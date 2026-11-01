@@ -32,6 +32,9 @@ Each fact has one owner; other pages link to it.
 | Accepted risks and known gaps | [Known limitations](audit/known-limitations.md) |
 | Deployed addresses | [Addresses](integrators/addresses.md) and [`deployments/`](../deployments/11155111/README.md) |
 
+[`facts.json`](facts.json) owns no fact: it is generated from the owners above by
+[`tools/gen_facts.py`](../tools/gen_facts.py), for the 6529.io site, and CI fails when it is stale.
+
 ## Module READMEs
 
 Each folder under `src/` has a README that maps its code (files, entry points with rule IDs,
@@ -53,6 +56,7 @@ in [Testing](testing/README.md).
 | [`tools/check_markdown_links.py`](../tools/check_markdown_links.py) | Every relative link and anchor resolves |
 | [`tools/gen_role_matrix.py`](../tools/gen_role_matrix.py) `--check` | The role matrix matches `config/genesis.example.json` |
 | [`tools/check_docs_facts.py`](../tools/check_docs_facts.py) | Cited test names, interface IDs, event topic0 values, nSLOC and bytecode sizes match the code |
+| [`tools/gen_facts.py`](../tools/gen_facts.py) `--check` | [`facts.json`](facts.json), the machine-readable facts the 6529.io site syncs (addresses, governed parameters and their launch defaults, gas with its labels, collection names, links), is generated from their owners |
 | [`tools/check_genesis.py`](../tools/check_genesis.py) | The genesis configuration matches the compiled selectors |
 | [`tools/check_natspec.py`](../tools/check_natspec.py) | Every external or public function, getter, event and error in `src/` has complete NatSpec |
 | [`tools/check_budgets.py`](../tools/check_budgets.py), [`tools/check_slither.py`](../tools/check_slither.py) | The engineering budgets; reviewed Slither findings ([triage](security/slither-triage.md)) |

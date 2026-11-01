@@ -336,7 +336,7 @@ reserved new key gains none of them until execution:
 | The sale `creator` | `Stream.primaryTerms`, `Editions.primaryTerms` | Zero |
 | Start an approved, unminted work; revoke a move nonce | `PackageRegistry` (`consume`, `revokeMove`) | `InvalidSignature`; `NotAuthority` |
 | Accept a package for an existing artist ID | `PackageRegistry.acceptPackage` | `InvalidSignature` |
-| Receive a no-bid auction's work | `EnglishAuction.settle` | Reverts with `InvalidRecipient(0)`; the work stays in custody until the outcome |
+| Receive a no-bid federated auction's work (v1.1) | `EnglishAuction.settle` | Reverts with `InvalidRecipient(0)`; the work stays in custody until the outcome. A canonical work goes to the museum and never waits ([AUC-24](stream-and-auctions.md#rules-and-invariants)) |
 | Set or finalize a record; add the artist's locators | `WorkRecords.setRecord`, `finalize`, `addLocator` | `NotWorkArtist`; `addLocator` falls through to the AccessManager check |
 | Party consents and the artist's errata repin signature | `WorkRecords` | `InvalidConsent` |
 | ARTIST statements | `StatementLog`, through `isArtist` | `NotAuthorized` |

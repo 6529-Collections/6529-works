@@ -51,6 +51,13 @@ jobs:
         # Cited test names, interface IDs, event topic0 values and nSLOC figures match the code.
         run: python tools/check_docs_facts.py
 
+      - name: Facts export generator unit tests
+        run: python -m tools.test_gen_facts
+
+      - name: Facts export
+        # docs/facts.json, which the 6529.io site syncs, must be generated from the repository.
+        run: python tools/gen_facts.py --check
+
   checks:
     name: Build and checks
     runs-on: ubuntu-latest

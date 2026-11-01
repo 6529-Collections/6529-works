@@ -1,12 +1,14 @@
 # editions
 
-6529 Stream Editions (named 6529 Editions before ADR 0005): the one shared ERC-1155 of
-editions. Each edition is anchored by a settled 6529 Stream work of kind `EDITION_MASTER`,
-shares its ID, and renders its media and license. Copies are minted by any sale adapter
-governance admits whose sale kind the edition's terms name, rc.2's being the uniform-price
-edition auction ([ADR 0005](../../docs/adr/0005-stream-editions-auction.md)); a new sale method
-is a new adapter, never a new Editions. The rules are in
-[Editions and sales](../../docs/spec/editions-and-sales.md) (`ED-*`).
+6529 Stream Editions (named 6529 Editions before ADR 0005; "6529 Stream Editions",
+`STREAMEDITIONS`): the one shared ERC-1155 of editions. Each edition is anchored by a settled
+6529 Stream work of kind `EDITION_MASTER`, shares its ID, and renders its media and license.
+Copies are minted by any sale adapter governance admits whose sale kind the edition's terms
+name, rc.2's being the uniform-price edition auction in [`sales/`](../sales/README.md)
+([ADR 0005](../../docs/adr/0005-stream-editions-auction.md)); a new sale method is a new adapter,
+never a new Editions. The rules are in
+[Editions and sales](../../docs/spec/editions-and-sales.md) (`ED-*`, and `EA-*` for the
+auction).
 
 ## Files
 
@@ -68,14 +70,15 @@ The create flow, with every check in order, is under
 - **Bytecode:** well inside EIP-170; current figures in the
   [audit scope](../../docs/audit/scope.md#products-and-sales).
 - **Tests:** `forge test --match-path 'test/editions/**'` (unit, the edition invariant suite and
-  `EditionsGasReport.t.sol`); the end-to-end path is
-  [`MasterEdition.t.sol`](../../test/integration/MasterEdition.t.sol). Coverage and mutation
-  testing: [Testing](../../docs/testing/README.md).
+  `EditionsGasReport.t.sol`); end to end, [`MasterEdition.t.sol`](../../test/integration/MasterEdition.t.sol)
+  and the edition auction's flows in [`test/integration/`](../../test/integration/README.md).
+  Coverage and mutation testing: [Testing](../../docs/testing/README.md).
 
 ## See also
 
 [ADR 0001 §6](../../docs/adr/0001-v1-scope.md#6-6529-editions) (with §3 exclusivity and §8
 license), [ADR 0003](../../docs/adr/0003-build-time-decisions.md),
 [ADR 0005](../../docs/adr/0005-stream-editions-auction.md); the
-[differences from the ADRs](../../docs/spec/README.md#differences-from-the-adrs) (`ED-*` rows),
-[invariants](../../docs/audit/invariants.md), [known limitations](../../docs/audit/known-limitations.md#sales-and-auctions).
+[differences from the ADRs](../../docs/spec/README.md#differences-from-the-adrs) (`ED-*` and
+`EA-*` rows), [invariants](../../docs/audit/invariants.md),
+[known limitations](../../docs/audit/known-limitations.md#the-edition-auction).

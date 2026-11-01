@@ -24,8 +24,9 @@ events do not tell you. The rules are in the [specification](../spec/README.md),
   `RoyaltyRateChanged`, `MetadataUpdate`, `BatchMetadataUpdate`, `OwnershipTransferred`,
   `ContractURISet`, `ContractURIUpdated`, `AdmittedMinterSet` and `ApprovalForAll`; `Bound`
   comes from both tokens and both registries, `AuthorityUpdated` from every governed contract.
-  `Credited` (adapters, escrow), `ConfigSet` (auction, entropy module) and `NonceRevoked`
-  (artist registry, statement log) each name two events with different topic0 values.
+  `Credited` (adapters, escrow) and `NonceRevoked` (artist registry, statement log) each name
+  two events with different topic0 values, and `ConfigSet` three (the English auction, the edition
+  auction and the entropy module).
   `Transfer(address,address,uint256)` is also ERC-20's (the ERC-721 log has four topics), and
   `Paused`, `Unpaused` and `OwnershipTransferred` match OpenZeppelin's `Pausable` and `Ownable`.
 - **Topics.** `indexed` parameters are topics 1 to 3, in declaration order. Structs, strings,
@@ -203,10 +204,37 @@ for role 4 (`CURATION_SIGNER`). The signer's epoch also changes with a new grant
 | `Paused(address account)` | `0x62e78cea…` | `pause()` (PAUSER, immediate) | Adapter-wide pause; on the auction it stops only new starts ([AUC-13][auc]). `account` is the immediate caller: the role holder, or the AccessManager through `execute`. |
 | `Unpaused(address account)` | `0x5db9ee0a…` | `unpause()` (UNPAUSER, no earlier than 48 hours after the pause) | |
 
-The fixed-price and Dutch adapters left with ADR 0005, and with them `PhasesSet`,
-`SaleClosed` and `ConsentNonceRevoked`. The Sepolia r1 to r3 instances still emit them; the
-`v1.0.0-rc.1` version of this page lists them. The edition auction's events come with its
-adapter.
+### UniformEditionAuction
+
+[`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol), interfaces
+[`IUniformEditionAuction`](../../src/interfaces/IUniformEditionAuction.sol) and `ISaleAdapter`.
+The sale ID is `saleIdOf(editions, editionId)`, a hash; bid IDs run from 1 in each sale, so key a
+bid by `(saleId, bidId)`. The rules are [EA-1 to EA-16][ed].
+
+| Event | topic0 | Emitted by | Meaning and indexing notes |
+| --- | --- | --- | --- |
+| `AuctionOpened(uint256 indexed saleId, address indexed token, uint256 indexed id, address master, uint32 maxCount, AuctionConfig terms, uint64 closeAt)` | `0x54085347…` | `open` (anyone, from the 1/1's start until the close) | `AuctionConfig` is `(uint96 basePrice, uint16 stepsPerDecade, uint16 stepCount, uint32 marginShare, uint32 closeOffset, uint32 softWindow, uint32 maxExtension)`, the terms the sale locked. `maxCount` is the creator's cap, zero for none; `closeAt` the close at opening. Follows `SaleStarted`. |
+| `SaleStarted(…)` | `0x36e87edc…` | `open` | `saleKind` is `UNIFORM_AUCTION`, `currency` zero (ETH), `price` step 0's price, `endTime` the close at opening; it moves later with the 1/1 and the soft close. |
+| `BidPlaced(uint256 indexed saleId, uint256 indexed bidId, address indexed bidder, uint256 step, uint256 quantity, uint256 position, uint64 endTime)` | `0xea05b7c0…` | `bid` (anyone) | The escrow is `quantity × stepPrice(step)`. `position` is the bid's place in its step's queue (capped sales; zero otherwise). `endTime` is the sale's end after the bid: a soft-close extension shows here. |
+| `BidRaised(uint256 indexed saleId, uint256 indexed bidId, address indexed bidder, uint256 fromStep, uint256 toStep, uint256 position, uint256 paid, uint64 endTime)` | `0x147e61d6…` | `raise` (the bidder) | The whole bid moved up; `paid` is the top-up. In a capped sale it leaves a departure at `fromStep` and joins `toStep` at `position`. |
+| `BidWithdrawn(uint256 indexed saleId, uint256 indexed bidId, address indexed bidder, address to, uint256 amount)` | `0xcc2c9bd2…` | `withdrawBid` (the bidder, only while the 1/1 is paused for a dispute) | The whole escrow went to `to`; the bid is gone. In a capped sale it leaves a departure. |
+| `AuctionCleared(uint256 indexed saleId, uint256 count, uint256 step, uint256 price, uint256 revenue, bool rationed, uint256 cutUnits)` | `0x0740a60e…` | The `settle` call that finishes the scan of the book (anyone) | The result: `count` copies at `price`, revenue paid out in the same call. `rationed` marks a cap binding inside the clearing step, which then sells `cutUnits`. Followed by `SaleSettled`. |
+| `SaleSettled(…)` | `0x16010625…` | The same `settle` call | One per sale: `buyer` and `recipient` zero, `quantity` the count, `price` the revenue, with the fee and seller amounts. The event the TDH pipeline weights. |
+| `SettlementScanned(uint256 indexed saleId, uint256 wordsLeft)` | `0x5ba31e1b…` | A `settle` call that stops at its gas bound before the scan of the book ends (declared in `IUniformEditionAuctionStorage`) | `wordsLeft` live words of eight steps remain; the next `settle` continues. |
+| `DeparturesSwept(uint256 indexed saleId, uint256 swept, uint256 total, uint256 cutoff)` | `0xcd2f0b03…` | `settle` of a rationed sale with departures, once per call | Progress of the caller's own sweep (each settler sweeps on its own): `swept` of `total` departures, and its cutoff so far. Interleaved settlers' events can show `swept` going down; `sweepOf(saleId, settler)` reads one settler's. |
+| `AuctionSettled(uint256 indexed saleId, uint256 count, uint256 cutoff)` | `0x449bedd3…` | The `settle` that completes the sale: the first settler to sweep every departure | Claims are open. `cutoff` is final (rationed sales; zero otherwise). |
+| `AuctionVoided(uint256 indexed saleId)` | `0x5b720134…` | `settle` after the 1/1 was cancelled | Nothing is minted or paid; every bid's claim refunds its whole escrow. |
+| `BidClaimed(uint256 indexed saleId, uint256 indexed bidId, address indexed bidder, address to, uint256 unitsWon, uint256 refund)` | `0x0c081c9a…` | `claimBid` (the bidder) and `claimBidFor` (anyone) | `unitsWon` copies minted to `to` (the bidder for `claimBidFor`); `refund` sent to `to`, or credited to the bidder by `claimBidFor` (with `Credited`). The bid is gone. |
+| `Credited(…)` | `0xdd0ef63b…` | `claimBidFor` | A refund credited to the bidder (`currency` zero). |
+| `Claimed(…)` | `0x913c9923…` | `claim(address(0), to)` | |
+| `ConfigSet(AuctionConfig previous, AuctionConfig next)` | `0x15d7d731…` | The constructor (from all zeros) and `setConfig` (PARAMETER_SETTER, 48 hours) | Sales opened afterwards lock `next`; open sales keep theirs. |
+| `TargetSet(address indexed token, bool listed)` | `0xd79dab7c…` | `setTarget` (SUCCESSOR_SETTER; at genesis through the wiring) | |
+| `FederationRegistrySet(address previous, address next)` | `0xb6b3a87c…` | `setFederationRegistry` (SUCCESSOR_SETTER) | None in v1. |
+| `Paused(address account)`, `Unpaused(address account)` | `0x62e78cea…`, `0x5db9ee0a…` | `pause()` (PAUSER, immediate), `unpause()` (UNPAUSER, no earlier than 48 hours after the pause) | A pause stops `open` only. |
+
+The fixed-price and Dutch adapters left with ADR 0005, and with them `PhasesSet`, `SaleClosed`
+and `ConsentNonceRevoked`. The Sepolia r1 to r3 instances still emit them; the `v1.0.0-rc.1`
+version of this page lists them.
 
 ### StatementLog
 
@@ -323,7 +351,7 @@ contract at a CREATE2 address.
 
 | Event | topic0 | Emitted by | Meaning and indexing notes |
 | --- | --- | --- | --- |
-| `AssetStatusChanged(address indexed asset, Status previous, Status current, uint64 revision)` | `0xd5701084…` | The allowlist's constructor (ETH admitted), `admitAsset` (FUNDS_SETTER, 14 days; [ECO-33][eco]) and `deprecateAsset` (GUARDIAN, immediate) | A deprecation freezes running auctions in that currency ([AUC-25][auc]). |
+| `AssetStatusChanged(address indexed asset, Status previous, Status current, uint64 revision)` | `0xd5701084…` | The allowlist's constructor (ETH admitted), `admitAsset` (FUNDS_SETTER, 14 days; [ECO-33][eco]) and `deprecateAsset` (GUARDIAN, immediate) | A deprecation freezes running auctions in that currency ([AUC-25][auc]); edition sales are ETH-only. |
 | `IncrementFloorChanged(address indexed asset, uint256 previous, uint256 current, uint64 revision)` | `0x866085d8…` | Every admission (with the same revision as its `AssetStatusChanged`) and `setIncrementFloor` (PARAMETER_SETTER, 48 hours) | The absolute minimum bid increment; an auction locks it at its first bid. |
 | `DefaultCurrencyChanged(bytes32 indexed product, address previous, address current, uint64 revision)` | `0x067a6334…` | `setDefaultCurrency` (FUNDS_SETTER, 14 days; each product's first at genesis through the wiring) | The currency a sale of `product` locks when its terms say `CURRENCY_DEFAULT`. |
 | `EconomicsSet(bytes32 indexed product, ProductEconomics previous, ProductEconomics next, uint64 revision)` | `0x7b619472…` | The resolver's constructor (once per product, from zeros, revision 1), `setFeeTerms` (FUNDS_SETTER, 14 days) and `setRoyaltyRate` (PARAMETER_SETTER, 48 hours) | `ProductEconomics` is `(address feeRecipient, uint32 feeShare, uint32 royaltyRate)`. Applies to new works and editions only ([ECO-6][eco]). `revision` is the changed setting's own counter: compare `previous` and `next` to tell fee terms from royalty rate. |
@@ -457,18 +485,35 @@ Per `saleId`:
 - **Credits.** Per account and currency on one adapter, `claimable` is the sum of `Credited`
   minus the sum of `Claimed`.
 
-### An edition
+### An edition and its sale
 
-- **Created.** `EditionCreated`, `MetadataUpdate(editionId)`, the registry's `ContentClaimed`,
-  and 6529 Stream's `EditionLinked` and `MetadataUpdate`, in one transaction. Read
-  `edition(editionId)` for the locked economics.
+- **Sale opened.** Editions' `EditionMinterBound` (unless the edition was bound already), then
+  `SaleStarted` and `AuctionOpened`, usually in the same transaction as the 1/1's `start`. One
+  sale per edition (`saleIdOf(editions, id)`).
+- **The book.** Fold `BidPlaced`, `BidRaised` and `BidWithdrawn` by `(saleId, bidId)`: each live
+  bid's step, quantity and position give the live units per step, which `stepTotals(saleId)`
+  returns. A raise or withdrawal in a capped sale also logs a departure at its old step
+  (`departures(saleId, step)`).
+- **The clocks.** The close is the 1/1's end plus the offset, or the last soft-close extension,
+  whichever is later: watch the 1/1's `BidPlaced` and `AuctionResumed` too, or read
+  `endTimes(saleId)`. Each `BidPlaced` and `BidRaised` carries the end after it.
+- **Settled.** Settlement runs in calls of bounded gas: a call that stops before the end of the
+  book emits `SettlementScanned`; `AuctionCleared` and `SaleSettled` come in the call that
+  finishes the scan, `DeparturesSwept` in each call of a sweep (the caller's own progress: each
+  settler sweeps on its own), and `AuctionSettled` when the first sweep completes and claims
+  open. A cancelled
+  1/1 gives `AuctionVoided` instead.
+- **Created.** `EditionCreated`, `MetadataUpdate(editionId)`, the registry's `ContentClaimed`, and
+  6529 Stream's `EditionLinked` and `MetadataUpdate`, in one transaction, any time after the
+  master's sale settled and before copies mint. Read `edition(editionId)` for the locked
+  economics.
 - **Bound.** `EditionMinterBound` names the adapter that sells the edition: emitted when its
   sale opens (`bindMinter`, often before `EditionCreated`), or else on the first mint;
   `edition(id).minter` reads it once the edition exists.
-- **Mints.** `TransferSingle` from zero, with the sale adapter as `operator`; the adapter's own
-  events tell the sale.
-- **Supply.** The sum of `TransferSingle.value` from zero equals `edition(id).minted`.
-  Reaching the creator's cap emits nothing.
+- **Claims.** Each `BidClaimed` with `unitsWon` above zero comes with Editions' `TransferSingle`
+  from zero (the adapter as operator). The sum of `TransferSingle.value` from zero equals
+  `edition(id).minted`, and reaches the sale's `count` once every winning bid is claimed. Reaching the
+  creator's cap emits nothing.
 
 ### Money
 
@@ -563,6 +608,9 @@ and a head. Also:
 
 ### Event ordering within a transaction
 
+- **A claim's `TransferSingle` follows its `BidClaimed`.** An edition-auction claim deletes the
+  bid and emits `BidClaimed` before it mints, so the recipient's ERC-1155 hook runs after the
+  event; a hook that reverts reverts the whole claim, and the bid stays claimable.
 - **Effects come before the summary event.** `ItemConsumed` precedes `WorkMinted`;
   `PrimarySaleSettled` and the delivery precede `SaleSettled`; `Credited` precedes
   `BidPlaced` and `BidWithdrawn`; `RoyaltyRateChanged` precedes `RoyaltyRateSet`;
@@ -641,7 +689,7 @@ and its `Transfer` to zero is the signal.
 ## Appendix: full topic0 values
 
 Every distinct event signature in the compiled ABIs of the deployed contracts on `main`, with
-structs expanded to tuples: 121 signatures.
+structs expanded to tuples: 132 signatures.
 
 <details>
 <summary>All topic0 values</summary>
@@ -656,26 +704,35 @@ structs expanded to tuples: 121 signatures.
 | `ArtistResolverSet(address,address,bytes32)` | `0x0923c8444fde0faa8f8b86ac14170efc9116fa3fc434402baab8c4ef1731c3ff` | StatementLog |
 | `AssetStatusChanged(address,uint8,uint8,uint64)` | `0xd5701084de76fb29c872a1a80df02ce3534cfe6bb1437ad174219a1dd3626c0c` | AssetAllowlist |
 | `AuctionCancelled(uint256,bytes32)` | `0x49d6765465d68d3195fe23b8994c157a73a07cf3732ab9d094d1d5fe2f896880` | EnglishAuction |
+| `AuctionCleared(uint256,uint256,uint256,uint256,uint256,bool,uint256)` | `0x0740a60eb3f6ff14f93d8845e29a302ed3d41894039224c85155e9de357ee68e` | UniformEditionAuction |
+| `AuctionOpened(uint256,address,uint256,address,uint32,(uint96,uint16,uint16,uint32,uint32,uint32,uint32),uint64)` | `0x54085347388e827248ea7d0de8d78b47f01bc9182e7963efd37f80e9214568c1` | UniformEditionAuction |
 | `AuctionPaused(uint256,bytes32)` | `0xc5ebe7699a677eb954ea6988e36b511bab70d7e1ade4318cdafac5206db27f79` | EnglishAuction |
 | `AuctionResumed(uint256,uint64)` | `0xd6998361646975076830fd22deba76d0ebb862929692ac6a7c878737e9ab430d` | EnglishAuction |
-| `AuthorityUpdated(address)` | `0x2f658b440c35314f52658ea8a740e05b284cdc84dc9ae01e891f21b8933e7cad` | DependencyRegistry, ArtistRegistry, AssetAllowlist, EconomicsResolver, RevenueEscrow, Eip712CurationVerifier, PackageRegistry, StatementLog, VrfEntropyModule, Stream, WorkRecords, Editions, EnglishAuction |
+| `AuctionSettled(uint256,uint256,uint256)` | `0x449bedd35ef4d34030a7128545897ef9f6410285965aa60a74992094336d6851` | UniformEditionAuction |
+| `AuctionVoided(uint256)` | `0x5b7201342ffb4a6650d6108ed4e2b82dac9e7efc56b5f0e5a8d0757dc186b1c6` | UniformEditionAuction |
+| `AuthorityUpdated(address)` | `0x2f658b440c35314f52658ea8a740e05b284cdc84dc9ae01e891f21b8933e7cad` | DependencyRegistry, ArtistRegistry, AssetAllowlist, EconomicsResolver, RevenueEscrow, Eip712CurationVerifier, PackageRegistry, StatementLog, VrfEntropyModule, Stream, WorkRecords, Editions, EnglishAuction, UniformEditionAuction |
 | `Base64Attested(bytes32)` | `0xde611757905ea5f13eedb7ea4f8e87ddcbc29ce9429073a6a8b0cf12101e563e` | ContentStore |
 | `Base64Progress(bytes32,uint256)` | `0x02b839e82d6e5c2ec40d13754cce314a887150d421bd3eeb478b03567c686971` | ContentStore |
 | `BatchMetadataUpdate(uint256,uint256)` | `0x6bd5c950a8d8df17f772f5af37cb3655737899cbf903264b9795592da439661c` | Stream, Editions |
+| `BidClaimed(uint256,uint256,address,address,uint256,uint256)` | `0x0c081c9a607de4b30ffc3e1b07522571ea711571a743f683fd01470124cd84d6` | UniformEditionAuction |
 | `BidPlaced(uint256,address,address,uint256,uint64)` | `0x6dcc6bb7f6ff492d5dd3fff00632c3b14d65ad4465c1b4f44685d8ac094ef16c` | EnglishAuction |
+| `BidPlaced(uint256,uint256,address,uint256,uint256,uint256,uint64)` | `0xea05b7c068c31a357fabd033340f7742c722f9491acac9bef1f500ab6049976e` | UniformEditionAuction |
+| `BidRaised(uint256,uint256,address,uint256,uint256,uint256,uint256,uint64)` | `0x147e61d6f7ae34d614677da9caeca4f1607dad8a974ce9713980887341d7f677` | UniformEditionAuction |
 | `BidWithdrawn(uint256,address,uint256)` | `0x8f8619524e8d462cead34604bd2247ede24175801481e4d0b8059ac8aa41c301` | EnglishAuction |
+| `BidWithdrawn(uint256,uint256,address,address,uint256)` | `0xcc2c9bd2af7c79d90490a0efe9b71b9b48e7d8c8ea481f7a10861058f59ae9a8` | UniformEditionAuction |
 | `Bound(bytes32,address)` | `0xd18d9295537e6da9cdfc3a07c1de8a8d8eb30fd42853acff19f097e2969f4784` | ArtistRegistry, PackageRegistry, Stream, Editions |
 | `ChangeCancelled(uint256,address,bool)` | `0x88a03d9ccb529a0c33b398ed874de8eb17013d6989134d8ca2bb31d264882ddf` | ArtistRegistry |
 | `ChangeContested(uint256,address)` | `0xd96e40f81122d9e08069624062bbcc05e00ba4d74c189a8bff7b33ced8299792` | ArtistRegistry |
 | `ChangeExecuted(uint256,(address,address,bytes32,bytes32),(address,address,bytes32,bytes32))` | `0x8e7ef8fd2a03e7165c8094e3607108b18469eeed2ed508186ffefd3fa6e0488c` | ArtistRegistry |
 | `ChangeStaged(uint256,(uint8,(address,address,bytes32,bytes32),address,uint64,uint64,uint64,bytes32,bytes32,address[]))` | `0x132aeaf28d0224ddcdd5cd42f1f2019354ba9d972372922378473c32c4a15e94` | ArtistRegistry |
 | `ChunkWritten(bytes32,address,uint256)` | `0xa720bfe8fb78f1436f460c61e8c1a02410fc148201c63e8e07a8f54a82e5627a` | ContentStore |
-| `Claimed(address,address,address,uint256)` | `0x913c992353dc81b7a8ba31496c484e9b6306bd2f6c509a649a38fdf5e1c953b2` | EnglishAuction |
+| `Claimed(address,address,address,uint256)` | `0x913c992353dc81b7a8ba31496c484e9b6306bd2f6c509a649a38fdf5e1c953b2` | EnglishAuction, UniformEditionAuction |
 | `ClaimFailed(address,address,uint256,uint256,uint256,bytes)` | `0xdaabf7a59b4eba4a2596b828b3ea851d5c37ae2de75087cf6d2c2bdd159d7070` | ClaimRouter |
 | `CollectionCreated(uint256,string,bytes32)` | `0x8966ba956c90c682e7629fa1eff72812e2a5d54259d1e684285c761439588057` | Stream |
 | `CollectionPreferredKindSet(uint256,uint8,uint8)` | `0x57ab57edc511e68ceac9b1e49b80959a2aa7279eb6fa0a548dabba84f3f42d33` | WorkRecords |
 | `ConfigSet((uint256,bytes32,uint32,uint16,bool),(uint256,bytes32,uint32,uint16,bool))` | `0xc5843e7141f604b3110f98ce25e5557fe89b0f64cff0657e5cefc993f00511a9` | VrfEntropyModule |
 | `ConfigSet((uint32,uint32,uint32),(uint32,uint32,uint32))` | `0xb208862316333bb2d7b1d4c78c1fe2307cb8fcc7de4ef87712dcbe581689fe52` | EnglishAuction |
+| `ConfigSet((uint96,uint16,uint16,uint32,uint32,uint32,uint32),(uint96,uint16,uint16,uint32,uint32,uint32,uint32))` | `0x15d7d731063b5081995cf6646e843f77da2b2d04be98b1f26dd3587b253b8db7` | UniformEditionAuction |
 | `ConsolidationSourceSet(address,address)` | `0x5b375cc73af25458e0e96a18adb844a77f4f149bbacebcad4489a1c1926a83fa` | ArtistRegistry |
 | `ContentClaimed(bytes32,bytes32)` | `0x7ee6542c3bb14fbd1d5f2469b3fe9a3bc0f12f90717d2df3d785ca1c5e34ca51` | PackageRegistry |
 | `ContentReleased(bytes32,bytes32,uint256)` | `0x0f5bb07b99770b114d938317e5ef610ece9a8fd796e204b663203cfcc17ac974` | PackageRegistry |
@@ -685,12 +742,13 @@ structs expanded to tuples: 121 signatures.
 | `ContractURIUpdated()` | `0xa5d4097edda6d87cb9329af83fb3712ef77eeb13738ffe43cc35a4ce305ad962` | Stream, Editions |
 | `CoordinatorSet(address,address,bytes32)` | `0x04092dc0da2aa8151ef027969128a1ab74240da2198b35dd3a2118b6043617ff` | VrfEntropyModule |
 | `Credited(address,address,address,uint256,uint256)` | `0x2a56c0b8b56559d2047c27729efa9ad0bba3ad9f14cbab37251e3008934dbdb0` | RevenueEscrow |
-| `Credited(address,address,uint256,uint256)` | `0xdd0ef63b44a932361273bab95d6e9bfcea5c7850c43844f540314e89899b970c` | EnglishAuction |
+| `Credited(address,address,uint256,uint256)` | `0xdd0ef63b44a932361273bab95d6e9bfcea5c7850c43844f540314e89899b970c` | EnglishAuction, UniformEditionAuction |
 | `DefaultCurrencyChanged(bytes32,address,address,uint64)` | `0x067a63345dbae6001939bc0d94813caee97a817779e5a2f7b1f80f88a1d12b98` | AssetAllowlist |
 | `DefaultLicenseSet(bytes32,(string,bytes32),(string,bytes32),uint64)` | `0x45967214951395edfaed913e180d66f46dc20f884611341e05657335090698b1` | EconomicsResolver |
 | `DefaultRendererSet(address,address,bytes32)` | `0xe2fab5e93f4326fb3c630fb4727e23f53f515c7850a15793f49130e5c0bcd320` | Stream |
 | `DeliveryClaimed(uint256,address,address)` | `0x97b1d318557d1873c3d7a8a9ef7fb4b4c83f2bb976bb53525208ed7712543748` | EnglishAuction |
 | `DeliveryPending(uint256,address)` | `0x96b5b68e86af123b788e4434fa8a32249a60a4f022f6bb2451d03055a8dfcb26` | EnglishAuction |
+| `DeparturesSwept(uint256,uint256,uint256,uint256)` | `0xcd2f0b03cb6f968ada1bbdaff91cc336fb6973b27da2abf27ce51dae3bfa057e` | UniformEditionAuction |
 | `DependencyDeprecated(bytes32,bytes32)` | `0x1ec1691a0ca2ee98d4fbcf4e43b0bb0e0a14423b3295cb62e5b0e3ab1f57cae5` | DependencyRegistry |
 | `DependencyRegistered(bytes32,bytes32,bytes32)` | `0x5e1b96d09ad31255e23f0b0144c328663f9dcfd03600de24ba76bed97f415716` | DependencyRegistry |
 | `EconomicsSet(bytes32,(address,uint32,uint32),(address,uint32,uint32),uint64)` | `0x7b619472492d3cc46abfe0e47b5d8d9cda2fc6d6d600c6419416f2216b2ae7d3` | EconomicsResolver |
@@ -699,7 +757,7 @@ structs expanded to tuples: 121 signatures.
 | `EditionLinked(uint256,address,uint256)` | `0xbab490db1fd479b73eef98c43ceeab4d158fbc6ac6a8dd914df5849d80a60b99` | Stream |
 | `EIP712DomainChanged()` | `0x0a6387c9ea3628b88a633bb4f3b151770f70085117a15f9bf3787cda53f13d31` | ArtistRegistry, ReleaseVerifier, Eip712CurationVerifier, PackageRegistry, StatementLog, WorkRecords |
 | `FederatedContractListed(uint256,address)` | `0x4004e60cf220a5ca24e2a0c0c4cb54e0759d8673a29f64b5c7afe580b01a51fc` | ArtistRegistry |
-| `FederationRegistrySet(address,address)` | `0xb6b3a87c0596650c0cf0eb6eca374c8ddc3de178190eabdc7b67d09f2f3a431e` | EnglishAuction |
+| `FederationRegistrySet(address,address)` | `0xb6b3a87c0596650c0cf0eb6eca374c8ddc3de178190eabdc7b67d09f2f3a431e` | EnglishAuction, UniformEditionAuction |
 | `FilePreferenceSet(uint256,bytes32,uint256,uint256)` | `0x700a41d4664d4e095541038a6ae434f80ea7c64a803f26a15c0731a550f59855` | WorkRecords |
 | `Flushed(address,address,address,uint256)` | `0xf5c342afbc0fd5497d66d2246a8208902c06a969755b7f7c415041a67d222caf` | RevenueEscrow |
 | `GovernanceConfigured(address,bytes32,bytes32,bytes32)` | `0xeb9f30f841bfc2bc2f6aebff0405fc98dd6e152e030304669b0dcb91e6668529` | GovernanceConfigurator |
@@ -723,7 +781,7 @@ structs expanded to tuples: 121 signatures.
 | `PackageAccepted(bytes32,uint256,address)` | `0x49639e3178859abe27d1fabf424f120e3144b903fbc59fb7a6d5666da877907d` | PackageRegistry |
 | `PackageRegistered(bytes32,bytes32,address,address)` | `0x0c1aff273f69c590d79d6ec4500fbec709412c9d6f5aca50140d6f1e72d8b821` | PackageRegistry |
 | `PackageRevoked(bytes32,bytes32)` | `0x6d695ea27d607e410f90e6b81ed7be5aacde025347b8885f0eef8a60c796dd90` | PackageRegistry |
-| `Paused(address)` | `0x62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258` | EnglishAuction |
+| `Paused(address)` | `0x62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258` | EnglishAuction, UniformEditionAuction |
 | `PreferredKindSet(uint8,uint8)` | `0x0c7addff33115506eceb32af47e39cfa360f77cd274f7a61785628f220a420e8` | WorkRecords |
 | `PrimarySaleSettled(uint256)` | `0xbdf40a602018a6fb327f9f11eb8f24f164a3439dc6bb06c5cf2317ff92121cea` | Stream |
 | `RecordOpened(uint256,bytes32,bytes32)` | `0xaa2a63e255d7826a28755f26ec86b6a056cf997cc736f42a4b0af2b13dcb48b8` | WorkRecords |
@@ -742,11 +800,12 @@ structs expanded to tuples: 121 signatures.
 | `RoleSuspensionLifted(uint64,address)` | `0x4c939cf9582b90782641e9eb9bbd308c3522c902eb4f53ced7ed3fecede67020` | WorksAccessManager |
 | `RoyaltyRateChanged(uint256,uint32,uint32)` | `0x2114cdf53fc75abac90fa604432eefa896d1dd5272aa96c82c01f9b543f8cd53` | Stream, Editions |
 | `RoyaltyRateSet(uint256,uint32,uint32,bytes32)` | `0xe8cb89229984389ed515ad4468d11354162343e1f8a6428bec4ffc6c1f6b04a5` | WorkRecords |
-| `SaleSettled(uint256,address,uint256,address,address,uint256,address,uint256,address,uint256,address,uint256)` | `0x16010625338e58299cd56c138533827e742865fde105b0c14272c707dd971b20` | EnglishAuction |
-| `SaleStarted(uint256,address,uint256,bytes32,address,uint256,uint64,uint64)` | `0x36e87edc6a9768b0cbf62a7a844b6d147adee3701d9778029ef463c3cf2df954` | EnglishAuction |
+| `SaleSettled(uint256,address,uint256,address,address,uint256,address,uint256,address,uint256,address,uint256)` | `0x16010625338e58299cd56c138533827e742865fde105b0c14272c707dd971b20` | EnglishAuction, UniformEditionAuction |
+| `SaleStarted(uint256,address,uint256,bytes32,address,uint256,uint64,uint64)` | `0x36e87edc6a9768b0cbf62a7a844b6d147adee3701d9778029ef463c3cf2df954` | EnglishAuction, UniformEditionAuction |
 | `SeedDelivered(bytes32,uint256,bytes32)` | `0x2a1a98d789f6210c2fb6c327204a52242c65b0c98a164f3fc8bc1c6b0479eb0d` | VrfEntropyModule |
 | `SeedLinked(bytes32,bytes32)` | `0xf4e9ac388df032c7aa58c87fffa65eea30eafa553518699548720ef2f6f64f42` | VrfEntropyModule |
 | `SeedRequested(bytes32,uint256)` | `0x13ccebb8a291fc5c387c182a5403c0aa3e322623fa2b250e1820cf8be4c55b2e` | VrfEntropyModule |
+| `SettlementScanned(uint256,uint256)` | `0x5ba31e1bbb69e573c0a45536d92c79905d779f65b3b09f73ac88014db70b9429` | UniformEditionAuction |
 | `SignerDisabled(address)` | `0xcd7d415743afbe3da9a397922c4a1d3f20efecad669641a0665b8fbd1f62d740` | Eip712CurationVerifier |
 | `SignerEnabled(address)` | `0x71b97cfbc2b8e475857f737bec1103b6beebaca04b52e11c9f7ecb527e64a6ca` | Eip712CurationVerifier |
 | `StandingAdded(uint256,address,uint64)` | `0xd59a9b0990450e51fc8b192b0c5988c84843d1db383c0e624bb9e8eeb4274a09` | ArtistRegistry |
@@ -758,11 +817,11 @@ structs expanded to tuples: 121 signatures.
 | `TargetAdminDelayUpdated(address,uint32,uint48)` | `0xa56b76017453f399ec2327ba00375dbfb1fd070ff854341ad6191e6a2e2de19c` | WorksAccessManager |
 | `TargetClosed(address,bool)` | `0x90d4e7bb7e5d933792b3562e1741306f8be94837e1348dacef9b6f1df56eb138` | WorksAccessManager |
 | `TargetFunctionRoleUpdated(address,bytes4,uint64)` | `0x9ea6790c7dadfd01c9f8b9762b3682607af2c7e79e05a9f9fdf5580dde949151` | WorksAccessManager |
-| `TargetSet(address,bool)` | `0xd79dab7c1ad9be25388690df227462ca1accba2033dbdbd3011ff0eb30c25088` | EnglishAuction |
+| `TargetSet(address,bool)` | `0xd79dab7c1ad9be25388690df227462ca1accba2033dbdbd3011ff0eb30c25088` | EnglishAuction, UniformEditionAuction |
 | `Transfer(address,address,uint256)` | `0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef` | Stream |
 | `TransferBatch(address,address,address,uint256[],uint256[])` | `0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb` | Editions |
 | `TransferSingle(address,address,address,uint256,uint256)` | `0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62` | Editions |
-| `Unpaused(address)` | `0x5db9ee0a495bf2e6ff9c91a7834c1ba4fdd244a5e8aa4e537bd38aeae4b073aa` | EnglishAuction |
+| `Unpaused(address)` | `0x5db9ee0a495bf2e6ff9c91a7834c1ba4fdd244a5e8aa4e537bd38aeae4b073aa` | EnglishAuction, UniformEditionAuction |
 | `URI(string,uint256)` | `0x6bb7ff708619ba0610cba295a58592e0451dee2622938c8755667688daf3529b` | Editions |
 | `VerifierSet(address,address,bytes32)` | `0xa3fb3ba52a3f33a4d15ad313aff346c928cc1b2b39194ec69d2b7785d362a0ea` | PackageRegistry |
 | `WalletCreated(address,bytes32,bytes32,(uint256,address,uint32)[])` | `0x140f5f9969cb7742e82b483caead38e16ee71968d0c0147939e24b8cc251372f` | SplitFactory |

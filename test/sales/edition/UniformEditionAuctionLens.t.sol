@@ -77,10 +77,11 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         assertEq(m.feeShare, 0);
     }
 
-    /// @dev The cut step's departure log sorted in `O(n log n)`: 600 departures logged in
-    ///      descending position order (the insertion sort's worst case, quadratic) keep
-    ///      `settlementOrder`, `clearing`, `quote` and `bidOutcome` far inside a 50M `eth_call`
-    ///      gas cap, and the order is by position.
+    /// @dev The cut step's departure log sorted in `O(n log n)` (a heapsort of packed keys): 600
+    ///      departures logged in descending position order (the insertion sort's worst case,
+    ///      quadratic) keep `settlementOrder`, `clearing` and `quote` near 5.2M gas each, far
+    ///      inside a 50M `eth_call` gas cap (the test logs the figures), and the order is by
+    ///      position.
     function test_Lens_SixHundredDeparturesInReverseOrderStayCheap() public {
         uint256 saleId = _open(900);
         address crowd = makeAddr("crowd");

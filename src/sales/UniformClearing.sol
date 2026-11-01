@@ -185,7 +185,8 @@ library UniformClearing {
     ///      number swept equals the log's count, which the caller checks. The final cut-off `X`
     ///      is then the least `X >= cutUnits` with `X = cutUnits + (units of the departures
     ///      starting below X)`: exactly `cutUnits` live units start below it, and {wonAtCut}
-    ///      hands out exactly `cutUnits` (proved in test/symbolic).
+    ///      hands out exactly `cutUnits` (proved in test/symbolic for queues of five entries of
+    ///      up to 255 units; the differential fuzz tests cover longer ones).
     /// @param cutoff The cut-off so far.
     /// @param minPos The lowest position accepted next: 0 at the start.
     /// @param pos The departure's position.

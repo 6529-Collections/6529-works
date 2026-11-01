@@ -379,8 +379,9 @@ interface IUniformEditionAuction is ISaleAdapter {
     error BiddingClosed(uint256 saleId, uint64 endTime);
     /// @notice A step at or past the sale's `stepCount`, or a raise not above the bid's step.
     error InvalidStep(uint256 step);
-    /// @notice A quantity of zero, or one that would take a step's entered or live units, or the
-    ///         sale's live units, past 2^32 - 1.
+    /// @notice A quantity of zero, or one that would take a step's live units or the sale's live
+    ///         units past 2^32 - 1, or, in a capped sale only (where units hold queue positions),
+    ///         a step's entered units.
     error InvalidQuantity(uint256 quantity);
     /// @notice `msg.value` is not exactly the escrow or the top-up due.
     error IncorrectPayment(uint256 expected, uint256 paid);

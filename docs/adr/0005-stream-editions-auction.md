@@ -4,6 +4,8 @@ Status: Accepted by the owner, 31 October 2026, who approved every recommended d
 ("defaults") and added decision 14 the same day. Recorded by the delivery owner (Claude Code,
 acting for the repository owner). Amends [ADR 0001](0001-v1-scope.md),
 [ADR 0003](0003-build-time-decisions.md) and [ADR 0004](0004-gas-budgets-under-glamsterdam.md).
+The text below is the record as accepted; changes made during the rc.2 delivery are dated
+amendments (§6 to §9), and each amended passage points to its amendment.
 
 This is this repository's ADR 0005. The "ADR 0005 (randomness)" that ADR 0001 cites under
 "Superseded or amended" is the 6529Stream repository's, a different record.
@@ -89,9 +91,8 @@ holds the bid book, the clearing, settlement and claims. Its frozen interface is
 - `open(token, id, data)` is permissionless from the 1/1's start until the edition close. For
   6529 Stream Editions, `data` is the master's package item, checked against the item hash 6529
   Stream stored, so no proof is needed. It locks the creator's cap, the governed parameters
-  and the `PRODUCT_EDITIONS` economics, and binds the edition to the adapter
-  (`IEditions.bindMinter`, [§6](#6-amendment-31-october-2026-the-edition-is-bound-when-its-sale-opens)),
-  which records the same economics in 6529 Stream Editions.
+  and the `PRODUCT_EDITIONS` economics. (Amended by [§6](#6-amendment-31-october-2026-the-edition-is-bound-when-its-sale-opens): it also binds the edition to the
+  adapter, which records the same economics in 6529 Stream Editions.)
 - Bids are ETH, exactly `quantity * price(step)`, from one unit at the base step. `raise` moves
   a whole bid up for exactly the difference. `withdrawBid` works only while the 1/1 is paused.
 
@@ -123,11 +124,9 @@ the seller, each through the revenue escrow if refused) and emits `SaleSettled` 
 the TDH pipeline weights (P29 §1.2). Copies sold need the edition, which `createEdition`
 (unchanged) creates once the master settles. When the cap binds inside the cut step, `settle`
 sweeps that step's departures in the position order the settler supplies, chunked and
-resumable. Each settler keeps its own progress and passes the rest of its own sweep on each
-call (`settlementOrderFor`), and the first to sweep every departure fixes the cutoff, so an
-order that skips a departure strands only its own sender; claims open when a sweep
-completes. `claimBid` mints a winner's copies and sends
-its refund to an address it names; `claimBidFor` lets anyone push a claim, crediting the
+resumable; claims open when the sweep completes. (Amended by [§9](#9-amendment-1-november-2026-each-settler-sweeps-on-its-own): each settler sweeps on its
+own, and claims open when the first sweep completes.) `claimBid` mints a winner's copies and
+sends its refund to an address it names; `claimBidFor` lets anyone push a claim, crediting the
 refund. Supply reaches exactly k once every winner has claimed.
 
 **6529 Stream Editions** ([`IEditions`](../../src/interfaces/IEditions.sol)).
@@ -142,25 +141,25 @@ refund. Supply reaches exactly k once every winner has claimed.
   length (decision 14). The edition auction requires `SaleKind.UNIFORM_AUCTION`, ETH and empty
   `params`. No EIP-712 type changes; the item hash's encoding, package tooling and fixtures do.
   With `price` gone from the terms, `createEdition`'s selector becomes `0x26c8844c`.
-- An edition is bound to one adapter, the only one that may mint it (`MinterMismatch`): the
-  adapter whose sale opened it (`bindMinter`, [§6](#6-amendment-31-october-2026-the-edition-is-bound-when-its-sale-opens)),
-  or else the first to mint it. A second admitted adapter of the same kind can neither open
-  nor add copies to a sale another one runs.
+- The first adapter to mint an edition is the only one that may mint it again
+  (`MinterMismatch`), so a second admitted adapter of the same kind cannot add copies to a
+  sale another one ran. (Amended by [§6](#6-amendment-31-october-2026-the-edition-is-bound-when-its-sale-opens): the edition is bound to the adapter whose sale opened
+  it, or else to the first to mint it, and that adapter keeps minting it after removal.)
 - `formatOf` and the OPEN window (`EditionWindowOpened`, `windowStart`) go with the fixed-price
   and Dutch adapters. Once they and the terms change land, and if nothing else in it changes,
-  the `IEditions` interface ID is `0xa41d86b8`; with `bindMinter` (§6) it is `0xe183b26f`. The
-  item hash's golden values change with the terms (`test_itemHash_golden`).
+  the `IEditions` interface ID is `0xa41d86b8`. The item hash's golden values change with the
+  terms (`test_itemHash_golden`). (Amended by [§6](#6-amendment-31-october-2026-the-edition-is-bound-when-its-sale-opens): with `bindMinter` it is `0xe183b26f`.)
 
 **The museum.** `IEconomicsResolver.museum()` names the 6529 Network Museum; `setMuseum`
-(compare-and-set on its own revision, as the resolver's other setters are) changes it. A 6529
-Stream work whose 1/1 settles with no bid, or ends unsold after its currency stayed deprecated
-for 30 days, goes to the museum. The English auction takes 6529 Stream as a constructor
-argument and gates the museum branch on it, so decision 9 holds in code: any other token's
-unbid work, federated or listed later by governance, goes to its artist. A delivery pending for
-the museum is claimed only by the museum recorded at settlement; for any other token the artist
-may also claim in the recipient's place (L-5), so no artist can take the museum's. The museum
-is a recipient chosen by the auction adapter and the resolver, not a hook in Core (ADR 0001
-§15).
+(compare-and-set on its own revision, as the resolver's other setters are) changes it. A
+canonical work, any token governance listed, whose 1/1 settles with no bid, or ends unsold
+after its currency stayed deprecated for 30 days, goes to the museum. A federated work goes to
+its artist. Governance lists 6529 Stream alone on the English auction (`setTarget` at genesis),
+so this is decision 9's rule; listing another token there would send its unbid works to the
+museum too. Only a federated work's artist may claim a pending delivery in the recipient's
+place (L-5), so no artist can take the museum's. The museum is a recipient chosen by the
+auction adapter and the resolver, not a hook in Core (ADR 0001 §15). (Amended by [§7](#7-amendment-31-october-2026-the-museum-branch-is-gated-on-6529-stream-in-code): the
+English auction gates the museum branch on 6529 Stream in code.)
 
 ### 3. Adding a sale method (decision 14)
 
@@ -184,9 +183,10 @@ name. No token contract hard-wires a minter.
    a field. The OPEN window does not return.
 2. Review it, deploy it, and schedule `Editions.setAdmittedMinter(fixedPriceSale, true)` and its
    `setTarget(editions, true)` (both 30 days), with its selectors in the governance manifest.
-3. Packages approved afterwards may name `FIXED_PRICE` with those params. The adapter calls
-   `Editions.bindMinter(editionId, item)` when a sale opens (§6). Editions sold by the auction
-   are untouched: each edition stays with the adapter that opened its sale.
+3. Packages approved afterwards may name `FIXED_PRICE` with those params. Editions sold by the
+   auction are untouched: each edition stays with its first minter. (Amended by [§6](#6-amendment-31-october-2026-the-edition-is-bound-when-its-sale-opens): the
+   adapter calls `Editions.bindMinter(editionId, item)` when a sale opens, and each edition
+   stays with the adapter that opened its sale.)
 
 Nothing in 6529 Stream, 6529 Stream Editions or a federated contract is redeployed. The cost is
 a guarantee rc.1 had: the token no longer knows every valid kind, so a master whose edition
@@ -203,7 +203,7 @@ The edition auction's parameters are one `AuctionConfig`, set by `setConfig(expe
 | --- | --- | --- | --- |
 | Breadth margin (D138) | 10% (10,000 of 100,000) | 0 to 50% | PARAMETER_SETTER, 48 hours |
 | Steps per decade (the step size) | 48 | 24, 48, 96 or 192 | PARAMETER_SETTER, 48 hours |
-| Base price | 0.0001 ETH | a power of ten from 10^12 to 10^17 wei, so prices read as the table does (decision 3) | PARAMETER_SETTER, 48 hours |
+| Base price | 0.0001 ETH | 10^12 to 10^17 wei; a power of ten since [§8](#8-amendment-31-october-2026-base-prices-are-powers-of-ten) | PARAMETER_SETTER, 48 hours |
 | Steps | 336 | 64 to 512, with a top step of at least 10 ETH | PARAMETER_SETTER, 48 hours |
 | Close offset after the 1/1 (D140) | 15 minutes | 0 to 1 day | PARAMETER_SETTER, 48 hours |
 | Soft-close window (D141) | 5 minutes | 1 minute to 1 hour | PARAMETER_SETTER, 48 hours |
@@ -277,6 +277,49 @@ seller had been paid.
   (140,201), about 20,000 more for the pair, the item hashed and checked a second time.
   An edition created unbound still writes 6.
 
+### 7. Amendment (31 October 2026): the museum branch is gated on 6529 Stream in code
+
+Made by the museum lane (PR #75). As accepted, §2 sent the unbid work of any token governance
+listed on the English auction to the museum, and relied on governance listing 6529 Stream alone
+for decision 9. The English auction now takes 6529 Stream as a constructor argument and gates
+the museum branch on it, so decision 9 holds in code:
+
+- A 6529 Stream work whose 1/1 settles with no bid, or ends unsold after its currency stayed
+  deprecated for 30 days, goes to the museum the resolver names at settlement.
+- Any other token's unbid work, federated or listed later by governance, goes to its artist.
+- A delivery pending for the museum is claimed only by the museum recorded at settlement; for
+  any other token the artist may also claim in the recipient's place (L-5), so no artist can
+  take the museum's.
+
+### 8. Amendment (31 October 2026): base prices are powers of ten
+
+Made by the clearing lane (PR #78). §4 bounded the base price to 10^12 to 10^17 wei.
+`StepLadder.isBasePrice` also requires a power of ten, so every price is a table mantissa times
+a power of ten and reads as the table does (decision 3, readable prices from a fixed table): a
+base of 0.00015 ETH would price the next steps at 0.0001575 and 0.000165 ETH instead of 0.000105
+and 0.00011. The default, 0.0001 ETH, is one.
+
+### 9. Amendment (1 November 2026): each settler sweeps on its own
+
+Made by the adapter lane (PR #77), after a review finding of 31 October. As designed in §2, the
+cut step's departure sweep was one resumable sweep that any settler continued. A settle call
+whose order skipped a departure (positions still strictly increasing) was accepted and moved the
+shared sweep past it, so the sweep could never finish: the sale stayed SETTLING and no bid could
+be claimed.
+
+- Each settler (`msg.sender`) keeps its own progress and passes the rest of its own sweep on
+  each call (`settlementOrderFor`); the first to sweep every departure fixes the cutoff, and
+  claims open. An order that skips a departure strands only its own sender, who settles from
+  another address; nobody's progress touches another's or the result.
+- A call sweeps at most 16 departures in the call that clears and 96 after.
+  `DeparturesSwept` reports the caller's progress, so interleaved settlers' events can show
+  `swept` going down. A call on a settled sale returns `true`.
+- A shared public relayer such as Multicall3 is one settler for all its callers, who would
+  share one sweep: keepers settle directly or through their own contract
+  ([runbook](../../script/README.md#the-edition-auction-keeper)).
+- LIM-EA-4 now reads: a dense book's settlement costs more calls, each of bounded gas, and a
+  griefer's sweep never blocks a keeper's.
+
 ## What this amends
 
 ADRs stay as written; each gets a pointer to this record.
@@ -343,11 +386,8 @@ over as the edition auction lands.
 - **LIM-EA-4: a dense book's settlement cost.** Filling every step raises `settle` to about
   700,000 Prague gas (at most 1,000,000 with 512 steps), paid by the settler; it costs an
   attacker far more in bids. A capped auction's departure sweep adds about 2,500 gas per
-  departure at the cut step, chunked across calls (16 in the clearing call, 96 after), each
-  call carrying only its caller's remaining slice. Each settler sweeps on its own: a settler
-  whose order skips a departure strands only its own progress (it settles from another
-  address), and a griefer's progress never touches the result. `DeparturesSwept` reports the
-  caller's progress, so interleaved settlers' events can show `swept` going down.
+  departure at the cut step, chunked across calls. (Amended by [§9](#9-amendment-1-november-2026-each-settler-sweeps-on-its-own): 16 departures in the
+  clearing call and 96 after, each settler sweeping on its own.)
 - **LIM-EA-5: demand reduction.** Marginal bidders bid the lowest step that gets in. It is
   inherent to a uniform price, and visible on the public ladder.
 - **LIM-EA-6: last-block ordering.** A block builder can reorder or censor bids in the final
@@ -362,18 +402,17 @@ over as the edition auction lands.
 - **LIM-EA-9: a frozen 1/1 delays editions.** An ERC-20 1/1 frozen by a currency deprecation
   (MARKET-2) delays the edition settlement until the 1/1 settles, up to 30 days. 6529 Stream
   launches in ETH, which is never deprecated in practice.
-- **LIM-EA-10: a removed adapter still mints the editions it sold.** Copies are minted at
-  claim, after the seller was paid, so 6529 Stream Editions lets an edition's bound adapter
-  mint it even after governance removes the adapter (§6); otherwise the winners would be
-  stranded. Governance therefore cannot stop a removed adapter's claims on editions it already
-  sold. The creator's cap still bounds them, removal stops every new sale, and an adapter is
-  admitted only after a 30-day review.
-- **LIM-EA-11: an edition auction nobody opens in time.** `open` is accepted until the 1/1's
+- **LIM-EA-10: claims need the adapter admitted.** Copies are minted at claim, and 6529 Stream
+  Editions refuses mints from a removed adapter (ED-5). Governance therefore removes an edition
+  auction only once its settled sales are claimed; `claimBidFor` lets anyone push the remaining
+  claims first. The removal is a 30-day operation, visible in advance. (Amended by [§6](#6-amendment-31-october-2026-the-edition-is-bound-when-its-sale-opens): it now
+  reads "a removed adapter still mints the editions it sold".)
+- **LIM-EA-11: an edition auction nobody opens in time.** (Added with [§6](#6-amendment-31-october-2026-the-edition-is-bound-when-its-sale-opens).) `open` is accepted until the 1/1's
   end plus the close offset. If nobody opens it by then, this adapter can never sell that
   work's editions. The edition is still unbound, so a later admitted adapter of its kind can
   open it (decision 14). The keeper opens the edition auction in the same batch as the 1/1's
   start (decision 7; [runbook](../../script/README.md#the-edition-auction-keeper)).
-- **LIM-EA-12: settlement waits for `createEdition`.** A sale with winners settles only once
+- **LIM-EA-12: settlement waits for `createEdition`.** (Added with [§6](#6-amendment-31-october-2026-the-edition-is-bound-when-its-sale-opens).) A sale with winners settles only once
   the edition exists (`EditionNotCreated`). `createEdition` is permissionless and
   deterministic once the 1/1 settles, but it takes the master's item, its package root and a
   Merkle proof, which the frozen `settle(saleId, order)` and `claimBid` cannot carry, and the

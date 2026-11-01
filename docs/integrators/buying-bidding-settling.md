@@ -1,9 +1,9 @@
 # Buying, bidding, settling and claiming
 
 For marketplace and wallet engineers, relayers and keepers: how to start, bid on and settle a
-6529 Stream auction, buy 6529 Stream Editions copies, claim what is owed, and read royalties.
-Rules are in [Stream and auctions](../spec/stream-and-auctions.md#rules-and-invariants) (`AUC-n`),
-[Editions and sales](../spec/editions-and-sales.md#rules-and-invariants) (`ED-n`) and
+6529 Stream auction, bid on 6529 Stream Editions copies in the edition auction, claim what is
+owed, and read royalties. Rules are in [Stream and auctions](../spec/stream-and-auctions.md#rules-and-invariants) (`AUC-n`),
+[Editions and sales](../spec/editions-and-sales.md#rules-and-invariants) (`ED-n`, `EA-n`) and
 [Economics and payouts](../spec/economics-and-payouts.md#rules-and-invariants) (`ECO-n`); event
 signatures in [Events and indexing](events-and-indexing.md); addresses in [Addresses](addresses.md).
 
@@ -24,6 +24,7 @@ are in [the flows file](../../deployments/11155111/flows.md#r3-the-release-candi
 | Contract | Interface | You call it to |
 | --- | --- | --- |
 | `EnglishAuction` | [IEnglishAuction](../../src/interfaces/IEnglishAuction.sol) | start, bid, withdraw, settle, claim |
+| `UniformEditionAuction` | [IUniformEditionAuction](../../src/interfaces/IUniformEditionAuction.sol) | open an edition's sale, bid, raise, withdraw during a 1/1 dispute, settle, claim |
 | `Stream` | [IStream](../../src/interfaces/IStream.sol), [IMintTarget](../../src/interfaces/IMintTarget.sol) | preview a start, read works, `royaltyInfo` |
 | `Editions` | [IEditions](../../src/interfaces/IEditions.sol) | read editions, `royaltyInfo` |
 | `PackageRegistry` | [IPackageRegistry](../../src/interfaces/IPackageRegistry.sol) | check approvals, acceptances and move nonces; relay acceptances; get the move digest |
@@ -42,7 +43,7 @@ The sale adapters share [`ISaleAdapter`](../../src/interfaces/ISaleAdapter.sol):
 - **Currencies.** `CURRENCY_ETH` is `address(0)`. `CURRENCY_DEFAULT` is
   `address(type(uint160).max)`; in a package it means "the product's default currency when the sale
   starts" ([EconomicsTypes.sol](../../src/interfaces/types/EconomicsTypes.sol)). Every sale locks
-  its resolved currency when it starts (AUC-15).
+  its resolved currency when it starts or opens (AUC-15). Edition auctions take ETH only (EA-4).
 - **Shares and rates** are out of 100,000 (`Splits.DENOMINATOR`, ECO-1): 6.529% is 6,529.
 - **Errors** are custom errors. A nested contract's error (Stream, the package registry, the
   allowlist, Permit2, a token) bubbles up unchanged: decode against every ABI on the path
@@ -52,7 +53,7 @@ The sale adapters share [`ISaleAdapter`](../../src/interfaces/ISaleAdapter.sol):
 
 ### The `Payment` struct
 
-Every bid carries one `Payment`
+Every English-auction bid carries one `Payment`
 ([SaleTypes.sol](../../src/interfaces/types/SaleTypes.sol)):
 
 | Field | Type | Meaning |
@@ -461,7 +462,7 @@ a new seller wallet creates its account, at the settler's cost.
 | Delivery failed (rejected, or the hook needed more than 300,000 gas) | `DeliveryPending(saleId, recipient)`; `pendingDelivery(saleId)` nonzero | The recipient or the winning bidder calls `claimDelivery(saleId, to)`, `to` neither zero nor the auction. With no bids the recipient is the museum recorded at settlement, and only it may claim, never the artist nor a museum named later; for any other token (federated, or listed later), the artist's authority may too (AUC-33). |
 | A payout refused by the wallet (ETH: reverted or needed over 100,000 gas) or by the token | The escrow's `Credited` | Anyone calls `RevenueEscrow.flush(wallet, asset)`, for a token once it allows it. |
 | An ERC-20 payout that failed even through the escrow (MONEY-1, AUC-23) | The auction's `Credited(wallet, token, saleId, amount)` | Anyone calls `claimFor(wallet, token)`; the funds only go to `wallet`. |
-| No bid (D140, AUC-24) | `SaleSettled` with `buyer == address(0)`, `price == 0`, and the 6529 Network Museum as recipient: `IEconomicsResolver.museum()` at settlement, even while the artist is [restrained](../glossary.md#restraint). Any other token's work (federated, or listed later by governance) names its artist's active authority. | Nothing. |
+| No bid (D140, AUC-24) | `SaleSettled` with `buyer == address(0)`, `price == 0`, and the 6529 Network Museum as recipient: `IEconomicsResolver.museum()` at settlement, even while the artist is [restrained](../glossary.md#restraint). Any other token's work (federated, or listed later by governance) names its artist's active authority. | Nothing. Its edition sale settles on its own ([EA-11](../spec/editions-and-sales.md#rules-and-invariants)). |
 | No bid on another token's work while its artist is restrained (IDENTITY-1, AUC-24) | Reverts with `InvalidRecipient(address(0))`: the creator from `IMintTarget.primaryTerms(tokenId, "")` is zero | Retry once the recovery override executes, is vetoed or voided, or lapses. |
 | Locked currency deprecated under 30 days | Reverts with `AssetNotActive(currency)` | Wait; the high bidder may `withdrawBid`. |
 | Locked currency deprecated 30 days | The high bid is credited back; a 6529 Stream work goes to the museum, any other token's to its artist | The bidder claims its credit. |
@@ -498,23 +499,202 @@ Besides the reverts in the two tables above:
 | `InvalidRecipient(to)` | `claimDelivery` to zero or to the auction. |
 | `IRevenueEscrow.InvalidAsset(address(0))` | `claimFor` on an ETH credit, which only its bidder claims. |
 
-## Buying an edition
+## Bidding in an edition auction
 
-Copies are sold by the edition's sale adapter: an adapter governance admitted on 6529 Stream
-Editions whose sale kind the edition's terms name
-([Editions and sales](../spec/editions-and-sales.md#mint-copies), ED-5). rc.2's is the
-uniform-price edition auction ([ADR 0005](../adr/0005-stream-editions-auction.md#2-design-summary));
-genesis deploys and admits it, and how to bid in it is added here with its rules. The fixed-price and Dutch adapters of `v1.0.0-rc.1` were removed by ADR 0005.
+Copies of a 6529 Stream Editions edition are sold only by the edition auction,
+`UniformEditionAuction`, which runs beside the master's 1/1 English auction and closes after it.
+Anyone bids a quantity at a price step; at the close the clearing picks how many copies sell and
+the one price every winner pays; winners claim their copies and everyone claims the rest of their
+escrow. The rules, the clearing and a worked example are in
+[Editions and sales](../spec/editions-and-sales.md#the-clearing) (`EA-n`).
 
-Whatever the adapter:
+An edition's copies are minted only by an adapter governance admitted on 6529 Stream Editions
+whose sale kind the edition's terms name
+([Editions and sales](../spec/editions-and-sales.md#mint-copies), ED-5). For any edition:
+
 - An edition's ID is its master's Stream token ID. `Editions.edition(editionId)` gives the terms
   (the creator's cap `maxCount`, the currency, sale kind and params), the copies minted so far
   and the bound adapter (`minter`).
 - An edition is bound to one adapter, the only one that may mint it (ED-5): the one whose sale
   opened it (`bindMinter`, possibly before the edition exists), or else the first to mint it.
   `EditionMinterBound` names it ([Editions](events-and-indexing.md#editions)).
-- A mint to a recipient that rejects `onERC1155Received` reverts.
-- `EditionUnavailable(editionId)` means the creator's cap is reached (ED-6).
+- `EditionUnavailable(editionId)` from a mint means the creator's cap is reached (ED-6).
+
+The fixed-price and Dutch adapters of `v1.0.0-rc.1` were removed by ADR 0005.
+
+### Finding the sale
+
+- The sale ID is `saleIdOf(editions, editionId)`, `uint256(keccak256(abi.encode(editions,
+  editionId)))`, where the edition ID is the master's 6529 Stream token ID. `auction(saleId)`
+  reverts with `UnknownAuction` until someone opens it.
+- `auction(saleId)` returns the locked terms (`terms`: base price, steps per decade, step count,
+  margin, close offset, soft-close window, backstop), the creator's cap (`maxCount`, zero for
+  none), the seller and fee terms, the status and the book's extent.
+- `endTimes(saleId)` returns every clock, read live: the 1/1's end and state, `closeAt` (the 1/1's
+  end plus the offset), `softEnd`, `endTime`, the backstop, and `biddingOpen` and
+  `withdrawalsOpen`. Show `endTime` as the close; it moves with the 1/1's anti-snipe and with
+  late edition bids.
+
+### Opening
+
+```solidity
+function open(address token, uint256 id, bytes calldata data) external returns (uint256 saleId);
+```
+
+Anyone may open the sale from the 1/1's start until the edition close; the keeper batches it with
+the 1/1's `start`. `data` is `abi.encode(item)`, the master's package item exactly as approved:
+its hash must equal the item hash Stream stored (`IStream.coreOf`), so no proof is needed. A sale
+nobody opens before the close never sells copies by this adapter (LIM-EA-11).
+
+`open` binds the edition to the adapter (`Editions.bindMinter`, `EditionMinterBound`) before it
+records the sale: a second adapter of the same kind cannot open it (`MinterMismatch`), and only
+the bound adapter ever mints it, even after governance removes it. If the edition does not exist
+yet, the binding records the sale's `PRODUCT_EDITIONS` economics in Editions; if it does, the
+sale pays the economics it recorded. A sale once opened, voided ones included, is never opened
+again (`AuctionExists`).
+
+### The ladder
+
+Bids name a step, not a price. `stepPrice(saleId, step)` and `ladder(saleId)` return the prices
+under the sale's locked terms (under `config()` before it opens). The prices are exact wei
+amounts from a fixed table, so clients can also compute them, and must match the golden vectors
+in [`test/fixtures/edition-auction/`](../../test/fixtures/edition-auction/) (the reference model
+is [`tools/edition_auction_ref.py`](../../tools/edition_auction_ref.py)). Snap a typed price to a
+step.
+
+### Bidding and raising
+
+```solidity
+function bid(uint256 saleId, uint256 step, uint256 quantity) external payable returns (uint256 bidId);
+function raise(uint256 saleId, uint256 bidId, uint256 newStep) external payable;
+```
+
+- **Pay exactly.** `msg.value` must be `quantity × stepPrice(saleId, step)` for a bid and
+  `quantity × (stepPrice(newStep) − stepPrice(step))` for a raise (`IncorrectPayment`).
+- **Bids are firm.** A bid can be raised but never lowered, and not withdrawn except while the
+  1/1 is paused for a dispute (`withdrawBid`, below). More copies means another bid. Tell the
+  bidder before they sign.
+- **The bid ID** runs from 1 in each sale. `bidOf(saleId, bidId)` returns the bidder, step,
+  quantity and queue position.
+- **Timing.** Bids are accepted while `endTimes(saleId).biddingOpen`. A bid or raise less than
+  `softWindow` before `endTime` extends it to `softWindow` after the bid, up to the backstop.
+  While the 1/1 is paused for a dispute, bids are accepted at any time and move no clock.
+- **A cap.** When the creator capped the edition, the step where the cap binds fills in arrival
+  order, and a raise rejoins at the back of its new step.
+
+### What to show before and after a bid
+
+Every figure comes from the views, so no two clients disagree:
+
+| View | Returns | Show it as |
+| --- | --- | --- |
+| `clearing(saleId)` | The result if the sale closed now: count, step, price, revenue, network fee, best revenue, whether the cut step is rationed | "Right now: 80 editions at 0.0511 ETH each" |
+| `bidOutcome(saleId, bidId)` | Copies won, price, escrow, refund, units ahead in the queue; final once settled | "In: 3 at 0.0511 (0.0828 ETH comes back)", "Partly in: 2 of 5" |
+| `quote(saleId, step, quantity)` | What a new bid would win, and how many existing units it would push out or pull in | "→ 81 at 0.0464 · you'd be in · 0 pushed out" |
+| `lowestWinningStep(saleId, quantity)` | The lowest step at which a new bid would win anything | "A bid of 1 gets in from 0.0464" |
+| `stepTotals(saleId)` | Live units per step from the lowest used step | The demand ladder |
+
+The lowest winning step can sit below the current price, because of the breadth margin: such a
+bid lowers everyone's price. Say so.
+
+### Withdrawing during a dispute
+
+```solidity
+function withdrawBid(uint256 saleId, uint256 bidId, address to) external;
+```
+
+Only while the 1/1 is paused for a dispute (`endTimes(saleId).withdrawalsOpen`;
+`WithdrawalsClosed` otherwise): it sends the whole escrow to `to`. If the dispute is upheld and
+the 1/1 cancelled, the sale is void and every remaining bid is refunded in full at its claim.
+
+### Settling
+
+```solidity
+function settle(uint256 saleId, uint256[] calldata order) external returns (bool settled);
+// IUniformEditionAuctionLens, answered by the adapter's address too:
+function settlementOrderFor(uint256 saleId, address settler) external view returns (uint256[] memory);
+function sweepOf(uint256 saleId, address settler)
+    external view returns (uint256 swept, uint256 nextPosition, uint256 cutoff);
+```
+
+Permissionless once the end has passed and the 1/1 is settled, or at any time once the 1/1 is
+cancelled, which voids the sale (`SettlementNotReady` otherwise). When copies sold, the edition
+must exist first: call `Editions.createEdition` (permissionless once the master's sale settled;
+`EditionNotCreated` otherwise).
+
+Settlement runs in calls of bounded gas, each of which advances it, so no book is too large to
+settle. A call scans at most 24 words of the book (eight steps each); the call that finishes the
+scan pays the revenue; when a cap binds inside a step that lost bids to raises or withdrawals,
+that call and the next ones sweep up to 16, then 96, of its departures. `settle` returns true once
+the sale is SETTLED (or VOID) and claims open, false while there is more to do; on a settled sale
+it returns true and changes nothing.
+
+**Each settler sweeps on its own.** The sweep's progress belongs to `msg.sender`: pass
+`settlementOrderFor(saleId, you)`, the rest of your own sweep in position order (empty unless a
+cap binds inside such a step), and call `settle(saleId, order)` from the same address until it
+returns true. The first settler to sweep every departure settles the sale. A reordered order
+reverts (`InvalidSettlementOrder`); an order that skips a departure is accepted but can never
+finish your sweep, and changes nobody else's: settle from another address. `sweepOf(saleId,
+you)` shows your progress, and `DeparturesSwept` reports it, so interleaved settlers' events can
+show `swept` going down.
+
+**Never settle through a shared public relayer** such as Multicall3: every caller of the relayer
+is one `msg.sender`, so they share one sweep, which one caller's wrong order strands for all of
+them. Settle directly, or through a contract of your own.
+
+Keeper checklist ([runbook](../../script/README.md#the-edition-auction-keeper)): open the edition
+sale with the 1/1's `start`; after the 1/1 settles, call `createEdition`, then, once `endTime`
+has passed, `settle(saleId, settlementOrderFor(saleId, keeper))` from the keeper's own address
+until it returns true; push claims with `claimBidFor` for bidders who do not claim.
+
+### Claiming copies and refunds
+
+```solidity
+function claimBid(uint256 saleId, uint256 bidId, address to) external returns (uint256 unitsWon, uint256 refund);
+function claimBidFor(uint256 saleId, uint256 bidId) external returns (uint256 unitsWon, uint256 refund);
+```
+
+- `claimBid` is the bidder's: it mints the copies won to `to` and sends the refund,
+  `escrow − unitsWon × price`, to `to`. A loser's refund is its whole escrow.
+- `claimBidFor` is anyone's: the copies go to the bidder and the refund is credited to its
+  `claimable` ETH, which it takes with `claim(address(0), to)` ([below](#credits-on-a-sale-adapter)).
+- **The recipient must accept ERC-1155.** A recipient whose hook rejects the copies reverts the
+  claim; claim to another address.
+- Copies exist only once claimed: the edition's supply reaches the clearing count when every
+  winning bid is claimed.
+
+### Events
+
+`AuctionOpened`, `BidPlaced`, `BidRaised`, `BidWithdrawn`, `AuctionCleared`, `DeparturesSwept`,
+`AuctionSettled`, `AuctionVoided` and `BidClaimed`, with `ISaleAdapter`'s `SaleStarted`,
+`SaleSettled` (one per sale: the count as the quantity, a zero buyer), `Credited` and `Claimed`,
+and Editions' `TransferSingle` per claim
+([UniformEditionAuction](events-and-indexing.md#uniformeditionauction),
+[Editions](events-and-indexing.md#editions)).
+
+### Errors
+
+| Error | Cause |
+| --- | --- |
+| `UnknownAuction(saleId)`, `AuctionExists(saleId)` | No sale with this ID; or a second `open`. |
+| `NoOneOfOneAuction(master, id)` | The 1/1 auction does not exist, or was cancelled. |
+| `BiddingClosed(saleId, endTime)` | The end passed, or the 1/1 was cancelled (seen by a bid within `softWindow` of the close; earlier bids are refunded at the void). |
+| `InvalidStep(step)`, `InvalidQuantity(quantity)` | A step past the ladder or a raise that does not move up; a zero quantity, or units past 2^32 − 1. |
+| `IncorrectPayment(expected, paid)` | `msg.value` is not exactly the escrow or the top-up. |
+| `UnknownBid(saleId, bidId)`, `NotBidder(caller)` | No live bid with this ID; the caller is not its bidder. |
+| `WithdrawalsClosed(saleId)` | A withdrawal outside a 1/1 dispute pause. |
+| `SettlementNotReady(saleId)`, `EditionNotCreated(token, id)` | Too early to settle; create the edition first. |
+| `InvalidSettlementOrder(index)` | The order is out of range or not in increasing position. |
+| `InvalidAuctionState(saleId, status)` | The sale is not in a state that allows the call, such as a claim before settlement. |
+| `SalePaused()`, `TargetNotAllowed(token)`, `InvalidSaleTerms(token, id)` | `open` while paused, for a token not served, or with terms that are not this kind's. |
+| `ClaimFailed(to)` | `to` refused the ETH; the bid stays claimable. |
+
+### Gas
+
+The budgets for `bid`, `claimBid` and `settle` are in
+[ADR 0005 §5](../adr/0005-stream-editions-auction.md#5-gas-budgets-adr-0004), and the measured
+Prague gas and new slots in the [ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table).
+A losing bidder pays for its bid and its refund claim.
 
 ## Claiming
 
@@ -523,6 +703,8 @@ Refunds are never pushed; every amount owed has a pull function:
 | What is owed | Where | Who calls | Function |
 | --- | --- | --- | --- |
 | An outbid, withdrawn or refunded bid | `EnglishAuction` | The bidder (payer) | `claim(currency, to)` |
+| An edition bid's copies and refund | `UniformEditionAuction` | The bidder; anyone with `claimBidFor` | `claimBid(saleId, bidId, to)`, `claimBidFor(saleId, bidId)` |
+| A refund `claimBidFor` credited | `UniformEditionAuction` | The bidder | `claim(address(0), to)` |
 | An ERC-20 auction payout that failed (MONEY-1) | `EnglishAuction` | Anyone, for the wallet | `claimFor(wallet, token)` |
 | A token whose delivery failed | `EnglishAuction` | The recipient or the winning bidder; with no bids the museum (another token's artist) | `claimDelivery(saleId, to)` |
 | A payout a wallet or token refused | `RevenueEscrow` | Anyone | `flush(wallet, asset)` |
@@ -680,7 +862,8 @@ Glamsterdam, which reprices state creation, since 6 October 2026
   interfaces are linked under [Contracts you call](#contracts-you-call).
 - **ADRs.** [ADR 0001 §5](../adr/0001-v1-scope.md#5-sales-and-auctions) (sales and auctions),
   [§7](../adr/0001-v1-scope.md#7-economics) (economics),
-  [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md) (gas budgets under Glamsterdam).
+  [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md) (gas budgets under Glamsterdam),
+  [ADR 0005](../adr/0005-stream-editions-auction.md) (the edition auction).
 - **Tests.** Linked where cited; Prague gas rows from
   [GasReport.t.sol](../../test/integration/GasReport.t.sol).
 - **Measurements.** [Sepolia flows](../../deployments/11155111/flows.md).

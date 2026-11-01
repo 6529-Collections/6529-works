@@ -1,0 +1,782 @@
+{
+  "schema": "6529-works/facts/1",
+  "generator": "tools/gen_facts.py",
+  "note": "Generated from the repository's sources; do not edit. Pre-audit: no figure here is a mainnet deployment unless networks.mainnet.deployed is true.",
+  "status": {
+    "maturity": "Pre-audit",
+    "mainnet": "Not deployed",
+    "release": "v1.0.0-rc.1",
+    "releaseDate": "2026-10-16"
+  },
+  "networks": {
+    "mainnet": {
+      "chainId": 1,
+      "deployed": false
+    },
+    "sepolia": {
+      "chainId": 11155111,
+      "deployed": true,
+      "testnet": true,
+      "instance": "sepolia-r3",
+      "sourceCommit": "e5fe78c",
+      "deployedOn": "2026-10-15",
+      "deployedAtTimestamp": 1792095396,
+      "startBlock": 11922738,
+      "confirmed": false,
+      "record": "deployments/11155111/1792095396.json",
+      "contracts": {
+        "ArtistRegistry": "0x69617D97A6186F1b84591C741B42E6432A50ee00",
+        "AssetAllowlist": "0xf639F666075Ffa068c9c5a652933A2D93436DEa7",
+        "ClaimRouter": "0x512fE15d72E3001C97688a4DC87dd33C8FA0d1fa",
+        "ConsolidationAdapter": "0x98D0c5A504047BF20c13cd534E58cd1F6E5bF85C",
+        "ContentStore": "0x102Fa07952733593036181bce6EA68Eacb288f08",
+        "CurationVerifier": "0xdA2B89D3aF0563e8a2C3BD744b70B36f1AFA9B55",
+        "DependencyRegistry": "0x48D7dB75981Be98041013151767322e335d24537",
+        "DutchSale": "0x605c312fb42c643C17892E25b2d77bC7C8eC674A",
+        "EconomicsResolver": "0xeF46fed48bECC91be66716872c3Cca8dF312863c",
+        "Editions": "0x3213D06f6906E2F4B6959c52dEac138006A86f2f",
+        "EnglishAuction": "0x429f5011e2c8706c7Cfe066678084874e6DfB4e9",
+        "EntropyModule": "0x7CD0F20950975620c3A718871619ca89b26DC66F",
+        "FixedPriceSale": "0xC703f43E9E24eDF0c5FBbFf7A22ea2dbF145D505",
+        "GovernanceConfigurator": "0xFbffd423a8CEADab85767985f281b16720a3A8a4",
+        "PackageRegistry": "0xB5f86498E01a4B197F1b8403075A45aD8b796FE9",
+        "ReleaseVerifier": "0x7a8b7A34Ac1A3A823C6463576FCe2C970C7C5fa9",
+        "Renderer": "0xf35E84765bad1CEF10Cf782125F4614Aa20B513F",
+        "RevenueEscrow": "0x41bb809F592518a27057b45227D22207E63b1D30",
+        "SplitFactory": "0x9f016127Ea06AC90ac0E5d2D938e6f9761B2C4a7",
+        "StatementLog": "0x38d4C76be1864aCF5A4cD8517F5b855706BDF3ec",
+        "Stream": "0x7377B99f91c6Ab88B7db41276B75e8ef8b1AEE2F",
+        "WorkRecords": "0xb5dd70dE6522f5bAfEba0af1D300B2c71b75aD3E",
+        "WorksAccessManager": "0x1bD0d448B5B030d1b0bFE1A7A1BBA21ED3d18745"
+      }
+    }
+  },
+  "collections": [
+    {
+      "contract": "Stream",
+      "standard": "ERC-721",
+      "name": "6529 Stream",
+      "symbol": "STREAM"
+    },
+    {
+      "contract": "Editions",
+      "standard": "ERC-1155",
+      "name": "6529 Stream Editions",
+      "symbol": "STREAMEDITIONS"
+    }
+  ],
+  "parameters": {
+    "denominator": 100000,
+    "oneOfOneAuction": {
+      "source": [
+        "script/Deploy.s.sol",
+        "src/sales/EnglishAuction.sol"
+      ],
+      "governedBy": "PARAMETER_SETTER",
+      "durationSeconds": {
+        "default": 86400,
+        "min": 3600,
+        "max": 604800
+      },
+      "antiSnipeWindowSeconds": {
+        "default": 900,
+        "min": 60,
+        "max": 86400
+      },
+      "minimumIncrementShare": {
+        "default": 5000,
+        "min": 1000,
+        "max": 100000,
+        "denominator": 100000
+      },
+      "minimumIncrementFloorWei": {
+        "default": "1000000000000000",
+        "governedBy": "FUNDS_SETTER"
+      },
+      "maxDisputePauseSeconds": 604800
+    },
+    "editionAuction": {
+      "source": [
+        "script/DeployV1.sol",
+        "script/Deploy.s.sol",
+        "docs/adr/0005-stream-editions-auction.md",
+        "src/interfaces/types/StepLadder.sol",
+        "src/sales/UniformEditionAuction.sol"
+      ],
+      "governedBy": "PARAMETER_SETTER",
+      "currency": "ETH",
+      "basePriceWei": {
+        "default": "100000000000000",
+        "allowed": [
+          "1000000000000",
+          "10000000000000",
+          "100000000000000",
+          "1000000000000000",
+          "10000000000000000",
+          "100000000000000000"
+        ]
+      },
+      "stepsPerDecade": {
+        "default": 48,
+        "allowed": [
+          24,
+          48,
+          96,
+          192
+        ]
+      },
+      "stepCount": {
+        "default": 336,
+        "min": 64,
+        "max": 512,
+        "minTopPriceWei": "10000000000000000000"
+      },
+      "breadthMargin": {
+        "default": 10000,
+        "min": 0,
+        "max": 50000,
+        "denominator": 100000
+      },
+      "closeOffsetSeconds": {
+        "default": 900,
+        "min": 0,
+        "max": 86400
+      },
+      "softCloseWindowSeconds": {
+        "default": 300,
+        "min": 60,
+        "max": 3600
+      },
+      "extensionBackstopSeconds": {
+        "default": 86400,
+        "min": 3600,
+        "max": 604800
+      },
+      "payoutGas": 100000,
+      "settlementPerCall": {
+        "bookWordsScanned": 24,
+        "departuresSweptByTheClearingCall": 16,
+        "departuresSweptLater": 96
+      }
+    },
+    "economics": {
+      "source": [
+        "src/economics/EconomicsResolver.sol"
+      ],
+      "governedBy": "FUNDS_SETTER",
+      "royaltyRate": {
+        "value": 6529,
+        "denominator": 100000
+      },
+      "networkFeeShare": {
+        "value": 25000,
+        "denominator": 100000
+      },
+      "federatedNetworkFeeShare": {
+        "value": 10000,
+        "denominator": 100000
+      }
+    },
+    "storage": {
+      "source": [
+        "src/content/ContentStore.sol",
+        "src/content/Renderer.sol"
+      ],
+      "maxChunks": 512,
+      "chunkSizeBytes": 24575,
+      "inlineThresholdBytes": 262144
+    },
+    "governanceDelaysSeconds": {
+      "source": [
+        "src/governance/Roles.sol"
+      ],
+      "immediate": 0,
+      "standard": 172800,
+      "funds": 1209600,
+      "successor": 2592000
+    }
+  },
+  "gas": {
+    "source": "docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table",
+    "labels": {
+      "pragueGas": "Prague gas of the whole transaction (intrinsic, calldata and execution), measured by test/integration/GasReport.t.sol",
+      "pragueCeiling": "the CI ceiling: a budget, or a regression ceiling",
+      "newSlots": "new storage slots the operation writes; newSlotsBudgeted marks the counts the start budget gates",
+      "sepoliaGas": "the Sepolia receipt (Glamsterdam pricing) on rehearsal r3, source e5fe78c, unless the row names another rehearsal or a simulation"
+    },
+    "sepoliaLabel": "Sepolia r3, Glamsterdam, measured 15 October 2026",
+    "rows": [
+      {
+        "operation": "start, steady state",
+        "pragueGas": 269082,
+        "pragueCeiling": {
+          "gas": 350000,
+          "kind": "budget"
+        },
+        "newSlots": 5,
+        "newSlotsBudgeted": true,
+        "newAccounts": 0,
+        "sepoliaGas": {
+          "gas": 735859,
+          "source": "r3"
+        }
+      },
+      {
+        "operation": "startWithBid, steady state",
+        "pragueGas": 311179,
+        "pragueCeiling": {
+          "gas": 350000,
+          "kind": "budget"
+        },
+        "newSlots": 6,
+        "newSlotsBudgeted": true,
+        "newAccounts": 0,
+        "sepoliaGas": {
+          "gas": 871980,
+          "source": "r3"
+        }
+      },
+      {
+        "operation": "start, two-party work",
+        "pragueGas": 277395,
+        "pragueCeiling": {
+          "gas": 350000,
+          "kind": "budget"
+        },
+        "newSlots": 5,
+        "newSlotsBudgeted": true,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "startWithBid, two-party work",
+        "pragueGas": 319479,
+        "pragueCeiling": {
+          "gas": 350000,
+          "kind": "budget"
+        },
+        "newSlots": 6,
+        "newSlotsBudgeted": true,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "start, VRF work",
+        "pragueGas": 276741,
+        "pragueCeiling": {
+          "gas": 350000,
+          "kind": "budget"
+        },
+        "newSlots": 5,
+        "newSlotsBudgeted": true,
+        "newAccounts": 0,
+        "sepoliaGas": {
+          "gas": 852868,
+          "source": "r2"
+        }
+      },
+      {
+        "operation": "start, edition master",
+        "pragueGas": 269105,
+        "pragueCeiling": {
+          "gas": 350000,
+          "kind": "budget"
+        },
+        "newSlots": 5,
+        "newSlotsBudgeted": true,
+        "newAccounts": 0,
+        "sepoliaGas": {
+          "gas": 736477,
+          "source": "r3"
+        }
+      },
+      {
+        "operation": "start, an artist's first work",
+        "pragueGas": 289174,
+        "pragueCeiling": {
+          "gas": 350000,
+          "kind": "budget"
+        },
+        "newSlots": 6,
+        "newSlotsBudgeted": true,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "startWithBid, an artist's first work",
+        "pragueGas": 331271,
+        "pragueCeiling": {
+          "gas": 350000,
+          "kind": "budget"
+        },
+        "newSlots": 7,
+        "newSlotsBudgeted": true,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "startWithBid, an artist's first work, two-party",
+        "pragueGas": 339551,
+        "pragueCeiling": {
+          "gas": 350000,
+          "kind": "budget"
+        },
+        "newSlots": 7,
+        "newSlotsBudgeted": true,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "startWithBid, ERC-20 by relayed Permit2",
+        "pragueGas": 356253,
+        "pragueCeiling": {
+          "gas": 365000,
+          "kind": "regression"
+        },
+        "newSlots": 6,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "start, first work in a new collection",
+        "pragueGas": 269105,
+        "pragueCeiling": {
+          "gas": 400000,
+          "kind": "budget"
+        },
+        "newSlots": 5,
+        "newAccounts": 0,
+        "sepoliaGas": {
+          "gas": 846977,
+          "source": "r2"
+        }
+      },
+      {
+        "operation": "start, first work ever (one-time)",
+        "pragueGas": 438257,
+        "pragueCeiling": {
+          "gas": 449000,
+          "kind": "regression"
+        },
+        "newSlots": 13,
+        "newAccounts": 0,
+        "sepoliaGas": {
+          "gas": 1601871,
+          "source": "r3"
+        }
+      },
+      {
+        "operation": "startWithBid, first bid under new sale terms (one-time)",
+        "pragueGas": 381328,
+        "pragueCeiling": {
+          "gas": 390000,
+          "kind": "regression"
+        },
+        "newSlots": 9,
+        "newAccounts": 0,
+        "sepoliaGas": {
+          "gas": 1213250,
+          "source": "r3"
+        }
+      },
+      {
+        "operation": "bid that outbids",
+        "pragueGas": 73464,
+        "pragueCeiling": {
+          "gas": 75000,
+          "kind": "regression"
+        },
+        "newSlots": 1,
+        "newAccounts": 0,
+        "sepoliaGas": {
+          "gas": 169060,
+          "source": "r3"
+        }
+      },
+      {
+        "operation": "settle, first payout to a seller wallet",
+        "pragueGas": 168552,
+        "pragueCeiling": {
+          "gas": 400000,
+          "kind": "budget"
+        },
+        "newSlots": 1,
+        "newAccounts": 1,
+        "sepoliaGas": {
+          "gas": 449934,
+          "source": "r3 simulation"
+        }
+      },
+      {
+        "operation": "settle, with a bid",
+        "pragueGas": 143552,
+        "pragueCeiling": {
+          "gas": 400000,
+          "kind": "budget"
+        },
+        "newSlots": 1,
+        "newAccounts": 0,
+        "sepoliaGas": {
+          "gas": 257763,
+          "source": "r2"
+        }
+      },
+      {
+        "operation": "settle, no bid (to the museum, D140)",
+        "pragueGas": 133993,
+        "pragueCeiling": {
+          "gas": 400000,
+          "kind": "budget"
+        },
+        "newSlots": 1,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "consume, as Stream calls it",
+        "pragueGas": 93069,
+        "pragueCeiling": {
+          "gas": 97000,
+          "kind": "regression"
+        },
+        "newSlots": 1,
+        "newAccounts": 0,
+        "sepoliaGas": {
+          "note": "part of start"
+        }
+      },
+      {
+        "operation": "createEdition",
+        "pragueGas": 240698,
+        "pragueCeiling": {
+          "gas": 275000,
+          "kind": "regression"
+        },
+        "newSlots": 6,
+        "newAccounts": 0,
+        "sepoliaGas": {
+          "gas": 887954,
+          "source": "r3 simulation"
+        }
+      },
+      {
+        "operation": "createEdition, an edition its sale bound at open",
+        "pragueGas": 140201,
+        "pragueCeiling": {
+          "gas": 144000,
+          "kind": "regression"
+        },
+        "newSlots": 2,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "re-rate a work (governed execute)",
+        "pragueGas": 186911,
+        "pragueCeiling": {
+          "gas": 192000,
+          "kind": "regression"
+        },
+        "newSlots": 1,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "refreshStanding, a first wallet",
+        "pragueGas": 129708,
+        "pragueCeiling": {
+          "gas": 131000,
+          "kind": "regression"
+        },
+        "newSlots": 2,
+        "newAccounts": 0,
+        "sepoliaGas": {
+          "gas": 299112,
+          "source": "r1"
+        }
+      },
+      {
+        "operation": "refreshStanding, a further wallet",
+        "pragueGas": 159105,
+        "pragueCeiling": {
+          "gas": 161000,
+          "kind": "regression"
+        },
+        "newSlots": 1,
+        "newAccounts": 0,
+        "sepoliaGas": {
+          "gas": 247970,
+          "source": "r2"
+        }
+      },
+      {
+        "operation": "royaltyInfo (view)",
+        "pragueGas": 41622,
+        "pragueCeiling": {
+          "gas": 50000,
+          "kind": "execution"
+        },
+        "newSlots": 0,
+        "newAccounts": 0,
+        "sepoliaGas": {
+          "gas": 36426,
+          "source": "r3"
+        }
+      },
+      {
+        "operation": "tokenURI (view, the size matrix)",
+        "pragueGas": 2735362,
+        "pragueGasIsMaximum": true,
+        "pragueCeiling": {
+          "gas": 8000000,
+          "kind": "budget"
+        },
+        "newSlots": 0,
+        "newAccounts": 0,
+        "sepoliaGas": {
+          "note": "unchanged"
+        }
+      },
+      {
+        "operation": "createWallet, a seller wallet (one artist payee)",
+        "pragueGas": 1241422,
+        "pragueCeiling": {
+          "gas": 1262000,
+          "kind": "regression"
+        },
+        "newSlots": 4,
+        "newAccounts": 1,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "release, the artist's first ETH release",
+        "pragueGas": 93402,
+        "pragueCeiling": {
+          "gas": 96000,
+          "kind": "regression"
+        },
+        "newSlots": 2,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "claimSigned, the artist's first signed release",
+        "pragueGas": 141464,
+        "pragueCeiling": {
+          "gas": 145000,
+          "kind": "regression"
+        },
+        "newSlots": 3,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "claimSigned, a later signed release (next nonce)",
+        "pragueGas": 90164,
+        "pragueCeiling": {
+          "gas": 92000,
+          "kind": "regression"
+        },
+        "newSlots": 0,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "Edition auction open, steady state (binds the edition)",
+        "pragueGas": 278235,
+        "pragueCeiling": {
+          "gas": 284000,
+          "kind": "regression"
+        },
+        "newSlots": 6,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "Edition auction open, the adapter's first (one-time)",
+        "pragueGas": 323960,
+        "pragueCeiling": {
+          "gas": 331000,
+          "kind": "regression"
+        },
+        "newSlots": 8,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "Edition bid, its 8-step word exists",
+        "pragueGas": 69257,
+        "pragueCeiling": {
+          "gas": 110000,
+          "kind": "budget"
+        },
+        "newSlots": 1,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "Edition bid, opens an 8-step word",
+        "pragueGas": 86327,
+        "pragueCeiling": {
+          "gas": 110000,
+          "kind": "budget"
+        },
+        "newSlots": 2,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "Edition bid, capped sale",
+        "pragueGas": 71674,
+        "pragueCeiling": {
+          "gas": 110000,
+          "kind": "budget"
+        },
+        "newSlots": 1,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "Edition bid near the close (1/1 read, soft close)",
+        "pragueGas": 87641,
+        "pragueCeiling": {
+          "gas": 110000,
+          "kind": "budget"
+        },
+        "newSlots": 1,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "Edition raise, same 8-step word",
+        "pragueGas": 53770,
+        "pragueCeiling": {
+          "gas": 56000,
+          "kind": "regression"
+        },
+        "newSlots": 0,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "Edition raise, capped (departure logged)",
+        "pragueGas": 78996,
+        "pragueCeiling": {
+          "gas": 81000,
+          "kind": "regression"
+        },
+        "newSlots": 1,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "Edition withdrawBid, capped, 1/1 paused",
+        "pragueGas": 94687,
+        "pragueCeiling": {
+          "gas": 97000,
+          "kind": "regression"
+        },
+        "newSlots": 1,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "Edition settle, 40 used steps",
+        "pragueGas": 160751,
+        "pragueCeiling": {
+          "gas": 400000,
+          "kind": "budget"
+        },
+        "newSlots": 1,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "Edition settle, capped, one departure swept",
+        "pragueGas": 158321,
+        "pragueCeiling": {
+          "gas": 159000,
+          "kind": "regression"
+        },
+        "newSlots": 1,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "Edition settle, every step used (512 steps, departures at the cut), each call",
+        "pragueGas": 228103,
+        "pragueGasIsMaximum": true,
+        "pragueGasIsExecution": true,
+        "pragueCeiling": {
+          "gas": 350000,
+          "kind": "execution"
+        },
+        "newSlots": 2,
+        "newSlotsRange": [
+          0,
+          2
+        ],
+        "newSlotsNote": "the call that clears and leaves its sweep unfinished writes the result and its settler's progress",
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "Edition claimBid, a winner and new holder",
+        "pragueGas": 94286,
+        "pragueCeiling": {
+          "gas": 100000,
+          "kind": "budget"
+        },
+        "newSlots": 1,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "Edition claimBid, refund only",
+        "pragueGas": 47546,
+        "pragueCeiling": {
+          "gas": 49000,
+          "kind": "regression"
+        },
+        "newSlots": 0,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "Edition claimBidFor, refund credited",
+        "pragueGas": 64591,
+        "pragueCeiling": {
+          "gas": 67000,
+          "kind": "regression"
+        },
+        "newSlots": 1,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      }
+    ]
+  },
+  "links": {
+    "repository": "https://github.com/6529-Collections/6529-works",
+    "release": "https://github.com/6529-Collections/6529-works/releases/tag/v1.0.0-rc.1",
+    "docs": {
+      "specification": "https://github.com/6529-Collections/6529-works/blob/main/docs/spec/README.md",
+      "editionsAndSales": "https://github.com/6529-Collections/6529-works/blob/main/docs/spec/editions-and-sales.md",
+      "streamAndAuctions": "https://github.com/6529-Collections/6529-works/blob/main/docs/spec/stream-and-auctions.md",
+      "editionAuctionAdr": "https://github.com/6529-Collections/6529-works/blob/main/docs/adr/0005-stream-editions-auction.md",
+      "integrators": "https://github.com/6529-Collections/6529-works/blob/main/docs/integrators/README.md",
+      "addresses": "https://github.com/6529-Collections/6529-works/blob/main/docs/integrators/addresses.md",
+      "buyingBiddingSettling": "https://github.com/6529-Collections/6529-works/blob/main/docs/integrators/buying-bidding-settling.md",
+      "eventsAndIndexing": "https://github.com/6529-Collections/6529-works/blob/main/docs/integrators/events-and-indexing.md",
+      "auditPack": "https://github.com/6529-Collections/6529-works/blob/main/docs/audit/README.md",
+      "knownLimitations": "https://github.com/6529-Collections/6529-works/blob/main/docs/audit/known-limitations.md",
+      "roles": "https://github.com/6529-Collections/6529-works/blob/main/docs/audit/roles.md",
+      "glossary": "https://github.com/6529-Collections/6529-works/blob/main/docs/glossary.md",
+      "architecture": "https://github.com/6529-Collections/6529-works/blob/main/docs/architecture.md",
+      "adrs": "https://github.com/6529-Collections/6529-works/blob/main/docs/adr/README.md",
+      "gasTable": "https://github.com/6529-Collections/6529-works/blob/main/docs/adr/0004-gas-budgets-under-glamsterdam.md",
+      "internalReview": "https://github.com/6529-Collections/6529-works/blob/main/docs/security/internal-review-2026-10.md",
+      "security": "https://github.com/6529-Collections/6529-works/blob/main/SECURITY.md",
+      "changelog": "https://github.com/6529-Collections/6529-works/blob/main/CHANGELOG.md"
+    }
+  }
+}
