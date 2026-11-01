@@ -3,9 +3,10 @@
 For integration engineers who call, decode or verify the 6529 Works contracts: where the ABIs
 come from and which build matches which deployment, the ERC-165 interface IDs and who answers
 them, every EIP-712 domain and type string, and the formulas of the protocol hashes you
-recompute off-chain. The current Sepolia instance, r3, runs `v1.0.0-rc.1` (`e5fe78c`), and
-every r3 contract is verified on Sourcify; `main` has changed since, see
-[Changes since the Sepolia r3 build](#changes-since-the-sepolia-r3-build). The superseded r2
+recompute off-chain. The current Sepolia instance, r4, runs `main` at `1e7022b` (the rc.2
+candidate), and every r4 contract is verified on Sourcify. The superseded r3 runs
+`v1.0.0-rc.1` (`e5fe78c`), see
+[Changes since the Sepolia r3 build](#changes-since-the-sepolia-r3-build); the superseded r2
 runs an earlier build, see
 [Changes since the Sepolia r2 build](#changes-since-the-sepolia-r2-build). Addresses are in
 [Addresses](addresses.md), events in [Events and indexing](events-and-indexing.md).
@@ -20,7 +21,7 @@ them from the commit the target deployment was built from:
 ```bash
 git clone --recurse-submodules https://github.com/6529-Collections/6529-works.git
 cd 6529-works
-git checkout e5fe78c                 # Sepolia r3 (400f96d for r2); main for the current code
+git checkout 1e7022b                 # Sepolia r4 (e5fe78c for r3, 400f96d for r2); main for the current code
 git submodule update --init --recursive
 forge build
 ```
@@ -119,7 +120,7 @@ hold each contract's code hash, which [`Verify.s.sol`](../../script/Verify.s.sol
 ## Changes since the Sepolia r3 build
 
 r3 runs `v1.0.0-rc.1`. [ADR 0005](../adr/0005-stream-editions-auction.md) changes the edition
-surface on `main`; more lands with the edition auction and the museum.
+surface; r4 (`1e7022b`) has every change below.
 
 | File | Change on `main` |
 | --- | --- |
@@ -586,6 +587,7 @@ The testing guide is
   [`WorksHashing.sol`](../../src/interfaces/types/WorksHashing.sol),
   [`foundry.toml`](../../foundry.toml).
 - Deployments: [Sepolia README](../../deployments/11155111/README.md),
+  [`1793536584.json`](../../deployments/11155111/1793536584.json) (r4),
   [`1792095396.json`](../../deployments/11155111/1792095396.json) (r3),
   [`1791750816.json`](../../deployments/11155111/1791750816.json) (r2).
 - ADRs: [ADR 0001](../adr/0001-v1-scope.md): verification through CBOR metadata with an IPFS

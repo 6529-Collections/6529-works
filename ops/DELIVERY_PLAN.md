@@ -87,7 +87,7 @@ them: the review fixes, the state-growth gas diet and the source-quality pass.
   in CI;
 - Sepolia r3: every contract an exact match on Sourcify, Verify passing on a fork advanced five
   days, and the lifecycle measured on chain
-  ([record](../deployments/11155111/README.md#sepolia-r3-15-october-2026-current),
+  ([record](../deployments/11155111/README.md#sepolia-r3-15-october-2026-superseded-by-r4),
   [flows](../deployments/11155111/flows.md#r3-the-release-candidate-15-october-2026)).
 
 **Open in phase 7:**

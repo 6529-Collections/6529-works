@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Runs the v1 flows on a Sepolia rehearsal deployment (r3 by default; -Record selects
+    Runs the v1 flows on a Sepolia rehearsal deployment (r4 by default; -Record selects
     another) and records the gas of every transaction (deployments/11155111/flows.md).
 
 .DESCRIPTION
@@ -15,7 +15,14 @@
     which runs `cast`/`forge` with the account's signer options appended (for example
     `--keystore <file> --password-file <file>`) and returns the program's output.
 
-    Accounts are keystore names in the operator's signer set; see $Accounts below.
+    Accounts are keystore names in the operator's signer set; see $Accounts below. A plan line
+    whose sender is `safe:<address>` is a call that Safe makes: the driver signs the Safe
+    transaction hash with the owner keystores in $SafeSigners (threshold many, sorted by owner
+    address) and relays `execTransaction` from the `any` account.
+
+    -ExpectRevert sends a transaction that must fail on chain (a refused bid, a refused
+    withdrawal): the driver reads the revert with eth_call first, sends with a fixed gas limit
+    (-GasLimit) so the node does not refuse to estimate it, and records the failed receipt.
 
 .EXAMPLE
     ./flows.ps1 -SignerModule <path> -State <state.json> -Step content
@@ -23,24 +30,34 @@
     ./flows.ps1 -SignerModule <path> -State <state.json> -Step settle -TokenId 6
     ./flows.ps1 -SignerModule <path> -State <state.json> -Step bid -TokenId 2 -Bidder bidder1 -Amount 50000000000000000 -Label bid-2-antisnipe
     ./flows.ps1 -SignerModule <path> -State <r1-state.json> -Record deployments/11155111/1791746472.json -Step settle -TokenId 6
+    ./flows.ps1 -SignerModule <path> -State <state.json> -Step openEdition -Index 5 -TokenId 2
+    ./flows.ps1 -SignerModule <path> -State <state.json> -Step editionBid -TokenId 2 -Bidder bidder3 -EditionStep 30 -Quantity 2
+    ./flows.ps1 -SignerModule <path> -State <state.json> -Step editionSettle -TokenId 3 -Settler wallet3 -Order 1
+    ./flows.ps1 -SignerModule <path> -State <state.json> -Step bid -TokenId 2 -Bidder bidder1 -Amount 1 -ExpectRevert -Label bid-1-wei
+    ./flows.ps1 -SignerModule <path> -State <state.json> -Step pause -TokenId 1
+    ./flows.ps1 -SignerModule <path> -State <state.json> -Step editionState -TokenId 2 -Label before-antisnipe
     ./flows.ps1 -SignerModule <path> -State <state.json> -Step prague
 
     The prague step replays each recorded transaction with
     `cast run <tx> --quick --evm-version prague`: the parent block's state, Prague gas costs.
-    Run it soon after the transactions: a public RPC keeps only recent historical state.
+    Run it soon after the transactions: a public RPC keeps only recent historical state (or
+    pass an archive RPC with -Rpc; r4 used https://sepolia.gateway.tenderly.co).
 #>
 param(
     [Parameter(Mandatory)] [string] $SignerModule,
     [Parameter(Mandatory)] [string] $State,
     [Parameter(Mandatory)] [ValidateSet('content', 'collections', 'package', 'start', 'startWithBid',
-        'bid', 'openRecord', 'sync', 'requestSeed', 'settle', 'createEdition', 'send', 'record',
-        'prague', 'report')] [string] $Step,
+        'bid', 'openRecord', 'sync', 'requestSeed', 'settle', 'createEdition', 'openEdition',
+        'editionBid', 'editionRaise', 'editionWithdraw', 'editionSettle', 'claimBid', 'claimBidFor',
+        'claimCredits', 'editionState', 'englishState', 'pause', 'englishWithdraw', 'outcome',
+        'scheduleCancel', 'executeCancel', 'send', 'record', 'prague', 'report')] [string] $Step,
     [string] $Rpc = 'https://ethereum-sepolia-rpc.publicnode.com',
-    # The deployment record, relative to the repository root (r3 by default).
-    [string] $Record = 'deployments/11155111/1792095396.json',
-    # The keystore that relays permissionless calls (role `any`). A second relayer lets the
-    # content uploads run beside the sale flow, each with its own state file.
-    [string] $Relay = 'stream-deployer',
+    # The deployment record, relative to the repository root (r4 by default).
+    [string] $Record = 'deployments/11155111/1793536584.json',
+    # The keystore that relays permissionless calls (role `any`): the keeper, an EOA with no
+    # role. A second relayer lets the content uploads run beside the sale flow, each with its
+    # own state file.
+    [string] $Relay = 'flows-keeper',
     [int] $Index = -1,
     [int] $TokenId = 0,
     [string] $Bidder = 'bidder1',
@@ -48,7 +65,20 @@ param(
     [string] $Label = '',
     [string] $From = 'any',
     [string] $To = '',
-    [string] $Data = ''
+    [string] $Data = '',
+    # The edition auction: a ladder step, a quantity, a bid ID, and a settler's explicit
+    # departure order (comma-separated indexes; omitted: the settler's own rest).
+    [int] $EditionStep = -1,
+    [int] $Quantity = 1,
+    [int] $BidId = 0,
+    [string] $Settler = 'any',
+    [string] $Order = $null,
+    # claimCredits: which adapter holds the credits (`english` or `edition`).
+    [ValidateSet('english', 'edition')] [string] $Adapter = 'english',
+    # The Safe that pauses (a guardian) or schedules and executes a cancel (the hot admin).
+    [string] $Safe = '',
+    [switch] $ExpectRevert,
+    [string] $GasLimit = '500000'
 )
 $ErrorActionPreference = 'Stop'
 Import-Module $SignerModule -Force
@@ -72,7 +102,18 @@ $Accounts = @{
     bidder2  = 'flows-bidder-2'
     wallet2  = 'flows-consolidated'  # the artist's consolidated second wallet (from r1)
     wallet3  = 'flows-wallet3'       # a wallet consolidated after the artist registers on r2
+    bidder3  = 'flows-bidder-3'      # r4 on
+    bidder4  = 'flows-bidder-4'      # r4 on
 }
+# Safe -> the owner keystores that sign for it (threshold many), from the genesis holders.
+$SafeSigners = @{
+    '0x5d1103f2fc0ce8d0e81a918a3819182208b6e916' = @('guardian1-1', 'guardian1-2')  # Guardian Safe 1, 2-of-3
+    '0x2588a62384f41bb32412841ab774cd574b427bd5' = @('hot-1', 'hot-2')              # Hot admin Safe, 2-of-3
+}
+# The genesis holders the dispute steps act as.
+$GuardianSafe = '0x5d1103f2FC0ce8D0E81a918A3819182208B6E916'
+$HotAdminSafe = '0x2588A62384F41bB32412841ab774CD574b427bd5'
+$Zero = '0x0000000000000000000000000000000000000000'
 
 # ---------------------------------------------------------------------------- state
 
@@ -174,7 +215,7 @@ function New-Signature($Sign) {
     return $sig
 }
 
-function Add-Receipt([string]$Label, [string]$Role, $Receipt) {
+function Add-Receipt([string]$Label, [string]$Role, $Receipt, [string]$Expected = '') {
     $s = Read-State
     $row = [pscustomobject]@{
         label   = $Label
@@ -185,6 +226,8 @@ function Add-Receipt([string]$Label, [string]$Role, $Receipt) {
         status  = $Receipt.status
         prague  = $null
     }
+    # A refusal sent on purpose records the revert eth_call read before sending.
+    if ($Expected) { $row | Add-Member -NotePropertyName expectedRevert -NotePropertyValue $Expected }
     # One row per transaction: recording a hash twice (a re-run `record`, or a stale forge
     # broadcast file) is an error, not a second measurement.
     if (@($s.txs | Where-Object { $_.hash -eq $row.hash }).Count -ne 0) {
@@ -192,8 +235,11 @@ function Add-Receipt([string]$Label, [string]$Role, $Receipt) {
     }
     $s.txs = @($s.txs) + $row
     Write-State $s
-    Write-Host ("{0,-34} {1,12:N0} gas  {2}" -f $Label, $row.gasUsed, $row.hash)
-    if ($Receipt.status -ne '0x1') { throw "$Label reverted: $($Receipt.transactionHash)" }
+    Write-Host ("{0,-34} {1,12:N0} gas  {2} {3}" -f $Label, $row.gasUsed, $row.hash, $Receipt.status)
+    if ($Expected) {
+        if ($Receipt.status -ne '0x0') { throw "$Label was expected to revert: $($Receipt.transactionHash)" }
+    }
+    elseif ($Receipt.status -ne '0x1') { throw "$Label reverted: $($Receipt.transactionHash)" }
     return $Receipt
 }
 
@@ -206,6 +252,22 @@ function Send-Planned([string]$Label, [string]$Role, [string]$To, [string]$Value
     if ($Calldata -and $Calldata -ne '0x') { $call += $Calldata }
     $call += @('--value', $Value, '--rpc-url', $Rpc, '--priority-gas-price', $PriorityFee,
         '--gas-price', $MaxFee, '--json')
+    $expected = ''
+    if ($ExpectRevert) {
+        # Read the refusal first; a call that succeeds is not sent.
+        $read = @('call', $To)
+        if ($Calldata -and $Calldata -ne '0x') { $read += $Calldata }
+        $read += @('--from', (Get-Address $Role), '--value', $Value, '--rpc-url', $Rpc)
+        try { Invoke-Cli 'cast' $read | Out-Null; throw "$Label`: the call succeeds, nothing to refuse" }
+        catch {
+            $text = "$_"
+            if ($text -match 'nothing to refuse') { throw }
+            $expected = if ($text -match '(execution reverted[^\n]*)') { $Matches[1] } else { $text }
+            $expected = ($expected -split "`n")[0].Trim()
+            Write-Host "expected revert: $expected"
+        }
+        $call += @('--gas-limit', $GasLimit)
+    }
     for ($attempt = 1; ; $attempt++) {
         try { $json = Invoke-Signed $account 'cast' $call; break }
         catch {
@@ -216,7 +278,36 @@ function Send-Planned([string]$Label, [string]$Role, [string]$To, [string]$Value
             Start-Sleep -Seconds 6
         }
     }
-    return Add-Receipt $Label $Role ($json | ConvertFrom-Json)
+    return Add-Receipt $Label $Role ($json | ConvertFrom-Json) $expected
+}
+
+# Relays a call `$Safe` makes: its owners sign the Safe transaction hash (EOA signatures,
+# sorted by owner address) and the `any` account sends `execTransaction`. The Safe reverts
+# (GS013) if the inner call fails, so a recorded success means the call succeeded.
+function Send-Safe([string]$Label, [string]$Safe, [string]$To, [string]$Value, [string]$Calldata) {
+    $signers = $SafeSigners[$Safe.ToLower()]
+    if (-not $signers) { throw "no signers for Safe $Safe" }
+    $nonce = (Invoke-Cli 'cast' @('call', $Safe, 'nonce()(uint256)', '--rpc-url', $Rpc)).Trim()
+    $hash = (Invoke-Cli 'cast' @('call', $Safe,
+            'getTransactionHash(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,uint256)(bytes32)',
+            $To, $Value, $Calldata, '0', '0', '0', '0', $Zero, $Zero, $nonce, '--rpc-url', $Rpc)).Trim()
+    $owned = @()
+    foreach ($k in $signers) {
+        $owner = (Invoke-Signed $k 'cast' @('wallet', 'address')).Trim()
+        $owned += , @($owner, $k)
+    }
+    $owned = $owned | Sort-Object { [System.Numerics.BigInteger]::Parse('0' + $_[0].Substring(2), 'AllowHexSpecifier') }
+    $sigs = '0x'
+    foreach ($o in $owned) {
+        $sig = (Invoke-Signed $o[1] 'cast' @('wallet', 'sign', '--no-hash', $hash)).Trim()
+        Invoke-Cli 'cast' @('wallet', 'verify', '--address', $o[0], '--no-hash', $hash, $sig) | Out-Null
+        $sigs += $sig.Substring(2)
+    }
+    $exec = (Invoke-Cli 'cast' @('calldata',
+            'execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes)',
+            $To, $Value, $Calldata, '0', '0', '0', '0', $Zero, $Zero, $sigs)).Trim()
+    Write-Host "Safe $Safe nonce $nonce, tx hash $hash"
+    return Send-Planned $Label 'any' $Safe '0' $exec
 }
 
 function Send-Broadcast([string]$Label, [string]$Sig, [string[]]$Arguments) {
@@ -248,7 +339,25 @@ function Send-Items($Items) {
             if ($i[1] -notmatch '^writeChunk-b64-(\d+)$') { throw "$($i[1]): calldata too long for cast" }
             Send-Broadcast $i[1] 'broadcastB64Chunk(uint256)' @("$(Get-Info $Items "b64-$($Matches[1])-k")") | Out-Null
         }
+        elseif ($i[2] -match '^safe:(0x[0-9a-fA-F]{40})$') { Send-Safe $i[1] $Matches[1] $i[3] $i[4] $i[5] | Out-Null }
         else { Send-Planned $i[1] $i[2] $i[3] $i[4] $i[5] | Out-Null }
+    }
+}
+
+# Prints a plan's INFO lines and keeps them in the state file under notes.snapshots.<label>,
+# with the latest block's number and time.
+function Save-Snapshot($Items, [string]$Name) {
+    $block = Invoke-Cli 'cast' @('block', 'latest', '--json', '--rpc-url', $Rpc) | ConvertFrom-Json
+    $snap = [ordered]@{ block = [Convert]::ToInt64($block.number, 16); timestamp = [Convert]::ToInt64($block.timestamp, 16) }
+    foreach ($i in $Items) { if ($i[0] -eq 'INFO') { $snap[$i[1]] = $i[2] } }
+    $snap.GetEnumerator() | ForEach-Object { Write-Host ("{0,-16} {1}" -f $_.Key, $_.Value) }
+    if ($Name) {
+        $s = Read-State
+        if (-not $s.notes.PSObject.Properties['snapshots']) {
+            $s.notes | Add-Member -NotePropertyName snapshots -NotePropertyValue ([pscustomobject]@{})
+        }
+        $s.notes.snapshots | Add-Member -NotePropertyName $Name -NotePropertyValue ([pscustomobject]$snap) -Force
+        Write-State $s
     }
 }
 
@@ -326,7 +435,63 @@ switch ($Step) {
         Send-Items (Invoke-Plan 'settleTx(uint256)' @("$TokenId"))
     }
     'createEdition' {
-        Send-Items (Invoke-Plan 'createEditionTx(uint256)' @("$TokenId"))
+        Send-Items (Invoke-Plan 'createEditionTx(uint256,uint256)' @("$Index", "$TokenId"))
+    }
+    'openEdition' {
+        Send-Items (Invoke-Plan 'openEditionTx(uint256,uint256)' @("$Index", "$TokenId"))
+    }
+    'editionBid' {
+        Send-Items (Invoke-Plan 'editionBidTx(uint256,address,uint256,uint256)' `
+            @("$TokenId", (Get-Address $Bidder), "$EditionStep", "$Quantity"))
+    }
+    'editionRaise' {
+        Send-Items (Invoke-Plan 'editionRaiseTx(uint256,uint256,uint256)' @("$TokenId", "$BidId", "$EditionStep"))
+    }
+    'editionWithdraw' {
+        Send-Items (Invoke-Plan 'editionWithdrawTx(uint256,uint256)' @("$TokenId", "$BidId"))
+    }
+    'editionSettle' {
+        $settler = Get-Address $Settler
+        if ($PSBoundParameters.ContainsKey('Order')) {
+            Send-Items (Invoke-Plan 'editionSettleOrderTx(uint256,address,uint256[])' @("$TokenId", $settler, "[$Order]"))
+        }
+        else { Send-Items (Invoke-Plan 'editionSettleTx(uint256,address)' @("$TokenId", $settler)) }
+    }
+    'claimBid' {
+        Send-Items (Invoke-Plan 'claimBidTx(uint256,uint256)' @("$TokenId", "$BidId"))
+    }
+    'claimBidFor' {
+        Send-Items (Invoke-Plan 'claimBidForTx(uint256,uint256)' @("$TokenId", "$BidId"))
+    }
+    'claimCredits' {
+        $adapterAddress = if ($Adapter -eq 'english') { $Contracts.EnglishAuction.address } else { $Contracts.UniformEditionAuction.address }
+        Send-Items (Invoke-Plan 'claimCreditsTx(address,address)' @($adapterAddress, (Get-Address $Bidder)))
+    }
+    'editionState' {
+        Save-Snapshot (Invoke-Plan 'editionState(uint256)' @("$TokenId")) $Label
+    }
+    'englishState' {
+        Save-Snapshot (Invoke-Plan 'englishState(uint256)' @("$TokenId")) $Label
+    }
+    'pause' {
+        $guardian = if ($Safe) { $Safe } else { $GuardianSafe }
+        Send-Items (Invoke-Plan 'pauseTx(uint256,address)' @("$TokenId", $guardian))
+    }
+    'englishWithdraw' {
+        Send-Items (Invoke-Plan 'englishWithdrawTx(uint256)' @("$TokenId"))
+    }
+    'outcome' {
+        Send-Items (Invoke-Plan 'outcomeTx(uint256)' @("$TokenId"))
+    }
+    'scheduleCancel' {
+        $admin = if ($Safe) { $Safe } else { $HotAdminSafe }
+        $plan = Invoke-Plan 'scheduleCancelTx(uint256,address)' @("$TokenId", $admin)
+        Set-Note "cancelOperation-$TokenId" (Get-Info $plan 'operationId')
+        Send-Items $plan
+    }
+    'executeCancel' {
+        $admin = if ($Safe) { $Safe } else { $HotAdminSafe }
+        Send-Items (Invoke-Plan 'executeCancelTx(uint256,address)' @("$TokenId", $admin))
     }
     'record' {
         # Records a transaction sent outside this driver (for example by the Chainlink node).
@@ -342,7 +507,10 @@ switch ($Step) {
         $s = Read-State
         foreach ($row in $s.txs) {
             if ($null -ne $row.prague) { continue }
-            $out = Invoke-Cli 'cast' @('run', $row.hash, '--quick', '--evm-version', 'prague', '--rpc-url', $Rpc)
+            # A pruned node cannot replay old blocks: report the row and go on (pass an archive
+            # RPC with -Rpc to fill it in).
+            try { $out = Invoke-Cli 'cast' @('run', $row.hash, '--quick', '--evm-version', 'prague', '--rpc-url', $Rpc) }
+            catch { Write-Host ("{0,-34} not replayed: {1}" -f $row.label, ("$_" -split "`n")[0]); continue }
             if ($out -notmatch 'Gas used: (\d+)') { throw "$($row.label): no gas in the cast run output" }
             $row.prague = [int64]$Matches[1]
             Write-State $s

@@ -506,7 +506,15 @@ forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" --sender <deployer
     50M `eth_estimateGas` cap of geth, reth and public RPCs. Deployed apart, every deploy
     transaction is at most about 39.9M with Sepolia's measured Glamsterdam costs (the edition
     auction; its lens about 30.7M, the English auction about 37.8M and its lens about 10.4M),
-    so no gas limit needs setting by hand: `--slow` takes each from `eth_estimateGas`.
+    so no gas limit needs setting by hand: `--slow` takes each from `eth_estimateGas`. On Sepolia
+    r4 (1 November 2026) the node's estimates were at most 38.7M (Stream; the edition auction
+    38.3M, its lens 30.2M, the English auction 36.8M and its lens 10.2M), and the whole deploy
+    used 496M gas over 26 transactions
+    ([per transaction](../deployments/11155111/README.md#sepolia-r4-1-november-2026-current)).
+    [`sepolia/deploy.ps1`](sepolia/deploy.ps1) runs this step with an instance's public inputs
+    (`config/sepolia-r4/deploy.env`) and the operator's signer module;
+    [`sepolia/`](sepolia/) also has the genesis and manifest writers, the per-transaction gas
+    rows, Sourcify verification and the flow driver.
   - **On Sepolia r1, with Glamsterdam costs,** the deploy took 445M gas over 25 transactions,
     6.19 times the Prague estimate. That cost about 0.022 ETH at a 0.05 gwei priority fee.
     The per-transaction table is `deployments/11155111/README.md`, added in
