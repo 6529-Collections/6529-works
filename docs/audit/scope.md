@@ -18,7 +18,7 @@ an audit.
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
 | Source lines | 11,995 non-blank, non-comment lines in 87 files under `src/` (budget: 12,000) |
-| Deployed contracts | 22 per deployment without the optional VRF entropy module and 23 with it (the edition auction creates its lens), plus one `SplitWallet` per payee configuration, deployed on demand |
+| Deployed contracts | 23 per deployment without the optional VRF entropy module and 24 with it: the 21 (or 22) that `DeployV1.order` lists, the edition auction's lens among them (deployed in its own transaction and pinned by the auction), plus the AccessManager the governance configurator creates and the lens the English auction creates; and one `SplitWallet` per payee configuration, deployed on demand |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
 | Contract size | Every contract within EIP-170 (24,576 bytes of runtime) and EIP-3860 (49,152 bytes of initcode), checked by `tools/check_budgets.py` in CI |
