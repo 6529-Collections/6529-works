@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Test } from "forge-std/Test.sol";
+import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
+import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IEnglishAuctionClock } from "src/interfaces/IEnglishAuctionClock.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
+import { LockedTerms, PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import { EnglishAuctionLens, IEnglishAuctionStorage } from "src/sales/EnglishAuctionLens.sol";
 import { Roles } from "src/governance/Roles.sol";
@@ -222,5 +226,79 @@ contract EnglishAuctionLensTest is AuctionBase {
         // The selector of `storageWords` is not one of the views the fallback forwards.
         assertTrue(IEnglishAuctionStorage.storageWords.selector != IEnglishAuction.auction.selector);
         assertEq(EnglishAuction.storageWords.selector, IEnglishAuctionStorage.storageWords.selector);
+    }
+}
+
+/// @notice The lens against an auction this test plays: the paths the real auction never
+///         takes (its `storageWords` reverting or answering the wrong length) and a token
+///         whose fee share is out of range, which `lockedTerms` refuses as the auction did.
+contract EnglishAuctionLensEdgesTest is Test {
+    EnglishAuctionLens internal lens;
+    /// @dev 0: answer from `words`; 1: revert with `Boom`; 2: answer one word too many.
+    uint256 internal mode;
+    mapping(bytes32 slot => bytes32 word) internal words;
+    uint32 internal feeShare;
+
+    error Boom(uint256 code);
+
+    function setUp() public {
+        // The lens takes its creator as its auction: this test.
+        lens = new EnglishAuctionLens(
+            address(0xE5C),
+            address(0x106),
+            IAssetAllowlist(address(0xA11)),
+            IEconomicsResolver(address(0xEC0)),
+            address(0)
+        );
+    }
+
+    /// @dev The auction's `storageWords`, as this test plays it.
+    function storageWords(bytes32[] calldata slots) external view returns (bytes32[] memory out) {
+        if (mode == 1) revert Boom(7);
+        out = new bytes32[](slots.length + (mode == 2 ? 1 : 0));
+        for (uint256 i; i < slots.length; ++i) {
+            out[i] = words[slots[i]];
+        }
+    }
+
+    /// @dev The token's `primaryTerms`, as this test plays it: only the fee share matters.
+    function primaryTerms(uint256, bytes calldata) external view returns (PrimaryTerms memory p) {
+        p.seller = address(0x5E11);
+        p.feeRecipient = address(0xFEE);
+        p.feeShare = feeShare;
+    }
+
+    /// @dev An auction that reverts in `storageWords` makes the view revert with its data.
+    function test_Lens_PassesOnTheAuctionsRevert() public {
+        assertEq(lens.adapter(), address(this));
+        mode = 1;
+        vm.expectRevert(abi.encodeWithSelector(Boom.selector, 7));
+        lens.config();
+    }
+
+    /// @dev An answer of any length but one word per slot is refused, with no data.
+    function test_Lens_RefusesAnAnswerOfTheWrongLength() public {
+        mode = 2;
+        vm.expectRevert(bytes(""));
+        lens.config();
+    }
+
+    /// @dev A fee share above 100% reverts `lockedTerms` with `InvalidSaleTerms`, as the
+    ///      auction's own `lockedTerms` did; at 100% it answers.
+    function test_LockedTerms_RefusesAFeeShareAboveTheDenominator() public {
+        uint256 saleId = 1;
+        bytes32 base = keccak256(abi.encode(saleId, uint256(8)));
+        // An ACTIVE sale (status 1 at bit 240) of token ID 3 on this "token", terms record 0.
+        words[base] =
+            bytes32(uint256(uint160(address(this))) | (uint256(3) << 160) | (uint256(1) << 240));
+        feeShare = 100_001;
+        vm.expectRevert(
+            abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(this), 3)
+        );
+        lens.lockedTerms(saleId);
+        feeShare = 100_000;
+        LockedTerms memory lt = lens.lockedTerms(saleId);
+        assertEq(lt.feeShare, 100_000);
+        assertEq(lt.seller, address(0x5E11));
     }
 }
