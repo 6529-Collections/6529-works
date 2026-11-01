@@ -181,9 +181,9 @@ Sale adapters pay a wallet through `RevenuePayment`: directly, and on a clean re
 wallet or the token, as a credit in `RevenueEscrow` under that wallet, never anywhere else
 (ECO-26). The routes and their gas are under [a primary sale payout](#a-primary-sale-payout).
 
-**Zero amounts.** The auction's `_pay` (`EnglishAuction`) returns before paying a zero amount,
-so a zero fee needs no fee recipient. `RevenuePayment` itself refuses a zero wallet or the
-escrow as the wallet (`InvalidWallet`) before it looks at the amount, then treats a zero
+**Zero amounts.** The adapters' payouts (`EnglishAuction._pay`, `UniformEditionAuction._pay`)
+skip a zero amount, so a zero fee needs no fee recipient. `RevenuePayment` itself refuses a zero
+wallet or the escrow as the wallet (`InvalidWallet`) before it looks at the amount, then treats a zero
 amount as a no-op. The withdrawal and escrow paths revert on a zero amount instead: a release
 with nothing releasable, or a signed release of amount 0 (`NothingToRelease`); an escrow deposit
 (`ZeroAmount`); a `flush` or `recover` of a zero credit (`NothingOwed`); an adapter claim with
@@ -318,6 +318,8 @@ sequenceDiagram
   In the auction each ERC-20 payout runs in its own 1,000,000-gas frame: if it fails even through
   the escrow, the auction credits the wallet itself and still delivers the work, and anyone later
   pays the credit with `claimFor(wallet, token)` (MONEY-1, ECO-36).
+- **The edition auction** pays its revenue in ETH only, the fee recipient first, then the seller,
+  through the same routes ([Editions and sales](editions-and-sales.md#settlement-payouts-and-claims)).
 - **Gas.** The first payout to a new seller wallet creates its account, once per payee
   configuration, and costs more, especially under Glamsterdam
   ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table);
@@ -542,7 +544,7 @@ Accepted risks are listed once, with their IDs, in
 | A token blocks the network fee Safe | Fees in that token are escrowed under the Safe; pushing its royalty share reverts. | See [the flow](#escrow-recovery-for-a-blocked-fee-recipient-safe). |
 | A token blocks a fixed payee | `release` to its account reverts. | The payee calls `releaseTo` ([`HostileTokens.t.sol`](../../test/economics/HostileTokens.t.sol) `test_Blocklist_BlockedPayeeReleaseRevertsAndRedirectWorks`). |
 | A wallet's `receive` needs more than 100,000 gas | The ETH payout is credited to the escrow. | Anyone calls `flush`, which forwards all remaining gas. Split wallets have an empty `receive`. |
-| An ERC-20 payout fails even through the escrow | Auction: the work is delivered and the auction credits the wallet. | Auction: anyone calls `claimFor(wallet, token)` once the token works again. |
+| An ERC-20 payout fails even through the escrow | The work is delivered and the English auction credits the wallet; edition sales pay only ETH. | Anyone calls `claimFor(wallet, token)` once the token works again. |
 | A non-standard token is admitted by mistake (LIM-SAL-7) | Fee-on-transfer and rounding tokens revert on every path. A token that returns nothing or returns `false` fails on every `TokenTransfer` path, but one that returns nothing passes a Permit2 pull; in the auction its payouts and refunds then fail and stay as credits. | Deprecate it (GUARDIAN, immediate). Prevention is governance vetting before `admitAsset`. |
 | An ERC-20's balance in a wallet falls (negative rebase) | That asset's releases revert with `ObservedDecreased`; nothing is lost. | Releases resume when receipts reach the recorded mark again. |
 | An artist's key is lost or stolen | A thief holding it can pull until an override that moves the payout is staged; nobody can push to it. | Identity recovery redirects the payout, accrued balances included ([Identity and recovery](identity-and-recovery.md)). |
@@ -569,7 +571,7 @@ Accepted risks are listed once, with their IDs, in
 | ETH increment floor at launch | 0.001 ETH (deploy default) | `ETH_INCREMENT_FLOOR` in [`script/Deploy.s.sol`](../../script/Deploy.s.sol) |
 | Default currency at genesis | ETH for all three products | [`config/genesis.example.json`](../../config/genesis.example.json) |
 | Re-admission wait | 14 days after the deprecation | `Roles.FUNDS` in `AssetAllowlist.admitAsset` |
-| ETH payout gas; reserve on top | 100,000; 40,000 | `EnglishAuction.PAYOUT_GAS`; `RevenuePayment.ETH_CALL_RESERVE` |
+| ETH payout gas; reserve on top | 100,000; 40,000 | `EnglishAuction.PAYOUT_GAS`, `UniformEditionAuction.PAYOUT_GAS`; `RevenuePayment.ETH_CALL_RESERVE` |
 | Token gas on the direct ERC-20 route | 300,000 | `RevenuePayment.ERC20_TRANSFER_GAS` |
 | Auction ERC-20 payout frame | 1,000,000 | `EnglishAuction._ERC20_PAYOUT_GAS` (private) |
 | Claims per batch: plain; signed | 50; 20 | `ClaimRouter.MAX_CLAIMS`, `MAX_SIGNED_CLAIMS` |
@@ -595,7 +597,8 @@ See the [register](README.md#differences-from-the-adrs).
   [`ProtocolContracts.sol`](../../src/libraries/ProtocolContracts.sol);
   [`SignatureVerifier.sol`](../../src/libraries/SignatureVerifier.sol);
   [`Stream.sol`](../../src/stream/Stream.sol); [`Editions.sol`](../../src/editions/Editions.sol);
-  [`EnglishAuction.sol`](../../src/sales/EnglishAuction.sol).
+  [`EnglishAuction.sol`](../../src/sales/EnglishAuction.sol);
+  [`UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol).
 - ADRs: [ADR 0001 §5](../adr/0001-v1-scope.md#5-sales-and-auctions) and
   [§7](../adr/0001-v1-scope.md#7-economics);
   [ADR 0003, Economics](../adr/0003-build-time-decisions.md#economics-amends-adr-0001-7);

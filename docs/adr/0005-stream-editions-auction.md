@@ -4,6 +4,8 @@ Status: Accepted by the owner, 31 October 2026, who approved every recommended d
 ("defaults") and added decision 14 the same day. Recorded by the delivery owner (Claude Code,
 acting for the repository owner). Amends [ADR 0001](0001-v1-scope.md),
 [ADR 0003](0003-build-time-decisions.md) and [ADR 0004](0004-gas-budgets-under-glamsterdam.md).
+The text below is the record as accepted; changes made during the rc.2 delivery are dated
+amendments (§6 to §11), and each amended passage points to its amendment.
 
 This is this repository's ADR 0005. The "ADR 0005 (randomness)" that ADR 0001 cites under
 "Superseded or amended" is the 6529Stream repository's, a different record.
@@ -89,9 +91,8 @@ holds the bid book, the clearing, settlement and claims. Its frozen interface is
 - `open(token, id, data)` is permissionless from the 1/1's start until the edition close. For
   6529 Stream Editions, `data` is the master's package item, checked against the item hash 6529
   Stream stored, so no proof is needed. It locks the creator's cap, the governed parameters
-  and the `PRODUCT_EDITIONS` economics, and binds the edition to the adapter
-  (`IEditions.bindMinter`, [§6](#6-amendment-31-october-2026-the-edition-is-bound-when-its-sale-opens)),
-  which records the same economics in 6529 Stream Editions.
+  and the `PRODUCT_EDITIONS` economics. (Amended by [§6](#6-amendment-31-october-2026-the-edition-is-bound-when-its-sale-opens): it also binds the edition to the
+  adapter, which records the same economics in 6529 Stream Editions.)
 - Bids are ETH, exactly `quantity * price(step)`, from one unit at the base step. `raise` moves
   a whole bid up for exactly the difference. `withdrawBid` works only while the 1/1 is paused.
 
@@ -123,11 +124,9 @@ the seller, each through the revenue escrow if refused) and emits `SaleSettled` 
 the TDH pipeline weights (P29 §1.2). Copies sold need the edition, which `createEdition`
 (unchanged) creates once the master settles. When the cap binds inside the cut step, `settle`
 sweeps that step's departures in the position order the settler supplies, chunked and
-resumable. Each settler keeps its own progress and passes the rest of its own sweep on each
-call (`settlementOrderFor`), and the first to sweep every departure fixes the cutoff, so an
-order that skips a departure strands only its own sender; claims open when a sweep
-completes. `claimBid` mints a winner's copies and sends
-its refund to an address it names; `claimBidFor` lets anyone push a claim, crediting the
+resumable; claims open when the sweep completes. (Amended by [§9](#9-amendment-1-november-2026-each-settler-sweeps-on-its-own): each settler sweeps on its
+own, and claims open when the first sweep completes.) `claimBid` mints a winner's copies and
+sends its refund to an address it names; `claimBidFor` lets anyone push a claim, crediting the
 refund. Supply reaches exactly k once every winner has claimed.
 
 **6529 Stream Editions** ([`IEditions`](../../src/interfaces/IEditions.sol)).
@@ -142,25 +141,25 @@ refund. Supply reaches exactly k once every winner has claimed.
   length (decision 14). The edition auction requires `SaleKind.UNIFORM_AUCTION`, ETH and empty
   `params`. No EIP-712 type changes; the item hash's encoding, package tooling and fixtures do.
   With `price` gone from the terms, `createEdition`'s selector becomes `0x26c8844c`.
-- An edition is bound to one adapter, the only one that may mint it (`MinterMismatch`): the
-  adapter whose sale opened it (`bindMinter`, [§6](#6-amendment-31-october-2026-the-edition-is-bound-when-its-sale-opens)),
-  or else the first to mint it. A second admitted adapter of the same kind can neither open
-  nor add copies to a sale another one runs.
+- The first adapter to mint an edition is the only one that may mint it again
+  (`MinterMismatch`), so a second admitted adapter of the same kind cannot add copies to a
+  sale another one ran. (Amended by [§6](#6-amendment-31-october-2026-the-edition-is-bound-when-its-sale-opens): the edition is bound to the adapter whose sale opened
+  it, or else to the first to mint it, and that adapter keeps minting it after removal.)
 - `formatOf` and the OPEN window (`EditionWindowOpened`, `windowStart`) go with the fixed-price
   and Dutch adapters. Once they and the terms change land, and if nothing else in it changes,
-  the `IEditions` interface ID is `0xa41d86b8`; with `bindMinter` (§6) it is `0xe183b26f`. The
-  item hash's golden values change with the terms (`test_itemHash_golden`).
+  the `IEditions` interface ID is `0xa41d86b8`. The item hash's golden values change with the
+  terms (`test_itemHash_golden`). (Amended by [§6](#6-amendment-31-october-2026-the-edition-is-bound-when-its-sale-opens): with `bindMinter` it is `0xe183b26f`.)
 
 **The museum.** `IEconomicsResolver.museum()` names the 6529 Network Museum; `setMuseum`
-(compare-and-set on its own revision, as the resolver's other setters are) changes it. A 6529
-Stream work whose 1/1 settles with no bid, or ends unsold after its currency stayed deprecated
-for 30 days, goes to the museum. The English auction takes 6529 Stream as a constructor
-argument and gates the museum branch on it, so decision 9 holds in code: any other token's
-unbid work, federated or listed later by governance, goes to its artist. A delivery pending for
-the museum is claimed only by the museum recorded at settlement; for any other token the artist
-may also claim in the recipient's place (L-5), so no artist can take the museum's. The museum
-is a recipient chosen by the auction adapter and the resolver, not a hook in Core (ADR 0001
-§15).
+(compare-and-set on its own revision, as the resolver's other setters are) changes it. A
+canonical work, any token governance listed, whose 1/1 settles with no bid, or ends unsold
+after its currency stayed deprecated for 30 days, goes to the museum. A federated work goes to
+its artist. Governance lists 6529 Stream alone on the English auction (`setTarget` at genesis),
+so this is decision 9's rule; listing another token there would send its unbid works to the
+museum too. Only a federated work's artist may claim a pending delivery in the recipient's
+place (L-5), so no artist can take the museum's. The museum is a recipient chosen by the
+auction adapter and the resolver, not a hook in Core (ADR 0001 §15). (Amended by [§7](#7-amendment-31-october-2026-the-museum-branch-is-gated-on-6529-stream-in-code), then
+[§11](#11-amendment-31-october-2026-stream-records-each-11s-primary-sale-outcome-owner-decision-17): 6529 Stream itself moves an unsold work to the museum.)
 
 ### 3. Adding a sale method (decision 14)
 
@@ -184,9 +183,10 @@ name. No token contract hard-wires a minter.
    a field. The OPEN window does not return.
 2. Review it, deploy it, and schedule `Editions.setAdmittedMinter(fixedPriceSale, true)` and its
    `setTarget(editions, true)` (both 30 days), with its selectors in the governance manifest.
-3. Packages approved afterwards may name `FIXED_PRICE` with those params. The adapter calls
-   `Editions.bindMinter(editionId, item)` when a sale opens (§6). Editions sold by the auction
-   are untouched: each edition stays with the adapter that opened its sale.
+3. Packages approved afterwards may name `FIXED_PRICE` with those params. Editions sold by the
+   auction are untouched: each edition stays with its first minter. (Amended by [§6](#6-amendment-31-october-2026-the-edition-is-bound-when-its-sale-opens): the
+   adapter calls `Editions.bindMinter(editionId, item)` when a sale opens, and each edition
+   stays with the adapter that opened its sale.)
 
 Nothing in 6529 Stream, 6529 Stream Editions or a federated contract is redeployed. The cost is
 a guarantee rc.1 had: the token no longer knows every valid kind, so a master whose edition
@@ -203,7 +203,7 @@ The edition auction's parameters are one `AuctionConfig`, set by `setConfig(expe
 | --- | --- | --- | --- |
 | Breadth margin (D138) | 10% (10,000 of 100,000) | 0 to 50% | PARAMETER_SETTER, 48 hours |
 | Steps per decade (the step size) | 48 | 24, 48, 96 or 192 | PARAMETER_SETTER, 48 hours |
-| Base price | 0.0001 ETH | a power of ten from 10^12 to 10^17 wei, so prices read as the table does (decision 3) | PARAMETER_SETTER, 48 hours |
+| Base price | 0.0001 ETH | 10^12 to 10^17 wei; a power of ten since [§8](#8-amendment-31-october-2026-base-prices-are-powers-of-ten) | PARAMETER_SETTER, 48 hours |
 | Steps | 336 | 64 to 512, with a top step of at least 10 ETH | PARAMETER_SETTER, 48 hours |
 | Close offset after the 1/1 (D140) | 15 minutes | 0 to 1 day | PARAMETER_SETTER, 48 hours |
 | Soft-close window (D141) | 5 minutes | 1 minute to 1 hour | PARAMETER_SETTER, 48 hours |
@@ -277,6 +277,129 @@ seller had been paid.
   (140,201), about 20,000 more for the pair, the item hashed and checked a second time.
   An edition created unbound still writes 6.
 
+### 7. Amendment (31 October 2026): the museum branch is gated on 6529 Stream in code
+
+Superseded by [§11](#11-amendment-31-october-2026-stream-records-each-11s-primary-sale-outcome-owner-decision-17): Stream now moves an unsold work to the museum itself, and the English
+auction has no museum branch. Kept as history.
+
+Made by the museum lane (PR #75). As accepted, §2 sent the unbid work of any token governance
+listed on the English auction to the museum, and relied on governance listing 6529 Stream alone
+for decision 9. The English auction now takes 6529 Stream as a constructor argument and gates
+the museum branch on it, so decision 9 holds in code:
+
+- A 6529 Stream work whose 1/1 settles with no bid, or ends unsold after its currency stayed
+  deprecated for 30 days, goes to the museum the resolver names at settlement.
+- Any other token's unbid work, federated or listed later by governance, goes to its artist.
+- A delivery pending for the museum is claimed only by the museum recorded at settlement; for
+  any other token the artist may also claim in the recipient's place (L-5), so no artist can
+  take the museum's.
+
+### 8. Amendment (31 October 2026): base prices are powers of ten
+
+Made by the clearing lane (PR #78). §4 bounded the base price to 10^12 to 10^17 wei.
+`StepLadder.isBasePrice` also requires a power of ten, so every price is a table mantissa times
+a power of ten and reads as the table does (decision 3, readable prices from a fixed table): a
+base of 0.00015 ETH would price the next steps at 0.0001575 and 0.000165 ETH instead of 0.000105
+and 0.00011. The default, 0.0001 ETH, is one.
+
+### 9. Amendment (1 November 2026): each settler sweeps on its own
+
+Made by the adapter lane (PR #77), after a review finding of 31 October. As designed in §2, the
+cut step's departure sweep was one resumable sweep that any settler continued. A settle call
+whose order skipped a departure (positions still strictly increasing) was accepted and moved the
+shared sweep past it, so the sweep could never finish: the sale stayed SETTLING and no bid could
+be claimed.
+
+- Each settler (`msg.sender`) keeps its own progress and passes the rest of its own sweep on
+  each call (`settlementOrderFor`); the first to sweep every departure fixes the cutoff, and
+  claims open. An order that skips a departure strands only its own sender, who settles from
+  another address; nobody's progress touches another's or the result.
+- A call sweeps at most 16 departures in the call that clears and 96 after.
+  `DeparturesSwept` reports the caller's progress, so interleaved settlers' events can show
+  `swept` going down. A call on a settled sale returns `true`.
+- A shared public relayer such as Multicall3 is one settler for all its callers, who would
+  share one sweep: keepers settle directly or through their own contract
+  ([runbook](../../script/README.md#the-edition-auction-keeper)).
+- LIM-EA-4 now reads: a dense book's settlement costs more calls, each of bounded gas, and a
+  griefer's sweep never blocks a keeper's.
+
+### 10. Amendment (31 October 2026): Stream's dependency pointers are governed (owner decision 16)
+
+Made by PR #81, with the review fixes of #80 and #81.
+
+- **The pointers.** Stream's package registry, artist registry, economics resolver and entropy
+  module are replaceable by governance (`setDependency`, SUCCESSOR_SETTER, the 30-day class,
+  compare-and-set); Stream's code and address stay immutable, with no proxy, and the split
+  factory stays fixed. Existing tokens are unaffected: ownership, the terms and royalty receiver
+  locked at mint, a finalized work's pinned renderer and a VRF work's seed, which always comes
+  from the entropy module the work minted under (`entropyModuleOf`; the review of #81 found that
+  the renderer and `openRecord` read the current module, so a replacement could change or break
+  the seed of a work whose record was not open yet).
+- **Who follows.** 6529 Stream Editions and `WorkRecords` read the pointers from Stream instead
+  of copying them, so a replacement reaches them at once. Contracts wired to the same
+  dependencies on their own (one-shot binds, pinned code hashes, the auctions' economics
+  resolver: the edition auction's lens copies it at construction) do not follow, so a
+  replacement is a set planned with them
+  ([the procedure](../../script/README.md#replacing-one-of-streams-dependencies)). Stream's
+  immutable split factory keeps the genesis artist registry as the payout resolver of every
+  Stream work, so that registry is only partly replaceable (LIM-GV-16). The artist registry's
+  one `register` caller is governed (`setPackageRegistry`, 30 days), so a successor package
+  registry onboards new artists.
+- **Cost.** The genesis contracts stay immutables, with a replacement bit each in the counter
+  word every mint already reads, so a start with no replacement reads no extra slot: about +820
+  Prague gas. An artist's first two-party start with a bid is 339,511, and with a VRF seed
+  347,186, 2,814 under 350K ([ADR 0004's table](0004-gas-budgets-under-glamsterdam.md#the-table)).
+- **The kind recorded at admission (the review of #80).** `mint` compares an item's sale kind
+  with the adapter's kind recorded at its first admission, the kind `primaryTerms` reports,
+  instead of the adapter's live `saleKind()` (about +1,530 Prague gas, the kind kept in the
+  minter word `mint` reads), so a later change of an adapter's `saleKind()` changes nothing for
+  Stream. This amends the decision 15 note under [Open items](#open-items).
+- **Metadata survives a faulty records satellite.** Stream is permanent and `WorkRecords` is
+  bound once, so `rendererOf` reads `pinnedRenderer` with a fixed gas cap and one word back, and
+  serves the default renderer on any fault but a changed pinned renderer's
+  `DependencyCodeChanged`, which still fails closed (WS-16, RND-28). Cost: Stream +224 bytes.
+
+### 11. Amendment (31 October 2026): Stream records each 1/1's primary-sale outcome (owner decision 17)
+
+Made by PR #82. It supersedes [§7](#7-amendment-31-october-2026-the-museum-branch-is-gated-on-6529-stream-in-code)
+and amends the decision 15 note under [Open items](#open-items).
+
+- **The outcome.** The minting adapter's settlement call carries it:
+  `IMintTarget.settlePrimary(id, outcome, buyer, currency, price)` replaces
+  `markPrimarySettled(id)`. Stream stores SOLD, UNBID or FROZEN_OUT in two bits of the token's
+  flags word, and for SOLD the currency and the price (96 bits, saturated) in one new word;
+  `primarySale(id)` answers them, and `PrimarySaleSettled` names the outcome, the buyer, the
+  currency and the exact price. The same call returns the seller and fee terms the adapter pays
+  by (`PrimarySettlement`), so the English auction's `settle` no longer reads `primaryTerms`.
+- **Stream moves unsold works to the museum.** For UNBID and FROZEN_OUT Stream itself moves the
+  work out of the adapter's custody to `IEconomicsResolver.museum()`, read at that moment, with
+  no receiver callback, and never to the artist. The English auction no longer has a museum
+  branch, a `_MUSEUM` flag or a Stream constructor argument: it reports the outcome (FROZEN_OUT
+  for the freeze exit and a delisting) and delivers only what it sold, or another token's
+  unsold work to its creator. 6529 Stream Editions answers `settlePrimary` as a no-op (copies
+  are sold at mint); a token other than Stream returns `holder` zero.
+- **Enforced on-chain.** The museum rule (D140, decisions 9 and 10) holds for every sale an
+  admitted adapter settles, except a deliberately false SOLD report, for example one naming the
+  artist as the buyer of a work nobody bought: Stream cannot tell a false sale from a true one,
+  and refusing the artist as a buyer would block an artist buying their own work. An adapter
+  can also bypass the call: Stream lets a holder transfer an unsettled work
+  (`test_transfersDoNotSettle`) and the minting adapter burn one, so an adapter that never
+  settles can hand an unsold work to anyone; such a work stays NONE in `primarySale` and its
+  edition can never be created. Refusing transfers of unsettled works would cost about 2,100 gas
+  on every later transfer of every work, so it is left to the admission review.
+- **The admission requirement** (decisions 9, 10, 15 and 17). Any 1/1 sale adapter admitted for
+  6529 Stream must settle each sale with Stream (`settlePrimary`) and report its true outcome:
+  SOLD with the buyer who paid, the currency and the price; UNBID when the sale ended with no
+  bid; FROZEN_OUT when it ended unsold because its currency stayed frozen. Governance checks this
+  in the 30-day review before `Stream.setAdmittedMinter(adapter, true)` executes, with the three
+  cases on-chain enforcement leaves to it (a false SOLD, a work moved without settling, a burn
+  outside a cancel); a guardian vetoes an admission that does not hold it.
+  `StreamSaleMethods.t.sol` (`test_ASecondAdapterSendsAnUnbidWorkToTheMuseum`) shows a second
+  adapter's unbid work landing in the museum without the adapter moving it.
+- **Cost** ([ADR 0004's table](0004-gas-budgets-under-glamsterdam.md#the-table)): the English
+  `settle` with a bid writes one new slot (the sale record) and costs more; with no bid it costs
+  less. Also useful for TDH: P29 shares the Works pool by realized ETH price.
+
 ## What this amends
 
 ADRs stay as written; each gets a pointer to this record.
@@ -343,11 +466,8 @@ over as the edition auction lands.
 - **LIM-EA-4: a dense book's settlement cost.** Filling every step raises `settle` to about
   700,000 Prague gas (at most 1,000,000 with 512 steps), paid by the settler; it costs an
   attacker far more in bids. A capped auction's departure sweep adds about 2,500 gas per
-  departure at the cut step, chunked across calls (16 in the clearing call, 96 after), each
-  call carrying only its caller's remaining slice. Each settler sweeps on its own: a settler
-  whose order skips a departure strands only its own progress (it settles from another
-  address), and a griefer's progress never touches the result. `DeparturesSwept` reports the
-  caller's progress, so interleaved settlers' events can show `swept` going down.
+  departure at the cut step, chunked across calls. (Amended by [§9](#9-amendment-1-november-2026-each-settler-sweeps-on-its-own): 16 departures in the
+  clearing call and 96 after, each settler sweeping on its own.)
 - **LIM-EA-5: demand reduction.** Marginal bidders bid the lowest step that gets in. It is
   inherent to a uniform price, and visible on the public ladder.
 - **LIM-EA-6: last-block ordering.** A block builder can reorder or censor bids in the final
@@ -362,18 +482,21 @@ over as the edition auction lands.
 - **LIM-EA-9: a frozen 1/1 delays editions.** An ERC-20 1/1 frozen by a currency deprecation
   (MARKET-2) delays the edition settlement until the 1/1 settles, up to 30 days. 6529 Stream
   launches in ETH, which is never deprecated in practice.
-- **LIM-EA-10: a removed adapter still mints the editions it sold.** Copies are minted at
-  claim, after the seller was paid, so 6529 Stream Editions lets an edition's bound adapter
-  mint it even after governance removes the adapter (§6); otherwise the winners would be
-  stranded. Governance therefore cannot stop a removed adapter's claims on editions it already
-  sold. The creator's cap still bounds them, removal stops every new sale, and an adapter is
-  admitted only after a 30-day review.
-- **LIM-EA-11: an edition auction nobody opens in time.** `open` is accepted until the 1/1's
+- **LIM-EA-10: claims need the adapter admitted.** Copies are minted at claim, and 6529 Stream
+  Editions refuses mints from a removed adapter (ED-5). Governance therefore removes an edition
+  auction only once its settled sales are claimed; `claimBidFor` lets anyone push the remaining
+  claims first. The removal is a 30-day operation, visible in advance. (Amended by [§6](#6-amendment-31-october-2026-the-edition-is-bound-when-its-sale-opens): it now
+  reads "a removed adapter still mints the editions it sold". Copies are minted at claim, after
+  the seller was paid, so Editions lets an edition's bound adapter mint it after removal and
+  governance cannot stop a removed adapter's claims on editions it already sold; the creator's
+  cap still bounds them, removal stops every new sale, and an adapter is admitted only after a
+  30-day review.)
+- **LIM-EA-11: an edition auction nobody opens in time.** (Added with [§6](#6-amendment-31-october-2026-the-edition-is-bound-when-its-sale-opens).) `open` is accepted until the 1/1's
   end plus the close offset. If nobody opens it by then, this adapter can never sell that
   work's editions. The edition is still unbound, so a later admitted adapter of its kind can
   open it (decision 14). The keeper opens the edition auction in the same batch as the 1/1's
   start (decision 7; [runbook](../../script/README.md#the-edition-auction-keeper)).
-- **LIM-EA-12: settlement waits for `createEdition`.** A sale with winners settles only once
+- **LIM-EA-12: settlement waits for `createEdition`.** (Added 1 November 2026 with the adapter, PR #77.) A sale with winners settles only once
   the edition exists (`EditionNotCreated`). `createEdition` is permissionless and
   deterministic once the 1/1 settles, but it takes the master's item, its package root and a
   Merkle proof, which the frozen `settle(saleId, order)` and `claimBid` cannot carry, and the
@@ -445,8 +568,7 @@ before each merge.
 
   **Closed, 31 October 2026 (owner decision 15).** Decision 14 covers 6529 Stream's own 1/1s
   too, before rc.2 ("once this contract goes live we are never going to change it"). Stream
-  mints an item only for an admitted adapter whose sale kind, recorded at its first
-  admission, is the item's sale kind, and
+  mints an item only for an admitted adapter whose `saleKind()` is the item's sale kind, and
   checks only that the item names one; the adapter checks the sale's currency and params. The
   English auction is admitted at genesis; a later 1/1 method is an adapter governance admits
   (`Stream.setAdmittedMinter`, SUCCESSOR_SETTER, the 30-day class), with no new Stream.
@@ -458,98 +580,52 @@ before each merge.
   Prague gas with no new slot, and the English auction's `settle` by about 2,200 (one more cold
   read, the minting adapter's kind) ([ADR 0004's table](0004-gas-budgets-under-glamsterdam.md#the-table)).
 
-  **Admission requirement for a 1/1 sale adapter (decisions 9, 10, 15 and 17).** Any 1/1 sale
-  adapter admitted for 6529 Stream must settle each sale with Stream
-  (`IMintTarget.settlePrimary`) and report its true outcome: SOLD with the buyer who paid, the
-  currency and the price; UNBID when the sale ended with no bid; FROZEN_OUT when it ended unsold
-  because its currency stayed frozen. Governance checks this in the 30-day review before
-  `Stream.setAdmittedMinter(adapter, true)` executes; a guardian vetoes an admission that does
-  not hold it.
+  **Admission requirement for a 1/1 sale adapter (decisions 9, 10 and 15).** The museum rule
+  is enforced inside the English auction, for 6529 Stream's tokens; nothing in Stream makes
+  another adapter follow it. Any 1/1 sale adapter admitted for 6529 Stream must therefore:
+  - send a work that ends its sale unbid, and a work that leaves the 30-day currency-freeze
+    exit unsold, to `IEconomicsResolver.museum()`, read at settlement;
+  - never send either to the work's artist (decision 9's artist branch is for federated works
+    only);
+  - and governance checks both in the 30-day review before `Stream.setAdmittedMinter(adapter,
+    true)` executes; a guardian vetoes an admission that does not hold them.
 
-  **Enforced on-chain (owner decision 17).** For an UNBID or FROZEN_OUT report Stream itself
-  moves the work out of the adapter's custody to `IEconomicsResolver.museum()`, read at that
-  moment, and never to the artist; the adapter does not move it. So the museum rule holds for
-  every sale an admitted adapter settles, except for a deliberately false SOLD report, for
-  example one naming the artist as the buyer of a work nobody bought: Stream cannot tell a
-  false sale from a true one, and a rule refusing the artist as a buyer would block an artist
-  buying their own work. An adapter can also bypass the call: the work sits in its custody, and
-  Stream lets a holder transfer an unsettled work (`test_transfersDoNotSettle`) and the minting
-  adapter burn one, so an adapter that never settles can hand an unsold work to anyone. Such a
-  work stays NONE in `primarySale` and its edition can never be created. Refusing transfers of
-  unsettled works would close that path at about 2,100 gas on every later transfer of every
-  work (a cold read of the token's flags), so it is left to the review above, which covers
-  all three cases: a false SOLD, a work moved without settling, and a burn outside a cancel.
   `StreamSaleMethods.t.sol` (`test_ASecondAdapterSendsAnUnbidWorkToTheMuseum`) shows a second
-  adapter's unbid work landing in the museum without the adapter moving it.
+  adapter sending a work that ends unbid to the museum; its mock has no currency-freeze exit,
+  so the test does not show that branch.
+
+  **Not enforced on-chain.** Stream never learns whether a sale had a buyer; a Stream-only
+  settle call declaring the buyer would not stop an adapter that names its artist as one; and a
+  transfer rule refusing the artist would block an artist buying their own work. The 30-day
+  review, with the guardians' veto, is the control.
+
+  (Amended by [§11](#11-amendment-31-october-2026-stream-records-each-11s-primary-sale-outcome-owner-decision-17): Stream now records each sale's outcome and moves an unsold work to the
+  museum itself, so the rule is enforced on chain for every sale an admitted adapter settles,
+  except a deliberately false SOLD report; the requirement becomes reporting the true outcome.)
 
   **The rest of the 1/1 adapter review.** Stream trusts an admitted adapter, unchecked, for the
   works it mints, so the same review also confirms that the adapter:
   - burns a work (`IMintTarget.burn`) only to cancel a sale after an upheld dispute, through a
     governed action like the English auction's `cancel` (48 hours): Stream lets the minting
     adapter burn any work it holds before the sale settles;
-  - settles the primary sale (`settlePrimary`) when the sale is final, and only then, with the
-    true outcome: an edition of a master waits for it, a settled work can no longer be burned,
-    and Stream records the outcome and price for good;
+  - marks the primary sale settled (`markPrimarySettled`) when the sale is final, and only then:
+    an edition of a master waits for it, and a settled work can no longer be burned. (Amended by
+    [§11](#11-amendment-31-october-2026-stream-records-each-11s-primary-sale-outcome-owner-decision-17): `settlePrimary`, with the true outcome, which Stream records for good.)
   - pays the fee recipient and the seller wallet the shares `primaryTerms` reports;
-  - claims, at its first admission, the kind it sells: Stream records it then and compares it
-    at every mint and reports it in `primaryTerms`, so a later change of the adapter's
-    `saleKind()` changes nothing for Stream (the review of #80 found that `mint` compared the
-    live value);
+  - reports a constant `saleKind()`: `mint` compares the live value with the item's, while
+    `primaryTerms` reports the value recorded at the first admission, so an adapter whose kind
+    could change (an upgradeable one, for example) could mint another kind's items under its
+    recorded label. (Amended by [§10](#10-amendment-31-october-2026-streams-dependency-pointers-are-governed-owner-decision-16): `mint` compares the kind recorded at the first
+    admission, so a later change of `saleKind()` changes nothing for Stream.)
   - claims a kind no other admitted adapter serves, unless it replaces that adapter, which is
     then removed in the same governance batch: the move signature names no adapter, so two
     admitted adapters of one kind can each start the same item.
 
   An edition master sold by a method other than the English auction gets no edition auction
   from the genesis edition auction, which reads the 1/1's clock from the English auction
-  (`IEnglishAuction.saleIdOf`); its editions need an edition sale method that reads the new
+  (`IEnglishAuctionClock.auctionClock`); its editions need an edition sale method that reads the new
   method's clock (a new adapter, with no new Stream or Editions). The edition auction
   hard-wires one immutable English auction (`englishAuction`), from which it reads the 1/1's
   end and state, so for such a master its `open` reverts with `NoOneOfOneAuction`. Adding a
   1/1 sale method therefore also means deploying and admitting a matching edition adapter;
   until then, that method's masters sell no editions by auction.
-
-- **Stream's dependency pointers (owner decision 16, 31 October 2026).** Stream's package
-  registry, artist registry, economics resolver and entropy module are replaceable by
-  governance (`setDependency`, SUCCESSOR_SETTER, the 30-day class, compare-and-set); Stream's
-  code and address stay immutable, with no proxy, and the split factory stays fixed. Existing
-  tokens are unaffected: ownership, the terms and royalty receiver locked at mint, a finalized
-  work's pinned renderer and a VRF work's seed, which always comes from the entropy module the
-  work minted under (`entropyModuleOf`; the review of #81 found that the renderer and
-  `openRecord` read the current module, so a replacement could change or break the seed of a
-  work whose record was not open yet). 6529 Stream Editions and `WorkRecords` read the pointers
-  from Stream instead of copying them, so a replacement reaches them at once. Contracts wired to
-  the same dependencies on their own (one-shot binds, pinned code hashes, the auctions'
-  economics resolver) do not follow, so a replacement is a set planned with them
-  ([the procedure](../../script/README.md#replacing-one-of-streams-dependencies)). Stream's
-  immutable split factory keeps the genesis artist registry as the payout resolver of every
-  Stream work, so that registry is only partly replaceable (LIM-GV-16). The artist registry's
-  one `register` caller is governed (`setPackageRegistry`, 30 days), so a successor package
-  registry onboards new artists. The genesis contracts stay
-  immutables, with a replacement bit each in the counter word every mint already reads, so a
-  start with no replacement reads no extra slot: about +820 Prague gas. With the #80 review's
-  fix (`mint` compares the kind recorded at admission, about +1,530), an artist's first
-  two-party start with a bid is 339,511 (the kind kept in the minter word `mint` reads), and
-  with a VRF seed 347,186, 2,814 under 350K
-  ([ADR 0004's table](0004-gas-budgets-under-glamsterdam.md#the-table)).
-
-- **Stream records each 1/1's primary-sale outcome (owner decision 17, 31 October 2026).** The
-  minting adapter's settlement call carries the outcome: `IMintTarget.settlePrimary(id,
-  outcome, buyer, currency, price)` replaces `markPrimarySettled(id)`. Stream stores SOLD,
-  UNBID or FROZEN_OUT in two bits of the token's flags word, and for SOLD the currency and the
-  price (96 bits, saturated) in one new word; `primarySale(id)` answers them, and
-  `PrimarySaleSettled` names the buyer with the exact price. For UNBID and FROZEN_OUT Stream
-  moves the work to the museum itself (above), so the English auction no longer has a museum
-  branch, a `_MUSEUM` flag or a Stream constructor argument: it reports the outcome and
-  delivers only what it sold, or another token's unsold work to its artist. The same call
-  returns the seller and fee terms the adapter pays by (`PrimarySettlement`), so the English
-  settle no longer reads `primaryTerms`, and no longer pays the cold read of the adapter's
-  kind the review of #80 found. Shape: the call stays on `IMintTarget`, so every adapter
-  settles every token the same way; 6529 Stream Editions answers it as a no-op (copies are sold
-  at mint); a token other than Stream returns `holder` zero and its adapter delivers an unsold
-  work to the creator. Also useful for TDH: P29 shares the Works pool by realized ETH price.
-
-- **Metadata survives a faulty records satellite (31 October 2026).** Stream is permanent and
-  `WorkRecords` is bound once, so `rendererOf` reads `pinnedRenderer` with a fixed gas cap and
-  one word back, and serves the default renderer on any fault but a changed pinned
-  renderer's `DependencyCodeChanged`, which still fails closed (WS-16, RND-28). Cost: Stream
-  +224 bytes.

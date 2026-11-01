@@ -91,6 +91,7 @@ Deployment records name contracts by their contract name, except `CurationVerifi
 | `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) |
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) |
 | `EnglishAuctionLens` (created by the auction: its first `CREATE`) | [`src/sales/EnglishAuctionLens.sol`](../../src/sales/EnglishAuctionLens.sol) |
+| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol); its views are answered by `UniformEditionAuctionLens` ([`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol)), which its constructor creates (`lens()`), through the adapter's own address |
 | `FixedPriceSale`, `DutchSale` | Sepolia r1 to r3 only: removed by [ADR 0005](../adr/0005-stream-editions-auction.md); the source is at the `v1.0.0-rc.1` tag |
 
 ### Compiler settings
@@ -256,7 +257,7 @@ selectors.
 | `IStream` | [`IStream.sol`](../../src/interfaces/IStream.sol) | `0xdeb700c1` | `0x4b62279d` | Stream |
 | `IWorkRecords` | [`IWorkRecords.sol`](../../src/interfaces/IWorkRecords.sol) | `0xc109676d` | `0x3f3d6835` | WorkRecords |
 | `IEditions` | [`IEditions.sol`](../../src/interfaces/IEditions.sol) | `0xe183b26f` | `0xa5bd946e` | Editions |
-| `ISaleAdapter` | [`ISaleAdapter.sol`](../../src/interfaces/ISaleAdapter.sol) | `0x312dc1e1` | `0x312dc1e1` | EnglishAuction (and FixedPriceSale, DutchSale on r1 to r3) |
+| `ISaleAdapter` | [`ISaleAdapter.sol`](../../src/interfaces/ISaleAdapter.sol) | `0x312dc1e1` | `0x312dc1e1` | EnglishAuction, UniformEditionAuction (and FixedPriceSale, DutchSale on r1 to r3) |
 | `IEnglishAuction` | [`IEnglishAuction.sol`](../../src/interfaces/IEnglishAuction.sol) | `0x75122f3e` | `0xc1a8b12f` | EnglishAuction |
 | `IEnglishAuctionClock` | [`IEnglishAuctionClock.sol`](../../src/interfaces/IEnglishAuctionClock.sol) | `0x968c7b07` | none | None: an integration view of EnglishAuction (`auctionClock`), never reported through ERC-165 |
 | `IUniformEditionAuction` | [`IUniformEditionAuction.sol`](../../src/interfaces/IUniformEditionAuction.sol) | `0x69e7405b` | none | UniformEditionAuction, the edition auction of [ADR 0005](../adr/0005-stream-editions-auction.md) (its views are answered by its lens, through a read-only fallback) |
@@ -421,8 +422,9 @@ witness type and `TokenPermissions(address token,uint256 amount)`, for example
 | EnglishAuction `startWithBid` | `keccak256(abi.encode(START_BID_WITNESS, token, keccak256(mintData), recipient, amount, deadline))` | resolved: the payer when the argument is zero |
 
 `amount` is the payment amount and `deadline` the payment's deadline. The Permit2
-`TokenPermissions` carry the currency and `payment.amount`, which the auction pulls exactly
-([AUC-19](../spec/stream-and-auctions.md#rules-and-invariants)).
+`TokenPermissions` carry the currency and `payment.amount`
+([AUC-19](../spec/stream-and-auctions.md#rules-and-invariants)). Edition-auction bids are ETH
+only and take no `Payment`.
 
 ## Protocol hashes recomputed off-chain
 

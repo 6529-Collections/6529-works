@@ -10,8 +10,13 @@ assertion, not the test's name; [Gaps](#gaps) lists what no campaign covers.
 
 Every campaign runs with `[profile.default.invariant]` in [`foundry.toml`](../../foundry.toml):
 `runs = 256`, `depth = 128` calls per run, `fail_on_revert = true`, `show_metrics = true`.
-Fuzz tests run 256 times (`[profile.default.fuzz] runs`). No `/// forge-config:` comment under
-`test/` overrides either.
+Fuzz tests run 256 times (`[profile.default.fuzz] runs`). Two `/// forge-config:` comments under
+`test/` change fuzz runs: `testFuzz_Clear_MatchesTheBruteForceOverUnits` runs 10,000 times, and
+`testFuzz_Settlement_EqualsTheLibraryClearing` 10,000 under the `deep` profile; none changes
+an invariant campaign's runs or depth. Three campaigns check their invariant after every
+fourth call (`check_interval = 4`; every call in the `deep` profile): the content store, the
+Stream lifecycle and the edition auction, whose checks read many contracts; each of their
+actions still checks its own effects.
 
 - **The rule.** Every contract that moves money gets stateful invariants of at least 256 runs
   of depth 128 ([AGENTS.md](../../AGENTS.md), [ADR 0001](../adr/0001-v1-scope.md#intended-behavior)).
@@ -23,9 +28,10 @@ Fuzz tests run 256 times (`[profile.default.fuzz] runs`). No `/// forge-config:`
   handler action, failing the campaign through `fail_on_revert`) or **after-campaign** (an
   `afterInvariant` hook, checked at the end of every run).
 - **Non-vacuity.** `test_HandlerReachesEveryPath` (economics),
-  `AuctionHandlerCoverage.test_EveryPathRuns`, `AuctionHaltsCoverage.test_HaltPathsRun` and
-  `ArtistRegistryInvariantTest.test_HandlerReachesContestResolveAndLapse` replay
-  campaign-shaped sequences and assert that every path the invariants rely on executes.
+  `AuctionHandlerCoverage.test_EveryPathRuns`, `AuctionHaltsCoverage.test_HaltPathsRun`,
+  `ArtistRegistryInvariantTest.test_HandlerReachesContestResolveAndLapse` and
+  `EditionAuctionInvariantTest.test_EveryActionRuns` replay campaign-shaped sequences and assert
+  that every path the invariants rely on executes.
 - **Running them.** `forge test --match-contract Invariant`; commands and CI jobs are on
   [Build, test and budgets](build-and-test.md).
 
@@ -144,7 +150,42 @@ suite's `afterInvariant` drives every sale to an end after each run.
 
 The fixed-price and Dutch campaigns (INV-SAL-1 to INV-SAL-11) left with their adapters
 ([ADR 0005](../adr/0005-stream-editions-auction.md)); they are at the `v1.0.0-rc.1` tag. The
-edition auction's campaigns come with its adapter.
+edition auction's campaign runs on the wired stack, below.
+
+## The edition auction on the wired stack
+
+[`EditionAuctionInvariant.t.sol`](../../test/integration/invariant/EditionAuctionInvariant.t.sol),
+handler [`EditionAuctionHandler`](../../test/integration/invariant/EditionAuctionHandler.sol).
+Everything is real: the whole v1 stack deployed by `DeployV1` with the committed genesis, the
+edition auction beside each master's English auction, `Editions`, the museum. Six edition
+masters by one artist with creator caps of none, none, 4, none, 6 and 2; five edition bidders
+on a narrow band of low steps (so steps collide, caps bind inside a step and raises leave holes
+at the cut step) and one bid in sixteen far above it; up to two books a run spread wider than
+one settle call scans (`wideBook`); two 1/1 bidders. The oracle is
+[`UniformClearingReference`](../../test/helpers/UniformClearingReference.sol): every bid
+expanded into unit bids, every count scanned, and the cut step filled in arrival order. The rules
+are on [Editions and sales][ed] (EA-n).
+
+| ID | Invariant | Test | Handler actions |
+| --- | --- | --- | --- |
+| INV-EA-1 | No unsold or extra copies: an edition's minted supply equals the units its claims minted, never exceeds the clearing count `k`, and equals `k` once every winning bid is claimed; the units every bid wins sum to `k`. | `invariant_editionAuction` | `bid`, `raise`, `withdraw`, `settle`, `claim` |
+| INV-EA-2 | ETH conservation: the adapter's balance is what bidders paid in minus refunds, withdrawals, revenue and credits paid out, and equals exactly what it owes: every unclaimed bid's escrow, less its won units at the clearing price once settled, plus the credits. | `invariant_editionAuction` | all |
+| INV-EA-3 | Clearing optimality and the breadth rule: before settlement the live count, price and best revenue equal the per-unit reference's (so the count is the largest within the margin of `R*`); at settlement the stored result equals it too, and its revenue is within the margin of `R*`. | `invariant_editionAuction`; handler check: `settle` | `bid`, `raise`, `withdraw`, `settle` |
+| INV-EA-4 | The cap: the count never exceeds a nonzero creator cap. | `invariant_editionAuction` | `bid`, `raise` |
+| INV-EA-5 | FIFO at the cut step: every claim mints exactly the reference's fill in arrival order of the units the clearing step sells, the marginal bid partly, and `bidOutcome` agrees with the claim; the departure order the handler sorts equals `settlementOrder` (a fresh settler's order), and a sweep completes. | handler check: `settle`, `claim`; `invariant_editionAuction` | `raise`, `withdraw`, `settle` (by one or more settlers), `claim` |
+| INV-EA-6 | The view equals settlement: the last live `clearing` before settling is the stored result, and the stored result never changes afterwards. | handler check: `settle`; `invariant_editionAuction` | `settle`, `claim` |
+| INV-EA-7 | The clocks: `endTimes` reads the 1/1's end live, `closeAt` is that end plus the offset, `endTime = max(closeAt, softEnd)` never before `closeAt` and never past the backstop, the soft end is the handler's model (a bid or raise in the window, none while the 1/1 is paused), and bidding and withdrawals are open exactly when the rules say. | `invariant_editionAuction` | `bid` (a quarter in the window), `raise`, `bidOneOfOne` (half in its anti-snipe window), `disputePause`, `resolveDispute`, `warp` |
+| INV-EA-8 | No settlement before the end, before the 1/1 settles, or before the edition exists when copies sold; a cancelled 1/1's sale refuses a bid once the adapter reads the cancellation (every cancel here lands 48 hours after the pause, past the cached close; LIM-EA-16 has the rest) and settles VOID. | handler check: `settle` | `settle`, `resolveDispute`, `createEdition` |
+| INV-EA-9 | A void sale refunds every bid in full and mints nothing. | handler check: `claim`; `invariant_editionAuction` (INV-EA-2) | `resolveDispute` (cancel), `settle`, `claim` |
+| INV-EA-10 | Firm bids and single claims: a withdrawal outside a 1/1 dispute pause, a stranger's raise, a payment one wei off, a second open, a second claim, all revert; a withdrawal during a pause refunds the whole escrow. | handler check: `withdraw`, `raise`, `bid`, `open`, `claim` | as named |
+| INV-EA-11 | Beside the 1/1: a 1/1 bid in its anti-snipe window extends the 1/1 and never moves the edition end earlier; an unbid 1/1 settles to the museum. | handler check: `bidOneOfOne`, `settleOneOfOne` | as named |
+| INV-EA-12 | Per-settler sweeps and completability: a settler's call moves only its own progress (`sweepOf`); an order that skips a departure is accepted but never finishes its sender's sweep; a reordered one reverts with `InvalidSettlementOrder`; after any of these, a keeper settling from its own address completes settlement within a bounded number of calls, and a later call by another settler returns true and changes nothing. | handler check: `settle` (one keeper, a handoff, a stranded sweep, a refused reorder, interleaved keepers) | `settle` |
+| INV-EA-13 | No claim while SETTLING: while a sale's scan or sweep is unfinished, its bidder's claim and a pushed claim both revert with `InvalidAuctionState`. A book wider than one call's scan (24 words) settles over calls: the first stores scan progress and no result; an early call may advance the scan before the edition exists, and the call that would finish it waits for the edition. | handler check: `settle` | `wideBook`, `settle` |
+
+`test_EveryActionRuns` replays campaign-shaped sequences from fixed seeds and asserts that every
+action and path ran, among them the soft close, a rationed cut step with a swept hole, a settler
+handoff, a stranded sweep, interleaved settlers, a void sale's refunds, a part-filled claim and
+an unbid 1/1 going to the museum.
 
 ## Stream's interned terms
 
@@ -252,6 +293,8 @@ Properties with no campaign of their own, or tested more directly outside one: b
 | PROP-ECO-8 | The royalty wallet's shares add up to 100,000. | [`EconomicsResolver.t.sol`](../../test/economics/EconomicsResolver.t.sol) `testFuzz_RoyaltySplitSharesAddUp` |
 | PROP-ECO-9 | A predicted wallet address equals the deployed one. | [`SplitFactory.t.sol`](../../test/economics/SplitFactory.t.sol) `testFuzz_PredictionMatchesDeployment` |
 | PROP-AUC-1 | A settlement splits the price exactly between seller and network, with the fee the `mulDiv` floor, the bid step the `mulDiv` ceiling, and the increment the larger of the share and the floor. | [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol) `testFuzz_Settle_SplitsExactly`, `testFuzz_Bid_IncrementIsMaxOfShareAndFloor`, `testFuzz_FeeMatchesMulDivFloor`, `testFuzz_StepMatchesMulDivCeil` |
+| PROP-EA-1 | On random books of bids and raises, capped and uncapped, under four margins, the edition auction's live clearing, every bid's outcome and the settlement order equal a brute-force per-unit reference, and settling and claiming every bid mints exactly the count and leaves the adapter empty; other settlers' skipped, partial and reversed sweeps never block the keeper or change an outcome. | [`EditionAuctionDifferential.t.sol`](../../test/integration/EditionAuctionDifferential.t.sol) `testFuzz_Clearing_EqualsTheBruteForceReference` |
+| PROP-EA-2 | The step ladder rises strictly and nests for every allowed steps-per-decade and base price. | [`StepLadder.t.sol`](../../test/interfaces/StepLadder.t.sol) `testFuzz_DecadesAndSteps`, `test_EveryLadderRisesAndNests` |
 | PROP-STR-1 | The royalty receiver is the factory's wallet, the amount matches `mulDiv`, and `royaltyInfo` never returns zero for lack of gas. | [`Stream.t.sol`](../../test/stream/Stream.t.sol) `testFuzz_royaltyInfo_isTheFactoryWallet`, `testFuzz_royaltyInfo_matchesMulDiv`, `testFuzz_royaltyInfo_neverZeroForLackOfGas` |
 
 ### Single use, uniqueness and authorization
@@ -295,7 +338,7 @@ Figures: [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table). Rul
 | PROP-GAS-4 | The harness's cold-account correction is exact (a `start` from a fully cold state equals the corrected figure after warming every account), adds nothing for accounts already cold, and refuses storage it does not cool. | [`GasHarness.t.sol`](../../test/integration/GasHarness.t.sol) `test_TheColdAccountCorrectionIsExact`, `test_NothingIsAddedForAccountsAlreadyCold`, `test_RequireCooledRefusesStorageItDoesNotCool` |
 | PROP-GAS-5 | The state-growth counter counts a slot once, ignores overwrites, zero-to-zero, reverted writes, out-of-gas and `INVALID` frames and transient storage, and counts `CREATE` and ETH sent to a fresh account or an empty precompile as new accounts. | [`StateGrowth.t.sol`](../../test/helpers/StateGrowth.t.sol) (24 tests) |
 | PROP-GAS-6 | With every record, media and locator cap filled on the real stack, Stream's `tokenURI` and Editions' `uri` cost at most 8M Prague gas (`TOKEN_URI_BUDGET`) and create no state. | [`TokenUriBudget.t.sol`](../../test/integration/TokenUriBudget.t.sol) `test_Budget_*`; `GasReport.t.sol` `test_Gas_TokenURIBySize`; [`RendererGas.t.sol`](../../test/content/renderer/RendererGas.t.sol) `RendererGasTest`, `RendererGasBudgetTest` |
-| PROP-GAS-7 | Worst-case bounded inputs fit the EIP-7825 cap of 16,777,216 gas in Prague gas, intrinsic and calldata included: claim batches and the largest split wallet; mint, `openRecord`, relicense with 16 consents, the longest locator, the preferred-locator scan and `syncOnChain`; `consume` and `registerPackage`; `createEdition`; settlement with every fallback; `stageChange`, `stageOverride` and `refreshStanding` (under half the cap); manifest registration and attestation at `MAX_CHUNKS`; genesis `configure`. | [`GasCap.t.sol`](../../test/economics/GasCap.t.sol), [`StreamTxCap.t.sol`](../../test/stream/StreamTxCap.t.sol), [`PackageRegistryGas.t.sol`](../../test/curation/PackageRegistryGas.t.sol), `Editions.t.sol` `test_Gas_CreateEditionWorstCaseFitsTxCap`, [`EnglishAuctionGas.t.sol`](../../test/sales/auction/EnglishAuctionGas.t.sol) `test_SettleGas_FitsTheTransactionCap`, [`EnglishAuctionHostile.t.sol`](../../test/sales/auction/EnglishAuctionHostile.t.sol) `test_SettleWorstCaseFitsTheFusakaCap`, [`ArtistRegistryStanding.t.sol`](../../test/identity/ArtistRegistryStanding.t.sol) `test_WorstCase_*`, `ContentStore.t.sol` `test_RegisterManifest_AtMaxChunksFitsTheTransactionGasCap`, `Base64Attest.t.sol` `test_Attest_AtMaxChunksEveryCallFitsTheTransactionGasCap`, [`Genesis.t.sol`](../../test/integration/Genesis.t.sol) `test_GenesisConfigureFitsTheTransactionCap`, [`GenesisConfig.t.sol`](../../test/governance/GenesisConfig.t.sol) `test_MaximumWiringFitsTheTransactionGasCap` |
+| PROP-GAS-7 | Worst-case bounded inputs fit the EIP-7825 cap of 16,777,216 gas in Prague gas, intrinsic and calldata included: claim batches and the largest split wallet; mint, `openRecord`, relicense with 16 consents, the longest locator, the preferred-locator scan and `syncOnChain`; `consume` and `registerPackage`; `createEdition`; every `settle` call of the edition auction's worst cases (every step of the widest ladder used, the cap binding at step 0, the longest departure sweep); settlement with every fallback; `stageChange`, `stageOverride` and `refreshStanding` (under half the cap); manifest registration and attestation at `MAX_CHUNKS`; genesis `configure`. | [`GasCap.t.sol`](../../test/economics/GasCap.t.sol), [`StreamTxCap.t.sol`](../../test/stream/StreamTxCap.t.sol), [`PackageRegistryGas.t.sol`](../../test/curation/PackageRegistryGas.t.sol), `Editions.t.sol` `test_Gas_CreateEditionWorstCaseFitsTxCap`, [`EditionAuctionGasReport.t.sol`](../../test/integration/EditionAuctionGasReport.t.sol) `test_Gas_EditionAuction_SettleWorstCase`, `test_Gas_EditionAuction_SettleWorstCase512`, `test_Gas_EditionAuction_SweepChunkWorstCase`, [`EnglishAuctionGas.t.sol`](../../test/sales/auction/EnglishAuctionGas.t.sol) `test_SettleGas_FitsTheTransactionCap`, [`EnglishAuctionHostile.t.sol`](../../test/sales/auction/EnglishAuctionHostile.t.sol) `test_SettleWorstCaseFitsTheFusakaCap`, [`ArtistRegistryStanding.t.sol`](../../test/identity/ArtistRegistryStanding.t.sol) `test_WorstCase_*`, `ContentStore.t.sol` `test_RegisterManifest_AtMaxChunksFitsTheTransactionGasCap`, `Base64Attest.t.sol` `test_Attest_AtMaxChunksEveryCallFitsTheTransactionGasCap`, [`Genesis.t.sol`](../../test/integration/Genesis.t.sol) `test_GenesisConfigureFitsTheTransactionCap`, [`GenesisConfig.t.sol`](../../test/governance/GenesisConfig.t.sol) `test_MaximumWiringFitsTheTransactionGasCap` |
 | PROP-GAS-8 | The VRF callback creates no storage slot and, repriced as ADR 0004 models Glamsterdam, uses at most half of `MIN_CALLBACK_GAS` (100,000). | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol) `test_Callback_UsesUnderHalfTheFloorUnderGlamsterdam` |
 
 ## Gaps
@@ -304,8 +347,10 @@ What no stateful campaign covers yet. Suites on the real, wired stack are being 
 [PR #62](https://github.com/6529-Collections/6529-works/pull/62); coverage, mutation testing
 and Halmos proofs are in [Testing](../testing/README.md).
 
+- **Refusing payees under the edition auction.** Its campaign pays an ordinary network fee
+  recipient and seller wallet; refused payouts through the escrow are unit tests.
 - **`AssetAllowlist`** runs for real only in the auction halts campaign; **`EconomicsResolver`**
-  is always mocked.
+  runs for real only in the wired campaigns.
 - **`WorkRecords`** runs only inside the Stream campaign, which never drives `relicense`,
   `repinRenderer`, `syncOnChain` or the preferred-location settings.
 - **`ContentStore`, `DependencyRegistry` and `Renderer`**: fuzz and unit tests only

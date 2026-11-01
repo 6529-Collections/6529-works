@@ -31,11 +31,12 @@ flowchart TB
     subgraph Sales [Sale adapters]
         direction LR
         EA[EnglishAuction]
+        UA[UniformEditionAuction]
     end
     subgraph Products
         direction LR
         S[Stream ERC-721] --- WR[WorkRecords]
-        S <-->|master and edition| E[Editions ERC-1155]
+        S <-->|master and edition| E[6529 Stream Editions ERC-1155]
     end
     subgraph Money
         direction LR
@@ -53,7 +54,7 @@ flowchart TB
 
     Signer -->|approves roots| Curation
     Artist -->|accepts, signs the move| Curation
-    Buyers -->|start, bid, buy, settle| Sales
+    Buyers -->|start, bid, settle, claim| Sales
     Sales -->|mint| Products
     Products -->|consume item| Curation
     Sales -->|pay, or escrow on failure| Money
@@ -65,10 +66,11 @@ flowchart TB
 A work's path: the artist's package is voted on and attested, each party accepts it, the lead
 artist signs "move to Stream", anyone starts the auction (which mints the token into auction
 custody and consumes the item), bids extend the clock near the end, and anyone settles. A master
-work's edition is created once its auction has settled, and is sold by the edition sale
-adapter governance admits ([ADR 0005](docs/adr/0005-stream-editions-auction.md)). By default,
-primary sales of both products pay 75% to the artist's side and 25% to the network, and
-royalties are 6.529% (ERC-2981, out of 100,000); a work keeps the terms it was minted with. The
+work's copies sell in a uniform-price edition auction beside its 1/1, which closes after the 1/1
+and sells as many copies as the bids support, at one price
+([ADR 0005](docs/adr/0005-stream-editions-auction.md)). By default, primary sales of both
+products pay 75% to the artist's side and 25% to the network, and royalties are 6.529%
+(ERC-2981, out of 100,000); a work keeps the terms it was minted with. The
 [protocol specification](docs/spec/README.md) describes every flow; the
 [architecture overview](docs/architecture.md) shows how the contracts fit together.
 
@@ -78,10 +80,11 @@ royalties are 6.529% (ERC-2981, out of 100,000); a work keeps the terms it was m
 | --- | --- | ---: |
 | [`Stream`](src/stream/README.md) | The shared ERC-721: mints consumed items, locks terms, royalties, the edition link | 727 |
 | [`WorkRecords`](src/stream/README.md) | Each work's record, license, locators, preferred location, finalize and renderer pin | 619 |
-| [`Editions`](src/editions/README.md) | The shared ERC-1155, linked to Stream masters | 349 |
+| [`Editions`](src/editions/README.md) | 6529 Stream Editions, the shared ERC-1155, linked to Stream masters | 349 |
 | [`PackageRegistry`](src/curation/README.md) | Package roots, party consent, the move signature, consume-once items, content uniqueness | 359 |
 | [`Eip712CurationVerifier`](src/curation/README.md) | Accepts curation signers' EIP-712 approvals | 103 |
 | [`EnglishAuction`](src/sales/README.md), [`EnglishAuctionLens`](src/sales/README.md) | Stream's primary sale: anti-snipe clock, pull refunds, pending claims, dispute pause; its views answered by a lens | 790 + 293 |
+| [`UniformEditionAuction`](src/sales/README.md), [`UniformEditionAuctionLens`](src/sales/README.md) | The edition auction: firm ETH bids on a step ladder beside the 1/1, one clearing price, FIFO at a capped step, claims | 826 + 553 |
 | [`EconomicsResolver`](src/economics/README.md), [`AssetAllowlist`](src/economics/README.md) | Terms for new works, fee recipients, currencies and increment floors | 212 + 122 |
 | [`SplitFactory`](src/economics/README.md), [`SplitWallet`](src/economics/README.md) | Immutable pull-payment wallets at predicted addresses | 100 + 143 |
 | [`RevenueEscrow`](src/economics/README.md), [`ClaimRouter`](src/economics/README.md), [`ReleaseVerifier`](src/economics/README.md) | Failed-payment escrow, batch claims, signed releases | 89 + 99 + 41 |

@@ -583,6 +583,41 @@ sequenceDiagram
 - A burned or unminted token reverts with `UnknownWork`. The call stays under 50,000 gas
   ([ADR 0004, the table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
 
+### An edition master's 1/1 beside its editions
+
+An `EDITION_MASTER`'s 1/1 sells in this auction while its copies sell in the edition auction
+beside it (D140, D141). The edition auction only reads this auction: nothing here waits for the
+editions, and the 1/1's rules are unchanged. The edition rules are `EA-1` to `EA-16` in
+[Editions and sales](editions-and-sales.md#timing-alongside-the-11); its offsets and windows are
+under [its parameters](editions-and-sales.md#the-edition-auction).
+
+```mermaid
+sequenceDiagram
+    participant Keeper as Anyone (keeper)
+    participant Auction as EnglishAuction (the 1/1)
+    participant EA as UniformEditionAuction (the copies)
+    participant Ed as Editions
+    Keeper->>Auction: start(stream, mintData)
+    Keeper->>EA: open(editions, workId, abi.encode(item)), in the same batch
+    Note over Auction,EA: both take bids; the edition close is the 1/1 end plus closeOffset
+    Note over Auction: a 1/1 bid in its anti-snipe window extends the 1/1 end
+    Note over EA: the edition close moves with it; late edition bids add the soft close
+    Keeper->>Auction: settle(saleId): to the high bidder; unbid, Stream moves it to the museum
+    Keeper->>Ed: createEdition(workId, item, root, proof)
+    Keeper->>EA: settle(editionSaleId, order), once its own end has passed
+```
+
+- **The 1/1 closes first.** The edition close is the 1/1's current end plus the offset, so a
+  1/1 extended by anti-snipe or resumed after a dispute pause moves it; edition bids never move
+  the 1/1.
+- **The editions settle second.** Edition settlement waits for the 1/1 to be SETTLED, so the
+  1/1's end is final, and, when copies sold, for the edition to exist; `createEdition` needs the
+  settled master ([AUC-11](#rules-and-invariants)).
+- **Independent outcomes.** Copies sell whether or not the 1/1 drew a bid: an unbid 1/1 goes to
+  the museum ([settle with no bid](#settle-with-no-bid)) and its editions settle all the same. A
+  1/1 dispute pause lets edition bidders withdraw, and a cancel voids the edition auction with
+  full refunds.
+
 ### Collections and marketplace metadata
 
 - **`createCollection(name, metadataHash)`** (PLATFORM) creates the next collection ID, from 1.

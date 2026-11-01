@@ -15,6 +15,15 @@ Governed delays are named by [delay class](#delay-class), and shares and rates a
 
 ## 0-9
 
+### 6529 Network Museum
+
+The account that receives a 6529 Stream 1/1 whose sale ends unsold, unbid or frozen out
+(`EconomicsResolver.museum`, set by FUNDS_SETTER): 6529 Stream itself moves the work there when
+the adapter reports the outcome (`settlePrimary`, owner decision 17). Another token's unsold work
+goes to its creator.
+
+See: [stream and auctions](spec/stream-and-auctions.md).
+
 ### 6529 Stream
 
 The one shared, network-curated ERC-721 of 1/1 works (`Stream`), sold by English auction, with
@@ -24,8 +33,9 @@ See: [stream and auctions](spec/stream-and-auctions.md).
 
 ### 6529 Stream Editions
 
-The one shared ERC-1155 for editions (`Editions`), each anchored by a 6529 Stream
-[edition master](#edition-master). Named 6529 Editions before ADR 0005 (D139).
+The one shared ERC-1155 for editions (`Editions`, symbol `STREAMEDITIONS`), each anchored by a
+6529 Stream [edition master](#edition-master) and sold by the [edition auction](#edition-auction).
+Named 6529 Editions before ADR 0005 (D139).
 
 See: [editions and sales](spec/editions-and-sales.md).
 
@@ -153,6 +163,13 @@ Bound calls use no [role](#role).
 
 See: [governance](spec/governance.md).
 
+### breadth margin
+
+The share of the best revenue the edition auction's clearing may give up to sell more copies:
+the count is the largest whose revenue is within the margin of the best (governed).
+
+See: [editions and sales](spec/editions-and-sales.md#the-clearing).
+
 ### burn
 
 Destroying a token (`IMintTarget.burn`). A 6529 Stream token burns only when an upheld dispute
@@ -211,6 +228,13 @@ A stateless contract that batches split-wallet releases (`ClaimRouter`). It neve
 redirects funds.
 
 See: [economics and payouts](spec/economics-and-payouts.md).
+
+### clearing price
+
+The one price every winner of an [edition auction](#edition-auction) pays per copy: the price of
+the lowest winning step.
+
+See: [editions and sales](spec/editions-and-sales.md#the-clearing).
 
 ### collaborator
 
@@ -300,7 +324,8 @@ See: [identity and recovery](spec/identity-and-recovery.md).
 
 ### copy
 
-One unit of an edition's ERC-1155 supply, minted by the edition's admitted sale adapter.
+One unit of an edition's ERC-1155 supply, minted when a winning
+[edition auction](#edition-auction) bid is claimed.
 
 See: [editions and sales](spec/editions-and-sales.md).
 
@@ -321,9 +346,9 @@ See: [rendering and tokenURI](spec/rendering-and-tokenuri.md).
 ### creator
 
 The lead artist's [active authority](#active-authority) in a token's
-[PrimaryTerms](#primaryterms). It receives an unsold auction token.
+[PrimaryTerms](#primaryterms). It receives an unsold federated auction token.
 
-See: [editions and sales](spec/editions-and-sales.md).
+See: [stream and auctions](spec/stream-and-auctions.md).
 
 ### credit
 
@@ -380,6 +405,13 @@ sale starts. It requires a zero price.
 
 See: [economics and payouts](spec/economics-and-payouts.md).
 
+### cut step
+
+The step at which a creator's cap stops the clearing inside the step, so only some of its units
+win; they fill in queue [position](#position) order.
+
+See: [editions and sales](spec/editions-and-sales.md#the-cut-step).
+
 ## D
 
 ### delay class
@@ -402,6 +434,14 @@ The 100,000 parts every share and rate is out of (`Splits.DENOMINATOR`), so the 
 is 6,529.
 
 See: [economics and payouts](spec/economics-and-payouts.md).
+
+### departure hint
+
+The order, by [position](#position), of a [cut step](#cut-step)'s raises and withdrawals, which
+a settler supplies so settlement can close the holes they left. Each settler sweeps on its own:
+`settlementOrderFor(saleId, settler)` computes the rest of its sweep.
+
+See: [editions and sales](spec/editions-and-sales.md#the-cut-step).
 
 ### dependency registry
 
@@ -456,8 +496,16 @@ See: [economics and payouts](spec/economics-and-payouts.md).
 
 ### edition
 
-A 6529 Stream Editions token ID, equal to its [edition master](#edition-master)'s Stream token ID.
-Anyone creates it once the master's primary sale has settled.
+A 6529 Stream Editions token ID, equal to its [edition master](#edition-master)'s Stream token
+ID. Anyone creates it once the master's primary sale has settled.
+
+See: [editions and sales](spec/editions-and-sales.md).
+
+### edition auction
+
+The uniform-price auction that sells an edition's copies (`UniformEditionAuction`): public,
+firm bids of a quantity at a [step](#step-ladder), one [clearing price](#clearing-price), and
+exactly as many copies as it sells. It runs beside the master's 1/1 and closes after it.
 
 See: [editions and sales](spec/editions-and-sales.md).
 
@@ -784,7 +832,7 @@ See: [storage](integrators/storage.md).
 
 ### LockedTerms
 
-The terms a sale adapter locks for one sale: token, ID, currency, price, seller and fee terms.
+The terms the English auction locks for one sale: token, ID, currency, price, seller and fee terms.
 
 See: [stream and auctions](spec/stream-and-auctions.md).
 
@@ -960,6 +1008,13 @@ and appends platform statements, as the only writer of DISPUTE_OUTCOME; a guardi
 
 See: [trust assumptions](audit/trust-assumptions.md).
 
+### position
+
+A bid's place in its step's queue in a capped [edition auction](#edition-auction): the units that
+entered the step before it. A raise rejoins at the back of its new step.
+
+See: [editions and sales](spec/editions-and-sales.md#the-cut-step).
+
 ### Prague gas
 
 A whole transaction's gas priced with Prague's schedule, cold at the start: the unit of every
@@ -1109,22 +1164,22 @@ See: [economics and payouts](spec/economics-and-payouts.md).
 
 ### sale adapter
 
-A shared contract that sells tokens through `IMintTarget`: the English auction, and for
-editions the uniform-price edition auction of ADR 0005 once it lands. It pays out with the
-escrow as fallback.
+A shared contract that sells tokens through `IMintTarget`: the English auction and the
+[edition auction](#edition-auction). It pays out with the escrow as fallback.
 
 See: [buying, bidding and settling](integrators/buying-bidding-settling.md).
 
 ### sale ID
 
-A sale's number in its adapter: a hash of `(token, tokenId)` (`saleIdOf`).
+A sale's number in its adapter: a hash of `(token, tokenId)` (`saleIdOf`), on both auctions.
 
 See: [architecture](architecture.md#identifiers-and-hashes).
 
 ### sale kind
 
 A `bytes32` label naming a sale method, claimed by its adapter: `ENGLISH_AUCTION` or
-`UNIFORM_AUCTION`; `FIXED_PRICE` and `DUTCH` are reserved labels of removed adapters.
+`UNIFORM_AUCTION`. A token mints only for an admitted adapter of its terms' kind; `FIXED_PRICE`
+and `DUTCH` are reserved labels of rc.1's removed adapters.
 
 See: [`SaleTypes.sol`](../src/interfaces/types/SaleTypes.sol).
 
@@ -1162,10 +1217,11 @@ See: [stream and auctions](spec/stream-and-auctions.md).
 
 ### settle
 
-`EnglishAuction.settle`, permissionless after the end: it delivers the token, pays out and marks
-the primary sale settled.
+`settle` on either auction, permissionless after the end. The English auction delivers the token,
+pays out and marks the primary sale settled; the edition auction stores its clearing and pays
+out, and claims then mint the copies.
 
-See: [stream and auctions](spec/stream-and-auctions.md).
+See: [stream and auctions](spec/stream-and-auctions.md), [editions and sales](spec/editions-and-sales.md).
 
 ### signed release
 
@@ -1179,6 +1235,13 @@ The value a curation signer's approval must bind. A disable or re-enable starts 
 older approvals never count again.
 
 See: [curation](spec/curation.md).
+
+### soft close
+
+The edition auction's anti-snipe: a bid in its last window moves the close to that window after
+the bid, never past a governed backstop.
+
+See: [editions and sales](spec/editions-and-sales.md#timing-alongside-the-11).
 
 ### split wallet
 
@@ -1257,6 +1320,13 @@ Who a statement speaks as: ARTIST (per the [artist resolver](#artist-resolver)),
 zero-delay CURATOR or PLATFORM holder.
 
 See: [disputes and statements](spec/disputes-and-statements.md).
+
+### step ladder
+
+The fixed prices an edition bid may name, step by step from a base price, from a table of E192
+mantissas: exact, strictly increasing, and the same in every client.
+
+See: [editions and sales](spec/editions-and-sales.md#the-step-ladder).
 
 ### sticky standing snapshot
 

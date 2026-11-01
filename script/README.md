@@ -141,6 +141,9 @@ independent of the admins they check:
   the admins, and no earlier than 48 hours after it (`unpause`, `resume` and `cancel` count
   the delay from the pause; re-admitting a deprecated currency waits 14 days from the
   deprecation).
+- **The edition auction's pause stops new opens only.** Running edition sales keep taking
+  bids, settle and pay out; a sale nobody opened before its close never sells copies, so lift a
+  pause before the 1/1s that started under it close.
 - **Deprecating an auction's currency.** A deprecation freezes the live auctions in that
   currency: nothing settles, and their high bidders may withdraw. To keep them alive,
   re-admit the currency between day 14 and day 30 after the deprecation (`admitAsset` is in
@@ -401,6 +404,7 @@ Genesis sets them. The wiring makes ETH (`address(0)`) the revision-0 default fo
 therefore start in the genesis block:
 
 - `EnglishAuction.start` reads the `PRODUCT_STREAM` default.
+- Edition auctions take ETH only, whatever the `PRODUCT_EDITIONS` default.
 
 Verify reads every default back at the revision genesis produced.
 
@@ -713,6 +717,10 @@ them so that nothing waits ([ADR 0005](../docs/adr/0005-stream-editions-auction.
    settler sweeps on its own: a keeper that sent a wrong order strands only its own progress
    (`sweepOf`), and settles from another address. A call after the sale settled returns
    `true`.
+   **Settle directly, or through the keeper's own contract, never through a shared public
+   relayer** such as Multicall3: the sweep slot belongs to `msg.sender`, so every caller of a
+   shared relayer shares one slot, and one caller's wrong order strands the sweep for all of
+   them. A keeper's own batching contract is its own settler.
 4. **Optionally push claims** with `claimBidFor(saleId, bidId)`: copies go to the bidder and the
    refund is credited to it.
 

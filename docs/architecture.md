@@ -25,8 +25,8 @@ decisions win. The precise contract surfaces are the interfaces in
         v                         v                           v
   +-----------------+    +------------------+       +--------------------+
   | IPackageRegistry|--->| ICurationVerifier|       |  IEnglishAuction   |  shared sale
-  | approve, accept |    | (v1: ICuration-  |       |  edition sale      |  adapters
-  | consume, unique |    |  SignerVerifier) |       |  (ADR 0005)        |  (ISaleAdapter)
+  | approve, accept |    | (v1: ICuration-  |       |  IUniformEdition-  |  adapters
+  | consume, unique |    |  SignerVerifier) |       |  Auction           |  (ISaleAdapter)
   +-----------------+    +------------------+       +--------------------+
      |  ^   bound: Stream, Editions                    | IMintTarget  |
      |  |                                              v              v
@@ -65,7 +65,7 @@ decisions win. The precise contract surfaces are the interfaces in
 | `IEditions` (+ `IMintTarget`) | 6529 Stream Editions ERC-1155 (`src/editions/`) | §6 |
 | `IPackageRegistry`, `ICurationVerifier` (v1: `ICurationSignerVerifier`) | package registry, v1 verifier (`src/curation/`) | §3 |
 | `IContentStore`, `IDependencyRegistry`, `IRenderer` | content store, dependency registry, renderer (`src/content/`) | §8 |
-| `ISaleAdapter`, `IEnglishAuction`, `IUniformEditionAuction` (frozen, ADR 0005) | shared sale adapters (`src/sales/`) | §5, §6, §12 |
+| `ISaleAdapter`, `IEnglishAuction`, `IUniformEditionAuction` | shared sale adapters (`src/sales/`) | §5, §6, §12; ADR 0005 |
 | `IEconomicsResolver` and the economics lane's interfaces | money routing (`src/economics/`) | §5, §7 |
 | `IArtistRegistry` (+ `IArtistRoleResolver`), `IConsolidationSource` | artist registry, consolidation adapter (`src/identity/`) | §11 |
 | `IStatementLog` | statement log (`src/records/`) | §12, §15 |
@@ -107,7 +107,7 @@ signatures, each in its contract's domain.
 | product ID | `PRODUCT_STREAM`, `PRODUCT_EDITIONS`, `PRODUCT_FEDERATED` (`keccak256` of the name) |
 | token ID | one global sequence on 6529 Stream, from 1, assigned at sale start, never reused |
 | edition ID | equal to the master's Stream token ID |
-| sale ID | auctions: `uint256(keccak256(abi.encode(token, tokenId)))` |
+| sale ID | both auctions: `uint256(keccak256(abi.encode(token, tokenId)))`; the edition auction's token is 6529 Stream Editions and its ID the edition ID |
 | kinds | `bytes32` labels: `SaleKind.*` and `StatementKinds.*` |
 
 Shares and rates use a denominator of 100,000 (6.529% is 6,529). The currency
@@ -229,13 +229,20 @@ default when the sale starts".
    - It locks economics, records `(stream, workId, contentHash)` and calls
      `IStream.linkEdition`.
    - A burned or disputed master never gets an edition.
-3. Copies are minted through `IEditions.mint` by an admitted sale adapter whose
-   sale kind the edition's terms name, within the creator's optional cap. Each
-   edition is bound to one adapter: the one whose sale opened it
-   (`bindMinter`), or else the first to mint it. rc.2 sells editions by the
-   uniform-price edition auction (ADR 0005), admitted once it lands; a new sale
-   method is a new adapter, never a new Editions.
-4. The edition renders its master's media and record. `WorkRecords` calls
+3. The edition auction runs beside the master's 1/1: anyone opens it from the
+   1/1's start (the keeper batches it with `start`), anyone bids a quantity at a
+   ladder step in ETH, and it closes a governed offset after the 1/1's final end, or
+   later under its own soft close. Settlement needs the 1/1 settled and, when
+   copies sold, the edition created (step 2); it computes one clearing price and
+   count and pays the seller and the network.
+4. Each claim of a winning bid mints through `IEditions.mint`, so the edition
+   reaches exactly the count sold; losers' escrow is refunded in full
+   ([editions and sales](spec/editions-and-sales.md)). Editions mints only for an
+   adapter whose sale kind the edition's terms name, within the creator's
+   optional cap. Each edition is bound to one adapter: the one whose sale opened
+   it (`bindMinter`), or else the first to mint it. A new sale method is a new
+   adapter, never a new Editions.
+5. The edition renders its master's media and record. `WorkRecords` calls
    `notifyMasterUpdated` when the master changes, and `notifyAllUpdated` after a
    global or collection preferred-location change (as does Stream after a new
    default renderer), so Editions re-emits ERC-4906.
