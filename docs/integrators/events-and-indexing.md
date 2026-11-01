@@ -93,6 +93,7 @@ ERC-721 events come from OpenZeppelin 5.7.0's `ERC721`; ERC-4906 events from `IE
 | `RoyaltyRateChanged(uint256 indexed tokenId, uint32 previous, uint32 next)` | `0x2114cdf5…` | `setRoyaltyRate`, callable only by the bound work-records satellite, from `WorkRecords.setRoyaltyRate` | The ERC-2981 rate (out of 100,000) changed; the receiver never does ([AUC-6][auc]). Followed by the satellite's `RoyaltyRateSet`. |
 | `DefaultRendererSet(address previous, address next, bytes32 codeHash)` | `0xe2fab5e9…` | The constructor (`previous` zero) and `setDefaultRenderer` (SUCCESSOR_SETTER, 30 days) | The renderer for every unfinalized work; `codeHash` is pinned. Followed by both tokens' `BatchMetadataUpdate`. Changes every unfinalized work's state hash, with no per-token event. |
 | `DependencySet(bytes32 indexed kind, address previous, address next)` | `0xb584a2a6…` | `setDependency` (SUCCESSOR_SETTER, 30 days, compare-and-set) | Stream's package registry, artist registry, economics resolver or entropy module (`kind` is the right-padded ASCII name, such as `"ECONOMICS"`) was replaced; new works use `next`. Existing tokens are unaffected, so no metadata event follows. 6529 Stream Editions and `WorkRecords` read the pointer from Stream and follow at once (owner decision 16). |
+| `WorkRescued(uint256 indexed tokenId, address indexed adapter, address museum)` | `0x77ac3c64…` | `rescueToMuseum` (SUCCESSOR_SETTER, 30 days) | A work stranded in a removed sale adapter's custody, unsettled 90 days after the removal, moved to the museum (owner decision 20); it follows the work's `Transfer`. `primarySale` then reports UNBID; no `PrimarySaleSettled` is emitted, since the adapter never reported an outcome. |
 | `EditionLinked(uint256 indexed tokenId, address indexed editions, uint256 editionId)` | `0xbab490db…` | `linkEdition`, callable only by bound 6529 Stream Editions, from `createEdition` | The master's edition exists; `editionId` always equals `tokenId`. Followed by `MetadataUpdate(tokenId)`. |
 | `Bound(bytes32 indexed name, address target)` | `0xd18d9295…` | `bindWorkRecords` (`"WORK_RECORDS"`), `bindEditions` (`"EDITIONS"`), run by the genesis wiring | Once per name, never changed. |
 | `OwnershipTransferred(address indexed previousOwner, address indexed newOwner)` | `0x8be0079c…` | The constructor (from zero) and `setOwner` (FUNDS_SETTER, 14 days) | The marketplace owner (`owner()`); no on-chain powers. |
@@ -835,6 +836,7 @@ structs expanded to tuples: 132 signatures.
 | `WorkFinalized(uint256,address,bytes32)` | `0x01445583576e00c75dcf7097e261819caa20e55dc9609e8d62000ae1ea472986` | WorkRecords |
 | `WorkMinted(uint256,uint256,bytes32,uint64,uint256,uint8,bytes32,bytes32,bytes32,bytes32)` | `0x2f52e67a66ac559d9d69c3e1de3044d92d5dfc95d07d41c4a9f46d06ece8393f` | Stream |
 | `WorkOnChainComplete(uint256)` | `0x15405c6beca1812d5599c3c71668ef2f894705b2271421a61bceb70c6fcb1428` | WorkRecords |
+| `WorkRescued(uint256,address,address)` | `0x77ac3c6455fa9305b1c12dc5c6cefeb7417b9d5ed5009a19a6bb464e41428ea8` | Stream |
 
 Not deployed in v1 ([`IFederationRegistry`](../../src/interfaces/IFederationRegistry.sol)):
 

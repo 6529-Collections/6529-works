@@ -75,6 +75,9 @@ import { SpdxId } from "./SpdxId.sol";
 contract Stream is ERC721, AccessManaged, IStream {
     /// @notice The longest accepted collection name, in bytes.
     uint256 public constant MAX_NAME_BYTES = 256;
+    /// @dev How long after its removal a sale adapter's stranded works may be moved to the
+    ///      museum (`rescueToMuseum`, owner decision 20).
+    uint256 private constant RESCUE_DELAY = 90 days;
     /// @notice The gas `rendererOf` gives the records satellite's `pinnedRenderer`: several
     ///         times the cold reads it makes, so only a fault exhausts it.
     uint256 public constant RECORDS_GAS = 100_000;
@@ -129,12 +132,15 @@ contract Stream is ERC721, AccessManaged, IStream {
 
     /// @dev `id` is assigned on first admission and kept, so a removed adapter still settles
     ///      the sales it started. Its sale kind is recorded then too: in full in `_minterKinds`,
-    ///      which `primaryTerms` reports, and as `kindKey` (`_kindKey`, 232 bits of its hash) in
+    ///      which `primaryTerms` reports, and as `kindKey` (`_kindKey`, 192 bits of its hash) in
     ///      this word, which `mint` reads anyway, so the kind check costs a mint no extra slot.
+    ///      `removedAt` is when governance removed the adapter, zero while it is admitted
+    ///      (`rescueToMuseum`, owner decision 20).
     struct Minter {
         bool admitted;
         uint16 id;
-        uint232 kindKey;
+        uint40 removedAt;
+        uint192 kindKey;
     }
 
     /// @dev The four dependencies as a mint uses them, resolved from one read of
@@ -384,7 +390,8 @@ contract Stream is ERC721, AccessManaged, IStream {
     ///      `ISaleAdapter`, no EIP-7702 delegation and a nonzero sale kind, which the first
     ///      admission records with the adapter's index. Removal stops new mints only: the adapter
     ///      keeps its index, so it can still settle (`settlePrimary`) and cancel (`burn`)
-    ///      the sales it started; a live sale is never stranded.
+    ///      the sales it started; a live sale is never stranded. Removal records its time, in
+    ///      the same word, from which `rescueToMuseum` counts; admission clears it.
     function setAdmittedMinter(address adapter, bool admitted) external restricted {
         Minter storage minter = _minters[adapter];
         if (admitted) {
@@ -396,6 +403,9 @@ contract Stream is ERC721, AccessManaged, IStream {
                 (minter.id, minter.kindKey) = (id, _kindKey(kind));
                 _minterKinds[id] = kind;
             }
+            minter.removedAt = 0;
+        } else if (minter.admitted) {
+            minter.removedAt = uint40(block.timestamp);
         }
         minter.admitted = admitted;
         emit AdmittedMinterSet(adapter, admitted);
@@ -441,15 +451,41 @@ contract Stream is ERC721, AccessManaged, IStream {
         t.flags = flags;
         emit PrimarySaleSettled(tokenId, outcome, buyer, currency, price);
         if (outcome != PrimaryOutcome.SOLD) {
-            address museum = IEconomicsResolver(economics()).museum();
-            if (museum == address(0)) revert ERC721InvalidReceiver(museum);
-            address from = _update(museum, tokenId, address(0));
+            address from;
+            (settlement.holder, from) = _toMuseum(tokenId);
             if (from != msg.sender) revert ERC721IncorrectOwner(msg.sender, tokenId, from);
-            settlement.holder = museum;
         }
         settlement.seller = t.seller;
         settlement.feeRecipient = _feeRecipients[shared.feeRecipientId - 1];
         settlement.feeShare = shared.feeShare;
+    }
+
+    /// @inheritdoc IStream
+    /// @dev SUCCESSOR_SETTER role (the 30-day class). A work is stranded only while its minting
+    ///      adapter holds it unsettled after governance removed that adapter: a collector's
+    ///      work fails the holder check, and a settled one the `SETTLED` flag. Settling it
+    ///      here (UNBID: neither outcome bit) closes `settlePrimary` and `burn` to the adapter.
+    function rescueToMuseum(uint256 tokenId) external restricted {
+        TokenData storage t = _live(tokenId);
+        address adapter = _ownerOf(tokenId);
+        Minter storage minter = _minters[adapter];
+        uint256 removedAt = minter.removedAt;
+        if (
+            t.flags & SETTLED != 0 || minter.id != _terms[t.termsId].minterId || removedAt == 0
+                || block.timestamp < removedAt + RESCUE_DELAY
+        ) revert WorkNotRescuable(tokenId);
+        t.flags |= SETTLED;
+        (address museum,) = _toMuseum(tokenId);
+        emit WorkRescued(tokenId, adapter, museum);
+    }
+
+    /// @dev Moves `tokenId` to the museum the economics resolver names now (a zero museum
+    ///      reverts, `ERC721InvalidReceiver`), with no receiver callback; returns the museum and
+    ///      the previous holder.
+    function _toMuseum(uint256 tokenId) private returns (address museum, address from) {
+        museum = IEconomicsResolver(economics()).museum();
+        if (museum == address(0)) revert ERC721InvalidReceiver(museum);
+        from = _update(museum, tokenId, address(0));
     }
 
     // ----------------------------------------------------------------- collections and works
@@ -852,15 +888,12 @@ contract Stream is ERC721, AccessManaged, IStream {
         if (renderer != address(0) && renderer.code.length == 0) renderer = address(0);
     }
 
-    /// @dev A sale kind as `Minter.kindKey` holds it: the low 232 bits of its keccak256, so two
+    /// @dev A sale kind as `Minter.kindKey` holds it: the low 192 bits of its keccak256, so two
     ///      kinds share a key only through a hash collision.
-    function _kindKey(bytes32 kind) private pure returns (uint232 key) {
+    function _kindKey(bytes32 kind) private pure returns (uint192 key) {
         assembly ("memory-safe") {
             mstore(0, kind)
-            key := and(
-                keccak256(0, 0x20),
-                0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
-            )
+            key := and(keccak256(0, 0x20), 0xffffffffffffffffffffffffffffffffffffffffffffffff)
         }
     }
 
