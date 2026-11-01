@@ -119,8 +119,7 @@ library DeployGuards {
     error PolicyMismatch(string what);
     /// @notice The genesis names something this deployment does not have.
     error DroppedFromGenesis(string what);
-    /// @notice On mainnet, a council or curation-signer role is held by the deployer EOA
-    ///         (owner decision 18).
+    /// @notice On mainnet, a role is held by the deployer EOA (owner decision 18).
     error HolderIsTheDeployer(string role, address account);
     /// @notice On mainnet, one account holds roles of two groups that must be held apart: the
     ///         community council's, the security council's or the curation signer's (owner
@@ -314,13 +313,15 @@ library DeployGuards {
     }
 
     /// @notice Owner decision 18, at mainnet genesis (`Deploy.s.sol` and `Verify.s.sol` run it
-    ///         on chain 1 only): the community council, the security council and the curation
-    ///         signers ({roleGroup}) are held by distinct accounts, and none of them by the
-    ///         deployer EOA. An account may hold several roles of one group (the community
-    ///         council's Safe holds ADMIN and the setters); it may not hold roles of two groups
-    ///         (`RoleGroupsShareAHolder`), and the deployer may hold none of them
-    ///         (`HolderIsTheDeployer`). The operational roles (STORAGE_OPERATOR, MINTER, KEEPER,
-    ///         PLATFORM, CURATOR) belong to no group.
+    ///         on chain 1 only): the deployer EOA holds no role at all (`HolderIsTheDeployer`),
+    ///         and the community council, the security council and the curation signers
+    ///         ({roleGroup}) are held by distinct accounts (`RoleGroupsShareAHolder`). An account
+    ///         may hold several roles of one group: the community council's Safe holds ADMIN and
+    ///         the setters, and each of the security council's three guardian Safes holds GUARDIAN
+    ///         and PAUSER ({checkHolders} keeps their signers disjoint, so one lost or compromised
+    ///         Safe never takes the veto or the pause away). The operational roles
+    ///         (STORAGE_OPERATOR, MINTER, KEEPER, PLATFORM, CURATOR) belong to no group; who holds
+    ///         them on mainnet is an open owner decision.
     function checkRoleGroups(string memory json, address deployer) internal view {
         uint256 holders;
         while (vm.keyExistsJson(json, _holder(holders, ""))) ++holders;
@@ -330,9 +331,9 @@ library DeployGuards {
         for (uint256 i; i < holders; ++i) {
             string memory role = vm.parseJsonString(json, _holder(i, ".role"));
             address account = vm.parseJsonAddress(json, _holder(i, ".account"));
+            if (account == deployer) revert HolderIsTheDeployer(role, account);
             uint8 group = roleGroup(role);
             if (group == 0) continue;
-            if (account == deployer) revert HolderIsTheDeployer(role, account);
             for (uint256 j; j < i; ++j) {
                 if (accounts[j] == account && groups[j] != group) {
                     revert RoleGroupsShareAHolder(account, roles[j], role);

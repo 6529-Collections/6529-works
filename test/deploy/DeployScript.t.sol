@@ -540,6 +540,14 @@ contract DeployScriptTest is Test {
             vm.expectRevert(reasons[i]);
             deployer.prepare();
         }
+        // The deployer holds no role at all on mainnet, an operational one included.
+        _genesisFile(_moveHolder(_filled(), "PLATFORM", "51", address(this)));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.HolderIsTheDeployer.selector, "PLATFORM", address(this)
+            )
+        );
+        deployer.prepare();
         // The committed example's groups pass the mainnet check.
         DeployGuards.checkRoleGroups(_filled(), address(this));
     }

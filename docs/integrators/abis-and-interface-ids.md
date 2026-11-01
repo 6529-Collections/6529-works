@@ -137,6 +137,7 @@ surface on `main`; more lands with the edition auction and the museum.
 | [`IPackageRegistry.sol`](../../src/interfaces/IPackageRegistry.sol) | `consume` also returns the lead artist's active authority, `(bytes32 itemHash, uint256 artistId, address authority)`; its selector and the interface ID are unchanged. |
 | [`IEntropyModule.sol`](../../src/interfaces/IEntropyModule.sol) | New `isDeliveredContent(bytes32)` and `seedOfContent(bytes32)`, the one-word reads by content hash that 6529 Stream's `mint` and `WorkRecords.openRecord` use. |
 | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) | New `setPackageRegistry(address,address)` (`0x00752cf1`) and event `PackageRegistrySet(address,address)`: the only `register` caller is replaceable by governance with Stream's package registry (owner decision 16). |
+| [`IStream.sol`](../../src/interfaces/IStream.sol) | New `rescueToMuseum(uint256)` (`0xe9c794a4`), event `WorkRescued(uint256,address,address)` and error `WorkNotRescuable(uint256)` (owner decision 20); the ID becomes `0x37709465`. |
 
 | Function or event | r3 | `main` |
 | --- | --- | --- |
@@ -257,7 +258,7 @@ selectors.
 | Interface | Source | ID on `main` | ID on r2 | Deployed contract that answers `supportsInterface` |
 | --- | --- | --- | --- | --- |
 | `IMintTarget` | [`IMintTarget.sol`](../../src/interfaces/IMintTarget.sol) | `0xba4ae536` | `0x4f4f5133` | Stream, Editions |
-| `IStream` | [`IStream.sol`](../../src/interfaces/IStream.sol) | `0xdeb700c1` | `0x4b62279d` | Stream |
+| `IStream` | [`IStream.sol`](../../src/interfaces/IStream.sol) | `0x37709465` | `0x4b62279d` | Stream |
 | `IWorkRecords` | [`IWorkRecords.sol`](../../src/interfaces/IWorkRecords.sol) | `0xc109676d` | `0x3f3d6835` | WorkRecords |
 | `IEditions` | [`IEditions.sol`](../../src/interfaces/IEditions.sol) | `0xe183b26f` | `0xa5bd946e` | Editions |
 | `ISaleAdapter` | [`ISaleAdapter.sol`](../../src/interfaces/ISaleAdapter.sol) | `0x312dc1e1` | `0x312dc1e1` | EnglishAuction, UniformEditionAuction (and FixedPriceSale, DutchSale on r1 to r3) |
