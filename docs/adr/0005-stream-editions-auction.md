@@ -454,8 +454,9 @@ before each merge.
   Stream work, so that registry is only partly replaceable (LIM-GV-16). The genesis contracts stay
   immutables, with a replacement bit each in the counter word every mint already reads, so a
   start with no replacement reads no extra slot: about +820 Prague gas. With the #80 review's
-  fix (`mint` compares the kind recorded at admission, about +1,530), the binding row is
-  341,923, 8,077 under 350K ([ADR 0004's table](0004-gas-budgets-under-glamsterdam.md#the-table)).
+  fix (`mint` compares the kind recorded at admission, about +1,530), an artist's first
+  two-party start with a bid is 341,761, and with a VRF seed 349,680, 320 under 350K
+  ([ADR 0004's table](0004-gas-budgets-under-glamsterdam.md#the-table)).
 
 - **Metadata survives a faulty records satellite (31 October 2026).** Stream is permanent and
   `WorkRecords` is bound once, so `rendererOf` reads `pinnedRenderer` with a fixed gas cap and

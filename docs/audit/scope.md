@@ -17,7 +17,7 @@ an audit.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 9,817 non-blank, non-comment lines in 81 files under `src/` (budget: 12,000) |
+| Source lines | 9,831 non-blank, non-comment lines in 81 files under `src/` (budget: 12,000) |
 | Deployed contracts | 21 per deployment, plus one `SplitWallet` per payee configuration, deployed on demand |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
@@ -33,18 +33,18 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 630 | 21,654 | 23,463 | 2,922 |
-| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 622 | 22,979 | 25,674 | 1,597 |
-| `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 313 | 17,485 | 19,160 | 7,091 |
+| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 645 | 21,873 | 23,682 | 2,703 |
+| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 619 | 22,994 | 25,688 | 1,582 |
+| `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 313 | 17,485 | 19,159 | 7,091 |
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 774 | 24,524 | 26,864 | **52** |
 
 ### Curation, identity and records
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | 358 | 13,951 | 15,367 | 10,625 |
+| `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | 358 | 13,950 | 15,366 | 10,626 |
 | `Eip712CurationVerifier` | [`src/curation/Eip712CurationVerifier.sol`](../../src/curation/Eip712CurationVerifier.sol) | 103 | 5,694 | 6,385 | 18,882 |
-| `ArtistRegistry` | [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol) | 561 | 20,329 | 21,597 | 4,247 |
+| `ArtistRegistry` | [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol) | 561 | 20,328 | 21,596 | 4,248 |
 | `ConsolidationAdapter` | [`src/identity/ConsolidationAdapter.sol`](../../src/identity/ConsolidationAdapter.sol) | 133 | 3,059 | 3,371 | 21,517 |
 | `StatementLog` | [`src/records/StatementLog.sol`](../../src/records/StatementLog.sol) | 314 | 11,742 | 13,038 | 12,834 |
 | `VrfEntropyModule` (optional) | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol) | 218 | 8,184 | 10,122 | 16,392 |
@@ -67,7 +67,7 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 | --- | --- | ---: | ---: | ---: | ---: |
 | `ContentStore` | [`src/content/ContentStore.sol`](../../src/content/ContentStore.sol) | 240 | 7,257 | 7,285 | 17,319 |
 | `DependencyRegistry` | [`src/content/DependencyRegistry.sol`](../../src/content/DependencyRegistry.sol) | 66 | 3,007 | 3,452 | 21,569 |
-| `Renderer` | [`src/content/Renderer.sol`](../../src/content/Renderer.sol) | 769 | 24,397 | 24,712 | **179** |
+| `Renderer` | [`src/content/Renderer.sol`](../../src/content/Renderer.sol) | 770 | 24,365 | 24,680 | **211** |
 
 ### Governance
 
@@ -112,7 +112,7 @@ The "Used by" column is a reading aid; the import graph is authoritative.
 
 ### Interfaces and shared types
 
-1,763 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
+1,764 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
 [`src/economics/interfaces/`](../../src/economics/interfaces/), plus the 14-line Chainlink
 coordinator interface [`src/entropy/IVRFCoordinatorV2Plus.sol`](../../src/entropy/IVRFCoordinatorV2Plus.sol).
 `WorksHashing` is counted here and listed with the libraries above. They carry the external

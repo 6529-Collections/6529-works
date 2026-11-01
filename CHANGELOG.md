@@ -21,9 +21,10 @@
 - 6529 Stream: `rendererOf` reads the records satellite with a fixed gas cap (`RECORDS_GAS`) and
   serves the default renderer on any fault of it but a changed pinned renderer, which still
   fails closed; one read instead of two. The gas check covers a cold satellite account, so the
-  satellite always gets all of `RECORDS_GAS`. Stream grows by 711 bytes with the two entries above;
-  `start` costs about 2,350 more Prague gas (the binding row 341,923, 8,077 under 350K),
-  `settle` 2,281, `createEdition` 5,032, with no new slot
+  satellite always gets all of `RECORDS_GAS`. Stream grows by 930 bytes with the two entries
+  above; `start` costs about 2,200 more Prague gas (an artist's first two-party start with a bid
+  341,761; with a VRF seed 349,680, now a gated row, 320 under 350K), `settle` 2,280,
+  `createEdition` 4,966, with no new slot
   ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
 - 6529 Stream: the 1/1 sale method is pluggable (ADR 0005, owner decision 15). `mint` takes any
   admitted adapter whose `saleKind()` is the item's sale kind, and `_checkItem` requires only a
