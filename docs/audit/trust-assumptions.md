@@ -183,8 +183,9 @@ by the genesis wiring and then locked ([GV-24][gv]).
   ([AUC-29][auc]), except a token sent with a
   plain `transferFrom` ([LIM-SAL-10][lim-sal]).
 - **An Editions adapter mints what its kind sells.** Editions mints for any admitted adapter whose
-  `saleKind()` equals an edition's terms, within the creator's cap; once one adapter has minted an
-  edition, only it may mint that edition again (owner decision 14, [ED-5][ed]). The edition
+  `saleKind()` equals an edition's terms, within the creator's cap; once an adapter is bound to an
+  edition (when its sale opens, or else at its first mint), only it may mint that edition (owner
+  decision 14, [ED-5][ed]). The edition
   auction mints only what its settled clearing sold ([EA-9][ed]); admitting another adapter of the
   same kind is a 30-day action, and it could never add copies to a sale the first one ran.
 

@@ -678,8 +678,8 @@ and Editions' `TransferSingle` per claim
 | --- | --- |
 | `UnknownAuction(saleId)`, `AuctionExists(saleId)` | No sale with this ID; or a second `open`. |
 | `NoOneOfOneAuction(master, id)` | The 1/1 auction does not exist, or was cancelled. |
-| `BiddingClosed(saleId, endTime)` | The end passed, or the 1/1 was cancelled (seen by a bid within `softWindow` of the close; earlier bids are refunded at the void). |
-| `InvalidStep(step)`, `InvalidQuantity(quantity)` | A step past the ladder or a raise that does not move up; a zero quantity, or units past 2^32 − 1. |
+| `BiddingClosed(saleId, endTime)` | The end passed, or the 1/1 was cancelled (seen by a bid within `softWindow` of the close; earlier bids are refunded at the void); for `open`, the edition close passed. |
+| `InvalidStep(step)`, `InvalidQuantity(quantity)` | A step past the ladder or a raise that does not move up; a zero quantity, units past 2^32 − 1, or a bid ID past 2^32 − 1. |
 | `IncorrectPayment(expected, paid)` | `msg.value` is not exactly the escrow or the top-up. |
 | `UnknownBid(saleId, bidId)`, `NotBidder(caller)` | No live bid with this ID; the caller is not its bidder. |
 | `WithdrawalsClosed(saleId)` | A withdrawal outside a 1/1 dispute pause. |
@@ -687,6 +687,7 @@ and Editions' `TransferSingle` per claim
 | `InvalidSettlementOrder(index)` | The order is out of range or not in increasing position. |
 | `InvalidAuctionState(saleId, status)` | The sale is not in a state that allows the call, such as a claim before settlement. |
 | `SalePaused()`, `TargetNotAllowed(token)`, `InvalidSaleTerms(token, id)` | `open` while paused, for a token not served, or with terms that are not this kind's. |
+| `InvalidRecipient(to)`, `NothingToClaim(account, currency)` | `withdrawBid`, `claimBid` or `claim` to zero, or `claimBid` to the adapter; `claim` with no credit. |
 | `ClaimFailed(to)` | `to` refused the ETH; the bid stays claimable. |
 
 ### Gas
