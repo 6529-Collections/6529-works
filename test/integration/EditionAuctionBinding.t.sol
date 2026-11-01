@@ -31,9 +31,7 @@ contract EditionAuctionBindingTest is EditionAuctionStack {
     /// @dev A second uniform auction, admitted on Editions and listing it, as an upgrade would
     ///      deploy one (its 30-day admission waited out before any sale starts).
     function _secondAdapter() internal returns (UniformEditionAuction a) {
-        a = new UniformEditionAuction(
-            address(manager), address(escrow), address(editions), address(auction), _editionConfig()
-        );
+        a = _newEditionAuction();
         _govern(
             hotAdmin,
             address(editions),

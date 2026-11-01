@@ -51,6 +51,9 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         uint256 pos;
         bool withdrawn;
         bool claimed;
+        /// @dev When it was placed or last raised (ADR 0005 §12: a withdrawal during a pause
+        ///      needs a placement in a minute that ended before the pause began).
+        uint256 placedAt;
     }
 
     /// @dev A departure from a step's queue: a raise out of it or a withdrawal.
@@ -213,6 +216,10 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
     function disputePause(uint256 seed) external {
         (bool found, uint256 i) = _pieceWith1of1(seed, IEnglishAuction.AuctionState.ACTIVE);
         if (!found || pieces[i].pauseUsed) return;
+        // A dispute is raised some time after the bids it concerns: a minute on, so the bids
+        // already placed may leave during the pause (ADR 0005 §12), and later ones may not.
+        vm.warp(block.timestamp + 1 minutes);
+        if (_state1of1(i) != IEnglishAuction.AuctionState.ACTIVE) return;
         vm.prank(guardian1);
         auction.pause(pieces[i].saleId, keccak256(abi.encode("edition auction dispute", i)));
         pieces[i].pauseUsed = true;
@@ -351,6 +358,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             ghostIn += cost;
             _depart(i, b.step, b.pos, b.qty);
             b.step = next;
+            b.placedAt = block.timestamp;
             b.pos = pieces[i].cap == 0 ? 0 : enteredUnits[i][next];
             enteredUnits[i][next] += b.qty;
             liveUnits[i][next] += b.qty;
@@ -362,7 +370,8 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
     }
 
     /// @notice A bidder withdraws an edition bid in full, which only a dispute pause of the 1/1
-    ///         allows (bids are firm otherwise).
+    ///         allows, and only for a bid placed or last raised in a minute (from the sale's
+    ///         open) that ended before the pause began (bids are firm otherwise).
     function withdraw(uint256 seed, uint256 bidSeed) external {
         for (uint256 k; k < MASTERS; ++k) {
             uint256 i = (seed % MASTERS + k) % MASTERS;
@@ -371,13 +380,16 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             uint256 index = bidSeed % book[i].length;
             GhostBid storage b = book[i][index];
             if (b.withdrawn || b.claimed) continue;
-            bool paused = _state1of1(i) == IEnglishAuction.AuctionState.PAUSED;
+            bool paused = _eligible(i, b);
+            if (_lens().canWithdraw(p.editionSaleId, index + 1) != paused) {
+                _violation("canWithdraw disagrees with the withdrawal rule");
+            }
             uint256 escrow = b.qty * _price(i, b.step);
             uint256 before = b.bidder.balance;
             vm.prank(b.bidder);
             try ea.withdrawBid(p.editionSaleId, index + 1, b.bidder) {
                 if (!paused) {
-                    _violation("a bid was withdrawn outside a dispute pause");
+                    _violation("an ineligible bid was withdrawn");
                     return;
                 }
                 if (b.bidder.balance - before != escrow) _violation("a withdrawal was not exact");
@@ -386,7 +398,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
                 b.withdrawn = true;
                 ++hits["withdraw"];
             } catch {
-                if (paused) _violation("a withdrawal during a dispute pause failed");
+                if (paused) _violation("an eligible withdrawal during a dispute pause failed");
                 ++hits["withdrawRefused"];
             }
             return;
@@ -525,7 +537,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             if (id != book[i].length + 1) _violation("bid IDs are not sequential");
             ghostIn += cost;
             uint256 pos = p.cap == 0 ? 0 : enteredUnits[i][step];
-            book[i].push(GhostBid(bidder, step, qty, pos, false, false));
+            book[i].push(GhostBid(bidder, step, qty, pos, false, false, block.timestamp));
             enteredUnits[i][step] += qty;
             liveUnits[i][step] += qty;
             _widen(i, step);
@@ -762,7 +774,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
     }
 
     function _lens() internal view returns (IUniformEditionAuctionLens) {
-        return IUniformEditionAuctionLens(editionAuction.lens());
+        return IUniformEditionAuctionLens(address(editionAuction));
     }
 
     function _reversed(uint256[] memory list) internal pure returns (uint256[] memory out) {
@@ -976,6 +988,19 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             if (pieces[i].started && _state1of1(i) == state) return (true, i);
         }
         return (false, 0);
+    }
+
+    /// @dev The withdrawal rule, modelled independently of the adapter: the 1/1 is paused, and
+    ///      the bid's minute (from the sale's open, capped at 65,535) is below the pause's.
+    function _eligible(uint256 i, GhostBid storage b) internal view returns (bool) {
+        IEnglishAuction.Auction memory o = auction.auction(pieces[i].saleId);
+        if (o.state != IEnglishAuction.AuctionState.PAUSED) return false;
+        uint256 opened = ea.auction(pieces[i].editionSaleId).openedAt;
+        uint256 placed = b.placedAt > opened ? (b.placedAt - opened) / 60 : 0;
+        uint256 paused = o.pausedAt > opened ? (o.pausedAt - opened) / 60 : 0;
+        if (placed > type(uint16).max) placed = type(uint16).max;
+        if (paused > type(uint16).max) paused = type(uint16).max;
+        return placed < paused;
     }
 
     function _state1of1(uint256 i) internal view returns (IEnglishAuction.AuctionState) {

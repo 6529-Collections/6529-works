@@ -31,6 +31,7 @@ import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import { UniformEditionAuction } from "src/sales/UniformEditionAuction.sol";
+import { UniformEditionAuctionLens } from "src/sales/UniformEditionAuctionLens.sol";
 import { EnglishAuctionLens } from "src/sales/EnglishAuctionLens.sol";
 import { Stream } from "src/stream/Stream.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
@@ -170,8 +171,6 @@ library DeployV1 {
             assign(d, name, _create2(name, salt(p, name), initcode(p, d, name)));
             if (_eq(name, "GovernanceConfigurator")) {
                 d.manager = d.configurator.worksManager();
-            } else if (_eq(name, "UniformEditionAuction")) {
-                d.editionAuctionLens = d.editionAuction.lens();
             } else if (_eq(name, "EnglishAuction")) {
                 d.englishAuctionLens = EnglishAuctionLens(d.englishAuction.lens());
             } else if (_eq(name, "ContentStore")) {
@@ -199,8 +198,6 @@ library DeployV1 {
             assign(d, name, a);
             if (_eq(name, "GovernanceConfigurator")) {
                 d.manager = WorksAccessManager(vm.computeCreateAddress(a, 1));
-            } else if (_eq(name, "UniformEditionAuction")) {
-                d.editionAuctionLens = vm.computeCreateAddress(a, 1);
             } else if (_eq(name, "EnglishAuction")) {
                 d.englishAuctionLens = EnglishAuctionLens(vm.computeCreateAddress(a, 1));
             }
@@ -210,7 +207,7 @@ library DeployV1 {
     /// @notice The contracts `deploy` creates with CREATE2, in order. The entropy module is
     ///         included only with a VRF coordinator; the manager is created by the configurator.
     function order(Params memory p) internal pure returns (string[] memory list) {
-        string[20] memory all = [
+        string[21] memory all = [
             "GovernanceConfigurator",
             "ContentStore",
             "DependencyRegistry",
@@ -230,6 +227,7 @@ library DeployV1 {
             "WorkRecords",
             "Editions",
             "EnglishAuction",
+            "UniformEditionAuctionLens",
             "UniformEditionAuction"
         ];
         bool vrf = p.vrfCoordinator != address(0);
@@ -386,12 +384,29 @@ library DeployV1 {
                 )
             );
         }
+        if (n == keccak256("UniformEditionAuctionLens")) {
+            // Its own transaction (F8): the adapter pins it. Stateless and bound to no adapter.
+            return _code(
+                type(UniformEditionAuctionLens).creationCode,
+                abi.encode(d.editions, d.stream, d.englishAuction, d.revenueEscrow)
+            );
+        }
         if (n == keccak256("UniformEditionAuction")) {
-            // It reads 6529 Stream and the economics resolver from Editions; its target is
+            // It reads 6529 Stream from Editions and pins the lens deployed just before it, by
+            // the code hash read from the chain (as Editions pins Stream's); its target is
             // genesis wiring, like the English auction's.
+            address lens = d.editionAuctionLens;
             return _code(
                 type(UniformEditionAuction).creationCode,
-                abi.encode(m, d.revenueEscrow, d.editions, d.englishAuction, p.editionAuction)
+                abi.encode(
+                    m,
+                    d.revenueEscrow,
+                    d.editions,
+                    d.englishAuction,
+                    lens,
+                    lens.codehash,
+                    p.editionAuction
+                )
             );
         }
         revert UnknownContract(name);

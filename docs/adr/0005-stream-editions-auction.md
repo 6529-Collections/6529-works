@@ -5,7 +5,7 @@ Status: Accepted by the owner, 31 October 2026, who approved every recommended d
 acting for the repository owner). Amends [ADR 0001](0001-v1-scope.md),
 [ADR 0003](0003-build-time-decisions.md) and [ADR 0004](0004-gas-budgets-under-glamsterdam.md).
 The text below is the record as accepted; changes made during the rc.2 delivery are dated
-amendments (§6 to §11), and each amended passage points to its amendment.
+amendments (§6 to §12), and each amended passage points to its amendment.
 
 This is this repository's ADR 0005. The "ADR 0005 (randomness)" that ADR 0001 cites under
 "Superseded or amended" is the 6529Stream repository's, a different record.
@@ -250,7 +250,9 @@ claim bound it to one of them, and the other sale's winners could never claim, t
 seller had been paid.
 
 - **`IEditions.bindMinter(editionId, item)`.** The caller must be admitted, and its
-  `saleKind()` must be the edition's: the stored kind once the edition exists, and before
+  `saleKind()` (since [§12](#12-amendment-1-november-2026-fix-pass-a-of-the-rc2-review), the
+  kind recorded at its first admission) must be the edition's: the stored kind once the
+  edition exists, and before
   that the kind in `item`, which must be the master's EDITION_MASTER item (its hash equal to
   the item hash 6529 Stream stored). An unbound edition is bound to the caller
   (`EditionMinterBound`); a call by the bound adapter is a no-op; any other reverts with
@@ -399,6 +401,63 @@ and amends the decision 15 note under [Open items](#open-items).
 - **Cost** ([ADR 0004's table](0004-gas-budgets-under-glamsterdam.md#the-table)): the English
   `settle` with a bid writes one new slot (the sale record) and costs more; with no bid it costs
   less. Also useful for TDH: P29 shares the Works pool by realized ETH price.
+
+### 12. Amendment (1 November 2026): fix pass A of the rc.2 review
+
+Made by fix pass A (the edition auction, its lens, 6529 Stream Editions and `EditionRules`)
+after the rc.2 seven-lens review.
+
+- **Withdrawals during a dispute pause (markets M-1; amends decision 12 and §2).** Decision 12
+  opened withdrawals while the 1/1 is paused so that bidders already committed to a contested
+  work can leave it. As built, any bid could leave, including one placed during the pause, so a
+  pause let anyone post demand, induce firm raises, and withdraw in the pause's last second at
+  no cost (decision 2's "no spoofing" lapsed), and a flash-funded bid-and-withdraw could fill a
+  step's 32-bit position counter for good (clearing Info 1). Now a bid may be withdrawn only if
+  it was placed, or last raised (a raise is new demand), in a minute, counted from the sale's
+  open, that ended before the pause began. Each bid word keeps that minute in its 16 spare bits
+  (capped at 65,535, which never counts as early); the adapter reads the 1/1's `pausedAt` when a
+  withdrawal is asked. A bid placed during the pause, in the pause's own minute, or in the
+  withdrawal's block stays, so decision 12's purpose holds and spoofing does not. The lens's
+  `canWithdraw(saleId, bidId)` answers for one bid; `EndTimes.withdrawalsOpen` still means "the
+  1/1 is paused". `withdrawBid` reads the 1/1 through `auction()`, about 10,000 more gas (the
+  regression ceiling is 103,000).
+- **One source of truth for edition economics (LC-1, MONEY-L1, G-1).** The lens held a copy of
+  the economics resolver taken at construction, while Editions reads 6529 Stream's current
+  one, so after a resolver replacement (owner decision 16) a sale paid the old split and its
+  edition reported the new one. `IEditions.bindMinter` now returns the `WorkTerms` it locks
+  (an existing edition's as recorded, `royaltyRate` zero until the edition exists), and the
+  adapter pays exactly those; the lens keeps only a preview of them to refuse unpayable terms
+  at open (CALLS-1), read from Stream's current resolver. The selector, and so the `IEditions`
+  interface ID, is unchanged.
+- **The kind recorded at admission (governance L-3).** Editions now compares the kind an
+  adapter reported at its first admission (kept through removal and re-admission, as 6529
+  Stream does since decision 15), not its live `saleKind()`, and refuses to admit an adapter
+  that reports none.
+- **The lens in its own transaction (gas M-2).** The adapter's single deployment carried the
+  lens's creation (42,006 code bytes), about 68M gas under Glamsterdam: over a 60M block. The
+  lens is now deployed first, in its own CREATE2 entry of `DeployV1`, and is bound to no
+  adapter: it reads every sale from its caller. The adapter's constructor takes the lens and its
+  expected code hash and checks the code hash, the code and that the lens's immutables
+  (Editions, Stream, English auction, escrow) are its own.
+- **Long departure logs (gas M-1).** The lens reads a log four entries per storage word and
+  sorts with a heap in Yul. A keeper pages with `settlementOrderFor(saleId, settler,
+  fromPosition, max)`, `O(n log max)`: 21.9M gas for a page of 96 at 10,000 departures. Measured
+  through the adapter with the log in its worst order, `clearing` and `quote` cost about 5,000
+  gas a departure at the cut step and stay within a 50M `eth_call` up to about 9,000;
+  `settlementOrder` up to about 7,000 and `departures` up to about 8,000.
+- **Edition params are at most two words (gas L-1).** `EditionRules.MAX_PARAMS_BYTES` is 64,
+  down from 1,024: the master's 1/1 `start` carries the item, and at 1,024 bytes the binding
+  start row (an artist's first two-party work with a bid and a VRF seed) was 361,211 Prague
+  gas, over its budget; at 256, 348,132 and at 128, 345,988, both over the row's 5,000 margin.
+  At 64 every start row stays inside 350,000 less the margin: that row is 344,887 for a master
+  at the bound, and the steady-state master start 268,959. The design rule: a sale method
+  whose parameters do not fit two words commits to a hash of them in `params` and takes the
+  full data when its sale opens, checking it against that hash, for example
+  `params = abi.encode(keccak256(extra))` with `open`'s `data = abi.encode(item, extra)`.
+  Once the edition exists, the hash is the one it records (`edition(id).terms.params`), never
+  the caller's copy of the item: `bindMinter` checks a caller's item against 6529 Stream only
+  before the edition exists. `test_F10_AnAdapterTakesLongParamsByHash` and
+  `test_F10_TheRecordedHashGovernsOnceTheEditionExists` prove the path with a mock adapter.
 
 ## What this amends
 

@@ -33,7 +33,7 @@ import { UniformEditionAuctionLens } from "./UniformEditionAuctionLens.sol";
 /// @notice The uniform-price edition auction (ADR 0005; D138-D141), the one sale of 6529 Stream
 ///         Editions. See {IUniformEditionAuction} for the rules; this contract adds the storage
 ///         layout and the bounds. Every view of a sale lives on its lens
-///         ({UniformEditionAuctionLens}), which the constructor creates.
+///         ({UniformEditionAuctionLens}), deployed on its own and pinned by the constructor.
 /// @dev Storage (`IUniformEditionAuctionStorage.Space` documents every word). Per sale: a state word
 ///      written at open and updated by every bid, raise and withdrawal (`SaleWord`), a payout word
 ///      written at open (`PayoutWord`) and a result word written at settlement (`ResultWord`).
@@ -56,7 +56,9 @@ import { UniformEditionAuctionLens } from "./UniformEditionAuctionLens.sol";
 ///
 ///      `open` hands its token-specific data to the lens (`masterTerms`), which checks the
 ///      package item against 6529 Stream and the 1/1, and returns what to lock, so no
-///      package-item codec is compiled here (EIP-170). The lens is this contract's own creation.
+///      package-item codec is compiled here (EIP-170); it pays the economics 6529 Stream
+///      Editions returns from `bindMinter` (F1). The lens is deployed in its own transaction,
+///      so this contract's deployment fits a block (F8), and pinned here: code hash and wiring.
 ///      For the same reason every view of `IUniformEditionAuction` is answered by the lens: the
 ///      adapter forwards the call's own calldata to it ({answeredByLens}) and returns its answer
 ///      unchanged, so callers use one address and one interface.
@@ -149,7 +151,7 @@ contract UniformEditionAuction is
     mapping(uint256 saleId => ResultWord) private _results;
     /// @dev A scan in progress, packed as `ScanWord` is (from the least significant bit).
     mapping(uint256 saleId => uint256) private _scans;
-    mapping(uint256 saleId => mapping(uint256 bidId => IUniformEditionAuction.Bid)) private _bids;
+    mapping(uint256 saleId => mapping(uint256 bidId => BidWord)) private _bids;
     mapping(uint256 saleId => mapping(uint256 word => uint256)) private _live;
     mapping(uint256 saleId => mapping(uint256 key => uint256)) private _departures;
     mapping(address account => uint256) private _credits;
@@ -162,14 +164,20 @@ contract UniformEditionAuction is
     /// @param authority_ The AccessManager governing the setters and the pause.
     /// @param escrow_ The revenue escrow for refused payouts.
     /// @param editions_ 6529 Stream Editions (ERC-165 `IEditions`, not EIP-7702 delegated); its
-    ///        6529 Stream and that Stream's economics resolver are read from it.
+    ///        6529 Stream is read from it.
     /// @param englishAuction_ The English auction (ERC-165 `IEnglishAuction`) that sells the 1/1s.
+    /// @param lens_ The lens, deployed beforehand in its own transaction (so this contract's
+    ///        deployment fits a block): it must have code, no EIP-7702 delegation, the code hash
+    ///        `lensCodeHash` and this adapter's Editions, Stream, English auction and escrow.
+    /// @param lensCodeHash The lens's reviewed code hash.
     /// @param config_ The initial governed parameters.
     constructor(
         address authority_,
         address escrow_,
         address editions_,
         address englishAuction_,
+        address lens_,
+        bytes32 lensCodeHash,
         IUniformEditionAuction.AuctionConfig memory config_
     ) AccessManaged(authority_) {
         Dependency.check(escrow_);
@@ -177,15 +185,17 @@ contract UniformEditionAuction is
         Dependency.check(englishAuction_, type(IEnglishAuction).interfaceId);
         address stream_ = IEditions(editions_).stream();
         Dependency.check(stream_, type(IStream).interfaceId);
-        address economics_ = IStream(stream_).economics();
-        Dependency.check(economics_, type(IEconomicsResolver).interfaceId);
+        Dependency.checkPinned(lens_, lensCodeHash);
+        IUniformEditionAuctionLens l = IUniformEditionAuctionLens(lens_);
+        if (
+            l.editions() != editions_ || l.stream() != stream_
+                || l.englishAuction() != englishAuction_ || l.escrow() != escrow_
+        ) revert Dependency.InvalidDependency(lens_);
         escrow = escrow_;
         englishAuction = englishAuction_;
         editions = editions_;
         stream = stream_;
-        lens = address(
-            new UniformEditionAuctionLens(editions_, stream_, englishAuction_, economics_, escrow_)
-        );
+        lens = lens_;
         _setConfig(config_);
     }
 
@@ -223,16 +233,19 @@ contract UniformEditionAuction is
             // forge-lint: disable-next-line(unsafe-typecast)
             revert IUniformEditionAuction.BiddingClosed(saleId, uint64(closeAt));
         }
-        _bindEdition(id, data);
-        // Safe: the 1/1 stores its end in 32 bits, and ids are below 2^32 (checked above).
+        // F1: the sale pays exactly the economics 6529 Stream Editions locks for the edition and
+        // returns, their one source (the lens checked a preview of them above).
+        (address seller, address feeRecipient, uint256 feeShare) = _bindEdition(id, data);
+        // Safe: the 1/1 stores its end in 32 bits, and ids are below 2^32 (checked above); a fee
+        // share is at most 100,000 (checked by the lens).
         // forge-lint: disable-start(unsafe-typecast)
         a.status = IUniformEditionAuction.AuctionStatus.OPEN;
         a.termsId = st.termsId;
         a.maxCount = m.maxCount;
         a.oneOfOneEnd = uint32(m.oneOfOneEnd);
         a.openedAt = uint32(block.timestamp);
-        uint16 feeRecipientId = m.feeShare == 0 ? 0 : _feeRecipientId(token, id, m.feeRecipient);
-        _payouts[saleId] = PayoutWord(m.seller, m.feeShare, feeRecipientId, uint32(id));
+        uint16 feeRecipientId = feeShare == 0 ? 0 : _feeRecipientId(token, id, feeRecipient);
+        _payouts[saleId] = PayoutWord(seller, uint32(feeShare), feeRecipientId, uint32(id));
         emit SaleStarted(
             saleId,
             token,
@@ -286,8 +299,13 @@ contract UniformEditionAuction is
         (a.liveUnits, a.bidCount) = (uint32(units), uint32(bidId));
         uint32 position = _enter(saleId, a.maxCount != 0, step, quantity);
         _sales[saleId] = a;
-        _bids[saleId][bidId] =
-            IUniformEditionAuction.Bid(msg.sender, uint16(step), uint32(quantity), position);
+        _bids[saleId][bidId] = BidWord(
+            msg.sender,
+            uint16(step),
+            uint32(quantity),
+            position,
+            _minutes(a.openedAt, block.timestamp)
+        );
         // forge-lint: disable-end(unsafe-typecast)
         emit IUniformEditionAuction.BidPlaced(
             saleId, bidId, msg.sender, step, quantity, position, endTime
@@ -301,7 +319,7 @@ contract UniformEditionAuction is
     /// @param newStep A step above the bid's and below `stepCount`.
     function raise(uint256 saleId, uint256 bidId, uint256 newStep) external payable nonReentrant {
         SaleWord memory a = _open(saleId);
-        IUniformEditionAuction.Bid memory b = _bidOf(saleId, bidId);
+        BidWord memory b = _bidOf(saleId, bidId);
         if (b.bidder != msg.sender) revert IUniformEditionAuction.NotBidder(msg.sender);
         IUniformEditionAuction.AuctionConfig memory t = _terms[a.termsId];
         if (newStep <= b.step || newStep >= t.stepCount) {
@@ -317,16 +335,21 @@ contract UniformEditionAuction is
         _leave(saleId, capped, b.step, b.position, b.quantity);
         uint32 position = _enter(saleId, capped, newStep, b.quantity);
         _sales[saleId] = a;
-        IUniformEditionAuction.Bid storage stored = _bids[saleId][bidId];
-        // forge-lint: disable-next-line(unsafe-typecast)
-        (stored.step, stored.position) = (uint16(newStep), position);
+        BidWord storage stored = _bids[saleId][bidId];
+        // A raise is new demand: it restarts the bid's placement minute. Safe: below
+        // `stepCount`, at most 512.
+        // forge-lint: disable-start(unsafe-typecast)
+        (stored.step, stored.position, stored.placedMinute) =
+        (uint16(newStep), position, _minutes(a.openedAt, block.timestamp));
+        // forge-lint: disable-end(unsafe-typecast)
         emit IUniformEditionAuction.BidRaised(
             saleId, bidId, msg.sender, b.step, newStep, position, paid, endTime
         );
     }
 
-    /// @notice Withdraws the caller's bid while the 1/1 is paused for a dispute, sending its
-    ///         escrow to `to` (`IUniformEditionAuction.withdrawBid`).
+    /// @notice Withdraws the caller's bid while the 1/1 is paused for a dispute, if the bid was
+    ///         placed (or last raised) before the pause, sending its escrow to `to`
+    ///         (`IUniformEditionAuction.withdrawBid`).
     /// @param saleId The sale ID.
     /// @param bidId The bid's ID.
     /// @param to The address that receives the escrow.
@@ -334,11 +357,17 @@ contract UniformEditionAuction is
         if (to == address(0)) revert InvalidRecipient(to);
         SaleWord storage a = _sales[saleId];
         _requireStatus(saleId, a.status, IUniformEditionAuction.AuctionStatus.OPEN);
-        IUniformEditionAuction.Bid memory b = _bidOf(saleId, bidId);
+        BidWord memory b = _bidOf(saleId, bidId);
         if (b.bidder != msg.sender) revert IUniformEditionAuction.NotBidder(msg.sender);
-        if (_oneOfOne(saleId).state != IEnglishAuction.AuctionState.PAUSED) {
-            revert IUniformEditionAuction.WithdrawalsClosed(saleId);
-        }
+        // Only a bid placed (or last raised) in a minute that ended before the 1/1's dispute
+        // pause began may leave (decision 12, as amended): demand added during the pause, or in
+        // the pause's own minute, is firm, so a pause cannot be used to fake demand, and a bid
+        // is never withdrawn in the block that placed it. A saturated minute is never early.
+        (uint256 state, uint256 pausedAt) = _pause(saleId);
+        if (
+            state != uint256(IEnglishAuction.AuctionState.PAUSED)
+                || b.placedMinute >= _minutes(a.openedAt, pausedAt)
+        ) revert IUniformEditionAuction.WithdrawalsClosed(saleId);
         a.liveUnits -= b.quantity;
         _leave(saleId, a.maxCount != 0, b.step, b.position, b.quantity);
         delete _bids[saleId][bidId];
@@ -397,7 +426,7 @@ contract UniformEditionAuction is
         returns (uint256 unitsWon, uint256 refund)
     {
         if (to == address(0) || to == address(this)) revert InvalidRecipient(to);
-        IUniformEditionAuction.Bid memory b = _bidOf(saleId, bidId);
+        BidWord memory b = _bidOf(saleId, bidId);
         if (b.bidder != msg.sender) revert IUniformEditionAuction.NotBidder(msg.sender);
         (unitsWon, refund) = _claim(saleId, bidId, b, to);
         if (refund != 0 && !TokenTransfer.sendETH(to, refund, gasleft())) revert ClaimFailed(to);
@@ -414,7 +443,7 @@ contract UniformEditionAuction is
         nonReentrant
         returns (uint256 unitsWon, uint256 refund)
     {
-        IUniformEditionAuction.Bid memory b = _bidOf(saleId, bidId);
+        BidWord memory b = _bidOf(saleId, bidId);
         (unitsWon, refund) = _claim(saleId, bidId, b, b.bidder);
         if (refund != 0) {
             _credits[b.bidder] += refund;
@@ -502,8 +531,8 @@ contract UniformEditionAuction is
     ///         `settlementOrder`): it sends this call's calldata unchanged to the lens, which
     ///         declares each with the same signature, and returns or reverts with its answer.
     ///         Any other call reverts there. ETH is refused.
-    /// @dev A read-only `staticcall` to a fixed, stateless lens this contract created; no
-    ///      delegatecall. The views live there because this contract's write path alone nearly
+    /// @dev A read-only `staticcall` to the fixed, stateless lens this contract pinned; no
+    ///      delegatecall. The lens reads its caller, this contract. The views live there because this contract's write path alone nearly
     ///      fills EIP-170.
     fallback() external {
         address target = lens;
@@ -567,7 +596,7 @@ contract UniformEditionAuction is
                 slot := s.slot
             }
         } else if (space == Space.BID) {
-            IUniformEditionAuction.Bid storage s = _bids[saleId][key];
+            BidWord storage s = _bids[saleId][key];
             assembly ("memory-safe") {
                 slot := s.slot
             }
@@ -671,13 +700,14 @@ contract UniformEditionAuction is
         one = IEnglishAuction.AuctionState.ACTIVE;
         // forge-lint: disable-next-line(block-timestamp)
         if (fresh || block.timestamp + t.softWindow >= closeAt) {
-            IEnglishAuction.Auction memory o = _oneOfOne(saleId);
-            one = o.state;
-            if (o.endTime > a.oneOfOneEnd) {
+            uint64 oneEnd;
+            (one, oneEnd) = IEnglishAuctionClock(englishAuction)
+                .auctionClock(saleIdOf(stream, _payouts[saleId].id));
+            if (oneEnd > a.oneOfOneEnd) {
                 // Safe: the 1/1 stores its end in 32 bits.
                 // forge-lint: disable-next-line(unsafe-typecast)
-                a.oneOfOneEnd = uint32(o.endTime);
-                closeAt = uint256(o.endTime) + t.closeOffset;
+                a.oneOfOneEnd = uint32(oneEnd);
+                closeAt = uint256(oneEnd) + t.closeOffset;
             }
         }
         uint256 soft = a.softEnd;
@@ -876,7 +906,7 @@ contract UniformEditionAuction is
 
     /// @dev Claims bid `b` of a SETTLED or VOID sale: deletes it, then mints its copies to `to`.
     ///      The caller sends or credits the refund.
-    function _claim(uint256 saleId, uint256 bidId, IUniformEditionAuction.Bid memory b, address to)
+    function _claim(uint256 saleId, uint256 bidId, BidWord memory b, address to)
         private
         returns (uint256 unitsWon, uint256 refund)
     {
@@ -1166,12 +1196,36 @@ contract UniformEditionAuction is
         return uint256(t.basePrice) * m * 10 ** (step / n) / StepLadder.MANTISSA_SCALE;
     }
 
-    /// @dev The 1/1 auction of sale `saleId` (its edition ID is in the payout word): its state
-    ///      and end, the only fields read, from `auctionClock` (the rest stay zero).
-    function _oneOfOne(uint256 saleId) private view returns (IEnglishAuction.Auction memory o) {
-        uint256 id = _payouts[saleId].id;
-        (o.state, o.endTime) =
-            IEnglishAuctionClock(englishAuction).auctionClock(saleIdOf(stream, id));
+    /// @dev Whole minutes from `from` to `to`, zero if `to` is earlier, capped at 65,535. A bid
+    ///      placed in minute `m` is before a pause in minute `p` exactly when `m < p`: the pause
+    ///      began after minute `m` ended. A capped minute is never before another, and a pause
+    ///      before the sale opened is minute zero, before which nothing was placed.
+    function _minutes(uint256 from, uint256 to) private pure returns (uint16) {
+        uint256 m = to > from ? (to - from) / 60 : 0;
+        // Safe: capped below 2^16.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return m < type(uint16).max ? uint16(m) : type(uint16).max;
+    }
+
+    /// @dev The 1/1's state and the time its dispute pause began (zero if none), the eleventh
+    ///      and ninth words of `IEnglishAuction.auction` (a static struct of eleven words), read
+    ///      without decoding the rest.
+    function _pause(uint256 saleId) private view returns (uint256 state, uint256 pausedAt) {
+        address target = englishAuction;
+        uint256 oneOfOne = saleIdOf(stream, _payouts[saleId].id);
+        bytes4 selector = IEnglishAuction.auction.selector;
+        // Invariants: the call and its returndata use memory from the free memory pointer on,
+        // without moving it: temporary memory nothing else reads. A failed or short answer
+        // reverts.
+        assembly ("memory-safe") {
+            let p := mload(0x40)
+            mstore(p, selector)
+            mstore(add(p, 0x04), oneOfOne)
+            if iszero(staticcall(gas(), target, p, 0x24, p, 0x160)) { revert(0, 0) }
+            if lt(returndatasize(), 0x160) { revert(0, 0) }
+            pausedAt := mload(add(p, 0x100))
+            state := mload(add(p, 0x140))
+        }
     }
 
     /// @dev Sale `saleId`'s state word, required OPEN.
@@ -1180,13 +1234,17 @@ contract UniformEditionAuction is
         _requireStatus(saleId, a.status, IUniformEditionAuction.AuctionStatus.OPEN);
     }
 
-    /// @dev `IEditions.bindMinter(id, item)` with the item `open` received, bubbling a revert.
+    /// @dev `IEditions.bindMinter(id, item)` with the item `open` received, bubbling a revert;
+    ///      returns the seller, fee recipient and fee share of the `WorkTerms` it returns.
     ///      `data` is `abi.encode(item)`: the tuple's offset word, then the tuple, whose inner
     ///      offsets are relative to its start. So the call's arguments are `id`, the tuple's new
     ///      offset (0x40) and `data` past its first word, and this contract needs no item codec.
     ///      A `data` the lens decoded through another offset hands Editions a different item,
     ///      whose hash is not the master's: the open reverts (`NotEditionMaster`).
-    function _bindEdition(uint256 id, bytes calldata data) private {
+    function _bindEdition(uint256 id, bytes calldata data)
+        private
+        returns (address seller, address feeRecipient, uint256 feeShare)
+    {
         address target = editions;
         bytes4 selector = IEditions.bindMinter.selector;
         // Invariants: `data` is at least one word long (the lens decoded an item from it before
@@ -1204,6 +1262,12 @@ contract UniformEditionAuction is
                 returndatacopy(p, 0, returndatasize())
                 revert(p, returndatasize())
             }
+            // The first three words of the returned `WorkTerms` (a static struct of five);
+            // `returndatacopy` reverts if Editions returned fewer.
+            returndatacopy(p, 0, 0x60)
+            seller := mload(p)
+            feeRecipient := mload(add(p, 0x20))
+            feeShare := mload(add(p, 0x40))
         }
     }
 
@@ -1221,11 +1285,7 @@ contract UniformEditionAuction is
     }
 
     /// @dev A live bid.
-    function _bidOf(uint256 saleId, uint256 bidId)
-        private
-        view
-        returns (IUniformEditionAuction.Bid memory b)
-    {
+    function _bidOf(uint256 saleId, uint256 bidId) private view returns (BidWord memory b) {
         b = _bids[saleId][bidId];
         if (b.bidder == address(0)) revert IUniformEditionAuction.UnknownBid(saleId, bidId);
     }
