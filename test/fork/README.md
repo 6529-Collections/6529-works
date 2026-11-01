@@ -38,7 +38,7 @@ The system is deployed by the same deploy library as the integration tests
 | [`DeploySimulationFork.t.sol`](DeploySimulationFork.t.sol) | Everything `Deploy.s.sol` touches on Sepolia | The full deploy script with sepolia-r3's inputs (its holders on the committed policy, fee recipient, marketplace owner, VRF gas lane and limits, epoch-0 manifest; r3's fee Safe as the museum, which r3 predates; a new VRF subscription, as the runbook creates for each deployment) under a fresh namespace: every off-anvil guard passes against the live Safes and dependencies (the Safe singleton, module and guard checks included), and `Verify.s.sol` confirms the simulated deployment five days later, once the new entropy module is its subscription's only consumer. |
 
 The Sepolia inputs are those of r3, the current rehearsal
-([deployment record](../../deployments/11155111/README.md#sepolia-r3-15-october-2026-current)).
+([deployment record](../../deployments/11155111/README.md#sepolia-r3-15-october-2026-superseded-by-r4)).
 The simulation uses the committed example with r3's holders, as a new rehearsal would, so it
 follows the committed policy as it changes. r3's own `config/sepolia-r3/genesis.json` (the
 committed policy at `e5fe78c` with r1's holders) is checked against the live Safes by

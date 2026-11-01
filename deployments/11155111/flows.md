@@ -2,11 +2,13 @@
 
 On 11 October 2026 the v1 flows were run on two Sepolia rehearsal deployments
 ([README](README.md)). Settlement and the edition flow followed on 13 October, once the
-24-hour auctions had ended. A lifecycle check on r3 followed on 15 October:
+24-hour auctions had ended. A lifecycle check on r3 followed on 15 October, and the rc.2 flows,
+with the uniform edition auction, on r4 on 1 November:
 
 | Instance | Source | Record | Role here |
 | --- | --- | --- | --- |
-| **r3** | `main` at `e5fe78c`: every review fix, the state-growth gas diet and the source-quality pass | [`1792095396.json`](1792095396.json) | **Current.** A lifecycle check on 15 October 2026, measured against r2: [r3](#r3-the-release-candidate-15-october-2026) |
+| **r4** | `main` at `1e7022b`: the rc.2 candidate, with the uniform edition auction, the museum rule and the 0.05 ETH opening bid | [`1793536584.json`](1793536584.json) | **Current.** The rc.2 flows on 1 November 2026, every edition-auction step on chain: [r4](#r4-the-rc2-candidate-1-november-2026) |
+| r3 | `main` at `e5fe78c`: every review fix, the state-growth gas diet and the source-quality pass | [`1792095396.json`](1792095396.json) | A lifecycle check on 15 October 2026, measured against r2: [r3](#r3-the-release-candidate-15-october-2026) |
 | r2 | `main` at `400f96d`: the full v1 scope, including the Editions gas cuts ([#41](https://github.com/6529-Collections/6529-works/pull/41)) and the contested overrides ([#44](https://github.com/6529-Collections/6529-works/pull/44)) | [`1791750816.json`](1791750816.json) | Reference for every section below the r3 one |
 | r1 | `main` at `60edd9b`, before #41 and #44 | [`1791746472.json`](1791746472.json) | Measured first; kept for comparison |
 
@@ -30,10 +32,243 @@ These are testnet rehearsals with throwaway keys, and the code is pre-audit.
 > DEPS-2, and the renderer's media-list read has its own 1,000,000-gas cap since the content
 > fixes (#56), so `tokenURI` needs about 1.07M gas available rather than about 1.0M.
 
+## r4: the rc.2 candidate (1 November 2026)
+
+On 1 November 2026 the rc.2 flows ran on **r4**, `main` at `1e7022b`
+([README](README.md#sepolia-r4-1-november-2026-current)): the uniform-price edition auction of
+[ADR 0005](../../docs/adr/0005-stream-editions-auction.md) beside each edition master's 1/1,
+the museum rule (owner decision 17), the 0.05 ETH opening bid (decision 19) and a dispute
+pause and cancel. r4's 1/1 auctions run **1 hour** (a testnet setting, the governed minimum);
+every other parameter is the mainnet default, so the edition close is 15 minutes after the
+1/1's final end and the soft close 5 minutes.
+
+- **Driver.** [`script/sepolia/Flows.s.sol`](../../script/sepolia/Flows.s.sol) and
+  [`flows.ps1`](../../script/sepolia/flows.ps1), extended for r4: the rc.2 package (ten items,
+  three edition masters: uncapped, capped at 3, and one for the dispute), the edition
+  auction's open, bid, raise, withdrawal, settlement with a settler's own departure order and
+  claims, Safe-relayed calls (a guardian's pause, the hot admin's `schedule` and `execute`), and
+  refusals sent on purpose and recorded as failed receipts (`-ExpectRevert`). State files:
+  [`flows/r4.json`](flows/r4.json) and [`flows/r4-content.json`](flows/r4-content.json) (the
+  content uploads, run beside it from a second relayer).
+- **Accounts.** Throwaway testnet keys: the keeper (`0xe3Aac284…7214`, no role) sent every
+  permissionless call, starts, opens, settles, `createEdition` and `claimBidFor`; bidders 1 to 4
+  and wallet 3 bid and claimed; Guardian Safe 1 and the hot admin Safe signed 2-of-3 through the
+  driver. The museum is the testnet EOA `0xd954e414…D840`.
+- **Gas.** Sepolia gas is the receipt's; Prague is the receipt replayed with
+  `cast run --quick --evm-version prague` on an archive RPC
+  (`https://sepolia.gateway.tenderly.co`; the default public RPC had pruned the older blocks).
+
+### What ran
+
+| Token | Item | Role | Outcome |
+| ---: | --- | --- | --- |
+| 1 | 9: edition master, no cap | The dispute | 1/1 paused by a guardian at 12:46:24 UTC; edition sale open (bids accepted during the pause) until the cancel voids it |
+| 2 | 5: edition master, no cap | The main sale | 1/1 SOLD to bidder 1 at 0.055125 ETH; edition: 11 bids, 11 copies at 0.000422 ETH (step 30) |
+| 3 | 8: edition master, cap 3 | The cut step | 1/1 UNBID, moved to the museum; edition: 4 bids and two raises, 3 copies at 0.000162 ETH (step 10), rationed |
+| 4 | 0: an original | The museum | 1/1 UNBID, moved to the museum |
+
+Before them: two collections, the package (registration with curation signer 1's approval,
+the CURATOR statement, the artist's first acceptance) and the content uploads.
+
+### The checklist
+
+| Flow | Result |
+| --- | --- |
+| Ten or more edition bids from several wallets, beside a 1/1 English auction | **Pass.** 11 bids on token 2's edition from four wallets (bidders 1 to 4), [first](https://sepolia.etherscan.io/tx/0xc1cc727d229e67eac189f7dbe66f0b87b3599df932e2db7f8fb5196b09aab2da) to [eleventh](https://sepolia.etherscan.io/tx/0x1230751d867ee0b8a27a2da2898a4f43f9b9fe1b4cc03274007280ebfcf90084), while its 1/1 drew three bids: [0.05](https://sepolia.etherscan.io/tx/0x91b5170b2a5d17d4f4f3c211188989497e25d0fc4f20c0e2a5152a13bce0eade), [0.0525](https://sepolia.etherscan.io/tx/0x5067e29f7097f26ea633124fb86f45c941e5e02f7d256a559b28890787a725d5) and [0.055125 ETH](https://sepolia.etherscan.io/tx/0x98bf7134a86a70cf8a9b1e99577407aedb576785ad3b7a5e1ee4a73ebf6991ee). |
+| A raise | **Pass.** Bid 4 on token 2 raised from step 20 to 32, paying the difference: [`0x321f1f16…`](https://sepolia.etherscan.io/tx/0x321f1f1650971ca51d31043a8a47c7fb82dc83ce3cce6c74600033a5c2f081e1). Two more on the capped sale: [`0xb310592f…`](https://sepolia.etherscan.io/tx/0xb310592f9de945c0e59ef9df4f096b0bef62bada5a6a985c616ab6daf4be8ee3), [`0xf6d870c7…`](https://sepolia.etherscan.io/tx/0xf6d870c762974e0d2c8cd652fe5f90ca3eabe35a02d43af84f73fabf439c9ceb). |
+| The 1/1's anti-snipe moves the edition close | **Pass.** Bidder 1's bid at 13:31:24 UTC, inside the 1/1's last 15 minutes, [`0x98bf7134…`](https://sepolia.etherscan.io/tx/0x98bf7134a86a70cf8a9b1e99577407aedb576785ad3b7a5e1ee4a73ebf6991ee), moved the 1/1's end from 13:45:00 to 13:46:24 and the edition's `closeAt` from 14:00:00 to 14:01:24 (`endTimes`, read before and after). |
+| A soft-close extension | **Pass.** Bidder 3's edition bid at 13:57:36 UTC, inside the last 5 minutes before `closeAt` 14:01:24, [`0x1230751d…`](https://sepolia.etherscan.io/tx/0x1230751d867ee0b8a27a2da2898a4f43f9b9fe1b4cc03274007280ebfcf90084), set `softEnd` to 14:02:36, so the sale closed at 14:02:36. |
+| A capped edition auction with a hole at the cut step, settled through the per-settler sweep | **Pass.** Token 3's edition (cap 3): the two raises left departures at positions 0 and 5 of the cut step (step 10). Wallet 3 settled first with an order that skips departure 0, [`0x5e90096a…`](https://sepolia.etherscan.io/tx/0x5e90096a7b2950e7b73e4d3fe9db7e400bd130754068742499800852ea4aaed9): the call cleared and paid the sale but stranded only wallet 3's own sweep (1 of 2 swept, cutoff 1; `sweepOf`). The keeper then settled with its own order `[0,1]`, [`0xb1d9707a…`](https://sepolia.etherscan.io/tx/0xb1d9707a51601e56290dadfc2da430237a53658256b63f11098e50755c6524aa): SETTLED, cutoff 2. Bid 2 (positions 1 and 2) wins 1 copy through the hole at position 0. |
+| An unbid 1/1 that Stream moves to the museum (decision 17) | **Pass.** Tokens 4 (an original) and 3 (the capped master) drew no 1/1 bid; `settle` [`0x69c8e790…`](https://sepolia.etherscan.io/tx/0x69c8e7905c84f5a4a118eeff10e2b170e6ff1700dda0751a0d13fcbaea956813), [`0x11a8f33b…`](https://sepolia.etherscan.io/tx/0x11a8f33b0c40bf587bbb03949d029cf0ce3146bccda16b39e3ed5e231d0facbe): Stream recorded UNBID (`primarySale`) and moved each to the testnet museum (`ownerOf`). Token 3's edition sold anyway (D141). |
+| A dispute pause, a pre-pause bid withdrawn, and a bid placed during the pause that cannot be | **Pass.** Guardian Safe 1 (2-of-3) paused token 1's 1/1, [`0xe4462884…`](https://sepolia.etherscan.io/tx/0xe4462884f6f59c70a349e8d49b402295fa7c385e2a6b8802d4d6ff1d25779fdd). Bidder 1 withdrew its pre-pause edition bid, [`0x3981428f…`](https://sepolia.etherscan.io/tx/0x3981428ff823e8abc128d40bf16a4d4fa1dd240a8cb393d1309ec9b825c2525a), and bidder 4 its pre-pause 0.05 ETH 1/1 bid, [`0x44c8f86c…`](https://sepolia.etherscan.io/tx/0x44c8f86c4830ba835ffd59ffe190b6b97634d26aec39ebe5c3edf1f289d160c4) (credited, then claimed [`0xc893e952…`](https://sepolia.etherscan.io/tx/0xc893e952dfb95f4a1a3c1d3ae3a3b2d463618d69a5a0b45cac6349d4e2dafaad)). Bidder 3's edition bid during the pause was accepted, [`0x05cfe486…`](https://sepolia.etherscan.io/tx/0x05cfe4868a77b278960d10bd5a82bf5b84c1fa65a1c0326680a83db9d11362ff), and its withdrawal reverted on chain with `WithdrawalsClosed(saleId)`, [`0x719cd6e0…`](https://sepolia.etherscan.io/tx/0x719cd6e0254d863b2277a3d55e605c8380f5610edf67c79b68f8c9ff33eaf8e8). |
+| A dispute that voids an edition auction, with refunds | **Pending** until the cancel can execute, from **3 November 2026, 12:48:00 UTC** (the 48-hour PARAMETER_SETTER delay from the schedule; the contract also requires 48 hours from the pause). Done so far: the pause, the PLATFORM `DISPUTE_OUTCOME` statement [`0xcc6d2a00…`](https://sepolia.etherscan.io/tx/0xcc6d2a000b94317a9b388162eff86534593cd0a3ce2c439b6d18868fc5bf82f5) and the hot admin Safe's `schedule` [`0x4eb73e04…`](https://sepolia.etherscan.io/tx/0x4eb73e04b11cd90d856032d76236f9f28d9ba39a2dbc62815caa2db123ad135d) (operation `0xfee38ae8…72f4`). The commands that finish it are under [Pending (r4)](#pending-r4). |
+| Settle and claims: `claimBid` and `claimBidFor` | **Pass.** Keeper settles [`0xfa395cca…`](https://sepolia.etherscan.io/tx/0xfa395cca32865c4e79393302b1af6515160198c8d3acd3643f31daa99aeae752) (token 2) and the sweep above (token 3); every bid claimed: `claimBid` by the bidder ([token 2 bid 1](https://sepolia.etherscan.io/tx/0x386c554930ef850474b9a0ff8466c632cafe0efa82d37ba92cb24c4edc76d79c), [token 3 bid 2](https://sepolia.etherscan.io/tx/0xaf261f8731869cfe3595d28935206bfd648bf25fad8e9dbe763a26fe8a777099) and two more) and `claimBidFor` by the keeper ([token 2 bid 4](https://sepolia.etherscan.io/tx/0x9e72ede93cf7ababa28cbc78e72c23799ce029133d59fc06d1d654cf3babc218), [token 3 bid 3, refund only](https://sepolia.etherscan.io/tx/0x5f727b4fabd3cd6ac68a76751196a26a03c66f18ae8b8142001b0d46967624eb) and nine more); the bidders then claimed their credited refunds (`claim`). |
+| `createEdition` by the keeper | **Pass.** The keeper, an EOA with no role, created both editions once their 1/1s settled: [`0x774d7e72…`](https://sepolia.etherscan.io/tx/0x774d7e7268c938fea4a78e6532deb6f1b52e86708e4f3a7730d0dbfc013e00a1), [`0xda8aaf6b…`](https://sepolia.etherscan.io/tx/0xda8aaf6b122df4c5f0360ba6b0f2b714465dfa0172f5821bc846327775fb2e55). |
+| A 1/1 sold above 0.05 ETH | **Pass.** Token 2 settled SOLD to bidder 1 at 0.055125 ETH, [`0x6a4e5916…`](https://sepolia.etherscan.io/tx/0x6a4e5916f20b46cc427130573b84ba0a11b2e49494a3d9502e3a537ab7f03e71). |
+| A 1-wei bid refused | **Pass.** Bidder 3's 1-wei first bid on token 2 reverted on chain with `BidTooLow(50000000000000000, 1)`, [`0xd93d150b…`](https://sepolia.etherscan.io/tx/0xd93d150b683ef2cb225d7de5a854603ed056f741e6aed292ded03bb62252d77e): the 0.05 ETH opening bid (decision 19). |
+
+### Token 2: the main edition sale
+
+The clocks, from `endTimes` (UTC, 1 November):
+
+| When | 1/1 end | `closeAt` | `softEnd` | `endTime` |
+| --- | --- | --- | --- | --- |
+| After the bids (12:54:48) | 13:45:00 | 14:00:00 | — | 14:00:00 |
+| Before the anti-snipe bid (13:31:12) | 13:45:00 | 14:00:00 | — | 14:00:00 |
+| After it (13:31:24) | 13:46:24 | 14:01:24 | — | 14:01:24 |
+| Before the soft-close bid (13:57:24) | 13:46:24 | 14:01:24 | — | 14:01:24 |
+| After it (13:57:36) | 13:46:24 | 14:01:24 | 14:02:36 | 14:02:36 |
+
+The clearing: 21 units bid; the result is 11 copies at step 30
+(0.000422 ETH each, revenue 0.004642 ETH), not rationed (no cap). The
+network fee is the 25% locked at open; the rest went to the artist's split wallet.
+
+| Bid | Bidder | Step | Units | Won | Refund (ETH) | Placed | Claimed |
+| ---: | --- | --- | ---: | ---: | ---: | --- | --- |
+| 1 | bidder 1 | 48 | 1 | 1 | 0.000578 | [`0xc1cc727d…`](https://sepolia.etherscan.io/tx/0xc1cc727d229e67eac189f7dbe66f0b87b3599df932e2db7f8fb5196b09aab2da) | `claimBid` [`0x386c5549…`](https://sepolia.etherscan.io/tx/0x386c554930ef850474b9a0ff8466c632cafe0efa82d37ba92cb24c4edc76d79c) |
+| 2 | bidder 2 | 40 | 2 | 2 | 0.000518 | [`0xce307e00…`](https://sepolia.etherscan.io/tx/0xce307e00498279029eef8ede644df68d6342dec6d10facab2f2135eebc713275) | `claimBid` [`0x56dc3cf3…`](https://sepolia.etherscan.io/tx/0x56dc3cf3fee7be4e39ae8429a0801540591b6ac5f03f261bd2bda9d0a96588a8) |
+| 3 | bidder 3 | 30 | 3 | 3 | 0 | [`0x57fd461e…`](https://sepolia.etherscan.io/tx/0x57fd461e331335f50fbf6661a132a3d88218a1d8dc9773a7509e6813c7d9e6f4) | `claimBid` [`0x1642ff2c…`](https://sepolia.etherscan.io/tx/0x1642ff2c93b7d3fd6cdf60da704d4fcf8666ae1f84687a95a38e53714b187f1a) |
+| 4 | bidder 4 | 20, raised to 32 | 2 | 2 | 0.000084 | [`0xde7a47c4…`](https://sepolia.etherscan.io/tx/0xde7a47c498fc6dd160f3c72ca5fc67e1301c4e6321a01b92735ee5de3e438e3a) | `claimBidFor` [`0x9e72ede9…`](https://sepolia.etherscan.io/tx/0x9e72ede93cf7ababa28cbc78e72c23799ce029133d59fc06d1d654cf3babc218) |
+| 5 | bidder 1 | 10 | 4 | 0 | 0.000648 | [`0xa82be197…`](https://sepolia.etherscan.io/tx/0xa82be1976a58767552911c3341db90a99f7be55d6d0b9367e0d5cc08b0e6b3ee) | `claimBidFor` [`0xc06e6e1d…`](https://sepolia.etherscan.io/tx/0xc06e6e1dc7e6ef686b4670c444c9aa0e585abec928e84607f48da03b61e8f99a) |
+| 6 | bidder 2 | 0 | 3 | 0 | 0.0003 | [`0x822f6aee…`](https://sepolia.etherscan.io/tx/0x822f6aeeb00e329fbbfa2b00becd225c40400a14a12514d11c32057d0794db37) | `claimBidFor` [`0x830a1059…`](https://sepolia.etherscan.io/tx/0x830a1059809dad65cf9a408e1fd0a19446451d14e335342a7cbd1b077a28ed81) |
+| 7 | bidder 3 | 44 | 1 | 1 | 0.000403 | [`0x0da18db8…`](https://sepolia.etherscan.io/tx/0x0da18db8126a8b0a1c153441fd1329c220c665dbab348c6889016bf1b00a7005) | `claimBidFor` [`0x5a41a6dc…`](https://sepolia.etherscan.io/tx/0x5a41a6dcf175b2e4147f4dc9253eaaf007071d9e6b0daeccd40c52035fff8472) |
+| 8 | bidder 4 | 36 | 1 | 1 | 0.00014 | [`0x483a4f02…`](https://sepolia.etherscan.io/tx/0x483a4f02571cea962e473fb3a57887a25ec95628d257a44f1f62dab02bd2f0bb) | `claimBidFor` [`0xdf1da4fd…`](https://sepolia.etherscan.io/tx/0xdf1da4fd0d2064412291599a2e0969864b89ce9985534027d1116a466b89a313) |
+| 9 | bidder 1 | 24 | 2 | 0 | 0.000632 | [`0x5593247d…`](https://sepolia.etherscan.io/tx/0x5593247d2781e035e08a7bb3a80ed3a709f8e3fb3ab3331bf68edd7caf1f04ae) | `claimBidFor` [`0x0888db85…`](https://sepolia.etherscan.io/tx/0x0888db85895a7fb816ea541f7032a4a49800e6f30a9fc572ae70e75a69b8de7b) |
+| 10 | bidder 2 | 12 | 1 | 0 | 0.000178 | [`0x1d5bc001…`](https://sepolia.etherscan.io/tx/0x1d5bc0018683af64ae4b31f688cc2d0790f4646acb82134721b7a5dc557a6ba4) | `claimBidFor` [`0x5d825393…`](https://sepolia.etherscan.io/tx/0x5d82539320b25c4f63b99d3f42bcf80368cef004921c325acdcd9c0e5833a9fc) |
+| 11 | bidder 3 | 30 | 1 | 1 | 0 | [`0x1230751d…`](https://sepolia.etherscan.io/tx/0x1230751d867ee0b8a27a2da2898a4f43f9b9fe1b4cc03274007280ebfcf90084) | `claimBidFor` [`0x6ab3b36a…`](https://sepolia.etherscan.io/tx/0x6ab3b36aa118caf34b6fc917a40dacc7018948bc215a4220491be4f3ba79501d) |
+
+### Token 3: the cut step and the per-settler sweep
+
+Cap 3. All four bids entered step 10 (positions 0, 1, 3 and 5); bid 1 then raised to step 20
+and bid 4 to step 15, each leaving a departure in step 10's log: `(position 0, 1 unit)` and
+`(position 5, 1 unit)`. The clearing: 3 copies at step 10 (0.000162 ETH), two of them
+above the cut step, so step 10 wins `cutUnits` = 1. The sweep moves the cutoff past every
+departure below it: the one at position 0 lifts it from 1 to 2, the one at position 5 does
+not. Without the hole, bid 2 (positions 1 and 2) would win nothing.
+
+| Bid | Bidder | Step | Units | Position | Won | Refund (ETH) | Placed | Claimed |
+| ---: | --- | --- | ---: | --- | ---: | ---: | --- | --- |
+| 1 | bidder 1 | 10, raised to 20 | 1 | 0 at step 10; 0 at step 20 | 1 | 0.000099 | [`0x57337350…`](https://sepolia.etherscan.io/tx/0x573373504560d1be729443846f74b54eccb7c25b19a26184cd18bdbc8a156afd) | `claimBidFor` [`0xf613c92a…`](https://sepolia.etherscan.io/tx/0xf613c92a2c9a59b535cb4240881ab18ba1dec1762223b73a5a37dfda28d89239) |
+| 2 | bidder 2 | 10 | 2 | 1 | 1 | 0.000162 | [`0xb3128ae3…`](https://sepolia.etherscan.io/tx/0xb3128ae3c4c4724e352bf658bdc06bf0dfd7dd5117ea340a0dbb8dddd876cfa2) | `claimBid` [`0xaf261f87…`](https://sepolia.etherscan.io/tx/0xaf261f8731869cfe3595d28935206bfd648bf25fad8e9dbe763a26fe8a777099) |
+| 3 | bidder 3 | 10 | 2 | 3 | 0 | 0.000324 | [`0xbf8965b7…`](https://sepolia.etherscan.io/tx/0xbf8965b7cff6abc066ac2cce28b87c61870d636d6d1ba8d89b04901e4b99944a) | `claimBidFor` [`0x5f727b4f…`](https://sepolia.etherscan.io/tx/0x5f727b4fabd3cd6ac68a76751196a26a03c66f18ae8b8142001b0d46967624eb) |
+| 4 | bidder 4 | 10, raised to 15 | 1 | 5 at step 10; 0 at step 15 | 1 | 0.000043 | [`0xcc817056…`](https://sepolia.etherscan.io/tx/0xcc817056216062556db39c09b9ca8208fdc6fb21ed8b3330f957fe9303040302) | `claimBidFor` [`0xf3e810a0…`](https://sepolia.etherscan.io/tx/0xf3e810a0a47fc9f4087264000b99e784b3b59860b5fe4931e87baf540e168135) |
+
+1. **Wallet 3 settles first with the order `[1]`**, skipping departure 0
+   ([`0x5e90096a…`](https://sepolia.etherscan.io/tx/0x5e90096a7b2950e7b73e4d3fe9db7e400bd130754068742499800852ea4aaed9), 335,513 gas). The call
+   scans and clears the book, pays the seller and the fee, and sweeps departure 1 for wallet 3
+   only: `sweepOf(wallet 3)` = 1 swept, next position 6, cutoff 1. The sale is SETTLING; wallet
+   3 can never finish (departure 0's position is below its next position), and its progress
+   touches no one else's.
+2. **The keeper settles with its own order** from `settlementOrderFor(saleId, keeper)` =
+   `[0,1]` ([`0xb1d9707a…`](https://sepolia.etherscan.io/tx/0xb1d9707a51601e56290dadfc2da430237a53658256b63f11098e50755c6524aa), 57,839 gas): its sweep starts from
+   scratch and completes, so the sale is SETTLED with cutoff 2 (`settlement`).
+
+### Token 1: the dispute
+
+| Step | Transaction | Gas |
+| --- | --- | ---: |
+| Bidder 1's edition bid, step 20 (bid 1) | [`0xc54876ed…`](https://sepolia.etherscan.io/tx/0xc54876ed9c82142ccd6228afdde29e2f8cd68fab324bbe2fa34d0ee848d18609) | 268,801 |
+| Bidder 2's edition bid, step 24 (bid 2) | [`0x562a5c59…`](https://sepolia.etherscan.io/tx/0x562a5c59279fa6236bca394ff9c38fbe5bbb8f00c58b0ea3d769c0c5190cd269) | 268,854 |
+| Bidder 4's 0.05 ETH 1/1 bid | [`0x241bc311…`](https://sepolia.etherscan.io/tx/0x241bc311bc3b82a5494a3d265ce89ef2275d8185eea9ac3c122b3b6c1a1818d7) | 510,773 |
+| Guardian Safe 1 pauses the 1/1 (`execTransaction`) | [`0xe4462884…`](https://sepolia.etherscan.io/tx/0xe4462884f6f59c70a349e8d49b402295fa7c385e2a6b8802d4d6ff1d25779fdd) | 211,418 |
+| Bidder 1 withdraws bid 1: placed before the pause's minute | [`0x3981428f…`](https://sepolia.etherscan.io/tx/0x3981428ff823e8abc128d40bf16a4d4fa1dd240a8cb393d1309ec9b825c2525a) | 66,672 |
+| Bidder 4 withdraws its 1/1 bid (credited) | [`0x44c8f86c…`](https://sepolia.etherscan.io/tx/0x44c8f86c4830ba835ffd59ffe190b6b97634d26aec39ebe5c3edf1f289d160c4) | 158,448 |
+| Bidder 4 claims the credit | [`0xc893e952…`](https://sepolia.etherscan.io/tx/0xc893e952dfb95f4a1a3c1d3ae3a3b2d463618d69a5a0b45cac6349d4e2dafaad) | 32,581 |
+| Bidder 3 bids during the pause, step 30 (bid 3): accepted | [`0x05cfe486…`](https://sepolia.etherscan.io/tx/0x05cfe4868a77b278960d10bd5a82bf5b84c1fa65a1c0326680a83db9d11362ff) | 170,934 |
+| Bidder 3 tries to withdraw bid 3: **reverts** `WithdrawalsClosed` | [`0x719cd6e0…`](https://sepolia.etherscan.io/tx/0x719cd6e0254d863b2277a3d55e605c8380f5610edf67c79b68f8c9ff33eaf8e8) | 34,315 |
+| PLATFORM records the `DISPUTE_OUTCOME` about token 1 | [`0xcc6d2a00…`](https://sepolia.etherscan.io/tx/0xcc6d2a000b94317a9b388162eff86534593cd0a3ce2c439b6d18868fc5bf82f5) | 397,757 |
+| The hot admin Safe schedules `cancel(saleId, outcome)` on the manager | [`0x4eb73e04…`](https://sepolia.etherscan.io/tx/0x4eb73e04b11cd90d856032d76236f9f28d9ba39a2dbc62815caa2db123ad135d) | 188,105 |
+
+The pause began at 12:46:24 UTC, in minute 2 of the edition sale (counted from
+its open); bids 1 and 2 were placed in minute 0, bid 3 in minute 3. `withdrawalsOpen` read true
+from the pause on.
+
+### Pending (r4)
+
+From **3 November 2026, 12:48:00 UTC** (the schedule's ready time; it expires a week later, and
+the pause lapses on 8 November at 12:46:24 UTC), in the repository root with the operator's
+signer module (`Flow` is the helper under [Pending](#pending) below; r4 is the driver's
+default record):
+
+```powershell
+$r4 = @('-State', 'deployments/11155111/flows/r4.json')
+Flow @r4 -Step executeCancel -TokenId 1                    # the hot admin Safe: cancel, burn
+Flow @r4 -Step editionSettle -TokenId 1 -Label editionSettle-1-void   # AuctionVoided
+Flow @r4 -Step claimBid -TokenId 1 -BidId 2               # bidder 2: full refund
+Flow @r4 -Step claimBidFor -TokenId 1 -BidId 3            # bidder 3's during-pause bid
+Flow @r4 -Step claimCredits -Adapter edition -Bidder bidder3 -Label claimCredits-edition-bidder3-void
+```
+
+### Gas (r4)
+
+| Operation | Note | Sepolia | Prague |
+| --- | --- | ---: | ---: |
+| **Setup** | | | |
+| [`createCollection-Flows`](https://sepolia.etherscan.io/tx/0xc7d183570d0a521b384ccd09ded56f6deaae737f14af15421d421cfe872e6e77) |  | 382,250 | 116,690 |
+| [`createCollection-Flows-2`](https://sepolia.etherscan.io/tx/0x4b27eb80d8316111edddb088325cbbe7522317e8d8293a3892a4957b0a00c672) |  | 383,196 | 117,636 |
+| [`registerPackage`](https://sepolia.etherscan.io/tx/0xc4ad319e1e06de03d1e1cb9b1a6cac121c4e9dab7fffda4d753e8c2757cabf96) |  | 274,607 | 103,367 |
+| [`appendCurator`](https://sepolia.etherscan.io/tx/0x4b36c4426ff4383a72766489d726ee6fec8ed73375fbc40e4cd7b4af30912ef2) |  | 274,631 | 104,191 |
+| [`acceptPackage`](https://sepolia.etherscan.io/tx/0xf8762fbca16c95ee34b7b8fa4eba211d59cd236c41d051ab1b4da1a22e54fbdc) |  | 1,381,522 | 416,202 |
+| **1/1 starts and bids** | | | |
+| [`start-9`](https://sepolia.etherscan.io/tx/0x55c8ac09be44b3077bd160b83566c47ec84f083a754076b4a038de77de23d354) | first start ever (one-time slots) | 1,598,898 | 436,338 |
+| [`start-5`](https://sepolia.etherscan.io/tx/0x0098711095e51c97c1dccf8e5facf2f7479f897271ff5a43a8044abf9f8391e1) | steady state, edition master | 734,390 | 268,690 |
+| [`start-8`](https://sepolia.etherscan.io/tx/0x4bff91719d6d2b00e3bffc772f59fd2a00528973652da9f1f72262fb7bb15acf) | steady state, capped master | 732,872 | 267,172 |
+| [`start-0`](https://sepolia.etherscan.io/tx/0x8c2fbd104548a9415757054aa0910ebca4019e6d43b12ff86bf7c6f469db7c8b) | steady state, original | 734,361 | 268,661 |
+| [`bid-1-prepause-0.05`](https://sepolia.etherscan.io/tx/0x241bc311bc3b82a5494a3d265ce89ef2275d8185eea9ac3c122b3b6c1a1818d7) | first bid on the auction (locks the increment floor) | 510,773 | 143,993 |
+| [`bid-2-opening-0.05`](https://sepolia.etherscan.io/tx/0x91b5170b2a5d17d4f4f3c211188989497e25d0fc4f20c0e2a5152a13bce0eade) | first bid | 169,464 | 73,844 |
+| [`bid-2-outbid-0.0525`](https://sepolia.etherscan.io/tx/0x5067e29f7097f26ea633124fb86f45c941e5e02f7d256a559b28890787a725d5) | outbids, credits the previous bidder | 169,138 | 73,518 |
+| [`bid-2-antisnipe-0.055125`](https://sepolia.etherscan.io/tx/0x98bf7134a86a70cf8a9b1e99577407aedb576785ad3b7a5e1ee4a73ebf6991ee) | anti-snipe extension | 179,548 | 76,728 |
+| [`bid-2-1-wei-refused`](https://sepolia.etherscan.io/tx/0xd93d150b683ef2cb225d7de5a854603ed056f741e6aed292ded03bb62252d77e) | reverted on purpose | 56,537 | 48,937 |
+| **Edition auction** | | | |
+| [`openEdition-1`](https://sepolia.etherscan.io/tx/0x727664d43b046bc21edf7a4dc8195ff577549313e0808530b613b5abcf55f9bf) | the adapter's first sale (fee recipient registered) | 1,025,742 | 317,982 |
+| [`openEdition-2`](https://sepolia.etherscan.io/tx/0x70730afab21398b454da0acc166bb9c942e681730a64bc587ab3620af90c1dd5) | binds the edition, locks its economics | 796,765 | 272,245 |
+| [`openEdition-3`](https://sepolia.etherscan.io/tx/0xee0b9b4b91bbc4fe174402b9a9330a88cabe28a6cdae5276b644feba4df7a73e) |  | 796,789 | 272,269 |
+| [`editionBid-1-prepause-b1`](https://sepolia.etherscan.io/tx/0xc54876ed9c82142ccd6228afdde29e2f8cd68fab324bbe2fa34d0ee848d18609) | first bid on the sale | 268,801 | 85,561 |
+| [`editionBid-2-1-bidder1-s48x1`](https://sepolia.etherscan.io/tx/0xc1cc727d229e67eac189f7dbe66f0b87b3599df932e2db7f8fb5196b09aab2da) | new step | 269,004 | 85,764 |
+| [`editionBid-2-7-bidder3-s44x1`](https://sepolia.etherscan.io/tx/0x0da18db8126a8b0a1c153441fd1329c220c665dbab348c6889016bf1b00a7005) | a step's bitmap word already written | 170,913 | 68,493 |
+| [`editionBid-3-1-bidder1-s10x1`](https://sepolia.etherscan.io/tx/0x573373504560d1be729443846f74b54eccb7c25b19a26184cd18bdbc8a156afd) | capped: first entry at a step | 271,239 | 87,999 |
+| [`editionBid-3-2-bidder2-s10x2`](https://sepolia.etherscan.io/tx/0xb3128ae3c4c4724e352bf658bdc06bf0dfd7dd5117ea340a0dbb8dddd876cfa2) | capped: same step | 173,351 | 70,931 |
+| [`editionBid-2-11-bidder3-s30x1-softclose`](https://sepolia.etherscan.io/tx/0x1230751d867ee0b8a27a2da2898a4f43f9b9fe1b4cc03274007280ebfcf90084) | sets `softEnd` | 180,339 | 77,519 |
+| [`editionRaise-2-bid4-s20-to-s32`](https://sepolia.etherscan.io/tx/0x321f1f1650971ca51d31043a8a47c7fb82dc83ce3cce6c74600033a5c2f081e1) | uncapped | 65,300 | 50,516 |
+| [`editionRaise-3-bid1-s10-to-s20`](https://sepolia.etherscan.io/tx/0xb310592f9de945c0e59ef9df4f096b0bef62bada5a6a985c616ab6daf4be8ee3) | capped: first departure, new step | 298,103 | 100,463 |
+| [`editionRaise-3-bid4-s10-to-s15`](https://sepolia.etherscan.io/tx/0xf6d870c762974e0d2c8cd652fe5f90ca3eabe35a02d43af84f73fabf439c9ceb) | capped: second departure | 80,242 | 58,642 |
+| [`editionSettle-3-wallet3-order-[1]-stranded`](https://sepolia.etherscan.io/tx/0x5e90096a7b2950e7b73e4d3fe9db7e400bd130754068742499800852ea4aaed9) | scan, clear, pay, partial sweep | 335,513 | 151,773 |
+| [`editionSettle-3-keeper-own-sweep-[0,1]`](https://sepolia.etherscan.io/tx/0xb1d9707a51601e56290dadfc2da430237a53658256b63f11098e50755c6524aa) | a second settler's whole sweep | 57,839 | 49,439 |
+| [`editionSettle-2-keeper`](https://sepolia.etherscan.io/tx/0xfa395cca32865c4e79393302b1af6515160198c8d3acd3643f31daa99aeae752) | scan, clear, pay (first payout to the seller wallet) | 237,862 | 142,042 |
+| [`claimBid-2-1-bidder1`](https://sepolia.etherscan.io/tx/0x386c554930ef850474b9a0ff8466c632cafe0efa82d37ba92cb24c4edc76d79c) | first copy of the edition to a new holder, refund sent | 181,063 | 88,659 |
+| [`claimBid-3-2-bidder2-marginal`](https://sepolia.etherscan.io/tx/0xaf261f8731869cfe3595d28935206bfd648bf25fad8e9dbe763a26fe8a777099) | the marginal bid: 1 of 2 units | 181,145 | 88,741 |
+| [`claimBidFor-2-4-keeper`](https://sepolia.etherscan.io/tx/0x9e72ede93cf7ababa28cbc78e72c23799ce029133d59fc06d1d654cf3babc218) | 2 copies, refund credited | 188,605 | 90,901 |
+| [`claimBidFor-3-1-keeper`](https://sepolia.etherscan.io/tx/0xf613c92a2c9a59b535cb4240881ab18ba1dec1762223b73a5a37dfda28d89239) | 1 copy, refund credited (new credit slot) | 286,664 | 108,140 |
+| [`claimBidFor-3-3-keeper-refund-only`](https://sepolia.etherscan.io/tx/0x5f727b4fabd3cd6ac68a76751196a26a03c66f18ae8b8142001b0d46967624eb) | no copy, refund credited | 143,279 | 60,875 |
+| [`claimBidFor-2-5-keeper`](https://sepolia.etherscan.io/tx/0xc06e6e1dc7e6ef686b4670c444c9aa0e585abec928e84607f48da03b61e8f99a) | no copy, credit to an existing slot | 44,509 | 42,436 |
+| [`claimCredits-edition-bidder1`](https://sepolia.etherscan.io/tx/0x4091607f94cf9007b50ff6194dae09c8e82967441ad9cf4d8599b37099071183) | `claim` of the credited refunds | 32,391 | 32,188 |
+| **Settlement and editions** | | | |
+| [`settle-4-unbid-to-museum`](https://sepolia.etherscan.io/tx/0x69c8e7905c84f5a4a118eeff10e2b170e6ff1700dda0751a0d13fcbaea956813) | UNBID: Stream moves it to the museum | 341,011 | 140,971 |
+| [`settle-3-unbid-master-to-museum`](https://sepolia.etherscan.io/tx/0x11a8f33b0c40bf587bbb03949d029cf0ce3146bccda16b39e3ed5e231d0facbe) | the same, an edition master | 243,103 | 123,883 |
+| [`settle-2-sold-0.055125`](https://sepolia.etherscan.io/tx/0x6a4e5916f20b46cc427130573b84ba0a11b2e49494a3d9502e3a537ab7f03e71) | SOLD: delivery, first payout to the seller wallet | 554,082 | 189,642 |
+| [`createEdition-2-keeper`](https://sepolia.etherscan.io/tx/0x774d7e7268c938fea4a78e6532deb6f1b52e86708e4f3a7730d0dbfc013e00a1) | economics already locked by the open | 339,990 | 147,350 |
+| [`createEdition-3-keeper`](https://sepolia.etherscan.io/tx/0xda8aaf6b122df4c5f0360ba6b0f2b714465dfa0172f5821bc846327775fb2e55) | the same, capped | 348,524 | 148,684 |
+| [`claimCredits-english-bidder1-0.05`](https://sepolia.etherscan.io/tx/0xb93b03c8dea5a9e883542287cd8e153de2138f500507cd54bede6e45e7509807) | `claim` of an outbid credit | 32,581 | 32,426 |
+| **Dispute** | | | |
+| [`pause-1`](https://sepolia.etherscan.io/tx/0xe4462884f6f59c70a349e8d49b402295fa7c385e2a6b8802d4d6ff1d25779fdd) | Guardian Safe `execTransaction` | 211,418 | 113,398 |
+| [`editionWithdraw-1-prepause-b1`](https://sepolia.etherscan.io/tx/0x3981428ff823e8abc128d40bf16a4d4fa1dd240a8cb393d1309ec9b825c2525a) | escrow sent back | 66,672 | 55,440 |
+| [`withdrawBid-1-prepause-0.05`](https://sepolia.etherscan.io/tx/0x44c8f86c4830ba835ffd59ffe190b6b97634d26aec39ebe5c3edf1f289d160c4) | 1/1 bid credited back | 158,448 | 68,828 |
+| [`editionBid-1-during-pause-b3`](https://sepolia.etherscan.io/tx/0x05cfe4868a77b278960d10bd5a82bf5b84c1fa65a1c0326680a83db9d11362ff) | accepted while paused | 170,934 | 68,514 |
+| [`editionWithdraw-1-during-pause-refused`](https://sepolia.etherscan.io/tx/0x719cd6e0254d863b2277a3d55e605c8380f5610edf67c79b68f8c9ff33eaf8e8) | reverted on purpose | 34,315 | 39,915 |
+| [`disputeOutcome-1`](https://sepolia.etherscan.io/tx/0xcc6d2a000b94317a9b388162eff86534593cd0a3ce2c439b6d18868fc5bf82f5) | PLATFORM statement | 397,757 | 138,897 |
+| [`scheduleCancel-1`](https://sepolia.etherscan.io/tx/0x4eb73e04b11cd90d856032d76236f9f28d9ba39a2dbc62815caa2db123ad135d) | hot admin Safe `execTransaction` → `manager.schedule` | 188,105 | 98,085 |
+
+Every other row is in [`flows/r4.json`](flows/r4.json). The content uploads
+([`flows/r4-content.json`](flows/r4-content.json), 36 transactions) cost what they cost on r3,
+row for row: `writeChunk` of 1,024, 8,192 and 24,572 bytes is 1,914,322,
+13,008,576 and 38,364,370 gas, a record chunk
+625,103 and a manifest about 578K to 580K.
+
+- **The edition auction on Sepolia.** A bid that opens a new step costs about 269K (Prague about
+  85,764); one at an already-used step word about 171K. A raise is 65K uncapped and
+  80K to 298K capped (a departure log entry, and a new step). Settling a sale is 238K to 336K;
+  a second settler's sweep 58K. A claim is 44K (refund credited to an existing credit) to 287K
+  (copies to a new holder and a new credit). Opening a sale is about 797K: it binds the edition
+  and locks its economics, which is why `createEdition` after it costs only about 340K
+  (r3's, which locked them, was 888K simulated).
+- **Starts match r3.** A steady-state start is 734,390 (r3: 735,859); the first start
+  ever 1,598,898 (r3: 1,601,871).
+- **Refusals sent on purpose** cost what they ran before reverting: 56,537 for the
+  1-wei bid, 34,315 for the refused withdrawal.
+
+### Not run on r4
+
+- The VRF request and fulfilment (r2 ran it), `openRecord` and `syncOnChain`, the views'
+  gas, `refreshStanding`, ERC-20 and Permit2 bids, and governance operations other than the
+  pause and the scheduled cancel.
+- The live Verify (due from 6 November 2026, 12:41:36 UTC;
+  [README](README.md#sepolia-r4-1-november-2026-current)).
+- The state-gas reservoir test of the runbook's step 13.
+
 ## r3: the release candidate (15 October 2026)
 
 On 15 October 2026 the lifecycle ran again on **r3**, `main` at `e5fe78c`
-([README](README.md#sepolia-r3-15-october-2026-current)): every review fix, the state-growth
+([README](README.md#sepolia-r3-15-october-2026-superseded-by-r4)): every review fix, the state-growth
 gas diet and the source-quality pass. Same driver, same package (the same files, items and
 root `0xde416feb…e68d`) and the same accounts as r2. The state file is
 [`flows/r3.json`](flows/r3.json).
@@ -72,7 +307,7 @@ saving.
 | `purchase`, a later copy, new holder (simulated) | 232,158 |  | 370,142 | −137,984 | 2 → 1 | about 228K |
 | `purchase`, two copies, existing holder (simulated) | 134,262 |  | 174,326 | −40,064 | 0 → 0 | — |
 | `settle`, with a bid, first payout to the seller wallet (simulated) | 449,934 |  | 441,363 | +8,571 | 1 and an account | — |
-| Deploy, 25 transactions ([README](README.md#sepolia-r3-15-october-2026-current)) | 476,686,821 | 76,583,081 (forge) | 447,912,784 | +28,774,037 | | |
+| Deploy, 25 transactions ([README](README.md#sepolia-r3-15-october-2026-superseded-by-r4)) | 476,686,821 | 76,583,081 (forge) | 447,912,784 | +28,774,037 | | |
 
 - **Each slot the diet removed is about 88,000 to 89,000 gas on Sepolia,** on top of its
   Prague saving. A steady-state `start` fell by 111,104 gas (13%), `startWithBid` by 110,332
@@ -84,7 +319,7 @@ saving.
   `openSale` writes 6 (ADR 0004: about 762K on Sepolia); this run has one edition, so it does
   not measure one.
 - **The deploy costs more:** the contracts grew with the review fixes; the per-transaction
-  table is in the [README](README.md#sepolia-r3-15-october-2026-current).
+  table is in the [README](README.md#sepolia-r3-15-october-2026-superseded-by-r4).
 - **`settle` of the first payout costs 8,571 more** than on r2. The diet did not change its
   slots, and its Prague gas grew by about 8K with the review fixes (ADR 0004's table: 166,585,
   against 158,414 in CI when r2 was measured).
@@ -143,8 +378,10 @@ fixes, hence the different output sizes.
 Item 6, the VRF work, was not started on r3: its seed request is the next thing to run if
 the VRF path needs re-measuring.
 
-**To finish, from 16 October 2026, 20:35 UTC,** in the repository root (r3 is the driver's
-default record; `Flow` is the helper under [Pending](#pending) below):
+**To finish, from 16 October 2026, 20:35 UTC,** in a checkout of `e5fe78c`, whose driver has
+r3 as its default record and the `openSale` and `purchase` steps (`Flow` is the helper under
+[Pending](#pending) below). The driver on `main` has neither step, and its default record is
+r4's:
 
 ```powershell
 $r3 = @('-State', 'deployments/11155111/flows/r3.json')
@@ -609,7 +846,7 @@ Flow @r2 -Step bid -TokenId <id> -Bidder bidder1 -Amount <at least the minimum b
 ```
 
 `Flow` is a helper that runs `script/sepolia/flows.ps1` with the operator's signer
-module, and `@r2` passes r2's state file and record (r3 is the driver's default since the r3
+module, and `@r2` passes r2's state file and record (r4 is the driver's default since the r4
 run):
 
 ```powershell

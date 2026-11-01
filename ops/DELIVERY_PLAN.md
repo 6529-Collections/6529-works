@@ -65,8 +65,11 @@ script/          deployment and verification
 
 **16 October 2026: release candidate
 [v1.0.0-rc.1](../docs/releases/v1.0.0-rc.1.md).** Phases 1 to 6 are complete. Phase 7
-(testnet) has three Sepolia rehearsals, the last of them RC1's code, with the items under "Open in
-phase 7" still to do. The code is pre-audit and not production-ready.
+(testnet) has four Sepolia rehearsals: r3 is RC1's code, and r4 (1 November 2026) the rc.2
+candidate, `1e7022b`, with the uniform edition auction run on chain
+([record](../deployments/11155111/README.md#sepolia-r4-1-november-2026-current),
+[flows](../deployments/11155111/flows.md#r4-the-rc2-candidate-1-november-2026)). The items under
+"Open in phase 7" are still to do. The code is pre-audit and not production-ready.
 
 **What RC1 is.** The tag on `main` whose contracts, deploy and verify scripts, genesis policy and
 `foundry.toml` are those of `e5fe78c`, the code deployed as Sepolia rehearsal r3. It holds every
@@ -87,14 +90,17 @@ them: the review fixes, the state-growth gas diet and the source-quality pass.
   in CI;
 - Sepolia r3: every contract an exact match on Sourcify, Verify passing on a fork advanced five
   days, and the lifecycle measured on chain
-  ([record](../deployments/11155111/README.md#sepolia-r3-15-october-2026-current),
+  ([record](../deployments/11155111/README.md#sepolia-r3-15-october-2026-superseded-by-r4),
   [flows](../deployments/11155111/flows.md#r3-the-release-candidate-15-october-2026)).
 
 **Open in phase 7:**
 - r3's settlements, edition sale and purchases, and a real anti-snipe bid, from 16 October
   2026, 20:35 UTC; until then those rows are simulated;
-- the live Verify: r1 and r2 from 16 October, r3 from 20 October 2026;
-- the flows not yet run on Sepolia: the dispute pause and other guardian operations, and a
+- the live Verify: r1 and r2 from 16 October, r3 from 20 October, r4 from 6 November 2026;
+- r4's dispute cancel of token 1, scheduled by the hot admin Safe and executable from
+  3 November 2026, 12:48 UTC, then the void settlement and its refunds (a guardian's dispute
+  pause, with its withdrawals, already ran on r4);
+- the flows not yet run on Sepolia: guardian operations other than the dispute pause, and a
   recovery or identity change (each needs a Safe or waits a governed delay); finalize and
   preferred-location failover; ERC-20 payments by Permit2
   ([flows](../deployments/11155111/flows.md#pending));

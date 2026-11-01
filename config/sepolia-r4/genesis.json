@@ -1,0 +1,1063 @@
+{
+  "schema": "6529-works/governance-genesis/1",
+  "description": "Sepolia rehearsal r4 of 6529 Works v1 (chain 11155111). Holders are throwaway testnet Safes and keys with the mainnet structure: a 2-of-3 hot admin Safe, a 3-of-5 cold recovery admin Safe with distinct signers, and three 2-of-3 guardian Safes. Not for mainnet.",
+  "sources": [
+    "docs/adr/0002-access-manager-hardening.md (decision 7: selector classes)",
+    "docs/adr/0003-build-time-decisions.md (build-time role and class decisions)",
+    "docs/architecture.md (governance map)",
+    "src/interfaces/ and the implementations on main (selectors); src/governance/Roles.sol (role IDs and delays)"
+  ],
+  "roles": [
+    {
+      "name": "ADMIN",
+      "id": 0,
+      "executionClass": "successor",
+      "executionDelay": 2592000,
+      "grantClass": "successor",
+      "grantDelay": 2592000,
+      "suspendable": false
+    },
+    {
+      "name": "GUARDIAN",
+      "id": 1,
+      "executionClass": "immediate",
+      "executionDelay": 0,
+      "grantClass": "successor",
+      "grantDelay": 2592000,
+      "suspendable": false
+    },
+    {
+      "name": "PAUSER",
+      "id": 2,
+      "executionClass": "immediate",
+      "executionDelay": 0,
+      "grantClass": "standard",
+      "grantDelay": 172800,
+      "suspendable": false
+    },
+    {
+      "name": "UNPAUSER",
+      "id": 3,
+      "executionClass": "standard",
+      "executionDelay": 172800,
+      "grantClass": "standard",
+      "grantDelay": 172800,
+      "suspendable": false
+    },
+    {
+      "name": "CURATION_SIGNER",
+      "id": 4,
+      "executionClass": "immediate",
+      "executionDelay": 0,
+      "grantClass": "successor",
+      "grantDelay": 2592000,
+      "suspendable": false
+    },
+    {
+      "name": "STORAGE_OPERATOR",
+      "id": 5,
+      "executionClass": "immediate",
+      "executionDelay": 0,
+      "grantClass": "standard",
+      "grantDelay": 172800,
+      "suspendable": true
+    },
+    {
+      "name": "MINTER",
+      "id": 6,
+      "executionClass": "immediate",
+      "executionDelay": 0,
+      "grantClass": "successor",
+      "grantDelay": 2592000,
+      "suspendable": false
+    },
+    {
+      "name": "KEEPER",
+      "id": 7,
+      "executionClass": "immediate",
+      "executionDelay": 0,
+      "grantClass": "standard",
+      "grantDelay": 172800,
+      "suspendable": false
+    },
+    {
+      "name": "PLATFORM",
+      "id": 8,
+      "executionClass": "immediate",
+      "executionDelay": 0,
+      "grantClass": "standard",
+      "grantDelay": 172800,
+      "suspendable": true
+    },
+    {
+      "name": "PARAMETER_SETTER",
+      "id": 9,
+      "executionClass": "standard",
+      "executionDelay": 172800,
+      "grantClass": "standard",
+      "grantDelay": 172800,
+      "suspendable": false
+    },
+    {
+      "name": "FUNDS_SETTER",
+      "id": 10,
+      "executionClass": "funds",
+      "executionDelay": 1209600,
+      "grantClass": "funds",
+      "grantDelay": 1209600,
+      "suspendable": false
+    },
+    {
+      "name": "SUCCESSOR_SETTER",
+      "id": 11,
+      "executionClass": "successor",
+      "executionDelay": 2592000,
+      "grantClass": "successor",
+      "grantDelay": 2592000,
+      "suspendable": false
+    },
+    {
+      "name": "CURATOR",
+      "id": 12,
+      "executionClass": "immediate",
+      "executionDelay": 0,
+      "grantClass": "successor",
+      "grantDelay": 2592000,
+      "suspendable": true
+    }
+  ],
+  "holders": [
+    {
+      "role": "ADMIN",
+      "account": "0x2588A62384F41bB32412841ab774CD574b427bd5",
+      "label": "Hot admin Safe (2-of-3)"
+    },
+    {
+      "role": "ADMIN",
+      "account": "0x5090272f56f9139CfE91aa927bc547244FC0d6B9",
+      "label": "Cold recovery admin Safe (3-of-5, distinct signers, ADMIN only)"
+    },
+    {
+      "role": "GUARDIAN",
+      "account": "0x5d1103f2FC0ce8D0E81a918A3819182208B6E916",
+      "label": "Guardian Safe 1 (2-of-3)"
+    },
+    {
+      "role": "GUARDIAN",
+      "account": "0x894D246cA153Be5a9b125d694e52cdD146f5be8C",
+      "label": "Guardian Safe 2 (2-of-3)"
+    },
+    {
+      "role": "GUARDIAN",
+      "account": "0x708A1Eb9D5ea5678D5168752ee0bfe3D58f4bA7e",
+      "label": "Guardian Safe 3 (2-of-3)"
+    },
+    {
+      "role": "PAUSER",
+      "account": "0x5d1103f2FC0ce8D0E81a918A3819182208B6E916",
+      "label": "Guardian Safe 1 (2-of-3)"
+    },
+    {
+      "role": "PAUSER",
+      "account": "0x894D246cA153Be5a9b125d694e52cdD146f5be8C",
+      "label": "Guardian Safe 2 (2-of-3)"
+    },
+    {
+      "role": "PAUSER",
+      "account": "0x708A1Eb9D5ea5678D5168752ee0bfe3D58f4bA7e",
+      "label": "Guardian Safe 3 (2-of-3)"
+    },
+    {
+      "role": "UNPAUSER",
+      "account": "0x2588A62384F41bB32412841ab774CD574b427bd5",
+      "label": "Hot admin Safe (2-of-3)"
+    },
+    {
+      "role": "PARAMETER_SETTER",
+      "account": "0x2588A62384F41bB32412841ab774CD574b427bd5",
+      "label": "Hot admin Safe (2-of-3)"
+    },
+    {
+      "role": "FUNDS_SETTER",
+      "account": "0x2588A62384F41bB32412841ab774CD574b427bd5",
+      "label": "Hot admin Safe (2-of-3)"
+    },
+    {
+      "role": "SUCCESSOR_SETTER",
+      "account": "0x2588A62384F41bB32412841ab774CD574b427bd5",
+      "label": "Hot admin Safe (2-of-3)"
+    },
+    {
+      "role": "CURATION_SIGNER",
+      "account": "0xc7091A91Fa76f7494a3b847B6A08f164C7097830",
+      "label": "Curation signer key 1"
+    },
+    {
+      "role": "CURATION_SIGNER",
+      "account": "0x148F83Bd54Ef232d8e7056a21Ca777C6e8Bac709",
+      "label": "Curation signer key 2"
+    },
+    {
+      "role": "STORAGE_OPERATOR",
+      "account": "0x4484CEBA86645575Fd1E48Ac06dCc8c6CEe44ACd",
+      "label": "Storage operator key"
+    },
+    {
+      "role": "PLATFORM",
+      "account": "0x0a69CdD0d8De0680779237aFF610C90b61B83b2D",
+      "label": "Platform key"
+    },
+    {
+      "role": "CURATOR",
+      "account": "0xBDccCcBfAF7aAE8702bD41e79f0CF0441676906a",
+      "label": "Curator key"
+    }
+  ],
+  "peers": [
+    {
+      "name": "SplitFactory",
+      "address": "0x000000000000000000000000000000000000a010",
+      "note": "not governed; passed to ArtistRegistry.bindSplitFactory"
+    },
+    {
+      "name": "WorksAccessManager",
+      "address": "0x000000000000000000000000000000000000a0ff",
+      "note": "configurator.worksManager(); the subject of the epoch-0 manifest"
+    }
+  ],
+  "manager": {
+    "name": "WorksAccessManager",
+    "artifact": "src/governance/WorksAccessManager.sol:WorksAccessManager",
+    "base": "lib/openzeppelin-contracts/contracts/access/manager/AccessManager.sol:AccessManager",
+    "note": "Never a configured target. Its functions beyond the OpenZeppelin base check the caller's role themselves; tools/check_genesis.py requires every one to be listed here.",
+    "functions": [
+      {
+        "signature": "suspend(uint64,address)",
+        "selector": "0x64bf6e5d",
+        "role": "GUARDIAN",
+        "class": "immediate",
+        "delay": 0,
+        "note": "One-way suspension of a holder of a suspendable role (roles[].suspendable); an ADMIN grantRole or revokeRole of that role to that account (30 days) clears it"
+      }
+    ],
+    "views": [
+      {
+        "signature": "isSuspended(uint64,address)",
+        "selector": "0xbd2e6ac3"
+      }
+    ]
+  },
+  "contracts": [
+    {
+      "name": "Stream",
+      "artifact": "src/stream/Stream.sol:Stream",
+      "implementation": "src/stream/Stream.sol:Stream",
+      "address": "0x000000000000000000000000000000000000a001",
+      "status": "implemented (stream lane)",
+      "functions": [
+        {
+          "signature": "createCollection(string,bytes32)",
+          "selector": "0x41d06dde",
+          "role": "PLATFORM",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "setContractURI(string)",
+          "selector": "0x938e3d7b",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
+        },
+        {
+          "signature": "setOwner(address,address)",
+          "selector": "0x299a7bcc",
+          "role": "FUNDS_SETTER",
+          "class": "funds",
+          "delay": 1209600
+        },
+        {
+          "signature": "setDefaultRenderer(address,address,bytes32)",
+          "selector": "0x95021460",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        },
+        {
+          "signature": "setAdmittedMinter(address,bool)",
+          "selector": "0xa82ed63a",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        },
+        {
+          "signature": "releaseContent(uint256,bytes32,uint256)",
+          "selector": "0x56c6d728",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
+        },
+        {
+          "signature": "setDependency(bytes32,address,address)",
+          "selector": "0x480b197d",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        },
+        {
+          "signature": "rescueToMuseum(uint256)",
+          "selector": "0xe9c794a4",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        }
+      ],
+      "genesisOnly": [
+        {
+          "signature": "bindWorkRecords(address)",
+          "selector": "0x8bb9e2fd"
+        },
+        {
+          "signature": "bindEditions(address)",
+          "selector": "0x8d12f114"
+        }
+      ],
+      "deferred": []
+    },
+    {
+      "name": "WorkRecords",
+      "artifact": "src/stream/WorkRecords.sol:WorkRecords",
+      "implementation": "src/stream/WorkRecords.sol:WorkRecords",
+      "address": "0x000000000000000000000000000000000000a002",
+      "status": "implemented (stream lane)",
+      "functions": [
+        {
+          "signature": "setPreferredKind(uint8)",
+          "selector": "0x40ff5d7f",
+          "role": "STORAGE_OPERATOR",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "setCollectionPreferredKind(uint256,uint8)",
+          "selector": "0x4ddc92d1",
+          "role": "STORAGE_OPERATOR",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "setFilePreference(uint256,bytes32,uint256)",
+          "selector": "0x65a48a4e",
+          "role": "STORAGE_OPERATOR",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "addLocator(uint256,bytes32,(uint8,string))",
+          "selector": "0xf3326c0f",
+          "role": "PLATFORM",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "relicense(uint256,(string,bytes32),(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])",
+          "selector": "0xd60ad0db",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
+        },
+        {
+          "signature": "setRoyaltyRate(uint256,uint32,(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])",
+          "selector": "0xc13560ef",
+          "role": "FUNDS_SETTER",
+          "class": "funds",
+          "delay": 1209600
+        },
+        {
+          "signature": "repinRenderer(uint256,address,bytes32,bytes32,uint64,bytes)",
+          "selector": "0x12e96e4a",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "Editions",
+      "artifact": "src/editions/Editions.sol:Editions",
+      "implementation": "src/editions/Editions.sol:Editions",
+      "address": "0x000000000000000000000000000000000000a003",
+      "status": "implemented (editions lane); pending until it merges",
+      "functions": [
+        {
+          "signature": "setContractURI(string)",
+          "selector": "0x938e3d7b",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
+        },
+        {
+          "signature": "setOwner(address,address)",
+          "selector": "0x299a7bcc",
+          "role": "FUNDS_SETTER",
+          "class": "funds",
+          "delay": 1209600
+        },
+        {
+          "signature": "setAdmittedMinter(address,bool)",
+          "selector": "0xa82ed63a",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        }
+      ],
+      "genesisOnly": [
+        {
+          "signature": "bindWorkRecords(address)",
+          "selector": "0x8bb9e2fd"
+        }
+      ],
+      "deferred": []
+    },
+    {
+      "name": "PackageRegistry",
+      "artifact": "src/curation/PackageRegistry.sol:PackageRegistry",
+      "implementation": "src/curation/PackageRegistry.sol:PackageRegistry",
+      "address": "0x000000000000000000000000000000000000a004",
+      "status": "implemented on main",
+      "functions": [
+        {
+          "signature": "revokePackage(bytes32,bytes32)",
+          "selector": "0x6ce7e2f6",
+          "role": "GUARDIAN",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "setVerifier(address,address,bytes32)",
+          "selector": "0xef65fbd2",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        }
+      ],
+      "genesisOnly": [
+        {
+          "signature": "bindStream(address)",
+          "selector": "0x7d4b8f67"
+        },
+        {
+          "signature": "bindEditions(address)",
+          "selector": "0x8d12f114"
+        }
+      ],
+      "deferred": []
+    },
+    {
+      "name": "CurationVerifier",
+      "artifact": "src/curation/Eip712CurationVerifier.sol:Eip712CurationVerifier",
+      "implementation": "src/curation/Eip712CurationVerifier.sol:Eip712CurationVerifier",
+      "address": "0x000000000000000000000000000000000000a005",
+      "status": "implemented on main",
+      "functions": [
+        {
+          "signature": "disableSigner(address)",
+          "selector": "0x27086336",
+          "role": "GUARDIAN",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "enableSigner(address)",
+          "selector": "0x6dcd6b34",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "ArtistRegistry",
+      "artifact": "src/identity/ArtistRegistry.sol:ArtistRegistry",
+      "implementation": "src/identity/ArtistRegistry.sol:ArtistRegistry",
+      "address": "0x000000000000000000000000000000000000a006",
+      "status": "implemented on main",
+      "functions": [
+        {
+          "signature": "vetoChange(uint256)",
+          "selector": "0xc86a97ee",
+          "role": "GUARDIAN",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "stageOverride(uint256,uint8,(address,address,bytes32,bytes32),bytes32,uint64,bytes)",
+          "selector": "0xf27323a6",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
+        },
+        {
+          "signature": "setConsolidationSource(address,address,bytes32)",
+          "selector": "0x741cbdad",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        },
+        {
+          "signature": "setPackageRegistry(address,address)",
+          "selector": "0x00752cf1",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        },
+        {
+          "signature": "resolveContested(uint256,bool,bytes32)",
+          "selector": "0xd16d1602",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        }
+      ],
+      "genesisOnly": [
+        {
+          "signature": "bindPackageRegistry(address)",
+          "selector": "0x56ea1bf8"
+        },
+        {
+          "signature": "bindStream(address)",
+          "selector": "0x7d4b8f67"
+        },
+        {
+          "signature": "bindSplitFactory(address)",
+          "selector": "0x5b004c86"
+        },
+        {
+          "signature": "bindStatementLog(address)",
+          "selector": "0xa46c8086"
+        }
+      ],
+      "deferred": [
+        {
+          "signature": "bindFederationRegistry(address)",
+          "selector": "0x3d4dbd3c",
+          "note": "v1.1: bound when the federation registry ships, as a 30-day ADMIN action"
+        }
+      ]
+    },
+    {
+      "name": "StatementLog",
+      "artifact": "src/records/StatementLog.sol:StatementLog",
+      "implementation": "src/records/StatementLog.sol:StatementLog",
+      "address": "0x000000000000000000000000000000000000a007",
+      "status": "implemented on main",
+      "functions": [
+        {
+          "signature": "appendCurator((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))",
+          "selector": "0xa054305a",
+          "role": "CURATOR",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "appendPlatform((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))",
+          "selector": "0x8479b292",
+          "role": "PLATFORM",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "appendGovernanceManifest((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))",
+          "selector": "0x5cab7fab",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        },
+        {
+          "signature": "setArtistResolver(address,address,bytes32)",
+          "selector": "0x4585913a",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "EnglishAuction",
+      "artifact": "src/sales/EnglishAuction.sol:EnglishAuction",
+      "implementation": "src/sales/EnglishAuction.sol:EnglishAuction",
+      "address": "0x000000000000000000000000000000000000a008",
+      "status": "implemented on main",
+      "functions": [
+        {
+          "signature": "pause()",
+          "selector": "0x8456cb59",
+          "role": "PAUSER",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "unpause()",
+          "selector": "0x3f4ba83a",
+          "role": "UNPAUSER",
+          "class": "standard",
+          "delay": 172800
+        },
+        {
+          "signature": "pause(uint256,bytes32)",
+          "selector": "0xa9f8f393",
+          "role": "GUARDIAN",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "resume(uint256)",
+          "selector": "0x414000b5",
+          "role": "UNPAUSER",
+          "class": "standard",
+          "delay": 172800
+        },
+        {
+          "signature": "cancel(uint256,bytes32)",
+          "selector": "0xeafb64d5",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
+        },
+        {
+          "signature": "setConfig((uint32,uint32,uint32),(uint32,uint32,uint32))",
+          "selector": "0x8a5268b2",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
+        },
+        {
+          "signature": "setOpeningBid(address,uint256,uint256)",
+          "selector": "0x5d918358",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
+        },
+        {
+          "signature": "setTarget(address,bool)",
+          "selector": "0x80ffe77f",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        },
+        {
+          "signature": "setFederationRegistry(address,address)",
+          "selector": "0x747e3199",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "UniformEditionAuction",
+      "artifact": "src/sales/UniformEditionAuction.sol:UniformEditionAuction",
+      "implementation": "src/sales/UniformEditionAuction.sol:UniformEditionAuction",
+      "address": "0x000000000000000000000000000000000000a009",
+      "status": "implemented on the edition-auction branch; lands with it",
+      "functions": [
+        {
+          "signature": "pause()",
+          "selector": "0x8456cb59",
+          "role": "PAUSER",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "unpause()",
+          "selector": "0x3f4ba83a",
+          "role": "UNPAUSER",
+          "class": "standard",
+          "delay": 172800
+        },
+        {
+          "signature": "setConfig((uint96,uint16,uint16,uint32,uint32,uint32,uint32),(uint96,uint16,uint16,uint32,uint32,uint32,uint32))",
+          "selector": "0x3a59bb19",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
+        },
+        {
+          "signature": "setTarget(address,bool)",
+          "selector": "0x80ffe77f",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        },
+        {
+          "signature": "setFederationRegistry(address,address)",
+          "selector": "0x747e3199",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "EconomicsResolver",
+      "artifact": "src/economics/EconomicsResolver.sol:EconomicsResolver",
+      "implementation": "src/economics/EconomicsResolver.sol:EconomicsResolver",
+      "address": "0x000000000000000000000000000000000000a00b",
+      "status": "implemented on main",
+      "functions": [
+        {
+          "signature": "setFeeTerms(bytes32,uint64,address,uint32)",
+          "selector": "0x9a8fce26",
+          "role": "FUNDS_SETTER",
+          "class": "funds",
+          "delay": 1209600
+        },
+        {
+          "signature": "setRoyaltyRate(bytes32,uint64,uint32)",
+          "selector": "0x6e58f7af",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
+        },
+        {
+          "signature": "setDefaultLicense(bytes32,uint64,(string,bytes32))",
+          "selector": "0x387226d6",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
+        },
+        {
+          "signature": "setMuseum(uint64,address)",
+          "selector": "0x10d71d79",
+          "role": "FUNDS_SETTER",
+          "class": "funds",
+          "delay": 1209600
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "AssetAllowlist",
+      "artifact": "src/economics/AssetAllowlist.sol:AssetAllowlist",
+      "implementation": "src/economics/AssetAllowlist.sol:AssetAllowlist",
+      "address": "0x000000000000000000000000000000000000a00c",
+      "status": "implemented on main",
+      "functions": [
+        {
+          "signature": "admitAsset(address,uint64,uint256)",
+          "selector": "0x3979fc8e",
+          "role": "FUNDS_SETTER",
+          "class": "funds",
+          "delay": 1209600
+        },
+        {
+          "signature": "setDefaultCurrency(bytes32,uint64,address)",
+          "selector": "0xbc27c0e9",
+          "role": "FUNDS_SETTER",
+          "class": "funds",
+          "delay": 1209600
+        },
+        {
+          "signature": "setIncrementFloor(address,uint64,uint256)",
+          "selector": "0xad176f96",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
+        },
+        {
+          "signature": "deprecateAsset(address)",
+          "selector": "0x41003c89",
+          "role": "GUARDIAN",
+          "class": "immediate",
+          "delay": 0
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "RevenueEscrow",
+      "artifact": "src/economics/RevenueEscrow.sol:RevenueEscrow",
+      "implementation": "src/economics/RevenueEscrow.sol:RevenueEscrow",
+      "address": "0x000000000000000000000000000000000000a00d",
+      "status": "implemented on main",
+      "functions": [
+        {
+          "signature": "recover(address,address,address)",
+          "selector": "0x159c61f8",
+          "role": "FUNDS_SETTER",
+          "class": "funds",
+          "delay": 1209600
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "DependencyRegistry",
+      "artifact": "src/content/DependencyRegistry.sol:DependencyRegistry",
+      "implementation": "src/content/DependencyRegistry.sol:DependencyRegistry",
+      "address": "0x000000000000000000000000000000000000a00e",
+      "status": "implemented on main",
+      "functions": [
+        {
+          "signature": "register(bytes32,bytes32,bytes32)",
+          "selector": "0x4da274fd",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
+        },
+        {
+          "signature": "deprecate(bytes32,bytes32)",
+          "selector": "0x38bc7435",
+          "role": "GUARDIAN",
+          "class": "immediate",
+          "delay": 0
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "EntropyModule",
+      "artifact": "src/entropy/VrfEntropyModule.sol:VrfEntropyModule",
+      "implementation": "src/entropy/VrfEntropyModule.sol:VrfEntropyModule",
+      "address": "0x000000000000000000000000000000000000a00f",
+      "status": "implemented on main (optional module)",
+      "functions": [
+        {
+          "signature": "setConfig((uint256,bytes32,uint32,uint16,bool),(uint256,bytes32,uint32,uint16,bool))",
+          "selector": "0x058832db",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
+        },
+        {
+          "signature": "setCoordinator(address,address,bytes32)",
+          "selector": "0xf1fb02ec",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        },
+        {
+          "signature": "lowerCallbackGasLimit(uint32,uint32)",
+          "selector": "0x37f9925e",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    }
+  ],
+  "wiring": [
+    {
+      "contract": "Stream",
+      "signature": "bindWorkRecords(address)",
+      "args": [
+        "WorkRecords"
+      ],
+      "calldata": "0x8bb9e2fd000000000000000000000000000000000000000000000000000000000000a002"
+    },
+    {
+      "contract": "Stream",
+      "signature": "bindEditions(address)",
+      "args": [
+        "Editions"
+      ],
+      "calldata": "0x8d12f114000000000000000000000000000000000000000000000000000000000000a003"
+    },
+    {
+      "contract": "Editions",
+      "signature": "bindWorkRecords(address)",
+      "args": [
+        "WorkRecords"
+      ],
+      "calldata": "0x8bb9e2fd000000000000000000000000000000000000000000000000000000000000a002"
+    },
+    {
+      "contract": "PackageRegistry",
+      "signature": "bindStream(address)",
+      "args": [
+        "Stream"
+      ],
+      "calldata": "0x7d4b8f67000000000000000000000000000000000000000000000000000000000000a001"
+    },
+    {
+      "contract": "PackageRegistry",
+      "signature": "bindEditions(address)",
+      "args": [
+        "Editions"
+      ],
+      "calldata": "0x8d12f114000000000000000000000000000000000000000000000000000000000000a003"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "signature": "bindPackageRegistry(address)",
+      "args": [
+        "PackageRegistry"
+      ],
+      "calldata": "0x56ea1bf8000000000000000000000000000000000000000000000000000000000000a004"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "signature": "bindStream(address)",
+      "args": [
+        "Stream"
+      ],
+      "calldata": "0x7d4b8f67000000000000000000000000000000000000000000000000000000000000a001"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "signature": "bindSplitFactory(address)",
+      "args": [
+        "SplitFactory"
+      ],
+      "calldata": "0x5b004c86000000000000000000000000000000000000000000000000000000000000a010"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "signature": "bindStatementLog(address)",
+      "args": [
+        "StatementLog"
+      ],
+      "calldata": "0xa46c8086000000000000000000000000000000000000000000000000000000000000a007"
+    },
+    {
+      "contract": "Stream",
+      "signature": "setAdmittedMinter(address,bool)",
+      "args": [
+        "EnglishAuction",
+        true
+      ],
+      "calldata": "0xa82ed63a000000000000000000000000000000000000000000000000000000000000a0080000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "contract": "Editions",
+      "signature": "setAdmittedMinter(address,bool)",
+      "args": [
+        "UniformEditionAuction",
+        true
+      ],
+      "calldata": "0xa82ed63a000000000000000000000000000000000000000000000000000000000000a0090000000000000000000000000000000000000000000000000000000000000001",
+      "note": "The genesis edition sale; later sale methods are admitted the same way, in the 30-day class (owner decision 14)"
+    },
+    {
+      "contract": "EnglishAuction",
+      "signature": "setTarget(address,bool)",
+      "args": [
+        "Stream",
+        true
+      ],
+      "calldata": "0x80ffe77f000000000000000000000000000000000000000000000000000000000000a0010000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "contract": "EnglishAuction",
+      "signature": "setOpeningBid(address,uint256,uint256)",
+      "args": [
+        "0x0000000000000000000000000000000000000000",
+        0,
+        50000000000000000
+      ],
+      "note": "ETH opening bid 0.05 ETH (owner decision 19): a 1-wei self-bid can no longer take a 1/1 past the museum",
+      "calldata": "0x5d9183580000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000b1a2bc2ec50000"
+    },
+    {
+      "contract": "UniformEditionAuction",
+      "signature": "setTarget(address,bool)",
+      "args": [
+        "Editions",
+        true
+      ],
+      "calldata": "0x80ffe77f000000000000000000000000000000000000000000000000000000000000a0030000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "contract": "AssetAllowlist",
+      "signature": "setDefaultCurrency(bytes32,uint64,address)",
+      "args": [
+        "0x8d6f9a2373152dc58ba78e223790bc7f77f86abeb152249f9dfa37dfb9f47de2",
+        0,
+        "0x0000000000000000000000000000000000000000"
+      ],
+      "note": "PRODUCT_STREAM: ETH, revision 0",
+      "calldata": "0xbc27c0e98d6f9a2373152dc58ba78e223790bc7f77f86abeb152249f9dfa37dfb9f47de200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "contract": "AssetAllowlist",
+      "signature": "setDefaultCurrency(bytes32,uint64,address)",
+      "args": [
+        "0xdda24e9b6aae8e08617e9965b04fb0c49afa288965fbdf1734798e07309ffb7b",
+        0,
+        "0x0000000000000000000000000000000000000000"
+      ],
+      "note": "PRODUCT_EDITIONS: ETH, revision 0",
+      "calldata": "0xbc27c0e9dda24e9b6aae8e08617e9965b04fb0c49afa288965fbdf1734798e07309ffb7b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "contract": "AssetAllowlist",
+      "signature": "setDefaultCurrency(bytes32,uint64,address)",
+      "args": [
+        "0x12f6fbd5cb8f4522cd7d37f0fdc7097a4960a4f90e7a869820d34c7bdb75edff",
+        0,
+        "0x0000000000000000000000000000000000000000"
+      ],
+      "note": "PRODUCT_FEDERATED: ETH, revision 0",
+      "calldata": "0xbc27c0e912f6fbd5cb8f4522cd7d37f0fdc7097a4960a4f90e7a869820d34c7bdb75edff00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "contract": "StatementLog",
+      "signature": "appendGovernanceManifest((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))",
+      "args": [],
+      "statement": {
+        "token": "WorksAccessManager",
+        "id": 0,
+        "kind": "GOVERNANCE_MANIFEST",
+        "schema": "keccak256(\"6529-works/governance-manifest/1\")",
+        "content": "SHA-256 (algorithm 2) of the signed epoch-0 manifest JSON (placeholder digest)",
+        "uri": "ar://placeholder-epoch-0-manifest",
+        "fileId": "0",
+        "supersedes": "0 (first epoch)"
+      },
+      "calldata": "0x5cab7fab0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000a0ff0000000000000000000000000000000000000000000000000000000000000000da3e4cfef33ef5fdea6a80cfd6c21354d7614a38addf188d0edad56c431651fc8eed62bc4427fadfd725468d49f945fa5af42bb4e58a6a6e36a907ce8743d4a700000000000000000000000000000000000000000000000000000000000000026e422bb96460cca9f8124fc04f069fe6e7bdce63cb4224e7c9a4eb5bba13d291000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002161723a2f2f706c616365686f6c6465722d65706f63682d302d6d616e696665737400000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "initialInstalls": {
+    "constructor": "Anything immutable or installed once with a pinned code hash: the curation verifier in the PackageRegistry, the resolver and escrow in the sale adapters, the consolidation source in the ArtistRegistry, the artist resolver in the StatementLog, the initial economics, default license and museum in the EconomicsResolver.",
+    "wiring": "One-shot binds between protocol contracts, admitted-minter grants (setAdmittedMinter), sale targets (setTarget), each product's first default currency (setDefaultCurrency: EnglishAuction.start reads PRODUCT_STREAM's) and the epoch-0 governance manifest (appendGovernanceManifest).",
+    "grants": "Curation signers are active once granted CURATION_SIGNER in holders; the verifier has no signer list to wire."
+  },
+  "pendingLanes": [
+    {
+      "contract": "Editions",
+      "lane": "editions",
+      "note": "Mapped from the lane's Editions implementation; tools/check_genesis.py reports it pending until it merges, then checks it in full."
+    },
+    {
+      "contract": "FederationRegistry",
+      "lane": "federated (v1.1)",
+      "note": "Not deployed at genesis. setStatus and setArtistDelisted map to PARAMETER_SETTER; ArtistRegistry.bindFederationRegistry (deferred above) and the adapters' setFederationRegistry run when it ships."
+    }
+  ],
+  "unusedRoles": [
+    {
+      "role": "MINTER",
+      "note": "Sale adapters mint through each token's admitted-minter mapping (setAdmittedMinter, 30-day class), not the MINTER role."
+    },
+    {
+      "role": "KEEPER",
+      "note": "No v1 selector maps to KEEPER; grant it when a keeper function exists."
+    }
+  ]
+}

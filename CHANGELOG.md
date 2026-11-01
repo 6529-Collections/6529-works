@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Sepolia rehearsal r4 (1 November 2026): the rc.2 candidate, `main` at `1e7022b`, deployed
+  with r1's Safes and keys, a new namespace, its own VRF subscription and a dedicated testnet
+  museum, every contract verified on Sourcify (exact match). 26 transactions, 496,057,168 gas;
+  every deploy transaction's node estimate stayed under 40M. One testnet deviation: 1-hour 1/1
+  auctions (`AUCTION_DURATION=3600`, the governed minimum). Verify passes on a fork advanced five
+  days; the live Verify is due from 6 November 2026. Record, genesis, manifest and inputs:
+  `deployments/11155111/1793536584.json`, `config/sepolia-r4/`. The rc.2 flows ran on it
+  ([flows](deployments/11155111/flows.md#r4-the-rc2-candidate-1-november-2026)): 11 edition bids
+  from four wallets beside a 1/1, raises, the 1/1's anti-snipe moving the edition close, a soft
+  close, a capped sale with a hole at the cut step settled through the per-settler sweep,
+  unbid 1/1s moved to the museum by Stream, a guardian's dispute pause with a pre-pause
+  withdrawal and a refused during-pause withdrawal, a 1/1 sold at 0.055125 ETH, a refused 1-wei
+  bid, keeper `createEdition`, `claimBid` and `claimBidFor`; the dispute's cancel, which voids
+  that edition sale, is scheduled. The Sepolia driver (`script/sepolia/`) gains the edition
+  auction's steps, Safe-relayed calls and on-chain refusals, and the deploy, genesis, manifest,
+  gas and Sourcify helpers the run used. The integrator pages, the root README and
+  `docs/facts.json` now name r4.
 - The English auction closes the sale of a rescued work (owner decision 20). If 6529 Stream
   already records the work as settled, which only `rescueToMuseum` does before the auction
   settles, `settle` closes the sale with refunds only. It credits the standing bid back,
@@ -399,7 +416,7 @@
   [`test/README.md`](test/README.md) maps the tree.
 - Sepolia rehearsal r3 (15 October 2026): `main` at `e5fe78c` deployed with r1's Safes and keys,
   a new namespace and its own VRF subscription, and every contract verified on Sourcify with an
-  exact match ([record](deployments/11155111/README.md#sepolia-r3-15-october-2026-current)).
+  exact match ([record](deployments/11155111/README.md#sepolia-r3-15-october-2026-superseded-by-r4)).
   Verify passes on a fork advanced five days; the live Verify is due from 20 October 2026. A
   lifecycle check measures the state-growth diet on chain: a steady-state `start` costs 735,859
   gas against r2's 846,963 ([flows](deployments/11155111/flows.md#r3-the-release-candidate-15-october-2026)).
