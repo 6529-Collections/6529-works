@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
+import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { console2 } from "forge-std/console2.sol";
+import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { PrimaryOutcome } from "src/interfaces/types/SaleTypes.sol";
 import { HostileActor } from "../mocks/sales/AuctionMocks.sol";
+import { FixedPriceOneOfOneMock } from "../mocks/stream/OneOfOneSaleMocks.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
 /// @notice Owner decision 20 on the real genesis deployment: governance may move a work stranded
@@ -124,7 +128,7 @@ contract StrandedWorkRescueTest is IntegrationBase {
         );
         stream.burn(tokenId, 1);
         vm.stopPrank();
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSelector(IStream.SaleAlreadySettled.selector, tokenId));
         auction.settle(saleId);
         assertEq(stream.ownerOf(tokenId), museum, "still in the museum");
         // And a second rescue is refused: the work is settled now.
@@ -159,6 +163,26 @@ contract StrandedWorkRescueTest is IntegrationBase {
         _setAuctionAdmitted(true);
         vm.warp(block.timestamp + 365 days);
         _assertRefused(second);
+    }
+
+    /// @dev The 90 days run from the removal that took the adapter out: removing it again
+    ///      changes nothing, while admitting it again and removing it restarts them.
+    function test_Rescue_CountsFromTheRemovalThatTookTheAdapterOut() public {
+        (, uint256 first) = _startItem(0);
+        uint256 removedAt = _setAuctionAdmitted(false);
+        _setAuctionAdmitted(false);
+        vm.warp(removedAt + RESCUE_DELAY - 30 days);
+        (bool ok,) = _governed(_rescueCall(first));
+        assertTrue(ok, "a second removal does not restart the clock");
+
+        _setAuctionAdmitted(true);
+        (, uint256 second) = _startItem(1);
+        uint256 again = _setAuctionAdmitted(false);
+        vm.warp(again + RESCUE_DELAY - 30 days - 1);
+        _assertRefused(second);
+        vm.warp(again + RESCUE_DELAY - 30 days);
+        (ok,) = _governed(_rescueCall(second));
+        assertTrue(ok, "from the latest removal");
     }
 
     /// @dev A settled work is never rescued, even 90 days after its adapter's removal: an unbid
@@ -212,6 +236,48 @@ contract StrandedWorkRescueTest is IntegrationBase {
         assertEq(stream.ownerOf(handed), collector, "still the collector's");
     }
 
+    /// @dev Only the adapter that MINTED the work strands it: a work its minting adapter handed
+    ///      unsettled to another Stream adapter, itself removed 90 days earlier, is refused, so
+    ///      the minter-ID check matters on its own.
+    function test_Rescue_RefusesAWorkHeldByAnotherRemovedAdapter() public {
+        (, uint256 tokenId) = _startItem(0);
+        FixedPriceOneOfOneMock other = new FixedPriceOneOfOneMock();
+        _govern(
+            hotAdmin,
+            address(stream),
+            abi.encodeCall(stream.setAdmittedMinter, (address(other), true))
+        );
+        vm.prank(address(auction));
+        stream.transferFrom(address(auction), address(other), tokenId);
+        _govern(
+            hotAdmin,
+            address(stream),
+            abi.encodeCall(stream.setAdmittedMinter, (address(other), false))
+        );
+        uint256 removedAt = _setAuctionAdmitted(false);
+        vm.warp(removedAt + RESCUE_DELAY);
+        _assertRefused(tokenId);
+        assertEq(stream.ownerOf(tokenId), address(other), "still where its adapter put it");
+    }
+
+    /// @dev LIM-SAL-14: the rescue checks Stream's record only, not the adapter's sale. Run
+    ///      against an auction that ended with a standing bid nobody settled, it still moves the
+    ///      work, and the auction's settlement then reverts for good. Governance settles such a
+    ///      sale first (`settle` is permissionless) or a guardian cancels the rescue.
+    function test_Rescue_CannotSeeTheAdaptersSale() public {
+        (uint256 saleId, uint256 tokenId) = _startItem(0);
+        _ethBid(saleId, collector, 1 ether);
+        uint256 removedAt = _setAuctionAdmitted(false);
+        vm.warp(removedAt + RESCUE_DELAY);
+        uint256 held = address(auction).balance;
+        (bool ok,) = _governed(_rescueCall(tokenId));
+        assertTrue(ok, "Stream cannot see the standing bid");
+        assertEq(stream.ownerOf(tokenId), museum);
+        vm.expectRevert(abi.encodeWithSelector(IStream.SaleAlreadySettled.selector, tokenId));
+        auction.settle(saleId);
+        assertEq(address(auction).balance, held, "the bid stays in the auction");
+    }
+
     /// @dev The destination is the museum the economics resolver names when the rescue runs,
     ///      never the caller's: the call takes only the token ID, and calldata carrying another
     ///      address after it changes nothing.
@@ -228,6 +294,32 @@ contract StrandedWorkRescueTest is IntegrationBase {
         assertEq(IStream.rescueToMuseum.selector, bytes4(keccak256("rescueToMuseum(uint256)")));
     }
 
+    /// @dev A zero museum (only a replacement resolver could name one) refuses the rescue,
+    ///      `ERC721InvalidReceiver`, rather than burn the work; once the resolver names a museum
+    ///      again the same rescue completes.
+    function test_Rescue_AZeroMuseumIsRefusedNotBurned() public {
+        (, uint256 tokenId) = _startItem(0);
+        uint256 removedAt = _setAuctionAdmitted(false);
+        vm.warp(removedAt + RESCUE_DELAY);
+        vm.mockCall(
+            address(economics),
+            abi.encodeWithSelector(IEconomicsResolver.museum.selector),
+            abi.encode(address(0))
+        );
+        (bool ok, bytes memory reason) = _governed(_rescueCall(tokenId));
+        assertFalse(ok);
+        assertEq(
+            reason, abi.encodeWithSelector(IERC721Errors.ERC721InvalidReceiver.selector, address(0))
+        );
+        assertEq(stream.ownerOf(tokenId), address(auction), "not burned, not moved");
+        (PrimaryOutcome outcome,,) = stream.primarySale(tokenId);
+        assertEq(uint8(outcome), uint8(PrimaryOutcome.NONE));
+        vm.clearMockedCalls();
+        (ok,) = _governed(_rescueCall(tokenId));
+        assertTrue(ok);
+        assertEq(stream.ownerOf(tokenId), museum);
+    }
+
     /// @dev The rescue is governed: SUCCESSOR_SETTER in the 30-day class, and no one else.
     function test_Rescue_IsTheSuccessorClass() public {
         (, uint256 tokenId) = _startItem(0);
@@ -235,11 +327,22 @@ contract StrandedWorkRescueTest is IntegrationBase {
             manager.canCall(hotAdmin, address(stream), IStream.rescueToMuseum.selector);
         assertFalse(immediate);
         assertEq(delay, 30 days);
-        vm.prank(collector);
-        vm.expectRevert();
-        stream.rescueToMuseum(tokenId);
-        vm.prank(guardian1);
-        vm.expectRevert();
+        address[2] memory callers = [collector, guardian1];
+        for (uint256 i; i < callers.length; ++i) {
+            vm.prank(callers[i]);
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    IAccessManaged.AccessManagedUnauthorized.selector, callers[i]
+                )
+            );
+            stream.rescueToMuseum(tokenId);
+        }
+        // The role holder itself only through a scheduled operation.
+        bytes32 id = manager.hashOperation(hotAdmin, address(stream), _rescueCall(tokenId));
+        vm.prank(hotAdmin);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManager.AccessManagerNotScheduled.selector, id)
+        );
         stream.rescueToMuseum(tokenId);
     }
 }

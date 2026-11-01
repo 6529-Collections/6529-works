@@ -550,6 +550,37 @@ contract DeployScriptTest is Test {
         deployer.prepare();
         // The committed example's groups pass the mainnet check.
         DeployGuards.checkRoleGroups(_filled(), address(this));
+        // An operational role belongs to no group, so a council account may also hold one.
+        DeployGuards.checkRoleGroups(_moveHolder(_filled(), "PLATFORM", "51", hot), address(this));
+    }
+
+    /// Owner decision 18: Verify repeats the role-group guard on mainnet. Its canonical
+    /// dependency checks run first and need mainnet's code, so the harness drives check 5.
+    function test_VerifyRepeatsTheRoleGroupGuardOnMainnet() public {
+        _sepolia();
+        address hot = _account("01");
+        string memory shared = _moveHolder(_filled(), "CURATION_SIGNER", "21", hot);
+        _genesisFile(shared);
+        deployer.run();
+        string memory record = deployer.lastRecord();
+        verifier.setFile(GENESIS, bytes(shared));
+        verifier.setFile("config/manifest.json", MANIFEST);
+        verifier.checkGuardsExternal(record, shared);
+        vm.chainId(1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.RoleGroupsShareAHolder.selector, hot, "ADMIN", "CURATION_SIGNER"
+            )
+        );
+        verifier.checkGuardsExternal(record, shared);
+        // The recorded deployer is refused as a holder too.
+        string memory deployerSigns = _moveHolder(_filled(), "CURATION_SIGNER", "21", address(this));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.HolderIsTheDeployer.selector, "CURATION_SIGNER", address(this)
+            )
+        );
+        verifier.checkGuardsExternal(record, deployerSigns);
     }
 
     /// Owner decision 18: the groups are ADMIN and the delayed setters, GUARDIAN and PAUSER,

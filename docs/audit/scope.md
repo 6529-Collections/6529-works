@@ -33,10 +33,10 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 749 | 24,200 | 26,037 | 376 |
+| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 749 | 24,200 | 26,037 | **376** |
 | `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 619 | 22,990 | 25,685 | 1,586 |
 | `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 374 | 19,003 | 20,685 | 5,573 |
-| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 799 | 23,139 | 26,175 | **1,437** |
+| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 799 | 23,139 | 26,175 | 1,437 |
 | `EnglishAuctionLens` | [`src/sales/EnglishAuctionLens.sol`](../../src/sales/EnglishAuctionLens.sol) | 290 | 6,372 | 6,665 | 18,204 |
 | `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 848 | 24,156 | 28,190 | 420 |
 | `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 668 | 19,102 | 19,461 | 5,474 |
@@ -170,9 +170,8 @@ python tools/check_docs_facts.py --artifacts out --update  # refresh the figures
 ```
 
 Per-file nSLOC uses `strip_solidity` and `count_code_lines` from `tools/check_budgets.py`;
-sizes are the compiled `bytecode` and `deployedBytecode` lengths. `EnglishAuction` and
-`Renderer` have the smallest EIP-170 margins (see the tables); CI fails any change that crosses
-the limit.
+sizes are the compiled `bytecode` and `deployedBytecode` lengths. `Renderer` and `Stream` have
+the smallest EIP-170 margins (see the tables); CI fails any change that crosses the limit.
 
 ## Related
 
