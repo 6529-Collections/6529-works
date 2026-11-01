@@ -14,8 +14,8 @@ import { ItemKind, SeedPolicy } from "./types/PackageTypes.sol";
 ///      starts and never reused; a burn leaves a gap. Collections are groupings with
 ///      per-collection serials from 1; collection IDs and serials stay below 2^32. Tokens are
 ///      minted only through `IMintTarget.mint`, for an approved, unconsumed item whose lead
-///      artist signed "move to Stream", by an admitted sale adapter whose `saleKind()` is the
-///      item's sale kind. The 1/1 sale method is pluggable (ADR 0005, owner decisions 14 and 15):
+///      artist signed "move to Stream", by an admitted sale adapter whose sale kind, recorded at
+///      its first admission, is the item's sale kind. The 1/1 sale method is pluggable (ADR 0005, owner decisions 14 and 15):
 ///      the English auction (`SaleKind.ENGLISH_AUCTION`) is admitted at genesis, and a later
 ///      method is an adapter governance admits (`setAdmittedMinter`, the 30-day class), with no
 ///      new Stream. A VRF item's seed must already be delivered (`IEntropyModule.requestSeed`
@@ -321,9 +321,11 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     ///         before. `tokenURI` forwards to it (and 6529 Stream Editions' `uri`). Fails closed:
     ///         reverts with `Dependency.DependencyCodeChanged` when the default renderer's code is
     ///         no longer the code hash `setDefaultRenderer` (or the constructor) pinned, or when a
-    ///         finalized work's pinned renderer changed code; it never falls back to another
-    ///         renderer. A new default renderer, or the errata repin for a finalized work,
-    ///         restores the metadata.
+    ///         finalized work's pinned renderer changed code; it never falls back from either to
+    ///         another renderer. A new default renderer, or the errata repin for a finalized work,
+    ///         restores the metadata. Any other fault of the records satellite (a revert, running
+    ///         out of its `RECORDS_GAS`, a malformed answer) serves the default renderer, so a
+    ///         faulty satellite never takes every work's metadata down.
     /// @param tokenId A live token ID (`UnknownWork` otherwise).
     /// @return The renderer that builds the token's metadata.
     function rendererOf(uint256 tokenId) external view returns (address);

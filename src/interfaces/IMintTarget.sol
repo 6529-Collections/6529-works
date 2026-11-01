@@ -12,8 +12,9 @@ import { PrimaryTerms } from "./types/SaleTypes.sol";
 ///      admitted-minter mapping (`isAdmittedMinter`), written by a governed setter on the 30-day
 ///      class (a mapping read is cheaper on the start path than an AccessManager hop). Removal
 ///      stops new mints only: an adapter that minted can still settle and burn.
-///      The token checks that the calling adapter's `ISaleAdapter.saleKind()` equals
-///      `terms.saleKind`. Token IDs are never reused.
+///      The token checks that the calling adapter's sale kind equals `terms.saleKind`: 6529
+///      Stream the kind recorded at the adapter's first admission, 6529 Stream Editions its
+///      `ISaleAdapter.saleKind()`. Token IDs are never reused.
 interface IMintTarget {
     /// @notice An adapter was admitted or removed as a minter.
     /// @param adapter The sale adapter.

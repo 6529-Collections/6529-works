@@ -35,12 +35,18 @@ Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
 ## Developer notes
 
 - **Governed dependencies (owner decision 16).** The package registry, artist registry,
-  economics resolver and entropy module live in four consecutive slots after every earlier
-  variable, which `setDependency` indexes; the split factory stays immutable.
+  economics resolver and entropy module are the genesis contracts, held as immutables, until
+  `setDependency` replaces one: it writes `_replaced[i]` (declared last, so the earlier slots
+  keep their positions) and sets bit `i` of `Counts.replaced`, in the counter word every mint
+  already reads, so a mint with no replacement reads no extra slot. The split factory stays
+  immutable.
 - **Pluggable 1/1 sale (owner decision 15).** `_minterKinds` records each adapter's sale kind
   at its first admission, after every earlier mapping, so the storage layout of the other
-  slots is unchanged; `primaryTerms` reads it for a minted work. `mint` compares the live
-  `saleKind()` of the caller with the item's.
+  slots is unchanged; `primaryTerms` reads it for a minted work, and `mint` compares it with
+  the item's, so an adapter's later `saleKind()` answer changes nothing.
+- **Fault-tolerant metadata.** `rendererOf` reads the records satellite's `pinnedRenderer`
+  with a fixed `RECORDS_GAS` and one word back; any fault but a changed pinned renderer's
+  `DependencyCodeChanged` (WS-16) falls back to the default renderer.
 - **Start-path storage (QUALITY-6).** A mint writes the ERC-721 owner, two token words (seller,
   serial, collection, a flags byte and a 24-bit terms ID; the item hash) and rewrites two
   nonzero counter words (the global counts and the collection's). The

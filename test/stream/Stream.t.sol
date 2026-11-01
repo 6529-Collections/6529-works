@@ -45,6 +45,7 @@ import {
 } from "../mocks/stream/StreamMocks.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 import { StreamFixture } from "./StreamFixture.sol";
+import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 
 contract StreamTest is StreamFixture {
@@ -601,17 +602,32 @@ contract StreamTest is StreamFixture {
         auction.startRaw(stream, address(auction), 0, 2, data);
     }
 
-    function test_mint_revertsForWrongAdapterKind() public {
+    /// @dev `mint` compares the item's kind with the adapter's kind recorded at its first
+    ///      admission, the kind `primaryTerms` reports, never with what `saleKind()` answers
+    ///      now: an adapter whose kind changes after admission still mints only its recorded
+    ///      kind's items, and a removal and re-admission records nothing new.
+    function test_mint_comparesTheKindRecordedAtAdmission() public {
         auction.setSaleKind(SaleKind.UNIFORM_AUCTION);
-        bytes memory data = _request(_item(1));
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IMintTarget.SaleKindMismatch.selector,
-                SaleKind.ENGLISH_AUCTION,
-                SaleKind.UNIFORM_AUCTION
-            )
+        PackageItem memory item = _item(1);
+        item.sale.saleKind = SaleKind.UNIFORM_AUCTION;
+        bytes memory expected = abi.encodeWithSelector(
+            IMintTarget.SaleKindMismatch.selector,
+            SaleKind.UNIFORM_AUCTION,
+            SaleKind.ENGLISH_AUCTION
         );
-        auction.start(stream, data);
+        vm.expectRevert(expected);
+        auction.start(stream, _request(item));
+
+        uint256 tokenId = _mint(2);
+        assertEq(stream.primaryTerms(tokenId, "").saleKind, SaleKind.ENGLISH_AUCTION);
+
+        vm.startPrank(governor);
+        stream.setAdmittedMinter(address(auction), false);
+        stream.setAdmittedMinter(address(auction), true);
+        vm.stopPrank();
+        vm.expectRevert(expected);
+        auction.start(stream, _request(item));
+        assertEq(stream.primaryTerms(_mint(3), "").saleKind, SaleKind.ENGLISH_AUCTION);
     }
 
     /// @dev `_consume` forwards `data[32:]` as `consume`'s arguments without re-encoding. This
@@ -835,13 +851,15 @@ contract StreamTest is StreamFixture {
                 IMintTarget.SaleKindMismatch.selector, low, SaleKind.ENGLISH_AUCTION
             )
         );
-        auction.setSaleKind(low);
+        MockSaleAdapter lowAdapter = new MockSaleAdapter(low);
+        vm.prank(governor);
+        stream.setAdmittedMinter(address(lowAdapter), true);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IMintTarget.SaleKindMismatch.selector, SaleKind.ENGLISH_AUCTION, low
             )
         );
-        auction.start(stream, _request(_item(1)));
+        lowAdapter.start(stream, _request(_item(1)));
     }
 
     /// @dev The economics resolver accepts a royalty rate of exactly 100%, and so does a mint.
@@ -1476,6 +1494,48 @@ contract StreamTest is StreamFixture {
         recordsMock.setPin(1, address(pinned));
         assertEq(stream.rendererOf(1), address(pinned));
         assertEq(stream.tokenURI(1), pinned.tokenURI(address(stream), 1));
+    }
+
+    /// @dev A fault in the records satellite never takes metadata down: a revert, running out
+    ///      of gas, an empty or over-long answer, a word that is not an address, and an address
+    ///      without code each fall back to the default renderer. A finalized work's pin whose
+    ///      code changed still fails closed (WS-16).
+    function test_rendererOf_fallsBackOnARecordsFault() public {
+        _bindMocks();
+        _mint(1);
+        MockRenderer pinned = new MockRenderer("pinned");
+        recordsMock.setPin(1, address(pinned));
+        assertEq(stream.rendererOf(1), address(pinned));
+        string memory fallbackUri = renderer.tokenURI(address(stream), 1);
+        for (uint8 fault = 1; fault <= 6; ++fault) {
+            recordsMock.setFault(fault);
+            assertEq(stream.rendererOf(1), address(renderer), "the default renderer");
+            assertEq(stream.tokenURI(1), fallbackUri);
+        }
+        recordsMock.setFault(7);
+        vm.expectRevert(
+            abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, address(pinned))
+        );
+        stream.rendererOf(1);
+        recordsMock.setFault(0);
+        assertEq(stream.rendererOf(1), address(pinned), "a sound answer is used again");
+    }
+
+    /// @dev The satellite always gets its full gas: a caller holding too little to forward it
+    ///      is refused, never answered with the default renderer.
+    function test_rendererOf_refusesACallerTooShortOfGasForTheRecords() public {
+        _bindMocks();
+        _mint(1);
+        recordsMock.setPin(1, address(new MockRenderer("pinned")));
+        (bool ok, bytes memory answer) =
+            address(stream).staticcall{ gas: 90_000 }(abi.encodeCall(stream.rendererOf, (1)));
+        assertFalse(ok);
+        assertEq(
+            answer,
+            abi.encodeWithSelector(
+                BoundedCall.BoundedCallInsufficientGas.selector, stream.RECORDS_GAS()
+            )
+        );
     }
 
     function test_tokenURI_revertsForUnknownToken() public {

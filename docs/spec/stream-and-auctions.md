@@ -31,7 +31,8 @@ economics resolver and entropy module are replaceable by governance: `setDepende
 expected, next)`, SUCCESSOR_SETTER in the 30-day class, compare-and-set, with the
 constructor's install checks (code, no EIP-7702 delegation, ERC-165 for the kind's interface;
 never zero, so an entropy module can be installed on a Stream deployed without one but never
-removed). Stream's code and address stay immutable, and existing tokens are unaffected: their
+removed). The genesis contracts stay immutables; a replacement is stored with a bit in the
+counter word every mint reads, so a mint with no replacement reads no extra slot. Stream's code and address stay immutable, and existing tokens are unaffected: their
 owners, the terms and royalty receiver locked at mint (the split factory stays immutable), a
 finalized work's pinned renderer, and a work's seed once its record opens. 6529 Stream
 Editions and `WorkRecords` read these pointers from Stream, so they follow at once. Other
@@ -241,7 +242,7 @@ sequenceDiagram
     Anyone->>Auction: start(stream, abi.encode(StreamMintRequest))
     Note over Auction: refused while the emergency pause is on, or for an unlisted token
     Auction->>Stream: mint(auction, 0, 1, mintData)
-    Stream->>Auction: saleKind() must be the item's kind, ENGLISH_AUCTION
+    Note over Stream: the adapter's kind recorded at admission must be the item's, ENGLISH_AUCTION
     Note over Stream: Stream rules - sale kind, collection, seed policy, license ID
     Stream->>Registry: consume(root, item, proof, move)
     Registry-->>Stream: itemHash, lead artistId
@@ -599,7 +600,7 @@ sequenceDiagram
 | ID | Rule | Enforced in | Tested by |
 | --- | --- | --- | --- |
 | AUC-1 | Only an admitted minter mints, into its own custody, with `id` 0 and `amount` 1. Admission requires code, ERC-165 `ISaleAdapter` and no EIP-7702 delegation. | `Stream.mint`, `Stream.setAdmittedMinter` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_mint_revertsForUnadmittedCaller`, `test_mint_revertsForWrongShape`, `test_setAdmittedMinter`, `test_setAdmittedMinter_reverts` |
-| AUC-2 | Stream mints only for an admitted adapter whose sale kind is the item's, and an item that names a sale kind and has at least one party, an existing collection, a coherent seed policy and a valid license ID. The 1/1 sale method is pluggable (owner decision 15): the English auction is admitted at genesis, a later method by governance (30 days), and `primaryTerms` reports the minting adapter's kind, recorded at its first admission. | `Stream.mint`, `Stream._checkItem`, `Stream.setAdmittedMinter`, `Stream.primaryTerms` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_mint_revertsForWrongAdapterKind`, `test_mint_revertsForStreamRuleBreaks`, `test_mint_acceptsMixedCaseLicenseId`, `test_mint_refusesALicenseIdTheRecordsWouldRefuse`, `test_saleMethod_aSecondAdapterMintsOnlyItsOwnKind`, `test_saleMethod_kindRecordedAtFirstAdmission`; [`StreamSaleMethods.t.sol`](../../test/integration/StreamSaleMethods.t.sol): `test_ASecondAdmittedAdapterSellsAWorkEndToEnd`, `test_AnUnadmittedAdapterIsRefused` |
+| AUC-2 | Stream mints only for an admitted adapter whose sale kind, recorded at its first admission, is the item's, and an item that names a sale kind and has at least one party, an existing collection, a coherent seed policy and a valid license ID. The 1/1 sale method is pluggable (owner decision 15): the English auction is admitted at genesis, a later method by governance (30 days), and `primaryTerms` reports the minting adapter's kind, recorded at its first admission. | `Stream.mint`, `Stream._checkItem`, `Stream.setAdmittedMinter`, `Stream.primaryTerms` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_mint_comparesTheKindRecordedAtAdmission`, `test_mint_revertsForStreamRuleBreaks`, `test_mint_acceptsMixedCaseLicenseId`, `test_mint_refusesALicenseIdTheRecordsWouldRefuse`, `test_saleMethod_aSecondAdapterMintsOnlyItsOwnKind`, `test_saleMethod_kindRecordedAtFirstAdmission`; [`StreamSaleMethods.t.sol`](../../test/integration/StreamSaleMethods.t.sol): `test_ASecondAdmittedAdapterSellsAWorkEndToEnd`, `test_AnUnadmittedAdapterIsRefused` |
 | AUC-3 | Every mint consumes its package item in the same call; a registry revert reverts the mint. | `Stream._consume` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_mint_bubblesRegistryRevert`, `testFuzz_mintRequestEncodesAsConsumeArguments`, `test_mint_reentrantRegistryKeepsCountersConsistent` |
 | AUC-4 | A VRF item mints only when Stream has an entropy module and the item's seed is delivered. | `Stream.mint`, `Stream._checkItem` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_mint_vrfNeedsDeliveredSeed`, `test_mint_vrfRejectedWithoutEntropyModule`; [`VrfWork.t.sol`](../../test/integration/VrfWork.t.sol): `test_SeedRequestedDeliveredThenStartedAndRendered` |
 | AUC-5 | Token IDs are one global sequence from 1, never reused; serials count per collection from 1; `totalSupply` is minted minus burned. | `Stream._store`, `Stream.burn` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_mint_assignsGlobalIdsAndPerCollectionSerials`, `test_burn_leavesGapAndCountsSupply`; [`StreamInvariant.t.sol`](../../test/stream/StreamInvariant.t.sol): `invariant_idsMonotonicAndNeverReused`, `invariant_serialsPerCollection`, `invariant_supplyIsMintedMinusBurned` |

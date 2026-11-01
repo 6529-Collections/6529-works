@@ -15,6 +15,7 @@ import { IRenderer } from "src/interfaces/IRenderer.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
 import {
     CURRENCY_DEFAULT,
     ProductEconomics,
@@ -383,12 +384,54 @@ contract ConstantAuction is IERC721Receiver, Supports165 {
     }
 }
 
-/// @notice A records-satellite mock: holds renderer pins and drives the core's hooks.
+/// @notice A records-satellite mock: holds renderer pins and drives the core's hooks. Its
+///         `pinnedRenderer` can be made to fail in each way `Stream.rendererOf` tolerates.
 contract MockWorkRecords is Supports165 {
     /// @notice The Stream this satellite serves, which `bindWorkRecords` checks.
     address public immutable stream;
-    mapping(uint256 => address) public pinnedRenderer;
+    mapping(uint256 => address) internal _pins;
     mapping(uint256 => bool) public isOpen;
+    /// @notice 0 none; 1 revert; 2 run out of gas; 3 answer nothing; 4 answer two words;
+    ///         5 a word that is not an address; 6 an address without code; 7 revert with
+    ///         `DependencyCodeChanged` for the pin.
+    uint8 public fault;
+
+    function setFault(uint8 fault_) external {
+        fault = fault_;
+    }
+
+    function pinnedRenderer(uint256 tokenId) external view returns (address) {
+        uint8 f = fault;
+        if (f == 1) revert("records fault");
+        if (f == 2) {
+            uint256 i;
+            while (gasleft() > 0) {
+                ++i;
+            }
+        }
+        if (f == 3) {
+            assembly ("memory-safe") {
+                return(0, 0)
+            }
+        }
+        if (f == 4) {
+            address pin = _pins[tokenId];
+            assembly ("memory-safe") {
+                mstore(0, pin)
+                mstore(0x20, pin)
+                return(0, 0x40)
+            }
+        }
+        if (f == 5) {
+            assembly ("memory-safe") {
+                mstore(0, not(0))
+                return(0, 0x20)
+            }
+        }
+        if (f == 6) return address(0xdead);
+        if (f == 7) revert Dependency.DependencyCodeChanged(_pins[tokenId]);
+        return _pins[tokenId];
+    }
 
     constructor(address stream_) {
         stream = stream_;
@@ -399,7 +442,7 @@ contract MockWorkRecords is Supports165 {
     }
 
     function setPin(uint256 tokenId, address renderer) external {
-        pinnedRenderer[tokenId] = renderer;
+        _pins[tokenId] = renderer;
         isOpen[tokenId] = true;
     }
 

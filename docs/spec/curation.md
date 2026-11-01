@@ -307,7 +307,7 @@ sequenceDiagram
     Anyone->>Auction: start(stream, abi.encode(StreamMintRequest))
     Auction->>Auction: not paused, target allowed
     Auction->>Stream: mint(auction, 0, 1, data)
-    Stream->>Auction: saleKind(), after the admitted-minter check
+    Note over Stream: the adapter's kind recorded at admission, after the admitted-minter check
     Stream->>Stream: item rules (_checkItem)
     Stream->>Registry: consume(root, item, proof, move)
     Registry->>Registry: caller, root, proof, content, terms, parties, payees

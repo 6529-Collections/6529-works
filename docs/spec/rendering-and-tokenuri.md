@@ -120,12 +120,9 @@ sequenceDiagram
     participant R as Renderer
     C->>S: tokenURI(tokenId)
     S->>S: rendererOf, the token must be live
-    S->>W: isOpen(tokenId)
-    opt record open
-        S->>W: pinnedRenderer(tokenId)
-        Note over W: reverts DependencyCodeChanged if the pinned code changed
-    end
-    opt no pin
+    S->>W: pinnedRenderer(tokenId), with exactly RECORDS_GAS
+    Note over W: reverts DependencyCodeChanged if the pinned code changed, RecordNotOpen before openRecord
+    opt no pin, or any other fault of WorkRecords
         S->>S: defaultRenderer, its codehash must match the installed hash
     end
     S->>R: tokenURI(stream, tokenId)
@@ -135,6 +132,11 @@ sequenceDiagram
 
 - `rendererOf` never falls back from a broken pin to the default, or from a broken default to
   anything else: the call reverts (`Dependency.DependencyCodeChanged`).
+- A fault of the records satellite itself never takes metadata down: `rendererOf` gives
+  `pinnedRenderer` exactly `RECORDS_GAS` (100,000; a caller too short of gas to forward it is
+  refused with `BoundedCallInsufficientGas`) and reads one word back, and a revert other than
+  `DependencyCodeChanged`, running out of gas, or an answer that is not an address with code
+  serves the default renderer.
 
 ### Inside the renderer
 
@@ -394,6 +396,7 @@ costs about 30M gas, 512 KiB about 8.4M (`test_FullForm_1MiB` and `test_FullForm
 | RND-25 | The threshold is between 1 and 1,048,576. | `Renderer` constructor | `Renderer.t.sol` `test_Constructor_RejectsBadThresholds` |
 | RND-26 | `tokenURI` and `Editions.uri` cost at most 8M Prague gas with every cap at once, and create no state. | the caps above, `Stream.createCollection` (no control characters, `<`, `"` or `\`), `WorkRecords.openRecord` (preview cap) | [`TokenUriBudget.t.sol`](../../test/integration/TokenUriBudget.t.sol) `test_Budget_*`, `test_CollectionName_RefusesBytesThatEscapeLong`, `test_PreviewCap_OpenRecordRefusesALargerPreview`; `RendererGas.t.sol` (`RendererGasBudgetTest`, `RendererGasAdversarialTest`) |
 | RND-27 | Every visible change to a work's metadata made through `WorkRecords` or Stream emits ERC-4906 on Stream and, for a master with an edition, on Editions (exceptions under [Events](#events)). | `WorkRecords._refresh`, `_refreshAll`, `Stream.setDefaultRenderer` | `WorkRecords.t.sol` `test_preferenceSetters_eventsAndRefresh`, `test_preferenceSetters_notifyAllEditions`; [`Editions.t.sol`](../../test/editions/Editions.t.sol) `test_NotifyMasterUpdated_EmitsForEditionsOnly`; `Stream.t.sol` `test_emitMetadataUpdate_fromRecords` |
+| RND-28 | A fault of the records satellite never takes metadata down: `pinnedRenderer` gets exactly `RECORDS_GAS`, and a revert other than `DependencyCodeChanged`, running out of that gas, or an answer that is not one word holding an address with code serves the default renderer; a caller too short of gas to forward `RECORDS_GAS` is refused. | `Stream.rendererOf`, `_pinnedRenderer` | [`Stream.t.sol`](../../test/stream/Stream.t.sol) `test_rendererOf_fallsBackOnARecordsFault`, `test_rendererOf_refusesACallerTooShortOfGasForTheRecords` |
 
 ## Events
 
