@@ -36,7 +36,7 @@ contract EditionAuctionGasReport is EditionAuctionStack {
     uint256 internal constant RAISE_CAPPED_CEILING = 81_000;
     uint256 internal constant CLAIM_LOSER_CEILING = 49_000;
     uint256 internal constant CLAIM_FOR_CEILING = 67_000;
-    uint256 internal constant WITHDRAW_CEILING = 90_000;
+    uint256 internal constant WITHDRAW_CEILING = 103_000;
     uint256 internal constant SWEEP_SETTLE_CEILING = 153_000;
 
     address internal artist;
@@ -208,6 +208,8 @@ contract EditionAuctionGasReport is EditionAuctionStack {
         _openMaster(60);
         address b = makeAddr("gasBidder");
         uint256 bidId = _editionBid(saleId, b, 130, 5);
+        // The pause comes a minute after the bid: only bids placed before it may leave.
+        vm.warp(block.timestamp + 60);
         vm.prank(guardian1);
         auction.pause(oneSaleId, keccak256("dispute"));
         bytes memory data = abi.encodeCall(editionAuction.withdrawBid, (saleId, bidId, b));
@@ -547,9 +549,7 @@ contract EditionAuctionGasReport is EditionAuctionStack {
     }
 
     function _setUpFreshAdapter() internal {
-        editionAuction = new UniformEditionAuction(
-            address(manager), address(escrow), address(editions), address(auction), _editionConfig()
-        );
+        editionAuction = _newEditionAuction();
         ea = IUniformEditionAuction(address(editionAuction));
         _govern(
             hotAdmin,

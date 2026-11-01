@@ -8,40 +8,50 @@ import { IUniformEditionAuction } from "./IUniformEditionAuction.sol";
 /// @notice The read side of the uniform-price edition auction: every view of a sale, computed
 ///         from the adapter's storage words (`IUniformEditionAuctionStorage.storageWord`) with the
 ///         clearing code its settlement runs (`UniformClearing`), and the master check the
-///         adapter's `open` consults. Stateless; the adapter creates it in its constructor
-///         (`IUniformEditionAuctionStorage.lens`); the adapter forwards its own views here, so
-///         each view below has the signature `IUniformEditionAuction` gives it. Errors are the adapter's.
+///         adapter's `open` consults. Stateless and bound to no adapter: deployed in its own
+///         transaction and pinned by the adapter's constructor (`IUniformEditionAuctionStorage.lens`),
+///         it reads every sale from its caller, the adapter, which forwards its own views here,
+///         so each view below has the signature `IUniformEditionAuction` gives it. Errors are
+///         the adapter's.
 /// @dev Views that depend on the 1/1 read it live: `masterTerms` (on `open`'s path) through
 ///      `IEnglishAuctionClock.auctionClock`, the others through `IEnglishAuction.auction`. The
 ///      adapter's fallback forwards every selector it does not declare, so the lens's own
-///      `adapter` and `masterTerms` are answered at the adapter's address too. Both are
-///      read-only (a `staticcall`), and the adapter's ERC-165 does not advertise them.
+///      `masterTerms`, `sweepOf` and `settlementOrderFor` are answered at the adapter's address
+///      too. Every one is read-only (a `staticcall`), and the adapter's ERC-165 does not
+///      advertise them. Call the views at the adapter: called directly, the lens reads its
+///      caller's words.
 interface IUniformEditionAuctionLens {
-    /// @notice What `open` locks for a master, from its token-specific data.
+    /// @notice What `open` locks for a master from the lens, from its token-specific data. The
+    ///         payout terms are not here: `open` pays exactly the economics 6529 Stream Editions
+    ///         locks and returns (`IEditions.bindMinter`).
     /// @param maxCount The creator's cap from the edition terms, zero for none.
-    /// @param seller The `PRODUCT_EDITIONS` seller split wallet of the item's payees.
-    /// @param feeRecipient The network fee recipient; zero when the fee share is zero.
-    /// @param feeShare The network fee share, out of 100,000.
     /// @param oneOfOneEnd The 1/1's end now.
     /// @param oneOfOneState The 1/1's state now: never NONE or CANCELLED.
     struct MasterTerms {
         uint32 maxCount;
-        address seller;
-        address feeRecipient;
-        uint32 feeShare;
         uint64 oneOfOneEnd;
         IEnglishAuction.AuctionState oneOfOneState;
     }
 
-    /// @notice The adapter this lens reads.
-    /// @return The adapter's address (immutable).
-    function adapter() external view returns (address);
+    /// @notice The 6529 Stream Editions this lens was deployed for (immutable).
+    /// @return The address its adapter must also have.
+    function editions() external view returns (address);
+    /// @notice The 6529 Stream this lens was deployed for (immutable).
+    /// @return The address its adapter must also have.
+    function stream() external view returns (address);
+    /// @notice The English auction this lens was deployed for (immutable).
+    /// @return The address its adapter must also have.
+    function englishAuction() external view returns (address);
+    /// @notice The revenue escrow this lens was deployed for (immutable).
+    /// @return The address its adapter must also have.
+    function escrow() external view returns (address);
     /// @notice The master check of `open`. For 6529 Stream Editions, `data` must be
     ///         `abi.encode(PackageItem)` of an EDITION_MASTER item whose `WorksHashing.itemHash`
     ///         is the one 6529 Stream stored for `id`, with edition terms naming
-    ///         `SaleKind.UNIFORM_AUCTION`, `CURRENCY_ETH` and empty params; its
-    ///         `PRODUCT_EDITIONS` payout terms must be payable; and its 1/1 auction must exist and
-    ///         not be cancelled. Reverts with the adapter's `InvalidSaleTerms` or
+    ///         `SaleKind.UNIFORM_AUCTION`, `CURRENCY_ETH` and empty params; the
+    ///         `PRODUCT_EDITIONS` payout terms 6529 Stream Editions will lock (an existing
+    ///         edition's, or the current resolver's) must be payable; and its 1/1 auction must
+    ///         exist and not be cancelled. Reverts with the adapter's `InvalidSaleTerms` or
     ///         `NoOneOfOneAuction` otherwise.
     /// @param token The edition contract.
     /// @param id The edition ID.
@@ -81,6 +91,13 @@ interface IUniformEditionAuctionLens {
         external
         view
         returns (IUniformEditionAuction.Bid memory);
+    /// @notice Whether bid `bidId` may be withdrawn now: the sale is OPEN, its 1/1 is paused for a
+    ///         dispute, and the bid was placed (or last raised) in a minute that ended before the
+    ///         pause began (decision 12, as amended 1 November 2026). Reverts with `UnknownBid`.
+    /// @param saleId The sale ID.
+    /// @param bidId The bid's ID.
+    /// @return Whether `withdrawBid` would accept it now.
+    function canWithdraw(uint256 saleId, uint256 bidId) external view returns (bool);
     /// @notice A bid's position in the result: copies won, price, escrow, refund and units ahead
     ///         in its queue; final once the sale is SETTLED or VOID. Reverts with `UnknownBid`.
     /// @param saleId The sale ID.
@@ -160,11 +177,29 @@ interface IUniformEditionAuctionLens {
         view
         returns (uint256 swept, uint256 nextPosition, uint256 cutoff);
     /// @notice What `settler` passes to its next `settle` call: the rest of the order after
-    ///         its own progress (`settlementOrder` for a settler with none).
+    ///         its own progress (`settlementOrder` for a settler with none). Sorts and returns
+    ///         the whole log: beyond about 7,000 departures at the cut step it exceeds a 50M
+    ///         `eth_call`, so page with the four-argument form.
     /// @param saleId The sale ID.
     /// @param settler The settler (`settle`'s `msg.sender`).
     /// @return order The remaining departure indexes, in position order.
     function settlementOrderFor(uint256 saleId, address settler)
+        external
+        view
+        returns (uint256[] memory order);
+    /// @notice One page of `settler`'s remaining order: at most `max` departure indexes, in
+    ///         position order, from the later of `fromPosition` and the settler's own next
+    ///         position. `O(n log max)` over a log of `n` departures (a bounded heap), reading the
+    ///         log four entries per word: a page of 96 from a log of 10,000 departures costs about
+    ///         22M gas in the log's worst order. A keeper pages with `fromPosition` one past the last position it got
+    ///         (`departures(saleId, step)` gives them), or passes each page to `settle` and asks
+    ///         again.
+    /// @param saleId The sale ID.
+    /// @param settler The settler (`settle`'s `msg.sender`).
+    /// @param fromPosition The least position to return.
+    /// @param max The most indexes to return.
+    /// @return order The departure indexes, in position order.
+    function settlementOrderFor(uint256 saleId, address settler, uint256 fromPosition, uint256 max)
         external
         view
         returns (uint256[] memory order);

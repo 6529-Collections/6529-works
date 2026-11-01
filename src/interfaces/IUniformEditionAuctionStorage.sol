@@ -35,6 +35,24 @@ interface IUniformEditionAuctionStorage {
         uint32 bidCount;
     }
 
+    /// @notice One bid as stored (`Space.BID`): `IUniformEditionAuction.Bid`'s fields, then the
+    ///         minute it was placed or last raised, counted from the sale's `openedAt` and
+    ///         capped at 65,535. A withdrawal during a 1/1 dispute pause is open only to a bid
+    ///         placed in a minute that ended before the pause began (ADR 0005, amended
+    ///         1 November 2026).
+    /// @param bidder Who placed it.
+    /// @param step Its step.
+    /// @param quantity Its units.
+    /// @param position Units entered at its step before it.
+    /// @param placedMinute `(placed or raised - openedAt) / 60`, at most 65,535.
+    struct BidWord {
+        address bidder;
+        uint16 step;
+        uint32 quantity;
+        uint32 position;
+        uint16 placedMinute;
+    }
+
     /// @notice A sale's payout terms, locked at open (`Space.PAYOUT`).
     /// @param seller The artist-portion split wallet.
     /// @param feeShare The network fee share, out of 100,000.
@@ -95,7 +113,7 @@ interface IUniformEditionAuctionStorage {
     /// @dev Struct words pack their fields from the least significant bit, in declaration order.
     ///      SALE (`SaleWord`), PAYOUT (`PayoutWord`), RESULT (`ResultWord`), SCAN (`ScanWord`):
     ///      `key` ignored. BID:
-    ///      `key` the bid ID (`IUniformEditionAuction.Bid`). LIVE: `key` a word index `w`; eight 32-bit live-unit
+    ///      `key` the bid ID (`BidWord`). LIVE: `key` a word index `w`; eight 32-bit live-unit
     ///      counters, step `8w + j` in bits `32j`. DEPARTURE: `key` is `step << 32 | w`; word 0
     ///      holds the step's departure count (bits 0-31), its departed units (32-63) and entries
     ///      0-2 (64 bits each from bit 64), and word `w >= 1` entries `4w - 1` to `4w + 2` (64
@@ -123,9 +141,11 @@ interface IUniformEditionAuctionStorage {
     /// @param wordsLeft The live words still to scan.
     event SettlementScanned(uint256 indexed saleId, uint256 wordsLeft);
 
-    /// @notice The read-only lens this adapter created in its constructor. It computes every
-    ///         view of `IUniformEditionAuction`, which the adapter forwards to it, and the master
-    ///         check `open` consults.
+    /// @notice The read-only lens this adapter pinned in its constructor: deployed beforehand in
+    ///         its own transaction, with the code hash and the wiring (Editions, Stream, English
+    ///         auction, escrow) the constructor checked. It computes every view of
+    ///         `IUniformEditionAuction` from its caller's words, which the adapter forwards to
+    ///         it, and the master check `open` consults.
     /// @return The lens's address (immutable).
     function lens() external view returns (address);
     /// @notice One raw storage word, from which the lens computes every view.

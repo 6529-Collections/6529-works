@@ -21,6 +21,7 @@ import {
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { UniformEditionAuction } from "src/sales/UniformEditionAuction.sol";
+import { UniformEditionAuctionLens } from "src/sales/UniformEditionAuctionLens.sol";
 import { MockRevenueEscrow } from "../../mocks/sales/SaleMocks.sol";
 import {
     MockEditionToken,
@@ -51,7 +52,11 @@ abstract contract EditionAuctionBase is Test {
     UniformEditionAuction internal auction;
     /// @dev The adapter through its frozen interface (the views reach the lens).
     IUniformEditionAuction internal ua;
+    /// @dev The lens's own views, at the adapter's address: the lens reads its caller, so it is
+    ///      always called through the adapter's fallback.
     IUniformEditionAuctionLens internal lens;
+    /// @dev The deployed lens itself.
+    address internal lensAddress;
 
     address internal seller = makeAddr("sellerWallet");
     address internal networkFee = makeAddr("networkFeeSafe");
@@ -73,11 +78,10 @@ abstract contract EditionAuctionBase is Test {
         editions = new MockEditionToken(address(stream));
         editions.setResolver(address(economics));
         english = new MockOneOfOneAuction();
-        auction = new UniformEditionAuction(
-            address(manager), address(escrow), address(editions), address(english), defaultConfig()
-        );
+        auction = _deployAuction(defaultConfig());
         ua = IUniformEditionAuction(address(auction));
-        lens = IUniformEditionAuctionLens(auction.lens());
+        lens = IUniformEditionAuctionLens(address(auction));
+        lensAddress = auction.lens();
         auction.setTarget(address(editions), true);
         editions.admit(address(auction), true);
         english.set(
@@ -85,6 +89,27 @@ abstract contract EditionAuctionBase is Test {
             ID,
             IEnglishAuction.AuctionState.ACTIVE,
             uint64(block.timestamp + 1 days)
+        );
+    }
+
+    /// @dev The lens in its own deployment, then the adapter pinning it (F8).
+    function _deployAuction(IUniformEditionAuction.AuctionConfig memory config)
+        internal
+        returns (UniformEditionAuction)
+    {
+        address l = address(
+            new UniformEditionAuctionLens(
+                address(editions), address(stream), address(english), address(escrow)
+            )
+        );
+        return new UniformEditionAuction(
+            address(manager),
+            address(escrow),
+            address(editions),
+            address(english),
+            l,
+            l.codehash,
+            config
         );
     }
 
@@ -163,6 +188,8 @@ abstract contract EditionAuctionBase is Test {
     function _withdrawDuringPause(uint256 saleId, uint256 bidId) internal {
         IUniformEditionAuction.Bid memory b = ua.bidOf(saleId, bidId);
         IEnglishAuction.Auction memory o = english.auction(english.saleIdOf(address(stream), ID));
+        // A pause in a later minute than the bid's (only bids placed before the pause leave).
+        vm.warp(block.timestamp + 60);
         english.set(address(stream), ID, IEnglishAuction.AuctionState.PAUSED, o.endTime);
         uint256 amount = uint256(b.quantity) * _price(saleId, b.step);
         vm.prank(b.bidder);

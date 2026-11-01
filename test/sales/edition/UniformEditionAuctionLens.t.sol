@@ -58,23 +58,35 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         ua.auction(saleId);
     }
 
-    /// @dev A sale opened after its edition exists pays the economics the edition recorded,
-    ///      not the resolver's current ones, so the edition always reports the split paid.
-    function test_Lens_MasterTermsOfAnExistingEditionAreItsRecorded() public {
+    /// @dev F1: a sale pays exactly the economics 6529 Stream Editions returns from
+    ///      `bindMinter`: for an edition that exists, the ones it recorded, whatever the
+    ///      resolver says now.
+    function test_Open_PaysTheEconomicsEditionsReturns() public {
         address recordedSeller = makeAddr("recordedSeller");
         address recordedFee = makeAddr("recordedFee");
         editions.setExists(ID, true);
         editions.setLocked(ID, recordedSeller, recordedFee, 10_000);
-        IUniformEditionAuctionLens.MasterTerms memory m =
-            lens.masterTerms(address(editions), ID, abi.encode(_item(ID, 0)));
-        assertEq(m.seller, recordedSeller);
-        assertEq(m.feeRecipient, recordedFee);
-        assertEq(m.feeShare, 10_000);
-        // No fee recorded: none paid.
-        editions.setLocked(ID, recordedSeller, recordedFee, 0);
-        m = lens.masterTerms(address(editions), ID, abi.encode(_item(ID, 0)));
-        assertEq(m.feeRecipient, address(0));
-        assertEq(m.feeShare, 0);
+        uint256 saleId = _open(0);
+        IUniformEditionAuction.Auction memory a = ua.auction(saleId);
+        assertEq(a.seller, recordedSeller);
+        assertEq(a.feeRecipient, recordedFee);
+        assertEq(a.feeShare, 10_000);
+        // The lens's preview of them refuses unpayable terms (here, no seller).
+        editions.setLocked(ID + 1, address(0), recordedFee, 10_000);
+        editions.setExists(ID + 1, true);
+        english.set(
+            address(stream),
+            ID + 1,
+            IEnglishAuction.AuctionState.ACTIVE,
+            uint64(block.timestamp + 1 days)
+        );
+        PackageItem memory item = _item(ID + 1, 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISaleAdapter.InvalidSaleTerms.selector, address(editions), ID + 1
+            )
+        );
+        auction.open(address(editions), ID + 1, abi.encode(item));
     }
 
     /// @dev The cut step's departure log sorted in `O(n log n)` (a heapsort of packed keys): 600
@@ -141,9 +153,6 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         IUniformEditionAuctionLens.MasterTerms memory m =
             lens.masterTerms(address(editions), ID, abi.encode(item));
         assertEq(m.maxCount, 42);
-        assertEq(m.seller, seller);
-        assertEq(m.feeRecipient, networkFee);
-        assertEq(m.feeShare, FEE_SHARE);
         assertEq(m.oneOfOneEnd, block.timestamp + 1 days);
         assertEq(uint8(m.oneOfOneState), uint8(IEnglishAuction.AuctionState.ACTIVE));
         // Another token is refused.

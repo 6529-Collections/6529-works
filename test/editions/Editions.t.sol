@@ -44,6 +44,7 @@ import { EditionsBase } from "./EditionsBase.sol";
 import { StateGrowth } from "../helpers/StateGrowth.sol";
 import {
     EditionsAdapterMock,
+    HashedParamsAdapterMock,
     EditionsPackages,
     EditionsRendererMock,
     EditionsStreamMock,
@@ -813,6 +814,109 @@ contract EditionsTest is EditionsBase {
         assertEq(editions.edition(id).minter, address(adapter));
         adapter.buy(editions, other, buyer, 1);
         assertEq(editions.edition(other).minter, address(adapter));
+    }
+
+    /// @dev F10: edition params are at most two words. A sale method whose parameters do not
+    ///      fit commits to their hash in `params` and takes them in full when its sale opens,
+    ///      checking the hash: the extension path stays open under the bound.
+    function test_F10_AnAdapterTakesLongParamsByHash() public {
+        HashedParamsAdapterMock hashed = new HashedParamsAdapterMock();
+        vm.prank(governor);
+        editions.setAdmittedMinter(address(hashed), true);
+        bytes memory extra = new bytes(1024);
+        for (uint256 i; i < extra.length; ++i) {
+            extra[i] = bytes1(uint8(i % 251 + 1));
+        }
+        PackageItem memory item = _item(10);
+        item.edition =
+            EditionTerms(10, CURRENCY_ETH, hashed.saleKind(), abi.encode(keccak256(extra)));
+        assertLe(item.edition.params.length, EditionRules.MAX_PARAMS_BYTES);
+        uint256 id = _masterInAuction(item);
+        bytes memory other = abi.encodePacked(extra, uint8(1));
+        vm.expectRevert(abi.encodeWithSelector(HashedParamsAdapterMock.ParamsMismatch.selector, id));
+        hashed.open(editions, id, abi.encode(item, other));
+        hashed.open(editions, id, abi.encode(item, extra));
+        assertEq(keccak256(hashed.extraOf(id)), keccak256(extra));
+        stream.settle(id, COLLECTOR);
+        _createEdition(id, item);
+        hashed.buy(editions, id, buyer, 3);
+        assertEq(editions.edition(id).minter, address(hashed));
+        assertEq(editions.edition(id).minted, 3);
+    }
+
+    /// @dev F4 (governance L-3): Editions compares the kind an adapter reported at its first
+    ///      admission, as 6529 Stream does since owner decision 15, not its live `saleKind()`:
+    ///      an adapter whose answer changes can neither take another kind's edition nor lose
+    ///      its own, and a re-admission keeps the recorded kind.
+    function test_F4_TheKindRecordedAtAdmissionGoverns() public {
+        PackageItem memory item = _item(0);
+        uint256 id = _masterInAuction(item);
+        EditionsAdapterMock shifty = new EditionsAdapterMock(FIXED_PRICE);
+        vm.prank(governor);
+        editions.setAdmittedMinter(address(shifty), true);
+        shifty.setKind(SaleKind.UNIFORM_AUCTION);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IMintTarget.SaleKindMismatch.selector, SaleKind.UNIFORM_AUCTION, FIXED_PRICE
+            )
+        );
+        shifty.bind(editions, id, item);
+        // The uniform adapter changes its answer: still its kind's adapter.
+        adapter.setKind(FIXED_PRICE);
+        adapter.bind(editions, id, item);
+        stream.settle(id, COLLECTOR);
+        _createEdition(id, item);
+        adapter.buy(editions, id, buyer, 1);
+        assertEq(editions.edition(id).minted, 1);
+        // A removal and re-admission keep the recorded kind.
+        vm.startPrank(governor);
+        editions.setAdmittedMinter(address(shifty), false);
+        editions.setAdmittedMinter(address(shifty), true);
+        vm.stopPrank();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IMintTarget.SaleKindMismatch.selector, SaleKind.UNIFORM_AUCTION, FIXED_PRICE
+            )
+        );
+        shifty.buy(editions, id, buyer, 1);
+    }
+
+    /// @dev F4: an adapter that reports no kind is refused at admission.
+    function test_F4_AdmissionRefusesAnAdapterWithNoKind() public {
+        EditionsAdapterMock none = new EditionsAdapterMock(bytes32(0));
+        vm.prank(governor);
+        vm.expectRevert(
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(none))
+        );
+        editions.setAdmittedMinter(address(none), true);
+    }
+
+    /// @dev F1: `bindMinter` returns the economics it locks (an edition not created yet: the
+    ///      resolver's now, with no royalty rate), and an existing edition's as recorded.
+    function test_F1_BindMinterReturnsTheLockedEconomics() public {
+        PackageItem memory item = _item(0);
+        uint256 id = _masterInAuction(item);
+        WorkTerms memory w = economics.newWorkTerms(PRODUCT_EDITIONS, item.payees);
+        vm.prank(address(adapter));
+        WorkTerms memory t = editions.bindMinter(id, item);
+        assertEq(t.seller, w.seller);
+        assertEq(t.feeRecipient, w.feeRecipient);
+        assertEq(t.feeShare, w.feeShare);
+        assertEq(t.royaltyReceiver, w.royaltyReceiver);
+        assertEq(t.royaltyRate, 0, "the master's rate is written at creation");
+        // The resolver changes; the binding's terms hold, re-binding returns them.
+        economics.setEconomics(ProductEconomics(makeAddr("laterFee"), 10_000, 6_529));
+        vm.prank(address(adapter));
+        WorkTerms memory again = editions.bindMinter(id, item);
+        assertEq(again.feeRecipient, w.feeRecipient);
+        assertEq(again.feeShare, w.feeShare);
+        stream.settle(id, COLLECTOR);
+        _createEdition(id, item);
+        vm.prank(address(adapter));
+        WorkTerms memory created = editions.bindMinter(id, item);
+        assertEq(created.seller, w.seller);
+        assertEq(created.feeRecipient, w.feeRecipient);
+        assertEq(created.royaltyRate, editions.edition(id).royaltyRate);
     }
 
     /// @dev `bindMinter` before the edition exists: the edition auction opens with the master's

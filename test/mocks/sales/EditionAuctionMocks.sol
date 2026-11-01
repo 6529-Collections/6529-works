@@ -31,7 +31,18 @@ contract MockOneOfOneAuction {
         external
     {
         IEnglishAuction.Auction storage a = _auctions[saleIdOf(token, id)];
+        // A pause records when it began, as the real auction does; anything else clears it.
+        if (state != IEnglishAuction.AuctionState.PAUSED) {
+            a.pausedAt = 0;
+        } else if (a.state != IEnglishAuction.AuctionState.PAUSED) {
+            a.pausedAt = uint64(block.timestamp);
+        }
         (a.token, a.tokenId, a.state, a.endTime) = (token, id, state, endTime);
+    }
+
+    /// @dev Sets when a 1/1's dispute pause began.
+    function setPausedAt(address token, uint256 id, uint64 pausedAt) external {
+        _auctions[saleIdOf(token, id)].pausedAt = pausedAt;
     }
 
     function auction(uint256 saleId) external view returns (IEnglishAuction.Auction memory a) {
@@ -130,7 +141,7 @@ contract MockEditionToken is ERC1155 {
     /// @dev Editions' rule: admitted callers only; binds an unbound edition (locking the
     ///      resolver's economics if it does not exist yet), a no-op for the bound adapter, and
     ///      `MinterMismatch` for another. The item is only hashed and recorded.
-    function bindMinter(uint256 id, PackageItem calldata item) external {
+    function bindMinter(uint256 id, PackageItem calldata item) external returns (WorkTerms memory) {
         if (!admitted[msg.sender]) revert IMintTarget.NotAdmittedMinter(msg.sender);
         ++binds;
         address bound = minterOf[id];
@@ -144,6 +155,7 @@ contract MockEditionToken is ERC1155 {
         } else if (bound != msg.sender) {
             revert IEditions.MinterMismatch(id, bound);
         }
+        return _locked[id];
     }
 
     /// @dev The economics an edition recorded (as `createEdition` or a binding locked them).

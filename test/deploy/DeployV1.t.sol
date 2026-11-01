@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
 import { Vm } from "forge-std/Vm.sol";
+import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
@@ -200,10 +201,19 @@ contract DeployV1Test is Test {
         assertEq(d.editionAuction.stream(), address(d.stream));
         assertEq(d.editionAuction.englishAuction(), address(d.englishAuction));
         assertEq(d.editionAuction.escrow(), address(d.revenueEscrow));
-        // Its lens is the auction's first CREATE, recorded beside it.
+        // Its lens is deployed in its own CREATE2 entry before it (F8), recorded beside it, and
+        // pinned by the auction with this adapter's wiring.
         assertEq(d.editionAuction.lens(), d.editionAuctionLens);
-        assertEq(d.editionAuctionLens, vm.computeCreateAddress(address(d.editionAuction), 1));
         assertTrue(d.editionAuctionLens.code.length != 0);
+        assertEq(IUniformEditionAuctionLens(d.editionAuctionLens).editions(), address(d.editions));
+        assertEq(IUniformEditionAuctionLens(d.editionAuctionLens).stream(), address(d.stream));
+        assertEq(
+            IUniformEditionAuctionLens(d.editionAuctionLens).englishAuction(),
+            address(d.englishAuction)
+        );
+        assertEq(
+            IUniformEditionAuctionLens(d.editionAuctionLens).escrow(), address(d.revenueEscrow)
+        );
         assertEq(
             keccak256(abi.encode(d.editionAuction.config())),
             keccak256(abi.encode(DeployV1.editionAuctionDefaults())),

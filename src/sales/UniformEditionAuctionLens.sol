@@ -24,17 +24,19 @@ import { UniformClearing } from "./UniformClearing.sol";
 /// @notice The read side of {UniformEditionAuction}: every view of a sale, computed from the
 ///         adapter's storage words with the clearing code its settlement runs, and the master
 ///         check its `open` consults. See {IUniformEditionAuctionLens}.
-/// @dev Stateless. The adapter's constructor creates it and is its `adapter`. It decodes the word
+/// @dev Stateless, and bound to no adapter: deployed in its own transaction (so the adapter's
+///      deployment fits a block), it reads every sale from `msg.sender`, the adapter forwarding
+///      its views through its read-only fallback or calling `masterTerms` from `open`. Called
+///      from anywhere else, it reads the caller's own words, which is harmless. The adapter's
+///      constructor pins its code hash and checks that its immutables (`editions`, `stream`,
+///      `englishAuction`, `escrow`) are the adapter's own. It decodes the word
 ///      layouts `IStorage.Space` documents; the test suite pins every decoder
 ///      against the adapter's behaviour. A sale's book is frozen once it closes (claims never
 ///      touch live units), so the clearing it computes after the close is the settlement's.
 contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
-    /// @inheritdoc IUniformEditionAuctionLens
-    address public immutable adapter;
     address private immutable _editions;
     address private immutable _stream;
     address private immutable _englishAuction;
-    address private immutable _economics;
     address private immutable _escrow;
 
     /// @dev Departure log entries in a step's head word; four in each word after it.
@@ -43,21 +45,32 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
     /// @param editions_ The adapter's 6529 Stream Editions.
     /// @param stream_ Its 6529 Stream.
     /// @param englishAuction_ The adapter's English auction.
-    /// @param economics_ 6529 Stream's economics resolver.
     /// @param escrow_ The adapter's revenue escrow.
-    constructor(
-        address editions_,
-        address stream_,
-        address englishAuction_,
-        address economics_,
-        address escrow_
-    ) {
-        adapter = msg.sender;
+    constructor(address editions_, address stream_, address englishAuction_, address escrow_) {
         _editions = editions_;
         _stream = stream_;
         _englishAuction = englishAuction_;
-        _economics = economics_;
         _escrow = escrow_;
+    }
+
+    /// @inheritdoc IUniformEditionAuctionLens
+    function editions() external view returns (address) {
+        return _editions;
+    }
+
+    /// @inheritdoc IUniformEditionAuctionLens
+    function stream() external view returns (address) {
+        return _stream;
+    }
+
+    /// @inheritdoc IUniformEditionAuctionLens
+    function englishAuction() external view returns (address) {
+        return _englishAuction;
+    }
+
+    /// @inheritdoc IUniformEditionAuctionLens
+    function escrow() external view returns (address) {
+        return _escrow;
     }
 
     // -------------------------------------------------------------------------- the master
@@ -86,9 +99,11 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
                 || WorksHashing.itemHash(item) != itemHash || e.saleKind != SaleKind.UNIFORM_AUCTION
                 || e.currency != CURRENCY_ETH || e.params.length != 0
         ) revert ISaleAdapter.InvalidSaleTerms(token, id);
-        // The economics the edition records: locked when it was created or bound, or, for an
-        // edition still unbound, the resolver's now, which `bindMinter` locks in this same
-        // transaction. So the split this sale pays is always the one the edition reports.
+        // A preview of the economics `bindMinter` locks and returns in this same transaction,
+        // which the adapter pays (F1: 6529 Stream Editions is their one source): the ones an
+        // existing edition recorded, or else the current resolver's (6529 Stream's, read live,
+        // as Editions reads it). CALLS-1: the escrow refuses to be paid as a wallet, so a sale
+        // paying it could never settle; it is refused at open.
         WorkTerms memory w;
         if (IEditions(_editions).exists(id)) {
             IEditions.Edition memory locked = IEditions(_editions).edition(id);
@@ -100,17 +115,14 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
                 locked.royaltyRate
             );
         } else {
-            w = IEconomicsResolver(_economics).newWorkTerms(PRODUCT_EDITIONS, item.payees);
+            w = IEconomicsResolver(IStream(_stream).economics())
+                .newWorkTerms(PRODUCT_EDITIONS, item.payees);
         }
-        // CALLS-1: the escrow refuses to be paid as a wallet, so a sale paying it could never
-        // settle; it is refused at open.
         if (
             w.seller == address(0) || w.seller == _escrow || w.feeShare > Splits.DENOMINATOR
                 || (w.feeShare != 0 && (w.feeRecipient == address(0) || w.feeRecipient == _escrow))
         ) revert ISaleAdapter.InvalidSaleTerms(token, id);
         m.maxCount = e.maxCount;
-        m.seller = w.seller;
-        if (w.feeShare != 0) (m.feeRecipient, m.feeShare) = (w.feeRecipient, w.feeShare);
     }
 
     // ----------------------------------------------------------------------------- a sale
@@ -239,6 +251,26 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
     }
 
     /// @inheritdoc IUniformEditionAuctionLens
+    function canWithdraw(uint256 saleId, uint256 bidId) external view returns (bool) {
+        IStorage.SaleWord memory a = _opened(saleId);
+        uint256 w = _word(IStorage.Space.BID, saleId, bidId);
+        // Safe: the bidder is the word's low 160 bits.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        if (address(uint160(w)) == address(0)) {
+            revert IUniformEditionAuction.UnknownBid(saleId, bidId);
+        }
+        if (a.status != IUniformEditionAuction.AuctionStatus.OPEN) return false;
+        IEnglishAuction.Auction memory o =
+            IEnglishAuction(_englishAuction).auction(_saleIdOf(_stream, _payout(saleId).id));
+        if (o.state != IEnglishAuction.AuctionState.PAUSED) return false;
+        // The adapter's rule: the bid's minute (bits 240-255) ended before the pause began.
+        uint256 placed = w >> 240;
+        uint256 paused = o.pausedAt > a.openedAt ? (o.pausedAt - a.openedAt) / 60 : 0;
+        if (paused > type(uint16).max) paused = type(uint16).max;
+        return placed < paused;
+    }
+
+    /// @inheritdoc IUniformEditionAuctionLens
     function bidOutcome(uint256 saleId, uint256 bidId)
         external
         view
@@ -356,10 +388,10 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         view
         returns (IUniformEditionAuction.Departure[] memory list)
     {
-        (uint256 count, uint256 head) = _departureCount(saleId, step);
-        list = new IUniformEditionAuction.Departure[](count);
-        for (uint256 i; i < count; ++i) {
-            uint256 entry = _departure(saleId, step, head, i);
+        uint256[] memory entries = _entries(saleId, step);
+        list = new IUniformEditionAuction.Departure[](entries.length);
+        for (uint256 i; i < entries.length; ++i) {
+            uint256 entry = entries[i];
             // Safe: 32-bit fields of the entry.
             // forge-lint: disable-next-line(unsafe-typecast)
             list[i] = IUniformEditionAuction.Departure(uint32(entry), uint32(entry >> 32));
@@ -406,19 +438,40 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
     function settlementOrderFor(uint256 saleId, address settler)
         external
         view
+        returns (uint256[] memory)
+    {
+        return settlementOrderFor(saleId, settler, 0, type(uint256).max);
+    }
+
+    /// @inheritdoc IUniformEditionAuctionLens
+    function settlementOrderFor(uint256 saleId, address settler, uint256 fromPosition, uint256 max)
+        public
+        view
         returns (uint256[] memory order)
     {
         IStorage.SaleWord memory a = _opened(saleId);
-        // Cleared and sweeping: the departures from the settler's next position on.
+        uint256 step;
         if (
             a.status == IUniformEditionAuction.AuctionStatus.SETTLING
                 && _word(IStorage.Space.SCAN, saleId, 0) == 0
         ) {
+            // Cleared and sweeping: from the settler's next position on.
+            step = _result(saleId).step;
             (, uint256 next,) = sweepOf(saleId, settler);
-            (order,) = _sorted(saleId, _result(saleId).step, next);
+            if (next > fromPosition) fromPosition = next;
+        } else if (
+            a.status == IUniformEditionAuction.AuctionStatus.OPEN
+                || a.status == IUniformEditionAuction.AuctionStatus.SETTLING
+        ) {
+            // Not cleared yet: the order the live clearing needs.
+            UniformClearing.Result memory r =
+                UniformClearing.clear(_book(saleId, a, 0), _rules(a, _config(a.termsId)));
+            if (!r.rationed) return order;
+            step = r.step;
+        } else {
             return order;
         }
-        return settlementOrder(saleId);
+        order = _smallest(_entries(saleId, step), fromPosition, max);
     }
 
     // --------------------------------------------------------------------------- internal
@@ -478,19 +531,25 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
 
     /// @dev `step`'s departure indexes whose position is at least `from`, sorted by position
     ///      (ties, which a log never holds, by index), with their entries (`position |
-    ///      quantity << 32`) in the same order. A heapsort of packed keys, `O(n log n)` in the
-    ///      worst case: a log of thousands of departures in any order stays far inside an
-    ///      `eth_call` gas cap.
+    ///      quantity << 32`) in the same order. A heapsort of packed keys, `O(n log n)`
+    ///      whatever the order; the log is read four entries per storage word. Measured through
+    ///      the adapter with the log in its worst order: `clearing` and `quote` cost about 5,000
+    ///      gas a departure at the cut step (50.6M at 10,000), so they stay within a 50M
+    ///      `eth_call` up to about 9,000; `settlementOrder` up to about 7,000 and `departures`
+    ///      up to about 8,000 (both return the whole log). A keeper pages with
+    ///      `settlementOrderFor(saleId, settler, fromPosition, max)`: 21.9M for a page of 96 at
+    ///      10,000 departures.
     function _sorted(uint256 saleId, uint256 step, uint256 from)
         private
         view
         returns (uint256[] memory order, uint256[] memory entries)
     {
-        (uint256 count, uint256 head) = _departureCount(saleId, step);
+        uint256[] memory log = _entries(saleId, step);
+        uint256 count = log.length;
         uint256[] memory keys = new uint256[](count);
         uint256 n;
         for (uint256 i; i < count; ++i) {
-            uint256 entry = _departure(saleId, step, head, i);
+            uint256 entry = log[i];
             if (uint32(entry) < from) continue;
             // The key orders by position, then index; its low 64 bits are the entry.
             keys[n++] = uint256(uint32(entry)) << 128 | i << 64 | uint64(entry);
@@ -505,6 +564,79 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         entries = new uint256[](n);
         for (uint256 k; k < n; ++k) {
             (order[k], entries[k]) = (uint64(keys[k] >> 64), uint64(keys[k]));
+        }
+    }
+
+    /// @dev The indexes of the `max` departures of `log` with the lowest positions at least
+    ///      `from`, in position order: a bounded max-heap of packed keys (position, index),
+    ///      `O(n log max)`, then sorted. A keeper pages through a long log with `from` one past
+    ///      the last position it got.
+    function _smallest(uint256[] memory log, uint256 from, uint256 max)
+        private
+        pure
+        returns (uint256[] memory order)
+    {
+        uint256 count = log.length;
+        if (max > count) max = count;
+        uint256[] memory heap = new uint256[](max);
+        // Invariants: `n <= max`, the length `heap` was allocated with, so every index read or
+        // written (`k`, a parent or a child, each below `n`) is inside it; `i < count` indexes
+        // `log`. A key is `position << 128 | i`: positions below 2^32, indexes below 2^64, so
+        // keys order by position, then index. Only `heap`'s own words are written.
+        assembly ("memory-safe") {
+            let h := add(heap, 0x20)
+            let src := add(log, 0x20)
+            let n := 0
+            for { let i := 0 } lt(i, count) { i := add(i, 1) } {
+                let position := and(mload(add(src, shl(5, i))), 0xffffffff)
+                if iszero(lt(position, from)) {
+                    let key := or(shl(128, position), i)
+                    switch lt(n, max)
+                    case 1 {
+                        // Sift the new key up from the end.
+                        let k := n
+                        n := add(n, 1)
+                        for { } k { } {
+                            let parent := shr(1, sub(k, 1))
+                            let pv := mload(add(h, shl(5, parent)))
+                            if iszero(lt(pv, key)) { break }
+                            mstore(add(h, shl(5, k)), pv)
+                            k := parent
+                        }
+                        mstore(add(h, shl(5, k)), key)
+                    }
+                    default {
+                        // Full: a key below the largest kept replaces it and sifts down.
+                        if and(gt(n, 0), lt(key, mload(h))) {
+                            let k := 0
+                            for { } 1 { } {
+                                let child := add(shl(1, k), 1)
+                                if iszero(lt(child, n)) { break }
+                                let cv := mload(add(h, shl(5, child)))
+                                let right := add(child, 1)
+                                if lt(right, n) {
+                                    let rv := mload(add(h, shl(5, right)))
+                                    if gt(rv, cv) {
+                                        child := right
+                                        cv := rv
+                                    }
+                                }
+                                if iszero(gt(cv, key)) { break }
+                                mstore(add(h, shl(5, k)), cv)
+                                k := child
+                            }
+                            mstore(add(h, shl(5, k)), key)
+                        }
+                    }
+                }
+            }
+            mstore(heap, n)
+        }
+        uint256 n = heap.length;
+        _heapSort(heap);
+        order = heap;
+        for (uint256 k; k < n; ++k) {
+            order[k] = uint64(heap[k]);
         }
     }
 
@@ -524,14 +656,29 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
 
     /// @dev Restores the max-heap below `root` within the first `n` elements of `a`.
     function _siftDown(uint256[] memory a, uint256 root, uint256 n) private pure {
-        uint256 value = a[root];
-        for (uint256 child = 2 * root + 1; child < n; child = 2 * root + 1) {
-            if (child + 1 < n && a[child + 1] > a[child]) ++child;
-            if (a[child] <= value) break;
-            a[root] = a[child];
-            root = child;
+        // Invariants: callers pass `root < n <= a.length`, so every index read or written (the
+        // root and each child below `n`) is inside `a`; only `a`'s words are written.
+        assembly ("memory-safe") {
+            let p := add(a, 0x20)
+            let value := mload(add(p, shl(5, root)))
+            for { } 1 { } {
+                let child := add(shl(1, root), 1)
+                if iszero(lt(child, n)) { break }
+                let cv := mload(add(p, shl(5, child)))
+                let right := add(child, 1)
+                if lt(right, n) {
+                    let rv := mload(add(p, shl(5, right)))
+                    if gt(rv, cv) {
+                        child := right
+                        cv := rv
+                    }
+                }
+                if iszero(gt(cv, value)) { break }
+                mstore(add(p, shl(5, root)), cv)
+                root := child
+            }
+            mstore(add(p, shl(5, root)), value)
         }
-        a[root] = value;
     }
 
     /// @dev The live units ahead of `position` in `step`'s queue: the position less the departed
@@ -541,10 +688,10 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         view
         returns (uint256 ahead)
     {
-        (uint256 count, uint256 head) = _departureCount(saleId, step);
+        uint256[] memory log = _entries(saleId, step);
         ahead = position;
-        for (uint256 i; i < count; ++i) {
-            uint256 entry = _departure(saleId, step, head, i);
+        for (uint256 i; i < log.length; ++i) {
+            uint256 entry = log[i];
             if (uint32(entry) < position) ahead -= uint32(entry >> 32);
         }
     }
@@ -559,15 +706,21 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         count = uint32(head);
     }
 
-    /// @dev Departure `index` of `step`'s log: `position | quantity << 32` in the low 64 bits.
-    function _departure(uint256 saleId, uint256 step, uint256 head, uint256 index)
-        private
-        view
-        returns (uint256)
-    {
-        if (index < _HEAD_ENTRIES) return head >> (64 + (index << 6));
-        uint256 j = index - _HEAD_ENTRIES;
-        return _word(IStorage.Space.DEPARTURE, saleId, step << 32 | 1 + (j >> 2)) >> ((j & 3) << 6);
+    /// @dev `step`'s departure log, entry `i` (`position | quantity << 32`) at index `i`: the
+    ///      head word holds the first three, each later word four, so every word is read once.
+    function _entries(uint256 saleId, uint256 step) private view returns (uint256[] memory log) {
+        (uint256 count, uint256 head) = _departureCount(saleId, step);
+        log = new uint256[](count);
+        uint256 word = head >> 64;
+        for (uint256 i; i < count; ++i) {
+            if (i >= _HEAD_ENTRIES && (i - _HEAD_ENTRIES) & 3 == 0) {
+                word = _word(
+                    IStorage.Space.DEPARTURE, saleId, step << 32 | 1 + ((i - _HEAD_ENTRIES) >> 2)
+                );
+            }
+            log[i] = uint64(word);
+            word >>= 64;
+        }
     }
 
     // forge-lint: disable-end(unsafe-typecast)
@@ -616,7 +769,7 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
     {
         IStorage.SaleWord memory a = _sale(saleId);
         if (a.status == IUniformEditionAuction.AuctionStatus.NONE) {
-            return IUniformEditionAuction(adapter).config();
+            return IUniformEditionAuction(msg.sender).config();
         }
         return _config(a.termsId);
     }
@@ -692,7 +845,7 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         view
         returns (uint256)
     {
-        return IStorage(adapter).storageWord(space, saleId, key);
+        return IStorage(msg.sender).storageWord(space, saleId, key);
     }
 
     function _saleIdOf(address token, uint256 id) private pure returns (uint256) {

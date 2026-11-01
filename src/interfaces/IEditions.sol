@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { IERC1155 } from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import { IERC2981 } from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import { IMintTarget } from "./IMintTarget.sol";
+import { WorkTerms } from "./types/EconomicsTypes.sol";
 import { EditionTerms, License, PackageItem } from "./types/PackageTypes.sol";
 
 /// @title IEditions
@@ -179,15 +180,25 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     ///         for `editionId`. Binds and emits `EditionMinterBound` if the edition is unbound; a
     ///         no-op if it is bound to the caller; reverts with `MinterMismatch` if it is bound
     ///         to another adapter. Binding an edition that does not exist yet also locks its
-    ///         `PRODUCT_EDITIONS` economics, in the transaction in which the sale locks its own;
-    ///         the binding and those economics are kept when the edition is created.
+    ///         `PRODUCT_EDITIONS` economics from the current resolver; the binding and those
+    ///         economics are kept when the edition is created. Returns the edition's locked
+    ///         economics, which the binding sale pays: 6529 Stream Editions is their one source.
+    ///         The caller's kind is the one recorded at its first admission
+    ///         (`setAdmittedMinter`), not its live `saleKind()`.
     /// @dev Added on 31 October 2026, an amendment of ADR 0005's frozen interface: binding at
     ///      the first mint let two adapters of one kind both sell an edition, and the first
-    ///      claim locked out the other sale's winners after its seller was paid.
+    ///      claim locked out the other sale's winners after its seller was paid. Returning the
+    ///      economics (fix pass A, F1) keeps an adapter on the resolver Editions reads after a
+    ///      replacement (owner decision 16); the selector, and so the interface ID, is unchanged.
     /// @param editionId The edition ID, equal to its master's 6529 Stream token ID.
     /// @param item The master's EDITION_MASTER package item; read only while the edition does
     ///        not exist.
-    function bindMinter(uint256 editionId, PackageItem calldata item) external;
+    /// @return terms The edition's economics: seller, fee recipient, fee share and royalty
+    ///         receiver as locked; `royaltyRate` is the edition's rate, zero until it is created
+    ///         (`createEdition` sets the master's rate).
+    function bindMinter(uint256 editionId, PackageItem calldata item)
+        external
+        returns (WorkTerms memory terms);
 
     /// @notice Binds 6529 Stream's work-records satellite, once (ERC-165 for `IWorkRecords`, not
     ///         an EIP-7702 delegated account). ADMIN role.
