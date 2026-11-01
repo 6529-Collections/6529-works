@@ -66,10 +66,10 @@ contract MockOneOfOneAuction {
     function auctionClock(uint256 saleId)
         external
         view
-        returns (IEnglishAuction.AuctionState state, uint64 endTime)
+        returns (IEnglishAuction.AuctionState state, uint64 endTime, uint64 pausedAt)
     {
         IEnglishAuction.Auction storage a = _auctions[saleId];
-        (state, endTime) = (a.state, a.endTime);
+        (state, endTime, pausedAt) = (a.state, a.endTime, a.pausedAt);
         if (state == IEnglishAuction.AuctionState.NONE) revert ISaleAdapter.UnknownSale(saleId);
     }
 

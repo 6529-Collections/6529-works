@@ -47,9 +47,10 @@ import { UniformEditionAuctionLens } from "./UniformEditionAuctionLens.sol";
 ///      one record per change and a sale stores its 16-bit ID; fee recipients likewise.
 ///
 ///      The 1/1's end only ever moves later, so the sale caches it and reads it live
-///      (`IEnglishAuctionClock.auctionClock`, the state and end the English auction answers
-///      itself, not through its lens) only when a bid or raise lands within `softWindow` of the
-///      cached close, or later. Settlement and withdrawals always read it live. A cancelled 1/1
+///      (`IEnglishAuctionClock.auctionClock`, the state, end and pause start the English
+///      auction answers itself, not through its lens) only when a bid or raise lands within
+///      `softWindow` of the cached close, or later. Settlement and withdrawals always read it
+///      live. A cancelled 1/1
 ///      is therefore seen by the next settlement (anyone may void the sale at once) or by a bid
 ///      near the close; a bid placed far from the close after the cancel is refunded in full with
 ///      every other.
@@ -363,9 +364,9 @@ contract UniformEditionAuction is
         // pause began may leave (decision 12, as amended): demand added during the pause, or in
         // the pause's own minute, is firm, so a pause cannot be used to fake demand, and a bid
         // is never withdrawn in the block that placed it. A saturated minute is never early.
-        (uint256 state, uint256 pausedAt) = _pause(saleId);
+        (IEnglishAuction.AuctionState state,, uint64 pausedAt) = _oneOfOneClock(saleId);
         if (
-            state != uint256(IEnglishAuction.AuctionState.PAUSED)
+            state != IEnglishAuction.AuctionState.PAUSED
                 || b.placedMinute >= _minutes(a.openedAt, pausedAt)
         ) revert IUniformEditionAuction.WithdrawalsClosed(saleId);
         a.liveUnits -= b.quantity;
@@ -701,8 +702,7 @@ contract UniformEditionAuction is
         // forge-lint: disable-next-line(block-timestamp)
         if (fresh || block.timestamp + t.softWindow >= closeAt) {
             uint64 oneEnd;
-            (one, oneEnd) = IEnglishAuctionClock(englishAuction)
-                .auctionClock(saleIdOf(stream, _payouts[saleId].id));
+            (one, oneEnd,) = _oneOfOneClock(saleId);
             if (oneEnd > a.oneOfOneEnd) {
                 // Safe: the 1/1 stores its end in 32 bits.
                 // forge-lint: disable-next-line(unsafe-typecast)
@@ -1207,25 +1207,15 @@ contract UniformEditionAuction is
         return m < type(uint16).max ? uint16(m) : type(uint16).max;
     }
 
-    /// @dev The 1/1's state and the time its dispute pause began (zero if none), the eleventh
-    ///      and ninth words of `IEnglishAuction.auction` (a static struct of eleven words), read
-    ///      without decoding the rest.
-    function _pause(uint256 saleId) private view returns (uint256 state, uint256 pausedAt) {
-        address target = englishAuction;
-        uint256 oneOfOne = saleIdOf(stream, _payouts[saleId].id);
-        bytes4 selector = IEnglishAuction.auction.selector;
-        // Invariants: the call and its returndata use memory from the free memory pointer on,
-        // without moving it: temporary memory nothing else reads. A failed or short answer
-        // reverts.
-        assembly ("memory-safe") {
-            let p := mload(0x40)
-            mstore(p, selector)
-            mstore(add(p, 0x04), oneOfOne)
-            if iszero(staticcall(gas(), target, p, 0x24, p, 0x160)) { revert(0, 0) }
-            if lt(returndatasize(), 0x160) { revert(0, 0) }
-            pausedAt := mload(add(p, 0x100))
-            state := mload(add(p, 0x140))
-        }
+    /// @dev Sale `saleId`'s 1/1, read live from the English auction itself
+    ///      (`IEnglishAuctionClock.auctionClock`): its state, end and dispute-pause start.
+    function _oneOfOneClock(uint256 saleId)
+        private
+        view
+        returns (IEnglishAuction.AuctionState, uint64, uint64)
+    {
+        return IEnglishAuctionClock(englishAuction)
+            .auctionClock(saleIdOf(stream, _payouts[saleId].id));
     }
 
     /// @dev Sale `saleId`'s state word, required OPEN.

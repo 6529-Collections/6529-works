@@ -329,7 +329,6 @@ contract EnglishAuctionLens {
     ///      by hand (it is always `0x20`, the length, then one word per slot), which keeps a
     ///      view's overhead small.
     function _read(bytes32[] memory slots) private view returns (bytes32[] memory) {
-        address target = msg.sender;
         bytes4 selector = IEnglishAuctionStorage.storageWords.selector;
         assembly ("memory-safe") {
             let n := mload(slots)
@@ -339,7 +338,7 @@ contract EnglishAuctionLens {
             mstore(add(ptr, 0x04), 0x20)
             mstore(add(ptr, 0x24), n)
             mcopy(add(ptr, 0x44), add(slots, 0x20), size)
-            if iszero(staticcall(gas(), target, ptr, add(0x44, size), 0, 0)) {
+            if iszero(staticcall(gas(), caller(), ptr, add(0x44, size), 0, 0)) {
                 returndatacopy(ptr, 0, returndatasize())
                 revert(ptr, returndatasize())
             }

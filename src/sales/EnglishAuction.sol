@@ -640,12 +640,12 @@ contract EnglishAuction is
     /// @inheritdoc IEnglishAuctionClock
     /// @dev Answered here, not through the lens, for contracts that read an auction on their own
     ///      hot paths (the edition auction reads its 1/1 in `open`, `bid`, `settle` and
-    ///      `withdrawBid`): one cold slot for a sale never paused, against the lens's extra
-    ///      account and round trips.
+    ///      `withdrawBid`, which needs the pause start): one cold slot for a sale never paused,
+    ///      against the lens's extra account and round trips.
     function auctionClock(uint256 saleId)
         external
         view
-        returns (IEnglishAuction.AuctionState state, uint64 endTime)
+        returns (IEnglishAuction.AuctionState state, uint64 endTime, uint64 pausedAt)
     {
         Sale storage s = _sales[saleId];
         state = _state(s);
@@ -654,12 +654,13 @@ contract EnglishAuction is
         // Only a dispute pause sets `pausedAt`, and it sets `_PAUSE_USED` with it: an unpaused
         // sale's slot 2 is not read.
         if (s.flags & _PAUSE_USED != 0) {
-            uint256 pausedAt = s.pausedAt;
+            pausedAt = s.pausedAt;
             // forge-lint: disable-next-line(block-timestamp)
             if (pausedAt != 0 && block.timestamp > pausedAt + _MAX_PAUSE) {
-                // Truncating as `auction` does: the end fits 32 bits.
+                // Shown resumed, as `auction` shows it. Truncating as `auction` does: the end
+                // fits 32 bits.
                 // forge-lint: disable-next-line(unsafe-typecast)
-                endTime = uint64(_resumedEnd(s, _MAX_PAUSE));
+                (endTime, pausedAt) = (uint64(_resumedEnd(s, _MAX_PAUSE)), 0);
             }
         }
     }
@@ -765,7 +766,7 @@ contract EnglishAuction is
                         || (terms.feeRecipient == address(0) && terms.feeShare != 0)))
                 || terms.creator == address(0) || terms.feeShare > Splits.DENOMINATOR
                 || terms.price != 0 || terms.params.length != 0
-                || _ownerOf(token, tokenId) != address(this)
+                || IERC721(token).ownerOf(tokenId) != address(this)
         ) revert ISaleAdapter.InvalidSaleTerms(token, tokenId);
         saleId = _saleIdOf(token, tokenId);
         Sale storage s = _sales[saleId];
@@ -1062,16 +1063,10 @@ contract EnglishAuction is
         assembly ("memory-safe") {
             pop(call(gasLimit, token, 0, add(data, 0x20), mload(data), 0, 0))
         }
-        if (_ownerOf(token, tokenId) == address(this)) {
+        if (IERC721(token).ownerOf(tokenId) == address(this)) {
             s.flags |= _DELIVERY_PENDING;
             emit IEnglishAuction.DeliveryPending(saleId, to);
         }
-    }
-
-    /// @dev The token's owner of `tokenId`: one call site for the custody checks at start, after
-    ///      a delivery and at an unsold settlement.
-    function _ownerOf(address token, uint256 tokenId) private view returns (address) {
-        return IERC721(token).ownerOf(tokenId);
     }
 
     /// @dev Reports the outcome to the token (`IMintTarget.settlePrimary`, owner decision 17) and
@@ -1091,7 +1086,7 @@ contract EnglishAuction is
             .settlePrimary(s.tokenId, outcome, bidder, _terms[s.termsId].currency, price);
         lt = _lock(s, p.seller, p.feeRecipient, p.feeShare);
         if (bidder == address(0)) {
-            address owner = _ownerOf(s.token, s.tokenId);
+            address owner = IERC721(s.token).ownerOf(s.tokenId);
             taken = owner != address(this);
             address to = taken ? owner : _unbidClaimant(s);
             if (to == address(0)) revert ISaleAdapter.InvalidRecipient(to);

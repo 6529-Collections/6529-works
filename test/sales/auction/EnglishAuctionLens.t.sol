@@ -350,18 +350,24 @@ contract EnglishAuctionLensTest is AuctionBase {
     }
 
     /// @dev Through a dispute pause and its resumption, and through a pause left to run past
-    ///      `MAX_PAUSE`, `auctionClock` stays `auction`'s state and end at every point.
+    ///      `MAX_PAUSE`, `auctionClock` stays `auction`'s state, end and pause start at every
+    ///      point: the pause start while the pause is live, zero after `resume` and once it has
+    ///      run past `MAX_PAUSE`.
     function test_AuctionClock_MatchesAuctionThroughAPauseAndResume() public {
         uint256 saleId = _start();
         _bidEth(saleId, alice, 1 ether);
         _assertClockIsAuctions(saleId);
         _pause(saleId);
         assertEq(uint8(_assertClockIsAuctions(saleId)), uint8(IEnglishAuction.AuctionState.PAUSED));
+        (,, uint64 pausedAt) = auction.auctionClock(saleId);
+        assertEq(pausedAt, block.timestamp, "the pause start");
         vm.warp(block.timestamp + Roles.STANDARD);
         _assertClockIsAuctions(saleId);
         vm.prank(unpauser);
         auction.resume(saleId);
         assertEq(uint8(_assertClockIsAuctions(saleId)), uint8(IEnglishAuction.AuctionState.ACTIVE));
+        (,, pausedAt) = auction.auctionClock(saleId);
+        assertEq(pausedAt, 0, "cleared by resume");
         _end(saleId);
         assertEq(uint8(_assertClockIsAuctions(saleId)), uint8(IEnglishAuction.AuctionState.ENDED));
         auction.settle(saleId);
@@ -374,8 +380,12 @@ contract EnglishAuctionLensTest is AuctionBase {
         uint64 maxPause = auction.MAX_PAUSE();
         vm.warp(block.timestamp + maxPause);
         assertEq(uint8(_assertClockIsAuctions(lapsed)), uint8(IEnglishAuction.AuctionState.PAUSED));
+        (,, pausedAt) = auction.auctionClock(lapsed);
+        assertTrue(pausedAt != 0, "still live at MAX_PAUSE");
         vm.warp(block.timestamp + 1);
         assertEq(uint8(_assertClockIsAuctions(lapsed)), uint8(IEnglishAuction.AuctionState.ACTIVE));
+        (,, pausedAt) = auction.auctionClock(lapsed);
+        assertEq(pausedAt, 0, "shown resumed past MAX_PAUSE");
         assertEq(auction.auction(lapsed).pausedTotal, maxPause, "shown resumed");
         _end(lapsed);
         assertEq(uint8(_assertClockIsAuctions(lapsed)), uint8(IEnglishAuction.AuctionState.ENDED));
@@ -383,7 +393,8 @@ contract EnglishAuctionLensTest is AuctionBase {
         _assertClockIsAuctions(lapsed);
     }
 
-    /// @dev Asserts `auctionClock(saleId)` is `auction(saleId)`'s state and end; returns it.
+    /// @dev Asserts `auctionClock(saleId)` is `auction(saleId)`'s state, end and pause start;
+    ///      returns the state.
     function _assertClockIsAuctions(uint256 saleId)
         internal
         view
@@ -391,9 +402,11 @@ contract EnglishAuctionLensTest is AuctionBase {
     {
         IEnglishAuction.Auction memory a = auction.auction(saleId);
         uint64 endTime;
-        (state, endTime) = auction.auctionClock(saleId);
+        uint64 pausedAt;
+        (state, endTime, pausedAt) = auction.auctionClock(saleId);
         assertEq(uint8(state), uint8(a.state), "state");
         assertEq(endTime, a.endTime, "end");
+        assertEq(pausedAt, a.pausedAt, "pause start");
     }
 
     /// @dev The lens decodes the auction's layout: its slot numbers are the compiler's.
@@ -791,9 +804,11 @@ contract EnglishAuctionLensLayoutTest is AuctionBase {
     // ------------------------------------------------------------------ helpers
 
     function _assertClock(uint256 saleId, IEnglishAuction.Auction memory a) internal view {
-        (IEnglishAuction.AuctionState state, uint64 end) = auction.auctionClock(saleId);
+        (IEnglishAuction.AuctionState state, uint64 end, uint64 pausedAt) =
+            auction.auctionClock(saleId);
         assertEq(uint8(state), uint8(a.state), "auctionClock state");
         assertEq(end, a.endTime, "auctionClock end");
+        assertEq(pausedAt, a.pausedAt, "auctionClock pause start");
     }
 
     /// @dev The `size`-byte field at byte `offset` of the auction's word at `slot`.

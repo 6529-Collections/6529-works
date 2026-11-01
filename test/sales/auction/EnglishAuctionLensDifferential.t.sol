@@ -128,7 +128,8 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
     }
 
     /// @dev The lens build's `auctionClock`, which the pre-lens build lacks, against its own
-    ///      `auction` after every step: the same state and end, or the same revert.
+    ///      `auction` after every step: the same state, end and pause start, or the same
+    ///      revert.
     function _checkClock() internal view {
         uint256 unknown = uint256(keccak256("no such sale"));
         for (uint256 i; i <= sales.length; ++i) {
@@ -141,7 +142,9 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
             assertEq(okC, okA, "auctionClock reverts exactly when auction does");
             if (okA) {
                 IEnglishAuction.Auction memory x = abi.decode(a, (IEnglishAuction.Auction));
-                assertEq(c, abi.encode(x.state, x.endTime), "auction's state and end");
+                assertEq(
+                    c, abi.encode(x.state, x.endTime, x.pausedAt), "auction's state, end, pausedAt"
+                );
             } else {
                 assertEq(c, a, "with the same revert data");
             }
