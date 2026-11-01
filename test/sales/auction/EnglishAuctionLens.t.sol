@@ -2,9 +2,11 @@
 pragma solidity ^0.8.24;
 
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { IEnglishAuctionClock } from "src/interfaces/IEnglishAuctionClock.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import { EnglishAuctionLens, IEnglishAuctionStorage } from "src/sales/EnglishAuctionLens.sol";
+import { Roles } from "src/governance/Roles.sol";
 import { AuctionBase } from "./AuctionBase.sol";
 
 /// @notice The lens the English auction creates for its views (EIP-170 headroom): the auction
@@ -134,6 +136,71 @@ contract EnglishAuctionLensTest is AuctionBase {
         assertEq(address(uint160(uint256(words[0]))), address(manager));
         assertEq(uint256(words[2]), 1, "Stream is listed");
         assertEq(IEnglishAuctionStorage(address(auction)).storageWords(new bytes32[](0)).length, 0);
+    }
+
+    /// @dev `auctionClock` is answered by the auction itself, for contracts that read an
+    ///      auction on their hot paths: the lens does not declare it, it is outside the ERC-165
+    ///      surface, and an unknown sale reverts as `auction` does.
+    function test_AuctionClock_IsAnsweredByTheCoreOutsideErc165() public {
+        uint256 saleId = _start();
+        _assertClockIsAuctions(saleId);
+        (bool ok, bytes memory ret) =
+            auction.lens().staticcall(abi.encodeCall(IEnglishAuctionClock.auctionClock, (saleId)));
+        assertFalse(ok, "the lens does not answer it");
+        assertEq(ret.length, 0);
+        assertFalse(auction.supportsInterface(type(IEnglishAuctionClock).interfaceId));
+        assertTrue(auction.supportsInterface(type(IEnglishAuction).interfaceId));
+        uint256 unknown = 42;
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.UnknownSale.selector, unknown));
+        auction.auctionClock(unknown);
+        assertEq(EnglishAuction.auctionClock.selector, IEnglishAuctionClock.auctionClock.selector);
+    }
+
+    /// @dev Through a dispute pause and its resumption, and through a pause left to run past
+    ///      `MAX_PAUSE`, `auctionClock` stays `auction`'s state and end at every point.
+    function test_AuctionClock_MatchesAuctionThroughAPauseAndResume() public {
+        uint256 saleId = _start();
+        _bidEth(saleId, alice, 1 ether);
+        _assertClockIsAuctions(saleId);
+        _pause(saleId);
+        assertEq(uint8(_assertClockIsAuctions(saleId)), uint8(IEnglishAuction.AuctionState.PAUSED));
+        vm.warp(block.timestamp + Roles.STANDARD);
+        _assertClockIsAuctions(saleId);
+        vm.prank(unpauser);
+        auction.resume(saleId);
+        assertEq(uint8(_assertClockIsAuctions(saleId)), uint8(IEnglishAuction.AuctionState.ACTIVE));
+        _end(saleId);
+        assertEq(uint8(_assertClockIsAuctions(saleId)), uint8(IEnglishAuction.AuctionState.ENDED));
+        auction.settle(saleId);
+        assertEq(uint8(_assertClockIsAuctions(saleId)), uint8(IEnglishAuction.AuctionState.SETTLED));
+
+        // A pause nobody resumes: the end it resumes to is reported before anyone writes it.
+        uint256 lapsed = _start();
+        _bidEth(lapsed, bob, 1 ether);
+        _pause(lapsed);
+        uint64 maxPause = auction.MAX_PAUSE();
+        vm.warp(block.timestamp + maxPause);
+        assertEq(uint8(_assertClockIsAuctions(lapsed)), uint8(IEnglishAuction.AuctionState.PAUSED));
+        vm.warp(block.timestamp + 1);
+        assertEq(uint8(_assertClockIsAuctions(lapsed)), uint8(IEnglishAuction.AuctionState.ACTIVE));
+        assertEq(auction.auction(lapsed).pausedTotal, maxPause, "shown resumed");
+        _end(lapsed);
+        assertEq(uint8(_assertClockIsAuctions(lapsed)), uint8(IEnglishAuction.AuctionState.ENDED));
+        auction.settle(lapsed);
+        _assertClockIsAuctions(lapsed);
+    }
+
+    /// @dev Asserts `auctionClock(saleId)` is `auction(saleId)`'s state and end; returns it.
+    function _assertClockIsAuctions(uint256 saleId)
+        internal
+        view
+        returns (IEnglishAuction.AuctionState state)
+    {
+        IEnglishAuction.Auction memory a = auction.auction(saleId);
+        uint64 endTime;
+        (state, endTime) = auction.auctionClock(saleId);
+        assertEq(uint8(state), uint8(a.state), "state");
+        assertEq(endTime, a.endTime, "end");
     }
 
     /// @dev The lens decodes the auction's layout: its slot numbers are the compiler's.

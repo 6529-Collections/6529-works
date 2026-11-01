@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { IEnglishAuctionClock } from "src/interfaces/IEnglishAuctionClock.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { Payment } from "src/interfaces/types/SaleTypes.sol";
@@ -107,12 +108,36 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
         _install(lensBuild);
         hashes = new bytes32[](steps + 1);
         hashes[0] = _observe();
+        if (lensBuild) _checkClock();
         for (uint256 step; step < steps; ++step) {
             uint256 free = _freeMemory();
             _act(uint256(keccak256(abi.encode(seed, step))));
             seen |= _seen();
             _reuseMemory(free);
             hashes[step + 1] = _observe();
+            if (lensBuild) _checkClock();
+        }
+    }
+
+    /// @dev The lens build's `auctionClock`, which the pre-lens build lacks, against its own
+    ///      `auction` after every step: the same state and end, or the same revert.
+    function _checkClock() internal view {
+        uint256 unknown = uint256(keccak256("no such sale"));
+        for (uint256 i; i <= sales.length; ++i) {
+            uint256 saleId = i < sales.length ? sales[i] : unknown;
+            uint256 free = _freeMemory();
+            (bool okA, bytes memory a) =
+                AT.staticcall(abi.encodeCall(IEnglishAuction.auction, (saleId)));
+            (bool okC, bytes memory c) =
+                AT.staticcall(abi.encodeCall(IEnglishAuctionClock.auctionClock, (saleId)));
+            assertEq(okC, okA, "auctionClock reverts exactly when auction does");
+            if (okA) {
+                IEnglishAuction.Auction memory x = abi.decode(a, (IEnglishAuction.Auction));
+                assertEq(c, abi.encode(x.state, x.endTime), "auction's state and end");
+            } else {
+                assertEq(c, a, "with the same revert data");
+            }
+            _reuseMemory(free);
         }
     }
 
@@ -218,8 +243,9 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
             n = _record(n, abi.encodeCall(ISaleAdapter.isTarget, (tokens[i])));
             n = _record(n, abi.encodeCall(IEnglishAuction.saleIdOf, (tokens[i], i * 7 + 1)));
         }
-        bytes4[7] memory ids = [
+        bytes4[8] memory ids = [
             type(IEnglishAuction).interfaceId,
+            type(IEnglishAuctionClock).interfaceId,
             type(ISaleAdapter).interfaceId,
             type(IERC721Receiver).interfaceId,
             type(IERC165).interfaceId,

@@ -46,11 +46,20 @@ call it does not declare to the lens with a read-only `staticcall` and returns t
 byte for byte. The views keep their signatures, selectors and ERC-165 IDs, so a caller using the
 auction's address and `IEnglishAuction` (or `ISaleAdapter`) sees no change. The
 `EnglishAuction` artifact's `abi` lists only the functions the contract declares (the writes,
-`saleKind`, `onERC721Received`, `lens`, `storageWords`, `settlePayout` and AccessManaged's); for
-the whole surface, merge it with the `EnglishAuctionLens` artifact's `abi` (the views, and the
-getters `MAX_PAUSE`, `OPENING_BID_FLOORS`, `PAYOUT_GAS`, `allowlist`, `economicsResolver`,
-`permit2` and `federationRegistryCodeHash`), or use the `IEnglishAuction` artifact. The lens's
-own `adapter()` is answered through the auction too.
+`saleKind`, `auctionClock`, `onERC721Received`, `lens`, `storageWords`, `settlePayout` and
+AccessManaged's); for the whole surface, merge it with the `EnglishAuctionLens` artifact's `abi`
+(the views, and the getters `MAX_PAUSE`, `OPENING_BID_FLOORS`, `PAYOUT_GAS`, `allowlist`,
+`economicsResolver`, `permit2` and `federationRegistryCodeHash`), or use the `IEnglishAuction`
+artifact. The lens's own `adapter()` is answered through the auction too.
+
+A view through the lens costs a contract that calls it on chain about 7,000 more gas than
+before (one more cold account and the lens's reads). **A contract that reads an auction on
+its own hot path should call `auctionClock(saleId)`**
+([`IEnglishAuctionClock`](../../src/interfaces/IEnglishAuctionClock.sol)): the auction answers
+it itself, with exactly `auction(saleId).state` and `.endTime`, from one cold slot for a sale
+never paused (24,207 Prague gas cold as a transaction, against 39,342 for `auction`). It is an
+integration view, outside `IEnglishAuction`: `supportsInterface` reports no ID for it, and
+`IEnglishAuction`'s ID does not change. The edition auction reads its 1/1 this way.
 
 ### Contract names
 
@@ -237,6 +246,7 @@ selectors.
 | `IEditions` | [`IEditions.sol`](../../src/interfaces/IEditions.sol) | `0xa41d86b8` | `0xa5bd946e` | Editions |
 | `ISaleAdapter` | [`ISaleAdapter.sol`](../../src/interfaces/ISaleAdapter.sol) | `0x312dc1e1` | `0x312dc1e1` | EnglishAuction (and FixedPriceSale, DutchSale on r1 to r3) |
 | `IEnglishAuction` | [`IEnglishAuction.sol`](../../src/interfaces/IEnglishAuction.sol) | `0x75122f3e` | `0xc1a8b12f` | EnglishAuction |
+| `IEnglishAuctionClock` | [`IEnglishAuctionClock.sol`](../../src/interfaces/IEnglishAuctionClock.sol) | `0x968c7b07` | none | None: an integration view of EnglishAuction (`auctionClock`), never reported through ERC-165 |
 | `IUniformEditionAuction` | [`IUniformEditionAuction.sol`](../../src/interfaces/IUniformEditionAuction.sol) | `0x69e7405b` | none | None yet: the edition auction of [ADR 0005](../adr/0005-stream-editions-auction.md), not implemented on `main` |
 | `IFixedPriceSale`, `IDutchSale`, `IMintSale` | Removed by ADR 0005 | none | `0xfedd2754`, `0xb1c10995`, none | FixedPriceSale and DutchSale on r1 to r3 (r3: `0x773a4920`, `0x382667e1`) |
 | `ICurationVerifier` | [`ICurationVerifier.sol`](../../src/interfaces/ICurationVerifier.sol) | `0x492733ca` | `0x492733ca` | Eip712CurationVerifier |
