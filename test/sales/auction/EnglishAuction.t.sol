@@ -21,6 +21,7 @@ import {
     LockedTerms,
     Payment,
     PaymentMethod,
+    PrimaryOutcome,
     PrimaryTerms,
     SaleKind
 } from "src/interfaces/types/SaleTypes.sol";
@@ -1208,6 +1209,11 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(other.ownerOf(1), artist, "its artist");
         assertEq(other.balanceOf(museum), 0, "never the museum");
         assertEq(auction.auction(saleId).recipient, artist);
+        assertEq(
+            other.settled(1),
+            other.settlementHash(PrimaryOutcome.UNBID, address(0), ETH, 0),
+            "reported UNBID"
+        );
     }
 
     /// @dev Owner decision 10 with decision 9: another listed token's 30-day freeze exit takes
@@ -1226,6 +1232,11 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(other.ownerOf(1), artist, "its artist, not the museum");
         assertEq(auction.claimable(alice, address(usd)), 100e18, "the bid is credited back");
         assertEq(usd.balanceOf(seller) + usd.balanceOf(network), 0, "nothing is paid");
+        assertEq(
+            other.settled(1),
+            other.settlementHash(PrimaryOutcome.FROZEN_OUT, address(0), address(usd), 0),
+            "reported FROZEN_OUT, no buyer and no price"
+        );
     }
 
     /// @dev L-5 applies to every token but 6529 Stream: another listed token's artist, as the
@@ -1271,6 +1282,28 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(usd.balanceOf(seller), 75e18);
         assertEq(usd.balanceOf(network), 25e18);
         assertEq(usd.balanceOf(address(auction)), 0);
+        assertEq(
+            stream.settled(1),
+            stream.settlementHash(PrimaryOutcome.SOLD, alice, address(usd), 100e18),
+            "reported SOLD in the locked ERC-20"
+        );
+    }
+
+    /// @dev Owner decision 17: the buyer of record is the bidder who paid, not the recipient
+    ///      the bid named, which receives the work.
+    function test_Settle_ReportsThePayerAsTheBuyer() public {
+        uint256 saleId = _start();
+        vm.deal(alice, 1 ether);
+        vm.prank(alice);
+        auction.bid{ value: 1 ether }(saleId, carol, _direct(alice, 1 ether));
+        _end(saleId);
+        auction.settle(saleId);
+        assertEq(stream.ownerOf(1), carol, "the recipient receives the work");
+        assertEq(
+            stream.settled(1),
+            stream.settlementHash(PrimaryOutcome.SOLD, alice, ETH, 1 ether),
+            "the payer is the buyer"
+        );
     }
 
     function test_Settle_RefusingWalletIsEscrowed() public {

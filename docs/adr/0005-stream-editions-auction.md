@@ -408,10 +408,16 @@ before each merge.
   **Enforced on-chain (owner decision 17).** For an UNBID or FROZEN_OUT report Stream itself
   moves the work out of the adapter's custody to `IEconomicsResolver.museum()`, read at that
   moment, and never to the artist; the adapter does not move it. So the museum rule holds for
-  every admitted adapter, whatever its code, except for a deliberately false SOLD report, for
-  example one naming the artist as the buyer of a work nobody bought. That one case is what the
-  review above covers: Stream cannot tell a false sale from a true one, and a rule refusing the
-  artist as a buyer would block an artist buying their own work.
+  every sale an admitted adapter settles, except for a deliberately false SOLD report, for
+  example one naming the artist as the buyer of a work nobody bought: Stream cannot tell a
+  false sale from a true one, and a rule refusing the artist as a buyer would block an artist
+  buying their own work. An adapter can also bypass the call: the work sits in its custody, and
+  Stream lets a holder transfer an unsettled work (`test_transfersDoNotSettle`) and the minting
+  adapter burn one, so an adapter that never settles can hand an unsold work to anyone. Such a
+  work stays NONE in `primarySale` and its edition can never be created. Refusing transfers of
+  unsettled works would close that path at about 2,100 gas on every later transfer of every
+  work (a cold read of the token's flags), so it is left to the review above, which covers
+  all three cases: a false SOLD, a work moved without settling, and a burn outside a cancel.
   `StreamSaleMethods.t.sol` (`test_ASecondAdapterSendsAnUnbidWorkToTheMuseum`) shows a second
   adapter's unbid work landing in the museum without the adapter moving it.
 

@@ -9,8 +9,9 @@
   new word (`primarySale(id)`; the price in 96 bits, saturated); `PrimarySaleSettled` now carries
   the outcome, the buyer, the currency and the exact price (new topic0). For UNBID and FROZEN_OUT
   Stream itself moves the work from the adapter's custody to `IEconomicsResolver.museum()`, read
-  then, with no receiver callback: the museum rule (D140) holds for every admitted 1/1 adapter
-  but for a deliberately false SOLD report, which the admission review covers (ADR 0005). The
+  then, with no receiver callback: the museum rule (D140) holds for every sale an admitted 1/1
+  adapter settles but for a deliberately false SOLD report; that, and an adapter that moves a
+  work without settling it, are left to the admission review (ADR 0005). The
   English auction loses its museum branch, the `_MUSEUM` flag and its Stream constructor
   argument, reports FROZEN_OUT for the freeze exit and a delisting, and no longer reads
   `primaryTerms` at settlement. `IMintTarget`'s and `IStream`'s interface IDs change. Prague
