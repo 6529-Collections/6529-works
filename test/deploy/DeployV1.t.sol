@@ -36,6 +36,7 @@ import { VerifyV1 } from "script/VerifyV1.sol";
 import { MockVrfCoordinator } from "../mocks/entropy/EntropyMocks.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
+import { IEnglishAuctionFull } from "test/helpers/IEnglishAuctionFull.sol";
 
 /// @notice The deploy library the script broadcasts and the integration tests reuse: every
 ///         merged v1 contract, the genesis configuration from config/genesis.example.json, the
@@ -179,7 +180,7 @@ contract DeployV1Test is Test {
         assertEq(IPackageRegistry(address(d.packageRegistry)).stream(), address(d.stream));
         assertEq(d.artistRegistry.stream(), address(d.stream));
         assertTrue(d.stream.isAdmittedMinter(address(d.englishAuction)));
-        assertTrue(d.englishAuction.isTarget(address(d.stream)));
+        assertTrue(IEnglishAuctionFull(address(d.englishAuction)).isTarget(address(d.stream)));
         assertEq(d.stream.owner(), makeAddr("marketOwner"));
         // The real renderer, pinned by Stream.
         assertEq(d.stream.defaultRenderer(), address(d.renderer));

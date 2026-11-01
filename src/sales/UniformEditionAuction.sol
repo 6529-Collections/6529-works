@@ -14,6 +14,7 @@ import { Roles } from "../governance/Roles.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IEditions } from "../interfaces/IEditions.sol";
 import { IEnglishAuction } from "../interfaces/IEnglishAuction.sol";
+import { IEnglishAuctionClock } from "../interfaces/IEnglishAuctionClock.sol";
 import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
@@ -46,7 +47,8 @@ import { UniformEditionAuctionLens } from "./UniformEditionAuctionLens.sol";
 ///      one record per change and a sale stores its 16-bit ID; fee recipients likewise.
 ///
 ///      The 1/1's end only ever moves later, so the sale caches it and reads it live
-///      (`IEnglishAuction.auction`) only when a bid or raise lands within `softWindow` of the
+///      (`IEnglishAuctionClock.auctionClock`, the state and end the English auction answers
+///      itself, not through its lens) only when a bid or raise lands within `softWindow` of the
 ///      cached close, or later. Settlement and withdrawals always read it live. A cancelled 1/1
 ///      is therefore seen by the next settlement (anyone may void the sale at once) or by a bid
 ///      near the close; a bid placed far from the close after the cancel is refunded in full with
@@ -1164,10 +1166,12 @@ contract UniformEditionAuction is
         return uint256(t.basePrice) * m * 10 ** (step / n) / StepLadder.MANTISSA_SCALE;
     }
 
-    /// @dev The 1/1 auction of sale `saleId` (its edition ID is in the payout word).
-    function _oneOfOne(uint256 saleId) private view returns (IEnglishAuction.Auction memory) {
+    /// @dev The 1/1 auction of sale `saleId` (its edition ID is in the payout word): its state
+    ///      and end, the only fields read, from `auctionClock` (the rest stay zero).
+    function _oneOfOne(uint256 saleId) private view returns (IEnglishAuction.Auction memory o) {
         uint256 id = _payouts[saleId].id;
-        return IEnglishAuction(englishAuction).auction(saleIdOf(stream, id));
+        (o.state, o.endTime) =
+            IEnglishAuctionClock(englishAuction).auctionClock(saleIdOf(stream, id));
     }
 
     /// @dev Sale `saleId`'s state word, required OPEN.

@@ -27,8 +27,8 @@ contract EditionAuctionGasReport is EditionAuctionStack {
     /// @dev The settlement's worst case, held to 350,000 execution gas (ADR 0004).
     uint256 internal constant SETTLE_EXECUTION_BUDGET = 350_000;
     /// @dev Regression ceilings (ADR 0004).
-    uint256 internal constant OPEN_CEILING = 284_000;
-    uint256 internal constant OPEN_FIRST_CEILING = 331_000;
+    uint256 internal constant OPEN_CEILING = 275_000;
+    uint256 internal constant OPEN_FIRST_CEILING = 322_000;
     /// @dev Moved from 144,000 by owner decision 16: 6529 Stream Editions reads the package
     ///      registry from Stream (two reads) instead of an immutable.
     uint256 internal constant CREATE_BOUND_CEILING = 148_000;
@@ -36,8 +36,8 @@ contract EditionAuctionGasReport is EditionAuctionStack {
     uint256 internal constant RAISE_CAPPED_CEILING = 81_000;
     uint256 internal constant CLAIM_LOSER_CEILING = 49_000;
     uint256 internal constant CLAIM_FOR_CEILING = 67_000;
-    uint256 internal constant WITHDRAW_CEILING = 97_000;
-    uint256 internal constant SWEEP_SETTLE_CEILING = 159_000;
+    uint256 internal constant WITHDRAW_CEILING = 90_000;
+    uint256 internal constant SWEEP_SETTLE_CEILING = 153_000;
 
     address internal artist;
     address internal keeper = makeAddr("keeper");
