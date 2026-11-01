@@ -11,7 +11,9 @@ import { EditionAuctionStack } from "./EditionAuctionStack.sol";
 ///         `tools/edition_auction_ref.py`'s brute force): random books of bids and raises, on
 ///         capped and uncapped sales and under four breadth margins, then the contract's live
 ///         clearing, every bid's outcome and the settlement order against the reference, and
-///         settlement and every claim against exact supply and ETH conservation.
+///         settlement and every claim against exact supply and ETH conservation. Before the
+///         keeper settles, other settlers make bad, partial or reordered sweeps of their own:
+///         settlement still completes and every outcome still equals the reference.
 /// @dev The golden vectors replay fixed books through the adapter
 ///      (`test/sales/edition/UniformEditionAuctionVectors.t.sol`); this explores books nobody
 ///      wrote down. Bids land on a narrow band of low steps, so steps collide, caps bind inside a
@@ -83,9 +85,51 @@ contract EditionAuctionDifferentialTest is EditionAuctionStack {
             uint256 index = capIndex % CAPS.length;
             editions.createEdition(workId, works[index].item, root, _proofOf(works, index));
         }
+        _otherSettlers(sale, seed);
         _settleEditions(sale);
         assertEq(ea.settlement(sale).count, k, "settled count");
+        _checkOutcomes(sale, k, price, cap);
         _claimAll(sale, workId, k, seed);
+    }
+
+    /// @dev After the close, three settlers each start a sweep of their own from a mangled
+    ///      order: the first departure skipped, a prefix, or the order reversed (refused when it
+    ///      has two or more). Each sweep is the caller's own, so none of them blocks a keeper,
+    ///      and a prefix that covers every departure may settle the sale itself.
+    function _otherSettlers(uint256 sale, uint256 seed) internal {
+        IUniformEditionAuction.EndTimes memory e = ea.endTimes(sale);
+        if (block.timestamp < e.endTime) vm.warp(e.endTime);
+        for (uint256 r; r < 3; ++r) {
+            address settler = makeAddr(string.concat("differentialSettler", vm.toString(r)));
+            uint256[] memory full = _orderFor(sale, settler);
+            uint256[] memory order;
+            if (r == 0 && full.length != 0) {
+                order = new uint256[](full.length - 1);
+                for (uint256 j = 1; j < full.length; ++j) {
+                    order[j - 1] = full[j];
+                }
+            } else if (r == 1) {
+                order = new uint256[]((seed >> 8) % (full.length + 1));
+                for (uint256 j; j < order.length; ++j) {
+                    order[j] = full[j];
+                }
+            } else {
+                order = new uint256[](full.length);
+                for (uint256 j; j < full.length; ++j) {
+                    order[j] = full[full.length - 1 - j];
+                }
+            }
+            vm.prank(settler);
+            try editionAuction.settle(sale, order) { }
+            catch (bytes memory reason) {
+                assertEq(
+                    bytes4(reason),
+                    IUniformEditionAuction.InvalidSettlementOrder.selector,
+                    "only a reordered sweep is refused"
+                );
+                assertGt(order.length, 1, "a refused order had two or more departures");
+            }
+        }
     }
 
     // ------------------------------------------------------------------ the book
