@@ -136,13 +136,13 @@ class BudgetTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("3 Solidity code lines", out)
 
-    def test_default_line_limit_is_twelve_thousand(self) -> None:
-        self.repo.write("Big.sol", "uint256 constant X = 1;\n" * 12_000)
+    def test_default_line_limit_is_thirteen_thousand(self) -> None:
+        self.repo.write("Big.sol", "uint256 constant X = 1;\n" * 13_000)
         self.assertEqual(self.repo.run("--skip-sizes")[0], 0)
         self.repo.write("Bigger.sol", "uint256 constant Y = 1;\n")
         code, out = self.repo.run("--skip-sizes")
         self.assertEqual(code, 1)
-        self.assertIn("12001 Solidity code lines in src/ (limit 12000)", out)
+        self.assertIn("13001 Solidity code lines in src/ (limit 13000)", out)
 
     def test_lib_directories_are_excluded(self) -> None:
         self.repo.write("lib/vendor/V.sol", "contract V { function f(address t) external { t.delegatecall(\"\"); } }\n")

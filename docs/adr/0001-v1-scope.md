@@ -5,7 +5,8 @@ Status: Accepted by the owner, 11 October 2026. §13 is amended by
 are recorded in [ADR 0003](0003-build-time-decisions.md); the gas budgets under
 Glamsterdam are in [ADR 0004](0004-gas-budgets-under-glamsterdam.md). The edition sale, the
 6529 Stream Editions name and where an unbid work goes (§1–§3, §5, §6, §12, §16, §17 and the
-non-goals) are amended by [ADR 0005](0005-stream-editions-auction.md).
+non-goals) are amended by [ADR 0005](0005-stream-editions-auction.md). The size budget is
+amended on 1 November 2026 (see [Amendments](#amendments)).
 
 Origin: this decision was accepted in the 6529Stream repository as ADR 0055
 (6529Stream PR #745),
@@ -737,7 +738,8 @@ and then to mainnet.
 AccessManager governs all of them. The VRF module is optional.
 
 **Engineering budgets, enforced as CI gates:**
-- **Size:** 8–12K non-comment lines of production Solidity.
+- **Size:** 8–12K non-comment lines of production Solidity. (Amended 1 November 2026: the
+  gate is 13,000 lines; see [Amendments](#amendments).)
 - **Structure:** at most 5 linked libraries; no delegatecall; no proxies.
 - **Contract size:** EIP-170 enforced in every Foundry profile.
 - **CI time:** full build and test in under 15 minutes.
@@ -863,6 +865,24 @@ AccessManager governs all of them. The VRF module is optional.
 - **ADR 0036** (on #744 only): delivery moved to the museum repository.
 - **Retained:** ADR 0007 (no proxies), the ADR 0008 revenue principles and the
   ADR 0016 Core-native ERC-721.
+
+## Amendments
+
+- **1 November 2026: the source-size budget rises from 12,000 to 13,000 lines (owner decision
+  24).** `tools/check_budgets.py` counts non-comment, non-blank Solidity lines under `src/`,
+  interfaces and shared types included, and now fails above 13,000 (`MAX_LINES`). The scope
+  grew for reasons the owner accepted:
+  - owner decision 15: Stream's 1/1 sale methods are pluggable (admitted sale adapters);
+  - owner decision 16: Stream's dependency pointers are governance-replaceable;
+  - owner decision 17: Stream records each 1/1's primary-sale outcome and moves unsold works
+    to the museum itself;
+  - owner decision 20: the narrow rescue of works stranded in a removed sale adapter;
+  - the fixes of the rc.2 seven-lens review (fix passes A and B).
+
+  With fix passes A and B merged, `src/` stood at exactly 12,000 lines, with every addition
+  offset. The 1,000-line rise leaves room for the rescue and for reviewed fixes. It does not
+  change the other budgets: at most 5 linked libraries, no `delegatecall`, no proxies, and
+  EIP-170 for every contract.
 
 ## Open items
 

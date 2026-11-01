@@ -2,7 +2,8 @@
 """Enforce the ADR 0001 engineering budgets on the v1 sources in src/.
 
 Checks:
-  1. at most 12,000 non-comment, non-blank Solidity lines under src/ (lib/ excluded);
+  1. at most 13,000 non-comment, non-blank Solidity lines under src/ (lib/ excluded; ADR 0001,
+     amended 1 November 2026 by owner decision 24);
   2. no `delegatecall` (or the equivalent legacy `callcode`) in src/ code;
   3. at most 5 libraries with public or external functions (each would be linked);
   4. every contract built by the measured Foundry profile fits EIP-170 (24,576-byte
@@ -27,7 +28,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-MAX_LINES = 12_000
+MAX_LINES = 13_000
 MAX_LINKED_LIBRARIES = 5
 MAX_RUNTIME_BYTES = 24_576
 MAX_INITCODE_BYTES = 49_152
