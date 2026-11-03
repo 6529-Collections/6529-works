@@ -104,8 +104,8 @@ its auction, which pins the lens's code hash.
 Every gas limit came from the node's `eth_estimateGas` (Glamsterdam costs) just before sending
 (`--slow --skip-simulation`), times forge's 1.3 multiplier; the Estimate column is the limit
 divided back. The runbook's estimates for the auction transactions: UniformEditionAuction about 39.9M (r4: 38,317,552); UniformEditionAuctionLens about 30.7M (r4: 30,234,170); EnglishAuction about 37.8M (r4: 36,848,337); EnglishAuctionLens about 10.4M (r4: 10,234,620). Every
-transaction stayed under 40M; the largest estimate is Stream's
-(38,682,590). Per-row data: [`script/sepolia/deploy_gas.py`](../../script/sepolia/deploy_gas.py).
+node estimate stayed under 40M (the limits sent, at 1.3 times, reached 50.3M); the largest
+estimate is Stream's (38,682,590). Per-row data: [`script/sepolia/deploy_gas.py`](../../script/sepolia/deploy_gas.py).
 
 | # | Transaction | Prague (forge) | Estimate (node) | Sepolia | Ratio to Prague |
 | ---: | --- | ---: | ---: | ---: | ---: |

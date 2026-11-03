@@ -826,6 +826,9 @@ Two behaviors are worth knowing:
 
 ## Pending
 
+r1's and r2's open items. r4 has since run the guardian `pause` and the upheld-dispute
+`cancel` through the Safes ([r4](#r4-the-rc2-candidate-1-november-2026)).
+
 **Done on 13 October.** The settlement and edition sequences ran on both instances,
 from the driver with the committed state files, [`flows/r2.json`](flows/r2.json) and
 [`flows/r1.json`](flows/r1.json). Each state file holds its run's addresses, receipts
