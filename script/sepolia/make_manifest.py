@@ -71,6 +71,9 @@ def main(new, prev, commit, sim_path=None):
     vrf["subscriptionId"] = e["VRF_SUBSCRIPTION_ID"]
     vrf["keyHash"] = e["VRF_KEY_HASH"]
     vrf["nativePayment"] = e.get("VRF_NATIVE_PAYMENT") == "1"
+    # The deploy's defaults (script/Deploy.s.sol) unless the env file sets them.
+    vrf["callbackGasLimit"] = int(e.get("VRF_CALLBACK_GAS_LIMIT", 200000))
+    vrf["confirmations"] = int(e.get("VRF_CONFIRMATIONS", 3))
     if sim_path is None:
         m["contracts"] = {k: None for k in CONTRACTS}
     else:

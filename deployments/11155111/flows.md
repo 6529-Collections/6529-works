@@ -372,10 +372,11 @@ fixes, hence the different output sizes.
 Item 6, the VRF work, was not started on r3: its seed request is the next thing to run if
 the VRF path needs re-measuring.
 
-**To finish, from 16 October 2026, 20:35 UTC,** in a checkout of `e5fe78c`, whose driver has
-r3 as its default record and the `openSale` and `purchase` steps (`Flow` is the helper under
-[Pending](#pending) below). The driver on `main` has neither step, and its default record is
-r4's:
+**To finish, from 16 October 2026, 20:35 UTC,** in a checkout of `2c59563` (#67, r3's record),
+whose driver has r3 as its default record, the `openSale` and `purchase` steps, and r3's
+record and state file (`Flow` is the helper under [Pending](#pending) below). The driver at
+`e5fe78c` still defaults to r2's record, and the one on `main` has neither step and defaults
+to r4's:
 
 ```powershell
 $r3 = @('-State', 'deployments/11155111/flows/r3.json')

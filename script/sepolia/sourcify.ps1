@@ -32,7 +32,6 @@ $Repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location $Repo
 $Out = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Out)
 $rec = Get-Content -Raw -Encoding UTF8 (Join-Path $Repo $Record) | ConvertFrom-Json
-$run = Get-Content -Raw -Encoding UTF8 (Join-Path $Repo $Run) | ConvertFrom-Json
 $paths = [ordered]@{
     WorksAccessManager        = 'src/governance/WorksAccessManager.sol:WorksAccessManager'
     GovernanceConfigurator    = 'src/governance/GovernanceConfigurator.sol:GovernanceConfigurator'
@@ -62,13 +61,23 @@ $paths = [ordered]@{
 $names = @($rec.contracts.PSObject.Properties.Name)
 $unmapped = @($names | Where-Object { -not $paths.Contains($_) })
 if ($unmapped.Count) { throw "unmapped contract in the record: $($unmapped -join ', ')" }
+# The creation transactions, from forge's broadcast cache: needed to submit, not to read status.
 $creation = @{}
-foreach ($t in $run.transactions) {
-    if ($t.transactionType -eq 'CREATE2' -and $t.contractAddress) { $creation[$t.contractAddress.ToLower()] = $t.hash }
+if (-not $StatusOnly) {
+    $run = Get-Content -Raw -Encoding UTF8 (Join-Path $Repo $Run) | ConvertFrom-Json
+    foreach ($t in $run.transactions) {
+        if ($t.transactionType -eq 'CREATE2' -and $t.contractAddress) { $creation[$t.contractAddress.ToLower()] = $t.hash }
+    }
 }
+# Earlier results are kept only for this record's addresses.
 $results = [ordered]@{}
 if ((Test-Path $Out) -and ($Only.Count -or $StatusOnly)) {
-    (Get-Content -Raw $Out | ConvertFrom-Json).PSObject.Properties | ForEach-Object { $results[$_.Name] = $_.Value }
+    (Get-Content -Raw $Out | ConvertFrom-Json).PSObject.Properties | ForEach-Object {
+        $current = $rec.contracts.PSObject.Properties[$_.Name]
+        if ($current -and $_.Value.address -and $current.Value.address.ToLower() -eq $_.Value.address.ToLower()) {
+            $results[$_.Name] = $_.Value
+        }
+    }
 }
 foreach ($name in $paths.Keys) {
     if (-not ($names -contains $name)) { continue }
@@ -77,7 +86,7 @@ foreach ($name in $paths.Keys) {
     $tx = if ($name -eq 'WorksAccessManager') { $creation[$rec.contracts.GovernanceConfigurator.address.ToLower()] } else { $creation[$addr.ToLower()] }
     $text = ''
     if ($StatusOnly) {
-        if ($results.Contains($name)) { $text = $results[$name].forge }
+        if ($results.Contains($name)) { $text = $results[$name].forge; $tx = $results[$name].creationTx }
     }
     else {
         $a = @('verify-contract', '--verifier', 'sourcify', '--chain', '11155111', $addr, $paths[$name], '--watch')
