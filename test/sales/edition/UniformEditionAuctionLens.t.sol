@@ -199,6 +199,10 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.UnknownBid.selector, 5, 1));
         ua.bidOutcome(5, 1);
         uint256 saleId = _open(0);
+        vm.expectRevert(
+            abi.encodeWithSelector(IUniformEditionAuction.UnknownBid.selector, saleId, 1)
+        );
+        lens.canWithdraw(saleId, 1);
         vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.InvalidStep.selector, 336));
         ua.stepPrice(saleId, 336);
         vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.InvalidStep.selector, 336));
@@ -207,6 +211,16 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         ua.quote(saleId, 3, 0);
         vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.InvalidQuantity.selector, 0));
         ua.lowestWinningStep(saleId, 0);
+        // A quantity the book's 32-bit unit count cannot hold, even with no bids in it.
+        uint256 tooMany = uint256(type(uint32).max) + 1;
+        vm.expectRevert(
+            abi.encodeWithSelector(IUniformEditionAuction.InvalidQuantity.selector, tooMany)
+        );
+        ua.quote(saleId, 3, tooMany);
+        vm.expectRevert(
+            abi.encodeWithSelector(IUniformEditionAuction.InvalidQuantity.selector, tooMany)
+        );
+        ua.lowestWinningStep(saleId, tooMany);
     }
 
     function test_Lens_EmptyBook() public {
@@ -285,6 +299,39 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         (bool found, uint256 step) = ua.lowestWinningStep(saleId, 1);
         assertTrue(found);
         assertEq(step, 101);
+    }
+
+    /// @dev A bid can pull units in as well as push them out: here it moves the clearing down
+    ///      to its own step, where the unit already there then wins too (the reference model,
+    ///      `tools/edition_auction_ref.py`, gives the same: 1 at step 80 before, 3 at step 55).
+    function test_Lens_AQuoteThatPullsUnitsIn() public {
+        uint256 saleId = _open(0);
+        _bid(saleId, alice, 80, 1);
+        _bid(saleId, bob, 55, 1);
+        assertEq(ua.clearing(saleId).count, 1);
+        IUniformEditionAuction.Quote memory q = ua.quote(saleId, 55, 1);
+        assertEq(q.unitsWon, 1);
+        assertEq(q.unitsPulledIn, 1);
+        assertEq(q.unitsPushedOut, 0);
+        assertEq(q.result.count, 3);
+        assertEq(q.result.step, 55);
+    }
+
+    /// @dev `departures` counts the clearing step's departures only when the cap binds there:
+    ///      a capped sale that clears below its cap, with a departure at the clearing step,
+    ///      reports none.
+    function test_Lens_NoDeparturesWhenTheCapDoesNotBind() public {
+        uint256 saleId = _open(10);
+        _bid(saleId, alice, 10, 2);
+        _bid(saleId, bob, 10, 1);
+        _raise(saleId, 2, 11);
+        assertEq(ua.departures(saleId, 10).length, 1);
+        _settle(saleId);
+        IUniformEditionAuction.Settlement memory s = ua.settlement(saleId);
+        assertEq(s.step, 10);
+        assertEq(s.count, 3);
+        assertFalse(s.rationed);
+        assertEq(s.departures, 0);
     }
 
     function test_Lens_NoWinningStepWhenTheCapIsFilledAtTheTop() public {
