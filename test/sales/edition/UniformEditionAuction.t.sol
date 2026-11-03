@@ -578,6 +578,22 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
             uint160(networkFee)
         );
         assertEq(auction.storageWord(IUniformEditionAuctionStorage.Space.FEE_RECIPIENT, 0, 2), 0);
+        // Another recipient gets the next index, and the earlier sales keep theirs.
+        address otherFee = makeAddr("otherFeeSafe");
+        economics.set(seller, otherFee, FEE_SHARE);
+        english.set(
+            address(stream),
+            9,
+            IEnglishAuction.AuctionState.ACTIVE,
+            uint64(block.timestamp + 1 days)
+        );
+        uint256 third = _openId(9, 0);
+        assertEq(ua.auction(third).feeRecipient, otherFee);
+        assertEq(ua.auction(second).feeRecipient, networkFee);
+        assertEq(
+            auction.storageWord(IUniformEditionAuctionStorage.Space.FEE_RECIPIENT, 0, 2),
+            uint160(otherFee)
+        );
     }
 
     function test_Open_Timing() public {

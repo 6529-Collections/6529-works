@@ -51,6 +51,25 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
         assertEq(address(auction).balance, 0);
     }
 
+    /// @dev The scan stops where the demand above a used step reaches the cap: a book whose cap
+    ///      fills within the first call's words clears in that call, however far below its
+    ///      lowest bid lies.
+    function test_Settlement_TheScanStopsAtTheCap() public {
+        uint256 saleId = _open(2);
+        _bid(saleId, makeAddr("high"), 300, 2);
+        _bid(saleId, makeAddr("next"), 290, 1);
+        _bid(saleId, makeAddr("low"), 0, 1);
+        _closeOneOfOne(saleId);
+        editions.setExists(ID, true);
+        uint256 balance = address(auction).balance;
+        assertTrue(auction.settle(saleId, new uint256[](0)), "cleared in one call");
+        paidOut += balance - address(auction).balance;
+        IUniformEditionAuction.Settlement memory s = ua.settlement(saleId);
+        assertEq(s.count, 2);
+        assertEq(s.step, 300);
+        assertFalse(s.rationed);
+    }
+
     /// @dev `SettlementScanned` gives the words left above the book's lowest word, not above
     ///      step 0: words 37 down to 2, the first call scans 37 to 14 and leaves 12.
     function test_Settlement_ScanEventCountsTheWordsLeftAboveTheLowest() public {
