@@ -115,6 +115,52 @@ class ShardTest(unittest.TestCase):
         for module, glob in mt.MODULE_TESTS.items():
             self.assertTrue(glob.startswith("test/"), module)
 
+    def test_every_floor_names_a_file_with_code_as_a_whole_percentage(self) -> None:
+        floors = json.loads((ROOT / "tools" / "mutation-floors.json").read_text(encoding="utf-8"))
+        self.assertIsInstance(floors["margin"], float)
+        files = set(mt.source_files(ROOT))
+        for path, floor in floors["files"].items():
+            self.assertIn(path, files, "a floor for a file that is gone or has no code")
+            self.assertIsInstance(floor, int, path)
+            self.assertTrue(0 <= floor <= 100, path)
+
+
+class BudgetTest(unittest.TestCase):
+    def test_a_command_that_outruns_its_timeout_is_stopped(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            log = Path(d) / "sleep.log"
+            code = mt._run_logged([sys.executable, "-c", "import time; time.sleep(60)"], log, 0.5)
+            self.assertEqual(code, -1)
+            self.assertIn("timed out", log.read_text(encoding="utf-8"))
+
+    def test_the_deadline_shortens_each_timeout(self) -> None:
+        self.assertIsNone(mt.Deadline(None).cap(None))
+        self.assertEqual(mt.Deadline(None).cap(5), 5)
+        self.assertFalse(mt.Deadline(None).passed)
+        self.assertLessEqual(mt.Deadline(1).cap(1200), 1)
+        self.assertTrue(mt.Deadline(0).passed)
+        self.assertEqual(mt.Deadline(0).cap(1200), 0)
+
+    def test_a_spent_budget_stops_the_constants_and_the_recheck_as_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            source = root / "src" / "x" / "Thing.sol"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(CONSTANTS.encode("utf-8"))
+            shard = mt.Shard("x-Thing", "src/x/Thing.sol", "test/x/**", None, True)
+            r = mt.FileResult(shard.path)
+            mt.run_constants(root, shard, root, 60, r, mt.Deadline(0))
+            self.assertEqual(r.status, "timeout")
+            self.assertEqual(r.total["constant"], 0)
+            self.assertEqual(source.read_bytes(), CONSTANTS.encode("utf-8"))
+
+            r = mt.FileResult(shard.path)
+            mt.parse_log(LOG, r)
+            mt.recheck(root, r, root, 60, mt.Deadline(0))
+            self.assertEqual(r.status, "timeout")
+            self.assertTrue(all(s.recheck == "not-rechecked" for s in r.survivors))
+            self.assertEqual(source.read_bytes(), CONSTANTS.encode("utf-8"))
+
 
 class ConstantTest(unittest.TestCase):
     def test_integer_literal_constants_move_one_up_and_one_down(self) -> None:
@@ -200,6 +246,94 @@ class ReportTest(unittest.TestCase):
                 code = mt.main(["report", str(base), "--floors", str(floors)])
         self.assertEqual(code, 1)
         self.assertIn("below its floor", err.getvalue())
+
+    def test_results_name_their_shards(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            (r,) = mt.load_results([self._results(Path(d))])
+        self.assertEqual(r.shards, ["x"])
+
+    def _plan(self) -> dict:
+        big = [
+            mt.Shard(f"x-Big-{g}", "src/x/Big.sol", "test/x/**", m, g == "statements")
+            for g, m in mt.SPLIT_GROUPS.items()
+        ]
+        new = mt.Shard("x-New", "src/x/New.sol", "test/x/**", None, True)
+        thing = mt.Shard("x", "src/x/Thing.sol", "test/x/**", None, True)
+        return {s.name: s for s in [*big, new, thing]}
+
+    def test_a_planned_shard_without_results_marks_its_file_missing(self) -> None:
+        operators = mt.FileResult("src/x/Big.sol", shards=["x-Big-operators"])
+        operators.total.update(tweak=10)
+        operators.caught.update(tweak=10)
+        with tempfile.TemporaryDirectory() as d:
+            self._results(Path(d))
+            self._write(Path(d), "x-Big-operators", operators)
+            results = mt.apply_plan(mt.load_results([Path(d)]), self._plan())
+        by_path = {r.path: r for r in results}
+        self.assertEqual(sorted(by_path), ["src/x/Big.sol", "src/x/New.sol", "src/x/Thing.sol"])
+        # A split file with some groups reported is not scored as if it were whole.
+        big = by_path["src/x/Big.sol"]
+        self.assertEqual(big.status, "missing")
+        self.assertEqual(big.missing, ["x-Big-statements", "x-Big-relations", "x-Big-conditions"])
+        # A planned file with no results at all still gets its row.
+        self.assertEqual(by_path["src/x/New.sol"].missing, ["x-New"])
+        self.assertEqual(by_path["src/x/Thing.sol"].status, "ok")
+        text = mt.markdown(results)
+        self.assertIn("**2 contract(s) without a complete result:**", text)
+        self.assertIn("- `src/x/New.sol`: missing: no results from x-New", text)
+        self.assertIn("| `src/x/Big.sol` (missing) | 10 |", text)
+
+    def test_floors_fail_an_unfinished_file_and_a_file_without_a_floor(self) -> None:
+        thing = mt.FileResult("src/x/Thing.sol")
+        mt.parse_log(LOG, thing)  # 88.2%
+        late = mt.FileResult("src/x/Late.sol", status="timeout")
+        empty = mt.FileResult("src/x/Types.sol")  # nothing to mutate
+        new = mt.FileResult("src/x/New.sol")
+        new.total.update(tweak=4)
+        new.caught.update(tweak=3)
+        with tempfile.TemporaryDirectory() as d:
+            floors = Path(d) / "floors.json"
+            floors.write_text(
+                json.dumps({"files": {"src/x/Thing.sol": 88, "src/x/Late.sol": 50}}),
+                encoding="utf-8",
+            )
+            failures = mt.check_floors([thing, late, empty, new], floors)
+        self.assertEqual(len(failures), 2, failures)
+        self.assertEqual(failures[0], "src/x/Late.sol: timeout")
+        self.assertIn("src/x/New.sol: kill rate 75.0% and no floor", failures[1])
+
+    def test_written_floors_keep_the_floors_of_files_not_measured(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            results = mt.load_results([self._results(Path(d))])  # 91.2%
+            path = Path(d) / "floors.json"
+            path.write_text(
+                json.dumps({"margin": 2.0, "files": {"src/a/Old.sol": 77, "src/x/Thing.sol": 50}}),
+                encoding="utf-8",
+            )
+            mt.write_floors(results, path, 2.0)
+            written = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(written["files"], {"src/a/Old.sol": 77, "src/x/Thing.sol": 89})
+
+    def test_report_command_names_a_planned_shard_that_left_no_results(self) -> None:
+        # Real shard names: the plan is checked against `tools/mutation.py list`.
+        shard = mt.shards(ROOT)["libraries-Utf8"]
+        r = mt.FileResult(shard.path, shards=[shard.name])
+        r.total.update(tweak=2)
+        r.caught.update(tweak=2)
+        with tempfile.TemporaryDirectory() as d:
+            self._write(Path(d), shard.name, r)
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.chdir(ROOT), contextlib.redirect_stdout(out), \
+                    contextlib.redirect_stderr(err):
+                ok = mt.main(["report", d, "--shards", '["libraries-Utf8"]'])
+                missing = mt.main(["report", d, "--shards", "libraries-Utf8 libraries-SSTORE2"])
+                unknown = mt.main(["report", d, "--shards", "libraries-Nothing"])
+                # A run whose shards all failed has no results at all, and says which.
+                none = mt.main(["report", str(Path(d) / "none"), "--shards", "libraries-Utf8"])
+        self.assertEqual((ok, missing, unknown, none), (0, 1, 2, 1))
+        self.assertIn(
+            "src/libraries/SSTORE2.sol: missing: no results from libraries-SSTORE2", err.getvalue()
+        )
 
 
 if __name__ == "__main__":
