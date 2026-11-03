@@ -1,7 +1,13 @@
 # Curation
 
-Curation decides which works may ever mint on 6529 Stream. Voters approve a package (a Merkle
-root of items) in a 6529 wave; a curation signer attests the approval; anyone registers the
+Curation decides which works may ever mint on 6529 Stream. Main Stage is the only way in (owner
+decision 25, [ADR 0001's amendment of 1 November 2026](../adr/0001-v1-scope.md#amendments)):
+the artist's Main Stage submission carries the work's package (a Merkle root of items) before
+the vote, so voters approve exactly what would mint, and a submission not picked as a Meme card
+becomes Stream-eligible under the network's routing rule (at least 10% of the median winning
+Main Stage vote of the last 30 days, held for 24 hours, never less than 3,000,000 TDH; changed by
+TDH vote, D86). These are network rules, not contract code. A curation signer attests the
+approval; anyone registers the
 root; every party named by an item signs it; and the lead artist signs a revocable move that lets
 the work start. At the auction start the package registry consumes the item, checking all of this
 and recording its content hash so the same work never mints twice. For auditors, integrators and
@@ -226,14 +232,14 @@ selector-by-selector matrix is [roles.md](../audit/roles.md).
 
 ```mermaid
 sequenceDiagram
-    participant Wave as 6529 wave (off-chain)
+    participant Wave as Main Stage (off-chain)
     participant Signer as Curation signer
     participant Anyone as Anyone
     participant Registry as PackageRegistry
     participant Verifier as Eip712CurationVerifier
     participant Curator as CURATOR key
     participant Log as StatementLog
-    Wave->>Wave: artist submits, TDH-weighted vote approves
+    Wave->>Wave: artist submits the package, the TDH-weighted vote and routing rule approve
     Signer->>Signer: check every SHA-256, simulate openRecord
     Signer->>Verifier: signerEpoch(signer)
     Signer->>Anyone: attestation abi.encode(signer, signature)

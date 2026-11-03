@@ -838,6 +838,15 @@ See: [stream and auctions](spec/stream-and-auctions.md).
 
 ## M
 
+### Main Stage
+
+The 6529 [wave](#wave) whose TDH-weighted vote picks The Memes cards, and since owner decision 25
+the only way into 6529 Stream: a submission carries its Stream package before the vote, and one
+not picked as a Meme card becomes Stream-eligible under the network's routing rule. The contracts
+never read it.
+
+See: [ADR 0001's amendments](adr/0001-v1-scope.md#amendments), [curation](spec/curation.md).
+
 ### manifest
 
 Either a [content manifest](#content-manifest) or a [governance manifest](#governance-manifest).

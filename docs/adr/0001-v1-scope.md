@@ -5,8 +5,9 @@ Status: Accepted by the owner, 11 October 2026. §13 is amended by
 are recorded in [ADR 0003](0003-build-time-decisions.md); the gas budgets under
 Glamsterdam are in [ADR 0004](0004-gas-budgets-under-glamsterdam.md). The edition sale, the
 6529 Stream Editions name and where an unbid work goes (§1–§3, §5, §6, §12, §16, §17 and the
-non-goals) are amended by [ADR 0005](0005-stream-editions-auction.md). The size budget is
-amended on 1 November 2026 (see [Amendments](#amendments)).
+non-goals) are amended by [ADR 0005](0005-stream-editions-auction.md). The size budget, and
+the route into 6529 Stream (§2 and §3), are amended on 1 November 2026 (see
+[Amendments](#amendments)).
 
 Origin: this decision was accepted in the 6529Stream repository as ADR 0055
 (6529Stream PR #745),
@@ -64,7 +65,7 @@ into collections. In this ADR, "Stream" abbreviates 6529 Stream. Every work in S
 | Tier | Admission | Contract | Primary split (default) |
 | --- | --- | --- | --- |
 | The Memes | Main Stage winners, ranked by TDH-weighted votes (about 150 a year) | Existing Memes ERC-1155 | 50/50 (unchanged; outside this ADR) |
-| 6529 Stream | Approved by the published TDH rule, either from Main Stage or from dedicated Stream waves | One shared Stream ERC-721 | 75% artist / 25% network |
+| 6529 Stream | Approved by the published TDH rule, either from Main Stage or from dedicated Stream waves (amended 1 November 2026: from Main Stage only; see [Amendments](#amendments)) | One shared Stream ERC-721 | 75% artist / 25% network |
 | 6529 Editions | An approved edition package anchored by a Stream edition master | One shared 6529 Editions ERC-1155 | 75 / 25 |
 | 6529 Stream Federated | Artist-deployed contracts from the network's templates, registered permissionlessly (no curation) | Artist's own ERC-721, ERC-1155 or linked pair | 90% artist / 10% network (v1.1, only if needed) |
 
@@ -77,6 +78,9 @@ into collections. In this ADR, "Stream" abbreviates 6529 Stream. Every work in S
 - Approval rules (for example 10M TDH held for 24 hours), bucket approvals and
   pacing are wave policy, not contract code. A single artist may have many
   works approved at once.
+- (Amended 1 November 2026, owner decisions 25 to 27: Main Stage is the only way in, its
+  submission carries the Stream package before the vote, and the approval rule is the 6529chain
+  routing rule; see [Amendments](#amendments).)
 
 **The package**
 - The artist submits a package, and voters vote on it. The package hash is a
@@ -883,6 +887,28 @@ AccessManager governs all of them. The VRF module is optional.
   offset. The 1,000-line rise leaves room for the rescue and for reviewed fixes. It does not
   change the other budgets: at most 5 linked libraries, no `delegatecall`, no proxies, and
   EIP-170 for every contract.
+
+- **1 November 2026: Main Stage is the only way into 6529 Stream (owner decisions 25 to
+  27).**
+  - **The route (decision 25).** Main Stage is the ONLY way into 6529 Stream; there are no
+    dedicated Stream waves. This supersedes §2's "either from Main Stage or from dedicated Stream
+    waves".
+  - **The package before the vote (decision 26).** The Main Stage submission carries the
+    work's Stream package (its files, description, license, payees, edition terms and seed
+    policy) before the vote, so voters vote on exactly what would mint. This matches §3: voters
+    vote on the package, and only items that exactly match it can mint. Main Stage's submission
+    format gains the package fields before Stream routing goes live.
+  - **The routing rule** (6529chain decisions D79, D80, D133 and D135). A Main Stage submission
+    not picked as a Meme card becomes Stream-eligible when it holds at least 10% of the median
+    winning Main Stage vote of the last 30 days, for 24 hours, and never less than 3,000,000
+    TDH. The network can change these values by TDH vote (D86). They are network rules, not
+    contract code; this replaces §3's example rule (10M TDH held for 24 hours).
+  - **Who may submit (decision 27).** Main Stage stays open to the nominee group, as now, with
+    up to 10 active submissions per profile (up from 3), a live Main Stage setting changed when
+    Stream routing goes live.
+
+  Nothing on chain changes: the contracts check the curation signer's attestation of an
+  approved package, whatever wave approved it (§3, "Trust boundary").
 
 ## Open items
 

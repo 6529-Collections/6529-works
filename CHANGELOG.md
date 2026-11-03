@@ -19,6 +19,15 @@
   auction's steps, Safe-relayed calls and on-chain refusals, and the deploy, genesis, manifest,
   gas and Sourcify helpers the run used. The integrator pages, the root README and
   `docs/facts.json` now name r4.
+- ADR 0001 is amended on 1 November 2026 (owner decisions 25 to 27): Main Stage is the only way
+  into 6529 Stream, with no dedicated Stream waves; the Main Stage submission carries the Stream
+  package (files, description, license, payees, edition terms, seed policy) before the vote; a
+  submission not picked as a Meme card becomes Stream-eligible under the 6529chain routing rule
+  (at least 10% of the median winning Main Stage vote of the last 30 days, held for 24 hours,
+  never under 3,000,000 TDH; D79, D80, D133, D135, changed by TDH vote under D86), a network
+  rule, not contract code; and Main Stage stays open to the nominee group, with up to 10 active
+  submissions per profile. The curation spec, glossary (Main Stage), README, architecture and
+  trust assumptions follow. No contract changes.
 - The English auction closes the sale of a rescued work (owner decision 20). If 6529 Stream
   already records the work as settled, which only `rescueToMuseum` does before the auction
   settles, `settle` closes the sale with refunds only. It credits the standing bid back,
