@@ -13,6 +13,8 @@ import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStatementLog, Statement } from "src/interfaces/IStatementLog.sol";
+import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
+import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
@@ -53,16 +55,34 @@ interface IDigests {
         returns (bytes32);
 }
 
+/// @dev The OpenZeppelin AccessManager calls a delayed role holder makes (`WorksAccessManager`).
+interface IManagerOps {
+    function schedule(address target, bytes calldata data, uint48 when)
+        external
+        returns (bytes32 operationId, uint32 nonce);
+    function execute(address target, bytes calldata data) external payable returns (uint32);
+    function hashOperation(address caller, address target, bytes calldata data)
+        external
+        view
+        returns (bytes32);
+    function getSchedule(bytes32 id) external view returns (uint48);
+}
+
 /// @title Flows
-/// @notice Encodes the v1 flows run on a Sepolia rehearsal deployment (r3 by default,
-///         `deployments/11155111/1792095396.json`; set `FLOWS_RECORD` for another record): the content uploads, one curated package of
-///         eight works, its approval and acceptance, the auction starts, bids, record opening, the
-///         VRF request and, after the 24-hour auction, settlement and the linked edition.
+/// @notice Encodes the v1 flows run on a Sepolia rehearsal deployment (r4 by default, `RECORD`;
+///         set `FLOWS_RECORD` for another record): the content uploads, one curated package of
+///         ten works, its approval and acceptance, the 1/1 starts and bids, the edition auctions
+///         that run beside the edition masters' 1/1s (open, bids, raises, settlement with the
+///         per-settler departure sweep, claims), a guardian's dispute pause and the hot admin's
+///         scheduled cancel that voids an edition sale, record opening, the VRF request, and the
+///         linked edition.
 /// @dev It holds no key. Only `broadcastB64Chunk` broadcasts, from the script's sender; every
 ///      other entry point reads the live chain (run it with `--rpc-url`) and prints lines for a
 ///      driver to act on:
 ///      - `TX <label> <from> <to> <value> <calldata>`: a transaction to send, where `<from>` names
-///        the account that must send it (`any`, `platform`, `curator`, `artist`, or an address);
+///        the account that must send it (`any`, `platform`, `curator`, `artist`, or an address),
+///        or `safe:<address>` for a call a Safe makes (the driver collects its owners'
+///        signatures and relays `execTransaction`);
 ///      - `SIGN <label> <signer> <digest>`: an EIP-712 digest, read from the contract that checks
 ///        it, for `<signer>` to sign without hashing again;
 ///      - `INFO <key> <value>`.
@@ -73,11 +93,11 @@ contract Flows is Script {
     using Strings for uint256;
     using Strings for address;
 
-    /// @dev The deployment record the flows run against: r3 unless `FLOWS_RECORD` names another
-    ///      (r2 is `deployments/11155111/1791750816.json`, r1 `deployments/11155111/1791746472.json`).
-    ///      The package step signs the epoch-bound approval of the current curation verifier
-    ///      (#55), so it no longer runs on r1 or r2; their packages are registered already.
-    string internal constant RECORD = "deployments/11155111/1792095396.json";
+    /// @dev The deployment record the flows run against: r4 unless `FLOWS_RECORD` names another
+    ///      (r3 is `deployments/11155111/1792095396.json`). The package is rc.2's (uniform edition
+    ///      auction terms, three edition masters), so the package step runs on r4 and later
+    ///      instances only; r1 to r3 registered earlier packages.
+    string internal constant RECORD = "deployments/11155111/1793536584.json";
     /// @dev Seeds every file, record and evidence hash. It is kept from r1 so that every instance
     ///      shares one package (same files and root).
     string internal constant LABEL = "6529-works/sepolia-r1/flows";
@@ -85,9 +105,9 @@ contract Flows is Script {
     address internal constant DEFAULT_ARTIST = 0x111Cb972e6734feA580D403555a2a0ed4Cd3Ae1B;
     /// @dev Curation signer 1 of r1, r2 and r3 (holds CURATION_SIGNER).
     address internal constant DEFAULT_SIGNER = 0xc7091A91Fa76f7494a3b847B6A08f164C7097830;
-    uint256 internal constant ITEMS = 8;
-    /// @dev The master's creator cap on its edition count.
-    uint32 internal constant EDITION_CAP = 10;
+    uint256 internal constant ITEMS = 10;
+    /// @dev The capped master's creator cap on its edition count; the other masters have none.
+    uint32 internal constant EDITION_CAP = 3;
 
     /// @dev Item roles in the package.
     uint256 internal constant ITEM_FIRST_START = 0;
@@ -98,6 +118,10 @@ contract Flows is Script {
     uint256 internal constant ITEM_MASTER = 5;
     uint256 internal constant ITEM_VRF = 6;
     uint256 internal constant ITEM_NEW_COLLECTION = 7;
+    /// @dev An edition master whose creator caps the edition (`EDITION_CAP`): the cut step.
+    uint256 internal constant ITEM_CAPPED_MASTER = 8;
+    /// @dev An uncapped edition master whose 1/1 a guardian pauses for a dispute.
+    uint256 internal constant ITEM_DISPUTE_MASTER = 9;
 
     struct Addrs {
         address store;
@@ -110,6 +134,8 @@ contract Flows is Script {
         address editions;
         address auction;
         address entropy;
+        address editionAuction;
+        address manager;
         bytes32 cc0TextFileId;
     }
 
@@ -140,6 +166,11 @@ contract Flows is Script {
         a.editions = vm.parseJsonAddress(json, ".contracts.Editions.address");
         a.auction = vm.parseJsonAddress(json, ".contracts.EnglishAuction.address");
         a.entropy = vm.parseJsonAddress(json, ".contracts.EntropyModule.address");
+        a.manager = vm.parseJsonAddress(json, ".contracts.WorksAccessManager.address");
+        // rc.2 and later (r4 on): the uniform edition auction.
+        if (vm.keyExistsJson(json, ".contracts.UniformEditionAuction")) {
+            a.editionAuction = vm.parseJsonAddress(json, ".contracts.UniformEditionAuction.address");
+        }
         a.cc0TextFileId = vm.parseJsonBytes32(json, ".cc0TextFileId");
     }
 
@@ -263,7 +294,8 @@ contract Flows is Script {
         w.media = new MediaFile[](1);
         w.media[0] = MediaFile(_fileId(a, primary), primary.sha, FileRole.PRIMARY);
         PackageItem memory item;
-        item.kind = i == ITEM_MASTER ? ItemKind.EDITION_MASTER : ItemKind.ORIGINAL;
+        bool master = _isMaster(i);
+        item.kind = master ? ItemKind.EDITION_MASTER : ItemKind.ORIGINAL;
         item.collectionId = i == ITEM_NEW_COLLECTION ? _collection2() : _collection();
         item.contentHash = primary.sha;
         item.mediaHash = WorksHashing.mediaHash(w.media);
@@ -275,10 +307,20 @@ contract Flows is Script {
         item.license = License("CC0-1.0", a.cc0TextFileId);
         item.seedPolicy = i == ITEM_VRF ? SeedPolicy.VRF : SeedPolicy.NONE;
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_ETH, "");
-        item.edition = i == ITEM_MASTER
-            ? EditionTerms(EDITION_CAP, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "")
+        item.edition = master
+            ? EditionTerms(
+                i == ITEM_CAPPED_MASTER ? EDITION_CAP : 0,
+                CURRENCY_ETH,
+                SaleKind.UNIFORM_AUCTION,
+                ""
+            )
             : EditionTerms(0, address(0), bytes32(0), "");
         w.item = item;
+    }
+
+    /// @dev Items 5, 8 and 9 are edition masters: uncapped, capped and the disputed one.
+    function _isMaster(uint256 i) internal pure returns (bool) {
+        return i == ITEM_MASTER || i == ITEM_CAPPED_MASTER || i == ITEM_DISPUTE_MASTER;
     }
 
     function _works(Addrs memory a) internal view returns (Work[] memory works) {
@@ -734,10 +776,11 @@ contract Flows is Script {
 
     // ------------------------------------------------------------------ 5. the edition
 
-    /// @notice `createEdition` for the master minted as Stream token `workId` (anyone, after the
-    ///         master's sale settled).
-    function createEditionTx(uint256 workId) external view {
+    /// @notice `createEdition` for the master item `index` minted as Stream token `workId`
+    ///         (anyone: the keeper, after the master's 1/1 sale settled).
+    function createEditionTx(uint256 index, uint256 workId) external view {
         Addrs memory a = _addrs();
+        require(_isMaster(index), "not an edition master item");
         Work[] memory works = _works(a);
         bytes32[] memory leaves = _leaves(works);
         _tx(
@@ -747,8 +790,347 @@ contract Flows is Script {
             0,
             abi.encodeCall(
                 IEditions.createEdition,
-                (workId, works[ITEM_MASTER].item, _root(leaves), _proof(leaves, ITEM_MASTER))
+                (workId, works[index].item, _root(leaves), _proof(leaves, index))
             )
+        );
+    }
+
+    // ------------------------------------------------------------------ 6. the edition auction
+
+    function _uea(Addrs memory a) internal pure returns (IUniformEditionAuction) {
+        require(a.editionAuction != address(0), "record has no UniformEditionAuction");
+        return IUniformEditionAuction(a.editionAuction);
+    }
+
+    /// @dev The edition sale of master token `tokenId` (sale IDs are derived).
+    function _editionSale(Addrs memory a, uint256 tokenId) internal pure returns (uint256) {
+        return uint256(keccak256(abi.encode(a.editions, tokenId)));
+    }
+
+    /// @notice `open` of the edition auction beside master token `tokenId`, minted from item
+    ///         `index` (anyone: the keeper batches it with the 1/1's start).
+    function openEditionTx(uint256 index, uint256 tokenId) external view {
+        Addrs memory a = _addrs();
+        require(_isMaster(index), "not an edition master item");
+        uint256 saleId = _editionSale(a, tokenId);
+        require(_uea(a).saleIdOf(a.editions, tokenId) == saleId, "sale ID derivation");
+        _info("saleId", saleId.toString());
+        _tx(
+            string.concat("openEdition-", tokenId.toString()),
+            "any",
+            a.editionAuction,
+            0,
+            abi.encodeCall(
+                IUniformEditionAuction.open,
+                (a.editions, tokenId, abi.encode(_works(a)[index].item))
+            )
+        );
+    }
+
+    /// @notice A bid of `quantity` units at `step` on master `tokenId`'s edition sale, paying
+    ///         its exact escrow.
+    function editionBidTx(uint256 tokenId, address bidder, uint256 step, uint256 quantity)
+        external
+        view
+    {
+        Addrs memory a = _addrs();
+        IUniformEditionAuction uea = _uea(a);
+        uint256 saleId = _editionSale(a, tokenId);
+        uint256 price = uea.stepPrice(saleId, step);
+        _info("saleId", saleId.toString());
+        _info("price", price.toString());
+        _info("nextBidId", (uint256(uea.auction(saleId).bidCount) + 1).toString());
+        _tx(
+            string.concat("editionBid-", tokenId.toString()),
+            bidder.toHexString(),
+            a.editionAuction,
+            price * quantity,
+            abi.encodeCall(IUniformEditionAuction.bid, (saleId, step, quantity))
+        );
+    }
+
+    /// @notice `raise` of bid `bidId` on master `tokenId`'s edition sale to `newStep`, paying the
+    ///         exact difference; the bidder sends it.
+    function editionRaiseTx(uint256 tokenId, uint256 bidId, uint256 newStep) external view {
+        Addrs memory a = _addrs();
+        IUniformEditionAuction uea = _uea(a);
+        uint256 saleId = _editionSale(a, tokenId);
+        IUniformEditionAuction.Bid memory b = uea.bidOf(saleId, bidId);
+        uint256 paid =
+            uint256(b.quantity) * (uea.stepPrice(saleId, newStep) - uea.stepPrice(saleId, b.step));
+        _info("fromStep", uint256(b.step).toString());
+        _tx(
+            string.concat("editionRaise-", tokenId.toString()),
+            b.bidder.toHexString(),
+            a.editionAuction,
+            paid,
+            abi.encodeCall(IUniformEditionAuction.raise, (saleId, bidId, newStep))
+        );
+    }
+
+    /// @notice `withdrawBid` of bid `bidId` on master `tokenId`'s edition sale, its escrow to
+    ///         the bidder (only while the 1/1 is paused, for a bid placed before the pause).
+    function editionWithdrawTx(uint256 tokenId, uint256 bidId) external view {
+        Addrs memory a = _addrs();
+        uint256 saleId = _editionSale(a, tokenId);
+        address bidder = _uea(a).bidOf(saleId, bidId).bidder;
+        _info(
+            "canWithdraw",
+            IUniformEditionAuctionLens(a.editionAuction).canWithdraw(saleId, bidId)
+                ? "true"
+                : "false"
+        );
+        _tx(
+            string.concat("editionWithdraw-", tokenId.toString()),
+            bidder.toHexString(),
+            a.editionAuction,
+            0,
+            abi.encodeCall(IUniformEditionAuction.withdrawBid, (saleId, bidId, bidder))
+        );
+    }
+
+    /// @notice `settle` of master `tokenId`'s edition sale by `settler` with the rest of its own
+    ///         departure sweep, as the keeper sends it: before the clearing call every settler's
+    ///         order is the whole sorted log (`settlementOrder`), after it the settler's own rest
+    ///         (`settlementOrderFor`).
+    function editionSettleTx(uint256 tokenId, address settler) external view {
+        Addrs memory a = _addrs();
+        uint256 saleId = _editionSale(a, tokenId);
+        IUniformEditionAuction.AuctionStatus status = _uea(a).auction(saleId).status;
+        uint256[] memory order = status == IUniformEditionAuction.AuctionStatus.SETTLING
+            ? IUniformEditionAuctionLens(a.editionAuction).settlementOrderFor(saleId, settler)
+            : _uea(a).settlementOrder(saleId);
+        _settleTx(a, tokenId, saleId, settler, order);
+    }
+
+    /// @notice `settle` with an explicit `order`: for showing that a settler whose order skips a
+    ///         departure strands only its own sweep.
+    function editionSettleOrderTx(uint256 tokenId, address settler, uint256[] calldata order)
+        external
+        view
+    {
+        Addrs memory a = _addrs();
+        _settleTx(a, tokenId, _editionSale(a, tokenId), settler, order);
+    }
+
+    function _settleTx(
+        Addrs memory a,
+        uint256 tokenId,
+        uint256 saleId,
+        address settler,
+        uint256[] memory order
+    ) internal pure {
+        string memory list;
+        for (uint256 i; i < order.length; ++i) {
+            list = string.concat(list, i == 0 ? "" : ",", order[i].toString());
+        }
+        _info("order", string.concat("[", list, "]"));
+        _tx(
+            string.concat("editionSettle-", tokenId.toString()),
+            settler.toHexString(),
+            a.editionAuction,
+            0,
+            abi.encodeCall(IUniformEditionAuction.settle, (saleId, order))
+        );
+    }
+
+    /// @notice `claimBid` by the bidder of bid `bidId`, copies and refund to itself.
+    function claimBidTx(uint256 tokenId, uint256 bidId) external view {
+        Addrs memory a = _addrs();
+        uint256 saleId = _editionSale(a, tokenId);
+        address bidder = _uea(a).bidOf(saleId, bidId).bidder;
+        _outcome(a, saleId, bidId);
+        _tx(
+            string.concat("claimBid-", tokenId.toString(), "-", bidId.toString()),
+            bidder.toHexString(),
+            a.editionAuction,
+            0,
+            abi.encodeCall(IUniformEditionAuction.claimBid, (saleId, bidId, bidder))
+        );
+    }
+
+    /// @notice `claimBidFor` of bid `bidId` (anyone: the keeper pushes the claim; the refund is
+    ///         credited to the bidder).
+    function claimBidForTx(uint256 tokenId, uint256 bidId) external view {
+        Addrs memory a = _addrs();
+        uint256 saleId = _editionSale(a, tokenId);
+        _outcome(a, saleId, bidId);
+        _tx(
+            string.concat("claimBidFor-", tokenId.toString(), "-", bidId.toString()),
+            "any",
+            a.editionAuction,
+            0,
+            abi.encodeCall(IUniformEditionAuction.claimBidFor, (saleId, bidId))
+        );
+    }
+
+    function _outcome(Addrs memory a, uint256 saleId, uint256 bidId) internal view {
+        IUniformEditionAuction.BidOutcome memory o = _uea(a).bidOutcome(saleId, bidId);
+        _info("unitsWon", o.unitsWon.toString());
+        _info("refund", o.refund.toString());
+        _info("isFinal", o.isFinal ? "true" : "false");
+    }
+
+    /// @notice `account` claims its ETH credits from `adapter` (the English auction's outbid
+    ///         refunds, or the edition auction's `claimBidFor` refunds) to itself.
+    function claimCreditsTx(address adapter, address account) external pure {
+        _tx(
+            "claimCredits",
+            account.toHexString(),
+            adapter,
+            0,
+            abi.encodeWithSignature("claim(address,address)", CURRENCY_ETH, account)
+        );
+    }
+
+    /// @notice The edition sale's clocks, status and live result, as INFO lines.
+    function editionState(uint256 tokenId) external view {
+        Addrs memory a = _addrs();
+        IUniformEditionAuction uea = _uea(a);
+        uint256 saleId = _editionSale(a, tokenId);
+        IUniformEditionAuction.EndTimes memory e = uea.endTimes(saleId);
+        IUniformEditionAuction.Auction memory s = uea.auction(saleId);
+        _info("saleId", saleId.toString());
+        _info("status", uint256(s.status).toString());
+        _info("bidCount", uint256(s.bidCount).toString());
+        _info("liveUnits", uint256(s.liveUnits).toString());
+        _info("oneOfOneEnd", uint256(e.oneOfOneEnd).toString());
+        _info("closeAt", uint256(e.closeAt).toString());
+        _info("softEnd", uint256(e.softEnd).toString());
+        _info("endTime", uint256(e.endTime).toString());
+        _info("backstop", uint256(e.backstop).toString());
+        _info("oneOfOneState", uint256(e.oneOfOneState).toString());
+        _info("biddingOpen", e.biddingOpen ? "true" : "false");
+        _info("withdrawalsOpen", e.withdrawalsOpen ? "true" : "false");
+        if (s.status == IUniformEditionAuction.AuctionStatus.VOID) return;
+        IUniformEditionAuction.Clearing memory c = uea.clearing(saleId);
+        _info("count", c.count.toString());
+        _info("step", c.step.toString());
+        _info("price", c.price.toString());
+        _info("revenue", c.revenue.toString());
+        _info("rationed", c.rationed ? "true" : "false");
+        _info("cutUnits", c.cutUnits.toString());
+        _info("cutoff", c.cutoff.toString());
+        _info("departures", uea.departures(saleId, c.step).length.toString());
+    }
+
+    /// @notice Master or work `tokenId`'s 1/1 English auction, as INFO lines.
+    function englishState(uint256 tokenId) external view {
+        Addrs memory a = _addrs();
+        uint256 saleId = _oneOfOneSale(a, tokenId);
+        IEnglishAuction.Auction memory s = IEnglishAuction(a.auction).auction(saleId);
+        _info("saleId", saleId.toString());
+        _info("state", uint256(s.state).toString());
+        _info("endTime", uint256(s.endTime).toString());
+        _info("bidder", s.bidder.toHexString());
+        _info("bid", s.bid.toString());
+        _info("pausedAt", uint256(s.pausedAt).toString());
+        if (s.state == IEnglishAuction.AuctionState.ACTIVE) {
+            _info("minimumBid", IEnglishAuction(a.auction).minimumBid(saleId).toString());
+        }
+    }
+
+    // ------------------------------------------------------------------ 7. disputes
+
+    /// @dev The disputed 1/1's English auction sale.
+    function _oneOfOneSale(Addrs memory a, uint256 tokenId) internal pure returns (uint256) {
+        return uint256(keccak256(abi.encode(a.stream, tokenId)));
+    }
+
+    /// @notice A guardian Safe pauses master `tokenId`'s 1/1 for a dispute (GUARDIAN,
+    ///         immediate). `guardian` is the Safe.
+    function pauseTx(uint256 tokenId, address guardian) external view {
+        Addrs memory a = _addrs();
+        _tx(
+            string.concat("pause-", tokenId.toString()),
+            string.concat("safe:", guardian.toHexString()),
+            a.auction,
+            0,
+            abi.encodeCall(
+                IEnglishAuction.pause,
+                (_oneOfOneSale(a, tokenId), keccak256(abi.encode(LABEL, "dispute", tokenId)))
+            )
+        );
+    }
+
+    /// @notice The high bidder withdraws its 1/1 bid while the 1/1 is paused (credited back).
+    function englishWithdrawTx(uint256 tokenId) external view {
+        Addrs memory a = _addrs();
+        uint256 saleId = _oneOfOneSale(a, tokenId);
+        _tx(
+            string.concat("withdrawBid-", tokenId.toString()),
+            IEnglishAuction(a.auction).auction(saleId).bidder.toHexString(),
+            a.auction,
+            0,
+            abi.encodeCall(IEnglishAuction.withdrawBid, (saleId))
+        );
+    }
+
+    /// @notice PLATFORM records the dispute's outcome about Stream token `tokenId` (the
+    ///         statement a cancel must cite).
+    function outcomeTx(uint256 tokenId) external view {
+        Addrs memory a = _addrs();
+        bytes memory text =
+            abi.encodePacked(LABEL, " dispute outcome: upheld, token ", tokenId.toString());
+        _tx(
+            string.concat("disputeOutcome-", tokenId.toString()),
+            "platform",
+            a.statements,
+            0,
+            abi.encodeCall(
+                IStatementLog.appendPlatform,
+                (Statement(
+                        a.stream,
+                        tokenId,
+                        StatementKinds.DISPUTE_OUTCOME,
+                        keccak256("6529-works/dispute-outcome/1"),
+                        HashRef(HASH_SHA256, sha256(text)),
+                        "ar://sepolia-r4-flows-dispute-outcome",
+                        bytes32(0),
+                        bytes32(0)
+                    ))
+            )
+        );
+    }
+
+    /// @dev The cancel of `tokenId`'s 1/1, citing the token's latest outcome.
+    function _cancelData(Addrs memory a, uint256 tokenId) internal view returns (bytes memory) {
+        (bytes32 outcome,) = IStatementLog(a.statements).disputeOutcomeOf(a.stream, tokenId);
+        require(outcome != 0, "no dispute outcome recorded");
+        _info("outcomeRef", vm.toString(outcome));
+        return abi.encodeCall(IEnglishAuction.cancel, (_oneOfOneSale(a, tokenId), outcome));
+    }
+
+    /// @notice The hot admin Safe schedules the cancel of `tokenId`'s paused 1/1 on the manager
+    ///         (PARAMETER_SETTER: a 48-hour execution delay). `admin` is the Safe.
+    function scheduleCancelTx(uint256 tokenId, address admin) external view {
+        Addrs memory a = _addrs();
+        bytes memory data = _cancelData(a, tokenId);
+        _info(
+            "operationId", vm.toString(IManagerOps(a.manager).hashOperation(admin, a.auction, data))
+        );
+        _tx(
+            string.concat("scheduleCancel-", tokenId.toString()),
+            string.concat("safe:", admin.toHexString()),
+            a.manager,
+            0,
+            abi.encodeCall(IManagerOps.schedule, (a.auction, data, uint48(0)))
+        );
+    }
+
+    /// @notice The hot admin Safe executes the scheduled cancel once it is ready.
+    function executeCancelTx(uint256 tokenId, address admin) external view {
+        Addrs memory a = _addrs();
+        bytes memory data = _cancelData(a, tokenId);
+        bytes32 id = IManagerOps(a.manager).hashOperation(admin, a.auction, data);
+        _info("operationId", vm.toString(id));
+        _info("readyAt", uint256(IManagerOps(a.manager).getSchedule(id)).toString());
+        _tx(
+            string.concat("executeCancel-", tokenId.toString()),
+            string.concat("safe:", admin.toHexString()),
+            a.manager,
+            0,
+            abi.encodeCall(IManagerOps.execute, (a.auction, data))
         );
     }
 }

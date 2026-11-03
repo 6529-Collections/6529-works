@@ -9,13 +9,15 @@ signatures in [Events and indexing](events-and-indexing.md); addresses in [Addre
 
 > Pre-audit. See the [project status](../../README.md#status).
 
-Sepolia r3 ([Addresses](addresses.md#sepolia-r3)) runs `v1.0.0-rc.1`: the auction and claims
-as this page describes them, with the edition terms and the fixed-price and Dutch edition
-adapters that ADR 0005 replaced. The superseded r2 predates the October 2026 review fixes: it
+Sepolia r4 ([Addresses](addresses.md#sepolia-r4)) runs `main` at `1e7022b`: the 1/1 auction,
+the uniform edition auction and the claims as this page describes them, with 1-hour 1/1
+auctions (a testnet setting). The superseded r3 runs `v1.0.0-rc.1`, with the edition terms
+and the fixed-price and Dutch edition adapters that ADR 0005 replaced. The superseded r2 predates the October 2026 review fixes: it
 has no `claimFor`, ERC-20 payout frame, `scheduleDelay`, currency freeze,
 `SHORTFALL_REVERT_CEILING` or identity restraint
 ([Addresses](addresses.md#sepolia-r2-superseded)). Sepolia gas figures here are r2's; r3's
-are in [the flows file](../../deployments/11155111/flows.md#r3-the-release-candidate-15-october-2026).
+and r4's (with every edition-auction step) are in
+[the flows file](../../deployments/11155111/flows.md#r4-the-rc2-candidate-1-november-2026).
 
 ## Before you start
 

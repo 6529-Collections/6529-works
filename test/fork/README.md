@@ -37,8 +37,9 @@ The system is deployed by the same deploy library as the integration tests
 | [`VrfFork.t.sol`](VrfFork.t.sol) | Chainlink VRF v2.5 coordinator on Sepolia (`0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B`) | The code hash sepolia-r3 pinned; a new native-funded subscription with the entropy module as consumer; `requestSeed` reaches the coordinator, which logs the request with r3's gas lane, confirmations and callback gas; a simulated fulfilment (the real one needs the oracle's VRF proof) delivered within the callback gas lets the VRF work start and its seed render; nobody but the coordinator fulfils. |
 | [`DeploySimulationFork.t.sol`](DeploySimulationFork.t.sol) | Everything `Deploy.s.sol` touches on Sepolia | The full deploy script with sepolia-r3's inputs (its holders on the committed policy, fee recipient, marketplace owner, VRF gas lane and limits, epoch-0 manifest; r3's fee Safe as the museum, which r3 predates; a new VRF subscription, as the runbook creates for each deployment) under a fresh namespace: every off-anvil guard passes against the live Safes and dependencies (the Safe singleton, module and guard checks included), and `Verify.s.sol` confirms the simulated deployment five days later, once the new entropy module is its subscription's only consumer. |
 
-The Sepolia inputs are those of r3, the current rehearsal
-([deployment record](../../deployments/11155111/README.md#sepolia-r3-15-october-2026-current)).
+The Sepolia inputs are those of r3 (r4, deployed on 1 November 2026, now supersedes it; r4 shares
+r3's holders)
+([deployment record](../../deployments/11155111/README.md#sepolia-r3-15-october-2026-superseded-by-r4)).
 The simulation uses the committed example with r3's holders, as a new rehearsal would, so it
 follows the committed policy as it changes. r3's own `config/sepolia-r3/genesis.json` (the
 committed policy at `e5fe78c` with r1's holders) is checked against the live Safes by

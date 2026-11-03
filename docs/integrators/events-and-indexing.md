@@ -38,8 +38,11 @@ events do not tell you. The rules are in the [specification](../spec/README.md),
   ([`tools/content/keccak.py`](../../tools/content/keccak.py)).
 - **Binding names.** The `name` of a `Bound` event is an ASCII string left-aligned in a
   `bytes32` (for example `"WORK_RECORDS"`), not a hash.
-- **Where to start.** Scan from the deployment record's `startBlock`. For Sepolia r3 that is
-  block 11,922,738 ([`1792095396.json`](../../deployments/11155111/1792095396.json)). The
+- **Where to start.** Scan from the deployment record's `startBlock`. For Sepolia r4 that is
+  block 12,041,045 ([`1793536584.json`](../../deployments/11155111/1793536584.json)). The superseded
+  r3 starts at block 11,922,738 ([`1792095396.json`](../../deployments/11155111/1792095396.json))
+  and runs `v1.0.0-rc.1`
+  ([changes since r3](abis-and-interface-ids.md#changes-since-the-sepolia-r3-build)); the
   superseded r2 starts at block 11,894,137
   ([`1791750816.json`](../../deployments/11155111/1791750816.json)) and runs an earlier build
   whose events differ in a few places
