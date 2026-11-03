@@ -1112,7 +1112,9 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
     function test_Settle_ZeroBidsMintsNothing() public {
         uint256 saleId = _open(0);
         _closeOneOfOne(saleId);
-        // No edition is needed when nothing sold.
+        // No edition is needed when nothing sold, and nothing has a price.
+        vm.expectEmit(address(auction));
+        emit IUniformEditionAuction.AuctionCleared(saleId, 0, 0, 0, 0, false, 0);
         vm.expectEmit(address(auction));
         emit ISaleAdapter.SaleSettled(
             saleId,
@@ -1264,8 +1266,14 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         assertEq(c.step, 11);
         assertTrue(c.rationed);
         assertEq(ua.settlementOrder(saleId).length, 0, "step 11 logged no departures");
-        // Rationed at a step without departures settles at once.
-        _settle(saleId);
+        // Rationed at a step without departures settles at once, its cutoff the cut units.
+        _closeOneOfOne(saleId);
+        editions.setExists(ID, true);
+        uint256 balance = address(auction).balance;
+        vm.expectEmit(address(auction));
+        emit IUniformEditionAuction.AuctionSettled(saleId, 4, 4);
+        assertTrue(auction.settle(saleId, new uint256[](0)));
+        paidOut += balance - address(auction).balance;
         assertEq(
             uint8(ua.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.SETTLED)
         );
@@ -1321,6 +1329,12 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         );
         auction.settle(saleId, first);
         assertFalse(auction.settle(saleId, new uint256[](0)), "nothing new to sweep");
+        // A settler whose first call sweeps nothing leaves no progress slot behind.
+        address idle = makeAddr("idle");
+        vm.prank(idle);
+        assertFalse(auction.settle(saleId, new uint256[](0)));
+        (swept, nextPosition, cutoff) = lens.sweepOf(saleId, idle);
+        assertEq(swept + nextPosition + cutoff, 0, "no slot for an empty call");
         // Extra entries after the end are ignored.
         uint256[] memory rest = new uint256[](3);
         (rest[0], rest[1], rest[2]) = (0, 0, 1);
