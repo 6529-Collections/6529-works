@@ -762,6 +762,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         IUniformEditionAuction.EndTimes memory e = ua.endTimes(saleId);
         assertEq(e.backstop, backstop);
         assertEq(e.endTime, backstop, "capped at the backstop");
+        assertEq(e.softEnd, backstop, "the stored soft end is capped too");
         vm.warp(backstop);
         uint256 price = _price(saleId, 0);
         vm.deal(bob, price);

@@ -51,6 +51,19 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
         assertEq(address(auction).balance, 0);
     }
 
+    /// @dev `SettlementScanned` gives the words left above the book's lowest word, not above
+    ///      step 0: words 37 down to 2, the first call scans 37 to 14 and leaves 12.
+    function test_Settlement_ScanEventCountsTheWordsLeftAboveTheLowest() public {
+        uint256 saleId = _open(30);
+        _bid(saleId, makeAddr("low"), 16, 40);
+        _bid(saleId, makeAddr("high"), 300, 1);
+        _closeOneOfOne(saleId);
+        editions.setExists(ID, true);
+        vm.expectEmit(address(auction));
+        emit IUniformEditionAuctionStorage.SettlementScanned(saleId, 12);
+        assertFalse(auction.settle(saleId, new uint256[](0)));
+    }
+
     /// @dev A book wider than one call's scan (24 words) settles over several calls; meanwhile
     ///      the sale is SETTLING, refuses bids and claims, shows no stored result, and its
     ///      settlement order is the live clearing's.
