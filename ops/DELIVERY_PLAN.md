@@ -97,10 +97,8 @@ them: the review fixes, the state-growth gas diet and the source-quality pass.
 - r3's settlements, edition sale and purchases, and a real anti-snipe bid, from 16 October
   2026, 20:35 UTC; until then those rows are simulated;
 - the live Verify: r1 and r2 from 16 October, r3 from 20 October, r4 from 6 November 2026;
-- r4's dispute cancel of token 1, scheduled by the hot admin Safe and executable from
-  3 November 2026, 12:48 UTC, then the void settlement and its refunds (a guardian's dispute
-  pause, with its withdrawals, already ran on r4);
-- the flows not yet run on Sepolia: guardian operations other than the dispute pause, and a
+- the flows not yet run on Sepolia: guardian and admin operations other than r4's dispute
+  pause and cancel (which voided an edition sale and refunded it), and a
   recovery or identity change (each needs a Safe or waits a governed delay); finalize and
   preferred-location failover; ERC-20 payments by Permit2
   ([flows](../deployments/11155111/flows.md#pending));

@@ -62,7 +62,7 @@ every other parameter is the mainnet default, so the edition close is 15 minutes
 
 | Token | Item | Role | Outcome |
 | ---: | --- | --- | --- |
-| 1 | 9: edition master, no cap | The dispute | 1/1 paused by a guardian at 12:46:24 UTC; edition sale open (bids accepted during the pause) until the cancel voids it |
+| 1 | 9: edition master, no cap | The dispute | 1/1 paused by a guardian at 12:46:24 UTC; cancelled 48 hours later and burned; its edition sale VOID, every remaining bid refunded |
 | 2 | 5: edition master, no cap | The main sale | 1/1 SOLD to bidder 1 at 0.055125 ETH; edition: 11 bids, 11 copies at 0.000422 ETH (step 30) |
 | 3 | 8: edition master, cap 3 | The cut step | 1/1 UNBID, moved to the museum; edition: 4 bids and two raises, 3 copies at 0.000162 ETH (step 10), rationed |
 | 4 | 0: an original | The museum | 1/1 UNBID, moved to the museum |
@@ -81,7 +81,7 @@ the CURATOR statement, the artist's first acceptance) and the content uploads.
 | A capped edition auction with a hole at the cut step, settled through the per-settler sweep | **Pass.** Token 3's edition (cap 3): the two raises left departures at positions 0 and 5 of the cut step (step 10). Wallet 3 settled first with an order that skips departure 0, [`0x5e90096a…`](https://sepolia.etherscan.io/tx/0x5e90096a7b2950e7b73e4d3fe9db7e400bd130754068742499800852ea4aaed9): the call cleared and paid the sale but stranded only wallet 3's own sweep (1 of 2 swept, cutoff 1; `sweepOf`). The keeper then settled with its own order `[0,1]`, [`0xb1d9707a…`](https://sepolia.etherscan.io/tx/0xb1d9707a51601e56290dadfc2da430237a53658256b63f11098e50755c6524aa): SETTLED, cutoff 2. Bid 2 (positions 1 and 2) wins 1 copy through the hole at position 0. |
 | An unbid 1/1 that Stream moves to the museum (decision 17) | **Pass.** Tokens 4 (an original) and 3 (the capped master) drew no 1/1 bid; `settle` [`0x69c8e790…`](https://sepolia.etherscan.io/tx/0x69c8e7905c84f5a4a118eeff10e2b170e6ff1700dda0751a0d13fcbaea956813), [`0x11a8f33b…`](https://sepolia.etherscan.io/tx/0x11a8f33b0c40bf587bbb03949d029cf0ce3146bccda16b39e3ed5e231d0facbe): Stream recorded UNBID (`primarySale`) and moved each to the testnet museum (`ownerOf`). Token 3's edition sold anyway (D141). |
 | A dispute pause, a pre-pause bid withdrawn, and a bid placed during the pause that cannot be | **Pass.** Guardian Safe 1 (2-of-3) paused token 1's 1/1, [`0xe4462884…`](https://sepolia.etherscan.io/tx/0xe4462884f6f59c70a349e8d49b402295fa7c385e2a6b8802d4d6ff1d25779fdd). Bidder 1 withdrew its pre-pause edition bid, [`0x3981428f…`](https://sepolia.etherscan.io/tx/0x3981428ff823e8abc128d40bf16a4d4fa1dd240a8cb393d1309ec9b825c2525a), and bidder 4 its pre-pause 0.05 ETH 1/1 bid, [`0x44c8f86c…`](https://sepolia.etherscan.io/tx/0x44c8f86c4830ba835ffd59ffe190b6b97634d26aec39ebe5c3edf1f289d160c4) (credited, then claimed [`0xc893e952…`](https://sepolia.etherscan.io/tx/0xc893e952dfb95f4a1a3c1d3ae3a3b2d463618d69a5a0b45cac6349d4e2dafaad)). Bidder 3's edition bid during the pause was accepted, [`0x05cfe486…`](https://sepolia.etherscan.io/tx/0x05cfe4868a77b278960d10bd5a82bf5b84c1fa65a1c0326680a83db9d11362ff), and its withdrawal reverted on chain with `WithdrawalsClosed(saleId)`, [`0x719cd6e0…`](https://sepolia.etherscan.io/tx/0x719cd6e0254d863b2277a3d55e605c8380f5610edf67c79b68f8c9ff33eaf8e8). |
-| A dispute that voids an edition auction, with refunds | **Pending** until the cancel can execute, from **3 November 2026, 12:48:00 UTC** (the 48-hour PARAMETER_SETTER delay from the schedule; the contract also requires 48 hours from the pause). Done so far: the pause, the PLATFORM `DISPUTE_OUTCOME` statement [`0xcc6d2a00…`](https://sepolia.etherscan.io/tx/0xcc6d2a000b94317a9b388162eff86534593cd0a3ce2c439b6d18868fc5bf82f5) and the hot admin Safe's `schedule` [`0x4eb73e04…`](https://sepolia.etherscan.io/tx/0x4eb73e04b11cd90d856032d76236f9f28d9ba39a2dbc62815caa2db123ad135d) (operation `0xfee38ae8…72f4`). The commands that finish it are under [Pending (r4)](#pending-r4). |
+| A dispute that voids an edition auction, with refunds | **Pass.** The hot admin Safe's scheduled `cancel` executed [`0x43560367…`](https://sepolia.etherscan.io/tx/0x435603677b32c2d48a6bf999300605a1c74260ce3951d2584bdf0c762f5b1b59) (167,535 gas), 48 hours after the pause; the 1/1 is CANCELLED and its token burned. `settle` voided the edition sale [`0xa0739914…`](https://sepolia.etherscan.io/tx/0xa0739914026476b1d0b629de47938b19bed0c57c7a103437e60a6f31d2a04b4f) (`AuctionVoided`), and every remaining bid was refunded in full: bid 2, placed before the pause, [`0x60c9bc04…`](https://sepolia.etherscan.io/tx/0x60c9bc04f4a560f3e4983bfdb9b58d86bc59c00a20c79c0cbc9d6addc00c27a3), and bid 3, placed during it, [`0xb9a3d198…`](https://sepolia.etherscan.io/tx/0xb9a3d198ea1cd135683a1601a224edf543cc793695a7d9a68d22a451bb95a3f4) (the keeper's `claimBidFor`; bidder 3 then claimed the credit, [`0xbeb6573d…`](https://sepolia.etherscan.io/tx/0xbeb6573daed2244d8ef10fc4c953a9456056b43612ca3a7ae739be967c5e6913)). No copy was minted and the edition was never created. |
 | Settle and claims: `claimBid` and `claimBidFor` | **Pass.** Keeper settles [`0xfa395cca…`](https://sepolia.etherscan.io/tx/0xfa395cca32865c4e79393302b1af6515160198c8d3acd3643f31daa99aeae752) (token 2) and the sweep above (token 3); every bid claimed: `claimBid` by the bidder ([token 2 bid 1](https://sepolia.etherscan.io/tx/0x386c554930ef850474b9a0ff8466c632cafe0efa82d37ba92cb24c4edc76d79c), [token 3 bid 2](https://sepolia.etherscan.io/tx/0xaf261f8731869cfe3595d28935206bfd648bf25fad8e9dbe763a26fe8a777099) and two more) and `claimBidFor` by the keeper ([token 2 bid 4](https://sepolia.etherscan.io/tx/0x9e72ede93cf7ababa28cbc78e72c23799ce029133d59fc06d1d654cf3babc218), [token 3 bid 3, refund only](https://sepolia.etherscan.io/tx/0x5f727b4fabd3cd6ac68a76751196a26a03c66f18ae8b8142001b0d46967624eb) and nine more); the bidders then claimed their credited refunds (`claim`). |
 | `createEdition` by the keeper | **Pass.** The keeper, an EOA with no role, created both editions once their 1/1s settled: [`0x774d7e72…`](https://sepolia.etherscan.io/tx/0x774d7e7268c938fea4a78e6532deb6f1b52e86708e4f3a7730d0dbfc013e00a1), [`0xda8aaf6b…`](https://sepolia.etherscan.io/tx/0xda8aaf6b122df4c5f0360ba6b0f2b714465dfa0172f5821bc846327775fb2e55). |
 | A 1/1 sold above 0.05 ETH | **Pass.** Token 2 settled SOLD to bidder 1 at 0.055125 ETH, [`0x6a4e5916…`](https://sepolia.etherscan.io/tx/0x6a4e5916f20b46cc427130573b84ba0a11b2e49494a3d9502e3a537ab7f03e71). |
@@ -158,26 +158,15 @@ not. Without the hole, bid 2 (positions 1 and 2) would win nothing.
 | Bidder 3 tries to withdraw bid 3: **reverts** `WithdrawalsClosed` | [`0x719cd6e0…`](https://sepolia.etherscan.io/tx/0x719cd6e0254d863b2277a3d55e605c8380f5610edf67c79b68f8c9ff33eaf8e8) | 34,315 |
 | PLATFORM records the `DISPUTE_OUTCOME` about token 1 | [`0xcc6d2a00…`](https://sepolia.etherscan.io/tx/0xcc6d2a000b94317a9b388162eff86534593cd0a3ce2c439b6d18868fc5bf82f5) | 397,757 |
 | The hot admin Safe schedules `cancel(saleId, outcome)` on the manager | [`0x4eb73e04…`](https://sepolia.etherscan.io/tx/0x4eb73e04b11cd90d856032d76236f9f28d9ba39a2dbc62815caa2db123ad135d) | 188,105 |
+| 48 hours later, the hot admin Safe executes the cancel: the 1/1 is CANCELLED, the token burned | [`0x43560367…`](https://sepolia.etherscan.io/tx/0x435603677b32c2d48a6bf999300605a1c74260ce3951d2584bdf0c762f5b1b59) | 167,535 |
+| The keeper's `settle` voids the edition sale (`AuctionVoided`) | [`0xa0739914…`](https://sepolia.etherscan.io/tx/0xa0739914026476b1d0b629de47938b19bed0c57c7a103437e60a6f31d2a04b4f) | 45,740 |
+| Bidder 2 claims bid 2: its whole escrow back | [`0x60c9bc04…`](https://sepolia.etherscan.io/tx/0x60c9bc04f4a560f3e4983bfdb9b58d86bc59c00a20c79c0cbc9d6addc00c27a3) | 38,560 |
+| The keeper claims bid 3, the during-pause bid, for bidder 3: credited in full | [`0xb9a3d198…`](https://sepolia.etherscan.io/tx/0xb9a3d198ea1cd135683a1601a224edf543cc793695a7d9a68d22a451bb95a3f4) | 139,360 |
+| Bidder 3 claims the credit | [`0xbeb6573d…`](https://sepolia.etherscan.io/tx/0xbeb6573daed2244d8ef10fc4c953a9456056b43612ca3a7ae739be967c5e6913) | 32,391 |
 
 The pause began at 12:46:24 UTC, in minute 2 of the edition sale (counted from
 its open); bids 1 and 2 were placed in minute 0, bid 3 in minute 3. `withdrawalsOpen` read true
 from the pause on.
-
-### Pending (r4)
-
-From **3 November 2026, 12:48:00 UTC** (the schedule's ready time; it expires a week later, and
-the pause lapses on 8 November at 12:46:24 UTC), in the repository root with the operator's
-signer module (`Flow` is the helper under [Pending](#pending) below; r4 is the driver's
-default record):
-
-```powershell
-$r4 = @('-State', 'deployments/11155111/flows/r4.json')
-Flow @r4 -Step executeCancel -TokenId 1                    # the hot admin Safe: cancel, burn
-Flow @r4 -Step editionSettle -TokenId 1 -Label editionSettle-1-void   # AuctionVoided
-Flow @r4 -Step claimBid -TokenId 1 -BidId 2               # bidder 2: full refund
-Flow @r4 -Step claimBidFor -TokenId 1 -BidId 3            # bidder 3's during-pause bid
-Flow @r4 -Step claimCredits -Adapter edition -Bidder bidder3 -Label claimCredits-edition-bidder3-void
-```
 
 ### Gas (r4)
 
@@ -237,6 +226,11 @@ Flow @r4 -Step claimCredits -Adapter edition -Bidder bidder3 -Label claimCredits
 | [`editionWithdraw-1-during-pause-refused`](https://sepolia.etherscan.io/tx/0x719cd6e0254d863b2277a3d55e605c8380f5610edf67c79b68f8c9ff33eaf8e8) | reverted on purpose | 34,315 | 39,915 |
 | [`disputeOutcome-1`](https://sepolia.etherscan.io/tx/0xcc6d2a000b94317a9b388162eff86534593cd0a3ce2c439b6d18868fc5bf82f5) | PLATFORM statement | 397,757 | 138,897 |
 | [`scheduleCancel-1`](https://sepolia.etherscan.io/tx/0x4eb73e04b11cd90d856032d76236f9f28d9ba39a2dbc62815caa2db123ad135d) | hot admin Safe `execTransaction` → `manager.schedule` | 188,105 | 98,085 |
+| [`executeCancel-1`](https://sepolia.etherscan.io/tx/0x435603677b32c2d48a6bf999300605a1c74260ce3951d2584bdf0c762f5b1b59) | hot admin Safe → `manager.execute` → `cancel`: credits nothing (no standing bid), burns | 167,535 | 134,567 |
+| [`editionSettle-1-void`](https://sepolia.etherscan.io/tx/0xa0739914026476b1d0b629de47938b19bed0c57c7a103437e60a6f31d2a04b4f) | the void: one status write | 45,740 | 44,140 |
+| [`claimBid-1-2-void-refund`](https://sepolia.etherscan.io/tx/0x60c9bc04f4a560f3e4983bfdb9b58d86bc59c00a20c79c0cbc9d6addc00c27a3) | full refund sent | 38,560 | 39,899 |
+| [`claimBidFor-1-3-void-refund`](https://sepolia.etherscan.io/tx/0xb9a3d198ea1cd135683a1601a224edf543cc793695a7d9a68d22a451bb95a3f4) | full refund credited (new credit slot) | 139,360 | 56,956 |
+| [`claimCredits-edition-bidder3-void`](https://sepolia.etherscan.io/tx/0xbeb6573daed2244d8ef10fc4c953a9456056b43612ca3a7ae739be967c5e6913) | `claim` of the credit | 32,391 | 32,188 |
 
 Every other row is in [`flows/r4.json`](flows/r4.json). The content uploads
 ([`flows/r4-content.json`](flows/r4-content.json), 36 transactions) cost what they cost on r3,
@@ -260,7 +254,7 @@ row for row: `writeChunk` of 1,024, 8,192 and 24,572 bytes is 1,914,322,
 
 - The VRF request and fulfilment (r2 ran it), `openRecord` and `syncOnChain`, the views'
   gas, `refreshStanding`, ERC-20 and Permit2 bids, and governance operations other than the
-  pause and the scheduled cancel.
+  dispute pause and cancel.
 - The live Verify (due from 6 November 2026, 12:41:36 UTC;
   [README](README.md#sepolia-r4-1-november-2026-current)).
 - The state-gas reservoir test of the runbook's step 13.

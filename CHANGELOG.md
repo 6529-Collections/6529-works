@@ -14,8 +14,8 @@
   close, a capped sale with a hole at the cut step settled through the per-settler sweep,
   unbid 1/1s moved to the museum by Stream, a guardian's dispute pause with a pre-pause
   withdrawal and a refused during-pause withdrawal, a 1/1 sold at 0.055125 ETH, a refused 1-wei
-  bid, keeper `createEdition`, `claimBid` and `claimBidFor`; the dispute's cancel, which voids
-  that edition sale, is scheduled. The Sepolia driver (`script/sepolia/`) gains the edition
+  bid, keeper `createEdition`, `claimBid` and `claimBidFor`, and 48 hours after the pause the hot
+  admin Safe's cancel, which voided that edition sale and refunded its bids. The Sepolia driver (`script/sepolia/`) gains the edition
   auction's steps, Safe-relayed calls and on-chain refusals, and the deploy, genesis, manifest,
   gas and Sourcify helpers the run used. The integrator pages, the root README and
   `docs/facts.json` now name r4.

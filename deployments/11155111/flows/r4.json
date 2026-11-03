@@ -680,6 +680,51 @@
                     "gasUsed":  32391,
                     "status":  "0x1",
                     "prague":  32188
+                },
+                {
+                    "label":  "executeCancel-1",
+                    "from":  "any",
+                    "hash":  "0x435603677b32c2d48a6bf999300605a1c74260ce3951d2584bdf0c762f5b1b59",
+                    "block":  12055388,
+                    "gasUsed":  167535,
+                    "status":  "0x1",
+                    "prague":  134567
+                },
+                {
+                    "label":  "editionSettle-1-void",
+                    "from":  "any",
+                    "hash":  "0xa0739914026476b1d0b629de47938b19bed0c57c7a103437e60a6f31d2a04b4f",
+                    "block":  12055389,
+                    "gasUsed":  45740,
+                    "status":  "0x1",
+                    "prague":  44140
+                },
+                {
+                    "label":  "claimBid-1-2-void-refund",
+                    "from":  "bidder2",
+                    "hash":  "0x60c9bc04f4a560f3e4983bfdb9b58d86bc59c00a20c79c0cbc9d6addc00c27a3",
+                    "block":  12055391,
+                    "gasUsed":  38560,
+                    "status":  "0x1",
+                    "prague":  39899
+                },
+                {
+                    "label":  "claimBidFor-1-3-void-refund",
+                    "from":  "any",
+                    "hash":  "0xb9a3d198ea1cd135683a1601a224edf543cc793695a7d9a68d22a451bb95a3f4",
+                    "block":  12055392,
+                    "gasUsed":  139360,
+                    "status":  "0x1",
+                    "prague":  56956
+                },
+                {
+                    "label":  "claimCredits-edition-bidder3-void",
+                    "from":  "bidder3",
+                    "hash":  "0xbeb6573daed2244d8ef10fc4c953a9456056b43612ca3a7ae739be967c5e6913",
+                    "block":  12055394,
+                    "gasUsed":  32391,
+                    "status":  "0x1",
+                    "prague":  32188
                 }
             ],
     "notes":  {
@@ -1050,7 +1095,33 @@
                                                                    "cutUnits":  "4",
                                                                    "cutoff":  "0",
                                                                    "departures":  "0"
-                                                               }
+                                                               },
+                                    "token1-cancelled":  {
+                                                             "block":  12055388,
+                                                             "timestamp":  1793710128,
+                                                             "saleId":  "22578639751586519314291313133437088392136428315718717390142377225298568176216",
+                                                             "state":  "5",
+                                                             "endTime":  "1793540640",
+                                                             "bidder":  "0x0000000000000000000000000000000000000000",
+                                                             "bid":  "50000000000000000",
+                                                             "pausedAt":  "0"
+                                                         },
+                                    "token1-edition-void":  {
+                                                                "block":  12055389,
+                                                                "timestamp":  1793710140,
+                                                                "saleId":  "54774129013530628018849617569485322045492474593301590840614219553081843702620",
+                                                                "status":  "5",
+                                                                "bidCount":  "3",
+                                                                "liveUnits":  "2",
+                                                                "oneOfOneEnd":  "1793540640",
+                                                                "closeAt":  "1793541540",
+                                                                "softEnd":  "0",
+                                                                "endTime":  "1793541540",
+                                                                "backstop":  "1793627940",
+                                                                "oneOfOneState":  "5",
+                                                                "biddingOpen":  "false",
+                                                                "withdrawalsOpen":  "false"
+                                                            }
                                 },
                   "nextMoveNonce":  4,
                   "cancelOperation-1":  "0xfee38ae8e7254a1affe8e5146b8bccac8ca4855f6970a62bddfb7cc9b73772f4"
