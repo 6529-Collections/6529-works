@@ -1419,6 +1419,9 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         assertTrue(auction.settle(saleId, rest));
         (swept,,) = lens.sweepOf(saleId, address(this));
         assertEq(swept, 0, "a finished sweep leaves no progress behind");
+        // Settled: no order is left for anyone, though the clearing step logged departures.
+        assertEq(ua.settlementOrder(saleId).length, 0);
+        assertEq(lens.settlementOrderFor(saleId, makeAddr("late settler")).length, 0);
         // Cap 5: 4 at step 11, 1 at step 10 to the first live unit (carol at position 4).
         assertEq(_claimAll(saleId), 5);
         assertEq(editions.balanceOf(carol, ID), 1);

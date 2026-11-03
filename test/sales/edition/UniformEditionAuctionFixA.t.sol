@@ -231,6 +231,9 @@ contract UniformEditionAuctionFixATest is EditionAuctionBase {
         paidOut += balance - address(auction).balance;
         uint256[] memory next = lens.settlementOrderFor(saleId, address(this), 0, 96);
         assertEq(next[0], all[16]);
+        // A page asked from further on starts there, past the settler's own progress.
+        uint256 later = log[all[40]].position;
+        assertEq(lens.settlementOrderFor(saleId, address(this), later, 1)[0], all[40]);
         // Another settler still starts from the beginning.
         assertEq(lens.settlementOrderFor(saleId, makeAddr("other"), 0, 1)[0], all[0]);
     }

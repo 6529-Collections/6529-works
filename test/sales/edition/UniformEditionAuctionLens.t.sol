@@ -205,13 +205,20 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         lens.canWithdraw(saleId, 1);
         vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.InvalidStep.selector, 336));
         ua.stepPrice(saleId, 336);
+        vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.InvalidStep.selector, 337));
+        ua.stepPrice(saleId, 337);
         vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.InvalidStep.selector, 336));
         ua.quote(saleId, 336, 1);
+        vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.InvalidStep.selector, 337));
+        ua.quote(saleId, 337, 1);
         vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.InvalidQuantity.selector, 0));
         ua.quote(saleId, 3, 0);
         vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.InvalidQuantity.selector, 0));
         ua.lowestWinningStep(saleId, 0);
-        // A quantity the book's 32-bit unit count cannot hold, even with no bids in it.
+        // The book's 32-bit unit count holds a quote of its whole range, and not one more.
+        assertEq(ua.quote(saleId, 3, type(uint32).max).unitsWon, type(uint32).max);
+        (bool found,) = ua.lowestWinningStep(saleId, type(uint32).max);
+        assertTrue(found);
         uint256 tooMany = uint256(type(uint32).max) + 1;
         vm.expectRevert(
             abi.encodeWithSelector(IUniformEditionAuction.InvalidQuantity.selector, tooMany)
