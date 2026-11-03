@@ -55,7 +55,7 @@ pins, with the finding's ID in a `/// Regression:` NatSpec line
 | Coverage (`.github/workflows/strength.yml`) | every push to `main`, every day at 04:30 UTC, and on demand | `forge coverage` under the lite profile; the per-contract table in the job summary; fails when a contract drops below its floor; uploads `lcov.info` | about 4 min | no (not on pull requests) |
 | Symbolic (Halmos) (`strength.yml`) | as Coverage | every `check_*` in `test/symbolic`, one test contract at a time; fails unless every declared proof passes | about 7 min (31 proofs) | no (not on pull requests) |
 | Nightly (`.github/workflows/nightly.yml`) | every day at 03:30 UTC, and on demand | the invariant suites under the `deep` profile (2,000 runs of depth 256), economics and the others in two jobs of up to 3 hours; the fork tests in `test/fork` against public mainnet and Sepolia endpoints | about an hour | no (scheduled) |
-| Mutation (`.github/workflows/mutation.yml`) | weekly, Sunday 02:00 UTC, and on demand; one small shard when a push to `main` changes the workflow or the tool | every shard of `tools/mutation.py`, eight jobs at a time; the merged report in the run summary; fails when a planned shard left no results, or a contract's kill rate drops below its floor | several hours | no (scheduled) |
+| Mutation (`.github/workflows/mutation.yml`) | weekly, Sunday 02:00 UTC, and on demand; one small shard when a push to `main` changes the workflow or the tool | every shard of `tools/mutation.py`, eight jobs at a time, each stopped at a 335-minute budget; the merged report in the run summary, with a row for every planned file; fails, naming the shard or contract, when a planned shard left no results or ran out of its budget, a contract has no floor, or a contract's kill rate drops below its floor | several hours | no (scheduled) |
 
 `forge test` runs in three parts whose filters together select every test exactly once (2,486
 tests at v1.0.0-rc.1: 2,411, 7 and 68), so the parts run on separate runners. Each
@@ -137,19 +137,31 @@ python tools/mutation.py report mutation --markdown mutation/report.md
 - **CONST.** slither-mutate never changes a `constant`, and the protocol's limits are
   constants, so `tools/mutation.py` adds one rule: every integer-literal constant is moved one
   up and one down, and each change must fail a test.
-- **How a shard runs.** One shard per src/ file. The seven largest files (`Renderer`,
-  `JsonScan`, `PackageRegistry`, `ArtistRegistry`, `EnglishAuction`, `Stream`, `WorkRecords`)
-  are split into four shards that run in parallel: statements (revert, comment, CONST),
+- **How a shard runs.** One shard per src/ file, planned from the tree, so a new file gets
+  its shard with nothing to register. The thirteen files whose whole shard does not finish in
+  a 6-hour CI job (`ContentStore`, `JsonScan`, `Renderer`, `PackageRegistry`,
+  `GovernanceConfig`, `ArtistRegistry`, `EnglishAuction`, `EnglishAuctionLens`,
+  `UniformClearing`, `UniformEditionAuction`, `UniformEditionAuctionLens`, `Stream`,
+  `WorkRecords`; `SPLIT_FILES` in the tool) are split into four shards that run in parallel:
+  statements (revert, comment, CONST),
   arithmetic, logical and unary operators, relational operators, and `if` conditions. They skip
   the other eight operators, which on these files gave hours of almost only equivalent or
   repeated mutants (nine assignment variants of one subtraction, a literal 0 replaced by 0,
-  `storage` read as `memory`); every other file runs all fifteen. On those seven files the
+  `storage` read as `memory`, a `constant` read as `immutable`); every other file runs all
+  fifteen. On those files the
   relational shard makes two replacements per comparison (the boundary shift and the equality
   flip, which subsume the other three) instead of five. Each mutant runs the tests of its
   module first, under the `lite` profile with `--fail-fast`; every survivor then runs against
   the whole suite, so a mutant an integration test kills counts as killed. A mutant whose
   tests time out (20 minutes) counts as killed, as slither-mutate counts it; the report
-  lists how many.
+  lists how many. In CI a shard also has a 335-minute budget (`run --budget`), below the job's
+  6-hour limit: a shard still running then stops, restores `src/`, and reports `timeout`, where
+  a cancelled job would leave no results at all. A file that times out belongs in
+  `SPLIT_FILES`.
+- **The report.** `report --shards` takes the run's plan, so every planned file gets a row. A
+  planned shard that left no results (a cancelled job, a lost runner) marks its file
+  `missing` and names the shard, and a split file with some groups missing is not scored as if
+  it were whole. The run fails with an annotation per contract.
 - **Limits.** Inside inline assembly slither-mutate only comments out statements (its operator
   rules read Solidity expressions), so the word-level logic of `Utf8`, `JsonEscape`,
   `JsonScan`, `DataUri`, `HtmlScript`, `Base64Validator` and `SSTORE2` gets fewer mutants than
@@ -159,10 +171,12 @@ python tools/mutation.py report mutation --markdown mutation/report.md
   changes gas and not results. A gas test can kill a mutant that only makes the code more
   expensive; that still shows the change is observable.
 - **Floors.** [`tools/mutation-floors.json`](../../tools/mutation-floors.json) holds a
-  kill-rate floor per contract, a baseline minus 2 points, and `report --floors` fails when a
-  contract drops below its floor.
+  kill-rate floor per contract, a measured rate minus 2 points (`margin`) rounded down to a
+  whole point, and `report --floors` fails when a contract drops below its floor, did not
+  finish, or has mutants and no floor (so a new src/ file gets one from its first run).
   `python tools/mutation.py report mutation --write-floors tools/mutation-floors.json`
-  rewrites them from a run.
+  writes the floors of the contracts a run measured and keeps the others. A unit test checks
+  that every floor names a src/ file with code.
 - **slither-mutate 0.11.6 fixes.** `tools/mutation.py` runs slither-mutate through a shim
   that fixes three bugs found here. ROR (relational operators) aborted on the first Yul
   comparison it met, which silently dropped every relational mutant of the eight contracts
