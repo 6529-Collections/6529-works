@@ -165,7 +165,8 @@ class Survivor:
 class FileResult:
     path: str
     # ok; aborted (the unmutated suite failed); error (slither-mutate failed); timeout (the
-    # shard ran out of its --budget); missing (a planned shard left no results, see `missing`).
+    # shard ran out of its --budget before every mutant had run against its module's tests);
+    # missing (a planned shard left no results, see `missing`).
     status: str = "ok"
     caught: dict[str, int] = field(default_factory=lambda: {c: 0 for c in CATEGORIES})
     total: dict[str, int] = field(default_factory=lambda: {c: 0 for c in CATEGORIES})
@@ -181,6 +182,11 @@ class FileResult:
     @property
     def mutants(self) -> int:
         return sum(self.total.values())
+
+    @property
+    def unrechecked(self) -> int:
+        """Survivors left out of the re-check (the budget ran out): the rate is a lower bound."""
+        return sum(1 for s in self.survivors if s.recheck == "not-rechecked")
 
     @property
     def killed(self) -> int:
@@ -371,7 +377,10 @@ def _patch_mutators() -> None:
                         if use_sufficient
                         else [op for op in ROR.relational_operators if op != ir.type]
                     )
+                    skip = unsigned_zero_equivalent(ir.type.value, _zero_side(ir))
                     for op in replacements:
+                        if op.value == skip:
+                            continue
                         new_str = old_str.replace(ir.type.value, op.value)
                         create_patch_with_line(
                             result, self.in_file, start, stop, old_str, new_str,
@@ -379,7 +388,39 @@ def _patch_mutators() -> None:
                         )
         return result
 
+    def _zero_side(ir) -> str | None:
+        """'right' for `x OP 0` with `x` unsigned, 'left' for `0 OP x`, otherwise None."""
+        from slither.slithir.variables import Constant
+
+        def zero(v) -> bool:
+            return isinstance(v, Constant) and v.value == 0
+
+        def unsigned(v) -> bool:
+            return str(v.type).startswith("uint")
+
+        if zero(ir.variable_right) and unsigned(ir.variable_left):
+            return "right"
+        if zero(ir.variable_left) and unsigned(ir.variable_right):
+            return "left"
+        return None
+
     ROR.ROR._mutate = ror_mutate
+
+
+# For an unsigned `x`, the replacement of a comparison with the literal 0 that cannot change
+# its result: `x == 0` read as `x <= 0`, `x != 0` as `x > 0`, `x > 0` as `x != 0`, `x <= 0` as
+# `x == 0`, and the mirrors with the zero on the left. Each one survives, and each survivor
+# costs a re-check against the whole suite (minutes), so ROR does not make them.
+_UNSIGNED_ZERO_EQUIVALENTS = {
+    "right": {"==": "<=", "!=": ">", ">": "!=", "<=": "=="},
+    "left": {"==": ">=", "!=": "<", "<": "!=", ">=": "=="},
+}
+
+
+def unsigned_zero_equivalent(operator: str, zero_side: str | None) -> str | None:
+    """The replacement of `operator` that is equivalent when one operand is unsigned and the
+    other the literal 0, on `zero_side` ('right' or 'left'); None otherwise."""
+    return _UNSIGNED_ZERO_EQUIVALENTS.get(zero_side or "", {}).get(operator)
 
 
 def _python() -> str:
@@ -583,13 +624,17 @@ def run_constants(
 def recheck(
     root: Path, result: FileResult, out: Path, timeout: float, deadline: Deadline
 ) -> None:
-    """Runs each survivor against the whole suite; restores the source afterwards."""
+    """Runs each survivor against the whole suite; restores the source afterwards.
+
+    Every mutant has run against its module's tests by then, so a spent budget leaves nothing
+    unmeasured: the survivors not re-checked stay `not-rechecked` and count as survived, which
+    makes the kill rate a lower bound (the report says how many).
+    """
     source = root / result.path
     original = source.read_bytes()
     try:
         for i, s in enumerate(result.survivors):
             if deadline.passed:
-                result.status = "timeout"
                 return
             mutant = Path(s.mutant_file)
             if not mutant.is_file():
@@ -602,8 +647,7 @@ def recheck(
                 deadline.cap(timeout),
             )
             if code == -1 and deadline.passed:
-                result.status = "timeout"
-                return
+                return  # the budget ran out, not the mutant's own time: left not re-checked
             s.recheck = "survived" if code == 0 else "timeout" if code == -1 else "killed"
     finally:
         source.write_bytes(original)
@@ -637,6 +681,13 @@ def run_shard(root: Path, shard: Shard, out: Path, do_recheck: bool, timeout: in
         print(
             f"[{shard.name}] stopped at its {budget / 60:.0f}-minute budget; the report lists "
             f"{shard.path} as `timeout`{hint}",
+            file=sys.stderr,
+            flush=True,
+        )
+    elif result.unrechecked:
+        print(
+            f"[{shard.name}] the budget ran out while re-checking: {result.unrechecked} "
+            "survivors were not re-checked and count as survived",
             file=sys.stderr,
             flush=True,
         )
@@ -747,6 +798,15 @@ def markdown(results: list[FileResult]) -> str:
         lines.append(f"**{len(unfinished)} contract(s) without a complete result:**")
         lines.append("")
         lines.extend(f"- `{r.path}`: {_status(r)}" for r in unfinished)
+        lines.append("")
+    partial = [r for r in results if r.status == "ok" and r.unrechecked]
+    if partial:
+        lines.append(
+            "**Lower bounds:** the budget ran out while these re-checked survivors against the "
+            "whole suite; a survivor not re-checked counts as survived."
+        )
+        lines.append("")
+        lines.extend(f"- `{r.path}`: {r.unrechecked} not re-checked" for r in partial)
         lines.append("")
     lines += [
         "| Contract | Mutants | Killed | Survived | Kill rate | Revert | Comment | Tweak | "
@@ -941,7 +1001,7 @@ def main(argv: list[str] | None = None) -> int:
             summary = {
                 r.path: {"mutants": r.mutants, "killed": r.killed, "kill_rate": kill_rate(r),
                          "timeouts": r.timeouts, "status": r.status, "shards": r.shards,
-                         "missing_shards": r.missing}
+                         "missing_shards": r.missing, "not_rechecked": r.unrechecked}
                 for r in results
             }
             args.json.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8",

@@ -155,9 +155,15 @@ python tools/mutation.py report mutation --markdown mutation/report.md
   the whole suite, so a mutant an integration test kills counts as killed. A mutant whose
   tests time out (20 minutes) counts as killed, as slither-mutate counts it; the report
   lists how many. In CI a shard also has a 335-minute budget (`run --budget`), below the job's
-  6-hour limit: a shard still running then stops, restores `src/`, and reports `timeout`, where
-  a cancelled job would leave no results at all. A file that times out belongs in
-  `SPLIT_FILES`.
+  6-hour limit, where a cancelled job would leave no results at all. A shard still mutating
+  then stops, restores `src/`, and reports `timeout` (its file belongs in `SPLIT_FILES`). A
+  shard still re-checking has run every mutant against its module's tests: it stops there,
+  the survivors it did not re-check count as survived, and the report lists the contract's
+  rate as a lower bound with how many were left.
+- **Zero comparisons.** For an unsigned value, `x == 0` read as `x <= 0` (and `x != 0` as
+  `x > 0`, `x > 0` as `x != 0`, `x <= 0` as `x == 0`, and the mirrors) cannot change anything,
+  and each such survivor cost a full re-check, so the fixed ROR does not make those
+  replacements; it makes every other one.
 - **The report.** `report --shards` takes the run's plan, so every planned file gets a row. A
   planned shard that left no results (a cancelled job, a lost runner) marks its file
   `missing` and names the shard, and a split file with some groups missing is not scored as if

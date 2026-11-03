@@ -141,7 +141,9 @@ class BudgetTest(unittest.TestCase):
         self.assertTrue(mt.Deadline(0).passed)
         self.assertEqual(mt.Deadline(0).cap(1200), 0)
 
-    def test_a_spent_budget_stops_the_constants_and_the_recheck_as_timeout(self) -> None:
+    def test_a_spent_budget_ends_the_constants_as_timeout_and_the_recheck_as_a_lower_bound(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             source = root / "src" / "x" / "Thing.sol"
@@ -157,9 +159,29 @@ class BudgetTest(unittest.TestCase):
             r = mt.FileResult(shard.path)
             mt.parse_log(LOG, r)
             mt.recheck(root, r, root, 60, mt.Deadline(0))
-            self.assertEqual(r.status, "timeout")
-            self.assertTrue(all(s.recheck == "not-rechecked" for s in r.survivors))
+            # Every mutant ran against its module's tests: complete, the rate a lower bound.
+            self.assertEqual(r.status, "ok")
+            self.assertEqual(r.unrechecked, 4)
+            self.assertEqual(r.killed, 30)
             self.assertEqual(source.read_bytes(), CONSTANTS.encode("utf-8"))
+        text = mt.markdown([r])
+        self.assertIn("**Lower bounds:**", text)
+        self.assertIn("- `src/x/Thing.sol`: 4 not re-checked", text)
+
+
+class RorTest(unittest.TestCase):
+    def test_the_replacements_equivalent_for_an_unsigned_comparison_with_zero(self) -> None:
+        eq = mt.unsigned_zero_equivalent
+        # x == 0, x != 0, x > 0, x <= 0 (zero on the right) and their mirrors.
+        self.assertEqual(
+            [eq(op, "right") for op in ("==", "!=", ">", "<=", "<", ">=")],
+            ["<=", ">", "!=", "==", None, None],
+        )
+        self.assertEqual(
+            [eq(op, "left") for op in ("==", "!=", "<", ">=", ">", "<=")],
+            [">=", "<", "!=", "==", None, None],
+        )
+        self.assertIsNone(eq("==", None))  # not a comparison of an unsigned value with zero
 
 
 class ConstantTest(unittest.TestCase):
