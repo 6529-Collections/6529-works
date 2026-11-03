@@ -319,13 +319,14 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
 
     /// @dev `departures` counts the clearing step's departures only when the cap binds there:
     ///      a capped sale that clears below its cap, with a departure at the clearing step,
-    ///      reports none, and settles in one call with nothing to sweep.
+    ///      reports none, settles in one call with nothing to sweep, and has no settlement
+    ///      order once settled.
     function test_Lens_NoDeparturesWhenTheCapDoesNotBind() public {
         uint256 saleId = _open(10);
-        _bid(saleId, alice, 10, 2);
-        _bid(saleId, bob, 10, 1);
-        _raise(saleId, 2, 11);
-        assertEq(ua.departures(saleId, 10).length, 1);
+        _bid(saleId, alice, 0, 2);
+        _bid(saleId, bob, 0, 1);
+        _raise(saleId, 2, 1);
+        assertEq(ua.departures(saleId, 0).length, 1);
         _closeOneOfOne(saleId);
         editions.setExists(ID, true);
         uint256 balance = address(auction).balance;
@@ -335,10 +336,12 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
             uint8(ua.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.SETTLED)
         );
         IUniformEditionAuction.Settlement memory s = ua.settlement(saleId);
-        assertEq(s.step, 10);
+        assertEq(s.step, 0);
         assertEq(s.count, 3);
         assertFalse(s.rationed);
         assertEq(s.departures, 0);
+        assertEq(ua.settlementOrder(saleId).length, 0);
+        assertEq(lens.settlementOrderFor(saleId, address(this)).length, 0);
     }
 
     function test_Lens_NoWinningStepWhenTheCapIsFilledAtTheTop() public {
