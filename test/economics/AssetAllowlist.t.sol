@@ -178,6 +178,46 @@ contract AssetAllowlistTest is EconomicsBase {
         allowlist.deprecateAsset(bob);
     }
 
+    /// @dev `statusClock` (MARKET-1, MARKET-2): `since` is the latest status change, and
+    ///      `inactiveTotal` the seconds spent in closed deprecations: zero on a first admission
+    ///      (ETH's, at construction, too), each deprecation's length added when the asset is
+    ///      admitted again, and an open deprecation not counted until then.
+    function test_StatusClock_AddsEachClosedDeprecation() public {
+        (IAssetAllowlist.Status status, uint256 since, uint256 inactive) =
+            allowlist.statusClock(ETH);
+        assertEq(uint8(status), uint8(IAssetAllowlist.Status.Active));
+        assertEq(inactive, 0);
+
+        vm.warp(1_000_000);
+        allowlist.admitAsset(address(usdc), 0, 1e6);
+        (status, since, inactive) = allowlist.statusClock(address(usdc));
+        assertEq(uint8(status), uint8(IAssetAllowlist.Status.Active));
+        assertEq(since, 1_000_000);
+        assertEq(inactive, 0, "a first admission closes no deprecation");
+
+        uint256 first = Roles.FUNDS + 5;
+        allowlist.deprecateAsset(address(usdc));
+        vm.warp(block.timestamp + first);
+        (status, since, inactive) = allowlist.statusClock(address(usdc));
+        assertEq(uint8(status), uint8(IAssetAllowlist.Status.Deprecated));
+        assertEq(since, 1_000_000);
+        assertEq(inactive, 0, "an open deprecation is not counted yet");
+        allowlist.admitAsset(address(usdc), 2, 1e6);
+        (status, since, inactive) = allowlist.statusClock(address(usdc));
+        assertEq(uint8(status), uint8(IAssetAllowlist.Status.Active));
+        assertEq(since, block.timestamp);
+        assertEq(inactive, first);
+
+        uint256 second = Roles.FUNDS + 7;
+        vm.warp(block.timestamp + 11);
+        allowlist.deprecateAsset(address(usdc));
+        vm.warp(block.timestamp + second);
+        allowlist.admitAsset(address(usdc), 4, 1e6);
+        (, since, inactive) = allowlist.statusClock(address(usdc));
+        assertEq(since, block.timestamp);
+        assertEq(inactive, first + second, "the active time between is not counted");
+    }
+
     function test_EveryAssetChangeBumpsTheRevision() public {
         allowlist.admitAsset(address(usdc), 0, 1e6);
         assertEq(_revision(address(usdc)), 1);

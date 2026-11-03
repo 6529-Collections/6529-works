@@ -8,7 +8,7 @@ import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol"
 import { Roles } from "src/governance/Roles.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { ICurationSignerVerifier, ICurationVerifier } from "src/interfaces/ICurationVerifier.sol";
-import { ERC1271WalletMock } from "test/mocks/libraries/AdversarialTargets.sol";
+import { ERC1271WalletMock, ReturnDataMock } from "test/mocks/libraries/AdversarialTargets.sol";
 import { CurationBase } from "./CurationBase.sol";
 
 contract Eip712CurationVerifierTest is CurationBase {
@@ -66,6 +66,8 @@ contract Eip712CurationVerifierTest is CurationBase {
         assertTrue(verifier.supportsInterface(type(ICurationVerifier).interfaceId));
         assertTrue(verifier.supportsInterface(type(ICurationSignerVerifier).interfaceId));
         assertFalse(verifier.supportsInterface(0xffffffff));
+        // Below every supported ID, too: each check is an equality, not an ordering.
+        assertFalse(verifier.supportsInterface(0x00000000));
     }
 
     // ------------------------------------------------------------------------ isApproved
@@ -260,6 +262,9 @@ contract Eip712CurationVerifierTest is CurationBase {
         bytes memory offset = bytes.concat(good);
         offset[63] = 0x60;
         assertFalse(_approved(verifier, ROOT, EVIDENCE, offset));
+        // An offset below 0x40 is no more canonical than one above it.
+        offset[63] = 0x20;
+        assertFalse(_approved(verifier, ROOT, EVIDENCE, offset));
         bytes memory long = bytes.concat(good);
         long[95] = 0xff;
         assertFalse(_approved(verifier, ROOT, EVIDENCE, long));
@@ -289,6 +294,23 @@ contract Eip712CurationVerifierTest is CurationBase {
         bytes memory compact =
             _compact(signerKey1, verifier.approvalDigest(ROOT, EVIDENCE, _epoch1()));
         assertTrue(_approved(verifier, ROOT, EVIDENCE, abi.encode(signer1, compact)));
+    }
+
+    /// @dev The decoder's length bounds, seen through a contract signer that accepts any
+    ///      signature: the shortest attestation (96 bytes, an empty signature) and a signature of
+    ///      exactly `MAX_SIGNATURE_LENGTH` bytes both reach the signer; one byte more never does.
+    function test_isApproved_signatureLengthBoundsForAContractSigner() public {
+        ReturnDataMock anySignature = new ReturnDataMock();
+        anySignature.configure(abi.encode(bytes4(0x1626ba7e)), false);
+        vm.prank(admin);
+        manager.grantRole(Roles.CURATION_SIGNER, address(anySignature), 0);
+        bytes memory empty = abi.encode(address(anySignature), new bytes(0));
+        assertEq(empty.length, 96);
+        assertTrue(_approved(verifier, ROOT, EVIDENCE, empty));
+        bytes memory atCap = abi.encode(address(anySignature), new bytes(4096));
+        assertTrue(_approved(verifier, ROOT, EVIDENCE, atCap));
+        bytes memory overCap = abi.encode(address(anySignature), new bytes(4097));
+        assertFalse(_approved(verifier, ROOT, EVIDENCE, overCap));
     }
 
     function testFuzz_isApproved_neverRevertsOnGarbage(bytes calldata garbage) public view {
