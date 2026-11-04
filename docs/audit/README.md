@@ -76,9 +76,11 @@ Areas where a small change has large effects, or where the review concentrated:
   them: [internal-review-2026-10.md](../security/internal-review-2026-10.md).
 - **Static analysis.** Slither runs in CI; every High or Medium finding has a reviewed row in
   the [triage record](../security/slither-triage.md).
-- **Sepolia.** Two rehearsal deployments with the mainnet Safe structure, and every v1 flow run
-  on them under Glamsterdam pricing ([flows](../../deployments/11155111/flows.md)). They run
-  source that predates the review fixes.
+- **Sepolia.** Four testnet rehearsals with the mainnet Safe structure and throwaway signers,
+  their flows measured under Glamsterdam pricing ([flows](../../deployments/11155111/flows.md)).
+  r4 (1 November 2026) runs the code of `v1.0.0-rc.2`, verified on Sourcify; its live Verify is
+  due from 6 November 2026, 12:41:36 UTC. r3 runs `v1.0.0-rc.1`. Flows not yet run on Sepolia
+  are listed there.
 
 ## Reporting
 

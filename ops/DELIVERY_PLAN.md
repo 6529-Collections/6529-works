@@ -63,40 +63,49 @@ script/          deployment and verification
 
 ## Current status
 
-**16 October 2026: release candidate
-[v1.0.0-rc.1](../docs/releases/v1.0.0-rc.1.md).** Phases 1 to 6 are complete. Phase 7
-(testnet) has four Sepolia rehearsals: r3 is RC1's code, and r4 (1 November 2026) the rc.2
-candidate, `1e7022b`, with the uniform edition auction run on chain
+**4 November 2026: release candidate
+[v1.0.0-rc.2](../docs/releases/v1.0.0-rc.2.md).** Phases 1 to 6 are complete. Phase 7
+(testnet) has four Sepolia rehearsals: r4 (1 November 2026) runs rc.2's code, `1e7022b`, with
+the uniform edition auction run on chain
 ([record](../deployments/11155111/README.md#sepolia-r4-1-november-2026-current),
-[flows](../deployments/11155111/flows.md#r4-the-rc2-candidate-1-november-2026)). The items under
-"Open in phase 7" are still to do. The code is pre-audit and not production-ready.
+[flows](../deployments/11155111/flows.md#r4-the-rc2-candidate-1-november-2026)), and r3 runs
+[v1.0.0-rc.1](../docs/releases/v1.0.0-rc.1.md). The items under "Open in phase 7" are still to
+do. The code is pre-audit and not production-ready: no external audit has started, and r4 is a
+testnet rehearsal whose live Verify is due from 6 November 2026, 12:41:36 UTC.
 
-**What RC1 is.** The tag on `main` whose contracts, deploy and verify scripts, genesis policy and
-`foundry.toml` are those of `e5fe78c`, the code deployed as Sepolia rehearsal r3. It holds every
-v1 module of [ADR 0001](../docs/adr/0001-v1-scope.md), as amended by ADRs
-[0002](../docs/adr/0002-access-manager-hardening.md),
-[0003](../docs/adr/0003-build-time-decisions.md) and
-[0004](../docs/adr/0004-gas-budgets-under-glamsterdam.md), and what the October work added to
-them: the review fixes, the state-growth gas diet and the source-quality pass.
+**What rc.2 is.** The tag on `main` whose contracts, deploy and verify scripts, genesis policy and
+`foundry.toml` are those of `1e7022b`, the code deployed as Sepolia rehearsal r4. To rc.1 it adds
+[ADR 0005](../docs/adr/0005-stream-editions-auction.md)'s 6529 Stream Editions auction
+(`UniformEditionAuction`, its lens, `UniformClearing` and `StepLadder`); generic editions bound
+to the adapter that sells them (`bindMinter`), with the fixed-price and Dutch adapters removed;
+the museum rule and 6529 Stream's record of each 1/1's primary-sale outcome; pluggable 1/1 sale
+methods and governed dependencies; the fixes of the rc.2 seven-lens review (passes A, B and C)
+and the rescue-settle fix; and the owner's decisions of 31 October and 1 November 2026 (ADR 0005
+and [ADR 0001](../docs/adr/0001-v1-scope.md)'s amendments).
 
-**The evidence** (figures in the [release notes](../docs/releases/v1.0.0-rc.1.md#evidence)):
-- an [internal adversarial review](../docs/security/internal-review-2026-10.md) by AI agents: no
-  Critical or High finding, 9 Medium and 30 Low; every Medium and 28 Lows fixed in #51 to #57;
+**The evidence** (figures in the [release notes](../docs/releases/v1.0.0-rc.2.md#evidence)):
+- adversarial reviews by AI agents, neither an external audit: the October
+  [internal review](../docs/security/internal-review-2026-10.md) (no Critical or High finding,
+  9 Medium and 30 Low; every Medium and 28 Lows fixed in #51 to #57), and the rc.2 seven-lens
+  review, fixed in passes A, B and C (#90, #89, #87), with a Low from the review of #91 fixed in
+  #92;
 - the test suite: unit, fuzz, integration and fork tests, stateful invariants on every contract
-  that moves money and on the wired stack, per-contract coverage and mutation floors, and Halmos
-  proofs over the text, base64, bounded-call, signer-epoch and split libraries
-  ([Testing](../docs/testing/README.md));
+  that moves money, on the wired stack and on the edition auction, a differential fuzz of the
+  edition auction against a brute-force reference, per-contract coverage and mutation floors,
+  and Halmos proofs over the text, base64, bounded-call, signer-epoch and split libraries and the
+  edition auction's clearing and step ladder ([Testing](../docs/testing/README.md));
 - the gas budgets of ADR 0004, in Prague gas with exact counts of new slots and accounts, gated
   in CI;
-- Sepolia r3: every contract an exact match on Sourcify, Verify passing on a fork advanced five
-  days, and the lifecycle measured on chain
-  ([record](../deployments/11155111/README.md#sepolia-r3-15-october-2026-superseded-by-r4),
-  [flows](../deployments/11155111/flows.md#r3-the-release-candidate-15-october-2026)).
+- Sepolia r4: every contract an exact match on Sourcify, Verify passing on a fork advanced five
+  days, and the rc.2 flows measured on chain
+  ([record](../deployments/11155111/README.md#sepolia-r4-1-november-2026-current),
+  [flows](../deployments/11155111/flows.md#r4-the-rc2-candidate-1-november-2026)).
 
 **Open in phase 7:**
 - r3's settlements, edition sale and purchases, and a real anti-snipe bid, from 16 October
   2026, 20:35 UTC; until then those rows are simulated;
-- the live Verify: r1 and r2 from 16 October, r3 from 20 October, r4 from 6 November 2026;
+- the live Verify: r1 and r2 from 16 October, r3 from 20 October, r4 from 6 November 2026,
+  12:41:36 UTC;
 - the flows not yet run on Sepolia: guardian and admin operations other than r4's dispute
   pause and cancel (which voided an edition sale and refunded it), and a
   recovery or identity change (each needs a Safe or waits a governed delay); finalize and
@@ -105,13 +114,13 @@ them: the review fixes, the state-growth gas diet and the source-quality pass.
 - Etherscan verification, which needs an API key (Sourcify is done);
 - the marketplace and metadata rendering matrix
   ([launch checklist](https://github.com/6529-Collections/6529-works/issues/1));
-- the first weekly mutation measurement of `src/libraries/Dependency.sol`, which #66 added
-  after the campaign: it has no baseline row or floor yet. The rest of the
-  [mutation baseline](../docs/testing/mutation-baseline.md) is complete (#69, #72), with every
-  open gap closed (#73).
+- the fork deploy simulation (`test/fork/DeploySimulationFork.t.sol`): it still runs r3's inputs
+  and expects rc.1's 15 governed contracts and 19 wiring calls, where rc.2 deploys 14 and 18, so
+  it has failed in the nightly run since 1 November 2026. The other fork tests pass.
 
 **Next (phase 8, audit and mainnet):**
-1. **External audit** of RC1, with the [auditor pack](../docs/audit/README.md) and the review's
+1. **External audit** of the release candidate, with the [auditor pack](../docs/audit/README.md)
+   and the review's
    [residual risks](../docs/security/internal-review-2026-10.md#6-residual-risks-and-recommended-next-steps);
    then remediation and a new release candidate.
 2. **Mainnet prerequisites:**
@@ -119,8 +128,11 @@ them: the review fixes, the state-growth gas diet and the source-quality pass.
      the fixed gas allowances (`DELIVERY_GAS`, `PAYOUT_GAS`, the auction's ERC-20 payout frame,
      the VRF callback limit, the claim router's minimums and shortfall ceiling, the
      consolidation read stipend) and the state-gas reservoir (runbook step 13);
-   - the Safes with hardware-wallet signers: the hot and cold admin Safes and three guardian
-     Safes, with no shared signer, and the operational keys;
+   - the network-held role holders of owner decision 18
+     ([LIM-GV-18](../docs/audit/known-limitations.md)): a community council for the delayed
+     roles, a security council holding PAUSER and GUARDIAN as three guardian Safes with disjoint
+     signers, and a dedicated curation signer, with hardware-wallet signers; and the
+     operational keys;
    - the deployment ceremony from the [runbook](../script/README.md), then Verify after the
      5-day setback.
 3. **6529 Stream Federated** in v1.1, only if needed (ADR 0001 §16).
@@ -137,3 +149,8 @@ them: the review fixes, the state-growth gas diet and the source-quality pass.
   organisation (#68) and the mutation baseline (#69).
 - 16 October: v1.0.0-rc.1; the mutation baseline completed (#72) and its 78 open gaps closed
   (#73).
+- 31 October and 1 November: ADR 0005 and its lanes, with Stream's pluggable 1/1 sales,
+  governed dependencies and primary-sale outcomes (#74 to #86); the seven-lens review's fix
+  passes A, B and C (#90, #89, #87); owner decisions 18 to 24 (#91) and the rescue-settle fix
+  (#92); Sepolia r4, deployed on 1 November (#93); ADR 0001's Main Stage amendment (#94).
+- 4 November: mutation floors for rc.2's new contracts (#95); v1.0.0-rc.2.
