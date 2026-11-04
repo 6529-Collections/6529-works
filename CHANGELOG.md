@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Mutation testing: the weekly report now lists every planned contract. A shard that leaves no
+  results (a cancelled job, a lost runner) marks its contract missing by shard name and fails
+  the run, where the report used to leave the contract out (five were, on 808705c1) or score a
+  split file on the groups that did report. Each shard stops at a 335-minute budget before the
+  6-hour job limit and still reports; a contract with no floor fails the report, so a new
+  `src/` file gets one; six more files are split; and the fixed ROR no longer makes the
+  replacements that cannot change an unsigned comparison with zero. Floors for the edition
+  auction, its lens, `UniformClearing`, `StepLadder`, `EnglishAuctionLens` and `Dependency`;
+  three baseline floors recorded again from the CI run; and tests for the survivors that were
+  gaps, among them an underpaid raise, steps past the ladder, a second fee recipient's index,
+  and the lens's paging heap ([Testing](docs/testing/README.md#mutation-testing)).
 - Sepolia rehearsal r4 (1 November 2026): the rc.2 candidate, `main` at `1e7022b`, deployed
   with r1's Safes and keys, a new namespace, its own VRF subscription and a dedicated testnet
   museum, every contract verified on Sourcify (exact match). 26 transactions, 496,057,168 gas;

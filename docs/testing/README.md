@@ -303,20 +303,43 @@ that need a change under `src/` are for the module owners; the rest are tests.
 
 The baseline's 78 open gaps are closed: the gap lane killed 69 with focused tests, re-triaged 3,
 and found 6 moved by #66 ([how each was decided](mutation-baseline.md#what-survives-and-why)).
-None was a bug. What mutation testing still leaves:
+None was a bug.
 
-1. `src/libraries/Dependency.sol`, which #66 added after the campaign, has no baseline row and
-   no floor; record both from the weekly run's report. Its own suite,
-   `test/libraries/Dependency.t.sol`, pins each check (code, the EIP-7702 refusal, ERC-165, and
-   both sides of each code-hash comparison), so its mutants die in the fast first pass.
-2. Only an exact-gas harness would see the 32 gas-margin survivors, and only a lying mock of a
-   trusted contract the 74 defensive ones.
-3. The edition auction (ADR 0005) adds `UniformEditionAuction`, `UniformEditionAuctionLens`,
-   `UniformClearing` and `StepLadder` with no baseline row and no floor. Record both from the
-   first weekly run after they land, then triage every survivor as the baseline did; the
-   differential fuzz and the real-stack invariant suite run in the second pass, so a mutant only
-   they notice still counts as killed. The deleted fixed-price and Dutch contracts' floors left
-   `tools/mutation-floors.json` with them.
+**rc.2 (November 2026).** The weekly run on 808705c1 and the runs on rc.2's code that followed
+it (PR #95) measured the contracts the baseline never saw, and every survivor of the edition
+auction's files was triaged. Kill rates and the floors they set:
+
+| Contract | Killed | Kill rate | Floor |
+| --- | ---: | ---: | ---: |
+| `UniformEditionAuction` | 1,064 of 1,142 | 93.2% | 91 |
+| `UniformEditionAuctionLens` | 731 of 818 | 89.4% | 87 |
+| `UniformClearing` | 274 of 288 | 95.1% | 93 |
+| `StepLadder` | 205 of 217 | 94.5% | 92 |
+| `EnglishAuctionLens` | 316 of 332 | 95.2% | 93 |
+| `Dependency` | 42 of 43 | 97.7% | 95 |
+
+Fifty-seven survivors, about twenty gaps, are now killed by tests: an underpaid raise and steps
+past the ladder; the stored soft end at the backstop; a second network fee recipient overwriting
+the first one's index (an earlier sale's fee would have gone to the newer recipient); one-call
+settlement below the cap and at a rationed step without departures; the scan stopping at the
+cap; every field of `setConfig`'s expectation and an unpause after its delay; the lens's paging
+heap for departures logged in position order and shuffled (only reverse order was tested), a
+quote that pulls units in, and the views' guards. None was a bug in `src/`. The rest are
+equivalent (unsigned and enum orderings, statement-form increments, a cached end the 1/1 only
+moves later), defensive (bounds of 65,535 configurations or fee recipients, reentrancy guards
+with no untrusted call inside) or event-only (a zero `Credited` on a full win).
+
+The same pass re-checked every floor on rc.2's code. Three baseline floors were set from fewer
+mutants than the CI run makes of the same code, and are recorded again from it, every survivor
+triaged: `EditionRules` 85 (rewritten by #76; 14 of 16, the two left equivalent), `TokenTransfer`
+90 (166 of 180; unsigned and enum comparisons, the dead strict-path branch, and lying-token
+balance checks) and `SignatureVerifier` 80 (84 of 102; the comparisons behind OpenZeppelin's own
+checks, as the baseline triaged them, and the ERC-1271 gas margin). Tests written for the
+others' survivors keep their floors: `Eip712CurationVerifier` (the decoder's length and offset
+bounds, ERC-165) and `AssetAllowlist` (`statusClock`'s `inactiveTotal`, which no test read).
+
+What mutation testing still leaves: only an exact-gas harness would see the gas-margin
+survivors, and only a lying mock of a trusted contract the defensive ones.
 
 **From coverage:**
 
