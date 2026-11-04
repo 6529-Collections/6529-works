@@ -11,7 +11,11 @@
   status table and the docs index, and `docs/facts.json` names the release. The README's status
   table, the delivery plan's status, the testing guide's test counts and the auditor pack's
   Sepolia entry are brought to rc.2. The entries below are grouped by area, newest first in each
-  group.
+  group, and each is as merged: a later entry can change what an earlier one describes. Both
+  lenses end up deployed in their own transactions (fix passes A and B), `auctionClock` also
+  returns `pausedAt` (fix pass B), the edition auction's worst settlement call is re-measured
+  at 307,070 execution gas (fix pass C), and the mutation baseline's figures rise as its gaps close
+  (#73). ADR 0004's table holds the current gas figures.
 
 ### Auctions
 

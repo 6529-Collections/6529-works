@@ -9,7 +9,8 @@
 
 - **Always-green `main` and small PRs.** No long-lived integration branches.
 - **Budgets are CI gates, not intentions:**
-  - 8–12K non-comment lines of Solidity under `src/`;
+  - 8–13K non-comment lines of Solidity under `src/` (12K until ADR 0001's amendment of 1
+    November 2026, owner decision 24);
   - at most 5 linked libraries;
   - no delegatecall or proxies;
   - EIP-170 respected;
@@ -56,7 +57,7 @@ script/          deployment and verification
 | 2. Foundations | Shared libraries; AccessManager configuration with hardening tests | Library parity and fuzz tests pass; guardian-cancel requirement proven |
 | 3. Core products | Stream ERC-721; content store, dependency registry and renderer; package registry and curation verifier; statement log | Curated package → start → token renders from the content store |
 | 4. Money | Auction adapter; split wallet and resolvers; currency allowlist | Invariant campaigns pass for auction, splits and escrow |
-| 5. Editions and sales | 6529 Editions ERC-1155 with bilateral link; fixed-price adapter; Dutch adapter | Master auction plus linked edition sale works end to end |
+| 5. Editions and sales | 6529 Editions ERC-1155 with bilateral link; fixed-price adapter; Dutch adapter (rc.1). In rc.2, 6529 Stream Editions with the uniform edition auction in place of both adapters ([ADR 0005](../docs/adr/0005-stream-editions-auction.md)) | Master auction plus linked edition sale works end to end |
 | 6. Identity and disputes | Artist registry with consolidation recovery; dispute pause; optional VRF module | Recovery, override and dispute flows tested |
 | 7. Testnet | Sepolia deployment, verification, flows and marketplace matrix | Launch checklist testnet section complete |
 | 8. Audit and mainnet | External audit, remediation, mainnet ceremony | Launch checklist complete |
@@ -130,9 +131,11 @@ and [ADR 0001](../docs/adr/0001-v1-scope.md)'s amendments).
      consolidation read stipend) and the state-gas reservoir (runbook step 13);
    - the network-held role holders of owner decision 18
      ([LIM-GV-18](../docs/audit/known-limitations.md)): a community council for the delayed
-     roles, a security council holding PAUSER and GUARDIAN as three guardian Safes with disjoint
-     signers, and a dedicated curation signer, with hardware-wallet signers; and the
-     operational keys;
+     roles and a security council for PAUSER and GUARDIAN. The deploy guards
+     ([`DeployGuards.sol`](../script/DeployGuards.sol)) also require at least two admin Safes
+     (the hot admin and the cold recovery admin, whose holder is still open), at least three
+     guardian Safes, at least two curation signer keys, and no signer shared between any two
+     admin or guardian Safes; all with hardware-wallet signers; and the operational keys;
    - the deployment ceremony from the [runbook](../script/README.md), then Verify after the
      5-day setback.
 3. **6529 Stream Federated** in v1.1, only if needed (ADR 0001 §16).
