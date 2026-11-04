@@ -231,8 +231,69 @@ contract UniformEditionAuctionFixATest is EditionAuctionBase {
         paidOut += balance - address(auction).balance;
         uint256[] memory next = lens.settlementOrderFor(saleId, address(this), 0, 96);
         assertEq(next[0], all[16]);
+        // A page asked from further on starts there, past the settler's own progress.
+        uint256 later = log[all[40]].position;
+        assertEq(lens.settlementOrderFor(saleId, address(this), later, 1)[0], all[40]);
         // Another settler still starts from the beginning.
         assertEq(lens.settlementOrderFor(saleId, makeAddr("other"), 0, 1)[0], all[0]);
+    }
+
+    /// @dev The pages come from a bounded max-heap. Logged in position order (the usual case),
+    ///      no later departure displaces a kept one; logged shuffled, departures displace the
+    ///      largest kept one and sift down. Either way each page is the next `max` departures
+    ///      by position, and the pages concatenate to the order.
+    function test_F9_PagesHoldForDeparturesLoggedInPositionOrder() public {
+        uint256 saleId = _open(250);
+        address crowd = makeAddr("crowd");
+        for (uint256 i; i < 300; ++i) {
+            _bid(saleId, crowd, 10, 1);
+        }
+        for (uint256 bidId = 101; bidId <= 300; ++bidId) {
+            _raise(saleId, bidId, 11);
+        }
+        _assertPagesConcatenate(saleId, 200);
+    }
+
+    /// @dev As above, with the departures logged in a shuffled order.
+    function test_F9_PagesHoldForDeparturesLoggedShuffled() public {
+        uint256 saleId = _open(250);
+        address crowd = makeAddr("crowd");
+        for (uint256 i; i < 300; ++i) {
+            _bid(saleId, crowd, 10, 1);
+        }
+        // 37 is coprime to 200, so this raises each of bids 101 to 300 once, out of order.
+        for (uint256 i; i < 200; ++i) {
+            _raise(saleId, 101 + (i * 37) % 200, 11);
+        }
+        _assertPagesConcatenate(saleId, 200);
+    }
+
+    function _assertPagesConcatenate(uint256 saleId, uint256 departures) internal view {
+        uint256[] memory all = ua.settlementOrder(saleId);
+        assertEq(all.length, departures);
+        IUniformEditionAuction.Departure[] memory log = ua.departures(saleId, 10);
+        for (uint256 k = 1; k < all.length; ++k) {
+            assertLt(log[all[k - 1]].position, log[all[k]].position, "the order is by position");
+        }
+        uint256[4] memory sizes = [uint256(1), 7, 64, 199];
+        for (uint256 s; s < sizes.length; ++s) {
+            uint256 got;
+            uint256 from;
+            while (got < all.length) {
+                uint256[] memory page =
+                    lens.settlementOrderFor(saleId, address(this), from, sizes[s]);
+                assertEq(page.length, _min(sizes[s], all.length - got), "a full page");
+                for (uint256 k; k < page.length; ++k) {
+                    assertEq(page[k], all[got + k], "pages concatenate");
+                }
+                got += page.length;
+                from = log[page[page.length - 1]].position + 1;
+            }
+        }
+    }
+
+    function _min(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a < b ? a : b;
     }
 
     /// @dev Gas lens M-1: the keeper's path stays well inside a 50M `eth_call` at 10,000

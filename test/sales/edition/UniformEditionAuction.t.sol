@@ -154,6 +154,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         assertTrue(auction.supportsInterface(type(ISaleAdapter).interfaceId));
         assertTrue(auction.supportsInterface(type(IERC165).interfaceId));
         assertFalse(auction.supportsInterface(0xffffffff));
+        assertFalse(auction.supportsInterface(0x00000000));
         assertFalse(auction.supportsInterface(type(IUniformEditionAuctionStorage).interfaceId));
     }
 
@@ -226,6 +227,44 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
     }
 
     // ================================================================== governance
+
+    /// @dev `setConfig` compares every field of the expected parameters: one off in either
+    ///      direction, in any field, is a stale expectation.
+    function test_SetConfig_EveryFieldOfTheExpectationCounts() public {
+        IUniformEditionAuction.AuctionConfig memory next = defaultConfig();
+        next.marginShare = 30_000;
+        for (uint256 field; field < 7; ++field) {
+            for (uint256 up; up < 2; ++up) {
+                IUniformEditionAuction.AuctionConfig memory stale = defaultConfig();
+                _nudge(stale, field, up == 1);
+                vm.expectRevert(ISaleAdapter.ExpectedValueMismatch.selector);
+                auction.setConfig(stale, next);
+            }
+        }
+        auction.setConfig(defaultConfig(), next);
+        _assertConfig(auction.config(), next);
+    }
+
+    function _nudge(IUniformEditionAuction.AuctionConfig memory c, uint256 field, bool up)
+        internal
+        pure
+    {
+        if (field == 0) {
+            c.basePrice = up ? c.basePrice + 1 : c.basePrice - 1;
+        } else if (field == 1) {
+            c.stepsPerDecade = up ? c.stepsPerDecade + 1 : c.stepsPerDecade - 1;
+        } else if (field == 2) {
+            c.stepCount = up ? c.stepCount + 1 : c.stepCount - 1;
+        } else if (field == 3) {
+            c.marginShare = up ? c.marginShare + 1 : c.marginShare - 1;
+        } else if (field == 4) {
+            c.closeOffset = up ? c.closeOffset + 1 : c.closeOffset - 1;
+        } else if (field == 5) {
+            c.softWindow = up ? c.softWindow + 1 : c.softWindow - 1;
+        } else {
+            c.maxExtension = up ? c.maxExtension + 1 : c.maxExtension - 1;
+        }
+    }
 
     function test_SetConfig_CompareAndSetAndLocksPerSale() public {
         uint256 saleId = _open(0);
@@ -384,6 +423,11 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         assertFalse(auction.paused());
         vm.expectRevert(ISaleAdapter.NotPaused.selector);
         auction.unpause();
+        // Any time after the delay, not only its first second.
+        auction.pause();
+        vm.warp(block.timestamp + Roles.STANDARD + 1 days);
+        auction.unpause();
+        assertFalse(auction.paused());
     }
 
     function test_SetTarget_OnlyEditions() public {
@@ -578,6 +622,22 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
             uint160(networkFee)
         );
         assertEq(auction.storageWord(IUniformEditionAuctionStorage.Space.FEE_RECIPIENT, 0, 2), 0);
+        // Another recipient gets the next index, and the earlier sales keep theirs.
+        address otherFee = makeAddr("otherFeeSafe");
+        economics.set(seller, otherFee, FEE_SHARE);
+        english.set(
+            address(stream),
+            9,
+            IEnglishAuction.AuctionState.ACTIVE,
+            uint64(block.timestamp + 1 days)
+        );
+        uint256 third = _openId(9, 0);
+        assertEq(ua.auction(third).feeRecipient, otherFee);
+        assertEq(ua.auction(second).feeRecipient, networkFee);
+        assertEq(
+            auction.storageWord(IUniformEditionAuctionStorage.Space.FEE_RECIPIENT, 0, 2),
+            uint160(otherFee)
+        );
     }
 
     function test_Open_Timing() public {
@@ -660,6 +720,8 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         auction.bid{ value: price + 1 }(saleId, 10, 1);
         vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.InvalidStep.selector, 336));
         auction.bid{ value: price }(saleId, 336, 1);
+        vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.InvalidStep.selector, 337));
+        auction.bid{ value: price }(saleId, 337, 1);
         vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.InvalidQuantity.selector, 0));
         auction.bid(saleId, 10, 0);
         vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.UnknownAuction.selector, 5));
@@ -762,6 +824,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         IUniformEditionAuction.EndTimes memory e = ua.endTimes(saleId);
         assertEq(e.backstop, backstop);
         assertEq(e.endTime, backstop, "capped at the backstop");
+        assertEq(e.softEnd, backstop, "the stored soft end is capped too");
         vm.warp(backstop);
         uint256 price = _price(saleId, 0);
         vm.deal(bob, price);
@@ -894,12 +957,19 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         auction.raise(saleId, 1, 99);
         vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.InvalidStep.selector, 336));
         auction.raise(saleId, 1, 336);
+        vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.InvalidStep.selector, 337));
+        auction.raise(saleId, 1, 337);
         uint256 paid = 4 * (_price(saleId, 101) - _price(saleId, 100));
         vm.deal(alice, paid + 1);
         vm.expectRevert(
             abi.encodeWithSelector(IUniformEditionAuction.IncorrectPayment.selector, paid, paid + 1)
         );
         auction.raise{ value: paid + 1 }(saleId, 1, 101);
+        // Short by one wei is refused as well: the raise pays the step difference exactly.
+        vm.expectRevert(
+            abi.encodeWithSelector(IUniformEditionAuction.IncorrectPayment.selector, paid, paid - 1)
+        );
+        auction.raise{ value: paid - 1 }(saleId, 1, 101);
         vm.expectRevert(
             abi.encodeWithSelector(IUniformEditionAuction.UnknownBid.selector, saleId, 2)
         );
@@ -1111,7 +1181,9 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
     function test_Settle_ZeroBidsMintsNothing() public {
         uint256 saleId = _open(0);
         _closeOneOfOne(saleId);
-        // No edition is needed when nothing sold.
+        // No edition is needed when nothing sold, and nothing has a price.
+        vm.expectEmit(address(auction));
+        emit IUniformEditionAuction.AuctionCleared(saleId, 0, 0, 0, 0, false, 0);
         vm.expectEmit(address(auction));
         emit ISaleAdapter.SaleSettled(
             saleId,
@@ -1148,6 +1220,15 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         emit IUniformEditionAuction.AuctionVoided(saleId);
         assertTrue(auction.settle(saleId, new uint256[](0)));
         assertEq(uint8(ua.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.VOID));
+        // Settling a void sale again reverts (only a SETTLED one answers true).
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IUniformEditionAuction.InvalidAuctionState.selector,
+                saleId,
+                IUniformEditionAuction.AuctionStatus.VOID
+            )
+        );
+        auction.settle(saleId, new uint256[](0));
         IUniformEditionAuction.BidOutcome memory o = ua.bidOutcome(saleId, 1);
         assertTrue(o.isFinal);
         assertEq(o.unitsWon, 0);
@@ -1263,8 +1344,14 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         assertEq(c.step, 11);
         assertTrue(c.rationed);
         assertEq(ua.settlementOrder(saleId).length, 0, "step 11 logged no departures");
-        // Rationed at a step without departures settles at once.
-        _settle(saleId);
+        // Rationed at a step without departures settles at once, its cutoff the cut units.
+        _closeOneOfOne(saleId);
+        editions.setExists(ID, true);
+        uint256 balance = address(auction).balance;
+        vm.expectEmit(address(auction));
+        emit IUniformEditionAuction.AuctionSettled(saleId, 4, 4);
+        assertTrue(auction.settle(saleId, new uint256[](0)));
+        paidOut += balance - address(auction).balance;
         assertEq(
             uint8(ua.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.SETTLED)
         );
@@ -1320,12 +1407,21 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         );
         auction.settle(saleId, first);
         assertFalse(auction.settle(saleId, new uint256[](0)), "nothing new to sweep");
+        // A settler whose first call sweeps nothing leaves no progress slot behind.
+        address idle = makeAddr("idle");
+        vm.prank(idle);
+        assertFalse(auction.settle(saleId, new uint256[](0)));
+        (swept, nextPosition, cutoff) = lens.sweepOf(saleId, idle);
+        assertEq(swept + nextPosition + cutoff, 0, "no slot for an empty call");
         // Extra entries after the end are ignored.
         uint256[] memory rest = new uint256[](3);
         (rest[0], rest[1], rest[2]) = (0, 0, 1);
         assertTrue(auction.settle(saleId, rest));
         (swept,,) = lens.sweepOf(saleId, address(this));
         assertEq(swept, 0, "a finished sweep leaves no progress behind");
+        // Settled: no order is left for anyone, though the clearing step logged departures.
+        assertEq(ua.settlementOrder(saleId).length, 0);
+        assertEq(lens.settlementOrderFor(saleId, makeAddr("late settler")).length, 0);
         // Cap 5: 4 at step 11, 1 at step 10 to the first live unit (carol at position 4).
         assertEq(_claimAll(saleId), 5);
         assertEq(editions.balanceOf(carol, ID), 1);

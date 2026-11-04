@@ -55,7 +55,7 @@ pins, with the finding's ID in a `/// Regression:` NatSpec line
 | Coverage (`.github/workflows/strength.yml`) | every push to `main`, every day at 04:30 UTC, and on demand | `forge coverage` under the lite profile; the per-contract table in the job summary; fails when a contract drops below its floor; uploads `lcov.info` | about 4 min | no (not on pull requests) |
 | Symbolic (Halmos) (`strength.yml`) | as Coverage | every `check_*` in `test/symbolic`, one test contract at a time; fails unless every declared proof passes | about 7 min (31 proofs) | no (not on pull requests) |
 | Nightly (`.github/workflows/nightly.yml`) | every day at 03:30 UTC, and on demand | the invariant suites under the `deep` profile (2,000 runs of depth 256), economics and the others in two jobs of up to 3 hours; the fork tests in `test/fork` against public mainnet and Sepolia endpoints | about an hour | no (scheduled) |
-| Mutation (`.github/workflows/mutation.yml`) | weekly, Sunday 02:00 UTC, and on demand; one small shard when a push to `main` changes the workflow or the tool | every shard of `tools/mutation.py`, eight jobs at a time; the merged report in the run summary; fails when a planned shard left no results, or a contract's kill rate drops below its floor | several hours | no (scheduled) |
+| Mutation (`.github/workflows/mutation.yml`) | weekly, Sunday 02:00 UTC, and on demand; one small shard when a push to `main` changes the workflow or the tool | every shard of `tools/mutation.py`, eight jobs at a time, each stopped at a 335-minute budget; the merged report in the run summary, with a row for every planned file; fails, naming the shard or contract, when a planned shard left no results or ran out of its budget, a contract has no floor, or a contract's kill rate drops below its floor | several hours | no (scheduled) |
 
 `forge test` runs in three parts whose filters together select every test exactly once (2,486
 tests at v1.0.0-rc.1: 2,411, 7 and 68), so the parts run on separate runners. Each
@@ -137,19 +137,37 @@ python tools/mutation.py report mutation --markdown mutation/report.md
 - **CONST.** slither-mutate never changes a `constant`, and the protocol's limits are
   constants, so `tools/mutation.py` adds one rule: every integer-literal constant is moved one
   up and one down, and each change must fail a test.
-- **How a shard runs.** One shard per src/ file. The seven largest files (`Renderer`,
-  `JsonScan`, `PackageRegistry`, `ArtistRegistry`, `EnglishAuction`, `Stream`, `WorkRecords`)
-  are split into four shards that run in parallel: statements (revert, comment, CONST),
+- **How a shard runs.** One shard per src/ file, planned from the tree, so a new file gets
+  its shard with nothing to register. The thirteen files whose whole shard does not finish in
+  a 6-hour CI job (`ContentStore`, `JsonScan`, `Renderer`, `PackageRegistry`,
+  `GovernanceConfig`, `ArtistRegistry`, `EnglishAuction`, `EnglishAuctionLens`,
+  `UniformClearing`, `UniformEditionAuction`, `UniformEditionAuctionLens`, `Stream`,
+  `WorkRecords`; `SPLIT_FILES` in the tool) are split into four shards that run in parallel:
+  statements (revert, comment, CONST),
   arithmetic, logical and unary operators, relational operators, and `if` conditions. They skip
   the other eight operators, which on these files gave hours of almost only equivalent or
   repeated mutants (nine assignment variants of one subtraction, a literal 0 replaced by 0,
-  `storage` read as `memory`); every other file runs all fifteen. On those seven files the
+  `storage` read as `memory`, a `constant` read as `immutable`); every other file runs all
+  fifteen. On those files the
   relational shard makes two replacements per comparison (the boundary shift and the equality
   flip, which subsume the other three) instead of five. Each mutant runs the tests of its
   module first, under the `lite` profile with `--fail-fast`; every survivor then runs against
   the whole suite, so a mutant an integration test kills counts as killed. A mutant whose
   tests time out (20 minutes) counts as killed, as slither-mutate counts it; the report
-  lists how many.
+  lists how many. In CI a shard also has a 335-minute budget (`run --budget`), below the job's
+  6-hour limit, where a cancelled job would leave no results at all. A shard still mutating
+  then stops, restores `src/`, and reports `timeout` (its file belongs in `SPLIT_FILES`). A
+  shard still re-checking has run every mutant against its module's tests: it stops there,
+  the survivors it did not re-check count as survived, and the report lists the contract's
+  rate as a lower bound with how many were left.
+- **Zero comparisons.** For an unsigned value, `x == 0` read as `x <= 0` (and `x != 0` as
+  `x > 0`, `x > 0` as `x != 0`, `x <= 0` as `x == 0`, and the mirrors) cannot change anything,
+  and each such survivor cost a full re-check, so the fixed ROR does not make those
+  replacements; it makes every other one.
+- **The report.** `report --shards` takes the run's plan, so every planned file gets a row. A
+  planned shard that left no results (a cancelled job, a lost runner) marks its file
+  `missing` and names the shard, and a split file with some groups missing is not scored as if
+  it were whole. The run fails with an annotation per contract.
 - **Limits.** Inside inline assembly slither-mutate only comments out statements (its operator
   rules read Solidity expressions), so the word-level logic of `Utf8`, `JsonEscape`,
   `JsonScan`, `DataUri`, `HtmlScript`, `Base64Validator` and `SSTORE2` gets fewer mutants than
@@ -159,10 +177,13 @@ python tools/mutation.py report mutation --markdown mutation/report.md
   changes gas and not results. A gas test can kill a mutant that only makes the code more
   expensive; that still shows the change is observable.
 - **Floors.** [`tools/mutation-floors.json`](../../tools/mutation-floors.json) holds a
-  kill-rate floor per contract, a baseline minus 2 points, and `report --floors` fails when a
-  contract drops below its floor.
+  kill-rate floor per contract, a measured rate minus 2 points (`margin`) rounded down to a
+  whole point, and `report --floors` fails when a contract drops below its floor, did not
+  finish, has mutants and no floor (so a new src/ file gets one from its first run), or has a
+  floor and no mutants (the run measured nothing, a log the tool could not read, say).
   `python tools/mutation.py report mutation --write-floors tools/mutation-floors.json`
-  rewrites them from a run.
+  writes the floors of the contracts a run measured and keeps the others. A unit test checks
+  that every floor names a src/ file with code.
 - **slither-mutate 0.11.6 fixes.** `tools/mutation.py` runs slither-mutate through a shim
   that fixes three bugs found here. ROR (relational operators) aborted on the first Yul
   comparison it met, which silently dropped every relational mutant of the eight contracts
@@ -283,20 +304,43 @@ that need a change under `src/` are for the module owners; the rest are tests.
 
 The baseline's 78 open gaps are closed: the gap lane killed 69 with focused tests, re-triaged 3,
 and found 6 moved by #66 ([how each was decided](mutation-baseline.md#what-survives-and-why)).
-None was a bug. What mutation testing still leaves:
+None was a bug.
 
-1. `src/libraries/Dependency.sol`, which #66 added after the campaign, has no baseline row and
-   no floor; record both from the weekly run's report. Its own suite,
-   `test/libraries/Dependency.t.sol`, pins each check (code, the EIP-7702 refusal, ERC-165, and
-   both sides of each code-hash comparison), so its mutants die in the fast first pass.
-2. Only an exact-gas harness would see the 32 gas-margin survivors, and only a lying mock of a
-   trusted contract the 74 defensive ones.
-3. The edition auction (ADR 0005) adds `UniformEditionAuction`, `UniformEditionAuctionLens`,
-   `UniformClearing` and `StepLadder` with no baseline row and no floor. Record both from the
-   first weekly run after they land, then triage every survivor as the baseline did; the
-   differential fuzz and the real-stack invariant suite run in the second pass, so a mutant only
-   they notice still counts as killed. The deleted fixed-price and Dutch contracts' floors left
-   `tools/mutation-floors.json` with them.
+**rc.2 (November 2026).** The weekly run on 808705c1 and the runs on rc.2's code that followed
+it (PR #95) measured the contracts the baseline never saw, and every survivor of the edition
+auction's files was triaged. Kill rates and the floors they set:
+
+| Contract | Killed | Kill rate | Floor |
+| --- | ---: | ---: | ---: |
+| `UniformEditionAuction` | 1,064 of 1,142 | 93.2% | 91 |
+| `UniformEditionAuctionLens` | 731 of 818 | 89.4% | 87 |
+| `UniformClearing` | 274 of 288 | 95.1% | 93 |
+| `StepLadder` | 205 of 217 | 94.5% | 92 |
+| `EnglishAuctionLens` | 316 of 332 | 95.2% | 93 |
+| `Dependency` | 42 of 43 | 97.7% | 95 |
+
+Fifty-seven survivors, about twenty gaps, are now killed by tests: an underpaid raise and steps
+past the ladder; the stored soft end at the backstop; a second network fee recipient overwriting
+the first one's index (an earlier sale's fee would have gone to the newer recipient); one-call
+settlement below the cap and at a rationed step without departures; the scan stopping at the
+cap; every field of `setConfig`'s expectation and an unpause after its delay; the lens's paging
+heap for departures logged in position order and shuffled (only reverse order was tested), a
+quote that pulls units in, and the views' guards. None was a bug in `src/`. The rest are
+equivalent (unsigned and enum orderings, statement-form increments, a cached end the 1/1 only
+moves later), defensive (bounds of 65,535 configurations or fee recipients, reentrancy guards
+with no untrusted call inside) or event-only (a zero `Credited` on a full win).
+
+The same pass re-checked every floor on rc.2's code. Three baseline floors were set from fewer
+mutants than the CI run makes of the same code, and are recorded again from it, every survivor
+triaged: `EditionRules` 85 (rewritten by #76; 14 of 16, the two left equivalent), `TokenTransfer`
+90 (166 of 180; unsigned and enum comparisons, the dead strict-path branch, and lying-token
+balance checks) and `SignatureVerifier` 80 (84 of 102; the comparisons behind OpenZeppelin's own
+checks, as the baseline triaged them, and the ERC-1271 gas margin). Tests written for the
+others' survivors keep their floors: `Eip712CurationVerifier` (the decoder's length and offset
+bounds, ERC-165) and `AssetAllowlist` (`statusClock`'s `inactiveTotal`, which no test read).
+
+What mutation testing still leaves: only an exact-gas harness would see the gas-margin
+survivors, and only a lying mock of a trusted contract the defensive ones.
 
 **From coverage:**
 

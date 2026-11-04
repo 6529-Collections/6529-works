@@ -199,14 +199,35 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.UnknownBid.selector, 5, 1));
         ua.bidOutcome(5, 1);
         uint256 saleId = _open(0);
+        vm.expectRevert(
+            abi.encodeWithSelector(IUniformEditionAuction.UnknownBid.selector, saleId, 1)
+        );
+        lens.canWithdraw(saleId, 1);
         vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.InvalidStep.selector, 336));
         ua.stepPrice(saleId, 336);
+        vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.InvalidStep.selector, 337));
+        ua.stepPrice(saleId, 337);
         vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.InvalidStep.selector, 336));
         ua.quote(saleId, 336, 1);
+        vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.InvalidStep.selector, 337));
+        ua.quote(saleId, 337, 1);
         vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.InvalidQuantity.selector, 0));
         ua.quote(saleId, 3, 0);
         vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.InvalidQuantity.selector, 0));
         ua.lowestWinningStep(saleId, 0);
+        // The book's 32-bit unit count holds a quote of its whole range, and not one more.
+        assertEq(ua.quote(saleId, 3, type(uint32).max).unitsWon, type(uint32).max);
+        (bool found,) = ua.lowestWinningStep(saleId, type(uint32).max);
+        assertTrue(found);
+        uint256 tooMany = uint256(type(uint32).max) + 1;
+        vm.expectRevert(
+            abi.encodeWithSelector(IUniformEditionAuction.InvalidQuantity.selector, tooMany)
+        );
+        ua.quote(saleId, 3, tooMany);
+        vm.expectRevert(
+            abi.encodeWithSelector(IUniformEditionAuction.InvalidQuantity.selector, tooMany)
+        );
+        ua.lowestWinningStep(saleId, tooMany);
     }
 
     function test_Lens_EmptyBook() public {
@@ -285,6 +306,49 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         (bool found, uint256 step) = ua.lowestWinningStep(saleId, 1);
         assertTrue(found);
         assertEq(step, 101);
+    }
+
+    /// @dev A bid can pull units in as well as push them out: here it moves the clearing down
+    ///      to its own step, where the unit already there then wins too (the reference model,
+    ///      `tools/edition_auction_ref.py`, gives the same: 1 at step 80 before, 3 at step 55).
+    function test_Lens_AQuoteThatPullsUnitsIn() public {
+        uint256 saleId = _open(0);
+        _bid(saleId, alice, 80, 1);
+        _bid(saleId, bob, 55, 1);
+        assertEq(ua.clearing(saleId).count, 1);
+        IUniformEditionAuction.Quote memory q = ua.quote(saleId, 55, 1);
+        assertEq(q.unitsWon, 1);
+        assertEq(q.unitsPulledIn, 1);
+        assertEq(q.unitsPushedOut, 0);
+        assertEq(q.result.count, 3);
+        assertEq(q.result.step, 55);
+    }
+
+    /// @dev `departures` counts the clearing step's departures only when the cap binds there:
+    ///      a capped sale that clears below its cap, with a departure at the clearing step,
+    ///      reports none, settles in one call with nothing to sweep, and has no settlement
+    ///      order once settled.
+    function test_Lens_NoDeparturesWhenTheCapDoesNotBind() public {
+        uint256 saleId = _open(10);
+        _bid(saleId, alice, 0, 2);
+        _bid(saleId, bob, 0, 1);
+        _raise(saleId, 2, 1);
+        assertEq(ua.departures(saleId, 0).length, 1);
+        _closeOneOfOne(saleId);
+        editions.setExists(ID, true);
+        uint256 balance = address(auction).balance;
+        assertTrue(auction.settle(saleId, new uint256[](0)), "settled in one call");
+        paidOut += balance - address(auction).balance;
+        assertEq(
+            uint8(ua.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.SETTLED)
+        );
+        IUniformEditionAuction.Settlement memory s = ua.settlement(saleId);
+        assertEq(s.step, 0);
+        assertEq(s.count, 3);
+        assertFalse(s.rationed);
+        assertEq(s.departures, 0);
+        assertEq(ua.settlementOrder(saleId).length, 0);
+        assertEq(lens.settlementOrderFor(saleId, address(this)).length, 0);
     }
 
     function test_Lens_NoWinningStepWhenTheCapIsFilledAtTheTop() public {

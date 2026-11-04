@@ -70,6 +70,17 @@ contract EditionRulesTest is Test {
         assertFalse(rules.isValid(t), "past the bound");
     }
 
+    /// @dev The bound is two words (ADR 0005 section 12, fix pass A's F10), written out here so
+    ///      that a change to the constant shows: two words pass and a byte more does not.
+    function test_ParamsBoundIsTwoWords() public view {
+        EditionTerms memory t = _terms(0);
+        t.params = abi.encode(bytes32(uint256(1)), bytes32(uint256(2)));
+        assertEq(t.params.length, 64);
+        assertTrue(rules.isValid(t), "two words");
+        t.params = bytes.concat(t.params, hex"00");
+        assertFalse(rules.isValid(t), "two words and a byte");
+    }
+
     /// @dev Arbitrary terms never make the rule revert, and the verdict is exactly the rule.
     function testFuzz_MatchesTheRule(
         uint32 maxCount,

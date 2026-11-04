@@ -188,6 +188,13 @@ contract StepLadderTest is Test {
         assertEq(harness.mantissa(191), 988);
         vm.expectRevert(abi.encodeWithSelector(StepLadder.MantissaIndexOutOfRange.selector, 192));
         harness.mantissa(192);
+        // Every index past the table, not only the first.
+        vm.expectRevert(abi.encodeWithSelector(StepLadder.MantissaIndexOutOfRange.selector, 193));
+        harness.mantissa(193);
+        vm.expectRevert(
+            abi.encodeWithSelector(StepLadder.MantissaIndexOutOfRange.selector, type(uint256).max)
+        );
+        harness.mantissa(type(uint256).max);
     }
 
     /// @dev A decade up is exactly ten times the price, a step up is 4% to 26% more (the
