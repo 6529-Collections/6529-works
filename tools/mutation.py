@@ -532,10 +532,13 @@ def run_slither_mutate(
     env[SUFFICIENT_ROR_ENV] = "1" if shard.path in SPLIT_FILES else "0"
     source = root / shard.path
     original = source.read_bytes()
-    code = _run_logged(cmd, log, timeout=deadline.cap(None), env=env)
-    if code == -1 and deadline.passed:
-        # slither-mutate restores the file only when it finishes.
+    try:
+        code = _run_logged(cmd, log, timeout=deadline.cap(None), env=env)
+    finally:
+        # slither-mutate restores the file only when it finishes; this covers a stop at the
+        # budget, a crash and Ctrl+C. Its process tree has exited by now, so nothing races.
         source.write_bytes(original)
+    if code == -1 and deadline.passed:
         result.status = "timeout"
         return
     text = log.read_text(encoding="utf-8", errors="replace")
@@ -860,9 +863,9 @@ def write_floors(results: list[FileResult], path: Path, margin: float) -> None:
 
     Floors of contracts these results do not measure (a run of some shards only) are kept.
     """
-    floors: dict[str, int] = {}
+    floors: dict[str, float] = {}
     if path.is_file():
-        floors.update(json.loads(path.read_text(encoding="utf-8")).get("files", {}))
+        floors.update(load_floors(path))
     floors.update(
         (r.path, max(0, int(rate - margin)))
         for r in results
@@ -872,6 +875,19 @@ def write_floors(results: list[FileResult], path: Path, margin: float) -> None:
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 
+def load_floors(path: Path) -> dict[str, float]:
+    """The `files` map of a floors file; a missing or malformed file fails closed."""
+    try:
+        floors = json.loads(path.read_text(encoding="utf-8"))["files"]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise MutationError(f"{path.as_posix()}: no usable floors ({exc!r})") from exc
+    if not isinstance(floors, dict) or not all(
+        isinstance(v, (int, float)) and not isinstance(v, bool) for v in floors.values()
+    ):
+        raise MutationError(f"{path.as_posix()}: `files` must map each contract to a number")
+    return floors
+
+
 def check_floors(results: list[FileResult], floors_path: Path) -> list[str]:
     """Each reported contract must have finished, and must kill at least its floor.
 
@@ -879,7 +895,7 @@ def check_floors(results: list[FileResult], floors_path: Path) -> list[str]:
     one recorded (`report --write-floors`). Floors of contracts the run did not plan are not
     checked: a run on demand may cover only some shards.
     """
-    floors = json.loads(floors_path.read_text(encoding="utf-8")).get("files", {})
+    floors = load_floors(floors_path)
     failures = []
     for r in results:
         rate = kill_rate(r)

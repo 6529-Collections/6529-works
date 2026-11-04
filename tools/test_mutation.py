@@ -169,6 +169,31 @@ class BudgetTest(unittest.TestCase):
         self.assertIn("- `src/x/Thing.sol`: 4 not re-checked", text)
 
 
+class RestoreTest(unittest.TestCase):
+    def test_slither_mutate_leaves_the_source_as_it_found_it_on_any_exit(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            source = root / "src" / "x" / "Thing.sol"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(CONSTANTS.encode("utf-8"))
+            shard = mt.Shard("x-Thing", "src/x/Thing.sol", "test/x/**", None, True)
+
+            def interrupted(cmd, log, timeout=None, env=None):
+                source.write_bytes(b"// a mutant left behind")
+                raise KeyboardInterrupt
+
+            real = mt._run_logged
+            mt._run_logged = interrupted
+            try:
+                with self.assertRaises(KeyboardInterrupt):
+                    mt.run_slither_mutate(
+                        root, shard, root, 60, mt.FileResult(shard.path), mt.Deadline(None)
+                    )
+            finally:
+                mt._run_logged = real
+            self.assertEqual(source.read_bytes(), CONSTANTS.encode("utf-8"))
+
+
 class RorTest(unittest.TestCase):
     def test_the_replacements_equivalent_for_an_unsigned_comparison_with_zero(self) -> None:
         eq = mt.unsigned_zero_equivalent
@@ -323,6 +348,26 @@ class ReportTest(unittest.TestCase):
         self.assertEqual(len(failures), 2, failures)
         self.assertEqual(failures[0], "src/x/Late.sol: timeout")
         self.assertIn("src/x/New.sol: kill rate 75.0% and no floor", failures[1])
+
+    def test_an_unusable_floors_file_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            results = mt.load_results([self._results(Path(d))])
+            path = Path(d) / "floors.json"
+            with self.assertRaises(mt.MutationError):
+                mt.check_floors(results, path)  # missing
+            for text in ("{", '{"margin": 2.0}', '{"files": []}', '{"files": {"a": "90"}}',
+                         '{"files": {"a": true}}'):
+                path.write_text(text, encoding="utf-8")
+                with self.assertRaises(mt.MutationError, msg=text):
+                    mt.check_floors(results, path)
+            path.write_text('{"files": {"src/x/Thing.sol": 80}}', encoding="utf-8")
+            self.assertEqual(mt.check_floors(results, path), [])
+            out, err = io.StringIO(), io.StringIO()
+            path.write_text("{", encoding="utf-8")
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = mt.main(["report", d, "--floors", str(path)])
+        self.assertEqual(code, 2)
+        self.assertIn("no usable floors", err.getvalue())
 
     def test_written_floors_keep_the_floors_of_files_not_measured(self) -> None:
         with tempfile.TemporaryDirectory() as d:
