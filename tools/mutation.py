@@ -892,8 +892,10 @@ def check_floors(results: list[FileResult], floors_path: Path) -> list[str]:
     """Each reported contract must have finished, and must kill at least its floor.
 
     A contract with something to mutate and no floor fails too, so that a new src/ file gets
-    one recorded (`report --write-floors`). Floors of contracts the run did not plan are not
-    checked: a run on demand may cover only some shards.
+    one recorded (`report --write-floors`), and so does a contract with a floor and no mutants:
+    a floor is only ever recorded from mutants, so the run measured nothing (a log the tool
+    could not read, say) and would otherwise pass it unseen. Floors of contracts the run did
+    not plan are not checked: a run on demand may cover only some shards.
     """
     floors = load_floors(floors_path)
     failures = []
@@ -903,7 +905,8 @@ def check_floors(results: list[FileResult], floors_path: Path) -> list[str]:
         if r.status != "ok":
             failures.append(f"{r.path}: {_status(r)}")
         elif rate is None:
-            continue  # nothing to mutate
+            if floor is not None:
+                failures.append(f"{r.path}: no mutants, though its floor is {floor}%")
         elif floor is None:
             failures.append(
                 f"{r.path}: kill rate {rate:.1f}% and no floor in {floors_path.as_posix()}; "

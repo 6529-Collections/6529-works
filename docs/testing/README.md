@@ -179,7 +179,8 @@ python tools/mutation.py report mutation --markdown mutation/report.md
 - **Floors.** [`tools/mutation-floors.json`](../../tools/mutation-floors.json) holds a
   kill-rate floor per contract, a measured rate minus 2 points (`margin`) rounded down to a
   whole point, and `report --floors` fails when a contract drops below its floor, did not
-  finish, or has mutants and no floor (so a new src/ file gets one from its first run).
+  finish, has mutants and no floor (so a new src/ file gets one from its first run), or has a
+  floor and no mutants (the run measured nothing, a log the tool could not read, say).
   `python tools/mutation.py report mutation --write-floors tools/mutation-floors.json`
   writes the floors of the contracts a run measured and keeps the others. A unit test checks
   that every floor names a src/ file with code.

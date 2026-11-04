@@ -338,16 +338,21 @@ class ReportTest(unittest.TestCase):
         new = mt.FileResult("src/x/New.sol")
         new.total.update(tweak=4)
         new.caught.update(tweak=3)
+        # Finished with no mutants, yet a floor was recorded from mutants: nothing was measured.
+        blank = mt.FileResult("src/x/Blank.sol")
         with tempfile.TemporaryDirectory() as d:
             floors = Path(d) / "floors.json"
             floors.write_text(
-                json.dumps({"files": {"src/x/Thing.sol": 88, "src/x/Late.sol": 50}}),
+                json.dumps(
+                    {"files": {"src/x/Thing.sol": 88, "src/x/Late.sol": 50, "src/x/Blank.sol": 90}}
+                ),
                 encoding="utf-8",
             )
-            failures = mt.check_floors([thing, late, empty, new], floors)
-        self.assertEqual(len(failures), 2, failures)
+            failures = mt.check_floors([thing, late, empty, new, blank], floors)
+        self.assertEqual(len(failures), 3, failures)
         self.assertEqual(failures[0], "src/x/Late.sol: timeout")
         self.assertIn("src/x/New.sol: kill rate 75.0% and no floor", failures[1])
+        self.assertEqual(failures[2], "src/x/Blank.sol: no mutants, though its floor is 90%")
 
     def test_an_unusable_floors_file_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as d:
