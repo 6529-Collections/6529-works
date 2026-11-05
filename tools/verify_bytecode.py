@@ -651,6 +651,16 @@ def verify_deployment(
 
     report.deployment_digest = "0x" + hashlib.sha256(record_text.encode()).hexdigest()
 
+    # Validate contracts field early
+    contracts = record.get("contracts")
+    if not isinstance(contracts, dict) or not contracts:
+        report.overall_status = "failed"
+        report.error_message = (
+            "Deployment record missing or has invalid 'contracts' field: "
+            "expected a nonempty dict"
+        )
+        return report
+
     # Check chain ID
     try:
         chain_id = get_chain_id(rpc_url)
@@ -683,8 +693,7 @@ def verify_deployment(
     # Use hex block number for consistency
     block_hex = hex(block_number)
 
-    # List contracts to verify
-    contracts = record.get("contracts", {})
+    # Set contract count (contracts already validated above)
     report.total_expected = len(contracts)
 
     # Note external dependencies
