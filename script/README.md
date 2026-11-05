@@ -6,9 +6,9 @@ implement the deploy assembly and the configuration readback from the
 [§13 evidence trail](../docs/adr/0001-v1-scope.md#13-governance) of
 [ADR 0001](../docs/adr/0001-v1-scope.md).
 
-Not built yet: a deployed-bytecode verifier that matches the chain against a reproducible
-build. Verify recomputes every address from the recorded constructor parameters and compares
-code hashes with the record, but it does not rebuild the bytecode.
+**Bytecode verification:** `tools/verify_bytecode.py` rebuilds bytecode from a source revision,
+simulates deployment on a fork to embed immutables, and compares against on-chain code. It
+requires network access and runs outside CI. See [LIM-REL-1](../docs/audit/known-limitations.md#release-evidence).
 
 6529 Works is pre-audit and not deployed on mainnet. A Sepolia run is a testnet rehearsal, not a
 launch; the rehearsals so far are recorded in [`deployments/11155111/`](../deployments/11155111/README.md).

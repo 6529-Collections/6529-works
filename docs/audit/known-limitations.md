@@ -165,7 +165,7 @@ are this page's.
 
 | ID | Type | Limitation | Consequence | Mitigation or procedure | Source |
 | --- | --- | --- | --- | --- | --- |
-| LIM-REL-1 | Gap | **No deployed-bytecode verifier.** `Verify.s.sol` recomputes addresses and compares code hashes with the record, but does not rebuild the bytecode from source. | Nobody can yet reproduce a deployment's bytecode from the repository with one command. | CBOR metadata with an IPFS hash is on (`bytecode_hash = "ipfs"`), so Sourcify and Etherscan can report exact matches. | [script README](../../script/README.md); [`foundry.toml`](../../foundry.toml) |
+| LIM-REL-1 | Accepted | **Bytecode verifier requires network access.** `tools/verify_bytecode.py` rebuilds bytecode from a source revision, simulates deployment on a fork to embed immutables, and compares against on-chain code. | Verification needs RPC access to the target chain and runs outside CI. | CBOR metadata with an IPFS hash is on (`bytecode_hash = "ipfs"`), so Sourcify and Etherscan can report exact matches; the verifier produces a JSON evidence report. | [tools/verify_bytecode.py](../../tools/verify_bytecode.py); [script README](../../script/README.md); [`foundry.toml`](../../foundry.toml) |
 
 ## Differences from the ADRs
 
