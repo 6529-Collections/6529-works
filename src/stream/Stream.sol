@@ -95,7 +95,7 @@ contract Stream is ERC721, AccessManaged, IStream {
 
     /// @dev `TokenData.flags`: an EDITION_MASTER, the seed policy (two bits), the primary sale
     ///      settled, the edition linked, and how the sale settled (owner decision 17): sold,
-    ///      frozen out, or neither, unbid.
+    ///      frozen out, neither, unbid, or both, rescued (owner decision 28).
     uint8 private constant KIND_MASTER = 1;
     uint8 private constant SEED_SHIFT = 1;
     uint8 private constant SEED_MASK = 3;

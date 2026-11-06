@@ -120,12 +120,13 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @param name The binding's label, as a left-aligned `bytes32` string.
     /// @param target The bound contract.
     event Bound(bytes32 indexed name, address target);
-    /// @notice The minting adapter settled a token's primary sale (owner decision 17). An UNBID
-    ///         or FROZEN_OUT work is followed by its `Transfer` to the museum.
+    /// @notice A token's primary sale settled: reported by its minting adapter (owner decision
+    ///         17), or RESCUED by `rescueToMuseum` (owner decision 28). An UNBID, FROZEN_OUT or
+    ///         RESCUED work is followed by its `Transfer` to the museum.
     /// @param tokenId The token whose primary sale settled.
-    /// @param outcome SOLD, UNBID or FROZEN_OUT.
+    /// @param outcome SOLD, UNBID, FROZEN_OUT or RESCUED.
     /// @param buyer The buyer of record (the winning bidder); zero unless SOLD.
-    /// @param currency The sale's currency (`CURRENCY_ETH` or an ERC-20).
+    /// @param currency The sale's currency (`CURRENCY_ETH` or an ERC-20); zero for RESCUED.
     /// @param price The price paid, exact; zero unless SOLD.
     event PrimarySaleSettled(
         uint256 indexed tokenId,
@@ -198,8 +199,8 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     error NotBurned(uint256 tokenId);
     /// @notice The token's primary sale settled, so it can no longer be burned or settled again.
     error SaleAlreadySettled(uint256 tokenId);
-    /// @notice A `settlePrimary` report that is NONE, SOLD with no buyer, or UNBID or FROZEN_OUT
-    ///         with a buyer or a price.
+    /// @notice A `settlePrimary` report that is NONE or RESCUED, SOLD with no buyer, or UNBID or
+    ///         FROZEN_OUT with a buyer or a price.
     error InvalidSaleOutcome();
     /// @notice The VRF seed of this item has not been delivered.
     error SeedNotDelivered(bytes32 itemHash);
@@ -279,8 +280,9 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     ///         always the museum the economics resolver names now (`ERC721InvalidReceiver` for
     ///         zero), never a caller's choice; a collector's work, a settled work and a work in a
     ///         live adapter's custody are refused (`WorkNotRescuable`). The work is then settled
-    ///         as UNBID, so the stranded adapter can never settle or burn it, and moves with no
-    ///         receiver callback (`Transfer`, then `WorkRescued`).
+    ///         as RESCUED (owner decision 28), so the stranded adapter can never settle or burn
+    ///         it, and moves with no receiver callback (`PrimarySaleSettled`, `Transfer`, then
+    ///         `WorkRescued`).
     /// @param tokenId The stranded work.
     function rescueToMuseum(uint256 tokenId) external;
 
@@ -349,17 +351,19 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @return artistId The lead artist's ID.
     function artistOf(uint256 tokenId) external view returns (uint256 artistId);
     /// @notice True once the minting adapter settled the token's primary sale
-    ///         (`IMintTarget.settlePrimary`), whatever the outcome; false before, and for burned
-    ///         or unminted IDs. A packed flag; it gates edition creation.
+    ///         (`IMintTarget.settlePrimary`), whatever the outcome, or governance rescued it
+    ///         (`rescueToMuseum`); false before, and for burned or unminted IDs. A packed flag;
+    ///         it gates edition creation.
     /// @param tokenId Any token ID.
     /// @return True for a live token whose primary sale settled.
     function primarySaleSettled(uint256 tokenId) external view returns (bool);
     /// @notice How a token's primary sale ended (owner decision 17), as its minting adapter
-    ///         reported it: NONE before settlement and for burned or unminted IDs. SOLD carries
-    ///         the currency and the price, held in 96 bits, so `type(uint96).max` means at least
-    ///         that (the exact price is in `PrimarySaleSettled`); UNBID and FROZEN_OUT carry zero.
+    ///         reported it, or RESCUED by `rescueToMuseum` (owner decision 28): NONE before
+    ///         settlement and for burned or unminted IDs. SOLD carries the currency and the
+    ///         price, held in 96 bits, so `type(uint96).max` means at least that (the exact price
+    ///         is in `PrimarySaleSettled`); UNBID, FROZEN_OUT and RESCUED carry zero.
     /// @param tokenId Any token ID.
-    /// @return outcome NONE, SOLD, UNBID or FROZEN_OUT.
+    /// @return outcome NONE, SOLD, UNBID, FROZEN_OUT or RESCUED.
     /// @return currency The sale's currency when SOLD (`CURRENCY_ETH` or an ERC-20), else zero.
     /// @return price The price paid when SOLD, else zero.
     function primarySale(uint256 tokenId)

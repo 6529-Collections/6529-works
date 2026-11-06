@@ -49,7 +49,8 @@ Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
   reads anyway, so an adapter's later `saleKind()` answer changes nothing and the check costs no
   extra slot.
 - **Primary-sale outcome (owner decision 17).** `settlePrimary` keeps the outcome in two
-  `TokenData.flags` bits beside `SETTLED` (`SALE_SOLD`, `SALE_FROZEN_OUT`; neither is UNBID), in
+  `TokenData.flags` bits beside `SETTLED` (`SALE_SOLD`, `SALE_FROZEN_OUT`; neither is UNBID,
+  and both, which no adapter can report, is `rescueToMuseum`'s RESCUED, owner decision 28), in
   the word it rewrites anyway, and a SOLD work's currency and price in `_sales` (declared last),
   the only new slot. An unsold work moves to the museum through `_update`, checked for the
   adapter's custody and a nonzero museum, with no receiver callback; the only external call is

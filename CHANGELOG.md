@@ -13,6 +13,7 @@
   - The specification gains the work-lifecycle and sale-method-lifecycle tables (AUC-37), and
     `StreamStatesInvariant.t.sol` checks every observed transition against them on the real
     stack. ADR 0005 §13 records the amendment.
+
 ## 1.0.0-rc.2 (2026-11-04)
 
 - Release candidate 2, pre-audit and not production-ready: the code deployed as Sepolia

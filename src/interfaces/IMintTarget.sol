@@ -88,7 +88,8 @@ interface IMintTarget {
     ///         6529 Stream: only the adapter that minted the token (`IStream.NotMintingAdapter`),
     ///         once (`IStream.SaleAlreadySettled`). It records the outcome (`IStream.primarySale`)
     ///         and emits `IStream.PrimarySaleSettled` with the buyer. SOLD needs a buyer; UNBID
-    ///         and FROZEN_OUT take no buyer and no price (`IStream.InvalidSaleOutcome`), and
+    ///         and FROZEN_OUT take no buyer and no price (`IStream.InvalidSaleOutcome`, which
+    ///         also refuses NONE and RESCUED, governance's outcome, owner decision 28), and
     ///         Stream itself moves the work from the adapter's custody to the 6529 Network Museum
     ///         (`IEconomicsResolver.museum()`, read now) and returns the museum as `holder`, with
     ///         the seller and fee terms.

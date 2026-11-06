@@ -174,6 +174,9 @@ contract StreamStatesInvariantTest is IntegrationBase {
                 if (outcome == PrimaryOutcome.NONE || outcome == PrimaryOutcome.RESCUED) {
                     _violation("an adapter reported NONE or RESCUED");
                 }
+                // An accepted report lands in its own row's state.
+                (, PrimaryOutcome recorded) = _state(id);
+                if (recorded != outcome) _violation("a settlement recorded another outcome");
             } catch {
                 if (outcome == PrimaryOutcome.RESCUED) ++hits["RESCUED report refused"];
             }
@@ -249,11 +252,18 @@ contract StreamStatesInvariantTest is IntegrationBase {
         _observe();
     }
 
-    /// @notice Governance rescues a work (30 days); refused unless it is stranded.
+    /// @notice Governance rescues a work (30 days); refused unless it is stranded. A rescue
+    ///         that goes through lands in the rescued state.
     function rescue(uint256 seed) external {
         uint256 id = _pick(seed);
         if (id != 0) {
-            _governTry(hotAdmin, address(stream), abi.encodeCall(stream.rescueToMuseum, (id)));
+            bool ok = _governTry(
+                hotAdmin, address(stream), abi.encodeCall(stream.rescueToMuseum, (id))
+            );
+            if (ok) {
+                (S rescued,) = _state(id);
+                if (rescued != S.RESCUED) _violation("a rescue did not record RESCUED");
+            }
         }
         _observe();
     }
