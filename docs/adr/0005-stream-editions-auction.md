@@ -526,8 +526,9 @@ specification ([Stream and auctions](../spec/stream-and-auctions.md), "A work's 
 
 Cost: Stream grows by 173 bytes (RESCUED 125, the strict transitions 48), to 24,373 with 203
 free; 6529 Stream Editions by 12. Gas: `settle` with a bid costs 52 more and with no bid 106
-more (the extra outcome check and its decoding, and the new deployment addresses); every start
-row moved by at most 32 with the new addresses and keeps its 5,000 of margin.
+more (the extra outcome check and its decoding, and the new deployment addresses). Every start
+row moved by at most 32 with the new addresses, and the budgeted ETH start rows keep their 5,000
+of margin under 350,000 (the tightest is 344,917).
 
 ## What this amends
 

@@ -139,12 +139,14 @@ contract StreamStatesInvariantTest is IntegrationBase {
         _observe();
     }
 
-    /// @notice An ETH bid at the minimum on an English-auction work.
+    /// @notice An ETH bid at the minimum on an English-auction work, by the bidder (a DIRECT
+    ///         payment's payer is the caller).
     function bid(uint256 seed) external {
         uint256 id = _pick(seed);
         if (id != 0 && minterOf[id] == address(auction)) {
             uint256 saleId = englishSale[id];
             try auction.minimumBid(saleId) returns (uint256 amount) {
+                vm.prank(bidder);
                 try auction.bid{ value: amount }(
                     saleId, address(0), Payment(PaymentMethod.DIRECT, bidder, amount, 0, 0, "")
                 ) {
@@ -263,6 +265,7 @@ contract StreamStatesInvariantTest is IntegrationBase {
             if (ok) {
                 (S rescued,) = _state(id);
                 if (rescued != S.RESCUED) _violation("a rescue did not record RESCUED");
+                if (_holder(id) != museum) _violation("a rescue did not reach the museum");
             }
         }
         _observe();
@@ -410,6 +413,7 @@ contract StreamStatesInvariantTest is IntegrationBase {
         uint256[9] memory totals;
         uint256 refusedRescued;
         uint256 refusedNoOps;
+        uint256 acceptedBids;
         for (uint256 run; run < RUNS; ++run) {
             uint256 snapshot = vm.snapshotState();
             for (uint256 depth; depth < DEPTH; ++depth) {
@@ -421,6 +425,7 @@ contract StreamStatesInvariantTest is IntegrationBase {
             }
             refusedRescued += hits["RESCUED report refused"];
             refusedNoOps += hits["no-op refused"];
+            acceptedBids += hits["bid"];
             vm.revertToStateAndDelete(snapshot);
         }
         for (uint256 i; i < transitions.length; ++i) {
@@ -431,6 +436,8 @@ contract StreamStatesInvariantTest is IntegrationBase {
         console2.log("no-op admissions refused", refusedNoOps);
         assertGt(refusedRescued, 0, "RESCUED report refused");
         assertGt(refusedNoOps, 0, "no-op admission refused");
+        console2.log("bids accepted", acceptedBids);
+        assertGt(acceptedBids, 0, "bid accepted");
     }
 
     /// @dev One random action, weighted toward the ones that move works.
