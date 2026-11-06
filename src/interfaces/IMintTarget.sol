@@ -16,10 +16,14 @@ import { PrimaryOutcome, PrimarySettlement, PrimaryTerms } from "./types/SaleTyp
 ///      Stream the kind recorded at the adapter's first admission, 6529 Stream Editions its
 ///      `ISaleAdapter.saleKind()`. Token IDs are never reused.
 interface IMintTarget {
-    /// @notice An adapter was admitted or removed as a minter.
+    /// @notice An adapter was admitted or removed as a minter. With the adapter's ID, the events
+    ///         alone reconstruct every adapter's state, and on 6529 Stream the block of a
+    ///         removal starts its rescue clock (owner decision 28).
     /// @param adapter The sale adapter.
+    /// @param id The adapter's ID, assigned at its first admission and kept for good: the ID
+    ///        the token records with each work or edition the adapter mints.
     /// @param admitted Whether it may now call `mint`.
-    event AdmittedMinterSet(address indexed adapter, bool admitted);
+    event AdmittedMinterSet(address indexed adapter, uint16 indexed id, bool admitted);
 
     /// @notice The calling adapter's sale kind is not the one the terms require.
     error SaleKindMismatch(bytes32 expected, bytes32 actual);
@@ -84,7 +88,8 @@ interface IMintTarget {
     ///         6529 Stream: only the adapter that minted the token (`IStream.NotMintingAdapter`),
     ///         once (`IStream.SaleAlreadySettled`). It records the outcome (`IStream.primarySale`)
     ///         and emits `IStream.PrimarySaleSettled` with the buyer. SOLD needs a buyer; UNBID
-    ///         and FROZEN_OUT take no buyer and no price (`IStream.InvalidSaleOutcome`), and
+    ///         and FROZEN_OUT take no buyer and no price (`IStream.InvalidSaleOutcome`, which
+    ///         also refuses NONE and RESCUED, governance's outcome, owner decision 28), and
     ///         Stream itself moves the work from the adapter's custody to the 6529 Network Museum
     ///         (`IEconomicsResolver.museum()`, read now) and returns the museum as `holder`, with
     ///         the seller and fee terms.

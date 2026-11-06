@@ -642,12 +642,14 @@ contract EditionsTest is EditionsBase {
         vm.etch(delegated, abi.encodePacked(hex"ef0100", fresh));
         _expectNotAdmissible(delegated);
 
-        vm.expectEmit(true, false, false, true, address(editions));
-        emit IMintTarget.AdmittedMinterSet(fresh, true);
+        // The event carries the binding ID: the base admitted two adapters, so this one is 3,
+        // kept through its removal (owner decision 28).
+        vm.expectEmit(true, true, false, true, address(editions));
+        emit IMintTarget.AdmittedMinterSet(fresh, 3, true);
         editions.setAdmittedMinter(fresh, true);
         assertTrue(editions.isAdmittedMinter(fresh));
-        vm.expectEmit(true, false, false, true, address(editions));
-        emit IMintTarget.AdmittedMinterSet(fresh, false);
+        vm.expectEmit(true, true, false, true, address(editions));
+        emit IMintTarget.AdmittedMinterSet(fresh, 3, false);
         editions.setAdmittedMinter(fresh, false);
         assertFalse(editions.isAdmittedMinter(fresh));
 

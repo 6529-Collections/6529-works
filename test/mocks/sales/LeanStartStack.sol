@@ -220,7 +220,7 @@ contract LeanStream is ERC721, IMintTarget {
     function setAdmittedMinter(address adapter, bool admitted) external {
         if (minterIdOf[adapter] == 0) minterIdOf[adapter] = ++minterCount;
         isAdmittedMinter[adapter] = admitted;
-        emit AdmittedMinterSet(adapter, admitted);
+        emit AdmittedMinterSet(adapter, 0, admitted);
     }
 
     function mint(address to, uint256 id, uint256 amount, bytes calldata data)

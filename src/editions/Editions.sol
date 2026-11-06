@@ -271,7 +271,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
             }
         }
         m.status = admitted ? MINTER_ADMITTED : MINTER_REMOVED;
-        emit AdmittedMinterSet(adapter, admitted);
+        emit AdmittedMinterSet(adapter, m.id, admitted);
     }
 
     /// @inheritdoc IMintTarget

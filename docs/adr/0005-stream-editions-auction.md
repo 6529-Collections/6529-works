@@ -5,7 +5,7 @@ Status: Accepted by the owner, 31 October 2026, who approved every recommended d
 acting for the repository owner). Amends [ADR 0001](0001-v1-scope.md),
 [ADR 0003](0003-build-time-decisions.md) and [ADR 0004](0004-gas-budgets-under-glamsterdam.md).
 The text below is the record as accepted; changes made during the rc.2 delivery are dated
-amendments (§6 to §12), and each amended passage points to its amendment.
+amendments (§6 to §12), rc.3's is §13, and each amended passage points to its amendment.
 
 This is this repository's ADR 0005. The "ADR 0005 (randomness)" that ADR 0001 cites under
 "Superseded or amended" is the 6529Stream repository's, a different record.
@@ -491,6 +491,44 @@ after the rc.2 seven-lens review.
   the caller's copy of the item: `bindMinter` checks a caller's item against 6529 Stream only
   before the edition exists. `test_F10_AnAdapterTakesLongParamsByHash` and
   `test_F10_TheRecordedHashGovernsOnceTheEditionExists` prove the path with a mock adapter.
+
+### 13. Amendment (6 November 2026): explicit Stream state machines (owner decision 28, rc.3)
+
+6529 Stream's two implicit state machines are now explicit, in the contract and in the
+specification ([Stream and auctions](../spec/stream-and-auctions.md), "A work's lifecycle" and
+"A sale method's lifecycle").
+
+- **A fifth permanent outcome, RESCUED.** `PrimaryOutcome` gains RESCUED, appended last so the
+  earlier values keep their encodings. A work `rescueToMuseum` moves (owner decision 20) is
+  recorded RESCUED, not UNBID, in the one flag combination no adapter can produce (`SALE_SOLD`
+  and `SALE_FROZEN_OUT` together), so no storage is added. The rescue emits
+  `PrimarySaleSettled(tokenId, RESCUED, 0, 0, 0)` before its `Transfer`, and `WorkRescued` after
+  it, so every settlement goes through `PrimarySaleSettled`. `settlePrimary` refuses RESCUED
+  from an adapter (`InvalidSaleOutcome`). The English auction's close of a rescued sale reads
+  any nonzero outcome and is unchanged.
+- **Strict sale-method transitions.** `setAdmittedMinter` reverts with `AdmissionUnchanged` on
+  a call that changes nothing: admitting an admitted adapter, or removing one that was never
+  admitted or is already removed. `AdmittedMinterSet` now carries the adapter's ID
+  (`AdmittedMinterSet(address,uint16,bool)`, in `IMintTarget`, so 6529 Stream Editions emits it
+  too), so the events alone rebuild every adapter's state and, from a removal's block, its
+  90-day rescue clock.
+- **The tables are enforced by a test.** `StreamStatesInvariant.t.sol` runs random call
+  sequences on the real stack and checks every observed (before, after) work state against the
+  work table, every adapter change against the sale-method table, and that no recorded outcome
+  ever changes. A planted bug that lets `burn` take a settled work, or `rescueToMuseum` take a
+  settled one, fails it.
+- **Unsettled, out of custody** is named as a state: the contract allows it (refusing transfers
+  of unsettled works would cost about 2,100 gas on every later transfer, forever) and the
+  admission review rules it out, as the admission requirement above says.
+- **NONE stays ambiguous in `primarySale`:** never minted, in sale and cancelled all answer it.
+  The website's data layer and an indexer tell them apart from `totalMinted`, `ownerOf` and the
+  `Transfer` events.
+
+Cost: Stream grows by 173 bytes (RESCUED 125, the strict transitions 48), to 24,373 with 203
+free; 6529 Stream Editions by 12. Gas: `settle` with a bid costs 52 more and with no bid 106
+more (the extra outcome check and its decoding, and the new deployment addresses). Every start
+row moved by at most 32 with the new addresses, and the budgeted ETH start rows keep their 5,000
+of margin under 350,000 (the tightest is 344,917).
 
 ## What this amends
 

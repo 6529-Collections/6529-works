@@ -20,7 +20,8 @@ import { IntegrationBase } from "./IntegrationBase.sol";
 ///         stranded only while its primary sale never settled, its minting adapter still holds
 ///         it, and that adapter was removed at least 90 days earlier and not admitted again. The
 ///         rescue is SUCCESSOR_SETTER (30 days), goes to the economics resolver's museum only,
-///         settles the work as UNBID, and leaves the stranded adapter nothing it can do with it.
+///         settles the work as RESCUED (owner decision 28), and leaves the stranded adapter
+///         nothing it can do with it.
 contract StrandedWorkRescueTest is IntegrationBase {
     address internal artist;
     address internal collector = makeAddr("rescueCollector");
@@ -92,7 +93,8 @@ contract StrandedWorkRescueTest is IntegrationBase {
     // -------------------------------------------------------------------------- tests
 
     /// @dev The happy path: 90 days after its removal, the auction's unsettled work moves to
-    ///      the museum, recorded UNBID, with `Transfer` then `WorkRescued`. The old adapter can
+    ///      the museum, recorded RESCUED (owner decision 28), with `PrimarySaleSettled`, then
+    ///      `Transfer`, then `WorkRescued`. The old adapter can
     ///      then neither settle nor burn it, and the auction's own settlement closes the sale
     ///      without touching the work (`RescuedSaleClosed`).
     function test_Rescue_MovesAStrandedWorkToTheMuseum() public {
@@ -105,6 +107,8 @@ contract StrandedWorkRescueTest is IntegrationBase {
         manager.schedule(address(stream), call, 0);
         vm.warp(block.timestamp + 30 days);
         vm.expectEmit(address(stream));
+        emit IStream.PrimarySaleSettled(tokenId, PrimaryOutcome.RESCUED, address(0), address(0), 0);
+        vm.expectEmit(address(stream));
         emit IERC721.Transfer(address(auction), museum, tokenId);
         vm.expectEmit(address(stream));
         emit IStream.WorkRescued(tokenId, address(auction), museum);
@@ -115,7 +119,7 @@ contract StrandedWorkRescueTest is IntegrationBase {
 
         assertEq(stream.ownerOf(tokenId), museum, "in the museum");
         (PrimaryOutcome outcome, address currency, uint256 price) = stream.primarySale(tokenId);
-        assertEq(uint8(outcome), uint8(PrimaryOutcome.UNBID), "recorded UNBID");
+        assertEq(uint8(outcome), uint8(PrimaryOutcome.RESCUED), "recorded RESCUED");
         assertEq(currency, address(0));
         assertEq(price, 0);
         assertTrue(stream.primarySaleSettled(tokenId));
@@ -171,12 +175,23 @@ contract StrandedWorkRescueTest is IntegrationBase {
         _assertRefused(second);
     }
 
-    /// @dev The 90 days run from the removal that took the adapter out: removing it again
-    ///      changes nothing, while admitting it again and removing it restarts them.
+    /// @dev The 90 days run from the removal that took the adapter out: removing it again is
+    ///      refused (owner decision 28: `AdmissionUnchanged`), while admitting it again and
+    ///      removing it restarts them.
     function test_Rescue_CountsFromTheRemovalThatTookTheAdapterOut() public {
         (, uint256 first) = _startItem(0);
         uint256 removedAt = _setAuctionAdmitted(false);
-        _setAuctionAdmitted(false);
+        bytes memory again_ = abi.encodeCall(stream.setAdmittedMinter, (address(auction), false));
+        vm.prank(hotAdmin);
+        manager.schedule(address(stream), again_, 0);
+        vm.warp(block.timestamp + 30 days);
+        vm.prank(hotAdmin);
+        vm.expectRevert(
+            abi.encodeWithSelector(IStream.AdmissionUnchanged.selector, address(auction), false)
+        );
+        manager.execute(address(stream), again_);
+        vm.prank(hotAdmin);
+        manager.cancel(hotAdmin, address(stream), again_);
         vm.warp(removedAt + RESCUE_DELAY - 30 days);
         (bool ok,) = _governed(_rescueCall(first));
         assertTrue(ok, "a second removal does not restart the clock");

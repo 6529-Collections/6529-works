@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Explicit Stream state machines (owner decision 28, rc.3):
+  - `PrimaryOutcome` gains RESCUED (4, appended so earlier values keep their encodings).
+    `rescueToMuseum` records it, in the one flag combination no adapter can produce, so no
+    storage is added. It emits `PrimarySaleSettled(tokenId, RESCUED, 0, 0, 0)` beside
+    `WorkRescued`. `settlePrimary` refuses RESCUED from an adapter.
+  - `setAdmittedMinter` reverts with `AdmissionUnchanged` on a call that changes nothing.
+    `AdmittedMinterSet` becomes `AdmittedMinterSet(address,uint16,bool)`, with the adapter's
+    ID, on 6529 Stream and 6529 Stream Editions.
+  - The specification gains the work-lifecycle and sale-method-lifecycle tables (AUC-37), and
+    `StreamStatesInvariant.t.sol` checks every observed transition against them on the real
+    stack. ADR 0005 §13 records the amendment.
+
 ## 1.0.0-rc.2 (2026-11-04)
 
 - Release candidate 2, pre-audit and not production-ready: the code deployed as Sepolia

@@ -61,7 +61,7 @@ contract MockEditionTarget is ERC1155, IMintTarget {
 
     function setAdmittedMinter(address adapter, bool admitted) external {
         isAdmittedMinter[adapter] = admitted;
-        emit AdmittedMinterSet(adapter, admitted);
+        emit AdmittedMinterSet(adapter, 0, admitted);
     }
 
     function setIdOffset(uint256 offset) external {

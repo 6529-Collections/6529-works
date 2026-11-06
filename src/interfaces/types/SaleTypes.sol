@@ -83,17 +83,23 @@ struct PrimaryTerms {
 }
 
 /// @notice How a 1/1's primary sale ended, as the adapter that minted it reports it to the token
-///         (`IMintTarget.settlePrimary`, owner decision 17). NONE is never reported: it is the
-///         answer of `IStream.primarySale` before settlement.
+///         (`IMintTarget.settlePrimary`, owner decision 17), or as governance ended it
+///         (RESCUED, owner decision 28). NONE is never reported: it is the answer of
+///         `IStream.primarySale` before settlement. RESCUED is never reported by an adapter
+///         either: only 6529 Stream's `rescueToMuseum` records it.
 /// @dev SOLD: a buyer paid a price. UNBID: the sale ended with no bid. FROZEN_OUT: the sale
 ///      ended unsold because its currency stayed frozen (the English auction's 30-day freeze
-///      exit) or its token was delisted, any standing bid credited back. 6529 Stream moves an
-///      UNBID or FROZEN_OUT work to the 6529 Network Museum itself.
+///      exit) or its token was delisted, any standing bid credited back. RESCUED: governance
+///      moved the work out of a removed adapter's custody before the adapter settled it
+///      (`IStream.rescueToMuseum`, owner decision 20). 6529 Stream moves an UNBID, FROZEN_OUT or
+///      RESCUED work to the 6529 Network Museum itself. Appended last, so the earlier values
+///      keep their encodings.
 enum PrimaryOutcome {
     NONE,
     SOLD,
     UNBID,
-    FROZEN_OUT
+    FROZEN_OUT,
+    RESCUED
 }
 
 /// @notice What a token answers when a 1/1's primary sale settles (`IMintTarget.settlePrimary`,

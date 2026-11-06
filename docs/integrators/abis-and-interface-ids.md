@@ -140,6 +140,7 @@ surface; r4 (`1e7022b`) has every change below.
 | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) | New `setPackageRegistry(address,address)` (`0x00752cf1`) and event `PackageRegistrySet(address,address)`: the only `register` caller is replaceable by governance with Stream's package registry (owner decision 16). |
 | [`IStream.sol`](../../src/interfaces/IStream.sol) | New `rescueToMuseum(uint256)` (`0xe9c794a4`), event `WorkRescued(uint256,address,address)` and error `WorkNotRescuable(uint256)` (owner decision 20); the ID becomes `0x37709465`. |
 | [`IEnglishAuction.sol`](../../src/interfaces/IEnglishAuction.sol) | New event `RescuedSaleClosed(uint256)`: `settle` closes the sale of a work governance rescued to the museum with refunds only (owner decision 20). The interface ID is unchanged. |
+| [`types/SaleTypes.sol`](../../src/interfaces/types/SaleTypes.sol), [`IStream.sol`](../../src/interfaces/IStream.sol), [`IMintTarget.sol`](../../src/interfaces/IMintTarget.sol) | rc.3, owner decision 28: `PrimaryOutcome` gains `RESCUED` (4), appended so the earlier values keep their encodings; `rescueToMuseum` emits `PrimarySaleSettled` with it and `settlePrimary` refuses it. `AdmittedMinterSet` becomes `AdmittedMinterSet(address,uint16,bool)` (topic0 `0x4a137c32…`), with the adapter's ID indexed. New error `AdmissionUnchanged(address,bool)`: 6529 Stream's `setAdmittedMinter` reverts on a call that changes nothing. Interface IDs are unchanged. |
 
 | Function or event | r3 | `main` |
 | --- | --- | --- |
