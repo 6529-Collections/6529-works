@@ -255,8 +255,6 @@ row for row: `writeChunk` of 1,024, 8,192 and 24,572 bytes is 1,914,322,
 - The VRF request and fulfilment (r2 ran it), `openRecord` and `syncOnChain`, the views'
   gas, `refreshStanding`, ERC-20 and Permit2 bids, and governance operations other than the
   dispute pause and cancel.
-- The live Verify (due from 6 November 2026, 12:41:36 UTC;
-  [README](README.md#sepolia-r4-1-november-2026-current)).
 - The state-gas reservoir test of the runbook's step 13.
 
 ## r3: the release candidate (15 October 2026)

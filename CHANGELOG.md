@@ -13,6 +13,12 @@
   - The specification gains the work-lifecycle and sale-method-lifecycle tables (AUC-37), and
     `StreamStatesInvariant.t.sol` checks every observed transition against them on the real
     stack. ADR 0005 §13 records the amendment.
+- Sepolia r4's live Verify passed on 6 November 2026 at block 12,076,640, after the manager's
+  5-day setback: 14 targets, 18 wiring calls and 17 holders, run read-only from `f2ec3d8` (the
+  `v1.0.0-rc.2` commit). The record says `"confirmed": true`, and `docs/facts.json` follows.
+  The Sepolia README, the release notes (a dated note), the root README, the delivery plan and
+  the auditor pack record it; the README notes that Verify needs an RPC that serves the deploy
+  blocks' logs.
 
 ## 1.0.0-rc.2 (2026-11-04)
 

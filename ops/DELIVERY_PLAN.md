@@ -72,7 +72,7 @@ the uniform edition auction run on chain
 [flows](../deployments/11155111/flows.md#r4-the-rc2-candidate-1-november-2026)), and r3 runs
 [v1.0.0-rc.1](../docs/releases/v1.0.0-rc.1.md). The items under "Open in phase 7" are still to
 do. The code is pre-audit and not production-ready: no external audit has started, and r4 is a
-testnet rehearsal whose live Verify is due from 6 November 2026, 12:41:36 UTC.
+testnet rehearsal whose live Verify passed on 6 November 2026, at block 12,076,640.
 
 **What rc.2 is.** The tag on `main` whose contracts, deploy and verify scripts, genesis policy and
 `foundry.toml` are those of `1e7022b`, the code deployed as Sepolia rehearsal r4. To rc.1 it adds
@@ -105,8 +105,8 @@ and [ADR 0001](../docs/adr/0001-v1-scope.md)'s amendments).
 **Open in phase 7:**
 - r3's settlements, edition sale and purchases, and a real anti-snipe bid, from 16 October
   2026, 20:35 UTC; until then those rows are simulated;
-- the live Verify: r1 and r2 from 16 October, r3 from 20 October, r4 from 6 November 2026,
-  12:41:36 UTC;
+- the live Verify of r1 and r2 (due from 16 October) and r3 (from 20 October); r4's passed on
+  6 November 2026, at block 12,076,640;
 - the flows not yet run on Sepolia: guardian and admin operations other than r4's dispute
   pause and cancel (which voided an edition sale and refunded it), and a
   recovery or identity change (each needs a Safe or waits a governed delay); finalize and
