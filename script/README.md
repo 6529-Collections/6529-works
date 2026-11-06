@@ -6,10 +6,10 @@ implement the deploy assembly and the configuration readback from the
 [§13 evidence trail](../docs/adr/0001-v1-scope.md#13-governance) of
 [ADR 0001](../docs/adr/0001-v1-scope.md).
 
-**Bytecode reproducibility:** all 24 contracts use CREATE2, so `Verify.s.sol` already proves
-bytecode reproducibility: it rebuilds from source, recomputes every address from the initcode
-(creation code plus constructor arguments), and compares on-chain code hashes. A matching
-CREATE2 address proves the initcode was reproduced from source. `tools/verify_evidence.py`
+**Address and code-hash verification:** `Verify.s.sol` rebuilds from source and recomputes
+every address: 23 contracts use CREATE2, whose addresses commit to the initcode (creation code
+plus constructor arguments); WorksAccessManager uses CREATE from the configurator at nonce 1.
+Verify also compares runtime code hashes against the deployment record. `tools/verify_evidence.py`
 wraps Verify to produce a JSON evidence file recording the inputs, environment and result.
 
 6529 Works is pre-audit and not deployed on mainnet. A Sepolia run is a testnet rehearsal, not a

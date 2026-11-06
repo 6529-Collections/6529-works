@@ -2,11 +2,13 @@
 """Generate JSON evidence from a Verify.s.sol run.
 
 Wraps `forge script script/Verify.s.sol` to produce a structured evidence file that
-records the inputs, environment and result. Verify.s.sol already proves bytecode
-reproducibility: all contracts use CREATE2, so a matching address proves the initcode
-(creation code plus constructor arguments) was reproduced from source.
+records the inputs, environment and result.
 
-This tool packages that proof as documented evidence for LIM-REL-1.
+Verify.s.sol rebuilds from source and recomputes every address: 23 contracts use
+CREATE2, whose addresses commit to the initcode (creation code plus constructor
+arguments); WorksAccessManager uses CREATE from the configurator at nonce 1.
+Verify also compares runtime code hashes against the deployment record. This tool
+packages that verification as documented evidence.
 
 Example:
     python tools/verify_evidence.py \\
@@ -25,6 +27,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -32,7 +35,24 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-TOOL_VERSION = "0.1.0"
+TOOL_VERSION = "0.1.1"
+
+
+def sanitize_error(message: str) -> str:
+    """Remove potential credentials from error messages."""
+    # Remove anything that looks like an API key or token in a URL path
+    sanitized = re.sub(
+        r"(https?://[^/\s]+)/[^\s]*",
+        r"\1/<redacted>",
+        str(message),
+    )
+    # Also redact common API key patterns
+    sanitized = re.sub(
+        r"[a-fA-F0-9]{32,}",
+        "<redacted>",
+        sanitized,
+    )
+    return sanitized
 
 
 @dataclass
@@ -62,10 +82,13 @@ class VerifyEvidence:
     manifest_sha256: str
     chain_id: int
 
+    # Verify settings
+    allow_pending_operations: bool = False
+
     # Observation point
-    block_number: int
-    block_hash: str
-    block_timestamp: str
+    block_number: int = 0
+    block_hash: str = ""
+    block_timestamp: str = ""
 
     # Verify output
     verify_stdout: str = ""
@@ -102,6 +125,9 @@ class VerifyEvidence:
                 "manifest_path": self.manifest_path,
                 "manifest_sha256": self.manifest_sha256,
                 "chain_id": self.chain_id,
+            },
+            "verify_settings": {
+                "allow_pending_operations": self.allow_pending_operations,
             },
             "observation": {
                 "block_number": self.block_number,
@@ -170,8 +196,17 @@ def get_submodule_revisions(repo_root: Path) -> dict[str, str]:
     return revisions
 
 
+class ForgeConfigError(Exception):
+    """Raised when forge config cannot be read or is invalid."""
+
+    pass
+
+
 def get_forge_config(repo_root: Path) -> tuple[str, str, int, bool]:
-    """Get solc version, EVM version, optimizer runs, via_ir from forge config."""
+    """Get solc version, EVM version, optimizer runs, via_ir from forge config.
+
+    Raises ForgeConfigError if forge config fails or returns invalid data.
+    """
     result = subprocess.run(
         ["forge", "config", "--json"],
         capture_output=True,
@@ -179,18 +214,30 @@ def get_forge_config(repo_root: Path) -> tuple[str, str, int, bool]:
         cwd=repo_root,
     )
     if result.returncode != 0:
-        return "unknown", "unknown", 0, False
+        raise ForgeConfigError(f"forge config failed: {result.stderr[:200]}")
 
     try:
         config = json.loads(result.stdout)
-        return (
-            str(config.get("solc", "unknown")),
-            str(config.get("evm_version", "unknown")),
-            int(config.get("optimizer_runs", 200)),
-            bool(config.get("via_ir", False)),
-        )
-    except (json.JSONDecodeError, KeyError):
-        return "unknown", "unknown", 0, False
+    except json.JSONDecodeError as e:
+        raise ForgeConfigError(f"forge config returned invalid JSON: {e}")
+
+    # Require essential fields
+    if "solc" not in config:
+        raise ForgeConfigError("forge config missing 'solc' field")
+    if "evm_version" not in config:
+        raise ForgeConfigError("forge config missing 'evm_version' field")
+
+    try:
+        optimizer_runs = int(config.get("optimizer_runs", 200))
+    except (ValueError, TypeError) as e:
+        raise ForgeConfigError(f"invalid optimizer_runs value: {e}")
+
+    return (
+        str(config["solc"]),
+        str(config["evm_version"]),
+        optimizer_runs,
+        bool(config.get("via_ir", False)),
+    )
 
 
 def get_foundry_version() -> str:
@@ -208,6 +255,7 @@ def get_foundry_version() -> str:
 
 def rpc_call(url: str, method: str, params: list[Any], timeout: int = 30) -> Any:
     """Make a JSON-RPC call."""
+    import urllib.error
     import urllib.request
 
     payload = json.dumps(
@@ -217,11 +265,17 @@ def rpc_call(url: str, method: str, params: list[Any], timeout: int = 30) -> Any
     headers = {"Content-Type": "application/json"}
     request = urllib.request.Request(url, data=payload, headers=headers)
 
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        result = json.loads(response.read().decode())
-        if "error" in result:
-            raise RuntimeError(f"RPC error: {result['error']}")
-        return result.get("result")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            result = json.loads(response.read().decode())
+            if "error" in result:
+                raise RuntimeError(f"RPC error: {result['error']}")
+            return result.get("result")
+    except urllib.error.URLError as e:
+        # Sanitize error to avoid leaking credentials
+        raise RuntimeError(f"RPC connection failed: {sanitize_error(str(e))}")
+    except Exception as e:
+        raise RuntimeError(f"RPC call failed: {sanitize_error(str(e))}")
 
 
 def get_block_info(rpc_url: str, tag: str = "finalized") -> tuple[int, str, str]:
@@ -261,12 +315,16 @@ def run_verify(
     allow_pending: bool = False,
 ) -> tuple[int, str, str]:
     """Run Verify.s.sol and return exit code, stdout, stderr."""
+    # Start with minimal env, explicitly set ALLOW_PENDING_OPERATIONS
     env = dict(os.environ)
     env["DEPLOYMENT"] = str(deployment_path)
     env["MANIFEST_PATH"] = str(manifest_path)
 
+    # Explicitly set (not inherit) ALLOW_PENDING_OPERATIONS
     if allow_pending:
         env["ALLOW_PENDING_OPERATIONS"] = "1"
+    else:
+        env.pop("ALLOW_PENDING_OPERATIONS", None)
 
     cmd = [
         "forge",
@@ -313,8 +371,34 @@ def generate_evidence(
     git_commit, git_branch = get_git_info(repo_root)
     submodules = get_submodule_revisions(repo_root)
 
-    # Get build config
-    solc, evm, runs, via_ir = get_forge_config(repo_root)
+    # Get build config - fail if unavailable
+    try:
+        solc, evm, runs, via_ir = get_forge_config(repo_root)
+    except ForgeConfigError as e:
+        # Return error evidence if we can't read forge config
+        return VerifyEvidence(
+            tool_version=TOOL_VERSION,
+            timestamp=timestamp,
+            result="error",
+            git_commit=git_commit,
+            git_branch=git_branch,
+            submodule_revisions=submodules,
+            solc_version="unknown",
+            evm_version="unknown",
+            optimizer_runs=0,
+            via_ir=False,
+            foundry_version=get_foundry_version(),
+            deployment_path=str(deployment_path),
+            deployment_sha256=sha256_file(deployment_path),
+            manifest_path=str(manifest_path),
+            manifest_sha256=sha256_file(manifest_path),
+            chain_id=chain_id,
+            allow_pending_operations=allow_pending,
+            contract_count=len(contracts),
+            contract_names=list(contracts.keys()),
+            error_message=f"Failed to read forge config: {e}",
+        )
+
     foundry = get_foundry_version()
 
     # Initialize evidence
@@ -335,9 +419,7 @@ def generate_evidence(
         manifest_path=str(manifest_path),
         manifest_sha256=sha256_file(manifest_path),
         chain_id=chain_id,
-        block_number=0,
-        block_hash="",
-        block_timestamp="",
+        allow_pending_operations=allow_pending,
         contract_count=len(contracts),
         contract_names=list(contracts.keys()),
     )
@@ -358,7 +440,7 @@ def generate_evidence(
         evidence.block_timestamp = block_ts
     except Exception as e:
         evidence.result = "error"
-        evidence.error_message = f"Failed to get block info: {e}"
+        evidence.error_message = f"Failed to get block info: {sanitize_error(str(e))}"
         return evidence
 
     # Run Verify.s.sol
@@ -393,7 +475,7 @@ def generate_evidence(
         evidence.error_message = "Verify.s.sol timed out after 300 seconds"
     except Exception as e:
         evidence.result = "error"
-        evidence.error_message = f"Failed to run Verify.s.sol: {e}"
+        evidence.error_message = f"Failed to run Verify.s.sol: {sanitize_error(str(e))}"
 
     return evidence
 
@@ -500,14 +582,18 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(output_json)
 
-    # Print summary
+    # Print summary (sanitize any error messages)
     print(f"\n{'=' * 60}", file=sys.stderr)
     print(f"Result: {evidence.result.upper()}", file=sys.stderr)
     print(f"Commit: {evidence.git_commit[:12]}", file=sys.stderr)
-    print(f"Block: {evidence.block_number} ({evidence.block_hash[:18]}...)", file=sys.stderr)
+    if evidence.block_hash:
+        print(
+            f"Block: {evidence.block_number} ({evidence.block_hash[:18]}...)",
+            file=sys.stderr,
+        )
     print(f"Contracts: {evidence.contract_count}", file=sys.stderr)
     if evidence.error_message:
-        print(f"Error: {evidence.error_message[:200]}", file=sys.stderr)
+        print(f"Error: {sanitize_error(evidence.error_message)[:200]}", file=sys.stderr)
     print("=" * 60, file=sys.stderr)
 
     # Exit code

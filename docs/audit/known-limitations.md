@@ -165,7 +165,7 @@ are this page's.
 
 | ID | Type | Limitation | Consequence | Mitigation or procedure | Source |
 | --- | --- | --- | --- | --- | --- |
-| LIM-REL-1 | Gap | **Evidence packaging for bytecode verification.** `Verify.s.sol` already proves bytecode reproducibility: all contracts use CREATE2, so a matching address proves the initcode was reproduced from source. `tools/verify_evidence.py` wraps it to produce JSON evidence files. | The gap is documented evidence: a single command that records inputs, environment and result as a structured file. | CBOR metadata with an IPFS hash is on (`bytecode_hash = "ipfs"`), so Sourcify and Etherscan can report exact matches; r4's live Verify passed on 6 November 2026. | [script README](../../script/README.md); [`tools/verify_evidence.py`](../../tools/verify_evidence.py) |
+| LIM-REL-1 | Gap | **Evidence packaging for verification.** `Verify.s.sol` rebuilds from source and recomputes every address (23 use CREATE2; one uses CREATE at nonce 1), and compares runtime code hashes against the record. `tools/verify_evidence.py` wraps it to produce JSON evidence files. | The gap is documented evidence: a single command that records inputs, environment and result as a structured file. | CBOR metadata with an IPFS hash is on (`bytecode_hash = "ipfs"`), so Sourcify and Etherscan can report exact matches; r4's live Verify passed on 6 November 2026. | [script README](../../script/README.md); [`tools/verify_evidence.py`](../../tools/verify_evidence.py) |
 
 ## Differences from the ADRs
 
