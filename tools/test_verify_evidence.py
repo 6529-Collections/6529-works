@@ -342,6 +342,40 @@ class TestFindRoot(unittest.TestCase):
                 ve.find_root(Path(tmpdir))
 
 
+class TestEvidenceSanitization(unittest.TestCase):
+    """Test that evidence output sanitizes credentials."""
+
+    def test_error_message_sanitized_in_to_dict(self) -> None:
+        """Error messages with credentials are sanitized in to_dict output."""
+        evidence = ve.VerifyEvidence(
+            tool_version="0.1.0",
+            timestamp="2026-11-06T12:00:00+00:00",
+            result="error",
+            git_commit="abc",
+            git_branch="main",
+            submodule_revisions={},
+            solc_version="0.8.28",
+            evm_version="cancun",
+            optimizer_runs=200,
+            via_ir=False,
+            foundry_version="forge 0.2.0",
+            deployment_path="test.json",
+            deployment_sha256="0x123",
+            manifest_path="manifest.json",
+            manifest_sha256="0x456",
+            chain_id=1,
+            # Simulate an error with a credential-bearing URL
+            error_message="RPC failed: https://eth-mainnet.alchemy.com/v2/secret_api_key_12345",
+        )
+
+        d = evidence.to_dict()
+        # The secret should be redacted
+        self.assertNotIn("secret_api_key_12345", d["error_message"])
+        self.assertIn("<redacted>", d["error_message"])
+        # Host should be preserved
+        self.assertIn("eth-mainnet.alchemy.com", d["error_message"])
+
+
 class TestResultMapping(unittest.TestCase):
     """Test evidence result to exit code mapping."""
 

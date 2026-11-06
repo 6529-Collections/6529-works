@@ -143,7 +143,7 @@ class VerifyEvidence:
                 "stdout_tail": self.verify_stdout[-2000:] if self.verify_stdout else "",
                 "stderr_tail": self.verify_stderr[-1000:] if self.verify_stderr else "",
             },
-            "error_message": self.error_message,
+            "error_message": sanitize_error(self.error_message) if self.error_message else "",
         }
 
 
@@ -321,10 +321,7 @@ def run_verify(
     env["MANIFEST_PATH"] = str(manifest_path)
 
     # Explicitly set (not inherit) ALLOW_PENDING_OPERATIONS
-    if allow_pending:
-        env["ALLOW_PENDING_OPERATIONS"] = "1"
-    else:
-        env.pop("ALLOW_PENDING_OPERATIONS", None)
+    env["ALLOW_PENDING_OPERATIONS"] = "1" if allow_pending else "0"
 
     cmd = [
         "forge",
