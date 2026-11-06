@@ -16,10 +16,14 @@ import { PrimaryOutcome, PrimarySettlement, PrimaryTerms } from "./types/SaleTyp
 ///      Stream the kind recorded at the adapter's first admission, 6529 Stream Editions its
 ///      `ISaleAdapter.saleKind()`. Token IDs are never reused.
 interface IMintTarget {
-    /// @notice An adapter was admitted or removed as a minter.
+    /// @notice An adapter was admitted or removed as a minter. With the adapter's ID, the events
+    ///         alone reconstruct every adapter's state, and on 6529 Stream the block of a
+    ///         removal starts its rescue clock (owner decision 28).
     /// @param adapter The sale adapter.
+    /// @param id The adapter's ID, assigned at its first admission and kept for good: the ID
+    ///        the token records with each work or edition the adapter mints.
     /// @param admitted Whether it may now call `mint`.
-    event AdmittedMinterSet(address indexed adapter, bool admitted);
+    event AdmittedMinterSet(address indexed adapter, uint16 indexed id, bool admitted);
 
     /// @notice The calling adapter's sale kind is not the one the terms require.
     error SaleKindMismatch(bytes32 expected, bytes32 actual);

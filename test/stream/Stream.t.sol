@@ -180,7 +180,7 @@ contract StreamTest is StreamFixture {
     function test_setAdmittedMinter() public {
         MockSaleAdapter other = new MockSaleAdapter(SaleKind.ENGLISH_AUCTION);
         vm.expectEmit(address(stream));
-        emit IMintTarget.AdmittedMinterSet(address(other), true);
+        emit IMintTarget.AdmittedMinterSet(address(other), 2, true);
         vm.prank(governor);
         stream.setAdmittedMinter(address(other), true);
         assertTrue(stream.isAdmittedMinter(address(other)));
@@ -189,7 +189,7 @@ contract StreamTest is StreamFixture {
 
         // Removal stops new mints; the minting adapter still finishes its running sales.
         vm.expectEmit(address(stream));
-        emit IMintTarget.AdmittedMinterSet(address(other), false);
+        emit IMintTarget.AdmittedMinterSet(address(other), 2, false);
         vm.prank(governor);
         stream.setAdmittedMinter(address(other), false);
         assertFalse(stream.isAdmittedMinter(address(other)));
@@ -203,12 +203,30 @@ contract StreamTest is StreamFixture {
         other.burn(stream, disputed, 1);
         assertEq(stream.totalSupply(), 1);
 
-        // Removal checks nothing about the address: one that never was an adapter is refused
-        // nothing.
+        // Owner decision 28: only real transitions. Removing an address that was never
+        // admitted, removing an adapter already removed, and admitting an admitted adapter all
+        // revert, and emit nothing.
         address notAnAdapter = makeAddr("not an adapter");
-        vm.prank(governor);
+        vm.startPrank(governor);
+        vm.expectRevert(
+            abi.encodeWithSelector(IStream.AdmissionUnchanged.selector, notAnAdapter, false)
+        );
         stream.setAdmittedMinter(notAnAdapter, false);
+        vm.expectRevert(
+            abi.encodeWithSelector(IStream.AdmissionUnchanged.selector, address(other), false)
+        );
+        stream.setAdmittedMinter(address(other), false);
+        vm.expectRevert(
+            abi.encodeWithSelector(IStream.AdmissionUnchanged.selector, address(auction), true)
+        );
+        stream.setAdmittedMinter(address(auction), true);
+        // Admitting a removed adapter again is a transition: it keeps its ID.
+        vm.expectEmit(address(stream));
+        emit IMintTarget.AdmittedMinterSet(address(other), 2, true);
+        stream.setAdmittedMinter(address(other), true);
+        vm.stopPrank();
         assertFalse(stream.isAdmittedMinter(notAnAdapter));
+        assertTrue(stream.isAdmittedMinter(address(other)));
     }
 
     // ------------------------------------------------------- pluggable 1/1 sales (decision 15)
@@ -1101,6 +1119,12 @@ contract StreamTest is StreamFixture {
         auction.settleWith(stream, 1, PrimaryOutcome.UNBID, buyer, address(0), 0);
         vm.expectRevert(IStream.InvalidSaleOutcome.selector);
         auction.settleWith(stream, 1, PrimaryOutcome.FROZEN_OUT, address(0), address(0), 1);
+        // Owner decision 28: RESCUED is governance's outcome (`rescueToMuseum`), never an
+        // adapter's report, however coherent the rest of it.
+        vm.expectRevert(IStream.InvalidSaleOutcome.selector);
+        auction.settleWith(stream, 1, PrimaryOutcome.RESCUED, address(0), address(0), 0);
+        (PrimaryOutcome none,,) = stream.primarySale(1);
+        assertEq(uint8(none), uint8(PrimaryOutcome.NONE), "nothing recorded");
 
         address collector = makeAddr("collector");
         auction.deliver(address(stream), 1, collector);

@@ -44,7 +44,7 @@ contract RescuedSaleCloseTest is EditionAuctionStack {
     ///      sale cannot settle. The 1/1's `settle` then closes it with a refund only; the winner
     ///      claims the full bid back; the seller and the network get nothing; the work stays in
     ///      the museum. The edition sale then settles, the edition can be created from the
-    ///      rescued master (Stream records it settled, UNBID) and the edition bidder claims
+    ///      rescued master (Stream records it settled, RESCUED) and the edition bidder claims
     ///      their copy, as after any unbid 1/1. Before the fix the 1/1's `settle` reverted
     ///      `SaleAlreadySettled` for good, locking the bid and the edition sale.
     function test_RescuedWorkWithAWinningBidClosesWithARefundAndFreesTheEdition() public {
@@ -55,13 +55,13 @@ contract RescuedSaleCloseTest is EditionAuctionStack {
         vm.warp(auction.auction(oneSaleId).endTime);
         _rescue(tokenId);
         (PrimaryOutcome outcome,,) = stream.primarySale(tokenId);
-        assertEq(uint8(outcome), uint8(PrimaryOutcome.UNBID));
+        assertEq(uint8(outcome), uint8(PrimaryOutcome.RESCUED), "RESCUED, a nonzero outcome");
         _assertEditionWaits(saleId);
 
         _closeWithRefund(oneSaleId, tokenId);
 
         // The edition sale is free: the edition is created from the rescued master (Stream
-        // records it settled, UNBID), the sale settles, and the edition bidder's copy is minted.
+        // records it settled, RESCUED), the sale settles, and the edition bidder's copy is minted.
         editions.createEdition(tokenId, w.item, root, _proofOf(_one(w), 0));
         _settleEditions(saleId);
         vm.prank(fan);

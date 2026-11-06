@@ -643,11 +643,11 @@ contract EditionsTest is EditionsBase {
         _expectNotAdmissible(delegated);
 
         vm.expectEmit(true, false, false, true, address(editions));
-        emit IMintTarget.AdmittedMinterSet(fresh, true);
+        emit IMintTarget.AdmittedMinterSet(fresh, 0, true);
         editions.setAdmittedMinter(fresh, true);
         assertTrue(editions.isAdmittedMinter(fresh));
         vm.expectEmit(true, false, false, true, address(editions));
-        emit IMintTarget.AdmittedMinterSet(fresh, false);
+        emit IMintTarget.AdmittedMinterSet(fresh, 0, false);
         editions.setAdmittedMinter(fresh, false);
         assertFalse(editions.isAdmittedMinter(fresh));
 

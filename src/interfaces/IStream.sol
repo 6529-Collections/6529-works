@@ -152,8 +152,8 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     event DependencySet(bytes32 indexed kind, address previous, address next);
     /// @notice Governance moved a work stranded in a removed sale adapter's custody to the museum
     ///         (`rescueToMuseum`, owner decision 20), right after its `Transfer` there. Its
-    ///         primary sale is recorded as UNBID. No `PrimarySaleSettled` is emitted: the adapter
-    ///         never reported an outcome.
+    ///         primary sale is recorded as RESCUED, announced by `PrimarySaleSettled` before the
+    ///         `Transfer` (owner decision 28), so every settlement goes through that one event.
     /// @param tokenId The rescued work.
     /// @param adapter The removed minting adapter that held it.
     /// @param museum The museum it moved to (`IEconomicsResolver.museum()`, read now).
@@ -210,6 +210,10 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     error ExpectedValueMismatch();
     /// @notice `setDependency` names no dependency Stream has.
     error UnknownDependency(bytes32 kind);
+    /// @notice `setAdmittedMinter` would change nothing: `adapter` is already admitted, or is not
+    ///         admitted (never admitted, or already removed) and `admitted` is false (owner
+    ///         decision 28).
+    error AdmissionUnchanged(address adapter, bool admitted);
     /// @notice The work is not stranded: its primary sale settled, its holder is not the adapter
     ///         that minted it, or that adapter is admitted or was removed less than 90 days ago
     ///         (`rescueToMuseum`).

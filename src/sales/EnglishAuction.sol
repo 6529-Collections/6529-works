@@ -1149,8 +1149,9 @@ contract EnglishAuction is
     ///      a rescue does before this adapter settles (6529 Stream's `rescueToMuseum`, owner
     ///      decision 20; the adapter that minted a work is the only one that settles it). Read
     ///      from the token, never from this adapter's state: `primarySale(tokenId)`'s first word,
-    ///      the outcome, is not NONE. A token without that view, or with a short or reverting
-    ///      answer, reports nothing, so its sale settles as usual.
+    ///      the outcome, is not NONE (6529 Stream reports RESCUED, owner decision 28; any
+    ///      outcome counts). A token without that view, or with a short or reverting answer,
+    ///      reports nothing, so its sale settles as usual.
     function _rescued(Sale storage s) private view returns (bool rescued) {
         address token = s.token;
         uint256 tokenId = s.tokenId;

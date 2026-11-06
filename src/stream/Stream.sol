@@ -391,9 +391,13 @@ contract Stream is ERC721, AccessManaged, IStream {
     ///      admission records with the adapter's index. Removal stops new mints only: the adapter
     ///      keeps its index, so it can still settle (`settlePrimary`) and cancel (`burn`)
     ///      the sales it started; a live sale is never stranded. Removal records its time, in
-    ///      the same word, from which `rescueToMuseum` counts; admission clears it.
+    ///      the same word, from which `rescueToMuseum` counts; admission clears it. Only real
+    ///      transitions are accepted (owner decision 28): admitting an admitted adapter, or
+    ///      removing one that is not admitted (never admitted or already removed), reverts with
+    ///      `AdmissionUnchanged`, so each `AdmittedMinterSet` is a state change.
     function setAdmittedMinter(address adapter, bool admitted) external restricted {
         Minter storage minter = _minters[adapter];
+        if (admitted == minter.admitted) revert AdmissionUnchanged(adapter, admitted);
         if (admitted) {
             Dependency.check(adapter, type(ISaleAdapter).interfaceId);
             if (minter.id == 0) {
@@ -403,12 +407,9 @@ contract Stream is ERC721, AccessManaged, IStream {
                 (minter.id, minter.kindKey) = (id, _kindKey(kind));
                 _minterKinds[id] = kind;
             }
-            minter.removedAt = 0;
-        } else if (minter.admitted) {
-            minter.removedAt = uint40(block.timestamp);
         }
-        minter.admitted = admitted;
-        emit AdmittedMinterSet(adapter, admitted);
+        (minter.admitted, minter.removedAt) = (admitted, admitted ? 0 : uint40(block.timestamp));
+        emit AdmittedMinterSet(adapter, minter.id, admitted);
     }
 
     /// @inheritdoc IMintTarget
@@ -443,9 +444,10 @@ contract Stream is ERC721, AccessManaged, IStream {
             uint256 stored = price < type(uint96).max ? price : type(uint96).max;
             _sales[tokenId] = uint256(uint160(currency)) | (stored << 160);
         } else {
-            if (outcome == PrimaryOutcome.NONE || buyer != address(0) || price != 0) {
-                revert InvalidSaleOutcome();
-            }
+            if (
+                outcome == PrimaryOutcome.NONE || outcome == PrimaryOutcome.RESCUED
+                    || buyer != address(0) || price != 0
+            ) revert InvalidSaleOutcome();
             if (outcome == PrimaryOutcome.FROZEN_OUT) flags |= SALE_FROZEN_OUT;
         }
         t.flags = flags;
@@ -464,7 +466,8 @@ contract Stream is ERC721, AccessManaged, IStream {
     /// @dev SUCCESSOR_SETTER role (the 30-day class). A work is stranded only while its minting
     ///      adapter holds it unsettled after governance removed that adapter: a collector's
     ///      work fails the holder check, and a settled one the `SETTLED` flag. Settling it
-    ///      here (UNBID: neither outcome bit) closes `settlePrimary` and `burn` to the adapter.
+    ///      here closes `settlePrimary` and `burn` to the adapter. RESCUED is both outcome bits,
+    ///      a combination no adapter can report (owner decision 28): no new storage.
     function rescueToMuseum(uint256 tokenId) external restricted {
         TokenData storage t = _live(tokenId);
         address adapter = _ownerOf(tokenId);
@@ -474,7 +477,8 @@ contract Stream is ERC721, AccessManaged, IStream {
             t.flags & SETTLED != 0 || minter.id != _terms[t.termsId].minterId || removedAt == 0
                 || block.timestamp < removedAt + RESCUE_DELAY
         ) revert WorkNotRescuable(tokenId);
-        t.flags |= SETTLED;
+        t.flags |= SETTLED | SALE_SOLD | SALE_FROZEN_OUT;
+        emit PrimarySaleSettled(tokenId, PrimaryOutcome.RESCUED, address(0), address(0), 0);
         (address museum,) = _toMuseum(tokenId);
         emit WorkRescued(tokenId, adapter, museum);
     }
@@ -593,7 +597,9 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IStream
-    /// @dev A settled token is never burned (`burn` refuses it), so its flags decide.
+    /// @dev A settled token is never burned (`burn` refuses it), so its flags decide. The two
+    ///      outcome bits: neither UNBID, `SALE_SOLD` SOLD, `SALE_FROZEN_OUT` FROZEN_OUT, both
+    ///      RESCUED (owner decision 28).
     function primarySale(uint256 tokenId)
         external
         view
@@ -601,11 +607,11 @@ contract Stream is ERC721, AccessManaged, IStream {
     {
         uint8 flags = _tokens[tokenId].flags;
         if (flags & SETTLED == 0) return (PrimaryOutcome.NONE, address(0), 0);
-        if (flags & SALE_SOLD == 0) {
-            outcome =
-                flags & SALE_FROZEN_OUT != 0 ? PrimaryOutcome.FROZEN_OUT : PrimaryOutcome.UNBID;
+        if (flags & SALE_FROZEN_OUT != 0) {
+            outcome = flags & SALE_SOLD != 0 ? PrimaryOutcome.RESCUED : PrimaryOutcome.FROZEN_OUT;
             return (outcome, address(0), 0);
         }
+        if (flags & SALE_SOLD == 0) return (PrimaryOutcome.UNBID, address(0), 0);
         uint256 sale = _sales[tokenId];
         return (PrimaryOutcome.SOLD, address(uint160(sale)), sale >> 160);
     }
