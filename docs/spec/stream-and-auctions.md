@@ -157,8 +157,79 @@ stateDiagram-v2
 A settled token can never be burned or settled again (`SaleAlreadySettled`), and ERC-721
 transfers never mark a sale settled. `primarySaleSettled(tokenId)` reads the flag, which gates
 `IEditions.createEdition` and `linkEdition`; `primarySale(tokenId)` reads the outcome (owner
-decision 17): SOLD with its currency and price, UNBID or FROZEN_OUT, or NONE before
-settlement.
+decisions 17 and 28): SOLD with its currency and price, UNBID, FROZEN_OUT or RESCUED, or NONE
+before settlement.
+
+### A work's lifecycle (owner decision 28)
+
+Every 6529 Stream work is in exactly one of these states. Stream decides each from what it
+stores: whether the ID was minted (`totalMinted`), whether the token exists (`ownerOf`), its
+recorded outcome (`primarySale`), and whether its holder is the adapter that minted it.
+
+| State | What Stream records | Holder |
+| --- | --- | --- |
+| Never minted | The ID is above `totalMinted()`; `primarySale` is NONE | none (`ownerOf` reverts) |
+| In sale | Minted, outcome NONE | the sale adapter that minted it |
+| Unsettled, out of custody | Minted, outcome NONE | anyone but the minting adapter |
+| Cancelled (burned) | Minted, then burned; outcome NONE | none (`ownerOf` reverts); the ID is never reused |
+| Sold | Outcome SOLD, with its currency and price | the minting adapter while its delivery is pending, then the buyer and later owners |
+| Unbid | Outcome UNBID | the museum at settlement, then later owners |
+| Frozen out | Outcome FROZEN_OUT | the museum at settlement, then later owners |
+| Rescued | Outcome RESCUED | the museum at the rescue, then later owners |
+
+NONE is the answer of three states: never minted, in sale (or out of custody) and cancelled.
+Stream does not tell them apart in `primarySale`; an indexer or the website's data layer reads
+`totalMinted`, `ownerOf` and the `Transfer` events (owner decision 28).
+
+| From | To | Function | Caller | Guard |
+| --- | --- | --- | --- | --- |
+| Never minted | In sale | `mint` | an admitted sale adapter, inside its own start | The adapter is admitted; the item is approved, unconsumed and of the adapter's sale kind; a VRF item's seed is delivered. The work is minted to the adapter itself (`to == msg.sender`) |
+| In sale | Cancelled | `burn` | the minting adapter (the English auction's `cancel`, PARAMETER_SETTER, 48 hours) | The caller holds the work, it is the adapter that minted it (admitted or not), and the sale is unsettled |
+| In sale | Sold | `settlePrimary(SOLD)` | the minting adapter, inside its `settle` | Unsettled; a nonzero buyer. The work stays with the adapter until it delivers it |
+| In sale | Unbid or frozen out | `settlePrimary(UNBID or FROZEN_OUT)` | the minting adapter, inside its `settle` | Unsettled; no buyer and no price; the adapter holds the work; the museum is not zero. Stream moves the work to the museum |
+| In sale | Rescued | `rescueToMuseum` | SUCCESSOR_SETTER, 30 days | Unsettled; the minting adapter holds the work; that adapter was removed at least 90 days earlier and is not admitted; the museum is not zero. Stream moves the work to the museum |
+| In sale | Unsettled, out of custody | an ERC-721 transfer by the adapter | the minting adapter | None in the contract (see below) |
+| Unsettled, out of custody | In sale | an ERC-721 transfer back to the adapter | the holder | None |
+| Unsettled, out of custody | Sold | `settlePrimary(SOLD)` | the minting adapter | Unsettled; a nonzero buyer (a SOLD report does not check the holder) |
+| Sold, unbid, frozen out or rescued | the same state | ERC-721 transfers, and the delivery of a sold work | the holder or an approved operator | The outcome never changes |
+
+Nothing else moves a work between these states. Once an outcome is recorded it is final:
+`settlePrimary` refuses a settled work (`SaleAlreadySettled`), `burn` refuses it, and
+`rescueToMuseum` refuses it (`WorkNotRescuable`). An adapter cannot report NONE or RESCUED
+(`InvalidSaleOutcome`), so RESCUED comes from governance only. `StreamStatesInvariant.t.sol`
+checks every observed transition against this table on the real stack.
+
+**Unsettled, out of custody** is a state the contract allows and admission review rules out.
+Stream does not refuse transfers of unsettled works: refusing them would add about 2,100 gas to
+every later transfer of every work, forever. An adapter that moved a work out without settling
+it could still report SOLD for it, and the work is out of reach of `burn` and
+`rescueToMuseum`. The 30-day review before `setAdmittedMinter` checks that an adapter never
+does this ([ADR 0005](../adr/0005-stream-editions-auction.md), the admission requirement).
+
+### A sale method's lifecycle (owner decision 28)
+
+A 1/1 sale adapter is in one of four states in 6529 Stream. Stream keeps them in one word per
+adapter: whether it is admitted, its ID (assigned at its first admission and kept for good) and
+when it was removed.
+
+| State | What Stream records | May mint | May settle and burn its works | Its unsettled works are rescuable |
+| --- | --- | --- | --- | --- |
+| Never admitted | No ID | no | no | no |
+| Admitted | An ID; admitted | yes | yes | no |
+| Removed | An ID; not admitted; the removal time | no | yes | no |
+| Rescue-eligible | Removed at least 90 days ago | no | yes | yes, those it still holds |
+
+| From | To | Function | Caller | Guard |
+| --- | --- | --- | --- | --- |
+| Never admitted | Admitted | `setAdmittedMinter(adapter, true)` | SUCCESSOR_SETTER, 30 days (the English auction at genesis, through the wiring) | Code, no EIP-7702 delegation, ERC-165 `ISaleAdapter`, a nonzero `saleKind()`. Assigns the next ID and records the kind |
+| Admitted | Removed | `setAdmittedMinter(adapter, false)` | SUCCESSOR_SETTER, 30 days | Records the removal time |
+| Removed | Rescue-eligible | time | none | 90 days after the removal (`block.timestamp >= removedAt + 90 days`) |
+| Removed or rescue-eligible | Admitted | `setAdmittedMinter(adapter, true)` | SUCCESSOR_SETTER, 30 days | The admission checks again; the ID and kind are kept; the removal time is cleared |
+
+A call that would change nothing reverts with `AdmissionUnchanged`: admitting an admitted
+adapter, or removing one that was never admitted or is already removed. Every
+`AdmittedMinterSet(adapter, id, admitted)` is therefore a transition, and the events alone
+rebuild every adapter's state; a removal's block timestamp starts its 90-day rescue clock.
 
 ### An auction
 
@@ -685,6 +756,7 @@ sequenceDiagram
 | AUC-34 | The auction's views are answered by the lens its constructor pinned (deployed in its own transaction, F8: the address, its code hash and the auction's five dependencies are checked, else `InvalidDependency`), which nothing can replace. The lens is stateless and reads its caller, so a direct call from anyone else changes nothing. The auction's fallback forwards any call it does not declare with a `staticcall`, returns or reverts with the lens's answer unchanged, refuses ETH, and reverts with no data on a selector neither knows. Every moved view answers byte for byte as before the lens. The auction answers `auctionClock` itself (an integration view outside `IEnglishAuction` and ERC-165): exactly `auction`'s state, end and pause start (`pausedAt`), or `auction`'s revert. | `EnglishAuction.fallback`, `lens`, `storageWords`, `auctionClock`; `EnglishAuctionLens` | [`EnglishAuctionLensDifferential.t.sol`](../../test/sales/auction/EnglishAuctionLensDifferential.t.sol): `testFuzz_EveryMovedViewMatchesThePreLensBuild`, `test_EveryMovedViewMatchesThePreLensBuild_LongSequences`; [`EnglishAuctionLens.t.sol`](../../test/sales/auction/EnglishAuctionLens.t.sol): `test_Lens_IsPinnedWithTheAuctionsDependencies`, `test_Constructor_PinsTheLens`, `test_Lens_ADirectCallFromAThirdPartyChangesNothing`, `test_Lens_CannotBeSwapped`, `test_Fallback_RefusesEth`, `test_Fallback_RevertsOnUnknownSelectors`, `test_Fallback_IsAReadOnlyForwarder`, `test_Lens_ReadsTheAuctionsLayout`, `test_AuctionClock_IsAnsweredByTheCoreOutsideErc165`, `test_AuctionClock_MatchesAuctionThroughAPauseAndResume`, `test_Lens_PassesOnTheAuctionsRevert`, `test_Lens_RefusesAnAnswerOfTheWrongLength`, `test_LockedTerms_RefusesAFeeShareAboveTheDenominator`, and the layout pinned to `forge inspect EnglishAuction storageLayout`: `test_Layout_GovernedWordsAreTheCompilers`, `test_Layout_SaleAndTermsWordsAreTheCompilers`, `test_Layout_ALapsedPauseReadsTheWindowAndTheDuration`, `test_Layout_FederatedTermsAreTheCompilers`; [`DeployScript.t.sol`](../../test/deploy/DeployScript.t.sol): `test_VerifyChecksTheAuctionsLens` |
 | AUC-35 | Governance moves a stranded work to the museum, and nothing else (owner decision 20, `rescueToMuseum`, SUCCESSOR_SETTER, 30 days). A work is stranded only while its primary sale never settled (`primarySale` NONE), the sale adapter that minted it still holds it, and that adapter was removed at least 90 days earlier and not admitted again (its removal time is kept in its minter word). The destination is the economics resolver's museum, read then, never a caller's choice. The work is then settled as UNBID (`WorkRescued` after its `Transfer`), so the stranded adapter can neither settle nor burn it; a collector's work, a settled work (a sold one awaiting delivery included) and a work in a live adapter's custody are refused (`WorkNotRescuable`). The rescue cannot see the adapter's sale, so it is for an adapter that cannot settle: a sale the adapter can still settle is settled first ([LIM-SAL-14](../audit/known-limitations.md#sales-and-auctions)). | `Stream.rescueToMuseum`, `Stream.setAdmittedMinter` | [`StrandedWorkRescue.t.sol`](../../test/integration/StrandedWorkRescue.t.sol): `test_Rescue_MovesAStrandedWorkToTheMuseum`, `test_Rescue_RefusesAnAdapterRemovedLessThan90DaysAgo`, `test_Rescue_RefusesAnAdapterNeverRemovedOrAdmittedAgain`, `test_Rescue_CountsFromTheRemovalThatTookTheAdapterOut`, `test_Rescue_RefusesSettledAndSoldWorks`, `test_Rescue_RefusesAWorkNotHeldByItsAdapter`, `test_Rescue_RefusesAWorkHeldByAnotherRemovedAdapter`, `test_Rescue_CannotSeeTheAdaptersSale`, `test_Rescue_GoesToTheMuseumOnly`, `test_Rescue_AZeroMuseumIsRefusedNotBurned`, `test_Rescue_IsTheSuccessorClass` |
 | AUC-36 | A sale whose work 6529 Stream already records as settled, which only a rescue does before the minting adapter settles (owner decision 20), closes with refunds only: the English auction's `settle` reads the outcome from the token (`primarySale`, not NONE), credits the standing bid back to its bidder, reports nothing to the token, pays no seller or fee, mints and delivers nothing, and marks the auction SETTLED (`RescuedSaleClosed`), so the edition sale of a master can settle. A token without that view, or a NONE, short or reverting answer, settles as before. The close never asks where the work is, so a later holder who sends a rescued work back to the adapter with a plain transfer cannot re-strand the bid. Any other token that reports an outcome there before its sale settles gets the same close and leaves its work in the adapter's custody, so a token listed or federated later answers NONE until the adapter settles its sale. | `EnglishAuction.settle`, `_rescued` | [`RescuedSaleClose.t.sol`](../../test/integration/RescuedSaleClose.t.sol): `test_RescuedWorkWithAWinningBidClosesWithARefundAndFreesTheEdition`, `test_RescuedWorkWithNoBidClosesWithNothingToCredit`, `test_AWorkNotRescuedSettlesAsBefore`, `test_ARescuedWorkSentBackToTheAuctionStillCloses`; [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol): `test_Settle_ATokenReportingTheWorkSettledClosesWithARefundOnly`, `test_Settle_OnlyARecordedOutcomeClosesWithRefunds`, `test_Settle_ARecordedOutcomeClosesWithoutWaitingOutAFreeze` |
+| AUC-37 | Stream's work and sale-method lifecycles are the tables above (owner decision 28): every work is in one state of the work table and changes state only by one of its rows, a recorded outcome (SOLD, UNBID, FROZEN_OUT or RESCUED) never changes, and an adapter changes state only by a row of the sale-method table. RESCUED is recorded only by `rescueToMuseum`, which emits `PrimarySaleSettled` with it; `settlePrimary` refuses it from an adapter. `setAdmittedMinter` refuses a call that changes nothing (`AdmissionUnchanged`), and `AdmittedMinterSet` carries the adapter's ID. | `Stream.settlePrimary`, `burn`, `rescueToMuseum`, `setAdmittedMinter`, `primarySale` | [`StreamStatesInvariant.t.sol`](../../test/integration/invariant/StreamStatesInvariant.t.sol): `invariant_streamStatesFollowTheTables`, `test_EveryTransitionIsReached`; [`StrandedWorkRescue.t.sol`](../../test/integration/StrandedWorkRescue.t.sol): `test_Rescue_MovesAStrandedWorkToTheMuseum`, `test_Rescue_CountsFromTheRemovalThatTookTheAdapterOut`; [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_setAdmittedMinter`, `test_settlePrimary_refusesAnIncoherentReport` |
 
 ## Events
 
