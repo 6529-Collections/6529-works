@@ -78,9 +78,9 @@ Areas where a small change has large effects, or where the review concentrated:
   the [triage record](../security/slither-triage.md).
 - **Sepolia.** Four testnet rehearsals with the mainnet Safe structure and throwaway signers,
   their flows measured under Glamsterdam pricing ([flows](../../deployments/11155111/flows.md)).
-  r4 (1 November 2026) runs the code of `v1.0.0-rc.2`, verified on Sourcify; its live Verify is
-  due from 6 November 2026, 12:41:36 UTC. r3 runs `v1.0.0-rc.1`. Flows not yet run on Sepolia
-  are listed there.
+  r4 (1 November 2026) runs the code of `v1.0.0-rc.2`, verified on Sourcify; its live Verify
+  passed on 6 November 2026, at block 12,076,640. r3 runs `v1.0.0-rc.1`. Flows not yet run on
+  Sepolia are listed there.
 
 ## Reporting
 

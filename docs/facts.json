@@ -22,7 +22,7 @@
       "deployedOn": "2026-11-01",
       "deployedAtTimestamp": 1793536584,
       "startBlock": 12041045,
-      "confirmed": false,
+      "confirmed": true,
       "record": "deployments/11155111/1793536584.json",
       "contracts": {
         "ArtistRegistry": "0xf54f5465F1C4DB161145DA3C1369f8BF1195Aa91",
