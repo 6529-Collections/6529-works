@@ -183,7 +183,9 @@ move whenever a source file changes. CI enforces them in
   and writes at most 6 or 7 new slots (`START_MAX_SLOTS`, `START_WITH_BID_MAX_SLOTS`). ERC-20
   starts have a regression ceiling, not a budget (decision 6).
 - **Ceilings.** `settle` and the first start in a new collection have 400K test ceilings,
-  `royaltyInfo` 50,000 gas of execution, and `tokenURI` 8M (`TOKEN_URI_BUDGET`, tested in
+  `royaltyInfo` 50,000 gas of execution (also called with exactly that much gas, cold, in
+  [`RoyaltyInfoGas.t.sol`](../../test/integration/RoyaltyInfoGas.t.sol), where every lower
+  limit must revert rather than answer a zero royalty), and `tokenURI` 8M (`TOKEN_URI_BUDGET`, tested in
   [`TokenUriBudget.t.sol`](../../test/integration/TokenUriBudget.t.sol) and
   [`RendererGas.t.sol`](../../test/content/renderer/RendererGas.t.sol)). Every other operation
   has a regression ceiling (the `*_CEILING` constants); a change that crosses one says why in
