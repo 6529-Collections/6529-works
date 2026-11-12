@@ -574,6 +574,13 @@ The record is only an index; each check is made against the chain or the committ
   JSON;
 - no other grant-delay or admin-delay change is pending;
 - no account outside the configuration was granted a role;
+- every selector remap, role-admin change, role-guardian change and target closure on the
+  manager since genesis matches the configuration: a configured selector keeps its role, any
+  other selector stays with ADMIN, every role's admin is ADMIN, a configured role's guardian
+  is GUARDIAN and any other role's ADMIN, and no target is closed. The configurator's readback
+  sees only the configured selectors and roles, so this catches a genesis-only bind or the
+  deferred `bindFederationRegistry` given a role, a mapping to a new role ID or the public
+  role, and a change made and later undone;
 - no operation scheduled on the manager since genesis is still pending. Each one fails the
   run with its ID, caller, target, selector and ready time. After reviewing them, set
   `ALLOW_PENDING_OPERATIONS=1` to log them instead.
@@ -582,7 +589,9 @@ Verify checks the genesis configuration. After a governance change, such as an
 [admin recovery](#admin-recovery) or a key rotation, run it in epoch mode: set
 `GOVERNANCE_CONFIG` to a copy of the genesis file with the current holders. The wiring
 readback stays genesis readback, so a later default-currency change still fails it. Epoch
-mode logs every grant it accepts for an account that no longer holds the role. When the
+mode logs every grant it accepts for an account that no longer holds the role, and every
+past remap, role-admin or role-guardian change or target closure it accepts because the
+manager is back to the configuration. When the
 epoch's governance manifest is given (`GOVERNANCE_MANIFEST_PATH`), Verify requires its
 SHA-256 to be the content of a `GOVERNANCE_MANIFEST` statement on the manager's chain, and
 its `governanceConfig.sha256` to be the SHA-256 of the `GOVERNANCE_CONFIG` file.
