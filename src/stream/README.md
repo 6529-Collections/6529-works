@@ -80,6 +80,9 @@ Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
   EIP-7825 cap from cold storage), stores progress in the record's first word and emits
   `OnChainSyncProgress` only when the budget stops it; the call that finishes emits
   `WorkOnChainComplete`.
+- **Locator adders.** `LocatorCounts` keeps, in its one word beside the two quota counts, a
+  16-bit mask of the indices the artist added; the preferred-location fallbacks read only
+  those (WS-21), so a PLATFORM locator is served only through the storage operator's file index.
 - **Amendments** bump the version before their external calls (Stream, Editions), and every
   consent binds the state hash, so nothing applies twice.
 - **Bytecode.** `WorkRecords` is the tighter of the two; current margins in the

@@ -66,11 +66,13 @@ contract ContentToTokenURIFlowTest is IntegrationBase {
         assertFalse(_contains(uri, "data:image/png;base64,"), "not inline before on-chain complete");
 
         // Locator mode: the artist and the platform register copies; the storage operator
-        // chooses among them.
+        // chooses among them (a platform copy is served only by its explicit pick, WS-21).
         vm.prank(artist);
         records.addLocator(tokenId, v.fileId, CA.ar("golden arweave"));
         vm.prank(platform);
         records.addLocator(tokenId, v.fileId, CA.ipfsLocator("golden ipfs"));
+        vm.prank(storageOperator);
+        records.setPreferredKind(LocatorKind.IPFS);
         assertTrue(
             _contains(
                 stream.tokenURI(tokenId),
@@ -78,7 +80,7 @@ contract ContentToTokenURIFlowTest is IntegrationBase {
             )
         );
         vm.prank(storageOperator);
-        records.setPreferredKind(LocatorKind.IPFS);
+        records.setFilePreference(tokenId, v.fileId, 1);
         assertTrue(
             _contains(
                 stream.tokenURI(tokenId), string.concat('"image":"', CA.ipfs("golden ipfs"), '"')

@@ -246,11 +246,13 @@ contract TokenUriBudgetTest is IntegrationBase {
     }
 
     /// @dev 16 locators on the license text, of the longest kind (IPFS, 66 bytes) last and
-    ///      ARWEAVE before it, and the global preference on IPFS: the scan runs to the end.
+    ///      ARWEAVE before it, and the global preference on IPFS: the scan runs to the end. The
+    ///      platform's 8 come first and the artist's 8 last, since the kind fallback considers
+    ///      only the artist's (WS-21), so the served IPFS copy is the artist's at index 15.
     function _addLocators(Built memory b) internal {
         for (uint256 i; i < 16; ++i) {
             string memory seed = string.concat(vm.toString(salt), "/", vm.toString(i));
-            vm.prank(i < 8 ? artist : platform);
+            vm.prank(i < 8 ? platform : artist);
             records.addLocator(
                 b.tokenId, b.licenseText, i == 15 ? CA.ipfsLocator(seed) : CA.ar(seed)
             );

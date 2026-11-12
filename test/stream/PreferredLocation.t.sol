@@ -8,7 +8,8 @@ import { RecordsFixture } from "./RecordsFixture.sol";
 
 /// @notice Fuzzes preferred-location resolution (D10: file override, then collection kind, then
 ///         global kind, then first registered, then the implicit ONCHAIN copy) against a model.
-///         ONCHAIN matches only a work marked on-chain complete by `syncOnChain`.
+///         ONCHAIN matches only a work marked on-chain complete by `syncOnChain`, and only the
+///         file override selects a locator the platform added (RFX-REC-1).
 contract PreferredLocationTest is RecordsFixture {
     uint256 internal constant NONE = type(uint256).max;
 
@@ -17,24 +18,34 @@ contract PreferredLocationTest is RecordsFixture {
         return LocatorKind(raw % 4);
     }
 
-    function _modelFirst(LocatorKind[] memory kinds, LocatorKind kind, bool onChain)
-        internal
-        pure
-        returns (bool, uint256)
-    {
+    /// @dev The first artist locator of `kind` (`byArtist`), or the implicit ONCHAIN copy.
+    function _modelFirst(
+        LocatorKind[] memory kinds,
+        bool[] memory byArtist,
+        LocatorKind kind,
+        bool onChain
+    ) internal pure returns (bool, uint256) {
         if (kind == LocatorKind.NONE) return (false, 0);
         if (kind == LocatorKind.ONCHAIN) return (onChain, NONE);
         for (uint256 i; i < kinds.length; ++i) {
-            if (kinds[i] == kind) return (true, i);
+            if (byArtist[i] && kinds[i] == kind) return (true, i);
         }
         return (false, 0);
     }
 
     /// @dev Mints and opens a work with `count` locators on its primary file, ARWEAVE or IPFS
-    ///      by the bits of `kindBits`; uploads its media if `complete` and syncs it if `sync`.
-    function _workWithLocators(uint256 count, uint256 kindBits, bool complete, bool sync)
+    ///      by the bits of `kindBits`, added by the artist or the platform by the bits of
+    ///      `adderBits` (the other side once one's quota of 8 is used); uploads its media if
+    ///      `complete` and syncs it if `sync`.
+    function _workWithLocators(
+        uint256 count,
+        uint256 kindBits,
+        uint256 adderBits,
+        bool complete,
+        bool sync
+    )
         internal
-        returns (uint256 tokenId, bytes32 file, LocatorKind[] memory kinds)
+        returns (uint256 tokenId, bytes32 file, LocatorKind[] memory kinds, bool[] memory byArtist)
     {
         PackageItem memory item;
         MediaFile[] memory media;
@@ -43,18 +54,33 @@ contract PreferredLocationTest is RecordsFixture {
         file = media[0].fileId;
         if (sync) records.syncOnChain(tokenId);
         kinds = new LocatorKind[](count);
+        byArtist = new bool[](count);
+        uint256 artistAdded;
         for (uint256 i; i < count; ++i) {
             kinds[i] = (kindBits >> i) & 1 == 0 ? LocatorKind.ARWEAVE : LocatorKind.IPFS;
             string memory seed = vm.toString(i);
             string memory uri = kinds[i] == LocatorKind.ARWEAVE ? CA.arweave(seed) : CA.ipfs(seed);
-            // The platform's quota of 8, then the artist's.
-            vm.prank(i < 8 ? platform : artist);
+            // Each side has a quota of 8; a full side passes to the other.
+            bool artistAdds = (adderBits >> i) & 1 == 1;
+            if (artistAdds && artistAdded == 8) artistAdds = false;
+            if (!artistAdds && i - artistAdded == 8) artistAdds = true;
+            byArtist[i] = artistAdds;
+            if (artistAdds) ++artistAdded;
+            vm.prank(artistAdds ? artist : platform);
             records.addLocator(tokenId, file, Locator(kinds[i], uri));
         }
     }
 
+    function _modelFirstArtist(bool[] memory byArtist) internal pure returns (bool, uint256) {
+        for (uint256 i; i < byArtist.length; ++i) {
+            if (byArtist[i]) return (true, i);
+        }
+        return (false, 0);
+    }
+
     function _model(
         LocatorKind[] memory kinds,
+        bool[] memory byArtist,
         uint256 filePref,
         LocatorKind collectionKind,
         LocatorKind globalKind,
@@ -62,15 +88,17 @@ contract PreferredLocationTest is RecordsFixture {
     ) internal pure returns (bool found, uint256 expected) {
         found = filePref != NONE;
         expected = filePref;
-        if (!found) (found, expected) = _modelFirst(kinds, collectionKind, onChain);
-        if (!found) (found, expected) = _modelFirst(kinds, globalKind, onChain);
-        if (!found && kinds.length != 0) (found, expected) = (true, 0);
+        if (!found) (found, expected) = _modelFirst(kinds, byArtist, collectionKind, onChain);
+        if (!found) (found, expected) = _modelFirst(kinds, byArtist, globalKind, onChain);
+        if (!found) (found, expected) = _modelFirstArtist(byArtist);
         if (!found && onChain) (found, expected) = (true, NONE);
     }
 
+    /// Regression: RFX-REC-1 (the adder of each locator is fuzzed)
     function testFuzz_preferredLocator_matchesModel(
         uint8 count,
         uint256 kindBits,
+        uint256 adderBits,
         uint8 globalRaw,
         uint8 collectionRaw,
         uint8 filePrefRaw,
@@ -80,8 +108,8 @@ contract PreferredLocationTest is RecordsFixture {
         count = uint8(bound(count, 0, 16));
         // A complete file that was never synced does not resolve on-chain.
         bool onChain = complete && synced;
-        (uint256 tokenId, bytes32 file, LocatorKind[] memory kinds) =
-            _workWithLocators(count, kindBits, complete, onChain);
+        (uint256 tokenId, bytes32 file, LocatorKind[] memory kinds, bool[] memory byArtist) =
+            _workWithLocators(count, kindBits, adderBits, complete, onChain);
 
         LocatorKind globalKind = _kind(globalRaw);
         LocatorKind collectionKind = _kind(collectionRaw);
@@ -93,7 +121,7 @@ contract PreferredLocationTest is RecordsFixture {
         vm.stopPrank();
 
         (bool found, uint256 expected) =
-            _model(kinds, filePref, collectionKind, globalKind, onChain);
+            _model(kinds, byArtist, filePref, collectionKind, globalKind, onChain);
         (Locator memory chosen, uint256 index) = records.preferredLocator(tokenId, file);
         if (!found) {
             assertEq(index, NONE);
@@ -122,7 +150,7 @@ contract PreferredLocationTest is RecordsFixture {
         records.openRecord(idB, b, mediaB);
         bytes32 fileA = mediaA[0].fileId;
         bytes32 fileB = mediaB[0].fileId;
-        vm.startPrank(platform);
+        vm.startPrank(artist);
         records.addLocator(idA, fileA, CA.ipfsLocator("a"));
         records.addLocator(idB, fileB, CA.ar("b"));
         vm.stopPrank();

@@ -1926,7 +1926,7 @@ contract WorkRecordsTest is RecordsFixture {
     function test_preferredLocator_mostSpecificWins() public {
         (uint256 tokenId,) = _work(1);
         bytes32 file = _primary(tokenId);
-        vm.startPrank(platform);
+        vm.startPrank(artist);
         records.addLocator(tokenId, file, _ar("a0"));
         records.addLocator(tokenId, file, _ipfs("i1"));
         records.addLocator(tokenId, file, _ar("a2"));
@@ -1962,7 +1962,7 @@ contract WorkRecordsTest is RecordsFixture {
         _expectNoLocator(tokenId, file);
         vm.prank(storageOperator);
         records.setPreferredKind(LocatorKind.ONCHAIN);
-        vm.prank(platform);
+        vm.prank(artist);
         records.addLocator(tokenId, file, _ipfs("i0"));
         _expectPreferred(tokenId, file, 0, CA.ipfs("i0"));
         _upload(1);
@@ -1994,6 +1994,130 @@ contract WorkRecordsTest is RecordsFixture {
             abi.encodeWithSelector(IWorkRecords.FileNotInWork.selector, tokenId, keccak256("x"))
         );
         records.preferredLocator(tokenId, keccak256("x"));
+    }
+
+    /// @dev Every fallback tier (collection kind, global kind, first registered) considers only
+    ///      the artist's locators, whatever the platform registered before them; the storage
+    ///      operator's file preference still selects a platform locator.
+    /// Regression: RFX-REC-1
+    function test_preferredLocator_fallbacksConsiderOnlyTheArtistsLocators() public {
+        (uint256 tokenId,) = _work(1);
+        bytes32 file = _primary(tokenId);
+        vm.startPrank(platform);
+        records.addLocator(tokenId, file, _ar("p0"));
+        records.addLocator(tokenId, file, _ipfs("p1"));
+        vm.stopPrank();
+        vm.startPrank(artist);
+        records.addLocator(tokenId, file, _ar("a2"));
+        records.addLocator(tokenId, file, _ipfs("a3"));
+        vm.stopPrank();
+        vm.prank(platform);
+        records.addLocator(tokenId, file, _ar("p4"));
+
+        // First registered: the artist's first, not the platform's index 0.
+        _expectPreferred(tokenId, file, 2, CA.arweave("a2"));
+        vm.startPrank(storageOperator);
+        // Global kind: the artist's first IPFS copy, not the platform's index 1.
+        records.setPreferredKind(LocatorKind.IPFS);
+        _expectPreferred(tokenId, file, 3, CA.ipfs("a3"));
+        // Collection kind: the artist's first Arweave copy, not the platform's index 0.
+        records.setCollectionPreferredKind(collectionId, LocatorKind.ARWEAVE);
+        _expectPreferred(tokenId, file, 2, CA.arweave("a2"));
+        // The operator's explicit pick of a platform locator is served.
+        records.setFilePreference(tokenId, file, 0);
+        _expectPreferred(tokenId, file, 0, CA.arweave("p0"));
+        records.setFilePreference(tokenId, file, 4);
+        _expectPreferred(tokenId, file, 4, CA.arweave("p4"));
+        records.setFilePreference(tokenId, file, NONE);
+        _expectPreferred(tokenId, file, 2, CA.arweave("a2"));
+        vm.stopPrank();
+    }
+
+    /// @dev A kind only the platform registered never matches: resolution falls through to the
+    ///      artist's first locator.
+    /// Regression: RFX-REC-1
+    function test_preferredLocator_aPlatformOnlyKindFallsThroughToTheArtist() public {
+        (uint256 tokenId,) = _work(1);
+        bytes32 file = _primary(tokenId);
+        vm.prank(platform);
+        records.addLocator(tokenId, file, _ipfs("p0"));
+        vm.prank(artist);
+        records.addLocator(tokenId, file, _ar("a1"));
+        vm.startPrank(storageOperator);
+        records.setPreferredKind(LocatorKind.IPFS);
+        _expectPreferred(tokenId, file, 1, CA.arweave("a1"));
+        records.setCollectionPreferredKind(collectionId, LocatorKind.IPFS);
+        _expectPreferred(tokenId, file, 1, CA.arweave("a1"));
+        vm.stopPrank();
+    }
+
+    /// @dev With only platform locators, the file resolves to the empty locator, then to the
+    ///      implicit ONCHAIN copy once the work is synced, until the operator picks one.
+    /// Regression: RFX-REC-1
+    function test_preferredLocator_platformOnlyLocatorsNeedTheOperatorsPick() public {
+        (uint256 tokenId, PackageItem memory item, MediaFile[] memory media) = _minted(1, true);
+        records.openRecord(tokenId, item, media);
+        bytes32 file = media[0].fileId;
+        vm.startPrank(platform);
+        records.addLocator(tokenId, file, _ar("p0"));
+        records.addLocator(tokenId, file, _ipfs("p1"));
+        vm.stopPrank();
+        _expectNoLocator(tokenId, file);
+        vm.startPrank(storageOperator);
+        records.setPreferredKind(LocatorKind.ARWEAVE);
+        records.setCollectionPreferredKind(collectionId, LocatorKind.IPFS);
+        vm.stopPrank();
+        _expectNoLocator(tokenId, file);
+
+        records.syncOnChain(tokenId);
+        (Locator memory chosen, uint256 index) = records.preferredLocator(tokenId, file);
+        assertEq(index, NONE);
+        assertEq(uint8(chosen.kind), uint8(LocatorKind.ONCHAIN));
+
+        vm.prank(storageOperator);
+        records.setFilePreference(tokenId, file, 1);
+        _expectPreferred(tokenId, file, 1, CA.ipfs("p1"));
+    }
+
+    /// @dev After finalize only the platform adds; its locators still need the operator's pick,
+    ///      and the artist's earlier locators keep serving the fallbacks.
+    /// Regression: RFX-REC-1
+    function test_preferredLocator_platformLocatorsAfterFinalizeNeedTheOperatorsPick() public {
+        (uint256 tokenId,) = _work(1);
+        bytes32 file = _primary(tokenId);
+        vm.prank(artist);
+        records.addLocator(tokenId, file, _ar("a0"));
+        bytes32 state = records.workStateHash(tokenId);
+        vm.prank(artist);
+        records.finalize(tokenId, state);
+        vm.prank(platform);
+        records.addLocator(tokenId, file, _ipfs("p1"));
+        vm.prank(storageOperator);
+        records.setPreferredKind(LocatorKind.IPFS);
+        _expectPreferred(tokenId, file, 0, CA.arweave("a0"));
+        vm.prank(storageOperator);
+        records.setFilePreference(tokenId, file, 1);
+        _expectPreferred(tokenId, file, 1, CA.ipfs("p1"));
+    }
+
+    /// @dev A platform locator emits the same events as before: `LocatorAdded` and ERC-4906
+    ///      through the core, although it does not change what is served.
+    /// Regression: RFX-REC-1
+    function test_addLocator_platformLocatorStillRefreshesTheMetadata() public {
+        (uint256 tokenId,) = _work(1);
+        bytes32 file = _primary(tokenId);
+        vm.expectEmit(address(records));
+        emit IWorkRecords.LocatorAdded(tokenId, file, 0, _ipfs("p0"));
+        vm.expectEmit(address(stream));
+        emit MetadataUpdate(tokenId);
+        vm.prank(platform);
+        records.addLocator(tokenId, file, _ipfs("p0"));
+        vm.expectEmit(address(records));
+        emit IWorkRecords.LocatorAdded(tokenId, file, 1, _ar("a1"));
+        vm.expectEmit(address(stream));
+        emit MetadataUpdate(tokenId);
+        vm.prank(artist);
+        records.addLocator(tokenId, file, _ar("a1"));
     }
 
     function _expectPreferred(uint256 tokenId, bytes32 file, uint256 index, string memory uri)
