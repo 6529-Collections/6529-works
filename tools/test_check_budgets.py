@@ -163,14 +163,16 @@ class BudgetTest(unittest.TestCase):
     def test_contract_size_limits(self) -> None:
         self.repo.write("A.sol", "contract A {}\n")
         at_limit = {"A": {"runtime_size": 24_576, "init_size": 49_152}}
-        code, out = self.repo.run("--sizes-json", str(self.repo.sizes(at_limit)))
+        # The margin floor is tested on its own (MarginTest); here only EIP-170 and EIP-3860.
+        no_floor = ("--min-margin", "0")
+        code, out = self.repo.run("--sizes-json", str(self.repo.sizes(at_limit)), *no_floor)
         self.assertEqual(code, 0, out)
 
         over = {
             "A": {"runtime_size": 24_577, "init_size": 100},
             "B": {"runtime_size": 100, "init_size": 49_153},
         }
-        code, out = self.repo.run("--sizes-json", str(self.repo.sizes(over)))
+        code, out = self.repo.run("--sizes-json", str(self.repo.sizes(over)), *no_floor)
         self.assertEqual(code, 1)
         self.assertIn("A runtime 24577 > 24576", out)
         self.assertIn("B initcode 49153 > 49152", out)
@@ -279,6 +281,132 @@ class BudgetTest(unittest.TestCase):
         (self.repo.root / "src").rmdir()
         with self.assertRaises(SystemExit):
             self.repo.run("--skip-sizes")
+
+
+def _runtime(margin: int) -> dict:
+    """A size entry leaving `margin` bytes under EIP-170."""
+    return {"runtime_size": cb.MAX_RUNTIME_BYTES - margin, "init_size": 100}
+
+
+class MarginTest(unittest.TestCase):
+    """Regression: RFX-TOOL-1. The EIP-170 margin floor and its recorded exemptions."""
+
+    def setUp(self) -> None:
+        self.repo = TempRepo()
+        self.addCleanup(self.repo.close)
+        self.repo.write(
+            "Core.sol",
+            "abstract contract Base {}\ncontract Core is Base {}\ncontract Tight {}\n",
+        )
+
+    def _exempt(self, entries: dict) -> None:
+        path = self.repo.root / "tools" / "size-margins.json"
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(json.dumps({"exempt": entries}), encoding="utf-8")
+
+    def _run(self, sizes: dict, *args: str) -> tuple[int, str]:
+        return self.repo.run("--sizes-json", str(self.repo.sizes(sizes)), *args)
+
+    def test_floor_is_512_bytes(self) -> None:
+        self.assertEqual(cb.MIN_RUNTIME_MARGIN, 512)
+        code, out = self._run({"Core": _runtime(512), "Tight": _runtime(600)})
+        self.assertEqual(code, 0, out)
+        self.assertIn("ok   2 src/ contracts keep 512 bytes of EIP-170 margin (0 exempt)", out)
+        code, out = self._run({"Core": _runtime(511), "Tight": _runtime(600)})
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL Core margin 511 bytes < 512 (runtime 24065)", out)
+
+    def test_only_contracts_declared_in_src_are_held_to_the_floor(self) -> None:
+        # A test contract, an abstract base and a name only in a comment or string.
+        self.repo.write("Notes.sol", '// contract Commented {}\nstring constant S = "contract Quoted";\n')
+        sizes = {
+            "Core": _runtime(600),
+            "Tight": _runtime(600),
+            "TestOnlyHandler": _runtime(0),
+            "Base": _runtime(0),
+            "Commented": _runtime(0),
+            "Quoted": _runtime(0),
+        }
+        code, out = self._run(sizes)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(cb.deployable_contracts(self.repo.root / "src"), {"Core", "Tight"})
+
+    def test_an_exempt_contract_may_not_lose_margin(self) -> None:
+        self._exempt({"Tight": {"margin": 203, "reason": "not upgradeable"}})
+        code, out = self._run({"Core": _runtime(600), "Tight": _runtime(203)})
+        self.assertEqual(code, 0, out)
+        self.assertIn("ok   Tight margin 203 bytes (exempt, recorded 203)", out)
+        self.assertIn("(1 exempt)", out)
+        code, out = self._run({"Core": _runtime(600), "Tight": _runtime(202)})
+        self.assertEqual(code, 1)
+        self.assertIn(
+            "FAIL Tight margin 202 bytes < its recorded 203 (runtime 24374; exempt from the"
+            " 512-byte floor: not upgradeable)",
+            out,
+        )
+
+    def test_a_gain_is_reported_and_a_recovered_contract_loses_its_exemption(self) -> None:
+        self._exempt({"Tight": {"margin": 203, "reason": "not upgradeable"}})
+        code, out = self._run({"Core": _runtime(600), "Tight": _runtime(300)})
+        self.assertEqual(code, 0, out)
+        self.assertIn("Tight margin 300 bytes (exempt, recorded 203: raise the record", out)
+        code, out = self._run({"Core": _runtime(600), "Tight": _runtime(512)})
+        self.assertEqual(code, 1)
+        self.assertIn("Tight margin 512 bytes is back at or above the 512-byte floor", out)
+
+    def test_an_exemption_for_an_unmeasured_contract_fails(self) -> None:
+        self._exempt({"Gone": {"margin": 100, "reason": "removed since"}})
+        code, out = self._run({"Core": _runtime(600), "Tight": _runtime(600)})
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL Gone: exempt in tools/size-margins.json, but no src/ contract", out)
+
+    def test_a_malformed_exemptions_file_fails(self) -> None:
+        cases = {
+            "no reason": {"exempt": {"Tight": {"margin": 100}}},
+            "blank reason": {"exempt": {"Tight": {"margin": 100, "reason": " "}}},
+            "string margin": {"exempt": {"Tight": {"margin": "100", "reason": "r"}}},
+            "bool margin": {"exempt": {"Tight": {"margin": True, "reason": "r"}}},
+            "negative margin": {"exempt": {"Tight": {"margin": -1, "reason": "r"}}},
+            "margin at the floor": {"exempt": {"Tight": {"margin": 512, "reason": "r"}}},
+            "no exempt object": {"Tight": {"margin": 100, "reason": "r"}},
+            "not an object": [1, 2],
+        }
+        path = self.repo.root / "tools" / "size-margins.json"
+        path.parent.mkdir(exist_ok=True)
+        for label, data in cases.items():
+            with self.subTest(label):
+                path.write_text(json.dumps(data), encoding="utf-8")
+                code, out = self._run({"Core": _runtime(600), "Tight": _runtime(100)})
+                self.assertEqual(code, 1, out)
+                self.assertIn("FAIL size-margins.json", out)
+        path.write_text("{not json", encoding="utf-8")
+        code, out = self._run({"Core": _runtime(600), "Tight": _runtime(100)})
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL size-margins.json: not JSON", out)
+
+    def test_a_missing_exemptions_file_exempts_nothing(self) -> None:
+        code, out = self._run({"Core": _runtime(600), "Tight": _runtime(100)})
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL Tight margin 100 bytes < 512", out)
+
+    def test_an_explicit_exemptions_file_and_floor(self) -> None:
+        other = self.repo.root / "other.json"
+        other.write_text(
+            json.dumps({"exempt": {"Tight": {"margin": 100, "reason": "r"}}}), encoding="utf-8"
+        )
+        sizes = {"Core": _runtime(600), "Tight": _runtime(100)}
+        code, out = self._run(sizes, "--margins", str(other))
+        self.assertEqual(code, 0, out)
+        code, out = self._run(sizes, "--min-margin", "1024")
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL Core margin 600 bytes < 1024", out)
+
+    def test_the_committed_exemptions_are_well_formed(self) -> None:
+        path = Path(__file__).with_name("size-margins.json")
+        exempt = cb.load_margins(path, cb.MIN_RUNTIME_MARGIN)
+        self.assertTrue(exempt, "the committed file lists the contracts below the floor")
+        for name, entry in exempt.items():
+            self.assertLess(entry["margin"], cb.MIN_RUNTIME_MARGIN, name)
 
 
 if __name__ == "__main__":
