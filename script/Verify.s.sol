@@ -46,7 +46,9 @@ import { VerifyV1 } from "./VerifyV1.sol";
 ///         5. Off anvil, the genesis file still matches the committed policy and names nothing
 ///            the deployment lacks, and its holders pass the deploy's holder guards against the
 ///            chain as it is now: Safes, signer separation, no deployment contract
-///            (`DeployGuards.checkHolders`, `checkHoldersAgainst`).
+///            (`DeployGuards.checkHolders`, `checkHoldersAgainst`); on mainnet, the role groups
+///            and no deployer as a holder, museum, marketplace owner or fee recipient
+///            (`checkRoleGroups`, `checkRecipients`).
 ///         6. `VerifyV1.check`: every role, holder, delay and selector, no role left with the
 ///            configurator, every target's authority, every wired getter, and PLATFORM's
 ///            immediate path into `openSale`, `closeSale` and `addLocator`. Off anvil, the
@@ -94,13 +96,6 @@ contract Verify is ScriptIO {
     /// @notice On mainnet, a canonical dependency's code (or its recorded hash) is not the pinned
     ///         code.
     error NonCanonicalCode(string name, address account, bytes32 codehash);
-    /// @notice The VRF subscription's consumers are not exactly the entropy module (`count`
-    ///         consumers).
-    error SubscriptionConsumers(uint256 subscriptionId, uint256 count);
-    /// @notice On mainnet, the VRF subscription's owner is not the hot admin Safe.
-    error SubscriptionOwner(address owner);
-    /// @notice On mainnet, the coordinator does not report the subscription.
-    error SubscriptionUnreadable(address coordinator, uint256 subscriptionId);
     /// @notice Epoch mode: a genesis holder the current configuration drops still has a record
     ///         for the role.
     error HolderNotRemoved(uint64 role, address account);
@@ -268,35 +263,14 @@ contract Verify is ScriptIO {
         ) revert NonCanonicalCode("DELEGATION_CONTRACT", p.delegation, p.delegation.codehash);
     }
 
-    /// @dev The live entropy module's VRF subscription, read from its current coordinator
-    ///      (`getSubscription`, Chainlink v2.5): the module is the only consumer. On `mainnet` the
-    ///      owner must be the hot admin Safe, the configured holder of both ADMIN and
-    ///      PARAMETER_SETTER (which moves the module between subscriptions). A read that fails
-    ///      fails Verify, except off mainnet when the coordinator has no such function (it
-    ///      reverts with no data).
+    /// @dev The live entropy module's VRF subscription (`DeployGuards.checkSubscription`): the
+    ///      module is the only consumer, and on `mainnet` the owner is the hot admin Safe.
     function _checkSubscription(
         DeployV1.Deployment memory d,
         GovernanceConfig.Config memory cfg,
         bool mainnet
     ) internal view {
-        if (address(d.entropyModule) == address(0)) return;
-        address coordinator = d.entropyModule.coordinator();
-        uint256 id = d.entropyModule.config().subscriptionId;
-        (bool ok, bytes memory ret) =
-            coordinator.staticcall(abi.encodeWithSignature("getSubscription(uint256)", id));
-        // Off mainnet, a coordinator without `getSubscription` (empty revert data) is skipped;
-        // any other failure, such as `InvalidSubscription`, fails.
-        if (!mainnet && ret.length == 0) return;
-        if (!ok || ret.length < 192) revert SubscriptionUnreadable(coordinator, id);
-        (,,, address owner, address[] memory consumers) =
-            abi.decode(ret, (uint96, uint96, uint64, address, address[]));
-        if (consumers.length != 1 || consumers[0] != address(d.entropyModule)) {
-            revert SubscriptionConsumers(id, consumers.length);
-        }
-        if (
-            mainnet
-                && !(_holds(cfg, Roles.ADMIN, owner) && _holds(cfg, Roles.PARAMETER_SETTER, owner))
-        ) revert SubscriptionOwner(owner);
+        DeployGuards.checkSubscription(d, cfg, mainnet);
     }
 
     function _holds(GovernanceConfig.Config memory cfg, uint64 role, address account)
@@ -439,6 +413,7 @@ contract Verify is ScriptIO {
         DeployGuards.checkHoldersAgainst(d, paramsOf(record), cfg);
         if (block.chainid == DeployGuards.MAINNET_CHAIN_ID) {
             DeployGuards.checkRoleGroups(json, paramsOf(record).deployer);
+            DeployGuards.checkRecipients(paramsOf(record));
         }
     }
 

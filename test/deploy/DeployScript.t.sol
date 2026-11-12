@@ -1187,16 +1187,16 @@ contract DeployScriptTest is Test {
         MockVrfSubscriptions coordinator = new MockVrfSubscriptions();
         (string memory record, DeployV1.Deployment memory d) = _vrfRecord(coordinator);
         address module = address(d.entropyModule);
-        vm.expectRevert(abi.encodeWithSelector(Verify.SubscriptionConsumers.selector, 7, 0));
+        vm.expectRevert(abi.encodeWithSelector(DeployGuards.ModuleNotAConsumer.selector, 7, module));
         verifier.verify(record);
         address[] memory two = new address[](2);
         two[0] = module;
         two[1] = makeAddr("anotherConsumer");
         coordinator.setSubscription(address(this), two);
-        vm.expectRevert(abi.encodeWithSelector(Verify.SubscriptionConsumers.selector, 7, 2));
+        vm.expectRevert(abi.encodeWithSelector(DeployGuards.SubscriptionConsumers.selector, 7, 2));
         verifier.verify(record);
         coordinator.setSubscription(address(this), _one(makeAddr("notTheModule")));
-        vm.expectRevert(abi.encodeWithSelector(Verify.SubscriptionConsumers.selector, 7, 1));
+        vm.expectRevert(abi.encodeWithSelector(DeployGuards.ModuleNotAConsumer.selector, 7, module));
         verifier.verify(record);
         // Off mainnet any owner is accepted (Sepolia r2's is the operator).
         coordinator.setSubscription(address(this), _one(module));
@@ -1204,7 +1204,9 @@ contract DeployScriptTest is Test {
         // A coordinator that does not know the subscription fails the run (L5).
         coordinator.setUnknown(true);
         vm.expectRevert(
-            abi.encodeWithSelector(Verify.SubscriptionUnreadable.selector, address(coordinator), 7)
+            abi.encodeWithSelector(
+                DeployGuards.SubscriptionUnreadable.selector, address(coordinator), 7
+            )
         );
         verifier.verify(record);
     }
@@ -1221,7 +1223,9 @@ contract DeployScriptTest is Test {
         for (uint256 i; i < 2; ++i) {
             coordinator.setSubscription(wrong[i], consumers);
             verifier.checkSubscriptionExternal(d, cfg, false);
-            vm.expectRevert(abi.encodeWithSelector(Verify.SubscriptionOwner.selector, wrong[i]));
+            vm.expectRevert(
+                abi.encodeWithSelector(DeployGuards.SubscriptionOwner.selector, wrong[i])
+            );
             verifier.checkSubscriptionExternal(d, cfg, true);
         }
         coordinator.setSubscription(_account("01"), consumers);
@@ -1231,7 +1235,9 @@ contract DeployScriptTest is Test {
         vm.etch(address(coordinator), address(plain).code);
         verifier.checkSubscriptionExternal(d, cfg, false);
         vm.expectRevert(
-            abi.encodeWithSelector(Verify.SubscriptionUnreadable.selector, address(coordinator), 7)
+            abi.encodeWithSelector(
+                DeployGuards.SubscriptionUnreadable.selector, address(coordinator), 7
+            )
         );
         verifier.checkSubscriptionExternal(d, cfg, true);
     }
@@ -1993,6 +1999,111 @@ contract DeployScriptTest is Test {
         vm.warp(d.manager.getSchedule(id) + d.manager.expiration());
         assertEq(d.manager.getSchedule(id), 0, "expired");
         verifier.verify(record);
+    }
+
+    // ------------------------------------------------------------------ RFX-TOOL-3: mainnet inputs
+
+    /// @dev The off-anvil inputs on chain 1, with the canonical delegation contract and Permit2
+    ///      code in place, so `prepare` reaches the parameter checks.
+    function _mainnetInputs() internal {
+        DelegationManagementMock delegation = _sepolia();
+        vm.chainId(1);
+        vm.etch(DeployGuards.CANONICAL_DELEGATION, address(delegation).code);
+        deployer.setEnv("DELEGATION_CONTRACT", "");
+    }
+
+    /// Regression: RFX-TOOL-3
+    /// @dev On mainnet the deployer EOA (this test calls `prepare`) is refused as the museum,
+    ///      the marketplace owner and the network fee recipient; on Sepolia it is accepted.
+    function test_MainnetRefusesTheDeployerAsAPinnedRecipient() public {
+        _mainnetInputs();
+        deployer.prepare();
+        string[3] memory names = ["MUSEUM", "MARKETPLACE_OWNER", "NETWORK_FEE_RECIPIENT"];
+        string[3] memory valid = [
+            vm.toString(makeAddr("museum")),
+            vm.toString(makeAddr("owner")),
+            vm.toString(makeAddr("fee"))
+        ];
+        for (uint256 i; i < names.length; ++i) {
+            deployer.setEnv(names[i], vm.toString(address(this)));
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    DeployGuards.RecipientIsTheDeployer.selector, names[i], address(this)
+                )
+            );
+            deployer.prepare();
+            vm.chainId(SEPOLIA);
+            deployer.setEnv("DELEGATION_CONTRACT", vm.toString(DeployGuards.CANONICAL_DELEGATION));
+            deployer.prepare();
+            vm.chainId(1);
+            deployer.setEnv("DELEGATION_CONTRACT", "");
+            deployer.setEnv(names[i], valid[i]);
+        }
+        deployer.prepare();
+    }
+
+    /// Regression: RFX-TOOL-3
+    /// @dev Verify repeats the recipient guard on mainnet, against the recorded parameters.
+    function test_VerifyRefusesTheDeployerAsAPinnedRecipientOnMainnet() public {
+        _sepolia();
+        deployer.run();
+        string memory record = deployer.lastRecord();
+        verifier.setFile(GENESIS, bytes(_filled()));
+        verifier.setFile("config/manifest.json", MANIFEST);
+        string memory museumIsDeployer =
+            _tamper(record, vm.toString(makeAddr("museum")), vm.toString(address(this)));
+        verifier.checkGuardsExternal(museumIsDeployer, _filled());
+        vm.chainId(1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.RecipientIsTheDeployer.selector, "MUSEUM", address(this)
+            )
+        );
+        verifier.checkGuardsExternal(museumIsDeployer, _filled());
+        verifier.checkGuardsExternal(record, _filled());
+    }
+
+    /// Regression: RFX-TOOL-3
+    /// @dev On mainnet the deploy reads the VRF subscription in the simulation, after the
+    ///      contracts and before `configure`: it must be the hot admin Safe's and list the
+    ///      module the run deploys as its only consumer, as Verify later requires. Off mainnet
+    ///      the module is added after the broadcast, so the deploy does not read it.
+    function test_MainnetDeployChecksTheSubscriptionBeforeTheBroadcast() public {
+        MockVrfSubscriptions coordinator = new MockVrfSubscriptions();
+        _sepolia();
+        _withVrf(address(coordinator));
+        Deploy.Run memory r = deployer.prepare();
+        DeployV1.Deployment memory d = deployer.run();
+        GovernanceConfig.Config memory cfg = DeployV1.config(d, r.json);
+        address module = address(d.entropyModule);
+        deployer.checkDeployment(d, r, cfg); // Sepolia: not read
+        vm.chainId(1);
+        vm.expectRevert(abi.encodeWithSelector(DeployGuards.ModuleNotAConsumer.selector, 7, module));
+        deployer.checkDeployment(d, r, cfg);
+        address[] memory two = new address[](2);
+        (two[0], two[1]) = (makeAddr("anotherConsumer"), module);
+        coordinator.setSubscription(_account("01"), two);
+        vm.expectRevert(abi.encodeWithSelector(DeployGuards.SubscriptionConsumers.selector, 7, 2));
+        deployer.checkDeployment(d, r, cfg);
+        // The operator still owns it, or the cold admin does.
+        address[2] memory wrong = [address(this), _account("02")];
+        for (uint256 i; i < wrong.length; ++i) {
+            coordinator.setSubscription(wrong[i], _one(module));
+            vm.expectRevert(
+                abi.encodeWithSelector(DeployGuards.SubscriptionOwner.selector, wrong[i])
+            );
+            deployer.checkDeployment(d, r, cfg);
+        }
+        coordinator.setSubscription(_account("01"), _one(module));
+        deployer.checkDeployment(d, r, cfg);
+        // A coordinator that cannot report the subscription fails closed on mainnet.
+        coordinator.setUnknown(true);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.SubscriptionUnreadable.selector, address(coordinator), 7
+            )
+        );
+        deployer.checkDeployment(d, r, cfg);
     }
 
     // ------------------------------------------------------------------ RFX-TOOL-2: the role map
