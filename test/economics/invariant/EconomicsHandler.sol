@@ -15,6 +15,7 @@ import {
     BlocklistToken,
     FeeOnTransferToken,
     MockArtistResolver,
+    NoReturnToken,
     RebasingToken,
     ToggleRecipient
 } from "../../mocks/economics/EconomicsMocks.sol";
@@ -26,7 +27,9 @@ import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 ///         the exact revert, from its own ghost state (payouts, measured releases, the receipts
 ///         high-water mark and each token's rules), never from `releasable`. Released amounts are
 ///         recorded from measured balance deltas. Assets: ETH, a USDC-style blocklist token, a
-///         fee-on-transfer token whose fee is toggled, and a rebasing token whose index moves.
+///         fee-on-transfer token whose fee is toggled, a rebasing token whose index moves, and a
+///         token whose `transfer` returns nothing (wallets only: it is never a sale currency, so
+///         payments, deposits and flushes do not use it).
 ///         `fail_on_revert` is on, so any unpredicted revert or mismatch fails the campaign.
 contract EconomicsHandler is Test {
     address internal constant ETH = address(0);
@@ -42,6 +45,7 @@ contract EconomicsHandler is Test {
         BlocklistToken usdc;
         FeeOnTransferToken fee;
         RebasingToken rebase;
+        NoReturnToken silent;
         MockArtistResolver resolver;
         uint256[] keys;
         uint256[] artistIds;
@@ -68,6 +72,7 @@ contract EconomicsHandler is Test {
     BlocklistToken public usdc;
     FeeOnTransferToken public fee;
     RebasingToken public rebase;
+    NoReturnToken public silent;
     MockArtistResolver public resolver;
     address[] public assets;
     address[] public actors;
@@ -109,12 +114,14 @@ contract EconomicsHandler is Test {
         usdc = s.usdc;
         fee = s.fee;
         rebase = s.rebase;
+        silent = s.silent;
         resolver = s.resolver;
         artistIds = s.artistIds;
         assets.push(ETH);
         assets.push(address(s.usdc));
         assets.push(address(s.fee));
         assets.push(address(s.rebase));
+        assets.push(address(s.silent));
         for (uint256 i; i < s.keys.length; ++i) {
             address actor = vm.addr(s.keys[i]);
             actors.push(actor);
@@ -132,7 +139,7 @@ contract EconomicsHandler is Test {
     function release(uint256 walletSeed, uint256 payeeSeed, uint256 assetSeed, uint256 callerSeed)
         external
     {
-        Attempt memory t = _attemptFor(walletSeed, payeeSeed, assets[assetSeed % 4], 0);
+        Attempt memory t = _attemptFor(walletSeed, payeeSeed, assets[assetSeed % 5], 0);
         if (callerSeed % 3 == 0) t.caller = _actor(callerSeed);
         _run(t);
     }
@@ -144,7 +151,7 @@ contract EconomicsHandler is Test {
         uint256 callerSeed,
         uint256 recipientSeed
     ) external {
-        Attempt memory t = _attemptFor(walletSeed, payeeSeed, assets[assetSeed % 4], 1);
+        Attempt memory t = _attemptFor(walletSeed, payeeSeed, assets[assetSeed % 5], 1);
         if (callerSeed % 3 == 0) t.caller = _actor(callerSeed);
         t.recipient = _actor(recipientSeed);
         _run(t);
@@ -158,7 +165,7 @@ contract EconomicsHandler is Test {
         uint256 signerSeed,
         uint256 recipientSeed
     ) external {
-        Attempt memory t = _attemptFor(walletSeed, payeeSeed, assets[assetSeed % 4], 2);
+        Attempt memory t = _attemptFor(walletSeed, payeeSeed, assets[assetSeed % 5], 2);
         if (signerSeed % 4 == 0) t.signer = _actor(signerSeed);
         t.recipient = _actor(recipientSeed);
         // Mostly the whole amount; sometimes an exact amount that may exceed what is due.
@@ -267,7 +274,7 @@ contract EconomicsHandler is Test {
 
     function receiveDirect(uint256 walletSeed, uint256 assetSeed, uint256 amount) external {
         SplitWallet w = _wallet(walletSeed);
-        address asset = assets[assetSeed % 4];
+        address asset = assets[assetSeed % 5];
         amount = bound(amount, 1, asset == ETH ? 50 ether : 1e24);
         if (asset == ETH) vm.deal(address(w), address(w).balance + amount);
         else BlocklistToken(asset).mint(address(w), amount);
@@ -551,6 +558,7 @@ contract EconomicsHandler is Test {
         paidOut[t.asset] += paid;
         modelHigh[address(t.w)][t.asset] = current;
         ++outcomes[keccak256(abi.encode(kind, "ok"))];
+        if (t.asset == address(silent)) ++outcomes["release.noReturn"];
     }
 
     function _send(Attempt memory t) internal returns (bool ok, bytes memory ret) {

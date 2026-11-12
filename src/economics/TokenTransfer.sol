@@ -9,9 +9,10 @@ import { BoundedCall } from "../libraries/BoundedCall.sol";
 ///         when it returns exactly one word holding `true`, and both balances must then move by
 ///         exactly the amount. Fee-on-transfer, rebasing-rounding, no-return and false-returning
 ///         tokens therefore fail closed instead of corrupting accounting. ETH sends share one
-///         primitive that copies no return data. Permit2 pulls are the exception: Permit2 calls
-///         the token itself and accepts one that returns nothing, so the sale adapters check
-///         only the balance deltas around it, and a no-return token can pay through Permit2.
+///         primitive that copies no return data. Two exceptions accept a token that returns
+///         nothing: Permit2 pulls (Permit2 calls the token itself, so the sale adapters check
+///         only the balance deltas around it) and {transferExactAllowingNoReturn}, which split
+///         wallets release with (ECO-23).
 /// @dev Internal functions only, so nothing here is a linked library. Calls copy at most one word
 ///      of return data, so a return-data bomb costs the token, not the caller.
 library TokenTransfer {
@@ -31,6 +32,7 @@ library TokenTransfer {
         Reverted,
         True,
         False,
+        Empty,
         Malformed
     }
 
@@ -66,6 +68,29 @@ library TokenTransfer {
         if (!_transfer(asset, to, amount, _ALL_GAS)) {
             revert TokenCallFailed(asset, IERC20.transfer.selector);
         }
+    }
+
+    /// @notice Transfers exactly `amount` of `asset` from this contract to `to`, or reverts, like
+    ///         {transferExact}, except that a call returning no data also counts: the exact
+    ///         balance deltas on both sides, not the return value, prove the move. A `false`, any
+    ///         return other than nothing or one word holding `true`, and any balance change other
+    ///         than exactly `amount` on both sides still revert. An account without code never
+    ///         gets this far: its `balanceOf` read, before the call, fails (`TokenReadFailed`).
+    /// @dev For a holder that has no other way out of a token it did not choose, such as a split
+    ///      wallet paid royalties by a marketplace. Never use it on a path that takes a sale
+    ///      currency in.
+    function transferExactAllowingNoReturn(address asset, address to, uint256 amount) internal {
+        uint256 fromBefore = balanceOf(asset, address(this));
+        uint256 toBefore = balanceOf(asset, to);
+        if (fromBefore < amount) revert TokenBalanceMismatch(asset);
+        Outcome outcome = _call(asset, abi.encodeCall(IERC20.transfer, (to, amount)), _ALL_GAS);
+        if (outcome != Outcome.True && outcome != Outcome.Empty) {
+            revert TokenCallFailed(asset, IERC20.transfer.selector);
+        }
+        if (
+            balanceOf(asset, address(this)) != fromBefore - amount
+                || balanceOf(asset, to) != toBefore + amount
+        ) revert TokenBalanceMismatch(asset);
     }
 
     /// @notice Transfers exactly `amount` of `asset` from this contract to `to`, giving the token
@@ -142,7 +167,8 @@ library TokenTransfer {
         if (fromBefore < amount) revert TokenBalanceMismatch(asset);
         Outcome outcome = _call(asset, data, gasLimit);
         if (outcome == Outcome.Reverted && tolerateFailure) return false;
-        if (outcome == Outcome.Malformed || outcome == Outcome.Reverted) {
+        // Empty and Malformed: no return value, or not exactly one word of 0 or 1.
+        if (outcome == Outcome.Reverted || outcome >= Outcome.Empty) {
             revert TokenCallFailed(asset, selector);
         }
         uint256 fromAfter = balanceOf(asset, from);
@@ -171,6 +197,7 @@ library TokenTransfer {
             word := mload(0x00)
         }
         if (!ok) return Outcome.Reverted;
+        if (size == 0) return Outcome.Empty;
         if (size != 32 || word > 1) return Outcome.Malformed;
         return word == 1 ? Outcome.True : Outcome.False;
     }

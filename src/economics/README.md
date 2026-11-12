@@ -52,6 +52,10 @@ Payment, release and recovery sequences are under
   words; never move the list into constructor arguments.
 - **Withdrawals never read the allowlist**, so a deprecated or never-admitted asset stays
   withdrawable (ECO-25); keep the allowlist out of the wallet and escrow.
+- **Only a wallet release accepts a no-return token.** `SplitWallet` releases with
+  `TokenTransfer.transferExactAllowingNoReturn`, which counts an empty `transfer` return because
+  the exact balance deltas prove the move (ECO-23). Keep every path that takes a sale currency in
+  (payments, escrow deposits, adapter pulls) on the strict `transferExact` / `pullExact`.
 - **Transaction cap.** [`GasCap.t.sol`](../../test/economics/GasCap.t.sol) measures the cold
   worst cases (a 64-payee wallet deployment and full atomic and continue-mode batches) against
   75% of the EIP-7825 cap (ECO-31); the largest, a full continue-mode signed batch, is about
@@ -75,5 +79,5 @@ prevents a second settlement (LIM-ECO-5).
 [ADR 0001 §7](../../docs/adr/0001-v1-scope.md#7-economics) (with §5 currencies and §11 the
 artist-resolved payout), [ADR 0003, economics](../../docs/adr/0003-build-time-decisions.md#economics-amends-adr-0001-7);
 [known limitations](../../docs/audit/known-limitations.md#economics-and-payouts) LIM-ECO-1 to
-LIM-ECO-5 and LIM-GAS-6; [invariants](../../docs/audit/invariants.md);
+LIM-ECO-6 and LIM-GAS-6; [invariants](../../docs/audit/invariants.md);
 [buying, bidding and settling](../../docs/integrators/buying-bidding-settling.md).
