@@ -5,6 +5,7 @@ import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessMana
 import { AuthorityUtils } from "@openzeppelin/contracts/access/manager/AuthorityUtils.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { ERC165Checker } from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { IERC1155 } from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
@@ -209,22 +210,39 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IStatementLog
-    /// @dev The item fallback is one bounded read of `coreOf(id)` on `token`; any other answer
-    ///      (not a Stream, a burned or unminted token) leaves the token's own result, zero.
+    /// @dev The item fallback is one bounded read of `coreOf(id)` on `token`. A token that is
+    ///      not a Stream, and a Stream's burned or unminted token (`IStream.UnknownWork`), leave
+    ///      the token's own result, zero. Any other failure of a token that declares `IStream`
+    ///      by ERC-165 reverts with `BoundedCall.BoundedCallFailed` (fail closed), so a failed
+    ///      read never passes for "no outcome".
     function latestDisputeOutcome(address token, uint256 id)
         external
         view
         returns (bytes32 entryHash)
     {
         entryHash = _latestDispute[subjectKey(token, id)];
-        if (entryHash != 0 || token == address(0)) return entryHash;
-        (bool ok, bytes memory core) = BoundedCall.tryRead(
-            token, abi.encodeCall(IStream.coreOf, (id)), OWNER_READ_GAS, 192, 0
-        );
-        if (ok && core.length == 192) {
-            bytes32 itemHash = abi.decode(core, (bytes32));
-            entryHash = _latestDispute[subjectKey(address(0), uint256(itemHash))];
+        if (entryHash != 0 || token == address(0) || token.code.length == 0) return entryHash;
+        if (!BoundedCall.hasSufficientGas(gasleft(), OWNER_READ_GAS, BoundedCall.CALL_RESERVE)) {
+            revert BoundedCall.BoundedCallInsufficientGas(OWNER_READ_GAS);
         }
+        bytes memory input = abi.encodeCall(IStream.coreOf, (id));
+        bool ok;
+        uint256 size;
+        bytes32 head;
+        assembly ("memory-safe") {
+            ok := staticcall(OWNER_READ_GAS, token, add(input, 0x20), mload(input), 0, 0)
+            size := returndatasize()
+            // The first word: the item hash of an answer, or the selector of a revert.
+            if gt(size, 31) {
+                returndatacopy(0, 0, 32)
+                head := mload(0)
+            }
+        }
+        if (ok && size == 192) return _latestDispute[subjectKey(address(0), uint256(head))];
+        // Only the selector is compared, so truncating to four bytes is intended.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        if (!ok && size == 36 && bytes4(head) == IStream.UnknownWork.selector) return 0;
+        if (_declaresStream(token)) revert BoundedCall.BoundedCallFailed(token);
     }
 
     /// @notice Returns the EIP-712 digest `signer` must sign for {appendSigned}.
@@ -357,6 +375,19 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
             if (ok && owner.length == 32 && abi.decode(owner, (uint256)) != 0) return;
         }
         revert UnknownDisputeSubject(token, id);
+    }
+
+    /// @dev Whether `token` declares `IStream` by ERC-165, in one bounded read; a failed or
+    ///      malformed answer is "no".
+    function _declaresStream(address token) private view returns (bool) {
+        (bool ok, bytes memory answer) = BoundedCall.tryRead(
+            token,
+            abi.encodeCall(IERC165.supportsInterface, (type(IStream).interfaceId)),
+            OWNER_READ_GAS,
+            32,
+            0
+        );
+        return ok && answer.length == 32 && abi.decode(answer, (uint256)) == 1;
     }
 
     function _isAuthorized(Role role, Statement calldata s, address who)
