@@ -123,6 +123,63 @@ contract ArtistRegistryTest is IdentityFixture {
         _stage(wallet2Key, _identity(artist, payout), 0);
     }
 
+    /// @dev Rotates the artist from `artist` to `newAuthority` while the two stay consolidated,
+    ///      so the old key remains an established wallet of the new authority.
+    function _rotateKeepingTheOldKeyConsolidated() internal {
+        _consolidate(artist, newAuthority);
+        vm.warp(block.timestamp + 30 days);
+        _stage(artistKey, _identity(newAuthority, newAuthority), newKey);
+        vm.warp(block.timestamp + 7 days);
+        registry.executeChange(artistId);
+        assertEq(registry.authorityOf(artistId), newAuthority);
+        assertTrue(_source().isEstablished(newAuthority, artist), "still consolidated");
+    }
+
+    /// @dev A key the artist rotated away from signs no new change and no heartbeat, even
+    ///      while it is still an established wallet of the new authority.
+    /// Regression: RFX-ID-1
+    function test_StageChange_RevertsForARotatedAwayKeyStillConsolidated() public {
+        _rotateKeepingTheOldKeyConsolidated();
+        _armRevert(_notAuthorized(artist));
+        _stage(artistKey, _identity(newAuthority, thief), 0);
+        _armRevert(_notAuthorized(artist));
+        _stage(artistKey, _identity(thief, thief), thiefKey);
+        _expectNotAuthorized(artist);
+        vm.prank(artist);
+        registry.heartbeat(artistId);
+        assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.NONE));
+    }
+
+    /// @dev After a rotation the new authority and its other established wallets still sign.
+    /// Regression: RFX-ID-1
+    function test_StageChange_OtherEstablishedWalletsStillSignAfterARotation() public {
+        _consolidate(newAuthority, wallet2);
+        _rotateKeepingTheOldKeyConsolidated();
+        vm.prank(wallet2);
+        registry.heartbeat(artistId);
+        _stage(wallet2Key, _identity(newAuthority, payout), 0);
+        PendingChange memory p = registry.pendingChange(artistId);
+        assertEq(uint8(p.kind), uint8(ChangeKind.STANDARD));
+        assertEq(p.next.payout, payout);
+        vm.prank(guardian);
+        registry.vetoChange(artistId);
+        _stage(newKey, _identity(newAuthority, payout), 0);
+        assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.STANDARD));
+    }
+
+    /// @dev Overrides and cancels keep their rules: an override stages as before, and the
+    ///      rotated-away key, still a captured wallet, contests it as the specification states
+    ///      (until the consolidation is revoked and its standing ages out).
+    /// Regression: RFX-ID-1
+    function test_StageChange_ARotatedAwayKeyLeavesOverridesAndCancelsAsSpecified() public {
+        _rotateKeepingTheOldKeyConsolidated();
+        _stageOverride(ChangeKind.CONTESTED, _identity(wallet2, wallet2), wallet2Key);
+        assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.CONTESTED));
+        vm.prank(artist);
+        registry.cancelChange(artistId);
+        assertTrue(registry.pendingChange(artistId).contestedAt != 0, "captured: it contests");
+    }
+
     function test_StageChange_RevertsForStranger() public {
         _armRevert(_notAuthorized(thief));
         _stage(thiefKey, _identity(artist, thief), 0);

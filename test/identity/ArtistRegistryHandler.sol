@@ -336,7 +336,7 @@ contract ArtistRegistryHandler is Test {
 
     function heartbeat(uint256 callerSeed) external {
         address caller = _caller(callerSeed);
-        bool ok = caller == ghostAuthority || adapter.isEstablished(ghostAuthority, caller);
+        bool ok = _signs(caller);
         if (!ok) _expect(_notAuthorized(caller));
         vm.prank(caller);
         registry.heartbeat(artistId);
@@ -445,10 +445,15 @@ contract ArtistRegistryHandler is Test {
         if (registry.pendingChange(artistId).kind != ChangeKind.NONE) {
             return abi.encodeWithSelector(IArtistRegistry.ChangePending.selector, artistId);
         }
-        if (signer != ghostAuthority && !adapter.isEstablished(ghostAuthority, signer)) {
-            return _notAuthorized(signer);
-        }
+        if (!_signs(signer)) return _notAuthorized(signer);
         return _nextError(next);
+    }
+
+    /// @dev `_requireSigner`: the authority, or a wallet established with it now that was never
+    ///      the artist's authority (RFX-ID-1).
+    function _signs(address account) private view returns (bool) {
+        return account == ghostAuthority
+            || (!ghostWasAuthority[account] && adapter.isEstablished(ghostAuthority, account));
     }
 
     /// @dev `_checkNext`: a valid payout, and a new authority that has never been the artist's

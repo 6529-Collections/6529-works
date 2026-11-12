@@ -70,7 +70,7 @@ One change may be pending per artist (`pendingChange`; kind `NONE` when none).
 
 | Kind | Staged by | Wait before execution | Also needs | Who can stop it |
 | --- | --- | --- | --- | --- |
-| `STANDARD` | Anyone, relaying the signature of the authority or of an established consolidated wallet (`stageChange`) | 7 days (`CHANGE_DELAY`) | The new authority's countersignature, when the authority moves | The previous authority or a captured wallet cancels; a GUARDIAN vetoes |
+| `STANDARD` | Anyone, relaying the signature of the authority or of an established consolidated wallet that was never the artist's authority (`stageChange`) | 7 days (`CHANGE_DELAY`) | The new authority's countersignature, when the authority moves | The previous authority or a captured wallet cancels; a GUARDIAN vetoes |
 | `CONTESTED` | PARAMETER_SETTER (`stageOverride`), 48 hours (standard class) | 180 days (`OVERRIDE_DELAY`) | A nonzero evidence hash; the new authority's `OverrideAcceptance`, when the authority moves | A captured wallet contests; a GUARDIAN vetoes; never the previous authority |
 | `ESTATE` | As `CONTESTED` | 180 days | As `CONTESTED`, plus 365 days without signed activity (`DORMANCY`) | As `CONTESTED` |
 | `LOST_KEY` | As `CONTESTED` | 180 days | As `ESTATE` | As `CONTESTED` |
@@ -105,8 +105,10 @@ OverrideAcceptance(uint256 artistId,uint8 kind,address authority,address payout,
 
 - **`IdentityChange`** binds the artist's `changeNonce`, which every staging consumes and
   `revokeNonce` (the authority) burns. Its signer is the authority or a wallet established with
-  it at that moment (a live `isEstablished` check, not the snapshot); the new authority
-  countersigns the same digest when the authority moves (ID-5). The deadline is inclusive.
+  it at that moment (a live `isEstablished` check, not the snapshot) that was never an authority
+  of this artist: a key the artist rotated away from signs no change, even while it stays
+  consolidated with the new authority. The new authority countersigns the same digest when the
+  authority moves (ID-5). The deadline is inclusive.
 - **`OverrideAcceptance`** is signed by the new authority, only when the override moves the
   authority. It binds no nonce, so a key holder cannot void it, and is consumed once by digest
   (`AcceptanceUsed`, ID-12). Its deadline is checked when the scheduled `stageOverride` executes,
@@ -287,8 +289,13 @@ sequenceDiagram
     Note over R: N is the authority, the dormancy clock restarts
 ```
 
-- **Preconditions.** Nothing pending; the signer is established with the authority now; the new
-  key passes the no-return and reservation checks; the payout is allowed.
+- **Preconditions.** Nothing pending; the signer is established with the authority now and was
+  never this artist's authority; the new key passes the no-return and reservation checks; the
+  payout is allowed.
+- **After the rotation.** Revoke the consolidation between the old key and the new authority.
+  The old key can no longer stage a change or a heartbeat (ID-5), but while it stays
+  consolidated it is captured as a canceller of later changes and can contest an override,
+  and after a revocation it keeps that standing for the 30-day grace (ID-21).
 - **Effects.** Accrued balances follow the new payout
   (`test_RecoveryByConsolidatedWalletThenSplitWalletPull`).
 - **If the key was stolen, not lost,** the thief is the previous authority and can cancel any
@@ -441,7 +448,7 @@ The calls that count as signed activity and reset the dormancy clock:
 
 | Call | Sets the last activity |
 | --- | --- |
-| `register`, `stageChange`, `revokeNonce`; `heartbeat` by the authority or an established wallet | Yes (`register` emits `ArtistRegistered`, not `ActivityRecorded`) |
+| `register`, `stageChange`, `revokeNonce`; `heartbeat` by the authority or an established wallet that was never its authority | Yes (`register` emits `ArtistRegistered`, not `ActivityRecorded`) |
 | `cancelChange` of a STANDARD change, or one that contests an override | Yes |
 | `executeChange`, or a `resolveContested` that upholds and applies | Yes: the clock restarts for the identity installed |
 | `cancelChange` of an override already contested | No: it does nothing |
@@ -549,7 +556,7 @@ Test files: [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) (
 | ID-2 | Every past authority keeps resolving to its artist and never becomes an authority again, of any artist. | `ArtistRegistry._taken`, `_checkNext`, `_apply`, `register` | AR `test_StageChange_RevertsForAPreviousAuthority`, `test_Register_PastAuthoritiesStayTaken`; IR `test_RotationBackToAPreviousAuthorityIsRefused`; INV `invariant_PastAuthoritiesResolveToTheArtist` |
 | ID-3 | A staged authority change reserves exactly its new authority until the change ends, however it ends. | `ArtistRegistry._stage`, `_clear`, `_apply`, `_taken` | AR `test_Reservation_FollowsThePendingChange`, `test_Reservation_ReleasedWhenExecutionClears`; IR `test_PendingNextAuthorityIsReservedUntilTheRecoveryExecutes`; INV `invariant_OnlyThePendingNextAuthorityIsReserved` |
 | ID-4 | At most one change is pending; an override replaces a pending STANDARD change but never another override. | `ArtistRegistry.stageChange`, `stageOverride` | AR `test_StageChange_RevertsWhenPending`, `test_Override_RevertsWhenAnOverrideIsPending`, `test_Override_ReplacesAPendingStandardChange` |
-| ID-5 | A STANDARD change needs an unexpired `IdentityChange` signature by the authority or a wallet established now, plus the new authority's countersignature when it moves. | `ArtistRegistry.stageChange`, `_requireSigner` | AR `test_StageChange_ByEstablishedWallet`, `test_StageChange_RevertsForFreshlyConsolidatedWallet`, `test_StageChange_AuthorityChangeNeedsTheNewKey`, `test_StageChange_RevertsForExpiredDeadline` |
+| ID-5 | A STANDARD change needs an unexpired `IdentityChange` signature by the authority or a wallet established now that was never an authority of the artist, plus the new authority's countersignature when it moves; a heartbeat needs the same signer. | `ArtistRegistry.stageChange`, `heartbeat`, `_requireSigner` | AR `test_StageChange_ByEstablishedWallet`, `test_StageChange_RevertsForFreshlyConsolidatedWallet`, `test_StageChange_AuthorityChangeNeedsTheNewKey`, `test_StageChange_RevertsForExpiredDeadline`, `test_StageChange_RevertsForARotatedAwayKeyStillConsolidated`, `test_StageChange_OtherEstablishedWalletsStillSignAfterARotation`, `test_StageChange_ARotatedAwayKeyLeavesOverridesAndCancelsAsSpecified` |
 | ID-6 | Every staging consumes the nonce; replay keys on the nonce, never on signature bytes; signatures bind the registry's domain. | `ArtistRegistry._stage`, `changeDigest` | AR `test_Replay_ConsumedNonceRejected`, `test_Replay_CompactFormOfAUsedSignatureRejected`, `test_Replay_OtherRegistryRejected` |
 | ID-7 | Only the authority burns its nonce; that voids unused STANDARD payloads but not override acceptances. | `ArtistRegistry.revokeNonce` | AR `test_RevokeNonce_VoidsAPresignedPayload`, `test_RevokeNonce_RevertsForAnyoneButTheAuthority`, `test_Override_AcceptanceSurvivesANonceBurn` |
 | ID-8 | A STANDARD change executes no earlier than 7 days after staging, an override no earlier than 180 days. | `ArtistRegistry.executeChange`, `resolveContested` | AR `testFuzz_ExecuteChange_RespectsTheDelay`, `test_Override_ContestedWaits180Days`; INV `invariant_PendingChangeIsWellFormed` |
@@ -602,7 +609,7 @@ Accepted risks are listed once, with their IDs, in
 | Activity lands during the 48-hour scheduling of an `ESTATE` or `LOST_KEY` override | The staging reverts with `NotDormant` | Wait out the dormancy, or stage a `CONTESTED` override |
 | A contest lapses | The freeze and restraint lift; the stale entry blocks new changes | Anyone calls `expireContest`, or a guardian vetoes |
 | The new key tries to accept a package while its change waits | `register` reverts with `AccountTaken` | Accept after the change executes |
-| The old key stays consolidated with the new authority after a rotation | The old key is an established wallet of the new authority and is captured as an override canceller (`test_Standing_AnOldKeyConsolidatedWithTheNewAuthorityIsCaptured`) | Revoke that consolidation after rotating; the old key then keeps standing only for the 30-day grace |
+| The old key stays consolidated with the new authority after a rotation | The old key signs no change or heartbeat (ID-5), but it is an established wallet of the new authority and is captured as a canceller, so it can cancel later STANDARD changes and contest overrides (`test_Standing_AnOldKeyConsolidatedWithTheNewAuthorityIsCaptured`) | Revoke that consolidation after rotating; the old key then keeps standing only for the 30-day grace |
 
 Other accepted risks for this area: wallets planted with the key (LIM-ID-4), standing only for
 recorded wallets (LIM-ID-5), a network that abuses recovery restrains the real artist (LIM-ID-2,
