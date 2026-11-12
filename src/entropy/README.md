@@ -17,7 +17,7 @@ gate, the retry rule and the coordinator change.
 
 | Caller | Calls | Rules |
 | --- | --- | --- |
-| Anyone (the artist, a relayer, a bot) | `requestSeed(item, packageRoot, proof)` for a `VRF` item of an approved, unconsumed package; links the item to its content's draw, and asks the coordinator only if the content has no pending or delivered draw | ENT-1, ENT-2, ENT-5, ENT-14, ENT-15, ENT-17 |
+| Anyone (the artist, a relayer, a bot) | `requestSeed(item, packageRoot, proof)` for a `VRF` item of an approved, unconsumed package; links the item to its content's draw, and asks the coordinator only if the content has no pending or delivered draw; after consumption, only the link-only call of the consuming item to its content's delivered seed | ENT-1, ENT-2, ENT-5, ENT-14, ENT-15, ENT-17, ENT-19 |
 | The current coordinator | `rawFulfillRandomWords(requestId, words)`; the first delivery fixes the seed, later ones are silent no-ops | ENT-4, ENT-6 to ENT-8, ENT-13 |
 | `Stream.mint`, inside the auction's `start` | `isDeliveredContent(item.contentHash)`, one word, after the item is consumed; a `VRF` item whose content has no delivered seed reverts the start with `SeedNotDelivered` | ENT-12 |
 | `WorkRecords.openRecord`; the renderer before a record opens | `seedOfContent(item.contentHash)`; `seedOf(itemHash)` | ENT-3, ENT-18 |

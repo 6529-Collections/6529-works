@@ -133,13 +133,16 @@ contract EntropyHandler is Test, EntropyItems {
 
     /// @dev A request: refused by the gate; for an item not yet linked, a join that returns zero
     ///      when the content's draw is delivered or pending; for a linked item, refused then; and
-    ///      otherwise a new request for the content.
+    ///      otherwise a new request for the content. The gate's one exception (RFX-ENT-1): the
+    ///      VRF item that consumed its content, not yet linked, joins a delivered draw.
     function request(uint256 itemSeed, uint256 callerSeed, uint256 wait) external {
         uint256 i = itemSeed % ITEMS;
         uint256 c = contentOf(i);
         vm.warp(block.timestamp + (wait % 36 hours));
         bool open = _gateOpen(i);
-        bool joins = open && !linked[i] && (_delivered[c] || _pending(c));
+        bool consumedLink = _vrf(i) && !linked[i] && _delivered[c]
+            && registry.consumedBy(itemOf(i).contentHash) == _hash(itemOf(i));
+        bool joins = (open && !linked[i] && (_delivered[c] || _pending(c))) || consumedLink;
         bool requests = open && !_delivered[c] && !_pending(c);
 
         vm.prank(address(uint160(callerSeed)));

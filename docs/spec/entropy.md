@@ -53,8 +53,10 @@ same seed.
 Reads are keyed by item hash, through a link (`itemHash => contentHash`) that `requestSeed`
 records on an item's first call, emitting `SeedLinked`. If the content already has a pending or
 delivered draw, the item only joins it: the call returns zero and the coordinator is not asked.
-An item that never called `requestSeed` reads as undelivered and cannot start, even if its
-content's seed exists.
+An item that never called `requestSeed` reads as undelivered by item hash. Stream's start reads
+the content (`isDeliveredContent`), so such an item can still start on its content's seed;
+after that start consumed the content, `requestSeed` still links that one item (the
+consumption exception below), so its work reads the seed by item hash.
 
 ### The request gate
 
@@ -68,6 +70,14 @@ a seed. Anyone may call it; there is no role and no fee. Every failure is
    requests at once.
 3. The proof has at most 32 hashes and places the item's leaf under the root.
 4. `packageRegistry.consumedItemOf(item.contentHash)` is zero: no item has consumed the content.
+
+**The consumption exception.** Once the content is consumed, the gate refuses every item but
+one: the item `consumedItemOf(item.contentHash)` names, a `VRF` item not yet linked, whose
+content's seed is already delivered. That call only links it (`SeedLinked`, returns zero): no
+proof or package status is checked (the registry's consumption record stands for them, so a
+package revoked after the mint does not block it), no request is made and the coordinator is not
+asked. Any other item of the content, an item whose own content has no delivered seed, and any
+call that would need a draw revert with `NotRequestable` (ENT-19).
 
 The gate runs on every call, repeats included. It bounds the total spend to one draw per VRF
 content the network approved, plus one repeat per `retryDelay` for each draw that never arrived,
@@ -115,7 +125,9 @@ back to A) neither coordinator can deliver the other's requests; a pending draw 
   changes no existing work's seed, and stays readable for the works minted under it. A work
   whose item never had a request of its own (it shares a seeded content with another package's
   item) has no item link, so `seedOf(itemHash)` reverts and its `tokenURI` reverts until anyone
-  opens its record, which stores the content's seed; it never shows another seed.
+  links its item (`requestSeed` on the module `entropyModuleOf` names, the consumption
+  exception, ENT-19) or opens its record, which stores the content's seed; it never shows
+  another seed.
 - **`requestOf(itemHash)`** returns the content's latest request ID (zero once delivered) and
   when it was made.
 
@@ -154,13 +166,15 @@ stateDiagram-v2
     Started --> [*]
 ```
 
-Once the content is consumed, the gate refuses further requests for any item that carries it;
-reads continue to work (`test_Gate_ConsumptionAfterDeliveryBlocksNothingRead`).
+Once the content is consumed, the gate refuses further requests for any item that carries it,
+except the link-only call of the consuming item to its content's delivered seed (ENT-19); reads
+continue to work (`test_Gate_ConsumptionAfterDeliveryBlocksNothingRead`).
 
 | Transition | Caller (role) | Delay | Function |
 | --- | --- | --- | --- |
 | Item linked; first request for a content | Anyone | none | `VrfEntropyModule.requestSeed` |
 | Item joins a pending or delivered draw | Anyone | none | `VrfEntropyModule.requestSeed` (returns zero) |
+| The consuming item of a consumed content links to its delivered seed | Anyone | none | `VrfEntropyModule.requestSeed` (returns zero; ENT-19) |
 | Repeat request | Anyone, once `retryDelay` has passed since the latest request | `retryDelay` (3 to 30 days) | `VrfEntropyModule.requestSeed` |
 | Seed delivered | The current coordinator only | none | `VrfEntropyModule.rawFulfillRandomWords` |
 | Work started | Anyone, through the auction | none | `EnglishAuction.start`, `Stream.mint` |
@@ -283,7 +297,7 @@ the 30-day class (ENT-11; `InvalidConfig`).
 
 | ID | Rule | Enforced in | Tested by |
 | --- | --- | --- | --- |
-| ENT-1 | A request is accepted only for a `VRF` item with a nonzero content hash, placed by a proof of at most 32 hashes under an `APPROVED` root, whose content is unconsumed; checked on every call. | `VrfEntropyModule._requestable` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Gate_RejectsAnUnknownOrRevokedPackage`, `test_Gate_RejectsAnItemThatIsNotInThePackage`, `test_Gate_ThePolicyCannotBeFlippedToVrf`, `test_Gate_RejectsAConsumedItem`, `test_Gate_RejectsAnItemWithoutAContentHash`, `test_Gate_RevocationStopsARepeatButNotTheReads`; [`VrfEntropyFuzz.t.sol`](../../test/entropy/VrfEntropyFuzz.t.sol): `testFuzz_OnlyItemsOfAnApprovedPackageCanBeRequested`, `testFuzz_NonVrfItemsAreAlwaysRefused` |
+| ENT-1 | A request is accepted only for a `VRF` item with a nonzero content hash, placed by a proof of at most 32 hashes under an `APPROVED` root, whose content is unconsumed; checked on every call, with the one link-only exception of ENT-19. | `VrfEntropyModule._requestable` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Gate_RejectsAnUnknownOrRevokedPackage`, `test_Gate_RejectsAnItemThatIsNotInThePackage`, `test_Gate_ThePolicyCannotBeFlippedToVrf`, `test_Gate_RejectsAConsumedItem`, `test_Gate_RejectsAnItemWithoutAContentHash`, `test_Gate_RevocationStopsARepeatButNotTheReads`; [`VrfEntropyFuzz.t.sol`](../../test/entropy/VrfEntropyFuzz.t.sol): `testFuzz_OnlyItemsOfAnApprovedPackageCanBeRequested`, `testFuzz_NonVrfItemsAreAlwaysRefused` |
 | ENT-2 | One draw per content hash: every linked item carrying the content reads the same seed, and joining never asks the coordinator. | `VrfEntropyModule.requestSeed` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Content_ASecondItemJoinsTheDeliveredDrawWithoutARequest`, `test_Content_ASecondItemJoinsAPendingDrawAndSharesItsClock`; [`VrfEntropyInvariant.t.sol`](../../test/entropy/VrfEntropyInvariant.t.sol): `invariant_ItemsThatShareContentReadOneSeed`; [`VrfWork.t.sol`](../../test/integration/VrfWork.t.sol): `test_ARevisionOfTheWorkReadsTheSameSeed`; [`Dispute.t.sol`](../../test/integration/Dispute.t.sol): `test_TheRightfulVrfItemReadsTheContentsSeed` |
 | ENT-3 | An item never linked reads as undelivered; `seedOf` reverts until delivery. | `VrfEntropyModule.isDelivered`, `seedOf` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Content_AnUnlinkedItemReadsAsUndelivered`, `test_SeedOf_RevertsBeforeDelivery` |
 | ENT-4 | The first delivery fixes the seed for good; a later delivery for the content is a no-op that does not revert; no request is accepted after delivery. | `VrfEntropyModule.rawFulfillRandomWords`, `requestSeed` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Fulfill_TheFirstDeliveryWinsInEitherOrder`, `test_Fulfill_ADoubleFulfilIsANoOp`, `test_NoRequestAfterDelivery`; [`VrfEntropyFuzz.t.sol`](../../test/entropy/VrfEntropyFuzz.t.sol): `testFuzz_TheFirstDeliveryOfManyRequestsWins`, `testFuzz_SeedIsTheDeliveredWord`; [`VrfEntropyInvariant.t.sol`](../../test/entropy/VrfEntropyInvariant.t.sol): `invariant_AtMostOneSeedPerItemAndItNeverChanges` |
@@ -301,6 +315,7 @@ the 30-day class (ENT-11; `InvalidConfig`).
 | ENT-16 | Installation checks: `retryDelay` within 3 to 30 days; a valid configuration; the registry has code, is not delegated, answers ERC-165 for `IPackageRegistry` and has its pinned code hash. | `VrfEntropyModule` constructor | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Constructor_RejectsBadRetryDelay`, `test_Constructor_TheMinimumRetryDelayIsThreeDays`, `test_Constructor_RejectsARegistryWithoutErc165Support`, `test_Constructor_PinsTheRegistryCodeHash`, `test_Constructor_RejectsADelegatedRegistry` |
 | ENT-17 | Anyone may request, under the real AccessManager; nothing is payable. | `VrfEntropyModule` | [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_AnyoneMayRequestASeedUnderTheRealManager`, `test_NothingIsPayable`; [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Request_NoRoleIsNeeded`, `test_Request_IsNonPayable` |
 | ENT-18 | A work's VRF seed always comes from the entropy module that was current at its mint (`IStream.entropyModuleOf`), before and after its record opens: replacing the module (owner decision 16) changes no existing work's seed or metadata, and only later works use the new module. | `Stream.setDependency`, `Stream.entropyModuleOf`, `WorkRecords.openRecord`, `Renderer._seed` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_entropyModuleOf_answersTheModuleCurrentAtMint`; [`StreamDependencies.t.sol`](../../test/integration/StreamDependencies.t.sol): `test_ReplacingTheEntropyModuleNeverChangesAnExistingWorksSeed`, `test_TwoEntropyReplacementsLeaveEachErasWorksUnchanged`, `test_AVrfRequestInFlightAcrossAReplacement`, `test_ReplacingEachDependencyLeavesExistingTokensUnchanged` |
+| ENT-19 | After its content is consumed, the item `consumedItemOf(contentHash)` names, a `VRF` item not yet linked, links to the content's already delivered seed with no proof or package check, no request and no coordinator call; every other call for a consumed content reverts with `NotRequestable`, so consumption never starts a draw and never links an item to another content. | `VrfEntropyModule.requestSeed`, `_isConsumedBy` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Content_TheConsumingItemLinksToTheDeliveredSeedAfterConsumption`, `test_Gate_AfterConsumptionNoDrawIsRequested`, `test_Gate_AfterConsumptionOnlyTheConsumingItemLinksToItsOwnContent`, `test_Gate_RejectsAConsumedItem` |
 
 ## Events
 

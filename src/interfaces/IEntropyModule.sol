@@ -70,7 +70,10 @@ interface IEntropyModule is IERC165 {
     ///         draw's seed, or adds another request once `retryDelay()` has passed with no seed
     ///         fixed. Returns zero when the item only joined a delivered or pending draw. A
     ///         linked item called again once `retryDelay()` has passed with no seed fixed makes
-    ///         a new request for the content. Permissionless.
+    ///         a new request for the content. After consumption only the item that consumed the
+    ///         content may still be linked, and only to an already delivered seed (no request,
+    ///         no proof or package check), so a minted work reads its seed by item hash.
+    ///         Permissionless.
     /// @param item The package item; the module computes its hash itself.
     /// @param packageRoot An approved package root that lists the item.
     /// @param proof The Merkle proof of the item's leaf (`WorksHashing.leaf(itemHash)`) under
