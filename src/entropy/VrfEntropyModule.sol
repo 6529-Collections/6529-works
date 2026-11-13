@@ -251,7 +251,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         // RFX-ENT-2: the count and the wait belong to the coordinator tenure of the content's
         // latest request; the first request to a replacement coordinator is not a repeat.
         uint32 epoch = _coordinatorEpoch;
-        uint8 repeats;
+        uint8 repeats = 0;
         if (seed.requestedAt != 0 && seed.epoch == epoch) {
             repeats = seed.repeats;
             uint64 retryAt = seed.requestedAt + _repeatWait(repeats);
