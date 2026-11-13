@@ -12,8 +12,9 @@ import {
 } from "test/mocks/entropy/EntropyMocks.sol";
 import { EntropyBase, EntropyItems } from "./EntropyBase.sol";
 
-/// @dev Drives the module with arbitrary requests, deliveries, revocations and consumptions, and
-///      tracks what must hold: the handler predicts the outcome of every call, and `violations`
+/// @dev Drives the module with arbitrary requests, deliveries, revocations, consumptions and
+///      coordinator swaps (between two coordinators, so A to B to A happens), and tracks what
+///      must hold: the handler predicts the outcome of every call, and `violations`
 ///      counts each prediction the module got wrong (so a delivery that reverts or changes a
 ///      fixed seed, a request that got past the package gate or the policy check, or a wrongly
 ///      refused request shows). Indexes 0 to 3 are the VRF items of the four-item package; 4 and
@@ -27,18 +28,30 @@ contract EntropyHandler is Test, EntropyItems {
 
     VrfEntropyModule internal immutable module;
     MockVrfCoordinator internal immutable coordinator;
+    MockVrfCoordinator internal immutable coordinatorB;
+    address internal immutable successor;
     EntropyPackageRegistryMock internal immutable registry;
     bytes32 internal immutable root;
     bytes32 internal immutable noneRoot;
     bytes32 internal immutable artistRoot;
     uint64 internal immutable retryDelay;
+    uint64 internal immutable maxRetryDelay;
     bytes32[][4] internal proofs;
 
-    /// @dev The model is per content (the draw) and per item (its link to the draw).
+    /// @dev The model is per content (the draw) and per item (its link to the draw). A
+    ///      content's repeat count and wait belong to the coordinator tenure (`_epoch`) of its
+    ///      latest request (RFX-ENT-2); `_tenure*` count the requests of the current tenure.
     mapping(uint256 index => bool) public linked;
     mapping(uint256 content => uint256[]) internal issued;
+    mapping(uint256 content => address[]) internal issuedBy;
     mapping(uint256 content => uint256) internal _currentId;
     mapping(uint256 content => uint64) internal _requestedAt;
+    mapping(uint256 content => uint256) internal _epochOf;
+    mapping(uint256 content => uint64) internal _tenureFirstAt;
+    mapping(uint256 content => uint256) internal _tenureRequests;
+    mapping(uint256 content => uint256) internal _repeats;
+    MockVrfCoordinator public current;
+    uint256 internal _epoch;
     mapping(uint256 content => bool) internal _delivered;
     mapping(uint256 content => bytes32) internal _seed;
     mapping(uint256 content => uint256) internal _deliveries;
@@ -49,14 +62,20 @@ contract EntropyHandler is Test, EntropyItems {
     constructor(
         VrfEntropyModule module_,
         MockVrfCoordinator coordinator_,
+        MockVrfCoordinator coordinatorB_,
+        address successor_,
         EntropyPackageRegistryMock registry_,
         bytes32[3] memory roots_
     ) {
         module = module_;
         coordinator = coordinator_;
+        coordinatorB = coordinatorB_;
+        successor = successor_;
+        current = coordinator_;
         registry = registry_;
         (root, noneRoot, artistRoot) = (roots_[0], roots_[1], roots_[2]);
         retryDelay = module_.retryDelay();
+        maxRetryDelay = module_.MAX_RETRY_DELAY();
         for (uint256 i = 6; i < ITEMS; ++i) {
             registry_.setStatus(_twinRoot(i), IPackageRegistry.PackageStatus.APPROVED);
         }
@@ -114,8 +133,38 @@ contract EntropyHandler is Test, EntropyItems {
             && registry.consumedBy(itemOf(i).contentHash) == 0;
     }
 
+    /// @dev The backoff (RFX-ENT-2): the wait before a content's next repeat, after `repeats`
+    ///      repeats, is `retryDelay * 2^repeats`, capped at `MAX_RETRY_DELAY`.
+    function _wait(uint256 repeats) internal view returns (uint256) {
+        if (repeats >= 8) return maxRetryDelay;
+        uint256 wait = uint256(retryDelay) << repeats;
+        return wait < maxRetryDelay ? wait : maxRetryDelay;
+    }
+
+    /// @dev A request of an earlier coordinator tenure is not pending: the first request to a
+    ///      new coordinator is made at once.
     function _pending(uint256 c) internal view returns (bool) {
-        return _requestedAt[c] != 0 && block.timestamp < _requestedAt[c] + retryDelay;
+        return _requestedAt[c] != 0 && _epochOf[c] == _epoch
+            && block.timestamp < _requestedAt[c] + _wait(_repeats[c]);
+    }
+
+    /// @notice The most requests the backoff lets a content's draw have issued to the current
+    ///         coordinator by now, counted from its first request of the current tenure: every
+    ///         repeat made at its earliest moment.
+    function maxRequests(uint256 c) public view returns (uint256 n) {
+        if (_requestedAt[c] == 0 || _epochOf[c] != _epoch) return 0;
+        uint256 t = _tenureFirstAt[c];
+        n = 1;
+        while (t + _wait(n - 1) <= block.timestamp) {
+            t += _wait(n - 1);
+            ++n;
+        }
+    }
+
+    /// @notice The requests the content's draw issued to the current coordinator in its current
+    ///         tenure.
+    function tenureRequests(uint256 c) external view returns (uint256) {
+        return _epochOf[c] == _epoch ? _tenureRequests[c] : 0;
     }
 
     function _twinRoot(uint256 i) internal pure returns (bytes32) {
@@ -133,13 +182,16 @@ contract EntropyHandler is Test, EntropyItems {
 
     /// @dev A request: refused by the gate; for an item not yet linked, a join that returns zero
     ///      when the content's draw is delivered or pending; for a linked item, refused then; and
-    ///      otherwise a new request for the content.
+    ///      otherwise a new request for the content. The gate's one exception (RFX-ENT-1): the
+    ///      VRF item that consumed its content, not yet linked, joins a delivered draw.
     function request(uint256 itemSeed, uint256 callerSeed, uint256 wait) external {
         uint256 i = itemSeed % ITEMS;
         uint256 c = contentOf(i);
         vm.warp(block.timestamp + (wait % 36 hours));
         bool open = _gateOpen(i);
-        bool joins = open && !linked[i] && (_delivered[c] || _pending(c));
+        bool consumedLink = _vrf(i) && !linked[i] && _delivered[c]
+            && registry.consumedBy(itemOf(i).contentHash) == _hash(itemOf(i));
+        bool joins = (open && !linked[i] && (_delivered[c] || _pending(c))) || consumedLink;
         bool requests = open && !_delivered[c] && !_pending(c);
 
         vm.prank(address(uint160(callerSeed)));
@@ -150,7 +202,16 @@ contract EntropyHandler is Test, EntropyItems {
             ++accepted;
             linked[i] = true;
             if (id != 0) {
+                if (_requestedAt[c] == 0 || _epochOf[c] != _epoch) {
+                    (_repeats[c], _tenureRequests[c]) = (0, 0);
+                    _tenureFirstAt[c] = uint64(block.timestamp);
+                    _epochOf[c] = _epoch;
+                } else {
+                    ++_repeats[c];
+                }
+                ++_tenureRequests[c];
                 issued[c].push(id);
+                issuedBy[c].push(address(current));
                 _currentId[c] = id;
                 _requestedAt[c] = uint64(block.timestamp);
             }
@@ -159,23 +220,37 @@ contract EntropyHandler is Test, EntropyItems {
         }
     }
 
-    /// @dev A delivery for any request ever issued for the item's content, current or earlier.
-    ///      The first one fixes the seed; later ones are no-ops. None may revert.
+    /// @dev A delivery for any request ever issued for the item's content, current or earlier,
+    ///      by the coordinator that issued it. The first one fixes the seed; later ones are
+    ///      no-ops. None from the current coordinator may revert (a restored coordinator's
+    ///      requests from its earlier tenure included); every one from another coordinator must.
     function fulfill(uint256 itemSeed, uint256 pick, uint256 word) external {
         uint256 c = contentOf(itemSeed % ITEMS);
         uint256 count = issued[c].length;
         if (count == 0) return;
-        uint256 id = issued[c][pick % count];
+        uint256 k = pick % count;
+        uint256 id = issued[c][k];
+        bool live = issuedBy[c][k] == address(current);
 
-        try coordinator.fulfill(id, word) {
+        try MockVrfCoordinator(issuedBy[c][k]).fulfill(id, word) {
+            if (!live) ++violations;
             if (!_delivered[c]) {
                 _delivered[c] = true;
                 _seed[c] = bytes32(word);
                 ++_deliveries[c];
             }
         } catch {
-            ++violations;
+            if (live) ++violations;
         }
+    }
+
+    /// @dev Governance replaces the coordinator with the other one: a new tenure.
+    function swap() external {
+        MockVrfCoordinator next = current == coordinator ? coordinatorB : coordinator;
+        vm.prank(successor);
+        module.setCoordinator(address(current), address(next), address(next).codehash);
+        current = next;
+        ++_epoch;
     }
 
     /// @dev The guardian revokes the packages, or they are approved again (the gate is
@@ -207,9 +282,13 @@ contract VrfEntropyInvariantTest is EntropyBase {
 
     function setUp() public override {
         super.setUp();
+        MockVrfCoordinator b = new MockVrfCoordinator();
+        b.setNextId(10_000);
         handler = new EntropyHandler(
             module,
             coordinator,
+            b,
+            successor,
             registry,
             [root, plainRoot(SeedPolicy.NONE), plainRoot(SeedPolicy.ARTIST)]
         );
@@ -217,17 +296,20 @@ contract VrfEntropyInvariantTest is EntropyBase {
             handler.setProof(i, proofs[i]);
         }
         targetContract(address(handler));
-        bytes4[] memory selectors = new bytes4[](4);
+        bytes4[] memory selectors = new bytes4[](5);
         selectors[0] = EntropyHandler.request.selector;
         selectors[1] = EntropyHandler.fulfill.selector;
         selectors[2] = EntropyHandler.setApproved.selector;
         selectors[3] = EntropyHandler.setConsumed.selector;
+        selectors[4] = EntropyHandler.swap.selector;
         targetSelector(FuzzSelector({ addr: address(handler), selectors: selectors }));
     }
 
     /// @dev Every request, repeat and delivery had the outcome the rules predict: a request only
     ///      for an approved, unconsumed VRF item of an approved package, a repeat only after the
-    ///      delay, and a delivery for any request ever issued, which never reverts.
+    ///      content's current backoff wait (restarted by a coordinator swap), and a delivery for
+    ///      any request the current coordinator ever issued, which never reverts, while one from
+    ///      another coordinator always does.
     function invariant_EveryCallHadThePredictedOutcome() public view {
         assertEq(handler.violations(), 0);
     }
@@ -253,6 +335,16 @@ contract VrfEntropyInvariantTest is EntropyBase {
             (uint256 requestId,) = module.requestOf(handler.itemHash(i));
             assertEq(requestId, handler.currentId(i));
             if (i == 4 || i == 5) assertEq(requestId, 0);
+        }
+    }
+
+    /// @dev The backoff bounds the requests a content's draw makes to one coordinator in one
+    ///      tenure: never more than the tenure's first request plus every repeat made at its
+    ///      earliest moment since then (RFX-ENT-2). A swap starts a new tenure, so it cannot be
+    ///      used to draw more from the coordinator of the current one.
+    function invariant_TheBackoffBoundsTheRequestsOfAContent() public view {
+        for (uint256 c; c < 4; ++c) {
+            assertLe(handler.tenureRequests(c), handler.maxRequests(c));
         }
     }
 

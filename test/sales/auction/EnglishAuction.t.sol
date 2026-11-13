@@ -1317,7 +1317,7 @@ contract EnglishAuctionTest is AuctionBase {
 
     /// @dev The recorded outcome is read before the currency freeze (MARKET-2): a sale whose
     ///      work the token already records settled closes with the refund at once, even while
-    ///      its currency is deprecated, without waiting for the 30-day freeze exit.
+    ///      its currency is deprecated, without waiting for the 60-day freeze exit.
     function test_Settle_ARecordedOutcomeClosesWithoutWaitingOutAFreeze() public {
         OutcomeReportingTarget t = _outcomeToken(address(usd));
         uint256 saleId = auction.start(address(t), "");
@@ -1373,8 +1373,9 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(stream.ownerOf(1), bob);
     }
 
-    /// @dev Owner decision 10 with decision 9: another listed token's 30-day freeze exit takes
-    ///      its no-bid branch too, so its work goes to its artist, with the bid credited back.
+    /// @dev Owner decision 10 with decision 9: another listed token's 60-day freeze exit
+    ///      (RFX-SAL-2) takes its no-bid branch too, so its work goes to its artist, with the bid
+    ///      credited back.
     function test_Settle_AnotherListedTokensFreezeExitGoesToItsArtist() public {
         MockMintTarget other = _listedToken(address(usd));
         uint256 saleId = auction.start(address(other), "");
@@ -1384,7 +1385,7 @@ contract EnglishAuctionTest is AuctionBase {
         auction.bid(saleId, address(0), _direct(alice, 100e18));
         vm.stopPrank();
         allowlist.deprecateAsset(address(usd));
-        vm.warp(block.timestamp + 30 days);
+        vm.warp(block.timestamp + 60 days);
         auction.settle(saleId);
         assertEq(other.ownerOf(1), artist, "its artist, not the museum");
         assertEq(auction.claimable(alice, address(usd)), 100e18, "the bid is credited back");
@@ -1509,19 +1510,23 @@ contract EnglishAuctionTest is AuctionBase {
             );
             vm.prank(bob);
             auction.claimDelivery(saleId, bob);
-            vm.expectEmit(address(auction));
-            emit IEnglishAuction.DeliveryClaimed(saleId, address(winner), carol);
+            // RFX-SAL-1: within 30 days of the end the recipient may claim only to itself;
+            // the bidder names any address.
+            vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, carol));
             winner.execute(
                 address(auction), 0, abi.encodeCall(auction.claimDelivery, (saleId, carol))
             );
+            vm.expectEmit(address(auction));
+            emit IEnglishAuction.DeliveryClaimed(saleId, address(winner), carol);
+            vm.prank(alice);
+            auction.claimDelivery(saleId, carol);
             assertEq(stream.ownerOf(_tokenIdOf(saleId)), carol);
             assertEq(auction.pendingDelivery(saleId), address(0));
             vm.expectRevert(
                 abi.encodeWithSelector(IEnglishAuction.NoPendingDelivery.selector, saleId)
             );
-            winner.execute(
-                address(auction), 0, abi.encodeCall(auction.claimDelivery, (saleId, carol))
-            );
+            vm.prank(alice);
+            auction.claimDelivery(saleId, carol);
         }
     }
 
@@ -1669,6 +1674,151 @@ contract EnglishAuctionTest is AuctionBase {
         auction.claimDelivery(saleId, carol);
         assertEq(stream.ownerOf(1), carol);
         assertEq(auction.pendingDelivery(saleId), address(0));
+    }
+
+    /// @dev A sale whose winning bid named `recipient`, settled with the delivery pending.
+    function _pendingFor(HostileActor recipient) internal returns (uint256 saleId) {
+        recipient.configure(HostileActor.Behaviour.ACCEPT, HostileActor.Behaviour.REVERT);
+        saleId = _start();
+        vm.deal(alice, 1 ether);
+        vm.prank(alice);
+        auction.bid{ value: 1 ether }(saleId, address(recipient), _direct(alice, 1 ether));
+        _end(saleId);
+        auction.settle(saleId);
+        assertEq(auction.pendingDelivery(saleId), address(recipient));
+    }
+
+    /// @dev The first second at which the recipient may claim to another address: 30 days after
+    ///      the sale's stored end.
+    function _redirectOpensAt(uint256 saleId) internal view returns (uint256) {
+        return uint256(auction.auction(saleId).endTime) + 30 days;
+    }
+
+    /// Regression: RFX-SAL-1
+    /// @dev A recipient contract that forwards any call does not let a third party route the
+    ///      claim through it to an address of its own while the bidder's 30 days run.
+    function test_ClaimDelivery_AForwardingRecipientCannotSendTheTokenElsewhere() public {
+        HostileActor forwarder = new HostileActor();
+        uint256 saleId = _pendingFor(forwarder);
+        address stranger = makeAddr("stranger");
+        vm.warp(_redirectOpensAt(saleId) - 1);
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, stranger));
+        forwarder.execute(
+            address(auction), 0, abi.encodeCall(auction.claimDelivery, (saleId, stranger))
+        );
+        assertEq(stream.ownerOf(_tokenIdOf(saleId)), address(auction), "still in custody");
+        assertEq(auction.pendingDelivery(saleId), address(forwarder), "still pending");
+        // The stranger cannot claim directly either, before or after the 30 days.
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.NoPendingDelivery.selector, saleId));
+        auction.claimDelivery(saleId, stranger);
+        vm.warp(_redirectOpensAt(saleId));
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.NoPendingDelivery.selector, saleId));
+        auction.claimDelivery(saleId, stranger);
+    }
+
+    /// Regression: RFX-SAL-1
+    /// @dev The recipient claims to itself at any time once it can receive the token.
+    function test_ClaimDelivery_TheRecipientClaimsToItself() public {
+        HostileActor recipient = new HostileActor();
+        uint256 saleId = _pendingFor(recipient);
+        recipient.configure(HostileActor.Behaviour.ACCEPT, HostileActor.Behaviour.ACCEPT);
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.DeliveryClaimed(saleId, address(recipient), address(recipient));
+        recipient.execute(
+            address(auction), 0, abi.encodeCall(auction.claimDelivery, (saleId, address(recipient)))
+        );
+        assertEq(stream.ownerOf(_tokenIdOf(saleId)), address(recipient));
+        assertEq(auction.pendingDelivery(saleId), address(0));
+    }
+
+    /// Regression: RFX-SAL-1
+    /// @dev A recipient contract that can make calls but cannot receive the token, named by a
+    ///      bidder that cannot call: the recipient's claim to another address is refused for 30
+    ///      days after the end, so the bidder acts first, and accepted from then, so the work is
+    ///      not held forever.
+    function test_ClaimDelivery_TheRecipientRedirectsOnlyAfterThirtyDays() public {
+        HostileActor recipient = new HostileActor();
+        uint256 saleId = _pendingFor(recipient);
+        address elsewhere = makeAddr("elsewhere");
+        bytes memory claim = abi.encodeCall(auction.claimDelivery, (saleId, elsewhere));
+        vm.warp(_redirectOpensAt(saleId) - 1);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, elsewhere));
+        recipient.execute(address(auction), 0, claim);
+        assertEq(auction.pendingDelivery(saleId), address(recipient), "still pending");
+
+        vm.warp(_redirectOpensAt(saleId));
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.DeliveryClaimed(saleId, address(recipient), elsewhere);
+        recipient.execute(address(auction), 0, claim);
+        assertEq(stream.ownerOf(_tokenIdOf(saleId)), elsewhere);
+        assertEq(auction.pendingDelivery(saleId), address(0));
+    }
+
+    /// Regression: RFX-SAL-1
+    /// @dev The 30 days count from the stored end, which a dispute pause moves later.
+    function test_ClaimDelivery_TheRedirectDelayCountsFromTheTolledEnd() public {
+        HostileActor recipient = new HostileActor();
+        recipient.configure(HostileActor.Behaviour.ACCEPT, HostileActor.Behaviour.REVERT);
+        uint256 saleId = _start();
+        vm.deal(alice, 1 ether);
+        vm.prank(alice);
+        auction.bid{ value: 1 ether }(saleId, address(recipient), _direct(alice, 1 ether));
+        uint256 originalEnd = auction.auction(saleId).endTime;
+        _pause(saleId);
+        vm.warp(block.timestamp + 7 days + 1);
+        uint256 tolledEnd = auction.auction(saleId).endTime;
+        assertGt(tolledEnd, originalEnd, "the pause moved the end");
+        vm.warp(tolledEnd);
+        auction.settle(saleId);
+        assertEq(auction.auction(saleId).endTime, tolledEnd, "the stored end is the tolled one");
+        address elsewhere = makeAddr("elsewhere");
+        bytes memory claim = abi.encodeCall(auction.claimDelivery, (saleId, elsewhere));
+        vm.warp(originalEnd + 30 days);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, elsewhere));
+        recipient.execute(address(auction), 0, claim);
+        vm.warp(tolledEnd + 30 days);
+        recipient.execute(address(auction), 0, claim);
+        assertEq(stream.ownerOf(_tokenIdOf(saleId)), elsewhere);
+    }
+
+    /// Regression: RFX-SAL-1
+    /// @dev The winning bidder names any address, the recipient's own included, at any time.
+    function testFuzz_ClaimDelivery_TheBidderRedirectsAtAnyTime(uint256 wait) public {
+        wait = bound(wait, 0, 400 days);
+        HostileActor recipient = new HostileActor();
+        uint256 saleId = _pendingFor(recipient);
+        vm.warp(block.timestamp + wait);
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.DeliveryClaimed(saleId, address(recipient), bob);
+        vm.prank(alice);
+        auction.claimDelivery(saleId, bob);
+        assertEq(stream.ownerOf(_tokenIdOf(saleId)), bob);
+    }
+
+    /// Regression: RFX-SAL-1
+    /// @dev With no bid the 30 days do not apply: another listed token's artist, the recorded
+    ///      recipient, claims to any address at once.
+    function test_ClaimDelivery_ANoBidArtistNamesAnyAddressAtOnce() public {
+        HostileActor artistWallet = new HostileActor();
+        artistWallet.configure(HostileActor.Behaviour.ACCEPT, HostileActor.Behaviour.REVERT);
+        MockMintTarget other = _listedToken(ETH);
+        PrimaryTerms memory t = _terms(ETH);
+        t.creator = address(artistWallet);
+        other.setTerms(t);
+        uint256 saleId = auction.start(address(other), "");
+        _end(saleId);
+        auction.settle(saleId);
+        assertEq(auction.pendingDelivery(saleId), address(artistWallet));
+        address elsewhere = makeAddr("elsewhere");
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.DeliveryClaimed(saleId, address(artistWallet), elsewhere);
+        artistWallet.execute(
+            address(auction), 0, abi.encodeCall(auction.claimDelivery, (saleId, elsewhere))
+        );
+        assertEq(other.ownerOf(1), elsewhere);
     }
 
     /// @dev D140, the gap PLAN section 1.9 found, now closed by Stream (owner decision 17): an

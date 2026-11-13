@@ -29,7 +29,7 @@ Edition bids are ETH; only the English auction calls Permit2
 | Caller | Calls | Rules |
 | --- | --- | --- |
 | Anyone | `start`, `startWithBid`, `bid`, `settle`, `claimFor` | AUC-14 to AUC-25, AUC-29 |
-| A bidder | `claim` of its credits; `withdrawBid` (the high bidder, while paused or frozen); `claimDelivery` | AUC-18, AUC-21, DSP-15 |
+| A bidder | `claim` of its credits; `withdrawBid` (the high bidder, while paused or frozen); `claimDelivery` (the winning bidder to any address; the recipient it named to itself, or anywhere from 30 days after the end) | AUC-18, AUC-21, DSP-15 |
 | Guardians and governance | The dispute `pause(saleId, …)`, `resume`, `cancel`; `pause()`, `unpause()`; `setConfig`, `setOpeningBid`, `setTarget`, `setFederationRegistry` | AUC-13, AUC-26, AUC-30, DSP-13 to DSP-19; [role matrix](../../docs/audit/roles.md#englishauction) |
 | Anyone (edition auction) | `open`, `bid`, `settle`, `claimBidFor`, every view | EA-1, EA-4, EA-8 to EA-13 |
 | An edition bidder | `raise`, `claimBid`; `withdrawBid` while the 1/1 is paused for a dispute; `claim` of its credits | EA-5, EA-9, EA-16 |
@@ -48,8 +48,8 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
   rules must change its lens too (`EnglishAuctionLensDifferential.t.sol`,
   `EnglishAuctionLens.t.sol`). Hot-path views stay on the auction: `saleKind`, and
   `auctionClock` (`IEnglishAuctionClock`), which the edition auction reads and any new on-chain
-  consumer should. A rescue for tokens sent by plain `transferFrom` was declined for its size
-  (LIM-SAL-10).
+  consumer should. Nothing sweeps assets sent to the auction outside its flows; the auction
+  now has room for a governed rescue, so adding one is a scope decision (LIM-SAL-10).
 - **English auction storage.** A steady-state start writes one `Sale` word and shares a terms
   record per distinct combination; seller and fee terms come back from the token at settlement,
   from the call that reports the outcome (`IMintTarget.settlePrimary`, owner decision 17).

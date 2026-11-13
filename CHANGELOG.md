@@ -2,6 +2,70 @@
 
 ## Unreleased
 
+- Review fixes of November 2026 (RFX-*), grouped by area:
+  - **English auction.** With a bid, the winning bidder may send a pending delivery to any
+    address at any time; the recipient its bid named may claim to itself at any time, and to
+    another address only from 30 days after the auction's stored end (`InvalidRecipient`
+    before then; AUC-21, RFX-SAL-1), so the bidder acts first and a recipient that can call but
+    cannot receive the work does not hold it forever. The currency-freeze exit is 60 days, was
+    30, longer than a guardian's 30-day removal plus a 14-day re-admission (AUC-25, RFX-SAL-2).
+    `settle` itself is unchanged: no timed exit closes a sale whose token fails to settle it.
+    The lifecycle invariant gains the start pause and a hostile bidder and receiver
+    (RFX-SAL-4). `EnglishAuction` grows to 23,429 bytes (1,147 under EIP-170). Known
+    limitations: LIM-SAL-3, LIM-SAL-15 and LIM-EA-9 state 60 days, LIM-SAL-10 covers every asset
+    sent outside the auction's flows, and the new LIM-SAL-16 records that a listed or federated
+    token whose settlement calls fail holds a standing bid with no exit, which v1, listing only
+    6529 Stream, cannot meet, and which admitting any other token must solve first.
+  - **Split wallets.** A release also accepts an ERC-20 `transfer` that returns nothing, still
+    requiring exact balance deltas (`TokenTransfer.transferExactAllowingNoReturn`, ECO-23,
+    RFX-ECO-1); payments, escrow and the sale adapters keep the strict check. `SplitWallet`
+    shrinks by 278 bytes, so **the wallet's init code changed and every split-wallet address
+    differs on a fresh deployment**; `createWallet` costs 1,185,635 Prague gas. New LIM-ECO-6:
+    a wallet freezes an asset that does not move exact amounts.
+  - **Records and identity.** The kind and first-registered locator fallbacks consider only the
+    artist's locators; a PLATFORM locator is served only once STORAGE_OPERATOR selects it (WS-21,
+    RFX-REC-1). `latestDisputeOutcome` follows the item fallback only for a token that declares
+    `IStream` by ERC-165, checked before `coreOf` is read, so any other token reads zero; it fails
+    closed when a Stream's item read fails for any reason but `UnknownWork` (DSP-12, RFX-REC-2). A key the artist rotated away from signs no
+    identity change and no heartbeat, even while consolidated with the new authority (ID-5,
+    RFX-ID-1; LIM-ID-14 records that, while still consolidated, it can cancel every STANDARD
+    change and contest every override until the consolidation is revoked and its grace has
+    passed, kept on purpose because the same power lets a displaced artist resist a hijacker).
+  - **Entropy.** The item that consumed a content may link to its content's delivered seed after
+    consumption, with no request (ENT-19, RFX-ENT-1). Repeat requests back off exponentially:
+    the k-th repeat waits `retryDelay * 2^(k-1)` after the previous request, capped at
+    `MAX_RETRY_DELAY` (30 days), with the count kept in the draw's existing word together with
+    the coordinator epoch of the latest request; a coordinator swap restarts the count, so the
+    first request to the new coordinator is made at once (ENT-5, RFX-ENT-2). At the 3-day base a
+    content undelivered for a year has at most 15 requests to one coordinator outstanding,
+    against 122 before; a coordinator restored after another may also deliver its earlier
+    tenure's requests. `VrfEntropyModule` grows to 8,903 bytes. LIM-ENT-1 states the bound; new
+    LIM-ENT-7 records that a module or coordinator replacement can redraw a seed, and the
+    runbook's dependency table and coordinator step say how to avoid it: the module
+    replacement's inventory lists every unminted content with a seed requested or delivered,
+    released content included, and is rebuilt immediately before execution.
+  - **Deploy and Verify.** On mainnet the deploy and Verify refuse the deployer as the museum,
+    the marketplace owner or the network fee recipient, and **the mainnet deploy order
+    changed**: the simulation reads the VRF subscription before `configure`, so the admin Safe
+    adds the VRF module's predicted address as the subscription's only consumer before the
+    broadcast (`ModuleNotAConsumer` names it; RFX-TOOL-3). Verify checks every selector remap,
+    role-admin change, role-guardian change and target closure since genesis against the
+    configuration; in epoch mode against the epoch's configuration alone, so a genesis mapping
+    the epoch dropped passes only once the selector is back with ADMIN (GV-15, RFX-TOOL-2).
+  - **Budgets and tests.** `check_budgets.py` keeps 512 bytes of EIP-170 margin for every
+    contract declared in `src/`, with recorded exemptions in `tools/size-margins.json` (`Stream`
+    203, `Renderer` 211, `UniformEditionAuction` 420; RFX-TOOL-1); a contract declared there
+    without a size measurement fails the gate. The Sepolia fork simulation expects 14 governed
+    targets and 18 wiring calls, the anvil run's 13 and 18 plus the entropy module. `RoyaltyInfoGas.t.sol` calls
+    `royaltyInfo` with exactly its 50,000-gas budget and requires every lower limit to revert
+    (RFX-TOOL-4). ADR 0004's table is re-measured: the `settle` rows are unchanged, `tokenURI`'s
+    worst case rose by 1,887 to 2,736,626 (the statement log's `IStream` check), every other
+    row moved by at most 32, and the binding start row is 338,253.
+  - **Docs.** Any two colluding guardians shield each other, however many there are (LIM-GV-4,
+    ADR 0002 amendment note), though they cannot stop live sales settling except 1/1 auctions
+    in an ERC-20 they deprecate (LIM-SAL-15); LIM-GAS-2 covers the deployment's state gas; the trust assumptions,
+    architecture, storage guide, audit scope and the module READMEs follow these changes.
+
 - Explicit Stream state machines (owner decision 28, rc.3):
   - `PrimaryOutcome` gains RESCUED (4, appended so earlier values keep their encodings).
     `rescueToMuseum` records it, in the one flag combination no adapter can produce, so no

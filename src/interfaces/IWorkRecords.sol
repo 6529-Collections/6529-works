@@ -339,7 +339,8 @@ interface IWorkRecords {
     ///         "Final" fixes the content, and since the content a locator names is not verified
     ///         on-chain, a finalized work's copies are the platform's to register and the storage
     ///         operator's to choose. The platform may then use the file's whole
-    ///         `Limits.MAX_LOCATORS_PER_FILE`, the artist's unused slots included.
+    ///         `Limits.MAX_LOCATORS_PER_FILE`, the artist's unused slots included. A platform
+    ///         locator is served only once the storage operator selects it (`setFilePreference`).
     /// @param tokenId A work with an open record.
     /// @param fileId One of the work's media files (`FileNotInWork` otherwise).
     /// @param locator The ARWEAVE or IPFS locator of a copy of that file.
@@ -352,10 +353,12 @@ interface IWorkRecords {
     /// @notice The locator `tokenURI` serves for a file. The most specific setting wins: the
     ///         file's preferred index, then the collection's preferred kind, then the global
     ///         preferred kind, then the first registered locator, then the implicit ONCHAIN copy.
-    ///         A kind matches only if the file has a locator of that kind, and then its first
-    ///         such locator is used; ONCHAIN matches only a work `syncOnChain` marked on-chain
-    ///         complete (the stored flag, never a content-store scan). Returns an empty locator
-    ///         (kind NONE) when nothing matches.
+    ///         Only the file's preferred index selects a locator the platform added: the kind
+    ///         and first-registered tiers consider the artist's locators alone. A kind matches
+    ///         only if the artist added a locator of that kind, and then the first such locator
+    ///         is used; ONCHAIN matches only a work `syncOnChain` marked on-chain complete (the
+    ///         stored flag, never a content-store scan). Returns an empty locator (kind NONE)
+    ///         when nothing matches.
     /// @param tokenId A work with an open record.
     /// @param fileId One of the work's media files (`FileNotInWork` otherwise).
     /// @return locator The chosen locator.

@@ -106,7 +106,7 @@ mutation shard, weekly). [Testing](../testing/README.md) describes them and the 
 | Format | Any file `forge fmt` would change (line length 100, tab width 4, bracket spacing) | `forge fmt --check`, `[fmt]` in `foundry.toml` |
 | Build | A compile error | `forge build` |
 | Tests | Any failing unit, fuzz, invariant or integration test, including the gas and state-growth gates | `forge test` |
-| Budgets | More than 13,000 code lines under `src/`; `delegatecall` or `callcode` in `src/`; more than 5 libraries with a public or external function; any contract of the `default` profile over 24,576 bytes of runtime (EIP-170) or 49,152 bytes of initcode (EIP-3860) | [`tools/check_budgets.py`](../../tools/check_budgets.py) |
+| Budgets | More than 13,000 code lines under `src/`; `delegatecall` or `callcode` in `src/`; more than 5 libraries with a public or external function; any contract of the `default` profile over 24,576 bytes of runtime (EIP-170) or 49,152 bytes of initcode (EIP-3860); a contract declared in `src/` with less than 512 bytes of EIP-170 margin, unless exempt; an exempt contract whose margin fell below the value its exemption records, or is back at 512 bytes or more; an exemption naming no measured `src/` contract | [`tools/check_budgets.py`](../../tools/check_budgets.py), [`tools/size-margins.json`](../../tools/size-margins.json) |
 | Genesis configuration | A selector in [`config/genesis.example.json`](../../config/genesis.example.json) that is not in its contract's compiled ABI; a `restricted` function (inherited ones included) that is neither mapped, genesis-only nor deferred; a wiring call to an unlisted target or with a non-genesis selector; a delay that does not match its role's class; a role whose `suspendable` flag is not a boolean, or is set on a role with a delay or on GUARDIAN, PAUSER or CURATION_SIGNER; a function `WorksAccessManager` adds to its OpenZeppelin base that `manager` does not list, or lists with another selector, role or delay. `GenesisConfig.t.sol` checks the flags against `Roles.isSuspendable` exactly | [`tools/check_genesis.py`](../../tools/check_genesis.py) |
 | NatSpec | In `src/`: an external or public function or getter without `@notice` or `@inheritdoc` (the only declarations `@inheritdoc` can stand in for); an event without `@notice`; a function or event without a `@param` for a named parameter; a function without one `@return` per return value (a named return cited by name); a `@param` that names no parameter; an error without `@notice` | [`tools/check_natspec.py`](../../tools/check_natspec.py) |
 | Content tooling | A failing `unittest` in `tools/content`. `test_anvil.py` sends the uploader's calldata to the compiled `ContentStore` on a local Anvil node; `CONTENT_E2E_REQUIRE=1` makes a missing `anvil` or build output a failure, not a skip | `python -m unittest discover -s tools/content -t . -p "test_*.py"` |
@@ -159,7 +159,7 @@ All are standard library only and run from anywhere in the repository.
 
 | Tool | Purpose |
 | --- | --- |
-| [`tools/check_budgets.py`](../../tools/check_budgets.py) | The engineering budgets: lines, delegatecall, linked libraries, contract sizes |
+| [`tools/check_budgets.py`](../../tools/check_budgets.py) | The engineering budgets: lines, delegatecall, linked libraries, contract sizes and their EIP-170 margin |
 | [`tools/check_genesis.py`](../../tools/check_genesis.py) | The genesis configuration against the compiled contracts and `src/`; with `--config <file>`, a deployment's copy against the committed policy |
 | [`tools/check_slither.py`](../../tools/check_slither.py) | Slither, gated by the triage record |
 | [`tools/check_markdown_links.py`](../../tools/check_markdown_links.py) | Relative links and anchors in Markdown (`--no-git` checks untracked files too) |
@@ -183,7 +183,9 @@ move whenever a source file changes. CI enforces them in
   and writes at most 6 or 7 new slots (`START_MAX_SLOTS`, `START_WITH_BID_MAX_SLOTS`). ERC-20
   starts have a regression ceiling, not a budget (decision 6).
 - **Ceilings.** `settle` and the first start in a new collection have 400K test ceilings,
-  `royaltyInfo` 50,000 gas of execution, and `tokenURI` 8M (`TOKEN_URI_BUDGET`, tested in
+  `royaltyInfo` 50,000 gas of execution (also called with exactly that much gas, cold, in
+  [`RoyaltyInfoGas.t.sol`](../../test/integration/RoyaltyInfoGas.t.sol), where every lower
+  limit must revert rather than answer a zero royalty), and `tokenURI` 8M (`TOKEN_URI_BUDGET`, tested in
   [`TokenUriBudget.t.sol`](../../test/integration/TokenUriBudget.t.sol) and
   [`RendererGas.t.sol`](../../test/content/renderer/RendererGas.t.sol)). Every other operation
   has a regression ceiling (the `*_CEILING` constants); a change that crosses one says why in
@@ -212,6 +214,7 @@ move whenever a source file changes. CI enforces them in
 | No delegatecall | No `delegatecall` or `callcode` in `src/`; the one sanctioned exception is OpenZeppelin `Multicall` in `lib/`, inherited by `WorksAccessManager` | `check_budgets.py` (a scan of `src/` with comments and strings stripped) | ADR 0001, [ADR 0002](../adr/0002-access-manager-hardening.md#security-impact) |
 | No proxies | No contract is a proxy | By design; the delegatecall scan is the mechanical check | ADR 0001 |
 | Contract size | Every contract of the `default` profile within EIP-170 (24,576 bytes of runtime) and EIP-3860 (49,152 bytes of initcode) | `check_budgets.py --profile default`, from `forge build --sizes --json` | ADR 0001, AGENTS.md |
+| EIP-170 margin | Every contract declared in `src/` keeps at least 512 bytes under EIP-170 (`MIN_RUNTIME_MARGIN`), unless [`tools/size-margins.json`](../../tools/size-margins.json) exempts it; an exempt contract may not lose margin below its recorded value | `check_budgets.py --profile default`, from the same data | RFX-TOOL-1: the contracts are not upgradeable, so the room left decides whether a later fix can ship in the same contract |
 | Static analysis | No unreviewed High or Medium Slither finding | `check_slither.py` and the [triage record](../security/slither-triage.md) | AGENTS.md |
 | Invariant campaigns | At least 256 runs of depth 128 for every contract that moves money | `foundry.toml`; the campaigns and their [gaps](invariants.md#gaps) are on Invariants | ADR 0001, AGENTS.md |
 | CI time | Under 15 minutes | Each job's `timeout-minutes`: 15 for Build and checks, each Tests part and Static analysis (all in parallel), and for Coverage and Symbolic in `strength.yml`; 5 for Docs and the Contracts summary | ADR 0001, AGENTS.md |
@@ -219,6 +222,15 @@ move whenever a source file changes. CI enforces them in
 The budget checker measures the profile named by `--profile` (`default` unless given) and never
 infers it from `foundry.toml`, so adding a profile cannot silently change which bytecode the
 size gate measures.
+
+The margin floor applies to contracts declared in `src/`; test contracts and mocks are held to
+EIP-170 only. The floor itself is a constant in the checker, so it cannot be lowered from the
+exemptions file. Each exemption records the contract's margin when it was granted and a reason;
+`Stream`, `Renderer` and `UniformEditionAuction` were below the floor when the gate was added and
+are exempt at the margins they had then. A change that frees bytes in an exempt contract should
+raise its record (the checker prints the new margin), and one that brings it back to 512 bytes
+removes the exemption. A change that needs bytes from an exempt contract below its record
+changes the record in the same pull request and says why.
 
 ## Differences from the ADRs
 

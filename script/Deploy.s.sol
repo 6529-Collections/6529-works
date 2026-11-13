@@ -34,6 +34,10 @@ import { ScriptIO } from "./ScriptIO.sol";
 ///      - the CC0 text must hash to `DeployV1.CC0_LEGALCODE_SHA256`;
 ///      - Permit2 and the delegation contract must have code, and be canonical on mainnet;
 ///      - on mainnet the VRF coordinator must be the canonical one with its pinned code hash;
+///      - on mainnet the deployer may not be the museum, the marketplace owner or the network
+///        fee recipient (`DeployGuards.checkRecipients`), and the VRF subscription must already
+///        be owned by the hot admin Safe and list the module this run deploys as its only
+///        consumer (`DeployGuards.checkSubscription`, as Verify reads it);
 ///      - the entropy module is required unless declined with `NO_VRF=1`;
 ///      - nothing the genesis names may be left out.
 ///      On anvil, when the delegation contract has no code, a `DelegationManagementMock` is
@@ -147,6 +151,7 @@ contract Deploy is ScriptIO {
         }
         r.p = params(r.local);
         r.p.deployer = msg.sender;
+        if (block.chainid == DeployGuards.MAINNET_CHAIN_ID) DeployGuards.checkRecipients(r.p);
         (r.manifest, r.manifestPath) = manifest(r.local);
         checkConfiguratorSlot(r.p);
         checkAddressesFree(r.p);
@@ -154,7 +159,9 @@ contract Deploy is ScriptIO {
 
     /// @notice Off-anvil checks against the deployed contracts, before `configure`: nothing the
     ///         genesis names is left out, the policy is the committed one, and no holder is a
-    ///         contract of the deployment.
+    ///         contract of the deployment. On mainnet, the VRF subscription is the hot admin
+    ///         Safe's and lists the deployed module as its only consumer. These run in the
+    ///         simulation, so a failure aborts the run with nothing broadcast.
     function checkDeployment(
         DeployV1.Deployment memory d,
         Run memory r,
@@ -164,6 +171,9 @@ contract Deploy is ScriptIO {
         DeployGuards.checkNothingDropped(d, r.json, r.p.vrfCoordinator == address(0));
         DeployGuards.checkPolicy(d, r.json, _read(EXAMPLE_GENESIS), r.manifest);
         DeployGuards.checkHoldersAgainst(d, r.p, cfg);
+        if (block.chainid == DeployGuards.MAINNET_CHAIN_ID) {
+            DeployGuards.checkSubscription(d, cfg, true);
+        }
     }
 
     /// @notice The configurator's CREATE2 address must be free. If it is not, someone deployed

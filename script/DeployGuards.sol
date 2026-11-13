@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
+import { Roles } from "src/governance/Roles.sol";
 import { DelegatedEOA } from "src/libraries/DelegatedEOA.sol";
 import { DeployV1 } from "./DeployV1.sol";
 
@@ -125,6 +126,22 @@ library DeployGuards {
     ///         community council's, the security council's or the curation signer's (owner
     ///         decision 18).
     error RoleGroupsShareAHolder(address account, string role, string otherRole);
+    /// @notice On mainnet, the museum, the marketplace owner or the network fee recipient
+    ///         (`name`) is the deployer EOA.
+    error RecipientIsTheDeployer(string name, address account);
+    /// @notice The entropy module is not a consumer of its VRF subscription. Before a mainnet
+    ///         broadcast, add `module` (the address the run will deploy it at) as the
+    ///         subscription's only consumer.
+    error ModuleNotAConsumer(uint256 subscriptionId, address module);
+    /// @notice The VRF subscription has `count` consumers: the entropy module must be the only
+    ///         one.
+    error SubscriptionConsumers(uint256 subscriptionId, uint256 count);
+    /// @notice On mainnet, the VRF subscription's owner is not the hot admin Safe (the
+    ///         configured holder of ADMIN and PARAMETER_SETTER).
+    error SubscriptionOwner(address owner);
+    /// @notice The coordinator does not report the subscription (on mainnet, or off mainnet
+    ///         with a reason).
+    error SubscriptionUnreadable(address coordinator, uint256 subscriptionId);
 
     /// @notice The community council's roles (owner decision 18): ADMIN and the delayed
     ///         setters, each acting 48 hours to 30 days after it is scheduled.
@@ -341,6 +358,71 @@ library DeployGuards {
             }
             (accounts[i], groups[i], roles[i]) = (account, group, role);
         }
+    }
+
+    /// @notice On mainnet, the accounts the deployment pins at construction are not the
+    ///         deployer EOA (`Deploy.s.sol` runs it before the broadcast, `Verify.s.sol` against
+    ///         the record): the 6529 Network Museum, the marketplace `owner()` and the network
+    ///         fee recipient. Each is changed later only by a 14-day FUNDS_SETTER action, and the
+    ///         deployer's key, used once to deploy, is not a network-held account (owner decision
+    ///         18).
+    function checkRecipients(DeployV1.Params memory p) internal pure {
+        if (p.museum == p.deployer) revert RecipientIsTheDeployer("MUSEUM", p.museum);
+        if (p.marketOwner == p.deployer) {
+            revert RecipientIsTheDeployer("MARKETPLACE_OWNER", p.marketOwner);
+        }
+        if (p.feeRecipient == p.deployer) {
+            revert RecipientIsTheDeployer("NETWORK_FEE_RECIPIENT", p.feeRecipient);
+        }
+    }
+
+    /// @notice The entropy module's VRF subscription, read from the module's coordinator
+    ///         (`getSubscription`, Chainlink v2.5): the module is its only consumer, and on
+    ///         `mainnet` its owner is the hot admin Safe, the configured holder of both ADMIN and
+    ///         PARAMETER_SETTER (which moves the module between subscriptions). `Verify.s.sol`
+    ///         runs it off anvil; on mainnet `Deploy.s.sol` runs it before the broadcast,
+    ///         against the module the simulation deployed, so the hot admin Safe adds that
+    ///         address as a consumer first (Chainlink accepts an address without code). A read
+    ///         that fails fails the check, except off mainnet when the coordinator has no such
+    ///         function (it reverts with no data).
+    function checkSubscription(
+        DeployV1.Deployment memory d,
+        GovernanceConfig.Config memory cfg,
+        bool mainnet
+    ) internal view {
+        address module = address(d.entropyModule);
+        if (module == address(0)) return;
+        address coordinator = d.entropyModule.coordinator();
+        uint256 id = d.entropyModule.config().subscriptionId;
+        (bool ok, bytes memory ret) =
+            coordinator.staticcall(abi.encodeWithSignature("getSubscription(uint256)", id));
+        // Off mainnet, a coordinator without `getSubscription` (empty revert data) is skipped;
+        // any other failure, such as `InvalidSubscription`, fails.
+        if (!mainnet && ret.length == 0) return;
+        if (!ok || ret.length < 192) revert SubscriptionUnreadable(coordinator, id);
+        (,,, address owner, address[] memory consumers) =
+            abi.decode(ret, (uint96, uint96, uint64, address, address[]));
+        bool listed;
+        for (uint256 i; i < consumers.length && !listed; ++i) {
+            listed = consumers[i] == module;
+        }
+        if (!listed) revert ModuleNotAConsumer(id, module);
+        if (consumers.length != 1) revert SubscriptionConsumers(id, consumers.length);
+        if (
+            mainnet
+                && !(_holds(cfg, Roles.ADMIN, owner) && _holds(cfg, Roles.PARAMETER_SETTER, owner))
+        ) revert SubscriptionOwner(owner);
+    }
+
+    function _holds(GovernanceConfig.Config memory cfg, uint64 role, address account)
+        private
+        pure
+        returns (bool)
+    {
+        for (uint256 i; i < cfg.grants.length; ++i) {
+            if (cfg.grants[i].role == role && cfg.grants[i].account == account) return true;
+        }
+        return false;
     }
 
     /// @notice The owner decision 18 group of `role`: {COMMUNITY_COUNCIL} for ADMIN, UNPAUSER,

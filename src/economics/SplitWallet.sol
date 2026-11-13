@@ -20,8 +20,10 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///         stays below the number of payees.
 /// @dev No owner, no governance and no asset allowlist: an asset that governance deprecates, or
 ///      never admitted, stays withdrawable (fixes RC1 Medium M-3). Every ERC-20 move is checked by
-///      exact balance deltas on both sides, so a token that charges fees, rebases with rounding,
-///      returns nothing or returns `false` fails closed for its own releases only. A recorded
+///      exact balance deltas on both sides, so a token that charges fees, rebases with rounding
+///      or returns `false` fails closed for its own releases only. A token that returns nothing
+///      from `transfer` releases normally, because the deltas prove the move and a wallet has no
+///      other way out of a token a marketplace chose to pay royalties in. A recorded
 ///      high-water mark of each ERC-20's `observed` makes a balance that shrinks (a negative
 ///      rebase) fail closed too. ETH needs none: nothing but a release can take ETH out of the
 ///      wallet, and a release adds what it sends to `totalReleased` first, so ETH receipts never
@@ -179,7 +181,7 @@ contract SplitWallet is ISplitWallet, ReentrancyGuardTransient {
                 revert ETHTransferFailed(recipient, amount);
             }
         } else {
-            TokenTransfer.transferExact(asset, recipient, amount);
+            TokenTransfer.transferExactAllowingNoReturn(asset, recipient, amount);
         }
     }
 

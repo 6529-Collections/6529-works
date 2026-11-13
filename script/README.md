@@ -115,7 +115,7 @@ or stores a key:
 
 | Account | Roles | Kind |
 | --- | --- | --- |
-| Deployer (operator) | None after genesis. It is the configurator's `deployer`, and signs every deploy transaction and `configure` | Keystore or Ledger EOA, funded with Sepolia ETH. Not an EIP-7702 delegated account: the script refuses one (`DelegatedDeployer`) |
+| Deployer (operator) | None after genesis. It is the configurator's `deployer`, and signs every deploy transaction and `configure` | Keystore or Ledger EOA, funded with Sepolia ETH. Not an EIP-7702 delegated account: the script refuses one (`DelegatedDeployer`). On mainnet it may not be a role holder, the museum, the marketplace owner or the network fee recipient (`HolderIsTheDeployer`, `RecipientIsTheDeployer`; Verify repeats both) |
 | Hot admin Safe | ADMIN, UNPAUSER, PARAMETER_SETTER, FUNDS_SETTER, SUCCESSOR_SETTER | Safe |
 | Cold recovery admin Safe | ADMIN only. It acts only for [admin recovery](#admin-recovery) | Safe, 3-of-5 recommended. Its signers differ from the hot admin's and the guardians', on hardware wallets kept in separate places |
 | Guardian Safes 1, 2 and 3 | GUARDIAN, PAUSER (at least three off anvil) | Safe, 2-of-3 each |
@@ -126,7 +126,7 @@ or stores a key:
 | Network fee recipient | No role (`NETWORK_FEE_RECIPIENT`) | An existing account: a Safe, or an EOA with a balance or a sent transaction ([below](#the-network-fee-recipient-must-exist)) |
 | 6529 Network Museum | No role (`MUSEUM`). Receives every 6529 Stream work whose 1/1 sale ends unsold (D140), moved there by Stream (owner decision 17); FUNDS_SETTER can change it (`setMuseum`, 14 days) | An existing Safe or EOA that can hold ERC-721 tokens ([below](#the-museum-must-exist)) |
 | Marketplace owner | No role (`MARKETPLACE_OWNER`). Stream's `owner()`: collection admin on marketplaces, no protocol power; FUNDS_SETTER can change it (`setOwner`, 14 days) | Safe or EOA, separate from the platform key, so a stolen platform key does not also hold the marketplace listing |
-| VRF subscription owner | No role; owns the Chainlink subscription. It can cancel the subscription or remove the module at once, outside governance, so on mainnet it must be the hot admin Safe (Verify checks it) | Mainnet: the hot admin Safe. Sepolia: EOA or Safe |
+| VRF subscription owner | No role; owns the Chainlink subscription. It can cancel the subscription or remove the module at once, outside governance, so on mainnet it must be the hot admin Safe (the deploy checks it before the broadcast, and Verify again) | Mainnet: the hot admin Safe. Sepolia: EOA or Safe |
 | Keeper | No role (`refreshStanding` is permissionless) | Any funded EOA |
 
 Delays and responsibilities are in the [role table](../docs/spec/governance.md#roles).
@@ -147,10 +147,10 @@ independent of the admins they check:
   pause before the 1/1s that started under it close.
 - **Deprecating an auction's currency.** A deprecation freezes the live auctions in that
   currency: nothing settles, and their high bidders may withdraw. To keep them alive,
-  re-admit the currency between day 14 and day 30 after the deprecation (`admitAsset` is in
+  re-admit the currency between day 14 and day 60 after the deprecation (`admitAsset` is in
   the 14-day class and executes no earlier than 14 days from the deprecation); the first
   `settle` after the re-admission reopens each auction for at least the governed duration.
-  After day 30, anyone can end a frozen auction unsold: its standing bid is credited back to
+  After day 60, anyone can end a frozen auction unsold: its standing bid is credited back to
   the bidder and a 6529 Stream work goes to the museum (any other token's to its artist).
 
 #### The network fee recipient must exist
@@ -170,7 +170,7 @@ Glamsterdam that costs whoever settles or buys about 184K more gas
 
 #### The museum must exist
 
-6529 Stream moves every work whose 1/1 sale ends unsold, unbid or by the 30-day currency
+6529 Stream moves every work whose 1/1 sale ends unsold, unbid or by the 60-day currency
 freeze, to the museum its current economics resolver names when the adapter settles the sale,
 with no receiver callback (owner decision 17;
 [AUC-24, AUC-33](../docs/spec/stream-and-auctions.md#rules-and-invariants)).
@@ -390,7 +390,13 @@ On Sepolia, set the module up as on mainnet; do not use `NO_VRF`.
 
 3. After the broadcast, add the module (`EntropyModule` in the record) as the subscription's
    only consumer. Requests fail until it is a consumer and the subscription is funded.
-   Verify, off anvil, requires the module to be the only consumer.
+   Verify, off anvil, requires the module to be the only consumer. **On mainnet, add it before
+   the broadcast:** the simulation reads the subscription after deploying the contracts and
+   before `configure`, and stops with nothing broadcast unless the hot admin Safe owns it and
+   the module this run deploys is its only consumer. The first simulation stops with
+   `ModuleNotAConsumer(subscriptionId, module)`, naming the module's address (CREATE2 under
+   `DEPLOY_NAMESPACE`, so the broadcast deploys it there); the hot admin Safe adds that
+   address (`addConsumer` accepts an address without code), and the next simulation passes.
 4. **On mainnet, the subscription owner is the hot admin Safe.** This is an accepted
    trade-off: if the hot admin is compromised, VRF works stop for about 64 days or more. The
    hot Safe can cancel the subscription at once. The cold admin removes it (30 days), then
@@ -406,6 +412,13 @@ On Sepolia, set the module up as on mainnet; do not use `NO_VRF`.
    `SubscriptionOwnerTransferRequested` for the subscription ID.
 5. Never use Chainlink's subscription `migrate`. The [entropy README](../src/entropy/README.md)
    describes the coordinator-change procedure.
+6. **A coordinator change orphans every pending request**, including one whose fulfilment is
+   already visible on the old coordinator: request IDs are scoped to their coordinator, so the
+   old one can no longer deliver, and the content is drawn again through the new one
+   ([coordinator change](../docs/spec/entropy.md#coordinator-change)). Execute `setCoordinator`
+   only when every request has its delivery (no `SeedRequested` without a `SeedDelivered` for
+   its content), or accept and publish the redraw of each pending content
+   ([LIM-ENT-7](../docs/audit/known-limitations.md#entropy)).
 
 ### 8. Default currencies
 
@@ -574,6 +587,13 @@ The record is only an index; each check is made against the chain or the committ
   JSON;
 - no other grant-delay or admin-delay change is pending;
 - no account outside the configuration was granted a role;
+- every selector remap, role-admin change, role-guardian change and target closure on the
+  manager since genesis matches the configuration: a configured selector keeps its role, any
+  other selector stays with ADMIN, every role's admin is ADMIN, a configured role's guardian
+  is GUARDIAN and any other role's ADMIN, and no target is closed. The configurator's readback
+  sees only the configured selectors and roles, so this catches a genesis-only bind or the
+  deferred `bindFederationRegistry` given a role, a mapping to a new role ID or the public
+  role, and a change made and later undone;
 - no operation scheduled on the manager since genesis is still pending. Each one fails the
   run with its ID, caller, target, selector and ready time. After reviewing them, set
   `ALLOW_PENDING_OPERATIONS=1` to log them instead.
@@ -582,7 +602,10 @@ Verify checks the genesis configuration. After a governance change, such as an
 [admin recovery](#admin-recovery) or a key rotation, run it in epoch mode: set
 `GOVERNANCE_CONFIG` to a copy of the genesis file with the current holders. The wiring
 readback stays genesis readback, so a later default-currency change still fails it. Epoch
-mode logs every grant it accepts for an account that no longer holds the role. When the
+mode logs every grant it accepts for an account that no longer holds the role, and every
+past remap, role-admin or role-guardian change or target closure it accepts because the
+manager is back to the epoch configuration; a genesis selector mapping the epoch file drops
+counts as such a change, so it passes only once the manager maps that selector to ADMIN. When the
 epoch's governance manifest is given (`GOVERNANCE_MANIFEST_PATH`), Verify requires its
 SHA-256 to be the content of a `GOVERNANCE_MANIFEST` statement on the manager's chain, and
 its `governanceConfig.sha256` to be the SHA-256 of the `GOVERNANCE_CONFIG` file.
@@ -703,7 +726,11 @@ Before the mainnet broadcast, besides the [Sepolia runbook](#sepolia-runbook) st
    also checked against decision 18 by hand, and Verify reads every role holder back
    ([step 11](#11-verify-after-5-days)).
 6. The VRF subscription owner is the community council (it must hold ADMIN and
-   PARAMETER_SETTER; Verify checks it).
+   PARAMETER_SETTER), and it has added the module's address as the only consumer
+   ([step 7](#7-chainlink-vrf-the-entropy-module)). The deploy checks both before the
+   broadcast, and Verify again.
+7. The museum, the marketplace owner and the network fee recipient are network-held accounts,
+   not the deployer (the deploy and Verify refuse the deployer for each).
 
 ## Operating procedures
 
@@ -871,9 +898,9 @@ Before any switch:
 
 | Replaced | Who else holds it | The replacement set | Without a Stream redeploy? |
 | --- | --- | --- | --- |
-| Entropy module | Nobody: the renderer and `WorkRecords` ask Stream | A new `VrfEntropyModule` pinned to Stream's current package registry, added as a consumer of a funded subscription ([step 7](#7-chainlink-vrf-the-entropy-module)); then `setDependency("ENTROPY_MODULE")`. Seeds requested from the old module but not yet started are requested again from the new one. Keep the old module deployed: the works minted under it read their seeds from it. | Yes |
+| Entropy module | Nobody: the renderer and `WorkRecords` ask Stream | A new `VrfEntropyModule` pinned to Stream's current package registry, added as a consumer of a funded subscription ([step 7](#7-chainlink-vrf-the-entropy-module)); then `setDependency("ENTROPY_MODULE")`. A successor entropy module MUST honour every seed its predecessor delivered for content not yet minted: answer `isDeliveredContent`, `seedOfContent` and `seedOf` with the predecessor's seed and refuse a new draw for it. Today's `VrfEntropyModule` reads no predecessor, so until such a module exists schedule a replacement only when no unminted VRF content has a seed delivered or requested on the old module, or publish that each such content is redrawn. List those contents before scheduling: every content hash in the old module's `SeedLinked` events whose `PackageRegistry.consumedItemOf` reads zero (a content a dispute released reads zero again, so it stays on the list). A delivered content is drawn again by the new module; a pending one is drawn there too, while the old module may still deliver its request. Rebuild the list immediately before executing, since anyone can request a seed and the old coordinator can deliver one during the 30-day delay, and cancel the switch, or publish the redraw, for each content not already disclosed ([LIM-ENT-7](../docs/audit/known-limitations.md#entropy)). Keep the old module deployed: the works minted under it read their seeds from it. | Yes |
 | Economics resolver | `EnglishAuction` (immutable: the federated fee recipient and the asset allowlist; since owner decision 17 Stream, not the auction, reads the museum) and `UniformEditionAuction` (it holds no resolver: a sale pays exactly the terms `Editions.bindMinter` locks and returns, one source of truth since ADR 0005 §12; but it reads the 1/1's clock from its immutable English auction, so it is replaced with it) | A new resolver whose `splitFactory()` is Stream's (Stream derives sellers with its own immutable factory and Editions with the resolver's; `setDependency` does not check it), a new `EnglishAuction` and a new edition auction on it; then `setDependency("ECONOMICS")`, `Stream.setAdmittedMinter` (the new auction in, the old out: one adapter per kind, ADR 0005) and the same on Editions. Sales running on the old adapters finish there: their fees follow the terms locked at mint or at open, while an unsold 1/1 goes to the NEW resolver's museum, since Stream reads `museum()` from its current resolver when it settles (owner decision 17). | Yes |
-| Package registry | `VrfEntropyModule` (pinned registry), `ArtistRegistry` (its only `register` caller: `setPackageRegistry`, SUCCESSOR_SETTER, 30 days) | A successor registry pinned to the current artist registry, bound to the existing Stream and Editions (`bindStream`, `bindEditions`: one-shot per instance, so a new instance binds), plus a new entropy module pinned to it; then, in one batch, `setDependency("PACKAGE_REGISTRY")`, `ArtistRegistry.setPackageRegistry(old, successor)`, so new artists register through the successor (`test_AReplacementPackageRegistryRegistersNewArtists`), and `setDependency("ENTROPY_MODULE")`. The successor MUST read its predecessor's state: approved packages, consumed content (or content minted before would mint again), edition claims (or `createEdition` refuses every master minted before) and releases (or `releaseContent` refuses every work burned before); it must also keep `consume`'s ABI, which Stream calls (LIM-GV-17). Today's `PackageRegistry` reads none of it: the successor is new code. | Yes, with new code |
+| Package registry | `VrfEntropyModule` (pinned registry), `ArtistRegistry` (its only `register` caller: `setPackageRegistry`, SUCCESSOR_SETTER, 30 days) | A successor registry pinned to the current artist registry, bound to the existing Stream and Editions (`bindStream`, `bindEditions`: one-shot per instance, so a new instance binds), plus a new entropy module pinned to it, which carries the same obligation as in the row above (honour the predecessor's delivered seeds for unminted content, or schedule only when there are none, or publish the redraw); then, in one batch, `setDependency("PACKAGE_REGISTRY")`, `ArtistRegistry.setPackageRegistry(old, successor)`, so new artists register through the successor (`test_AReplacementPackageRegistryRegistersNewArtists`), and `setDependency("ENTROPY_MODULE")`. The successor MUST read its predecessor's state: approved packages, consumed content (or content minted before would mint again), edition claims (or `createEdition` refuses every master minted before) and releases (or `releaseContent` refuses every work burned before); it must also keep `consume`'s ABI, which Stream calls (LIM-GV-17). Today's `PackageRegistry` reads none of it: the successor is new code. | Yes, with new code |
 | Artist registry | `SplitFactory` and every `SplitWallet` (the payout resolver, pinned by code hash), `PackageRegistry` (pinned), `StatementLog` (`setArtistResolver`, 30 days) | A registry carrying every identity, authority, pending change and recovery; a successor package registry pinned to it (row above); `StatementLog.setArtistResolver`; the new registry's one-shot binds. | **No, not completely.** Stream's split factory is immutable, so every Stream work, existing or future, resolves its artist payouts through the genesis artist registry: a replacement moves authority (creator, records consent, statements) but never payouts, and an artist known only to the replacement cannot release Stream proceeds. The genesis registry would have to be kept in step for every identity change, by hand. |
 
 One limit follows ([LIM-GV-16](../docs/audit/known-limitations.md#trust-and-governance)): the

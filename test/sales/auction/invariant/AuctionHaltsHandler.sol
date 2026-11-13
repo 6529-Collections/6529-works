@@ -48,7 +48,7 @@ contract SwitchToken is PermitToken {
 
 /// @dev The auction's lifecycle through halts: dispute pauses (with the 48-hour floor on
 ///      `resume` and `cancel`), the start pause, currency deprecation and re-admission (MARKET-2,
-///      with the 14-day re-admission floor and the 30-day freeze exit), withdrawals while paused
+///      with the 14-day re-admission floor and the 60-day freeze exit), withdrawals while paused
 ///      or frozen (LIFECYCLE-1), a token that blocks the auction (MONEY-1 credits) and
 ///      `claimFor`. Every action is guarded so it never reverts unexpectedly
 ///      (`fail_on_revert`). Adopted from the independent review of the sales fixes.
@@ -249,8 +249,8 @@ contract AuctionHaltsHandler is Test {
         (IAssetAllowlist.Status status, uint256 since,) = allowlist.statusClock(currency);
         bool active = status == IAssetAllowlist.Status.Active;
         if (!active) {
-            // Nothing settles while frozen, sold or unsold, until the 30-day exit.
-            if (block.timestamp < since + 30 days) {
+            // Nothing settles while frozen, sold or unsold, until the 60-day exit.
+            if (block.timestamp < since + 60 days) {
                 vm.expectRevert(
                     abi.encodeWithSelector(IAssetAllowlist.AssetNotActive.selector, currency)
                 );
@@ -406,17 +406,45 @@ contract AuctionHaltsHandler is Test {
         uint256 saleId = _sale(saleSeed);
         address claimant = auction.pendingDelivery(saleId);
         if (claimant == address(0)) return;
-        address winner = auction.auction(saleId).bidder;
-        if (asWinner && winner != address(0)) claimant = winner;
+        IEnglishAuction.Auction memory a = auction.auction(saleId);
+        address winner = a.bidder;
+        address to = sink;
+        // RFX-SAL-1: the winning bidder names any address; the recipient its bid named claims
+        // to itself, and to another address only from 30 days after the end. Before then a
+        // recipient that refuses the token (the hostile actor) leaves the claim to the bidder.
+        if (winner != address(0) && claimant != winner && !asWinner) {
+            if (block.timestamp < uint256(a.endTime) + 30 days) {
+                _expectRedirectRefused(saleId, claimant);
+                if (claimant == address(hostile)) claimant = winner;
+                else to = claimant;
+            } else {
+                ++hits["recipientRedirect"];
+            }
+        } else if (winner != address(0) && claimant != winner) {
+            claimant = winner;
+        }
         if (claimant == address(hostile)) {
             hostile.execute(
-                address(auction), 0, abi.encodeCall(auction.claimDelivery, (saleId, sink))
+                address(auction), 0, abi.encodeCall(auction.claimDelivery, (saleId, to))
             );
         } else {
             vm.prank(claimant);
-            auction.claimDelivery(saleId, sink);
+            auction.claimDelivery(saleId, to);
         }
         ++hits["delivery"];
+    }
+
+    /// @dev Within 30 days of the end the recipient's claim to another address is refused.
+    function _expectRedirectRefused(uint256 saleId, address recipient) internal {
+        bytes memory claim = abi.encodeCall(auction.claimDelivery, (saleId, sink));
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, sink));
+        if (recipient == address(hostile)) {
+            hostile.execute(address(auction), 0, claim);
+        } else {
+            vm.prank(recipient);
+            auction.claimDelivery(saleId, sink);
+        }
+        ++hits["redirectRefused"];
     }
 
     function toggleStartPause() external {
@@ -553,7 +581,7 @@ contract AuctionHaltsHandler is Test {
 
     // ---------------------------------------------------------------------------- helpers
 
-    /// @dev The 30-day freeze exit: the standing bid is credited back to its bidder and the
+    /// @dev The 60-day freeze exit: the standing bid is credited back to its bidder and the
     ///      work goes where an unbid canonical work goes, the museum (D140, owner decision 10),
     ///      delivered or pending.
     function _freezeExit(uint256 saleId, IEnglishAuction.Auction memory a) internal {

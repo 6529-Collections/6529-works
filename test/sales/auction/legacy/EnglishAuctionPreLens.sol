@@ -4,8 +4,9 @@ pragma solidity ^0.8.24;
 // Test-only copy of src/sales/EnglishAuction.sol at main 075428f, before its views moved to
 // EnglishAuctionLens: the reference build EnglishAuctionLensDifferential.t.sol compares every
 // moved view against. Only the contract name and the import paths differ, and owner decision
-// 17's settlement (settlePrimary; no stream constructor argument), applied here exactly as
-// in EnglishAuction so the comparison stays like with like. Never deployed.
+// 17's settlement (settlePrimary; no stream constructor argument), and RFX-SAL-1's
+// `claimDelivery` rule and RFX-SAL-2's 60-day freeze exit, applied here exactly as in
+// EnglishAuction so the comparison stays like with like. Never deployed.
 
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { IERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
@@ -117,7 +118,8 @@ contract EnglishAuctionPreLens is
     /// @dev How long a sale's currency must have been deprecated before anyone may end the
     ///      frozen sale unsold (MARKET-2): the standing bid is credited back and the work goes
     ///      where an unbid work goes (D140: the museum for 6529 Stream, else the artist).
-    uint256 private constant _FREEZE_EXIT = 30 days;
+    uint256 private constant _FREEZE_EXIT = 60 days;
+    uint256 private constant _REDIRECT_DELAY = 30 days;
 
     bytes4 private constant _SAFE_TRANSFER_FROM = 0x42842e0e;
     uint8 private constant _PAUSE_USED = 1;
@@ -364,7 +366,14 @@ contract EnglishAuctionPreLens is
                     && msg.sender != bidder
                     && (bidder != address(0) || msg.sender != _unbidClaimant(s)))
         ) revert NoPendingDelivery(saleId);
-        if (to == address(0) || to == address(this)) revert InvalidRecipient(to);
+        if (
+            to == address(0) || to == address(this)
+                || (bidder != address(0)
+                    && msg.sender != bidder
+                    && to != pending
+                    // forge-lint: disable-next-line(block-timestamp)
+                    && block.timestamp < uint256(s.endTime) + _REDIRECT_DELAY)
+        ) revert InvalidRecipient(to);
         s.flags &= ~_DELIVERY_PENDING;
         IERC721(s.token).safeTransferFrom(address(this), to, s.tokenId);
         emit DeliveryClaimed(saleId, pending, to);

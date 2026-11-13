@@ -8,7 +8,14 @@ Checks:
   3. at most 5 libraries with public or external functions (each would be linked);
   4. every contract built by the measured Foundry profile fits EIP-170 (24,576-byte
      runtime) and EIP-3860 (49,152-byte initcode), read from
-     `forge build --sizes --json`.
+     `forge build --sizes --json`;
+  5. every contract declared in src/ keeps at least 512 bytes of EIP-170 margin (24,576 minus
+     its runtime size), unless tools/size-margins.json exempts it. The contracts are not
+     upgradeable, so the room left decides whether a later fix can ship in the same contract.
+     An exemption records the contract's margin when it was granted and a reason. The gate
+     fails when an exempt contract's margin falls below its recorded value, when an exempt
+     contract is back at or above the floor (remove the exemption), and when an exemption
+     names no contract of src/ that forge measured.
 
 Run from anywhere: `python tools/check_budgets.py`. Standard library only. The
 repository root is the nearest ancestor with a foundry.toml. Sizes always come from
@@ -32,11 +39,14 @@ MAX_LINES = 13_000
 MAX_LINKED_LIBRARIES = 5
 MAX_RUNTIME_BYTES = 24_576
 MAX_INITCODE_BYTES = 49_152
+MIN_RUNTIME_MARGIN = 512
+DEFAULT_MARGINS = Path("tools") / "size-margins.json"
 DEFAULT_PROFILE = "default"
 SIZE_FIELDS = ("runtime_size", "init_size")
 
 FORBIDDEN_CALL = re.compile(r"\b(delegatecall|callcode)\b")
 LIBRARY = re.compile(r"\blibrary\s+([A-Za-z_$][\w$]*)\s*\{")
+CONTRACT = re.compile(r"\b(abstract\s+)?contract\s+([A-Za-z_$][\w$]*)")
 NAMED_FUNCTION = re.compile(r"\bfunction\s+([A-Za-z_$][\w$]*)\s*\(")
 WORD = re.compile(r"[A-Za-z_$][\w$]*")
 
@@ -173,15 +183,118 @@ def _is_size_entry(entry: object) -> bool:
     )
 
 
-def check_sizes(sizes: dict, report: Report) -> None:
+def deployable_contracts(src: Path) -> set[str]:
+    """Names of the non-abstract contracts declared in src/ (comments and strings ignored)."""
+    names: set[str] = set()
+    for path in source_files(src):
+        code = strip_solidity(path.read_text(encoding="utf-8"))
+        names.update(m.group(2) for m in CONTRACT.finditer(code) if not m.group(1))
+    return names
+
+
+class MarginsError(Exception):
+    """The exemptions file cannot be used."""
+
+
+def load_margins(path: Path, floor: int) -> dict[str, dict]:
+    """The exemptions in `path`: {"exempt": {contract: {"margin": bytes, "reason": text}}}.
+
+    A missing file means no exemptions, the strictest reading. Every entry needs an integer
+    margin below the floor (an exemption at or above it is not needed) and a reason.
+    """
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise MarginsError(f"{path.name}: not JSON ({exc})") from exc
+    exempt = data.get("exempt") if isinstance(data, dict) else None
+    if not isinstance(exempt, dict):
+        raise MarginsError(f'{path.name}: expected an object with an "exempt" object')
+    for name, entry in exempt.items():
+        margin = entry.get("margin") if isinstance(entry, dict) else None
+        reason = entry.get("reason") if isinstance(entry, dict) else None
+        if type(margin) is not int or not 0 <= margin < floor:
+            raise MarginsError(
+                f"{path.name}: {name}: margin must be an integer from 0 to {floor - 1} bytes"
+            )
+        if not isinstance(reason, str) or not reason.strip():
+            raise MarginsError(f"{path.name}: {name}: a reason is required")
+    return exempt
+
+
+def check_margins(
+    valid: dict[str, dict],
+    contracts: set[str],
+    exempt: dict[str, dict],
+    floor: int,
+    report: Report,
+) -> None:
+    """Every src/ contract keeps `floor` bytes of EIP-170 margin, or its exemption.
+
+    A contract declared in src/ without a well-formed measurement fails: a truncated or
+    partial size report must not pass the gate by leaving a contract out.
+    """
+    problems: list[str] = [
+        f"{name}: declared in src/ but has no size measurement"
+        for name in sorted(contracts - set(valid))
+    ]
+    notes: list[str] = []
+    measured = sorted(name for name in valid if name in contracts)
+    for name in measured:
+        runtime = valid[name]["runtime_size"]
+        margin = MAX_RUNTIME_BYTES - runtime
+        if name not in exempt:
+            if margin < floor:
+                problems.append(
+                    f"{name} margin {margin} bytes < {floor} (runtime {runtime}): free bytes,"
+                    " or record an exemption with a reason in tools/size-margins.json"
+                )
+            continue
+        recorded = exempt[name]["margin"]
+        if margin < recorded:
+            problems.append(
+                f"{name} margin {margin} bytes < its recorded {recorded} (runtime {runtime};"
+                f" exempt from the {floor}-byte floor: {exempt[name]['reason']})"
+            )
+        elif margin >= floor:
+            problems.append(
+                f"{name} margin {margin} bytes is back at or above the {floor}-byte floor:"
+                " remove its exemption from tools/size-margins.json"
+            )
+        elif margin > recorded:
+            notes.append(
+                f"{name} margin {margin} bytes (exempt, recorded {recorded}: raise the record"
+                " to keep the gain)"
+            )
+        else:
+            notes.append(f"{name} margin {margin} bytes (exempt, recorded {recorded})")
+    for name in sorted(set(exempt) - set(measured)):
+        problems.append(
+            f"{name}: exempt in tools/size-margins.json, but no src/ contract of that name"
+            " was measured"
+        )
+    for message in problems:
+        report.check(False, message)
+    for message in notes:
+        report.check(True, message)
+    report.check(
+        not problems,
+        f"{len(measured)} src/ contracts keep {floor} bytes of EIP-170 margin"
+        f" ({len(exempt)} exempt)",
+    )
+
+
+def check_sizes(sizes: dict, report: Report) -> dict[str, dict]:
     """Check every contract in forge's size JSON, failing cleanly on unexpected shapes.
 
     The gate is the only EIP-170 enforcement in CI, so a changed or truncated forge
-    output must produce a FAIL line naming the contract, never an exception.
+    output must produce a FAIL line naming the contract, never an exception. Returns the
+    well-formed entries.
     """
     if not isinstance(sizes, dict):
         report.check(False, "contract sizes: expected a JSON object from forge")
-        return
+        return {}
     problems = []
     valid: dict[str, dict] = {}
     for name, entry in sorted(sizes.items()):
@@ -204,6 +317,7 @@ def check_sizes(sizes: dict, report: Report) -> None:
     else:
         detail = "no contracts"
     report.check(not problems, f"{len(sizes)} contracts within EIP-170/EIP-3860 ({detail})")
+    return valid
 
 
 def find_root(start: Path) -> Path:
@@ -245,6 +359,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skip-sizes", action="store_true", help="skip the contract-size check")
     parser.add_argument("--max-lines", type=int, default=MAX_LINES)
     parser.add_argument("--max-linked-libraries", type=int, default=MAX_LINKED_LIBRARIES)
+    parser.add_argument(
+        "--min-margin",
+        type=int,
+        default=MIN_RUNTIME_MARGIN,
+        help=f"EIP-170 margin floor in bytes (default: {MIN_RUNTIME_MARGIN})",
+    )
+    parser.add_argument(
+        "--margins",
+        type=Path,
+        help=f"exemptions file (default: {DEFAULT_MARGINS.as_posix()} under the root)",
+    )
     args = parser.parse_args(argv)
 
     root = args.root or find_root(Path(__file__).resolve().parent)
@@ -258,7 +383,13 @@ def main(argv: list[str] | None = None) -> int:
             sizes = json.loads(args.sizes_json.read_text(encoding="utf-8"))
         else:
             sizes = forge_sizes(root, args.profile)
-        check_sizes(sizes, report)
+        valid = check_sizes(sizes, report)
+        try:
+            exempt = load_margins(args.margins or root / DEFAULT_MARGINS, args.min_margin)
+        except MarginsError as exc:
+            report.check(False, str(exc))
+        else:
+            check_margins(valid, deployable_contracts(src), exempt, args.min_margin, report)
 
     for line in report.notes + report.failures:
         print(line)

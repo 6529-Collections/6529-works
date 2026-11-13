@@ -14,6 +14,7 @@ import {
     BlocklistToken,
     FeeOnTransferToken,
     MockArtistResolver,
+    NoReturnToken,
     RebasingToken,
     ToggleRecipient
 } from "../../mocks/economics/EconomicsMocks.sol";
@@ -33,9 +34,10 @@ contract EconomicsInvariantTest is Test {
     BlocklistToken internal usdc;
     FeeOnTransferToken internal fee;
     RebasingToken internal rebase;
+    NoReturnToken internal silent;
     ToggleRecipient internal toggle;
     SplitWallet[] internal wallets;
-    address[4] internal assets;
+    address[5] internal assets;
 
     function setUp() public {
         AccessManager manager = new AccessManager(address(this));
@@ -49,8 +51,9 @@ contract EconomicsInvariantTest is Test {
         fee = new FeeOnTransferToken();
         fee.setFee(0);
         rebase = new RebasingToken();
+        silent = new NoReturnToken();
         toggle = new ToggleRecipient();
-        assets = [ETH, address(usdc), address(fee), address(rebase)];
+        assets = [ETH, address(usdc), address(fee), address(rebase), address(silent)];
 
         uint256[] memory keys = new uint256[](7);
         for (uint256 i; i < keys.length; ++i) {
@@ -85,6 +88,7 @@ contract EconomicsInvariantTest is Test {
                 usdc,
                 fee,
                 rebase,
+                silent,
                 resolver,
                 keys,
                 artistIds
@@ -120,7 +124,7 @@ contract EconomicsInvariantTest is Test {
     function invariant_WalletConservesValue() public view {
         for (uint256 w; w < wallets.length; ++w) {
             SplitWallet wallet = wallets[w];
-            for (uint256 k; k < 4; ++k) {
+            for (uint256 k; k < assets.length; ++k) {
                 address asset = assets[k];
                 uint256 sum;
                 for (uint256 i; i < wallet.payeeCount(); ++i) {
@@ -143,7 +147,7 @@ contract EconomicsInvariantTest is Test {
     function invariant_ReleasedWithinEntitlement() public view {
         for (uint256 w; w < wallets.length; ++w) {
             SplitWallet wallet = wallets[w];
-            for (uint256 k; k < 4; ++k) {
+            for (uint256 k; k < assets.length; ++k) {
                 address asset = assets[k];
                 uint256 recorded = asset == ETH
                     ? handler.modelHigh(address(wallet), ETH)
@@ -160,7 +164,7 @@ contract EconomicsInvariantTest is Test {
     /// @notice Recipient-side conservation: everything wallets released was measurably received,
     ///         and (outside the rebasing token) payees hold exactly that.
     function invariant_RecipientsReceivedEverythingReleased() public view {
-        for (uint256 k; k < 4; ++k) {
+        for (uint256 k; k < assets.length; ++k) {
             address asset = assets[k];
             uint256 released;
             for (uint256 w; w < wallets.length; ++w) {
@@ -183,7 +187,7 @@ contract EconomicsInvariantTest is Test {
         for (uint256 w; w < wallets.length; ++w) {
             assertEq(wallets[w].recordedObserved(ETH), 0, "no ETH mark");
             assertLe(handler.modelHigh(address(wallets[w]), ETH), wallets[w].observed(ETH));
-            for (uint256 k = 1; k < 4; ++k) {
+            for (uint256 k = 1; k < assets.length; ++k) {
                 address asset = assets[k];
                 uint256 recorded = wallets[w].recordedObserved(asset);
                 assertEq(recorded, handler.modelHigh(address(wallets[w]), asset));
@@ -199,8 +203,9 @@ contract EconomicsInvariantTest is Test {
         for (uint256 w; w < wallets.length; ++w) {
             SplitWallet wallet = wallets[w];
             uint256 n = wallet.payeeCount();
-            for (uint256 k; k < 3; ++k) {
+            for (uint256 k; k < assets.length; ++k) {
                 address asset = assets[k];
+                if (asset == address(rebase)) continue;
                 uint256 due;
                 for (uint256 i; i < n; ++i) {
                     due += wallet.releasable(asset, i);
@@ -229,7 +234,7 @@ contract EconomicsInvariantTest is Test {
     /// @notice The router and the payer never keep funds or approvals (beyond the residue of
     ///         payments the model expected to revert).
     function invariant_IntermediariesHoldNothing() public view {
-        for (uint256 k; k < 4; ++k) {
+        for (uint256 k; k < assets.length; ++k) {
             assertEq(_balance(assets[k], address(router)), 0);
         }
         assertEq(address(payer).balance, 0);
@@ -279,7 +284,7 @@ contract EconomicsInvariantTest is Test {
                 handler.toggleOpen();
             }
         }
-        bytes32[16] memory paths = [
+        bytes32[17] memory paths = [
             keccak256(abi.encode(bytes32("release"), "ok")),
             keccak256(abi.encode(bytes32("releaseTo"), "ok")),
             keccak256(abi.encode(bytes32("signed"), "ok")),
@@ -295,7 +300,9 @@ contract EconomicsInvariantTest is Test {
             bytes32("flush.ok"),
             bytes32("recover.ok"),
             bytes32("consent.set"),
-            bytes32("recover.consented")
+            bytes32("recover.consented"),
+            // A no-return token released from a wallet (regression RFX-ECO-1).
+            bytes32("release.noReturn")
         ];
         for (uint256 i; i < paths.length; ++i) {
             assertGt(handler.outcomes(paths[i]), 0, vm.toString(i));

@@ -144,7 +144,7 @@ suite's `afterInvariant` drives every sale to an end after each run.
 | INV-AUC-6 | After 30 days, settling every sale and claiming every delivery and credit leaves no funds and no token, with every deposit accounted for. | after-campaign: `AuctionInvariantBase.afterInvariant` | all |
 | INV-AUC-7 | Once the token stops blocking and the currency is re-admitted, every sale ends settled or cancelled, leaving no funds and no token. | after-campaign: `AuctionHaltsInvariantBase.afterInvariant` | `drain` |
 | INV-AUC-8 | A bid extends the end to at least `now + the locked window`; settlement delivers the token (or leaves it pending) to the high bid's recipient, or the museum if none (D140); a second dispute pause reverts (`PauseExhausted`); a withdrawal leaves the sale paused; `resume` or `unpause` within 48 hours (`Roles.STANDARD`) of the pause reverts (`UnpauseTooEarly`, review finding GOV-5). | handler check: `bid`, `settle`, `pause`, `pauseAndWithdraw`, `resume`, `toggleStartPause` | as named |
-| INV-AUC-9 | An unended sale refuses `settle`; a deprecated currency blocks settlement for 30 days, then `settle` credits the standing bid back to its bidder and gives the work to the museum (owner decision 10); re-admission in the last window or after the end reopens the sale for the longer of the governed duration and the locked window, keeping the bid. | handler check: `AuctionHaltsHandler.settle`, `_freezeExit` | `settle`, `toggleCurrency` |
+| INV-AUC-9 | An unended sale refuses `settle`; a deprecated currency blocks settlement for 60 days, then `settle` credits the standing bid back to its bidder and gives the work to the museum (owner decision 10); re-admission in the last window or after the end reopens the sale for the longer of the governed duration and the locked window, keeping the bid. | handler check: `AuctionHaltsHandler.settle`, `_freezeExit` | `settle`, `toggleCurrency` |
 
 ## Edition sales
 
@@ -251,10 +251,11 @@ and 1.
 
 | ID | Invariant | Test | Handler actions |
 | --- | --- | --- | --- |
-| INV-ENT-1 | A request succeeds only for a VRF item of an approved package with unconsumed content, issues a new request only if the content's draw is neither delivered nor pending (a repeat only after `retryDelay`), else links the item to that draw and returns zero; a delivery for any issued request never reverts. | `invariant_EveryCallHadThePredictedOutcome` | `request`, `fulfill`, `setApproved`, `setConsumed` |
+| INV-ENT-1 | A request succeeds only for a VRF item of an approved package with unconsumed content, issues a new request only if the content's draw is neither delivered nor pending (a repeat only after the content's backoff wait, `retryDelay * 2^repeats` capped at 30 days, the count restarting after a coordinator swap), else links the item to that draw and returns zero; a delivery for any request the current coordinator issued never reverts, and one from another coordinator always does. | `invariant_EveryCallHadThePredictedOutcome` | `request`, `fulfill`, `setApproved`, `setConsumed`, `swap` |
 | INV-ENT-2 | At most one delivery fixes a content's seed, and `isDelivered` and `seedOf` match the model forever after. | `invariant_AtMostOneSeedPerItemAndItNeverChanges` | `fulfill` |
 | INV-ENT-3 | `requestOf(item)` is the last request its content's draw issued until delivery, then zero, and an unlinked or non-VRF item never has one. | `invariant_TheCurrentRequestIsTheLastIssued` | `request`, `fulfill` |
 | INV-ENT-4 | Items that share a content hash read one seed once both are linked and the draw is delivered. | `invariant_ItemsThatShareContentReadOneSeed` | `request`, `fulfill` |
+| INV-ENT-5 | A content's draw never has more requests to one coordinator in one tenure than the tenure's first plus every repeat made at its earliest backoff moment since then. | `invariant_TheBackoffBoundsTheRequestsOfAContent` | `request`, `swap` |
 
 ## Governance
 

@@ -114,8 +114,15 @@ contract EnglishAuction is
     uint256 private constant _ERC20_PAYOUT_GAS = 1_000_000;
     /// @dev How long a sale's currency must have been deprecated before anyone may end the
     ///      frozen sale unsold (MARKET-2): the standing bid is credited back and the work goes
-    ///      where an unbid work goes (D140: the museum for 6529 Stream, else the artist).
-    uint256 private constant _FREEZE_EXIT = 30 days;
+    ///      where an unbid work goes (D140: the museum for 6529 Stream, else the artist). It is
+    ///      longer than a guardian's removal (30 days) plus a re-admission after it (14 days), so
+    ///      governance can re-admit a currency a single guardian deprecated and keeps vetoing
+    ///      before any sale in it can be ended this way (RFX-SAL-2).
+    uint256 private constant _FREEZE_EXIT = 60 days;
+    /// @dev How long after an auction's end only the winning bidder may send a pending delivery
+    ///      to an address other than the recipient it named (RFX-SAL-1); after it the recipient
+    ///      may too.
+    uint256 private constant _REDIRECT_DELAY = 30 days;
 
     bytes4 private constant _SAFE_TRANSFER_FROM = 0x42842e0e;
     uint8 private constant _PAUSE_USED = 1;
@@ -362,7 +369,7 @@ contract EnglishAuction is
     ///         the end, or within the sale's last anti-snipe window before it, the first call
     ///         reopens the auction for the governed duration (or the anti-snipe window if longer)
     ///         and emits `AuctionResumed` instead of settling. Once the currency has been
-    ///         deprecated for 30 days, the call ends the sale unsold: the standing bid is
+    ///         deprecated for 60 days, the call ends the sale unsold: the standing bid is
     ///         credited back and the work goes where an unbid work goes, the museum for 6529
     ///         Stream and the artist for any other token (MARKET-2; ADR 0005, owner decision 10).
     ///         A sale of a federated contract the registry has since delisted settles the same
@@ -417,17 +424,25 @@ contract EnglishAuction is
         _emitSettled(saleId, s, lt, price, fee);
     }
 
-    /// @notice The winner whose delivery is pending names the recipient `to` and receives the
-    ///         token there. For an unsold work of a token other than 6529 Stream, the artist
-    ///         recorded at settlement claims it, or the artist the token reports now (L-5). An
-    ///         unsold 6529 Stream work is never pending: Stream moved it to the museum.
+    /// @notice Delivers a pending token to `to`. The winning bidder (the payer of the high bid)
+    ///         names any `to` at any time; the recipient it named may claim to itself at any
+    ///         time, and to another address only from 30 days after the auction's end. For an
+    ///         unsold work of a token other than 6529 Stream, the artist recorded at settlement
+    ///         claims it, or the artist the token reports now (L-5). An unsold 6529 Stream work
+    ///         is never pending: Stream moved it to the museum.
     /// @param saleId The auction's sale ID.
-    /// @param to The address that receives the token; neither zero nor this adapter.
-    /// @dev The pending recipient or the winning bidder (the payer of the high bid) may claim, to
-    ///      any address except zero and this adapter, so a recipient contract that cannot make the
-    ///      call does not strand the token. With no bids the artist may, as the authority
-    ///      recorded at settlement or the active one the token reports (L-5). If neither the recipient nor the winner can make the call, the token
-    ///      stays in custody: that is the winner's choice of recipient.
+    /// @param to The address that receives the token; neither zero nor this adapter, and the
+    ///        caller itself when the caller is the recipient but not the winning bidder and the
+    ///        auction ended less than 30 days ago.
+    /// @dev RFX-SAL-1. The bidder chose the recipient, so for {_REDIRECT_DELAY} after the end
+    ///      (the stored end, after any pause) only the bidder may send the token elsewhere, and a
+    ///      recipient contract that forwards calls cannot redirect it first. After that the
+    ///      recipient may name another address too, so a recipient contract that can make calls
+    ///      but cannot receive the token, chosen by a bidder that cannot call, does not hold the
+    ///      work forever. With no bids the artist, recorded at settlement or the active one the
+    ///      token reports (L-5), names any `to`. If neither the recipient nor the winning bidder
+    ///      can make the call, the token stays in custody: that is the winner's choice of
+    ///      recipient.
     function claimDelivery(uint256 saleId, address to) external nonReentrant {
         Sale storage s = _sales[saleId];
         address pending = _recipientOf(s);
@@ -438,7 +453,16 @@ contract EnglishAuction is
                     && msg.sender != bidder
                     && (bidder != address(0) || msg.sender != _unbidClaimant(s)))
         ) revert IEnglishAuction.NoPendingDelivery(saleId);
-        if (to == address(0) || to == address(this)) revert ISaleAdapter.InvalidRecipient(to);
+        // RFX-SAL-1: with a bid, a caller other than the bidder is the recipient, which may
+        // claim to another address only {_REDIRECT_DELAY} after the end.
+        if (
+            to == address(0) || to == address(this)
+                || (bidder != address(0)
+                    && msg.sender != bidder
+                    && to != pending
+                    // forge-lint: disable-next-line(block-timestamp)
+                    && block.timestamp < uint256(s.endTime) + _REDIRECT_DELAY)
+        ) revert ISaleAdapter.InvalidRecipient(to);
         s.flags &= ~_DELIVERY_PENDING;
         IERC721(s.token).safeTransferFrom(address(this), to, s.tokenId);
         emit IEnglishAuction.DeliveryClaimed(saleId, pending, to);

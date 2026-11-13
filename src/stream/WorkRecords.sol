@@ -77,10 +77,13 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         uint256 roles;
     }
 
-    /// @dev How many of a file's locators the artist and the platform each added.
+    /// @dev How many of a file's locators the artist and the platform each added, and which
+    ///      the artist added: bit `i` of `byArtist` is set for the artist's locator at index `i`
+    ///      (a file has at most `Limits.MAX_LOCATORS_PER_FILE`, 16).
     struct LocatorCounts {
         uint8 artist;
         uint8 platform;
+        uint16 byArtist;
     }
 
     /// @inheritdoc IWorkRecords
@@ -484,10 +487,16 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         if (finalized) (used, quota) = (used + counts.artist, Limits.MAX_LOCATORS_PER_FILE);
         if (used >= quota || seen[uriHash]) revert InvalidLocator();
         seen[uriHash] = true;
-        if (byArtist) ++counts.artist;
-        else ++counts.platform;
         Locator[] storage list = _locators[tokenId][fileId];
         uint256 index = list.length;
+        if (byArtist) {
+            ++counts.artist;
+            // Below 16: the file holds at most `Limits.MAX_LOCATORS_PER_FILE` locators.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            counts.byArtist |= uint16(1 << index);
+        } else {
+            ++counts.platform;
+        }
         list.push(locator);
         emit LocatorAdded(tokenId, fileId, index, locator);
         _refresh(tokenId);
@@ -502,11 +511,13 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     /// @inheritdoc IWorkRecords
     /// @dev Every locator is registered as a copy of that one file (ADR 0001 section 8); it is
     ///      not verified on-chain, so the storage operator chooses only among the copies
-    ///      registered for the file. ONCHAIN matches on the work's stored
+    ///      registered for the file. Only the file preference can select a locator the platform
+    ///      added: the kind and first-registered fallbacks consider the artist's locators alone,
+    ///      so the platform never decides what is served. ONCHAIN matches on the work's stored
     ///      `onChainComplete` flag (`syncOnChain`), never on a content-store completeness scan,
-    ///      which costs a read per chunk. With no registered locator, a synced work's file
-    ///      resolves to the implicit ONCHAIN copy; otherwise the result is the empty locator
-    ///      (kind NONE, index `type(uint256).max`).
+    ///      which costs a read per chunk. With no artist locator, a synced work's file resolves
+    ///      to the implicit ONCHAIN copy; otherwise the result is the empty locator (kind NONE,
+    ///      index `type(uint256).max`).
     function preferredLocator(uint256 tokenId, bytes32 fileId)
         external
         view
@@ -515,15 +526,23 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         bool onChain = _open(tokenId).onChainComplete;
         _requireMedia(tokenId, fileId);
         Locator[] storage list = _locators[tokenId][fileId];
+        uint256 artistMask = _locatorCounts[tokenId][fileId].byArtist;
         index = _filePrefs[tokenId][fileId];
         bool found = index != 0;
         if (found) index -= 1;
         if (!found) {
             (,, uint256 collectionId,,,) = _core(tokenId);
-            (found, index) = _firstOfKind(list, onChain, _collectionKinds[collectionId]);
+            (found, index) = _firstOfKind(list, artistMask, onChain, _collectionKinds[collectionId]);
         }
-        if (!found) (found, index) = _firstOfKind(list, onChain, preferredKind);
-        if (!found && list.length != 0) (found, index) = (true, 0);
+        if (!found) (found, index) = _firstOfKind(list, artistMask, onChain, preferredKind);
+        if (!found && artistMask != 0) {
+            // The artist's first locator: the mask's lowest set bit.
+            index = 0;
+            while ((artistMask >> index) & 1 == 0) {
+                ++index;
+            }
+            found = true;
+        }
         if (!found && onChain) (found, index) = (true, NONE);
         if (!found) return (Locator(LocatorKind.NONE, ""), NONE);
         locator = index == NONE ? Locator(LocatorKind.ONCHAIN, "") : list[index];
@@ -840,17 +859,19 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         }
     }
 
-    /// @dev The first locator of `kind`, or the implicit ONCHAIN one (`NONE`) when the work is
-    ///      on-chain complete. NONE as a kind never matches.
-    function _firstOfKind(Locator[] storage list, bool onChain, LocatorKind kind)
-        private
-        view
-        returns (bool, uint256)
-    {
+    /// @dev The first locator of `kind` the artist added (`artistMask`, see `LocatorCounts`), or
+    ///      the implicit ONCHAIN one (`NONE`) when the work is on-chain complete. NONE as a kind
+    ///      never matches.
+    function _firstOfKind(
+        Locator[] storage list,
+        uint256 artistMask,
+        bool onChain,
+        LocatorKind kind
+    ) private view returns (bool, uint256) {
         if (kind == LocatorKind.NONE) return (false, 0);
         if (kind == LocatorKind.ONCHAIN) return (onChain, NONE);
-        for (uint256 i; i < list.length; ++i) {
-            if (list[i].kind == kind) return (true, i);
+        for (uint256 i; artistMask >> i != 0; ++i) {
+            if ((artistMask >> i) & 1 != 0 && list[i].kind == kind) return (true, i);
         }
         return (false, 0);
     }

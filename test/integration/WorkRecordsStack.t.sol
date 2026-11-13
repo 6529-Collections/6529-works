@@ -131,9 +131,11 @@ contract WorkRecordsStackTest is IntegrationBase {
     // ------------------------------------- LIFECYCLE-3: after finalize only the platform adds locators
 
     /// Regression: LIFECYCLE-3 (docs/security/internal-review-2026-10.md)
+    /// Regression: RFX-REC-1
     /// @dev After finalize the artist's `addLocator` is refused, so the artist can neither serve
     ///      new content under a finalized work nor register the work's canonical copy ahead of the
-    ///      platform; the platform registers it and an IPFS failover serves it.
+    ///      platform; the platform registers it, and it is served once the storage operator
+    ///      selects it (a kind preference alone never serves a platform locator).
     function test_Locator_ArtistCannotAddAfterFinalize() public {
         (uint256 tokenId, bytes32 file) = _openWork();
         string memory arweaveCopy = CA.arweave("platform arweave copy");
@@ -156,14 +158,18 @@ contract WorkRecordsStackTest is IntegrationBase {
         records.addLocator(tokenId, file, canonical);
         vm.prank(storageOperator);
         records.setPreferredKind(LocatorKind.IPFS);
-        assertEq(_served(tokenId, file), canonical.uri, "the IPFS failover serves it");
+        assertEq(_served(tokenId, file), "", "platform copies wait for the operator's pick");
+        vm.prank(storageOperator);
+        records.setFilePreference(tokenId, file, 1);
+        assertEq(_served(tokenId, file), canonical.uri, "the operator's pick serves it");
         assertTrue(_contains(stream.tokenURI(tokenId), canonical.uri));
         assertEq(records.workStateHash(tokenId), state, "locators never change the state hash");
     }
 
     /// Regression: LIFECYCLE-3 (docs/security/internal-review-2026-10.md)
-    /// @dev Unchanged: the artist's locators added before finalize, and the platform's at any
-    ///      time, are served by the kind preferences and the fallback.
+    /// Regression: RFX-REC-1
+    /// @dev The artist's locators added before finalize are served by the kind preferences and
+    ///      the fallback; the platform's, at any time, once the storage operator selects them.
     function test_Locator_ArtistBeforeAndPlatformAfterFinalizeAreServed() public {
         (uint256 tokenId, bytes32 file) = _openWork();
         vm.prank(artist);
@@ -174,9 +180,14 @@ contract WorkRecordsStackTest is IntegrationBase {
         records.addLocator(tokenId, file, CA.ipfsLocator("platform after"));
         vm.prank(storageOperator);
         records.setPreferredKind(LocatorKind.IPFS);
-        assertEq(_served(tokenId, file), CA.ipfs("platform after"), "the kind preference");
+        assertEq(_served(tokenId, file), CA.arweave("artist before"), "no platform fallback");
         vm.prank(storageOperator);
+        records.setFilePreference(tokenId, file, 1);
+        assertEq(_served(tokenId, file), CA.ipfs("platform after"), "the operator's pick");
+        vm.startPrank(storageOperator);
+        records.setFilePreference(tokenId, file, type(uint256).max);
         records.setPreferredKind(LocatorKind.ARWEAVE);
+        vm.stopPrank();
         assertEq(_served(tokenId, file), CA.arweave("artist before"));
     }
 

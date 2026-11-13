@@ -5,6 +5,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SplitWallet } from "src/economics/SplitWallet.sol";
 import { Splits } from "src/economics/Splits.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
+import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import {
     BlocklistToken,
@@ -163,11 +164,14 @@ contract HostileTokenMatrixTest is EconomicsBase {
     // ---------------------------------------------------------------- odd return shapes
 
     /// @dev Only a 32-byte word of exactly 0 or 1 is an answer: a `true` with more data after
-    ///      it, or a word whose upper bits are set, fails closed; a `balanceOf` that returns more
-    ///      than one word fails the read; a reverting `approve` fails the escrow route
-    ///      (mutation testing: each of these was unpinned).
+    ///      it, a word whose upper bits are set, or a return shorter than a word (which a split
+    ///      wallet still refuses, though it accepts an empty return) fails closed; a `balanceOf`
+    ///      that returns more than one word fails the read; a reverting `approve` fails the escrow
+    ///      route (mutation testing: each of these was unpinned).
     function test_OddReturnShapes_FailClosed() public {
-        for (uint8 mode = 1; mode <= 2; ++mode) {
+        uint8[3] memory modes = [1, 2, 5];
+        for (uint256 i; i < modes.length; ++i) {
+            uint8 mode = modes[i];
             OddReturnToken t = new OddReturnToken();
             t.mint(address(wallet), AMOUNT);
             t.setMode(mode);
@@ -240,13 +244,104 @@ contract HostileTokenMatrixTest is EconomicsBase {
         _assertNoResidue(address(t), before);
     }
 
-    function test_NoReturn_ReleaseReverts() public {
+    /// Regression: RFX-ECO-1
+    /// @dev A wallet has no other way out of a token a marketplace pays royalties in, so a
+    ///      `transfer` that returns nothing counts once both balances moved by exactly the amount:
+    ///      each payee, fixed or artist-resolved, by `release` or `releaseTo`, gets its full share.
+    function test_NoReturn_ReleasePaysEachPayeeInFull() public {
+        NoReturnToken t = new NoReturnToken();
+        SplitWallet w = _trio();
+        t.mint(address(w), AMOUNT);
+        uint256 iAlice = _indexOf(w, alice);
+        uint256 iBob = _indexOf(w, bob);
+        uint256 iArtist = _artistIndex(w, ARTIST);
+
+        vm.expectEmit(address(w));
+        emit ISplitWallet.Released(address(t), iAlice, alice, alice, 500, AMOUNT);
+        assertEq(w.release(address(t), iAlice), 500);
+        vm.prank(bob);
+        assertEq(w.releaseTo(address(t), iBob, bob), 300);
+        vm.prank(artistPayout);
+        assertEq(w.release(address(t), iArtist), 200);
+
+        assertEq(t.balanceOf(alice), 500);
+        assertEq(t.balanceOf(bob), 300);
+        assertEq(t.balanceOf(artistPayout), 200);
+        assertEq(t.balanceOf(address(w)), 0);
+        assertEq(w.totalReleased(address(t)), AMOUNT);
+        assertEq(w.recordedObserved(address(t)), AMOUNT);
+    }
+
+    /// Regression: RFX-ECO-1
+    /// @dev The claim router releases a no-return token like any other: each fixed payee in full.
+    function test_NoReturn_RouterClaimReleasesEachFixedPayee() public {
         NoReturnToken t = new NoReturnToken();
         t.mint(address(wallet), AMOUNT);
+        IClaimRouter.Claim[] memory claims = new IClaimRouter.Claim[](2);
+        claims[0] = IClaimRouter.Claim(address(wallet), address(t), _indexOf(wallet, alice));
+        claims[1] = IClaimRouter.Claim(address(wallet), address(t), _indexOf(wallet, bob));
+        uint256[] memory amounts = router.claim(claims, false);
+        assertEq(amounts[0], 600);
+        assertEq(amounts[1], 400);
+        assertEq(t.balanceOf(alice), 600);
+        assertEq(t.balanceOf(bob), 400);
+        assertEq(t.balanceOf(address(wallet)), 0);
+        assertEq(t.balanceOf(address(router)), 0);
+    }
+
+    /// @dev An empty return is not proof of a move: a token that returns nothing and moves nothing
+    ///      fails the delta check, and the release leaves no trace.
+    function test_NoReturn_ReleaseThatMovesNothingReverts() public {
+        SilentNoOpToken t = new SilentNoOpToken();
+        t.mint(address(wallet), AMOUNT);
         Snapshot memory before = _snap(address(t));
-        vm.expectRevert(_failed(address(t), IERC20.transfer.selector));
+        vm.expectRevert(_mismatch(address(t)));
         wallet.release(address(t), 0);
         _assertNoResidue(address(t), before);
+        assertEq(wallet.recordedObserved(address(t)), 0);
+    }
+
+    /// @dev Accepting an empty return does not accept a fee or a rounding loss: a no-return token
+    ///      that charges a fee or rounds a share down still fails the exact-delta check.
+    function test_NoReturn_FeeOrRoundingReleaseStillReverts() public {
+        SilentFeeToken f = new SilentFeeToken();
+        f.mint(address(wallet), AMOUNT);
+        Snapshot memory before = _snap(address(f));
+        vm.expectRevert(_mismatch(address(f)));
+        wallet.release(address(f), 0);
+        _assertNoResidue(address(f), before);
+
+        SilentRebasingToken r = new SilentRebasingToken();
+        r.setIndex(3e18);
+        // 1001 shares: no payee entitlement is a whole number of shares.
+        r.mint(address(wallet), 3003);
+        before = _snap(address(r));
+        vm.expectRevert(_mismatch(address(r)));
+        wallet.release(address(r), 0);
+        _assertNoResidue(address(r), before);
+    }
+
+    /// @dev The sender's balance is read again just before the transfer: a token whose reading
+    ///      fell below the amount since the wallet computed what is due fails with a balance
+    ///      mismatch, before any call.
+    function test_NoReturn_BalanceBelowTheAmountBeforeTheCallReverts() public {
+        ReleaseShadowToken t = new ReleaseShadowToken();
+        t.mint(address(wallet), AMOUNT);
+        uint256 iAlice = _indexOf(wallet, alice);
+        Snapshot memory before = _snap(address(t));
+        vm.expectRevert(_mismatch(address(t)));
+        wallet.release(address(t), iAlice);
+        _assertNoResidue(address(t), before);
+        assertEq(t.transfers(), 0);
+    }
+
+    /// @dev An account without code is not a token: the `balanceOf` read before any transfer
+    ///      fails, so nothing is released.
+    function test_ReleaseOfAnAccountWithoutCodeReverts() public {
+        address notAToken = makeAddr("notAToken");
+        vm.expectRevert(abi.encodeWithSelector(TokenTransfer.TokenReadFailed.selector, notAToken));
+        wallet.release(notAToken, 0);
+        assertEq(wallet.totalReleased(notAToken), 0);
     }
 
     function test_NoReturn_FlushRevertsAndKeepsCredit() public {
@@ -496,7 +591,7 @@ contract OneSidedFalseToken is MockERC20("OneSided", "ONE") {
 /// @dev Mode 1: `transfer` moves and returns a word with its upper bits set over a `true`.
 ///      Mode 2: `transfer` moves and returns `true` followed by a second word. Mode 3:
 ///      `balanceOf` returns two words. Mode 4: `transfer` refuses (returns false) and
-///      `approve` reverts.
+///      `approve` reverts. Mode 5: `transfer` moves and returns one byte.
 contract OddReturnToken is MockERC20("Odd", "ODD") {
     uint8 public mode;
 
@@ -520,6 +615,12 @@ contract OddReturnToken is MockERC20("Odd", "ODD") {
                 return(0, 64)
             }
         }
+        if (mode == 5) {
+            assembly ("memory-safe") {
+                mstore(0, shl(248, 1))
+                return(0, 1)
+            }
+        }
         return true;
     }
 
@@ -538,5 +639,58 @@ contract OddReturnToken is MockERC20("Odd", "ODD") {
             }
         }
         return held;
+    }
+}
+
+/// @dev `transfer` returns nothing and moves nothing.
+contract SilentNoOpToken is MockERC20("SilentNoOp", "SNO") {
+    function transfer(address, uint256) public pure override returns (bool) {
+        assembly ("memory-safe") {
+            return(0, 0)
+        }
+    }
+}
+
+/// @dev Fee-on-transfer, and `transfer` returns nothing.
+contract SilentFeeToken is FeeOnTransferToken {
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        _transfer(msg.sender, to, amount);
+        assembly ("memory-safe") {
+            return(0, 0)
+        }
+    }
+}
+
+/// @dev Share-based rebasing that rounds a move down, and `transfer` returns nothing.
+contract SilentRebasingToken is RebasingToken {
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        _transfer(msg.sender, to, amount);
+        assembly ("memory-safe") {
+            return(0, 0)
+        }
+    }
+}
+
+/// @dev Reports an account's balance less what that account, if a split wallet, has recorded as
+///      released of this token, so the reading drops as soon as a release records its effects;
+///      `transfer` returns nothing and counts its calls.
+contract ReleaseShadowToken is MockERC20("Shadow", "SHD") {
+    uint256 public transfers;
+
+    function balanceOf(address account) public view override returns (uint256) {
+        uint256 held = _balances[account];
+        (bool ok, bytes memory ret) =
+            account.staticcall(abi.encodeCall(ISplitWallet.totalReleased, (address(this))));
+        if (!ok || ret.length != 32) return held;
+        uint256 shadow = abi.decode(ret, (uint256));
+        return held > shadow ? held - shadow : 0;
+    }
+
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        ++transfers;
+        _transfer(msg.sender, to, amount);
+        assembly ("memory-safe") {
+            return(0, 0)
+        }
     }
 }

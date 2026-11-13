@@ -46,7 +46,9 @@ import { VerifyV1 } from "./VerifyV1.sol";
 ///         5. Off anvil, the genesis file still matches the committed policy and names nothing
 ///            the deployment lacks, and its holders pass the deploy's holder guards against the
 ///            chain as it is now: Safes, signer separation, no deployment contract
-///            (`DeployGuards.checkHolders`, `checkHoldersAgainst`).
+///            (`DeployGuards.checkHolders`, `checkHoldersAgainst`); on mainnet, the role groups
+///            and no deployer as a holder, museum, marketplace owner or fee recipient
+///            (`checkRoleGroups`, `checkRecipients`).
 ///         6. `VerifyV1.check`: every role, holder, delay and selector, no role left with the
 ///            configurator, every target's authority, every wired getter, and PLATFORM's
 ///            immediate path into `openSale`, `closeSale` and `addLocator`. Off anvil, the
@@ -60,12 +62,19 @@ import { VerifyV1 } from "./VerifyV1.sol";
 ///            own initial ADMIN, renounced).
 ///         10. No operation scheduled on the manager since genesis is still pending, unless
 ///            `ALLOW_PENDING_OPERATIONS=1` (then each is logged).
+///         11. Every selector remap, role-admin change, role-guardian change and target closure
+///            on the manager since genesis matches the configuration: a selector the
+///            configuration maps keeps its role, every other selector stays with ADMIN (its
+///            default), every role's admin is ADMIN, every configured role's guardian is
+///            GUARDIAN and any other role's stays ADMIN, and no target is closed. Check 6 reads
+///            the configured selectors, roles and targets; this check covers the rest.
 ///
 ///         After a governance change (an admin recovery, a key rotation), set
 ///         `GOVERNANCE_CONFIG` to a copy of the genesis file with the current holders (epoch
-///         mode). Checks 5, 6 and 9 then use it; checks 7 and 8 keep the genesis file; every
-///         genesis holder it drops must hold no record for that role any more, and each past
-///         grant it accepts for an account since removed is logged. With
+///         mode). Checks 5, 6, 9 and 11 then use it; checks 7 and 8 keep the genesis file;
+///         every genesis holder it drops must hold no record for that role any more, and each
+///         past grant it accepts for an account since removed is logged, as is each past
+///         change check 11 accepts because the manager is back to the configuration. With
 ///         `GOVERNANCE_MANIFEST_PATH`, the epoch manifest must be recorded on the manager's
 ///         statement chain and name the `GOVERNANCE_CONFIG` file's SHA-256. The wiring
 ///         readback in check 6 stays genesis readback (a later default-currency change still
@@ -87,13 +96,6 @@ contract Verify is ScriptIO {
     /// @notice On mainnet, a canonical dependency's code (or its recorded hash) is not the pinned
     ///         code.
     error NonCanonicalCode(string name, address account, bytes32 codehash);
-    /// @notice The VRF subscription's consumers are not exactly the entropy module (`count`
-    ///         consumers).
-    error SubscriptionConsumers(uint256 subscriptionId, uint256 count);
-    /// @notice On mainnet, the VRF subscription's owner is not the hot admin Safe.
-    error SubscriptionOwner(address owner);
-    /// @notice On mainnet, the coordinator does not report the subscription.
-    error SubscriptionUnreadable(address coordinator, uint256 subscriptionId);
     /// @notice Epoch mode: a genesis holder the current configuration drops still has a record
     ///         for the role.
     error HolderNotRemoved(uint64 role, address account);
@@ -108,6 +110,17 @@ contract Verify is ScriptIO {
     error PendingOperation(
         bytes32 operationId, address caller, address target, bytes4 selector, uint48 readyAt
     );
+    /// @notice Since genesis, `selector` on `target` was mapped to `role`, which the
+    ///         configuration does not give it (ADMIN for a selector the configuration does not
+    ///         map).
+    error UnexpectedFunctionRole(address target, bytes4 selector, uint64 role);
+    /// @notice Since genesis, `role`'s admin was set to `admin`; every role's admin is ADMIN.
+    error UnexpectedRoleAdmin(uint64 role, uint64 admin);
+    /// @notice Since genesis, `role`'s guardian was set to `guardian`, which is not GUARDIAN
+    ///         for a configured role or ADMIN for any other.
+    error UnexpectedRoleGuardian(uint64 role, uint64 guardian);
+    /// @notice Since genesis, `target` was closed on the manager; the configuration closes none.
+    error UnexpectedTargetClosed(address target);
 
     string internal constant EXAMPLE_GENESIS = "config/genesis.example.json";
 
@@ -250,35 +263,14 @@ contract Verify is ScriptIO {
         ) revert NonCanonicalCode("DELEGATION_CONTRACT", p.delegation, p.delegation.codehash);
     }
 
-    /// @dev The live entropy module's VRF subscription, read from its current coordinator
-    ///      (`getSubscription`, Chainlink v2.5): the module is the only consumer. On `mainnet` the
-    ///      owner must be the hot admin Safe, the configured holder of both ADMIN and
-    ///      PARAMETER_SETTER (which moves the module between subscriptions). A read that fails
-    ///      fails Verify, except off mainnet when the coordinator has no such function (it
-    ///      reverts with no data).
+    /// @dev The live entropy module's VRF subscription (`DeployGuards.checkSubscription`): the
+    ///      module is the only consumer, and on `mainnet` the owner is the hot admin Safe.
     function _checkSubscription(
         DeployV1.Deployment memory d,
         GovernanceConfig.Config memory cfg,
         bool mainnet
     ) internal view {
-        if (address(d.entropyModule) == address(0)) return;
-        address coordinator = d.entropyModule.coordinator();
-        uint256 id = d.entropyModule.config().subscriptionId;
-        (bool ok, bytes memory ret) =
-            coordinator.staticcall(abi.encodeWithSignature("getSubscription(uint256)", id));
-        // Off mainnet, a coordinator without `getSubscription` (empty revert data) is skipped;
-        // any other failure, such as `InvalidSubscription`, fails.
-        if (!mainnet && ret.length == 0) return;
-        if (!ok || ret.length < 192) revert SubscriptionUnreadable(coordinator, id);
-        (,,, address owner, address[] memory consumers) =
-            abi.decode(ret, (uint96, uint96, uint64, address, address[]));
-        if (consumers.length != 1 || consumers[0] != address(d.entropyModule)) {
-            revert SubscriptionConsumers(id, consumers.length);
-        }
-        if (
-            mainnet
-                && !(_holds(cfg, Roles.ADMIN, owner) && _holds(cfg, Roles.PARAMETER_SETTER, owner))
-        ) revert SubscriptionOwner(owner);
+        DeployGuards.checkSubscription(d, cfg, mainnet);
     }
 
     function _holds(GovernanceConfig.Config memory cfg, uint64 role, address account)
@@ -308,6 +300,7 @@ contract Verify is ScriptIO {
         _checkConfigured(d, initial, wired, manifest, fromBlock);
         _checkPendingDelays(d, fromBlock);
         _checkGrants(d, initial, cfg, fromBlock);
+        _checkRoleMap(d, initial, cfg, fromBlock);
         _checkRemoved(d, initial, cfg);
         _checkPendingOperations(d, fromBlock);
         _checkEpochManifest(d, fromBlock);
@@ -420,6 +413,7 @@ contract Verify is ScriptIO {
         DeployGuards.checkHoldersAgainst(d, paramsOf(record), cfg);
         if (block.chainid == DeployGuards.MAINNET_CHAIN_ID) {
             DeployGuards.checkRoleGroups(json, paramsOf(record).deployer);
+            DeployGuards.checkRecipients(paramsOf(record));
         }
     }
 
@@ -546,6 +540,90 @@ contract Verify is ScriptIO {
             }
             if (!expected) revert UnexpectedGrant(role, account);
         }
+    }
+
+    /// @dev Check 11, over the manager's `TargetFunctionRoleUpdated`, `RoleAdminChanged`,
+    ///      `RoleGuardianChanged` and `TargetClosed` events since genesis. Genesis itself emits
+    ///      only matching ones (each role's guardian, each configured selector). Outside epoch
+    ///      mode every event must match; in epoch mode a past one that does not match the epoch
+    ///      configuration (a genesis mapping included) is accepted, and logged, when the
+    ///      manager's current state for it matches the epoch configuration.
+    function _checkRoleMap(
+        DeployV1.Deployment memory d,
+        GovernanceConfig.Config memory initial,
+        GovernanceConfig.Config memory cfg,
+        uint256 fromBlock
+    ) internal view {
+        address m = address(d.manager);
+        bool epoch = keccak256(abi.encode(initial)) != keccak256(abi.encode(cfg));
+        Vm.EthGetLogs[] memory logs =
+            _logs(fromBlock, m, keccak256("TargetFunctionRoleUpdated(address,bytes4,uint64)"));
+        for (uint256 i; i < logs.length; ++i) {
+            address target = address(uint160(uint256(logs[i].topics[1])));
+            uint64 role = uint64(uint256(logs[i].topics[2]));
+            bytes4 selector = abi.decode(logs[i].data, (bytes4));
+            // Outside epoch mode `cfg` is the initial configuration. In epoch mode an event that
+            // matches only the initial one (a genesis mapping the epoch has since dropped or
+            // changed) is a past change like any other: it passes only if the manager's current
+            // role is the epoch's, ADMIN for a selector the epoch no longer maps.
+            uint64 expected = _mappedRole(cfg, target, selector);
+            if (role == expected) continue;
+            if (!epoch || d.manager.getTargetFunctionRole(target, selector) != expected) {
+                revert UnexpectedFunctionRole(target, selector, role);
+            }
+            console2.log("epoch mode: accepted a past selector remap, since restored", target);
+        }
+        logs = _logs(fromBlock, m, keccak256("RoleAdminChanged(uint64,uint64)"));
+        for (uint256 i; i < logs.length; ++i) {
+            uint64 role = uint64(uint256(logs[i].topics[1]));
+            uint64 admin = uint64(uint256(logs[i].topics[2]));
+            if (admin == Roles.ADMIN) continue;
+            if (!epoch || d.manager.getRoleAdmin(role) != Roles.ADMIN) {
+                revert UnexpectedRoleAdmin(role, admin);
+            }
+            console2.log("epoch mode: accepted a past role-admin change, since restored", role);
+        }
+        logs = _logs(fromBlock, m, keccak256("RoleGuardianChanged(uint64,uint64)"));
+        for (uint256 i; i < logs.length; ++i) {
+            uint64 role = uint64(uint256(logs[i].topics[1]));
+            uint64 guardian = uint64(uint256(logs[i].topics[2]));
+            uint64 expected = _expectedGuardian(role);
+            if (guardian == expected) continue;
+            if (!epoch || d.manager.getRoleGuardian(role) != expected) {
+                revert UnexpectedRoleGuardian(role, guardian);
+            }
+            console2.log("epoch mode: accepted a past role-guardian change, since restored", role);
+        }
+        logs = _logs(fromBlock, m, keccak256("TargetClosed(address,bool)"));
+        for (uint256 i; i < logs.length; ++i) {
+            address target = address(uint160(uint256(logs[i].topics[1])));
+            if (!abi.decode(logs[i].data, (bool))) continue;
+            if (!epoch || d.manager.isTargetClosed(target)) revert UnexpectedTargetClosed(target);
+            console2.log("epoch mode: accepted a past target closure, since reopened", target);
+        }
+    }
+
+    /// @dev The role `cfg` gives `selector` on `target`: its configured role, or ADMIN, the
+    ///      manager's default, for a selector it does not map.
+    function _mappedRole(GovernanceConfig.Config memory cfg, address target, bytes4 selector)
+        internal
+        pure
+        returns (uint64)
+    {
+        for (uint256 i; i < cfg.targets.length; ++i) {
+            if (cfg.targets[i].target != target) continue;
+            GovernanceConfig.FunctionRole[] memory fns = cfg.targets[i].functions;
+            for (uint256 j; j < fns.length; ++j) {
+                if (fns[j].selector == selector) return fns[j].role;
+            }
+        }
+        return Roles.ADMIN;
+    }
+
+    /// @dev GUARDIAN for every role genesis configures but ADMIN (`GovernanceConfig.install`),
+    ///      ADMIN, the manager's default, for any other role.
+    function _expectedGuardian(uint64 role) internal pure returns (uint64) {
+        return role != Roles.ADMIN && role < Roles.COUNT ? Roles.GUARDIAN : Roles.ADMIN;
     }
 
     function _checkCodeHashes(string memory record) internal view {

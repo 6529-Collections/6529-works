@@ -194,12 +194,15 @@ cast call $RECORDS "locators(uint256,bytes32)((uint8,string)[])" $TOKEN_ID $FILE
 `preferredLocator` returns the [preferred locator](../glossary.md#preferred-locator), the copy
 `tokenURI` serves, and its registration index. The most specific setting wins: the file's
 preferred index (`setFilePreference`), then the collection's and the global preferred kind
-(`setCollectionPreferredKind`, `setPreferredKind`), then the first registered copy (WS-21). Two
-results carry the index `type(uint256).max`:
+(`setCollectionPreferredKind`, `setPreferredKind`), then the first registered copy (WS-21). The
+kind and first-registered fallbacks consider only the artist's locators: a PLATFORM copy is
+served only once the storage operator selects it with `setFilePreference`, and a file with no
+artist locator yields the on-chain copy of a synced work, otherwise an empty one. Two results
+carry the index `type(uint256).max`:
 
 - kind `ONCHAIN`: the work is on-chain complete, and a preferred kind names `ONCHAIN` or no copy
-  is registered; read it from the content store as in section 2;
-- kind `NONE`: no copy is known.
+  the fallbacks consider is registered; read it from the content store as in section 2;
+- kind `NONE`: no copy is served.
 
 `locators` returns every registered copy in registration order, so a client can fall back to the
 next copy itself when the preferred one fails to verify. The renderer does not: it uses the

@@ -20,8 +20,8 @@ also in [Disputes and statements](../../docs/spec/disputes-and-statements.md#ide
 | Caller | Calls | Rules |
 | --- | --- | --- |
 | The bound package registry | `register` on an account's first package acceptance | ID-1, ID-2 |
-| Anyone, relaying the authority's or an established wallet's signature | `stageChange` (STANDARD) | ID-3 to ID-6 |
-| The authority | `revokeNonce`; `heartbeat` (also an established wallet) | ID-7, ID-19 |
+| Anyone, relaying the authority's or an established wallet's signature (never a previous authority's) | `stageChange` (STANDARD) | ID-3 to ID-6 |
+| The authority | `revokeNonce`; `heartbeat` (also an established wallet, never a previous authority) | ID-5, ID-7, ID-19 |
 | The previous authority or a captured wallet | `cancelChange`: cancels a STANDARD change, contests an override during its notice | ID-9, ID-13 |
 | Anyone | `executeChange` once due; `refreshStanding`; `expireContest` after 365 days | ID-8, ID-15, ID-20 to ID-23 |
 | Governance | `stageOverride` (with the new authority's acceptance), `resolveContested` citing a recorded vote, `vetoChange`, `setConsolidationSource`, `setPackageRegistry` (Stream's successor package registry, owner decision 16); the genesis binds | ID-10 to ID-14, ID-27, ID-29, ID-30; [role matrix](../../docs/audit/roles.md#artistregistry) |
@@ -79,5 +79,5 @@ restraint withholds are in the [stolen-key flow](../../docs/spec/identity-and-re
 and its [owner decisions](../../docs/adr/0003-build-time-decisions.md#owner-decisions-11-october-2026)
 (1 contested overrides, 4 artists pay for refreshes, 6 the restraint);
 [known limitations](../../docs/audit/known-limitations.md#identity-and-recovery) LIM-ID-1 to
-LIM-ID-13; [trust assumptions](../../docs/audit/trust-assumptions.md);
+LIM-ID-14; [trust assumptions](../../docs/audit/trust-assumptions.md);
 [runbook, standing refresh](../../script/README.md#12-standing-refresh-refreshstanding).

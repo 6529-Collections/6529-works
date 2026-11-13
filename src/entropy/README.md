@@ -17,7 +17,7 @@ gate, the retry rule and the coordinator change.
 
 | Caller | Calls | Rules |
 | --- | --- | --- |
-| Anyone (the artist, a relayer, a bot) | `requestSeed(item, packageRoot, proof)` for a `VRF` item of an approved, unconsumed package; links the item to its content's draw, and asks the coordinator only if the content has no pending or delivered draw | ENT-1, ENT-2, ENT-5, ENT-14, ENT-15, ENT-17 |
+| Anyone (the artist, a relayer, a bot) | `requestSeed(item, packageRoot, proof)` for a `VRF` item of an approved, unconsumed package; links the item to its content's draw, and asks the coordinator only if the content has no pending or delivered draw; after consumption, only the link-only call of the consuming item to its content's delivered seed | ENT-1, ENT-2, ENT-5, ENT-14, ENT-15, ENT-17, ENT-19 |
 | The current coordinator | `rawFulfillRandomWords(requestId, words)`; the first delivery fixes the seed, later ones are silent no-ops | ENT-4, ENT-6 to ENT-8, ENT-13 |
 | `Stream.mint`, inside the auction's `start` | `isDeliveredContent(item.contentHash)`, one word, after the item is consumed; a `VRF` item whose content has no delivered seed reverts the start with `SeedNotDelivered` | ENT-12 |
 | `WorkRecords.openRecord`; the renderer before a record opens | `seedOfContent(item.contentHash)`; `seedOf(itemHash)` | ENT-3, ENT-18 |
@@ -30,7 +30,9 @@ under [VrfEntropyModule events](../../docs/integrators/events-and-indexing.md#vr
 ## Developer notes
 
 - **Storage.** `_seeds[contentHash]` is one `Seed`: a value word that holds the latest request
-  ID until delivery and the seed after it, plus the request time and the delivered flag. The
+  ID until delivery and the seed after it, plus a word with the request time, the delivered flag,
+  the repeat count that sets the backoff and the coordinator epoch of the latest request (ENT-5).
+  `_coordinatorEpoch` shares `coordinator`'s slot. The
   callback overwrites a word `requestSeed` already made nonzero, so a delivery creates no
   storage slot; keep it that way (ENT-13). `_contentOf[itemHash]` is the item link, and
   `_requests[coordinator][requestId]` remembers every request under the coordinator that
@@ -39,12 +41,17 @@ under [VrfEntropyModule events](../../docs/integrators/events-and-indexing.md#vr
   draw's two words, the request record), a joining item one; the test
   `test_Request_NewStorageSlots` pins both. The request is off the auction's start path, which
   pays only for `isDelivered`.
-- **Order inside `requestSeed`.** The request time is written before the coordinator call and
-  the request ID after it, so a reentrant call finds a pending draw and cannot deliver the new
-  ID. Do not reorder these writes without rerunning the reentrancy tests.
+- **Order inside `requestSeed`.** The request time, repeat count and epoch are written before the
+  coordinator call and the request ID after it, so a reentrant call finds a pending draw and
+  cannot deliver the new ID. Do not reorder these writes without rerunning the reentrancy tests.
+- **Backoff.** A content's k-th repeat waits `retryDelay * 2^(k-1)` after the previous request,
+  capped at `MAX_RETRY_DELAY`; the count is per content and per coordinator tenure, and restarts
+  (with no wait for the first request) once `setCoordinator` has changed the epoch. The
+  per-tenure bound it gives on outstanding requests, and the A-to-B-to-A case, are in the spec's
+  [first delivery wins](../../docs/spec/entropy.md#first-delivery-wins).
 - **A delivery never reverts for a fixed seed**, so the oracle's fulfilment succeeds; a
-  malformed callback (not exactly one word) reverts and the item is requested again after
-  `retryDelay`. Delivery is tracked by a flag, so a zero seed is valid.
+  malformed callback (not exactly one word) reverts and the item is requested again once its
+  backoff wait has passed. Delivery is tracked by a flag, so a zero seed is valid.
 - **Callback gas.** The floor (`MIN_CALLBACK_GAS`) is sized against the callback's measured
   Glamsterdam cost, recorded in
   [ADR 0004, security impact](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#security-impact);
@@ -71,5 +78,5 @@ Reveals after settlement, per-copy seeds and a fallback randomness source
 
 [ADR 0003, sales and auctions](../../docs/adr/0003-build-time-decisions.md#sales-and-auctions-amends-adr-0001-5-6-and-9)
 (requests before minting, the lowerable gas limit, additive retries);
-[known limitations](../../docs/audit/known-limitations.md#entropy) LIM-ENT-1 to LIM-ENT-5;
+[known limitations](../../docs/audit/known-limitations.md#entropy) LIM-ENT-1 to LIM-ENT-7;
 [trust assumptions](../../docs/audit/trust-assumptions.md).

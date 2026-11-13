@@ -33,8 +33,9 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///         {isArtist}. Its address never changes: split wallets pin it, and the identity source
 ///         is swapped inside it ({setConsolidationSource}).
 /// @dev Every identity change is staged, waits and can be stopped:
-///      - STANDARD changes are signed by the authority or an established consolidated wallet as
-///        `Typehashes.IDENTITY_CHANGE`; a new authority countersigns the same digest. They wait
+///      - STANDARD changes are signed by the authority or an established consolidated wallet
+///        that was never this artist's authority, as `Typehashes.IDENTITY_CHANGE`; a new
+///        authority countersigns the same digest. They wait
 ///        {CHANGE_DELAY}; the previous authority, any wallet captured at staging, or the guardian
 ///        ({vetoChange}) can stop them.
 ///      - Overrides (CONTESTED, ESTATE, LOST_KEY) are governed, carry an evidence hash as public
@@ -602,12 +603,15 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         if (p.kind == ChangeKind.NONE) revert NoPendingChange(artistId);
     }
 
-    /// @dev `account` must be the authority or an established consolidated wallet of it.
+    /// @dev `account` must be the authority or an established consolidated wallet of it, and
+    ///      never a previous authority of this artist: a key the artist rotated away from signs
+    ///      nothing for it, even while it stays consolidated with the new authority.
     function _requireSigner(uint256 artistId, Artist storage a, address account) private view {
         address current = a.authority;
-        if (account != current && !_source().isEstablished(current, account)) {
-            revert NotAuthorized(artistId, account);
-        }
+        if (
+            account != current
+                && (artistIdOf[account] == artistId || !_source().isEstablished(current, account))
+        ) revert NotAuthorized(artistId, account);
     }
 
     function _checkNext(uint256 artistId, ArtistIdentity calldata next) private view {

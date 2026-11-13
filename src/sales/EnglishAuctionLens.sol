@@ -226,7 +226,9 @@ contract EnglishAuctionLens {
         return high + Math.max(step, t.incrementFloor);
     }
 
-    /// @notice Who may claim the sale's pending delivery (`IEnglishAuction.pendingDelivery`).
+    /// @notice The recipient the sale's delivery is pending for
+    ///         (`IEnglishAuction.pendingDelivery`): it may claim the token to itself (to any
+    ///         address from 30 days after the end), and the winning bidder to any address.
     /// @param saleId The sale ID.
     /// @return The pending recipient, or zero when no delivery is pending.
     function pendingDelivery(uint256 saleId) external view returns (address) {
