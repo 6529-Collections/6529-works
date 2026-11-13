@@ -210,11 +210,12 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IStatementLog
-    /// @dev The item fallback is one bounded read of `coreOf(id)` on `token`. A token that is
-    ///      not a Stream, and a Stream's burned or unminted token (`IStream.UnknownWork`), leave
-    ///      the token's own result, zero. Any other failure of a token that declares `IStream`
-    ///      by ERC-165 reverts with `BoundedCall.BoundedCallFailed` (fail closed), so a failed
-    ///      read never passes for "no outcome".
+    /// @dev The item fallback is one bounded read of `coreOf(id)` on a token that declares
+    ///      `IStream` by ERC-165, checked first. A token that does not declare it is never asked
+    ///      for `coreOf`, so whatever it would answer, it keeps its own result, zero; so does a
+    ///      Stream's burned or unminted token (`IStream.UnknownWork`). Any other failure of a
+    ///      token that declares `IStream` reverts with `BoundedCall.BoundedCallFailed` (fail
+    ///      closed), so a failed read never passes for "no outcome".
     function latestDisputeOutcome(address token, uint256 id)
         external
         view
@@ -222,6 +223,8 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     {
         entryHash = _latestDispute[subjectKey(token, id)];
         if (entryHash != 0 || token == address(0) || token.code.length == 0) return entryHash;
+        // RFX-REC-2: only a declared Stream's answer can name an item.
+        if (!_declaresStream(token)) return 0;
         if (!BoundedCall.hasSufficientGas(gasleft(), OWNER_READ_GAS, BoundedCall.CALL_RESERVE)) {
             revert BoundedCall.BoundedCallInsufficientGas(OWNER_READ_GAS);
         }
@@ -242,7 +245,7 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
         // Only the selector is compared, so truncating to four bytes is intended.
         // forge-lint: disable-next-line(unsafe-typecast)
         if (!ok && size == 36 && bytes4(head) == IStream.UnknownWork.selector) return 0;
-        if (_declaresStream(token)) revert BoundedCall.BoundedCallFailed(token);
+        revert BoundedCall.BoundedCallFailed(token);
     }
 
     /// @notice Returns the EIP-712 digest `signer` must sign for {appendSigned}.

@@ -362,9 +362,9 @@ contract StatementLogPolicyTest is StatementLogFixture {
         );
     }
 
-    /// @dev The item fallback follows only a Stream's full `coreOf` answer, 192 bytes: a token
-    ///      whose answer is shorter keeps its own result, zero, even when the answer's first word
-    ///      names an item with an outcome (found by mutation testing).
+    /// @dev The item fallback follows only a Stream's full `coreOf` answer, 192 bytes: an
+    ///      answer of any other length, even one whose first word names an item with an outcome,
+    ///      is a failed read of a declared Stream and reverts (found by mutation testing).
     function test_LatestDisputeOutcome_FollowsOnlyAFullCoreOfAnswer() public {
         bytes32 itemHash = keccak256("an item");
         Statement memory dispute = _statement(address(0), uint256(itemHash));
@@ -372,21 +372,44 @@ contract StatementLogPolicyTest is StatementLogFixture {
         vm.prank(platform);
         bytes32 outcome = stmtLog.appendPlatform(dispute);
 
-        ReturnDataMock token = new ReturnDataMock();
-        token.configure(abi.encode(itemHash, 1, 1, 1, 1, 6_529), false);
+        StreamCoreMock token = new StreamCoreMock(itemHash);
+        token.setRawAnswer(abi.encode(itemHash, 1, 1, 1, 1, 6_529));
         assertEq(stmtLog.latestDisputeOutcome(address(token), 1), outcome, "a full answer");
 
-        bytes[3] memory shorter = [ // 191, 32 and 0 bytes
+        bytes[4] memory others = [ // 191, 224, 32 and 0 bytes
             abi.encodePacked(
                 itemHash, uint256(1), uint256(1), uint256(1), uint256(1), uint248(6_529)
             ),
+            abi.encode(itemHash, 1, 1, 1, 1, 6_529, 0),
             abi.encode(itemHash),
             bytes("")
         ];
-        for (uint256 i; i < shorter.length; ++i) {
-            token.configure(shorter[i], false);
-            assertEq(stmtLog.latestDisputeOutcome(address(token), 1), bytes32(0));
+        for (uint256 i; i < others.length; ++i) {
+            token.setRawAnswer(others[i]);
+            vm.expectRevert(
+                abi.encodeWithSelector(BoundedCall.BoundedCallFailed.selector, address(token))
+            );
+            stmtLog.latestDisputeOutcome(address(token), 1);
         }
+    }
+
+    /// @dev A token that does not declare `IStream` reads zero even when its `coreOf` gives a
+    ///      full, well-formed answer naming an item that has an outcome: the declaration is
+    ///      checked before any answer is accepted. Declaring `IStream`, the same answer is
+    ///      followed.
+    /// Regression: RFX-REC-2
+    function test_LatestDisputeOutcome_AnUndeclaredTokensAnswerNamesNoItem() public {
+        bytes32 itemHash = keccak256("an item");
+        Statement memory dispute = _statement(address(0), uint256(itemHash));
+        dispute.kind = StatementKinds.DISPUTE_OUTCOME;
+        vm.prank(platform);
+        bytes32 outcome = stmtLog.appendPlatform(dispute);
+
+        StreamCoreMock token = new StreamCoreMock(itemHash);
+        token.setDeclares(false);
+        assertEq(stmtLog.latestDisputeOutcome(address(token), 1), bytes32(0), "not a Stream");
+        token.setDeclares(true);
+        assertEq(stmtLog.latestDisputeOutcome(address(token), 1), outcome, "a Stream");
     }
 
     /// @dev A token that declares `IStream` by ERC-165 and whose `coreOf` fails is refused: a
@@ -749,20 +772,23 @@ contract StatementLogPolicyTest is StatementLogFixture {
     }
 }
 
-/// @dev A Stream-shaped token for the dispute fallback: declares `IStream` by ERC-165 and
-///      answers `coreOf` in full, with `UnknownWork`, another revert, by running out of gas, or
-///      with a short answer.
+/// @dev A Stream-shaped token for the dispute fallback: declares `IStream` by ERC-165 (unless
+///      told not to) and answers `coreOf` in full, with `UnknownWork`, another revert, by
+///      running out of gas, with a short answer, or with any raw bytes.
 contract StreamCoreMock {
     enum Mode {
         ANSWER,
         UNKNOWN_WORK,
         OTHER_REVERT,
         OUT_OF_GAS,
-        SHORT_ANSWER
+        SHORT_ANSWER,
+        RAW
     }
 
     bytes32 internal immutable item;
     Mode public mode;
+    bool public undeclared;
+    bytes internal raw;
 
     constructor(bytes32 item_) {
         item = item_;
@@ -772,8 +798,18 @@ contract StreamCoreMock {
         mode = next;
     }
 
-    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return interfaceId == type(IStream).interfaceId || interfaceId == 0x01ffc9a7;
+    function setDeclares(bool declares) external {
+        undeclared = !declares;
+    }
+
+    function setRawAnswer(bytes calldata answer) external {
+        raw = answer;
+        mode = Mode.RAW;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external view returns (bool) {
+        if (interfaceId == 0x01ffc9a7) return true;
+        return interfaceId == type(IStream).interfaceId && !undeclared;
     }
 
     function coreOf(uint256 tokenId)
@@ -794,6 +830,12 @@ contract StreamCoreMock {
             assembly ("memory-safe") {
                 mstore(0, word)
                 return(0, 32)
+            }
+        }
+        if (m == Mode.RAW) {
+            bytes memory answer = raw;
+            assembly ("memory-safe") {
+                return(add(answer, 0x20), mload(answer))
             }
         }
         return (item, 1, 1, 0, 0, 0);
