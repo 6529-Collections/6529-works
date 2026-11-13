@@ -24,8 +24,9 @@
     a wallet freezes an asset that does not move exact amounts.
   - **Records and identity.** The kind and first-registered locator fallbacks consider only the
     artist's locators; a PLATFORM locator is served only once STORAGE_OPERATOR selects it (WS-21,
-    RFX-REC-1). `latestDisputeOutcome` fails closed when a Stream's item read fails for any
-    reason but `UnknownWork` (DSP-12, RFX-REC-2). A key the artist rotated away from signs no
+    RFX-REC-1). `latestDisputeOutcome` follows the item fallback only for a token that declares
+    `IStream` by ERC-165, checked before `coreOf` is read, so any other token reads zero; it fails
+    closed when a Stream's item read fails for any reason but `UnknownWork` (DSP-12, RFX-REC-2). A key the artist rotated away from signs no
     identity change and no heartbeat, even while consolidated with the new authority (ID-5,
     RFX-ID-1; LIM-ID-14 records that, while still consolidated, it can cancel every STANDARD
     change and contest every override until the consolidation is revoked and its grace has
@@ -40,7 +41,9 @@
     against 122 before; a coordinator restored after another may also deliver its earlier
     tenure's requests. `VrfEntropyModule` grows to 8,903 bytes. LIM-ENT-1 states the bound; new
     LIM-ENT-7 records that a module or coordinator replacement can redraw a seed, and the
-    runbook's dependency table and coordinator step say how to avoid it.
+    runbook's dependency table and coordinator step say how to avoid it: the module
+    replacement's inventory lists every unminted content with a seed requested or delivered,
+    released content included, and is rebuilt immediately before execution.
   - **Deploy and Verify.** On mainnet the deploy and Verify refuse the deployer as the museum,
     the marketplace owner or the network fee recipient, and **the mainnet deploy order
     changed**: the simulation reads the VRF subscription before `configure`, so the admin Safe
@@ -51,12 +54,15 @@
     the epoch dropped passes only once the selector is back with ADMIN (GV-15, RFX-TOOL-2).
   - **Budgets and tests.** `check_budgets.py` keeps 512 bytes of EIP-170 margin for every
     contract declared in `src/`, with recorded exemptions in `tools/size-margins.json` (`Stream`
-    203, `Renderer` 211, `UniformEditionAuction` 420; RFX-TOOL-1). `RoyaltyInfoGas.t.sol` calls
+    203, `Renderer` 211, `UniformEditionAuction` 420; RFX-TOOL-1); a contract declared there
+    without a size measurement fails the gate. The Sepolia fork simulation expects 14 governed
+    targets and 18 wiring calls, the anvil run's 13 and 18 plus the entropy module. `RoyaltyInfoGas.t.sol` calls
     `royaltyInfo` with exactly its 50,000-gas budget and requires every lower limit to revert
     (RFX-TOOL-4). ADR 0004's table is re-measured: the `settle` rows are unchanged, every other
     row moved by at most 32, and the binding start row is 338,253.
   - **Docs.** Any two colluding guardians shield each other, however many there are (LIM-GV-4,
-    ADR 0002 amendment note); LIM-GAS-2 covers the deployment's state gas; the trust assumptions,
+    ADR 0002 amendment note), though they cannot stop live sales settling except 1/1 auctions
+    in an ERC-20 they deprecate (LIM-SAL-15); LIM-GAS-2 covers the deployment's state gas; the trust assumptions,
     architecture, storage guide, audit scope and the module READMEs follow these changes.
 
 - Explicit Stream state machines (owner decision 28, rc.3):

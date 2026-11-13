@@ -17,7 +17,7 @@ an audit.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 12,128 non-blank, non-comment lines in 87 files under `src/` (budget: 13,000; ADR 0001, amended 1 November 2026) |
+| Source lines | 12,129 non-blank, non-comment lines in 87 files under `src/` (budget: 13,000; ADR 0001, amended 1 November 2026) |
 | Deployed contracts | 23 per deployment without the optional VRF entropy module and 24 with it: the 21 (or 22) that `DeployV1.order` lists, the edition auction's lens among them (deployed in its own transaction and pinned by the auction), plus the AccessManager the governance configurator creates and the lens the English auction creates; and one `SplitWallet` per payee configuration, deployed on demand |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
@@ -49,7 +49,7 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 | `Eip712CurationVerifier` | [`src/curation/Eip712CurationVerifier.sol`](../../src/curation/Eip712CurationVerifier.sol) | 103 | 5,694 | 6,385 | 18,882 |
 | `ArtistRegistry` | [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol) | 568 | 20,616 | 21,884 | 3,960 |
 | `ConsolidationAdapter` | [`src/identity/ConsolidationAdapter.sol`](../../src/identity/ConsolidationAdapter.sol) | 133 | 3,059 | 3,371 | 21,517 |
-| `StatementLog` | [`src/records/StatementLog.sol`](../../src/records/StatementLog.sol) | 336 | 12,053 | 13,349 | 12,523 |
+| `StatementLog` | [`src/records/StatementLog.sol`](../../src/records/StatementLog.sol) | 337 | 12,054 | 13,350 | 12,522 |
 | `VrfEntropyModule` (optional) | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol) | 252 | 8,903 | 10,848 | 15,673 |
 
 ### Economics

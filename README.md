@@ -91,7 +91,7 @@ products pay 75% to the artist's side and 25% to the network, and royalties are 
 | [`ArtistRegistry`](src/identity/README.md), [`ConsolidationAdapter`](src/identity/README.md) | Artist identity and payouts; 7-day recovery and 180-day overrides through 6529 consolidations | 568 + 133 |
 | [`ContentStore`](src/content/README.md), [`DependencyRegistry`](src/content/README.md) | Content-addressed on-chain chunks and shared libraries | 240 + 66 |
 | [`Renderer`](src/content/README.md) | `tokenURI` and `fullTokenURI` for works and editions | 770 |
-| [`StatementLog`](src/records/README.md) | Append-only signed statements: dispute outcomes, curation evidence, manifests | 336 |
+| [`StatementLog`](src/records/README.md) | Append-only signed statements: dispute outcomes, curation evidence, manifests | 337 |
 | [`VrfEntropyModule`](src/entropy/README.md) | Optional Chainlink VRF seed per work, delivered before the start | 252 |
 | [`WorksAccessManager`](src/governance/README.md), [`GovernanceConfigurator`](src/governance/README.md) | One AccessManager for everything; guardians cancel any scheduled operation and can suspend operational keys | 71 + 43 |
 
