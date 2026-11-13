@@ -169,7 +169,7 @@ the current behavior in full.
 | [Disputes and statements](disputes-and-statements.md) | DSP-19 | ADR 0001 §12: all bids are refunded | As pull credits | None recorded |
 | [Disputes and statements](disputes-and-statements.md) | – | ADR 0001 §12: each entry records the work | Open subjects: tokens, items, artists, governance manifests, any `(token, id)` | ADR 0003, owner decision 1; ADR 0002, decision 6 |
 | [Entropy](entropy.md) | ENT-12 | ADR 0001 §9: `start` requests the seed; the 24-hour clock starts at delivery | `start` needs a delivered seed; the clock starts at the start | ADR 0003, sales |
-| [Entropy](entropy.md) | ENT-5 | ADR 0001 §9: an undelivered request may be re-requested | Repeats after `retryDelay` add requests; the first delivery wins | ADR 0003, sales |
+| [Entropy](entropy.md) | ENT-5 | ADR 0001 §9: an undelivered request may be re-requested | Repeats add requests after an exponential backoff (`retryDelay`, doubling per repeat, capped at 30 days); the first delivery wins | ADR 0003, sales |
 | [Entropy](entropy.md) | ENT-1, ENT-2 | ADR 0001 §9: VRF per work; ADR 0003: one draw per VRF item | One draw per content hash, plus repeats while undelivered | Review finding DEPS-1 |
 | [Entropy](entropy.md) | ENT-11, GV-21 | ADR 0001 §13.9: gas parameters are raise-only | The callback gas limit can also be lowered (30 days, floor 100,000) | Review finding DEPS-5 (ADR 0003) |
 | [Entropy](entropy.md) | ENT-13 | Sepolia `flows.md` §6 (not an ADR): the callback writes a new slot | No new slot: the seed overwrites the request ID | Review finding DEPS-2; ADR 0004 |

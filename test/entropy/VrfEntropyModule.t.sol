@@ -969,12 +969,12 @@ contract VrfEntropyModuleTest is EntropyBase {
         (uint256 requestId, uint64 requestedAt) = module.requestOf(items[0]);
         assertEq(requestId, second);
         assertEq(requestedAt, block.timestamp);
-        // The delay restarts from the new request.
+        // The wait restarts from the new request, and doubles for the second repeat.
         vm.expectRevert(
             abi.encodeWithSelector(
                 IEntropyModule.RequestPending.selector,
                 items[0],
-                uint64(block.timestamp + RETRY_DELAY)
+                uint64(block.timestamp + 2 * RETRY_DELAY)
             )
         );
         module.requestSeed(_item(0), root, proofs[0]);
@@ -1008,7 +1008,7 @@ contract VrfEntropyModuleTest is EntropyBase {
         uint256[4] memory ids;
         ids[0] = _request(0);
         for (uint256 i = 1; i < ids.length; ++i) {
-            vm.warp(block.timestamp + RETRY_DELAY);
+            vm.warp(block.timestamp + _wait(i));
             ids[i] = _request(0);
         }
         coordinator.fulfill(ids[1], 4444); // an earlier-than-latest request, delivered first
@@ -1066,6 +1066,213 @@ contract VrfEntropyModuleTest is EntropyBase {
         // The repeat's own delivery arrives later: a no-op, not a revert.
         evil.deliver(second, 0xF);
         assertEq(module.seedOf(items[0]), bytes32(uint256(0xE)));
+    }
+
+    /// @dev The wait before the k-th repeat of a content under the 3-day base: `RETRY_DELAY *
+    ///      2^(k-1)`, capped at `MAX_RETRY_DELAY`.
+    function _wait(uint256 k) internal view returns (uint256) {
+        uint256 cap = module.MAX_RETRY_DELAY();
+        if (k > 8) return cap;
+        uint256 wait = uint256(RETRY_DELAY) << (k - 1);
+        return wait < cap ? wait : cap;
+    }
+
+    /// @dev Makes the k-th repeat of item 0 at the earliest moment, after checking that one
+    ///      second earlier it is refused with that moment as `retryAt`. Returns the request ID.
+    function _repeatAtTheEarliest(uint256 k, address caller) internal returns (uint256 id) {
+        (, uint64 previous) = module.requestOf(items[0]);
+        uint64 retryAt = uint64(previous + _wait(k));
+        vm.warp(retryAt - 1);
+        vm.prank(caller);
+        vm.expectRevert(
+            abi.encodeWithSelector(IEntropyModule.RequestPending.selector, items[0], retryAt)
+        );
+        module.requestSeed(_item(0), root, proofs[0]);
+        vm.warp(retryAt);
+        vm.prank(caller);
+        id = module.requestSeed(_item(0), root, proofs[0]);
+        assertTrue(id != 0, "the repeat is accepted at retryAt");
+    }
+
+    /// Regression: RFX-ENT-2
+    /// @dev The first four repeats wait 3, 6, 12 and 24 days after the previous request.
+    function test_Repeat_TheWaitDoublesForTheFirstFourRepeats() public {
+        _request(0);
+        uint256[4] memory expected = [uint256(3 days), 6 days, 12 days, 24 days];
+        for (uint256 k = 1; k <= 4; ++k) {
+            (, uint64 previous) = module.requestOf(items[0]);
+            _repeatAtTheEarliest(k, stranger);
+            assertEq(block.timestamp - previous, expected[k - 1]);
+        }
+    }
+
+    /// Regression: RFX-ENT-2
+    /// @dev From the fifth repeat on, the wait is `MAX_RETRY_DELAY` (30 days); a base of 20 days
+    ///      reaches the cap at the second repeat, and a 30-day base waits 30 days every time.
+    function test_Repeat_TheWaitIsCappedAtTheMaximumRetryDelay() public {
+        uint64 cap = module.MAX_RETRY_DELAY();
+        _request(0);
+        for (uint256 k = 1; k <= 8; ++k) {
+            (, uint64 previous) = module.requestOf(items[0]);
+            _repeatAtTheEarliest(k, stranger);
+            if (k >= 5) assertEq(block.timestamp - previous, cap);
+        }
+
+        uint64[2] memory bases = [uint64(20 days), cap];
+        for (uint256 b; b < bases.length; ++b) {
+            module = _newModule(address(coordinator), _config(), bases[b], address(registry));
+            uint64[3] memory waits = b == 0 ? [uint64(20 days), cap, cap] : [cap, cap, cap];
+            _request(0);
+            for (uint256 k; k < waits.length; ++k) {
+                (, uint64 previous) = module.requestOf(items[0]);
+                vm.warp(previous + waits[k] - 1);
+                vm.expectRevert(
+                    abi.encodeWithSelector(
+                        IEntropyModule.RequestPending.selector, items[0], previous + waits[k]
+                    )
+                );
+                module.requestSeed(_item(0), root, proofs[0]);
+                vm.warp(previous + waits[k]);
+                _request(0);
+            }
+        }
+    }
+
+    /// Regression: RFX-ENT-2
+    /// @dev However many repeats a content has had, past the 255 the count saturates at, the
+    ///      next one is accepted no later than `MAX_RETRY_DELAY` after the previous request.
+    function test_Repeat_ARepeatIsAlwaysEventuallyAccepted() public {
+        uint64 cap = module.MAX_RETRY_DELAY();
+        _request(0);
+        for (uint256 k = 1; k <= 260; ++k) {
+            vm.warp(block.timestamp + cap);
+            assertTrue(_request(0) != 0);
+        }
+        (, uint64 previous) = module.requestOf(items[0]);
+        vm.expectRevert(
+            abi.encodeWithSelector(IEntropyModule.RequestPending.selector, items[0], previous + cap)
+        );
+        _request(0);
+    }
+
+    /// Regression: RFX-ENT-2
+    /// @dev Whatever the number of earlier repeats, a caller arriving `MAX_RETRY_DELAY` or more
+    ///      after the previous request is accepted.
+    function testFuzz_Repeat_IsAcceptedOnceTheCappedWaitHasPassed(uint8 repeats, uint32 late)
+        public
+    {
+        uint64 cap = module.MAX_RETRY_DELAY();
+        _request(0);
+        uint256 n = bound(repeats, 0, 12);
+        for (uint256 k = 1; k <= n; ++k) {
+            vm.warp(block.timestamp + _wait(k));
+            _request(0);
+        }
+        vm.warp(block.timestamp + cap + bound(late, 0, 365 days));
+        assertTrue(_request(0) != 0);
+    }
+
+    /// Regression: RFX-ENT-2
+    /// @dev Under the backoff, any outstanding request may still deliver first, and its word is
+    ///      the seed; the other deliveries change nothing.
+    function test_Repeat_TheFirstDeliveryStillWinsUnderTheBackoff() public {
+        uint256[6] memory ids;
+        ids[0] = _request(0);
+        for (uint256 k = 1; k < ids.length; ++k) {
+            ids[k] = _repeatAtTheEarliest(k, stranger);
+        }
+        coordinator.fulfill(ids[2], 0xC0FFEE);
+        for (uint256 i; i < ids.length; ++i) {
+            coordinator.fulfill(ids[i], 1000 + i);
+        }
+        assertEq(module.seedOf(items[0]), bytes32(uint256(0xC0FFEE)));
+        vm.warp(block.timestamp + 365 days);
+        vm.expectRevert(
+            abi.encodeWithSelector(IEntropyModule.SeedAlreadyDelivered.selector, items[0])
+        );
+        _request(0);
+    }
+
+    /// Regression: RFX-ENT-2
+    /// @dev No caller, privileged or not, and no second item of the content, repeats before the
+    ///      content's current wait: after one repeat, a caller arriving `RETRY_DELAY` later (the
+    ///      earlier rule's moment) is refused until twice that.
+    function test_Repeat_NoCallerRepeatsBeforeTheCurrentWait() public {
+        _request(0);
+        _repeatAtTheEarliest(1, stranger);
+        (, uint64 previous) = module.requestOf(items[0]);
+        uint64 retryAt = previous + 2 * RETRY_DELAY;
+        vm.warp(previous + RETRY_DELAY);
+        address[5] memory callers = [stranger, other, admin, setter, successor];
+        for (uint256 i; i < callers.length; ++i) {
+            vm.prank(callers[i]);
+            vm.expectRevert(
+                abi.encodeWithSelector(IEntropyModule.RequestPending.selector, items[0], retryAt)
+            );
+            module.requestSeed(_item(0), root, proofs[0]);
+        }
+        // A revision of the work joins the pending draw and asks nothing; called again, it is
+        // refused on the same clock.
+        (PackageItem memory item, bytes32 revisionRoot) = _revision();
+        assertEq(module.requestSeed(item, revisionRoot, new bytes32[](0)), 0, "joined");
+        vm.expectRevert(
+            abi.encodeWithSelector(IEntropyModule.RequestPending.selector, _hash(item), retryAt)
+        );
+        module.requestSeed(item, revisionRoot, new bytes32[](0));
+        (, uint64 stamp) = module.requestOf(items[0]);
+        assertEq(stamp, previous, "nothing was requested");
+    }
+
+    /// Regression: RFX-ENT-2
+    /// @dev A coordinator replacement keeps the content's repeat count: after two repeats and a
+    ///      swap, the next repeat still waits four times the base.
+    function test_Repeat_ACoordinatorSwapDoesNotResetTheBackoff() public {
+        _request(0);
+        _repeatAtTheEarliest(1, stranger);
+        _repeatAtTheEarliest(2, stranger);
+        MockVrfCoordinator next = new MockVrfCoordinator();
+        next.setNextId(500);
+        _swap(address(next));
+        (, uint64 previous) = module.requestOf(items[0]);
+        vm.warp(previous + RETRY_DELAY);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IEntropyModule.RequestPending.selector, items[0], previous + 4 * RETRY_DELAY
+            )
+        );
+        _request(0);
+        uint256 id = _repeatAtTheEarliest(3, stranger);
+        assertEq(id, 500, "through the new coordinator");
+    }
+
+    /// Regression: RFX-ENT-2
+    /// @dev The bound the documentation states: at a 3-day base, repeating at every earliest
+    ///      moment, a content has at most 15 requests in its first undelivered year (the first
+    ///      request, four doubling repeats by day 45, then one per 30 days).
+    function test_Repeat_AtMostFifteenRequestsInAYearAtAThreeDayBase() public {
+        uint256 start = block.timestamp;
+        _request(0);
+        uint256 requests = 1;
+        for (uint256 k = 1;; ++k) {
+            (, uint64 previous) = module.requestOf(items[0]);
+            if (previous + _wait(k) > start + 365 days) break;
+            vm.warp(previous + _wait(k));
+            _request(0);
+            ++requests;
+        }
+        assertEq(requests, 15);
+        (, uint64 last) = module.requestOf(items[0]);
+        assertEq(last - start, 45 days + 10 * 30 days);
+    }
+
+    /// Regression: RFX-ENT-2
+    /// @dev The repeat count lives in the word the request time already writes: a repeat creates
+    ///      one slot in the module, the new request ID's record, and no other.
+    function test_Repeat_CreatesOnlyTheRequestRecord() public {
+        _request(0);
+        vm.warp(block.timestamp + RETRY_DELAY);
+        bytes memory again = abi.encodeCall(module.requestSeed, (_item(0), root, proofs[0]));
+        assertEq(_moduleSlots(stranger, address(module), again), 1);
     }
 
     function test_Repeat_OfOneItemLeavesOthersUntouched() public {

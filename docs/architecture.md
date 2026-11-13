@@ -142,9 +142,9 @@ default when the sale starts".
    packageRoot, proof)` for an approved, unconsumed VRF item. The seed is drawn
    once per content hash: every approved item carrying the same work links to
    that one draw and reads it by item hash, so re-packaging a work cannot draw
-   again. While no seed is fixed, anyone may add another request after the
-   retry delay (at least 3 days); the first delivery wins and later ones are
-   no-ops. Nothing is in custody yet, so nothing can get stuck.
+   again. While no seed is fixed, anyone may add another request after a
+   backoff wait (at least 3 days, doubling with each repeat up to 30 days); the
+   first delivery wins and later ones are no-ops. Nothing is in custody yet, so nothing can get stuck.
 5. **Move to Stream.** The lead artist signs `MoveToStream` off-chain;
    `revokeMove` cancels an unused one.
 6. **Start (permissionless; per steady-state start, at most 350K Prague gas and

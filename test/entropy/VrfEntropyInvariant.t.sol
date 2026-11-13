@@ -32,6 +32,7 @@ contract EntropyHandler is Test, EntropyItems {
     bytes32 internal immutable noneRoot;
     bytes32 internal immutable artistRoot;
     uint64 internal immutable retryDelay;
+    uint64 internal immutable maxRetryDelay;
     bytes32[][4] internal proofs;
 
     /// @dev The model is per content (the draw) and per item (its link to the draw).
@@ -39,6 +40,8 @@ contract EntropyHandler is Test, EntropyItems {
     mapping(uint256 content => uint256[]) internal issued;
     mapping(uint256 content => uint256) internal _currentId;
     mapping(uint256 content => uint64) internal _requestedAt;
+    mapping(uint256 content => uint64) internal _firstRequestedAt;
+    mapping(uint256 content => uint256) internal _repeats;
     mapping(uint256 content => bool) internal _delivered;
     mapping(uint256 content => bytes32) internal _seed;
     mapping(uint256 content => uint256) internal _deliveries;
@@ -57,6 +60,7 @@ contract EntropyHandler is Test, EntropyItems {
         registry = registry_;
         (root, noneRoot, artistRoot) = (roots_[0], roots_[1], roots_[2]);
         retryDelay = module_.retryDelay();
+        maxRetryDelay = module_.MAX_RETRY_DELAY();
         for (uint256 i = 6; i < ITEMS; ++i) {
             registry_.setStatus(_twinRoot(i), IPackageRegistry.PackageStatus.APPROVED);
         }
@@ -114,8 +118,32 @@ contract EntropyHandler is Test, EntropyItems {
             && registry.consumedBy(itemOf(i).contentHash) == 0;
     }
 
+    /// @dev The backoff (RFX-ENT-2): the wait before a content's next repeat, after `repeats`
+    ///      repeats, is `retryDelay * 2^repeats`, capped at `MAX_RETRY_DELAY`.
+    function _wait(uint256 repeats) internal view returns (uint256) {
+        if (repeats >= 8) return maxRetryDelay;
+        uint256 wait = uint256(retryDelay) << repeats;
+        return wait < maxRetryDelay ? wait : maxRetryDelay;
+    }
+
     function _pending(uint256 c) internal view returns (bool) {
-        return _requestedAt[c] != 0 && block.timestamp < _requestedAt[c] + retryDelay;
+        return _requestedAt[c] != 0 && block.timestamp < _requestedAt[c] + _wait(_repeats[c]);
+    }
+
+    /// @notice The most requests the backoff lets a content's draw have issued by now, counted
+    ///         from its first request: every repeat made at its earliest moment.
+    function maxRequests(uint256 c) public view returns (uint256 n) {
+        if (_firstRequestedAt[c] == 0) return 0;
+        uint256 t = _firstRequestedAt[c];
+        n = 1;
+        while (t + _wait(n - 1) <= block.timestamp) {
+            t += _wait(n - 1);
+            ++n;
+        }
+    }
+
+    function issuedCount(uint256 c) external view returns (uint256) {
+        return issued[c].length;
     }
 
     function _twinRoot(uint256 i) internal pure returns (bytes32) {
@@ -153,6 +181,8 @@ contract EntropyHandler is Test, EntropyItems {
             ++accepted;
             linked[i] = true;
             if (id != 0) {
+                if (_requestedAt[c] == 0) _firstRequestedAt[c] = uint64(block.timestamp);
+                else ++_repeats[c];
                 issued[c].push(id);
                 _currentId[c] = id;
                 _requestedAt[c] = uint64(block.timestamp);
@@ -230,7 +260,8 @@ contract VrfEntropyInvariantTest is EntropyBase {
 
     /// @dev Every request, repeat and delivery had the outcome the rules predict: a request only
     ///      for an approved, unconsumed VRF item of an approved package, a repeat only after the
-    ///      delay, and a delivery for any request ever issued, which never reverts.
+    ///      content's current backoff wait, and a delivery for any request ever issued, which never
+    ///      reverts.
     function invariant_EveryCallHadThePredictedOutcome() public view {
         assertEq(handler.violations(), 0);
     }
@@ -256,6 +287,14 @@ contract VrfEntropyInvariantTest is EntropyBase {
             (uint256 requestId,) = module.requestOf(handler.itemHash(i));
             assertEq(requestId, handler.currentId(i));
             if (i == 4 || i == 5) assertEq(requestId, 0);
+        }
+    }
+
+    /// @dev The backoff bounds the requests outstanding for a content: never more than the first
+    ///      request plus every repeat made at its earliest moment since then (RFX-ENT-2).
+    function invariant_TheBackoffBoundsTheRequestsOfAContent() public view {
+        for (uint256 c; c < 4; ++c) {
+            assertLe(handler.issuedCount(c), handler.maxRequests(c));
         }
     }
 

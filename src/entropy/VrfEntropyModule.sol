@@ -42,21 +42,29 @@ import { IVRFCoordinatorV2Plus } from "./IVRFCoordinatorV2Plus.sol";
 ///      that root, and the item's content hash must not be consumed. Every failure of the gate is
 ///      `NotRequestable(itemHash)`. This keeps {requestSeed} open to anyone (the
 ///      artist, a relayer, a bot) with no privileged step, while the total possible spend is one
-///      draw per approved VRF content, plus a repeat per `retryDelay` for each one whose draw
-///      never arrived. A guardian's `revokePackage` stops further requests at once. The gate is
-///      checked on every call, repeats included. Its one exception requests nothing: the item
-///      that consumed a content whose seed is delivered may still link to that seed.
+///      draw per approved VRF content, plus the repeats the backoff below allows for each one
+///      whose draw never arrived. A guardian's `revokePackage` stops further requests at once.
+///      The gate is checked on every call, repeats included. Its one exception requests nothing:
+///      the item that consumed a content whose seed is delivered may still link to that seed.
 ///
-///      Repeat. A request still undelivered `retryDelay` seconds after it was made may be
-///      requested again by anyone. A repeat ADDS a request and never invalidates an earlier one:
-///      Chainlink VRF v2.5 does not expire a pending request on-chain, so the oracle may still
-///      deliver an earlier request late, and a delivery for any outstanding request is accepted.
+///      Repeat. A content whose seed is still undelivered may be requested again by anyone, with
+///      an exponential backoff: the k-th repeat may be made `retryDelay * 2^(k-1)` seconds after
+///      the previous request, the wait capped at `MAX_RETRY_DELAY` so a repeat always stays
+///      possible. The repeat count is kept per content, in the draw's word, and a coordinator
+///      replacement does not reset it. A repeat ADDS a request and never invalidates an earlier
+///      one: Chainlink VRF v2.5 does not expire a pending request on-chain, so the oracle may
+///      still deliver an earlier request late, and a delivery for any outstanding request is
+///      accepted.
 ///      The first delivery fixes the seed; every later delivery for the content is a silent no-op
 ///      (it must not revert, so the oracle's fulfilment succeeds). Superseding the old request
 ///      would let an observer who sees a disliked late delivery pending in the mempool front-run
-///      a repeat to discard it. Residual risk: while two requests are outstanding at once, whoever
-///      orders the two deliveries (a searcher or block builder) chooses which of two independent
-///      random words becomes the seed; `retryDelay` (3 days at least) keeps that window rare.
+///      a repeat to discard it. Residual risk: while several requests are outstanding at once,
+///      whoever can withhold or order their deliveries (the oracle, a searcher or a block builder)
+///      chooses which of their independent random words becomes the seed. The backoff bounds how
+///      many there are: after an undelivered period T of at least (2^m - 1) * retryDelay, at most
+///      1 + m + floor((T - (2^m - 1) * retryDelay) / MAX_RETRY_DELAY), where m is the number of
+///      repeats whose wait is below the cap (for a 3-day `retryDelay`, m = 4: at most 15 requests
+///      in a year).
 ///
 ///      Trust. The coordinator can only deliver the seed of a content it was asked for, and the
 ///      first delivery is final: a delivered seed never changes. Governance chooses the
@@ -65,7 +73,8 @@ import { IVRFCoordinatorV2Plus } from "./IVRFCoordinatorV2Plus.sol";
 ///      the pinned address is refused) and the request parameters ({setConfig}, 48-hour class,
 ///      compare-and-set, with a raise-only callback gas limit; {lowerCallbackGasLimit} lowers it
 ///      in the 30-day class). Request IDs are scoped to their coordinator, so a coordinator swap
-///      orphans in-flight requests of the old one; each is requested again after `retryDelay`.
+///      orphans in-flight requests of the old one; each is requested again once its content's
+///      current wait has passed.
 contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     /// @notice The request parameters.
     /// @param subscriptionId The funded VRF v2.5 subscription; this module must be its consumer.
@@ -84,10 +93,13 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     /// @dev One content's randomness. `value` is the latest request ID until `delivered`, then
     ///      the seed: the callback overwrites a word `requestSeed` already made nonzero, so a
     ///      delivery creates no storage slot (about 111,000 gas each under Glamsterdam).
+    ///      `repeats` counts the content's repeats (saturating at 255), packed in the word that
+    ///      `requestedAt` already writes, so it costs no slot of its own.
     struct Seed {
         uint256 value;
         uint64 requestedAt;
         bool delivered;
+        uint8 repeats;
     }
 
     /// @notice The lowest callback gas limit. The callback creates no storage slot (the seed
@@ -103,7 +115,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     /// @notice The shortest `retryDelay`. Not an expiry (VRF v2.5 requests never expire on-chain):
     ///         a repeat is only worth its cost once a delivery is plainly overdue.
     uint64 public constant MIN_RETRY_DELAY = 3 days;
-    /// @notice The longest `retryDelay`.
+    /// @notice The longest `retryDelay`, and the cap of the wait before any repeat.
     uint64 public constant MAX_RETRY_DELAY = 30 days;
     /// @notice The longest Merkle proof accepted: a package of 2^32 items.
     uint256 public constant MAX_PROOF_LENGTH = 32;
@@ -143,7 +155,8 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     /// @param coordinator_ The VRF v2.5 coordinator.
     /// @param coordinatorCodeHash The reviewed code hash `coordinator_` must have.
     /// @param config_ The initial request parameters.
-    /// @param retryDelay_ Seconds before an undelivered request may be requested again.
+    /// @param retryDelay_ Seconds before an undelivered content's first repeat; each later
+    ///        repeat waits twice the previous wait, up to `MAX_RETRY_DELAY`.
     /// @param packageRegistry_ The package registry that gates requests.
     /// @param packageRegistryCodeHash The reviewed code hash `packageRegistry_` must have.
     constructor(
@@ -186,11 +199,12 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     ///      be linked, with no proof or package check, no request and no coordinator call, so a
     ///      work minted on its content's seed without a link of its own can be read by item hash.
     ///      Otherwise, if the content's seed is not delivered and no request is outstanding
-    ///      (or `retryDelay` has passed since the last one), requests one random word. A repeat
-    ///      adds a request; every outstanding request may still deliver, and the first delivery
-    ///      wins. The request time is written before the coordinator is called and the request ID
-    ///      only after, so a reentrant call finds a pending request and cannot deliver the new ID,
-    ///      which is not yet recorded. A reentrant delivery of an EARLIER request is valid; the
+    ///      (or the content's current wait, `retryDelay * 2^repeats` capped at
+    ///      `MAX_RETRY_DELAY`, has passed since the last one), requests one random word. A repeat
+    ///      adds a request and counts toward the next wait; every outstanding request may still
+    ///      deliver, and the first delivery wins. The request time and repeat count are written
+    ///      before the coordinator is called and the request ID only after, so a reentrant call
+    ///      finds a pending request and cannot deliver the new ID, which is not yet recorded. A reentrant delivery of an EARLIER request is valid; the
     ///      seed is then already delivered when the call returns, and the new request is recorded
     ///      (its late delivery is a no-op) but is not announced as the item's current request.
     /// @param item The package item; the module computes its hash (`WorksHashing.itemHash`).
@@ -219,16 +233,20 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
             if (joined) return 0;
             revert SeedAlreadyDelivered(itemHash);
         }
+        uint8 repeats = seed.repeats;
         if (seed.requestedAt != 0) {
-            uint64 retryAt = seed.requestedAt + retryDelay;
+            uint64 retryAt = seed.requestedAt + _repeatWait(repeats);
             // The delay is a day or more; validator timestamp drift is immaterial.
             // forge-lint: disable-next-line(block-timestamp)
             if (block.timestamp < retryAt) {
                 if (joined) return 0;
                 revert RequestPending(itemHash, retryAt);
             }
+            if (repeats < type(uint8).max) ++repeats;
         }
+        // One word: the request time and the repeat count, both before the coordinator call.
         seed.requestedAt = uint64(block.timestamp);
+        seed.repeats = repeats;
 
         VrfConfig memory c = _config;
         address coord = coordinator;
@@ -325,7 +343,8 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
 
     /// @inheritdoc IEntropyModule
     /// @dev Request IDs are scoped to their coordinator, so requests made through the old one can
-    ///      no longer be delivered; they are requested again after `retryDelay`. Delivered seeds
+    ///      no longer be delivered; they are requested again once the content's current wait has
+    ///      passed (the repeat count is per content and survives the swap). Delivered seeds
     ///      are unaffected. `next` must differ from the current coordinator, have code, not be an
     ///      EIP-7702 delegated account, and have the pinned code hash. Switching coordinators
     ///      also needs a new subscription: see the README's runbook.
@@ -423,6 +442,16 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     {
         return item.seedPolicy == SeedPolicy.VRF
             && packageRegistry.consumedItemOf(item.contentHash) == itemHash;
+    }
+
+    /// @dev The wait before the next repeat of a content that already has `repeats` repeats:
+    ///      `retryDelay * 2^repeats`, capped at `MAX_RETRY_DELAY`. `retryDelay` is at least
+    ///      `MIN_RETRY_DELAY`, a tenth of the cap, so from the fifth repeat on the wait is the
+    ///      cap; the shift stops at 8, so it cannot overflow.
+    function _repeatWait(uint8 repeats) private view returns (uint64) {
+        if (repeats >= 8) return MAX_RETRY_DELAY;
+        uint256 wait = uint256(retryDelay) << repeats;
+        return wait < MAX_RETRY_DELAY ? uint64(wait) : MAX_RETRY_DELAY;
     }
 
     function _validate(VrfConfig memory c) private pure {

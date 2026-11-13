@@ -234,8 +234,11 @@ A work whose item has `seedPolicy == VRF` starts only after its seed is delivere
    the request ([flows §6](../../deployments/11155111/flows.md#6-vrf)).
 3. Check `isDeliveredContent(item.contentHash)`, then start.
 
-If no seed arrives, anyone may request again once `retryDelay()` has passed (at least 3 days,
-`VrfEntropyModule.MIN_RETRY_DELAY`); earlier calls revert with `RequestPending(itemHash, retryAt)`.
+If no seed arrives, anyone may request again once the content's backoff wait has passed:
+`retryDelay()` (at least 3 days, `VrfEntropyModule.MIN_RETRY_DELAY`) before the first repeat,
+doubling with each repeat up to 30 days ([ENT-5](../spec/entropy.md#rules-and-invariants));
+earlier calls revert with `RequestPending(itemHash, retryAt)`, whose `retryAt` is the next
+moment a repeat is accepted.
 
 ### The currency
 

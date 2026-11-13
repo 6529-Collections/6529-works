@@ -64,7 +64,8 @@ contract VrfEntropyFuzzTest is EntropyBase {
         uint256[] memory ids = new uint256[](n);
         ids[0] = _request(0);
         for (uint256 i = 1; i < n; ++i) {
-            vm.warp(block.timestamp + RETRY_DELAY);
+            // At least every repeat's wait (the backoff caps it at `MAX_RETRY_DELAY`).
+            vm.warp(block.timestamp + module.MAX_RETRY_DELAY());
             ids[i] = _request(0);
         }
         uint256 winner = bound(first, 0, n - 1);

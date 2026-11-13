@@ -30,7 +30,8 @@ under [VrfEntropyModule events](../../docs/integrators/events-and-indexing.md#vr
 ## Developer notes
 
 - **Storage.** `_seeds[contentHash]` is one `Seed`: a value word that holds the latest request
-  ID until delivery and the seed after it, plus the request time and the delivered flag. The
+  ID until delivery and the seed after it, plus a word with the request time, the delivered flag
+  and the repeat count that sets the backoff (ENT-5). The
   callback overwrites a word `requestSeed` already made nonzero, so a delivery creates no
   storage slot; keep it that way (ENT-13). `_contentOf[itemHash]` is the item link, and
   `_requests[coordinator][requestId]` remembers every request under the coordinator that
@@ -39,12 +40,16 @@ under [VrfEntropyModule events](../../docs/integrators/events-and-indexing.md#vr
   draw's two words, the request record), a joining item one; the test
   `test_Request_NewStorageSlots` pins both. The request is off the auction's start path, which
   pays only for `isDelivered`.
-- **Order inside `requestSeed`.** The request time is written before the coordinator call and
-  the request ID after it, so a reentrant call finds a pending draw and cannot deliver the new
-  ID. Do not reorder these writes without rerunning the reentrancy tests.
+- **Order inside `requestSeed`.** The request time and repeat count are written before the
+  coordinator call and the request ID after it, so a reentrant call finds a pending draw and
+  cannot deliver the new ID. Do not reorder these writes without rerunning the reentrancy tests.
+- **Backoff.** A content's k-th repeat waits `retryDelay * 2^(k-1)` after the previous request,
+  capped at `MAX_RETRY_DELAY`; the count is per content and survives a coordinator swap. The
+  bound it gives on outstanding requests is in the spec's
+  [first delivery wins](../../docs/spec/entropy.md#first-delivery-wins).
 - **A delivery never reverts for a fixed seed**, so the oracle's fulfilment succeeds; a
-  malformed callback (not exactly one word) reverts and the item is requested again after
-  `retryDelay`. Delivery is tracked by a flag, so a zero seed is valid.
+  malformed callback (not exactly one word) reverts and the item is requested again once its
+  backoff wait has passed. Delivery is tracked by a flag, so a zero seed is valid.
 - **Callback gas.** The floor (`MIN_CALLBACK_GAS`) is sized against the callback's measured
   Glamsterdam cost, recorded in
   [ADR 0004, security impact](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#security-impact);

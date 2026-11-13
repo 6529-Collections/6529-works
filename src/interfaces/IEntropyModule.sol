@@ -17,8 +17,10 @@ import { PackageItem } from "./types/PackageTypes.sol";
 ///      any token or adapter. Anyone may request, for an item of an approved package that is not
 ///      yet consumed and whose seed policy is VRF (checked against the package registry), which
 ///      keeps the subscription safe from spam. An item whose content already has a delivered or
-///      pending draw only joins it. While no seed is fixed, anyone may add another request once
-///      `retryDelay()` (at least 3 days) has passed since the last one. The first delivery wins:
+///      pending draw only joins it. While no seed is fixed, anyone may add another request with
+///      an exponential backoff: the k-th repeat once `retryDelay() * 2^(k-1)` (the base at least
+///      3 days) has passed since the previous request, the wait capped at 30 days for the VRF
+///      module, so a repeat always stays possible. The first delivery wins:
 ///      any outstanding request from the coordinator that issued it may deliver until the
 ///      content's seed is fixed, and later deliveries are no-ops. Seeds are permanent.
 interface IEntropyModule is IERC165 {
@@ -67,10 +69,11 @@ interface IEntropyModule is IERC165 {
     error InvalidRandomWords(uint256 requestId);
 
     /// @notice Links an approved, unconsumed VRF item to its content's draw and requests that
-    ///         draw's seed, or adds another request once `retryDelay()` has passed with no seed
-    ///         fixed. Returns zero when the item only joined a delivered or pending draw. A
-    ///         linked item called again once `retryDelay()` has passed with no seed fixed makes
-    ///         a new request for the content. After consumption only the item that consumed the
+    ///         draw's seed, or adds another request once the content's current wait has passed
+    ///         with no seed fixed: `retryDelay()` before the first repeat, doubling with each
+    ///         repeat up to the module's cap. Returns zero when the item only joined a delivered
+    ///         or pending draw. A linked item called again once the wait has passed with no seed
+    ///         fixed makes a new request for the content. After consumption only the item that consumed the
     ///         content may still be linked, and only to an already delivered seed (no request,
     ///         no proof or package check), so a minted work reads its seed by item hash.
     ///         Permissionless.
@@ -114,8 +117,10 @@ interface IEntropyModule is IERC165 {
         external
         view
         returns (uint256 requestId, uint64 requestedAt);
-    /// @notice Seconds after the latest request before another may be added (at least 3 days).
-    /// @return The delay in seconds.
+    /// @notice Seconds after the first request before the first repeat may be added (at least 3
+    ///         days); the k-th repeat waits `retryDelay() * 2^(k-1)` after the previous request,
+    ///         up to the module's cap.
+    /// @return The base delay in seconds.
     function retryDelay() external view returns (uint64);
     /// @notice The VRF coordinator.
     /// @return The coordinator's address, the only account that may deliver seeds.

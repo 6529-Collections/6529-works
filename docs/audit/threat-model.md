@@ -212,7 +212,7 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 
 | Entry point | Threat | Mitigation |
 | --- | --- | --- |
-| `requestSeed` | Spam requests drain the subscription | [ENT-1, ENT-2, ENT-5][ent]: the gate is an approved, unconsumed VRF item, one draw per content hash, repeats after `retryDelay`; guardians revoke a hostile package ([LIM-ENT-2][lim-ent]) |
+| `requestSeed` | Spam requests drain the subscription | [ENT-1, ENT-2, ENT-5][ent]: the gate is an approved, unconsumed VRF item, one draw per content hash, repeats after an exponential backoff from `retryDelay`, capped at 30 days; guardians revoke a hostile package ([LIM-ENT-2][lim-ent]) |
 | Repeats and deliveries | An observer re-rolls a seed it dislikes | [ENT-4, ENT-5][ent]: a repeat never invalidates a request, and the first delivery wins. Residual: delivery ordering ([LIM-ENT-1][lim-ent]) |
 | Re-packaging | A revised package draws a second seed | [ENT-2][ent]: draws are keyed by content hash (DEPS-1) |
 | Coordinator | An old or replaced coordinator delivers | [ENT-6, ENT-7, ENT-8][ent]: requests scoped to their coordinator, code hash checked |
