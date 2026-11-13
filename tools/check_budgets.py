@@ -230,8 +230,15 @@ def check_margins(
     floor: int,
     report: Report,
 ) -> None:
-    """Every measured src/ contract keeps `floor` bytes of EIP-170 margin, or its exemption."""
-    problems: list[str] = []
+    """Every src/ contract keeps `floor` bytes of EIP-170 margin, or its exemption.
+
+    A contract declared in src/ without a well-formed measurement fails: a truncated or
+    partial size report must not pass the gate by leaving a contract out.
+    """
+    problems: list[str] = [
+        f"{name}: declared in src/ but has no size measurement"
+        for name in sorted(contracts - set(valid))
+    ]
     notes: list[str] = []
     measured = sorted(name for name in valid if name in contracts)
     for name in measured:

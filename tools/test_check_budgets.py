@@ -227,8 +227,10 @@ class BudgetTest(unittest.TestCase):
     def test_empty_forge_output_has_no_contracts(self) -> None:
         self.repo.write("A.sol", "contract A {}\n")
         code, out = self.repo.run("--sizes-json", str(self.repo.sizes({})))
-        self.assertEqual(code, 0, out)
-        self.assertIn("0 contracts within EIP-170/EIP-3860 (no contracts)", out)
+        self.assertIn("ok   0 contracts within EIP-170/EIP-3860 (no contracts)", out)
+        # The margin gate still fails: src/ declares a contract nobody measured.
+        self.assertEqual(code, 1, out)
+        self.assertIn("FAIL A: declared in src/ but has no size measurement", out)
 
     def test_root_is_the_nearest_foundry_toml_ancestor(self) -> None:
         (self.repo.root / "foundry.toml").write_text("[profile.default]\n", encoding="utf-8")
@@ -242,7 +244,7 @@ class BudgetTest(unittest.TestCase):
 
         def fake_forge_sizes(root: Path, profile: str) -> dict:
             calls.append(profile)
-            return {}
+            return {"A": {"runtime_size": 100, "init_size": 120}}
 
         real = cb.forge_sizes
         cb.forge_sizes = fake_forge_sizes
@@ -353,6 +355,34 @@ class MarginTest(unittest.TestCase):
         code, out = self._run({"Core": _runtime(600), "Tight": _runtime(512)})
         self.assertEqual(code, 1)
         self.assertIn("Tight margin 512 bytes is back at or above the 512-byte floor", out)
+
+    def test_a_contract_missing_from_partial_measurements_fails(self) -> None:
+        """Regression: RFX-TOOL-1. Leaving a src/ contract out of the sizes must not pass."""
+        code, out = self._run({"Core": _runtime(600)})
+        self.assertEqual(code, 1, out)
+        self.assertIn("FAIL Tight: declared in src/ but has no size measurement", out)
+        self.assertNotIn("Core: declared", out)
+        self.assertIn("FAIL 1 src/ contracts keep 512 bytes of EIP-170 margin", out)
+        # An exemption does not excuse a missing measurement either.
+        self._exempt({"Tight": {"margin": 100, "reason": "r"}})
+        code, out = self._run({"Core": _runtime(600)})
+        self.assertEqual(code, 1, out)
+        self.assertIn("FAIL Tight: declared in src/ but has no size measurement", out)
+
+    def test_empty_measurements_fail_naming_every_contract(self) -> None:
+        """Regression: RFX-TOOL-1. An empty size report measures nothing and fails."""
+        code, out = self._run({})
+        self.assertEqual(code, 1, out)
+        self.assertIn("FAIL Core: declared in src/ but has no size measurement", out)
+        self.assertIn("FAIL Tight: declared in src/ but has no size measurement", out)
+        self.assertIn("FAIL 0 src/ contracts keep 512 bytes of EIP-170 margin", out)
+
+    def test_a_malformed_measurement_counts_as_missing(self) -> None:
+        """Regression: RFX-TOOL-1. A src/ contract whose only entry is malformed is unmeasured."""
+        code, out = self._run({"Core": _runtime(600), "Tight": {"runtime_size": "big"}})
+        self.assertEqual(code, 1, out)
+        self.assertIn("FAIL Tight: malformed size entry", out)
+        self.assertIn("FAIL Tight: declared in src/ but has no size measurement", out)
 
     def test_an_exemption_for_an_unmeasured_contract_fails(self) -> None:
         self._exempt({"Gone": {"margin": 100, "reason": "removed since"}})
