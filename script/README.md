@@ -604,7 +604,8 @@ Verify checks the genesis configuration. After a governance change, such as an
 readback stays genesis readback, so a later default-currency change still fails it. Epoch
 mode logs every grant it accepts for an account that no longer holds the role, and every
 past remap, role-admin or role-guardian change or target closure it accepts because the
-manager is back to the configuration. When the
+manager is back to the epoch configuration; a genesis selector mapping the epoch file drops
+counts as such a change, so it passes only once the manager maps that selector to ADMIN. When the
 epoch's governance manifest is given (`GOVERNANCE_MANIFEST_PATH`), Verify requires its
 SHA-256 to be the content of a `GOVERNANCE_MANIFEST` statement on the manager's chain, and
 its `governanceConfig.sha256` to be the SHA-256 of the `GOVERNANCE_CONFIG` file.

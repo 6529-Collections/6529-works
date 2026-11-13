@@ -2306,6 +2306,55 @@ contract DeployScriptTest is Test {
         verifier.verify(record);
     }
 
+    /// Regression: RFX-TOOL-2
+    /// @dev Epoch mode, a selector the epoch configuration no longer maps: its genesis mapping
+    ///      matches only the initial configuration, so it passes only once the manager maps the
+    ///      selector to ADMIN, the default the epoch expects. A mapping left in place fails.
+    function test_EpochModeRefusesAMappingTheEpochDropped() public {
+        (string memory record, DeployV1.Deployment memory d) = _offAnvilRecord();
+        bytes4 dropped = 0x938e3d7b; // setContractURI(string), PARAMETER_SETTER at genesis
+        string memory entry = string.concat(
+            "        {\n",
+            '          "signature": "setContractURI(string)",\n',
+            '          "selector": "0x938e3d7b",\n',
+            '          "role": "PARAMETER_SETTER",\n',
+            '          "class": "standard",\n',
+            '          "delay": 172800\n',
+            "        },\n"
+        );
+        string memory epoch = _tamper(_filled(), entry, "");
+        // Every target that maps it at genesis (the entry is dropped wherever it appears).
+        GovernanceConfig.Config memory initial = DeployV1.config(d, _filled());
+        address[] memory targets = new address[](initial.targets.length);
+        uint256 count;
+        for (uint256 i; i < initial.targets.length; ++i) {
+            GovernanceConfig.FunctionRole[] memory fns = initial.targets[i].functions;
+            for (uint256 j; j < fns.length; ++j) {
+                if (fns[j].selector == dropped) targets[count++] = initial.targets[i].target;
+            }
+        }
+        assertGt(count, 0, "mapped at genesis");
+        address target = targets[0];
+        assertEq(d.manager.getTargetFunctionRole(target, dropped), Roles.PARAMETER_SETTER);
+        // The committed policy of the later epoch drops it too, so the guards accept the file.
+        verifier.setFile("config/genesis.example.json", bytes(_tamper(example, entry, "")));
+        verifier.setFile("config/epoch-1.json", bytes(epoch));
+        verifier.setEnv("GOVERNANCE_CONFIG", "config/epoch-1.json");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.UnexpectedFunctionRole.selector, target, dropped, Roles.PARAMETER_SETTER
+            )
+        );
+        verifier.verify(record);
+        // Governance removes the mapping everywhere; the epoch then verifies.
+        bytes[] memory calls = new bytes[](count);
+        for (uint256 i; i < count; ++i) {
+            calls[i] = _remap(targets[i], dropped, Roles.ADMIN);
+        }
+        _adminExecutes(d, _account("01"), calls);
+        verifier.verify(record);
+    }
+
     /// @dev A fresh verifier and deployment (the harness keeps logs across calls).
     function _reset() internal returns (string memory record, DeployV1.Deployment memory d) {
         deployer = new DeployHarness();

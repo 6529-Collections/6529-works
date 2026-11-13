@@ -545,8 +545,9 @@ contract Verify is ScriptIO {
     /// @dev Check 11, over the manager's `TargetFunctionRoleUpdated`, `RoleAdminChanged`,
     ///      `RoleGuardianChanged` and `TargetClosed` events since genesis. Genesis itself emits
     ///      only matching ones (each role's guardian, each configured selector). Outside epoch
-    ///      mode every event must match; in epoch mode a past one that does not is accepted,
-    ///      and logged, when the manager's current state for it matches again.
+    ///      mode every event must match; in epoch mode a past one that does not match the epoch
+    ///      configuration (a genesis mapping included) is accepted, and logged, when the
+    ///      manager's current state for it matches the epoch configuration.
     function _checkRoleMap(
         DeployV1.Deployment memory d,
         GovernanceConfig.Config memory initial,
@@ -561,15 +562,15 @@ contract Verify is ScriptIO {
             address target = address(uint160(uint256(logs[i].topics[1])));
             uint64 role = uint64(uint256(logs[i].topics[2]));
             bytes4 selector = abi.decode(logs[i].data, (bytes4));
-            if (
-                role == _mappedRole(initial, target, selector)
-                    || role == _mappedRole(cfg, target, selector)
-            ) continue;
-            if (
-                !epoch
-                    || d.manager.getTargetFunctionRole(target, selector)
-                        != _mappedRole(cfg, target, selector)
-            ) revert UnexpectedFunctionRole(target, selector, role);
+            // Outside epoch mode `cfg` is the initial configuration. In epoch mode an event that
+            // matches only the initial one (a genesis mapping the epoch has since dropped or
+            // changed) is a past change like any other: it passes only if the manager's current
+            // role is the epoch's, ADMIN for a selector the epoch no longer maps.
+            uint64 expected = _mappedRole(cfg, target, selector);
+            if (role == expected) continue;
+            if (!epoch || d.manager.getTargetFunctionRole(target, selector) != expected) {
+                revert UnexpectedFunctionRole(target, selector, role);
+            }
             console2.log("epoch mode: accepted a past selector remap, since restored", target);
         }
         logs = _logs(fromBlock, m, keccak256("RoleAdminChanged(uint64,uint64)"));
