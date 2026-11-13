@@ -316,13 +316,15 @@ Re-measured for the review-fix pass of November 2026, on the merged tree:
   158,365 with a bid, 123,989 with no bid): `settle` calls the token's `settlePrimary` as before.
 - **`createWallet`** fell by 55,787 to 1,185,635: the split wallet's code changed for
   releases of tokens that return nothing (RFX-ECO-1), and its init code with it.
-- **`tokenURI`**'s worst case in the size matrix is 2,734,418, 321 less, with the changed
-  records satellite (the locator fallback of RFX-REC-1) and deployment addresses.
+- **`tokenURI`**'s worst case in the size matrix is 2,736,626, 1,887 more: the changed records
+  satellite (the locator fallback of RFX-REC-1) and deployment addresses took 321 off, and the
+  statement log's check that the token declares `IStream`, now made before its item read
+  (RFX-REC-2), adds 2,208.
 - **`royaltyInfo`** is unchanged; [`RoyaltyInfoGas.t.sol`](../../test/integration/RoyaltyInfoGas.t.sol)
   now also calls it with exactly its 50,000-gas budget, cold, and requires every lower limit
   to revert rather than answer a zero royalty.
 - **Every other row** moved by at most 32 with the new code and deployment addresses (the
-  re-rate by 8, the edition auction's `open` rows by 12), and no row writes a new slot or
+  re-rate by 20, the edition auction's `open` rows by 12), and no row writes a new slot or
   account.
 
 The start rows keep their 5,000 of margin:
@@ -363,11 +365,11 @@ The start rows keep their 5,000 of margin:
 | `consume`, as Stream calls it | 93,130 | 97,000 (regression) | 1 | 0 | part of `start` |
 | `createEdition` | 246,504 | 275,000 (regression) | 6 | 0 | 887,954 (sim.) |
 | `createEdition`, an edition its sale bound at open | 144,344 | 148,000 (regression) | 2 | 0 | — |
-| re-rate a work (governed `execute`) | 189,914 | 192,000 (regression) | 1 | 0 | — |
+| re-rate a work (governed `execute`) | 189,902 | 192,000 (regression) | 1 | 0 | — |
 | `refreshStanding`, a first wallet | 129,730 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
 | `refreshStanding`, a further wallet | 159,127 | 161,000 (regression) | 1 | 0 | 247,970 (r2) |
 | `royaltyInfo` (view; `RoyaltyInfoGas.t.sol` caps its gas) | 41,644 | 50,000 of execution | 0 | 0 | 36,426 |
-| `tokenURI` (view, the size matrix) | at most 2,734,418 | 8,000,000 | 0 | 0 | unchanged |
+| `tokenURI` (view, the size matrix) | at most 2,736,626 | 8,000,000 | 0 | 0 | unchanged |
 | `createWallet`, a seller wallet (one artist payee) | 1,185,635 | 1,262,000 (regression) | 4 | 1 | — |
 | `release`, the artist's first ETH release | 93,402 | 96,000 (regression) | 2 | 0 | — |
 | `claimSigned`, the artist's first signed release | 141,464 | 145,000 (regression) | 3 | 0 | — |

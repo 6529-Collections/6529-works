@@ -58,7 +58,8 @@
     without a size measurement fails the gate. The Sepolia fork simulation expects 14 governed
     targets and 18 wiring calls, the anvil run's 13 and 18 plus the entropy module. `RoyaltyInfoGas.t.sol` calls
     `royaltyInfo` with exactly its 50,000-gas budget and requires every lower limit to revert
-    (RFX-TOOL-4). ADR 0004's table is re-measured: the `settle` rows are unchanged, every other
+    (RFX-TOOL-4). ADR 0004's table is re-measured: the `settle` rows are unchanged, `tokenURI`'s
+    worst case rose by 1,887 to 2,736,626 (the statement log's `IStream` check), every other
     row moved by at most 32, and the binding start row is 338,253.
   - **Docs.** Any two colluding guardians shield each other, however many there are (LIM-GV-4,
     ADR 0002 amendment note), though they cannot stop live sales settling except 1/1 auctions

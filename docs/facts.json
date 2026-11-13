@@ -566,7 +566,7 @@
       },
       {
         "operation": "re-rate a work (governed execute)",
-        "pragueGas": 189914,
+        "pragueGas": 189902,
         "pragueCeiling": {
           "gas": 192000,
           "kind": "regression"
@@ -619,7 +619,7 @@
       },
       {
         "operation": "tokenURI (view, the size matrix)",
-        "pragueGas": 2734418,
+        "pragueGas": 2736626,
         "pragueGasIsMaximum": true,
         "pragueCeiling": {
           "gas": 8000000,
