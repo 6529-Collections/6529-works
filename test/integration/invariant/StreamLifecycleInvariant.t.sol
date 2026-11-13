@@ -11,11 +11,15 @@ import { StreamLifecycleHandler } from "./StreamLifecycleHandler.sol";
 ///         The handler (`StreamLifecycleHandler`, inherited) registers and accepts packages,
 ///         moves items to Stream and starts their auctions, bids, settles, pauses for disputes and
 ///         cancels or resumes them, releases a burned work's content, opens, amends, finalizes
-///         and relicenses records, adds locators, transfers works, and stages and ends recovery
-///         overrides while the restrained keys keep trying to act. After every call:
+///         and relicenses records, adds locators, transfers works, stages and ends recovery
+///         overrides while the restrained keys keep trying to act, pauses and unpauses the
+///         auction's starts, and lets a hostile contract (reverting, burning its gas or
+///         re-entering) bid, receive works and claim, its refused deliveries claimed by the winning
+///         bidder (RFX-SAL-1, RFX-SAL-4). After every call:
 ///
 ///         1. Ownership: every token has exactly one owner, a known holder, and is in the
-///            auction's custody exactly while its sale is unsettled (a burned token has none).
+///            auction's custody exactly while its sale is unsettled or its delivery pending (a
+///            burned token has none).
 ///         2. IDs: token IDs are assigned once, in order, each to one item, and never reused;
 ///            supply is minted minus burned.
 ///         3. Content: a content hash is held by at most one live item. A burned work keeps it
@@ -34,7 +38,7 @@ import { StreamLifecycleHandler } from "./StreamLifecycleHandler.sol";
 ///            restrained, and the museum holds nothing else.
 ///         Every action also predicts its outcome; any disagreement fails the campaign.
 contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
-    uint256 internal constant ACTIONS = 18;
+    uint256 internal constant ACTIONS = 22;
     /// @dev Replayed sequences in `test_EveryActionRuns`.
     uint256 internal constant RUNS = 32;
 
@@ -64,6 +68,10 @@ contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
         s[15] = this.restrainedAct.selector;
         s[16] = this.transfer.selector;
         s[17] = this.warp.selector;
+        s[18] = this.toggleStartPause.selector;
+        s[19] = this.hostileBid.selector;
+        s[20] = this.hostileClaim.selector;
+        s[21] = this.claimDelivery.selector;
     }
 
     /// @notice Every invariant above (1 to 9). In CI the state is asserted every fourth call
@@ -79,7 +87,7 @@ contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
     ///         actions, depth 128) replayed from fixed seeds reach every action and the paths
     ///         the invariants are about, with every invariant holding after each step.
     function test_EveryActionRuns() public {
-        string[31] memory paths = [
+        string[44] memory paths = [
             "register",
             "registerRefused",
             "accept",
@@ -110,9 +118,22 @@ contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
             "warp",
             "contentUsed",
             "locatorRefused",
-            "cc0Held"
+            "cc0Held",
+            "startPaused",
+            "startUnpaused",
+            "pausedStart",
+            "pausedBid",
+            "pausedSettle",
+            "hostileBid",
+            "hostileRecipient",
+            "hostileReceived",
+            "deliveryPending",
+            "forwardedClaimRefused",
+            "deliveryClaimed",
+            "hostileClaimKept",
+            "hostileReentryRefused"
         ];
-        uint256[31] memory totals;
+        uint256[44] memory totals;
         // The deepest chain (a copy burned by an upheld dispute, its content released, a racing
         // copy refused, the rightful artist re-minting) is rare in random sequences: it is logged
         // here and asserted step by step by `test_CopyDisputeReleaseAndRemint`.
@@ -203,6 +224,10 @@ contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
         else if (which == 14) this.endRecovery(a, b);
         else if (which == 15) this.restrainedAct(a, b);
         else if (which == 16) this.transfer(a, b);
-        else this.warp(a);
+        else if (which == 17) this.warp(a);
+        else if (which == 18) this.toggleStartPause(a);
+        else if (which == 19) this.hostileBid(a, b, seed >> 64);
+        else if (which == 20) this.hostileClaim(b);
+        else this.claimDelivery(a);
     }
 }

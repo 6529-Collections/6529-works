@@ -394,7 +394,7 @@ See: [economics and payouts](spec/economics-and-payouts.md).
 
 ### currency freeze
 
-An English auction whose locked currency is deprecated: nothing settles, bids revert and the high bidder may withdraw; after 30 days anyone may end it unsold.
+An English auction whose locked currency is deprecated: nothing settles, bids revert and the high bidder may withdraw; after 60 days anyone may end it unsold.
 
 See: [stream and auctions](spec/stream-and-auctions.md#rules-and-invariants) (AUC-25).
 

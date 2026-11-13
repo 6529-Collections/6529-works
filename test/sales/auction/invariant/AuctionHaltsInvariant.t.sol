@@ -173,7 +173,7 @@ contract AuctionHaltsCoverage is AuctionHaltsFixture {
     }
 
     /// @dev Every halt path runs in campaign-shaped sequences. Half the runs then let a freeze
-    ///      run 31 days before settling (the freeze exit); every run ends with `drain`, which
+    ///      run 61 days before settling (the freeze exit); every run ends with `drain`, which
     ///      re-admits the currency (the reopenings) and settles everything.
     function test_HaltPathsRun() public {
         string[16] memory names = [
@@ -201,7 +201,7 @@ contract AuctionHaltsCoverage is AuctionHaltsFixture {
                 _step(uint256(keccak256(abi.encode(r, d))));
             }
             if (r % 2 == 0) {
-                vm.warp(block.timestamp + 31 days);
+                vm.warp(block.timestamp + 61 days);
                 for (uint256 i; i < handler.salesCount(); ++i) {
                     handler.settle(i);
                 }

@@ -29,7 +29,7 @@ Edition bids are ETH; only the English auction calls Permit2
 | Caller | Calls | Rules |
 | --- | --- | --- |
 | Anyone | `start`, `startWithBid`, `bid`, `settle`, `claimFor` | AUC-14 to AUC-25, AUC-29 |
-| A bidder | `claim` of its credits; `withdrawBid` (the high bidder, while paused or frozen); `claimDelivery` | AUC-18, AUC-21, DSP-15 |
+| A bidder | `claim` of its credits; `withdrawBid` (the high bidder, while paused or frozen); `claimDelivery` (the winning bidder to any address, the recipient it named to itself) | AUC-18, AUC-21, DSP-15 |
 | Guardians and governance | The dispute `pause(saleId, …)`, `resume`, `cancel`; `pause()`, `unpause()`; `setConfig`, `setOpeningBid`, `setTarget`, `setFederationRegistry` | AUC-13, AUC-26, AUC-30, DSP-13 to DSP-19; [role matrix](../../docs/audit/roles.md#englishauction) |
 | Anyone (edition auction) | `open`, `bid`, `settle`, `claimBidFor`, every view | EA-1, EA-4, EA-8 to EA-13 |
 | An edition bidder | `raise`, `claimBid`; `withdrawBid` while the 1/1 is paused for a dispute; `claim` of its credits | EA-5, EA-9, EA-16 |
@@ -58,6 +58,10 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
   as `holder`, so a 6529 Stream work is never pending (AUC-33). Any other token's unsold work
   goes to the creator the token reports. Where the work went is read with `ownerOf` after the
   call, not taken from the reported `holder`. The auction has no museum branch of its own.
+- **A token that refuses to settle.** `settle` calls `settlePrimary` inside `try`: a failure
+  reverts with the token's reason until 60 days after the end of a sale with a standing bid
+  (`_FREEZE_EXIT`); from then the call gets exactly `_REPORT_GAS` and a failure closes the sale
+  with a refund, as a rescued one closes (AUC-36). 6529 Stream never refuses a sold work.
 - **Edition auction storage.** Per sale, a state word (written by every bid), a payout word at
   open and a result word at settlement; live units eight steps to a word; one word per bid;
   departure logs only in capped sales.

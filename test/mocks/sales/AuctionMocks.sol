@@ -207,9 +207,11 @@ contract HostileActor is IERC721Receiver {
         onNft = nft;
     }
 
+    /// @dev Also re-arms the one re-entry.
     function setReentry(address target, bytes calldata data) external {
         reentryTarget = target;
         reentryData = data;
+        reentered = false;
     }
 
     function execute(address to, uint256 value, bytes calldata data)
@@ -382,6 +384,36 @@ contract OutcomeReportingTarget is PlainMintTarget {
             }
         }
         return (outcomeOf[id], address(0), 0);
+    }
+}
+
+/// @dev A listed token whose `settlePrimary` breaks the interface's promise that a sale can
+///      always settle, on demand: it reverts, or burns all the gas it is given (RFX-SAL-3).
+contract RefusingMintTarget is PlainMintTarget {
+    enum Refusal {
+        NONE,
+        REVERT,
+        BURN_GAS
+    }
+
+    Refusal public refusal;
+
+    function setRefusal(Refusal refusal_) external {
+        refusal = refusal_;
+    }
+
+    function settlePrimary(uint256, PrimaryOutcome, address, address, uint256)
+        external
+        view
+        override
+        returns (PrimarySettlement memory p)
+    {
+        if (refusal == Refusal.REVERT) revert("refused");
+        if (refusal == Refusal.BURN_GAS) {
+            while (true) { }
+        }
+        (p.seller, p.feeRecipient, p.feeShare) =
+        (_terms.seller, _terms.feeRecipient, _terms.feeShare);
     }
 }
 
