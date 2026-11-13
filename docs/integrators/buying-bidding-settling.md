@@ -465,7 +465,7 @@ a new seller wallet creates its account, at the settler's cost.
 | Outcome | How you see it | What to do |
 | --- | --- | --- |
 | Delivered | `Transfer` to the recipient, `SaleSettled` | Nothing. |
-| Delivery failed (rejected, or the hook needed more than 300,000 gas) | `DeliveryPending(saleId, recipient)`; `pendingDelivery(saleId)` nonzero | The winning bidder calls `claimDelivery(saleId, to)`, `to` neither zero nor the auction, or the recipient calls it with `to` itself (AUC-21). An unsold 6529 Stream work is never pending: Stream moves it to the museum itself (owner decision 17). With no bids on any other token (federated, or listed later), the artist's authority may claim too (AUC-33). |
+| Delivery failed (rejected, or the hook needed more than 300,000 gas) | `DeliveryPending(saleId, recipient)`; `pendingDelivery(saleId)` nonzero | The winning bidder calls `claimDelivery(saleId, to)` at any time, `to` neither zero nor the auction; the recipient calls it with `to` itself at any time, or with another address from 30 days after the auction's end (AUC-21). An unsold 6529 Stream work is never pending: Stream moves it to the museum itself (owner decision 17). With no bids on any other token (federated, or listed later), the artist's authority may claim too (AUC-33). |
 | A payout refused by the wallet (ETH: reverted or needed over 100,000 gas) or by the token | The escrow's `Credited` | Anyone calls `RevenueEscrow.flush(wallet, asset)`, for a token once it allows it. |
 | An ERC-20 payout that failed even through the escrow (MONEY-1, AUC-23) | The auction's `Credited(wallet, token, saleId, amount)` | Anyone calls `claimFor(wallet, token)`; the funds only go to `wallet`. |
 | No bid (D140, AUC-24, owner decision 17) | The auction reports UNBID to the token (`settlePrimary`); 6529 Stream moves the work from the auction's custody to the 6529 Network Museum, `IEconomicsResolver.museum()` read then, even while the artist is [restrained](../glossary.md#restraint), and emits `PrimarySaleSettled` with the outcome. `SaleSettled` has `buyer == address(0)`, `price == 0` and the museum as recipient. Any other token's work (federated, or listed later by governance) goes to the creator the token reports. | Nothing. Its edition sale still sells and settles, by anyone's `settle` call after its close ([EA-11](../spec/editions-and-sales.md#rules-and-invariants)). |
@@ -502,7 +502,7 @@ Besides the reverts in the two tables above:
 | --- | --- |
 | `UnknownSale(saleId)`, `InvalidAuctionState(saleId, state)` | No such sale, or not `ENDED`. |
 | `NoPendingDelivery(saleId)` | `claimDelivery` with nothing pending, or by a caller that may not claim. |
-| `InvalidRecipient(to)` | `claimDelivery` to zero or to the auction, or by the recipient to another address. |
+| `InvalidRecipient(to)` | `claimDelivery` to zero or to the auction, or by the recipient to another address within 30 days of the auction's end. |
 | `IRevenueEscrow.InvalidAsset(address(0))` | `claimFor` on an ETH credit, which only its bidder claims. |
 
 ## Bidding in an edition auction
@@ -720,7 +720,7 @@ Refunds are never pushed; every amount owed has a pull function:
 | An edition bid's copies and refund | `UniformEditionAuction` | The bidder; anyone with `claimBidFor` | `claimBid(saleId, bidId, to)`, `claimBidFor(saleId, bidId)` |
 | A refund `claimBidFor` credited | `UniformEditionAuction` | The bidder | `claim(address(0), to)` |
 | An ERC-20 auction payout that failed (MONEY-1) | `EnglishAuction` | Anyone, for the wallet | `claimFor(wallet, token)` |
-| A token whose delivery failed | `EnglishAuction` | The winning bidder, to any address, or the recipient, to itself; with no bids on a token other than 6529 Stream, also its artist | `claimDelivery(saleId, to)` |
+| A token whose delivery failed | `EnglishAuction` | The winning bidder, to any address, or the recipient, to itself (to any address from 30 days after the end); with no bids on a token other than 6529 Stream, also its artist | `claimDelivery(saleId, to)` |
 | A payout a wallet or token refused | `RevenueEscrow` | Anyone | `flush(wallet, asset)` |
 | A payee's share of sales or royalties | the `SplitWallet` | Depends on the payee (below) | `release`, `releaseTo`, `releaseWithAuthorization` |
 

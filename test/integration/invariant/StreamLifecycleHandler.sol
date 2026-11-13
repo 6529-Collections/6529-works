@@ -576,8 +576,9 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
 
     /// @notice A pending delivery (the hostile recipient refused the work) is claimed
     ///         (RFX-SAL-1). A third party first routes a claim through the hostile recipient to
-    ///         itself, which must be refused unless the hostile is also the winning bidder; then
-    ///         the winning bidder claims, to itself or, as the hostile, to a bidder.
+    ///         itself, which must be refused unless the hostile is also the winning bidder or 30
+    ///         days have passed since the end; then the winning bidder claims, to itself or, as
+    ///         the hostile, to a bidder.
     function claimDelivery(uint256 seed) external {
         for (uint256 k; k < ghostMinted; ++k) {
             uint256 tokenId = (seed % ghostMinted + k) % ghostMinted + 1;
@@ -585,11 +586,18 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             if (t.burned || t.owner != address(auction)) continue;
             uint256 saleId = t.saleId;
             if (auction.pendingDelivery(saleId) == address(0)) continue;
-            address winner = auction.auction(saleId).bidder;
+            IEnglishAuction.Auction memory a = auction.auction(saleId);
+            address winner = a.bidder;
             address stranger = lcBidders[seed % BIDDERS];
             if (stranger == winner) stranger = lcBidders[(seed % BIDDERS + 1) % BIDDERS];
             bytes memory toStranger = abi.encodeCall(auction.claimDelivery, (saleId, stranger));
-            if (winner != address(lcHostile)) {
+            if (winner != address(lcHostile) && block.timestamp >= uint256(a.endTime) + 30 days) {
+                // The recipient's own redirect, open from 30 days after the end.
+                vm.prank(stranger);
+                lcHostile.execute(address(auction), 0, toStranger);
+                t.owner = stranger;
+                ++hits["recipientRedirect"];
+            } else if (winner != address(lcHostile)) {
                 vm.prank(stranger);
                 try lcHostile.execute(address(auction), 0, toStranger) {
                     _violation("a forwarding recipient sent the work elsewhere");

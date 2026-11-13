@@ -112,20 +112,17 @@ contract EnglishAuction is
     ///      escrow fallback and new-slot costs under Glamsterdam fit with room to spare. A payout
     ///      that fails in it is credited to the wallet instead; the caller must forward it in full.
     uint256 private constant _ERC20_PAYOUT_GAS = 1_000_000;
-    /// @dev Gas given to the token's `settlePrimary` once a sale with a standing bid ended
-    ///      {_FREEZE_EXIT} ago (RFX-SAL-3), when a failure closes the sale with a refund: 6529
-    ///      Stream's needs a small part of it. The caller must forward it in full, so it cannot
-    ///      force a failure.
-    uint256 private constant _REPORT_GAS = 1_000_000;
     /// @dev How long a sale's currency must have been deprecated before anyone may end the
     ///      frozen sale unsold (MARKET-2): the standing bid is credited back and the work goes
     ///      where an unbid work goes (D140: the museum for 6529 Stream, else the artist). It is
     ///      longer than a guardian's removal (30 days) plus a re-admission after it (14 days), so
     ///      governance can re-admit a currency a single guardian deprecated and keeps vetoing
-    ///      before any sale in it can be ended this way (RFX-SAL-2). Also how long after a sale's
-    ///      end a token that refuses to settle it, or names a wallet the escrow refuses, stops
-    ///      holding up its standing bid (RFX-SAL-3).
+    ///      before any sale in it can be ended this way (RFX-SAL-2).
     uint256 private constant _FREEZE_EXIT = 60 days;
+    /// @dev How long after an auction's end only the winning bidder may send a pending delivery
+    ///      to an address other than the recipient it named (RFX-SAL-1); after it the recipient
+    ///      may too.
+    uint256 private constant _REDIRECT_DELAY = 30 days;
 
     bytes4 private constant _SAFE_TRANSFER_FROM = 0x42842e0e;
     uint8 private constant _PAUSE_USED = 1;
@@ -396,12 +393,7 @@ contract EnglishAuction is
     ///      it through `primarySale`: the sale then closes with refunds only ({_rescued}), the
     ///      standing bid credited back, nothing reported, paid, minted or delivered
     ///      (`RescuedSaleClosed`), so the bidder's funds and the work's edition sale are never
-    ///      stranded. The same close ends a sale with a standing bid whose token refuses
-    ///      `settlePrimary` 60 days or more after the end (RFX-SAL-3): the token is then given a
-    ///      1,000,000-gas frame, which the caller must be able to forward in full
-    ///      (`BoundedCallInsufficientGas`); the work stays in this adapter's custody. Before
-    ///      then a refusal reverts. From the same day an ETH payout to a wallet the escrow
-    ///      refuses (the zero address or the escrow) is credited to that wallet instead.
+    ///      stranded.
     function settle(uint256 saleId) external nonReentrant {
         Sale storage s = _require(saleId, IEnglishAuction.AuctionState.ENDED);
         if (_rescued(s)) {
@@ -422,15 +414,7 @@ contract EnglishAuction is
         address bidder = s.bidder;
         // With no bidder, `s.bid` is at most a withdrawn bid's reserve: nothing is paid.
         uint256 price = bidder == address(0) ? 0 : s.bid;
-        (bool reported, LockedTerms memory lt, bool taken) =
-            _settleWithToken(s, bidder, price, frozenOut);
-        // RFX-SAL-3: the token refused, {_FREEZE_EXIT} after the end, to settle a sale with a
-        // standing bid; the sale closes as a rescued one does, the bid credited back.
-        if (!reported) {
-            _refundHighBid(saleId, s);
-            emit IEnglishAuction.RescuedSaleClosed(saleId);
-            return;
-        }
+        (LockedTerms memory lt, bool taken) = _settleWithToken(s, bidder, price, frozenOut);
         // Exact: a bid fits 96 bits and the share 17, so the product cannot overflow.
         uint256 fee = price * lt.feeShare / Splits.DENOMINATOR;
         _pay(lt.currency, lt.seller, price - fee, saleId);
@@ -441,19 +425,24 @@ contract EnglishAuction is
     }
 
     /// @notice Delivers a pending token to `to`. The winning bidder (the payer of the high bid)
-    ///         names any `to`; the recipient it named may claim only to itself. For an unsold
-    ///         work of a token other than 6529 Stream, the artist recorded at settlement claims
-    ///         it, or the artist the token reports now (L-5). An unsold 6529 Stream work is never
-    ///         pending: Stream moved it to the museum.
+    ///         names any `to` at any time; the recipient it named may claim to itself at any
+    ///         time, and to another address only from 30 days after the auction's end. For an
+    ///         unsold work of a token other than 6529 Stream, the artist recorded at settlement
+    ///         claims it, or the artist the token reports now (L-5). An unsold 6529 Stream work
+    ///         is never pending: Stream moved it to the museum.
     /// @param saleId The auction's sale ID.
     /// @param to The address that receives the token; neither zero nor this adapter, and the
-    ///        caller itself when the caller is the recipient but not the winning bidder.
-    /// @dev Only the winning bidder chooses a different address (RFX-SAL-1), so a recipient
-    ///      contract that cannot receive the token does not strand it, and a recipient contract
-    ///      that forwards calls cannot send it elsewhere. With no bids the artist, recorded at
-    ///      settlement or the active one the token reports (L-5), names any `to`. If neither the
-    ///      recipient nor the winning bidder can make the call, the token stays in custody: that
-    ///      is the winner's choice of recipient.
+    ///        caller itself when the caller is the recipient but not the winning bidder and the
+    ///        auction ended less than 30 days ago.
+    /// @dev RFX-SAL-1. The bidder chose the recipient, so for {_REDIRECT_DELAY} after the end
+    ///      (the stored end, after any pause) only the bidder may send the token elsewhere, and a
+    ///      recipient contract that forwards calls cannot redirect it first. After that the
+    ///      recipient may name another address too, so a recipient contract that can make calls
+    ///      but cannot receive the token, chosen by a bidder that cannot call, does not hold the
+    ///      work forever. With no bids the artist, recorded at settlement or the active one the
+    ///      token reports (L-5), names any `to`. If neither the recipient nor the winning bidder
+    ///      can make the call, the token stays in custody: that is the winner's choice of
+    ///      recipient.
     function claimDelivery(uint256 saleId, address to) external nonReentrant {
         Sale storage s = _sales[saleId];
         address pending = _recipientOf(s);
@@ -465,10 +454,14 @@ contract EnglishAuction is
                     && (bidder != address(0) || msg.sender != _unbidClaimant(s)))
         ) revert IEnglishAuction.NoPendingDelivery(saleId);
         // RFX-SAL-1: with a bid, a caller other than the bidder is the recipient, which may
-        // claim only to itself.
+        // claim to another address only {_REDIRECT_DELAY} after the end.
         if (
             to == address(0) || to == address(this)
-                || (bidder != address(0) && msg.sender != bidder && to != pending)
+                || (bidder != address(0)
+                    && msg.sender != bidder
+                    && to != pending
+                    // forge-lint: disable-next-line(block-timestamp)
+                    && block.timestamp < uint256(s.endTime) + _REDIRECT_DELAY)
         ) revert ISaleAdapter.InvalidRecipient(to);
         s.flags &= ~_DELIVERY_PENDING;
         IERC721(s.token).safeTransferFrom(address(this), to, s.tokenId);
@@ -1058,21 +1051,11 @@ contract EnglishAuction is
     ///      MONEY-1: an ERC-20 payout runs in its own frame ({settlePayout}); if it fails for
     ///      any reason (the token changed behaviour, or blocks this adapter so even the escrow
     ///      route fails), the amount is credited to the wallet here, and anyone may later pay it
-    ///      out with `claimFor`. Delivery never waits on a payout. An ETH payout fails only by
-    ///      gas, which reverts, or when the token names the zero address or the escrow as the
-    ///      wallet, which the escrow refuses: that reverts too, until {_FREEZE_EXIT} after the
-    ///      sale's end, and is then credited to the wallet, so the sale completes (RFX-SAL-3).
+    ///      out with `claimFor`. Delivery never waits on a payout. ETH payouts cannot fail but
+    ///      by gas, which reverts.
     function _pay(address currency, address wallet, uint256 amount, uint256 saleId) private {
         if (amount == 0) return;
         if (currency == CURRENCY_ETH) {
-            if (
-                (wallet == address(0) || wallet == _escrow)
-                    // forge-lint: disable-next-line(block-timestamp)
-                    && block.timestamp >= uint256(_sales[saleId].endTime) + _FREEZE_EXIT
-            ) {
-                _credit(wallet, currency, saleId, amount);
-                return;
-            }
             RevenuePayment.payETH(IRevenueEscrow(_escrow), wallet, amount, _PAYOUT_GAS);
             return;
         }
@@ -1131,14 +1114,13 @@ contract EnglishAuction is
     ///      which must not be zero (`InvalidRecipient`, while a recovery override is pending).
     function _settleWithToken(Sale storage s, address bidder, uint256 price, bool frozenOut)
         private
-        returns (bool reported, LockedTerms memory lt, bool taken)
+        returns (LockedTerms memory lt, bool taken)
     {
         PrimaryOutcome outcome = bidder != address(0)
             ? PrimaryOutcome.SOLD
             : frozenOut ? PrimaryOutcome.FROZEN_OUT : PrimaryOutcome.UNBID;
-        PrimarySettlement memory p;
-        (reported, p) = _report(s, outcome, bidder, price);
-        if (!reported) return (false, lt, false);
+        PrimarySettlement memory p = IMintTarget(s.token)
+            .settlePrimary(s.tokenId, outcome, bidder, _terms[s.termsId].currency, price);
         lt = _lock(s, p.seller, p.feeRecipient, p.feeShare);
         if (bidder == address(0)) {
             address owner = IERC721(s.token).ownerOf(s.tokenId);
@@ -1147,42 +1129,6 @@ contract EnglishAuction is
             if (to == address(0)) revert ISaleAdapter.InvalidRecipient(to);
             s.recipient = to;
             s.flags |= _RECIPIENT_SET;
-        }
-    }
-
-    /// @dev Calls the token's `settlePrimary`. A sale with a standing bid that ended
-    ///      {_FREEZE_EXIT} ago or more gives it a frame of exactly {_REPORT_GAS}, which the caller
-    ///      must be able to forward in full, and returns false if it fails, so that `settle`
-    ///      closes the sale with a refund (RFX-SAL-3). Otherwise a failure reverts with the
-    ///      token's reason, so a passing fault cannot end a sale.
-    function _report(Sale storage s, PrimaryOutcome outcome, address bidder, uint256 price)
-        private
-        returns (bool reported, PrimarySettlement memory settlement)
-    {
-        // forge-lint: disable-next-line(block-timestamp)
-        bool exit = bidder != address(0) && block.timestamp >= uint256(s.endTime) + _FREEZE_EXIT;
-        uint256 gasLimit = gasleft();
-        if (exit) {
-            gasLimit = _REPORT_GAS;
-            if (!BoundedCall.hasSufficientGas(gasleft(), gasLimit, DELIVERY_RESERVE)) {
-                revert BoundedCall.BoundedCallInsufficientGas(gasLimit);
-            }
-        }
-        try IMintTarget(s.token).settlePrimary{ gas: gasLimit }(
-            s.tokenId, outcome, bidder, _terms[s.termsId].currency, price
-        ) returns (
-            PrimarySettlement memory p
-        ) {
-            (reported, settlement) = (true, p);
-        } catch {
-            // Before the exit the token's reason is passed on. The copy starts at offset 0, which
-            // is not memory-safe and need not be: the frame reverts at once.
-            if (!exit) {
-                assembly {
-                    returndatacopy(0, 0, returndatasize())
-                    revert(0, returndatasize())
-                }
-            }
         }
     }
 

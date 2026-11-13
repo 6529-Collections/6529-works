@@ -406,14 +406,22 @@ contract AuctionHaltsHandler is Test {
         uint256 saleId = _sale(saleSeed);
         address claimant = auction.pendingDelivery(saleId);
         if (claimant == address(0)) return;
-        address winner = auction.auction(saleId).bidder;
+        IEnglishAuction.Auction memory a = auction.auction(saleId);
+        address winner = a.bidder;
         address to = sink;
-        // RFX-SAL-1: only the winning bidder names another address; the recipient its bid named
-        // claims to itself, and one that refuses the token (the hostile actor) leaves the claim
-        // to the bidder.
-        if (winner != address(0) && claimant != winner) {
-            if (asWinner || claimant == address(hostile)) claimant = winner;
-            else to = claimant;
+        // RFX-SAL-1: the winning bidder names any address; the recipient its bid named claims
+        // to itself, and to another address only from 30 days after the end. Before then a
+        // recipient that refuses the token (the hostile actor) leaves the claim to the bidder.
+        if (winner != address(0) && claimant != winner && !asWinner) {
+            if (block.timestamp < uint256(a.endTime) + 30 days) {
+                _expectRedirectRefused(saleId, claimant);
+                if (claimant == address(hostile)) claimant = winner;
+                else to = claimant;
+            } else {
+                ++hits["recipientRedirect"];
+            }
+        } else if (winner != address(0) && claimant != winner) {
+            claimant = winner;
         }
         if (claimant == address(hostile)) {
             hostile.execute(
@@ -424,6 +432,19 @@ contract AuctionHaltsHandler is Test {
             auction.claimDelivery(saleId, to);
         }
         ++hits["delivery"];
+    }
+
+    /// @dev Within 30 days of the end the recipient's claim to another address is refused.
+    function _expectRedirectRefused(uint256 saleId, address recipient) internal {
+        bytes memory claim = abi.encodeCall(auction.claimDelivery, (saleId, sink));
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, sink));
+        if (recipient == address(hostile)) {
+            hostile.execute(address(auction), 0, claim);
+        } else {
+            vm.prank(recipient);
+            auction.claimDelivery(saleId, sink);
+        }
+        ++hits["redirectRefused"];
     }
 
     function toggleStartPause() external {

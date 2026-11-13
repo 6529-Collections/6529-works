@@ -134,10 +134,7 @@ interface IEnglishAuction is ISaleAdapter {
     /// @notice The sale of a work governance rescued to the museum (`IStream.rescueToMuseum`,
     ///         owner decision 20) ended: the token already recorded the work as settled, so
     ///         nothing was reported, paid, minted or delivered, and the standing bid, if any, was
-    ///         credited back to its bidder (`Credited`). The auction is SETTLED. Also emitted
-    ///         when a token refused to settle a sale with a standing bid 60 days or more after
-    ///         its end (RFX-SAL-3): the token recorded nothing, and the work stays in the
-    ///         auction's custody.
+    ///         credited back to its bidder (`Credited`). The auction is SETTLED.
     /// @param saleId The auction's sale ID.
     event RescuedSaleClosed(uint256 indexed saleId);
     /// @notice The governed auction parameters changed.
@@ -215,21 +212,20 @@ interface IEnglishAuction is ISaleAdapter {
     ///         credited back and the work goes where an unbid work goes, the museum for 6529
     ///         Stream and the artist for any other token (MARKET-2; ADR 0005, owner decision 10).
     ///         A sale of a federated contract the registry has since delisted settles the same
-    ///         way, to its artist (MARKET-5). From 60 days after the end, a token that refuses
-    ///         to settle a sale with a standing bid no longer holds the bid: the sale closes
-    ///         with the bid credited back (`RescuedSaleClosed`), and an ETH payout to a wallet
-    ///         the escrow refuses is credited to that wallet (RFX-SAL-3).
+    ///         way, to its artist (MARKET-5).
     /// @param saleId The ended auction's sale ID.
     function settle(uint256 saleId) external;
     /// @notice Delivers a pending token to `to`. The winning bidder (the payer of the high bid)
-    ///         names any `to`; the recipient it named may claim only to itself. For an unsold
-    ///         work of a token other than 6529 Stream, the artist recorded at settlement claims
-    ///         it, or the artist the token reports now (L-5). An unsold 6529 Stream work is never
-    ///         pending: Stream moved it to the museum.
+    ///         names any `to` at any time; the recipient it named may claim to itself at any
+    ///         time, and to another address only from 30 days after the auction's end, so the
+    ///         bidder acts first and a recipient that cannot receive the token does not hold it
+    ///         forever. For an unsold work of a token other than 6529 Stream, the artist recorded
+    ///         at settlement claims it, or the artist the token reports now (L-5). An unsold 6529
+    ///         Stream work is never pending: Stream moved it to the museum.
     /// @param saleId The auction's sale ID.
     /// @param to The address that receives the token; neither zero nor this adapter, and the
-    ///        caller itself when the caller is the recipient but not the winning bidder
-    ///        (`InvalidRecipient`).
+    ///        caller itself when the caller is the recipient but not the winning bidder and the
+    ///        auction ended less than 30 days ago (`InvalidRecipient`).
     function claimDelivery(uint256 saleId, address to) external;
     /// @notice Sends all of `account`'s credits in ERC-20 `currency` to `account` itself.
     ///         Permissionless: a seller split wallet or fee wallet whose ERC-20 payout failed at
