@@ -207,9 +207,11 @@ contract HostileActor is IERC721Receiver {
         onNft = nft;
     }
 
+    /// @dev Also re-arms the one re-entry.
     function setReentry(address target, bytes calldata data) external {
         reentryTarget = target;
         reentryData = data;
+        reentered = false;
     }
 
     function execute(address to, uint256 value, bytes calldata data)

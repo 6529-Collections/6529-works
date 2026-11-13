@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { Roles } from "src/governance/Roles.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
+import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { Role, Statement } from "src/interfaces/IStatementLog.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
@@ -26,6 +27,7 @@ import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { ContentAddresses } from "../../helpers/ContentAddresses.sol";
+import { HostileActor } from "../../mocks/sales/AuctionMocks.sol";
 import { IntegrationBase } from "../IntegrationBase.sol";
 
 /// @notice The handler of the Stream lifecycle invariant suite: one actor set driving 6529 Stream,
@@ -38,9 +40,10 @@ import { IntegrationBase } from "../IntegrationBase.sol";
 ///      `try` when the prediction is a refusal) and records any disagreement in `violations`.
 ///
 ///      Actors: three artists (each with five works in one package, one of which copies another
-///      artist's media), one collaborator credited on some works, three ETH bidders, the genesis
-///      holders (curation signer, curator, platform, guardians, hot admin) and the keys that
-///      recoveries install. Packages are built in `setUp`; artist 0's is approved and accepted
+///      artist's media), one collaborator credited on some works, three ETH bidders, a hostile
+///      contract that bids and receives works (it reverts, burns its gas or re-enters the auction
+///      when paid or delivered to), the genesis holders (curation signer, curator, platform,
+///      guardians, hot admin) and the keys that recoveries install. Packages are built in `setUp`; artist 0's is approved and accepted
 ///      there, the others by the `register` and `accept` actions.
 abstract contract StreamLifecycleHandler is IntegrationBase {
     uint256 internal constant ARTISTS = 3;
@@ -99,6 +102,9 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
     address[ARTISTS] internal lcArtists;
     address internal lcCollaborator;
     address[BIDDERS] internal lcBidders;
+    /// @dev A bidder and recipient that reverts, burns its gas or re-enters the auction when it
+    ///      receives ETH or a work, as each action sets it (RFX-SAL-4).
+    HostileActor internal lcHostile;
     /// @dev Every account that can hold a Stream token: actors, recovered keys, the auction and
     ///      the museum.
     address[] internal holders;
@@ -141,6 +147,8 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             lcBidders[i] = makeAddr(string.concat("lifecycleBidder", vm.toString(i)));
             holders.push(lcBidders[i]);
         }
+        lcHostile = new HostileActor();
+        holders.push(address(lcHostile));
         holders.push(address(auction));
         holders.push(museum);
         byTextFileId = _storeText("Creative Commons Attribution 4.0 (fixture)", "text/plain");
@@ -287,6 +295,10 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             _startConsumed(seed);
             return;
         }
+        if (auction.paused()) {
+            _pausedStart(p);
+            return;
+        }
         StartCase memory c = _startCase(p, bidSeed);
         bytes memory data = _mintRequest(p, artists.authorityOf(c.leadId), c.nonce);
         (bool ok, uint256 saleId, uint256 paid) = _startAuction(data, bidSeed);
@@ -314,6 +326,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         _ethBid(saleId, lcBidders[bidderSeed % BIDDERS], amount);
         ghostEthIn += amount;
         ++hits["bid"];
+        if (auction.paused()) ++hits["pausedBid"];
     }
 
     /// @notice Settles an ended auction (a quarter of the time, warping to the end of a live one
@@ -332,9 +345,19 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         IEnglishAuction.Auction memory a = auction.auction(t.saleId);
         bool restrained = artists.activeAuthorityOf(stream.artistOf(tokenId)) == address(0);
         try auction.settle(t.saleId) {
+            if (auction.paused()) ++hits["pausedSettle"];
             if (a.bidder != address(0)) {
-                t.owner = a.recipient;
                 ghostEthOut += a.bid;
+                t.owner = a.recipient;
+                if (auction.pendingDelivery(t.saleId) != address(0)) {
+                    // Only the hostile recipient refuses a work; it stays in custody, pending.
+                    if (a.recipient != address(lcHostile)) _violation("a delivery failed");
+                    t.owner = address(auction);
+                    ++hits["deliveryPending"];
+                } else if (a.recipient == address(lcHostile)) {
+                    if (lcHostile.reentryOk()) _violation("a delivery re-entered the auction");
+                    ++hits["hostileReceived"];
+                }
             } else {
                 t.owner = museum;
                 t.unbid = true;
@@ -431,6 +454,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
     /// @dev Right after a release, another artist's copy of the same content tries to take it:
     ///      the release reserves it for the beneficiary (`ContentReserved`).
     function _raceReservedContent(bytes32 contentHash, uint256 beneficiary) internal {
+        if (auction.paused()) return;
         for (uint256 p; p < pool.length; ++p) {
             PoolItem storage it = pool[p];
             uint256 leadId = uint160(lcArtists[it.lead]);
@@ -474,6 +498,146 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
     function warp(uint256 secondsSeed) external {
         vm.warp(block.timestamp + _bound(secondsSeed, 1 minutes, 12 hours));
         ++hits["warp"];
+    }
+
+    // ------------------------------------------------------------------ actions: the adapter
+
+    /// @notice The adapter's emergency pause (RFX-SAL-4): a guardian pauses (PAUSER, immediate)
+    ///         a third of the time it is not paused, and the hot admin unpauses (UNPAUSER, 48
+    ///         hours after scheduling, never sooner than 48 hours after the pause) when it is.
+    ///         Only starts stop: live auctions bid, settle and claim on.
+    function toggleStartPause(uint256 seed) external {
+        if (!auction.paused()) {
+            if (seed % 3 != 0) return;
+            vm.prank(guardian1);
+            auction.pause();
+            ++hits["startPaused"];
+            return;
+        }
+        _govern(hotAdmin, address(auction), abi.encodeCall(auction.unpause, ()));
+        if (auction.paused()) _violation("a governed unpause did not land");
+        ++hits["startUnpaused"];
+    }
+
+    /// @notice A hostile contract takes part in a live auction (RFX-SAL-4): it outbids for
+    ///         itself, or a bidder names it as the recipient. When it later receives ETH or the
+    ///         work it reverts, burns all its gas or re-enters the auction, as `modeSeed` sets.
+    function hostileBid(uint256 seed, uint256 modeSeed, uint256 amountSeed) external {
+        (bool found, uint256 tokenId) = _sale(seed, IEnglishAuction.AuctionState.ACTIVE);
+        if (!found) return;
+        uint256 saleId = tok[tokenId].saleId;
+        _configureHostile(modeSeed);
+        uint256 minimum = auction.minimumBid(saleId);
+        uint256 amount = _bound(amountSeed, minimum, minimum + 3 ether);
+        if (modeSeed % 2 == 0) {
+            address hostile = address(lcHostile);
+            vm.deal(hostile, hostile.balance + amount);
+            Payment memory payment = Payment(PaymentMethod.DIRECT, hostile, amount, 0, 0, "");
+            lcHostile.execute(
+                address(auction), amount, abi.encodeCall(auction.bid, (saleId, hostile, payment))
+            );
+            ++hits["hostileBid"];
+        } else {
+            address bidder = lcBidders[(modeSeed >> 8) % BIDDERS];
+            vm.deal(bidder, bidder.balance + amount);
+            vm.prank(bidder);
+            auction.bid{ value: amount }(
+                saleId, address(lcHostile), Payment(PaymentMethod.DIRECT, bidder, amount, 0, 0, "")
+            );
+            ++hits["hostileRecipient"];
+        }
+        ghostEthIn += amount;
+    }
+
+    /// @notice The hostile contract claims its ETH credits to itself, within a bounded gas
+    ///         budget: reverting or burning its gas, it keeps the credit (`ClaimFailed`);
+    ///         re-entering, it is refused the re-entry and paid.
+    function hostileClaim(uint256 modeSeed) external {
+        address hostile = address(lcHostile);
+        uint256 owed = auction.claimable(hostile, CURRENCY_ETH);
+        if (owed == 0) return;
+        _configureHostile(modeSeed);
+        bool reenters = lcHostile.onEth() == HostileActor.Behaviour.REENTER;
+        try lcHostile.execute{ gas: 2_000_000 }(
+            address(auction), 0, abi.encodeCall(auction.claim, (CURRENCY_ETH, hostile))
+        ) {
+            if (!reenters) _violation("a refusing receiver was paid");
+            if (lcHostile.reentryOk()) _violation("a claim was re-entered");
+            ghostEthOut += owed;
+            ++hits["hostileReentryRefused"];
+        } catch (bytes memory reason) {
+            if (reenters || bytes4(reason) != ISaleAdapter.ClaimFailed.selector) {
+                _violation("a claim failed for another reason");
+            }
+            if (auction.claimable(hostile, CURRENCY_ETH) != owed) _violation("a credit was lost");
+            ++hits["hostileClaimKept"];
+        }
+    }
+
+    /// @notice A pending delivery (the hostile recipient refused the work) is claimed
+    ///         (RFX-SAL-1). A third party first routes a claim through the hostile recipient to
+    ///         itself, which must be refused unless the hostile is also the winning bidder; then
+    ///         the winning bidder claims, to itself or, as the hostile, to a bidder.
+    function claimDelivery(uint256 seed) external {
+        for (uint256 k; k < ghostMinted; ++k) {
+            uint256 tokenId = (seed % ghostMinted + k) % ghostMinted + 1;
+            TokenGhost storage t = tok[tokenId];
+            if (t.burned || t.owner != address(auction)) continue;
+            uint256 saleId = t.saleId;
+            if (auction.pendingDelivery(saleId) == address(0)) continue;
+            address winner = auction.auction(saleId).bidder;
+            address stranger = lcBidders[seed % BIDDERS];
+            if (stranger == winner) stranger = lcBidders[(seed + 1) % BIDDERS];
+            bytes memory toStranger = abi.encodeCall(auction.claimDelivery, (saleId, stranger));
+            if (winner != address(lcHostile)) {
+                vm.prank(stranger);
+                try lcHostile.execute(address(auction), 0, toStranger) {
+                    _violation("a forwarding recipient sent the work elsewhere");
+                } catch (bytes memory reason) {
+                    if (bytes4(reason) != ISaleAdapter.InvalidRecipient.selector) {
+                        _violation("a forwarded claim failed for another reason");
+                    }
+                    ++hits["forwardedClaimRefused"];
+                }
+                vm.prank(winner);
+                auction.claimDelivery(saleId, winner);
+                t.owner = winner;
+            } else {
+                lcHostile.execute(address(auction), 0, toStranger);
+                t.owner = stranger;
+            }
+            ++hits["deliveryClaimed"];
+            return;
+        }
+    }
+
+    /// @dev Sets what the hostile contract does on receiving ETH and on receiving a work, and
+    ///      re-arms its re-entry: a claim of its own credits, which the guard must refuse.
+    function _configureHostile(uint256 modeSeed) internal {
+        HostileActor.Behaviour[3] memory modes = [
+            HostileActor.Behaviour.REVERT,
+            HostileActor.Behaviour.BURN_GAS,
+            HostileActor.Behaviour.REENTER
+        ];
+        lcHostile.configure(modes[(modeSeed >> 16) % 3], modes[(modeSeed >> 24) % 3]);
+        lcHostile.setReentry(
+            address(auction), abi.encodeCall(auction.claim, (CURRENCY_ETH, address(lcHostile)))
+        );
+    }
+
+    /// @dev While the adapter is paused every start is refused (`SalePaused`), whatever its item;
+    ///      the move's nonce is not consumed.
+    function _pausedStart(uint256 p) internal {
+        uint256 leadId = uint160(lcArtists[pool[p].lead]);
+        bytes memory data = _mintRequest(p, artists.authorityOf(leadId), nextMoveNonce[leadId]);
+        try auction.start(address(stream), data) {
+            _violation("a start succeeded while the adapter was paused");
+        } catch (bytes memory reason) {
+            if (bytes4(reason) != ISaleAdapter.SalePaused.selector) {
+                _violation("a paused start failed for another reason");
+            }
+            ++hits["pausedStart"];
+        }
     }
 
     // ------------------------------------------------------------------ actions: records
@@ -732,7 +896,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
     ///      is live, burned or released (an item is single-use and a burned one is tombstoned).
     function _startConsumed(uint256 seed) internal {
         PoolItem storage it = pool[seed % pool.length];
-        if (it.tokenId == 0) return;
+        if (it.tokenId == 0 || auction.paused()) return;
         uint256 leadId = uint160(lcArtists[it.lead]);
         address signer = artists.authorityOf(leadId);
         bytes memory data = _mintRequest(seed % pool.length, signer, nextMoveNonce[leadId]++);
@@ -1058,7 +1222,8 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         assertEq(stream.balanceOf(museum), unbid, "the museum holds only unbid works");
     }
 
-    /// @dev Every token has exactly one owner, or is in auction custody while its sale runs.
+    /// @dev Every token has exactly one owner, or is in auction custody while its sale runs or
+    ///      its delivery is pending.
     function _assertOwnership() internal view {
         uint256 held;
         for (uint256 h; h < holders.length; ++h) {
@@ -1076,13 +1241,13 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
                 continue;
             }
             assertEq(stream.ownerOf(tokenId), t.owner, "the token is where its sale put it");
-            bool custody = t.owner == address(auction);
+            bool settled = state == IEnglishAuction.AuctionState.SETTLED;
             assertEq(
-                custody,
-                state != IEnglishAuction.AuctionState.SETTLED,
-                "custody exactly while the sale is unsettled"
+                t.owner == address(auction),
+                !settled || auction.pendingDelivery(t.saleId) != address(0),
+                "custody exactly while the sale is unsettled or its delivery pending"
             );
-            assertEq(stream.primarySaleSettled(tokenId), !custody, "settled exactly once sold");
+            assertEq(stream.primarySaleSettled(tokenId), settled, "settled exactly once sold");
         }
     }
 
@@ -1176,6 +1341,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         for (uint256 i; i < BIDDERS; ++i) {
             owed += auction.claimable(lcBidders[i], CURRENCY_ETH);
         }
+        owed += auction.claimable(address(lcHostile), CURRENCY_ETH);
         for (uint256 tokenId = 1; tokenId <= ghostMinted; ++tokenId) {
             IEnglishAuction.Auction memory a = auction.auction(tok[tokenId].saleId);
             if (
