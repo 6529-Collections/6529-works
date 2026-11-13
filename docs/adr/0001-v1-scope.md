@@ -7,7 +7,9 @@ Glamsterdam are in [ADR 0004](0004-gas-budgets-under-glamsterdam.md). The editio
 6529 Stream Editions name and where an unbid work goes (§1–§3, §5, §6, §12, §16, §17 and the
 non-goals) are amended by [ADR 0005](0005-stream-editions-auction.md). The size budget, and
 the route into 6529 Stream (§2 and §3), are amended on 1 November 2026 (see
-[Amendments](#amendments)).
+[Amendments](#amendments)). Royalty-rate changes (§7) are made lower-only, and the lead artist may
+renounce powers over a work (§10), by [ADR 0006](0006-work-powers-and-conventions.md)
+(13 November 2026).
 
 Origin: this decision was accepted in the 6529Stream repository as ADR 0055
 (6529Stream PR #745),
