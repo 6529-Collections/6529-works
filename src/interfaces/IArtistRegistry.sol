@@ -295,7 +295,8 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
         external
         returns (uint256 artistId);
     /// @notice Stages a STANDARD change signed by `signer` (the current authority or an
-    ///         established consolidated wallet) as `Typehashes.IDENTITY_CHANGE`.
+    ///         established consolidated wallet that was never an authority of this artist) as
+    ///         `Typehashes.IDENTITY_CHANGE`.
     ///         `authorityAcceptance` is the new authority's signature over the same payload when
     ///         the authority changes, empty otherwise. Captures the cancellers.
     /// @param artistId The artist to change.
@@ -374,7 +375,7 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @param artistId The artist whose due change is applied.
     function executeChange(uint256 artistId) external;
     /// @notice Records signed activity. Callable by the authority or an established consolidated
-    ///         wallet. Never on the auction-start path.
+    ///         wallet that was never an authority of this artist. Never on the auction-start path.
     /// @param artistId The artist whose activity is recorded; its standing is refreshed too.
     function heartbeat(uint256 artistId) external;
     /// @notice The authority burns its current change nonce, so a change it pre-signed can never

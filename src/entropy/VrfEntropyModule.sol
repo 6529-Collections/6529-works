@@ -44,7 +44,8 @@ import { IVRFCoordinatorV2Plus } from "./IVRFCoordinatorV2Plus.sol";
 ///      artist, a relayer, a bot) with no privileged step, while the total possible spend is one
 ///      draw per approved VRF content, plus a repeat per `retryDelay` for each one whose draw
 ///      never arrived. A guardian's `revokePackage` stops further requests at once. The gate is
-///      checked on every call, repeats included.
+///      checked on every call, repeats included. Its one exception requests nothing: the item
+///      that consumed a content whose seed is delivered may still link to that seed.
 ///
 ///      Repeat. A request still undelivered `retryDelay` seconds after it was made may be
 ///      requested again by anyone. A repeat ADDS a request and never invalidates an earlier one:
@@ -180,7 +181,11 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     ///      approved in the package registry, `proof` places the item in it, and the item's content
     ///      hash is nonzero and unconsumed. An item not yet linked is linked to its content's draw
     ///      (`SeedLinked`); if that draw is delivered or pending, the call ends there and returns
-    ///      zero. Otherwise, if the content's seed is not delivered and no request is outstanding
+    ///      zero. Once the content is consumed the gate refuses every item but one: the item that
+    ///      consumed it (`consumedItemOf`), with the content's seed already delivered, may still
+    ///      be linked, with no proof or package check, no request and no coordinator call, so a
+    ///      work minted on its content's seed without a link of its own can be read by item hash.
+    ///      Otherwise, if the content's seed is not delivered and no request is outstanding
     ///      (or `retryDelay` has passed since the last one), requests one random word. A repeat
     ///      adds a request; every outstanding request may still deliver, and the first delivery
     ///      wins. The request time is written before the coordinator is called and the request ID
@@ -198,10 +203,14 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         returns (uint256 requestId)
     {
         bytes32 itemHash = WorksHashing.itemHashCalldata(item);
-        if (!_requestable(item, itemHash, packageRoot, proof)) revert NotRequestable(itemHash);
         bytes32 contentHash = item.contentHash;
         Seed storage seed = _seeds[contentHash];
         bool joined = _contentOf[itemHash] == 0;
+        // The minted item's link-only path: it returns below at `seed.delivered && joined`.
+        if (
+            !_requestable(item, itemHash, packageRoot, proof)
+                && !(joined && seed.delivered && _isConsumedBy(item, itemHash))
+        ) revert NotRequestable(itemHash);
         if (joined) {
             _contentOf[itemHash] = contentHash;
             emit SeedLinked(itemHash, contentHash);
@@ -403,6 +412,17 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         return status == IPackageRegistry.PackageStatus.APPROVED
             && MerkleProof.verifyCalldata(proof, packageRoot, WorksHashing.leaf(itemHash))
             && packageRegistry.consumedItemOf(item.contentHash) == 0;
+    }
+
+    /// @dev Whether `item` is the VRF item that consumed its content in the package registry,
+    ///      that is, the item of a minted work.
+    function _isConsumedBy(PackageItem calldata item, bytes32 itemHash)
+        private
+        view
+        returns (bool)
+    {
+        return item.seedPolicy == SeedPolicy.VRF
+            && packageRegistry.consumedItemOf(item.contentHash) == itemHash;
     }
 
     function _validate(VrfConfig memory c) private pure {

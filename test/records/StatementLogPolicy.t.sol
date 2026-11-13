@@ -17,6 +17,8 @@ import {
     OZERC1155Mock,
     OZERC721Mock
 } from "../mocks/records/RecordsMocks.sol";
+import { IStream } from "src/interfaces/IStream.sol";
+import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { ReturnDataMock } from "../mocks/libraries/AdversarialTargets.sol";
 import { EvilResolverMock, ForwardingResolverMock } from "../mocks/records/RecordsResolvers.sol";
 
@@ -387,6 +389,55 @@ contract StatementLogPolicyTest is StatementLogFixture {
         }
     }
 
+    /// @dev A token that declares `IStream` by ERC-165 and whose `coreOf` fails is refused: a
+    ///      failed read must not pass for "no outcome". Its definitive `UnknownWork` (a burned
+    ///      or unminted token) still reads as zero, and a full answer is followed.
+    /// Regression: RFX-REC-2
+    function test_LatestDisputeOutcome_AStreamWhoseCoreReadFailsReverts() public {
+        bytes32 itemHash = keccak256("an item");
+        Statement memory dispute = _statement(address(0), uint256(itemHash));
+        dispute.kind = StatementKinds.DISPUTE_OUTCOME;
+        vm.prank(platform);
+        bytes32 outcome = stmtLog.appendPlatform(dispute);
+
+        StreamCoreMock token = new StreamCoreMock(itemHash);
+        assertEq(stmtLog.latestDisputeOutcome(address(token), 1), outcome, "a full answer");
+        token.setMode(StreamCoreMock.Mode.UNKNOWN_WORK);
+        assertEq(stmtLog.latestDisputeOutcome(address(token), 1), bytes32(0), "no such work");
+
+        StreamCoreMock.Mode[3] memory failures = [
+            StreamCoreMock.Mode.OTHER_REVERT,
+            StreamCoreMock.Mode.OUT_OF_GAS,
+            StreamCoreMock.Mode.SHORT_ANSWER
+        ];
+        for (uint256 i; i < failures.length; ++i) {
+            token.setMode(failures[i]);
+            vm.expectRevert(
+                abi.encodeWithSelector(BoundedCall.BoundedCallFailed.selector, address(token))
+            );
+            stmtLog.latestDisputeOutcome(address(token), 1);
+        }
+
+        // A token's own outcome is answered without reading `coreOf` at all.
+        Statement memory own = _statement(address(token), 1);
+        own.kind = StatementKinds.DISPUTE_OUTCOME;
+        vm.prank(platform);
+        bytes32 tokenOutcome = stmtLog.appendPlatform(own);
+        assertEq(stmtLog.latestDisputeOutcome(address(token), 1), tokenOutcome);
+    }
+
+    /// @dev A token that does not declare `IStream` keeps the tolerant answer, zero, whatever
+    ///      its `coreOf` does (the artist registry asks about itself this way).
+    /// Regression: RFX-REC-2
+    function test_LatestDisputeOutcome_ANonStreamTokenStillReadsZero() public {
+        ReturnDataMock token = new ReturnDataMock();
+        token.configure(abi.encodeWithSignature("Error(string)", "no"), true);
+        assertEq(stmtLog.latestDisputeOutcome(address(token), 1), bytes32(0));
+        token.configure(abi.encodeWithSelector(IStream.UnknownWork.selector, 1), true);
+        assertEq(stmtLog.latestDisputeOutcome(address(token), 1), bytes32(0));
+        assertEq(stmtLog.latestDisputeOutcome(address(0xC0DE), 1), bytes32(0), "no code");
+    }
+
     // ----------------------------------------------------- relayed nonce event
 
     function test_Relay_EmitsTheNonceAndDirectEntriesDoNot() public {
@@ -695,5 +746,56 @@ contract StatementLogPolicyTest is StatementLogFixture {
         vm.expectRevert(IStatementLog.InvalidGovernanceManifest.selector);
         vm.prank(governor);
         manager.execute(address(stmtLog), viaGovernance);
+    }
+}
+
+/// @dev A Stream-shaped token for the dispute fallback: declares `IStream` by ERC-165 and
+///      answers `coreOf` in full, with `UnknownWork`, another revert, by running out of gas, or
+///      with a short answer.
+contract StreamCoreMock {
+    enum Mode {
+        ANSWER,
+        UNKNOWN_WORK,
+        OTHER_REVERT,
+        OUT_OF_GAS,
+        SHORT_ANSWER
+    }
+
+    bytes32 internal immutable item;
+    Mode public mode;
+
+    constructor(bytes32 item_) {
+        item = item_;
+    }
+
+    function setMode(Mode next) external {
+        mode = next;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IStream).interfaceId || interfaceId == 0x01ffc9a7;
+    }
+
+    function coreOf(uint256 tokenId)
+        external
+        view
+        returns (bytes32, uint256, uint256, uint8, uint8, uint32)
+    {
+        Mode m = mode;
+        if (m == Mode.UNKNOWN_WORK) revert IStream.UnknownWork(tokenId);
+        if (m == Mode.OTHER_REVERT) revert("broken");
+        if (m == Mode.OUT_OF_GAS) {
+            assembly ("memory-safe") {
+                invalid()
+            }
+        }
+        if (m == Mode.SHORT_ANSWER) {
+            bytes32 word = item;
+            assembly ("memory-safe") {
+                mstore(0, word)
+                return(0, 32)
+            }
+        }
+        return (item, 1, 1, 0, 0, 0);
     }
 }

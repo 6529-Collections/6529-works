@@ -785,6 +785,90 @@ contract VrfEntropyModuleTest is EntropyBase {
         module.requestSeed(item, revisionRoot, new bytes32[](0));
     }
 
+    /// @dev A work can mint on its content's seed without its own item having been linked (the
+    ///      content was seeded through another package's item). After that mint consumed the
+    ///      content, its item still links to the delivered seed so that it reads by item hash: no
+    ///      request, no coordinator call, and no proof or package status needed (the
+    ///      registry's consumption record names the item).
+    /// Regression: RFX-ENT-1
+    function test_Content_TheConsumingItemLinksToTheDeliveredSeedAfterConsumption() public {
+        coordinator.fulfill(_request(0), 42);
+        (PackageItem memory item, bytes32 revisionRoot) = _revision();
+        bytes32 revision = _hash(item);
+        // The revision minted on the content's seed: it consumed the content, unlinked.
+        registry.setConsumedBy(item.contentHash, revision);
+        registry.setStatus(revisionRoot, IPackageRegistry.PackageStatus.REVOKED);
+        vm.expectRevert(abi.encodeWithSelector(IEntropyModule.SeedNotDelivered.selector, revision));
+        module.seedOf(revision);
+
+        uint256 nextId = coordinator.nextId();
+        vm.expectEmit(true, true, false, false, address(module));
+        emit SeedLinked(revision, item.contentHash);
+        vm.recordLogs();
+        vm.prank(stranger);
+        assertEq(module.requestSeed(item, bytes32(0), new bytes32[](0)), 0);
+        assertEq(_countModuleLogs(IEntropyModule.SeedRequested.selector), 0, "no request");
+        assertEq(coordinator.nextId(), nextId, "the coordinator was not asked");
+        assertTrue(module.isDelivered(revision));
+        assertEq(module.seedOf(revision), bytes32(uint256(42)));
+        (uint256 requestId,) = module.requestOf(revision);
+        assertEq(requestId, 0);
+        // Linked once: the exception covers only the first link; the gate refuses a repeat.
+        vm.expectRevert(_notRequestable(revision));
+        module.requestSeed(item, bytes32(0), new bytes32[](0));
+    }
+
+    /// @dev After consumption nothing can start a draw: the consuming item of a content whose
+    ///      seed is pending or was never requested is refused, before and after `retryDelay`,
+    ///      and the coordinator is not asked.
+    /// Regression: RFX-ENT-1
+    function test_Gate_AfterConsumptionNoDrawIsRequested() public {
+        _request(0);
+        (PackageItem memory item, bytes32 revisionRoot) = _revision();
+        bytes32 revision = _hash(item);
+        registry.setConsumedBy(item.contentHash, revision);
+        uint256 nextId = coordinator.nextId();
+        vm.expectRevert(_notRequestable(revision));
+        module.requestSeed(item, revisionRoot, new bytes32[](0));
+        vm.warp(block.timestamp + RETRY_DELAY);
+        vm.expectRevert(_notRequestable(revision));
+        module.requestSeed(item, revisionRoot, new bytes32[](0));
+        // A content never requested: its own consuming item cannot open a draw either.
+        registry.setConsumedBy(_item(1).contentHash, items[1]);
+        vm.expectRevert(_notRequestable(items[1]));
+        module.requestSeed(_item(1), root, proofs[1]);
+        assertEq(coordinator.nextId(), nextId, "the coordinator was not asked");
+        assertFalse(module.isDelivered(revision));
+        assertFalse(module.isDelivered(items[1]));
+    }
+
+    /// @dev After consumption only the consuming item links, and only to its own content: an
+    ///      item of the same content that did not consume it, an item whose own content has no
+    ///      delivered seed (whatever else is seeded), and a non-VRF consuming item are refused.
+    /// Regression: RFX-ENT-1
+    function test_Gate_AfterConsumptionOnlyTheConsumingItemLinksToItsOwnContent() public {
+        coordinator.fulfill(_request(0), 42);
+        (PackageItem memory item, bytes32 revisionRoot) = _revision();
+        bytes32 revision = _hash(item);
+        registry.setConsumedBy(item.contentHash, keccak256("another item"));
+        vm.expectRevert(_notRequestable(revision));
+        module.requestSeed(item, revisionRoot, new bytes32[](0));
+
+        // Item 1 consumed its own, unseeded content; content 0's seed is not its seed.
+        registry.setConsumedBy(_item(1).contentHash, items[1]);
+        vm.expectRevert(_notRequestable(items[1]));
+        module.requestSeed(_item(1), root, proofs[1]);
+        vm.expectRevert(abi.encodeWithSelector(IEntropyModule.SeedNotDelivered.selector, items[1]));
+        module.seedOf(items[1]);
+
+        // An ARTIST item carrying the seeded content, which consumed it, is not a VRF work.
+        PackageItem memory artistItem = _plain(SeedPolicy.ARTIST);
+        artistItem.contentHash = _item(0).contentHash;
+        registry.setConsumedBy(artistItem.contentHash, _hash(artistItem));
+        vm.expectRevert(_notRequestable(_hash(artistItem)));
+        module.requestSeed(artistItem, bytes32(0), new bytes32[](0));
+    }
+
     function test_Content_ASecondItemJoinsAPendingDrawAndSharesItsClock() public {
         uint256 first = _request(0);
         (PackageItem memory item, bytes32 revisionRoot) = _revision();
