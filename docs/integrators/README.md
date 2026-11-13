@@ -14,7 +14,7 @@ mainnet deployment, and interfaces may still change before the audit.
 
 | Page | Read it to |
 | --- | --- |
-| [Reading a work](reading-a-work.md) | Show a work: `tokenURI` and `uri`, the JSON fields, inline and locator media, editions, licenses, dispute statements, royalties |
+| [Reading a work](reading-a-work.md) | Show a work: `tokenURI` and `uri`, the JSON fields, inline and locator media, editions, licenses, dispute statements, royalties, declarations and convention statements |
 | [Events and indexing](events-and-indexing.md) | Index the protocol: every event of every contract, and how to rebuild each entity's state from logs |
 | [Addresses](addresses.md) | Find the deployed contracts: Sepolia r4 now, mainnet later |
 | [ABIs and interface IDs](abis-and-interface-ids.md) | Get the ABIs, detect contracts with ERC-165, and recompute the EIP-712 digests and protocol hashes |
