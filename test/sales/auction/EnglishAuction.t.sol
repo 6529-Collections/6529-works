@@ -1317,7 +1317,7 @@ contract EnglishAuctionTest is AuctionBase {
 
     /// @dev The recorded outcome is read before the currency freeze (MARKET-2): a sale whose
     ///      work the token already records settled closes with the refund at once, even while
-    ///      its currency is deprecated, without waiting for the 30-day freeze exit.
+    ///      its currency is deprecated, without waiting for the 60-day freeze exit.
     function test_Settle_ARecordedOutcomeClosesWithoutWaitingOutAFreeze() public {
         OutcomeReportingTarget t = _outcomeToken(address(usd));
         uint256 saleId = auction.start(address(t), "");

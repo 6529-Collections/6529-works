@@ -2,6 +2,56 @@
 
 ## Unreleased
 
+- Review fixes of November 2026 (RFX-*), grouped by area:
+  - **English auction.** With a bid, only the winning bidder may send a pending delivery to
+    another address; the recipient its bid named may claim only to itself (`InvalidRecipient`,
+    AUC-21, RFX-SAL-1). The currency-freeze exit is 60 days, was 30, longer than a guardian's
+    30-day removal plus a 14-day re-admission (AUC-25, RFX-SAL-2). From 60 days after the end
+    of a sale with a standing bid, a token whose `settlePrimary` fails within exactly 1,000,000
+    gas closes the sale with the bid credited back (`RescuedSaleClosed`), and an ETH payout to
+    the zero address or the escrow is credited to that wallet in the auction (AUC-36,
+    RFX-SAL-3). The lifecycle invariant gains the start pause and a hostile bidder and
+    receiver (RFX-SAL-4). `EnglishAuction` grows to 23,858 bytes (718 under EIP-170). Known
+    limitations: LIM-SAL-3, LIM-SAL-15 and LIM-EA-9 state 60 days, LIM-SAL-10 covers every asset
+    sent outside the auction's flows, and LIM-SAL-16 is new.
+  - **Split wallets.** A release also accepts an ERC-20 `transfer` that returns nothing, still
+    requiring exact balance deltas (`TokenTransfer.transferExactAllowingNoReturn`, ECO-23,
+    RFX-ECO-1); payments, escrow and the sale adapters keep the strict check. `SplitWallet`
+    shrinks by 278 bytes, so **the wallet's init code changed and every split-wallet address
+    differs on a fresh deployment**; `createWallet` costs 1,185,635 Prague gas. New LIM-ECO-6:
+    a wallet freezes an asset that does not move exact amounts.
+  - **Records and identity.** The kind and first-registered locator fallbacks consider only the
+    artist's locators; a PLATFORM locator is served only once STORAGE_OPERATOR selects it (WS-21,
+    RFX-REC-1). `latestDisputeOutcome` fails closed when a Stream's item read fails for any
+    reason but `UnknownWork` (DSP-12, RFX-REC-2). A key the artist rotated away from signs no
+    identity change and no heartbeat, even while consolidated with the new authority (ID-5,
+    RFX-ID-1; LIM-ID-14 records that it remains a canceller until the consolidation is revoked
+    and its grace has passed).
+  - **Entropy.** The item that consumed a content may link to its content's delivered seed after
+    consumption, with no request (ENT-19, RFX-ENT-1). Repeat requests back off exponentially:
+    the k-th repeat waits `retryDelay * 2^(k-1)` after the previous request, capped at
+    `MAX_RETRY_DELAY` (30 days), with the count kept in the draw's existing word and not reset
+    by a coordinator swap (ENT-5, RFX-ENT-2). At the 3-day base a content undelivered for a year
+    has at most 15 requests outstanding, against 122 before. LIM-ENT-1 states the bound; new
+    LIM-ENT-7 records that a module or coordinator replacement can redraw a seed, and the
+    runbook's dependency table and coordinator step say how to avoid it.
+  - **Deploy and Verify.** On mainnet the deploy and Verify refuse the deployer as the museum,
+    the marketplace owner or the network fee recipient, and **the mainnet deploy order
+    changed**: the simulation reads the VRF subscription before `configure`, so the admin Safe
+    adds the VRF module's predicted address as the subscription's only consumer before the
+    broadcast (`ModuleNotAConsumer` names it; RFX-TOOL-3). Verify checks every selector remap,
+    role-admin change, role-guardian change and target closure since genesis against the
+    configuration (GV-15, RFX-TOOL-2).
+  - **Budgets and tests.** `check_budgets.py` keeps 512 bytes of EIP-170 margin for every
+    contract declared in `src/`, with recorded exemptions in `tools/size-margins.json` (`Stream`
+    203, `Renderer` 211, `UniformEditionAuction` 420; RFX-TOOL-1). `RoyaltyInfoGas.t.sol` calls
+    `royaltyInfo` with exactly its 50,000-gas budget and requires every lower limit to revert
+    (RFX-TOOL-4). ADR 0004's table is re-measured: each `settle` row rises by 905 (441 with no
+    bid), the binding start row is unchanged at 338,273.
+  - **Docs.** Any two colluding guardians shield each other, however many there are (LIM-GV-4,
+    ADR 0002 amendment note); LIM-GAS-2 covers the deployment's state gas; the trust assumptions,
+    architecture, storage guide, audit scope and the module READMEs follow these changes.
+
 - Explicit Stream state machines (owner decision 28, rc.3):
   - `PrimaryOutcome` gains RESCUED (4, appended so earlier values keep their encodings).
     `rescueToMuseum` records it, in the one flag combination no adapter can produce, so no

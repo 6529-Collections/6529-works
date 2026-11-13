@@ -57,7 +57,7 @@ interface IAssetAllowlist {
     /// @notice `asset` is not active.
     error AssetNotActive(address asset);
     /// @notice ETH, the native currency, is never deprecated: one guardian could otherwise
-    ///         freeze every ETH sale and, after the 30-day freeze exit, end each one unsold
+    ///         freeze every ETH sale and, after the 60-day freeze exit, end each one unsold
     ///         (MONEY-M1, G-2 in the rc.2 review).
     error EthNotDeprecable();
     /// @notice A deprecated `asset` may be re-admitted only from `allowedAt`, 14 days

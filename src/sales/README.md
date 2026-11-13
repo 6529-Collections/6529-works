@@ -48,8 +48,8 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
   rules must change its lens too (`EnglishAuctionLensDifferential.t.sol`,
   `EnglishAuctionLens.t.sol`). Hot-path views stay on the auction: `saleKind`, and
   `auctionClock` (`IEnglishAuctionClock`), which the edition auction reads and any new on-chain
-  consumer should. A rescue for tokens sent by plain `transferFrom` was declined for its size
-  (LIM-SAL-10).
+  consumer should. Nothing sweeps assets sent to the auction outside its flows; the auction
+  now has room for a governed rescue, so adding one is a scope decision (LIM-SAL-10).
 - **English auction storage.** A steady-state start writes one `Sale` word and shares a terms
   record per distinct combination; seller and fee terms come back from the token at settlement,
   from the call that reports the outcome (`IMintTarget.settlePrimary`, owner decision 17).

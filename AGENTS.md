@@ -19,7 +19,10 @@ Instructions for automated coding agents working in this repository.
 - 8–12K non-comment lines of Solidity under `src/`.
 - At most 5 linked libraries.
 - No delegatecall and no proxies.
-- EIP-170 respected, measured on the explicit `--profile default` build.
+- EIP-170 respected, measured on the explicit `--profile default` build, with at least 512
+  bytes of runtime margin for every contract declared in `src/`. A contract below that floor
+  needs an exemption in `tools/size-margins.json`, which records its margin and a reason; an
+  exempt contract may not lose margin below its record without updating it in the same PR.
 - No unreviewed High or Medium Slither finding (`docs/security/slither-triage.md`).
 - CI under 15 minutes.
 - Starting an auction in ETH, Stream's launch currency, at steady state costs at most 350K

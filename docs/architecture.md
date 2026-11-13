@@ -259,7 +259,10 @@ default when the sale starts".
    a CIDv1 of the fixed profile, with no path.
    - The STORAGE_OPERATOR role sets preferences. The most specific one wins:
      the file index, then the collection kind, then the global kind, then the
-     first registered locator. A file with no locator yields an empty one.
+     first registered locator. The kind and first-registered fallbacks consider
+     only the artist's locators: a PLATFORM copy is served only once the storage
+     operator selects it. A file with no such locator yields the on-chain copy
+     of a synced work, otherwise an empty one.
    - After finalize only the PLATFORM role adds locators.
    - It cannot add, remove or alter locators.
 3. The artist calls `finalize(tokenId, expectedStateHash)` once the record file
