@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:6529-works:schema:custody-attestation:v1",
+  "title": "Custody attestation, version 1",
+  "description": "The document of a CUSTODY_ATTESTATION statement: a custodian's EIP-712 signed attestation about a work's physical twin, posted by the owner, the artist or the platform. The message fields are the typed data CustodyAttestation(address token,uint256 tokenId,bytes32 objectId,uint8 status,uint64 asOf,address successor,bytes32 evidenceHash) in the domain (name \"6529 Works Custody Attestation\", version \"1\", chainId). Rules: docs/spec/declarations-and-conventions.md (DCL-19 to DCL-22).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "subject", "custodian", "message", "signature"],
+  "properties": {
+    "v": { "const": 1 },
+    "subject": { "$ref": "urn:6529-works:schema:common:v1#/$defs/workRef" },
+    "custodian": {
+      "description": "The account whose signature the reader verifies.",
+      "$ref": "urn:6529-works:schema:common:v1#/$defs/address"
+    },
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["token", "tokenId", "objectId", "status", "asOf", "successor", "evidenceHash"],
+      "properties": {
+        "token": { "$ref": "urn:6529-works:schema:common:v1#/$defs/address" },
+        "tokenId": { "$ref": "urn:6529-works:schema:common:v1#/$defs/uint256" },
+        "objectId": { "$ref": "urn:6529-works:schema:common:v1#/$defs/bytes32" },
+        "status": {
+          "description": "1 HELD: the custodian holds the object. 2 RELEASED: it handed the object to successor (zero if to no custodian). 3 MISSING. 4 DESTROYED.",
+          "enum": [1, 2, 3, 4]
+        },
+        "asOf": {
+          "description": "When the custodian last verified the object.",
+          "$ref": "urn:6529-works:schema:common:v1#/$defs/unixTime"
+        },
+        "successor": {
+          "description": "The next custodian's signing account for RELEASED; the zero address otherwise.",
+          "$ref": "urn:6529-works:schema:common:v1#/$defs/address"
+        },
+        "evidenceHash": {
+          "description": "SHA-256 of the evidence (condition report, photographs), or zero for none.",
+          "$ref": "urn:6529-works:schema:common:v1#/$defs/bytes32"
+        }
+      },
+      "if": { "properties": { "status": { "const": 2 } } },
+      "else": { "properties": { "successor": { "const": "0x0000000000000000000000000000000000000000" } } }
+    },
+    "signature": { "$ref": "urn:6529-works:schema:common:v1#/$defs/signature" },
+    "evidence": {
+      "description": "Where the evidence named by evidenceHash can be fetched.",
+      "type": "array",
+      "maxItems": 8,
+      "items": { "$ref": "urn:6529-works:schema:common:v1#/$defs/contentAddress" }
+    },
+    "note": { "$ref": "urn:6529-works:schema:common:v1#/$defs/text" }
+  }
+}

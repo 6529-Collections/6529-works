@@ -1,0 +1,25 @@
+{
+  "v": 1,
+  "artistId": "344073830386746567427978432078835137280280269756",
+  "updatedAt": 1794787200,
+  "entries": [
+    {
+      "catalogueNumber": "AB-2019-001",
+      "title": "An Early Work",
+      "date": "2019",
+      "medium": "Oil on canvas",
+      "note": "Not tokenized."
+    },
+    {
+      "catalogueNumber": "AB-2026-014",
+      "title": "Example Work No. 14",
+      "date": "2026-03",
+      "work": {
+        "chainId": 11155111,
+        "contract": "0x02617dbdc0b0521124cb4c2a3ef602977e29bd91",
+        "tokenId": "42"
+      },
+      "entry": "0x1d0c9f2e4a6b8c0d2e4f6a8b0c1d3e5f7a9b0c2d4e6f8a0b1c3d5e7f9a0b2c4d"
+    }
+  ]
+}

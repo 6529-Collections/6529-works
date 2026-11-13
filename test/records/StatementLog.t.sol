@@ -763,6 +763,64 @@ contract StatementLogTest is StatementLogFixture {
         assertEq(StatementKinds.GOVERNANCE_MANIFEST, keccak256("GOVERNANCE_MANIFEST"));
     }
 
+    /// @dev The convention kinds of docs/spec/declarations-and-conventions.md, pinned as the hex
+    ///      the registry in docs/spec/disputes-and-statements.md lists, and as their labels.
+    function test_Kinds_ConventionKindsAreStableLabels() public pure {
+        bytes32[5] memory kinds = [
+            StatementKinds.CONTENT_CHANGE_PROPOSAL,
+            StatementKinds.CONTENT_CHANGE_ACCEPTANCE,
+            StatementKinds.CATALOGUE_ENTRY,
+            StatementKinds.CITATION,
+            StatementKinds.CUSTODY_ATTESTATION
+        ];
+        bytes32[5] memory pinned = [
+            bytes32(0x839c052e9a5afc8f0beebb6265e5e0e47a21abf374d6747f389fe5dadc871554),
+            0x9d9eeba312ac7b3dc65b165a03f3b1eaf64f62cfd0ef22119dad7fdd6bc17f11,
+            0xaacce03f8117fda5561145df82472ae33d3859d463cf544fdb49c147f4c86dff,
+            0xe6c8d7dd9d949fc9fbac776ad88a44d7eba3ab1f7f24cdd6232df6c94c9f86fe,
+            0x86aca35bbe17a3ae9d833091d08756c7bfdcafa66f069af4d27b38534b5a5462
+        ];
+        string[5] memory labels = [
+            "CONTENT_CHANGE_PROPOSAL",
+            "CONTENT_CHANGE_ACCEPTANCE",
+            "CATALOGUE_ENTRY",
+            "CITATION",
+            "CUSTODY_ATTESTATION"
+        ];
+        for (uint256 i; i < kinds.length; ++i) {
+            assertEq(kinds[i], pinned[i], labels[i]);
+            assertEq(kinds[i], keccak256(bytes(labels[i])), labels[i]);
+        }
+    }
+
+    /// @dev The convention kinds are not reserved: the log accepts each under every role that may
+    ///      speak about the subject, so readers, not the log, apply each kind's writer rule.
+    function test_Kinds_ConventionKindsAreAcceptedUnderEveryRole() public {
+        bytes32[5] memory kinds = [
+            StatementKinds.CONTENT_CHANGE_PROPOSAL,
+            StatementKinds.CONTENT_CHANGE_ACCEPTANCE,
+            StatementKinds.CATALOGUE_ENTRY,
+            StatementKinds.CITATION,
+            StatementKinds.CUSTODY_ATTESTATION
+        ];
+        for (uint256 i; i < kinds.length; ++i) {
+            Statement memory s = _statement();
+            s.kind = kinds[i];
+            _expectAppend(Role.ARTIST, artist, s);
+            _append(Role.ARTIST, artist, s);
+            _expectAppend(Role.OWNER, tokenOwner, s);
+            _append(Role.OWNER, tokenOwner, s);
+            _expectAppend(Role.CURATOR, curator, s);
+            vm.prank(curator);
+            stmtLog.appendCurator(s);
+            _expectAppend(Role.PLATFORM, platform, s);
+            vm.prank(platform);
+            stmtLog.appendPlatform(s);
+        }
+        (uint64 count,) = stmtLog.chainOf(address(nft), 1);
+        assertEq(count, 20);
+    }
+
     function test_ExtensibleKindIsAccepted() public {
         Statement memory s = _statement();
         s.kind = keccak256("SOME_FUTURE_KIND");
