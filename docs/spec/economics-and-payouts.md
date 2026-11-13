@@ -157,7 +157,7 @@ address wallet = address(uint160(uint256(keccak256(abi.encodePacked(
   `pendingPayees()` (ECO-10). Funds sent to a predicted address are held, and split once anyone
   calls `createWallet` (ECO-11); `walletFor` reverts for a list no wallet would accept.
 - `createWallet` is idempotent and records `configOf[wallet]`, which `isWallet` reads. Deploying
-  a one-payee wallet costs 1,241,422 Prague gas
+  a one-payee wallet costs 1,185,635 Prague gas
   ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table)); no sale pays it.
 - Another salt gives an equivalent wallet (same `configHash`), which the escrow accepts as a
   replacement. A `SplitWallet` deployed by any other contract is not the factory's.
@@ -201,11 +201,18 @@ nothing credited (`NothingToClaim`).
 **Token strictness.** `TokenTransfer` moves every ERC-20 that a payout, escrow deposit, flush,
 release, direct or EIP-2612 pull, or adapter claim handles. It counts a token call only if it
 returns exactly one 32-byte word holding `true`, and requires both balances to move by exactly the
-amount (`TokenCallFailed`, `TokenBalanceMismatch`). The auction's Permit2 pull
-(`EnglishAuction._collect`) is the exception: Permit2 makes the token call, and the auction
-checks only the two balance deltas. Canonical Permit2 accepts a token that returns nothing.
-Exact balance deltas therefore hold on every path, but return-value checks do not, and
-admitting only standard ERC-20s is the guard (ECO-23, LIM-SAL-7).
+amount (`TokenCallFailed`, `TokenBalanceMismatch`). There are two exceptions, and both still
+require the exact deltas. The auction's Permit2 pull (`EnglishAuction._collect`): Permit2 makes
+the token call, and canonical Permit2 accepts a token that returns nothing. And a split wallet's
+release (`transferExactAllowingNoReturn`), which also counts a `transfer` that returns no data:
+a marketplace chooses the token a royalty is paid in, and an immutable wallet has no other way
+out of it. A `false`, a return of any other size, a call to an account without code (its
+`balanceOf` read fails first, `TokenReadFailed`) and a fee or rounding loss still revert there.
+Payments, escrow deposits and flushes, and the adapters' pulls and claims keep the strict check,
+so a no-return token is still no sale currency. Exact balance deltas therefore hold on every
+path, return-value checks do not, and admitting only standard ERC-20s is the guard (ECO-23,
+LIM-SAL-7). A token that moves a wei less or more than asked, or whose balance in a wallet
+falls, freezes that asset in the wallet, and no path rescues it (ECO-24, LIM-ECO-6).
 
 **The escrow** keeps credits by `(wallet, asset)`. Deposits are permissionless; anyone flushes a
 credit, only to its wallet, and a failed flush keeps it (ECO-27). Governed `recover` moves a
@@ -360,6 +367,9 @@ sequenceDiagram
 
 - Both payees of a royalty wallet are fixed, so anyone may push each share. The seller wallet's
   share then waits there for its own payees. `ClaimRouter.claim` batches these pushes.
+- The marketplace chooses the token. A release counts a `transfer` that returns nothing, as many
+  older tokens do, once both balances moved by exactly the amount
+  ([token strictness](#wallet-payments-and-the-escrow)).
 
 ### An artist's signed pull through the claim router
 
@@ -516,7 +526,7 @@ sequenceDiagram
 | ECO-20 | A signed release works once per `(account, nonce)`, only in the wallet and on the chain it names, before its deadline, and only while its signer is the payee's payout address. | `ReleaseVerifier.consume`; `SplitWallet.releaseWithAuthorization` | [`ReleaseVerifier.t.sol`](../../test/economics/ReleaseVerifier.t.sol) `test_ReplayAndRevokedNoncesRevert`, `test_OnlyTheNamedWalletConsumesAnAuthorization`, `test_SignatureDoesNotReplayOnAnotherChainOrVerifier`, `test_ExpiredAuthorizationReverts`; [`IdentityRecovery.t.sol`](../../test/integration/IdentityRecovery.t.sol) `test_SignedReleaseIsVoidedByRecovery` |
 | ECO-21 | Replay protection is keyed on the nonce, not the signature bytes; nonces in one bitmap word stay independent; one revocation covers every wallet. | `ReleaseVerifier._useNonce`, `revokeNonce` | [`ReleaseVerifier.t.sol`](../../test/economics/ReleaseVerifier.t.sol) `test_ReplayIsKeyedOnTheNonceNotTheSignatureBytes`, `test_NonceBitmapNoAliasingWithinAWord`, `test_OneRevocationCoversEveryWallet` |
 | ECO-22 | A signed release that fails does not consume its nonce. | `SplitWallet.releaseWithAuthorization` (atomic revert) | [`ReleaseVerifier.t.sol`](../../test/economics/ReleaseVerifier.t.sol) `test_AmountAboveReleasableRevertsWithoutConsumingNonce`, `test_FailedPaymentRollsBackNonce`, `test_PushCanPreemptAFixedPayeesSignedRelease` |
-| ECO-23 | Every ERC-20 move, the Permit2 pulls included, changes both balances by exactly the amount. Moves through `TokenTransfer` also require exactly one `true` word; the Permit2 pulls check balances only. Fee-on-transfer and rounding tokens therefore revert on every path, but a token that returns nothing can pass a Permit2 pull: admitting only standard ERC-20s is the guard. | `TokenTransfer._moveExact`, `_call`; `EnglishAuction._collect`; governance at `AssetAllowlist.admitAsset` | [`HostileTokens.t.sol`](../../test/economics/HostileTokens.t.sol) `test_FeeOnTransfer_PaymentRevertsAtomically`, `test_NoReturn_PaymentRevertsAtomically`, `test_ReturnsFalse_PaymentTriesEscrowThenRevertsAtomically`, `test_NonCanonicalTrue_FailsClosedOnEveryPath`, `test_Rebasing_RoundingPaymentRevertsAtomically` |
+| ECO-23 | Every ERC-20 move, the Permit2 pulls included, changes both balances by exactly the amount. Moves through `TokenTransfer` also require exactly one `true` word, except a split wallet's release, which also accepts no return data; the Permit2 pulls check balances only. Fee-on-transfer and rounding tokens therefore revert on every path; a token that returns nothing is released from a split wallet and can pass a Permit2 pull, and fails every other path: admitting only standard ERC-20s is the guard. | `TokenTransfer._moveExact`, `transferExactAllowingNoReturn`, `_call`; `SplitWallet._release`; `EnglishAuction._collect`; governance at `AssetAllowlist.admitAsset` | [`HostileTokens.t.sol`](../../test/economics/HostileTokens.t.sol) `test_FeeOnTransfer_PaymentRevertsAtomically`, `test_NoReturn_PaymentRevertsAtomically`, `test_NoReturn_ReleasePaysEachPayeeInFull`, `test_NoReturn_ReleaseThatMovesNothingReverts`, `test_NoReturn_FeeOrRoundingReleaseStillReverts`, `test_ReturnsFalse_PaymentTriesEscrowThenRevertsAtomically`, `test_ReturnsFalse_ReleaseReverts`, `test_OddReturnShapes_FailClosed`, `test_NonCanonicalTrue_FailsClosedOnEveryPath`, `test_Rebasing_RoundingPaymentRevertsAtomically` |
 | ECO-24 | An ERC-20 whose receipts fall below the recorded mark freezes that asset's releases without loss. | `SplitWallet._due` | [`SplitWallet.t.sol`](../../test/economics/SplitWallet.t.sol) `test_ShrinkingBalanceFailsClosedUntilRecovered`; [`HostileTokens.t.sol`](../../test/economics/HostileTokens.t.sol) `test_Rebasing_NegativeRebaseFreezesReleasesWithoutLoss`; [`EconomicsInvariant.t.sol`](../../test/economics/invariant/EconomicsInvariant.t.sol) `invariant_ObservedNeverDecreases` |
 | ECO-25 | Withdrawals never read the allowlist: deprecated and never-admitted assets stay withdrawable from wallets and the escrow. | `SplitWallet`, `RevenueEscrow` (no allowlist reference) | [`SplitWallet.t.sol`](../../test/economics/SplitWallet.t.sol) `test_DeprecatedAndNeverAdmittedAssetsStayWithdrawable`; [`RevenueEscrow.t.sol`](../../test/economics/RevenueEscrow.t.sol) `test_DeprecatedAssetCreditsStillFlush` |
 | ECO-26 | A wallet payment reaches the wallet or a credit under that wallet, never anywhere else, and a caller cannot starve it into the escrow. | `RevenuePayment.payETH`, `payERC20` | [`RevenuePayment.t.sol`](../../test/economics/RevenuePayment.t.sol) `testFuzz_PaymentsAlwaysReachTheWalletOrItsCredit`, `test_CallerCannotStarveETHPaymentIntoEscrow`, `test_CallerCannotStarveTokenPaymentIntoEscrow`, `test_EscrowRouteRevertsIfAnAllowanceSurvives` |
@@ -555,8 +565,9 @@ Accepted risks are listed once, with their IDs, in
 | A token blocks a fixed payee | `release` to its account reverts. | The payee calls `releaseTo` ([`HostileTokens.t.sol`](../../test/economics/HostileTokens.t.sol) `test_Blocklist_BlockedPayeeReleaseRevertsAndRedirectWorks`). |
 | A wallet's `receive` needs more than 100,000 gas | The ETH payout is credited to the escrow. | Anyone calls `flush`, which forwards all remaining gas. Split wallets have an empty `receive`. |
 | An ERC-20 payout fails even through the escrow | The work is delivered and the English auction credits the wallet; edition sales pay only ETH. | Anyone calls `claimFor(wallet, token)` once the token works again. |
-| A non-standard token is admitted by mistake (LIM-SAL-7) | Fee-on-transfer and rounding tokens revert on every path. A token that returns nothing or returns `false` fails on every `TokenTransfer` path, but one that returns nothing passes a Permit2 pull; in the auction its payouts and refunds then fail and stay as credits. | Deprecate it (GUARDIAN, immediate). Prevention is governance vetting before `admitAsset`. |
-| An ERC-20's balance in a wallet falls (negative rebase) | That asset's releases revert with `ObservedDecreased`; nothing is lost. | Releases resume when receipts reach the recorded mark again. |
+| A non-standard token is admitted by mistake (LIM-SAL-7) | Fee-on-transfer and rounding tokens revert on every path. A token that returns `false` fails on every `TokenTransfer` path; one that returns nothing fails on every path but a split wallet's release, and passes a Permit2 pull; in the auction its payouts and refunds then fail and stay as credits. | Deprecate it (GUARDIAN, immediate). Prevention is governance vetting before `admitAsset`. |
+| A wallet is paid in a token that moves a wei less or more than asked (LIM-ECO-6) | That asset's releases revert with `TokenBalanceMismatch`; the wallet's other assets are unaffected. | None: a wallet has no rescue path, and the funds stay in it. |
+| An ERC-20's balance in a wallet falls (negative rebase) (LIM-ECO-6) | That asset's releases revert with `ObservedDecreased`; nothing is lost. | Releases resume when receipts reach the recorded mark again; nothing else moves them. |
 | An artist's key is lost or stolen | A thief holding it can pull until an override that moves the payout is staged; nobody can push to it. | Identity recovery redirects the payout, accrued balances included ([Identity and recovery](identity-and-recovery.md)). |
 | A fixed payee's key is lost | Its share stays in the wallet; wallets have no governance. | None. Use artist-resolved payees for artists, and Safes for network accounts. |
 | A continue-mode batch reverts with `ClaimInsufficientGas` | Nothing is paid. | Raise the gas limit; drop an item that keeps failing below the ceiling, or batch it alone. |
