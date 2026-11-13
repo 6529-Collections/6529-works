@@ -147,10 +147,10 @@ independent of the admins they check:
   pause before the 1/1s that started under it close.
 - **Deprecating an auction's currency.** A deprecation freezes the live auctions in that
   currency: nothing settles, and their high bidders may withdraw. To keep them alive,
-  re-admit the currency between day 14 and day 30 after the deprecation (`admitAsset` is in
+  re-admit the currency between day 14 and day 60 after the deprecation (`admitAsset` is in
   the 14-day class and executes no earlier than 14 days from the deprecation); the first
   `settle` after the re-admission reopens each auction for at least the governed duration.
-  After day 30, anyone can end a frozen auction unsold: its standing bid is credited back to
+  After day 60, anyone can end a frozen auction unsold: its standing bid is credited back to
   the bidder and a 6529 Stream work goes to the museum (any other token's to its artist).
 
 #### The network fee recipient must exist
@@ -170,7 +170,7 @@ Glamsterdam that costs whoever settles or buys about 184K more gas
 
 #### The museum must exist
 
-6529 Stream moves every work whose 1/1 sale ends unsold, unbid or by the 30-day currency
+6529 Stream moves every work whose 1/1 sale ends unsold, unbid or by the 60-day currency
 freeze, to the museum its current economics resolver names when the adapter settles the sale,
 with no receiver callback (owner decision 17;
 [AUC-24, AUC-33](../docs/spec/stream-and-auctions.md#rules-and-invariants)).

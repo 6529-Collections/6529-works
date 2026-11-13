@@ -88,7 +88,7 @@ struct PrimaryTerms {
 ///         `IStream.primarySale` before settlement. RESCUED is never reported by an adapter
 ///         either: only 6529 Stream's `rescueToMuseum` records it.
 /// @dev SOLD: a buyer paid a price. UNBID: the sale ended with no bid. FROZEN_OUT: the sale
-///      ended unsold because its currency stayed frozen (the English auction's 30-day freeze
+///      ended unsold because its currency stayed frozen (the English auction's 60-day freeze
 ///      exit) or its token was delisted, any standing bid credited back. RESCUED: governance
 ///      moved the work out of a removed adapter's custody before the adapter settled it
 ///      (`IStream.rescueToMuseum`, owner decision 20). 6529 Stream moves an UNBID, FROZEN_OUT or

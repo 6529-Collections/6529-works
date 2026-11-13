@@ -74,7 +74,7 @@ interface ISaleAdapter is IERC165 {
 
     /// @notice `amount` was credited to `account` and is claimable: an outbid refund, a
     ///         withdrawn bid, or an ETH overpayment; for the auction also the high bid refunded by
-    ///         a dispute cancel or by a sale ending unsold (a currency freeze past its 30 days, or
+    ///         a dispute cancel or by a sale ending unsold (a currency freeze past its 60 days, or
     ///         a delisted federated contract), and an ERC-20 settlement payout that failed in its
     ///         own frame (MONEY-1), which `IEnglishAuction.claimFor` pays out.
     /// @param account The account credited: the bidder or buyer, or (MONEY-1) the seller or fee

@@ -385,6 +385,36 @@ contract OutcomeReportingTarget is PlainMintTarget {
     }
 }
 
+/// @dev A listed token whose `settlePrimary` breaks the interface's promise that a sale can
+///      always settle, on demand: it reverts, or burns all the gas it is given (RFX-SAL-3).
+contract RefusingMintTarget is PlainMintTarget {
+    enum Refusal {
+        NONE,
+        REVERT,
+        BURN_GAS
+    }
+
+    Refusal public refusal;
+
+    function setRefusal(Refusal refusal_) external {
+        refusal = refusal_;
+    }
+
+    function settlePrimary(uint256, PrimaryOutcome, address, address, uint256)
+        external
+        view
+        override
+        returns (PrimarySettlement memory p)
+    {
+        if (refusal == Refusal.REVERT) revert("refused");
+        if (refusal == Refusal.BURN_GAS) {
+            while (true) { }
+        }
+        (p.seller, p.feeRecipient, p.feeShare) =
+        (_terms.seller, _terms.feeRecipient, _terms.feeShare);
+    }
+}
+
 /// @dev Mints a chosen token ID. An ID that already exists is reported again without a mint, as
 ///      a template that re-issues a token ID would.
 contract HugeIdTarget is ERC721, IMintTarget {

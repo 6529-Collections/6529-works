@@ -29,7 +29,7 @@ import { IntegrationBase } from "./IntegrationBase.sol";
 ///         Museum is set in the economics resolver at genesis and changed only through the
 ///         14-day FUNDS_SETTER class. It receives every unbid canonical 6529 Stream 1/1, read
 ///         when the sale settles: after no bid, while the artist is restrained, and at the
-///         30-day currency-freeze exit, with the standing bid credited back. Stream moves the
+///         60-day currency-freeze exit, with the standing bid credited back. Stream moves the
 ///         work there itself when the auction reports the outcome (owner decision 17), so nothing
 ///         is ever pending, and records the outcome. An unbid federated work stays with its artist.
 contract MuseumTest is IntegrationBase {
@@ -318,19 +318,19 @@ contract MuseumTest is IntegrationBase {
         assertEq(networkFee.balance - feeBefore, 0.0125 ether, "the network fee it costs");
     }
 
-    /// @dev Owner decision 10: the 30-day currency-freeze exit takes the no-bid branch. The
+    /// @dev Owner decision 10: the 60-day currency-freeze exit takes the no-bid branch. The
     ///      standing bid is credited back in full and the work goes to the museum.
     function test_FreezeExitSendsTheWorkToTheMuseumAndCreditsTheBid() public {
         (uint256 saleId, uint256 tokenId) = _startUsdItem();
         _usdBid(saleId, collector, 100e18);
         uint256 frozenAt = _deprecateUsd();
-        vm.warp(frozenAt + 30 days - 1);
+        vm.warp(frozenAt + 60 days - 1);
         vm.expectRevert(
             abi.encodeWithSelector(IAssetAllowlist.AssetNotActive.selector, address(usd))
         );
         auction.settle(saleId);
 
-        vm.warp(frozenAt + 30 days);
+        vm.warp(frozenAt + 60 days);
         vm.expectEmit(address(auction));
         emit ISaleAdapter.Credited(collector, address(usd), saleId, 100e18);
         vm.expectEmit(address(stream));
@@ -393,7 +393,7 @@ contract MuseumTest is IntegrationBase {
         assertEq(stream.ownerOf(tokenId), museum, "Stream's unbid work: the museum");
     }
 
-    /// @dev Decision 10 with decision 9: another listed token's 30-day freeze exit takes its
+    /// @dev Decision 10 with decision 9: another listed token's 60-day freeze exit takes its
     ///      no-bid branch, so the work goes to its artist, with the bid credited back in full.
     function test_AnotherListedTokensFreezeExitGoesToItsArtist() public {
         MockMintTarget other = _listedToken();
@@ -402,7 +402,7 @@ contract MuseumTest is IntegrationBase {
         uint256 saleId = auction.start(address(other), "");
         _usdBid(saleId, collector, 100e18);
         uint256 frozenAt = _deprecateUsd();
-        vm.warp(frozenAt + 30 days);
+        vm.warp(frozenAt + 60 days);
         auction.settle(saleId);
         assertEq(other.ownerOf(1), federatedArtist, "its artist, not the museum");
         assertEq(auction.claimable(collector, address(usd)), 100e18, "the bid is credited back");
@@ -439,7 +439,7 @@ contract MuseumTest is IntegrationBase {
         uint256 saleId = auction.start(address(fed), "");
         _usdBid(saleId, collector, 100e18);
         uint256 frozenAt = _deprecateUsd();
-        vm.warp(frozenAt + 30 days);
+        vm.warp(frozenAt + 60 days);
         auction.settle(saleId);
         assertEq(fed.ownerOf(1), federatedArtist);
         assertEq(auction.claimable(collector, address(usd)), 100e18);

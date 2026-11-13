@@ -309,21 +309,28 @@ contract AuctionHandler is Test {
         ++hits["claim"];
     }
 
-    /// @dev The pending recipient claims, or the winning bidder does on its behalf.
+    /// @dev The pending recipient claims to itself, or the winning bidder does, to any address.
     function claimDelivery(uint256 saleSeed, bool asWinner) external {
         if (sales.length == 0) return;
         uint256 saleId = _sale(saleSeed);
         address claimant = auction.pendingDelivery(saleId);
         if (claimant == address(0)) return;
         address winner = auction.auction(saleId).bidder;
-        if (asWinner && winner != address(0)) claimant = winner;
+        address to = sink;
+        // RFX-SAL-1: only the winning bidder names another address; the recipient its bid named
+        // claims to itself, and one that refuses the token (the hostile actor) leaves the claim
+        // to the bidder.
+        if (winner != address(0) && claimant != winner) {
+            if (asWinner || claimant == address(hostile)) claimant = winner;
+            else to = claimant;
+        }
         if (claimant == address(hostile)) {
             hostile.execute(
-                address(auction), 0, abi.encodeCall(auction.claimDelivery, (saleId, sink))
+                address(auction), 0, abi.encodeCall(auction.claimDelivery, (saleId, to))
             );
         } else {
             vm.prank(claimant);
-            auction.claimDelivery(saleId, sink);
+            auction.claimDelivery(saleId, to);
         }
         ++hits["delivery"];
     }

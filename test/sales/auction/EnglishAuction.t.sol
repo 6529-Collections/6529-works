@@ -1373,8 +1373,9 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(stream.ownerOf(1), bob);
     }
 
-    /// @dev Owner decision 10 with decision 9: another listed token's 30-day freeze exit takes
-    ///      its no-bid branch too, so its work goes to its artist, with the bid credited back.
+    /// @dev Owner decision 10 with decision 9: another listed token's 60-day freeze exit
+    ///      (RFX-SAL-2) takes its no-bid branch too, so its work goes to its artist, with the bid
+    ///      credited back.
     function test_Settle_AnotherListedTokensFreezeExitGoesToItsArtist() public {
         MockMintTarget other = _listedToken(address(usd));
         uint256 saleId = auction.start(address(other), "");
@@ -1384,7 +1385,7 @@ contract EnglishAuctionTest is AuctionBase {
         auction.bid(saleId, address(0), _direct(alice, 100e18));
         vm.stopPrank();
         allowlist.deprecateAsset(address(usd));
-        vm.warp(block.timestamp + 30 days);
+        vm.warp(block.timestamp + 60 days);
         auction.settle(saleId);
         assertEq(other.ownerOf(1), artist, "its artist, not the museum");
         assertEq(auction.claimable(alice, address(usd)), 100e18, "the bid is credited back");
@@ -1509,19 +1510,22 @@ contract EnglishAuctionTest is AuctionBase {
             );
             vm.prank(bob);
             auction.claimDelivery(saleId, bob);
-            vm.expectEmit(address(auction));
-            emit IEnglishAuction.DeliveryClaimed(saleId, address(winner), carol);
+            // RFX-SAL-1: the recipient may claim only to itself; the bidder names any address.
+            vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, carol));
             winner.execute(
                 address(auction), 0, abi.encodeCall(auction.claimDelivery, (saleId, carol))
             );
+            vm.expectEmit(address(auction));
+            emit IEnglishAuction.DeliveryClaimed(saleId, address(winner), carol);
+            vm.prank(alice);
+            auction.claimDelivery(saleId, carol);
             assertEq(stream.ownerOf(_tokenIdOf(saleId)), carol);
             assertEq(auction.pendingDelivery(saleId), address(0));
             vm.expectRevert(
                 abi.encodeWithSelector(IEnglishAuction.NoPendingDelivery.selector, saleId)
             );
-            winner.execute(
-                address(auction), 0, abi.encodeCall(auction.claimDelivery, (saleId, carol))
-            );
+            vm.prank(alice);
+            auction.claimDelivery(saleId, carol);
         }
     }
 
@@ -1669,6 +1673,65 @@ contract EnglishAuctionTest is AuctionBase {
         auction.claimDelivery(saleId, carol);
         assertEq(stream.ownerOf(1), carol);
         assertEq(auction.pendingDelivery(saleId), address(0));
+    }
+
+    /// @dev A sale whose winning bid named `recipient`, settled with the delivery pending.
+    function _pendingFor(HostileActor recipient) internal returns (uint256 saleId) {
+        recipient.configure(HostileActor.Behaviour.ACCEPT, HostileActor.Behaviour.REVERT);
+        saleId = _start();
+        vm.deal(alice, 1 ether);
+        vm.prank(alice);
+        auction.bid{ value: 1 ether }(saleId, address(recipient), _direct(alice, 1 ether));
+        _end(saleId);
+        auction.settle(saleId);
+        assertEq(auction.pendingDelivery(saleId), address(recipient));
+    }
+
+    /// Regression: RFX-SAL-1
+    /// @dev A recipient contract that forwards any call does not let a third party route the
+    ///      claim through it to an address of its own: the recipient may claim only to itself.
+    function test_ClaimDelivery_AForwardingRecipientCannotSendTheTokenElsewhere() public {
+        HostileActor forwarder = new HostileActor();
+        uint256 saleId = _pendingFor(forwarder);
+        address stranger = makeAddr("stranger");
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, stranger));
+        forwarder.execute(
+            address(auction), 0, abi.encodeCall(auction.claimDelivery, (saleId, stranger))
+        );
+        assertEq(stream.ownerOf(_tokenIdOf(saleId)), address(auction), "still in custody");
+        assertEq(auction.pendingDelivery(saleId), address(forwarder), "still pending");
+        // The stranger cannot claim directly either.
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.NoPendingDelivery.selector, saleId));
+        auction.claimDelivery(saleId, stranger);
+    }
+
+    /// Regression: RFX-SAL-1
+    /// @dev The recipient still claims to itself once it can receive the token.
+    function test_ClaimDelivery_TheRecipientClaimsToItself() public {
+        HostileActor recipient = new HostileActor();
+        uint256 saleId = _pendingFor(recipient);
+        recipient.configure(HostileActor.Behaviour.ACCEPT, HostileActor.Behaviour.ACCEPT);
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.DeliveryClaimed(saleId, address(recipient), address(recipient));
+        recipient.execute(
+            address(auction), 0, abi.encodeCall(auction.claimDelivery, (saleId, address(recipient)))
+        );
+        assertEq(stream.ownerOf(_tokenIdOf(saleId)), address(recipient));
+        assertEq(auction.pendingDelivery(saleId), address(0));
+    }
+
+    /// Regression: RFX-SAL-1
+    /// @dev The winning bidder still names any address, the recipient's own included.
+    function test_ClaimDelivery_TheBidderStillRedirects() public {
+        HostileActor recipient = new HostileActor();
+        uint256 saleId = _pendingFor(recipient);
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.DeliveryClaimed(saleId, address(recipient), bob);
+        vm.prank(alice);
+        auction.claimDelivery(saleId, bob);
+        assertEq(stream.ownerOf(_tokenIdOf(saleId)), bob);
     }
 
     /// @dev D140, the gap PLAN section 1.9 found, now closed by Stream (owner decision 17): an
