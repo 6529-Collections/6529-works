@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {
+    ReentrancyGuardTransient
+} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
@@ -344,6 +347,9 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         TokenGhost storage t = tok[tokenId];
         IEnglishAuction.Auction memory a = auction.auction(t.saleId);
         bool restrained = artists.activeAuthorityOf(stream.artistOf(tokenId)) == address(0);
+        // A hostile recipient re-enters on delivery: re-arm it, so a refusal seen below is this
+        // settlement's and not an earlier operation's.
+        if (a.recipient == address(lcHostile)) _armHostileReentry();
         try auction.settle(t.saleId) {
             if (auction.paused()) ++hits["pausedSettle"];
             if (a.bidder != address(0)) {
@@ -355,7 +361,10 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
                     t.owner = address(auction);
                     ++hits["deliveryPending"];
                 } else if (a.recipient == address(lcHostile)) {
-                    if (lcHostile.reentryOk()) _violation("a delivery re-entered the auction");
+                    // It accepts the work only when set to re-enter, so it must have tried.
+                    if (!_reentryRefusedByGuard()) {
+                        _violation("a delivery's re-entry was not refused by the guard");
+                    }
                     ++hits["hostileReceived"];
                 }
             } else {
@@ -562,7 +571,9 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             address(auction), 0, abi.encodeCall(auction.claim, (CURRENCY_ETH, hostile))
         ) {
             if (!reenters) _violation("a refusing receiver was paid");
-            if (lcHostile.reentryOk()) _violation("a claim was re-entered");
+            if (!_reentryRefusedByGuard()) {
+                _violation("a claim's re-entry was not refused by the guard");
+            }
             ghostEthOut += owed;
             ++hits["hostileReentryRefused"];
         } catch (bytes memory reason) {
@@ -628,9 +639,26 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             HostileActor.Behaviour.REENTER
         ];
         lcHostile.configure(modes[(modeSeed >> 16) % 3], modes[(modeSeed >> 24) % 3]);
+        _armHostileReentry();
+    }
+
+    /// @dev Arms the hostile contract's one re-entry: a claim of its own credits.
+    function _armHostileReentry() internal {
         lcHostile.setReentry(
             address(auction), abi.encodeCall(auction.claim, (CURRENCY_ETH, address(lcHostile)))
         );
+    }
+
+    /// @dev Whether the hostile contract attempted its armed re-entry and the auction's
+    ///      reentrancy guard refused it with its own error, not any other failure.
+    function _reentryRefusedByGuard() internal view returns (bool) {
+        return lcHostile.reentered() && !lcHostile.reentryOk()
+            && keccak256(lcHostile.reentryResult())
+                == keccak256(
+                abi.encodeWithSelector(
+                ReentrancyGuardTransient.ReentrancyGuardReentrantCall.selector
+            )
+            );
     }
 
     /// @dev While the adapter is paused every start is refused (`SalePaused`), whatever its item;
