@@ -120,6 +120,15 @@ not halt curation.
 
 **Residual**
 - Guardians who all collude can shield each other from removal.
+  (Amendment note, 12 November 2026: two are enough, however many guardians there
+  are. Rule 2 bars a guardian only from cancelling its own revocation, and Rule 3
+  of the addendum lets any other guardian cancel it, so each of two colluding
+  guardians cancels the other's; the code is unchanged.
+  `test_Residual_ColludingGuardiansCanShieldEachOther` shows it with two guardians
+  of three. While both stay in office they can cancel every operation, so
+  governance stops, but they cannot move funds: refunds and withdrawals keep
+  working. See LIM-GV-4 in
+  [known limitations](../audit/known-limitations.md#trust-and-governance).)
 - Readback cannot see delay reductions that are still pending. OpenZeppelin
   exposes no getter for them, so deployment CI scans `RoleGrantDelayChanged`
   and `TargetAdminDelayUpdated` events for future effect times.

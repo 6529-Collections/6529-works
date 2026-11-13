@@ -8,7 +8,9 @@ import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
 import { Roles } from "src/governance/Roles.sol";
+import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { IStream } from "src/interfaces/IStream.sol";
 import { Deploy } from "script/Deploy.s.sol";
 import { DeployGuards } from "script/DeployGuards.sol";
 import { DeployV1 } from "script/DeployV1.sol";
@@ -1185,16 +1187,16 @@ contract DeployScriptTest is Test {
         MockVrfSubscriptions coordinator = new MockVrfSubscriptions();
         (string memory record, DeployV1.Deployment memory d) = _vrfRecord(coordinator);
         address module = address(d.entropyModule);
-        vm.expectRevert(abi.encodeWithSelector(Verify.SubscriptionConsumers.selector, 7, 0));
+        vm.expectRevert(abi.encodeWithSelector(DeployGuards.ModuleNotAConsumer.selector, 7, module));
         verifier.verify(record);
         address[] memory two = new address[](2);
         two[0] = module;
         two[1] = makeAddr("anotherConsumer");
         coordinator.setSubscription(address(this), two);
-        vm.expectRevert(abi.encodeWithSelector(Verify.SubscriptionConsumers.selector, 7, 2));
+        vm.expectRevert(abi.encodeWithSelector(DeployGuards.SubscriptionConsumers.selector, 7, 2));
         verifier.verify(record);
         coordinator.setSubscription(address(this), _one(makeAddr("notTheModule")));
-        vm.expectRevert(abi.encodeWithSelector(Verify.SubscriptionConsumers.selector, 7, 1));
+        vm.expectRevert(abi.encodeWithSelector(DeployGuards.ModuleNotAConsumer.selector, 7, module));
         verifier.verify(record);
         // Off mainnet any owner is accepted (Sepolia r2's is the operator).
         coordinator.setSubscription(address(this), _one(module));
@@ -1202,7 +1204,9 @@ contract DeployScriptTest is Test {
         // A coordinator that does not know the subscription fails the run (L5).
         coordinator.setUnknown(true);
         vm.expectRevert(
-            abi.encodeWithSelector(Verify.SubscriptionUnreadable.selector, address(coordinator), 7)
+            abi.encodeWithSelector(
+                DeployGuards.SubscriptionUnreadable.selector, address(coordinator), 7
+            )
         );
         verifier.verify(record);
     }
@@ -1219,7 +1223,9 @@ contract DeployScriptTest is Test {
         for (uint256 i; i < 2; ++i) {
             coordinator.setSubscription(wrong[i], consumers);
             verifier.checkSubscriptionExternal(d, cfg, false);
-            vm.expectRevert(abi.encodeWithSelector(Verify.SubscriptionOwner.selector, wrong[i]));
+            vm.expectRevert(
+                abi.encodeWithSelector(DeployGuards.SubscriptionOwner.selector, wrong[i])
+            );
             verifier.checkSubscriptionExternal(d, cfg, true);
         }
         coordinator.setSubscription(_account("01"), consumers);
@@ -1229,7 +1235,9 @@ contract DeployScriptTest is Test {
         vm.etch(address(coordinator), address(plain).code);
         verifier.checkSubscriptionExternal(d, cfg, false);
         vm.expectRevert(
-            abi.encodeWithSelector(Verify.SubscriptionUnreadable.selector, address(coordinator), 7)
+            abi.encodeWithSelector(
+                DeployGuards.SubscriptionUnreadable.selector, address(coordinator), 7
+            )
         );
         verifier.checkSubscriptionExternal(d, cfg, true);
     }
@@ -1990,6 +1998,311 @@ contract DeployScriptTest is Test {
         verifier.addLogs(vm.getRecordedLogs());
         vm.warp(d.manager.getSchedule(id) + d.manager.expiration());
         assertEq(d.manager.getSchedule(id), 0, "expired");
+        verifier.verify(record);
+    }
+
+    // ------------------------------------------------------------------ RFX-TOOL-3: mainnet inputs
+
+    /// @dev The off-anvil inputs on chain 1, with the canonical delegation contract and Permit2
+    ///      code in place, so `prepare` reaches the parameter checks.
+    function _mainnetInputs() internal {
+        DelegationManagementMock delegation = _sepolia();
+        vm.chainId(1);
+        vm.etch(DeployGuards.CANONICAL_DELEGATION, address(delegation).code);
+        deployer.setEnv("DELEGATION_CONTRACT", "");
+    }
+
+    /// Regression: RFX-TOOL-3
+    /// @dev On mainnet the deployer EOA (this test calls `prepare`) is refused as the museum,
+    ///      the marketplace owner and the network fee recipient; on Sepolia it is accepted.
+    function test_MainnetRefusesTheDeployerAsAPinnedRecipient() public {
+        _mainnetInputs();
+        deployer.prepare();
+        string[3] memory names = ["MUSEUM", "MARKETPLACE_OWNER", "NETWORK_FEE_RECIPIENT"];
+        string[3] memory valid = [
+            vm.toString(makeAddr("museum")),
+            vm.toString(makeAddr("owner")),
+            vm.toString(makeAddr("fee"))
+        ];
+        for (uint256 i; i < names.length; ++i) {
+            deployer.setEnv(names[i], vm.toString(address(this)));
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    DeployGuards.RecipientIsTheDeployer.selector, names[i], address(this)
+                )
+            );
+            deployer.prepare();
+            vm.chainId(SEPOLIA);
+            deployer.setEnv("DELEGATION_CONTRACT", vm.toString(DeployGuards.CANONICAL_DELEGATION));
+            deployer.prepare();
+            vm.chainId(1);
+            deployer.setEnv("DELEGATION_CONTRACT", "");
+            deployer.setEnv(names[i], valid[i]);
+        }
+        deployer.prepare();
+    }
+
+    /// Regression: RFX-TOOL-3
+    /// @dev Verify repeats the recipient guard on mainnet, against the recorded parameters.
+    function test_VerifyRefusesTheDeployerAsAPinnedRecipientOnMainnet() public {
+        _sepolia();
+        deployer.run();
+        string memory record = deployer.lastRecord();
+        verifier.setFile(GENESIS, bytes(_filled()));
+        verifier.setFile("config/manifest.json", MANIFEST);
+        string memory museumIsDeployer =
+            _tamper(record, vm.toString(makeAddr("museum")), vm.toString(address(this)));
+        verifier.checkGuardsExternal(museumIsDeployer, _filled());
+        vm.chainId(1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.RecipientIsTheDeployer.selector, "MUSEUM", address(this)
+            )
+        );
+        verifier.checkGuardsExternal(museumIsDeployer, _filled());
+        verifier.checkGuardsExternal(record, _filled());
+    }
+
+    /// Regression: RFX-TOOL-3
+    /// @dev On mainnet the deploy reads the VRF subscription in the simulation, after the
+    ///      contracts and before `configure`: it must be the hot admin Safe's and list the
+    ///      module the run deploys as its only consumer, as Verify later requires. Off mainnet
+    ///      the module is added after the broadcast, so the deploy does not read it.
+    function test_MainnetDeployChecksTheSubscriptionBeforeTheBroadcast() public {
+        MockVrfSubscriptions coordinator = new MockVrfSubscriptions();
+        _sepolia();
+        _withVrf(address(coordinator));
+        Deploy.Run memory r = deployer.prepare();
+        DeployV1.Deployment memory d = deployer.run();
+        GovernanceConfig.Config memory cfg = DeployV1.config(d, r.json);
+        address module = address(d.entropyModule);
+        deployer.checkDeployment(d, r, cfg); // Sepolia: not read
+        vm.chainId(1);
+        vm.expectRevert(abi.encodeWithSelector(DeployGuards.ModuleNotAConsumer.selector, 7, module));
+        deployer.checkDeployment(d, r, cfg);
+        address[] memory two = new address[](2);
+        (two[0], two[1]) = (makeAddr("anotherConsumer"), module);
+        coordinator.setSubscription(_account("01"), two);
+        vm.expectRevert(abi.encodeWithSelector(DeployGuards.SubscriptionConsumers.selector, 7, 2));
+        deployer.checkDeployment(d, r, cfg);
+        // The operator still owns it, or the cold admin does.
+        address[2] memory wrong = [address(this), _account("02")];
+        for (uint256 i; i < wrong.length; ++i) {
+            coordinator.setSubscription(wrong[i], _one(module));
+            vm.expectRevert(
+                abi.encodeWithSelector(DeployGuards.SubscriptionOwner.selector, wrong[i])
+            );
+            deployer.checkDeployment(d, r, cfg);
+        }
+        coordinator.setSubscription(_account("01"), _one(module));
+        deployer.checkDeployment(d, r, cfg);
+        // A coordinator that cannot report the subscription fails closed on mainnet.
+        coordinator.setUnknown(true);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.SubscriptionUnreadable.selector, address(coordinator), 7
+            )
+        );
+        deployer.checkDeployment(d, r, cfg);
+    }
+
+    // ------------------------------------------------------------------ RFX-TOOL-2: the role map
+
+    /// @dev The anvil hot admin (`0xB001`) schedules `calls` on the manager, waits out ADMIN's
+    ///      30-day delay and the targets' admin delay, and executes them in order; Verify sees
+    ///      the events.
+    function _adminExecutes(DeployV1.Deployment memory d, address admin, bytes[] memory calls)
+        internal
+    {
+        vm.recordLogs();
+        vm.startPrank(admin);
+        for (uint256 i; i < calls.length; ++i) {
+            d.manager.schedule(address(d.manager), calls[i], 0);
+        }
+        vm.warp(block.timestamp + 30 days);
+        for (uint256 i; i < calls.length; ++i) {
+            d.manager.execute(address(d.manager), calls[i]);
+        }
+        vm.stopPrank();
+        verifier.addLogs(vm.getRecordedLogs());
+    }
+
+    function _calls(bytes memory a) internal pure returns (bytes[] memory list) {
+        list = new bytes[](1);
+        list[0] = a;
+    }
+
+    function _calls(bytes memory a, bytes memory b) internal pure returns (bytes[] memory list) {
+        list = new bytes[](2);
+        (list[0], list[1]) = (a, b);
+    }
+
+    function _remap(address target, bytes4 selector, uint64 role)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = selector;
+        return abi.encodeCall(IAccessManager.setTargetFunctionRole, (target, selectors, role));
+    }
+
+    /// Regression: RFX-TOOL-2
+    /// @dev A genesis-only selector (a one-shot bind) mapped to a role after genesis: the
+    ///      configurator's readback reads only the configured selectors, so only the event scan
+    ///      sees it.
+    function test_VerifyCatchesARemappedGenesisOnlySelector() public {
+        (string memory record, DeployV1.Deployment memory d) = _anvilRecord();
+        bytes4 bind = IStream.bindWorkRecords.selector;
+        _adminExecutes(d, address(0xB001), _calls(_remap(address(d.stream), bind, Roles.PLATFORM)));
+        assertEq(d.manager.getTargetFunctionRole(address(d.stream), bind), Roles.PLATFORM);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.UnexpectedFunctionRole.selector, address(d.stream), bind, Roles.PLATFORM
+            )
+        );
+        verifier.verify(record);
+    }
+
+    /// Regression: RFX-TOOL-2
+    /// @dev The deferred federation bind opened to the public role.
+    function test_VerifyCatchesTheDeferredBindMappedToThePublicRole() public {
+        (string memory record, DeployV1.Deployment memory d) = _anvilRecord();
+        bytes4 bind = IArtistRegistry.bindFederationRegistry.selector;
+        _adminExecutes(
+            d, address(0xB001), _calls(_remap(address(d.artistRegistry), bind, Roles.PUBLIC))
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.UnexpectedFunctionRole.selector,
+                address(d.artistRegistry),
+                bind,
+                Roles.PUBLIC
+            )
+        );
+        verifier.verify(record);
+    }
+
+    /// Regression: RFX-TOOL-2
+    /// @dev A configured selector mapped to a role ID the configuration does not define, then
+    ///      restored: the current state matches, the history does not.
+    function test_VerifyCatchesARemapToANewRoleSinceRestored() public {
+        (string memory record, DeployV1.Deployment memory d) = _anvilRecord();
+        GovernanceConfig.Target memory t = DeployV1.config(d, example).targets[0];
+        (bytes4 selector, uint64 role) = (t.functions[0].selector, t.functions[0].role);
+        _adminExecutes(
+            d,
+            address(0xB001),
+            _calls(_remap(t.target, selector, 20), _remap(t.target, selector, role))
+        );
+        assertEq(d.manager.getTargetFunctionRole(t.target, selector), role, "restored");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.UnexpectedFunctionRole.selector, t.target, selector, uint64(20)
+            )
+        );
+        verifier.verify(record);
+    }
+
+    /// Regression: RFX-TOOL-2
+    /// @dev A role the configuration does not define given another admin: the readback checks
+    ///      the admins of the configured roles only.
+    function test_VerifyCatchesARoleAdminChangeOnAnUnlistedRole() public {
+        (string memory record, DeployV1.Deployment memory d) = _anvilRecord();
+        _adminExecutes(
+            d,
+            address(0xB001),
+            _calls(abi.encodeCall(IAccessManager.setRoleAdmin, (20, Roles.PLATFORM)))
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(Verify.UnexpectedRoleAdmin.selector, uint64(20), Roles.PLATFORM)
+        );
+        verifier.verify(record);
+    }
+
+    /// Regression: RFX-TOOL-2
+    function test_VerifyCatchesARoleGuardianChangeOnAnUnlistedRole() public {
+        (string memory record, DeployV1.Deployment memory d) = _anvilRecord();
+        _adminExecutes(
+            d,
+            address(0xB001),
+            _calls(abi.encodeCall(IAccessManager.setRoleGuardian, (20, Roles.PLATFORM)))
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.UnexpectedRoleGuardian.selector, uint64(20), Roles.PLATFORM
+            )
+        );
+        verifier.verify(record);
+    }
+
+    /// Regression: RFX-TOOL-2
+    /// @dev A target outside the configuration closed, and a configured target closed and
+    ///      reopened.
+    function test_VerifyCatchesATargetClosure() public {
+        (string memory record, DeployV1.Deployment memory d) = _anvilRecord();
+        address unlisted = makeAddr("unlisted");
+        _adminExecutes(
+            d,
+            address(0xB001),
+            _calls(abi.encodeCall(IAccessManager.setTargetClosed, (unlisted, true)))
+        );
+        vm.expectRevert(abi.encodeWithSelector(Verify.UnexpectedTargetClosed.selector, unlisted));
+        verifier.verify(record);
+
+        (record, d) = _reset();
+        address stream = address(d.stream);
+        _adminExecutes(
+            d,
+            address(0xB001),
+            _calls(
+                abi.encodeCall(IAccessManager.setTargetClosed, (stream, true)),
+                abi.encodeCall(IAccessManager.setTargetClosed, (stream, false))
+            )
+        );
+        assertFalse(d.manager.isTargetClosed(stream), "reopened");
+        vm.expectRevert(abi.encodeWithSelector(Verify.UnexpectedTargetClosed.selector, stream));
+        verifier.verify(record);
+    }
+
+    /// Regression: RFX-TOOL-2
+    /// @dev Changes that leave the configuration as it is pass: an unmapped selector set to
+    ///      ADMIN (its default), an unlisted role's admin and guardian set to ADMIN, and a
+    ///      target reopened that was never closed.
+    function test_VerifyAcceptsChangesThatMatchTheConfiguration() public {
+        (string memory record, DeployV1.Deployment memory d) = _anvilRecord();
+        bytes[] memory calls = new bytes[](4);
+        calls[0] = _remap(address(d.stream), IStream.bindWorkRecords.selector, Roles.ADMIN);
+        calls[1] = abi.encodeCall(IAccessManager.setRoleAdmin, (20, Roles.ADMIN));
+        calls[2] = abi.encodeCall(IAccessManager.setRoleGuardian, (20, Roles.ADMIN));
+        calls[3] = abi.encodeCall(IAccessManager.setTargetClosed, (address(d.stream), false));
+        _adminExecutes(d, address(0xB001), calls);
+        verifier.verify(record);
+    }
+
+    /// Regression: RFX-TOOL-2
+    /// @dev Epoch mode accepts, and logs, a past change the manager has since undone, as it
+    ///      accepts a past grant since revoked; one still in force fails in epoch mode too.
+    function test_EpochModeAcceptsARestoredRemapOnly() public {
+        (string memory record, DeployV1.Deployment memory d) = _offAnvilRecord();
+        address newHot = _recoverHotAdmin(d);
+        bytes4 bind = IStream.bindWorkRecords.selector;
+        address stream = address(d.stream);
+        _adminExecutes(
+            d,
+            newHot,
+            _calls(_remap(stream, bind, Roles.PLATFORM), _remap(stream, bind, Roles.ADMIN))
+        );
+        verifier.setFile("config/epoch-1.json", bytes(_epochFile()));
+        verifier.setEnv("GOVERNANCE_CONFIG", "config/epoch-1.json");
+        verifier.verify(record);
+        // A remap still in force fails in epoch mode too.
+        _adminExecutes(d, newHot, _calls(_remap(stream, bind, Roles.PLATFORM)));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.UnexpectedFunctionRole.selector, stream, bind, Roles.PLATFORM
+            )
+        );
         verifier.verify(record);
     }
 

@@ -115,7 +115,7 @@ or stores a key:
 
 | Account | Roles | Kind |
 | --- | --- | --- |
-| Deployer (operator) | None after genesis. It is the configurator's `deployer`, and signs every deploy transaction and `configure` | Keystore or Ledger EOA, funded with Sepolia ETH. Not an EIP-7702 delegated account: the script refuses one (`DelegatedDeployer`) |
+| Deployer (operator) | None after genesis. It is the configurator's `deployer`, and signs every deploy transaction and `configure` | Keystore or Ledger EOA, funded with Sepolia ETH. Not an EIP-7702 delegated account: the script refuses one (`DelegatedDeployer`). On mainnet it may not be a role holder, the museum, the marketplace owner or the network fee recipient (`HolderIsTheDeployer`, `RecipientIsTheDeployer`; Verify repeats both) |
 | Hot admin Safe | ADMIN, UNPAUSER, PARAMETER_SETTER, FUNDS_SETTER, SUCCESSOR_SETTER | Safe |
 | Cold recovery admin Safe | ADMIN only. It acts only for [admin recovery](#admin-recovery) | Safe, 3-of-5 recommended. Its signers differ from the hot admin's and the guardians', on hardware wallets kept in separate places |
 | Guardian Safes 1, 2 and 3 | GUARDIAN, PAUSER (at least three off anvil) | Safe, 2-of-3 each |
@@ -126,7 +126,7 @@ or stores a key:
 | Network fee recipient | No role (`NETWORK_FEE_RECIPIENT`) | An existing account: a Safe, or an EOA with a balance or a sent transaction ([below](#the-network-fee-recipient-must-exist)) |
 | 6529 Network Museum | No role (`MUSEUM`). Receives every 6529 Stream work whose 1/1 sale ends unsold (D140), moved there by Stream (owner decision 17); FUNDS_SETTER can change it (`setMuseum`, 14 days) | An existing Safe or EOA that can hold ERC-721 tokens ([below](#the-museum-must-exist)) |
 | Marketplace owner | No role (`MARKETPLACE_OWNER`). Stream's `owner()`: collection admin on marketplaces, no protocol power; FUNDS_SETTER can change it (`setOwner`, 14 days) | Safe or EOA, separate from the platform key, so a stolen platform key does not also hold the marketplace listing |
-| VRF subscription owner | No role; owns the Chainlink subscription. It can cancel the subscription or remove the module at once, outside governance, so on mainnet it must be the hot admin Safe (Verify checks it) | Mainnet: the hot admin Safe. Sepolia: EOA or Safe |
+| VRF subscription owner | No role; owns the Chainlink subscription. It can cancel the subscription or remove the module at once, outside governance, so on mainnet it must be the hot admin Safe (the deploy checks it before the broadcast, and Verify again) | Mainnet: the hot admin Safe. Sepolia: EOA or Safe |
 | Keeper | No role (`refreshStanding` is permissionless) | Any funded EOA |
 
 Delays and responsibilities are in the [role table](../docs/spec/governance.md#roles).
@@ -390,7 +390,13 @@ On Sepolia, set the module up as on mainnet; do not use `NO_VRF`.
 
 3. After the broadcast, add the module (`EntropyModule` in the record) as the subscription's
    only consumer. Requests fail until it is a consumer and the subscription is funded.
-   Verify, off anvil, requires the module to be the only consumer.
+   Verify, off anvil, requires the module to be the only consumer. **On mainnet, add it before
+   the broadcast:** the simulation reads the subscription after deploying the contracts and
+   before `configure`, and stops with nothing broadcast unless the hot admin Safe owns it and
+   the module this run deploys is its only consumer. The first simulation stops with
+   `ModuleNotAConsumer(subscriptionId, module)`, naming the module's address (CREATE2 under
+   `DEPLOY_NAMESPACE`, so the broadcast deploys it there); the hot admin Safe adds that
+   address (`addConsumer` accepts an address without code), and the next simulation passes.
 4. **On mainnet, the subscription owner is the hot admin Safe.** This is an accepted
    trade-off: if the hot admin is compromised, VRF works stop for about 64 days or more. The
    hot Safe can cancel the subscription at once. The cold admin removes it (30 days), then
@@ -574,6 +580,13 @@ The record is only an index; each check is made against the chain or the committ
   JSON;
 - no other grant-delay or admin-delay change is pending;
 - no account outside the configuration was granted a role;
+- every selector remap, role-admin change, role-guardian change and target closure on the
+  manager since genesis matches the configuration: a configured selector keeps its role, any
+  other selector stays with ADMIN, every role's admin is ADMIN, a configured role's guardian
+  is GUARDIAN and any other role's ADMIN, and no target is closed. The configurator's readback
+  sees only the configured selectors and roles, so this catches a genesis-only bind or the
+  deferred `bindFederationRegistry` given a role, a mapping to a new role ID or the public
+  role, and a change made and later undone;
 - no operation scheduled on the manager since genesis is still pending. Each one fails the
   run with its ID, caller, target, selector and ready time. After reviewing them, set
   `ALLOW_PENDING_OPERATIONS=1` to log them instead.
@@ -582,7 +595,9 @@ Verify checks the genesis configuration. After a governance change, such as an
 [admin recovery](#admin-recovery) or a key rotation, run it in epoch mode: set
 `GOVERNANCE_CONFIG` to a copy of the genesis file with the current holders. The wiring
 readback stays genesis readback, so a later default-currency change still fails it. Epoch
-mode logs every grant it accepts for an account that no longer holds the role. When the
+mode logs every grant it accepts for an account that no longer holds the role, and every
+past remap, role-admin or role-guardian change or target closure it accepts because the
+manager is back to the configuration. When the
 epoch's governance manifest is given (`GOVERNANCE_MANIFEST_PATH`), Verify requires its
 SHA-256 to be the content of a `GOVERNANCE_MANIFEST` statement on the manager's chain, and
 its `governanceConfig.sha256` to be the SHA-256 of the `GOVERNANCE_CONFIG` file.
@@ -703,7 +718,11 @@ Before the mainnet broadcast, besides the [Sepolia runbook](#sepolia-runbook) st
    also checked against decision 18 by hand, and Verify reads every role holder back
    ([step 11](#11-verify-after-5-days)).
 6. The VRF subscription owner is the community council (it must hold ADMIN and
-   PARAMETER_SETTER; Verify checks it).
+   PARAMETER_SETTER), and it has added the module's address as the only consumer
+   ([step 7](#7-chainlink-vrf-the-entropy-module)). The deploy checks both before the
+   broadcast, and Verify again.
+7. The museum, the marketplace owner and the network fee recipient are network-held accounts,
+   not the deployer (the deploy and Verify refuse the deployer for each).
 
 ## Operating procedures
 
