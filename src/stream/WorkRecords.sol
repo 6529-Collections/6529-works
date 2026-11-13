@@ -10,6 +10,7 @@ import { IEditions } from "../interfaces/IEditions.sol";
 import { IEntropyModule } from "../interfaces/IEntropyModule.sol";
 import { IRenderer } from "../interfaces/IRenderer.sol";
 import { IStream } from "../interfaces/IStream.sol";
+import { IWorkPowers, WorkPowers } from "../interfaces/IWorkPowers.sol";
 import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "../interfaces/types/ContentTypes.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
@@ -24,7 +25,8 @@ import { SpdxId } from "./SpdxId.sol";
 /// @notice The records satellite of 6529 Stream: descriptive records, media, licenses, seeds,
 ///         the state hash, finalize, on-chain completeness, amendments, renderer repins,
 ///         locators and preferred location (ADR 0001 sections 8, 9 and 10; integrator decisions
-///         D1, D2, D9, D10, D11, D19, D20, D24, E5, E6, E9 and E11).
+///         D1, D2, D9, D10, D11, D19, D20, D24, E5, E6, E9 and E11), and the lead artist's
+///         renounceable powers (`IWorkPowers`, ADR 0006).
 /// @dev Nothing here is written at mint, so none of it costs the auction start: a work's record
 ///      opens with the permissionless `openRecord`, checked against the item hash the core
 ///      stored, and every per-token function reverts with `RecordNotOpen` until then. The
@@ -41,7 +43,7 @@ import { SpdxId } from "./SpdxId.sol";
 ///      must cover the delay. Royalty-rate changes are applied in the core (and a linked edition)
 ///      through their bound hooks, and every visible change asks the core to emit ERC-4906 and
 ///      tells 6529 Stream Editions.
-contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
+contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers {
     uint256 private constant NONE = type(uint256).max;
     bytes32 private constant STATE_DOMAIN = keccak256("6529WORKS_WORK_STATE_V1");
     /// @dev Locators per file the artist may add, and separately the platform (16 in all).
@@ -60,9 +62,10 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     ///      from cold storage, so a call stays at about a quarter of the EIP-7825 cap (4.2M).
     uint256 private constant SYNC_CHUNKS = 512;
 
-    /// @dev Word 0: the pin, version, media count, flags and how many leading media files
-    ///      `syncOnChain` has found complete. `roles` packs each file's role in eight bits, file
-    ///      `i` at bits `8i`.
+    /// @dev Word 0: the pin, version, media count, flags, how many leading media files
+    ///      `syncOnChain` has found complete, and the renounced powers (`WorkPowers` bits, only
+    ///      ever added), which fill its last two bytes. `roles` packs each file's role in eight
+    ///      bits, file `i` at bits `8i`.
     struct RecordData {
         address renderer;
         uint32 version;
@@ -72,6 +75,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         bool onChainComplete;
         bool customLicense;
         uint8 syncedFiles;
+        uint16 renounced;
         bytes32 recordFileId;
         bytes32 mediaHash;
         uint256 roles;
@@ -369,7 +373,9 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     ///      the governed action carry; the contract does not order licenses. A license with the
     ///      current key and text is a no-op. The new text must be registered, and complete
     ///      on-chain once the work is finalized. `finalize` needs no CC0 check of its own: the
-    ///      stored license is written only here and by `openRecord`.
+    ///      stored license is written only here and by `openRecord`. Once the lead artist has
+    ///      renounced `WorkPowers.RELICENSE`, every call reverts with `PowerRenounced`, a no-op
+    ///      included.
     function relicense(
         uint256 tokenId,
         License calldata next,
@@ -379,6 +385,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         bytes[] calldata partySignatures
     ) external restricted {
         RecordData storage r = _open(tokenId);
+        _checkPower(r, tokenId, WorkPowers.RELICENSE);
         License memory previous = licenseOf(tokenId);
         bytes32 nextKey = _relicenseKey(tokenId, previous, next);
         if (nextKey == 0) return;
@@ -395,9 +402,12 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     }
 
     /// @inheritdoc IWorkRecords
-    /// @dev An unchanged rate is a no-op. The version bumps before the external calls; the core
-    ///      emits `RoyaltyRateChanged`, a linked edition's rate follows its master's, and this
-    ///      contract emits `RoyaltyRateSet` and refreshes the metadata.
+    /// @dev Lower-only (ADR 0006): a rate above the current one reverts with
+    ///      `RoyaltyRateNotLowered`, and an unchanged rate is a no-op. Once the lead artist has
+    ///      renounced `WorkPowers.ROYALTY_RATE`, every call reverts with `PowerRenounced`. The
+    ///      version bumps before the external calls; the core emits `RoyaltyRateChanged`, a
+    ///      linked edition's rate follows its master's, and this contract emits `RoyaltyRateSet`
+    ///      and refreshes the metadata.
     function setRoyaltyRate(
         uint256 tokenId,
         uint32 rate,
@@ -407,8 +417,10 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         bytes[] calldata partySignatures
     ) external restricted {
         RecordData storage r = _open(tokenId);
+        _checkPower(r, tokenId, WorkPowers.ROYALTY_RATE);
         (,,,,, uint32 previous) = _core(tokenId);
         if (rate == previous) return;
+        if (rate > previous) revert RoyaltyRateNotLowered(tokenId, previous, rate);
         bytes32 structHash = keccak256(
             abi.encode(
                 Typehashes.ROYALTY_RATE_CHANGE,
@@ -438,27 +450,63 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         address previous = r.renderer;
         if (renderer == previous) return;
         Dependency.checkPinned(renderer, type(IRenderer).interfaceId, rendererCodeHash);
-        bytes32 digest = _hashTypedDataV4(
-            keccak256(
-                abi.encode(
-                    Typehashes.RENDERER_REPIN,
-                    tokenId,
-                    renderer,
-                    rendererCodeHash,
-                    _checkState(tokenId, expectedStateHash),
-                    deadline
-                )
+        bytes32 structHash = keccak256(
+            abi.encode(
+                Typehashes.RENDERER_REPIN,
+                tokenId,
+                renderer,
+                rendererCodeHash,
+                _checkState(tokenId, expectedStateHash),
+                deadline
             )
         );
-        SignatureVerifier.checkDeadline(deadline);
-        if (!SignatureVerifier.isValid(_artistOf(tokenId), digest, artistSignature)) {
-            revert InvalidConsent(tokenId, 0);
-        }
+        _checkArtistConsent(tokenId, structHash, deadline, artistSignature);
         _pinCode(renderer, rendererCodeHash);
         r.renderer = renderer;
         ++r.version;
         emit RendererRepinned(tokenId, previous, renderer, rendererCodeHash);
         _refresh(tokenId);
+    }
+
+    // -------------------------------------------------------------------------------- powers
+
+    /// @inheritdoc IWorkPowers
+    /// @dev Authenticated as `repinRenderer` is: the lead artist's active authority, which the
+    ///      artist registry reports as zero while an authority-moving override is pending, so
+    ///      nobody renounces then. Collaborators do not sign: each renounceable power already
+    ///      needs the lead artist's signature (party 0 of the item is the lead artist), so
+    ///      renouncing removes nothing a collaborator could do without the lead artist. The
+    ///      version bump is the replay protection, as for every consent here.
+    function renounce(
+        uint256 tokenId,
+        uint16 powers,
+        bytes32 expectedStateHash,
+        uint64 deadline,
+        bytes calldata artistSignature
+    ) external {
+        RecordData storage r = _open(tokenId);
+        if (powers & ~WorkPowers.ALL != 0) revert UnknownPower(powers);
+        uint16 renounced = r.renounced;
+        if (powers & ~renounced == 0) return;
+        bytes32 structHash = keccak256(
+            abi.encode(
+                Typehashes.RENOUNCE_POWERS,
+                tokenId,
+                powers,
+                _checkState(tokenId, expectedStateHash),
+                deadline
+            )
+        );
+        _checkArtistConsent(tokenId, structHash, deadline, artistSignature);
+        renounced |= powers;
+        r.renounced = renounced;
+        ++r.version;
+        emit PowersRenounced(tokenId, powers, renounced, workStateHash(tokenId));
+    }
+
+    /// @inheritdoc IWorkPowers
+    function renouncedPowers(uint256 tokenId) external view returns (uint16) {
+        return _open(tokenId).renounced;
     }
 
     // ---------------------------------------------------------------------------- locators
@@ -592,11 +640,12 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     }
 
     /// @notice ERC-165: `IWorkRecords`, which 6529 Stream and 6529 Stream Editions check when
-    ///         binding.
+    ///         binding, and `IWorkPowers`.
     /// @param interfaceId The interface ID to test.
-    /// @return True for the `IWorkRecords` and `IERC165` interface IDs.
+    /// @return True for the `IWorkRecords`, `IWorkPowers` and `IERC165` interface IDs.
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
-        return interfaceId == type(IWorkRecords).interfaceId || super.supportsInterface(interfaceId);
+        return interfaceId == type(IWorkRecords).interfaceId
+            || interfaceId == type(IWorkPowers).interfaceId || super.supportsInterface(interfaceId);
     }
 
     // -------------------------------------------------------------------------------- internal
@@ -642,6 +691,11 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         );
     }
 
+    /// @dev Reverts with `PowerRenounced` once the lead artist renounced `power` for the work.
+    function _checkPower(RecordData storage r, uint256 tokenId, uint16 power) private view {
+        if (r.renounced & power != 0) revert PowerRenounced(tokenId, power);
+    }
+
     function _open(uint256 tokenId) private view returns (RecordData storage r) {
         r = _records[tokenId];
         if (!r.opened) revert RecordNotOpen(tokenId);
@@ -665,6 +719,21 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
 
     function _onlyArtist(uint256 tokenId) private view {
         if (!_isArtist(tokenId, msg.sender)) revert NotWorkArtist(tokenId, msg.sender);
+    }
+
+    /// @dev The lead artist's active authority signed `structHash` before `deadline`
+    ///      (`InvalidConsent(tokenId, 0)` otherwise): the errata repin and renunciation.
+    function _checkArtistConsent(
+        uint256 tokenId,
+        bytes32 structHash,
+        uint64 deadline,
+        bytes calldata signature
+    ) private view {
+        SignatureVerifier.checkDeadline(deadline);
+        if (!SignatureVerifier.isValid(_artistOf(tokenId), _hashTypedDataV4(structHash), signature))
+        {
+            revert InvalidConsent(tokenId, 0);
+        }
     }
 
     /// @dev Every party of the work's item consents, in order, each by its active authority

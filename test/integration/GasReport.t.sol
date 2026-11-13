@@ -898,7 +898,8 @@ contract IntegrationGasReport is IntegrationBase {
 
     // ------------------------------------------------------------------ re-rate
 
-    /// @dev A work re-rated to 10% (every party's consent plus FUNDS_SETTER's governed action),
+    /// @dev A work re-rated to 5% (every party's consent plus FUNDS_SETTER's governed action;
+    ///      rates are lower-only, ADR 0006),
     ///      executed through the manager: Stream moves the token to the terms with its new rate,
     ///      which no work has yet, so it writes that terms word (QUALITY-6); before, it overwrote
     ///      the token's own word.
@@ -906,7 +907,7 @@ contract IntegrationGasReport is IntegrationBase {
         uint256 tokenId = auction.auction(_steadyState()).tokenId;
         Work[] memory works = _package(root);
         records.openRecord(tokenId, works[0].item, works[0].media);
-        uint32 rate = 10_000;
+        uint32 rate = 5_000;
         uint64 deadline = uint64(block.timestamp + 30 days);
         bytes32 state = records.workStateHash(tokenId);
         bytes[] memory sigs = new bytes[](1);
