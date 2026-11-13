@@ -76,5 +76,5 @@ Reveals after settlement, per-copy seeds and a fallback randomness source
 
 [ADR 0003, sales and auctions](../../docs/adr/0003-build-time-decisions.md#sales-and-auctions-amends-adr-0001-5-6-and-9)
 (requests before minting, the lowerable gas limit, additive retries);
-[known limitations](../../docs/audit/known-limitations.md#entropy) LIM-ENT-1 to LIM-ENT-5;
+[known limitations](../../docs/audit/known-limitations.md#entropy) LIM-ENT-1 to LIM-ENT-7;
 [trust assumptions](../../docs/audit/trust-assumptions.md).

@@ -307,6 +307,13 @@ sequenceDiagram
   schedule it against the configuration that will be current when it executes.
 - **Chainlink's `migrate` cannot be used.** It calls `setCoordinator(address)` on each consumer;
   this module has no such function.
+- **A swap redraws pending content.** Every request still pending, including one whose delivery
+  is already visible on the old coordinator, is orphaned, and the content is drawn again
+  through the new one. Execute the change only when every request has its delivery, or publish
+  the redraw ([LIM-ENT-7](../audit/known-limitations.md#entropy)); the same holds for a
+  replacement of the module itself, whose successor must honour the seeds its predecessor
+  delivered for content not yet minted
+  ([runbook](../../script/README.md#replacing-one-of-streams-dependencies)).
 
 ### Lowering the callback gas limit
 

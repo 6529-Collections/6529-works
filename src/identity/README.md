@@ -79,5 +79,5 @@ restraint withholds are in the [stolen-key flow](../../docs/spec/identity-and-re
 and its [owner decisions](../../docs/adr/0003-build-time-decisions.md#owner-decisions-11-october-2026)
 (1 contested overrides, 4 artists pay for refreshes, 6 the restraint);
 [known limitations](../../docs/audit/known-limitations.md#identity-and-recovery) LIM-ID-1 to
-LIM-ID-13; [trust assumptions](../../docs/audit/trust-assumptions.md);
+LIM-ID-14; [trust assumptions](../../docs/audit/trust-assumptions.md);
 [runbook, standing refresh](../../script/README.md#12-standing-refresh-refreshstanding).
