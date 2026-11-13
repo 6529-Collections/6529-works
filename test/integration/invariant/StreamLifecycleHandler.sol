@@ -587,7 +587,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             if (auction.pendingDelivery(saleId) == address(0)) continue;
             address winner = auction.auction(saleId).bidder;
             address stranger = lcBidders[seed % BIDDERS];
-            if (stranger == winner) stranger = lcBidders[(seed + 1) % BIDDERS];
+            if (stranger == winner) stranger = lcBidders[(seed % BIDDERS + 1) % BIDDERS];
             bytes memory toStranger = abi.encodeCall(auction.claimDelivery, (saleId, stranger));
             if (winner != address(lcHostile)) {
                 vm.prank(stranger);

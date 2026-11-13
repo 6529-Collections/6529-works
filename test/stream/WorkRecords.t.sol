@@ -1622,7 +1622,7 @@ contract WorkRecordsTest is RecordsFixture {
         bytes32 pin = pinned.codehash;
         bool below;
         bool above;
-        for (uint8 i = 1; !(below && above); ++i) {
+        for (uint256 i = 1; !(below && above); ++i) {
             bytes memory moved = abi.encodePacked(code, i);
             bool lower = keccak256(moved) < pin;
             if (lower ? below : above) continue;
@@ -1677,7 +1677,7 @@ contract WorkRecordsTest is RecordsFixture {
         bytes32 pin = address(next).codehash;
         bool below;
         bool above;
-        for (uint8 i = 1; !(below && above); ++i) {
+        for (uint256 i = 1; !(below && above); ++i) {
             bytes memory moved = abi.encodePacked(code, i);
             bool lower = keccak256(moved) < pin;
             if (lower ? below : above) continue;

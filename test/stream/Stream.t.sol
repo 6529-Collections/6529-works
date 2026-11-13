@@ -1822,7 +1822,7 @@ contract StreamTest is StreamFixture {
         bytes memory code = address(renderer).code;
         bool below;
         bool above;
-        for (uint8 i = 1; !(below && above); ++i) {
+        for (uint256 i = 1; !(below && above); ++i) {
             bytes memory moved = abi.encodePacked(code, i);
             bool lower = keccak256(moved) < pinned;
             if (lower ? below : above) continue;
