@@ -50,21 +50,28 @@ import { IVRFCoordinatorV2Plus } from "./IVRFCoordinatorV2Plus.sol";
 ///      Repeat. A content whose seed is still undelivered may be requested again by anyone, with
 ///      an exponential backoff: the k-th repeat may be made `retryDelay * 2^(k-1)` seconds after
 ///      the previous request, the wait capped at `MAX_RETRY_DELAY` so a repeat always stays
-///      possible. The repeat count is kept per content, in the draw's word, and a coordinator
-///      replacement does not reset it. A repeat ADDS a request and never invalidates an earlier
-///      one: Chainlink VRF v2.5 does not expire a pending request on-chain, so the oracle may
-///      still deliver an earlier request late, and a delivery for any outstanding request is
-///      accepted.
+///      possible. The repeat count is kept per content and per coordinator tenure: the draw's
+///      word records the coordinator epoch of the content's latest request, and once
+///      {setCoordinator} has replaced the coordinator since then, the count restarts at zero and
+///      the first request to the new coordinator is made at once (the old one's requests can no
+///      longer deliver). A repeat ADDS a request and never invalidates an earlier one: Chainlink
+///      VRF v2.5 does not expire a pending request on-chain, so the oracle may still deliver an
+///      earlier request late, and a delivery for any outstanding request of the current
+///      coordinator is accepted.
 ///      The first delivery fixes the seed; every later delivery for the content is a silent no-op
 ///      (it must not revert, so the oracle's fulfilment succeeds). Superseding the old request
 ///      would let an observer who sees a disliked late delivery pending in the mempool front-run
 ///      a repeat to discard it. Residual risk: while several requests are outstanding at once,
 ///      whoever can withhold or order their deliveries (the oracle, a searcher or a block builder)
 ///      chooses which of their independent random words becomes the seed. The backoff bounds how
-///      many there are: after an undelivered period T of at least (2^m - 1) * retryDelay, at most
-///      1 + m + floor((T - (2^m - 1) * retryDelay) / MAX_RETRY_DELAY), where m is the number of
-///      repeats whose wait is below the cap (for a 3-day `retryDelay`, m = 4: at most 15 requests
-///      in a year).
+///      many there are, per coordinator tenure: after an undelivered period T of a tenure of at
+///      least (2^m - 1) * retryDelay, at most 1 + m + floor((T - (2^m - 1) * retryDelay) /
+///      MAX_RETRY_DELAY) requests to that coordinator, where m is the number of repeats whose
+///      wait is below the cap (for a 3-day `retryDelay`, m = 4: at most 15 requests in a year).
+///      Only governance's {setCoordinator} starts a tenure, so no caller can restart the count.
+///      A coordinator restored after another (A to B to A) starts a new tenure, and the requests
+///      of its earlier tenure are still recorded and may deliver again: its outstanding requests
+///      are then those of both tenures, each within its own bound.
 ///
 ///      Trust. The coordinator can only deliver the seed of a content it was asked for, and the
 ///      first delivery is final: a delivered seed never changes. Governance chooses the
@@ -73,8 +80,8 @@ import { IVRFCoordinatorV2Plus } from "./IVRFCoordinatorV2Plus.sol";
 ///      the pinned address is refused) and the request parameters ({setConfig}, 48-hour class,
 ///      compare-and-set, with a raise-only callback gas limit; {lowerCallbackGasLimit} lowers it
 ///      in the 30-day class). Request IDs are scoped to their coordinator, so a coordinator swap
-///      orphans in-flight requests of the old one; each is requested again once its content's
-///      current wait has passed.
+///      orphans in-flight requests of the old one; each content may be requested again at once
+///      from the new one, its repeat count restarting.
 contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     /// @notice The request parameters.
     /// @param subscriptionId The funded VRF v2.5 subscription; this module must be its consumer.
@@ -93,13 +100,15 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     /// @dev One content's randomness. `value` is the latest request ID until `delivered`, then
     ///      the seed: the callback overwrites a word `requestSeed` already made nonzero, so a
     ///      delivery creates no storage slot (about 111,000 gas each under Glamsterdam).
-    ///      `repeats` counts the content's repeats (saturating at 255), packed in the word that
-    ///      `requestedAt` already writes, so it costs no slot of its own.
+    ///      `repeats` counts the content's repeats (saturating at 255) to the coordinator of
+    ///      tenure `epoch`, the coordinator epoch of its latest request; both are packed in the
+    ///      word that `requestedAt` already writes, so they cost no slot of their own.
     struct Seed {
         uint256 value;
         uint64 requestedAt;
         bool delivered;
         uint8 repeats;
+        uint32 epoch;
     }
 
     /// @notice The lowest callback gas limit. The callback creates no storage slot (the seed
@@ -131,6 +140,10 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     /// @inheritdoc IEntropyModule
     /// @dev The only caller of {rawFulfillRandomWords}.
     address public coordinator;
+    /// @dev How many times {setCoordinator} has replaced the coordinator: the current tenure,
+    ///      which a content's repeat count belongs to. Packed with `coordinator`, which every
+    ///      request already reads.
+    uint32 private _coordinatorEpoch;
     /// @dev The coordinator's pinned code hash, checked again at every use, not only at
     ///      install.
     bytes32 private _coordinatorCodeHash;
@@ -200,9 +213,11 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     ///      work minted on its content's seed without a link of its own can be read by item hash.
     ///      Otherwise, if the content's seed is not delivered and no request is outstanding
     ///      (or the content's current wait, `retryDelay * 2^repeats` capped at
-    ///      `MAX_RETRY_DELAY`, has passed since the last one), requests one random word. A repeat
-    ///      adds a request and counts toward the next wait; every outstanding request may still
-    ///      deliver, and the first delivery wins. The request time and repeat count are written
+    ///      `MAX_RETRY_DELAY`, has passed since the last one), requests one random word. A
+    ///      request made under an earlier coordinator does not count: the first request to a new
+    ///      coordinator is made at once and its count starts at zero. A repeat adds a request
+    ///      and counts toward the next wait; every outstanding request may still deliver, and
+    ///      the first delivery wins. The request time, repeat count and epoch are written
     ///      before the coordinator is called and the request ID only after, so a reentrant call
     ///      finds a pending request and cannot deliver the new ID, which is not yet recorded. A reentrant delivery of an EARLIER request is valid; the
     ///      seed is then already delivered when the call returns, and the new request is recorded
@@ -233,8 +248,12 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
             if (joined) return 0;
             revert SeedAlreadyDelivered(itemHash);
         }
-        uint8 repeats = seed.repeats;
-        if (seed.requestedAt != 0) {
+        // RFX-ENT-2: the count and the wait belong to the coordinator tenure of the content's
+        // latest request; the first request to a replacement coordinator is not a repeat.
+        uint32 epoch = _coordinatorEpoch;
+        uint8 repeats;
+        if (seed.requestedAt != 0 && seed.epoch == epoch) {
+            repeats = seed.repeats;
             uint64 retryAt = seed.requestedAt + _repeatWait(repeats);
             // The delay is a day or more; validator timestamp drift is immaterial.
             // forge-lint: disable-next-line(block-timestamp)
@@ -244,9 +263,11 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
             }
             if (repeats < type(uint8).max) ++repeats;
         }
-        // One word: the request time and the repeat count, both before the coordinator call.
+        // One word: the request time, the repeat count and the epoch, before the coordinator
+        // call.
         seed.requestedAt = uint64(block.timestamp);
         seed.repeats = repeats;
+        seed.epoch = epoch;
 
         VrfConfig memory c = _config;
         address coord = coordinator;
@@ -343,9 +364,10 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
 
     /// @inheritdoc IEntropyModule
     /// @dev Request IDs are scoped to their coordinator, so requests made through the old one can
-    ///      no longer be delivered; they are requested again once the content's current wait has
-    ///      passed (the repeat count is per content and survives the swap). Delivered seeds
-    ///      are unaffected. `next` must differ from the current coordinator, have code, not be an
+    ///      no longer be delivered. The swap starts a new coordinator tenure (`_coordinatorEpoch`):
+    ///      an undelivered content may be requested from `next` at once, and its repeat count
+    ///      restarts. If an earlier coordinator is restored later, its own earlier requests may
+    ///      deliver again. Delivered seeds are unaffected. `next` must differ from the current coordinator, have code, not be an
     ///      EIP-7702 delegated account, and have the pinned code hash. Switching coordinators
     ///      also needs a new subscription: see the README's runbook.
     function setCoordinator(address expected, address next, bytes32 nextCodeHash)
@@ -357,6 +379,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         Dependency.checkPinned(next, nextCodeHash);
         emit CoordinatorSet(expected, next, nextCodeHash);
         coordinator = next;
+        ++_coordinatorEpoch;
         _coordinatorCodeHash = nextCodeHash;
     }
 

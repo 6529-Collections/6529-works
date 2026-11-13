@@ -251,11 +251,11 @@ and 1.
 
 | ID | Invariant | Test | Handler actions |
 | --- | --- | --- | --- |
-| INV-ENT-1 | A request succeeds only for a VRF item of an approved package with unconsumed content, issues a new request only if the content's draw is neither delivered nor pending (a repeat only after the content's backoff wait, `retryDelay * 2^repeats` capped at 30 days), else links the item to that draw and returns zero; a delivery for any issued request never reverts. | `invariant_EveryCallHadThePredictedOutcome` | `request`, `fulfill`, `setApproved`, `setConsumed` |
+| INV-ENT-1 | A request succeeds only for a VRF item of an approved package with unconsumed content, issues a new request only if the content's draw is neither delivered nor pending (a repeat only after the content's backoff wait, `retryDelay * 2^repeats` capped at 30 days, the count restarting after a coordinator swap), else links the item to that draw and returns zero; a delivery for any request the current coordinator issued never reverts, and one from another coordinator always does. | `invariant_EveryCallHadThePredictedOutcome` | `request`, `fulfill`, `setApproved`, `setConsumed`, `swap` |
 | INV-ENT-2 | At most one delivery fixes a content's seed, and `isDelivered` and `seedOf` match the model forever after. | `invariant_AtMostOneSeedPerItemAndItNeverChanges` | `fulfill` |
 | INV-ENT-3 | `requestOf(item)` is the last request its content's draw issued until delivery, then zero, and an unlinked or non-VRF item never has one. | `invariant_TheCurrentRequestIsTheLastIssued` | `request`, `fulfill` |
 | INV-ENT-4 | Items that share a content hash read one seed once both are linked and the draw is delivered. | `invariant_ItemsThatShareContentReadOneSeed` | `request`, `fulfill` |
-| INV-ENT-5 | A content's draw never has more requests than the first plus every repeat made at its earliest backoff moment since then. | `invariant_TheBackoffBoundsTheRequestsOfAContent` | `request` |
+| INV-ENT-5 | A content's draw never has more requests to one coordinator in one tenure than the tenure's first plus every repeat made at its earliest backoff moment since then. | `invariant_TheBackoffBoundsTheRequestsOfAContent` | `request`, `swap` |
 
 ## Governance
 

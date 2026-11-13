@@ -20,7 +20,8 @@ import { PackageItem } from "./types/PackageTypes.sol";
 ///      pending draw only joins it. While no seed is fixed, anyone may add another request with
 ///      an exponential backoff: the k-th repeat once `retryDelay() * 2^(k-1)` (the base at least
 ///      3 days) has passed since the previous request, the wait capped at 30 days for the VRF
-///      module, so a repeat always stays possible. The first delivery wins:
+///      module, so a repeat always stays possible; the VRF module restarts the count when its
+///      coordinator is replaced. The first delivery wins:
 ///      any outstanding request from the coordinator that issued it may deliver until the
 ///      content's seed is fixed, and later deliveries are no-ops. Seeds are permanent.
 interface IEntropyModule is IERC165 {

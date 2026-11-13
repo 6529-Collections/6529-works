@@ -1224,25 +1224,108 @@ contract VrfEntropyModuleTest is EntropyBase {
     }
 
     /// Regression: RFX-ENT-2
-    /// @dev A coordinator replacement keeps the content's repeat count: after two repeats and a
-    ///      swap, the next repeat still waits four times the base.
-    function test_Repeat_ACoordinatorSwapDoesNotResetTheBackoff() public {
+    /// @dev A coordinator replacement restarts the content's repeat count: after two repeats
+    ///      and a swap, the first request to the new coordinator is made at once, a second one
+    ///      at once is refused, and the schedule starts again at the base (3, 6, 12, 24 days).
+    function test_Repeat_ACoordinatorSwapRestartsTheBackoff() public {
         _request(0);
         _repeatAtTheEarliest(1, stranger);
         _repeatAtTheEarliest(2, stranger);
         MockVrfCoordinator next = new MockVrfCoordinator();
         next.setNextId(500);
         _swap(address(next));
+        uint256 first = _request(0);
+        assertEq(first, 500, "made at once, through the new coordinator");
+        (, uint64 stamp) = module.requestOf(items[0]);
+        assertEq(stamp, block.timestamp);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IEntropyModule.RequestPending.selector, items[0], block.timestamp + RETRY_DELAY
+            )
+        );
+        _request(0);
+        uint256[4] memory expected = [uint256(3 days), 6 days, 12 days, 24 days];
+        for (uint256 k = 1; k <= 4; ++k) {
+            (, uint64 previous) = module.requestOf(items[0]);
+            _repeatAtTheEarliest(k, stranger);
+            assertEq(block.timestamp - previous, expected[k - 1]);
+        }
+        // The old coordinator's requests no longer deliver; the new one's do.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IEntropyModule.OnlyCoordinatorCanFulfill.selector,
+                address(coordinator),
+                address(next)
+            )
+        );
+        coordinator.fulfill(1, 0xA);
+        next.fulfill(first, 0xB);
+        assertEq(module.seedOf(items[0]), bytes32(uint256(0xB)));
+    }
+
+    /// Regression: RFX-ENT-2
+    /// @dev Without a swap the schedule is unchanged by the epoch: governed parameter changes
+    ///      leave the count as it is, and the third repeat still waits four times the base.
+    function test_Repeat_WithoutASwapTheScheduleIsUnchanged() public {
+        _request(0);
+        _repeatAtTheEarliest(1, stranger);
+        _repeatAtTheEarliest(2, stranger);
+        VrfEntropyModule.VrfConfig memory current = module.config();
+        VrfEntropyModule.VrfConfig memory raised = module.config();
+        raised.callbackGasLimit = current.callbackGasLimit + 1;
+        vm.prank(setter);
+        module.setConfig(current, raised);
         (, uint64 previous) = module.requestOf(items[0]);
-        vm.warp(previous + RETRY_DELAY);
+        vm.warp(previous + 2 * RETRY_DELAY);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IEntropyModule.RequestPending.selector, items[0], previous + 4 * RETRY_DELAY
             )
         );
         _request(0);
-        uint256 id = _repeatAtTheEarliest(3, stranger);
-        assertEq(id, 500, "through the new coordinator");
+        _repeatAtTheEarliest(3, stranger);
+    }
+
+    /// Regression: RFX-ENT-2
+    /// @dev A to B to A: each swap restarts the count, and the restored coordinator's requests
+    ///      from its earlier tenure are still recorded and may deliver, first delivery winning.
+    function test_Repeat_ARestoredCoordinatorsEarlierRequestsMayDeliverAgain() public {
+        uint256 earlier = _request(0);
+        _repeatAtTheEarliest(1, stranger);
+        MockVrfCoordinator b = new MockVrfCoordinator();
+        b.setNextId(700);
+        _swap(address(b));
+        assertEq(_request(0), 700, "B is asked at once");
+        _swap(address(coordinator));
+        uint256 again = _request(0);
+        assertTrue(again != 0 && again != earlier, "A is asked again at once");
+        coordinator.fulfill(earlier, 0xEA);
+        assertEq(module.seedOf(items[0]), bytes32(uint256(0xEA)), "A's earlier request delivered");
+        coordinator.fulfill(again, 0xEB);
+        assertEq(module.seedOf(items[0]), bytes32(uint256(0xEA)), "the first delivery is final");
+    }
+
+    /// Regression: RFX-ENT-2
+    /// @dev Per coordinator tenure the bound is the one stated for a content: within a year of a
+    ///      swap, at a 3-day base, at most 15 requests to the new coordinator.
+    function test_Repeat_TheBoundHoldsPerCoordinatorTenure() public {
+        _request(0);
+        vm.warp(block.timestamp + 100 days);
+        _request(0);
+        MockVrfCoordinator next = new MockVrfCoordinator();
+        next.setNextId(900);
+        _swap(address(next));
+        uint256 start = block.timestamp;
+        assertEq(_request(0), 900);
+        uint256 requests = 1;
+        for (uint256 k = 1;; ++k) {
+            (, uint64 previous) = module.requestOf(items[0]);
+            if (previous + _wait(k) > start + 365 days) break;
+            vm.warp(previous + _wait(k));
+            _request(0);
+            ++requests;
+        }
+        assertEq(requests, 15);
     }
 
     /// Regression: RFX-ENT-2

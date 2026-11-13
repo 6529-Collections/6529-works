@@ -97,16 +97,20 @@ word unchanged, checkable against the oracle's proof; a zero word is valid.
 The cost of keeping earlier requests valid is a choice among them: while several are
 outstanding, whoever can withhold or order their deliveries (the oracle, a searcher or a block
 builder) picks which independent word becomes the seed. The [backoff](#retry-delay) bounds how
-many there can be. With base `d = retryDelay`, cap `C = MAX_RETRY_DELAY` (30 days) and `m` the
-number of repeats whose wait `d * 2^(k-1)` is below `C` (`m = ceil(log2(C / d))`), a content left
-undelivered for a period `T >= (2^m - 1) * d` has had at most
+many there can be, per coordinator tenure (from one `setCoordinator` to the next). With base
+`d = retryDelay`, cap `C = MAX_RETRY_DELAY` (30 days) and `m` the number of repeats whose wait
+`d * 2^(k-1)` is below `C` (`m = ceil(log2(C / d))`), a content left undelivered for a period
+`T >= (2^m - 1) * d` of one tenure has had at most
 
 `N(T) = 1 + m + floor((T - (2^m - 1) * d) / C)`
 
-requests, and fewer before that (one per doubling step). At the 3-day base, `m = 4`: the
-repeats fall on days 3, 9, 21 and 45, then every 30 days, so a year undelivered allows at most
-15 requests (1 + 4 + floor(320 / 30)), against 122 with a fixed 3-day delay
-([LIM-ENT-1](../audit/known-limitations.md#entropy)).
+requests to that tenure's coordinator, and fewer before that (one per doubling step). At the
+3-day base, `m = 4`: the repeats fall on days 3, 9, 21 and 45, then every 30 days, so a year
+undelivered allows at most 15 requests (1 + 4 + floor(320 / 30)), against 122 with a fixed 3-day
+delay ([LIM-ENT-1](../audit/known-limitations.md#entropy)). Only governance starts a tenure, in
+the 30-day class. A coordinator restored after another (A to B to A) starts a new tenure while
+its requests from the earlier one are still recorded and may deliver (ENT-8), so its outstanding
+requests for a content are then those of both tenures, each within its own bound.
 
 ### Retry delay
 
@@ -117,16 +121,21 @@ request, the wait capped at `MAX_RETRY_DELAY` (30 days) so a repeat always stays
 the 3-day base the waits are 3, 6, 12 and 24 days, then 30 days for every later repeat. Earlier,
 `requestSeed` reverts with `RequestPending(itemHash, retryAt)`, or, for an item joining for the
 first time, links it and returns zero. The repeat count belongs to the content (every item of it
-shares the clock), is kept in the draw's word that each request already writes (no extra
-storage slot), saturates at 255, where the wait is long since the cap, and is never reset: not
-by a coordinator replacement, so that a swap cannot be used to reopen fast repeats.
+shares the clock) and to the coordinator tenure of its latest request: the draw's word, which
+each request already writes, holds the count (saturating at 255, where the wait is long since
+the cap) and the coordinator epoch of that request, a module counter `setCoordinator`
+increments (no extra storage slot). When the epochs differ the count is taken as zero and the
+content is not pending, so the first request to a replacement coordinator is made at once and
+its schedule starts again at the base; the old coordinator's requests can no longer deliver.
+No caller can change the epoch, so within a tenure the schedule cannot be reopened.
 
 ### Request memory per coordinator
 
 Every request is remembered under the coordinator that issued it
 (`coordinator => requestId => contentHash`), never removed (ENT-8). After a swap (even A to B and
-back to A) neither coordinator can deliver the other's requests; a pending draw is repeated
-through the new one once the content's current wait has passed (at most 30 days).
+back to A) neither coordinator can deliver the other's requests; a pending draw may be requested
+from the new one at once, its repeat count restarting. When A is restored, its requests from
+its earlier tenure can deliver again.
 
 ### How the seed is read
 
@@ -195,7 +204,7 @@ continue to work (`test_Gate_ConsumptionAfterDeliveryBlocksNothingRead`).
 | Item linked; first request for a content | Anyone | none | `VrfEntropyModule.requestSeed` |
 | Item joins a pending or delivered draw | Anyone | none | `VrfEntropyModule.requestSeed` (returns zero) |
 | The consuming item of a consumed content links to its delivered seed | Anyone | none | `VrfEntropyModule.requestSeed` (returns zero; ENT-19) |
-| Repeat request | Anyone, once the content's backoff wait has passed since the latest request | the k-th repeat `retryDelay * 2^(k-1)`, at most 30 days | `VrfEntropyModule.requestSeed` |
+| Repeat request | Anyone, once the content's backoff wait has passed since the latest request | the k-th repeat `retryDelay * 2^(k-1)`, at most 30 days; none for the first request after a coordinator change | `VrfEntropyModule.requestSeed` |
 | Seed delivered | The current coordinator only | none | `VrfEntropyModule.rawFulfillRandomWords` |
 | Work started | Anyone, through the auction | none | `EnglishAuction.start`, `Stream.mint` |
 | Request parameters changed; gas limit raised | `PARAMETER_SETTER` | standard, 48 hours | `VrfEntropyModule.setConfig` |
@@ -268,9 +277,11 @@ sequenceDiagram
 
 - **Preconditions.** The gate passes; the seed is not delivered (`SeedAlreadyDelivered`);
   `block.timestamp >= requestedAt + min(retryDelay * 2^repeats, MAX_RETRY_DELAY)`, where
-  `repeats` is the number of repeats the content already had (`RequestPending`).
-- **Effects.** A new request under the current configuration and coordinator, timed now; the
-  content's repeat count goes up by one, doubling the next wait up to the cap.
+  `repeats` is the number of repeats the content already had (`RequestPending`), unless the
+  coordinator changed since the content's latest request, when no wait applies.
+- **Effects.** A new request under the current configuration and coordinator, timed now and
+  stamped with the current coordinator epoch; the content's repeat count goes up by one,
+  doubling the next wait up to the cap, or starts at zero after a coordinator change.
 
 ### Coordinator change
 
@@ -302,7 +313,8 @@ sequenceDiagram
 - **`setCoordinator`.** `expected` is the current coordinator (`ExpectedValueMismatch`); `next`
   differs from it, has code, is not EIP-7702 delegated, and has
   `nextCodeHash` (`InvalidDependency`). The coordinator has no ERC-165. Unlike the curation
-  verifier, a replaced coordinator is not retired: a swap back is allowed.
+  verifier, a replaced coordinator is not retired: a swap back is allowed. Each swap increments
+  the module's coordinator epoch, which restarts every undelivered content's repeat count.
 - **`setConfig`.** `expected` equals the whole current configuration (`ExpectedValueMismatch`), so
   schedule it against the configuration that will be current when it executes.
 - **Chainlink's `migrate` cannot be used.** It calls `setCoordinator(address)` on each consumer;
@@ -330,7 +342,7 @@ the 30-day class (ENT-11; `InvalidConfig`).
 | ENT-2 | One draw per content hash: every linked item carrying the content reads the same seed, and joining never asks the coordinator. | `VrfEntropyModule.requestSeed` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Content_ASecondItemJoinsTheDeliveredDrawWithoutARequest`, `test_Content_ASecondItemJoinsAPendingDrawAndSharesItsClock`; [`VrfEntropyInvariant.t.sol`](../../test/entropy/VrfEntropyInvariant.t.sol): `invariant_ItemsThatShareContentReadOneSeed`; [`VrfWork.t.sol`](../../test/integration/VrfWork.t.sol): `test_ARevisionOfTheWorkReadsTheSameSeed`; [`Dispute.t.sol`](../../test/integration/Dispute.t.sol): `test_TheRightfulVrfItemReadsTheContentsSeed` |
 | ENT-3 | An item never linked reads as undelivered; `seedOf` reverts until delivery. | `VrfEntropyModule.isDelivered`, `seedOf` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Content_AnUnlinkedItemReadsAsUndelivered`, `test_SeedOf_RevertsBeforeDelivery` |
 | ENT-4 | The first delivery fixes the seed for good, whichever outstanding request it answers and however many repeats were made; a later delivery for the content is a no-op that does not revert; no request is accepted after delivery. | `VrfEntropyModule.rawFulfillRandomWords`, `requestSeed` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Fulfill_TheFirstDeliveryWinsInEitherOrder`, `test_Fulfill_ADoubleFulfilIsANoOp`, `test_NoRequestAfterDelivery`, `test_Repeat_TheFirstDeliveryStillWinsUnderTheBackoff`; [`VrfEntropyFuzz.t.sol`](../../test/entropy/VrfEntropyFuzz.t.sol): `testFuzz_TheFirstDeliveryOfManyRequestsWins`, `testFuzz_SeedIsTheDeliveredWord`; [`VrfEntropyInvariant.t.sol`](../../test/entropy/VrfEntropyInvariant.t.sol): `invariant_AtMostOneSeedPerItemAndItNeverChanges` |
-| ENT-5 | The k-th repeat of a content's request is possible only once `retryDelay * 2^(k-1)`, capped at `MAX_RETRY_DELAY` (30 days), has passed since the previous request, for any caller and any item of the content; a coordinator replacement does not reset the count, and once the capped wait has passed a repeat is always accepted. A repeat adds a request and never invalidates an earlier one. | `VrfEntropyModule.requestSeed`, `_repeatWait` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Repeat_BeforeTheTimeoutReverts`, `test_Repeat_AfterTheTimeoutIsOpenToAnyone`, `test_Repeat_TheWaitDoublesForTheFirstFourRepeats`, `test_Repeat_TheWaitIsCappedAtTheMaximumRetryDelay`, `test_Repeat_ARepeatIsAlwaysEventuallyAccepted`, `testFuzz_Repeat_IsAcceptedOnceTheCappedWaitHasPassed`, `test_Repeat_NoCallerRepeatsBeforeTheCurrentWait`, `test_Repeat_ACoordinatorSwapDoesNotResetTheBackoff`, `test_Repeat_AtMostFifteenRequestsInAYearAtAThreeDayBase`, `test_Repeat_CreatesOnlyTheRequestRecord`, `test_Fulfill_AnEarlierRequestStillDeliversAfterARepeat`, `test_Fulfill_ARepeatCannotDiscardAPendingDelivery`, `test_Repeat_UsesTheCurrentConfiguration`; [`VrfEntropyFuzz.t.sol`](../../test/entropy/VrfEntropyFuzz.t.sol): `testFuzz_RetryWindow`; [`VrfEntropyInvariant.t.sol`](../../test/entropy/VrfEntropyInvariant.t.sol): `invariant_TheCurrentRequestIsTheLastIssued`, `invariant_TheBackoffBoundsTheRequestsOfAContent` |
+| ENT-5 | The k-th repeat of a content's request is possible only once `retryDelay * 2^(k-1)`, capped at `MAX_RETRY_DELAY` (30 days), has passed since the previous request, for any caller and any item of the content; the count and the wait belong to the coordinator tenure of the content's latest request, so the first request after a coordinator replacement is made at once and the schedule restarts, and no other call resets it; once the capped wait has passed a repeat is always accepted. A repeat adds a request and never invalidates an earlier one. | `VrfEntropyModule.requestSeed`, `_repeatWait` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Repeat_BeforeTheTimeoutReverts`, `test_Repeat_AfterTheTimeoutIsOpenToAnyone`, `test_Repeat_TheWaitDoublesForTheFirstFourRepeats`, `test_Repeat_TheWaitIsCappedAtTheMaximumRetryDelay`, `test_Repeat_ARepeatIsAlwaysEventuallyAccepted`, `testFuzz_Repeat_IsAcceptedOnceTheCappedWaitHasPassed`, `test_Repeat_NoCallerRepeatsBeforeTheCurrentWait`, `test_Repeat_ACoordinatorSwapRestartsTheBackoff`, `test_Repeat_WithoutASwapTheScheduleIsUnchanged`, `test_Repeat_ARestoredCoordinatorsEarlierRequestsMayDeliverAgain`, `test_Repeat_TheBoundHoldsPerCoordinatorTenure`, `test_Repeat_AtMostFifteenRequestsInAYearAtAThreeDayBase`, `test_Repeat_CreatesOnlyTheRequestRecord`, `test_Fulfill_AnEarlierRequestStillDeliversAfterARepeat`, `test_Fulfill_ARepeatCannotDiscardAPendingDelivery`, `test_Repeat_UsesTheCurrentConfiguration`; [`VrfEntropyFuzz.t.sol`](../../test/entropy/VrfEntropyFuzz.t.sol): `testFuzz_RetryWindow`; [`VrfEntropyInvariant.t.sol`](../../test/entropy/VrfEntropyInvariant.t.sol): `invariant_TheCurrentRequestIsTheLastIssued`, `invariant_TheBackoffBoundsTheRequestsOfAContent` |
 | ENT-6 | Only the current coordinator delivers, only a request it issued to this module, with exactly one word. | `VrfEntropyModule.rawFulfillRandomWords` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Fulfill_OnlyTheCoordinatorMay`, `test_Fulfill_AnUnissuedRequestIdReverts`, `test_Fulfill_ExactlyOneWordIsRequired`, `test_Fulfill_AMalformedDeliveryRevertsAndTheItemStaysUndelivered`; [`VrfEntropyFuzz.t.sol`](../../test/entropy/VrfEntropyFuzz.t.sol): `testFuzz_OnlyTheCoordinatorMayFulfill`, `testFuzz_RequestIdsRouteToTheirOwnItems` |
 | ENT-7 | The coordinator's pinned code hash is checked at install, at every request and at every delivery. | `Dependency.checkPinned`, `checkUnchanged` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Constructor_PinsTheCoordinatorCodeHash`, `test_Pin_ACoordinatorWhoseCodeChangedIsRefused`; [`VrfEntropyGovernance.t.sol`](../../test/entropy/VrfEntropyGovernance.t.sol): `test_SetCoordinator_PinsTheCodeHash` |
 | ENT-8 | Request IDs are scoped to their coordinator: a swap orphans the old coordinator's requests, the new one cannot deliver them, and delivered seeds survive. | `VrfEntropyModule._requests`, `rawFulfillRandomWords` | [`VrfEntropyGovernance.t.sol`](../../test/entropy/VrfEntropyGovernance.t.sol): `test_SetCoordinator_OldCoordinatorCanNoLongerDeliver`, `test_SetCoordinator_OrphanedRequestIsRerequestedThroughTheNewOne`, `test_SetCoordinator_RequestIdsAreScopedToTheirCoordinator`, `test_SetCoordinator_DeliveredSeedsSurviveTheSwap`; [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Repeat_RequestIdsDoNotMixAcrossCoordinators` |
@@ -360,10 +372,10 @@ keyed by content hash, not item hash: map items to it through `SeedLinked`.
 | A delivery is malformed (not exactly one word). | It reverts and the coordinator absorbs the failure. | A repeat once the backoff wait has passed. |
 | Code at the coordinator's address no longer has the pinned hash. | Requests and deliveries revert with `DependencyCodeChanged`. | `setCoordinator` to a reviewed coordinator (30 days). |
 | Chainlink lowers the coordinator's maximum callback gas below the module's limit. | Every request reverts at the coordinator. | `lowerCallbackGasLimit` (30 days), never below 100,000. |
-| Chainlink retires the coordinator. | No new requests; pending ones may never deliver. | The coordinator change above; orphaned requests repeat once their content's backoff wait has passed. |
+| Chainlink retires the coordinator. | No new requests; pending ones may never deliver. | The coordinator change above; orphaned contents are requested from the new coordinator at once. |
 | A request was made before its root was revoked. | It still delivers. | None needed: the item can no longer mint. |
 | A media revision of a VRF work is approved. | It has a new content hash and draws a new seed. | The curation runbook revokes the old root before approving such a revision ([curation.md](curation.md)). |
-| Several deliveries for one content are outstanding. | Whoever withholds or orders them chooses which of their random words becomes the seed. | Accepted risk [LIM-ENT-1](../audit/known-limitations.md#entropy); the backoff bounds the count ([first delivery wins](#first-delivery-wins): at most 15 in a year at the 3-day base). |
+| Several deliveries for one content are outstanding. | Whoever withholds or orders them chooses which of their random words becomes the seed. | Accepted risk [LIM-ENT-1](../audit/known-limitations.md#entropy); the backoff bounds the count ([first delivery wins](#first-delivery-wins): at most 15 in a year at the 3-day base, per coordinator tenure). |
 | A hostile approved package requests many VRF draws. | It spends one draw per content, plus repeats, until a guardian revokes it. | Accepted risk [LIM-ENT-2](../audit/known-limitations.md#entropy); a dedicated subscription with a modest, topped-up balance bounds the loss. |
 
 **Subscription operations** ([LIM-ENT-3](../audit/known-limitations.md#entropy)): use a
