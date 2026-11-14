@@ -97,8 +97,10 @@ the example grade. A new rubric is a new function and a new version number, neve
 and DCL-25. `CONTEXT` holds the venue's identity and clock, its outstanding nonces, the official
 token addresses of the chain, block `B` and the head, and the reads at `B`: the signer's code,
 `ownerOf` (or the edition balance, or the auction's pending-delivery buyer) and the
-consolidation source's `isEstablished` and `effectiveAt`. A program that keeps state uses
-`control_proof.verify_response` with its own nonce store.
+consolidation source's `isEstablished` and `effectiveAt`. The command recovers ECDSA signatures
+with `cast` and cannot make the ERC-1271 call a contract signer needs; a program that keeps state,
+or must accept contract signers, calls `control_proof.verify_response` with its own nonce store
+and `erc1271` callable.
 
 ### `custody digest FILE` and `custody check INPUT`
 

@@ -1,6 +1,7 @@
 """Command line: `python -m tools.conventions <command>`. Exit codes: 0 ok, 1 refused or invalid,
-2 bad input. Every command reads JSON files and prints JSON; none makes a network call, and
-only signature checks (with no `signatureValid` given) run `cast`."""
+2 bad input. Every command reads JSON files and prints JSON; none makes a network call. Only
+signature checks run `cast`: `control-proof verify` for a signer without code or with an EIP-7702 delegation, and
+`custody check` for an attestation given without `signatureValid`."""
 
 from __future__ import annotations
 
