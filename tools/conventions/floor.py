@@ -21,13 +21,17 @@ Inputs (plain dicts; hex values `0x`-prefixed):
 - `policy`: the wave's policy `P`: `requiresDeclarations` (bool), `waivable` (fact names),
   `allowsTimeCapsule` (bool), and optionally `workPowers`, the power names an intended
   renunciation may use; absent or null means `WORK_POWERS`, the `WorkPowers` names (DCL-8).
-- `contents`: `{fileId: bytes}`, the declarations file's stored bytes (`ContentStore.read`).
+- `contents`: `{fileId: bytes}`, stored bytes as `ContentStore.read` returns them: the
+  declarations file's, and optionally a media file's, which is then checked as a `stored` copy
+  (its chunks reproduce the file ID and it decodes to the declared SHA-256, WS-30).
 - `observed`: what the signer's own tooling saw: `fetched` (`{uri: bytes | "0x<sha256>" | None}`:
   the bytes fetched at a receipt's URI, which this module checks as the receipt's `form` says
   (`stored`: `fileInfo.length` bytes whose chunks reproduce the file ID, decoded by the file's
-  encoding; `decoded`: hashed as they are); or the SHA-256 of the decoded media when the caller
-  checked the bytes itself, accepted for a `stored` receipt only of an `Identity` file, whose
-  stored stream is the decoded media; None when the fetch failed), `dimensions`
+  encoding; `decoded`: hashed as they are); or, for a `decoded` receipt only, the SHA-256 of the
+  decoded media the caller measured itself (a `stored` receipt always needs the bytes); None when
+  the fetch failed). Since the declared SHA-256 is never recomputed on chain (WS-30), the storage
+  fact is met only when, for every file, a `stored` receipt checked by its bytes or the file's
+  bytes in `contents` ties it to the committed chunks. `dimensions`
   (`{fileId: {width, height}}` measured by decoding the file),
   `defaultRenderer`, `codeHash` (`{address: extcodehash}`) and `dependencies`
   (`{"name@version": {fileId, deprecated}}`: `DependencyRegistry.resolve(label(name),
@@ -177,23 +181,11 @@ def stored_file_id(data: bytes, info: Mapping[str, Any]) -> str:
     ).hex()  # fmt: skip
 
 
-def _hash_fetched(value: Any, form: str, info: Mapping[str, Any], file_id: str) -> tuple[str | None, str]:
-    """The SHA-256 of the decoded media a receipt's copy gives, checked as its `form` says. A
-    `stored` copy must also be the committed stream itself: its chunks must reproduce the file
-    ID, since another encoding of the same media (a different gzip header, say) decodes to the
-    same SHA-256 but cannot rebuild the content-store file."""
-    if value is None:
-        return None, "could not be fetched"
-    if isinstance(value, str):
-        if not re.fullmatch(r"0x[0-9a-f]{64}", value):
-            return None, "has an observed hash that is not lowercase 0x and 32 bytes of hex"
-        if form == "stored" and info.get("encoding") != "Identity":
-            return None, ("is a stored copy of a file that is not Identity, so it needs the fetched "
-                          "bytes, to check them against the committed chunk hashes")  # fmt: skip
-        return value, ""
-    data = bytes(value)
-    if form == "decoded":
-        return _sha256_hex(data), ""
+def _stored_digest(data: bytes, info: Mapping[str, Any], file_id: str) -> tuple[str | None, str]:
+    """`data` as the file's stored stream: `fileInfo.length` bytes whose chunks reproduce the
+    file ID (the committed chunk hashes, WS-25); then the SHA-256 of decoding them. Another
+    encoding of the same media (a different gzip header, say) decodes to the same SHA-256 but
+    cannot rebuild the content-store file, and is refused here."""
     encoding = info.get("encoding")
     if encoding not in _ENCODINGS:
         return None, "has a file whose encoding is unknown"
@@ -209,7 +201,30 @@ def _hash_fetched(value: Any, form: str, info: Mapping[str, Any], file_id: str) 
         return None, f"cannot be checked as the stored {encoding} stream: {exc}"
 
 
-def _check_storage(doc, S, package, observed) -> list[str]:
+def _hash_fetched(value: Any, form: str, info: Mapping[str, Any], file_id: str) -> tuple[str | None, str]:
+    """The SHA-256 of the decoded media a receipt's copy gives, checked as its `form` says. A
+    `stored` copy is always checked by its bytes (`_stored_digest`), whatever the encoding: an
+    observed hash cannot show that a copy reproduces the committed chunks. An observed hash is
+    accepted only for a `decoded` copy, as the signer's own measurement of the decoded media."""
+    if value is None:
+        return None, "could not be fetched"
+    if isinstance(value, str):
+        if not re.fullmatch(r"0x[0-9a-f]{64}", value):
+            return None, "has an observed hash that is not lowercase 0x and 32 bytes of hex"
+        if form == "stored":
+            return None, ("is a stored copy, which needs the fetched bytes, to check them against "
+                          "the committed chunk hashes; an observed hash stands only for a decoded copy")  # fmt: skip
+        return value, ""
+    data = bytes(value)
+    if form == "decoded":
+        return _sha256_hex(data), ""
+    return _stored_digest(data, info, file_id)
+
+
+def _check_storage(doc, S, package, contents, observed) -> list[str]:
+    """CHECK_storage. Besides each receipt's own check, the declared SHA-256 of every file must be
+    tied to its committed chunks at least once, since it is never recomputed on chain (WS-30): by
+    a `stored` receipt checked by its bytes, or by the content-store bytes in `contents`."""
     reasons: list[str] = []
     fact = doc["conservation"]["storage"]
     listed = fact.get("files", [])
@@ -226,17 +241,36 @@ def _check_storage(doc, S, package, observed) -> list[str]:
         if len({(r["network"], r["provider"]) for r in f["receipts"]}) < 2:
             reasons.append(f"{f['fileId']}: fewer than two receipts of distinct network or provider")
         info = _info(package, f["fileId"]) or {}
+        declared = _norm(m["sha256Hash"])
+        tied = False  # a stored receipt's bytes reproduced the chunks and decoded to `declared`
+        stored_by_bytes = False
         for r in f["receipts"]:
             network = locator_network(r["uri"])
             if network is None:
                 reasons.append(f"{r['uri']}: not a WorkRecords locator (WS-18)")
             elif network != r["network"]:
                 reasons.append(f"{r['uri']}: network {r['network']} does not match the address")
-            digest, why = _hash_fetched(fetched.get(r["uri"]), r["form"], info, m["fileId"])
+            value = fetched.get(r["uri"])
+            stored_by_bytes |= r["form"] == "stored" and isinstance(value, (bytes, bytearray))
+            digest, why = _hash_fetched(value, r["form"], info, m["fileId"])
             if digest is None:
                 reasons.append(f"{r['uri']}: {why}")
-            elif digest != _norm(m["sha256Hash"]):
+            elif digest != declared:
                 reasons.append(f"{r['uri']}: the fetched copy does not decode to the file's SHA-256")
+            elif r["form"] == "stored":
+                tied = True
+        own = contents.get(_norm(m["fileId"]), contents.get(m["fileId"]))
+        if own is not None:  # the content-store bytes (ContentStore.read): the WS-30 check
+            digest, why = _stored_digest(bytes(own), info, m["fileId"])
+            if digest is None:
+                reasons.append(f"{f['fileId']}: the content-store bytes in contents {why}")
+            elif digest != declared:
+                reasons.append(f"{f['fileId']}: the content-store bytes do not decode to the declared SHA-256 (WS-30)")
+            else:
+                tied = True
+        if not tied and not stored_by_bytes and own is None:
+            reasons.append(f"{f['fileId']}: the declared SHA-256 is not tied to the committed chunks: no stored "
+                           "receipt was checked by its bytes and no content-store bytes were given (WS-30)")
     return reasons
 
 
@@ -407,7 +441,7 @@ def check_floor(
                 facts[k] = {"state": "waived", "reasons": [fact["reason"]]}
             continue
         if k == "storage":
-            reasons = _check_storage(doc, S, package, observed)
+            reasons = _check_storage(doc, S, package, contents, observed)
         elif k == "format":
             reasons = _check_format(doc, S, package, observed)
         elif k == "license":

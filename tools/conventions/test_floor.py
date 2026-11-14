@@ -15,7 +15,8 @@ from tools.conventions import floor, testdata
 from tools.conventions.floor import DECLARATIONS_MIME, check_floor, floor_states, locator_network
 from tools.conventions.testdata import DECL_FILE, canonical, sha
 
-F1, F2 = "0x" + "11" * 32, "0x" + "22" * 32
+#: The still example's PRIMARY and PREVIEW file IDs, as testdata.realize gives them real bytes.
+F1, F2 = (m[0] for m in testdata.still_media()[1])
 
 
 def run(inp: dict) -> dict:
@@ -46,7 +47,7 @@ def stored_input(stored: bytes, encoding: str, digest: str,
     stored stream in `encoding`, decoding to media of SHA-256 `digest`, under the file ID the
     content store gives it. Returns (input, declarations document, file ID)."""
     fid = floor.stored_file_id(stored, {"encoding": encoding, "mimeType": "image/png", "sha256Hash": digest})
-    doc = testdata.example("declarations.json")
+    doc, media = testdata.still_media()
     for section in ("storage", "format"):
         for f in doc["conservation"][section]["files"]:
             if f["fileId"] == F1:
@@ -55,8 +56,7 @@ def stored_input(stored: bytes, encoding: str, digest: str,
                     f["sha256"] = digest
     if change:
         change(doc)
-    f2_sha = doc["conservation"]["storage"]["files"][1]["sha256"]
-    inp = testdata.floor_input(doc, [(fid, digest, "PRIMARY", "image/png"), (F2, f2_sha, "PREVIEW", "image/webp")])
+    inp = testdata.floor_input(doc, [(fid, digest, "PRIMARY", "image/png"), media[1]])
     inp["package"]["files"][fid].update(encoding=encoding, length=len(stored))
     return inp, doc, fid
 
@@ -192,7 +192,8 @@ class FactTest(unittest.TestCase):
             ("fewer than two receipts", with_doc(base, lambda d: at(d, receipts).pop())),
             ("does not match the address", with_doc(base, lambda d: at(d, receipts)[0].update(network="ipfs", provider="other"))),
             ("could not be fetched", edit(base, lambda i: i["observed"]["fetched"].__setitem__("ar://oPSkhDkQRE6xQF7RQgVgRkmoJKW7XueRtNdpwXEEnRc", None))),
-            ("does not decode to the file's SHA-256", edit(base, lambda i: i["observed"]["fetched"].__setitem__("ar://oPSkhDkQRE6xQF7RQgVgRkmoJKW7XueRtNdpwXEEnRc", "0x" + "00" * 32))),
+            ("needs the fetched bytes", edit(base, lambda i: i["observed"]["fetched"].__setitem__("ar://oPSkhDkQRE6xQF7RQgVgRkmoJKW7XueRtNdpwXEEnRc", "0x" + "00" * 32))),
+            ("committed chunk hashes", edit(base, lambda i: i["observed"]["fetched"].__setitem__("ar://oPSkhDkQRE6xQF7RQgVgRkmoJKW7XueRtNdpwXEEnRc", b"x" * len(testdata.STILL_PRIMARY_BYTES)))),
             ("observed hash that is not", edit(base, lambda i: i["observed"]["fetched"].__setitem__("ar://oPSkhDkQRE6xQF7RQgVgRkmoJKW7XueRtNdpwXEEnRc", "0xABC"))),
         ]  # fmt: skip
         for needle, inp in cases:
@@ -256,21 +257,71 @@ class FactTest(unittest.TestCase):
         reasons = run(inp)["facts"]["storage"]["reasons"]
         self.assertTrue(reasons and all("committed chunk hashes" in r for r in reasons), reasons)
 
-    def test_stored_receipt_of_an_encoded_file_needs_the_bytes(self) -> None:
-        """DCL-5 CHECK_storage: an observed SHA-256 stands for a `stored` copy only for an
-        Identity file, whose stored stream is the decoded media; for any other encoding the
-        tool needs the bytes, to check the chunk hashes. A `decoded` copy may be a hash."""
+    def test_stored_receipt_always_needs_the_bytes(self) -> None:
+        """DCL-5 CHECK_storage: an observed SHA-256 never stands for a `stored` copy, whatever
+        the encoding, Identity included; it stands only for a `decoded` copy."""
+        media = b"6529 works media bytes" * 50
+        for encoding, stored in (("Identity", media), ("Gzip", gzip.compress(media, mtime=0))):
+            with self.subTest(encoding):
+                inp, doc, _ = stored_input(stored, encoding, sha(media),
+                                           lambda d: d["conservation"]["storage"]["files"][0]["receipts"][1].update(form="decoded"))
+                f1 = doc["conservation"]["storage"]["files"][0]
+                stored_uri, decoded_uri = f1["receipts"][0]["uri"], f1["receipts"][1]["uri"]
+                inp["observed"]["fetched"].update({stored_uri: sha(media), decoded_uri: sha(media)})
+                reasons = run(inp)["facts"]["storage"]["reasons"]
+                self.assertTrue(any(stored_uri in r and "needs the fetched bytes" in r for r in reasons), reasons)
+                self.assertFalse(any(decoded_uri in r for r in reasons), reasons)
+                fixed = edit(inp, lambda i: i["observed"]["fetched"].update({stored_uri: stored}))
+                self.assertEqual(run(fixed)["facts"]["storage"]["state"], "met", run(fixed)["facts"]["storage"])
+
+    def test_declared_sha256_must_be_tied_to_the_committed_chunks(self) -> None:
+        """DCL-4/DCL-5 CHECK_storage and WS-30: with only hash-observed `decoded` receipts nothing
+        ties the declared SHA-256 to the committed chunks, so storage is refused; the file's
+        content-store bytes in `contents` tie it."""
         media = b"6529 works media bytes" * 50
         stored = gzip.compress(media, mtime=0)
-        inp, doc, _ = stored_input(stored, "Gzip", sha(media),
-                                   lambda d: d["conservation"]["storage"]["files"][0]["receipts"][1].update(form="decoded"))
-        f1 = doc["conservation"]["storage"]["files"][0]
-        inp["observed"]["fetched"].update({f1["receipts"][0]["uri"]: sha(media), f1["receipts"][1]["uri"]: sha(media)})
+
+        def both_decoded(d: dict) -> None:
+            for r in d["conservation"]["storage"]["files"][0]["receipts"]:
+                r["form"] = "decoded"
+        inp, doc, fid = stored_input(stored, "Gzip", sha(media), both_decoded)
+        for r in doc["conservation"]["storage"]["files"][0]["receipts"]:
+            inp["observed"]["fetched"][r["uri"]] = sha(media)
         reasons = run(inp)["facts"]["storage"]["reasons"]
         self.assertEqual(len(reasons), 1, reasons)
-        self.assertIn(f1["receipts"][0]["uri"], reasons[0])
-        self.assertIn("needs the fetched bytes", reasons[0])
-        self.assertTrue(run(testdata.still_floor_input())["ok"])  # Identity files, hashes observed
+        self.assertIn(fid, reasons[0])
+        self.assertIn("not tied to the committed chunks", reasons[0])
+        tied = edit(inp, lambda i: i["contents"].__setitem__(fid, stored))
+        self.assertEqual(run(tied)["facts"]["storage"]["state"], "met", run(tied)["facts"]["storage"])
+        other_stream = edit(inp, lambda i: i["contents"].__setitem__(fid, gzip.compress(media, mtime=1)))
+        self.assertTrue(any("content-store bytes in contents" in r and "committed chunk hashes" in r
+                            for r in run(other_stream)["facts"]["storage"]["reasons"]))
+
+    def test_declared_sha256_that_the_chunks_do_not_hash_to_is_refused(self) -> None:
+        """WS-30 regression: the file ID commits to a declared SHA-256 that the committed chunks
+        do not decode to. Both receipts' observed hashes equal the declared value, yet the storage
+        fact is refused: hash-only `stored` receipts are not accepted, the stored bytes decode to
+        another hash, and so do the content-store bytes."""
+        committed = b"6529 works media bytes" * 50
+        declared = sha(b"what the artist claimed instead")
+        inp, doc, fid = stored_input(committed, "Identity", declared)
+        receipts = doc["conservation"]["storage"]["files"][0]["receipts"]
+        for r in receipts:
+            inp["observed"]["fetched"][r["uri"]] = declared
+        self.assertEqual(run(inp)["facts"]["storage"]["state"], "failed")  # stored receipts need bytes
+        by_bytes = edit(inp, lambda i: [i["observed"]["fetched"].__setitem__(r["uri"], committed) for r in receipts])
+        reasons = run(by_bytes)["facts"]["storage"]["reasons"]
+        self.assertTrue(reasons and all("does not decode to the file's SHA-256" in r for r in reasons), reasons)
+
+        def decoded(d: dict) -> None:
+            for r in d["conservation"]["storage"]["files"][0]["receipts"]:
+                r["form"] = "decoded"
+        inp2, doc2, fid2 = stored_input(committed, "Identity", declared, decoded)
+        for r in doc2["conservation"]["storage"]["files"][0]["receipts"]:
+            inp2["observed"]["fetched"][r["uri"]] = declared
+        inp2["contents"][fid2] = committed
+        reasons = run(inp2)["facts"]["storage"]["reasons"]
+        self.assertEqual(reasons, [f"{fid2}: the content-store bytes do not decode to the declared SHA-256 (WS-30)"])
 
     def test_format(self) -> None:
         """DCL-5 CHECK_format."""

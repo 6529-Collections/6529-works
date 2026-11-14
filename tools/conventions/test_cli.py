@@ -77,10 +77,21 @@ class CliTest(unittest.TestCase):
         decl = inp["contents"].pop(testdata.DECL_FILE)
         self.write("decl.json", decl)
         inp["contents"] = {testdata.DECL_FILE: {"file": "decl.json"}}
-        inp["observed"]["fetched"] = {uri: {"sha256": h} for uri, h in inp["observed"]["fetched"].items()}
+        fetched = {}
+        for n, (uri, value) in enumerate(inp["observed"]["fetched"].items()):
+            if isinstance(value, bytes):  # a stored copy: the bytes, as a file
+                self.write(f"copy{n}.bin", value)
+                fetched[uri] = {"file": f"copy{n}.bin"}
+            else:
+                fetched[uri] = {"sha256": value}
+        inp["observed"]["fetched"] = fetched
         code, out, _ = run("floor", self.write("floor.json", inp))
         self.assertEqual(code, 0, out)
         self.assertTrue(json.loads(out)["ok"])
+        hashes_only = dict(inp, observed=dict(inp["observed"], fetched={u: {"sha256": "0x" + "00" * 32} for u in fetched}))
+        code, out, _ = run("floor", self.write("floor3.json", hashes_only))
+        self.assertEqual(code, 1)  # stored receipts need the bytes
+        self.assertTrue(any("needs the fetched bytes" in r for r in json.loads(out)["refusals"]))
         inp["policy"]["workPowers"] = []  # an explicit list that names no power refuses ROYALTY_RATE
         code, out, _ = run("floor", self.write("floor2.json", inp))
         self.assertEqual(code, 1)

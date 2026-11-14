@@ -57,26 +57,59 @@ def sha(data: bytes) -> str:
     return "0x" + hashlib.sha256(data).hexdigest()
 
 
-def receipts_observed(doc: dict) -> dict[str, str]:
-    """Every receipt URI of a declarations document mapped to its file's SHA-256 (a good copy)."""
-    out = {}
+def receipts_observed(doc: dict, stored: dict[str, bytes] | None = None) -> dict[str, Any]:
+    """Every receipt URI of a declarations document mapped to a good copy: for a `stored`
+    receipt the file's stored bytes from `stored` (an observed hash does not stand for a stored
+    copy), for a `decoded` receipt the file's SHA-256 as the signer measured it."""
+    out: dict[str, Any] = {}
     for f in doc.get("conservation", {}).get("storage", {}).get("files", []):
         for r in f["receipts"]:
-            out[r["uri"]] = f["sha256"]
+            data = (stored or {}).get(f["fileId"])
+            out[r["uri"]] = data if r["form"] == "stored" and data is not None else f["sha256"]
     return out
 
 
-def floor_input(doc: dict, media: list[tuple[str, str, str, str]], *, seed: str = "NONE",
+def realize(doc: dict, media: list[tuple[str, bytes, str, str]]) -> tuple[dict, list[tuple]]:
+    """The committed examples name illustrative file IDs (`0x1111…`) that no bytes reproduce.
+    For each `(example fileId, media bytes, role, mime)`, store the bytes as `Identity`, compute
+    the file ID the content store gives them, and put it and their SHA-256 in place of the
+    example's in the declarations' storage and format facts. Returns the document and the media
+    list for `floor_input`: `(fileId, sha256, role, mime, bytes)`."""
+    from . import floor  # deferred: floor imports nothing from here
+
+    doc = copy.deepcopy(doc)
+    out = []
+    for old, data, role, mime in media:
+        digest = sha(data)
+        fid = floor.stored_file_id(data, {"encoding": "Identity", "mimeType": mime, "sha256Hash": digest})
+        for section in ("storage", "format"):
+            for f in doc.get("conservation", {}).get(section, {}).get("files", []):
+                if f["fileId"] == old:
+                    f["fileId"] = fid
+                    if section == "storage":
+                        f["sha256"] = digest
+        out.append((fid, digest, role, mime, data))
+    return doc, out
+
+
+def floor_input(doc: dict, media: list[tuple], *, seed: str = "NONE",
                 record_deps: Any = None, decl_bytes: bytes | None = None) -> dict:
-    """`media`: (fileId, sha256, role, mime) for each non-declarations file, in order; the
-    declarations file is appended last as AUXILIARY."""
+    """`media`: (fileId, sha256, role, mime) or (fileId, sha256, role, mime, stored bytes) for
+    each non-declarations file, in order; the declarations file is appended last as AUXILIARY.
+    A file given with its bytes is `Identity`, `len(bytes)` long, and its stored receipts are
+    observed as those bytes."""
     data = canonical(doc) if decl_bytes is None else decl_bytes
     files = {LICENSE_TEXT: {"sha256Hash": CC0_TEXT_SHA, "length": 7048, "encoding": "Identity",
                             "mimeType": "text/plain", "complete": True}}
     entries = []
-    for fid, digest, role, mime in media:
+    stored: dict[str, bytes] = {}
+    for fid, digest, role, mime, *rest in media:
         entries.append({"fileId": fid, "sha256Hash": digest, "role": role})
-        files[fid] = {"sha256Hash": digest, "length": 1000, "encoding": "Identity",
+        length = 1000
+        if rest:
+            stored[fid] = rest[0]
+            length = len(rest[0])
+        files[fid] = {"sha256Hash": digest, "length": length, "encoding": "Identity",
                       "mimeType": mime, "complete": True}
     entries.append({"fileId": DECL_FILE, "sha256Hash": sha(data), "role": "AUXILIARY"})
     files[DECL_FILE] = {"sha256Hash": sha(data), "length": len(data), "encoding": "Identity",
@@ -95,25 +128,37 @@ def floor_input(doc: dict, media: list[tuple[str, str, str, str]], *, seed: str 
         },
         "policy": {"requiresDeclarations": True, "waivable": [], "allowsTimeCapsule": False},
         "contents": {DECL_FILE: data},
-        "observed": {"fetched": receipts_observed(doc), "dimensions": dims,
+        "observed": {"fetched": receipts_observed(doc, stored), "dimensions": dims,
                      "defaultRenderer": RENDERER, "codeHash": {RENDERER: "0x" + "44" * 32},
                      "dependencies": {}},
     }
 
 
-def still_floor_input() -> dict:
-    doc = example("declarations.json")
-    return floor_input(doc, [
-        ("0x" + "11" * 32, "0x0899f7c16ef4cb9720aa1e6d9cf54481e1667ba856dd5a8fd962dc0bfac1d4da", "PRIMARY", "image/png"),
-        ("0x" + "22" * 32, "0x38d991bcec7d27ad28bffa161f122d8d619642858b4af6987a458fbc1978489f", "PREVIEW", "image/webp"),
+#: Stand-in media bytes for the examples' files (never decoded here; the dimensions a signer
+#: measures are an input).
+STILL_PRIMARY_BYTES = b"6529 works example: the still image's PRIMARY file\n" * 40
+STILL_PREVIEW_BYTES = b"6529 works example: the still image's PREVIEW file\n" * 12
+GENERATIVE_PRIMARY_BYTES = b"// 6529 works example: the generative work's script\n" * 20
+
+
+def still_media() -> tuple[dict, list[tuple]]:
+    """declarations.json with real file IDs for its two media files, and the media list."""
+    return realize(example("declarations.json"), [
+        ("0x" + "11" * 32, STILL_PRIMARY_BYTES, "PRIMARY", "image/png"),
+        ("0x" + "22" * 32, STILL_PREVIEW_BYTES, "PREVIEW", "image/webp"),
     ])  # fmt: skip
 
 
+def still_floor_input() -> dict:
+    doc, media = still_media()
+    return floor_input(doc, media)
+
+
 def generative_floor_input() -> dict:
-    doc = example("declarations-generative.json")
-    return floor_input(doc, [
-        ("0x" + "33" * 32, "0xd0055a8735b5a69a40b9bf41ba553896ca536bcdd61444737a043a2f79d74e64", "PRIMARY", "text/javascript"),
-    ], seed="VRF", record_deps=[])  # fmt: skip
+    doc, media = realize(example("declarations-generative.json"), [
+        ("0x" + "33" * 32, GENERATIVE_PRIMARY_BYTES, "PRIMARY", "text/javascript"),
+    ])  # fmt: skip
+    return floor_input(doc, media, seed="VRF", record_deps=[])
 
 
 CIPHERTEXT_FILE = "0x" + "55" * 32

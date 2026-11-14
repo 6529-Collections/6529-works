@@ -132,7 +132,7 @@ a `reason`.
 
 | Fact | Content | Applies to |
 | --- | --- | --- |
-| `storage` | For every media file except the declarations file: its file ID, its SHA-256, and at least two independent storage receipts, each an `ar://` or `ipfs://` content address with its provider and the `form` of the bytes it holds: `stored`, the file's stored (encoded) stream, or `decoded`, the decoded media. For an `Identity` file the two are the same bytes. | Every work |
+| `storage` | For every media file except the declarations file: its file ID, its SHA-256, and at least two independent storage receipts, each an `ar://` or `ipfs://` content address with its provider and the `form` of the bytes it holds: `stored`, the file's stored (encoded) stream, or `decoded`, the decoded media. For an `Identity` file the two are the same bytes. A stored copy must reproduce the committed chunks, and each file's declared SHA-256 must be tied to those chunks once, by a stored copy or the content-store bytes. | Every work |
 | `format` | For every media file except the declarations file: its MIME type and, for images and video, its width and height in pixels; for time-based media, its duration | Every work |
 | `license` | The license identifier and the SHA-256 of its full text | Every work |
 | `generative` | The renderer address and code hash the work was approved under, its dependencies (name, version, file ID), its seed policy, and the runtime it was made for | A generative work (`G` in DCL-5): a PRIMARY file of a script MIME type (`text/html`, `text/javascript`, `application/javascript`, `text/ecmascript`, `application/ecmascript` or `image/svg+xml`), a record that declares dependencies (its `dependencies` member present and non-empty), or a seed policy other than NONE |
@@ -142,10 +142,16 @@ A storage receipt's `form` follows the storage guide's rule for what a locator h
 ([which bytes a locator holds](../integrators/storage.md#4-locators-content-addresses-only)): for a
 `Gzip`, `Base64` or `GzipBase64` file a copy may be either the stored stream (the one that can
 rebuild the content-store file, whose ID commits to those exact bytes) or the decoded media, and
-the receipt says which. A `stored` copy is checked against the file's committed chunk hashes
-(its 24,575-byte chunks, [WS-25](works-and-storage.md#rules-and-invariants)), not only by its
-length and decoded SHA-256: another encoding of the same media, such as a gzip stream with a
-different header, has the same decoded hash but cannot rebuild the file.
+the receipt says which. A `stored` copy is always checked by its bytes against the file's
+committed chunk hashes (its 24,575-byte chunks, [WS-25](works-and-storage.md#rules-and-invariants)),
+whatever the encoding, not only by its length and decoded SHA-256: another encoding of the same
+media, such as a gzip stream with a different header, has the same decoded hash but cannot
+rebuild the file, and a hash alone cannot show that a copy reproduces the chunks. A `decoded`
+copy may be checked by the signer's own hash of the decoded media. Because the declared SHA-256
+is never recomputed on chain ([WS-30](works-and-storage.md#rules-and-invariants)), the storage fact
+is met only when, for every file, the declared SHA-256 is tied to the committed chunks at least
+once: by a `stored` receipt checked by its bytes, or by decoding and hashing the content-store
+bytes (`ContentStore.read`).
 
 **DCL-5. The check before attestation.** ADR 0001 makes approval rules wave policy, not contract
 code ([ADR 0001 §3](../adr/0001-v1-scope.md#3-curation-and-approved-packages)), so the floor is
@@ -202,6 +208,10 @@ CHECK_storage:
                                  and keccak256(chunk i of b) == chunkHash(m.fileId, i) for every i
                                  and sha256(decode(b, fileInfo(m.fileId).encoding)) == m.sha256Hash
           if r.form == decoded:  require sha256(b) == m.sha256Hash
+      # WS-30: the declared SHA-256 is never recomputed on chain, so tie it to the chunks once
+      require some r in f.receipts has r.form == stored            # its bytes were checked above
+              or sha256(decode(read(m.fileId, 0, fileInfo(m.fileId).length),
+                               fileInfo(m.fileId).encoding)) == m.sha256Hash
 
 CHECK_format:
   require set(f.fileId for f in doc.format.files) == set(m.fileId for m in S)
@@ -672,8 +682,8 @@ apply it; "Supported on chain by" names the contract rule it builds on.
 | DCL-1 | Convention documents are canonical JSON with `v` and `subject`; `schema` is the hash of the `$id`; content is SHA-256; at most 65,536 bytes; a `uint256` string is at most 2<sup>256</sup> − 1. | Writers' tooling; readers | DSP-2 |
 | DCL-2 | A convention statement counts only after chain proof, official subject, the kind's role, a trusted resolver, hash, schema and subject checks, and supersession within kind and role. | Readers | DSP-1, DSP-7, DSP-10 |
 | DCL-3 | The declarations document is the one AUXILIARY file of its MIME type, `Identity`, one chunk, matching the content hash, and complete in the content store when the signer attests; fixed from approval. | Signer's tooling; readers | WS-2, WS-6, WS-25 |
-| DCL-4 | The floor's facts, each waivable with a reason; each storage receipt declares the form of the bytes it holds. | Artists' tooling | none |
-| DCL-5 | The signer checks the floor before attesting: generative by script MIME type, non-empty record dependencies or seed policy; dependencies resolved by their bytes32 labels and compared in order; custodians distinct by (address, object); citations well formed. | Curation signer | The evidence hash the package registry stores ([curation](curation.md#concepts)); DSP-4 |
+| DCL-4 | The floor's facts, each waivable with a reason; each storage receipt declares the form of the bytes it holds; a stored copy reproduces the committed chunks. | Artists' tooling | none |
+| DCL-5 | The signer checks the floor before attesting: stored copies by their bytes against the committed chunks, and each file's declared SHA-256 tied to its chunks once (WS-30); generative by script MIME type, non-empty record dependencies or seed policy; dependencies resolved by their bytes32 labels and compared in order; custodians distinct by (address, object); citations well formed. | Curation signer | The evidence hash the package registry stores ([curation](curation.md#concepts)); DSP-4 |
 | DCL-6 | Birth custodians and citations are the artist's approved claims. | Readers | WS-6 |
 | DCL-7 | A time capsule is unenforced, its ciphertext is an AUXILIARY media file, and it is outside the v1 curation policy until the owner approves it. | Curation signer; readers | WS-6 |
 | DCL-8 | An intended renunciation names `ROYALTY_RATE` or `RELICENSE`, is due at `RecordOpened` plus its days (due from that time on), and its state comes from `IWorkPowers.renouncedPowers`. | Readers | WS-37, WS-38 |
@@ -731,7 +741,7 @@ event: a reader that shows a display change, a catalogue entry or custody refres
 | Declarations MIME type | `application/vnd.6529-works.declarations+json` | DCL-3; the content store's MIME rule ([WS-26](works-and-storage.md#rules-and-invariants)) |
 | Declarations size | `Identity`, at most 24,575 bytes (one chunk) | DCL-3 |
 | Other convention documents | At most 65,536 bytes | DCL-1 |
-| Storage receipts per file | At least 2, of distinct network or provider, each of form `stored` or `decoded` | DCL-4, DCL-5 |
+| Storage receipts per file | At least 2, of distinct network or provider, each of form `stored` or `decoded`; the declared SHA-256 tied to the chunks by a stored copy or the content-store bytes | DCL-4, DCL-5 |
 | Script MIME types (a generative work) | `text/html`, `text/javascript`, `application/javascript`, `text/ecmascript`, `application/ecmascript`, `image/svg+xml` | DCL-4, DCL-5 |
 | Work powers | `ROYALTY_RATE` (bit 0, value 1), `RELICENSE` (bit 1, value 2) | DCL-8; [`IWorkPowers.sol`](../../src/interfaces/IWorkPowers.sol) |
 | Default custody age | 365 days for an unnamed custodian | DCL-21 |

@@ -56,14 +56,18 @@ canonical, as DCL-1 requires of every convention document.
 `ContentStore.fileInfo` per file, including the license text file), `policy` (the wave's
 `requiresDeclarations`, `waivable`, `allowsTimeCapsule` and, optionally, `workPowers`; without
 it the names are `ROYALTY_RATE` and `RELICENSE`, the `WorkPowers` names of DCL-8),
-`contents` (the declarations bytes, `{"file": path}` or `{"hex": "0x…"}`) and `observed`: what the
+`contents` (content-store bytes as `ContentStore.read` returns them, `{"file": path}` or
+`{"hex": "0x…"}`: the declarations file's, and optionally a media file's) and `observed`: what the
 signer's own tooling saw at each storage receipt (`{"file": path}` of the fetched bytes, which
 the tool checks as the receipt's `form` says: a `stored` copy is `fileInfo.length` bytes whose
 chunks reproduce the file ID (the committed chunk hashes) and that decode to the file's SHA-256, a
-`decoded` copy hashes to it; or `{"sha256": "0x…"}` of the decoded media, which stands for a
-`stored` copy only of an `Identity` file; or `null` when the fetch failed), the dimensions it
-measured by decoding each image or video, the default renderer and its code hash, and each
-dependency's resolution. The PRIMARY file's `fileInfo`, with its MIME type, is required: without
+`decoded` copy hashes to it; or `{"sha256": "0x…"}` of the decoded media, for a `decoded` receipt
+only, since a `stored` receipt always needs the bytes; or `null` when the fetch failed), the
+dimensions it measured by decoding each image or video, the default renderer and its code hash,
+and each dependency's resolution. A file's declared SHA-256 is never recomputed on chain (WS-30),
+so storage is met only when, for every file, a `stored` receipt checked by its bytes, or the
+file's content-store bytes in `contents` (decoded and hashed), tie it to the committed chunks;
+with only hash-observed `decoded` receipts the check refuses. The PRIMARY file's `fileInfo`, with its MIME type, is required: without
 it whether the work is generative is unknown, and the check refuses.
 
 The result lists every failure with the fact it belongs to, and each fact's state: `met`,
