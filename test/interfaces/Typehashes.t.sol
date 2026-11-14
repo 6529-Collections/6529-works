@@ -45,6 +45,10 @@ contract TypehashesTest is Test {
             0xe02c73b10a1645fcc06fd6d114765861f5bcd1cd03d788c53c6bdf196c748bd4
         );
         assertEq(
+            Typehashes.RENOUNCE_POWERS,
+            0xff8cc1b150cf1b390fd870b4a587d3c2632e80f32efbefe166b9f7b0131d3aff
+        );
+        assertEq(
             Typehashes.IDENTITY_CHANGE,
             0xa474bd174aa5ecb19efe75995251c1fb8289b62bca04bc6c19e869f254e190f0
         );
