@@ -1500,6 +1500,38 @@ contract WorkRecordsTest is RecordsFixture {
         assertEq(stream.work(tokenId).royaltyRate, 6_000);
     }
 
+    /// Regression: M4 in the reviews of #22
+    /// @dev A license round trip A -> B -> A returns every committed field but the version to
+    ///      its first value, so only the version tells the two A states apart: consents signed
+    ///      at the first A state are refused at the second.
+    function test_relicense_aRoundTripDoesNotReplayConsents() public {
+        MediaFile[] memory media = _single(7, true);
+        PackageItem memory item = _recordsItem(7, media);
+        item.license = _license("cc-by-4.0");
+        uint256 tokenId = _mint(item);
+        records.openRecord(tokenId, item, media);
+        License memory a = _license("cc-by-4.0");
+        License memory b = _license("mit");
+        uint64 deadline = uint64(block.timestamp + 3 days);
+        bytes32 s0 = records.workStateHash(tokenId);
+        bytes[] memory toB = _both(_relicenseHash(tokenId, b, s0, deadline));
+        vm.prank(governor);
+        records.relicense(tokenId, b, item, s0, deadline, toB);
+        bytes32 s1 = records.workStateHash(tokenId);
+        vm.prank(governor);
+        records.relicense(
+            tokenId, a, item, s1, deadline, _both(_relicenseHash(tokenId, a, s1, deadline))
+        );
+        bytes32 s2 = records.workStateHash(tokenId);
+        assertEq(records.licenseOf(tokenId).spdxId, "cc-by-4.0");
+        assertEq(records.record(tokenId).version, 2);
+        assertTrue(s2 != s0, "the version alone separates the two A states");
+        vm.prank(governor);
+        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.StateHashMismatch.selector, s0, s2));
+        records.relicense(tokenId, b, item, s0, deadline, toB);
+        assertEq(records.licenseOf(tokenId).spdxId, "cc-by-4.0");
+    }
+
     // ------------------------------------------------------------------------------ seeds
 
     function test_seedOf_byPolicy() public {

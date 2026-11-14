@@ -7,7 +7,7 @@ import { IStream } from "src/interfaces/IStream.sol";
 import { IWorkPowers, WorkPowers } from "src/interfaces/IWorkPowers.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
-import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
+import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { ItemKind, License, PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
@@ -569,5 +569,65 @@ contract WorkPowersTest is RecordsFixture {
         assertEq(WorkPowers.ROYALTY_RATE, 1);
         assertEq(WorkPowers.RELICENSE, 2);
         assertEq(WorkPowers.ALL, 3);
+    }
+
+    /// @dev The mask shares the record's first storage word with the renderer pin, version,
+    ///      media count and flags (`forge inspect WorkRecords storageLayout`: `_records` at slot
+    ///      5, `renounced` at byte offset 30). Every later write to that word (sync, finalize, the
+    ///      errata repin) keeps the mask, and the mask leaves the other fields intact.
+    function test_renounce_theMaskSurvivesEveryWriteToItsWord() public {
+        MediaFile[] memory media = new MediaFile[](2);
+        media[0] = _mediaFile(1, FileRole.PRIMARY, false);
+        media[1] = _mediaFile(2, FileRole.AUXILIARY, false);
+        PackageItem memory item = _recordsItem(1, media);
+        uint256 tokenId = _mint(item);
+        records.openRecord(tokenId, item, media);
+        _renounce(tokenId, WorkPowers.ALL);
+        assertEq(records.record(tokenId).version, 1);
+
+        _upload(1);
+        _upload(2);
+        records.syncOnChain(tokenId);
+        assertEq(records.renouncedPowers(tokenId), WorkPowers.ALL, "after sync");
+        assertTrue(records.record(tokenId).onChainComplete);
+        assertEq(records.mediaOf(tokenId).length, 2);
+
+        bytes32 state = records.workStateHash(tokenId);
+        vm.prank(artist);
+        records.finalize(tokenId, state);
+        assertEq(records.renouncedPowers(tokenId), WorkPowers.ALL, "after finalize");
+        IWorkRecords.RecordInfo memory info = records.record(tokenId);
+        assertEq(info.version, 2);
+        assertTrue(info.finalized && info.onChainComplete);
+
+        MockRenderer next = new MockRenderer("errata");
+        state = records.workStateHash(tokenId);
+        uint64 deadline = uint64(block.timestamp + 31 days);
+        bytes memory sig = _sign(
+            artistKey,
+            keccak256(
+                abi.encode(
+                    Typehashes.RENDERER_REPIN,
+                    tokenId,
+                    address(next),
+                    address(next).codehash,
+                    state,
+                    deadline
+                )
+            )
+        );
+        vm.prank(governor);
+        records.repinRenderer(tokenId, address(next), address(next).codehash, state, deadline, sig);
+        assertEq(records.renouncedPowers(tokenId), WorkPowers.ALL, "after repin");
+        info = records.record(tokenId);
+        assertEq(info.version, 3);
+        assertEq(info.renderer, address(next));
+        assertTrue(info.finalized && info.onChainComplete);
+        assertEq(records.mediaOf(tokenId).length, 2);
+
+        uint256 word =
+            uint256(vm.load(address(records), keccak256(abi.encode(tokenId, uint256(5)))));
+        assertEq(word >> 240, WorkPowers.ALL, "the mask is the word's top two bytes");
+        assertEq(address(uint160(word)), address(next), "the renderer pin is its low 20 bytes");
     }
 }

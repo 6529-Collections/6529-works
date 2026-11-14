@@ -54,7 +54,8 @@ interface IWorkPowers {
     ///         state hash and a deadline, as for the errata repin, so nobody acts as the artist
     ///         while the artist registry restrains the authority. Allowed before and after
     ///         finalize. Bits are only ever added: renouncing only bits already renounced
-    ///         (zero included) is a no-op that checks nothing; otherwise the version bumps, so
+    ///         (zero included) is a no-op that still requires an open record and known bits
+    ///         but checks no state hash, deadline or signature; otherwise the version bumps, so
     ///         the signature can never apply again and every pending consent for the work
     ///         lapses. No metadata event follows: `tokenURI` does not show the mask.
     /// @param tokenId A live work with an open record (`RecordNotOpen` otherwise).
