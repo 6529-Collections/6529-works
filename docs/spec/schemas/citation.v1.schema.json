@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:6529-works:schema:citation:v1",
+  "title": "Citation, version 1",
+  "description": "The document of a CITATION statement: the artist of a work cites another work by chain ID, contract and token ID. A claim by the citing artist; the cited work's artist does not consent. Rules: docs/spec/declarations-and-conventions.md (DCL-18).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "subject", "cited", "relation"],
+  "properties": {
+    "v": { "const": 1 },
+    "subject": {
+      "description": "The citing work: the statement's own subject.",
+      "$ref": "urn:6529-works:schema:common:v1#/$defs/workRef"
+    },
+    "cited": { "$ref": "urn:6529-works:schema:common:v1#/$defs/workRef" },
+    "relation": { "$ref": "urn:6529-works:schema:common:v1#/$defs/citationRelation" },
+    "citedContentHash": {
+      "description": "What the cited token showed when cited, if known.",
+      "$ref": "urn:6529-works:schema:common:v1#/$defs/hashRef"
+    },
+    "note": { "$ref": "urn:6529-works:schema:common:v1#/$defs/text" }
+  }
+}

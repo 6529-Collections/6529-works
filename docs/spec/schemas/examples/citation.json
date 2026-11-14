@@ -1,0 +1,19 @@
+{
+  "v": 1,
+  "subject": {
+    "chainId": 11155111,
+    "contract": "0x02617dbdc0b0521124cb4c2a3ef602977e29bd91",
+    "tokenId": "42"
+  },
+  "cited": {
+    "chainId": 11155111,
+    "contract": "0x02617dbdc0b0521124cb4c2a3ef602977e29bd91",
+    "tokenId": "7"
+  },
+  "relation": "responds-to",
+  "citedContentHash": {
+    "algorithm": 2,
+    "digest": "0x38d991bcec7d27ad28bffa161f122d8d619642858b4af6987a458fbc1978489f"
+  },
+  "note": "Answers the composition of work 7."
+}

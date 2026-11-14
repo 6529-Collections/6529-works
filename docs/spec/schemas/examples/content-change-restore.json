@@ -1,0 +1,10 @@
+{
+  "v": 1,
+  "subject": {
+    "chainId": 11155111,
+    "contract": "0x02617dbdc0b0521124cb4c2a3ef602977e29bd91",
+    "tokenId": "42"
+  },
+  "decision": "restore",
+  "note": "Back to the approved content."
+}

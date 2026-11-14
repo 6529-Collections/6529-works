@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:6529-works:schema:catalogue:v1",
+  "title": "Artist catalogue raisonne, version 1",
+  "description": "The artist-wide catalogue document: an index of the artist's works on any chain or off chain. The artist's profile document names it by hash. An entry about a 6529 Stream work cites its CATALOGUE_ENTRY statement, which wins over the index when the two differ. Rules: docs/spec/declarations-and-conventions.md (DCL-16, DCL-17).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "artistId", "updatedAt", "entries"],
+  "properties": {
+    "v": { "const": 1 },
+    "artistId": {
+      "description": "The artist ID in the 6529 Works artist registry.",
+      "$ref": "urn:6529-works:schema:common:v1#/$defs/uint256"
+    },
+    "updatedAt": { "$ref": "urn:6529-works:schema:common:v1#/$defs/unixTime" },
+    "entries": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["catalogueNumber", "title", "date"],
+        "properties": {
+          "catalogueNumber": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9 ./_-]{0,63}$"
+          },
+          "title": { "$ref": "urn:6529-works:schema:common:v1#/$defs/shortText" },
+          "date": {
+            "type": "string",
+            "pattern": "^-?[0-9]{1,6}(-[0-9]{2}(-[0-9]{2})?)?(/-?[0-9]{1,6}(-[0-9]{2}(-[0-9]{2})?)?)?$"
+          },
+          "work": {
+            "description": "The token, when the work is one.",
+            "$ref": "urn:6529-works:schema:common:v1#/$defs/workRef"
+          },
+          "entry": {
+            "description": "For a 6529 Stream work: the entry hash of its CATALOGUE_ENTRY statement.",
+            "$ref": "urn:6529-works:schema:common:v1#/$defs/bytes32"
+          },
+          "medium": { "$ref": "urn:6529-works:schema:common:v1#/$defs/shortText" },
+          "note": { "$ref": "urn:6529-works:schema:common:v1#/$defs/text" }
+        }
+      }
+    }
+  }
+}

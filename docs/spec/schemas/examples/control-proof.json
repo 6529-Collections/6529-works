@@ -1,0 +1,15 @@
+{
+  "v": 1,
+  "message": {
+    "venue": "https://gallery.example",
+    "nonce": "0x9c1f7a52d0b34e6f8a2c4d6e8f0a1b3c5d7e9f1a2b4c6d8e0f1a3b5c7d9e1f20",
+    "issuedAt": 1794787200,
+    "expiresAt": 1794787500,
+    "chainId": 11155111,
+    "token": "0x02617dbdc0b0521124cb4c2a3ef602977e29bd91",
+    "tokenId": "42",
+    "holder": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+    "signer": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266"
+  },
+  "signature": "0x01c74d651be38ff90dea31ee388b3a7778b9e93b3926a7f5ebf04eacd7c7718143fb9581d2d0f233dc52c335c14568f261e2517d210f10449711e5484b4b355e1b"
+}

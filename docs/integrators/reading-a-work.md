@@ -23,6 +23,8 @@ interface IDs are in [ABIs and interface IDs](abis-and-interface-ids.md).
 | The dispute status | `latestDisputeOutcome(stream, tokenId)` | StatementLog (`Renderer.statementLog()` gives its address) |
 | The edition of a master, and back | `editionOf(tokenId)`; `masterOf(editionId)` | 6529 Stream; 6529 Stream Editions |
 | When to refresh | `MetadataUpdate`, `BatchMetadataUpdate` (ERC-4906) | both tokens |
+| The primary sale price | `primarySale(tokenId)`; for an edition, `clearing(saleIdOf(editions, id))` | 6529 Stream; UniformEditionAuction |
+| The work's declarations, statements and promise card | `mediaOf(tokenId)`, then the statement log's events | WorkRecords; StatementLog ([below](#declarations-statements-and-the-promise-card)) |
 
 ## Fetching the metadata
 
@@ -379,6 +381,34 @@ outcome document restates the earlier disputes it keeps in force. For an edition
 master: `(stream, editionId)`. The log refuses an outcome about an ERC-1155 subject, so none is
 ever recorded against the edition itself ([DSP-11][dsp]).
 
+## Declarations, statements and the promise card
+
+Beyond the metadata, a work can carry promises and records that no contract checks. They are
+conventions, specified with their JSON Schemas in
+[Declarations and conventions](../spec/declarations-and-conventions.md); show them as claims, with
+who made them.
+
+- **The declarations document.** One AUXILIARY media file of MIME type
+  `application/vnd.6529-works.declarations+json`, fixed from approval: read `mediaOf(tokenId)`,
+  then `ContentStore.fileInfo(fileId)` for each AUXILIARY entry, then `ContentStore.read`, or
+  fetch a locator's copy and check its SHA-256 against the media entry ([DCL-3][dcl]). It holds
+  the conservation floor, named custodians of a physical twin, citations at birth, the powers the
+  artist promised to renounce, and a living-work note. A living work changes with no ERC-4906
+  event ([DCL-9][dcl]).
+- **Convention statements.** Index `StatementAppended` for the work's subject and read each kind
+  only under the role the [kind registry](../spec/disputes-and-statements.md#statement-kind-registry)
+  names: a content-change proposal (ARTIST) and acceptance (OWNER), which change what you may
+  display but never `tokenURI` ([DCL-12][dcl]); catalogue entries and citations (ARTIST); custody
+  attestations, whose custodian signature you verify ([DCL-20][dcl]). Validate every document as
+  [DCL-2][dcl] lists before you show it, and refresh on `StatementAppended`: these entries emit no
+  ERC-4906 event.
+- **Proving control at a venue.** A gallery or app checks that a visitor controls the holding
+  wallet with an off-chain EIP-712 challenge, no transaction, including a cold wallet through a
+  consolidated one ([DCL-24, DCL-25][dcl]).
+- **The promise card.** Generated from the reads in [DCL-26][dcl] at one block: what is fixed,
+  who can still change what and after what delay, and the residual risks. A grade, if you show
+  one, is the published rubric applied to the card, with its version ([DCL-30][dcl]).
+
 ## Other reads
 
 | Read | Contract | Returns | Notes |
@@ -390,6 +420,7 @@ ever recorded against the edition itself ([DSP-11][dsp]).
 | `work(tokenId)` | Stream | item hash, artist ID, collection, serial, kind, seed policy, seller, royalty receiver, royalty rate | Reverts with `UnknownWork`. |
 | `coreOf(tokenId)` | Stream | item hash, artist ID, collection, kind, seed policy, royalty rate | The cheap read. |
 | `primarySaleSettled(tokenId)` | Stream | bool | True once the auction settled; false before, and for burned IDs. |
+| `primarySale(tokenId)` | Stream | outcome, currency, price | NONE, SOLD, UNBID, FROZEN_OUT or RESCUED; the price is held in 96 bits, the exact one is in `PrimarySaleSettled` ([DCL-32][dcl]). |
 | `editionOf(tokenId)` | Stream | Editions address and edition ID, or zeros | Only for a master with an edition. |
 | `masterOf(editionId)` | Editions | Stream address, master token ID, content hash | Reverts with `UnknownEdition`. |
 | `edition(editionId)`, `exists(editionId)` | Editions | edition state, terms, minted count, bound sale adapter | |
@@ -469,3 +500,4 @@ Do not cache a revert as empty metadata.
 [ws]: ../spec/works-and-storage.md#rules-and-invariants
 [dsp]: ../spec/disputes-and-statements.md#rules-and-invariants
 [auc]: ../spec/stream-and-auctions.md#rules-and-invariants
+[dcl]: ../spec/declarations-and-conventions.md#rules-and-invariants

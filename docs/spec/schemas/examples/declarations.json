@@ -1,0 +1,102 @@
+{
+  "v": 1,
+  "contentHash": "0x0899f7c16ef4cb9720aa1e6d9cf54481e1667ba856dd5a8fd962dc0bfac1d4da",
+  "conservation": {
+    "storage": {
+      "waived": false,
+      "files": [
+        {
+          "fileId": "0x1111111111111111111111111111111111111111111111111111111111111111",
+          "sha256": "0x0899f7c16ef4cb9720aa1e6d9cf54481e1667ba856dd5a8fd962dc0bfac1d4da",
+          "receipts": [
+            {
+              "network": "arweave",
+              "uri": "ar://oPSkhDkQRE6xQF7RQgVgRkmoJKW7XueRtNdpwXEEnRc",
+              "provider": "example bundler",
+              "receipt": "bundle-0001"
+            },
+            {
+              "network": "ipfs",
+              "uri": "ipfs://bafkreiaith34c3xuzolsbkq6nwopkreb4fthxkcw3vni7wlc3qf7vqou3i",
+              "provider": "example pinning service"
+            }
+          ]
+        },
+        {
+          "fileId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+          "sha256": "0x38d991bcec7d27ad28bffa161f122d8d619642858b4af6987a458fbc1978489f",
+          "receipts": [
+            {
+              "network": "arweave",
+              "uri": "ar://py_SBohlmAyLr40ATFSLDs2C0kmcCIrfSZosW8JlApc",
+              "provider": "example bundler"
+            },
+            {
+              "network": "ipfs",
+              "uri": "ipfs://bafkreiby3gi3z3d5e6wsrp72cyprelmnmglefbmljl3jq6sfr66bs6cit4",
+              "provider": "example pinning service"
+            }
+          ]
+        }
+      ]
+    },
+    "format": {
+      "waived": false,
+      "files": [
+        {
+          "fileId": "0x1111111111111111111111111111111111111111111111111111111111111111",
+          "mimeType": "image/png",
+          "width": 4000,
+          "height": 5000,
+          "colorSpace": "sRGB"
+        },
+        {
+          "fileId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+          "mimeType": "image/webp",
+          "width": 400,
+          "height": 500
+        }
+      ]
+    },
+    "license": {
+      "waived": false,
+      "spdxId": "CC0-1.0",
+      "textSha256": "0xa2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499"
+    },
+    "display": {
+      "waived": false,
+      "instructions": "Show the whole image at its 4:5 aspect ratio on a black ground, never cropped.",
+      "aspectRatio": "4:5",
+      "background": "#000000",
+      "sound": "none",
+      "interaction": "none"
+    }
+  },
+  "custodians": [
+    {
+      "address": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+      "name": "Example Fine Art Storage",
+      "objectId": "0x27036a7eaf555d00bc19a8fca75c359fbaeb5ab2a6dddb13075526d251ff035b",
+      "object": "Archival pigment print, 100 x 125 cm, signed on the reverse.",
+      "maxAttestationAgeDays": 365
+    }
+  ],
+  "citations": [
+    {
+      "work": {
+        "chainId": 11155111,
+        "contract": "0x02617dbdc0b0521124cb4c2a3ef602977e29bd91",
+        "tokenId": "7"
+      },
+      "relation": "responds-to",
+      "note": "A reply to an earlier work in the same Stream."
+    }
+  ],
+  "intendedRenunciations": [
+    {
+      "power": "RECORD_EDITS",
+      "withinDaysOfRecordOpen": 30,
+      "note": "The power name is illustrative: the names are the ones the IWorkPowers view of ADR 0006 defines."
+    }
+  ]
+}

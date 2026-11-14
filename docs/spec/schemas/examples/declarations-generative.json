@@ -1,0 +1,68 @@
+{
+  "v": 1,
+  "contentHash": "0xd0055a8735b5a69a40b9bf41ba553896ca536bcdd61444737a043a2f79d74e64",
+  "conservation": {
+    "storage": {
+      "waived": false,
+      "files": [
+        {
+          "fileId": "0x3333333333333333333333333333333333333333333333333333333333333333",
+          "sha256": "0xd0055a8735b5a69a40b9bf41ba553896ca536bcdd61444737a043a2f79d74e64",
+          "receipts": [
+            {
+              "network": "arweave",
+              "uri": "ar://9USPkLhAcOKSPu8PO65eUkOjGo1k_xV5IR9cdaA-GE0",
+              "provider": "example bundler"
+            },
+            {
+              "network": "ipfs",
+              "uri": "ipfs://bafkreigqavnionnvu2nebon7ig5fkoewzjjwxtowcrchg6qehixxtv2omq",
+              "provider": "example pinning service"
+            }
+          ]
+        }
+      ]
+    },
+    "format": {
+      "waived": false,
+      "files": [
+        {
+          "fileId": "0x3333333333333333333333333333333333333333333333333333333333333333",
+          "mimeType": "text/javascript"
+        }
+      ]
+    },
+    "license": {
+      "waived": false,
+      "spdxId": "CC0-1.0",
+      "textSha256": "0xa2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499"
+    },
+    "generative": {
+      "waived": false,
+      "renderer": {
+        "address": "0xa4d100c8f6faed2d7db97a3bc68f9e215a8aea8f",
+        "codeHash": "0x4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      "dependencies": [],
+      "seedPolicy": "VRF",
+      "runtime": "Any browser with Canvas 2D and requestAnimationFrame; tested in Chromium 140 and Firefox 143. The script reads window.works.seed and nothing from the network."
+    },
+    "display": {
+      "waived": false,
+      "instructions": "Run full screen, square, on a white ground. The piece draws for about a minute, then holds; reload to watch it again.",
+      "aspectRatio": "1:1",
+      "background": "#ffffff",
+      "loop": false,
+      "sound": "none",
+      "interaction": "none"
+    }
+  },
+  "livingWork": {
+    "drivers": [
+      "time",
+      "randomness"
+    ],
+    "note": "The palette follows the season at the viewer's clock. Nothing on chain changes, so no ERC-4906 event announces it; a cached still is out of date within the month.",
+    "suggestedRefreshSeconds": 86400
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:6529-works:schema:catalogue-entry:v1",
+  "title": "Catalogue raisonne entry, version 1",
+  "description": "The document of a CATALOGUE_ENTRY statement: the artist's catalogue entry for one work. A later entry superseding it replaces it. Rules: docs/spec/declarations-and-conventions.md (DCL-16, DCL-17).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "subject", "catalogueNumber", "title", "date"],
+  "properties": {
+    "v": { "const": 1 },
+    "subject": { "$ref": "urn:6529-works:schema:common:v1#/$defs/workRef" },
+    "catalogueNumber": {
+      "description": "The artist's own number for the work, unique within the artist's catalogue.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9 ./_-]{0,63}$"
+    },
+    "title": { "$ref": "urn:6529-works:schema:common:v1#/$defs/shortText" },
+    "date": {
+      "description": "When the work was made: a year, a year and month, or a date (ISO 8601), or a range of two such values joined by a slash.",
+      "type": "string",
+      "pattern": "^-?[0-9]{1,6}(-[0-9]{2}(-[0-9]{2})?)?(/-?[0-9]{1,6}(-[0-9]{2}(-[0-9]{2})?)?)?$"
+    },
+    "medium": { "$ref": "urn:6529-works:schema:common:v1#/$defs/shortText" },
+    "dimensions": { "$ref": "urn:6529-works:schema:common:v1#/$defs/shortText" },
+    "series": { "$ref": "urn:6529-works:schema:common:v1#/$defs/shortText" },
+    "physicalTwin": {
+      "description": "The custodian's object ID of the work's physical twin, as the declarations document names it.",
+      "$ref": "urn:6529-works:schema:common:v1#/$defs/bytes32"
+    },
+    "exhibitions": {
+      "type": "array",
+      "maxItems": 64,
+      "items": { "$ref": "urn:6529-works:schema:common:v1#/$defs/shortText" }
+    },
+    "literature": {
+      "type": "array",
+      "maxItems": 64,
+      "items": { "$ref": "urn:6529-works:schema:common:v1#/$defs/shortText" }
+    },
+    "note": { "$ref": "urn:6529-works:schema:common:v1#/$defs/text" }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "v": 1,
+  "subject": {
+    "chainId": 11155111,
+    "contract": "0x02617dbdc0b0521124cb4c2a3ef602977e29bd91",
+    "tokenId": "42"
+  },
+  "catalogueNumber": "AB-2026-014",
+  "title": "Example Work No. 14",
+  "date": "2026-03",
+  "medium": "Digital image; archival pigment print twin",
+  "dimensions": "4000 x 5000 px; print 100 x 125 cm",
+  "series": "Examples",
+  "physicalTwin": "0x27036a7eaf555d00bc19a8fca75c359fbaeb5ab2a6dddb13075526d251ff035b",
+  "exhibitions": [
+    "Example Gallery, group show, 2026"
+  ],
+  "literature": []
+}
