@@ -239,7 +239,7 @@
       },
       {
         "operation": "start, two-party work",
-        "pragueGas": 276153,
+        "pragueGas": 276173,
         "pragueCeiling": {
           "gas": 350000,
           "kind": "budget"
@@ -251,7 +251,7 @@
       },
       {
         "operation": "startWithBid, two-party work",
-        "pragueGas": 318149,
+        "pragueGas": 318169,
         "pragueCeiling": {
           "gas": 350000,
           "kind": "budget"
@@ -293,7 +293,7 @@
       },
       {
         "operation": "start, edition master with 64 bytes of params (the bound)",
-        "pragueGas": 269013,
+        "pragueGas": 269033,
         "pragueCeiling": {
           "gas": 350000,
           "kind": "budget"
@@ -329,7 +329,7 @@
       },
       {
         "operation": "startWithBid, an artist's first work, two-party",
-        "pragueGas": 338253,
+        "pragueGas": 338273,
         "pragueCeiling": {
           "gas": 350000,
           "kind": "budget"
@@ -341,7 +341,7 @@
       },
       {
         "operation": "startWithBid, an artist's first work, two-party, VRF",
-        "pragueGas": 343802,
+        "pragueGas": 343782,
         "pragueCeiling": {
           "gas": 350000,
           "kind": "budget"
@@ -353,7 +353,7 @@
       },
       {
         "operation": "startWithBid, an artist's first work, two-party, VRF, edition master with 64 bytes of params (the bound)",
-        "pragueGas": 344949,
+        "pragueGas": 344937,
         "pragueCeiling": {
           "gas": 350000,
           "kind": "budget"
@@ -365,7 +365,7 @@
       },
       {
         "operation": "startWithBid, an artist's first work, two-party, all four dependencies replaced",
-        "pragueGas": 344657,
+        "pragueGas": 344645,
         "pragueCeiling": {
           "gas": 346000,
           "kind": "regression",
@@ -377,7 +377,7 @@
       },
       {
         "operation": "startWithBid, an artist's first work, two-party, VRF, all four dependencies replaced",
-        "pragueGas": 352314,
+        "pragueGas": 352294,
         "pragueCeiling": {
           "gas": 354000,
           "kind": "regression",
@@ -400,7 +400,7 @@
       },
       {
         "operation": "start, first work in a new collection",
-        "pragueGas": 267864,
+        "pragueGas": 267884,
         "pragueCeiling": {
           "gas": 400000,
           "kind": "budget"
@@ -414,7 +414,7 @@
       },
       {
         "operation": "start, first work ever (one-time)",
-        "pragueGas": 437024,
+        "pragueGas": 437036,
         "pragueCeiling": {
           "gas": 449000,
           "kind": "regression"
@@ -566,7 +566,7 @@
       },
       {
         "operation": "re-rate a work (governed execute)",
-        "pragueGas": 189902,
+        "pragueGas": 190150,
         "pragueCeiling": {
           "gas": 192000,
           "kind": "regression"
@@ -619,7 +619,7 @@
       },
       {
         "operation": "tokenURI (view, the size matrix)",
-        "pragueGas": 2736626,
+        "pragueGas": 2736559,
         "pragueGasIsMaximum": true,
         "pragueCeiling": {
           "gas": 8000000,
@@ -655,7 +655,7 @@
       },
       {
         "operation": "claimSigned, the artist's first signed release",
-        "pragueGas": 141464,
+        "pragueGas": 141484,
         "pragueCeiling": {
           "gas": 145000,
           "kind": "regression"

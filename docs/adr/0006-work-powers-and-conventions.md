@@ -132,8 +132,11 @@ ADRs stay as written; [ADR 0001](0001-v1-scope.md) gets a pointer to this record
 
 - **Bytecode.** `WorkRecords`' runtime grows from 23,139 to 23,946 bytes, leaving 630 bytes of
   EIP-170 margin (512 required). The errata repin and `renounce` share one artist-signature
-  check (`_checkArtistConsent`), which saved 38 bytes. 6529 Stream (24,373 bytes, margin 203) is
-  unchanged byte for byte.
+  check (`_checkArtistConsent`), which saved 38 bytes. Every other contract's runtime bytecode is
+  identical once its trailing CBOR metadata is stripped; only the metadata hash moves, through
+  `IWorkRecords.sol` (a NatSpec correction), `Typehashes.sol` and `StatementKinds.sol`: 6529
+  Stream (24,373 bytes, margin 203), 6529 Stream Editions, StatementLog, ArtistRegistry,
+  PackageRegistry, Eip712CurationVerifier, EnglishAuction, EconomicsResolver and Renderer.
 - **Storage and gas.** No new storage slot on any path. `setRoyaltyRate` and `relicense` read
   the record's first word once more (warm). The re-rate row of `GasReport.t.sol` now lowers the
   rate; its slot and account counts are unchanged.

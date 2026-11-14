@@ -17,7 +17,7 @@ an audit.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 12,129 non-blank, non-comment lines in 87 files under `src/` (budget: 13,000; ADR 0001, amended 1 November 2026) |
+| Source lines | 12,204 non-blank, non-comment lines in 88 files under `src/` (budget: 13,000; ADR 0001, amended 1 November 2026) |
 | Deployed contracts | 23 per deployment without the optional VRF entropy module and 24 with it: the 21 (or 22) that `DeployV1.order` lists, the edition auction's lens among them (deployed in its own transaction and pinned by the auction), plus the AccessManager the governance configurator creates and the lens the English auction creates; and one `SplitWallet` per payee configuration, deployed on demand |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
@@ -34,7 +34,7 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
 | `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 749 | 24,373 | 26,210 | **203** |
-| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 632 | 23,139 | 25,834 | 1,437 |
+| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 677 | 23,946 | 26,641 | 630 |
 | `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 374 | 19,015 | 20,697 | 5,561 |
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 824 | 23,429 | 26,465 | 1,147 |
 | `EnglishAuctionLens` | [`src/sales/EnglishAuctionLens.sol`](../../src/sales/EnglishAuctionLens.sol) | 290 | 6,372 | 6,665 | 18,204 |
@@ -115,7 +115,7 @@ The "Used by" column is a reading aid; the import graph is authoritative.
 
 ### Interfaces and shared types
 
-1,945 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
+1,975 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
 [`src/economics/interfaces/`](../../src/economics/interfaces/), plus the 14-line Chainlink
 coordinator interface [`src/entropy/IVRFCoordinatorV2Plus.sol`](../../src/entropy/IVRFCoordinatorV2Plus.sol).
 `WorksHashing` is counted here and listed with the libraries above. They carry the external
