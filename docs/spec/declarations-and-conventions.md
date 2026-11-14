@@ -644,3 +644,13 @@ No accepted ADR is departed from. The work powers this page refers to are
   [Identity and recovery](identity-and-recovery.md),
   [Reading a work](../integrators/reading-a-work.md), [roles](../audit/roles.md),
   [known limitations](../audit/known-limitations.md).
+
+## Reference tools
+
+[`tools/conventions/`](../../tools/conventions/README.md) implements these rules in Python,
+standard library only, for front ends, venues and the curation signer to copy or test against:
+schema validation and RFC 8785 canonical form (DCL-1), the floor check before attestation
+(DCL-3 to DCL-5, DCL-7), the promise card from reads at one block (DCL-26 to DCL-29), rubric 1
+(DCL-30), the control-proof verifier (DCL-23 to DCL-25) and the custody-attestation reader check
+(DCL-19 to DCL-22). The tools make no chain reads; the caller supplies them. This page is the
+authority where the two differ.
