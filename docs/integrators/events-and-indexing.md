@@ -108,9 +108,11 @@ ERC-721 events come from OpenZeppelin 5.7.0's `ERC721`; ERC-4906 events from `IE
 
 ### WorkRecords
 
-[`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol), interface
-[`IWorkRecords`](../../src/interfaces/IWorkRecords.sol). Every per-token change below also
-emits ERC-4906 events through both tokens ([refresh triggers](#erc-4906-refresh-triggers)).
+[`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol), interfaces
+[`IWorkRecords`](../../src/interfaces/IWorkRecords.sol) and
+[`IWorkPowers`](../../src/interfaces/IWorkPowers.sol). Every per-token change below also
+emits ERC-4906 events through both tokens ([refresh triggers](#erc-4906-refresh-triggers)),
+except `PowersRenounced`: `tokenURI` does not show the renounced powers.
 
 | Event | topic0 | Emitted by | Meaning and indexing notes |
 | --- | --- | --- | --- |
@@ -120,8 +122,9 @@ emits ERC-4906 events through both tokens ([refresh triggers](#erc-4906-refresh-
 | `OnChainSyncProgress(uint256 indexed tokenId, uint256 files)` | `0x2ac9493b…` | `syncOnChain` (permissionless), when its budget of 512 chunks (`SYNC_CHUNKS`) stops it | The first `files` media files are complete in the content store; the next call resumes there. No metadata or state-hash change. |
 | `WorkOnChainComplete(uint256 indexed tokenId)` | `0x15405c6b…` | The `syncOnChain` call that finds the last media file complete | Every media file is on-chain. One-way; the state hash does not change. Enables the implicit ONCHAIN locator ([WS-21][ws]) and inlining of the primary ([RND-17][rnd]). |
 | `LicenseChanged(uint256 indexed tokenId, License previous, License next)` | `0x8f67810f…` | `relicense` (PARAMETER_SETTER, 48 hours, plus every party's `Relicense` signature) | `License` is `(string spdxId, bytes32 textFileId)`. The record version bumps; the event carries no state hash (read `workStateHash`). |
-| `RoyaltyRateSet(uint256 indexed tokenId, uint32 previous, uint32 next, bytes32 stateHash)` | `0xe8cb8922…` | `setRoyaltyRate` (FUNDS_SETTER, 14 days, plus every party's `RoyaltyRateChange` signature) | The authoritative record of a rate change, with the new state hash. Follows 6529 Stream's and, for a linked master, 6529 Stream Editions' `RoyaltyRateChanged`. An unchanged rate emits nothing. |
+| `RoyaltyRateSet(uint256 indexed tokenId, uint32 previous, uint32 next, bytes32 stateHash)` | `0xe8cb8922…` | `setRoyaltyRate` (FUNDS_SETTER, 14 days, plus every party's `RoyaltyRateChange` signature) | The authoritative record of a rate change, with the new state hash. Lower-only: `next` is always below `previous` ([WS-14][ws]). Follows 6529 Stream's and, for a linked master, 6529 Stream Editions' `RoyaltyRateChanged`. An unchanged rate emits nothing. |
 | `RendererRepinned(uint256 indexed tokenId, address previous, address next, bytes32 codeHash)` | `0x382b0879…` | `repinRenderer` (SUCCESSOR_SETTER, 30 days, plus the artist's `RendererRepin` signature) | The errata path replaced a finalized work's renderer pin. No state hash in the event. |
+| `PowersRenounced(uint256 indexed tokenId, uint16 powers, uint16 renounced, bytes32 stateHash)` | `0x16458312…` | `renounce` (permissionless to submit, with the lead artist's `RenouncePowers` signature; [WS-37][ws]) | The lead artist gave up, for good, the `WorkPowers` bits in `powers` (1 `ROYALTY_RATE`, 2 `RELICENSE`); `renounced` is every bit renounced for the work after the call, and `stateHash` the new state hash (the version bumped). Renouncing nothing new emits nothing. No ERC-4906 event follows. Read `renouncedPowers(tokenId)` for the current mask. |
 | `LocatorAdded(uint256 indexed tokenId, bytes32 indexed fileId, uint256 index, Locator locator)` | `0x728460e4…` | `addLocator` (the artist before finalize, or PLATFORM) | `Locator` is `(uint8 kind, string uri)`. `index` is its position in the file's list, which is append-only. No state-hash change. |
 | `PreferredKindSet(LocatorKind previous, LocatorKind next)` | `0x0c7addff…` | `setPreferredKind` (STORAGE_OPERATOR, immediate) | The global preferred locator kind. Emitted even when unchanged; refreshes every token and edition. |
 | `CollectionPreferredKindSet(uint256 indexed collectionId, LocatorKind previous, LocatorKind next)` | `0x57ab57ed…` | `setCollectionPreferredKind` (STORAGE_OPERATOR) | A collection's preferred kind. The refresh covers every token, not only the collection's. |
@@ -459,12 +462,14 @@ sequenceDiagram
 | On-chain complete | Zero or more `OnChainSyncProgress`, then `WorkOnChainComplete` | |
 | Finalized | `WorkFinalized` | `record(tokenId)` |
 | Amended | `RoyaltyRateChanged` then `RoyaltyRateSet`; `LicenseChanged`; `RendererRepinned` | `workStateHash(tokenId)` |
+| Powers renounced | `PowersRenounced` | `renouncedPowers(tokenId)` |
 | Edition linked | `EditionLinked(tokenId, editions, tokenId)` | `editionOf(tokenId)` |
 | Delivered, transferred | `Transfer` | `ownerOf(tokenId)` |
 | Burned | `Transfer(auction, 0, tokenId)` with `AuctionCancelled`, only before the sale settled ([DSP-20][dsp]); a later `ContentReleased` names the item | |
 
 The record version is the number of `RecordSet`, `WorkFinalized`, `LicenseChanged`,
-`RoyaltyRateSet` and `RendererRepinned` events for the token, from zero at `openRecord`
+`RoyaltyRateSet`, `RendererRepinned` and `PowersRenounced` events for the token, from zero at
+`openRecord`
 ([WS-11][ws]). The state hash also commits to values no event carries, so read
 `workStateHash(tokenId)` rather than recompute it
 ([formula](abis-and-interface-ids.md#work-state-hash)).
@@ -590,6 +595,11 @@ and a head. Also:
   adds the fallback from a token to its item ([DSP-12][dsp]).
 - Governance manifests form their own chain on the subject `(manager, 0)`, with the manager as
   signer and role PLATFORM ([DSP-5][dsp]).
+- The convention kinds (`CONTENT_CHANGE_PROPOSAL`, `CONTENT_CHANGE_ACCEPTANCE`,
+  `CATALOGUE_ENTRY`, `CITATION`, `CUSTODY_ATTESTATION`) are accepted under every role; read each
+  only under the role the [kind registry](../spec/disputes-and-statements.md#statement-kind-registry)
+  names ([DCL-2](../spec/declarations-and-conventions.md#rules-and-invariants)). They emit no
+  ERC-4906 event: refresh a display change, a catalogue entry or custody on `StatementAppended`.
 
 ### Governance
 
@@ -798,6 +808,7 @@ structs expanded to tuples: 132 signatures.
 | `PackageRegistrySet(address,address)` | `0xf602f9bca87ed171d7fdb8fdcbde47a70bb58e7a2029620f431ea07ddb8edb93` | ArtistRegistry |
 | `PackageRevoked(bytes32,bytes32)` | `0x6d695ea27d607e410f90e6b81ed7be5aacde025347b8885f0eef8a60c796dd90` | PackageRegistry |
 | `Paused(address)` | `0x62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258` | EnglishAuction, UniformEditionAuction |
+| `PowersRenounced(uint256,uint16,uint16,bytes32)` | `0x1645831232817ad28692844e620258135b764cbc32106d9c36fc183ae2e4bd70` | WorkRecords |
 | `PreferredKindSet(uint8,uint8)` | `0x0c7addff33115506eceb32af47e39cfa360f77cd274f7a61785628f220a420e8` | WorkRecords |
 | `PrimarySaleSettled(uint256,uint8,address,address,uint256)` | `0xbb0a6d98d06d32ed01207833227c13c8ef140cc29411188e5f0e63d544ecd471` | Stream |
 | `RecordOpened(uint256,bytes32,bytes32)` | `0xaa2a63e255d7826a28755f26ec86b6a056cf997cc736f42a4b0af2b13dcb48b8` | WorkRecords |

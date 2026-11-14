@@ -23,9 +23,10 @@ additions could only be made now:
 
 Constraints the change had to meet:
 
-- **6529 Stream must not change.** Stream compiles `type(IWorkRecords).interfaceId` into its
-  bind check, so adding a function to `IWorkRecords` would change its bytecode; with metadata
-  hashes in the bytecode (ADR 0001), so would any edit to `IWorkRecords.sol`, comments included.
+- **6529 Stream's code must not change.** Stream compiles `type(IWorkRecords).interfaceId` into
+  its bind check, so adding a function to `IWorkRecords` would change its executable bytecode.
+  An edit to `IWorkRecords.sol` comments changes only the CBOR metadata hash appended to the
+  bytecode (ADR 0001), not the code.
 - **The budgets hold.** `WorkRecords` had 1,437 bytes of EIP-170 margin, and CI requires 512 to
   remain; no new storage slot on any path; the source-line budget (13,000) is not raised.
 
@@ -58,8 +59,11 @@ Constraints the change had to meet:
 - **Interface.** `renounce(tokenId, powers, expectedStateHash, deadline, artistSignature)`, the
   view `renouncedPowers(tokenId)`, the event `PowersRenounced(tokenId, powers, renounced,
   stateHash)` and the three errors are in a new interface, `IWorkPowers`, which `WorkRecords`
-  reports through ERC-165 beside `IWorkRecords`. `IWorkRecords` and 6529 Stream are unchanged:
-  Stream's runtime bytecode is byte-identical before and after the change.
+  reports through ERC-165 beside `IWorkRecords`. `IWorkRecords`' functions, events and errors
+  and 6529 Stream's code are unchanged: Stream's runtime bytecode is identical before and after
+  the change once its trailing CBOR metadata is stripped. Two NatSpec lines of `IWorkRecords`
+  were corrected (a renunciation bumps the version; royalty changes are lower-only), which moves
+  the metadata hash of every contract that compiles it.
 - **Storage.** A `uint16` mask in the last two bytes of the record's first storage word, which
   were spare: no new slot. Bits are only ever added.
 - **Authorization.** The lead artist's active authority signs the new EIP-712 type
@@ -83,9 +87,9 @@ Constraints the change had to meet:
     then; after a change, a former authority's signature no longer verifies.
   - *Editions:* a linked edition follows its master's rate and reads its master's license, so a
     renunciation on the master fixes both for the edition.
-  - *Renouncing twice:* renouncing only bits already renounced, or none, is a no-op that checks
-    nothing. It changes nothing and authorizes nothing, and a revert would only make retries
-    fail.
+  - *Renouncing twice:* renouncing only bits already renounced, or none, is a no-op: it still
+    needs an open record and known bits, but checks no state hash, deadline or signature. It
+    changes nothing and authorizes nothing, and a revert would only make retries fail.
   - *Pending consents:* the version bump makes every consent collected for the work lapse.
 - **The errata repin cannot be renounced.** The errata path (ADR 0001 §10) is how a finalized
   work's renderer is repaired. A pinned renderer that a future gas repricing or another protocol
@@ -147,6 +151,15 @@ ADRs stay as written; [ADR 0001](0001-v1-scope.md) gets a pointer to this record
   never raised as one.
 - **A lowered rate cannot be restored.** A rate lowered by mistake, or by agreement the parties
   later regret, stays lowered.
+- **A renunciation is immediate, with no guardian veto.** `renounce` is not a governed action:
+  it takes effect in the transaction that carries the signature, with no delay a guardian could
+  cancel, and nothing can reverse it.
+- **Renouncing `RELICENSE` freezes the license entirely.** It also blocks a later move to CC0
+  and any correction of the license-text pointer, since both go through `relicense`.
+- **After finalize, renouncing lapses collected consents.** The version bump makes every
+  consent collected for the work lapse, so the lead artist can, by renouncing any power not yet
+  renounced, void consents other parties already signed for a pending amendment (a lower rate,
+  a new license or a repin).
 
 ## Alternatives considered
 

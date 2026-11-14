@@ -15,7 +15,7 @@ are under [Relayed artist statement](../../docs/spec/disputes-and-statements.md#
 | `StatementLog.sol` | The log: the append paths per role, the EIP-712 relay and its nonces, the per-subject hash chain, the latest dispute outcome per subject. Holds no value; no pause, no edit, no delete. |
 | [`IStatementLog`](../interfaces/IStatementLog.sol) | `Role`, `Statement`, events, errors and the external surface. |
 | [`HashRef`](../interfaces/types/HashRef.sol) | The content hash type and its three accepted algorithm IDs. |
-| [`StatementKinds`](../interfaces/types/StatementKinds.sol) | Well-known kind labels (constants only); three are reserved: `DISPUTE_OUTCOME`, `CURATION_EVIDENCE` and `GOVERNANCE_MANIFEST`. |
+| [`StatementKinds`](../interfaces/types/StatementKinds.sol) | Well-known kind labels (constants only); three are reserved: `DISPUTE_OUTCOME`, `CURATION_EVIDENCE` and `GOVERNANCE_MANIFEST`. Five are convention kinds (content-change proposal and acceptance, catalogue entry, citation, custody attestation), accepted under every role, whose writers and schemas readers apply ([Declarations and conventions](../../docs/spec/declarations-and-conventions.md)). |
 | [`IArtistRoleResolver`](../interfaces/IArtistRoleResolver.sol) | The one question the log asks about ARTIST statements; `ArtistRegistry` implements it. |
 
 ## Entry points

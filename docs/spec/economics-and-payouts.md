@@ -87,8 +87,11 @@ Nothing in the resolver reaches back into an existing work or a running sale (EC
 - **Sales** lock their currency at start ([Stream and auctions](stream-and-auctions.md),
   [Editions and sales](editions-and-sales.md)).
 - **The one exception** is the royalty rate: `IWorkRecords.setRoyaltyRate` (FUNDS_SETTER, funds
-  class, plus every party's signature); a linked edition follows its master
-  ([Works and storage](works-and-storage.md)). Payees and the royalty receiver never change.
+  class, plus every party's signature) may only lower it, per
+  [ADR 0006](../adr/0006-work-powers-and-conventions.md), and stops for good once the lead artist
+  renounces the power (`IWorkPowers`); a linked edition follows its master
+  ([Works and storage](works-and-storage.md), WS-14, WS-38). Payees and the royalty receiver
+  never change.
 - **The fee recipient** is locked too, so one that can never be paid would strand every sale
   of every work minted under it. The resolver refuses the contracts it can recognise (ECO-3); for
   the rest, the runbook checks that a new recipient accepts ETH from a 100,000-gas call before

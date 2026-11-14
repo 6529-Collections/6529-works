@@ -271,6 +271,15 @@ consent, an identity-change acceptance or an escrow recovery consent.
 
 See: [`Typehashes.sol`](../src/interfaces/types/Typehashes.sol).
 
+### conservation floor
+
+The minimum preservation facts a work's [declarations document](#declarations-document) states
+(storage, format, license, display, and generative facts for a generative work), which the
+curation signer checks before attesting and publishes in the curation evidence. A convention: no
+contract checks it.
+
+See: [declarations and conventions](spec/declarations-and-conventions.md#the-conservation-floor).
+
 ### consolidation
 
 A two-way link between two wallets in the 6529 [delegation contract](#delegation-contract).
@@ -321,6 +330,15 @@ A [captured wallet](#captured-wallet)'s cancel of a pending [override](#override
 waits for a TDH vote or lapses after 365 days (`ArtistRegistry.CONTEST_TIMEOUT`).
 
 See: [identity and recovery](spec/identity-and-recovery.md).
+
+### convention kind
+
+A statement kind whose writer and document schema are set by a convention, not by the statement
+log: content-change proposals and acceptances, catalogue entries, citations and custody
+attestations. The log accepts them under every role; readers count each only under the role the
+kind registry names.
+
+See: [disputes and statements](spec/disputes-and-statements.md#statement-kind-registry).
 
 ### copy
 
@@ -413,6 +431,14 @@ win; they fill in queue [position](#position) order.
 See: [editions and sales](spec/editions-and-sales.md#the-cut-step).
 
 ## D
+
+### declarations document
+
+A work's statement of promises the contracts do not record (its conservation floor, custodians,
+citations, intended renunciations), carried as one AUXILIARY media file, so the approved media
+hash fixes it.
+
+See: [declarations and conventions](spec/declarations-and-conventions.md#the-declarations-document).
 
 ### delay class
 
@@ -836,6 +862,13 @@ The terms the English auction locks for one sale: token, ID, currency, price, se
 
 See: [stream and auctions](spec/stream-and-auctions.md).
 
+### lower-only
+
+Of a work's royalty rate: `setRoyaltyRate` may lower it but never raise it, even with every
+party's consent (ADR 0006). The rate new works mint with stays governed.
+
+See: [works and storage](spec/works-and-storage.md#rules-and-invariants).
+
 ## M
 
 ### Main Stage
@@ -1066,6 +1099,14 @@ on-chain.
 
 See: [identity and recovery](spec/identity-and-recovery.md).
 
+### promise card
+
+A client-generated summary of one work at one block: what is fixed, who can still change what
+and after what delay, and the residual risks. Never written on chain; a grade may be computed
+from it.
+
+See: [declarations and conventions](spec/declarations-and-conventions.md#the-card).
+
 ## R
 
 ### raise-only parameter
@@ -1115,6 +1156,14 @@ The immutable, stateless contract that builds `tokenURI` (`Renderer`). Works use
 renderer until finalize pins one.
 
 See: [rendering and tokenURI](spec/rendering-and-tokenuri.md).
+
+### renounced power
+
+A power over one work (`ROYALTY_RATE`, any further royalty change; `RELICENSE`, any further
+license change) that the lead artist gave up for good through `IWorkPowers.renounce`; the
+function then always reverts for that work. The errata repin cannot be renounced.
+
+See: [works and storage](spec/works-and-storage.md#rules-and-invariants).
 
 ### reserve
 

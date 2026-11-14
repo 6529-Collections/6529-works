@@ -163,6 +163,10 @@ by the genesis wiring and then locked ([GV-24][gv]).
 | --- | --- | --- | --- |
 | `Stream.bindWorkRecords`, `bindEditions` | Code, no EIP-7702, ERC-165, and its `stream()` is this Stream | `setRoyaltyRate`, `emitMetadataUpdate`; `linkEdition` once per settled master | [AUC-11][auc] |
 | `Editions.bindWorkRecords` | Code, no EIP-7702, ERC-165 | `setRoyaltyRate`, `notifyMasterUpdated`, `notifyAllUpdated` | [ED-7][ed] |
+
+Stream and Editions check only `IWorkRecords` when binding; no contract depends on `IWorkPowers`,
+the renounceable powers `WorkRecords` also reports through ERC-165
+([ADR 0006](../adr/0006-work-powers-and-conventions.md)).
 | `PackageRegistry.bindStream`, `bindEditions` | Code, no EIP-7702, ERC-165 | `consume`, `releaseContent`; `claimContent` for the consumed item | [CUR-15][cur] |
 | `ArtistRegistry.bindPackageRegistry`, `bindStream`, `bindSplitFactory`, `bindStatementLog` | Code and no EIP-7702; ERC-165 for the first two; the log's resolver is this registry | `register`; `isWallet`; `latestDisputeOutcome` | [ID-29][id] |
 | `ArtistRegistry.setPackageRegistry` (a 30-day SUCCESSOR_SETTER action, compare-and-set) | As `bindPackageRegistry` | `register`, moved to Stream's successor package registry | [ID-30][id] |
@@ -231,6 +235,11 @@ dependencies are pinned to a reviewed code hash, and all but the last row are ch
   pin moves only with the lead artist's signature, and a changed pinned renderer leaves the work
   without metadata until a repin ([RND-1, RND-5][rnd],
   [LIM-CNT-10][lim-cnt]).
+- **Renunciations.** `WorkRecords.renounce` is authenticated only by the lead artist's active
+  authority: no role, no delay and no guardian veto. The artist registry's restraint rule, which
+  reports no active authority while an authority-moving override is pending, stops a contested
+  key from renouncing; nothing else does, and a renunciation cannot be undone
+  ([WS-37, WS-38][ws], [LIM-CNT-14][lim-cnt]).
 
 ## Differences from the ADRs
 
