@@ -15,7 +15,7 @@ who verify a work's bytes. `WorkRecords` is the records satellite of 6529 Stream
 
 | Contract | Source | Interface | Responsibility |
 | --- | --- | --- | --- |
-| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | [`IWorkRecords`](../../src/interfaces/IWorkRecords.sol) | Opens each work's record from its approved item; the record file pointer, media list, license and ARTIST seed; the state hash and version; finalize and the renderer pin; on-chain completeness; amendments (relicense, royalty rate, errata repin); locators and preferred location. Governed through AccessManager. |
+| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | [`IWorkRecords`](../../src/interfaces/IWorkRecords.sol), [`IWorkPowers`](../../src/interfaces/IWorkPowers.sol) | Opens each work's record from its approved item; the record file pointer, media list, license and ARTIST seed; the state hash and version; finalize and the renderer pin; on-chain completeness; amendments (relicense, a lower royalty rate, errata repin); the lead artist's renounced powers; locators and preferred location. Governed through AccessManager. |
 | `SpdxId` (library) | [`src/stream/SpdxId.sol`](../../src/stream/SpdxId.sol) | none | The license-ID rule: 1 to 64 bytes of `[A-Za-z0-9.+-]`, original case kept. Stream applies it at mint, `WorkRecords` at deployment and relicense. |
 | `ContentStore` | [`src/content/ContentStore.sol`](../../src/content/ContentStore.sol) | [`IContentStore`](../../src/interfaces/IContentStore.sol) | Chunks, manifests, completeness, verified chunk and range reads, base64 attestation. No owner, no governance, no payable function. |
 | `Base64Validator` (library) | [`src/content/Base64Validator.sol`](../../src/content/Base64Validator.sol) | none | The strict RFC 4648 alphabet check behind `attestBase64`, 32 bytes per step. |
@@ -44,10 +44,11 @@ active authority (Stream's `artistOf`, then the artist registry's `activeAuthori
 | `relicense` | PARAMETER_SETTER (48 hours), with every party's signature | Artist registry `artistIdOf`, `activeAuthorityOf`; content store `sha256Of` or `isComplete` |
 | `setRoyaltyRate` | FUNDS_SETTER (14 days), with every party's signature | Artist registry; Stream `setRoyaltyRate`; for a linked master, Editions `setRoyaltyRate` |
 | `repinRenderer` | SUCCESSOR_SETTER (30 days), with the artist's signature | The new renderer's ERC-165 |
+| `renounce` | Anyone, with the artist's signature (not restricted, so no role) | Artist registry `activeAuthorityOf` |
 | `addLocator` | The artist before finalize; anyone else only as the AccessManager allows (PLATFORM, immediate at genesis) | For a caller other than the artist, the AccessManager's `canCall` |
 | `setPreferredKind`, `setCollectionPreferredKind`, `setFilePreference` | STORAGE_OPERATOR, immediate | `setCollectionPreferredKind`: Stream `collectionCount` |
 | `setAuthority` | The current AccessManager (OpenZeppelin `AccessManaged`) | None |
-| Views: `isOpen`, `record`, `mediaOf`, `licenseOf`, `workStateHash`, `pinnedRenderer`, `seedOf`, `locators`, `preferredLocator`, `preferredKind`, `collectionPreferredKind`, `filePreference`, `stream` | Anyone; Stream reads `stream`, `isOpen` and `pinnedRenderer`, Editions `licenseOf`, and the renderer the rest it needs | Stream `coreOf`; `workStateHash` also Stream `defaultRenderer`; `mediaOf` the content store's `sha256Of`; `openRecord` Stream's `entropyModuleOf`, then that module's `seedOf` (a VRF seed is stored at open) |
+| Views: `isOpen`, `record`, `mediaOf`, `licenseOf`, `workStateHash`, `pinnedRenderer`, `seedOf`, `renouncedPowers`, `locators`, `preferredLocator`, `preferredKind`, `collectionPreferredKind`, `filePreference`, `stream` | Anyone; Stream reads `stream`, `isOpen` and `pinnedRenderer`, Editions `licenseOf`, and the renderer the rest it needs | Stream `coreOf`; `workStateHash` also Stream `defaultRenderer`; `mediaOf` the content store's `sha256Of`; `openRecord` Stream's `entropyModuleOf`, then that module's `seedOf` (a VRF seed is stored at open) |
 
 Per-token functions also read Stream's `coreOf` and `editionOf`. Metadata refreshes follow
 WS-23: `emitMetadataUpdate(id, id)` and `notifyMasterUpdated` per token, or
@@ -100,7 +101,15 @@ through ERC-1271 ([`SignatureVerifier`](../../src/libraries/SignatureVerifier.so
 `keccak256(abi.encode(keccak256("6529WORKS_WORK_STATE_V1"), tokenId, version, recordFileId,
 licenseKey, licenseTextFileId, royaltyRate, renderer))`, where `renderer` is the pinned renderer
 once finalized and Stream's current default renderer before. `setRecord`, `finalize` and every
-consent bind it, so nothing applies twice or to a state its signer did not see (WS-11).
+consent bind it, so nothing applies twice or to a state its signer did not see (WS-11). The
+renounced powers are not in the hash; a renunciation bumps the version, which is.
+
+**Renounced powers.** The lead artist may give up, for one work and for good, any further
+royalty-rate change and any further relicense (`IWorkPowers`, [ADR 0006](../adr/0006-work-powers-and-conventions.md)).
+They are bits of a `uint16` mask (`WorkPowers.ROYALTY_RATE` 1, `WorkPowers.RELICENSE` 2) kept in
+the spare last two bytes of the record's first storage word, so no slot is added; bits are only
+ever added (WS-37, WS-38). The errata repin is not renounceable: a pinned renderer that a future
+gas repricing breaks could then never be repaired.
 
 **License.** An SPDX-style identifier in its original case plus the file ID of the full text,
 compared by license key (`keccak256` of the ASCII-lowercased identifier). The default is CC0
@@ -129,9 +138,9 @@ stateDiagram-v2
     state "Not open" as NotOpen
     [*] --> NotOpen : Stream mints the work
     NotOpen --> Open : openRecord (anyone)
-    Open --> Open : setRecord, relicense, setRoyaltyRate
+    Open --> Open : setRecord, relicense, setRoyaltyRate, renounce
     Open --> Finalized : finalize (the artist)
-    Finalized --> Finalized : relicense, setRoyaltyRate, repinRenderer
+    Finalized --> Finalized : relicense, setRoyaltyRate, repinRenderer, renounce
     note right of NotOpen
         Every per-token call reverts with RecordNotOpen
     end note
@@ -180,7 +189,8 @@ any GUARDIAN may cancel a scheduled call.
 | Open: new record file | The artist | None | `WorkRecords.setRecord` |
 | Open to Finalized | The artist | None | `WorkRecords.finalize` |
 | Open or Finalized: new license | PARAMETER_SETTER, plus every party's `Relicense` signature | Standard, 48 hours | `WorkRecords.relicense` |
-| Open or Finalized: new royalty rate | FUNDS_SETTER, plus every party's `RoyaltyRateChange` signature | Funds, 14 days | `WorkRecords.setRoyaltyRate` |
+| Open or Finalized: lower royalty rate | FUNDS_SETTER, plus every party's `RoyaltyRateChange` signature | Funds, 14 days | `WorkRecords.setRoyaltyRate` |
+| Open or Finalized: powers renounced (one-way) | Anyone, with the artist's `RenouncePowers` signature | None | `WorkRecords.renounce` |
 | Finalized: new renderer pin (errata) | SUCCESSOR_SETTER, plus the artist's `RendererRepin` signature | Successor, 30 days | `WorkRecords.repinRenderer` |
 | Not synced to Partly synced or On-chain complete | Anyone | None | `WorkRecords.syncOnChain` |
 | Locator appended (no state change) | The artist before finalize; PLATFORM at any time | Immediate | `WorkRecords.addLocator` |
@@ -351,8 +361,8 @@ sequenceDiagram
 
 | Amendment | Signers and typed data (`Typehashes`) | Own checks |
 | --- | --- | --- |
-| `relicense` | Every party of `item` (checked against Stream's item hash), in order: `Relicense(tokenId, licenseKey, textFileId, stateHash, deadline)`, so the key, not the identifier's case | Leaving CC0 reverts with `LicenseIrrevocable`; a CC0 license with another text, or an invalid identifier, with `InvalidLicense`; the new text is registered, and complete for a finalized work (WS-5, WS-12, WS-13) |
-| `setRoyaltyRate` | Every party: `RoyaltyRateChange(tokenId, rate, stateHash, deadline)` | Stream refuses a rate above its denominator (`InvalidRoyaltyRate`); payees never change (WS-14) |
+| `relicense` | Every party of `item` (checked against Stream's item hash), in order: `Relicense(tokenId, licenseKey, textFileId, stateHash, deadline)`, so the key, not the identifier's case | Leaving CC0 reverts with `LicenseIrrevocable`; a CC0 license with another text, or an invalid identifier, with `InvalidLicense`; the new text is registered, and complete for a finalized work; reverts with `PowerRenounced` once relicensing is renounced (WS-5, WS-12, WS-13, WS-38) |
+| `setRoyaltyRate` | Every party: `RoyaltyRateChange(tokenId, rate, stateHash, deadline)` | Lower-only: a rate above the current one reverts with `RoyaltyRateNotLowered` (so Stream's `InvalidRoyaltyRate` above its denominator is a second guard); reverts with `PowerRenounced` once the royalty power is renounced; payees never change (WS-14, WS-38) |
 | `repinRenderer` | The artist only: `RendererRepin(tokenId, renderer, rendererCodeHash, stateHash, deadline)` | A finalized work; the renderer has code, is not EIP-7702 delegated, has the signed code hash and supports `IRenderer` (WS-15, WS-16) |
 
 - Signatures are checked against the active authorities at execution, so the deadline must
@@ -360,6 +370,42 @@ sequenceDiagram
 - Whether a new license is more permissive is not checked: that judgement rests with the parties
   and the governed action. How the rate applies is in
   [Economics and payouts](economics-and-payouts.md).
+- **The rate only goes down.** The rate a work mints with is the economics resolver's, which
+  governance sets for new works; after mint, a consented change can only lower it, and a linked
+  edition follows its master. Re-applying the current rate stays a no-op.
+
+### Renounce a power
+
+```mermaid
+sequenceDiagram
+    participant Ar as Artist (active authority)
+    participant R as Relayer (anyone)
+    participant WR as WorkRecords
+    participant AR as ArtistRegistry
+    Ar->>WR: workStateHash(tokenId)
+    Ar->>R: RenouncePowers(tokenId, powers, stateHash, deadline) signature
+    R->>WR: renounce(tokenId, powers, stateHash, deadline, signature)
+    Note over WR: open record, known bits, state hash, deadline
+    WR->>AR: activeAuthorityOf(lead artist ID)
+    Note over WR: mask |= powers, version + 1
+    WR-->>R: PowersRenounced(tokenId, powers, renounced, new state hash)
+```
+
+- **Who.** The lead artist's active authority alone, as for the errata repin: it is party 0 of
+  every item, so each renounceable power already needs its signature, and renouncing removes
+  nothing a collaborator could do without it. While an authority-moving override is pending the
+  registry reports no active authority, so nobody renounces; a former authority's signature,
+  one made before the move included, no longer verifies (WS-37).
+- **When.** Any time the record is open, before or after finalize. A work in dispute is not
+  treated differently: no dispute state is kept on the work, as for every other amendment, and an
+  upheld dispute that burns the work ends the record (`UnknownWork`).
+- **Effects.** The mask gains the signed bits and the version bumps, so the signature can never
+  apply again and every consent collected for the work lapses. No metadata event: `tokenURI` does
+  not show the mask. Renouncing only bits already renounced, or none, is a no-op that checks
+  nothing; there is nothing left to authorize.
+- **Editions.** A linked edition's rate follows its master (`IEditions.setRoyaltyRate` is called
+  only by `setRoyaltyRate` here) and its license is the master's (`Editions.licenseOf`), so a
+  renunciation on the master fixes both for the edition.
 
 ### Mark a work on-chain complete
 
@@ -400,10 +446,10 @@ chunks stays under 30% of the 16,777,216-gas transaction cap in Prague gas
 | WS-8 | `setRecord` and `finalize` accept a record file only if it is registered, `Identity`, at most `MAX_RECORD_BYTES` and complete. | `WorkRecords._checkRecordFile` | [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_recordBounds_rejectStructuralBreaks`, `test_recordBounds_acceptCompleteSingleChunk`, `test_finalize_needsCompleteRecordFile` |
 | WS-9 | `finalize` requires the license text complete on-chain, pins the default renderer with its code hash, and happens once. | `WorkRecords.finalize`, `_requireLicenseText`, `_pinCode` | [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_finalize_needsStoredLicenseText`, `test_finalize_pinsDefaultRenderer`, `test_finalize_reverts`, `test_finalize_andRelicenseNeedAStoredLicenseText`; [`RendererCodePin.t.sol`](../../test/integration/RendererCodePin.t.sol) `test_FinalizeRefusesADefaultRendererWhoseCodeChanged` |
 | WS-10 | The state hash commits to the token ID, version, record file, license key, license text, royalty rate and effective renderer (the default renderer before finalize). | `WorkRecords.workStateHash` | [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_stateHash_golden`, `test_stateHash_changesWithDefaultRendererBeforeFinalizeOnly`, `test_finalize_compareAndSetCatchesRendererChange` |
-| WS-11 | Every applied change bumps the version; identical re-publishes are no-ops; permissionless actions and preferences never change the state hash. No consent applies twice. | `WorkRecords.setRecord`, `finalize`, `relicense`, `setRoyaltyRate`, `repinRenderer` | [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_setRecord_identicalIsNoOp`, `test_setRoyaltyRate_identicalIsNoOp`, `test_repinRenderer_samePinIsNoOp`, `test_stateHash_ignoresPermissionlessActions`, `test_setRoyaltyRate_aRoundTripDoesNotReplayConsents` |
+| WS-11 | Every applied change bumps the version; identical re-publishes are no-ops; permissionless actions and preferences never change the state hash. No consent applies twice. | `WorkRecords.setRecord`, `finalize`, `relicense`, `setRoyaltyRate`, `repinRenderer`, `renounce` | [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_setRecord_identicalIsNoOp`, `test_setRoyaltyRate_identicalIsNoOp`, `test_repinRenderer_samePinIsNoOp`, `test_stateHash_ignoresPermissionlessActions`, `test_setRoyaltyRate_aRoundTripDoesNotReplayConsents` |
 | WS-12 | CC0 is irrevocable: a relicense from the CC0 key to any other key reverts, whatever the identifier's case. | `WorkRecords._relicenseKey` | [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_relicense_cc0IsIrrevocableInAnyCase`; [`RecordAmendments.t.sol`](../../test/integration/RecordAmendments.t.sol) `test_RelicenseToCc0WithConsentAndGovernance`; [`WorkRecordsStack.t.sol`](../../test/integration/WorkRecordsStack.t.sol) `test_Cc0_TheTextNeverChanges` |
 | WS-13 | A relicense needs PARAMETER_SETTER and every party's `Relicense` signature by its active authority before the deadline; the new text is registered, and complete for a finalized work; the identifier is valid. | `WorkRecords.relicense`, `_checkConsents`, `_requireLicenseText` | [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_relicense_withEveryConsent`, `test_relicense_rejectsMissingOrBadConsent`, `test_relicense_needsGovernance`, `test_relicense_consentFollowsCurrentAuthority`, `test_relicense_rejectsInvalidNext`; [`RecordAmendments.t.sol`](../../test/integration/RecordAmendments.t.sol) `test_FinalizedWorkNeedsAnOnChainLicenseText` |
-| WS-14 | A royalty-rate change needs FUNDS_SETTER and every party's `RoyaltyRateChange` signature, and applies to Stream and a linked edition. | `WorkRecords.setRoyaltyRate`, `_applyRate` | [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_setRoyaltyRate_withEveryConsent`, `test_setRoyaltyRate_reverts`, `test_setRoyaltyRate_followsToLinkedEdition`; [`Stream.t.sol`](../../test/stream/Stream.t.sol) `test_coreOf_reportsTheCurrentRate`; [`RecoveryRestraint.t.sol`](../../test/integration/RecoveryRestraint.t.sol) `test_PreSignedRoyaltyConsentRefusedWhileRestrained` |
+| WS-14 | A royalty-rate change needs FUNDS_SETTER and every party's `RoyaltyRateChange` signature, only lowers the rate (`RoyaltyRateNotLowered` above the current one; the current one is a no-op), and applies to Stream and a linked edition. The rate at mint is the economics resolver's and is not affected. | `WorkRecords.setRoyaltyRate`, `_applyRate` | [`WorkPowers.t.sol`](../../test/stream/WorkPowers.t.sol) `test_setRoyaltyRate_lowersTheRate`, `test_setRoyaltyRate_refusesAHigherRate`, `test_setRoyaltyRate_anEqualRateChangesNothing`, `test_setRoyaltyRate_aLowerRateFollowsToTheLinkedEdition`, `test_setRoyaltyRate_theMintRateIsUnaffected`; [`WorkPowersInvariant.t.sol`](../../test/stream/WorkPowersInvariant.t.sol) `invariant_royaltyRateNeverRises`; [`WorkPowersStack.t.sol`](../../test/stream/WorkPowersStack.t.sol) `test_EditionFollowsTheMastersLowerRate`; [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_setRoyaltyRate_withEveryConsent`, `test_setRoyaltyRate_reverts`, `test_setRoyaltyRate_followsToLinkedEdition`; [`Stream.t.sol`](../../test/stream/Stream.t.sol) `test_coreOf_reportsTheCurrentRate`; [`RecoveryRestraint.t.sol`](../../test/integration/RecoveryRestraint.t.sol) `test_PreSignedRoyaltyConsentRefusedWhileRestrained` |
 | WS-15 | The errata repin needs a finalized work, SUCCESSOR_SETTER and the artist's `RendererRepin` signature binding the code hash; the renderer has code, is not EIP-7702 delegated, matches the hash and supports `IRenderer`. | `WorkRecords.repinRenderer` | [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_repinRenderer_errataPath`, `test_repinRenderer_reverts`; [`RecordAmendments.t.sol`](../../test/integration/RecordAmendments.t.sol) `test_NewDefaultRendererAndTheErrataRepin` |
 | WS-16 | A renderer address is pinned with one code hash forever. `pinnedRenderer` reverts with `DependencyCodeChanged` once the code differs, so `tokenURI` fails closed; pinning it again with another hash reverts. | `WorkRecords._pinCode`, `pinnedRenderer` | [`RendererCodePin.t.sol`](../../test/integration/RendererCodePin.t.sol) `test_PinnedRendererWithChangedCodeIsRefused`, `test_RepinRefusesARendererWhoseCodeChangedSincePinned`, `test_DefaultRendererWithChangedCodeIsRefused` |
 | WS-17 | `syncOnChain` is permissionless, one-way and resumable: whole files within 512 chunks per call, a revert at the first incomplete file keeps earlier progress, a repeat after completion emits nothing, and the state hash is unchanged. | `WorkRecords.syncOnChain` | [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_syncOnChain`; [`SyncOnChainResume.t.sol`](../../test/integration/SyncOnChainResume.t.sol) `test_SyncOnChain_ResumesAcrossCalls`, `test_SyncOnChain_KeepsItsPlaceUntilAFileCompletes`; [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_syncOnChain_needsEveryFile` |
@@ -426,6 +472,8 @@ chunks stays under 30% of the 16,777,216-gas transaction cap in Prague gas
 | WS-34 | A dependency label is 1 to 32 bytes of `[a-z0-9._-]`, left-aligned, then only zero bytes; a `(name, version)` maps to one complete file forever. | `DependencyRegistry.register`, `_requireLabel` | [`DependencyRegistry.t.sol`](../../test/content/DependencyRegistry.t.sol) `test_Register_LabelExamples`, `testFuzz_Register_LabelValidity`, `test_Register_VersionsAreImmutable`, `test_Register_RequiresCompleteContent` |
 | WS-35 | Deprecation is a one-way flag: nothing is deleted and the version still resolves. Both functions are restricted. | `DependencyRegistry.deprecate`, `resolve` | [`DependencyRegistry.t.sol`](../../test/content/DependencyRegistry.t.sol) `test_Deprecate_IsAFlagOnly`, `test_Deprecate_Guards`, `test_Register_OnlyTheRegistrarRole` |
 | WS-36 | The governed selectors of `WorkRecords` and `DependencyRegistry` map to the roles and delays in this page, and the genesis configuration installs them. | [`config/genesis.example.json`](../../config/genesis.example.json), `GovernanceConfigurator` | [`GenesisConfig.t.sol`](../../test/governance/GenesisConfig.t.sol) `test_JsonMatchesTheCompiledSelectors`, `test_EveryEntryMatchesItsSignatureAndClassDelay`, `test_GenesisConfigurationInstallsWiresAndReadsBack` |
+| WS-37 | `renounce` needs an open record, known bits only (`UnknownPower`), the current state hash and the signature of the lead artist's active authority before its deadline; nobody renounces while the authority is restrained. Bits are only added; renouncing nothing new is a no-op. | `WorkRecords.renounce`, `_checkArtistConsent` | [`WorkPowers.t.sol`](../../test/stream/WorkPowers.t.sol) `test_renounce_onlyTheLeadArtistSigns`, `test_renounce_aFormerAuthorityCannot`, `test_renounce_nobodyWhileTheAuthorityIsRestrained`, `test_renounce_refusesAnExpiredSignature`, `test_renounce_refusesAStaleStateHash`, `test_renounce_aSignatureNeverAppliesTwice`, `test_renounce_refusesUnknownBits`, `test_renounce_twiceIsAHarmlessNoOp`, `test_renounce_needsAnOpenRecord`, `test_renounce_emitsPowersRenouncedAndBumpsTheVersion`, `test_renounce_beforeAndAfterFinalize`; [`WorkPowersStack.t.sol`](../../test/stream/WorkPowersStack.t.sol) `test_NobodyRenouncesWhileTheArtistIsRestrained`; [`WorkPowersInvariant.t.sol`](../../test/stream/WorkPowersInvariant.t.sol) `invariant_renouncedMaskNeverLosesABit` |
+| WS-38 | Once a power is renounced its function always reverts with `PowerRenounced` for that work, a no-op included: `setRoyaltyRate` for `ROYALTY_RATE`, `relicense` for `RELICENSE`. The errata repin cannot be renounced. A linked edition follows its master. | `WorkRecords._checkPower` | [`WorkPowers.t.sol`](../../test/stream/WorkPowers.t.sol) `test_renounce_royaltyRateThenEveryRateChangeReverts`, `test_renounce_relicenseThenEveryRelicenseReverts`, `test_renounce_bothAtOnce`, `test_renounce_neverTheErrataRepin`, `test_renounce_theLinkedEditionFollowsTheMaster`; [`WorkPowersStack.t.sol`](../../test/stream/WorkPowersStack.t.sol) `test_RenouncingOnTheMasterFixesItsEdition`; [`WorkPowersInvariant.t.sol`](../../test/stream/WorkPowersInvariant.t.sol) `invariant_aRenouncedPowerNeverSucceedsAgain` |
 
 The whole path, from upload and attestation through `openRecord`, `finalize` and `syncOnChain` to
 inline rendering, runs on the real stack in
@@ -454,6 +502,7 @@ completion in the content store has no event: derive it from `ManifestRegistered
 | Base64 text breaks the strict alphabet | `attestBase64` reverts with `ContentBase64Invalid(fileId, index)` forever. | None for that file ID. Tooling refuses such text before upload. |
 | A pinned renderer's code no longer matches its pinned hash | `pinnedRenderer` reverts with `DependencyCodeChanged`, so `tokenURI` fails closed. | The errata repin (30 days). An unfinalized work's changed default renderer is replaced by `Stream.setDefaultRenderer` (30 days). |
 | The artist's key is lost | No `setRecord`, `finalize`, repin or artist consent; locators by PLATFORM, preferences and `syncOnChain` still work. | Recover the authority through the artist registry ([Identity and recovery](identity-and-recovery.md)), then sign. |
+| A power was renounced in error, or by an authority later found to be the wrong one | The power's function reverts for that work for good (WS-38); the work keeps its current rate and license. | None on-chain, by design: renunciation is permanent. The errata repin stays available. |
 | The state changed between signing and execution, or a consent expired or lost its authority | `StateHashMismatch`, `SignatureExpired(deadline)` or `InvalidConsent(tokenId, partyIndex)` at execution. | Read the new state hash, collect new signatures with a deadline past the delay, schedule again. |
 | A locator names the wrong content or goes dark | Not detected on-chain; `tokenURI` may serve it. | STORAGE_OPERATOR at once prefers another registered copy; the off-chain monitor re-pins or re-uploads. |
 | The PLATFORM or STORAGE_OPERATOR key is compromised | Junk locators (up to its quota), which no fallback serves (WS-21), or preferences pointing at a bad copy. | A guardian suspends the key; governance replaces it (30 days, then the 48-hour grant delay); the new operator restores the preferences. |
@@ -477,6 +526,7 @@ completion in the content store has no event: derive it from `ManifestRegistered
 | Locators per file | 16 in all; 8 by the artist and 8 by the platform before finalize | `Limits.MAX_LOCATORS_PER_FILE`, `WorkRecords.LOCATOR_QUOTA` |
 | Chunks per `syncOnChain` call | 512, in whole files | `WorkRecords.SYNC_CHUNKS` |
 | EIP-712 domain | `"6529 Works Records"`, version `"1"` | `Typehashes.WORK_RECORDS_NAME`, `DOMAIN_VERSION` |
+| Renounceable powers | `ROYALTY_RATE` 1, `RELICENSE` 2 (mask `ALL` 3); any other bit is refused | `WorkPowers` in `IWorkPowers.sol` |
 | Storage cost on Sepolia (Glamsterdam) | About 1,548 gas per stored byte (Prague about 218) | [`flows.md`](../../deployments/11155111/flows.md#1-content), [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#consequences) |
 
 ## Differences from the ADRs
@@ -487,6 +537,7 @@ See the [register](README.md#differences-from-the-adrs).
 
 - **Code:** [`WorkRecords.sol`](../../src/stream/WorkRecords.sol),
   [`IWorkRecords.sol`](../../src/interfaces/IWorkRecords.sol),
+  [`IWorkPowers.sol`](../../src/interfaces/IWorkPowers.sol),
   [`SpdxId.sol`](../../src/stream/SpdxId.sol),
   [`ContentStore.sol`](../../src/content/ContentStore.sol),
   [`IContentStore.sol`](../../src/interfaces/IContentStore.sol),
@@ -504,7 +555,9 @@ See the [register](README.md#differences-from-the-adrs).
   [ADR 0002](../adr/0002-access-manager-hardening.md) decision 7;
   [ADR 0003, token model and storage](../adr/0003-build-time-decisions.md#token-model-and-storage-amends-adr-0001-4-and-8)
   and [decisions from integration](../adr/0003-build-time-decisions.md#decisions-from-integration-11-october-2026-later);
-  [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table) for gas.
+  [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table) for gas;
+  [ADR 0006](../adr/0006-work-powers-and-conventions.md) for lower-only royalty changes and
+  renounceable powers.
 - **Tests:** [`test/stream/`](../../test/stream), [`test/content/`](../../test/content) and
   [`test/integration/`](../../test/integration), as cited per rule.
 - **Deployment evidence:** [`deployments/11155111/flows.md`](../../deployments/11155111/flows.md).

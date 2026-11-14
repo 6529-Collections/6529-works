@@ -222,11 +222,11 @@ contract MasterEditionFlowTest is IntegrationBase {
         (address receiver, uint256 amount) = editions.royaltyInfo(workId, 1 ether);
         assertEq(amount, 0.06529 ether, "6.529% at creation");
         assertEq(receiver, editions.edition(workId).royaltyReceiver);
-        _rerate(workId, _package(root)[0], 10_000);
+        _rerate(workId, _package(root)[0], 5_000);
         (, amount) = stream.royaltyInfo(workId, 1 ether);
-        assertEq(amount, 0.1 ether, "the master re-rated to 10%");
+        assertEq(amount, 0.05 ether, "the master re-rated to 5%");
         (address after_, uint256 editionAmount) = editions.royaltyInfo(workId, 1 ether);
-        assertEq(editionAmount, 0.1 ether, "the edition follows");
+        assertEq(editionAmount, 0.05 ether, "the edition follows");
         assertEq(after_, receiver, "payees never change");
     }
 
@@ -237,10 +237,10 @@ contract MasterEditionFlowTest is IntegrationBase {
         (uint256 saleId, uint256 workId) = _start(root, works, 2);
         _ethBid(saleId, collector, 1 ether);
         _settleAtEnd(saleId);
-        _rerate(workId, works[2], 10_000);
+        _rerate(workId, works[2], 5_000);
         editions.createEdition(workId, works[2].item, root, _proofOf(works, 2));
         (, uint256 amount) = editions.royaltyInfo(workId, 1 ether);
-        assertEq(amount, 0.1 ether, "the master's current rate");
+        assertEq(amount, 0.05 ether, "the master's current rate");
         assertEq(editions.edition(workId).royaltyRate, stream.work(workId).royaltyRate);
     }
 
