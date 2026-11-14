@@ -38,7 +38,7 @@ def grade_rubric_1(card: Mapping[str, Any]) -> dict:
     rows.append(("R4", 10 if card["declarations"]["status"] == "valid" else 0))
     applicable = [s for s in card["conservationFloor"].values() if s != "not_applicable"]
     if all(s == "met" for s in applicable):
-        r5 = 15  # vacuously so when no fact is applicable
+        r5 = 15  # only generative may be not_applicable (promise-card.v1), so four facts count
     elif all(s in ("met", "waived") for s in applicable) and "waived" in applicable:
         r5 = 8
     else:

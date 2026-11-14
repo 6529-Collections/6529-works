@@ -198,11 +198,11 @@
       "additionalProperties": false,
       "required": ["storage", "format", "license", "generative", "display"],
       "properties": {
-        "storage": { "$ref": "#/$defs/floorState" },
-        "format": { "$ref": "#/$defs/floorState" },
-        "license": { "$ref": "#/$defs/floorState" },
+        "storage": { "$ref": "#/$defs/appliedFloorState" },
+        "format": { "$ref": "#/$defs/appliedFloorState" },
+        "license": { "$ref": "#/$defs/appliedFloorState" },
         "generative": { "$ref": "#/$defs/floorState" },
-        "display": { "$ref": "#/$defs/floorState" }
+        "display": { "$ref": "#/$defs/appliedFloorState" }
       }
     },
     "displayChange": {
@@ -289,6 +289,13 @@
     }
   },
   "$defs": {
-    "floorState": { "enum": ["met", "waived", "unmet", "not_applicable"] }
+    "floorState": {
+      "description": "The generative fact's state: not_applicable for a work that is not generative (DCL-4, DCL-5).",
+      "enum": ["met", "waived", "unmet", "not_applicable"]
+    },
+    "appliedFloorState": {
+      "description": "The state of a fact that applies to every work (storage, format, license, display): never not_applicable.",
+      "enum": ["met", "waived", "unmet"]
+    }
   }
 }

@@ -53,8 +53,9 @@ floor:        a floor-result.v1 object (the published curation evidence, DCL-33)
 attestations: [custody attestation inputs, as custody.evaluate_custody takes them]
 displayChange:{proposal, acceptance, contentSha256, acceptedBy}   # the DCL-12 winner, if any
 dispute:      {documentVerified}            # optional (DCL-28)
-roles:        [{what, who, delaySeconds, guardianCancel, phase?}] # from the role matrix (DCL-27);
-              phase is "beforeFinalize" or "afterFinalize" for a path that applies only then
+roles:        [{what, who, delaySeconds, guardianCancel, phase?}] # required: from the role matrix
+              (DCL-27); phase is "beforeFinalize" or "afterFinalize" for a path that applies only then
+Every read the chain returns as a bool must be a JSON boolean; anything else is refused.
 generator:    {name, version}               # optional
 ```
 """
@@ -62,6 +63,7 @@ generator:    {name, version}               # optional
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
@@ -106,6 +108,14 @@ def _need(mapping: Mapping[str, Any], key: str, where: str) -> Any:
     if not isinstance(mapping, Mapping) or key not in mapping:
         raise ToolError(f"missing read {where}.{key}")
     return mapping[key]
+
+
+def _bool(value: Any, where: str) -> bool:
+    """A read that is a boolean on chain: a JSON `true` or `false`, nothing else (`"false"` is
+    not false, and must not become true)."""
+    if not isinstance(value, bool):
+        raise ToolError(f"the read {where} must be a JSON boolean, not {value!r}")
+    return value
 
 
 def _per_file(mapping: Mapping[str, Any], file_id: str, where: str) -> Any:
@@ -162,7 +172,8 @@ def declarations_status(
         return "ambiguous", None, None, ["more than one declarations file"]
     entry, info = found[0]
     file_id = _lc(entry["fileId"])
-    complete = _per_file(content_store.get("isComplete", {}), file_id, "ContentStore.isComplete")
+    complete = _bool(_per_file(content_store.get("isComplete", {}), file_id, "ContentStore.isComplete"),
+                     f"ContentStore.isComplete[{file_id}]")
     data: bytes | None = None
     problems: list[str] = []
     if complete:
@@ -190,7 +201,10 @@ def _powers(reads: Mapping[str, Any]) -> tuple[dict, dict[str, list[str]]]:
     if view is None:
         return {"available": False}, {}
     names = list(view.get("powers", POWERS))
-    mask = int(_need(view, "renouncedMask", "IWorkPowers"), 16)
+    raw = _need(view, "renouncedMask", "IWorkPowers")
+    if not isinstance(raw, str) or re.fullmatch(r"0x[0-9a-fA-F]{1,64}", raw) is None:
+        raise ToolError(f"the read IWorkPowers.renouncedMask must be 0x hex of a uint256, not {raw!r}")
+    mask = int(raw, 16)
     if mask >> len(names):
         raise ToolError("IWorkPowers.renouncedMask sets a bit with no power name")
     renounced = [n for i, n in enumerate(names) if mask >> i & 1]
@@ -255,7 +269,7 @@ def build_card(inputs: Mapping[str, Any]) -> CardResult:
     token = _lc(_need(reads, "token", "reads"))
     token_id = str(_need(reads, "tokenId", "reads"))
     stream = _need(reads, "Stream", "reads")
-    owner = stream.get("ownerOf")
+    owner = _need(stream, "ownerOf", "Stream")  # null, not absent, when it reverted
     if owner is None:
         raise NoCard("the token is burned (ownerOf reverts): a burned token has no card")
     core = _need(stream, "coreOf", "Stream")
@@ -266,11 +280,12 @@ def build_card(inputs: Mapping[str, Any]) -> CardResult:
     content_hash = _lc(_need(_need(reads, "WorkMinted", "reads"), "contentHash", "WorkMinted"))
     notes: dict[str, Any] = {}
 
-    is_open = bool(_need(records, "isOpen", "WorkRecords"))
+    is_open = _bool(_need(records, "isOpen", "WorkRecords"), "WorkRecords.isOpen")
     if is_open:
         rec = _need(records, "record", "WorkRecords")
-        finalized = bool(rec["finalized"])
-        on_chain_complete = bool(rec["onChainComplete"])
+        finalized = _bool(_need(rec, "finalized", "WorkRecords.record"), "WorkRecords.record.finalized")
+        on_chain_complete = _bool(_need(rec, "onChainComplete", "WorkRecords.record"),
+                                  "WorkRecords.record.onChainComplete")
         pinned = _lc(_need(records, "pinnedRenderer", "WorkRecords"))
         record = {
             "status": "finalized" if finalized else "open",
@@ -293,7 +308,8 @@ def build_card(inputs: Mapping[str, Any]) -> CardResult:
         files.append({
             "fileId": fid, "role": m["role"], "sha256": _lc(m["sha256Hash"]),
             "mimeType": info["mimeType"],
-            "complete": bool(_per_file(store.get("isComplete", {}), fid, "ContentStore.isComplete")),
+            "complete": _bool(_per_file(store.get("isComplete", {}), fid, "ContentStore.isComplete"),
+                              f"ContentStore.isComplete[{fid}]"),
             "locators": len(_per_file(records.get("locators", {}), fid, "WorkRecords.locators")),
             "preferredKind": preferred.get("kind", "NONE"),
         })  # fmt: skip
@@ -304,7 +320,8 @@ def build_card(inputs: Mapping[str, Any]) -> CardResult:
         "spdxId": lic["spdxId"],
         "cc0": floor.license_key(lic["spdxId"]) == CC0_KEY,
         "textFileId": text_id,
-        "textOnChain": bool(_per_file(store.get("isComplete", {}), text_id, "ContentStore.isComplete")),
+        "textOnChain": _bool(_per_file(store.get("isComplete", {}), text_id, "ContentStore.isComplete"),
+                             f"ContentStore.isComplete[{text_id}]"),
     }
 
     ps = _need(stream, "primarySale", "Stream")
@@ -326,7 +343,7 @@ def build_card(inputs: Mapping[str, Any]) -> CardResult:
         dispute = {"entryHash": latest, "scope": "token" if own == latest else "item"}
         verified = (inputs.get("dispute") or {}).get("documentVerified")
         if verified is not None:
-            dispute["documentVerified"] = bool(verified)
+            dispute["documentVerified"] = _bool(verified, "dispute.documentVerified")
 
     powers, covers = _powers(reads)
 
@@ -371,12 +388,16 @@ def build_card(inputs: Mapping[str, Any]) -> CardResult:
     else:
         display = {"state": "none"}
 
-    evaluation = custody.evaluate_custody(doc, inputs.get("attestations") or [], at["timestamp"])
+    evaluation = custody.evaluate_custody(doc, inputs.get("attestations") or [], at["timestamp"],
+                                          work={"chainId": at["chainId"], "contract": token, "tokenId": token_id})
     if evaluation["discarded"] or any(not e["recognized"] for e in evaluation["entries"]):
         notes["custody"] = evaluation
 
     cc0 = license_["cc0"]
-    changeable = _changeable(inputs.get("roles") or [], finalized=finalized, cc0=cc0,
+    roles = _need(inputs, "roles", "inputs")
+    if not isinstance(roles, list):
+        raise ToolError("inputs.roles must be the list of role-matrix rows (DCL-27)")
+    changeable = _changeable(roles, finalized=finalized, cc0=cc0,
                              sale_outcome=ps["outcome"], powers=powers, covers=covers)  # fmt: skip
 
     authority = _lc(_need(registry, "activeAuthorityOf", "ArtistRegistry"))

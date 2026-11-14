@@ -109,6 +109,33 @@ class ParseTest(unittest.TestCase):
             with self.subTest(name), self.assertRaises(CanonicalJsonError):
                 jcs.parse(data)
 
+    def test_integer_beyond_a_double_is_a_canonical_json_error(self) -> None:
+        """An integer no IEEE 754 double holds is refused as bad input, not an OverflowError."""
+        huge = b"1" + b"0" * 400
+        with self.assertRaises(CanonicalJsonError):
+            jcs.parse(huge)
+        with self.assertRaises(CanonicalJsonError):
+            jcs.canonicalize(10**400)
+        self.assertFalse(jcs.is_canonical(huge))
+        self.assertEqual(jcs.canonicalize(10**300), b"1e+300")  # still a double: rounded, kept
+
+    def test_deep_nesting_is_a_canonical_json_error(self) -> None:
+        """Nesting past MAX_DEPTH, or past Python's recursion limit, is refused as bad input when
+        parsing and when serializing, not a RecursionError."""
+        for depth in (jcs.MAX_DEPTH + 1, 100_000):
+            data = b"[" * depth + b"]" * depth
+            with self.subTest(depth=depth):
+                with self.assertRaises(CanonicalJsonError):
+                    jcs.parse(data)
+                self.assertFalse(jcs.is_canonical(data))
+        value: list = []
+        for _ in range(5_000):
+            value = [value]
+        with self.assertRaises(CanonicalJsonError):
+            jcs.canonicalize(value)
+        nested_ok = b"[" * jcs.MAX_DEPTH + b"]" * jcs.MAX_DEPTH
+        self.assertTrue(jcs.is_canonical(nested_ok))
+
     def test_is_canonical(self) -> None:
         self.assertTrue(jcs.is_canonical(b'{"a":1,"b":"x"}'))
         for data in (b'{"b":"x","a":1}', b'{"a": 1}', b'{"a":1.0}', b'{"a":1}\n', b'{"a":1,"a":1}'):

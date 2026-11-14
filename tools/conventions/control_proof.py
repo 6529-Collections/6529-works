@@ -7,13 +7,15 @@ read, the consolidation read). Signature recovery is pluggable (see `eip712`). A
 accepted only when its message equals the issued challenge, and the digest is built from that
 challenge with the verifier's own chain ID (DCL-24 steps 2 and 3).
 
-The steps are applied in order and the first refusal stops the check; the nonce is spent
-whatever the outcome (step 6).
+The challenge is claimed from the store before anything else is checked, in one atomic
+operation that returns it at most once and marks the nonce used whatever the outcome (steps 2
+and 6); then the steps are applied in order and the first refusal stops the check.
 """
 
 from __future__ import annotations
 
 import os
+import threading
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Protocol
 
@@ -26,31 +28,36 @@ DEFAULT_FRESHNESS_BLOCKS = 64  # DCL-24 step 4's example bound
 
 
 class NonceStore(Protocol):
-    def is_outstanding(self, nonce: str) -> bool: ...
-    def challenge(self, nonce: str) -> Mapping[str, Any] | None: ...
-    def spend(self, nonce: str) -> None: ...
+    def claim(self, nonce: str) -> Mapping[str, Any] | None:
+        """Atomically: if `nonce` names an outstanding challenge, mark it used and return it;
+        otherwise return None. Of any number of concurrent claims of one nonce, at most one gets
+        the challenge (DCL-24 steps 2 and 6). A store shared between processes must make this
+        one operation in its backend (for example a conditional delete that returns the row)."""
+        ...
 
 
 @dataclass
 class MemoryNonceStore:
-    """An in-memory store of issued challenges, keyed by nonce: issued and not yet spent are
-    outstanding."""
+    """An in-memory store of issued challenges, keyed by nonce: issued and not yet claimed are
+    outstanding. `claim` holds a lock, so it is atomic across threads of one process."""
 
     outstanding: dict[str, dict] = field(default_factory=dict)
     spent: set[str] = field(default_factory=set)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
     def add(self, message: Mapping[str, Any]) -> None:
-        self.outstanding[message["nonce"]] = dict(message)
+        with self._lock:
+            self.outstanding[message["nonce"]] = dict(message)
 
     def is_outstanding(self, nonce: str) -> bool:
         return nonce in self.outstanding and nonce not in self.spent
 
-    def spend(self, nonce: str) -> None:
-        self.outstanding.pop(nonce, None)
-        self.spent.add(nonce)
-
-    def challenge(self, nonce: str) -> dict | None:
-        return self.outstanding.get(nonce)
+    def claim(self, nonce: str) -> dict | None:
+        with self._lock:
+            if nonce in self.spent or nonce not in self.outstanding:
+                return None
+            self.spent.add(nonce)
+            return self.outstanding.pop(nonce)
 
 
 def issue_challenge(
@@ -127,30 +134,29 @@ def verify_response(
       `{"englishAuction": addr, "pendingDelivery": addr}`; for Editions, `{"balanceOf": int}`.
     - `consolidation` at `B`, from `ArtistRegistry.consolidationSource()`:
       `{"isEstablished": bool, "effectiveAt": int}`; needed only when holder != signer.
-    - `store`: the issued challenges; the response's message must equal `store.challenge(nonce)`
-      in every field (DCL-24 step 2).
+    - `store`: the issued challenges. The challenge is claimed first, in one atomic operation
+      that marks the nonce used whatever the outcome (steps 2 and 6), so of two concurrent
+      responses with one nonce at most one is checked further; the response's message must then
+      equal the claimed challenge in every field (step 2).
     """
     message = document.get("message", {}) if isinstance(document, Mapping) else {}
     nonce = message.get("nonce") if isinstance(message, Mapping) else None
-    try:
-        return _verify(
-            document, venue=venue, chain_id=chain_id, now=now, store=store,
-            official_tokens={k.lower(): v for k, v in official_tokens.items()}, block=block,
-            head_block=head_block, signer_code=signer_code, ownership=ownership,
-            consolidation=consolidation, freshness_blocks=freshness_blocks,
-            accept_pending_delivery=accept_pending_delivery,
-            accept_young_consolidation=accept_young_consolidation, ecdsa=ecdsa, erc1271=erc1271,
-        )  # fmt: skip
-    finally:
-        if isinstance(nonce, str):
-            store.spend(nonce)  # step 6, whatever the outcome
+    issued = store.claim(nonce) if isinstance(nonce, str) else None  # steps 2 and 6, atomically
+    return _verify(
+        document, issued=issued, venue=venue, chain_id=chain_id, now=now,
+        official_tokens={k.lower(): v for k, v in official_tokens.items()}, block=block,
+        head_block=head_block, signer_code=signer_code, ownership=ownership,
+        consolidation=consolidation, freshness_blocks=freshness_blocks,
+        accept_pending_delivery=accept_pending_delivery,
+        accept_young_consolidation=accept_young_consolidation, ecdsa=ecdsa, erc1271=erc1271,
+    )  # fmt: skip
 
 
 def _refuse(step: str, reason: str, digest: bytes | None = None, path: str | None = None) -> Verdict:
     return Verdict(False, None, step, reason, "0x" + digest.hex() if digest else None, path)
 
 
-def _verify(document, *, venue, chain_id, now, store, official_tokens, block, head_block,
+def _verify(document, *, issued, venue, chain_id, now, official_tokens, block, head_block,
             signer_code, ownership, consolidation, freshness_blocks, accept_pending_delivery,
             accept_young_consolidation, ecdsa, erc1271) -> Verdict:  # fmt: skip
     errors = validate(document, "control-proof")
@@ -159,11 +165,10 @@ def _verify(document, *, venue, chain_id, now, store, official_tokens, block, he
     if "signature" not in document:
         return _refuse("DCL-23", "a challenge without a signature is not a response")
     m = document["message"]
-    # Step 2: the response is the issued challenge, field for field.
-    if not store.is_outstanding(m["nonce"]):
+    # Step 2: the response is the claimed challenge, field for field.
+    if issued is None:
         return _refuse("DCL-24.2", "the nonce is not outstanding, or was used")
-    issued = store.challenge(m["nonce"])
-    if issued is None or dict(issued) != dict(m):
+    if dict(issued) != dict(m):
         return _refuse("DCL-24.2", "the response's message is not the issued challenge")
     m = dict(issued)
     if m["venue"] != venue:

@@ -76,6 +76,74 @@ class ExampleTest(unittest.TestCase):
         self.assertFalse(g.store.is_outstanding(g.doc["message"]["nonce"]))
 
 
+class AtomicClaimTest(unittest.TestCase):
+    """DCL-24 steps 2 and 6: the challenge is claimed, and its nonce marked used, in one atomic
+    operation before the signature is checked."""
+
+    def test_challenge_is_claimed_before_the_signature_check(self) -> None:
+        f = Fixture()
+        nonce = f.doc["message"]["nonce"]
+        seen: list[bool] = []
+
+        def ecdsa(signer: str, digest: bytes, signature: bytes) -> bool:
+            seen.append(f.store.is_outstanding(nonce))
+            return accept_example(signer, digest, signature)
+        self.assertTrue(f.verify(ecdsa=ecdsa).accepted)
+        self.assertEqual(seen, [False])  # already used while the signature was checked
+
+    def test_concurrent_responses_accept_at_most_one(self) -> None:
+        """Two responses with one nonce, the second arriving while the first is still checking
+        its signature: only the first is checked, and only it can be accepted."""
+        import threading
+        f = Fixture()
+        started, release = threading.Event(), threading.Event()
+        verdicts: dict[str, control_proof.Verdict] = {}
+
+        def ecdsa(signer: str, digest: bytes, signature: bytes) -> bool:
+            if threading.current_thread().name == "first":
+                started.set()
+                release.wait(5)
+            return accept_example(signer, digest, signature)
+
+        worker = threading.Thread(target=lambda: verdicts.update(first=f.verify(ecdsa=ecdsa)), name="first")
+        worker.start()
+        self.assertTrue(started.wait(5))
+        verdicts["second"] = f.verify(ecdsa=ecdsa)
+        release.set()
+        worker.join(5)
+        self.assertTrue(verdicts["first"].accepted, verdicts["first"])
+        self.assertEqual((verdicts["second"].accepted, verdicts["second"].step), (False, "DCL-24.2"))
+        self.assertIn("nonce", verdicts["second"].reason)
+
+    def test_any_store_with_an_atomic_claim(self) -> None:
+        """The store protocol is one operation, `claim`; a store that returns the challenge once
+        is all the verifier needs."""
+        f = Fixture()
+
+        class OneShot:
+            def __init__(self, challenge: dict) -> None:
+                self.challenge: dict | None = challenge
+                self.claims = 0
+
+            def claim(self, nonce: str) -> dict | None:
+                self.claims += 1
+                out, self.challenge = self.challenge, None
+                return out if out is not None and out["nonce"] == nonce else None
+        store = OneShot(dict(f.doc["message"]))
+        self.assertTrue(f.verify(store=store).accepted)
+        self.assertFalse(f.verify(store=store).accepted)
+        self.assertEqual(store.claims, 2)
+
+    def test_refused_document_still_uses_the_nonce(self) -> None:
+        """Step 6: a response refused for its shape still consumes the issued challenge."""
+        f = Fixture()
+        doc = copy.deepcopy(f.doc)
+        doc["message"].pop("holder")
+        self.assertEqual(f.verify(doc).step, "DCL-23")
+        self.assertFalse(f.store.is_outstanding(f.doc["message"]["nonce"]))
+        self.assertFalse(f.verify().accepted)
+
+
 class StepTwoTest(unittest.TestCase):
     def test_refusals(self) -> None:
         """DCL-24 step 2: venue, nonce, time window, chain and official token; DCL-23: the

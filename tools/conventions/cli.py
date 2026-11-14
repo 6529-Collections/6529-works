@@ -21,13 +21,19 @@ EXIT_NOT_OK = 1
 EXIT_ERROR = 2
 
 
-def _load(path: str) -> Any:
+def _load(path: str) -> dict:
+    """A JSON object from `path`; anything else is bad input (exit 2), never a traceback."""
     try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
+        value = json.loads(Path(path).read_text(encoding="utf-8"))
     except OSError as exc:
         raise ToolError(f"cannot read {path}: {exc.strerror or exc}") from None
     except ValueError as exc:
         raise ToolError(f"{path} is not JSON: {exc}") from None
+    except RecursionError:
+        raise ToolError(f"{path} nests too deeply") from None
+    if not isinstance(value, dict):
+        raise ToolError(f"{path} must hold a JSON object, not {type(value).__name__}")
+    return value
 
 
 def _print(value: Any) -> None:
@@ -145,7 +151,7 @@ def cmd_custody_check(args: argparse.Namespace) -> int:
             code = bytes.fromhex(att.get("custodianCode", "0x")[2:])
             att["signatureValid"] = custody.attestation_signature(att["document"], code=code).valid
         attestations.append(att)
-    _print(custody.evaluate_custody(declarations, attestations, spec["now"]))
+    _print(custody.evaluate_custody(declarations, attestations, spec["now"], work=spec["work"]))
     return 0
 
 
@@ -192,7 +198,7 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("file")
     q.set_defaults(func=cmd_custody_digest)
     q = cp.add_parser("check", help="which attestations count, recognized and stale")
-    q.add_argument("input", help="JSON: declarations, attestations, now")
+    q.add_argument("input", help="JSON: work {chainId, contract, tokenId}, declarations, attestations, now")
     q.set_defaults(func=cmd_custody_check)
     return parser
 

@@ -24,9 +24,11 @@ Inputs (plain dicts; hex values `0x`-prefixed):
 - `contents`: `{fileId: bytes}`, the declarations file's stored bytes (`ContentStore.read`).
 - `observed`: what the signer's own tooling saw: `fetched` (`{uri: bytes | "0x<sha256>" | None}`:
   the bytes fetched at a receipt's URI, which this module checks as the receipt's `form` says
-  (`stored`: `fileInfo.length` bytes, decoded by the file's encoding; `decoded`: hashed as they
-  are); or the SHA-256 of the decoded media when the caller checked the bytes itself; None when
-  the fetch failed), `dimensions` (`{fileId: {width, height}}` measured by decoding the file),
+  (`stored`: `fileInfo.length` bytes whose chunks reproduce the file ID, decoded by the file's
+  encoding; `decoded`: hashed as they are); or the SHA-256 of the decoded media when the caller
+  checked the bytes itself, accepted for a `stored` receipt only of an `Identity` file, whose
+  stored stream is the decoded media; None when the fetch failed), `dimensions`
+  (`{fileId: {width, height}}` measured by decoding the file),
   `defaultRenderer`, `codeHash` (`{address: extcodehash}`) and `dependencies`
   (`{"name@version": {fileId, deprecated}}`: `DependencyRegistry.resolve(label(name),
   label(version))`, see `dependency_label`; missing = unresolved).
@@ -48,6 +50,7 @@ from tools.content.cid import locator_accepted
 from tools.content.encoding import Encoding, decode
 from tools.content.errors import ToolError
 from tools.content.keccak import keccak256
+from tools.content.plan import chunk_hash, manifest_id, split_chunks
 
 from . import jcs
 from .schema import validate
@@ -163,14 +166,31 @@ def read_declarations(
     return doc, problems
 
 
-def _hash_fetched(value: Any, form: str, info: Mapping[str, Any]) -> tuple[str | None, str]:
-    """The SHA-256 of the decoded media a receipt's copy gives, checked as its `form` says."""
+def stored_file_id(data: bytes, info: Mapping[str, Any]) -> str:
+    """The file ID `ContentStore.manifestId` gives `data` as a file's stored stream with the
+    file's other committed fields (length, encoding, MIME type, declared SHA-256): equal to the
+    file's ID exactly when `data` reproduces every committed chunk hash (WS-25)."""
+    chunks = split_chunks(data)
+    return "0x" + manifest_id(
+        [chunk_hash(c) for c in chunks], len(data), _ENCODINGS[info["encoding"]], info["mimeType"],
+        bytes.fromhex(_norm(info["sha256Hash"])[2:]),
+    ).hex()  # fmt: skip
+
+
+def _hash_fetched(value: Any, form: str, info: Mapping[str, Any], file_id: str) -> tuple[str | None, str]:
+    """The SHA-256 of the decoded media a receipt's copy gives, checked as its `form` says. A
+    `stored` copy must also be the committed stream itself: its chunks must reproduce the file
+    ID, since another encoding of the same media (a different gzip header, say) decodes to the
+    same SHA-256 but cannot rebuild the content-store file."""
     if value is None:
         return None, "could not be fetched"
     if isinstance(value, str):
-        if re.fullmatch(r"0x[0-9a-f]{64}", value):
-            return value, ""
-        return None, "has an observed hash that is not lowercase 0x and 32 bytes of hex"
+        if not re.fullmatch(r"0x[0-9a-f]{64}", value):
+            return None, "has an observed hash that is not lowercase 0x and 32 bytes of hex"
+        if form == "stored" and info.get("encoding") != "Identity":
+            return None, ("is a stored copy of a file that is not Identity, so it needs the fetched "
+                          "bytes, to check them against the committed chunk hashes")  # fmt: skip
+        return value, ""
     data = bytes(value)
     if form == "decoded":
         return _sha256_hex(data), ""
@@ -179,10 +199,14 @@ def _hash_fetched(value: Any, form: str, info: Mapping[str, Any]) -> tuple[str |
         return None, "has a file whose encoding is unknown"
     if len(data) != info.get("length"):
         return None, "is not fileInfo.length bytes, so it is not the stored stream"
+    if not isinstance(info.get("mimeType"), str) or not isinstance(info.get("sha256Hash"), str):
+        return None, "has a file whose fileInfo lacks the MIME type or SHA-256 the file ID commits to"
     try:
+        if stored_file_id(data, info) != _norm(file_id):
+            return None, "does not reproduce the file's committed chunk hashes (file ID), so it is not the stored stream"
         return _sha256_hex(decode(data, _ENCODINGS[encoding])), ""
-    except ToolError as exc:
-        return None, f"does not decode as {encoding}: {exc}"
+    except (ToolError, ValueError) as exc:
+        return None, f"cannot be checked as the stored {encoding} stream: {exc}"
 
 
 def _check_storage(doc, S, package, observed) -> list[str]:
@@ -208,7 +232,7 @@ def _check_storage(doc, S, package, observed) -> list[str]:
                 reasons.append(f"{r['uri']}: not a WorkRecords locator (WS-18)")
             elif network != r["network"]:
                 reasons.append(f"{r['uri']}: network {r['network']} does not match the address")
-            digest, why = _hash_fetched(fetched.get(r["uri"]), r["form"], info)
+            digest, why = _hash_fetched(fetched.get(r["uri"]), r["form"], info, m["fileId"])
             if digest is None:
                 reasons.append(f"{r['uri']}: {why}")
             elif digest != _norm(m["sha256Hash"]):
@@ -343,8 +367,13 @@ def check_floor(
         return result()
     media = package["media"]
     primary = _info(package, media[0]["fileId"]) if media else None
+    if primary is None or not isinstance(primary.get("mimeType"), str):
+        # Fail closed: without the PRIMARY file's MIME type, G (and so the generative fact's
+        # applicability) is unknown.
+        refusals.append("no fileInfo with a MIME type for the PRIMARY file, so G is unknown")
+        return result()
     G = (
-        (primary is not None and primary.get("mimeType") in SCRIPT_MIMES)
+        primary["mimeType"] in SCRIPT_MIMES
         or record_declares_dependencies(package["item"].get("recordDependencies"))
         or package["item"].get("seedPolicy") != "NONE"
     )

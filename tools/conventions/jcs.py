@@ -28,6 +28,10 @@ class CanonicalJsonError(ToolError):
     """A value cannot be canonicalized, or bytes are not strict I-JSON."""
 
 
+#: Arrays and objects nested deeper than this are refused, by `canonicalize` and so by `parse`,
+#: before Python's recursion limit is reached. Convention documents nest a few levels.
+MAX_DEPTH = 64
+
 _ESCAPES = {'"': '\\"', "\\": "\\\\", "\b": "\\b", "\t": "\\t", "\n": "\\n", "\f": "\\f", "\r": "\\r"}
 
 
@@ -51,7 +55,10 @@ def _number(value: int | float) -> str:
     if isinstance(value, int):
         if abs(value) <= 2**53:
             return str(value)
-        value = float(value)  # RFC 8785 numbers are doubles; a larger integer is rounded
+        try:
+            value = float(value)  # RFC 8785 numbers are doubles; a larger integer is rounded
+        except OverflowError:
+            raise CanonicalJsonError("an integer is beyond the range of an IEEE 754 double") from None
     if math.isnan(value) or math.isinf(value):
         raise CanonicalJsonError("NaN and infinities have no JSON form")
     if value == 0:
@@ -84,7 +91,10 @@ def _utf16_key(name: str) -> bytes:
         raise CanonicalJsonError("a member name holds a lone surrogate") from None
 
 
-def _serialize(value: Any, out: list[str]) -> None:
+def _serialize(value: Any, out: list[str], depth: int = 0) -> None:
+    """`depth`: how many arrays and objects enclose `value`."""
+    if depth >= MAX_DEPTH and isinstance(value, (list, tuple, dict)):
+        raise CanonicalJsonError(f"the value nests arrays and objects more than {MAX_DEPTH} deep")
     if value is None:
         out.append("null")
     elif value is True:
@@ -100,7 +110,7 @@ def _serialize(value: Any, out: list[str]) -> None:
         for i, item in enumerate(value):
             if i:
                 out.append(",")
-            _serialize(item, out)
+            _serialize(item, out, depth + 1)
         out.append("]")
     elif isinstance(value, dict):
         for key in value:
@@ -112,7 +122,7 @@ def _serialize(value: Any, out: list[str]) -> None:
                 out.append(",")
             out.append(_string(key))
             out.append(":")
-            _serialize(value[key], out)
+            _serialize(value[key], out, depth + 1)
         out.append("}")
     else:
         raise CanonicalJsonError(f"{type(value).__name__} has no JSON form")
@@ -152,7 +162,9 @@ def parse(data: bytes) -> Any:
         raise
     except ValueError as exc:
         raise CanonicalJsonError(f"not JSON: {exc}") from None
-    canonicalize(value)  # refuses lone surrogates that escapes smuggled in
+    except RecursionError:
+        raise CanonicalJsonError(f"the document nests more than {MAX_DEPTH} deep") from None
+    canonicalize(value)  # refuses lone surrogates that escapes smuggled in, and deep nesting
     return value
 
 

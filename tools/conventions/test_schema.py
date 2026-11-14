@@ -82,6 +82,8 @@ MALFORMED = [
     ("promise-card.json", "powers available without lists", setp(["powers", "available"], True)),
     ("promise-card.json", "floor state unknown", setp(["conservationFloor", "storage"], "partial")),
     ("promise-card.json", "floor fact missing", delp(["conservationFloor", "generative"])),
+    ("promise-card.json", "storage not_applicable", setp(["conservationFloor", "storage"], "not_applicable")),
+    ("promise-card.json", "display not_applicable", setp(["conservationFloor", "display"], "not_applicable")),
     ("promise-card.json", "accepted display change without acceptedBy", setp(["displayChange"], {"state": "accepted"})),
     ("promise-card.json", "custody status number", setp(["custody", 0, "status"], 1)),
     ("promise-card.json", "custody HELD without asOf", delp(["custody", 0, "asOf"])),
@@ -160,6 +162,61 @@ class KeywordTest(unittest.TestCase):
     def test_unsupported_keyword_fails_closed(self) -> None:
         with self.assertRaises(SchemaError):
             self.make({"format": "email"}).errors("x", "urn:t")
+
+    def test_unsupported_keyword_anywhere_fails_at_load(self) -> None:
+        """An unsupported keyword is refused when the schema loads, wherever it sits, even where
+        no instance reaches it (here `x` is absent from the instance)."""
+        nests = {
+            "absent property": {"properties": {"x": {"multipleOf": 2}}},
+            "format other than uint256": {"properties": {"x": {"format": "email"}}},
+            "$defs": {"$defs": {"d": {"multipleOf": 2}}},
+            "items": {"items": {"properties": {"y": {"multipleOf": 2}}}},
+            "then branch": {"if": {"const": 1}, "then": {"multipleOf": 2}},
+            "else branch": {"if": {"const": 1}, "else": {"multipleOf": 2}},
+            "oneOf": {"oneOf": [{"type": "string"}, {"multipleOf": 2}]},
+            "not": {"not": {"multipleOf": 2}},
+            "additionalProperties": {"additionalProperties": {"multipleOf": 2}},
+            "unevaluatedProperties": {"unevaluatedProperties": {"multipleOf": 2}},
+        }
+        for name, body in nests.items():
+            with self.subTest(name), self.assertRaises(SchemaError):
+                self.make(body)
+
+    def test_member_names_are_not_keywords(self) -> None:
+        """A property or $defs entry may be called `format` or `items`: only schemas are walked."""
+        v = self.make({"properties": {"format": {"type": "string"}, "items": True}, "$defs": {"format": True}})
+        self.assertEqual(v.errors({"format": "x"}, "urn:t"), [])
+
+    def test_unreadable_or_malformed_schema_file_is_a_schema_error(self) -> None:
+        """A schema file that is not UTF-8 JSON, or cannot be read, raises SchemaError naming it."""
+        import tempfile
+        from pathlib import Path
+        cases = {"bad.schema.json": b'{"$id": "urn:t",', "latin.schema.json": b'{"$id": "\xff"}',
+                 "list.schema.json": b"[]"}  # fmt: skip
+        for name, data in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                (Path(tmp) / name).write_bytes(data)
+                with self.assertRaises(SchemaError) as caught:
+                    Validator.from_directory(Path(tmp))
+                self.assertIn(name, str(caught.exception))
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "dir.schema.json").mkdir()  # reading a directory raises OSError
+            with self.assertRaises(SchemaError) as caught:
+                Validator.from_directory(Path(tmp))
+            self.assertIn("dir.schema.json", str(caught.exception))
+
+    def test_uint256_is_bounded_by_value(self) -> None:
+        """DCL-1: a uint256 decimal string is 0 to 2**256 - 1; the 78-digit pattern alone would
+        admit 2**256, so the validator also checks the value (`format: uint256`)."""
+        for value, ok in (("0", True), (str(2**256 - 1), True), (str(2**256), False),
+                          ("9" * 78, False), ("1" + "0" * 78, False), ("042", False)):  # fmt: skip
+            with self.subTest(value=value):
+                doc = mutate(testdata.example("control-proof.json"), setp(["message", "tokenId"], value))
+                errors = schema.validate(doc, "control-proof")
+                self.assertEqual(errors == [], ok, errors)
+        attestation = testdata.example("custody-attestation.json")
+        attestation["subject"]["tokenId"] = attestation["message"]["tokenId"] = str(2**256)
+        self.assertNotEqual(schema.validate(attestation, "custody-attestation"), [])
 
     def test_unresolvable_ref(self) -> None:
         with self.assertRaises(SchemaError):

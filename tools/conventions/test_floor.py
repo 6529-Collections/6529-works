@@ -40,6 +40,27 @@ def edit(inp: dict, change: Callable[[dict], None]) -> dict:
     return out
 
 
+def stored_input(stored: bytes, encoding: str, digest: str,
+                 change: Callable[[dict], None] | None = None) -> tuple[dict, dict, str]:
+    """The still-image input with its PRIMARY file replaced by a real one: `stored` as the
+    stored stream in `encoding`, decoding to media of SHA-256 `digest`, under the file ID the
+    content store gives it. Returns (input, declarations document, file ID)."""
+    fid = floor.stored_file_id(stored, {"encoding": encoding, "mimeType": "image/png", "sha256Hash": digest})
+    doc = testdata.example("declarations.json")
+    for section in ("storage", "format"):
+        for f in doc["conservation"][section]["files"]:
+            if f["fileId"] == F1:
+                f["fileId"] = fid
+                if section == "storage":
+                    f["sha256"] = digest
+    if change:
+        change(doc)
+    f2_sha = doc["conservation"]["storage"]["files"][1]["sha256"]
+    inp = testdata.floor_input(doc, [(fid, digest, "PRIMARY", "image/png"), (F2, f2_sha, "PREVIEW", "image/webp")])
+    inp["package"]["files"][fid].update(encoding=encoding, length=len(stored))
+    return inp, doc, fid
+
+
 class ExamplesTest(unittest.TestCase):
     def test_still_image_example_meets_the_floor(self) -> None:
         """DCL-5: declarations.json against a matching package meets every applicable fact."""
@@ -187,20 +208,14 @@ class FactTest(unittest.TestCase):
         self.assertTrue(result["ok"], result["refusals"])
 
     def test_storage_decodes_fetched_bytes_by_the_file_encoding(self) -> None:
-        """DCL-5 CHECK_storage: sha256(decode(fetch(uri), encoding)) == the media SHA-256."""
+        """DCL-5 CHECK_storage: a stored copy reproduces the file ID and
+        sha256(decode(fetch(uri), encoding)) == the media SHA-256."""
         media = b"6529 works media bytes" * 50
         digest = sha(media)
         for encoding, stored in (("Identity", media), ("Gzip", gzip.compress(media, mtime=0)),
                                  ("Base64", base64.b64encode(media))):  # fmt: skip
             with self.subTest(encoding):
-                doc = testdata.example("declarations.json")
-                for f in doc["conservation"]["storage"]["files"]:
-                    if f["fileId"] == F1:
-                        f["sha256"] = digest
-                inp = testdata.floor_input(doc, [(F1, digest, "PRIMARY", "image/png"),
-                                                 (F2, doc["conservation"]["storage"]["files"][1]["sha256"], "PREVIEW", "image/webp")])  # fmt: skip
-                inp["package"]["files"][F1].update(encoding=encoding, length=len(stored))
-                inp["package"]["item"]["contentHash"] = doc["contentHash"]
+                inp, doc, _ = stored_input(stored, encoding, digest)
                 for r in doc["conservation"]["storage"]["files"][0]["receipts"]:
                     inp["observed"]["fetched"][r["uri"]] = stored
                 result = run(inp)
@@ -211,17 +226,13 @@ class FactTest(unittest.TestCase):
 
     def test_storage_receipt_forms(self) -> None:
         """DCL-4/DCL-5 CHECK_storage: a `decoded` copy hashes to the file's SHA-256 as fetched; a
-        `stored` copy must be fileInfo.length bytes that decode to it."""
+        `stored` copy must be fileInfo.length bytes that reproduce the file ID and decode to it."""
         media = b"6529 works media bytes" * 50
         stored = gzip.compress(media, mtime=0)
         digest = sha(media)
-        doc = testdata.example("declarations.json")
+        inp, doc, _ = stored_input(stored, "Gzip", digest,
+                                   lambda d: d["conservation"]["storage"]["files"][0]["receipts"][1].update(form="decoded"))
         f1 = doc["conservation"]["storage"]["files"][0]
-        f1["sha256"] = digest
-        f1["receipts"][1]["form"] = "decoded"
-        inp = testdata.floor_input(doc, [(F1, digest, "PRIMARY", "image/png"),
-                                         (F2, doc["conservation"]["storage"]["files"][1]["sha256"], "PREVIEW", "image/webp")])  # fmt: skip
-        inp["package"]["files"][F1].update(encoding="Gzip", length=len(stored))
         stored_uri, decoded_uri = f1["receipts"][0]["uri"], f1["receipts"][1]["uri"]
         inp["observed"]["fetched"].update({stored_uri: stored, decoded_uri: media})
         self.assertEqual(run(inp)["facts"]["storage"]["state"], "met", run(inp)["facts"]["storage"])
@@ -229,6 +240,37 @@ class FactTest(unittest.TestCase):
         reasons = run(swapped)["facts"]["storage"]["reasons"]
         self.assertTrue(any("not fileInfo.length bytes" in r for r in reasons), reasons)
         self.assertTrue(any(decoded_uri in r and "SHA-256" in r for r in reasons), reasons)
+
+    def test_stored_copy_must_be_the_committed_stream(self) -> None:
+        """DCL-5 CHECK_storage: a `stored` copy encoded differently (here a gzip header with
+        another mtime) has the same length and decodes to the same SHA-256, but its chunk hashes
+        are not the committed ones, so it cannot rebuild the file and is refused."""
+        media = b"6529 works media bytes" * 50
+        stored = gzip.compress(media, mtime=0)
+        other = gzip.compress(media, mtime=1)
+        self.assertEqual((len(other), sha(gzip.decompress(other))), (len(stored), sha(media)))
+        self.assertNotEqual(other, stored)
+        inp, doc, _ = stored_input(stored, "Gzip", sha(media))
+        for r in doc["conservation"]["storage"]["files"][0]["receipts"]:
+            inp["observed"]["fetched"][r["uri"]] = other
+        reasons = run(inp)["facts"]["storage"]["reasons"]
+        self.assertTrue(reasons and all("committed chunk hashes" in r for r in reasons), reasons)
+
+    def test_stored_receipt_of_an_encoded_file_needs_the_bytes(self) -> None:
+        """DCL-5 CHECK_storage: an observed SHA-256 stands for a `stored` copy only for an
+        Identity file, whose stored stream is the decoded media; for any other encoding the
+        tool needs the bytes, to check the chunk hashes. A `decoded` copy may be a hash."""
+        media = b"6529 works media bytes" * 50
+        stored = gzip.compress(media, mtime=0)
+        inp, doc, _ = stored_input(stored, "Gzip", sha(media),
+                                   lambda d: d["conservation"]["storage"]["files"][0]["receipts"][1].update(form="decoded"))
+        f1 = doc["conservation"]["storage"]["files"][0]
+        inp["observed"]["fetched"].update({f1["receipts"][0]["uri"]: sha(media), f1["receipts"][1]["uri"]: sha(media)})
+        reasons = run(inp)["facts"]["storage"]["reasons"]
+        self.assertEqual(len(reasons), 1, reasons)
+        self.assertIn(f1["receipts"][0]["uri"], reasons[0])
+        self.assertIn("needs the fetched bytes", reasons[0])
+        self.assertTrue(run(testdata.still_floor_input())["ok"])  # Identity files, hashes observed
 
     def test_format(self) -> None:
         """DCL-5 CHECK_format."""
@@ -306,6 +348,26 @@ class FactTest(unittest.TestCase):
             with self.subTest(name):
                 result = run(edit(still, change))
                 self.assertIn("missing generative", result["refusals"])
+
+    def test_missing_primary_metadata_fails_closed(self) -> None:
+        """DCL-5 G: without the PRIMARY file's fileInfo or MIME type, whether the work is
+        generative is unknown, so the check refuses rather than mark generative not_applicable;
+        even with a waived format fact the policy allows, and storage met from hashes."""
+        waived_format = with_doc(testdata.still_floor_input(), lambda d: d["conservation"].update(
+            format={"waived": True, "reason": "Measured by the venue."}))
+        waived_format["policy"]["waivable"] = ["format"]
+        self.assertTrue(run(waived_format)["ok"], run(waived_format)["refusals"])
+        for name, change in {
+            "no fileInfo": lambda i: i["package"]["files"].pop(F1),
+            "no MIME type": lambda i: i["package"]["files"][F1].pop("mimeType"),
+            "MIME type not a string": lambda i: i["package"]["files"][F1].update(mimeType=None),
+            "no media": lambda i: i["package"].update(media=[]),
+        }.items():  # fmt: skip
+            with self.subTest(name):
+                result = run(edit(waived_format, change))
+                self.assertFalse(result["ok"])
+                self.assertTrue(any("PRIMARY" in r and "G is unknown" in r for r in result["refusals"]), result["refusals"])
+                self.assertNotEqual(result["facts"]["generative"]["state"], "not_applicable")
 
     def test_empty_record_dependencies_declare_none(self) -> None:
         """DCL-4: "declares dependencies" means the member is present and non-empty."""

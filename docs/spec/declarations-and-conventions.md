@@ -72,7 +72,10 @@ token ID. A statement that carries one:
 | `supersedes` | The entry hash of the earlier entry of the same kind this one replaces, or zero |
 
 A reader refuses a convention document over 65,536 bytes; the declarations document has its own
-limit (DCL-3).
+limit (DCL-3). A token ID, price or other `uint256` member is a decimal string from 0 to
+2<sup>256</sup> − 1 with no leading zero; the common schema's pattern bounds its digits and its
+`format: uint256` names the value bound, which a reader checks whether or not its JSON Schema
+validator asserts formats, and a value above the bound makes the document invalid.
 
 **DCL-2. Validating any convention statement.** A reader:
 
@@ -139,7 +142,10 @@ A storage receipt's `form` follows the storage guide's rule for what a locator h
 ([which bytes a locator holds](../integrators/storage.md#4-locators-content-addresses-only)): for a
 `Gzip`, `Base64` or `GzipBase64` file a copy may be either the stored stream (the one that can
 rebuild the content-store file, whose ID commits to those exact bytes) or the decoded media, and
-the receipt says which.
+the receipt says which. A `stored` copy is checked against the file's committed chunk hashes
+(its 24,575-byte chunks, [WS-25](works-and-storage.md#rules-and-invariants)), not only by its
+length and decoded SHA-256: another encoding of the same media, such as a gzip stream with a
+different header, has the same decoded hash but cannot rebuild the file.
 
 **DCL-5. The check before attestation.** ADR 0001 makes approval rules wave policy, not contract
 code ([ADR 0001 §3](../adr/0001-v1-scope.md#3-curation-and-approved-packages)), so the floor is
@@ -154,6 +160,7 @@ so the CURATOR's `CURATION_EVIDENCE` statement publishes it (DCL-33). With `P` t
 CHECK_FLOOR(item, media, P):
   D := [m in media : m.role == AUXILIARY and fileInfo(m.fileId).mimeType == DECLARATIONS_MIME]
   if |D| > 1:                                  REFUSE "ambiguous declarations"
+  require media != [] and fileInfo(media[0].fileId) is known, with its mimeType   # fail closed
   G := fileInfo(media[0].fileId).mimeType in SCRIPT_MIMES
        or recordDependencies(item.recordFileId) != [] or item.seedPolicy != NONE
   if |D| == 0:
@@ -192,6 +199,7 @@ CHECK_storage:
           require r.uri passes WorkRecords' locator shape (WS-18) and r.network matches it
           b := fetch(r.uri)
           if r.form == stored:   require |b| == fileInfo(m.fileId).length
+                                 and keccak256(chunk i of b) == chunkHash(m.fileId, i) for every i
                                  and sha256(decode(b, fileInfo(m.fileId).encoding)) == m.sha256Hash
           if r.form == decoded:  require sha256(b) == m.sha256Hash
 
@@ -376,8 +384,9 @@ stateDiagram-v2
 **DCL-16. Per-work entry.** A `CATALOGUE_ENTRY` counts only under the ARTIST role, about a 6529
 Stream token, with a [`catalogue-entry.v1`](schemas/catalogue-entry.v1.schema.json) document
 ([example](schemas/examples/catalogue-entry.json)). The latest valid entry for the work, following
-`supersedes`, is its entry. An entry about a master covers its edition. Two works whose current
-entries share a `catalogueNumber` are both flagged.
+`supersedes`, is its entry. An entry about a master covers its edition. Two works of the same artist
+(the same `coreOf(tokenId).artistId` on the same 6529 Stream) whose current entries share a
+`catalogueNumber` are both flagged; the same number in two artists' catalogues is not a duplicate.
 
 **DCL-17. The artist-wide catalogue.** The log cannot hold it: `isArtist` is false for the artist
 subject, so no ARTIST statement can be about the artist, and a PLATFORM or CURATOR statement there
@@ -429,7 +438,11 @@ account 0 and its digest is
 `0xa03cc2c3767834df2ef6c583fd5d08e6d65ddd616d2f90a96e0ad8e00e152e2a`.
 
 **DCL-20. Posting.** A `CUSTODY_ATTESTATION` counts under the OWNER, ARTIST or PLATFORM role,
-about the 6529 Stream token the message names. The poster's role tells only who published it;
+about the 6529 Stream token the message names, and only for that work: a reader evaluating a work
+`(chainId, token, tokenId)` uses only attestations whose statement subject, document `subject`
+and message `token` and `tokenId` are that work, so one about another token, even with the same
+object ID and custodian, neither counts for it (DCL-21) nor recognizes a successor for it
+(DCL-22). The poster's role tells only who published it;
 the custodian's signature is what a reader trusts. The reader verifies it as the log verifies
 signatures ([`SignatureVerifier`](../../src/libraries/SignatureVerifier.sol)): low-s ECDSA for an
 account without code; for an EIP-7702 delegated account, ECDSA against the account first, then
@@ -480,8 +493,10 @@ Anvil test account 0, digest
    verifier's own expected chain ID, `token` the official 6529 Stream (or 6529 Stream Editions)
    address of that chain, and the token ID, holder and signer. Store the whole challenge, keyed
    by its nonce, as outstanding.
-2. On the response, look up the outstanding challenge by the response's nonce. Refuse unless one
-   is outstanding and unused and the response's message equals it in every field (`venue`,
+2. On the response, before any other check, claim the outstanding challenge by the response's
+   nonce in one atomic operation that returns it at most once and marks the nonce used (step 6),
+   so of two concurrent responses with one nonce at most one goes further. Refuse unless the
+   claim returned a challenge and the response's message equals it in every field (`venue`,
    `nonce`, `issuedAt`, `expiresAt`, `chainId`, `token`, `tokenId`, `holder`, `signer`): a
    response is the issued challenge plus a signature and nothing else. Refuse unless the time is
    within `[issuedAt − 60 s, expiresAt]`, and unless the challenge's `venue`, `chainId` and
@@ -498,7 +513,8 @@ Anvil test account 0, digest
    `EnglishAuction.pendingDelivery(saleId)` names the buyer; a venue may accept that buyer as
    the holder.
 5. If `holder == signer`, accept. Otherwise apply DCL-25.
-6. Mark the nonce used, whatever the outcome.
+6. The nonce is used whatever the outcome: the claim in step 2 marked it, before the signature
+   was checked.
 
 **DCL-25. A cold wallet through a consolidated wallet.** A collector keeps the work in a cold
 `holder` and signs with a hot `signer` consolidated with it in the 6529 delegation contract (use
@@ -521,13 +537,14 @@ sequenceDiagram
     participant N as Node at block B
     V->>W: challenge (venue, nonce, issuedAt, expiresAt, chainId, token, tokenId, holder, signer)
     W-->>V: EIP-712 signature
-    V->>V: response equals the issued challenge, times, digest with its own chain ID
+    V->>V: claim the challenge by nonce (atomic, marks it used)
+    V->>V: response equals the claimed challenge, times, digest with its own chain ID
     V->>N: code of signer; ERC-1271 isValidSignature if a contract
     V->>N: Stream.ownerOf(tokenId)
     opt holder is not the signer
         V->>N: consolidationSource().isEstablished(holder, signer)
     end
-    V->>V: accept or refuse, and spend the nonce
+    V->>V: accept or refuse (the nonce is already used)
 ```
 
 ## Promise card and grade
@@ -652,7 +669,7 @@ apply it; "Supported on chain by" names the contract rule it builds on.
 
 | ID | Rule | Applied by | Supported on chain by |
 | --- | --- | --- | --- |
-| DCL-1 | Convention documents are canonical JSON with `v` and `subject`; `schema` is the hash of the `$id`; content is SHA-256; at most 65,536 bytes. | Writers' tooling; readers | DSP-2 |
+| DCL-1 | Convention documents are canonical JSON with `v` and `subject`; `schema` is the hash of the `$id`; content is SHA-256; at most 65,536 bytes; a `uint256` string is at most 2<sup>256</sup> − 1. | Writers' tooling; readers | DSP-2 |
 | DCL-2 | A convention statement counts only after chain proof, official subject, the kind's role, a trusted resolver, hash, schema and subject checks, and supersession within kind and role. | Readers | DSP-1, DSP-7, DSP-10 |
 | DCL-3 | The declarations document is the one AUXILIARY file of its MIME type, `Identity`, one chunk, matching the content hash, and complete in the content store when the signer attests; fixed from approval. | Signer's tooling; readers | WS-2, WS-6, WS-25 |
 | DCL-4 | The floor's facts, each waivable with a reason; each storage receipt declares the form of the bytes it holds. | Artists' tooling | none |
@@ -667,15 +684,15 @@ apply it; "Supported on chain by" names the contract rule it builds on.
 | DCL-13 | An acceptance survives a transfer, labelled by who accepted it. | Readers | none |
 | DCL-14 | Burns and dispute outcomes prevail over the display. | Readers | DSP-12 |
 | DCL-15 | Editions never take a content change; proposed bytes minted as another work are flagged. | Readers | DSP-11 subject rules; `consumedItemOf` |
-| DCL-16 | A catalogue entry counts only as ARTIST; the latest per work wins; duplicate numbers are flagged. | Readers | ID-28 |
+| DCL-16 | A catalogue entry counts only as ARTIST; the latest per work wins; duplicate numbers within one artist's works are flagged. | Readers | ID-28 |
 | DCL-17 | The artist-wide catalogue is named from the profile document. | Artists; readers | ID-5, ID-8, ID-28 |
 | DCL-18 | A citation counts only as ARTIST about the citing work, only when well formed (schema-valid, non-zero chain ID, not the work itself), and is shown as the citing artist's claim. | Readers | ID-28 |
 | DCL-19 | Custody attestations are the typed data above. | Custodians' tooling | none |
-| DCL-20 | A custody attestation counts as posted by OWNER, ARTIST or PLATFORM, and only with a valid custodian signature. | Readers | DSP-3, DSP-6 |
+| DCL-20 | A custody attestation counts as posted by OWNER, ARTIST or PLATFORM, only with a valid custodian signature, and only for the work it names. | Readers | DSP-3, DSP-6 |
 | DCL-21 | The latest `asOf` counts, the later entry on a tie; future-dated is discarded; older than the allowed age is stale; a named custodian with no attestation is `NONE`. | Readers | none |
 | DCL-22 | Only a named custodian, or the successor in a recognized custodian's latest attestation when it is RELEASED, is recognized. | Readers | WS-6 |
 | DCL-23 | Control proofs are the typed data above, in the domain of the token's chain. | Venues; wallets | none |
-| DCL-24 | The response must equal the issued challenge; the verifier builds the digest with its own chain ID, checks the time window, the signature and ownership at a recent block, and spends the nonce. | Venues | none |
+| DCL-24 | The verifier first claims the issued challenge atomically, spending the nonce; the response must equal it; the verifier builds the digest with its own chain ID and checks the time window, the signature and ownership at a recent block. | Venues | none |
 | DCL-25 | A consolidated signer proves a cold holder only through the registry's consolidation source; a live, younger pair (non-zero `effectiveAt` after `B`) only at lower trust. | Venues | ID-24, ID-27 |
 | DCL-26 | A card reads everything at one block; the content hash comes from `WorkMinted`. | Card generators | none |
 | DCL-27 | Roles and delays on a card come from the role matrix and the deployment's events; the generator applies the six row rules. | Card generators | GV-10, GV-17 |

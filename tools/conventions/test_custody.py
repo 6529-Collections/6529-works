@@ -8,13 +8,29 @@ import copy
 import unittest
 from typing import Any
 
+from tools.content.errors import ToolError
 from tools.conventions import custody, schema, testdata
-from tools.conventions.custody import DAY, UNNAMED_LABEL, evaluate_custody
+from tools.conventions.custody import DAY, UNNAMED_LABEL
 
 AS_OF = 1794700800
 OBJECT = "0x27036a7eaf555d00bc19a8fca75c359fbaeb5ab2a6dddb13075526d251ff035b"
 SUCCESSOR = "0x" + "5c" * 20
 STRANGER = "0x" + "57" * 20
+#: The example attestation's work, the one evaluated unless a test says otherwise.
+WORK = {"chainId": 11155111, "contract": "0x02617dbdc0b0521124cb4c2a3ef602977e29bd91", "tokenId": "42"}
+OTHER_WORK = dict(WORK, tokenId="43")
+
+
+def evaluate_custody(declarations: Any, attestations: list, now: int, work: dict = WORK) -> dict:
+    return custody.evaluate_custody(declarations, attestations, now, work=work)
+
+
+def about(entry: dict, work: dict) -> dict:
+    """The attestation entry re-aimed at `work` (document subject and message token)."""
+    doc = entry["document"]
+    doc["subject"] = dict(work)
+    doc["message"].update(token=work["contract"], tokenId=work["tokenId"])
+    return entry
 
 
 def att(**changes: Any) -> dict:
@@ -138,6 +154,34 @@ class DiscardTest(unittest.TestCase):
                 self.assertIn(needle, result["discarded"][0]["reason"])
                 self.assertEqual([e["status"] for e in result["entries"]], ["NONE"])
 
+    def test_signature_valid_must_be_true_not_truthy(self) -> None:
+        """DCL-20: only a JSON `true` counts as a valid signature; `"false"` is not valid."""
+        for value in ("false", "true", 1, None):
+            with self.subTest(value=value):
+                result = evaluate_custody(declarations(), [att(signatureValid=value)], AS_OF)
+                self.assertIn("signature is not valid", result["discarded"][0]["reason"])
+
+    def test_attestation_about_another_work_is_discarded(self) -> None:
+        """DCL-20: an attestation counts only for the work it names. One about another token,
+        with the same objectId and named custodian, sets nothing for the evaluated work."""
+        other = about(att(message={"status": 3, "asOf": AS_OF + 50}), OTHER_WORK)
+        result = evaluate_custody(declarations(), [att(), other], AS_OF + DAY)
+        self.assertEqual(len(result["discarded"]), 1)
+        self.assertIn("another work", result["discarded"][0]["reason"])
+        self.assertEqual([(e["status"], e["asOf"]) for e in result["entries"]], [("HELD", AS_OF)])
+        alone = evaluate_custody(declarations(), [other], AS_OF + DAY)
+        self.assertEqual([e["status"] for e in alone["entries"]], ["NONE"])
+        # The other work's own evaluation counts it.
+        self.assertEqual([e["status"] for e in evaluate_custody(declarations(), [other], AS_OF + DAY, OTHER_WORK)["entries"]],
+                         ["MISSING"])  # fmt: skip
+
+    def test_work_is_compared_by_value(self) -> None:
+        """The evaluated work may be spelled with a checksummed contract or a numeric token ID."""
+        spelled = {"chainId": 11155111, "contract": "0x02617DBDC0B0521124CB4C2A3EF602977E29BD91", "tokenId": 42}
+        self.assertEqual(evaluate_custody(declarations(), [att()], AS_OF, spelled)["discarded"], [])
+        with self.assertRaises(ToolError):
+            evaluate_custody(declarations(), [att()], AS_OF, {"chainId": 11155111})
+
     def test_one_hour_skew_is_allowed(self) -> None:
         result = evaluate_custody(declarations(), [att(message={"asOf": AS_OF + 3600}, recordedAt=AS_OF)], AS_OF)
         self.assertEqual(result["discarded"], [])
@@ -177,6 +221,17 @@ class SuccessorTest(unittest.TestCase):
             declarations(), [release, held_again, successor], AS_OF + 4)["entries"]}  # fmt: skip
         self.assertFalse(entries[SUCCESSOR]["recognized"])
         self.assertEqual(entries[testdata.ANVIL_0]["status"], "HELD")
+
+    def test_release_about_another_work_recognizes_no_one_here(self) -> None:
+        """DCL-22: a named custodian's RELEASED attestation for another work, with the same
+        objectId, does not recognize its successor for the evaluated work."""
+        release = about(att(message={"status": 2, "successor": SUCCESSOR, "asOf": AS_OF + 1}), OTHER_WORK)
+        held = att(custodian=SUCCESSOR, message={"asOf": AS_OF + 2})
+        result = evaluate_custody(declarations(), [release, held], AS_OF + 3)
+        entries = {e["custodian"]: e for e in result["entries"]}
+        self.assertFalse(entries[SUCCESSOR]["recognized"])
+        self.assertEqual(entries[testdata.ANVIL_0]["status"], "NONE")
+        self.assertEqual([d["index"] for d in result["discarded"]], [0])
 
     def test_discarded_release_does_not_recognize(self) -> None:
         release = att(message={"status": 2, "successor": SUCCESSOR}, signatureValid=False)

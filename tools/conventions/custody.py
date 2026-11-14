@@ -1,9 +1,9 @@
 """The custody-attestation reader check (DCL-19 to DCL-22).
 
-`evaluate_custody(declarations, attestations, now)` decides, for each object and custodian,
-which attestation counts, whether its custodian is recognized and whether it is stale. It is a
-pure function: signature validity is an input (`signatureValid`, from `attestation_signature`
-or the caller's own DCL-20 check at the reader's block).
+`evaluate_custody(declarations, attestations, now, work=...)` decides, for each object and
+custodian of the work `work`, which attestation counts, whether its custodian is recognized and
+whether it is stale. It is a pure function: signature validity is an input (`signatureValid`, a
+JSON boolean from `attestation_signature` or the caller's own DCL-20 check at the reader's block).
 
 An attestation input is `{"document": <custody-attestation.v1>, "recordedAt": <entry time>,
 "posterRole": "OWNER|ARTIST|PLATFORM|CURATOR", "poster": "0x…", "signatureValid": bool}`, plus
@@ -15,6 +15,8 @@ its declarations are not valid (then no custodian is named).
 from __future__ import annotations
 
 from typing import Any, Iterable, Mapping
+
+from tools.content.errors import ToolError
 
 from . import eip712
 from .schema import validate
@@ -47,22 +49,31 @@ def attestation_signature(
     )  # fmt: skip
 
 
-def _discard_reason(att: Mapping[str, Any]) -> str | None:
+def work_key(ref: Mapping[str, Any]) -> tuple[Any, str, str]:
+    """`(chainId, contract, tokenId)` of a work reference, contract lowercased and the token ID
+    as a decimal string, so references compare equal however a caller spelled them."""
+    if not isinstance(ref, Mapping) or not {"chainId", "contract", "tokenId"} <= set(ref):
+        raise ToolError("a work is {chainId, contract, tokenId}")
+    contract = ref["contract"]
+    return ref["chainId"], contract.lower() if isinstance(contract, str) else contract, str(ref["tokenId"])
+
+
+def _discard_reason(att: Mapping[str, Any], work: tuple[Any, str, str]) -> str | None:
     doc = att["document"]
     errors = validate(doc, "custody-attestation")
     if errors:
         return "not a valid custody-attestation.v1 document: " + errors[0]
     if att.get("posterRole") not in POSTER_ROLES:
         return "posted under a role DCL-20 does not count"
-    subject = att.get("subject", doc["subject"])
+    subject = work_key(att.get("subject", doc["subject"]))
     message = doc["message"]
-    if (subject["chainId"], subject["contract"], subject["tokenId"]) != (
-        doc["subject"]["chainId"], doc["subject"]["contract"], doc["subject"]["tokenId"]
-    ):
+    if subject != work_key(doc["subject"]):
         return "the document's subject is not the statement's subject (DCL-2)"
-    if (message["token"], message["tokenId"]) != (subject["contract"], subject["tokenId"]):
+    if subject != work:
+        return "the attestation is about another work than the one evaluated (DCL-20)"
+    if (message["token"], message["tokenId"]) != subject[1:]:
         return "the message names another token than the statement's subject (DCL-20)"
-    if not att.get("signatureValid"):
+    if att.get("signatureValid") is not True:
         return "the custodian's signature is not valid (DCL-20)"
     if message["asOf"] > att["recordedAt"] + FUTURE_SKEW_SECONDS:
         return "asOf is more than one hour after the entry's recordedAt (DCL-21)"
@@ -73,24 +84,29 @@ def evaluate_custody(
     declarations: Mapping[str, Any] | None,
     attestations: Iterable[Mapping[str, Any]],
     now: int,
+    *,
+    work: Mapping[str, Any],
 ) -> dict:
     """DCL-21 and DCL-22 at reader time `now`. Returns `{"entries": [...], "discarded": [...]}`.
 
-    `attestations` are in log order: of two valid attestations with the same `asOf`, the later
-    one counts (DCL-21).
+    `work` is the evaluated work, `{chainId, contract, tokenId}`: an attestation whose subject is
+    another work is discarded (DCL-20), so it can neither count for this work nor recognize a
+    successor here. `attestations` are in log order: of two valid attestations with the same
+    `asOf`, the later one counts (DCL-21).
 
     Each entry: `objectId`, `custodian`, `recognized`, `status`, `asOf`, `stale`, `maxAgeDays`,
     and for an unrecognized custodian `label` (DCL-22) with `posterRole` and `poster`. A named
     custodian with no counting attestation has an entry with status `NONE`, no `asOf` and
     `stale` true, so it is never shown as current custody.
     """
+    evaluated = work_key(work)
     named = {}
     for c in (declarations or {}).get("custodians", []):
         named[(c["objectId"], c["address"])] = c["maxAttestationAgeDays"]
     discarded: list[dict] = []
     counting: dict[tuple[str, str], tuple[int, Mapping[str, Any]]] = {}
     for index, att in enumerate(attestations):
-        reason = _discard_reason(att)
+        reason = _discard_reason(att, evaluated)
         if reason:
             discarded.append({"index": index, "reason": reason})
             continue

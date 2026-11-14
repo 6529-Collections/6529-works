@@ -64,8 +64,8 @@ class RowTest(unittest.TestCase):
             ("R5", floor(display="unmet"), 0),
             ("R5", floor(storage="waived", display="unmet"), 0),
             ("R5", floor(generative="met"), 15),
-            ("R5", floor(storage="not_applicable", format="not_applicable", license="not_applicable",
-                         display="not_applicable"), 15),
+            ("R5", floor(generative="not_applicable"), 15),
+            ("R5", floor(generative="not_applicable", display="waived"), 8),
             ("R6", lambda c: c["storage"]["files"][0].update(locators=1), 5),
             ("R6", lambda c: c["storage"]["files"][0].update(locators=0), 0),
             ("R6", lambda c: c["storage"].update(files=[]), 0),
@@ -85,6 +85,14 @@ class RowTest(unittest.TestCase):
                 result = grade.grade(card(change))
                 self.assertEqual(points(result).get(row, 0), expected)
                 self.assertEqual(result["score"], sum(r["points"] for r in result["reasons"]))
+
+    def test_not_applicable_is_only_for_the_generative_fact(self) -> None:
+        """DCL-4: storage, format, license and display apply to every work, so a card that marks
+        one of them not_applicable is not a valid card and is not graded (R5 cannot be won by
+        marking every fact not_applicable)."""
+        for fact in ("storage", "format", "license", "display"):
+            with self.subTest(fact=fact), self.assertRaises(ToolError):
+                grade.grade(card(lambda c: c["conservationFloor"].update({fact: "not_applicable"})))
 
     def test_rows_with_zero_points_are_not_listed(self) -> None:
         """DCL-30: `reasons` lists each row that scored; R7 scored nothing on the example."""
@@ -152,7 +160,7 @@ class TotalityTest(unittest.TestCase):
     def test_total_over_valid_cards(self) -> None:
         """DCL-30: grading is total; every valid card gives a valid promise-grade.v1 document."""
         rng = random.Random(6529)
-        floor_states = ("met", "waived", "unmet", "not_applicable")
+        applied_states = ("met", "waived", "unmet")  # storage, format, license, display (DCL-4)
         statuses = ("not_open", "open", "finalized")
         decl = ("absent", "valid", "invalid", "ambiguous", "unreadable")
         count = 0
@@ -166,7 +174,10 @@ class TotalityTest(unittest.TestCase):
                     {"power": rng.choice(("ROYALTY_RATE", "RELICENSE")), "dueAt": 1,
                      "state": rng.choice(("renounced", "pending", "overdue", "unknown"))}
                     for _ in range(rng.randint(0, 2))]}  # fmt: skip
-                c["conservationFloor"] = {k: rng.choice(floor_states) for k in c["conservationFloor"]}
+                c["conservationFloor"] = {
+                    k: rng.choice(applied_states + (("not_applicable",) if k == "generative" else ()))
+                    for k in c["conservationFloor"]
+                }
                 c["storage"]["files"][0]["locators"] = rng.randint(0, 16)
                 if rng.random() < 0.3:
                     c["storage"]["files"] = []

@@ -111,18 +111,41 @@ class CliTest(unittest.TestCase):
         self.assertEqual((code, json.loads(out)["step"]), (1, "DCL-24.2"))
 
     def test_custody_check(self) -> None:
-        spec = {"declarations": str(EXAMPLES / "declarations.json"), "now": 1794787200,
+        work = {"chainId": 11155111, "contract": "0x02617dbdc0b0521124cb4c2a3ef602977e29bd91", "tokenId": "42"}
+        spec = {"work": work, "declarations": str(EXAMPLES / "declarations.json"), "now": 1794787200,
                 "attestations": [{"document": str(EXAMPLES / "custody-attestation.json"), "recordedAt": 1794700900,
                                   "posterRole": "OWNER", "poster": testdata.ANVIL_1, "signatureValid": True}]}  # fmt: skip
         code, out, _ = run("custody", "check", self.write("custody.json", spec))
         self.assertEqual(code, 0)
         self.assertTrue(json.loads(out)["entries"][0]["recognized"])
+        other = dict(spec, work=dict(work, tokenId="43"))  # DCL-20: an attestation about another work
+        code, out, _ = run("custody", "check", self.write("custody2.json", other))
+        self.assertEqual(code, 0)
+        result = json.loads(out)
+        self.assertEqual(len(result["discarded"]), 1)
+        self.assertEqual([e["status"] for e in result["entries"]], ["NONE"])
+        code, _, err = run("custody", "check", self.write("custody3.json", {k: v for k, v in spec.items() if k != "work"}))
+        self.assertEqual(code, 2)
+        self.assertIn("work", err)
 
     def test_bad_input_exits_2(self) -> None:
         self.assertEqual(run("grade", str(self.dir / "missing.json"))[0], 2)
         self.assertEqual(run("grade", self.write("x.json", b"{"))[0], 2)
         self.assertEqual(run("card", self.write("y.json", {"reads": {}}))[0], 2)
         self.assertEqual(run("validate", "nope", str(EXAMPLES / "citation.json"))[0], 2)
+
+    def test_non_object_json_input_exits_2(self) -> None:
+        """An input file holding JSON that is not an object is bad input: exit 2 with a message,
+        not a traceback."""
+        for value in ([], 7, "x", None):
+            path = self.write("v.json", value)
+            for argv in (("floor", path), ("card", path), ("grade", path), ("custody", "check", path),
+                         ("custody", "digest", path), ("control-proof", "digest", path),
+                         ("control-proof", "verify", path, "--context", path)):  # fmt: skip
+                with self.subTest(value=value, command=argv[0]):
+                    code, _, err = run(*argv)
+                    self.assertEqual(code, 2)
+                    self.assertIn("must hold a JSON object", err)
 
 
 if __name__ == "__main__":

@@ -31,6 +31,12 @@ def reads(inputs: dict) -> dict:
     return inputs["reads"]
 
 
+def _with(change: Callable[[dict], Any]) -> dict:
+    inputs = testdata.example_card_inputs()
+    change(inputs)
+    return inputs
+
+
 def not_open(inputs: dict) -> None:
     wr = reads(inputs)["WorkRecords"]
     for key in ("record", "mediaOf", "workStateHash", "pinnedRenderer", "locators", "preferredLocator", "RecordOpened"):
@@ -81,6 +87,51 @@ class ExampleCardTest(unittest.TestCase):
                 del node[path[-1]]
             with self.subTest(path=path), self.assertRaises(ToolError):
                 build(drop)
+
+    def test_boolean_reads_must_be_json_booleans(self) -> None:
+        """DCL-26: a bool read given as a string or a number is refused; `"false"` must never
+        become true (it would hide LIM-CNT-1 or mark a work finalized)."""
+        f1 = "0x" + "11" * 32
+        setters: dict[str, Callable[[dict, Any], None]] = {
+            "isOpen": lambda i, v: reads(i)["WorkRecords"].update(isOpen=v),
+            "finalized": lambda i, v: reads(i)["WorkRecords"]["record"].update(finalized=v),
+            "onChainComplete": lambda i, v: reads(i)["WorkRecords"]["record"].update(onChainComplete=v),
+            "isComplete of a media file": lambda i, v: reads(i)["ContentStore"]["isComplete"].update({f1: v}),
+            "isComplete of the license text": lambda i, v: reads(i)["ContentStore"]["isComplete"].update({testdata.LICENSE_TEXT: v}),
+            "isComplete of the declarations": lambda i, v: reads(i)["ContentStore"]["isComplete"].update({DECL_FILE: v}),
+            "documentVerified": lambda i, v: (reads(i)["StatementLog"].update(
+                latestDisputeOutcome=ENTRY, disputeOutcomeOf={"entryHash": ENTRY, "index": 0}),
+                i.update(dispute={"documentVerified": v})),
+        }  # fmt: skip
+        for name, setter in setters.items():
+            for bad in ("false", "true", 0, 1) + ((None,) if name != "documentVerified" else ()):
+                with self.subTest(read=name, value=bad), self.assertRaises(ToolError):
+                    build(lambda i: setter(i, bad))
+
+    def test_record_flags_must_be_present(self) -> None:
+        for key in ("finalized", "onChainComplete"):
+            with self.subTest(key), self.assertRaises(ToolError):
+                build(lambda i: reads(i)["WorkRecords"]["record"].pop(key))
+
+    def test_roles_are_required(self) -> None:
+        """DCL-27: the role matrix rows are an input; without them the card would claim nothing
+        can change, so a missing or malformed `roles` is refused."""
+        with self.assertRaises(ToolError):
+            build(lambda i: i.pop("roles"))
+        with self.assertRaises(ToolError):
+            build(lambda i: i.update(roles={"what": "record"}))
+        self.assertEqual(build(lambda i: i.update(roles=[]))["changeable"], [])  # given, and empty
+
+    def test_owner_read_must_be_present(self) -> None:
+        """DCL-28: ownerOf is null when it reverted (burned); an absent read is not a burn."""
+        with self.assertRaises(ToolError) as caught:
+            build(lambda i: reads(i)["Stream"].pop("ownerOf"))
+        self.assertNotIsInstance(caught.exception, NoCard)
+
+    def test_renounced_mask_must_be_hex(self) -> None:
+        for bad in (1, "1", "-0x1", " 0x1", "0x", None):
+            with self.subTest(bad=bad), self.assertRaises(ToolError):
+                build(lambda i: reads(i).update(IWorkPowers={"renouncedMask": bad}))
 
 
 class RecordStatesTest(unittest.TestCase):
@@ -346,6 +397,18 @@ class DisplayAndCustodyTest(unittest.TestCase):
         c = build(lambda i: i.update(attestations=[]))
         self.assertEqual(c["custody"], [{"objectId": c["custody"][0]["objectId"], "custodian": testdata.ANVIL_0,
                                          "recognized": True, "status": "NONE", "stale": True}])  # fmt: skip
+
+    def test_custody_of_another_work_is_not_shown(self) -> None:
+        """DCL-20: the card evaluates custody for its own (chainId, token, tokenId); an attestation
+        about another token is discarded, so the named custodian shows NONE."""
+        def other_token(i: dict) -> None:
+            doc = i["attestations"][0]["document"]
+            doc["subject"]["tokenId"] = doc["message"]["tokenId"] = "43"
+        result = build_card(_with(other_token))
+        self.assertEqual([e["status"] for e in result.card["custody"]], ["NONE"])
+        self.assertIn("another work", result.notes["custody"]["discarded"][0]["reason"])
+        other_chain = build_card(_with(lambda i: i["attestations"][0]["document"]["subject"].update(chainId=1)))
+        self.assertEqual([e["status"] for e in other_chain.card["custody"]], ["NONE"])
 
     def test_custody_recognized_and_stale(self) -> None:
         """DCL-21, DCL-22, DCL-28: recognized or not, fresh or stale."""

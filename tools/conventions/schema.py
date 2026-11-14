@@ -5,9 +5,10 @@ they say, and it implements only the Draft 2020-12 keywords those schemas use: `
 `enum`, `pattern`, `minLength`, `maxLength`, `minimum`, `maximum`, `exclusiveMinimum`,
 `minItems`, `maxItems`, `uniqueItems`, `items`, `required`, `properties`,
 `additionalProperties`, `unevaluatedProperties`, `allOf`, `anyOf`, `oneOf`, `not`, `if`/`then`/
-`else` and `$ref` (within a schema and across schemas by `$id`). A schema that uses any other
-keyword makes the validator raise `SchemaError` instead of silently ignoring it, so it fails
-closed when the schemas grow.
+`else`, `$ref` (within a schema and across schemas by `$id`) and `format`, asserted, for the one
+value `uint256`. A schema that uses any other keyword or format, anywhere in it, makes the
+validator raise `SchemaError` when the schemas load instead of silently ignoring it, so it fails
+closed when the schemas grow; a schema file that cannot be read or parsed raises it too.
 
 Instances are JSON values as `json.loads` returns them. JSON equality is used for `const`,
 `enum` and `uniqueItems`: `true` is not `1`, and `1` equals `1.0`. Patterns are ECMA-262
@@ -33,12 +34,51 @@ _KEYWORDS = {
     "type", "const", "enum", "pattern", "minLength", "maxLength", "minimum", "maximum",
     "exclusiveMinimum", "minItems", "maxItems", "uniqueItems", "items", "required", "properties",
     "additionalProperties", "unevaluatedProperties", "allOf", "anyOf", "oneOf", "not", "if", "then",
-    "else", "$ref",
+    "else", "$ref", "format",
 }  # fmt: skip
+#: The `format` values this validator asserts; any other value is refused at load. `uint256` is
+#: a decimal string from 0 to 2**256 - 1 (DCL-1): the common schema's pattern bounds the digits
+#: and this check bounds the value, which a pattern can say only at great length.
+_FORMATS = {"uint256"}
+UINT256_MAX = 2**256 - 1
+#: Keywords whose value is one subschema, and those whose value is a list or a map of them.
+_SUBSCHEMA = ("items", "additionalProperties", "unevaluatedProperties", "not", "if", "then", "else")
+_SUBSCHEMA_LISTS = ("allOf", "anyOf", "oneOf")
+_SUBSCHEMA_MAPS = ("properties", "$defs")
 
 
 class SchemaError(ToolError):
     """A schema uses a keyword this validator does not implement, or a `$ref` does not resolve."""
+
+
+def _check_keywords(schema: Any, where: str) -> None:
+    """Refuse, at load, any keyword or `format` this validator does not implement, wherever it
+    sits: under `$defs`, `properties`, `items`, the conditionals and the combinators alike, so a
+    subschema no instance happens to reach still fails closed."""
+    if isinstance(schema, bool):
+        return
+    if not isinstance(schema, dict):
+        raise SchemaError(f"a schema is an object or a boolean, at {where}")
+    unknown = set(schema) - _KEYWORDS - _ANNOTATIONS
+    if unknown:
+        raise SchemaError(f"unsupported schema keyword(s) {sorted(unknown)} at {where}")
+    if "format" in schema and schema["format"] not in _FORMATS:
+        raise SchemaError(f"unsupported format {schema['format']!r} at {where}")
+    for key in _SUBSCHEMA:
+        if key in schema:
+            _check_keywords(schema[key], f"{where}/{key}")
+    for key in _SUBSCHEMA_LISTS:
+        if key in schema:
+            if not isinstance(schema[key], list):
+                raise SchemaError(f"{key} is a list of schemas, at {where}")
+            for i, sub in enumerate(schema[key]):
+                _check_keywords(sub, f"{where}/{key}/{i}")
+    for key in _SUBSCHEMA_MAPS:
+        if key in schema:
+            if not isinstance(schema[key], dict):
+                raise SchemaError(f"{key} is an object of schemas, at {where}")
+            for name, sub in schema[key].items():
+                _check_keywords(sub, f"{where}/{key}/{name}")
 
 
 def schema_id(name: str) -> str:
@@ -104,6 +144,13 @@ def _regex(pattern: str) -> re.Pattern[str]:
     return re.compile("".join(out), re.ASCII)
 
 
+def _uint256_ok(value: str) -> bool:
+    """A decimal string without a leading zero whose value fits uint256 (`format: uint256`)."""
+    if re.fullmatch(r"0|[1-9][0-9]{0,77}", value, re.ASCII) is None:
+        return False
+    return int(value) <= UINT256_MAX
+
+
 def _pointer(path: str, key: str | int) -> str:
     text = str(key).replace("~", "~0").replace("/", "~1")
     return f"{path}/{text}"
@@ -115,9 +162,12 @@ class Validator:
     def __init__(self, schemas: Iterable[dict]) -> None:
         self._schemas: dict[str, dict] = {}
         for schema in schemas:
+            if not isinstance(schema, dict):
+                raise SchemaError("a schema document is a JSON object")
             sid = schema.get("$id")
             if not isinstance(sid, str):
                 raise SchemaError("every schema needs a string $id")
+            _check_keywords(schema, sid)
             self._schemas[sid] = schema
 
     @classmethod
@@ -125,7 +175,19 @@ class Validator:
         paths = sorted(Path(directory).glob("*.schema.json"))
         if not paths:
             raise SchemaError(f"no *.schema.json under {directory}")
-        return cls(json.loads(p.read_text(encoding="utf-8")) for p in paths)
+        schemas = []
+        for p in paths:
+            try:
+                schemas.append(json.loads(p.read_text(encoding="utf-8")))
+            except OSError as exc:
+                raise SchemaError(f"cannot read the schema {p.name}: {exc.strerror or exc}") from None
+            except ValueError as exc:  # JSONDecodeError and UnicodeDecodeError
+                raise SchemaError(f"the schema {p.name} is not UTF-8 JSON: {exc}") from None
+            except RecursionError:
+                raise SchemaError(f"the schema {p.name} nests too deeply") from None
+            if not isinstance(schemas[-1], dict):
+                raise SchemaError(f"the schema {p.name} is not a JSON object")
+        return cls(schemas)
 
     @property
     def ids(self) -> list[str]:
@@ -201,6 +263,8 @@ class Validator:
                 errors.append(f"{where}: longer than {schema['maxLength']} characters")
             if "pattern" in schema and not _regex(schema["pattern"]).search(value):
                 errors.append(f"{where}: does not match {schema['pattern']}")
+            if schema.get("format") == "uint256" and not _uint256_ok(value):
+                errors.append(f"{where}: not a uint256 decimal from 0 to 2**256 - 1")
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             if "minimum" in schema and value < schema["minimum"]:
                 errors.append(f"{where}: below the minimum {schema['minimum']}")

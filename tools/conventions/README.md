@@ -31,14 +31,14 @@ command prints JSON.
 
 | Module | Does | Rules |
 | --- | --- | --- |
-| [`schema.py`](schema.py) | Validates a document against the committed schema in [`docs/spec/schemas/`](../../docs/spec/schemas/), interpreting the schema itself; raises on any keyword it does not implement | DCL-1, DCL-2 step 4 |
+| [`schema.py`](schema.py) | Validates a document against the committed schema in [`docs/spec/schemas/`](../../docs/spec/schemas/), interpreting the schema itself; raises, when the schemas load, on any keyword it does not implement anywhere in a schema; checks `format: uint256` values (0 to 2<sup>256</sup> − 1) | DCL-1, DCL-2 step 4 |
 | [`jcs.py`](jcs.py) | RFC 8785 canonical JSON and a strict I-JSON parser | DCL-1, DCL-30 |
 | [`floor.py`](floor.py) | `check_floor(package, policy, contents, observed)`: the signer's `CHECK_FLOOR`; `floor_result` turns a passing result into the published floor-result.v1 object; `dependency_label` is the bytes32 `DependencyRegistry` takes | DCL-3 to DCL-5, DCL-7, DCL-33 |
 | [`card.py`](card.py) | `build_card(inputs)`: a promise card from the reads at one block | DCL-3, DCL-8, DCL-26 to DCL-29, DCL-33 |
 | [`grade.py`](grade.py) | `grade(card)`: rubric 1, total over valid cards | DCL-30, DCL-31 |
 | [`eip712.py`](eip712.py) | The two typed-data digests and `verify_signature`, as `SignatureVerifier` | DCL-19, DCL-20, DCL-23, DCL-24 step 3 |
 | [`control_proof.py`](control_proof.py) | `issue_challenge` and `verify_response` | DCL-23 to DCL-25 |
-| [`custody.py`](custody.py) | `evaluate_custody(declarations, attestations, now)` | DCL-20 to DCL-22 |
+| [`custody.py`](custody.py) | `evaluate_custody(declarations, attestations, now, work=...)` | DCL-20 to DCL-22 |
 
 The exact input shapes are in each module's docstring.
 
@@ -58,10 +58,13 @@ canonical, as DCL-1 requires of every convention document.
 it the names are `ROYALTY_RATE` and `RELICENSE`, the `WorkPowers` names of DCL-8),
 `contents` (the declarations bytes, `{"file": path}` or `{"hex": "0x…"}`) and `observed`: what the
 signer's own tooling saw at each storage receipt (`{"file": path}` of the fetched bytes, which
-the tool checks as the receipt's `form` says: a `stored` copy is `fileInfo.length` bytes that
-decode to the file's SHA-256, a `decoded` copy hashes to it; or `{"sha256": "0x…"}` of the
-decoded media; or `null` when the fetch failed), the dimensions it measured by decoding each image or video, the default
-renderer and its code hash, and each dependency's resolution.
+the tool checks as the receipt's `form` says: a `stored` copy is `fileInfo.length` bytes whose
+chunks reproduce the file ID (the committed chunk hashes) and that decode to the file's SHA-256, a
+`decoded` copy hashes to it; or `{"sha256": "0x…"}` of the decoded media, which stands for a
+`stored` copy only of an `Identity` file; or `null` when the fetch failed), the dimensions it
+measured by decoding each image or video, the default renderer and its code hash, and each
+dependency's resolution. The PRIMARY file's `fileInfo`, with its MIME type, is required: without
+it whether the work is generative is unknown, and the check refuses.
 
 The result lists every failure with the fact it belongs to, and each fact's state: `met`,
 `waived` (with its reason), `unmet`, `not_applicable` or `failed`. `ok` is false on any refusal;
@@ -74,9 +77,10 @@ Builds a promise card that validates against `promise-card.v1`, or fails. `INPUT
 one answer per function the spec cites, made at one block, and the documents a reader holds: a
 declarations copy fetched from a locator, the published floor result (a floor-result.v1 object;
 the card uses it only when it names the work's item hash and declarations file, DCL-33),
-custody attestations, the winning display change, and the `changeable` rows the caller composes
-from the [role matrix](../../docs/audit/roles.md), to which the tool applies DCL-27's row rules.
-The full shape is in [`card.py`](card.py).
+custody attestations (counted only when they are about this work, DCL-20), the winning display
+change, and the `roles` rows, required, that the caller composes from the
+[role matrix](../../docs/audit/roles.md), to which the tool applies DCL-27's row rules. A read
+the chain returns as a bool must be a JSON boolean. The full shape is in [`card.py`](card.py).
 
 The tool does not make the reads itself. The chain tooling in this repository reaches a node
 over JSON-RPC with `urllib` ([`tools/content/rpc.py`](../content/rpc.py)) rather than by
@@ -110,13 +114,16 @@ code,
 consolidation source's `isEstablished` and `effectiveAt`. The command recovers ECDSA signatures
 with `cast` and cannot make the ERC-1271 call a contract signer needs; a program that keeps state,
 or must accept contract signers, calls `control_proof.verify_response` with its own store of
-issued challenges and `erc1271` callable.
+issued challenges and `erc1271` callable. The store has one operation, `claim(nonce)`, which must
+be atomic: it returns the outstanding challenge at most once and marks it used, and the verifier
+calls it before any other check (DCL-24 steps 2 and 6).
 
 ### `custody digest FILE` and `custody check INPUT`
 
 `digest` prints the EIP-712 digest of a custody attestation. `check` applies DCL-20 to DCL-22 to a
-list of attestations: which counts for each object and custodian, whether the custodian is
-recognized, and whether it is stale. An attestation without `signatureValid` is checked with
+list of attestations about the work `INPUT` names (`work`: `{chainId, contract, tokenId}`; an
+attestation about another work is discarded): which counts for each object and custodian, whether
+the custodian is recognized, and whether it is stale. An attestation without `signatureValid` is checked with
 `cast` against the custodian, as an account without code unless `custodianCode` is given.
 
 ## Signatures
