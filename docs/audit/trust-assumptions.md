@@ -163,14 +163,14 @@ by the genesis wiring and then locked ([GV-24][gv]).
 | --- | --- | --- | --- |
 | `Stream.bindWorkRecords`, `bindEditions` | Code, no EIP-7702, ERC-165, and its `stream()` is this Stream | `setRoyaltyRate`, `emitMetadataUpdate`; `linkEdition` once per settled master | [AUC-11][auc] |
 | `Editions.bindWorkRecords` | Code, no EIP-7702, ERC-165 | `setRoyaltyRate`, `notifyMasterUpdated`, `notifyAllUpdated` | [ED-7][ed] |
-
-Stream and Editions check only `IWorkRecords` when binding; no contract depends on `IWorkPowers`,
-the renounceable powers `WorkRecords` also reports through ERC-165
-([ADR 0006](../adr/0006-work-powers-and-conventions.md)).
 | `PackageRegistry.bindStream`, `bindEditions` | Code, no EIP-7702, ERC-165 | `consume`, `releaseContent`; `claimContent` for the consumed item | [CUR-15][cur] |
 | `ArtistRegistry.bindPackageRegistry`, `bindStream`, `bindSplitFactory`, `bindStatementLog` | Code and no EIP-7702; ERC-165 for the first two; the log's resolver is this registry | `register`; `isWallet`; `latestDisputeOutcome` | [ID-29][id] |
 | `ArtistRegistry.setPackageRegistry` (a 30-day SUCCESSOR_SETTER action, compare-and-set) | As `bindPackageRegistry` | `register`, moved to Stream's successor package registry | [ID-30][id] |
 | `ArtistRegistry.bindFederationRegistry` (v1.1) | As above; a 30-day ADMIN action | `listFederatedContract`, at most 64 per artist | None in v1 |
+
+Stream and Editions check only `IWorkRecords` when binding; no contract depends on `IWorkPowers`,
+the renounceable powers `WorkRecords` also reports through ERC-165
+([ADR 0006](../adr/0006-work-powers-and-conventions.md)).
 
 ### Admitted sale adapters
 
