@@ -8,7 +8,7 @@ import copy
 import unittest
 from typing import Any
 
-from tools.conventions import custody, testdata
+from tools.conventions import custody, schema, testdata
 from tools.conventions.custody import DAY, UNNAMED_LABEL, evaluate_custody
 
 AS_OF = 1794700800
@@ -94,12 +94,25 @@ class StalenessTest(unittest.TestCase):
         entries = evaluate_custody(declarations(), [newer, older_posted_later], AS_OF + DAY)["entries"]
         self.assertEqual([(e["status"], e["asOf"]) for e in entries], [("MISSING", AS_OF + 10)])
 
+    def test_same_as_of_the_later_entry_counts(self) -> None:
+        """DCL-21: of two valid attestations with the same asOf, the later entry in the log."""
+        first = att(message={"status": 1})
+        second = att(message={"status": 3}, recordedAt=AS_OF + 200)
+        entries = evaluate_custody(declarations(), [first, second], AS_OF + DAY)["entries"]
+        self.assertEqual([e["status"] for e in entries], ["MISSING"])
+        entries = evaluate_custody(declarations(), [second, first], AS_OF + DAY)["entries"]
+        self.assertEqual([e["status"] for e in entries], ["HELD"])
+
     def test_named_custodian_without_attestation(self) -> None:
-        """DCL-21: a named custodian with nothing counting shows status NONE and stale."""
+        """DCL-21: a named custodian with nothing counting shows status NONE, no date, stale; the
+        card entry validates against promise-card.v1."""
         entries = evaluate_custody(declarations(), [], AS_OF)["entries"]
-        self.assertEqual(custody.card_custody({"entries": entries}),
-                         [{"objectId": OBJECT, "custodian": testdata.ANVIL_0, "recognized": True,
-                           "status": "NONE", "asOf": 0, "stale": True}])  # fmt: skip
+        card_entries = custody.card_custody({"entries": entries})
+        self.assertEqual(card_entries, [{"objectId": OBJECT, "custodian": testdata.ANVIL_0, "recognized": True,
+                                         "status": "NONE", "stale": True}])  # fmt: skip
+        card = testdata.example("promise-card.json")
+        card["custody"] = card_entries
+        self.assertEqual(schema.validate(card, "promise-card"), [])
 
 
 class DiscardTest(unittest.TestCase):
@@ -153,6 +166,17 @@ class SuccessorTest(unittest.TestCase):
         entries = {e["custodian"]: e for e in evaluate_custody(declarations(), [release, held], AS_OF)["entries"]}
         self.assertFalse(entries[SUCCESSOR]["recognized"])
         self.assertFalse(entries[STRANGER]["recognized"])
+
+    def test_only_the_latest_attestation_of_a_custodian_recognizes(self) -> None:
+        """DCL-22: a RELEASED attestation that the same custodian's later attestation replaced
+        recognizes no one; the successor in the latest one does."""
+        release = att(message={"status": 2, "successor": SUCCESSOR, "asOf": AS_OF + 1})
+        held_again = att(message={"status": 1, "asOf": AS_OF + 2})
+        successor = att(custodian=SUCCESSOR, message={"asOf": AS_OF + 3})
+        entries = {e["custodian"]: e for e in evaluate_custody(
+            declarations(), [release, held_again, successor], AS_OF + 4)["entries"]}  # fmt: skip
+        self.assertFalse(entries[SUCCESSOR]["recognized"])
+        self.assertEqual(entries[testdata.ANVIL_0]["status"], "HELD")
 
     def test_discarded_release_does_not_recognize(self) -> None:
         release = att(message={"status": 2, "successor": SUCCESSOR}, signatureValid=False)

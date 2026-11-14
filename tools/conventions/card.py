@@ -12,7 +12,7 @@ JSON-RPC with `urllib`, not by shelling out, so fetching is left to the caller.
 reads:
   at:          {chainId, blockNumber, blockHash, timestamp}            # block B
   token, tokenId
-  WorkMinted:  {contentHash}            # the event; coreOf has no content hash
+  WorkMinted:  {contentHash}            # the event; no view returns the content hash
   Stream:
     ownerOf:         address | null     # null when it reverted: a burned token has no card
     coreOf:          {itemHash, artistId, collectionId, kind, seedPolicy}
@@ -23,7 +23,7 @@ reads:
     isOpen:          bool
     record:          {version, finalized, onChainComplete}             # when open
     mediaOf:         [{fileId, sha256Hash, role}]                      # when open
-    licenseOf:       {spdxId, textFileId}  # reverts before the open: pass the item's license
+    licenseOf:       {spdxId, textFileId}  # reverts before the open: pass the item's license (DCL-28)
     workStateHash:   bytes32                                           # when open
     pinnedRenderer:  address                                           # when open
     locators:        {fileId: [{kind, uri}]}                           # when open
@@ -43,12 +43,13 @@ reads:
     pendingChange:     {kind}
   UniformEditionAuction:
     clearing: {count, price}                # for a master that has an edition
-  IWorkPowers:                              # optional; absent = "not reported" (ADR 0006)
-    renouncedMask: "0x…"                    # bit i set = powers[i] renounced
-    powers: [NAME, …]                       # the view's power names, in bit order
-    covers: {NAME: [what, …]}               # which `changeable` rows each power covers
+  IWorkPowers:                              # optional; absent = WorkRecords does not report it
+    renouncedMask: "0x…"                    # renouncedPowers(tokenId): bit i set = powers[i]
+    powers: [NAME, …]                       # optional; default POWERS, in bit order (DCL-8)
+    covers: {NAME: [what, …]}               # optional; default COVERS (DCL-8, DCL-27)
 declarationsCopies: {fileId: "0x…"}         # a copy fetched from a locator (not complete on chain)
-floor:        {fact: state} or a floor.check_floor result: the published curation evidence
+floor:        a floor-result.v1 object (the published curation evidence, DCL-33), or a
+              floor.check_floor result the reader recomputed; absent = every fact unmet
 attestations: [custody attestation inputs, as custody.evaluate_custody takes them]
 displayChange:{proposal, acceptance, contentSha256, acceptedBy}   # the DCL-12 winner, if any
 dispute:      {documentVerified}            # optional (DCL-28)
@@ -77,8 +78,12 @@ CC0_KEY = floor.license_key("CC0-1.0")
 
 ALWAYS_RISKS = (
     "LIM-GV-1", "LIM-GV-2", "LIM-GV-9", "LIM-GV-10", "LIM-GV-11", "LIM-ID-11", "LIM-ID-13",
-    "LIM-CNT-2", "LIM-CNT-3", "LIM-CNT-12", "LIM-SAL-8",
+    "LIM-CNT-2", "LIM-CNT-3", "LIM-CNT-12", "LIM-CNT-13", "LIM-SAL-8",
 )  # fmt: skip
+#: The `WorkPowers` names in bit order (bit 0 = 1, bit 1 = 2), and the `changeable` row each
+#: covers (DCL-8, DCL-27).
+POWERS = floor.WORK_POWERS
+COVERS = {"ROYALTY_RATE": ["royalty_rate"], "RELICENSE": ["license"]}
 UNTIL = {"record": "finalize", "burn_and_release": "settlement"}
 GENERATOR = {"name": "6529-works tools.conventions", "version": "1"}
 
@@ -184,13 +189,13 @@ def _powers(reads: Mapping[str, Any]) -> tuple[dict, dict[str, list[str]]]:
     view = reads.get("IWorkPowers")
     if view is None:
         return {"available": False}, {}
-    names = list(_need(view, "powers", "IWorkPowers"))
+    names = list(view.get("powers", POWERS))
     mask = int(_need(view, "renouncedMask", "IWorkPowers"), 16)
     if mask >> len(names):
         raise ToolError("IWorkPowers.renouncedMask sets a bit with no power name")
     renounced = [n for i, n in enumerate(names) if mask >> i & 1]
     retained = [n for i, n in enumerate(names) if not mask >> i & 1]
-    return {"available": True, "renounced": renounced, "retained": retained}, view.get("covers", {})
+    return {"available": True, "renounced": renounced, "retained": retained}, view.get("covers", COVERS)
 
 
 def _changeable(roles, *, finalized: bool, cc0: bool, sale_outcome: str, powers: dict, covers) -> list[dict]:
@@ -217,13 +222,31 @@ def _changeable(roles, *, finalized: bool, cc0: bool, sale_outcome: str, powers:
     return rows
 
 
-def _floor_states(published: Any) -> dict[str, str] | None:
+def _floor_states(
+    published: Any, item_hash: str, status: str, decl_file: str | None
+) -> tuple[dict[str, str], str | None]:
+    """DCL-33: the floor states the card shows, and why they fell back to `unmet` if they did.
+
+    `published` is a floor-result.v1 object, or a `floor.check_floor` result the reader
+    recomputed (turned into one with the card's item hash). It is used only when the
+    declarations are `valid` or `absent` and it names the work's item hash and the declarations
+    file the card found (None when absent); otherwise every fact is `unmet`."""
+    unmet = {k: "unmet" for k in floor.FACTS}
     if published is None:
-        return None
-    states = floor.floor_states(published) if "facts" in published else dict(published)
-    if set(states) != set(floor.FACTS) or any(s not in FLOOR_STATES for s in states.values()):
-        raise ToolError("the published floor result is not one met/waived/unmet/not_applicable per fact")
-    return states
+        return unmet, "no floor result was published for the item"
+    if status not in ("valid", "absent"):
+        return unmet, f"the declarations are {status}"
+    if isinstance(published, Mapping) and "ok" in published and "refusals" in published:
+        if not published["ok"]:
+            return unmet, "the recomputed floor check refused the item"
+        published = floor.floor_result(published, item_hash)
+    if validate(published, "floor-result"):
+        return unmet, "the published floor result is not a valid floor-result.v1"
+    if published["itemHash"] != item_hash:
+        return unmet, "the published floor result names another item"
+    if published["declarationsFileId"] != decl_file:
+        return unmet, "the published floor result names another declarations file"
+    return dict(published["facts"]), None
 
 
 def build_card(inputs: Mapping[str, Any]) -> CardResult:
@@ -327,15 +350,16 @@ def build_card(inputs: Mapping[str, Any]) -> CardResult:
                     state = "unknown"
                 elif r["power"] in powers["renounced"]:
                     state = "renounced"
-                elif at["timestamp"] <= due:
+                elif at["timestamp"] < due:  # due from dueAt on (DCL-8)
                     state = "pending"
                 else:
                     state = "overdue"
                 items.append({"power": r["power"], "dueAt": due, "state": state})
             declarations["intendedRenunciations"] = items
 
-    states = _floor_states(inputs.get("floor")) if status == "valid" else None
-    conservation = states or {k: "unmet" for k in floor.FACTS}
+    conservation, why = _floor_states(inputs.get("floor"), _lc(core["itemHash"]), status, decl_file)
+    if why is not None:
+        notes["conservationFloor"] = why
 
     change = inputs.get("displayChange")
     if change:

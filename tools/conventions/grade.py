@@ -57,7 +57,8 @@ def grade_rubric_1(card: Mapping[str, Any]) -> dict:
     overdue = any(r["state"] == "overdue" for r in card["declarations"].get("intendedRenunciations", []))
     rows.append(("R8", 0 if overdue else 5))
     score = sum(p for _, p in rows)
-    letter = next((name for name, floor in LETTER_FLOORS if score >= floor), "D")
+    by_points = next((name for name, floor in LETTER_FLOORS if score >= floor), "D")
+    letter = by_points
     caps: list[tuple[str, str]] = []
     if card["dispute"]["entryHash"] is not None:
         caps.append(("CAP1", "C"))
@@ -70,7 +71,8 @@ def grade_rubric_1(card: Mapping[str, Any]) -> dict:
     for _, ceiling in caps:
         letter = _cap(letter, ceiling)
     reasons = [{"row": r, "points": p} for r, p in rows if p > 0]
-    reasons += [{"row": c, "points": 0} for c, _ in caps]
+    # DCL-30: a cap is listed, with 0 points, only when its ceiling is below the points' letter.
+    reasons += [{"row": c, "points": 0} for c, ceiling in caps if _cap(by_points, ceiling) != by_points]
     return {"v": 1, "rubric": RUBRIC, "card": card_hash(card), "score": score, "letter": letter,
             "reasons": reasons}  # fmt: skip
 

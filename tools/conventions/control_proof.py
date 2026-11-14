@@ -1,9 +1,11 @@
 """The control-proof challenge and verifier (DCL-23 to DCL-25).
 
 `issue_challenge` is step 1 of DCL-24; `verify_response` runs steps 2 to 6 as a pure function of
-its inputs: the venue's identity and clock, a nonce store, the official token addresses, and the
-reads the venue made at its chosen block `B` (the signer's code, the ownership read, the
-consolidation read). Signature recovery is pluggable (see `eip712`).
+its inputs: the venue's identity and clock, a store of the issued challenges, the official token
+addresses, and the reads the venue made at its chosen block `B` (the signer's code, the ownership
+read, the consolidation read). Signature recovery is pluggable (see `eip712`). A response is
+accepted only when its message equals the issued challenge, and the digest is built from that
+challenge with the verifier's own chain ID (DCL-24 steps 2 and 3).
 
 The steps are applied in order and the first refusal stops the check; the nonce is spent
 whatever the outcome (step 6).
@@ -25,12 +27,14 @@ DEFAULT_FRESHNESS_BLOCKS = 64  # DCL-24 step 4's example bound
 
 class NonceStore(Protocol):
     def is_outstanding(self, nonce: str) -> bool: ...
+    def challenge(self, nonce: str) -> Mapping[str, Any] | None: ...
     def spend(self, nonce: str) -> None: ...
 
 
 @dataclass
 class MemoryNonceStore:
-    """An in-memory store: nonces issued and not yet spent are outstanding."""
+    """An in-memory store of issued challenges, keyed by nonce: issued and not yet spent are
+    outstanding."""
 
     outstanding: dict[str, dict] = field(default_factory=dict)
     spent: set[str] = field(default_factory=set)
@@ -110,7 +114,6 @@ def verify_response(
     freshness_blocks: int = DEFAULT_FRESHNESS_BLOCKS,
     accept_pending_delivery: bool = False,
     accept_young_consolidation: bool = False,
-    match_challenge: bool = False,
     ecdsa: eip712.EcdsaVerifier | None = None,
     erc1271: eip712.Erc1271Verifier | None = None,
 ) -> Verdict:
@@ -124,8 +127,8 @@ def verify_response(
       `{"englishAuction": addr, "pendingDelivery": addr}`; for Editions, `{"balanceOf": int}`.
     - `consolidation` at `B`, from `ArtistRegistry.consolidationSource()`:
       `{"isEstablished": bool, "effectiveAt": int}`; needed only when holder != signer.
-    - `match_challenge`: also require the response's message to equal the stored challenge
-      (`store.challenge(nonce)`); not one of DCL-24's literal steps, so off by default.
+    - `store`: the issued challenges; the response's message must equal `store.challenge(nonce)`
+      in every field (DCL-24 step 2).
     """
     message = document.get("message", {}) if isinstance(document, Mapping) else {}
     nonce = message.get("nonce") if isinstance(message, Mapping) else None
@@ -136,8 +139,7 @@ def verify_response(
             head_block=head_block, signer_code=signer_code, ownership=ownership,
             consolidation=consolidation, freshness_blocks=freshness_blocks,
             accept_pending_delivery=accept_pending_delivery,
-            accept_young_consolidation=accept_young_consolidation,
-            match_challenge=match_challenge, ecdsa=ecdsa, erc1271=erc1271,
+            accept_young_consolidation=accept_young_consolidation, ecdsa=ecdsa, erc1271=erc1271,
         )  # fmt: skip
     finally:
         if isinstance(nonce, str):
@@ -150,22 +152,22 @@ def _refuse(step: str, reason: str, digest: bytes | None = None, path: str | Non
 
 def _verify(document, *, venue, chain_id, now, store, official_tokens, block, head_block,
             signer_code, ownership, consolidation, freshness_blocks, accept_pending_delivery,
-            accept_young_consolidation, match_challenge, ecdsa, erc1271) -> Verdict:  # fmt: skip
+            accept_young_consolidation, ecdsa, erc1271) -> Verdict:  # fmt: skip
     errors = validate(document, "control-proof")
     if errors:
         return _refuse("DCL-23", "not a valid control-proof.v1 document: " + errors[0])
     if "signature" not in document:
         return _refuse("DCL-23", "a challenge without a signature is not a response")
     m = document["message"]
-    # Step 2.
-    if m["venue"] != venue:
-        return _refuse("DCL-24.2", "the venue is not this verifier's")
+    # Step 2: the response is the issued challenge, field for field.
     if not store.is_outstanding(m["nonce"]):
         return _refuse("DCL-24.2", "the nonce is not outstanding, or was used")
-    if match_challenge:
-        issued = getattr(store, "challenge", lambda _n: None)(m["nonce"])
-        if issued != m:
-            return _refuse("DCL-24.2", "the response's message is not the issued challenge")
+    issued = store.challenge(m["nonce"])
+    if issued is None or dict(issued) != dict(m):
+        return _refuse("DCL-24.2", "the response's message is not the issued challenge")
+    m = dict(issued)
+    if m["venue"] != venue:
+        return _refuse("DCL-24.2", "the venue is not this verifier's")
     if not m["issuedAt"] - CLOCK_SKEW_SECONDS <= now <= m["expiresAt"]:
         return _refuse("DCL-24.2", "the time is outside [issuedAt - 60 s, expiresAt]")
     if m["chainId"] != chain_id:
@@ -173,7 +175,7 @@ def _verify(document, *, venue, chain_id, now, store, official_tokens, block, he
     kind = official_tokens.get(m["token"])
     if kind not in ("stream", "editions"):
         return _refuse("DCL-24.2", "the token is not the official 6529 Stream or Editions address")
-    # Step 3.
+    # Step 3: the digest of the issued challenge, in the domain of the verifier's own chain ID.
     digest = eip712.control_digest(m, chain_id)
     check = eip712.verify_signature(
         m["signer"], digest, bytes.fromhex(document["signature"][2:]),

@@ -12,25 +12,26 @@ and indexers.
 > **Conventions, not contract rules.** No contract enforces anything on this page beyond what
 > the cited contract rules already enforce. A document that breaks a convention is still
 > accepted on chain; readers apply the rules below, and a reader that skips them shows claims
-> the protocol never checked. Where a rule depends on the work powers view, it names it
-> `IWorkPowers` and says "added by ADR 0006"
+> the protocol never checked (LIM-CNT-13). Where a rule depends on the work powers, it reads
+> `IWorkPowers`, which `WorkRecords` implements beside `IWorkRecords`
 > ([ADR 0006](../adr/0006-work-powers-and-conventions.md)).
 
 ## Contracts
 
-No contract is added or changed. The conventions use these existing reads and paths:
+This page adds no contract logic. The conventions use these reads and paths:
 
 | Contract | Source | What the conventions use |
 | --- | --- | --- |
 | `StatementLog` | [`StatementLog.sol`](../../src/records/StatementLog.sol) | Every convention statement: `append`, `appendSigned`, `appendPlatform`; `chainOf`, `latestDisputeOutcome`, `artistResolver` |
 | `StatementKinds` | [`StatementKinds.sol`](../../src/interfaces/types/StatementKinds.sol) | The convention kind labels (constants only; the [registry](disputes-and-statements.md#statement-kind-registry) lists them) |
-| `WorkRecords` | [`WorkRecords.sol`](../../src/stream/WorkRecords.sol) | `mediaOf` (finding the declarations file), `record`, `licenseOf`, `locators`, `preferredLocator`, `seedOf`, `workStateHash` |
+| `WorkRecords` | [`WorkRecords.sol`](../../src/stream/WorkRecords.sol) | `mediaOf` (finding the declarations file), `record`, `licenseOf`, `locators`, `preferredLocator`, `pinnedRenderer`, `seedOf`, `workStateHash`; the `RecordOpened` event |
+| `WorkRecords` as `IWorkPowers` | [`IWorkPowers.sol`](../../src/interfaces/IWorkPowers.sol) | `renouncedPowers` (which powers over a work are renounced, DCL-8), reported through ERC-165 |
 | `ContentStore` | [`ContentStore.sol`](../../src/content/ContentStore.sol) | `fileInfo` (MIME type, encoding, length), `read`, `isComplete`, `sha256Of` |
-| `Stream` | [`Stream.sol`](../../src/stream/Stream.sol) | `ownerOf`, `coreOf`, `artistOf`, `primarySale`, `editionOf`, `rendererOf`, `defaultRenderer` |
+| `DependencyRegistry` | [`DependencyRegistry.sol`](../../src/content/DependencyRegistry.sol) | `resolve` (a declared dependency's file and whether it is deprecated, DCL-5) |
+| `Stream` | [`Stream.sol`](../../src/stream/Stream.sol) | `ownerOf`, `coreOf`, `primarySale`, `editionOf`, `rendererOf`, `defaultRenderer`; the `WorkMinted` event (the content hash and the package root) |
 | `ArtistRegistry`, `ConsolidationAdapter` | [`ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol), [`ConsolidationAdapter.sol`](../../src/identity/ConsolidationAdapter.sol) | `artist` (the profile document hash), `activeAuthorityOf`, `pendingChange`, `consolidationSource`; `isEstablished`, `effectiveAt` |
 | `PackageRegistry` | [`PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | `consumedItemOf` (whether proposed bytes were minted as another work) |
 | `EnglishAuction`, `UniformEditionAuction` | [`EnglishAuction.sol`](../../src/sales/EnglishAuction.sol), [`UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | `pendingDelivery`; `saleIdOf`, `clearing` (primary prices) |
-| `IWorkPowers`, added by ADR 0006 | [ADR 0006](../adr/0006-work-powers-and-conventions.md) | Which powers over a work are renounced |
 
 The JSON Schemas (Draft 2020-12) are in [`schemas/`](schemas/), with an example of each
 document in [`schemas/examples/`](schemas/examples/). Shared definitions are in
@@ -99,7 +100,10 @@ stored as `Identity`, in one chunk (at most 24,575 bytes), and follows
 the work's content hash. A work lists at most one; two make the declarations `ambiguous`, and a
 reader then trusts neither. Because the media hash commits to it, the document is fixed from
 approval for as long as the work exists, and nothing the artist, the platform or governance does
-later changes it (WS-6). Examples: a still image with a physical twin
+later changes it (WS-6). The curation signer requires it complete in the content store
+(`isComplete`) before it attests (DCL-5), so a work approved by a wave that checks the floor can
+always read it on chain; only a wave that does not check the floor can approve a work whose
+declarations file is incomplete. Examples: a still image with a physical twin
 ([`declarations.json`](schemas/examples/declarations.json)), a generative living work
 ([`declarations-generative.json`](schemas/examples/declarations-generative.json)) and a time
 capsule ([`declarations-time-capsule.json`](schemas/examples/declarations-time-capsule.json)).
@@ -113,8 +117,8 @@ SHA-256 against the media entry. The sections, all optional:
 | `conservation` | The conservation floor | DCL-4, DCL-5 |
 | `custodians` | Who holds each physical twin, and how fresh an attestation must be | DCL-6, DCL-21, DCL-22 |
 | `citations` | Works the work cites at birth | DCL-6, DCL-18 |
-| `timeCapsule` | A reveal date, the encryption scheme, the ciphertext file and a plaintext commitment | DCL-7 |
-| `intendedRenunciations` | Powers the artist states they will renounce after the record opens | DCL-8 |
+| `timeCapsule` | A reveal date, the encryption scheme, the ciphertext file (an AUXILIARY media file) and a plaintext commitment | DCL-7 |
+| `intendedRenunciations` | Work powers (`ROYALTY_RATE`, `RELICENSE`) the artist states they will renounce after the record opens | DCL-8 |
 | `livingWork` | What makes the work change by itself | DCL-9 |
 
 ### The conservation floor
@@ -125,11 +129,17 @@ a `reason`.
 
 | Fact | Content | Applies to |
 | --- | --- | --- |
-| `storage` | For every media file except the declarations file: its file ID, its SHA-256, and at least two independent storage receipts, each an `ar://` or `ipfs://` content address with its provider | Every work |
+| `storage` | For every media file except the declarations file: its file ID, its SHA-256, and at least two independent storage receipts, each an `ar://` or `ipfs://` content address with its provider and the `form` of the bytes it holds: `stored`, the file's stored (encoded) stream, or `decoded`, the decoded media. For an `Identity` file the two are the same bytes. | Every work |
 | `format` | For every media file except the declarations file: its MIME type and, for images and video, its width and height in pixels; for time-based media, its duration | Every work |
 | `license` | The license identifier and the SHA-256 of its full text | Every work |
-| `generative` | The renderer address and code hash the work was approved under, its dependencies (name, version, file ID), its seed policy, and the runtime it was made for | A generative work: a script or HTML primary, a record that declares `dependencies`, or a seed policy other than NONE |
+| `generative` | The renderer address and code hash the work was approved under, its dependencies (name, version, file ID), its seed policy, and the runtime it was made for | A generative work (`G` in DCL-5): a PRIMARY file of a script MIME type (`text/html`, `text/javascript`, `application/javascript`, `text/ecmascript`, `application/ecmascript` or `image/svg+xml`), a record that declares dependencies (its `dependencies` member present and non-empty), or a seed policy other than NONE |
 | `display` | Instructions for display: aspect ratio, background, looping, sound, interaction | Every work |
+
+A storage receipt's `form` follows the storage guide's rule for what a locator holds
+([which bytes a locator holds](../integrators/storage.md#4-locators-content-addresses-only)): for a
+`Gzip`, `Base64` or `GzipBase64` file a copy may be either the stored stream (the one that can
+rebuild the content-store file, whose ID commits to those exact bytes) or the decoded media, and
+the receipt says which.
 
 **DCL-5. The check before attestation.** ADR 0001 makes approval rules wave policy, not contract
 code ([ADR 0001 §3](../adr/0001-v1-scope.md#3-curation-and-approved-packages)), so the floor is
@@ -137,16 +147,19 @@ enforced by the curation signer's tooling before it attests, beside its other
 [trust obligations](curation.md#trust-obligations-of-the-curation-signer). Whether a wave requires
 a declarations document, and which waivers it accepts, is that wave's policy; the evidence hash
 already commits to the rule parameters, and the result of this check goes into the evidence too,
-so the CURATOR's `CURATION_EVIDENCE` statement publishes it. With `P` the wave's policy, `item`
-and `media` the package item and its media list:
+so the CURATOR's `CURATION_EVIDENCE` statement publishes it (DCL-33). With `P` the wave's policy,
+`item` and `media` the package item and its media list (`media[0]` is the PRIMARY file):
 
 ```text
 CHECK_FLOOR(item, media, P):
   D := [m in media : m.role == AUXILIARY and fileInfo(m.fileId).mimeType == DECLARATIONS_MIME]
   if |D| > 1:                                  REFUSE "ambiguous declarations"
+  G := fileInfo(media[0].fileId).mimeType in SCRIPT_MIMES
+       or recordDependencies(item.recordFileId) != [] or item.seedPolicy != NONE
   if |D| == 0:
       if P.requiresDeclarations:               REFUSE "no declarations"
-      return {every fact: "unmet"}
+      return {storage, format, license, display: "unmet";
+              generative: "unmet" if G else "not_applicable"}
   d := D[0]; fi := fileInfo(d.fileId)
   require fi.encoding == Identity and fi.length <= 24575 and isComplete(d.fileId)
   bytes := read(d.fileId, 0, fi.length)
@@ -155,8 +168,6 @@ CHECK_FLOOR(item, media, P):
   doc := parse(bytes)
   require doc.contentHash == item.contentHash
   S := media without d
-  G := mime(S[0]) in {text/html, text/javascript, application/javascript}
-       or recordDeclaresDependencies(item.recordFileId) or item.seedPolicy != NONE
   facts := {storage, format, license, display} + ({generative} if G)
   for k in facts:
       require k in doc.conservation                         else REFUSE "missing " + k
@@ -165,7 +176,12 @@ CHECK_FLOOR(item, media, P):
           result[k] := "waived"; continue
       CHECK_<k>(...); result[k] := "met"
   result[generative] := "not_applicable" unless G
-  return result                                  # published in the curation evidence
+  return result                                  # published in the curation evidence (DCL-33)
+
+SCRIPT_MIMES := {text/html, text/javascript, application/javascript, text/ecmascript,
+                 application/ecmascript, image/svg+xml}
+recordDependencies(f) := the record file's `dependencies` member as an ordered list of
+                         (name, version), or [] when the member is absent
 
 CHECK_storage:
   require set(f.fileId for f in doc.storage.files) == set(m.fileId for m in S)
@@ -174,7 +190,10 @@ CHECK_storage:
       require |{(r.network, r.provider) for r in f.receipts}| >= 2
       for r in f.receipts:
           require r.uri passes WorkRecords' locator shape (WS-18) and r.network matches it
-          require sha256(decode(fetch(r.uri), fileInfo(m.fileId).encoding)) == m.sha256Hash
+          b := fetch(r.uri)
+          if r.form == stored:   require |b| == fileInfo(m.fileId).length
+                                 and sha256(decode(b, fileInfo(m.fileId).encoding)) == m.sha256Hash
+          if r.form == decoded:  require sha256(b) == m.sha256Hash
 
 CHECK_format:
   require set(f.fileId for f in doc.format.files) == set(m.fileId for m in S)
@@ -190,23 +209,49 @@ CHECK_generative:
   require doc.generative.renderer.address == Stream.defaultRenderer()
           and doc.generative.renderer.codeHash == extcodehash(that address)
   for dep in doc.generative.dependencies:
-      require DependencyRegistry.resolve(dep.name, dep.version) gives dep.fileId, not deprecated
-  require the record's declared dependencies are exactly doc.generative.dependencies
+      require DependencyRegistry.resolve(label(dep.name), label(dep.version))
+              gives dep.fileId, not deprecated
+  require [(dep.name, dep.version) for dep in doc.generative.dependencies]
+          == recordDependencies(item.recordFileId)          # ordered lists, compared in order
   require doc.generative.seedPolicy == item.seedPolicy and doc.generative.runtime is present
+
+label(s) := the ASCII bytes of s, left-aligned in a bytes32 and zero-padded (Solidity's
+            bytes32("p5.js")), the one spelling DependencyRegistry accepts: 1 to 32 bytes of
+            [a-z0-9._-], then zeros
 
 CHECK_display:
   require doc.display.instructions is present
 
 ALWAYS (whether or not facts are waived):
-  if "timeCapsule" in doc and not P.allowsTimeCapsule:  REFUSE "time capsule outside policy" (DCL-7)
-  for r in doc.intendedRenunciations: require r.power is a power IWorkPowers defines (ADR 0006)
-  require custodian addresses are distinct and non-zero, and every citation's work is well formed
+  if "timeCapsule" in doc:
+      if not P.allowsTimeCapsule:              REFUSE "time capsule outside policy" (DCL-7)
+      require doc.timeCapsule.ciphertextFileId == m.fileId for some m in S with
+              m.role == AUXILIARY                                                 (DCL-7)
+  for r in doc.intendedRenunciations: require r.power in {ROYALTY_RATE, RELICENSE}  (DCL-8)
+  require the (address, objectId) pairs of doc.custodians are distinct, and no address is zero
+  for c in doc.citations: require c.work is well formed                           (DCL-18)
 ```
 
-A work without declarations, or approved by a wave that does not check the floor, shows every
-fact as `unmet` on its promise card. The floor proves that copies existed and matched at
-approval, not that they still exist: later copies and fixity checks are `STORAGE_COPY` and
-`FIXITY_CHECK` statements, and locators the artist or the platform registers.
+The floor proves that copies existed and matched at approval, not that they still exist: later
+copies and fixity checks are `STORAGE_COPY` and `FIXITY_CHECK` statements, and locators the
+artist or the platform registers.
+
+**DCL-33. The published floor result.** The signer publishes the result of each item it checked
+in its `CURATION_EVIDENCE` document, as a member `conservationFloor` holding one
+[`floor-result.v1`](schemas/floor-result.v1.schema.json) object per item
+([example](schemas/examples/floor-result.json)): the item hash, the declarations file ID (`null`
+when the item lists none) and each fact's state. Only a passing check is published, so every
+state is `met`, `waived`, `unmet` or `not_applicable`; with no declarations file, no fact is
+`met` or `waived`. The evidence document has no schema of its own; only this member does. A
+promise-card reader finds the result in the CURATOR's latest valid `CURATION_EVIDENCE` statement
+about the root the work was minted from (`WorkMinted.packageRoot`, subject
+`(address(0), uint256(root))`) and uses it only when it is schema-valid, names the work's item
+hash, and names the declarations file the card found (`null` when the card's declarations are
+`absent`). In every other case (no published result, a result that fails those checks, or
+declarations `invalid`, `ambiguous` or `unreadable`) every fact is `unmet`, which is also what a
+work approved by a wave that does not check the floor shows. A reader MAY recompute the result
+with `CHECK_FLOOR` from the reads at its own block and show where the two differ; the card
+carries the published result.
 
 ### Custodians and citations at birth
 
@@ -222,18 +267,35 @@ citations with the approval as their date, and treats a named custodian as recog
 artist promises can be decrypted after `revealAfter`, under `scheme`, with an optional hash of
 the plaintext. It is a convention the contracts do not enforce: nothing on chain decrypts,
 releases a key or checks the date, and the media list cannot change, so the decrypted content can
-never become the work's media. **It is not part of the v1 curation policy until the owner
-approves it**: the schema requires `policyStatus` to say so, and the signer's tooling refuses a
-package that carries one (DCL-5) unless the wave's policy allows it.
+never become the work's media. `ciphertextFileId` must be the file ID of one of the work's
+AUXILIARY media files, so the media hash fixes the ciphertext and the `format` fact (and the
+`storage` fact, unless waived) lists it like every other file; the signer refuses a document
+whose ciphertext file is not in the media list as AUXILIARY (DCL-5). **It is not part of the v1
+curation policy until the owner approves it**: the schema requires `policyStatus` to say so, and
+the signer's tooling refuses a package that carries one (DCL-5) unless the wave's policy allows
+it.
 
 ### Intended renunciations
 
-**DCL-8.** Each entry names a power, by the name `IWorkPowers` uses (added by ADR 0006), and
-promises to renounce it within `withinDaysOfRecordOpen` days of the work's `RecordOpened` event.
-Its due time is that event's block timestamp plus the days. A reader computes its state at a
-block: `renounced` when `IWorkPowers` reports the power renounced; `pending` before the due time;
-`overdue` after it; `unknown` where the deployment has no `IWorkPowers` view. A promise is not a
-renunciation: until `IWorkPowers` reports it, the power is retained.
+**DCL-8.** Each entry names a work power by its name in the `WorkPowers` library of
+[`IWorkPowers.sol`](../../src/interfaces/IWorkPowers.sol) (ADR 0006), and promises to renounce it
+within `withinDaysOfRecordOpen` days of the work's `RecordOpened` event. The powers, in bit order
+(a power's bit index is its position):
+
+| Power | Bit (value) | What it stops | Card row it covers (DCL-27) |
+| --- | --- | --- | --- |
+| `ROYALTY_RATE` | 0 (1) | Any further `WorkRecords.setRoyaltyRate` | `royalty_rate` |
+| `RELICENSE` | 1 (2) | Any further `WorkRecords.relicense` | `license` |
+
+The schema accepts only these two names. The due time is the `RecordOpened` event's block
+timestamp plus the days. A reader computes the state at a block: `renounced` when
+`renouncedPowers(tokenId)` has the power's bit; otherwise `pending` while the block's timestamp
+is before the due time and `overdue` from the due time on (at exactly the due time the promise is
+due: `timestamp >= dueAt`); `unknown` where the deployment's `WorkRecords` does not report
+`IWorkPowers` through ERC-165 (a deployment from before ADR 0006). A promise is not a
+renunciation: until `renouncedPowers` reports it, the power is retained. Before the record opens
+there is no `RecordOpened` event, so nothing is due yet, and the declarations cannot be read
+(`mediaOf` reverts), so the card shows no intended renunciation (DCL-28).
 
 ### Living work
 
@@ -333,8 +395,12 @@ statement wins, being newer and per work.
 
 **DCL-18.** A `CITATION` counts only under the ARTIST role, about the citing 6529 Stream work, with
 a [`citation.v1`](schemas/citation.v1.schema.json) document ([example](schemas/examples/citation.json))
-naming the cited work by chain ID, contract and token ID, and the relation. A citation of the
-work itself is discarded. It is the citing artist's claim: the cited work's artist does not
+naming the cited work by chain ID, contract and token ID, and the relation. A citation is well
+formed when it is schema-valid (its document, or for a birth citation its declarations entry),
+its chain ID is non-zero, and it does not name the citing work itself (the same chain ID,
+contract and token ID); a reader discards one that is not. The signer checks the first two
+before it attests (DCL-5): the work's token ID does not exist before mint. It is the citing
+artist's claim: the cited work's artist does not
 consent, and a reader that shows a "cited by" list on the cited work labels it so. A
 `citedContentHash` lets a reader say whether the cited token still shows what was cited. Birth
 citations in the declarations document (DCL-6) have the same meaning.
@@ -370,16 +436,22 @@ account without code; for an EIP-7702 delegated account, ECDSA against the accou
 ERC-1271; ERC-1271 for a contract, called at the reader's block, so a contract custodian that
 later disowns a signature makes it fail.
 
-**DCL-21. Staleness.** For each object and custodian, the attestation with the latest `asOf`
-counts, not the latest entry. One whose `asOf` is later than the entry's `recordedAt` plus one
-hour is discarded. It is stale when the reader's block time minus `asOf` exceeds the custodian's
-`maxAttestationAgeDays` in the declarations, or 365 days for a custodian the declarations do not
-name. A stale attestation is shown with its date, never as current custody.
+**DCL-21. Staleness.** For each object and custodian, the valid attestation with the latest
+`asOf` counts, not the latest entry; of two with the same `asOf`, the later entry in the log
+counts. A valid attestation is one DCL-2 and DCL-20 accept that is not future-dated: one whose
+`asOf` is later than the entry's `recordedAt` plus one hour is discarded. It is stale when the
+reader's block time minus `asOf` exceeds the custodian's `maxAttestationAgeDays` in the
+declarations, or 365 days for a custodian the declarations do not name. A stale attestation is
+shown with its date, never as current custody. A custodian the declarations name with no valid
+attestation for its object is shown with status `NONE`, no date and `stale`, never as current
+custody.
 
 **DCL-22. Recognized custodians.** A custodian is recognized when the declarations name it for the
-object, or when a recognized custodian's valid RELEASED attestation names it as `successor`. Any
-other custodian's attestation is shown as "custodian not named by the work's declarations",
-with the poster's role and address, and never as the object's custody.
+object, or when the counting attestation (DCL-21) of a recognized custodian for that object is
+RELEASED and names it as `successor`. Only that latest attestation counts: a RELEASED attestation
+that the same custodian's later one replaced recognizes no one. Any other custodian's
+attestation is shown as "custodian not named by the work's declarations", with the poster's role
+and address, and never as the object's custody.
 
 ## Control proof
 
@@ -388,7 +460,8 @@ gas, that the person in front of it controls the wallet that holds a work. Nothi
 chain.
 
 **DCL-23. The message.** EIP-712, domain `{name: "6529 Works Control Proof", version: "1",
-chainId}` with the token's chain ID:
+chainId}`. The domain's `chainId` and the message's `chainId` are the same value: the chain ID of
+the chain the token is on, which the verifier knows from its own configuration (DCL-24):
 
 ```text
 ControlProof(string venue,bytes32 nonce,uint64 issuedAt,uint64 expiresAt,uint256 chainId,address token,uint256 tokenId,address holder,address signer)
@@ -403,12 +476,19 @@ Anvil test account 0, digest
 **DCL-24. The verifier's steps.**
 
 1. Issue the challenge: a fresh random `nonce`, `venue` set to the venue's own origin or
-   published name, `issuedAt` now, `expiresAt` at most 10 minutes later, and the token. Store the
-   nonce as outstanding.
-2. On the response, refuse unless `venue` is the verifier's own, the nonce is outstanding and
-   unused, the time is within `[issuedAt − 60 s, expiresAt]`, `chainId` equals the domain's,
-   and `token` is the official 6529 Stream (or 6529 Stream Editions) address of that chain.
-3. Verify the signature by `signer` as DCL-20 does: ECDSA for an account without code; for code
+   published name, `issuedAt` now, `expiresAt` at most 10 minutes later, `chainId` the
+   verifier's own expected chain ID, `token` the official 6529 Stream (or 6529 Stream Editions)
+   address of that chain, and the token ID, holder and signer. Store the whole challenge, keyed
+   by its nonce, as outstanding.
+2. On the response, look up the outstanding challenge by the response's nonce. Refuse unless one
+   is outstanding and unused and the response's message equals it in every field (`venue`,
+   `nonce`, `issuedAt`, `expiresAt`, `chainId`, `token`, `tokenId`, `holder`, `signer`): a
+   response is the issued challenge plus a signature and nothing else. Refuse unless the time is
+   within `[issuedAt − 60 s, expiresAt]`, and unless the challenge's `venue`, `chainId` and
+   `token` are still the verifier's own name, expected chain ID and official address.
+3. Build the digest from the issued challenge, with the verifier's own expected chain ID as the
+   domain's `chainId`, never from values only the response carries. Verify the signature by
+   `signer` as DCL-20 does: ECDSA for an account without code; for code
    `0xef0100 ‖ delegate` (EIP-7702), ECDSA against `signer` first, then ERC-1271; otherwise
    ERC-1271 `isValidSignature(digest, signature) == 0x1626ba7e`, at block `B` below.
 4. Choose `B`, a block no older than the venue's freshness bound (for example the latest block
@@ -428,8 +508,11 @@ when both have registered the consolidation of the other for at least 30 days an
 expired ([the consolidation adapter](identity-and-recovery.md#the-consolidation-adapter)), and
 `effectiveAt(holder, signer)` gives the time it is or becomes established (zero when there is no
 two-way consolidation). A venue accepts an established pair, and may accept a live, younger pair
-at lower trust. A consolidation can be added by whoever holds the cold key or a use-case-998
-sub-delegate (LIM-ID-4), so a high-value venue asks the holder itself to sign.
+at lower trust: one whose `effectiveAt(holder, signer)` at `B` is non-zero and later than `B`'s
+timestamp, so each side holds a live registration of the other but the later of the two is less
+than 30 days old (`isEstablished` is false). A pair whose `effectiveAt` is zero has no live
+two-way consolidation and is refused. A consolidation can be added by whoever holds the cold key
+or a use-case-998 sub-delegate (LIM-ID-4), so a high-value venue asks the holder itself to sign.
 
 ```mermaid
 sequenceDiagram
@@ -438,7 +521,7 @@ sequenceDiagram
     participant N as Node at block B
     V->>W: challenge (venue, nonce, issuedAt, expiresAt, chainId, token, tokenId, holder, signer)
     W-->>V: EIP-712 signature
-    V->>V: venue, nonce, times, chain and token
+    V->>V: response equals the issued challenge, times, digest with its own chain ID
     V->>N: code of signer; ERC-1271 isValidSignature if a contract
     V->>N: Stream.ownerOf(tokenId)
     opt holder is not the signer
@@ -455,24 +538,25 @@ sequenceDiagram
 
 | Read | Contract | Gives |
 | --- | --- | --- |
-| `ownerOf`, `coreOf`, `artistOf`, `primarySale`, `editionOf`, `rendererOf`, `defaultRenderer` | Stream | Owner, item hash, artist, collection, kind, seed policy; the sale outcome and price; the edition link; the renderer in force |
-| `isOpen`, `record`, `mediaOf`, `licenseOf`, `workStateHash`, `locators`, `preferredLocator`, `pinnedRenderer` | WorkRecords | Record status, version, finalized, on-chain complete, pinned renderer; media, roles and hashes; license; copies and the served copy |
-| `fileInfo`, `isComplete`, `isBase64Attested` | ContentStore | Each media file's MIME type, encoding, completeness; the declarations bytes (`read`) |
+| `ownerOf`, `coreOf`, `primarySale`, `editionOf`, `rendererOf` | Stream | Owner; item hash, artist ID, collection and kind; the sale outcome and price; the edition link; the renderer in force |
+| The `WorkMinted` event | Stream | The content hash (`contentHash`): no view returns it, since Stream stores only the item hash; and the package root, where the floor result is published (DCL-33) |
+| `isOpen`, `record`, `mediaOf`, `licenseOf`, `workStateHash`, `locators`, `preferredLocator`, `pinnedRenderer`; the `RecordOpened` event | WorkRecords | Record status, version, finalized, on-chain complete, state hash, whether a renderer is pinned; media, roles and hashes; license; how many copies each file has and the served copy's kind; when intended renunciations fall due |
+| `renouncedPowers` | WorkRecords, as `IWorkPowers` (ERC-165) | Renounced and retained powers (DCL-8) |
+| `fileInfo`, `isComplete`, `read` | ContentStore | Each media file's MIME type and completeness; whether the license text is on chain; the declarations bytes |
 | `latestDisputeOutcome`, `disputeOutcomeOf`, `chainOf`, `artistResolver` | StatementLog | Dispute status and its scope (token or item); the chain's count and head; the resolver |
-| `artist`, `activeAuthorityOf`, `pendingChange` | ArtistRegistry | Profile document hash; whether the artist is restrained; a pending identity change |
-| `resolve` | DependencyRegistry | Each declared dependency, and whether it is deprecated |
-| `edition`, `masterOf` | Editions | The edition, for a master |
-| `saleIdOf`, `clearing` | UniformEditionAuction | The edition's copies and price per copy |
-| The work powers view | `IWorkPowers`, added by ADR 0006 | Renounced and retained powers |
-| Documents | The declarations document; the work's convention statements | Floor, custody, display change, intended renunciations |
+| `activeAuthorityOf`, `pendingChange` | ArtistRegistry | The active authority and whether the artist is restrained; a pending identity change |
+| `saleIdOf`, `clearing` | UniformEditionAuction | The edition's copies and price per copy, for a master with an edition |
+| Documents | The declarations document; the published floor result (DCL-33); custody attestations; the winning display change (DCL-12) | Declarations, floor, custody, display change, intended renunciations |
 
 The [`promise-card.v1`](schemas/promise-card.v1.schema.json) schema is its machine-readable form
 ([example](schemas/examples/promise-card.json)).
 
 **DCL-27. Who can still change what.** The card lists each thing that can still change, who can
-change it and after what delay. The roles and delays come from the generated
-[role matrix](../audit/roles.md) for the deployment (and its later `RoleGranted` and
-`TargetFunctionRoleUpdated` events), never from this page:
+change it and after what delay. The caller (the front end or card generator) composes one row
+per path in the table below from the generated [role matrix](../audit/roles.md) for the
+deployment (and its later `RoleGranted` and `TargetFunctionRoleUpdated` events), never from this
+page: `what`, the roles (`who`), the delay, whether a guardian can cancel, and, for a path that
+applies only before or only after finalize, that phase:
 
 | What | Paths | Until |
 | --- | --- | --- |
@@ -486,23 +570,38 @@ change it and after what delay. The roles and delays come from the generated
 | `artist_resolver` | `StatementLog.setArtistResolver` ([roles](../audit/roles.md#statementlog)) | permanent |
 | `burn_and_release` | `EnglishAuction.cancel` and `Stream.releaseContent` after an upheld dispute ([roles](../audit/roles.md#englishauction)) | settlement ([DSP-20, DSP-22](disputes-and-statements.md#rules-and-invariants)) |
 
-A row a renounced power covers is marked `renounced` with the power's name, as `IWorkPowers`
-reports it (added by ADR 0006); without that view every row stays.
+The generator then applies these rules to the rows, as the reference tool does:
+
+1. A row for a before-finalize path is dropped once the record is finalized, and a row for an
+   after-finalize path while it is not.
+2. The `record` row is dropped once the record is finalized.
+3. The `license` row is dropped for a CC0 work (WS-12).
+4. The `burn_and_release` row is dropped once the primary sale has an outcome other than NONE.
+5. `until` is `finalize` for `record`, `settlement` for `burn_and_release`, and `permanent` for
+   every other row.
+6. A row a renounced power covers (DCL-8: `ROYALTY_RATE` covers `royalty_rate`, `RELICENSE`
+   covers `license`) gets `until: renounced` and `renouncedBy` with the power's name. Without
+   `IWorkPowers` every row stays as it is.
 
 **DCL-28. States the card distinguishes.** Record not open, open or finalized; on-chain complete
 or not; disputed (an outcome about the token, or only about its item) or not; the primary sale
 NONE, SOLD, UNBID, FROZEN_OUT or RESCUED (rescued by governance to the museum); each power
 renounced or retained, or `available: false` without `IWorkPowers`; declarations absent, valid,
-invalid, ambiguous or unreadable; each floor fact met, waived, unmet or not applicable; display
-changed or not, and by the current owner or not; each custody attestation recognized or not,
-fresh or stale. A burned token has no card. A dispute outcome's document is read to say what it
-decided: the log records only that an outcome exists.
+invalid, ambiguous or unreadable; each floor fact met, waived, unmet or not applicable (DCL-33);
+display changed or not, and by the current owner or not; each custody attestation recognized or
+not, fresh or stale, and each named custodian with no attestation (`NONE`, no date). A burned
+token has no card. A dispute outcome's document is read to say what it decided: the log records
+only that an outcome exists. While the record is not open, `mediaOf` and `licenseOf` revert: the
+card shows the license of the approved package item (the one `openRecord` will store), no media
+files, declarations `unreadable`, every floor fact `unmet`, and no intended renunciation, since
+none is due before `RecordOpened` (DCL-8).
 
 **DCL-29. Residual risks.** The card always prints LIM-GV-1, LIM-GV-2, LIM-GV-9, LIM-GV-10,
-LIM-GV-11, LIM-ID-11, LIM-ID-13, LIM-CNT-2, LIM-CNT-3, LIM-CNT-12 and LIM-SAL-8; LIM-CNT-1 while
-the work is not on-chain complete; LIM-CNT-10 once it is finalized; LIM-EA-14 for a master whose
-edition sale ran beside a disputed 1/1. Each links to
-[known limitations](../audit/known-limitations.md), which owns the text.
+LIM-GV-11, LIM-ID-11, LIM-ID-13, LIM-CNT-2, LIM-CNT-3, LIM-CNT-12, LIM-CNT-13 and LIM-SAL-8;
+LIM-CNT-1 while the work is not on-chain complete; LIM-CNT-10 once it is finalized; and
+LIM-EA-14 when the work is an EDITION_MASTER with a linked edition (`editionOf` names an editions
+contract) and a dispute outcome is recorded about the token or its item (`dispute.entryHash` is
+set). Each links to [known limitations](../audit/known-limitations.md), which owns the text.
 
 ### The grade
 
@@ -519,15 +618,17 @@ SHA-256 of the card's canonical JSON. Rubric 1:
 | R2 | 25 | `storage.onChainComplete` |
 | R3 | 5 | `license.textOnChain` |
 | R4 | 10 | `declarations.status` is `valid` |
-| R5 | 15, or 8 | Every applicable `conservationFloor` fact `met`; 8 if each is `met` or `waived` and at least one is waived |
-| R6 | 10, or 5 | The PRIMARY file has at least 2 `locators`; 5 if it has 1 |
+| R5 | 15, or 8 | Every applicable `conservationFloor` fact (one that is not `not_applicable`) is `met`, which also holds when no fact is applicable; 8 if each is `met` or `waived` and at least one is waived |
+| R6 | 10, or 5 | The first PRIMARY file in `storage.files` has at least 2 `locators`; 5 if it has 1; 0 when there is none (record not open) |
 | R7 | 0 to 10 | With `powers.available`: `floor(10 × renounced / (renounced + retained))`; 0 without the view or with no powers |
 | R8 | 5 | No intended renunciation is `overdue` |
 
 The letter is A from 85 points, B from 70, C from 50, D below, then capped: at C when
 `dispute.entryHash` is set (CAP1); at D when the record is not open (CAP2); at C when an intended
 renunciation is overdue (CAP3); at C when the declarations are invalid, ambiguous or unreadable
-(CAP4). `reasons` lists, in rubric order, each row that scored and each cap that applied.
+(CAP4). `reasons` lists, in rubric order, each row that scored points, then each cap that lowers
+the letter: one whose ceiling is below the letter the points alone give. A cap's reason carries 0
+points; a cap whose ceiling is at or above that letter changes nothing and is not listed.
 
 **DCL-31.** A rubric never changes once published; a new rubric is a new version number, a new
 `rubric` value and a new table on this page. A client shows the version it used and never
@@ -553,12 +654,12 @@ apply it; "Supported on chain by" names the contract rule it builds on.
 | --- | --- | --- | --- |
 | DCL-1 | Convention documents are canonical JSON with `v` and `subject`; `schema` is the hash of the `$id`; content is SHA-256; at most 65,536 bytes. | Writers' tooling; readers | DSP-2 |
 | DCL-2 | A convention statement counts only after chain proof, official subject, the kind's role, a trusted resolver, hash, schema and subject checks, and supersession within kind and role. | Readers | DSP-1, DSP-7, DSP-10 |
-| DCL-3 | The declarations document is the one AUXILIARY file of its MIME type, `Identity`, one chunk, matching the content hash; fixed from approval. | Signer's tooling; readers | WS-2, WS-6, WS-25 |
-| DCL-4 | The floor's facts, each waivable with a reason. | Artists' tooling | none |
-| DCL-5 | The signer checks the floor before attesting and publishes the result in the curation evidence. | Curation signer | The evidence hash the package registry stores ([curation](curation.md#concepts)); DSP-4 |
+| DCL-3 | The declarations document is the one AUXILIARY file of its MIME type, `Identity`, one chunk, matching the content hash, and complete in the content store when the signer attests; fixed from approval. | Signer's tooling; readers | WS-2, WS-6, WS-25 |
+| DCL-4 | The floor's facts, each waivable with a reason; each storage receipt declares the form of the bytes it holds. | Artists' tooling | none |
+| DCL-5 | The signer checks the floor before attesting: generative by script MIME type, non-empty record dependencies or seed policy; dependencies resolved by their bytes32 labels and compared in order; custodians distinct by (address, object); citations well formed. | Curation signer | The evidence hash the package registry stores ([curation](curation.md#concepts)); DSP-4 |
 | DCL-6 | Birth custodians and citations are the artist's approved claims. | Readers | WS-6 |
-| DCL-7 | A time capsule is unenforced and outside the v1 curation policy until the owner approves it. | Curation signer; readers | none |
-| DCL-8 | An intended renunciation is due at `RecordOpened` plus its days; its state comes from `IWorkPowers` (added by ADR 0006). | Readers | ADR 0006 |
+| DCL-7 | A time capsule is unenforced, its ciphertext is an AUXILIARY media file, and it is outside the v1 curation policy until the owner approves it. | Curation signer; readers | WS-6 |
+| DCL-8 | An intended renunciation names `ROYALTY_RATE` or `RELICENSE`, is due at `RecordOpened` plus its days (due from that time on), and its state comes from `IWorkPowers.renouncedPowers`. | Readers | WS-37, WS-38 |
 | DCL-9 | A living work's change emits no refresh event; readers re-render or date their cache. | Readers | none |
 | DCL-10 | A proposal counts only as ARTIST about a 6529 Stream token. | Readers | ID-28, DSP-7 |
 | DCL-11 | An acceptance counts only as OWNER about the same token, citing an earlier valid proposal. | Readers | DSP-6 |
@@ -568,21 +669,22 @@ apply it; "Supported on chain by" names the contract rule it builds on.
 | DCL-15 | Editions never take a content change; proposed bytes minted as another work are flagged. | Readers | DSP-11 subject rules; `consumedItemOf` |
 | DCL-16 | A catalogue entry counts only as ARTIST; the latest per work wins; duplicate numbers are flagged. | Readers | ID-28 |
 | DCL-17 | The artist-wide catalogue is named from the profile document. | Artists; readers | ID-5, ID-8, ID-28 |
-| DCL-18 | A citation counts only as ARTIST about the citing work and is shown as the citing artist's claim. | Readers | ID-28 |
+| DCL-18 | A citation counts only as ARTIST about the citing work, only when well formed (schema-valid, non-zero chain ID, not the work itself), and is shown as the citing artist's claim. | Readers | ID-28 |
 | DCL-19 | Custody attestations are the typed data above. | Custodians' tooling | none |
 | DCL-20 | A custody attestation counts as posted by OWNER, ARTIST or PLATFORM, and only with a valid custodian signature. | Readers | DSP-3, DSP-6 |
-| DCL-21 | The latest `asOf` counts; future-dated is discarded; older than the allowed age is stale. | Readers | none |
-| DCL-22 | Only a named custodian or its RELEASED successor is recognized. | Readers | WS-6 |
-| DCL-23 | Control proofs are the typed data above. | Venues; wallets | none |
-| DCL-24 | The verifier checks venue, nonce, times, chain, token, signature and ownership at a recent block, and spends the nonce. | Venues | none |
-| DCL-25 | A consolidated signer proves a cold holder only through the registry's consolidation source. | Venues | ID-24, ID-27 |
-| DCL-26 | A card reads everything at one block. | Card generators | none |
-| DCL-27 | Roles and delays on a card come from the role matrix and the deployment's events. | Card generators | GV-10, GV-17 |
-| DCL-28 | The card distinguishes the states listed. | Card generators | none |
+| DCL-21 | The latest `asOf` counts, the later entry on a tie; future-dated is discarded; older than the allowed age is stale; a named custodian with no attestation is `NONE`. | Readers | none |
+| DCL-22 | Only a named custodian, or the successor in a recognized custodian's latest attestation when it is RELEASED, is recognized. | Readers | WS-6 |
+| DCL-23 | Control proofs are the typed data above, in the domain of the token's chain. | Venues; wallets | none |
+| DCL-24 | The response must equal the issued challenge; the verifier builds the digest with its own chain ID, checks the time window, the signature and ownership at a recent block, and spends the nonce. | Venues | none |
+| DCL-25 | A consolidated signer proves a cold holder only through the registry's consolidation source; a live, younger pair (non-zero `effectiveAt` after `B`) only at lower trust. | Venues | ID-24, ID-27 |
+| DCL-26 | A card reads everything at one block; the content hash comes from `WorkMinted`. | Card generators | none |
+| DCL-27 | Roles and delays on a card come from the role matrix and the deployment's events; the generator applies the six row rules. | Card generators | GV-10, GV-17 |
+| DCL-28 | The card distinguishes the states listed, including a record not yet open. | Card generators | none |
 | DCL-29 | The card prints the residual risks listed. | Card generators | none |
-| DCL-30 | The grade is a pure function of the card under rubric 1, never on chain. | Clients | none |
+| DCL-30 | The grade is a pure function of the card under rubric 1, never on chain; caps are listed only when they lower the letter. | Clients | none |
 | DCL-31 | Rubrics are versioned and immutable. | Clients | none |
 | DCL-32 | Primary prices come from the reads and events listed. | Readers | AUC-8, EA-11 |
+| DCL-33 | The signer publishes each item's floor result as `floor-result.v1` in the curation evidence; a card uses it only when it matches the work and its declarations, and otherwise shows every fact `unmet`. | Curation signer; card generators | DSP-4 |
 
 ## Events
 
@@ -597,11 +699,13 @@ event: a reader that shows a display change, a catalogue entry or custody refres
 | --- | --- | --- |
 | A declarations document breaks DCL-3, or two are listed | `invalid` or `ambiguous`; every floor fact `unmet` | None for that work: the media cannot change. Later facts go in statements. |
 | The declarations file is not registered | `openRecord` reverts | Anyone registers the committed manifest. |
-| The declarations file is not complete on chain | The work cannot become on-chain complete; readers fetch the document by locator | Anyone uploads the missing chunks. |
+| The declarations file is not complete on chain (possible only under a wave that does not check the floor: DCL-3, DCL-5) | The work cannot become on-chain complete; readers fetch the document by locator | Anyone uploads the missing chunks. |
 | A storage receipt goes dark after approval | The floor stays `met` (it is about approval) | `STORAGE_COPY` and `FIXITY_CHECK` statements; new locators. |
 | An artist's key is lost or restrained | No ARTIST statements | [Identity and recovery](identity-and-recovery.md); earlier entries keep their resolver. |
 | A wrong convention statement | It stays in the log | A superseding entry of the same kind and role; readers apply DCL-2. |
 | A custodian's key is lost | No new attestations; the last goes stale | A RELEASED attestation signed earlier, or a statement explaining the change; readers show the custodian as unrecognized. |
+| No floor result is published for the item, or it does not match the work | Every floor fact `unmet` on the card (DCL-33) | The CURATOR publishes a corrected `CURATION_EVIDENCE` statement that supersedes the earlier one. |
+| A renunciation is signed in error | Permanent: the power stays renounced (LIM-CNT-14) | None. |
 
 ## Parameters and limits
 
@@ -610,7 +714,9 @@ event: a reader that shows a display change, a catalogue entry or custody refres
 | Declarations MIME type | `application/vnd.6529-works.declarations+json` | DCL-3; the content store's MIME rule ([WS-26](works-and-storage.md#rules-and-invariants)) |
 | Declarations size | `Identity`, at most 24,575 bytes (one chunk) | DCL-3 |
 | Other convention documents | At most 65,536 bytes | DCL-1 |
-| Storage receipts per file | At least 2, of distinct network or provider | DCL-5 |
+| Storage receipts per file | At least 2, of distinct network or provider, each of form `stored` or `decoded` | DCL-4, DCL-5 |
+| Script MIME types (a generative work) | `text/html`, `text/javascript`, `application/javascript`, `text/ecmascript`, `application/ecmascript`, `image/svg+xml` | DCL-4, DCL-5 |
+| Work powers | `ROYALTY_RATE` (bit 0, value 1), `RELICENSE` (bit 1, value 2) | DCL-8; [`IWorkPowers.sol`](../../src/interfaces/IWorkPowers.sol) |
 | Default custody age | 365 days for an unnamed custodian | DCL-21 |
 | Custody future skew | 1 hour after `recordedAt` | DCL-21 |
 | Control proof validity | At most 10 minutes; 60 seconds of clock skew | DCL-24 |
@@ -628,6 +734,8 @@ No accepted ADR is departed from. The work powers this page refers to are
 - Code: [`StatementKinds.sol`](../../src/interfaces/types/StatementKinds.sol),
   [`StatementLog.sol`](../../src/records/StatementLog.sol),
   [`WorkRecords.sol`](../../src/stream/WorkRecords.sol),
+  [`IWorkPowers.sol`](../../src/interfaces/IWorkPowers.sol),
+  [`DependencyRegistry.sol`](../../src/content/DependencyRegistry.sol),
   [`Renderer.sol`](../../src/content/Renderer.sol), [`JsonScan.sol`](../../src/content/JsonScan.sol),
   [`ContentTypes.sol`](../../src/interfaces/types/ContentTypes.sol),
   [`ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol),
@@ -649,8 +757,9 @@ No accepted ADR is departed from. The work powers this page refers to are
 
 [`tools/conventions/`](../../tools/conventions/README.md) implements these rules in Python,
 standard library only, for front ends, venues and the curation signer to copy or test against:
-schema validation and RFC 8785 canonical form (DCL-1), the floor check before attestation
-(DCL-3 to DCL-5, DCL-7), the promise card from reads at one block (DCL-26 to DCL-29), rubric 1
+schema validation and RFC 8785 canonical form (DCL-1), the floor check before attestation and
+its published result (DCL-3 to DCL-5, DCL-7, DCL-33), the promise card from reads at one block
+(DCL-26 to DCL-29, DCL-33), rubric 1
 (DCL-30), the control-proof verifier (DCL-23 to DCL-25) and the custody-attestation reader check
 (DCL-19 to DCL-22). The tools make no chain reads; the caller supplies them. This page is the
 authority where the two differ.

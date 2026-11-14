@@ -74,9 +74,8 @@
       "enum": ["references", "responds-to", "derives-from", "samples", "homage", "continues", "same-series"]
     },
     "powerName": {
-      "description": "The name of a work power as the IWorkPowers view added by ADR 0006 names it.",
-      "type": "string",
-      "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+      "description": "A work power by its name in the WorkPowers library of src/interfaces/IWorkPowers.sol (ADR 0006): ROYALTY_RATE (bit 0, value 1) or RELICENSE (bit 1, value 2). DCL-8.",
+      "enum": ["ROYALTY_RATE", "RELICENSE"]
     },
     "signature": {
       "description": "A signature as hex: 65 bytes, 64 bytes (ERC-2098), or a longer ERC-1271 signature of at most 4,096 bytes.",

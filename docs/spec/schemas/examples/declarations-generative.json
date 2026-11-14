@@ -12,11 +12,13 @@
             {
               "network": "arweave",
               "uri": "ar://9USPkLhAcOKSPu8PO65eUkOjGo1k_xV5IR9cdaA-GE0",
+              "form": "stored",
               "provider": "example bundler"
             },
             {
               "network": "ipfs",
               "uri": "ipfs://bafkreigqavnionnvu2nebon7ig5fkoewzjjwxtowcrchg6qehixxtv2omq",
+              "form": "stored",
               "provider": "example pinning service"
             }
           ]

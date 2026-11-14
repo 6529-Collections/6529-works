@@ -76,39 +76,39 @@ def evaluate_custody(
 ) -> dict:
     """DCL-21 and DCL-22 at reader time `now`. Returns `{"entries": [...], "discarded": [...]}`.
 
+    `attestations` are in log order: of two valid attestations with the same `asOf`, the later
+    one counts (DCL-21).
+
     Each entry: `objectId`, `custodian`, `recognized`, `status`, `asOf`, `stale`, `maxAgeDays`,
     and for an unrecognized custodian `label` (DCL-22) with `posterRole` and `poster`. A named
-    custodian with no counting attestation has an entry with status `NONE`, `asOf` 0 and
+    custodian with no counting attestation has an entry with status `NONE`, no `asOf` and
     `stale` true, so it is never shown as current custody.
     """
     named = {}
     for c in (declarations or {}).get("custodians", []):
         named[(c["objectId"], c["address"])] = c["maxAttestationAgeDays"]
     discarded: list[dict] = []
-    valid: list[Mapping[str, Any]] = []
     counting: dict[tuple[str, str], tuple[int, Mapping[str, Any]]] = {}
     for index, att in enumerate(attestations):
         reason = _discard_reason(att)
         if reason:
             discarded.append({"index": index, "reason": reason})
             continue
-        valid.append(att)
         doc = att["document"]
         key = (doc["message"]["objectId"], doc["custodian"])
         best = counting.get(key)
         # DCL-21: the latest asOf counts, not the latest entry; on a tie the later entry.
         if best is None or doc["message"]["asOf"] >= best[1]["document"]["message"]["asOf"]:
             counting[key] = (index, att)
-    # DCL-22: named custodians, then RELEASED successors of recognized custodians, to a fixpoint.
-    # Any valid RELEASED attestation of a recognized custodian counts, not only its latest.
+    # DCL-22: named custodians, then the successor in a recognized custodian's counting (latest)
+    # attestation when it is RELEASED, to a fixpoint. An earlier RELEASED one recognizes no one.
     recognized = set(named)
     changed = True
     while changed:
         changed = False
-        for att in valid:
-            doc = att["document"]
-            msg = doc["message"]
-            if msg["status"] == 2 and (msg["objectId"], doc["custodian"]) in recognized:
+        for key, (_, att) in counting.items():
+            msg = att["document"]["message"]
+            if msg["status"] == 2 and key in recognized:
                 nxt = (msg["objectId"], msg["successor"])
                 if msg["successor"] != eip712.ZERO_ADDRESS and nxt not in recognized:
                     recognized.add(nxt)
@@ -133,12 +133,12 @@ def evaluate_custody(
         if (object_id, custodian) not in counting:
             entries.append({
                 "objectId": object_id, "custodian": custodian, "recognized": True,
-                "status": "NONE", "asOf": 0, "stale": True, "maxAgeDays": max_days,
+                "status": "NONE", "stale": True, "maxAgeDays": max_days,
             })  # fmt: skip
     return {"entries": entries, "discarded": discarded}
 
 
 def card_custody(evaluation: Mapping[str, Any]) -> list[dict]:
-    """The promise card's `custody` array (promise-card.v1 fields only)."""
+    """The promise card's `custody` array (promise-card.v1 fields only; no `asOf` for NONE)."""
     keys = ("objectId", "custodian", "recognized", "status", "asOf", "stale")
-    return [{k: e[k] for k in keys} for e in evaluation["entries"]]
+    return [{k: e[k] for k in keys if k in e} for e in evaluation["entries"]]

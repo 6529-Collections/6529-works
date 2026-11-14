@@ -141,6 +141,10 @@ The contracts cannot check these; the signer's tooling must, before it attests (
   ([WS-2](works-and-storage.md#rules-and-invariants)) do not run at mint, so a mis-committed
   item mints and its record never opens.
 - **Decode Base64 strictly** (RFC 4648 alphabet, as the content store's `attestBase64` checks).
+- **Check the conservation floor when the wave's policy requires it**
+  ([DCL-5](declarations-and-conventions.md#the-conservation-floor)), refuse a package that
+  declares a time capsule while that is outside the v1 curation policy (DCL-7), and publish the
+  result in the curation evidence as a `floor-result.v1` object per item (DCL-33).
 - **Revoke before revising a VRF work's media.** A revision of the primary media has a new
   content hash and so draws a new seed; the guardian revokes the old root first
   ([`src/curation/README.md`](../../src/curation/README.md)).

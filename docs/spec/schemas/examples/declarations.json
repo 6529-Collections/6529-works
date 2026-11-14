@@ -12,12 +12,14 @@
             {
               "network": "arweave",
               "uri": "ar://oPSkhDkQRE6xQF7RQgVgRkmoJKW7XueRtNdpwXEEnRc",
+              "form": "stored",
               "provider": "example bundler",
               "receipt": "bundle-0001"
             },
             {
               "network": "ipfs",
               "uri": "ipfs://bafkreiaith34c3xuzolsbkq6nwopkreb4fthxkcw3vni7wlc3qf7vqou3i",
+              "form": "stored",
               "provider": "example pinning service"
             }
           ]
@@ -29,11 +31,13 @@
             {
               "network": "arweave",
               "uri": "ar://py_SBohlmAyLr40ATFSLDs2C0kmcCIrfSZosW8JlApc",
+              "form": "stored",
               "provider": "example bundler"
             },
             {
               "network": "ipfs",
               "uri": "ipfs://bafkreiby3gi3z3d5e6wsrp72cyprelmnmglefbmljl3jq6sfr66bs6cit4",
+              "form": "stored",
               "provider": "example pinning service"
             }
           ]
@@ -94,9 +98,9 @@
   ],
   "intendedRenunciations": [
     {
-      "power": "RECORD_EDITS",
+      "power": "ROYALTY_RATE",
       "withinDaysOfRecordOpen": 30,
-      "note": "The power name is illustrative: the names are the ones the IWorkPowers view of ADR 0006 defines."
+      "note": "The royalty rate will be fixed for good within 30 days of the record opening."
     }
   ]
 }

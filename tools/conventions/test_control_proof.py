@@ -44,6 +44,15 @@ class Fixture:
     def verify(self, doc: dict | None = None, **overrides: Any) -> control_proof.Verdict:
         return verify_response(doc or self.doc, **{**self.kwargs, **overrides})
 
+    def issued(self, change: Any) -> dict:
+        """A response to a challenge the venue issued with `change` applied: the store holds
+        the changed challenge, so the response equals it (DCL-24 step 2)."""
+        doc = copy.deepcopy(self.doc)
+        change(doc["message"])
+        self.store.outstanding.clear()
+        self.store.add(doc["message"])
+        return doc
+
 
 class ExampleTest(unittest.TestCase):
     def test_example_through_an_established_consolidation(self) -> None:
@@ -100,17 +109,31 @@ class StepTwoTest(unittest.TestCase):
                 f = Fixture()
                 self.assertTrue(f.verify(now=now, block={"number": 100, "timestamp": msg["issuedAt"]}).accepted)
 
-    def test_match_challenge_option(self) -> None:
-        """Beyond DCL-24's literal steps: with `match_challenge` the response must be the issued
-        challenge; without it a response naming another token ID passes step 2."""
+    def test_response_must_equal_the_issued_challenge(self) -> None:
+        """DCL-24 step 2: a response whose message differs from the issued challenge in any field
+        is refused, even with a valid signature over what it carries, and the nonce is spent."""
+        changes = {
+            "tokenId": "43", "holder": testdata.ANVIL_0, "signer": testdata.ANVIL_1, "token": EDITIONS,
+            "chainId": 1, "venue": "https://other.example", "issuedAt": 1794787201, "expiresAt": 1794787700,
+        }  # fmt: skip
+        for key, value in changes.items():
+            with self.subTest(field=key):
+                f = Fixture()
+                doc = copy.deepcopy(f.doc)
+                doc["message"][key] = value
+                verdict = f.verify(doc, ecdsa=any_signature)
+                self.assertEqual((verdict.accepted, verdict.step), (False, "DCL-24.2"))
+                self.assertIn("issued challenge", verdict.reason)
+                self.assertFalse(f.store.is_outstanding(f.doc["message"]["nonce"]))
+
+    def test_digest_uses_the_verifiers_chain_id(self) -> None:
+        """DCL-24 step 3: the digest is built with the verifier's own chain ID, so a signature
+        made in another chain's domain does not verify."""
         f = Fixture()
-        doc = copy.deepcopy(f.doc)
-        doc["message"]["tokenId"] = "43"
-        self.assertTrue(f.verify(doc, ecdsa=any_signature).accepted)
-        g = Fixture()
-        verdict = g.verify(doc, ecdsa=any_signature, match_challenge=True)
-        self.assertFalse(verdict.accepted)
-        self.assertIn("issued challenge", verdict.reason)
+        other_chain = control_proof.eip712.control_digest(f.doc["message"], 1)
+        verdict = f.verify(ecdsa=lambda s, d, sig: d == other_chain)
+        self.assertEqual((verdict.accepted, verdict.step), (False, "DCL-24.3"))
+        self.assertEqual(verdict.digest, "0x" + DIGEST.hex())
 
 
 class SignatureAndOwnershipTest(unittest.TestCase):
@@ -146,9 +169,7 @@ class SignatureAndOwnershipTest(unittest.TestCase):
 
     def test_edition_balance(self) -> None:
         def edition_doc(f: Fixture) -> dict:
-            doc = copy.deepcopy(f.doc)
-            doc["message"]["token"] = EDITIONS
-            return doc
+            return f.issued(lambda m: m.update(token=EDITIONS))
         for balance, ok in ((1, True), (0, False), (None, False), (True, False)):
             with self.subTest(balance=balance):
                 f = Fixture()
@@ -160,8 +181,7 @@ class ConsolidationTest(unittest.TestCase):
     def test_holder_is_signer(self) -> None:
         """DCL-24 step 5: holder == signer is accepted with no consolidation read."""
         f = Fixture()
-        doc = copy.deepcopy(f.doc)
-        doc["message"]["holder"] = testdata.ANVIL_0
+        doc = f.issued(lambda m: m.update(holder=testdata.ANVIL_0))
         verdict = f.verify(doc, ownership={"ownerOf": testdata.ANVIL_0}, consolidation=None, ecdsa=any_signature)
         self.assertEqual((verdict.accepted, verdict.step), (True, "DCL-24.5"))
 
@@ -211,7 +231,7 @@ class ChallengeTest(unittest.TestCase):
         verdict = verify_response(
             doc, venue=VENUE, chain_id=11155111, now=1100, store=store,
             official_tokens={STREAM: "stream"}, block={"number": 5, "timestamp": 1050}, head_block=6,
-            signer_code=b"", ownership={"ownerOf": testdata.ANVIL_0}, match_challenge=True,
+            signer_code=b"", ownership={"ownerOf": testdata.ANVIL_0},
             ecdsa=lambda s, d, sig: d == control_proof.eip712.control_digest(doc["message"]),
         )  # fmt: skip
         self.assertTrue(verdict.accepted, verdict)

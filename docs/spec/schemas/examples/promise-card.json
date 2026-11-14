@@ -57,7 +57,7 @@
       {
         "fileId": "0x6666666666666666666666666666666666666666666666666666666666666666",
         "role": "AUXILIARY",
-        "sha256": "0x9b1d3f5a7c9e0b2d4f6a8c0e1b3d5f7a9c0e2b4d6f8a0c1e3b5d7f9a0c2e4b6d",
+        "sha256": "0x193b2e847cd4032f89cc232f36050b69b03756215a3308d11863ea5d84e9fea2",
         "mimeType": "application/vnd.6529-works.declarations+json",
         "complete": true,
         "locators": 0,
@@ -90,7 +90,7 @@
     "livingWork": false,
     "intendedRenunciations": [
       {
-        "power": "RECORD_EDITS",
+        "power": "ROYALTY_RATE",
         "dueAt": 1794182400,
         "state": "unknown"
       }
@@ -189,11 +189,13 @@
     "LIM-CNT-3",
     "LIM-CNT-10",
     "LIM-CNT-12",
+    "LIM-CNT-13",
     "LIM-GV-1",
     "LIM-GV-2",
     "LIM-GV-9",
     "LIM-GV-10",
     "LIM-GV-11",
+    "LIM-ID-11",
     "LIM-ID-13",
     "LIM-SAL-8"
   ],

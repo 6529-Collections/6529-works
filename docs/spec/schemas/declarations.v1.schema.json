@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:6529-works:schema:declarations:v1",
   "title": "Declarations document, version 1",
-  "description": "The creator's stated promises about a work that the contracts do not record. Carried as one AUXILIARY media file of MIME type application/vnd.6529-works.declarations+json, so the approved media hash fixes it. Every section is a convention the contracts do not enforce. Rules: docs/spec/declarations-and-conventions.md (DCL-1 to DCL-9).",
+  "description": "The creator's stated promises about a work that the contracts do not record. Carried as one AUXILIARY media file of MIME type application/vnd.6529-works.declarations+json, so the approved media hash fixes it. Every section is a convention the contracts do not enforce. Rules: docs/spec/declarations-and-conventions.md (DCL-1 to DCL-9, DCL-18, DCL-33).",
   "type": "object",
   "additionalProperties": false,
   "required": ["v", "contentHash"],
@@ -29,7 +29,7 @@
     },
     "timeCapsule": { "$ref": "#/$defs/timeCapsule" },
     "intendedRenunciations": {
-      "description": "Powers over the work the artist states they will renounce after the record opens.",
+      "description": "Work powers (ROYALTY_RATE, RELICENSE) the artist states they will renounce after the record opens (DCL-8).",
       "type": "array",
       "minItems": 1,
       "maxItems": 16,
@@ -96,10 +96,14 @@
     "storageReceipt": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["network", "uri", "provider"],
+      "required": ["network", "uri", "form", "provider"],
       "properties": {
         "network": { "enum": ["arweave", "ipfs"] },
         "uri": { "$ref": "urn:6529-works:schema:common:v1#/$defs/contentAddress" },
+        "form": {
+          "description": "Which bytes the copy holds: stored, the file's stored (encoded) stream, fileInfo.length bytes that decode to the declared SHA-256; or decoded, the decoded media, whose SHA-256 is the declared one. The same bytes for an Identity file (DCL-4).",
+          "enum": ["stored", "decoded"]
+        },
         "provider": {
           "description": "Who holds the copy: an Arweave gateway or bundler, or an IPFS pinning service or operator.",
           "$ref": "urn:6529-works:schema:common:v1#/$defs/shortText"
@@ -268,7 +272,7 @@
           "$ref": "urn:6529-works:schema:common:v1#/$defs/shortText"
         },
         "ciphertextFileId": {
-          "description": "The media file (by content-store file ID) that holds the ciphertext.",
+          "description": "The file ID of the AUXILIARY media file that holds the ciphertext; it must be in the work's media list (DCL-7).",
           "$ref": "urn:6529-works:schema:common:v1#/$defs/bytes32"
         },
         "plaintextCommitment": {

@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:6529-works:schema:floor-result:v1",
+  "title": "Conservation floor result, version 1",
+  "description": "The published result of the curation signer's conservation-floor check of one package item, carried in the conservationFloor member (an array of these) of its CURATION_EVIDENCE document. Only a passing check is published. A promise-card reader uses it only when it names the work's item hash and the declarations file the card found. Rules: docs/spec/declarations-and-conventions.md (DCL-5, DCL-33).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "itemHash", "declarationsFileId", "facts"],
+  "properties": {
+    "v": { "const": 1 },
+    "itemHash": {
+      "description": "The package item's hash, as 6529 Stream stores it (coreOf).",
+      "$ref": "urn:6529-works:schema:common:v1#/$defs/bytes32"
+    },
+    "declarationsFileId": {
+      "description": "The declarations file the check read, or null when the item lists none.",
+      "oneOf": [{ "$ref": "urn:6529-works:schema:common:v1#/$defs/bytes32" }, { "type": "null" }]
+    },
+    "facts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["storage", "format", "license", "generative", "display"],
+      "properties": {
+        "storage": { "$ref": "#/$defs/state" },
+        "format": { "$ref": "#/$defs/state" },
+        "license": { "$ref": "#/$defs/state" },
+        "generative": { "$ref": "#/$defs/state" },
+        "display": { "$ref": "#/$defs/state" }
+      }
+    }
+  },
+  "if": { "properties": { "declarationsFileId": { "type": "null" } } },
+  "then": {
+    "description": "With no declarations file no fact is met or waived; generative is not_applicable for a work that is not generative.",
+    "properties": {
+      "facts": {
+        "properties": {
+          "storage": { "const": "unmet" },
+          "format": { "const": "unmet" },
+          "license": { "const": "unmet" },
+          "generative": { "enum": ["unmet", "not_applicable"] },
+          "display": { "const": "unmet" }
+        }
+      }
+    }
+  },
+  "else": {
+    "description": "With a declarations file every fact the check applied is met or waived.",
+    "properties": {
+      "facts": {
+        "properties": {
+          "storage": { "enum": ["met", "waived"] },
+          "format": { "enum": ["met", "waived"] },
+          "license": { "enum": ["met", "waived"] },
+          "generative": { "enum": ["met", "waived", "not_applicable"] },
+          "display": { "enum": ["met", "waived"] }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "state": { "enum": ["met", "waived", "unmet", "not_applicable"] }
+  }
+}

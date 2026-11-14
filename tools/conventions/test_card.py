@@ -46,19 +46,19 @@ def open_unfinalized(inputs: dict) -> None:
 
 class ExampleCardTest(unittest.TestCase):
     def test_reproduces_the_example_card(self) -> None:
-        """DCL-26 to DCL-29: the example's reads give the example card, except two fields: the
-        declarations file's SHA-256 (the example's is a placeholder; here it is the real hash of
-        the canonical declarations.json), and LIM-ID-11, which DCL-29 always prints and the
-        example omits."""
+        """DCL-26 to DCL-29: the example's reads give the example card exactly, including the
+        real SHA-256 of the canonical declarations.json."""
         expected = testdata.example("promise-card.json")
-        expected["storage"]["files"][2]["sha256"] = sha(canonical(testdata.example("declarations.json")))
-        expected["residualRisks"] = sorted(expected["residualRisks"] + ["LIM-ID-11"],
-                                           key=card_module._risk_key)
+        self.assertEqual(expected["storage"]["files"][2]["sha256"],
+                         sha(canonical(testdata.example("declarations.json"))))
         self.assertEqual(build(), expected)
 
-    def test_example_card_omits_lim_id_11(self) -> None:
-        """DCL-29 defect pin: the committed example lacks LIM-ID-11; fix the example, then this."""
-        self.assertNotIn("LIM-ID-11", testdata.example("promise-card.json")["residualRisks"])
+    def test_example_card_prints_every_always_risk(self) -> None:
+        """DCL-29: the committed example prints LIM-ID-11 and LIM-CNT-13 with the rest."""
+        risks = testdata.example("promise-card.json")["residualRisks"]
+        for risk in card_module.ALWAYS_RISKS:
+            with self.subTest(risk):
+                self.assertIn(risk, risks)
 
     def test_every_card_built_here_validates(self) -> None:
         for change in (None, not_open, open_unfinalized):
@@ -85,11 +85,13 @@ class ExampleCardTest(unittest.TestCase):
 
 class RecordStatesTest(unittest.TestCase):
     def test_record_not_open(self) -> None:
-        """DCL-28: record not open; mediaOf reverts so the declarations are unreadable."""
+        """DCL-28: record not open; mediaOf reverts so the declarations are unreadable, no
+        intended renunciation is shown, and the license is the approved item's."""
         c = build(not_open)
         self.assertEqual(c["record"], {"status": "not_open"})
         self.assertEqual(c["storage"], {"onChainComplete": False, "files": []})
         self.assertEqual(c["declarations"], {"status": "unreadable"})
+        self.assertEqual(c["license"]["spdxId"], "CC0-1.0")
         self.assertEqual(set(c["conservationFloor"].values()), {"unmet"})
         self.assertIn("LIM-CNT-1", c["residualRisks"])
         self.assertEqual(grade.grade(c)["letter"], "D")
@@ -174,15 +176,41 @@ class SaleAndDisputeTest(unittest.TestCase):
 
 
 class PowersTest(unittest.TestCase):
-    POWERS = ["RECORD_EDITS", "RELICENSE", "ROYALTY_RATE"]
-
-    def with_view(self, mask: str, covers: dict | None = None, now: int | None = None) -> Callable[[dict], None]:
+    def with_view(self, mask: str, now: int | None = None, **explicit: Any) -> Callable[[dict], None]:
+        """`renouncedPowers` only, so the default WorkPowers names and covers apply, unless
+        `powers` or `covers` are given explicitly."""
         def apply(i: dict) -> None:
-            reads(i)["IWorkPowers"] = {"renouncedMask": mask, "powers": self.POWERS,
-                                       "covers": covers or {}}
+            reads(i)["IWorkPowers"] = {"renouncedMask": mask, **explicit}
             if now is not None:
                 reads(i)["at"]["timestamp"] = now
         return apply
+
+    def test_default_names_and_covers(self) -> None:
+        """DCL-8: ROYALTY_RATE is bit 0 and covers royalty_rate; RELICENSE is bit 1 and covers
+        license."""
+        self.assertEqual(card_module.POWERS, ("ROYALTY_RATE", "RELICENSE"))
+        self.assertEqual(card_module.COVERS, {"ROYALTY_RATE": ["royalty_rate"], "RELICENSE": ["license"]})
+
+    def test_relicense_covers_the_license_row(self) -> None:
+        """DCL-27 rule 6: with RELICENSE renounced (mask 0x2) the license row of a non-CC0 work
+        is marked renounced, and the royalty row stays."""
+        def mit(i: dict) -> None:
+            reads(i)["WorkRecords"]["licenseOf"]["spdxId"] = "MIT"
+            i["floor"] = None
+        c = build(lambda i: (mit(i), self.with_view("0x2")(i)))
+        self.assertEqual(c["powers"], {"available": True, "renounced": ["RELICENSE"], "retained": ["ROYALTY_RATE"]})
+        rows = {r["what"]: r for r in c["changeable"]}
+        self.assertEqual((rows["license"]["until"], rows["license"]["renouncedBy"]), ("renounced", "RELICENSE"))
+        self.assertEqual(rows["royalty_rate"]["until"], "permanent")
+
+    def test_explicit_names_are_accepted(self) -> None:
+        """The view's names and covers may be given explicitly (forward compatibility); the card
+        still validates only WorkPowers names."""
+        c = build(self.with_view("0x1", powers=["ROYALTY_RATE", "RELICENSE"], covers={}))
+        row = next(r for r in c["changeable"] if r["what"] == "royalty_rate")
+        self.assertEqual(row["until"], "permanent")
+        with self.assertRaises(ToolError):
+            build(self.with_view("0x1", powers=["RECORD_EDITS"]))
 
     def test_absent_view_is_not_reported(self) -> None:
         """DCL-28: `available: false` without IWorkPowers; DCL-8: intended renunciations `unknown`."""
@@ -193,32 +221,36 @@ class PowersTest(unittest.TestCase):
     def test_mask_gives_renounced_and_retained(self) -> None:
         """DCL-28: each power renounced or retained; DCL-27: a row a renounced power covers is
         marked renounced with the power's name."""
-        c = build(self.with_view("0x5", {"ROYALTY_RATE": ["royalty_rate"]}))
-        self.assertEqual(c["powers"], {"available": True, "renounced": ["RECORD_EDITS", "ROYALTY_RATE"],
+        c = build(self.with_view("0x1"))
+        self.assertEqual(c["powers"], {"available": True, "renounced": ["ROYALTY_RATE"],
                                        "retained": ["RELICENSE"]})
         row = next(r for r in c["changeable"] if r["what"] == "royalty_rate")
         self.assertEqual((row["until"], row["renouncedBy"]), ("renounced", "ROYALTY_RATE"))
         self.assertEqual(c["declarations"]["intendedRenunciations"][0]["state"], "renounced")
 
     def test_intended_renunciation_pending_and_overdue(self) -> None:
-        """DCL-8: due at RecordOpened plus the days; pending before (and at) the due time,
-        overdue after it, while the view reports the power retained."""
+        """DCL-8: due at RecordOpened plus the days; pending before the due time, overdue from
+        it on (at exactly the due time it is due), while the view reports the power retained."""
         due = 1794182400
-        self.assertEqual(build(self.with_view("0x0", now=due))["declarations"]["intendedRenunciations"][0],
-                         {"power": "RECORD_EDITS", "dueAt": due, "state": "pending"})
+        self.assertEqual(build(self.with_view("0x0", now=due - 1))["declarations"]["intendedRenunciations"][0],
+                         {"power": "ROYALTY_RATE", "dueAt": due, "state": "pending"})
+        self.assertEqual(build(self.with_view("0x0", now=due))["declarations"]["intendedRenunciations"][0]["state"],
+                         "overdue")
         late = build(self.with_view("0x0", now=due + 1))
         self.assertEqual(late["declarations"]["intendedRenunciations"][0]["state"], "overdue")
         self.assertIn({"row": "CAP3", "points": 0}, grade.grade(late)["reasons"])
 
     def test_mask_beyond_the_names_is_refused(self) -> None:
         with self.assertRaises(ToolError):
-            build(self.with_view("0x8"))
+            build(self.with_view("0x4"))
 
 
 class DeclarationsTest(unittest.TestCase):
     """DCL-3 as a reader applies it; DCL-28: absent, valid, invalid, ambiguous or unreadable."""
 
     def test_absent(self) -> None:
+        """DCL-33: the published result names a declarations file the work does not list, so
+        every fact is unmet."""
         def drop(i: dict) -> None:
             reads(i)["WorkRecords"]["mediaOf"].pop()
         c = build(drop)
@@ -238,12 +270,16 @@ class DeclarationsTest(unittest.TestCase):
         self.assertEqual(build(twice)["declarations"], {"status": "ambiguous"})
 
     def test_invalid_on_chain_bytes(self) -> None:
+        """DCL-33: invalid declarations make every floor fact unmet whatever was published; the
+        points alone give C, so CAP4 (ceiling C) lowers nothing and is not listed (DCL-30)."""
         def corrupt(i: dict) -> None:
             reads(i)["ContentStore"]["read"][DECL_FILE] = "0x" + canonical({"v": 1}).hex()
         c = build(corrupt)
         self.assertEqual(c["declarations"], {"status": "invalid", "fileId": DECL_FILE})
         self.assertEqual(set(c["conservationFloor"].values()), {"unmet"})
-        self.assertIn({"row": "CAP4", "points": 0}, grade.grade(c)["reasons"])
+        graded = grade.grade(c)
+        self.assertEqual((graded["score"], graded["letter"]), (65, "C"))
+        self.assertNotIn({"row": "CAP4", "points": 0}, graded["reasons"])
 
     def test_unreadable_without_a_copy_and_valid_with_one(self) -> None:
         def incomplete(i: dict) -> None:
@@ -257,16 +293,38 @@ class DeclarationsTest(unittest.TestCase):
         self.assertEqual(build(with_copy(good))["declarations"]["status"], "valid")
         self.assertEqual(build(with_copy(b"{}"))["declarations"]["status"], "unreadable")
 
-    def test_published_floor_shapes(self) -> None:
-        """DCL-5/DCL-28: the floor comes from the published check; absent means unmet; a
-        malformed one is refused."""
+    def test_published_floor_result(self) -> None:
+        """DCL-33: the card shows the published floor-result.v1 (or a recomputed check) only when
+        it names the work's item hash and declarations file; otherwise every fact is unmet."""
         from tools.conventions import floor
         inp = testdata.still_floor_input()
-        published = floor.check_floor(inp["package"], inp["policy"], inp["contents"], inp["observed"])
-        self.assertEqual(build(lambda i: i.update(floor=published))["conservationFloor"]["storage"], "met")
-        self.assertEqual(set(build(lambda i: i.pop("floor"))["conservationFloor"].values()), {"unmet"})
-        with self.assertRaises(ToolError):
-            build(lambda i: i.update(floor={"storage": "met"}))
+        recomputed = floor.check_floor(inp["package"], inp["policy"], inp["contents"], inp["observed"])
+        self.assertEqual(build(lambda i: i.update(floor=recomputed))["conservationFloor"]["storage"], "met")
+        self.assertEqual(build()["conservationFloor"]["storage"], "met")
+        published = testdata.example("floor-result.json")
+        for why, bad in {
+            "absent": None,
+            "not floor-result.v1": {"storage": "met"},
+            "another item": dict(published, itemHash="0x" + "ab" * 32),
+            "another declarations file": dict(published, declarationsFileId="0x" + "99" * 32),
+            "a refused recomputed check": dict(recomputed, ok=False),
+        }.items():  # fmt: skip
+            with self.subTest(why):
+                result = build_card(dict(testdata.example_card_inputs(), floor=bad))
+                self.assertEqual(set(result.card["conservationFloor"].values()), {"unmet"})
+                self.assertIn("conservationFloor", result.notes)
+
+    def test_absent_declarations_use_a_matching_published_result(self) -> None:
+        """DCL-33: with no declarations file the card uses a result naming none, in which a
+        still image's generative fact is not_applicable (DCL-5)."""
+        def drop(i: dict) -> None:
+            reads(i)["WorkRecords"]["mediaOf"].pop()
+            i["floor"] = {"v": 1, "itemHash": reads(i)["Stream"]["coreOf"]["itemHash"], "declarationsFileId": None,
+                          "facts": {"storage": "unmet", "format": "unmet", "license": "unmet",
+                                    "generative": "not_applicable", "display": "unmet"}}  # fmt: skip
+        c = build(drop)
+        self.assertEqual(c["declarations"], {"status": "absent"})
+        self.assertEqual(c["conservationFloor"]["generative"], "not_applicable")
 
     def test_living_work_and_time_capsule_flags(self) -> None:
         c = build()
@@ -282,6 +340,12 @@ class DisplayAndCustodyTest(unittest.TestCase):
         by_other = build(lambda i: i.update(displayChange=dict(change, acceptedBy=testdata.ANVIL_0)))
         self.assertEqual(by_other["displayChange"]["state"], "accepted")
         self.assertFalse(by_other["displayChange"]["acceptedByCurrentOwner"])
+
+    def test_named_custodian_with_no_attestation(self) -> None:
+        """DCL-21, DCL-28: NONE, no date, stale."""
+        c = build(lambda i: i.update(attestations=[]))
+        self.assertEqual(c["custody"], [{"objectId": c["custody"][0]["objectId"], "custodian": testdata.ANVIL_0,
+                                         "recognized": True, "status": "NONE", "stale": True}])  # fmt: skip
 
     def test_custody_recognized_and_stale(self) -> None:
         """DCL-21, DCL-22, DCL-28: recognized or not, fresh or stale."""

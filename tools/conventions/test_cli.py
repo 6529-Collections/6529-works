@@ -81,7 +81,7 @@ class CliTest(unittest.TestCase):
         code, out, _ = run("floor", self.write("floor.json", inp))
         self.assertEqual(code, 0, out)
         self.assertTrue(json.loads(out)["ok"])
-        inp["policy"]["workPowers"] = []
+        inp["policy"]["workPowers"] = []  # an explicit list that names no power refuses ROYALTY_RATE
         code, out, _ = run("floor", self.write("floor2.json", inp))
         self.assertEqual(code, 1)
         self.assertFalse(json.loads(out)["ok"])
@@ -95,7 +95,7 @@ class CliTest(unittest.TestCase):
 
     def test_control_proof_verify(self) -> None:
         ctx = {"venue": "https://gallery.example", "chainId": 11155111, "now": 1794787260,
-               "outstandingNonces": [testdata.example("control-proof.json")["message"]["nonce"]],
+               "challenges": [{"v": 1, "message": testdata.example("control-proof.json")["message"]}],
                "officialTokens": {"0x02617dbdc0b0521124cb4c2a3ef602977e29bd91": "stream"},
                "block": {"number": 1, "timestamp": 1794787250}, "headBlock": 1,
                "ownership": {"ownerOf": testdata.ANVIL_1}, "consolidation": {"isEstablished": False, "effectiveAt": 0}}

@@ -77,7 +77,8 @@ class DeclarationsFileTest(unittest.TestCase):
     schema-valid, bound to the content hash."""
 
     def test_no_declarations(self) -> None:
-        """DCL-5: none listed is refused when the policy requires one, else every fact is unmet."""
+        """DCL-5: none listed is refused when the policy requires one; else every fact is unmet,
+        except that a work that is not generative has `generative` not_applicable."""
         def drop(i: dict) -> None:
             i["package"]["media"].pop()
         refused = run(edit(testdata.still_floor_input(), drop))
@@ -85,7 +86,12 @@ class DeclarationsFileTest(unittest.TestCase):
         allowed = run(edit(testdata.still_floor_input(),
                            lambda i: (drop(i), i["policy"].update(requiresDeclarations=False))))
         self.assertTrue(allowed["ok"])
-        self.assertEqual(set(floor_states(allowed).values()), {"unmet"})
+        self.assertEqual(floor_states(allowed), {"storage": "unmet", "format": "unmet", "license": "unmet",
+                                                 "generative": "not_applicable", "display": "unmet"})
+        self.assertIsNone(allowed["declarationsFileId"])
+        generative = run(edit(testdata.generative_floor_input(),
+                              lambda i: (drop(i), i["policy"].update(requiresDeclarations=False))))
+        self.assertEqual(set(floor_states(generative).values()), {"unmet"})
 
     def test_two_declarations_are_ambiguous(self) -> None:
         def second(i: dict) -> None:
@@ -193,7 +199,7 @@ class FactTest(unittest.TestCase):
                         f["sha256"] = digest
                 inp = testdata.floor_input(doc, [(F1, digest, "PRIMARY", "image/png"),
                                                  (F2, doc["conservation"]["storage"]["files"][1]["sha256"], "PREVIEW", "image/webp")])  # fmt: skip
-                inp["package"]["files"][F1]["encoding"] = encoding
+                inp["package"]["files"][F1].update(encoding=encoding, length=len(stored))
                 inp["package"]["item"]["contentHash"] = doc["contentHash"]
                 for r in doc["conservation"]["storage"]["files"][0]["receipts"]:
                     inp["observed"]["fetched"][r["uri"]] = stored
@@ -202,6 +208,27 @@ class FactTest(unittest.TestCase):
                 bad = edit(inp, lambda i: [i["observed"]["fetched"].__setitem__(r["uri"], b"not it")
                                            for r in doc["conservation"]["storage"]["files"][0]["receipts"]])
                 self.assertEqual(run(bad)["facts"]["storage"]["state"], "failed")
+
+    def test_storage_receipt_forms(self) -> None:
+        """DCL-4/DCL-5 CHECK_storage: a `decoded` copy hashes to the file's SHA-256 as fetched; a
+        `stored` copy must be fileInfo.length bytes that decode to it."""
+        media = b"6529 works media bytes" * 50
+        stored = gzip.compress(media, mtime=0)
+        digest = sha(media)
+        doc = testdata.example("declarations.json")
+        f1 = doc["conservation"]["storage"]["files"][0]
+        f1["sha256"] = digest
+        f1["receipts"][1]["form"] = "decoded"
+        inp = testdata.floor_input(doc, [(F1, digest, "PRIMARY", "image/png"),
+                                         (F2, doc["conservation"]["storage"]["files"][1]["sha256"], "PREVIEW", "image/webp")])  # fmt: skip
+        inp["package"]["files"][F1].update(encoding="Gzip", length=len(stored))
+        stored_uri, decoded_uri = f1["receipts"][0]["uri"], f1["receipts"][1]["uri"]
+        inp["observed"]["fetched"].update({stored_uri: stored, decoded_uri: media})
+        self.assertEqual(run(inp)["facts"]["storage"]["state"], "met", run(inp)["facts"]["storage"])
+        swapped = edit(inp, lambda i: i["observed"]["fetched"].update({stored_uri: media, decoded_uri: stored}))
+        reasons = run(swapped)["facts"]["storage"]["reasons"]
+        self.assertTrue(any("not fileInfo.length bytes" in r for r in reasons), reasons)
+        self.assertTrue(any(decoded_uri in r and "SHA-256" in r for r in reasons), reasons)
 
     def test_format(self) -> None:
         """DCL-5 CHECK_format."""
@@ -245,7 +272,7 @@ class FactTest(unittest.TestCase):
         base = testdata.generative_floor_input()
         dep = {"name": "p5", "version": "1.9.0", "fileId": "0x" + "88" * 32}
         with_dep = with_doc(base, lambda d: d["conservation"]["generative"]["dependencies"].append(dep))
-        with_dep["package"]["item"]["recordDependencies"] = [dep]
+        with_dep["package"]["item"]["recordDependencies"] = [{"name": "p5", "version": "1.9.0"}]  # [{name, version}]
         with_dep["observed"]["dependencies"] = {"p5@1.9.0": {"fileId": dep["fileId"], "deprecated": False}}
         self.assertEqual(run(with_dep)["facts"]["generative"]["state"], "met")
         cases = [
@@ -255,7 +282,8 @@ class FactTest(unittest.TestCase):
             ("did not resolve", edit(with_dep, lambda i: i["observed"].update(dependencies={}))),
             ("or is deprecated", edit(with_dep, lambda i: i["observed"]["dependencies"]["p5@1.9.0"].update(deprecated=True))),
             ("resolves to another file", edit(with_dep, lambda i: i["observed"]["dependencies"]["p5@1.9.0"].update(fileId="0x" + "00" * 32))),
-            ("not exactly generative.dependencies", edit(with_dep, lambda i: i["package"]["item"].update(recordDependencies=[]))),
+            ("not generative.dependencies, in order", edit(with_dep, lambda i: i["package"]["item"].update(recordDependencies=[]))),
+            ("not generative.dependencies, in order", edit(with_dep, lambda i: i["package"]["item"].update(recordDependencies=[{"name": "p5", "version": "1.9.1"}]))),
             ("seedPolicy is not the item's", edit(base, lambda i: i["package"]["item"].update(seedPolicy="ARTIST"))),
         ]  # fmt: skip
         for needle, inp in cases:
@@ -269,12 +297,23 @@ class FactTest(unittest.TestCase):
         for name, change in {
             "html primary": lambda i: i["package"]["files"][F1].update(mimeType="text/html"),
             "application/javascript primary": lambda i: i["package"]["files"][F1].update(mimeType="application/javascript"),
-            "record declares dependencies": lambda i: i["package"]["item"].update(recordDependencies=[]),
+            "record declares dependencies": lambda i: i["package"]["item"].update(recordDependencies=[{"name": "p5", "version": "1.9.0"}]),
+            "svg primary": lambda i: i["package"]["files"][F1].update(mimeType="image/svg+xml"),
+            "text/ecmascript primary": lambda i: i["package"]["files"][F1].update(mimeType="text/ecmascript"),
+            "application/ecmascript primary": lambda i: i["package"]["files"][F1].update(mimeType="application/ecmascript"),
             "seed policy ARTIST": lambda i: i["package"]["item"].update(seedPolicy="ARTIST"),
         }.items():  # fmt: skip
             with self.subTest(name):
                 result = run(edit(still, change))
                 self.assertIn("missing generative", result["refusals"])
+
+    def test_empty_record_dependencies_declare_none(self) -> None:
+        """DCL-4: "declares dependencies" means the member is present and non-empty."""
+        for deps in ([], None):
+            with self.subTest(deps=deps):
+                result = run(edit(testdata.still_floor_input(), lambda i: i["package"]["item"].update(recordDependencies=deps)))
+                self.assertTrue(result["ok"], result["refusals"])
+                self.assertEqual(result["facts"]["generative"]["state"], "not_applicable")
 
     def test_display(self) -> None:
         """DCL-5 CHECK_display, and a waived display allowed by the policy."""
@@ -293,10 +332,10 @@ class AlwaysTest(unittest.TestCase):
     def test_refusals(self) -> None:
         base = testdata.still_floor_input()
         cases = [
-            ("not a power IWorkPowers defines", edit(base, lambda i: i["policy"].update(workPowers=["OTHER"]))),
-            ("were not supplied", edit(base, lambda i: i["policy"].update(workPowers=None))),
-            ("custodian addresses are not distinct", with_doc(base, lambda d: d["custodians"].append(dict(d["custodians"][0], objectId="0x" + "01" * 32)))),
+            ("not a WorkPowers power", edit(base, lambda i: i["policy"].update(workPowers=["OTHER"]))),
+            ("pairs are not distinct", with_doc(base, lambda d: d["custodians"].append(dict(d["custodians"][0], name="Again")))),
             ("a custodian address is zero", with_doc(base, lambda d: d["custodians"][0].update(address=testdata.ZERO))),
+            ("names the work itself", edit(base, lambda i: i["package"].update(work={"chainId": 11155111, "contract": "0x02617dbdc0b0521124cb4c2a3ef602977e29bd91", "tokenId": "7"}))),
         ]  # fmt: skip
         for needle, inp in cases:
             with self.subTest(needle):
@@ -304,6 +343,33 @@ class AlwaysTest(unittest.TestCase):
                 self.assertFalse(result["ok"])
                 self.assertTrue(any(needle in r for r in result["refusals"]), result["refusals"])
                 self.assertEqual(result["facts"]["storage"]["state"], "met")
+
+
+    def test_work_powers_default_to_the_workpowers_names(self) -> None:
+        """DCL-8: without an explicit list the names are ROYALTY_RATE and RELICENSE, in bit order."""
+        self.assertEqual(floor.WORK_POWERS, ("ROYALTY_RATE", "RELICENSE"))
+        for powers in (None, ["ROYALTY_RATE"]):
+            with self.subTest(powers=powers):
+                result = run(edit(testdata.still_floor_input(), lambda i: i["policy"].update(workPowers=powers)))
+                self.assertTrue(result["ok"], result["refusals"])
+
+    def test_custodian_may_hold_two_objects(self) -> None:
+        """DCL-5 ALWAYS: distinct (address, objectId) pairs, so one custodian may hold two twins."""
+        two = with_doc(testdata.still_floor_input(),
+                       lambda d: d["custodians"].append(dict(d["custodians"][0], objectId="0x" + "01" * 32)))
+        result = run(two)
+        self.assertTrue(result["ok"], result["refusals"])
+
+    def test_time_capsule_ciphertext_must_be_an_auxiliary_media_file(self) -> None:
+        """DCL-7 and DCL-5 ALWAYS: the ciphertext file is one of the media, as AUXILIARY."""
+        allowed = edit(testdata.time_capsule_floor_input(),
+                       lambda i: i["policy"].update(allowsTimeCapsule=True, waivable=["storage"]))
+        self.assertTrue(run(allowed)["ok"], run(allowed)["refusals"])
+        needle = "ciphertext file is not an AUXILIARY media file"
+        elsewhere = with_doc(allowed, lambda d: d["timeCapsule"].update(ciphertextFileId="0x" + "56" * 32))
+        self.assertTrue(any(needle in r for r in run(elsewhere)["refusals"]))
+        as_preview = edit(allowed, lambda i: i["package"]["media"][1].update(role="PREVIEW"))
+        self.assertTrue(any(needle in r for r in run(as_preview)["refusals"]))
 
 
 class HelpersTest(unittest.TestCase):
@@ -320,6 +386,22 @@ class HelpersTest(unittest.TestCase):
     def test_license_key_matches_works_hashing(self) -> None:
         self.assertEqual(floor.license_key("CC0-1.0"), floor.license_key("cc0-1.0"))
         self.assertNotEqual(floor.license_key("CC0-1.0"), floor.license_key("CC-BY-4.0"))
+
+    def test_dependency_label_is_the_registry_bytes32(self) -> None:
+        """DCL-5 `label`: ASCII left-aligned, zero-padded; only the registry's spelling."""
+        self.assertEqual(floor.dependency_label("p5.js"), "0x" + b"p5.js".hex() + "00" * 27)
+        self.assertEqual(floor.dependency_label("a" * 32), "0x" + "61" * 32)
+        for bad in ("", "P5", "a" * 33, "p5 js", 5):
+            with self.subTest(bad=bad), self.assertRaises(floor.ToolError):
+                floor.dependency_label(bad)
+
+    def test_floor_result_is_the_published_document(self) -> None:
+        """DCL-33: a passing check becomes a valid floor-result.v1 naming the item and file."""
+        result = run(testdata.still_floor_input())
+        doc = floor.floor_result(result, "0x" + "AB" * 32)
+        self.assertEqual(doc, {"v": 1, "itemHash": "0x" + "ab" * 32, "declarationsFileId": DECL_FILE,
+                               "facts": floor_states(result)})  # fmt: skip
+        self.assertEqual(testdata.schema.validate(doc, "floor-result"), [])
 
     def test_floor_states_refuses_a_refused_check(self) -> None:
         with self.assertRaises(floor.ToolError):

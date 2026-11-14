@@ -1,4 +1,5 @@
-"""The conservation-floor check a curation signer runs before attesting (DCL-3 to DCL-5, DCL-7).
+"""The conservation-floor check a curation signer runs before attesting (DCL-3 to DCL-5, DCL-7)
+and the result it publishes (DCL-33).
 
 `check_floor(package, policy, contents, observed)` is `CHECK_FLOOR` of
 [DCL-5](../../docs/spec/declarations-and-conventions.md#the-conservation-floor) as a pure
@@ -9,27 +10,32 @@ it attests.
 Inputs (plain dicts; hex values `0x`-prefixed):
 
 - `package`: `item` (`contentHash`, `seedPolicy` `NONE|ARTIST|VRF`, `license`
-  `{spdxId, textFileId}`, `recordDependencies`: the record file's `dependencies` member as a list
-  of `{name, version, fileId}`, or null when the record has no such member), `media` (the ordered
-  media list, `[{fileId, sha256Hash, role}]`) and `files` (`ContentStore.fileInfo` per file ID:
-  `{sha256Hash, length, encoding, mimeType, complete}`; `encoding` is
-  `Identity|Gzip|Base64|GzipBase64` and `complete` is `isComplete`). `files` must also hold the
-  license text file, whose `sha256Hash` is `sha256Of`.
+  `{spdxId, textFileId}`, `recordDependencies`: the record file's `dependencies` member as an
+  ordered list of `{name, version}`, or null when the record has no such member; an empty list
+  and null both declare no dependency), `media` (the ordered media list,
+  `[{fileId, sha256Hash, role}]`, the PRIMARY file first), `files` (`ContentStore.fileInfo` per
+  file ID: `{sha256Hash, length, encoding, mimeType, complete}`; `encoding` is
+  `Identity|Gzip|Base64|GzipBase64` and `complete` is `isComplete`) and, optionally, `work`
+  (`{chainId, contract, tokenId}`, when the token is known: a citation of it is refused).
+  `files` must also hold the license text file, whose `sha256Hash` is `sha256Of`.
 - `policy`: the wave's policy `P`: `requiresDeclarations` (bool), `waivable` (fact names),
-  `allowsTimeCapsule` (bool), and `workPowers`, the power names `IWorkPowers` defines (ADR 0006),
-  or null when the caller has no such list (the renunciation check then refuses: fail closed).
+  `allowsTimeCapsule` (bool), and optionally `workPowers`, the power names an intended
+  renunciation may use; absent or null means `WORK_POWERS`, the `WorkPowers` names (DCL-8).
 - `contents`: `{fileId: bytes}`, the declarations file's stored bytes (`ContentStore.read`).
 - `observed`: what the signer's own tooling saw: `fetched` (`{uri: bytes | "0x<sha256>" | None}`:
-  the stored bytes fetched at a receipt's URI, which this module decodes and hashes; or the SHA-256
-  of the decoded bytes when the caller decoded them; None when the fetch failed), `dimensions`
-  (`{fileId: {width, height}}` measured by decoding the file), `defaultRenderer`,
-  `codeHash` (`{address: extcodehash}`) and `dependencies`
-  (`{"name@version": {fileId, deprecated}}`, `DependencyRegistry.resolve`; missing = unresolved).
+  the bytes fetched at a receipt's URI, which this module checks as the receipt's `form` says
+  (`stored`: `fileInfo.length` bytes, decoded by the file's encoding; `decoded`: hashed as they
+  are); or the SHA-256 of the decoded media when the caller checked the bytes itself; None when
+  the fetch failed), `dimensions` (`{fileId: {width, height}}` measured by decoding the file),
+  `defaultRenderer`, `codeHash` (`{address: extcodehash}`) and `dependencies`
+  (`{"name@version": {fileId, deprecated}}`: `DependencyRegistry.resolve(label(name),
+  label(version))`, see `dependency_label`; missing = unresolved).
 
-The result: `{"ok": bool, "refusals": [...], "facts": {fact: {"state", "reasons"}}}`. `ok` is
-false when any `require` fails or any `REFUSE` is reached; every failure is listed, with the
-fact it belongs to. A fact's state is `met`, `waived`, `unmet`, `not_applicable` or `failed`.
-The result is what goes into the curation evidence (DCL-5).
+The result: `{"ok": bool, "refusals": [...], "facts": {fact: {"state", "reasons"}},
+"declarationsFileId": "0x…" | None}`. `ok` is false when any `require` fails or any `REFUSE` is
+reached; every failure is listed, with the fact it belongs to. A fact's state is `met`, `waived`,
+`unmet`, `not_applicable` or `failed`. `floor_result(result, item_hash)` turns a passing result
+into the floor-result.v1 object the curation evidence publishes (DCL-33).
 """
 
 from __future__ import annotations
@@ -49,7 +55,9 @@ from .schema import validate
 DECLARATIONS_MIME = "application/vnd.6529-works.declarations+json"
 MAX_DECLARATIONS_BYTES = 24_575
 FACTS = ("storage", "format", "license", "generative", "display")
-SCRIPT_MIMES = frozenset({"text/html", "text/javascript", "application/javascript"})
+SCRIPT_MIMES = frozenset({"text/html", "text/javascript", "application/javascript", "text/ecmascript",
+                          "application/ecmascript", "image/svg+xml"})  # fmt: skip
+WORK_POWERS = ("ROYALTY_RATE", "RELICENSE")  # WorkPowers bit order: bit 0, bit 1 (DCL-8)
 _ENCODINGS = {"Identity": Encoding.IDENTITY, "Gzip": Encoding.GZIP, "Base64": Encoding.BASE64,
               "GzipBase64": Encoding.GZIP_BASE64}  # fmt: skip
 _AR = re.compile(r"ar://[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]\Z")
@@ -64,6 +72,20 @@ def locator_network(uri: str) -> str | None:
     if isinstance(uri, str) and locator_accepted(uri):
         return "ipfs"
     return None
+
+
+def dependency_label(text: str) -> str:
+    """DCL-5 `label`: the bytes32 `DependencyRegistry` takes for a name or version, its ASCII
+    bytes left-aligned and zero-padded (`bytes32("p5.js")`), as `0x` hex. Refuses a string the
+    registry would not accept (1 to 32 bytes of `[a-z0-9._-]`)."""
+    if not isinstance(text, str) or not re.fullmatch(r"[a-z0-9._-]{1,32}", text):
+        raise ToolError(f"{text!r} is not a DependencyRegistry label (1 to 32 of [a-z0-9._-])")
+    return "0x" + text.encode("ascii").ljust(32, b"\0").hex()
+
+
+def record_declares_dependencies(record_deps: Any) -> bool:
+    """DCL-4/DCL-5: the record's `dependencies` member is present and non-empty."""
+    return bool(record_deps)
 
 
 def license_key(spdx_id: str) -> bytes:
@@ -141,17 +163,24 @@ def read_declarations(
     return doc, problems
 
 
-def _hash_fetched(value: Any, encoding: str | None) -> tuple[str | None, str]:
+def _hash_fetched(value: Any, form: str, info: Mapping[str, Any]) -> tuple[str | None, str]:
+    """The SHA-256 of the decoded media a receipt's copy gives, checked as its `form` says."""
     if value is None:
         return None, "could not be fetched"
     if isinstance(value, str):
         if re.fullmatch(r"0x[0-9a-f]{64}", value):
             return value, ""
         return None, "has an observed hash that is not lowercase 0x and 32 bytes of hex"
+    data = bytes(value)
+    if form == "decoded":
+        return _sha256_hex(data), ""
+    encoding = info.get("encoding")
     if encoding not in _ENCODINGS:
         return None, "has a file whose encoding is unknown"
+    if len(data) != info.get("length"):
+        return None, "is not fileInfo.length bytes, so it is not the stored stream"
     try:
-        return _sha256_hex(decode(bytes(value), _ENCODINGS[encoding])), ""
+        return _sha256_hex(decode(data, _ENCODINGS[encoding])), ""
     except ToolError as exc:
         return None, f"does not decode as {encoding}: {exc}"
 
@@ -179,7 +208,7 @@ def _check_storage(doc, S, package, observed) -> list[str]:
                 reasons.append(f"{r['uri']}: not a WorkRecords locator (WS-18)")
             elif network != r["network"]:
                 reasons.append(f"{r['uri']}: network {r['network']} does not match the address")
-            digest, why = _hash_fetched(fetched.get(r["uri"]), info.get("encoding"))
+            digest, why = _hash_fetched(fetched.get(r["uri"]), r["form"], info)
             if digest is None:
                 reasons.append(f"{r['uri']}: {why}")
             elif digest != _norm(m["sha256Hash"]):
@@ -249,31 +278,43 @@ def _check_generative(doc, package, observed) -> list[str]:
             reasons.append(f"{key}: DependencyRegistry.resolve did not resolve it")
         elif _norm(got.get("fileId")) != dep["fileId"] or got.get("deprecated"):
             reasons.append(f"{key}: resolves to another file, or is deprecated")
-    record_deps = package["item"].get("recordDependencies")
-    norm = [{k: _norm(v) for k, v in d.items()} for d in (record_deps or [])]
-    if norm != fact["dependencies"]:
-        reasons.append("the record's declared dependencies are not exactly generative.dependencies")
+    record_deps = package["item"].get("recordDependencies") or []
+    declared = [(d.get("name"), d.get("version")) for d in record_deps]
+    if declared != [(d["name"], d["version"]) for d in fact["dependencies"]]:
+        reasons.append("the record's declared dependencies are not generative.dependencies, in order")
     if fact["seedPolicy"] != package["item"].get("seedPolicy"):
         reasons.append("seedPolicy is not the item's seed policy")
     return reasons
 
 
-def _always(doc, policy) -> list[str]:
+def _always(doc, policy, S, package) -> list[str]:
     refusals: list[str] = []
-    if "timeCapsule" in doc and not policy.get("allowsTimeCapsule"):
-        refusals.append("time capsule outside policy (DCL-7)")
+    if "timeCapsule" in doc:
+        if not policy.get("allowsTimeCapsule"):
+            refusals.append("time capsule outside policy (DCL-7)")
+        auxiliary = {_norm(m["fileId"]) for m in S if m["role"] == "AUXILIARY"}
+        if doc["timeCapsule"]["ciphertextFileId"] not in auxiliary:
+            refusals.append("the time capsule's ciphertext file is not an AUXILIARY media file (DCL-7)")
     powers = policy.get("workPowers")
+    powers = WORK_POWERS if powers is None else powers
     for r in doc.get("intendedRenunciations", []):
-        if powers is None:
-            refusals.append(f"{r['power']}: the IWorkPowers power names (ADR 0006) were not supplied")
-        elif r["power"] not in powers:
-            refusals.append(f"{r['power']}: not a power IWorkPowers defines (ADR 0006)")
-    addresses = [c["address"] for c in doc.get("custodians", [])]
-    if len(set(addresses)) != len(addresses):
-        refusals.append("custodian addresses are not distinct")
-    if ZERO_ADDRESS in addresses:
+        if r["power"] not in powers:
+            refusals.append(f"{r['power']}: not a WorkPowers power (DCL-8)")
+    custodians = doc.get("custodians", [])
+    pairs = [(c["address"], c["objectId"]) for c in custodians]
+    if len(set(pairs)) != len(pairs):
+        refusals.append("custodian (address, objectId) pairs are not distinct")
+    if any(c["address"] == ZERO_ADDRESS for c in custodians):
         refusals.append("a custodian address is zero")
-    # Every citation's work is well formed: the schema's workRef already requires it.
+    work = package.get("work")
+    for c in doc.get("citations", []):
+        ref = c["work"]
+        if ref["chainId"] == 0:  # the schema already refuses it; checked as DCL-18 states it
+            refusals.append("a citation names chain ID zero (DCL-18)")
+        if work is not None and (ref["chainId"], _norm(ref["contract"]), str(ref["tokenId"])) == (
+            work["chainId"], _norm(work["contract"]), str(work["tokenId"])
+        ):
+            refusals.append("a citation names the work itself (DCL-18)")
     return refusals
 
 
@@ -287,9 +328,11 @@ def check_floor(
     observed = observed or {}
     facts = {k: {"state": "unmet", "reasons": []} for k in FACTS}
     refusals: list[str] = []
+    declarations_file: list[str | None] = [None]
 
     def result() -> dict:
-        return {"ok": not refusals, "refusals": refusals, "facts": facts}
+        return {"ok": not refusals, "refusals": refusals, "facts": facts,
+                "declarationsFileId": declarations_file[0]}  # fmt: skip
 
     D, problems = _declarations_entries(package)
     if problems:
@@ -298,24 +341,28 @@ def check_floor(
     if len(D) > 1:
         refusals.append("ambiguous declarations")
         return result()
+    media = package["media"]
+    primary = _info(package, media[0]["fileId"]) if media else None
+    G = (
+        (primary is not None and primary.get("mimeType") in SCRIPT_MIMES)
+        or record_declares_dependencies(package["item"].get("recordDependencies"))
+        or package["item"].get("seedPolicy") != "NONE"
+    )
     if not D:
         if policy.get("requiresDeclarations"):
             refusals.append("no declarations")
-        return result()  # every fact "unmet"
+        if not G:
+            facts["generative"] = {"state": "not_applicable", "reasons": []}
+        return result()  # every other fact "unmet"
     d = D[0]
+    declarations_file[0] = _norm(d["fileId"])
     data = contents.get(_norm(d["fileId"]), contents.get(d["fileId"]))
     doc, problems = read_declarations(d, _info(package, d["fileId"]), data, package["item"]["contentHash"])
     if problems or doc is None:
         refusals += problems
         return result()
 
-    S = [m for m in package["media"] if m is not d]
-    first = _info(package, S[0]["fileId"]) if S else None
-    G = (
-        (first is not None and first.get("mimeType") in SCRIPT_MIMES)
-        or package["item"].get("recordDependencies") is not None
-        or package["item"].get("seedPolicy") != "NONE"
-    )
+    S = [m for m in media if m is not d]
     applicable = [k for k in FACTS if k != "generative" or G]
     for k in applicable:
         if k not in doc.get("conservation", {}):
@@ -347,12 +394,23 @@ def check_floor(
             facts[k] = {"state": "met", "reasons": []}
     if not G:
         facts["generative"] = {"state": "not_applicable", "reasons": []}
-    refusals += _always(doc, policy)
+    refusals += _always(doc, policy, S, package)
     return result()
 
 
 def floor_states(result: Mapping[str, Any]) -> dict[str, str]:
-    """The `{fact: state}` map a promise card shows for a passing check (DCL-28)."""
+    """The `{fact: state}` map of a passing check (DCL-28)."""
     if not result["ok"]:
         raise ToolError("a refused check has no floor states to publish")
     return {k: v["state"] for k, v in result["facts"].items()}
+
+
+def floor_result(result: Mapping[str, Any], item_hash: str) -> dict:
+    """DCL-33: the floor-result.v1 object the signer publishes in its curation evidence for a
+    passing check of the item `item_hash`."""
+    doc = {"v": 1, "itemHash": _norm(item_hash), "declarationsFileId": result["declarationsFileId"],
+           "facts": floor_states(result)}  # fmt: skip
+    errors = validate(doc, "floor-result")
+    if errors:  # pragma: no cover - a passing check always gives a valid result
+        raise ToolError("internal error: not a valid floor-result.v1: " + "; ".join(errors))
+    return doc

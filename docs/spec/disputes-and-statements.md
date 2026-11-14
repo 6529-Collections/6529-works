@@ -77,7 +77,7 @@ it is added here and, for tooling, to `StatementKinds`.
 | `FIXITY_CHECK` | `0xa6734f8e667c484f4fef5fa3896406f134daaacfac9f176e4b9fa285a79def89` | Any role | Neither | None defined |
 | `ACCESSION` | `0x4dc3a5e33f97bcd06f2d025349086438272d94a398185aca416ae539e36521fb` | Any role | Neither | None defined |
 | `DISPUTE_OUTCOME` | `0xd529e5493d4add16d19648888c9742a7c31945a9916c9323f13bc977ebd3526b` | PLATFORM | Log (DSP-4, DSP-11) | None defined |
-| `CURATION_EVIDENCE` | `0x10d8533be598105124a4fa93ecc6c1d4ed7e4d89809f2b02043c2b39f503a604` | CURATOR | Log (DSP-4) | None defined |
+| `CURATION_EVIDENCE` | `0x10d8533be598105124a4fa93ecc6c1d4ed7e4d89809f2b02043c2b39f503a604` | CURATOR | Log (DSP-4) | None defined; its `conservationFloor` member holds [`floor-result.v1`](schemas/floor-result.v1.schema.json) objects (DCL-33) |
 | `GOVERNANCE_MANIFEST` | `0xda3e4cfef33ef5fdea6a80cfd6c21354d7614a38addf188d0edad56c431651fc` | `appendGovernanceManifest` only | Log (DSP-4, DSP-5) | None defined |
 | `CONTENT_CHANGE_PROPOSAL` | `0x839c052e9a5afc8f0beebb6265e5e0e47a21abf374d6747f389fe5dadc871554` | ARTIST, about a 6529 Stream token | Convention (DCL-10) | [`content-change-proposal.v1`](schemas/content-change-proposal.v1.schema.json): `0x9068b0e8f5eadecb75e1a26c81b62e4706d7699d85703af4ef6b965a5c47cbff` |
 | `CONTENT_CHANGE_ACCEPTANCE` | `0x9d9eeba312ac7b3dc65b165a03f3b1eaf64f62cfd0ef22119dad7fdd6bc17f11` | OWNER, about the same token | Convention (DCL-11) | [`content-change-acceptance.v1`](schemas/content-change-acceptance.v1.schema.json): `0x592d278e78a6c95da74c031a22924283e71403c574e99c71d3cea20f96d04ea8` |
@@ -91,7 +91,8 @@ have schemas too: the declarations document
 catalogue ([`catalogue.v1`](schemas/catalogue.v1.schema.json)), the control proof
 ([`control-proof.v1`](schemas/control-proof.v1.schema.json)), the promise card
 ([`promise-card.v1`](schemas/promise-card.v1.schema.json)) and its grade
-([`promise-grade.v1`](schemas/promise-grade.v1.schema.json)).
+([`promise-grade.v1`](schemas/promise-grade.v1.schema.json)), and the published floor result
+([`floor-result.v1`](schemas/floor-result.v1.schema.json), a member of the curation evidence).
 
 ### The Statement struct
 

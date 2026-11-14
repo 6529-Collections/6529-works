@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from . import jcs
+from . import jcs, schema
 from .floor import DECLARATIONS_MIME
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -30,6 +30,7 @@ EXAMPLE_SCHEMAS = {
     "declarations.json": "declarations",
     "declarations-generative.json": "declarations",
     "declarations-time-capsule.json": "declarations",
+    "floor-result.json": "floor-result",
     "promise-card.json": "promise-card",
     "promise-grade.json": "promise-grade",
 }
@@ -92,8 +93,7 @@ def floor_input(doc: dict, media: list[tuple[str, str, str, str]], *, seed: str 
             "media": entries,
             "files": files,
         },
-        "policy": {"requiresDeclarations": True, "waivable": [], "allowsTimeCapsule": False,
-                   "workPowers": ["RECORD_EDITS"]},
+        "policy": {"requiresDeclarations": True, "waivable": [], "allowsTimeCapsule": False},
         "contents": {DECL_FILE: data},
         "observed": {"fetched": receipts_observed(doc), "dimensions": dims,
                      "defaultRenderer": RENDERER, "codeHash": {RENDERER: "0x" + "44" * 32},
@@ -116,10 +116,15 @@ def generative_floor_input() -> dict:
     ], seed="VRF", record_deps=[])  # fmt: skip
 
 
+CIPHERTEXT_FILE = "0x" + "55" * 32
+
+
 def time_capsule_floor_input() -> dict:
+    """The time-capsule example: the sealed PRIMARY image and the ciphertext as an AUXILIARY file."""
     doc = example("declarations-time-capsule.json")
     return floor_input(doc, [
         ("0x" + "11" * 32, "0x0899f7c16ef4cb9720aa1e6d9cf54481e1667ba856dd5a8fd962dc0bfac1d4da", "PRIMARY", "image/png"),
+        (CIPHERTEXT_FILE, "0x" + "5c" * 32, "AUXILIARY", "application/octet-stream"),
     ])  # fmt: skip
 
 
@@ -198,7 +203,7 @@ def example_card_inputs() -> dict:
             "ArtistRegistry": {"activeAuthorityOf": card["artist"]["activeAuthority"],
                                "pendingChange": {"kind": "NONE"}},
         },
-        "floor": card["conservationFloor"],
+        "floor": example("floor-result.json"),  # the published result (DCL-33)
         "attestations": [{"document": custody_doc, "recordedAt": 1794700900, "posterRole": "OWNER",
                           "poster": card["work"]["owner"], "signatureValid": True}],
         "roles": roles,

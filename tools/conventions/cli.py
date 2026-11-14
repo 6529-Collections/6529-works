@@ -104,8 +104,8 @@ def cmd_control_verify(args: argparse.Namespace) -> int:
     doc = _load(args.file)
     ctx = _load(args.context)
     store = control_proof.MemoryNonceStore()
-    for nonce in ctx.get("outstandingNonces", []):
-        store.add({"nonce": nonce})
+    for issued in ctx.get("challenges", []):  # the challenges the venue issued (DCL-24 step 1)
+        store.add(issued["message"] if "message" in issued else issued)
     verdict = control_proof.verify_response(
         doc, venue=ctx["venue"], chain_id=ctx["chainId"], now=ctx["now"], store=store,
         official_tokens=ctx["officialTokens"], block=ctx["block"], head_block=ctx["headBlock"],

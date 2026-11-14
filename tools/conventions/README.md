@@ -33,8 +33,8 @@ command prints JSON.
 | --- | --- | --- |
 | [`schema.py`](schema.py) | Validates a document against the committed schema in [`docs/spec/schemas/`](../../docs/spec/schemas/), interpreting the schema itself; raises on any keyword it does not implement | DCL-1, DCL-2 step 4 |
 | [`jcs.py`](jcs.py) | RFC 8785 canonical JSON and a strict I-JSON parser | DCL-1, DCL-30 |
-| [`floor.py`](floor.py) | `check_floor(package, policy, contents, observed)`: the signer's `CHECK_FLOOR` | DCL-3 to DCL-5, DCL-7 |
-| [`card.py`](card.py) | `build_card(inputs)`: a promise card from the reads at one block | DCL-3, DCL-8, DCL-26 to DCL-29 |
+| [`floor.py`](floor.py) | `check_floor(package, policy, contents, observed)`: the signer's `CHECK_FLOOR`; `floor_result` turns a passing result into the published floor-result.v1 object; `dependency_label` is the bytes32 `DependencyRegistry` takes | DCL-3 to DCL-5, DCL-7, DCL-33 |
+| [`card.py`](card.py) | `build_card(inputs)`: a promise card from the reads at one block | DCL-3, DCL-8, DCL-26 to DCL-29, DCL-33 |
 | [`grade.py`](grade.py) | `grade(card)`: rubric 1, total over valid cards | DCL-30, DCL-31 |
 | [`eip712.py`](eip712.py) | The two typed-data digests and `verify_signature`, as `SignatureVerifier` | DCL-19, DCL-20, DCL-23, DCL-24 step 3 |
 | [`control_proof.py`](control_proof.py) | `issue_challenge` and `verify_response` | DCL-23 to DCL-25 |
@@ -54,34 +54,41 @@ canonical, as DCL-1 requires of every convention document.
 
 `CHECK_FLOOR` of DCL-5. `INPUT` holds `package` (the item, the ordered media list and
 `ContentStore.fileInfo` per file, including the license text file), `policy` (the wave's
-`requiresDeclarations`, `waivable`, `allowsTimeCapsule` and the `IWorkPowers` power names),
+`requiresDeclarations`, `waivable`, `allowsTimeCapsule` and, optionally, `workPowers`; without
+it the names are `ROYALTY_RATE` and `RELICENSE`, the `WorkPowers` names of DCL-8),
 `contents` (the declarations bytes, `{"file": path}` or `{"hex": "0x…"}`) and `observed`: what the
-signer's own tooling saw at each storage receipt (`{"file": path}` of the fetched stored bytes,
-which the tool decodes and hashes, or `{"sha256": "0x…"}` of the decoded bytes, or `null` when
-the fetch failed), the dimensions it measured by decoding each image or video, the default
+signer's own tooling saw at each storage receipt (`{"file": path}` of the fetched bytes, which
+the tool checks as the receipt's `form` says: a `stored` copy is `fileInfo.length` bytes that
+decode to the file's SHA-256, a `decoded` copy hashes to it; or `{"sha256": "0x…"}` of the
+decoded media; or `null` when the fetch failed), the dimensions it measured by decoding each image or video, the default
 renderer and its code hash, and each dependency's resolution.
 
 The result lists every failure with the fact it belongs to, and each fact's state: `met`,
 `waived` (with its reason), `unmet`, `not_applicable` or `failed`. `ok` is false on any refusal;
-the signer does not attest then. The result is what DCL-5 puts into the curation evidence.
+the signer does not attest then. For a passing result, `floor.floor_result(result, itemHash)` is
+the floor-result.v1 object DCL-33 puts into the curation evidence.
 
 ### `card INPUT [--notes]`
 
 Builds a promise card that validates against `promise-card.v1`, or fails. `INPUT` holds `reads`,
 one answer per function the spec cites, made at one block, and the documents a reader holds: a
-declarations copy fetched from a locator, the published floor result, custody attestations, the
-winning display change, and the `changeable` rows taken from the
-[role matrix](../../docs/audit/roles.md). The full shape is in [`card.py`](card.py).
+declarations copy fetched from a locator, the published floor result (a floor-result.v1 object;
+the card uses it only when it names the work's item hash and declarations file, DCL-33),
+custody attestations, the winning display change, and the `changeable` rows the caller composes
+from the [role matrix](../../docs/audit/roles.md), to which the tool applies DCL-27's row rules.
+The full shape is in [`card.py`](card.py).
 
 The tool does not make the reads itself. The chain tooling in this repository reaches a node
 over JSON-RPC with `urllib` ([`tools/content/rpc.py`](../content/rpc.py)) rather than by
 shelling out to `cast call`, and the card needs reads from several contracts at one block, so
 fetching is left to the caller, who must pin every `eth_call` to the same block hash.
 
-`IWorkPowers` (added by ADR 0006) is optional: absent, the card says `"available": false` and
-every intended renunciation is `unknown`. Present, it is the renounced-powers mask with the
-view's power names in bit order, and `covers`, which maps each power to the `changeable` rows it
-covers.
+`IWorkPowers` is optional, for a deployment whose `WorkRecords` does not report it: absent, the
+card says `"available": false` and every intended renunciation is `unknown`. Present, it is
+`renouncedMask`, the `renouncedPowers(tokenId)` read. The names default to `ROYALTY_RATE`
+(bit 0) and `RELICENSE` (bit 1), and the covered rows to `royalty_rate` and `license` (DCL-8,
+DCL-27); `powers` and `covers` may be given explicitly, but the card schema accepts only the
+`WorkPowers` names.
 
 `--notes` also prints why the declarations and custody states were chosen.
 
@@ -94,13 +101,16 @@ the example grade. A new rubric is a new function and a new version number, neve
 ### `control-proof digest FILE` and `control-proof verify FILE --context CONTEXT`
 
 `digest` prints the EIP-712 digest of a control-proof document. `verify` runs DCL-24 steps 2 to 6
-and DCL-25. `CONTEXT` holds the venue's identity and clock, its outstanding nonces, the official
-token addresses of the chain, block `B` and the head, and the reads at `B`: the signer's code,
+and DCL-25: the response must equal a challenge the venue issued, and the digest is built from
+that challenge with the venue's own chain ID. `CONTEXT` holds the venue's identity and clock, the
+challenges it issued and has not spent (`challenges`: control-proof.v1 challenge documents), the
+official token addresses of the chain, block `B` and the head, and the reads at `B`: the signer's
+code,
 `ownerOf` (or the edition balance, or the auction's pending-delivery buyer) and the
 consolidation source's `isEstablished` and `effectiveAt`. The command recovers ECDSA signatures
 with `cast` and cannot make the ERC-1271 call a contract signer needs; a program that keeps state,
-or must accept contract signers, calls `control_proof.verify_response` with its own nonce store
-and `erc1271` callable.
+or must accept contract signers, calls `control_proof.verify_response` with its own store of
+issued challenges and `erc1271` callable.
 
 ### `custody digest FILE` and `custody check INPUT`
 

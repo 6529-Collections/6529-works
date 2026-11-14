@@ -50,7 +50,7 @@ class RowTest(unittest.TestCase):
             return lambda c: c["conservationFloor"].update(states)
 
         def powers(renounced: int, retained: int) -> Callable[[dict], None]:
-            names = [f"P{i}" for i in range(renounced + retained)]
+            names = ["ROYALTY_RATE", "RELICENSE"][: renounced + retained]  # the WorkPowers names
             return lambda c: c.update(powers={"available": True, "renounced": names[:renounced],
                                               "retained": names[renounced:]})
         cases = [
@@ -69,11 +69,14 @@ class RowTest(unittest.TestCase):
             ("R6", lambda c: c["storage"]["files"][0].update(locators=1), 5),
             ("R6", lambda c: c["storage"]["files"][0].update(locators=0), 0),
             ("R6", lambda c: c["storage"].update(files=[]), 0),
-            ("R7", powers(1, 2), 3),
-            ("R7", powers(2, 1), 6),
-            ("R7", powers(3, 0), 10),
+            ("R6", lambda c: c["storage"]["files"].append(dict(c["storage"]["files"][0], locators=0)), 10),
+            ("R6", lambda c: c["storage"]["files"].insert(1, dict(c["storage"]["files"][0], locators=0)) or
+                             c["storage"]["files"][0].update(locators=1), 5),
+            ("R7", powers(1, 1), 5),
+            ("R7", powers(2, 0), 10),
+            ("R7", powers(1, 0), 10),
             ("R7", powers(0, 0), 0),
-            ("R7", powers(0, 4), 0),
+            ("R7", powers(0, 2), 0),
             ("R8", lambda c: c["declarations"]["intendedRenunciations"][0].update(state="overdue"), 0),
             ("R8", lambda c: c["declarations"].pop("intendedRenunciations"), 5),
         ]  # fmt: skip
@@ -123,13 +126,26 @@ class LetterTest(unittest.TestCase):
                 self.assertEqual(result["reasons"][-1], {"row": cap, "points": 0})
 
     def test_caps_do_not_raise_a_letter(self) -> None:
+        """DCL-30: a cap whose ceiling is at or above the points' letter changes nothing and is
+        not listed."""
         def low_and_disputed(c: dict) -> None:
             c.update(record={"status": "not_open"})
             c["storage"].update(onChainComplete=False)
             c["dispute"].update(entryHash=ENTRY, scope="item")
         result = grade.grade(card(low_and_disputed))
-        self.assertEqual(result["letter"], "D")
-        self.assertEqual([r["row"] for r in result["reasons"]][-2:], ["CAP1", "CAP2"])
+        self.assertEqual((result["score"], result["letter"]), (45, "D"))
+        self.assertEqual([r["row"] for r in result["reasons"] if r["row"].startswith("CAP")], [])
+
+    def test_only_caps_that_lower_the_letter_are_listed(self) -> None:
+        """DCL-30: with points for B, CAP1 and CAP4 (ceiling C) each lower the letter and are
+        listed, in rubric order, with 0 points."""
+        def b_and_capped(c: dict) -> None:
+            c["declarations"].update(status="invalid")  # R4 lost: 80 points, B
+            c["dispute"].update(entryHash=ENTRY, scope="token")
+        result = grade.grade(card(b_and_capped))
+        self.assertEqual((result["score"], result["letter"]), (80, "C"))
+        self.assertEqual([r for r in result["reasons"] if r["row"].startswith("CAP")],
+                         [{"row": "CAP1", "points": 0}, {"row": "CAP4", "points": 0}])
 
 
 class TotalityTest(unittest.TestCase):
@@ -147,16 +163,17 @@ class TotalityTest(unittest.TestCase):
                 c["storage"]["onChainComplete"] = chain
                 c["license"]["textOnChain"] = text
                 c["declarations"] = {"status": d_status, "intendedRenunciations": [
-                    {"power": "P", "dueAt": 1, "state": rng.choice(("renounced", "pending", "overdue", "unknown"))}
+                    {"power": rng.choice(("ROYALTY_RATE", "RELICENSE")), "dueAt": 1,
+                     "state": rng.choice(("renounced", "pending", "overdue", "unknown"))}
                     for _ in range(rng.randint(0, 2))]}  # fmt: skip
                 c["conservationFloor"] = {k: rng.choice(floor_states) for k in c["conservationFloor"]}
                 c["storage"]["files"][0]["locators"] = rng.randint(0, 16)
                 if rng.random() < 0.3:
                     c["storage"]["files"] = []
-                n = rng.randint(0, 5)
-                k = rng.randint(0, n)
-                c["powers"] = rng.choice(({"available": False}, {"available": True, "renounced": [f"P{i}" for i in range(k)],
-                                                                 "retained": [f"Q{i}" for i in range(n - k)]}))  # fmt: skip
+                names = ["ROYALTY_RATE", "RELICENSE"][: rng.randint(0, 2)]
+                k = rng.randint(0, len(names))
+                c["powers"] = rng.choice(({"available": False}, {"available": True, "renounced": names[:k],
+                                                                 "retained": names[k:]}))  # fmt: skip
                 c["dispute"] = rng.choice(({"entryHash": None, "scope": None}, {"entryHash": ENTRY, "scope": "item"}))
                 self.assertEqual(schema.validate(c, "promise-card"), [], c)
                 result = grade.grade(c)

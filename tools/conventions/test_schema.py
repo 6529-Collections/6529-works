@@ -62,6 +62,9 @@ MALFORMED = [
     ("declarations.json", "citation relation unknown", setp(["citations", 0, "relation"], "likes")),
     ("declarations.json", "power name lowercase", setp(["intendedRenunciations", 0, "power"], "record_edits")),
     ("declarations.json", "renunciation days negative", setp(["intendedRenunciations", 0, "withinDaysOfRecordOpen"], -1)),
+    ("declarations.json", "power name not a WorkPowers name", setp(["intendedRenunciations", 0, "power"], "RECORD_EDITS")),
+    ("declarations.json", "storage receipt without form", delp(["conservation", "storage", "files", 0, "receipts", 0, "form"])),
+    ("declarations.json", "storage receipt form unknown", setp(["conservation", "storage", "files", 0, "receipts", 0, "form"], "zipped")),
     ("declarations-generative.json", "generative without runtime", delp(["conservation", "generative", "runtime"])),
     ("declarations-generative.json", "seed policy unknown", setp(["conservation", "generative", "seedPolicy"], "BLOCKHASH")),
     ("declarations-generative.json", "dependency name with uppercase", setp(["conservation", "generative", "dependencies"], [{"name": "P5", "version": "1", "fileId": "0x" + "00" * 32}])),
@@ -81,6 +84,13 @@ MALFORMED = [
     ("promise-card.json", "floor fact missing", delp(["conservationFloor", "generative"])),
     ("promise-card.json", "accepted display change without acceptedBy", setp(["displayChange"], {"state": "accepted"})),
     ("promise-card.json", "custody status number", setp(["custody", 0, "status"], 1)),
+    ("promise-card.json", "custody HELD without asOf", delp(["custody", 0, "asOf"])),
+    ("promise-card.json", "custody NONE with asOf", setp(["custody", 0, "status"], "NONE")),
+    ("promise-card.json", "renounced power not a WorkPowers name", lambda d: d.update(powers={"available": True, "renounced": ["P0"], "retained": []})),
+    ("floor-result.json", "floor result without declarations but met", setp(["declarationsFileId"], None)),
+    ("floor-result.json", "floor result with declarations but unmet", setp(["facts", "storage"], "unmet")),
+    ("floor-result.json", "floor result state failed", setp(["facts", "display"], "failed")),
+    ("floor-result.json", "floor result item hash missing", delp(["itemHash"])),
     ("promise-card.json", "changeable what unknown", setp(["changeable", 0, "what"], "price")),
     ("promise-card.json", "changeable who empty", setp(["changeable", 0, "who"], [])),
     ("promise-card.json", "residual risk not a LIM ID", setp(["residualRisks", 0], "RISK-1")),
@@ -120,7 +130,7 @@ class ExamplesTest(unittest.TestCase):
 
     def test_every_schema_loads_and_uses_only_supported_keywords(self) -> None:
         validator = schema.default_validator()
-        self.assertEqual(len(validator.ids), 11)
+        self.assertEqual(len(validator.ids), 12)
         for sid in validator.ids:
             with self.subTest(schema=sid):
                 validator.errors({}, sid)  # raises SchemaError on an unsupported keyword
