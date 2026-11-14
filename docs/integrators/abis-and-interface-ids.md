@@ -124,6 +124,7 @@ surface; r4 (`1e7022b`) has every change below.
 
 | File | Change on `main` |
 | --- | --- |
+| [`IWorkPowers.sol`](../../src/interfaces/IWorkPowers.sol), [`IWorkRecords.sol`](../../src/interfaces/IWorkRecords.sol), [`types/Typehashes.sol`](../../src/interfaces/types/Typehashes.sol) | [ADR 0006](../adr/0006-work-powers-and-conventions.md): a new interface `IWorkPowers` (ID `0xbd18229c`), which WorkRecords reports through ERC-165 beside `IWorkRecords`: `renounce(uint256,uint16,bytes32,uint64,bytes)` (`0x7dec8a35`), `renouncedPowers(uint256)` (`0xc0f4a8a9`), event `PowersRenounced(uint256,uint16,uint16,bytes32)` and errors `PowerRenounced(uint256,uint16)` (`0x9f252034`), `RoyaltyRateNotLowered(uint256,uint32,uint32)` (`0x5bed5d45`), `UnknownPower(uint16)` (`0xc8e7a469`); new typehash `Typehashes.RENOUNCE_POWERS`. `setRoyaltyRate` is lower-only. `IWorkRecords` changed only in NatSpec: its ID stays `0xc109676d`. |
 | [`types/PackageTypes.sol`](../../src/interfaces/types/PackageTypes.sol) | `EditionTerms` is `(uint32 maxCount, address currency, bytes32 saleKind, bytes params)`, was `(uint8 format, uint64 size, uint64 window, uint256 price, address currency, bytes32 saleKind, bytes params)`; `EditionFormat` is removed. Every function and event that carries a `PackageItem` or `EditionTerms` changed its selector or topic0 (below). |
 | [`IEditions.sol`](../../src/interfaces/IEditions.sol) | New `name()`, `symbol()`, event `EditionMinterBound(uint256,address)` and error `MinterMismatch(uint256,address)`; `Edition.windowStart` became `address minter`; `formatOf`, `EditionWindowOpened` and `PricedDefaultCurrency` are removed. |
 | `IFixedPriceSale.sol`, `IDutchSale.sol`, `IMintSale.sol` | Removed, with the fixed-price and Dutch adapters. |
@@ -263,6 +264,7 @@ selectors.
 | `IMintTarget` | [`IMintTarget.sol`](../../src/interfaces/IMintTarget.sol) | `0xba4ae536` | `0x4f4f5133` | Stream, Editions |
 | `IStream` | [`IStream.sol`](../../src/interfaces/IStream.sol) | `0x37709465` | `0x4b62279d` | Stream |
 | `IWorkRecords` | [`IWorkRecords.sol`](../../src/interfaces/IWorkRecords.sol) | `0xc109676d` | `0x3f3d6835` | WorkRecords |
+| `IWorkPowers` | [`IWorkPowers.sol`](../../src/interfaces/IWorkPowers.sol) | `0xbd18229c` | none | WorkRecords ([ADR 0006](../adr/0006-work-powers-and-conventions.md)) |
 | `IEditions` | [`IEditions.sol`](../../src/interfaces/IEditions.sol) | `0xe183b26f` | `0xa5bd946e` | Editions |
 | `ISaleAdapter` | [`ISaleAdapter.sol`](../../src/interfaces/ISaleAdapter.sol) | `0x312dc1e1` | `0x312dc1e1` | EnglishAuction, UniformEditionAuction (and FixedPriceSale, DutchSale on r1 to r3) |
 | `IEnglishAuction` | [`IEnglishAuction.sol`](../../src/interfaces/IEnglishAuction.sol) | `0x75122f3e` | `0xc1a8b12f` | EnglishAuction |
@@ -371,6 +373,7 @@ Type strings exactly as in code; typehashes pinned by `test_signedPayloadTypehas
 | `Typehashes.RELICENSE` | `Relicense(uint256 tokenId,bytes32 licenseKey,bytes32 textFileId,bytes32 stateHash,uint64 deadline)` | `0x8e6e8db23b02e7536fe205ab2dd4340fc5f4b94ad3878dece0549cff5101996f` | Work records; every party of the item, in order |
 | `Typehashes.ROYALTY_RATE_CHANGE` | `RoyaltyRateChange(uint256 tokenId,uint32 rate,bytes32 stateHash,uint64 deadline)` | `0x4f00b7a5a626b7fd46a6eb233ba5926281727b94836ffa9091fa1cc73d7fa038` | Work records; every party of the item, in order |
 | `Typehashes.RENDERER_REPIN` | `RendererRepin(uint256 tokenId,address renderer,bytes32 rendererCodeHash,bytes32 stateHash,uint64 deadline)` | `0xe02c73b10a1645fcc06fd6d114765861f5bcd1cd03d788c53c6bdf196c748bd4` | Work records; the lead artist's active authority |
+| `Typehashes.RENOUNCE_POWERS` | `RenouncePowers(uint256 tokenId,uint16 powers,bytes32 stateHash,uint64 deadline)` | `0xff8cc1b150cf1b390fd870b4a587d3c2632e80f32efbefe166b9f7b0131d3aff` | Work records; the lead artist's active authority |
 | `Typehashes.IDENTITY_CHANGE` | `IdentityChange(uint256 artistId,address authority,address payout,bytes32 profileId,bytes32 profileDocHash,uint256 nonce,uint64 deadline)` | `0xa474bd174aa5ecb19efe75995251c1fb8289b62bca04bc6c19e869f254e190f0` | Artist registry; the authority or an established consolidated wallet, and a new authority over the same digest |
 | `Typehashes.OVERRIDE_ACCEPTANCE` | `OverrideAcceptance(uint256 artistId,uint8 kind,address authority,address payout,bytes32 profileId,bytes32 profileDocHash,bytes32 evidenceHash,uint64 deadline)` | `0xe94c9e2e1a4e3c2652a414f70c177a61fc880d94ede3aaaf03a976666431f9a3` | Artist registry; the override's new authority |
 | `StatementLog` `HASHREF_TYPEHASH` | `HashRef(uint16 algorithm,bytes32 digest)` | `0x121a61476ab0828add4a5b9b9f2bb805adcfa15d81ff19494f98b0fd3e0bd6ed` | (a member type) |
@@ -397,6 +400,7 @@ ABI-encoded as a 32-byte word:
 | Relicense | `keccak256(abi.encode(RELICENSE, tokenId, licenseKey, textFileId, stateHash, deadline))`, `licenseKey` of the new license | none; use the WorkRecords domain |
 | RoyaltyRateChange | `keccak256(abi.encode(ROYALTY_RATE_CHANGE, tokenId, rate, stateHash, deadline))` | none |
 | RendererRepin | `keccak256(abi.encode(RENDERER_REPIN, tokenId, renderer, rendererCodeHash, stateHash, deadline))` | none |
+| RenouncePowers | `keccak256(abi.encode(RENOUNCE_POWERS, tokenId, powers, stateHash, deadline))`, `powers` a `uint16` mask of `WorkPowers` bits | none; use the WorkRecords domain |
 | IdentityChange | `keccak256(abi.encode(IDENTITY_CHANGE, artistId, authority, payout, profileId, profileDocHash, nonce, deadline))` | `ArtistRegistry.changeDigest` |
 | OverrideAcceptance | `keccak256(abi.encode(OVERRIDE_ACCEPTANCE, artistId, uint8(kind), authority, payout, profileId, profileDocHash, evidenceHash, deadline))` | `ArtistRegistry.overrideDigest` |
 | Authorization (statement relay) | `keccak256(abi.encode(AUTHORIZATION_TYPEHASH, uint8(role), signer, nonce, deadline, statementHash))`, with `statementHash` [below](#statement-entry-hash-and-chain-head) | `StatementLog.authorizationDigest` |
@@ -539,7 +543,8 @@ stateHash = keccak256(abi.encode(STATE_DOMAIN, tokenId, version, recordFileId,
 The license is the stored one, or the deployment's CC0 when none is stored. `renderer` is the
 pinned renderer once finalized, else Stream's current `defaultRenderer()`, so a new default
 renderer changes every unfinalized work's state hash
-([WS-10](../spec/works-and-storage.md#rules-and-invariants)).
+([WS-10](../spec/works-and-storage.md#rules-and-invariants)). The renounced-powers mask is not
+an input; a renunciation moves the state hash through the version it bumps.
 
 ### Other derived values
 

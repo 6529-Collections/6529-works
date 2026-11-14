@@ -1,0 +1,12 @@
+{
+  "v": 1,
+  "itemHash": "0x8a0c1e3b5d7f9a0c2e4b6d8f0a1c3e5b7d9f0a2c4e6b8d0f1a3c5e7b9d0f2a4c",
+  "declarationsFileId": "0x6666666666666666666666666666666666666666666666666666666666666666",
+  "facts": {
+    "storage": "met",
+    "format": "met",
+    "license": "met",
+    "generative": "not_applicable",
+    "display": "met"
+  }
+}

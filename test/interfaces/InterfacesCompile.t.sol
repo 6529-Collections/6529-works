@@ -25,6 +25,7 @@ import { ISaleAdapter } from "../../src/interfaces/ISaleAdapter.sol";
 import { IStatementLog } from "../../src/interfaces/IStatementLog.sol";
 import { IStream } from "../../src/interfaces/IStream.sol";
 import { IUniformEditionAuction } from "../../src/interfaces/IUniformEditionAuction.sol";
+import { IWorkPowers } from "../../src/interfaces/IWorkPowers.sol";
 import { IWorkRecords } from "../../src/interfaces/IWorkRecords.sol";
 import { Limits } from "../../src/interfaces/types/Limits.sol";
 import { SaleKind } from "../../src/interfaces/types/SaleTypes.sol";
@@ -38,6 +39,7 @@ contract InterfacesCompileTest is Test {
         assertEq(type(IMintTarget).interfaceId, bytes4(0xba4ae536), "IMintTarget");
         assertEq(type(IStream).interfaceId, bytes4(0x37709465), "IStream");
         assertEq(type(IWorkRecords).interfaceId, bytes4(0xc109676d), "IWorkRecords");
+        assertEq(type(IWorkPowers).interfaceId, bytes4(0xbd18229c), "IWorkPowers");
         assertEq(type(IEditions).interfaceId, bytes4(0xe183b26f), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");
         assertEq(type(IEnglishAuction).interfaceId, bytes4(0x75122f3e), "IEnglishAuction");

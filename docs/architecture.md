@@ -253,7 +253,7 @@ default when the sale starts".
 1. Until finalize the artist may point the work at a new record file
    (`setRecord`, bound to the state hash). Media never changes.
    - The version bumps only on a real change: the record pointer, license,
-     royalty rate or renderer pin. An identical re-publish is a no-op.
+     royalty rate, renderer pin or a renunciation. An identical re-publish is a no-op.
 2. The artist or the PLATFORM role appends ARWEAVE or IPFS locators. Each is a
    content address: `ar://` and a 43-character transaction ID, or `ipfs://` and
    a CIDv1 of the fixed profile, with no path.
@@ -275,10 +275,14 @@ default when the sale starts".
 5. Amendments need agreement plus a governed action:
    - **Relicensing:** every party, PARAMETER_SETTER role. CC0 is irrevocable, and a
      CC0 license (approved or set this way) names the deployment's CC0 text.
-   - **Royalty-rate change:** every party, FUNDS_SETTER role. Payees never
-     change. A master's change also applies to its edition
-     (`IEditions.setRoyaltyRate`).
+   - **Royalty-rate change:** every party, FUNDS_SETTER role, and only lower
+     (ADR 0006). Payees never change. A master's change also applies to its
+     edition (`IEditions.setRoyaltyRate`).
    - **Errata repin:** the artist, SUCCESSOR_SETTER role and its 30-day delay.
+6. The lead artist may renounce, for one work and for good, any further royalty
+   change and any further license change (`IWorkPowers.renounce`, ADR 0006): its
+   signature only, no role and no delay, relayed by anyone. The errata repin
+   cannot be renounced.
 
 ### Recovery
 

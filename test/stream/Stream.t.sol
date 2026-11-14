@@ -2050,11 +2050,11 @@ contract StreamWithRecordsTest is RecordsFixture {
         (uint256 tokenId, PackageItem memory item) = _work(1);
         bytes32 state = records.workStateHash(tokenId);
         uint64 deadline = uint64(block.timestamp + 1 days);
-        bytes[] memory sigs = _both(_royaltyHash(tokenId, 8_000, state, deadline));
+        bytes[] memory sigs = _both(_royaltyHash(tokenId, 5_000, state, deadline));
         vm.prank(governor);
-        records.setRoyaltyRate(tokenId, 8_000, item, state, deadline, sigs);
+        records.setRoyaltyRate(tokenId, 5_000, item, state, deadline, sigs);
         (,,,,, uint32 rate) = stream.coreOf(tokenId);
-        assertEq(rate, 8_000);
+        assertEq(rate, 5_000);
     }
 
     // ------------------------------------------------------------------------------ round 2

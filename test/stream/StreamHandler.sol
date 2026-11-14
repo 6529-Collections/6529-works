@@ -267,11 +267,12 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         } catch { }
     }
 
-    /// @dev A consented, governed royalty-rate change: the only way a rate may move.
+    /// @dev A consented, governed royalty-rate change: the only way a rate may move, and only
+    ///      down (ADR 0006).
     function changeRoyalty(uint256 seed, uint32 rate) external {
         (bool ok, uint256 tokenId) = _live(seed);
         if (!ok || !opened[tokenId]) return;
-        rate = uint32(bound(rate, 0, 100_000));
+        rate = uint32(bound(rate, 0, ghostRate[tokenId]));
         if (rate == ghostRate[tokenId]) return;
         bytes32 state = records.workStateHash(tokenId);
         uint64 deadline = uint64(block.timestamp + 1 days);

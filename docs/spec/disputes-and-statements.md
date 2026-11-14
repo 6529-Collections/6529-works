@@ -16,7 +16,7 @@ outcomes.
 | Contract | Source | Interface | Responsibility |
 | --- | --- | --- | --- |
 | `StatementLog` | [`src/records/StatementLog.sol`](../../src/records/StatementLog.sol) | [`IStatementLog`](../../src/interfaces/IStatementLog.sol) | Append paths per role, EIP-712 relay and nonces, per-subject hash chain, the latest dispute outcome per subject and the display rule. Holds no value; has no pause and no edit or delete path. |
-| `HashRef`, `StatementKinds` | [`HashRef.sol`](../../src/interfaces/types/HashRef.sol), [`StatementKinds.sol`](../../src/interfaces/types/StatementKinds.sol) | n/a | The content hash type and its three accepted algorithm IDs; the well-known kind labels, three of them reserved. |
+| `HashRef`, `StatementKinds` | [`HashRef.sol`](../../src/interfaces/types/HashRef.sol), [`StatementKinds.sol`](../../src/interfaces/types/StatementKinds.sol) | n/a | The content hash type and its three accepted algorithm IDs; the well-known kind labels, three of them reserved, and the convention kinds of [Declarations and conventions](declarations-and-conventions.md) ([registry](#statement-kind-registry)). |
 | `ArtistRegistry` | [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol) | [`IArtistRoleResolver`](../../src/interfaces/IArtistRoleResolver.sol), [`IArtistRegistry`](../../src/interfaces/IArtistRegistry.sol) | The v1 artist resolver (`isArtist`) the log asks for ARTIST statements; `resolveContested`, which cites a dispute outcome. |
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | [`IEnglishAuction`](../../src/interfaces/IEnglishAuction.sol) | The dispute pause, `withdrawBid`, `resume`, the self-ending pause, and `cancel`, which must cite a recorded outcome. |
 | `Stream`, `PackageRegistry` | [`Stream.sol`](../../src/stream/Stream.sol), [`PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | [`IStream`](../../src/interfaces/IStream.sol), [`IPackageRegistry`](../../src/interfaces/IPackageRegistry.sol) | `burn`; the governed `releaseContent`; `revokePackage`. |
@@ -57,6 +57,42 @@ The log never links an item subject to the token it becomes; Stream holds that l
 non-zero `bytes32`. Three are reserved to one role or path (DSP-4). The other well-known labels in
 `StatementKinds` (`ARTIST_STATEMENT`, `FIXITY_CHECK` and so on, each `keccak256` of its name)
 may be written under any role, so readers read `kind` with `role`.
+
+### Statement kind registry
+
+Every well-known kind, its label hash and who may write it. "Log" means `StatementLog` enforces
+the writer (DSP-4); "convention" means the log accepts the kind under any role and readers count
+it only under the writer shown, with the document and validation rules of
+[Declarations and conventions](declarations-and-conventions.md). A new kind needs no deployment:
+it is added here and, for tooling, to `StatementKinds`.
+`test_Kinds_AreStableLabels` and `test_Kinds_ConventionKindsAreStableLabels` pin the constants.
+
+| Kind | `keccak256` of the label | Writer | Enforced by | Document schema (`schema` field) |
+| --- | --- | --- | --- | --- |
+| `ARTIST_STATEMENT` | `0x5a1580558647bddf43fff3420098de4267da7d1c4ac1e439b13c47bf6b0e09dc` | Any role; an artist statement means ARTIST | Neither | None defined |
+| `INTERVIEW` | `0x827b89dd9d548b6bd3e4a96d838c595e26f74c7ba14a3bdcd3313513fcb06408` | Any role | Neither | None defined |
+| `EXHIBITION` | `0xd0de5de578371073cdab4ef396f1cde367249833524bbc411074e93617fde767` | Any role | Neither | None defined |
+| `CONSERVATION_NOTE` | `0xc0988b7b7e47b20329cd8d95db28dcab9904d0224d1b1f0d4c94bc745db42f54` | Any role | Neither | None defined |
+| `STORAGE_COPY` | `0x2bf2b36080bc02996a250bc51a5b82a3ad56e65ec68e9d2e3d02208af2027de1` | Any role | Neither | None defined |
+| `FIXITY_CHECK` | `0xa6734f8e667c484f4fef5fa3896406f134daaacfac9f176e4b9fa285a79def89` | Any role | Neither | None defined |
+| `ACCESSION` | `0x4dc3a5e33f97bcd06f2d025349086438272d94a398185aca416ae539e36521fb` | Any role | Neither | None defined |
+| `DISPUTE_OUTCOME` | `0xd529e5493d4add16d19648888c9742a7c31945a9916c9323f13bc977ebd3526b` | PLATFORM | Log (DSP-4, DSP-11) | None defined |
+| `CURATION_EVIDENCE` | `0x10d8533be598105124a4fa93ecc6c1d4ed7e4d89809f2b02043c2b39f503a604` | CURATOR | Log (DSP-4) | None defined; its `conservationFloor` member holds [`floor-result.v1`](schemas/floor-result.v1.schema.json) objects (DCL-33) |
+| `GOVERNANCE_MANIFEST` | `0xda3e4cfef33ef5fdea6a80cfd6c21354d7614a38addf188d0edad56c431651fc` | `appendGovernanceManifest` only | Log (DSP-4, DSP-5) | None defined |
+| `CONTENT_CHANGE_PROPOSAL` | `0x839c052e9a5afc8f0beebb6265e5e0e47a21abf374d6747f389fe5dadc871554` | ARTIST, about a 6529 Stream token | Convention (DCL-10) | [`content-change-proposal.v1`](schemas/content-change-proposal.v1.schema.json): `0x9068b0e8f5eadecb75e1a26c81b62e4706d7699d85703af4ef6b965a5c47cbff` |
+| `CONTENT_CHANGE_ACCEPTANCE` | `0x9d9eeba312ac7b3dc65b165a03f3b1eaf64f62cfd0ef22119dad7fdd6bc17f11` | OWNER, about the same token | Convention (DCL-11) | [`content-change-acceptance.v1`](schemas/content-change-acceptance.v1.schema.json): `0x592d278e78a6c95da74c031a22924283e71403c574e99c71d3cea20f96d04ea8` |
+| `CATALOGUE_ENTRY` | `0xaacce03f8117fda5561145df82472ae33d3859d463cf544fdb49c147f4c86dff` | ARTIST, about a 6529 Stream token | Convention (DCL-16) | [`catalogue-entry.v1`](schemas/catalogue-entry.v1.schema.json): `0xbf2d196eb14af6610f731afd5975b50f99ba31511bf665edc17752a35d476f72` |
+| `CITATION` | `0xe6c8d7dd9d949fc9fbac776ad88a44d7eba3ab1f7f24cdd6232df6c94c9f86fe` | ARTIST, about the citing 6529 Stream token | Convention (DCL-18) | [`citation.v1`](schemas/citation.v1.schema.json): `0x4630ac779b2d22e7b042c5f45efd6dfcf5da2f5c774668b35678975f1fa29de1` |
+| `CUSTODY_ATTESTATION` | `0x86aca35bbe17a3ae9d833091d08756c7bfdcafa66f069af4d27b38534b5a5462` | OWNER, ARTIST or PLATFORM, carrying a custodian's signature | Convention (DCL-20) | [`custody-attestation.v1`](schemas/custody-attestation.v1.schema.json): `0xc91341028bdd4590fffcab18e8c2864818fc07a8d664a1c1a22b44942f1cee54` |
+
+A schema value is `keccak256` of the schema's `$id` (DCL-1). Documents that are not statements
+have schemas too: the declarations document
+([`declarations.v1`](schemas/declarations.v1.schema.json), an AUXILIARY media file), the artist
+catalogue ([`catalogue.v1`](schemas/catalogue.v1.schema.json)), the control proof
+([`control-proof.v1`](schemas/control-proof.v1.schema.json)), the promise card
+([`promise-card.v1`](schemas/promise-card.v1.schema.json)) and its grade
+([`promise-grade.v1`](schemas/promise-grade.v1.schema.json)), and the published floor result
+([`floor-result.v1`](schemas/floor-result.v1.schema.json), a member of the curation evidence).
 
 ### The Statement struct
 
@@ -552,7 +588,8 @@ See the [register](README.md#differences-from-the-adrs).
   [`ContestedOverrides.t.sol`](../../test/identity/ContestedOverrides.t.sol),
   [`Renderer.t.sol`](../../test/content/renderer/Renderer.t.sol). How to run them:
   [testing](../testing/README.md).
-- Related pages: [Stream and auctions](stream-and-auctions.md), [Curation](curation.md),
+- Related pages: [Declarations and conventions](declarations-and-conventions.md),
+  [Stream and auctions](stream-and-auctions.md), [Curation](curation.md),
   [Identity and recovery](identity-and-recovery.md),
   [Rendering and tokenURI](rendering-and-tokenuri.md), [Governance](governance.md),
   [Entropy](entropy.md), [glossary](../glossary.md), [roles](../audit/roles.md),

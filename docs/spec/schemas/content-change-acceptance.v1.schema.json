@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:6529-works:schema:content-change-acceptance:v1",
+  "title": "Content change acceptance, version 1",
+  "description": "The document of a CONTENT_CHANGE_ACCEPTANCE statement: the owner of a 1/1 work accepts a proposal by its entry hash, or restores the approved content. Rules: docs/spec/declarations-and-conventions.md (DCL-10 to DCL-15).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "subject", "decision"],
+  "properties": {
+    "v": { "const": 1 },
+    "subject": { "$ref": "urn:6529-works:schema:common:v1#/$defs/workRef" },
+    "decision": { "enum": ["accept", "restore"] },
+    "proposal": {
+      "description": "The entry hash of the CONTENT_CHANGE_PROPOSAL accepted.",
+      "$ref": "urn:6529-works:schema:common:v1#/$defs/bytes32"
+    },
+    "contentSha256": {
+      "description": "The proposal's content.sha256, repeated so the owner's document names the bytes it accepts.",
+      "$ref": "urn:6529-works:schema:common:v1#/$defs/bytes32"
+    },
+    "note": { "$ref": "urn:6529-works:schema:common:v1#/$defs/text" }
+  },
+  "if": { "properties": { "decision": { "const": "accept" } } },
+  "then": { "required": ["proposal", "contentSha256"] },
+  "else": { "not": { "anyOf": [{ "required": ["proposal"] }, { "required": ["contentSha256"] }] } }
+}

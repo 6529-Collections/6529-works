@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:6529-works:schema:control-proof:v1",
+  "title": "Control proof, version 1",
+  "description": "An off-chain challenge and response by which a venue or app checks, with no transaction, that the person in front of it controls the wallet that holds a work. The message fields are the typed data ControlProof(string venue,bytes32 nonce,uint64 issuedAt,uint64 expiresAt,uint256 chainId,address token,uint256 tokenId,address holder,address signer) in the domain (name \"6529 Works Control Proof\", version \"1\", chainId). Nothing is written on chain. Rules: docs/spec/declarations-and-conventions.md (DCL-23 to DCL-25).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "message"],
+  "properties": {
+    "v": { "const": 1 },
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["venue", "nonce", "issuedAt", "expiresAt", "chainId", "token", "tokenId", "holder", "signer"],
+      "properties": {
+        "venue": {
+          "description": "The venue's own identifier, which it compares with itself: the origin of a web app (scheme, host and port), or a name the venue publishes.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "nonce": {
+          "description": "32 random bytes the venue chose for this challenge.",
+          "$ref": "urn:6529-works:schema:common:v1#/$defs/bytes32"
+        },
+        "issuedAt": { "$ref": "urn:6529-works:schema:common:v1#/$defs/unixTime" },
+        "expiresAt": { "$ref": "urn:6529-works:schema:common:v1#/$defs/unixTime" },
+        "chainId": { "$ref": "urn:6529-works:schema:common:v1#/$defs/chainId" },
+        "token": { "$ref": "urn:6529-works:schema:common:v1#/$defs/address" },
+        "tokenId": { "$ref": "urn:6529-works:schema:common:v1#/$defs/uint256" },
+        "holder": {
+          "description": "The account the work's ownership read must return: the signer itself, or a wallet consolidated with it.",
+          "$ref": "urn:6529-works:schema:common:v1#/$defs/address"
+        },
+        "signer": {
+          "description": "The account that signs: an EOA, an EIP-7702 delegated account or an ERC-1271 contract.",
+          "$ref": "urn:6529-works:schema:common:v1#/$defs/address"
+        }
+      }
+    },
+    "signature": {
+      "description": "The response: the signer's signature of the typed data. Absent in the challenge.",
+      "$ref": "urn:6529-works:schema:common:v1#/$defs/signature"
+    }
+  }
+}

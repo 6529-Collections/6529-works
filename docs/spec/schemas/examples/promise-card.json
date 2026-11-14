@@ -1,0 +1,206 @@
+{
+  "v": 1,
+  "generator": {
+    "name": "example card generator",
+    "version": "0.0.0"
+  },
+  "at": {
+    "chainId": 11155111,
+    "blockNumber": 12345678,
+    "blockHash": "0x7e57000000000000000000000000000000000000000000000000000000000001",
+    "timestamp": 1794787200
+  },
+  "work": {
+    "token": "0x02617dbdc0b0521124cb4c2a3ef602977e29bd91",
+    "tokenId": "42",
+    "owner": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+    "kind": "ORIGINAL",
+    "itemHash": "0x8a0c1e3b5d7f9a0c2e4b6d8f0a1c3e5b7d9f0a2c4e6b8d0f1a3c5e7b9d0f2a4c",
+    "contentHash": "0x0899f7c16ef4cb9720aa1e6d9cf54481e1667ba856dd5a8fd962dc0bfac1d4da",
+    "artistId": "344073830386746567427978432078835137280280269756",
+    "collectionId": "1"
+  },
+  "artist": {
+    "activeAuthority": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+    "restrained": false,
+    "pendingChange": "NONE",
+    "resolver": "0xf54f5465f1c4db161145da3c1369f8bf1195aa91"
+  },
+  "record": {
+    "status": "finalized",
+    "version": 3,
+    "stateHash": "0x5a7c9e0b2d4f6a8c0e1b3d5f7a9c0e2b4d6f8a0c1e3b5d7f9a0c2e4b6d8f0a1c",
+    "renderer": "0xa4d100c8f6faed2d7db97a3bc68f9e215a8aea8f",
+    "rendererPinned": true
+  },
+  "storage": {
+    "onChainComplete": true,
+    "files": [
+      {
+        "fileId": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "role": "PRIMARY",
+        "sha256": "0x0899f7c16ef4cb9720aa1e6d9cf54481e1667ba856dd5a8fd962dc0bfac1d4da",
+        "mimeType": "image/png",
+        "complete": true,
+        "locators": 2,
+        "preferredKind": "ONCHAIN"
+      },
+      {
+        "fileId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+        "role": "PREVIEW",
+        "sha256": "0x38d991bcec7d27ad28bffa161f122d8d619642858b4af6987a458fbc1978489f",
+        "mimeType": "image/webp",
+        "complete": true,
+        "locators": 2,
+        "preferredKind": "ONCHAIN"
+      },
+      {
+        "fileId": "0x6666666666666666666666666666666666666666666666666666666666666666",
+        "role": "AUXILIARY",
+        "sha256": "0x193b2e847cd4032f89cc232f36050b69b03756215a3308d11863ea5d84e9fea2",
+        "mimeType": "application/vnd.6529-works.declarations+json",
+        "complete": true,
+        "locators": 0,
+        "preferredKind": "ONCHAIN"
+      }
+    ]
+  },
+  "license": {
+    "spdxId": "CC0-1.0",
+    "cc0": true,
+    "textFileId": "0x7777777777777777777777777777777777777777777777777777777777777777",
+    "textOnChain": true
+  },
+  "sale": {
+    "outcome": "SOLD",
+    "currency": "0x0000000000000000000000000000000000000000",
+    "price": "1250000000000000000"
+  },
+  "dispute": {
+    "entryHash": null,
+    "scope": null
+  },
+  "powers": {
+    "available": false
+  },
+  "declarations": {
+    "status": "valid",
+    "fileId": "0x6666666666666666666666666666666666666666666666666666666666666666",
+    "timeCapsule": false,
+    "livingWork": false,
+    "intendedRenunciations": [
+      {
+        "power": "ROYALTY_RATE",
+        "dueAt": 1794182400,
+        "state": "unknown"
+      }
+    ]
+  },
+  "conservationFloor": {
+    "storage": "met",
+    "format": "met",
+    "license": "met",
+    "generative": "not_applicable",
+    "display": "met"
+  },
+  "displayChange": {
+    "state": "none"
+  },
+  "custody": [
+    {
+      "objectId": "0x27036a7eaf555d00bc19a8fca75c359fbaeb5ab2a6dddb13075526d251ff035b",
+      "custodian": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+      "recognized": true,
+      "status": "HELD",
+      "asOf": 1794700800,
+      "stale": false
+    }
+  ],
+  "changeable": [
+    {
+      "what": "royalty_rate",
+      "who": [
+        "EVERY_PARTY",
+        "FUNDS_SETTER"
+      ],
+      "delaySeconds": 1209600,
+      "guardianCancel": true,
+      "until": "permanent"
+    },
+    {
+      "what": "renderer",
+      "who": [
+        "ARTIST",
+        "SUCCESSOR_SETTER"
+      ],
+      "delaySeconds": 2592000,
+      "guardianCancel": true,
+      "until": "permanent"
+    },
+    {
+      "what": "served_copy",
+      "who": [
+        "PLATFORM",
+        "STORAGE_OPERATOR"
+      ],
+      "delaySeconds": 0,
+      "guardianCancel": false,
+      "until": "permanent"
+    },
+    {
+      "what": "dispute_statement",
+      "who": [
+        "PLATFORM"
+      ],
+      "delaySeconds": 0,
+      "guardianCancel": false,
+      "until": "permanent"
+    },
+    {
+      "what": "artist_authority",
+      "who": [
+        "ARTIST"
+      ],
+      "delaySeconds": 604800,
+      "guardianCancel": true,
+      "until": "permanent"
+    },
+    {
+      "what": "artist_authority",
+      "who": [
+        "PARAMETER_SETTER"
+      ],
+      "delaySeconds": 15724800,
+      "guardianCancel": true,
+      "until": "permanent"
+    },
+    {
+      "what": "artist_resolver",
+      "who": [
+        "SUCCESSOR_SETTER"
+      ],
+      "delaySeconds": 2592000,
+      "guardianCancel": true,
+      "until": "permanent"
+    }
+  ],
+  "residualRisks": [
+    "LIM-CNT-2",
+    "LIM-CNT-3",
+    "LIM-CNT-10",
+    "LIM-CNT-12",
+    "LIM-CNT-13",
+    "LIM-GV-1",
+    "LIM-GV-2",
+    "LIM-GV-9",
+    "LIM-GV-10",
+    "LIM-GV-11",
+    "LIM-ID-11",
+    "LIM-ID-13",
+    "LIM-SAL-8"
+  ],
+  "statements": {
+    "count": 4,
+    "head": "0x3b5d7f9a0c2e4b6d8f0a1c3e5b7d9f0a2c4e6b8d0f1a3c5e7b9d0f2a4c6e8b0d"
+  }
+}

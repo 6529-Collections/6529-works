@@ -53,6 +53,20 @@ three collections.
 | INV-STR-7 | The minting adapter cannot burn a token whose primary sale is marked settled. | handler check: `burn` (`violations`) | as named |
 | INV-STR-8 | A finalized work keeps its record file ID and renderer pin (returned by `rendererOf`), and `setRecord` and `finalize` on it revert. | `invariant_finalizedRecordsImmutable`; handler check: `attackFinalized` | `finalize`, `setRecord`, `attackFinalized`, `swapRenderer`, `addLocator` |
 
+### Work powers
+
+[`WorkPowersInvariant.t.sol`](../../test/stream/WorkPowersInvariant.t.sol), handler
+[`WorkPowersHandler`](../../test/stream/WorkPowersHandler.sol). Real `Stream` and `WorkRecords`
+with the records fixture's mocks; four works with open records, every party signing, and three
+licenses to move between ([ADR 0006](../adr/0006-work-powers-and-conventions.md), WS-14, WS-37,
+WS-38).
+
+| ID | Invariant | Test | Handler actions |
+| --- | --- | --- | --- |
+| INV-STR-12 | A work's renounced mask only gains bits: it equals the OR of every applied renunciation and keeps every bit it held at the previous check. | `invariant_renouncedMaskNeverLosesABit` | `renounce` |
+| INV-STR-13 | No renounced power's function succeeds again, every call the rules allow succeeds, and the rate and license are the ones the handler applied. | `invariant_aRenouncedPowerNeverSucceedsAgain` | `renounce`, `changeRoyalty`, `relicense` |
+| INV-STR-14 | A work's royalty rate never rises: never above its mint rate, and never at any step. | `invariant_royaltyRateNeverRises` | `changeRoyalty` |
+
 ## 6529 Stream Editions
 
 [`Editions.invariant.t.sol`](../../test/editions/Editions.invariant.t.sol), handler
@@ -352,8 +366,10 @@ and Halmos proofs are in [Testing](../testing/README.md).
   recipient and seller wallet; refused payouts through the escrow are unit tests.
 - **`AssetAllowlist`** runs for real only in the auction halts campaign; **`EconomicsResolver`**
   runs for real only in the wired campaigns.
-- **`WorkRecords`** runs only inside the Stream campaign, which never drives `relicense`,
-  `repinRenderer`, `syncOnChain` or the preferred-location settings.
+- **`WorkRecords`** runs inside the Stream campaign, which never drives `relicense`,
+  `repinRenderer`, `syncOnChain` or the preferred-location settings, and the work powers
+  campaign (INV-STR-12 to INV-STR-14), which drives `renounce`, `setRoyaltyRate` and
+  `relicense` but not `repinRenderer`, `syncOnChain` or the preferred-location settings.
 - **`ContentStore`, `DependencyRegistry` and `Renderer`**: fuzz and unit tests only
   (PROP-CNT-1, PROP-CNT-2, PROP-RND-1).
 - **Curation signer changes**: the campaign never disables, re-enables or swaps an

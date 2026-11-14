@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:6529-works:schema:content-change-proposal:v1",
+  "title": "Content change proposal, version 1",
+  "description": "The document of a CONTENT_CHANGE_PROPOSAL statement: the artist of a 1/1 work proposes new display content. Display only; the token's media and tokenURI never change. Rules: docs/spec/declarations-and-conventions.md (DCL-10 to DCL-15).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "subject", "fromContentHash", "content"],
+  "properties": {
+    "v": { "const": 1 },
+    "subject": {
+      "description": "The 6529 Stream token; equal to the statement's (token, id) and the log's chain.",
+      "$ref": "urn:6529-works:schema:common:v1#/$defs/workRef"
+    },
+    "fromContentHash": {
+      "description": "The work's approved content hash (media[0].sha256Hash), so the proposal names the work it changes.",
+      "$ref": "urn:6529-works:schema:common:v1#/$defs/bytes32"
+    },
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256", "mimeType", "locators"],
+      "properties": {
+        "sha256": {
+          "description": "The SHA-256 of the decoded proposed primary file.",
+          "$ref": "urn:6529-works:schema:common:v1#/$defs/bytes32"
+        },
+        "mimeType": {
+          "type": "string",
+          "pattern": "^[a-z0-9+._-]+/[a-z0-9+._-]+$",
+          "maxLength": 64
+        },
+        "fileId": {
+          "description": "A content-store file ID holding the proposed file, if it is stored there.",
+          "$ref": "urn:6529-works:schema:common:v1#/$defs/bytes32"
+        },
+        "locators": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": { "$ref": "urn:6529-works:schema:common:v1#/$defs/contentAddress" }
+        },
+        "previewLocator": { "$ref": "urn:6529-works:schema:common:v1#/$defs/contentAddress" }
+      }
+    },
+    "withdrawn": {
+      "description": "True withdraws the proposal this entry supersedes (the statement's supersedes field); content then repeats it.",
+      "type": "boolean"
+    },
+    "expiresAt": {
+      "description": "No acceptance recorded after this time counts.",
+      "$ref": "urn:6529-works:schema:common:v1#/$defs/unixTime"
+    },
+    "note": { "$ref": "urn:6529-works:schema:common:v1#/$defs/text" }
+  }
+}

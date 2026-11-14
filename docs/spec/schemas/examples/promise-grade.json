@@ -1,0 +1,37 @@
+{
+  "v": 1,
+  "rubric": 1,
+  "card": "0x09677d493060b9d77b263abe4460f2a6ae98f07ac832c6149642194580af38c4",
+  "score": 90,
+  "letter": "A",
+  "reasons": [
+    {
+      "row": "R1",
+      "points": 20
+    },
+    {
+      "row": "R2",
+      "points": 25
+    },
+    {
+      "row": "R3",
+      "points": 5
+    },
+    {
+      "row": "R4",
+      "points": 10
+    },
+    {
+      "row": "R5",
+      "points": 15
+    },
+    {
+      "row": "R6",
+      "points": 10
+    },
+    {
+      "row": "R8",
+      "points": 5
+    }
+  ]
+}

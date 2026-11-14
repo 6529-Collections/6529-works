@@ -1,0 +1,23 @@
+{
+  "v": 1,
+  "subject": {
+    "chainId": 11155111,
+    "contract": "0x02617dbdc0b0521124cb4c2a3ef602977e29bd91",
+    "tokenId": "42"
+  },
+  "custodian": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+  "message": {
+    "token": "0x02617dbdc0b0521124cb4c2a3ef602977e29bd91",
+    "tokenId": "42",
+    "objectId": "0x27036a7eaf555d00bc19a8fca75c359fbaeb5ab2a6dddb13075526d251ff035b",
+    "status": 1,
+    "asOf": 1794700800,
+    "successor": "0x0000000000000000000000000000000000000000",
+    "evidenceHash": "0xec30de0fc94bb5548e14573cf7c987da07d7596acf1aa399e5896035113a5027"
+  },
+  "signature": "0xbba379eb47ef5d76b6cb963e4add5fe48599922eda1e605c13337996d021fa9c3ca951a2ac6507002a73a2c8fa9f14a2c541b74e458bb0d53457959c2fa27c791b",
+  "evidence": [
+    "ipfs://bafkreihmgdpa7sklwvki4fcxht34tb62a7lvs2wpdkrztzmjma2rcosqe4"
+  ],
+  "note": "Condition checked in the vault; no change since the last report."
+}

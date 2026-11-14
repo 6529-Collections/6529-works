@@ -1,0 +1,20 @@
+{
+  "v": 1,
+  "subject": {
+    "chainId": 11155111,
+    "contract": "0x02617dbdc0b0521124cb4c2a3ef602977e29bd91",
+    "tokenId": "42"
+  },
+  "fromContentHash": "0x0899f7c16ef4cb9720aa1e6d9cf54481e1667ba856dd5a8fd962dc0bfac1d4da",
+  "content": {
+    "sha256": "0xe0f38ca3c769629a883c28d6b57df19aab14eaf792f4dbf8539792a77affc773",
+    "mimeType": "image/png",
+    "locators": [
+      "ar://cg0J6iEXSnLDgtIag8Wel2yEfEl9jbjefPo-dU9xdm0",
+      "ipfs://bafkreiha6ogkhr3jmkniqpbi222x34m2vmkov54s6tn7qu4xsktxv76hom"
+    ],
+    "previewLocator": "ipfs://bafkreicbi2pd5mbvw2b5mzpsxdgepavplxo36pmqbw5j3h6rvny5zpmbhq"
+  },
+  "expiresAt": 1797379200,
+  "note": "A restored scan of the same print, with the colour shift of the first scan corrected."
+}

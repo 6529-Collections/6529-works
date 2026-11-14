@@ -52,6 +52,11 @@ library Typehashes {
         "RendererRepin(uint256 tokenId,address renderer,bytes32 rendererCodeHash,"
         "bytes32 stateHash,uint64 deadline)"
     );
+    /// @notice The lead artist renounces powers over a work for good (work records domain;
+    ///         `powers` is a mask of `WorkPowers` bits).
+    bytes32 internal constant RENOUNCE_POWERS = keccak256(
+        "RenouncePowers(uint256 tokenId,uint16 powers,bytes32 stateHash,uint64 deadline)"
+    );
     /// @notice An artist identity change, and the new authority's acceptance of it (artist
     ///         registry domain).
     bytes32 internal constant IDENTITY_CHANGE = keccak256(

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:6529-works:schema:promise-grade:v1",
+  "title": "Promise grade, version 1",
+  "description": "The output of rubric 1 of the promise grade: a pure function of one promise card (version 1), computed by clients and never written on chain. It grades how much of a work's permanence is locked, not the work. Rubric: docs/spec/declarations-and-conventions.md (DCL-30, DCL-31).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "rubric", "card", "score", "letter", "reasons"],
+  "properties": {
+    "v": { "const": 1 },
+    "rubric": { "const": 1 },
+    "card": {
+      "description": "SHA-256 of the RFC 8785 canonical JSON of the card graded.",
+      "$ref": "urn:6529-works:schema:common:v1#/$defs/bytes32"
+    },
+    "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "letter": { "enum": ["A", "B", "C", "D"] },
+    "reasons": {
+      "description": "One line per rubric row that scored, or capped the letter, in rubric order.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["row", "points"],
+        "properties": {
+          "row": { "type": "string", "pattern": "^(R|CAP)[0-9]{1,2}$" },
+          "points": { "type": "integer", "minimum": 0, "maximum": 100 }
+        }
+      }
+    }
+  }
+}

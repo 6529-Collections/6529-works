@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+- Work powers and conventions ([ADR 0006](docs/adr/0006-work-powers-and-conventions.md)):
+  - **Lower-only royalty changes.** `WorkRecords.setRoyaltyRate` refuses a rate above the
+    work's current one (`RoyaltyRateNotLowered`), before any signature is checked; the rate new
+    works mint with stays governed, and a linked edition follows its master (WS-14,
+    LIM-CNT-15).
+  - **Renounceable powers.** A new interface, `IWorkPowers` (ID `0xbd18229c`), which
+    `WorkRecords` reports through ERC-165 beside `IWorkRecords`: the lead artist's active
+    authority signs `RenouncePowers` (`Typehashes.RENOUNCE_POWERS`) to give up, for one work and
+    for good, any further royalty change (`ROYALTY_RATE`) and any further license change
+    (`RELICENSE`); `renouncedPowers` reads the mask and `PowersRenounced` records it. The mask
+    lives in the record's first storage word, so no slot is added; the version bumps, so pending
+    consents lapse. The errata repin cannot be renounced (WS-37, WS-38; LIM-CNT-14 records that a
+    renunciation is immediate, has no guardian veto and cannot be undone).
+  - **Convention statement kinds** in `StatementKinds`: content-change proposal and acceptance,
+    catalogue entry, citation and custody attestation, accepted by the log under every role.
+  - **Declarations and conventions**, a new specification page (DCL-1 to DCL-33) with JSON
+    Schemas and examples: the declarations document and conservation floor, the floor result
+    the curation signer publishes in its evidence, content-change, catalogue, citation and
+    custody statements, the off-chain control proof, and the promise card and its grade
+    (LIM-CNT-13: conventions are unenforced, and every card prints it).
+  - **`tools/conventions`**, standard-library reference tools for those rules (schema
+    validation, the floor check, the promise card, the grade, the control-proof verifier and the
+    custody check), run in the Build and checks job with `CONVENTIONS_CAST_REQUIRE`.
+  - **Bytecode.** `WorkRecords` grows from 23,139 to 23,946 bytes (630 under EIP-170). No other
+    contract's executable code changes: with `IWorkRecords.sol` (a NatSpec correction),
+    `Typehashes.sol` and `StatementKinds.sol` changed, the metadata hash moves for `Stream`,
+    `Editions`, `StatementLog`, `ArtistRegistry`, `PackageRegistry`, `Eip712CurationVerifier`,
+    `EnglishAuction`, `EconomicsResolver` and `Renderer`. `IWorkRecords`' ID stays
+    `0xc109676d`.
+  - **Gas.** ADR 0004's table is re-measured: the re-rate, which now lowers the rate, rose by
+    248 to 190,150; `tokenURI`'s worst case fell by 67 to 2,736,559; the start rows moved by at
+    most 20 with the deployment addresses, and the binding start row is 338,273.
+
 - Review fixes of November 2026 (RFX-*), grouped by area:
   - **English auction.** With a bid, the winning bidder may send a pending delivery to any
     address at any time; the recipient its bid named may claim to itself at any time, and to

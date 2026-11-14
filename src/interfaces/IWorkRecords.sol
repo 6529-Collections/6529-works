@@ -25,8 +25,9 @@ import { Locator, LocatorKind, MediaFile } from "./types/ContentTypes.sol";
 ///      "The artist" is the active authority of the work's lead artist ID. The state hash
 ///      commits to the token ID, the version, the record file ID, the license key and text, the
 ///      royalty rate and the effective renderer. The version bumps only on a real change (a new
-///      record pointer, license, royalty rate or renderer pin); an identical re-publish is a
-///      no-op, and delivery actions (`syncOnChain`, `addLocator`) never change it. Every
+///      record pointer, license, royalty rate or renderer pin, or a renunciation through
+///      `IWorkPowers.renounce`); an identical re-publish is a no-op, and delivery actions
+///      (`syncOnChain`, `addLocator`) never change it. Every
 ///      finalize and signature binds the state hash, so nothing applies to a state its signer
 ///      did not see. Every visible change asks 6529 Stream to emit ERC-4906 and, for an edition
 ///      master, calls `IEditions.notifyMasterUpdated` (this satellite is bound in both).
@@ -285,11 +286,12 @@ interface IWorkRecords {
         uint64 deadline,
         bytes[] calldata partySignatures
     ) external;
-    /// @notice Changes a work's royalty rate (payees never change). FUNDS_SETTER role plus a
+    /// @notice Lowers a work's royalty rate (payees never change). FUNDS_SETTER role plus a
     ///         `Typehashes.ROYALTY_RATE_CHANGE` signature from every party of `item`. Bumps the
     ///         version before its external calls, calls `IStream.setRoyaltyRate` and, for an
     ///         edition master, `IEditions.setRoyaltyRate` on the linked edition, then emits
-    ///         `RoyaltyRateSet` and ERC-4906. An unchanged rate is a no-op.
+    ///         `RoyaltyRateSet` and ERC-4906. An unchanged rate is a no-op. Lower-only, and it
+    ///         always reverts once the lead artist renounces the power (see `IWorkPowers`).
     /// @param tokenId A live work with an open record.
     /// @param rate The new royalty rate, out of 100,000 (6529 Stream refuses more).
     /// @param item The work's approved package item, whose parties consent

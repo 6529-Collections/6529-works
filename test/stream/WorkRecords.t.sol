@@ -6,6 +6,7 @@ import { Vm } from "forge-std/Vm.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IWorkPowers } from "src/interfaces/IWorkPowers.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
@@ -369,10 +370,10 @@ contract WorkRecordsTest is RecordsFixture {
 
         bytes32 state = records.workStateHash(tokenId);
         uint64 deadline = uint64(block.timestamp + 1 days);
-        bytes[] memory sigs = _both(_royaltyHash(tokenId, 10_000, state, deadline));
+        bytes[] memory sigs = _both(_royaltyHash(tokenId, 5_000, state, deadline));
         vm.prank(governor);
-        records.setRoyaltyRate(tokenId, 10_000, item, state, deadline, sigs);
-        assertEq(stream.work(tokenId).royaltyRate, 10_000);
+        records.setRoyaltyRate(tokenId, 5_000, item, state, deadline, sigs);
+        assertEq(stream.work(tokenId).royaltyRate, 5_000);
 
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.LicenseIrrevocable.selector, tokenId));
@@ -1399,20 +1400,20 @@ contract WorkRecordsTest is RecordsFixture {
         (uint256 tokenId, PackageItem memory item) = _work(1);
         bytes32 state = records.workStateHash(tokenId);
         uint64 deadline = uint64(block.timestamp + 15 days);
-        bytes[] memory sigs = _both(_royaltyHash(tokenId, 10_000, state, deadline));
+        bytes[] memory sigs = _both(_royaltyHash(tokenId, 5_000, state, deadline));
         vm.expectEmit(address(stream));
-        emit IStream.RoyaltyRateChanged(tokenId, 6_529, 10_000);
+        emit IStream.RoyaltyRateChanged(tokenId, 6_529, 5_000);
         // The new state hash: version 1 at the new rate.
         vm.expectEmit(true, false, false, false, address(records));
-        emit IWorkRecords.RoyaltyRateSet(tokenId, 6_529, 10_000, bytes32(0));
+        emit IWorkRecords.RoyaltyRateSet(tokenId, 6_529, 5_000, bytes32(0));
         vm.expectEmit(address(stream));
         emit MetadataUpdate(tokenId);
         vm.recordLogs();
         vm.prank(governor);
-        records.setRoyaltyRate(tokenId, 10_000, item, state, deadline, sigs);
+        records.setRoyaltyRate(tokenId, 5_000, item, state, deadline, sigs);
         (address receiver, uint256 amount) = stream.royaltyInfo(tokenId, 1 ether);
         assertEq(receiver, _royaltyWallet(_sellerOf(item.payees), feeRecipient, 25_000));
-        assertEq(amount, 0.1 ether);
+        assertEq(amount, 0.05 ether);
         assertEq(records.record(tokenId).version, 1);
         bytes32 next = records.workStateHash(tokenId);
         assertTrue(next != state);
@@ -1428,13 +1429,19 @@ contract WorkRecordsTest is RecordsFixture {
         assertTrue(found);
     }
 
+    /// @dev A rate above Stream's denominator is above the current rate, so lower-only refuses
+    ///      it first (ADR 0006); Stream's own `InvalidRoyaltyRate` stays as a second guard.
     function test_setRoyaltyRate_reverts() public {
         (uint256 tokenId, PackageItem memory item) = _work(1);
         bytes32 state = records.workStateHash(tokenId);
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes[] memory sigs = _both(_royaltyHash(tokenId, 100_001, state, deadline));
         vm.prank(governor);
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidRoyaltyRate.selector, 100_001));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IWorkPowers.RoyaltyRateNotLowered.selector, tokenId, 6_529, 100_001
+            )
+        );
         records.setRoyaltyRate(tokenId, 100_001, item, state, deadline, sigs);
         sigs = _both(_royaltyHash(tokenId, 1, state, deadline));
         vm.prank(governor);
@@ -1465,33 +1472,64 @@ contract WorkRecordsTest is RecordsFixture {
         editionsMock.link(stream, tokenId, tokenId);
         bytes32 state = records.workStateHash(tokenId);
         uint64 deadline = uint64(block.timestamp + 15 days);
-        bytes[] memory sigs = _both(_royaltyHash(tokenId, 8_000, state, deadline));
+        bytes[] memory sigs = _both(_royaltyHash(tokenId, 5_000, state, deadline));
         vm.prank(governor);
-        records.setRoyaltyRate(tokenId, 8_000, item, state, deadline, sigs);
-        assertEq(stream.work(tokenId).royaltyRate, 8_000);
-        assertEq(editionsMock.rateOf(tokenId), 8_000);
+        records.setRoyaltyRate(tokenId, 5_000, item, state, deadline, sigs);
+        assertEq(stream.work(tokenId).royaltyRate, 5_000);
+        assertEq(editionsMock.rateOf(tokenId), 5_000);
     }
 
     /// Regression: M4 in the reviews of #22
-    /// @dev A rate round trip A -> B -> A does not let the first consents replay; the
-    ///      version moved, so the state hash they bind is gone.
+    /// @dev Consents signed at one state never replay once the version moved. Rates are
+    ///      lower-only (ADR 0006), so a round trip A -> B -> A no longer exists; two consents
+    ///      collected at the same state stand in for it: after the first applies, the second's
+    ///      state hash is gone.
     function test_setRoyaltyRate_aRoundTripDoesNotReplayConsents() public {
         (uint256 tokenId, PackageItem memory item) = _work(1);
         bytes32 s0 = records.workStateHash(tokenId);
         uint64 deadline = uint64(block.timestamp + 1 days);
-        bytes[] memory toB = _both(_royaltyHash(tokenId, 10_000, s0, deadline));
+        bytes[] memory toB = _both(_royaltyHash(tokenId, 6_000, s0, deadline));
+        bytes[] memory toC = _both(_royaltyHash(tokenId, 5_000, s0, deadline));
         vm.prank(governor);
-        records.setRoyaltyRate(tokenId, 10_000, item, s0, deadline, toB);
+        records.setRoyaltyRate(tokenId, 6_000, item, s0, deadline, toB);
         bytes32 s1 = records.workStateHash(tokenId);
-        bytes[] memory toA = _both(_royaltyHash(tokenId, 6_529, s1, deadline));
+        assertTrue(s1 != s0);
         vm.prank(governor);
-        records.setRoyaltyRate(tokenId, 6_529, item, s1, deadline, toA);
+        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.StateHashMismatch.selector, s0, s1));
+        records.setRoyaltyRate(tokenId, 5_000, item, s0, deadline, toC);
+        assertEq(stream.work(tokenId).royaltyRate, 6_000);
+    }
+
+    /// Regression: M4 in the reviews of #22
+    /// @dev A license round trip A -> B -> A returns every committed field but the version to
+    ///      its first value, so only the version tells the two A states apart: consents signed
+    ///      at the first A state are refused at the second.
+    function test_relicense_aRoundTripDoesNotReplayConsents() public {
+        MediaFile[] memory media = _single(7, true);
+        PackageItem memory item = _recordsItem(7, media);
+        item.license = _license("cc-by-4.0");
+        uint256 tokenId = _mint(item);
+        records.openRecord(tokenId, item, media);
+        License memory a = _license("cc-by-4.0");
+        License memory b = _license("mit");
+        uint64 deadline = uint64(block.timestamp + 3 days);
+        bytes32 s0 = records.workStateHash(tokenId);
+        bytes[] memory toB = _both(_relicenseHash(tokenId, b, s0, deadline));
+        vm.prank(governor);
+        records.relicense(tokenId, b, item, s0, deadline, toB);
+        bytes32 s1 = records.workStateHash(tokenId);
+        vm.prank(governor);
+        records.relicense(
+            tokenId, a, item, s1, deadline, _both(_relicenseHash(tokenId, a, s1, deadline))
+        );
         bytes32 s2 = records.workStateHash(tokenId);
-        assertTrue(s2 != s0);
+        assertEq(records.licenseOf(tokenId).spdxId, "cc-by-4.0");
+        assertEq(records.record(tokenId).version, 2);
+        assertTrue(s2 != s0, "the version alone separates the two A states");
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.StateHashMismatch.selector, s0, s2));
-        records.setRoyaltyRate(tokenId, 10_000, item, s0, deadline, toB);
-        assertEq(stream.work(tokenId).royaltyRate, 6_529);
+        records.relicense(tokenId, b, item, s0, deadline, toB);
+        assertEq(records.licenseOf(tokenId).spdxId, "cc-by-4.0");
     }
 
     // ------------------------------------------------------------------------------ seeds

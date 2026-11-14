@@ -1,0 +1,44 @@
+{
+  "v": 1,
+  "contentHash": "0x0899f7c16ef4cb9720aa1e6d9cf54481e1667ba856dd5a8fd962dc0bfac1d4da",
+  "conservation": {
+    "storage": {
+      "waived": true,
+      "reason": "Illustration of a waiver: the ciphertext is kept on chain only, with no copy elsewhere until the reveal."
+    },
+    "format": {
+      "waived": false,
+      "files": [
+        {
+          "fileId": "0x1111111111111111111111111111111111111111111111111111111111111111",
+          "mimeType": "image/png",
+          "width": 2000,
+          "height": 2000
+        },
+        {
+          "fileId": "0x5555555555555555555555555555555555555555555555555555555555555555",
+          "mimeType": "application/octet-stream"
+        }
+      ]
+    },
+    "license": {
+      "waived": false,
+      "spdxId": "CC0-1.0",
+      "textSha256": "0xa2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499"
+    },
+    "display": {
+      "waived": false,
+      "instructions": "The primary file is the sealed image. Before the reveal, show it with the reveal date; after it, show the decrypted image, square."
+    }
+  },
+  "timeCapsule": {
+    "revealAfter": 2051222400,
+    "scheme": "tlock over the drand quicknet chain, round for the reveal time",
+    "ciphertextFileId": "0x5555555555555555555555555555555555555555555555555555555555555555",
+    "plaintextCommitment": {
+      "algorithm": 2,
+      "digest": "0xe0f38ca3c769629a883c28d6b57df19aab14eaf792f4dbf8539792a77affc773"
+    },
+    "policyStatus": "outside-v1-curation-policy"
+  }
+}
