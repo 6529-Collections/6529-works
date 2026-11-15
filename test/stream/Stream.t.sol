@@ -67,14 +67,14 @@ contract StreamTest is StreamFixture {
         assertEq(stream.entropyModule(), address(entropy));
         assertEq(stream.splitFactory(), address(splitFactory));
         assertEq(stream.defaultRenderer(), address(renderer));
-        assertEq(stream.owner(), marketOwner);
+        assertEq(IStream(address(stream)).owner(), marketOwner);
         assertEq(stream.workRecords(), address(0));
         assertEq(stream.editions(), address(0));
         assertEq(stream.name(), "6529 Stream");
         assertEq(stream.symbol(), "STREAM");
-        assertEq(stream.totalMinted(), 0);
-        assertEq(stream.totalSupply(), 0);
-        assertEq(stream.collectionCount(), 1);
+        assertEq(IStream(address(stream)).totalMinted(), 0);
+        assertEq(IStream(address(stream)).totalSupply(), 0);
+        assertEq(IStream(address(stream)).collectionCount(), 1);
         assertTrue(stream.isAdmittedMinter(address(auction)));
     }
 

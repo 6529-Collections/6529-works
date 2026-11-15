@@ -16,6 +16,7 @@ import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
 import { IRenderer } from "../interfaces/IRenderer.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
 import { IStream } from "../interfaces/IStream.sol";
+import { IStreamCore } from "../interfaces/IStreamCore.sol";
 import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
 import { CURRENCY_ETH, PRODUCT_EDITIONS, WorkTerms } from "../interfaces/types/EconomicsTypes.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
@@ -40,7 +41,7 @@ import { EditionRules } from "./EditionRules.sol";
 ///      package's unconsumed items, and Stream already consumed exactly this item, so revoking a
 ///      root over another of its items never strands the edition of a master already sold
 ///      from it. The master's sale must also have settled
-///      (`IStream.primarySaleSettled`, marked by the minting adapter at settle), so a disputed or
+///      (`IStreamCore.primarySaleSettled`, marked by the minting adapter at settle), so a disputed or
 ///      burned master never gets an edition. Creation locks the edition's economics (seller,
 ///      network fee, royalty), claims the master's content hash in the package registry (which
 ///      accepts only the item Stream consumed for that hash, and only once), and writes both
@@ -94,7 +95,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     /// @dev The mint bound of an edition without a creator cap: `minted` is a `uint48`.
     uint256 private constant UNCAPPED = type(uint48).max;
 
-    /// @dev What `createEdition` reads of its master from `IStream.coreOf`.
+    /// @dev What `createEdition` reads of its master from `IStreamCore.coreOf`.
     struct Master {
         bytes32 itemHash;
         uint256 artistId;
@@ -177,7 +178,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
 
     /// @notice The package registry that approved the packages and claims edition content:
     ///         6529 Stream's, read from it on every use, so a governed replacement there
-    ///         (`IStream.setDependency`, owner decision 16) applies here at once.
+    ///         (`IStreamCore.setDependency`, owner decision 16) applies here at once.
     /// @return The package registry.
     function packageRegistry() public view returns (IPackageRegistry) {
         return IPackageRegistry(IStream(stream).packageRegistry());
@@ -271,7 +272,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
             }
         }
         m.status = admitted ? MINTER_ADMITTED : MINTER_REMOVED;
-        emit AdmittedMinterSet(adapter, m.id, admitted);
+        emit AdmittedMinterSet(adapter, m.id, admitted, _minterKinds[m.id]);
     }
 
     /// @inheritdoc IMintTarget
@@ -360,8 +361,8 @@ contract Editions is IEditions, ERC1155, AccessManaged {
             _bind(r, editionId, m, _saleKind(r));
             return _locked(r);
         }
-        (bytes32 itemHash,,, ItemKind kind,,) = IStream(stream).coreOf(editionId);
-        if (kind != ItemKind.EDITION_MASTER || WorksHashing.itemHashCalldata(item) != itemHash) {
+        (bytes32 itemHash,,, uint8 kind,,) = IStream(stream).coreOf(editionId);
+        if (kind != uint8(ItemKind.EDITION_MASTER) || WorksHashing.itemHashCalldata(item) != itemHash) {
             revert NotEditionMaster(editionId);
         }
         bool unbound = r.minterId == 0;
@@ -515,7 +516,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     ///      the master settled; an EDITION_MASTER item that is the master's stored one (its kind is
     ///      bound by the item hash); and the item proven (at most `Limits.MAX_PROOF_DEPTH` nodes)
     ///      in a package root the registry registered (an evidence hash), approved or revoked
-    ///      since. The master is read through `IStream.coreOf`, which skips the royalty-receiver
+    ///      since. The master is read through `IStreamCore.coreOf`, which skips the royalty-receiver
     ///      derivation `work` performs.
     function _admit(
         uint256 workId,

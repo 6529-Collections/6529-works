@@ -12,6 +12,7 @@ import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamCore } from "src/interfaces/IStreamCore.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import {
@@ -287,8 +288,8 @@ contract EditionsStreamMock {
         w.itemHash = itemHash;
         w.artistId = uint256(uint160(item.parties[0].account));
         w.collectionId = item.collectionId;
-        w.kind = item.kind;
-        w.seedPolicy = item.seedPolicy;
+        w.kind = uint8(item.kind);
+        w.seedPolicy = uint8(item.seedPolicy);
         w.royaltyRate = 6_529; // the launch rate Stream locks at mint
         _owners[id] = to;
     }
@@ -299,7 +300,7 @@ contract EditionsStreamMock {
         _settled[id] = true;
     }
 
-    /// @dev A consented re-rate of the master (`IStream.setRoyaltyRate` from `WorkRecords`).
+    /// @dev A consented re-rate of the master (`IStreamCore.setRoyaltyRate` from `WorkRecords`).
     function setMasterRoyaltyRate(uint256 id, uint32 rate) external {
         _works[id].royaltyRate = rate;
     }
@@ -307,7 +308,7 @@ contract EditionsStreamMock {
     /// @dev An upheld dispute burns the master in custody.
     function burnMaster(uint256 id) external {
         // As 6529 Stream: a settled token is never burned (after a sale nothing is confiscated).
-        if (_settled[id]) revert IStream.SaleAlreadySettled(id);
+        if (_settled[id]) revert IStreamCore.SaleAlreadySettled(id);
         delete _owners[id];
     }
 
@@ -323,16 +324,16 @@ contract EditionsStreamMock {
     }
 
     function work(uint256 id) external view returns (IStream.WorkCore memory) {
-        if (_owners[id] == address(0)) revert IStream.UnknownWork(id);
+        if (_owners[id] == address(0)) revert IStreamCore.UnknownWork(id);
         return _works[id];
     }
 
     function coreOf(uint256 id)
         external
         view
-        returns (bytes32, uint256, uint256, ItemKind, SeedPolicy, uint32)
+        returns (bytes32, uint256, uint256, uint8, uint8, uint32)
     {
-        if (_owners[id] == address(0)) revert IStream.UnknownWork(id);
+        if (_owners[id] == address(0)) revert IStreamCore.UnknownWork(id);
         IStream.WorkCore storage w = _works[id];
         return (w.itemHash, w.artistId, w.collectionId, w.kind, w.seedPolicy, w.royaltyRate);
     }
@@ -343,7 +344,7 @@ contract EditionsStreamMock {
 
     function ownerOf(uint256 id) external view returns (address holder) {
         holder = _owners[id];
-        if (holder == address(0)) revert IStream.UnknownWork(id);
+        if (holder == address(0)) revert IStreamCore.UnknownWork(id);
     }
 
     function rendererOf(uint256 id) external view returns (address r) {
@@ -357,12 +358,12 @@ contract EditionsStreamMock {
     }
 
     function linkEdition(uint256 tokenId, uint256 editionId) external {
-        if (msg.sender != editions) revert IStream.UnboundCaller(msg.sender);
+        if (msg.sender != editions) revert IStreamCore.UnboundCaller(msg.sender);
         if (
-            editionId != tokenId || _works[tokenId].kind != ItemKind.EDITION_MASTER
+            editionId != tokenId || _works[tokenId].kind != uint8(ItemKind.EDITION_MASTER)
                 || _linked[tokenId] != 0
         ) {
-            revert IStream.EditionLinkInvalid(tokenId);
+            revert IStreamCore.EditionLinkInvalid(tokenId);
         }
         if (linkMode == LinkMode.IGNORE) return;
         if (linkMode == LinkMode.REENTER) {

@@ -16,6 +16,7 @@ import { isKnownHashAlgorithm } from "../interfaces/types/HashRef.sol";
 import { IArtistRoleResolver } from "../interfaces/IArtistRoleResolver.sol";
 import { IStatementLog, Role, Statement } from "../interfaces/IStatementLog.sol";
 import { IStream } from "../interfaces/IStream.sol";
+import { IStreamCore } from "../interfaces/IStreamCore.sol";
 import { StatementKinds } from "../interfaces/types/StatementKinds.sol";
 
 /// @title StatementLog
@@ -35,7 +36,7 @@ import { StatementKinds } from "../interfaces/types/StatementKinds.sol";
 ///      work ID, an artist in the artist registry) are not checked.
 ///      {latestDisputeOutcome} answers for a work: the latest outcome about the token, or, while
 ///      it has none, the latest about the package item it was minted from (read from the token's
-///      `IStream.coreOf`).
+///      `IStreamCore.coreOf`).
 ///
 ///      Authorization per role:
 ///      - ARTIST: the pluggable {IArtistRoleResolver} says the signer is an artist of the subject.
@@ -213,7 +214,7 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     /// @dev The item fallback is one bounded read of `coreOf(id)` on a token that declares
     ///      `IStream` by ERC-165, checked first. A token that does not declare it is never asked
     ///      for `coreOf`, so whatever it would answer, it keeps its own result, zero; so does a
-    ///      Stream's burned or unminted token (`IStream.UnknownWork`). Any other failure of a
+    ///      Stream's burned or unminted token (`IStreamCore.UnknownWork`). Any other failure of a
     ///      token that declares `IStream` reverts with `BoundedCall.BoundedCallFailed` (fail
     ///      closed), so a failed read never passes for "no outcome".
     function latestDisputeOutcome(address token, uint256 id)
@@ -228,7 +229,7 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
         if (!BoundedCall.hasSufficientGas(gasleft(), OWNER_READ_GAS, BoundedCall.CALL_RESERVE)) {
             revert BoundedCall.BoundedCallInsufficientGas(OWNER_READ_GAS);
         }
-        bytes memory input = abi.encodeCall(IStream.coreOf, (id));
+        bytes memory input = abi.encodeCall(IStreamCore.coreOf, (id));
         bool ok;
         uint256 size;
         bytes32 head;
@@ -244,7 +245,7 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
         if (ok && size == 192) return _latestDispute[subjectKey(address(0), uint256(head))];
         // Only the selector is compared, so truncating to four bytes is intended.
         // forge-lint: disable-next-line(unsafe-typecast)
-        if (!ok && size == 36 && bytes4(head) == IStream.UnknownWork.selector) return 0;
+        if (!ok && size == 36 && bytes4(head) == IStreamCore.UnknownWork.selector) return 0;
         revert BoundedCall.BoundedCallFailed(token);
     }
 

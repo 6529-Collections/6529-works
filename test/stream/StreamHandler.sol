@@ -20,6 +20,7 @@ import { Stream } from "src/stream/Stream.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { MockEconomics, MockRenderer, MockSaleAdapter } from "../mocks/stream/StreamMocks.sol";
+import { IStream } from "src/interfaces/IStream.sol";
 
 /// @notice Drives 6529 Stream and its records satellite through random sequences of mints
 ///         (with random fee terms, into random collections), burns, transfers, record edits,
@@ -165,7 +166,7 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         address fee = feeShare == 0 ? address(0) : _feeRecipient;
         _econ.setTerms(WorkTerms(sellerWallet, fee, feeShare, address(0), rate));
 
-        uint256 expected = stream.totalMinted() + 1;
+        uint256 expected = IStream(address(stream)).totalMinted() + 1;
         (uint256 tokenId,) = auction.start(stream, _request(item));
         if (tokenId != expected) ++violations;
         ++ghostMinted;
@@ -195,7 +196,7 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
     function settle(uint256 seed) external {
         (bool ok, uint256 tokenId) = _live(seed);
         if (!ok || settled[tokenId]) return;
-        auction.settle(stream, tokenId);
+        auction.settle(IStream(address(stream)), tokenId);
         settled[tokenId] = true;
     }
 
@@ -358,7 +359,7 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
     }
 
     function _live(uint256 seed) internal view returns (bool, uint256) {
-        uint256 minted = stream.totalMinted();
+        uint256 minted = IStream(address(stream)).totalMinted();
         if (minted == 0) return (false, 0);
         uint256 tokenId = seed % minted + 1;
         return (!burned[tokenId], tokenId);

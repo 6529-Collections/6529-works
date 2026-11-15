@@ -143,7 +143,7 @@ struct PartyAcceptance {
     uint64 deadline;
 }
 
-/// @notice The `data` a sale adapter passes to `IStream.mint` to start a curated work: opaque to
+/// @notice The `data` a sale adapter passes to `IStreamCore.mint` to start a curated work: opaque to
 ///         the adapter, `abi.encode(StreamMintRequest)`.
 struct StreamMintRequest {
     bytes32 packageRoot;

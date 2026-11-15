@@ -855,7 +855,7 @@ contract RendererRecordsTest is RendererBase {
         IStream.WorkCore memory core = _core();
         core.collectionId = 1;
         core.serial = 3;
-        core.seedPolicy = SeedPolicy.ARTIST;
+        core.seedPolicy = uint8(SeedPolicy.ARTIST);
         stream.setWork(ID, core);
         stream.setCollection(1, IStream.Collection("C", bytes32(0), 3));
         records.setSeed(ID, SeedPolicy.ARTIST, bytes32(uint256(1)));

@@ -11,6 +11,7 @@ import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
 import { IStatementLog } from "../interfaces/IStatementLog.sol";
 import { IStream } from "../interfaces/IStream.sol";
+import { IStreamCore } from "../interfaces/IStreamCore.sol";
 import { Roles } from "./Roles.sol";
 
 /// @title GovernanceConfig
@@ -137,8 +138,8 @@ library GovernanceConfig {
     ///         first default currency (an auction cannot start without one), or the epoch-0
     ///         governance manifest. Everything else waits its delay class after genesis.
     function isGenesisSelector(bytes4 selector) internal pure returns (bool) {
-        return selector == IStream.bindWorkRecords.selector
-            || selector == IStream.bindEditions.selector
+        return selector == IStreamCore.bindWorkRecords.selector
+            || selector == IStreamCore.bindEditions.selector
             || selector == IPackageRegistry.bindStream.selector
             || selector == IArtistRegistry.bindPackageRegistry.selector
             || selector == IArtistRegistry.bindSplitFactory.selector

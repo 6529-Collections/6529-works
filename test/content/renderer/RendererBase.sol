@@ -137,7 +137,7 @@ abstract contract RendererBase is ContentBase {
     function _core() internal pure returns (IStream.WorkCore memory core) {
         core.itemHash = bytes32(uint256(1));
         core.artistId = 1;
-        core.kind = ItemKind.ORIGINAL;
+        core.kind = uint8(ItemKind.ORIGINAL);
     }
 
     /// @dev The record file the work points at, in the order RFC 8785 gives the keys.

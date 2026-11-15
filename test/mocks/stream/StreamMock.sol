@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamCore } from "src/interfaces/IStreamCore.sol";
 
 /// @notice The minimal 6529 Stream stand-in: the reads other contracts make of Stream, answered
 ///         from fixtures the test sets. The renderer reads `work`, `collection`, `workRecords`
@@ -83,7 +84,7 @@ contract StreamMock {
     function artistOf(uint256 id) external view returns (uint256 artistId) {
         _gate(msg.sig);
         artistId = cores[id].artistId;
-        if (artistId == 0) revert IStream.UnknownWork(id);
+        if (artistId == 0) revert IStreamCore.UnknownWork(id);
     }
 
     function _gate(bytes4 selector) internal view {

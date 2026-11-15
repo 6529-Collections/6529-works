@@ -13,6 +13,7 @@ import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { IStatementLog } from "../interfaces/IStatementLog.sol";
 import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
 import { IStream } from "../interfaces/IStream.sol";
+import { IStreamCore } from "../interfaces/IStreamCore.sol";
 import {
     ArtistIdentity,
     ChangeKind,
@@ -449,7 +450,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     // ----- reads -----
 
     /// @inheritdoc IArtistRoleResolver
-    /// @dev Resolves a 6529 Stream work (`IStream.artistOf`), or a 6529 Stream Editions edition
+    /// @dev Resolves a 6529 Stream work (`IStreamCore.artistOf`), or a 6529 Stream Editions edition
     ///      through its master, to the lead artist's active authority ({activeAuthorityOf}). Any
     ///      other subject returns false.
     function isArtist(address token, uint256 id, address account) external view returns (bool) {

@@ -7,6 +7,7 @@ import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { IntegrationBase } from "../integration/IntegrationBase.sol";
 import { SalesStackBase } from "./SalesStackBase.sol";
+import { IStream } from "src/interfaces/IStream.sol";
 
 /// @notice The guardians' window after a pause, on the real stack: the 48-hour UNPAUSER class
 ///         counts from the pause. An adapter's `unpause` or the auction's `resume(saleId)`
@@ -18,7 +19,7 @@ contract PauseWindowTest is IntegrationBase {
 
     /// Regression: GOV-5 (docs/security/internal-review-2026-10.md)
     function test_Resume_ScheduledBeforeThePauseWaitsTwoDaysAfterIt() public {
-        uint256 saleId = auction.saleIdOf(address(stream), stream.totalMinted() + 1);
+        uint256 saleId = auction.saleIdOf(address(stream), IStream(address(stream)).totalMinted() + 1);
         bytes memory resume = abi.encodeCall(auction.resume, (saleId));
         _schedule(hotAdmin, address(auction), resume);
 

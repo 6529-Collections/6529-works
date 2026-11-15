@@ -10,11 +10,12 @@ import { IEditions } from "../interfaces/IEditions.sol";
 import { IEntropyModule } from "../interfaces/IEntropyModule.sol";
 import { IRenderer } from "../interfaces/IRenderer.sol";
 import { IStream } from "../interfaces/IStream.sol";
+import { IStreamCore } from "../interfaces/IStreamCore.sol";
 import { IWorkPowers, WorkPowers } from "../interfaces/IWorkPowers.sol";
 import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "../interfaces/types/ContentTypes.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
-import { ItemKind, License, PackageItem, SeedPolicy } from "../interfaces/types/PackageTypes.sol";
+import { License, PackageItem, SeedPolicy } from "../interfaces/types/PackageTypes.sol";
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
 import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
 import { Dependency } from "../libraries/Dependency.sol";
@@ -356,7 +357,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     }
 
     /// @inheritdoc IWorkRecords
-    function seedOf(uint256 tokenId) external view returns (SeedPolicy policy, bytes32 seed) {
+    function seedOf(uint256 tokenId) external view returns (uint8 policy, bytes32 seed) {
         _open(tokenId);
         (,,,, policy,) = _core(tokenId);
         seed = _seeds[tokenId];
@@ -610,7 +611,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     {
         // Collection IDs run from 1 to the count and are never removed.
         if (collectionId == 0 || collectionId > IStream(stream).collectionCount()) {
-            revert IStream.UnknownCollection(collectionId);
+            revert IStreamCore.UnknownCollection(collectionId);
         }
         emit CollectionPreferredKindSet(collectionId, _collectionKinds[collectionId], kind);
         _collectionKinds[collectionId] = kind;
@@ -771,7 +772,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
             && keccak256(bytes(license.spdxId)) == keccak256(bytes(_cc0SpdxId));
     }
 
-    /// @dev The core's per-work facts (`IStream.coreOf`); reverts with `UnknownWork` for a
+    /// @dev The core's per-work facts (`IStreamCore.coreOf`); reverts with `UnknownWork` for a
     ///      burned or unminted token.
     function _core(uint256 tokenId)
         private
@@ -780,15 +781,15 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
             bytes32 itemHash,
             uint256 artistId,
             uint256 collectionId,
-            ItemKind kind,
-            SeedPolicy policy,
+            uint8 kind,
+            uint8 policy,
             uint32 rate
         )
     {
         (itemHash, artistId, collectionId, kind, policy, rate) = IStream(stream).coreOf(tokenId);
     }
 
-    /// @dev The work's linked edition (`IStream.editionOf`), or zero.
+    /// @dev The work's linked edition (`IStreamCore.editionOf`), or zero.
     function _edition(uint256 tokenId) private view returns (address editions, uint256 editionId) {
         (editions, editionId) = IStream(stream).editionOf(tokenId);
     }

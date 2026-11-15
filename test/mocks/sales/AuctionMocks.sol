@@ -59,7 +59,7 @@ contract MockMintTarget is ERC721, IMintTarget {
 
     function setAdmittedMinter(address adapter, bool admitted) external {
         isAdmittedMinter[adapter] = admitted;
-        emit AdmittedMinterSet(adapter, 0, admitted);
+        emit AdmittedMinterSet(adapter, 0, admitted, 0);
     }
 
     function setTerms(PrimaryTerms calldata terms) external {
@@ -293,7 +293,7 @@ contract PlainMintTarget is ERC721, IMintTarget {
 
     function setAdmittedMinter(address adapter, bool admitted) external {
         isAdmittedMinter[adapter] = admitted;
-        emit AdmittedMinterSet(adapter, 0, admitted);
+        emit AdmittedMinterSet(adapter, 0, admitted, 0);
     }
 
     function setTerms(PrimaryTerms calldata terms) external {

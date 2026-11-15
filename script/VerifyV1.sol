@@ -13,6 +13,7 @@ import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamCore } from "src/interfaces/IStreamCore.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import {
     PRODUCT_EDITIONS,
@@ -202,9 +203,9 @@ library VerifyV1 {
             ok = IEnglishAuction(target).openingBid(currency) == uint256(_word(data, 2));
         } else {
             address arg = address(uint160(uint256(_word(data, 0))));
-            if (selector == IStream.bindWorkRecords.selector) {
+            if (selector == IStreamCore.bindWorkRecords.selector) {
                 ok = _getter(target, "workRecords()") == arg;
-            } else if (selector == IStream.bindEditions.selector) {
+            } else if (selector == IStreamCore.bindEditions.selector) {
                 ok = _getter(target, "editions()") == arg;
             } else if (selector == IPackageRegistry.bindStream.selector) {
                 ok = _getter(target, "stream()") == arg;

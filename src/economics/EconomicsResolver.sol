@@ -31,9 +31,9 @@ import { Splits } from "./Splits.sol";
 /// @dev Changes apply to new works only: a work locks its terms (seller wallet, fee terms,
 ///      royalty receiver and rate) at mint and a sale locks its currency at start, and nothing
 ///      here reaches back into either. The museum is the exception: 6529 Stream reads it
-///      (through `IStream.economics()`) when it settles an unbid or frozen-out work and moves
+///      (through `IStreamCore.economics()`) when it settles an unbid or frozen-out work and moves
 ///      the work there itself (`IMintTarget.settlePrimary`, D140, owner decision 17), and when
-///      governance rescues a stranded work (`IStream.rescueToMuseum`, owner decision 20).
+///      governance rescues a stranded work (`IStreamCore.rescueToMuseum`, owner decision 20).
 ///      Governed through AccessManager with
 ///      `Roles` (src/governance/Roles.sol): {setFeeTerms} and {setMuseum} map to
 ///      `Roles.FUNDS_SETTER` (14 days); {setRoyaltyRate} and {setDefaultLicense} map to

@@ -29,6 +29,7 @@ import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { StateGrowth } from "../helpers/StateGrowth.sol";
 import { WorksDeployment } from "./WorksDeployment.sol";
+import { IStream } from "src/interfaces/IStream.sol";
 
 /// @notice Actors, package building, signatures and sale helpers shared by the end-to-end flows.
 /// @dev Every helper drives the real contracts the way an off-chain tool or a wallet would: it
@@ -349,7 +350,7 @@ abstract contract IntegrationBase is WorksDeployment {
         returns (uint256 saleId, uint256 tokenId)
     {
         saleId = auction.start(address(stream), _mintData(root, works, index));
-        tokenId = stream.totalMinted();
+        tokenId = IStream(address(stream)).totalMinted();
         assertEq(saleId, auction.saleIdOf(address(stream), tokenId), "sale ID");
     }
 

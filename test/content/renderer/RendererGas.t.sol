@@ -331,7 +331,7 @@ contract RendererGasAdversarialTest is RendererBase {
         IStream.WorkCore memory core = _core();
         core.collectionId = 1;
         core.serial = 9;
-        core.seedPolicy = SeedPolicy.ARTIST;
+        core.seedPolicy = uint8(SeedPolicy.ARTIST);
         stream.setWork(id, core);
         records.setSeed(id, SeedPolicy.ARTIST, bytes32(uint256(1)));
         disputeLog.set(address(stream), id, bytes32(uint256(1)));
@@ -832,7 +832,7 @@ contract RendererGasBudgetTest is RendererBase {
         IStream.WorkCore memory core = _core();
         core.collectionId = 1;
         core.serial = 9;
-        core.seedPolicy = SeedPolicy.ARTIST;
+        core.seedPolicy = uint8(SeedPolicy.ARTIST);
         stream.setWork(id, core);
         records.setSeed(id, SeedPolicy.ARTIST, bytes32(uint256(1)));
         disputeLog.set(address(stream), id, bytes32(uint256(1)));

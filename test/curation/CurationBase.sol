@@ -19,18 +19,34 @@ import {
     PartyAcceptance,
     PartyRole,
     SaleTerms,
-    SeedPolicy
+    SeedPolicy,
+    StreamMintRequest
 } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IMintPolicy } from "src/interfaces/IMintPolicy.sol";
+import { ProductEconomics } from "src/interfaces/types/EconomicsTypes.sol";
 import { CurationArtistRegistryMock } from "test/mocks/curation/CurationArtistRegistryMock.sol";
 import { MockBoundCaller } from "test/mocks/curation/MockBoundCaller.sol";
 
 /// @dev Pure fixtures shared by the curation tests and the invariant handler: items, Merkle
 ///      trees with sorted-pair hashing, and the three signature forms.
+/// @dev Stub economics resolver and split factory for the policy's quote.
+contract CurationPolicyStub {
+    function economics(bytes32) external pure returns (ProductEconomics memory) {
+        return ProductEconomics(address(0), 0, 5000);
+    }
+
+    function walletFor(ISplitWallet.Payee[] calldata, bytes32) external pure returns (address) {
+        return address(0x5E11E7);
+    }
+}
+
 abstract contract CurationHelpers is Test {
+    CurationPolicyStub internal _policyStub = new CurationPolicyStub();
+
     uint256 internal constant SECP256K1_N =
         0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141;
 
@@ -278,8 +294,37 @@ abstract contract CurationBase is CurationHelpers {
         bytes32[] memory proof,
         MoveAuthorization memory move
     ) internal returns (bytes32 itemHash, uint256 artistId) {
+        IMintPolicy.MintRecord memory r = _authorize(root, item, proof, move);
+        (itemHash, artistId) = (r.itemHash, r.artistId);
+    }
+
+    /// @dev `IMintPolicy.authorize` as the bound Stream calls it, with stub economics (no fee)
+    ///      and a stub split factory.
+    function _authorize(
+        bytes32 root,
+        PackageItem memory item,
+        bytes32[] memory proof,
+        MoveAuthorization memory move
+    ) internal returns (IMintPolicy.MintRecord memory) {
+        IMintPolicy.MintContext memory c = IMintPolicy.MintContext(
+            stream, address(_policyStub), address(0), address(_policyStub)
+        );
         vm.prank(stream);
-        (itemHash, artistId,) = registry.consume(root, item, proof, move);
+        return registry.authorize(c, abi.encode(StreamMintRequest(root, item, proof, move)));
+    }
+
+    /// @dev `IMintPolicy.authorize` on `target` with the caller the test set up (no prank).
+    function _policyCall(
+        PackageRegistry target,
+        bytes32 root,
+        PackageItem memory item,
+        bytes32[] memory proof,
+        MoveAuthorization memory move
+    ) internal returns (IMintPolicy.MintRecord memory) {
+        IMintPolicy.MintContext memory c = IMintPolicy.MintContext(
+            stream, address(_policyStub), address(0), address(_policyStub)
+        );
+        return target.authorize(c, abi.encode(StreamMintRequest(root, item, proof, move)));
     }
 
     function _claim(bytes32 contentHash, bytes32 itemHash) internal {

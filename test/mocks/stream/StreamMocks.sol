@@ -21,7 +21,16 @@ import {
     ProductEconomics,
     WorkTerms
 } from "src/interfaces/types/EconomicsTypes.sol";
-import { MoveAuthorization, PackageItem } from "src/interfaces/types/PackageTypes.sol";
+import {
+    MoveAuthorization,
+    PackageItem,
+    SeedPolicy,
+    StreamMintRequest
+} from "src/interfaces/types/PackageTypes.sol";
+import { IMintPolicy } from "src/interfaces/IMintPolicy.sol";
+import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
+import { PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
+import { SpdxId } from "src/stream/SpdxId.sol";
 import {
     PrimaryOutcome,
     PrimarySettlement,
@@ -38,8 +47,9 @@ abstract contract Supports165 is IERC165 {
     }
 }
 
-/// @notice Package registry mock: consumes each item once and returns the lead party's address
-///         as the artist ID, unless an override is set.
+/// @notice Package registry mock, as Stream's mint policy: applies the v1 item rules, consumes
+///         each item once and returns the lead party's address as the artist ID, unless an
+///         override is set; quotes the terms from the context's economics and split factory.
 contract MockPackageRegistry is Supports165 {
     error ItemConsumedAlready(bytes32 itemHash);
     error ContentUsed(bytes32 contentHash, bytes32 claimedBy);
@@ -62,8 +72,83 @@ contract MockPackageRegistry is Supports165 {
     address internal _reentryAdapter;
     bytes internal _reentryCall;
 
+    address public artistRegistry;
+
     function _interface() internal pure override returns (bytes4) {
-        return type(IPackageRegistry).interfaceId;
+        return type(IMintPolicy).interfaceId;
+    }
+
+    function setArtistRegistry(address registry) external {
+        artistRegistry = registry;
+    }
+
+    function authorize(IMintPolicy.MintContext calldata c, bytes calldata request)
+        external
+        returns (IMintPolicy.MintRecord memory r)
+    {
+        StreamMintRequest memory req = abi.decode(request, (StreamMintRequest));
+        PackageItem memory item = req.item;
+        _check(item, c.entropyModule);
+        address creator;
+        (r.itemHash, r.artistId, creator) =
+            this.consume(req.packageRoot, item, req.proof, req.move);
+        if (
+            item.seedPolicy == SeedPolicy.VRF
+                && !IEntropyModule(c.entropyModule).isDeliveredContent(item.contentHash)
+        ) revert IMintPolicy.SeedNotDelivered(r.itemHash);
+        (r.terms, r.royaltyRate) = _quote(item, c);
+        r.terms.creator = creator;
+        r.collectionId = item.collectionId;
+        r.kind = uint8(item.kind);
+        r.seedPolicy = uint8(item.seedPolicy);
+        r.packageRoot = req.packageRoot;
+        r.contentHash = item.contentHash;
+        r.mediaHash = item.mediaHash;
+        r.recordFileId = item.recordFileId;
+    }
+
+    function preview(IMintPolicy.MintContext calldata c, bytes calldata request)
+        external
+        view
+        returns (PrimaryTerms memory terms)
+    {
+        StreamMintRequest memory req = abi.decode(request, (StreamMintRequest));
+        _check(req.item, c.entropyModule);
+        uint256 artistId = IArtistRegistry(artistRegistry).artistIdOf(req.item.parties[0].account);
+        if (artistId == 0) revert IMintPolicy.InvalidLeadArtist();
+        (terms,) = _quote(req.item, c);
+        terms.creator = IArtistRegistry(artistRegistry).activeAuthorityOf(artistId);
+    }
+
+    function _check(PackageItem memory item, address entropy) internal pure {
+        if (item.sale.saleKind == 0) revert IMintPolicy.InvalidItemSale();
+        if (item.parties.length == 0) revert IMintPolicy.InvalidLeadArtist();
+        SeedPolicy policy = item.seedPolicy;
+        if (
+            (policy == SeedPolicy.ARTIST) != (item.seed != 0)
+                || (policy == SeedPolicy.VRF && entropy == address(0))
+        ) revert IMintPolicy.InvalidSeedPolicy();
+        if (!SpdxId.isValid(item.license.spdxId)) revert IMintPolicy.InvalidLicenseId();
+    }
+
+    function _quote(PackageItem memory item, IMintPolicy.MintContext calldata c)
+        internal
+        view
+        returns (PrimaryTerms memory terms, uint32 royaltyRate)
+    {
+        ProductEconomics memory e = IEconomicsResolver(c.economics).economics(PRODUCT_STREAM);
+        address seller = ISplitFactory(c.splitFactory).walletFor(item.payees, bytes32(0));
+        if (
+            e.royaltyRate > Splits.DENOMINATOR || e.feeShare >= Splits.DENOMINATOR
+                || (e.feeShare != 0 && (e.feeRecipient == address(0) || e.feeRecipient == seller))
+        ) revert IMintPolicy.InvalidWorkTerms();
+        terms.saleKind = item.sale.saleKind;
+        terms.currency = item.sale.currency;
+        terms.params = item.sale.params;
+        terms.seller = seller;
+        terms.feeRecipient = e.feeRecipient;
+        terms.feeShare = e.feeShare;
+        royaltyRate = e.royaltyRate;
     }
 
     function bindStream(address stream_) external {
@@ -113,7 +198,7 @@ contract MockPackageRegistry is Supports165 {
         // from the caller's (Stream's) artist registry.
         authority = overrideArtist
             ? address(uint160(artistOverride))
-            : IArtistRegistry(IStream(msg.sender).artistRegistry()).activeAuthorityOf(artistId);
+            : IArtistRegistry(artistRegistry).activeAuthorityOf(artistId);
         address adapter = _reentryAdapter;
         if (adapter != address(0)) {
             delete _reentryAdapter;

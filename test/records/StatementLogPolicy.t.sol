@@ -18,6 +18,7 @@ import {
     OZERC721Mock
 } from "../mocks/records/RecordsMocks.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamCore } from "src/interfaces/IStreamCore.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { ReturnDataMock } from "../mocks/libraries/AdversarialTargets.sol";
 import { EvilResolverMock, ForwardingResolverMock } from "../mocks/records/RecordsResolvers.sol";
@@ -456,7 +457,7 @@ contract StatementLogPolicyTest is StatementLogFixture {
         ReturnDataMock token = new ReturnDataMock();
         token.configure(abi.encodeWithSignature("Error(string)", "no"), true);
         assertEq(stmtLog.latestDisputeOutcome(address(token), 1), bytes32(0));
-        token.configure(abi.encodeWithSelector(IStream.UnknownWork.selector, 1), true);
+        token.configure(abi.encodeWithSelector(IStreamCore.UnknownWork.selector, 1), true);
         assertEq(stmtLog.latestDisputeOutcome(address(token), 1), bytes32(0));
         assertEq(stmtLog.latestDisputeOutcome(address(0xC0DE), 1), bytes32(0), "no code");
     }
@@ -818,7 +819,7 @@ contract StreamCoreMock {
         returns (bytes32, uint256, uint256, uint8, uint8, uint32)
     {
         Mode m = mode;
-        if (m == Mode.UNKNOWN_WORK) revert IStream.UnknownWork(tokenId);
+        if (m == Mode.UNKNOWN_WORK) revert IStreamCore.UnknownWork(tokenId);
         if (m == Mode.OTHER_REVERT) revert("broken");
         if (m == Mode.OUT_OF_GAS) {
             assembly ("memory-safe") {

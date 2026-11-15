@@ -19,6 +19,7 @@ import {
     SaleKind
 } from "src/interfaces/types/SaleTypes.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamCore } from "src/interfaces/IStreamCore.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { VerifyV1 } from "script/VerifyV1.sol";
 import { HostileActor, MockMintTarget } from "../mocks/sales/AuctionMocks.sol";
@@ -228,7 +229,7 @@ contract MuseumTest is IntegrationBase {
         vm.warp(auction.auction(saleId).endTime);
         LockedTerms memory lt = auction.lockedTerms(saleId);
         vm.expectEmit(address(stream));
-        emit IStream.PrimarySaleSettled(tokenId, PrimaryOutcome.UNBID, address(0), CURRENCY_ETH, 0);
+        emit IStreamCore.PrimarySaleSettled(tokenId, PrimaryOutcome.UNBID, address(0), CURRENCY_ETH, 0);
         vm.expectEmit(address(auction));
         emit ISaleAdapter.SaleSettled(
             saleId,
@@ -276,7 +277,7 @@ contract MuseumTest is IntegrationBase {
         _ethBid(saleId, collector, 1 ether);
         vm.warp(auction.auction(saleId).endTime);
         vm.expectEmit(address(stream));
-        emit IStream.PrimarySaleSettled(
+        emit IStreamCore.PrimarySaleSettled(
             tokenId, PrimaryOutcome.SOLD, collector, CURRENCY_ETH, 1 ether
         );
         auction.settle(saleId);
@@ -307,7 +308,7 @@ contract MuseumTest is IntegrationBase {
         uint256 feeBefore = networkFee.balance;
         vm.warp(auction.auction(saleId).endTime);
         vm.expectEmit(address(stream));
-        emit IStream.PrimarySaleSettled(
+        emit IStreamCore.PrimarySaleSettled(
             tokenId, PrimaryOutcome.SOLD, artist, CURRENCY_ETH, 0.05 ether
         );
         auction.settle(saleId);
@@ -334,7 +335,7 @@ contract MuseumTest is IntegrationBase {
         vm.expectEmit(address(auction));
         emit ISaleAdapter.Credited(collector, address(usd), saleId, 100e18);
         vm.expectEmit(address(stream));
-        emit IStream.PrimarySaleSettled(
+        emit IStreamCore.PrimarySaleSettled(
             tokenId, PrimaryOutcome.FROZEN_OUT, address(0), address(usd), 0
         );
         auction.settle(saleId);

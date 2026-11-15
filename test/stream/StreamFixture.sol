@@ -71,6 +71,7 @@ abstract contract StreamFixture is Test {
         manager = new AccessManager(address(this));
         registry = new MockPackageRegistry();
         artists = new MockArtistRegistry();
+        registry.setArtistRegistry(address(artists));
         renderer = new MockRenderer("default");
         splitFactory = new SplitFactory(
             IArtistPayoutResolver(address(artists)), IReleaseVerifier(address(renderer))

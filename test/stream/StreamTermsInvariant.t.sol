@@ -181,7 +181,7 @@ contract TermsHandler is Test {
                 break;
             }
         }
-        records.setRoyaltyRate(stream, tokenId, rate);
+        records.setRoyaltyRate(IStream(address(stream)), tokenId, rate);
         cur.r = rate;
         shadow[tokenId] = cur;
         ++reRates;
@@ -220,7 +220,7 @@ contract TermsHandler is Test {
         if (stream.primarySaleSettled(tokenId)) return;
         uint16 m = uint16(1 + minterSeed % 2);
         bool ok;
-        try adapters[m].settle(stream, tokenId) {
+        try adapters[m].settle(IStream(address(stream)), tokenId) {
             ok = true;
         } catch { }
         assertEq(ok, m == shadow[tokenId].m, "settle gated on the minting adapter");
@@ -307,7 +307,7 @@ contract StreamTermsInvariantTest is StreamFixture {
 
     function _checkViews(uint256 id) internal view {
         Pool.T memory t = handler.expected(id);
-        IStream.WorkCore memory w = stream.work(id);
+        IStream.WorkCore memory w = IStream(address(stream)).work(id);
         assertEq(w.artistId, t.a, "artist");
         assertEq(w.royaltyRate, t.r, "rate");
         assertEq(stream.artistOf(id), t.a);

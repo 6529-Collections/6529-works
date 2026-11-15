@@ -11,6 +11,7 @@ import { Roles } from "src/governance/Roles.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamCore } from "src/interfaces/IStreamCore.sol";
 import { Deploy } from "script/Deploy.s.sol";
 import { DeployGuards } from "script/DeployGuards.sol";
 import { DeployV1 } from "script/DeployV1.sol";
@@ -2153,7 +2154,7 @@ contract DeployScriptTest is Test {
     ///      sees it.
     function test_VerifyCatchesARemappedGenesisOnlySelector() public {
         (string memory record, DeployV1.Deployment memory d) = _anvilRecord();
-        bytes4 bind = IStream.bindWorkRecords.selector;
+        bytes4 bind = IStreamCore.bindWorkRecords.selector;
         _adminExecutes(d, address(0xB001), _calls(_remap(address(d.stream), bind, Roles.PLATFORM)));
         assertEq(d.manager.getTargetFunctionRole(address(d.stream), bind), Roles.PLATFORM);
         vm.expectRevert(
@@ -2272,7 +2273,7 @@ contract DeployScriptTest is Test {
     function test_VerifyAcceptsChangesThatMatchTheConfiguration() public {
         (string memory record, DeployV1.Deployment memory d) = _anvilRecord();
         bytes[] memory calls = new bytes[](4);
-        calls[0] = _remap(address(d.stream), IStream.bindWorkRecords.selector, Roles.ADMIN);
+        calls[0] = _remap(address(d.stream), IStreamCore.bindWorkRecords.selector, Roles.ADMIN);
         calls[1] = abi.encodeCall(IAccessManager.setRoleAdmin, (20, Roles.ADMIN));
         calls[2] = abi.encodeCall(IAccessManager.setRoleGuardian, (20, Roles.ADMIN));
         calls[3] = abi.encodeCall(IAccessManager.setTargetClosed, (address(d.stream), false));
@@ -2286,7 +2287,7 @@ contract DeployScriptTest is Test {
     function test_EpochModeAcceptsARestoredRemapOnly() public {
         (string memory record, DeployV1.Deployment memory d) = _offAnvilRecord();
         address newHot = _recoverHotAdmin(d);
-        bytes4 bind = IStream.bindWorkRecords.selector;
+        bytes4 bind = IStreamCore.bindWorkRecords.selector;
         address stream = address(d.stream);
         _adminExecutes(
             d,

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IMintPolicy } from "src/interfaces/IMintPolicy.sol";
+import { StreamMintRequest } from "src/interfaces/types/PackageTypes.sol";
 import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol";
 import { PackageRegistry } from "src/curation/PackageRegistry.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
@@ -169,9 +171,11 @@ contract CurationHandler is CurationHelpers {
         );
         PackageItem memory item = abi.decode(encodedItems[t.i], (PackageItem));
         vm.prank(t.caller);
-        try registry.consume(t.root, item, proof, move) returns (
-            bytes32 itemHash, uint256, address
-        ) {
+        try registry.authorize(
+            IMintPolicy.MintContext(t.caller, address(_policyStub), address(0), address(_policyStub)),
+            abi.encode(StreamMintRequest(t.root, item, proof, move))
+        ) returns (IMintPolicy.MintRecord memory rec) {
+            bytes32 itemHash = rec.itemHash;
             if (!t.expected || itemHash != itemHashes[t.i]) {
                 unexpectedSuccess = true;
             }

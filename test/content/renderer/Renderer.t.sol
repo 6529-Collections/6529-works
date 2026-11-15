@@ -104,7 +104,7 @@ contract RendererTest is RendererBase {
         IStream.WorkCore memory core = _core();
         core.collectionId = 3;
         core.serial = 12;
-        core.seedPolicy = SeedPolicy.ARTIST;
+        core.seedPolicy = uint8(SeedPolicy.ARTIST);
         stream.setWork(ID, core);
         stream.setCollection(3, IStream.Collection("Spring", bytes32(0), 12));
         records.setSeed(ID, SeedPolicy.ARTIST, bytes32(uint256(0xabc)));
@@ -157,12 +157,12 @@ contract RendererTest is RendererBase {
         bytes32 file = _file(png, IDENTITY, "image/png");
         _install(file);
         IStream.WorkCore memory core = _core();
-        core.seedPolicy = SeedPolicy.ARTIST;
+        core.seedPolicy = uint8(SeedPolicy.ARTIST);
         stream.setWork(ID, core);
         records.setSeed(ID, SeedPolicy.ARTIST, bytes32(uint256(0xabc)));
         assertEq(_attr(_out(), "Seed"), vm.toString(bytes32(uint256(0xabc))));
 
-        core.seedPolicy = SeedPolicy.VRF; // delivered before the mint, so always available
+        core.seedPolicy = uint8(SeedPolicy.VRF); // delivered before the mint, so always available
         stream.setWork(ID, core);
         records.setSeed(ID, SeedPolicy.VRF, bytes32(uint256(0xdef)));
         assertEq(_attr(_out(), "Seed"), vm.toString(bytes32(uint256(0xdef))));
@@ -177,7 +177,7 @@ contract RendererTest is RendererBase {
         core.collectionId = 3;
         core.serial = 12;
         core.artistId = 0xabc;
-        core.seedPolicy = SeedPolicy.VRF;
+        core.seedPolicy = uint8(SeedPolicy.VRF);
         stream.setWork(ID, core);
         stream.setCollection(3, IStream.Collection("Spring", bytes32(0), 12));
         RendererEntropyMock entropy = new RendererEntropyMock();
@@ -648,7 +648,7 @@ contract RendererTest is RendererBase {
         _install(file);
         IStream.WorkCore memory core = _core();
         core.collectionId = 1;
-        core.seedPolicy = SeedPolicy.ARTIST;
+        core.seedPolicy = uint8(SeedPolicy.ARTIST);
         stream.setWork(ID, core);
         stream.setCollection(1, IStream.Collection("C", bytes32(0), 1));
         records.setSeed(ID, SeedPolicy.ARTIST, bytes32(uint256(1)));

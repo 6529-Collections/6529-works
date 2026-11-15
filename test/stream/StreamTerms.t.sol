@@ -51,7 +51,7 @@ contract StreamTermsTest is StreamFixture {
         uint256 a = _mint(1);
         uint256 b = _mint(2);
         for (uint256 id = a; id <= b; ++id) {
-            IStream.WorkCore memory w = stream.work(id);
+            IStream.WorkCore memory w = IStream(address(stream)).work(id);
             assertEq(w.artistId, uint160(artist));
             assertEq(w.seller, seller);
             assertEq(w.royaltyReceiver, _defaultRoyaltyWallet());
@@ -90,16 +90,16 @@ contract StreamTermsTest is StreamFixture {
         _bindMocks();
         uint256 a = _mint(1);
         uint256 b = _mint(2);
-        recordsMock.setRoyaltyRate(stream, a, 10_000);
-        assertEq(stream.work(a).royaltyRate, 10_000);
-        assertEq(stream.work(b).royaltyRate, 6_529, "the shared terms did not change");
+        recordsMock.setRoyaltyRate(IStream(address(stream)), a, 10_000);
+        assertEq(IStream(address(stream)).work(a).royaltyRate, 10_000);
+        assertEq(IStream(address(stream)).work(b).royaltyRate, 6_529, "the shared terms did not change");
         (, uint256 amountB) = stream.royaltyInfo(b, 1 ether);
         assertEq(amountB, 0.06529 ether);
         (bytes32 key, uint256 word) = _key(uint160(artist), 10_000, 25_000, 1, 1);
         assertEq(uint256(vm.load(address(stream), _termsSlot(uint24(uint256(key)) & HASHED))), word);
-        recordsMock.setRoyaltyRate(stream, a, 6_529);
-        assertEq(stream.work(a).royaltyRate, 6_529);
-        assertEq(stream.work(a).royaltyReceiver, _defaultRoyaltyWallet());
+        recordsMock.setRoyaltyRate(IStream(address(stream)), a, 6_529);
+        assertEq(IStream(address(stream)).work(a).royaltyRate, 6_529);
+        assertEq(IStream(address(stream)).work(a).royaltyReceiver, _defaultRoyaltyWallet());
     }
 
     /// @dev Terms locked at mint survive a later economics change; new works lock the new ones.
@@ -112,11 +112,11 @@ contract StreamTermsTest is StreamFixture {
         PrimaryTerms memory tb = stream.primaryTerms(b, "");
         assertEq(ta.feeRecipient, feeRecipient);
         assertEq(ta.feeShare, 25_000);
-        assertEq(stream.work(a).royaltyRate, 6_529);
+        assertEq(IStream(address(stream)).work(a).royaltyRate, 6_529);
         assertEq(tb.feeRecipient, otherFee);
         assertEq(tb.feeShare, 10_000);
-        assertEq(stream.work(b).royaltyRate, 2_000);
-        assertEq(stream.work(b).royaltyReceiver, _royaltyWallet(seller, otherFee, 10_000));
+        assertEq(IStream(address(stream)).work(b).royaltyRate, 2_000);
+        assertEq(IStream(address(stream)).work(b).royaltyReceiver, _royaltyWallet(seller, otherFee, 10_000));
     }
 
     /// @dev Different artists' works keep their own artist and creator.
@@ -146,7 +146,7 @@ contract StreamTermsTest is StreamFixture {
         assertEq(uint256(vm.load(address(stream), _termsSlot(position))), squatter, "untouched");
         assertEq(uint256(vm.load(address(stream), _termsSlot(OVERFLOW | 1))), word);
         assertEq(stream.artistOf(a), uint160(artist));
-        assertEq(stream.work(a).royaltyRate, 6_529);
+        assertEq(IStream(address(stream)).work(a).royaltyRate, 6_529);
         assertEq(stream.primaryTerms(a, "").feeRecipient, feeRecipient);
         vm.record();
         uint256 b = _mint(2);
@@ -154,9 +154,9 @@ contract StreamTermsTest is StreamFixture {
         assertFalse(_contains(writes, _termsSlot(OVERFLOW | 2)), "no second overflow entry");
         assertEq(stream.artistOf(b), uint160(artist));
         // A re-rate reaches the overflow range the same way.
-        recordsMock.setRoyaltyRate(stream, b, 7_000);
-        assertEq(stream.work(b).royaltyRate, 7_000);
-        assertEq(stream.work(a).royaltyRate, 6_529);
+        recordsMock.setRoyaltyRate(IStream(address(stream)), b, 7_000);
+        assertEq(IStream(address(stream)).work(b).royaltyRate, 7_000);
+        assertEq(IStream(address(stream)).work(a).royaltyRate, 6_529);
     }
 
     /// @dev The packed flags: kind, seed policy, the settled sale and the edition link.
@@ -167,18 +167,18 @@ contract StreamTermsTest is StreamFixture {
         item.seedPolicy = SeedPolicy.ARTIST;
         item.seed = keccak256("seed");
         uint256 id = _mint(item);
-        (,,, ItemKind kind, SeedPolicy policy,) = stream.coreOf(id);
+        (,,, uint8 kind, uint8 policy,) = stream.coreOf(id);
         assertEq(uint8(kind), uint8(ItemKind.EDITION_MASTER));
         assertEq(uint8(policy), uint8(SeedPolicy.ARTIST));
         assertFalse(stream.primarySaleSettled(id));
-        auction.settle(stream, id);
+        auction.settle(IStream(address(stream)), id);
         assertTrue(stream.primarySaleSettled(id));
         (address linked,) = stream.editionOf(id);
         assertEq(linked, address(0));
-        editionsMock.link(stream, id, id);
+        editionsMock.link(IStream(address(stream)), id, id);
         (linked,) = stream.editionOf(id);
         assertEq(linked, address(editionsMock));
-        IStream.WorkCore memory w = stream.work(id);
+        IStream.WorkCore memory w = IStream(address(stream)).work(id);
         assertEq(uint8(w.kind), uint8(ItemKind.EDITION_MASTER));
         assertEq(uint8(w.seedPolicy), uint8(SeedPolicy.ARTIST));
         assertEq(w.serial, 1);
@@ -191,7 +191,7 @@ contract StreamTermsTest is StreamFixture {
         (,,, kind, policy,) = stream.coreOf(vrfId);
         assertEq(uint8(kind), uint8(ItemKind.ORIGINAL));
         assertEq(uint8(policy), uint8(SeedPolicy.VRF));
-        assertEq(stream.work(vrfId).serial, 2);
+        assertEq(IStream(address(stream)).work(vrfId).serial, 2);
     }
 
     function _contains(bytes32[] memory list, bytes32 value) internal pure returns (bool) {

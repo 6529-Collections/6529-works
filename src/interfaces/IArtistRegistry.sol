@@ -260,7 +260,7 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     ///        not an EIP-7702 delegated account.
     function bindPackageRegistry(address target) external;
     /// @notice Replaces the package registry, the only `register` caller, so that a successor
-    ///         registry installed in 6529 Stream (`IStream.setDependency`, owner decision 16) can
+    ///         registry installed in 6529 Stream (`IStreamCore.setDependency`, owner decision 16) can
     ///         register new artists. SUCCESSOR_SETTER role (the 30-day class), compare-and-set,
     ///         scheduled in the same batch as Stream's replacement. Existing artists are
     ///         unaffected.
@@ -268,7 +268,7 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @param next The successor: a contract supporting `IPackageRegistry` (ERC-165), not an
     ///        EIP-7702 delegated account.
     function setPackageRegistry(address expected, address next) external;
-    /// @notice Binds 6529 Stream, which `isArtist` reads (`IStream.artistOf`), once. ADMIN role.
+    /// @notice Binds 6529 Stream, which `isArtist` reads (`IStreamCore.artistOf`), once. ADMIN role.
     /// @param target 6529 Stream: a contract supporting `IStream` (ERC-165), not an EIP-7702
     ///        delegated account.
     function bindStream(address target) external;

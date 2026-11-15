@@ -8,6 +8,7 @@ import { SaleTerms } from "src/interfaces/types/PackageTypes.sol";
 import { Payment, PaymentMethod, PrimaryOutcome } from "src/interfaces/types/SaleTypes.sol";
 import { MockSaleAdapter } from "../../mocks/stream/StreamMocks.sol";
 import { IntegrationBase } from "../IntegrationBase.sol";
+import { IStream } from "src/interfaces/IStream.sol";
 
 /// @notice Owner decision 28: 6529 Stream's work lifecycle and sale-method lifecycle are the
 ///         tables in `docs/spec/stream-and-auctions.md` ("A work's lifecycle", "A sale
@@ -118,7 +119,7 @@ contract StreamStatesInvariantTest is IntegrationBase {
         if (nextItem < ITEMS) {
             uint256 index = nextItem;
             bytes memory data = _mintData(root, _package(root), index);
-            uint256 before = stream.totalMinted();
+            uint256 before = IStream(address(stream)).totalMinted();
             if (index % 2 == 0) {
                 try adapter.start(stream, data) {
                     minterOf[before + 1] = address(adapter);
@@ -171,7 +172,7 @@ contract StreamStatesInvariantTest is IntegrationBase {
             PrimaryOutcome outcome = PrimaryOutcome(outcomeSeed % 5);
             bool sold = outcome == PrimaryOutcome.SOLD;
             try adapter.settleWith(
-                stream, id, outcome, sold ? collector : address(0), CURRENCY_ETH, sold ? 1 : 0
+                IStream(address(stream)), id, outcome, sold ? collector : address(0), CURRENCY_ETH, sold ? 1 : 0
             ) {
                 if (outcome == PrimaryOutcome.NONE || outcome == PrimaryOutcome.RESCUED) {
                     _violation("an adapter reported NONE or RESCUED");
@@ -280,7 +281,7 @@ contract StreamStatesInvariantTest is IntegrationBase {
 
     /// @dev A minted token ID from `seed`, or zero when none is minted.
     function _pick(uint256 seed) internal view returns (uint256) {
-        uint256 minted = stream.totalMinted();
+        uint256 minted = IStream(address(stream)).totalMinted();
         return minted == 0 ? 0 : 1 + seed % minted;
     }
 
@@ -294,7 +295,7 @@ contract StreamStatesInvariantTest is IntegrationBase {
 
     /// @dev The work state of `id` per the spec's table, from what Stream stores.
     function _state(uint256 id) internal view returns (S, PrimaryOutcome outcome) {
-        if (id > stream.totalMinted()) return (S.NEVER_MINTED, PrimaryOutcome.NONE);
+        if (id > IStream(address(stream)).totalMinted()) return (S.NEVER_MINTED, PrimaryOutcome.NONE);
         (outcome,,) = stream.primarySale(id);
         address holder = _holder(id);
         // Every settled state has a holder; only a cancelled work has none.
@@ -337,7 +338,7 @@ contract StreamStatesInvariantTest is IntegrationBase {
     /// @dev Reads every work and both adapters, checks each change against the tables and
     ///      records the new states.
     function _observe() internal {
-        uint256 last = stream.totalMinted() + 1;
+        uint256 last = IStream(address(stream)).totalMinted() + 1;
         for (uint256 id = 1; id <= last; ++id) {
             (S now_, PrimaryOutcome outcome) = _state(id);
             S before = seen[id];

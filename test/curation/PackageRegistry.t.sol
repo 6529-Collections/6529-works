@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IMintPolicy } from "src/interfaces/IMintPolicy.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol";
@@ -243,7 +244,7 @@ contract PackageRegistryTest is CurationBase {
         MoveAuthorization memory move;
         vm.prank(stream);
         vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.UnboundCaller.selector, stream));
-        fresh.consume(bytes32(0), item, new bytes32[](0), move);
+        _policyCall(fresh, bytes32(0), item, new bytes32[](0), move);
     }
 
     // ------------------------------------------------------------------ registerPackage
@@ -322,7 +323,7 @@ contract PackageRegistryTest is CurationBase {
         assertEq(uint8(status), uint8(IPackageRegistry.PackageStatus.REVOKED));
         vm.prank(stream);
         vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.PackageNotApproved.selector, root));
-        registry.consume(root, item, new bytes32[](0), move);
+        _policyCall(registry, root, item, new bytes32[](0), move);
         PartyAcceptance memory a = _acceptance(collab);
         bytes memory sig = _sig(collabKey, registry.acceptanceDigest(root, a));
         vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.PackageNotApproved.selector, root));
@@ -601,8 +602,10 @@ contract PackageRegistryTest is CurationBase {
         vm.expectEmit(address(registry));
         emit IPackageRegistry.ItemConsumed(root, itemHash, _id(lead), SHA_A);
         vm.prank(stream);
+        IMintPolicy.MintRecord memory rec =
+            _policyCall(registry, root, item, new bytes32[](0), move);
         (bytes32 h, uint256 artistId, address authority) =
-            registry.consume(root, item, new bytes32[](0), move);
+            (rec.itemHash, rec.artistId, rec.terms.creator);
         assertEq(h, itemHash);
         assertEq(artistId, _id(lead));
         assertEq(authority, lead, "the active authority that signed the move");
@@ -657,14 +660,14 @@ contract PackageRegistryTest is CurationBase {
         vm.expectRevert(
             abi.encodeWithSelector(IPackageRegistry.PartyNotAccepted.selector, root, collab)
         );
-        registry.consume(root, item, new bytes32[](0), move);
+        _policyCall(registry, root, item, new bytes32[](0), move);
         // The collaborator accepted a different package: still not this one.
         _accept(keccak256("unrelated"), collabKey, true);
         vm.prank(stream);
         vm.expectRevert(
             abi.encodeWithSelector(IPackageRegistry.PartyNotAccepted.selector, root, collab)
         );
-        registry.consume(root, item, new bytes32[](0), move);
+        _policyCall(registry, root, item, new bytes32[](0), move);
     }
 
     function test_consume_onlyBoundStream() public {
@@ -675,7 +678,7 @@ contract PackageRegistryTest is CurationBase {
             vm.expectRevert(
                 abi.encodeWithSelector(IPackageRegistry.UnboundCaller.selector, callers[i])
             );
-            registry.consume(root, item, new bytes32[](0), move);
+            _policyCall(registry, root, item, new bytes32[](0), move);
         }
     }
 
@@ -689,7 +692,7 @@ contract PackageRegistryTest is CurationBase {
                 IPackageRegistry.ContentUsed.selector, PRODUCT_STREAM, SHA_A, _hash(item)
             )
         );
-        registry.consume(root, item, new bytes32[](0), fresh);
+        _policyCall(registry, root, item, new bytes32[](0), fresh);
     }
 
     function test_consume_itemIsSingleUseAcrossPackages() public {
@@ -713,7 +716,7 @@ contract PackageRegistryTest is CurationBase {
                 IPackageRegistry.ContentUsed.selector, PRODUCT_STREAM, SHA_A, _hash(item)
             )
         );
-        registry.consume(rootB, item, proof, move);
+        _policyCall(registry, rootB, item, proof, move);
     }
 
     /// @dev Two different items declaring the same content hash (other media lists and record
@@ -736,7 +739,7 @@ contract PackageRegistryTest is CurationBase {
                 IPackageRegistry.ContentUsed.selector, PRODUCT_STREAM, SHA_A, _hash(items[0])
             )
         );
-        registry.consume(root, items[1], proofs[1], move);
+        _policyCall(registry, root, items[1], proofs[1], move);
         assertEq(registry.consumedItemOf(SHA_A), _hash(items[0]));
     }
 
@@ -747,7 +750,7 @@ contract PackageRegistryTest is CurationBase {
         vm.expectRevert(
             abi.encodeWithSelector(IPackageRegistry.ItemNotInPackage.selector, root, _hash(item))
         );
-        registry.consume(root, item, new bytes32[](0), move);
+        _policyCall(registry, root, item, new bytes32[](0), move);
     }
 
     /// @dev A *valid* proof one level deeper than the cap is refused; at the cap it consumes.
@@ -765,7 +768,7 @@ contract PackageRegistryTest is CurationBase {
                 IPackageRegistry.ItemNotInPackage.selector, deepRoot, _hash(item)
             )
         );
-        registry.consume(deepRoot, item, deep, move);
+        _policyCall(registry, deepRoot, item, deep, move);
         (bytes32 root, bytes32[] memory atCap) = _deepProof(item, cap);
         _register(root);
         _accept(root, leadKey);
@@ -795,7 +798,7 @@ contract PackageRegistryTest is CurationBase {
         vm.warp(uint256(move.deadline) + 1);
         vm.prank(stream);
         vm.expectRevert(SignatureReverts.expired(move.deadline));
-        registry.consume(root, item, new bytes32[](0), move);
+        _policyCall(registry, root, item, new bytes32[](0), move);
     }
 
     function test_move_validAtDeadline() public {
@@ -809,7 +812,7 @@ contract PackageRegistryTest is CurationBase {
         MoveAuthorization memory move = _move(collabKey, root, _hash(item), 0);
         vm.prank(stream);
         vm.expectRevert(SignatureReverts.invalid(lead));
-        registry.consume(root, item, new bytes32[](0), move);
+        _policyCall(registry, root, item, new bytes32[](0), move);
     }
 
     function test_move_revertsMalleableHighS() public {
@@ -817,7 +820,7 @@ contract PackageRegistryTest is CurationBase {
         move.signature = _highS(leadKey, registry.moveDigest(root, _hash(item), 0, deadline));
         vm.prank(stream);
         vm.expectRevert(SignatureReverts.invalid(lead));
-        registry.consume(root, item, new bytes32[](0), move);
+        _policyCall(registry, root, item, new bytes32[](0), move);
     }
 
     function test_move_revertsWrongChain() public {
@@ -825,7 +828,7 @@ contract PackageRegistryTest is CurationBase {
         vm.chainId(block.chainid + 1);
         vm.prank(stream);
         vm.expectRevert(SignatureReverts.invalid(lead));
-        registry.consume(root, item, new bytes32[](0), move);
+        _policyCall(registry, root, item, new bytes32[](0), move);
     }
 
     function test_move_revertsOtherRegistryDeployment() public {
@@ -834,7 +837,7 @@ contract PackageRegistryTest is CurationBase {
         bytes memory foreign = _sig(leadKey, other.moveDigest(root, _hash(item), 0, deadline));
         vm.prank(stream);
         vm.expectRevert(SignatureReverts.invalid(lead));
-        registry.consume(root, item, new bytes32[](0), MoveAuthorization(0, deadline, foreign));
+        _policyCall(registry, root, item, new bytes32[](0), MoveAuthorization(0, deadline, foreign));
     }
 
     function test_move_bindsItem() public {
@@ -847,7 +850,7 @@ contract PackageRegistryTest is CurationBase {
         MoveAuthorization memory moveFor0 = _move(leadKey, root, _hash(items[0]), 0);
         vm.prank(stream);
         vm.expectRevert(SignatureReverts.invalid(lead));
-        registry.consume(root, items[1], proofs[1], moveFor0);
+        _policyCall(registry, root, items[1], proofs[1], moveFor0);
     }
 
     function test_move_signedByCurrentAuthorityAfterRecovery() public {
@@ -856,7 +859,7 @@ contract PackageRegistryTest is CurationBase {
         artists.recover(_id(lead), vm.addr(newKey));
         vm.prank(stream);
         vm.expectRevert(SignatureReverts.invalid(vm.addr(newKey)));
-        registry.consume(root, item, new bytes32[](0), oldMove);
+        _policyCall(registry, root, item, new bytes32[](0), oldMove);
         _consume(root, item, new bytes32[](0), _move(newKey, root, _hash(item), 0));
     }
 
@@ -889,7 +892,7 @@ contract PackageRegistryTest is CurationBase {
         vm.expectRevert(
             abi.encodeWithSelector(IPackageRegistry.MoveNonceUsed.selector, _id(lead), 5)
         );
-        registry.consume(root, items[1], proofs[1], second);
+        _policyCall(registry, root, items[1], proofs[1], second);
     }
 
     // ----------------------------------------------------------------------- revokeMove
@@ -908,12 +911,12 @@ contract PackageRegistryTest is CurationBase {
         vm.expectRevert(
             abi.encodeWithSelector(IPackageRegistry.MoveNonceUsed.selector, _id(lead), 0)
         );
-        registry.consume(root, item, new bytes32[](0), move);
+        _policyCall(registry, root, item, new bytes32[](0), move);
         vm.prank(stream);
         vm.expectRevert(
             abi.encodeWithSelector(IPackageRegistry.MoveNonceUsed.selector, _id(lead), 0)
         );
-        registry.consume(root, item, new bytes32[](0), compact);
+        _policyCall(registry, root, item, new bytes32[](0), compact);
         // A fresh nonce still works.
         _consume(root, item, new bytes32[](0), _move(leadKey, root, _hash(item), 1));
     }
@@ -1289,7 +1292,7 @@ contract PackageRegistryTest is CurationBase {
                     IPackageRegistry.ContentUsed.selector, PRODUCT_STREAM, SHA_A, _hash(copy)
                 )
             );
-            registry.consume(roots[r], copy, r == 0 ? new bytes32[](0) : proof, move);
+            _policyCall(registry, roots[r], copy, r == 0 ? new bytes32[](0) : proof, move);
         }
         // Even after the hash is consumed and released again by another item, to the copier.
         _consume(otherRoot, other, new bytes32[](0), _move(leadKey, otherRoot, _hash(other), 0));
@@ -1301,7 +1304,7 @@ contract PackageRegistryTest is CurationBase {
                 IPackageRegistry.ContentUsed.selector, PRODUCT_STREAM, SHA_A, _hash(copy)
             )
         );
-        registry.consume(single, copy, new bytes32[](0), again);
+        _policyCall(registry, single, copy, new bytes32[](0), again);
     }
 
     function test_releaseContent_revertsOnMismatch() public {
@@ -1400,7 +1403,7 @@ contract PackageRegistryTest is CurationBase {
                 IPackageRegistry.ContentReserved.selector, SHA_A, uint256(uint160(lead))
             )
         );
-        registry.consume(copyRoot, sibling, _proof(leaves, 1), move);
+        _policyCall(registry, copyRoot, sibling, _proof(leaves, 1), move);
 
         _consume(realRoot, real, new bytes32[](0), _move(leadKey, realRoot, _hash(real), 0));
         assertEq(registry.consumedItemOf(SHA_A), _hash(real));
@@ -1412,7 +1415,7 @@ contract PackageRegistryTest is CurationBase {
                 IPackageRegistry.ContentUsed.selector, PRODUCT_STREAM, SHA_A, _hash(real)
             )
         );
-        registry.consume(copyRoot, sibling, _proof(leaves, 1), move);
+        _policyCall(registry, copyRoot, sibling, _proof(leaves, 1), move);
     }
 
     // ---------------------------------------------------------------------- setVerifier
@@ -1597,7 +1600,7 @@ contract PackageRegistryTest is CurationBase {
                     IPackageRegistry.ItemNotInPackage.selector, root, _hash(item)
                 )
             );
-            registry.consume(root, item, bad, move);
+            _policyCall(registry, root, item, bad, move);
             // Dropping the last element also fails.
             bytes32[] memory shorter = new bytes32[](proof.length - 1);
             for (uint256 i; i < shorter.length; ++i) {
@@ -1609,7 +1612,7 @@ contract PackageRegistryTest is CurationBase {
                     IPackageRegistry.ItemNotInPackage.selector, root, _hash(item)
                 )
             );
-            registry.consume(root, item, shorter, move);
+            _policyCall(registry, root, item, shorter, move);
         }
         _consume(root, item, proof, move);
         assertEq(registry.consumedItemOf(item.contentHash), _hash(item));
@@ -1630,7 +1633,7 @@ contract PackageRegistryTest is CurationBase {
                 IPackageRegistry.ItemNotInPackage.selector, root, _hash(outsider)
             )
         );
-        registry.consume(root, outsider, proof, move);
+        _policyCall(registry, root, outsider, proof, move);
     }
 
     // -------------------------------------------------------------------------- helpers
@@ -1684,7 +1687,7 @@ contract PackageRegistryTest is CurationBase {
         MoveAuthorization memory move = _move(leadKey_, root, _hash(item), 0);
         vm.prank(stream);
         vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.InvalidItem.selector, _hash(item)));
-        registry.consume(root, item, new bytes32[](0), move);
+        _policyCall(registry, root, item, new bytes32[](0), move);
     }
 
     function _expectValid(PackageItem memory item, uint256[] memory keys) internal {

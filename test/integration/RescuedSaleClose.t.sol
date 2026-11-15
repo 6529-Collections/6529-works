@@ -5,6 +5,7 @@ import { Vm } from "forge-std/Vm.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamCore } from "src/interfaces/IStreamCore.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { PrimaryOutcome } from "src/interfaces/types/SaleTypes.sol";
@@ -189,7 +190,7 @@ contract RescuedSaleCloseTest is EditionAuctionStack {
     function _assertNoSaleSettled(Vm.Log[] memory logs) internal pure {
         for (uint256 i; i < logs.length; ++i) {
             assertTrue(logs[i].topics[0] != ISaleAdapter.SaleSettled.selector, "no SaleSettled");
-            assertTrue(logs[i].topics[0] != IStream.PrimarySaleSettled.selector, "no report");
+            assertTrue(logs[i].topics[0] != IStreamCore.PrimarySaleSettled.selector, "no report");
         }
     }
 }

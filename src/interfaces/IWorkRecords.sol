@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { License, PackageItem, SeedPolicy } from "./types/PackageTypes.sol";
+import { License, PackageItem } from "./types/PackageTypes.sol";
 import { Locator, LocatorKind, MediaFile } from "./types/ContentTypes.sol";
 
 /// @title IWorkRecords
@@ -256,7 +256,7 @@ interface IWorkRecords {
     /// @param tokenId A live work with an open record.
     /// @return policy The work's seed policy.
     /// @return seed The seed, or zero under NONE.
-    function seedOf(uint256 tokenId) external view returns (SeedPolicy policy, bytes32 seed);
+    function seedOf(uint256 tokenId) external view returns (uint8 policy, bytes32 seed);
 
     // ----- amendments: agreement plus a governed action (ADR 0001 sections 7, 8 and 10) -----
 
@@ -288,7 +288,7 @@ interface IWorkRecords {
     ) external;
     /// @notice Lowers a work's royalty rate (payees never change). FUNDS_SETTER role plus a
     ///         `Typehashes.ROYALTY_RATE_CHANGE` signature from every party of `item`. Bumps the
-    ///         version before its external calls, calls `IStream.setRoyaltyRate` and, for an
+    ///         version before its external calls, calls `IStreamCore.setRoyaltyRate` and, for an
     ///         edition master, `IEditions.setRoyaltyRate` on the linked edition, then emits
     ///         `RoyaltyRateSet` and ERC-4906. An unchanged rate is a no-op. Lower-only, and it
     ///         always reverts once the lead artist renounces the power (see `IWorkPowers`).
@@ -374,7 +374,7 @@ interface IWorkRecords {
     /// @param kind The new global preferred kind.
     function setPreferredKind(LocatorKind kind) external;
     /// @notice Sets a collection's preferred kind (NONE clears it). STORAGE_OPERATOR role.
-    /// @param collectionId An existing 6529 Stream collection (`IStream.UnknownCollection`
+    /// @param collectionId An existing 6529 Stream collection (`IStreamCore.UnknownCollection`
     ///        otherwise).
     /// @param kind The collection's new preferred kind.
     function setCollectionPreferredKind(uint256 collectionId, LocatorKind kind) external;

@@ -93,9 +93,9 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         }
         PackageItem memory item = abi.decode(data, (PackageItem));
         EditionTerms memory e = item.edition;
-        (bytes32 itemHash,,, ItemKind kind,,) = IStream(_stream).coreOf(id);
+        (bytes32 itemHash,,, uint8 kind,,) = IStream(_stream).coreOf(id);
         if (
-            token != _editions || kind != ItemKind.EDITION_MASTER
+            token != _editions || kind != uint8(ItemKind.EDITION_MASTER)
                 || WorksHashing.itemHash(item) != itemHash || e.saleKind != SaleKind.UNIFORM_AUCTION
                 || e.currency != CURRENCY_ETH || e.params.length != 0
         ) revert ISaleAdapter.InvalidSaleTerms(token, id);

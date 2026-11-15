@@ -7,7 +7,7 @@ import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol"
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { EditionRules } from "src/editions/EditionRules.sol";
 import { IEnglishAuctionClock } from "src/interfaces/IEnglishAuctionClock.sol";
-import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
+import { IMintPolicy } from "src/interfaces/IMintPolicy.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import {
     CURRENCY_ETH,
@@ -26,6 +26,7 @@ import { Payment, PaymentMethod, SaleKind } from "src/interfaces/types/SaleTypes
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { StateGrowth } from "../helpers/StateGrowth.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
+import { IStream } from "src/interfaces/IStream.sol";
 
 /// @notice The integration gas report: the budgets of ADR 0001, ADR 0003 and ADR 0004, measured
 ///         on the real, wired contracts. `forge test --match-test test_Gas_Table -vv` prints one
@@ -585,18 +586,14 @@ contract IntegrationGasReport is IntegrationBase {
         _growthIs(r, 7, 0);
     }
 
-    /// @dev Each of Stream's four dependencies replaced with itself, each a 30-day
-    ///      SUCCESSOR_SETTER action.
+    /// @dev Each of Stream's three mint-path dependencies (the mint policy, the economics
+    ///      resolver, the entropy module) replaced with itself, each a 30-day SUCCESSOR_SETTER
+    ///      action. The artist registry is permanent; the view extension is off the mint path.
     function _replaceAllDependencies() internal {
-        bytes32[4] memory kinds =
-            [bytes32("PACKAGE_REGISTRY"), "ARTIST_REGISTRY", "ECONOMICS", "ENTROPY_MODULE"];
-        address[4] memory current = [
-            stream.packageRegistry(),
-            stream.artistRegistry(),
-            stream.economics(),
-            stream.entropyModule()
-        ];
-        for (uint256 i; i < 4; ++i) {
+        bytes32[3] memory kinds = [bytes32("PACKAGE_REGISTRY"), "ECONOMICS", "ENTROPY_MODULE"];
+        address[3] memory current =
+            [stream.packageRegistry(), stream.economics(), stream.entropyModule()];
+        for (uint256 i; i < 3; ++i) {
             _govern(
                 hotAdmin,
                 address(stream),
@@ -793,7 +790,7 @@ contract IntegrationGasReport is IntegrationBase {
     ///      slot is the sale's recipient, and Stream records UNBID in a word it rewrites.
     function _rowSettleNoBid() internal returns (Row memory r) {
         _steadyState();
-        uint256 earlier = auction.saleIdOf(address(stream), stream.totalMinted()); // unbid
+        uint256 earlier = auction.saleIdOf(address(stream), IStream(address(stream)).totalMinted()); // unbid
         (uint256 saleId,) = _start(root, _package(root), 2);
         vm.warp(auction.auction(saleId).endTime);
         auction.settle(earlier);
@@ -848,11 +845,12 @@ contract IntegrationGasReport is IntegrationBase {
     function _rowConsume() internal returns (Row memory r) {
         _steadyState();
         bytes memory request = _mintData(root, _package(root), 2);
-        StreamMintRequest memory m = abi.decode(request, (StreamMintRequest));
-        bytes memory data =
-            abi.encodeCall(IPackageRegistry.consume, (m.packageRoot, m.item, m.proof, m.move));
+        IMintPolicy.MintContext memory c = IMintPolicy.MintContext(
+            address(auction), stream.economics(), stream.entropyModule(), stream.splitFactory()
+        );
+        bytes memory data = abi.encodeCall(IMintPolicy.authorize, (c, request));
         r = _row(
-            "consume (the registry's share of start, as a call)",
+            "authorize (the mint policy's share of start, as a call)",
             address(stream),
             address(registry),
             data,
@@ -935,7 +933,7 @@ contract IntegrationGasReport is IntegrationBase {
         );
         _gasAtMost(r, RERATE_CEILING, "regression ceiling");
         _growthIs(r, 1, 0);
-        if (pass == Pass.BOTH) assertEq(stream.work(tokenId).royaltyRate, rate);
+        if (pass == Pass.BOTH) assertEq(IStream(address(stream)).work(tokenId).royaltyRate, rate);
     }
 
     // ------------------------------------------------------------------ identity

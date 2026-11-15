@@ -16,6 +16,7 @@ import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStatementLog, Statement } from "src/interfaces/IStatementLog.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamCore } from "src/interfaces/IStreamCore.sol";
 import { HashRef, HASH_SHA256 } from "src/interfaces/types/HashRef.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
@@ -118,8 +119,8 @@ contract GenesisWiringTest is GovernanceFixture {
 
     function test_GenesisSelectorsAreExactlyTheAllowList() public pure {
         bytes4[12] memory allowed = [
-            IStream.bindWorkRecords.selector,
-            IStream.bindEditions.selector,
+            IStreamCore.bindWorkRecords.selector,
+            IStreamCore.bindEditions.selector,
             IPackageRegistry.bindStream.selector,
             IArtistRegistry.bindPackageRegistry.selector,
             IArtistRegistry.bindSplitFactory.selector,
@@ -135,10 +136,10 @@ contract GenesisWiringTest is GovernanceFixture {
             assertTrue(GovernanceConfig.isGenesisSelector(allowed[i]));
         }
         // The same selectors on the other contracts that declare them.
-        assertEq(IPackageRegistry.bindEditions.selector, IStream.bindEditions.selector);
+        assertEq(IPackageRegistry.bindEditions.selector, IStreamCore.bindEditions.selector);
         assertEq(IArtistRegistry.bindStream.selector, IPackageRegistry.bindStream.selector);
         assertFalse(GovernanceConfig.isGenesisSelector(IPackageRegistry.setVerifier.selector));
-        assertFalse(GovernanceConfig.isGenesisSelector(IStream.setDefaultRenderer.selector));
+        assertFalse(GovernanceConfig.isGenesisSelector(IStreamCore.setDefaultRenderer.selector));
         assertFalse(GovernanceConfig.isGenesisSelector(bytes4(0)));
     }
 
