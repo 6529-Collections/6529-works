@@ -42,7 +42,7 @@ contract GovernanceHandoverTest is IntegrationBase {
 
     /// @dev Every contract the genesis deployment creates.
     function _deployed() internal view returns (address[] memory all) {
-        address[24] memory list = [
+        address[26] memory list = [
             address(configurator),
             address(manager),
             address(store),
@@ -51,6 +51,8 @@ contract GovernanceHandoverTest is IntegrationBase {
             address(artists),
             address(releaseVerifier),
             address(splitFactory),
+            networkFee,
+            museum,
             address(claimRouter),
             address(allowlist),
             address(economics),
@@ -68,8 +70,8 @@ contract GovernanceHandoverTest is IntegrationBase {
             address(records),
             address(editions)
         ];
-        all = new address[](24);
-        for (uint256 i; i < 24; ++i) {
+        all = new address[](26);
+        for (uint256 i; i < 26; ++i) {
             all[i] = list[i];
         }
     }
@@ -110,7 +112,7 @@ contract GovernanceHandoverTest is IntegrationBase {
     function test_EveryGovernedContractMovesInOneTransaction() public {
         address[] memory governed = _governedBy(address(manager));
         address[] memory managed = manager.managedTargets();
-        assertEq(governed.length, 14, "the genesis stack's governed contracts");
+        assertEq(governed.length, 16, "the genesis stack's governed contracts");
         assertEq(managed.length, governed.length, "each one is on the managed list");
         for (uint256 i; i < governed.length; ++i) {
             bool listed;

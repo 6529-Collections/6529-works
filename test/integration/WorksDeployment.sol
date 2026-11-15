@@ -105,9 +105,16 @@ abstract contract WorksDeployment is Test {
     address internal storageOperator = makeAddr("storageOperator");
     address internal platform = makeAddr("platform");
     address internal curator = makeAddr("curator");
-    address internal networkFee = makeAddr("networkFeeSafe");
-    /// @dev The 6529 Network Museum (D140): where an unbid canonical 6529 Stream work goes.
-    address internal museum = makeAddr("networkMuseumSafe");
+    /// @dev The network fee Safe and the 6529 Network Museum's Safe (D140): the first
+    ///      destinations of the two governed vaults the deployment creates (ADR 0007).
+    address internal networkFeeSafe = makeAddr("networkFeeSafe");
+    address internal museumSafe = makeAddr("networkMuseumSafe");
+    /// @dev The network fee recipient the economics resolver names: the fee recipient's
+    ///      governed vault, set at deployment.
+    address internal networkFee;
+    /// @dev The museum the economics resolver names, where an unbid canonical 6529 Stream work
+    ///      goes: the museum's governed vault, set at deployment.
+    address internal museum;
     address internal marketOwner = makeAddr("marketOwner");
 
     bytes32 internal cc0TextFileId;
@@ -142,8 +149,8 @@ abstract contract WorksDeployment is Test {
     function _params() internal view virtual returns (DeployV1.Params memory p) {
         p.deployer = address(this);
         p.namespace = keccak256("6529-works/integration-lane-b");
-        p.feeRecipient = networkFee;
-        p.museum = museum;
+        p.feeRecipient = networkFeeSafe;
+        p.museum = museumSafe;
         p.marketOwner = marketOwner;
         p.delegation = address(delegation);
         p.cc0Text = CC0_TEXT;
@@ -168,6 +175,8 @@ abstract contract WorksDeployment is Test {
         artists = d.artistRegistry;
         releaseVerifier = d.splitFactory;
         splitFactory = d.splitFactory;
+        networkFee = address(d.feeRecipientVault);
+        museum = address(d.museumVault);
         claimRouter = d.claimRouter;
         allowlist = d.assetAllowlist;
         economics = d.economicsResolver;
