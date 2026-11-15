@@ -794,6 +794,9 @@ contract UniformEditionAuction is
             uint32(count), uint16(step), rationed, uint32(cutUnits), uint32(cutUnits), 0, 0, p.id
         );
         // forge-lint: disable-end(unsafe-typecast)
+        // The count is final here (rationing picks winners, not the count): seal the edition at
+        // it, so no copy past what the winners are owed can ever be minted (ED-12).
+        IEditions(editions).sealSupply(p.id, count);
         price = count == 0 ? 0 : _price(t, step);
         emit IUniformEditionAuction.AuctionCleared(
             saleId, count, step, price, count * price, rationed, cutUnits
@@ -921,6 +924,7 @@ contract UniformEditionAuction is
         IUniformEditionAuction.AuctionConfig memory t = _terms[a.termsId];
         refund = uint256(b.quantity) * _price(t, b.step);
         uint256 id = 0;
+        uint256 unitPrice;
         if (status == IUniformEditionAuction.AuctionStatus.SETTLED) {
             ResultWord memory r = _results[saleId];
             id = r.id;
@@ -928,13 +932,15 @@ contract UniformEditionAuction is
                 unitsWon = b.step > r.step || !r.rationed
                     ? b.quantity
                     : UniformClearing.wonAtCut(r.cutoff, b.position, b.quantity);
-                refund -= unitsWon * _price(t, r.step);
+                unitPrice = _price(t, r.step);
+                refund -= unitsWon * unitPrice;
             }
         }
         delete _bids[saleId][bidId];
         emit IUniformEditionAuction.BidClaimed(saleId, bidId, b.bidder, to, unitsWon, refund);
         if (unitsWon != 0) {
-            (uint256 minted,) = IMintTarget(editions).mint(to, id, unitsWon, "");
+            (uint256 minted,) = IMintTarget(editions)
+                .mint(to, id, unitsWon, abi.encode(CURRENCY_ETH, unitPrice));
             if (minted != id) revert InvalidSaleTerms(editions, id);
         }
     }

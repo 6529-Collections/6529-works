@@ -31,13 +31,18 @@ contract EditionAuctionGasReport is EditionAuctionStack {
     uint256 internal constant OPEN_FIRST_CEILING = 322_000;
     /// @dev Moved from 144,000 by owner decision 16: 6529 Stream Editions reads the package
     ///      registry from Stream (two reads) instead of an immutable.
-    uint256 internal constant CREATE_BOUND_CEILING = 148_000;
+    ///      Moved from 148,000 (permanence integration, 15 November 2026): `createEdition` now
+    ///      emits `EditionTermsLocked` and forwards all gas on each call out (154,572 measured).
+    uint256 internal constant CREATE_BOUND_CEILING = 158_000;
     uint256 internal constant RAISE_CEILING = 56_000;
     uint256 internal constant RAISE_CAPPED_CEILING = 81_000;
     uint256 internal constant CLAIM_LOSER_CEILING = 49_000;
     uint256 internal constant CLAIM_FOR_CEILING = 67_000;
     uint256 internal constant WITHDRAW_CEILING = 90_000;
-    uint256 internal constant SWEEP_SETTLE_CEILING = 153_000;
+    /// @dev Moved from 153,000 by the interim edition-auction wiring (permanence integration,
+    ///      15 November 2026; superseded by the edition-auction lane): settlement seals the
+    ///      edition's supply (`IEditions.sealSupply`, 162,191 measured).
+    uint256 internal constant SWEEP_SETTLE_CEILING = 166_000;
 
     address internal artist;
     address internal keeper = makeAddr("keeper");

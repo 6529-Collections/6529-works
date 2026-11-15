@@ -133,6 +133,11 @@ contract MockEditionToken is ERC1155 {
     address public resolver;
     /// @dev Counts the `bindMinter` calls.
     uint256 public binds;
+    /// @dev Editions' seal (`sealSupply`): whether and at what count, and the last price record.
+    mapping(uint256 id => bool) public sealed_;
+    mapping(uint256 id => uint256) public sealedCount;
+    address public lastCurrency;
+    uint256 public lastUnitPrice;
 
     constructor(address stream_) ERC1155("") {
         stream = stream_;
@@ -202,13 +207,26 @@ contract MockEditionToken is ERC1155 {
             if (!admitted[msg.sender]) revert IMintTarget.NotAdmittedMinter(msg.sender);
             if (bound != address(0)) revert IEditions.MinterMismatch(id, bound);
         }
-        if (amount == 0 || data.length != 0 || !exists[id]) {
+        if (amount == 0 || data.length != 64 || !exists[id]) {
             revert IMintTarget.InvalidMintRequest();
+        }
+        (lastCurrency, lastUnitPrice) = abi.decode(data, (address, uint256));
+        if (sealed_[id] && minted[id] + amount > sealedCount[id]) {
+            revert IEditions.EditionUnavailable(id);
         }
         minted[id] += amount;
         terms.saleKind = ISaleAdapter(msg.sender).saleKind();
         _mint(to, id, amount, "");
         return (id + returnOffset, terms);
+    }
+
+    /// @dev Editions' rule: the bound adapter seals once, at or above the copies minted.
+    function sealSupply(uint256 id, uint256 count) external {
+        if (minterOf[id] != msg.sender) revert IEditions.MinterMismatch(id, minterOf[id]);
+        if (sealed_[id]) revert IEditions.EditionSealed(id);
+        if (count < minted[id]) revert IEditions.InvalidSealCount(id, count);
+        (sealed_[id], sealedCount[id]) = (true, count);
+        emit IEditions.EditionSupplySealed(id, count);
     }
 
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {

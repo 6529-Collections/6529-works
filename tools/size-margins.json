@@ -5,8 +5,8 @@
       "reason": "below the floor when the gate was added (12 November 2026); renderers are pinned per work and replaceable by governance, so a later fix can ship in a new renderer"
     },
     "UniformEditionAuction": {
-      "margin": 420,
-      "reason": "below the floor when the gate was added (12 November 2026); its views are answered by its lens, so later read surfaces go there"
+      "margin": 210,
+      "reason": "temporary (15 November 2026): interim wiring of Editions' sealSupply and priced mints, superseded by the edition-auction lane, which must restore the margin; its views are answered by its lens, so later read surfaces go there"
     }
   }
 }
