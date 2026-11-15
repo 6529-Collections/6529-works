@@ -158,7 +158,7 @@ contract RendererHostileTest is RendererBase {
         address bomb = address(new ReturnBombMock(1_000_000, bytes32(uint256(1))));
         vm.expectRevert(
             abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector, bomb, IStreamViews.work.selector
+                IRenderer.RendererReadFailed.selector, bomb, IStream.coreOf.selector
             )
         );
         renderer.tokenURI(bomb, ID);
@@ -200,20 +200,18 @@ contract RendererHostileTest is RendererBase {
         );
         renderer.tokenURI(address(stream), ID);
 
-        // A collection name above 4 KiB.
+        // A collection name above 4 KiB, or not UTF-8, is no name: the work still renders,
+        // with an empty collection name (Stream's own storage is read, never its extension).
         records.setLicense(ID, _license());
         IStreamViews.WorkCore memory core = _core();
         core.collectionId = 1;
         stream.setWork(ID, core);
         stream.setCollection(1, IStreamViews.Collection(_text(5_000), bytes32(0), 1));
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector,
-                address(stream),
-                IStreamViews.collection.selector
-            )
-        );
-        renderer.tokenURI(address(stream), ID);
+        assertEq(_attr(_out(), "Collection"), "");
+        stream.setCollectionName(1, hex"ff");
+        assertEq(_attr(_out(), "Collection"), "");
+        stream.setCollectionName(1, bytes(_text(200)));
+        assertEq(_attr(_out(), "Collection"), _text(200));
 
         // More media files than a work may have.
         stream.setWork(ID, _core());

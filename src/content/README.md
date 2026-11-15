@@ -77,6 +77,11 @@ Integrators start at [Reading a work](../../docs/integrators/reading-a-work.md) 
   read path, means rerunning [`RendererGas.t.sol`](../../test/content/renderer/RendererGas.t.sol)
   and [`TokenUriBudget.t.sol`](../../test/integration/TokenUriBudget.t.sol); the margin is
   small (RND-26).
+- **Native reads only.** A work's facts come from Stream's `coreOf` and `extsload` (slots 17
+  and 18, in `_native`), never its fallback, which reaches the replaceable view extension: a
+  finalized work pins this renderer, so nothing replaceable may decide what it shows (RND-22).
+  Locators come from `WorkRecords.preferredLocator`, which serves only UTF-8 URIs, and the
+  PREVIEW is read only when used, so an inlined image primary never asks the delivery contract.
 - **`window.works` is a public API.** Finalized works pin their renderer, so version 1's fields
   never change meaning; a change needs a new `v` and a new renderer.
 - **Bytecode: `Renderer` is the second-tightest contract**, barely under EIP-170 (current

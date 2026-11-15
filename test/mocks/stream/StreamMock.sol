@@ -7,8 +7,9 @@ import { IStream } from "src/interfaces/IStream.sol";
 import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice The minimal 6529 Stream stand-in: the reads other contracts make of Stream, answered
-///         from fixtures the test sets. The renderer reads `work`, `collection`, `workRecords`
-///         and `entropyModuleOf`; the artist registry binds it (ERC-165 for `IStream`) and reads
+///         from fixtures the test sets. The renderer reads `coreOf`, `extsload` (at Stream's own
+///         storage slots, 17 and 18, which this mock mirrors), `workRecords` and
+///         `entropyModuleOf`; the artist registry binds it (ERC-165 for `IStream`) and reads
 ///         `artistOf` and `editions`. `artistOf` reverts with `UnknownWork` for a token with no
 ///         artist ID, as Stream does for an unminted or burned token, and `fail(selector, true)`
 ///         makes one read revert.
@@ -26,6 +27,24 @@ contract StreamMock {
     mapping(uint256 => IStreamViews.WorkCore) internal cores;
     mapping(uint256 => IStreamViews.Collection) internal collections;
     mapping(bytes4 => bool) internal failing;
+    /// @dev Padding so the two mappings below sit at Stream's slots 17 and 18, with Stream's
+    ///      struct layouts, for `extsload`.
+    uint256[11] private _gap;
+    mapping(uint256 => CollectionLayout) internal _collectionSlots;
+    mapping(uint256 => TokenLayout) internal _tokenSlots;
+
+    /// @dev `Stream.CollectionData` and the first word of `Stream.TokenData`.
+    struct CollectionLayout {
+        bool exists;
+        uint32 minted;
+        bytes32 metadataHash;
+        string name;
+    }
+
+    struct TokenLayout {
+        address seller;
+        uint32 serial;
+    }
 
     function supportsInterface(bytes4 id) external pure returns (bool) {
         return id == type(IERC165).interfaceId || id == type(IERC721).interfaceId
@@ -52,6 +71,8 @@ contract StreamMock {
 
     function setWork(uint256 id, IStreamViews.WorkCore calldata core) external {
         cores[id] = core;
+        // forge-lint: disable-next-line(unsafe-typecast)
+        _tokenSlots[id] = TokenLayout(core.seller, uint32(core.serial));
     }
 
     /// @dev A work known only by its lead artist ID (zero: unminted or burned).
@@ -61,6 +82,15 @@ contract StreamMock {
 
     function setCollection(uint256 id, IStreamViews.Collection calldata collection_) external {
         collections[id] = collection_;
+        // forge-lint: disable-next-line(unsafe-typecast)
+        _collectionSlots[id] = CollectionLayout(
+            true, uint32(collection_.minted), collection_.metadataHash, collection_.name
+        );
+    }
+
+    /// @dev Sets a collection's stored name to raw bytes (any, UTF-8 or not).
+    function setCollectionName(uint256 id, bytes calldata name) external {
+        _collectionSlots[id].name = string(name);
     }
 
     // ----- reads
@@ -68,6 +98,29 @@ contract StreamMock {
     function work(uint256 id) external view returns (IStreamViews.WorkCore memory) {
         _gate(msg.sig);
         return cores[id];
+    }
+
+    function coreOf(uint256 id)
+        external
+        view
+        returns (bytes32, uint256, uint256, uint8, uint8, uint32)
+    {
+        _gate(msg.sig);
+        IStreamViews.WorkCore storage c = cores[id];
+        if (c.artistId == 0) revert IStream.UnknownWork(id);
+        return (c.itemHash, c.artistId, c.collectionId, c.kind, c.seedPolicy, c.royaltyRate);
+    }
+
+    function extsload(bytes32 slot, uint256 n) external view returns (bytes32[] memory words) {
+        _gate(msg.sig);
+        words = new bytes32[](n);
+        for (uint256 i; i < n; ++i) {
+            bytes32 w;
+            assembly ("memory-safe") {
+                w := sload(add(slot, i))
+            }
+            words[i] = w;
+        }
     }
 
     /// @dev One module for every work: the mock models no replacement.
