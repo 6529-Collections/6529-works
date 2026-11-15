@@ -66,7 +66,7 @@
     deploys the split ledger and both vaults.
   - **Budgets.** The source-line budget rises from 13,000 to 15,000 (owner decision, 15
     November 2026; `tools/check_budgets.py`). ADR 0004's table is re-measured: the tightest
-    start row is 347,416 and the suite's start margin is 2,500 (was 5,000); the re-rate
+    start row is 347,404 and the suite's start margin is 2,500 (was 5,000); the re-rate
     (203,000), the bound `createEdition` (158,000) and the edition auction's capped-sweep
     `settle` (166,000) regression ceilings move with stated reasons; no start budget or slot
     maximum is raised.

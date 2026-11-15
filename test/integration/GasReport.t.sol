@@ -66,8 +66,8 @@ contract IntegrationGasReport is IntegrationBase {
     uint256 internal constant SETTLE_CEILING = 400_000;
     /// @dev The margin every start row with Stream's genesis dependencies keeps under the 350K
     ///      budget: the largest round value the measured rows support since the mint policy
-    ///      (on the permanence integration of 15 November 2026 the tightest row is 347,416,
-    ///      2,584 under the budget). It was 5,000 (the review of #81) before the start path
+    ///      (on the permanence integration of 15 November 2026 the tightest row is 347,404,
+    ///      2,596 under the budget). It was 5,000 (the review of #81) before the start path
     ///      gained the policy call and the locked-terms events.
     uint256 internal constant START_MARGIN = 2500;
     /// @dev After governance replaced Stream's three mint-path dependencies (the mint policy,

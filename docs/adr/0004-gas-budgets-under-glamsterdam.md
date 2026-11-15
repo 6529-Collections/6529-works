@@ -366,17 +366,17 @@ a replaceable mint policy, 6529 Stream Editions' sealed supply and priced mints 
 wiring of the edition auction), the permanent artist registry, the split ledger, the content
 store and the hardened manager; the fee recipient and the museum are governed vaults at
 genesis. Against `main` at `59c1d1c1`:
-- **The start rows** moved by −98 to +391 at steady state and by +2,310 to +2,677 on an
-  artist's first start (+4,147 for the first work ever): `mint` hands the request to the mint policy (`authorize`, one more call on the
+- **The start rows** moved by −94 to +403 at steady state and by +2,310 to +2,677 on an
+  artist's first start (+4,127 for the first work ever): `mint` hands the request to the mint policy (`authorize`, one more call on the
   hop the mint already made) and `WorkMinted` and `TermsInterned` carry the locked terms; the
   policy's redundant `ItemConsumed` was dropped (about −2,209 per start) and the split ledger's
   calldata `validate` took about 430 off. No row writes a new slot or account. The tightest
   row, an artist's first two-party VRF start with an edition master at the params bound, is
-  **347,416, 2,584 under 350K**; the suite's start margin falls from 5,000 to **2,500**
+  **347,404, 2,596 under 350K**; the suite's start margin falls from 5,000 to **2,500**
   (`START_MARGIN`), what the merged rows support. The rows with replaced dependencies now count
   three mint-path dependencies (the artist registry is fixed, AUC-39); their ceilings were set
   by the Stream lane at its measured figure plus about 2% (355,000 and 361,000).
-- **`authorize`** (113,458) replaces `consume` (93,130): the policy now also runs the item
+- **`authorize`** (113,470) replaces `consume` (93,130): the policy now also runs the item
   rules and the terms quote Stream ran before, and its economics and wallet reads. Its
   regression ceiling is 116,000 (the Stream lane's measured 113,576, plus about 2%).
 - **`createWallet`** fell by 1,089,685 to 95,950 and writes 1 new slot (was 4): a wallet is a
@@ -397,43 +397,43 @@ genesis. Against `main` at `59c1d1c1`:
 - **`tokenURI`**'s worst case is 2,756,905, 20,346 more (forward-all reads in the statement log
   and Stream's fail-closed renderer read), far under 8M.
 - **Every other row** moved by at most 495 (`royaltyInfo` −495, `refreshStanding` +104 and
-  +210, the edition auction's `open` −167), and `settle` by at most 46 with the fee recipient
+  +210, the edition auction's `open` −147), and `settle` by at most 34 with the fee recipient
   now a vault. No start budget and no slot maximum is raised.
 
 | Start row | Gas | Under 350K |
 | --- | --- | --- |
 | The binding row | 340,583 | 9,417 |
-| With a VRF seed | 346,247 | 3,753 |
-| VRF seed, edition master with 64 bytes of params (the tightest) | 347,416 | 2,584 |
+| With a VRF seed | 346,279 | 3,721 |
+| VRF seed, edition master with 64 bytes of params (the tightest) | 347,404 | 2,596 |
 
 | Operation | Prague gas | Prague ceiling | New slots | New accounts | Sepolia gas |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `start`, steady state | 268,105 | 350,000 | **5** | 0 | 735,859 |
-| `startWithBid`, steady state | 310,114 | 350,000 | **6** | 0 | 871,980 |
-| `start`, two-party work | 276,075 | 350,000 | **5** | 0 | — |
-| `startWithBid`, two-party work | 318,071 | 350,000 | **6** | 0 | — |
-| `start`, VRF work | 273,803 | 350,000 | **5** | 0 | 852,868 (r2) |
-| `start`, edition master | 268,207 | 350,000 | **5** | 0 | 736,477 |
-| `start`, edition master with 64 bytes of params (the bound) | 269,291 | 350,000 | **5** | 0 | — |
+| `start`, steady state | 268,117 | 350,000 | **5** | 0 | 735,859 |
+| `startWithBid`, steady state | 310,126 | 350,000 | **6** | 0 | 871,980 |
+| `start`, two-party work | 276,079 | 350,000 | **5** | 0 | — |
+| `startWithBid`, two-party work | 318,075 | 350,000 | **6** | 0 | — |
+| `start`, VRF work | 273,815 | 350,000 | **5** | 0 | 852,868 (r2) |
+| `start`, edition master | 268,187 | 350,000 | **5** | 0 | 736,477 |
+| `start`, edition master with 64 bytes of params (the bound) | 269,311 | 350,000 | **5** | 0 | — |
 | `start`, an artist's first work | 290,650 | 350,000 | **6** | 0 | — |
 | `startWithBid`, an artist's first work | 332,659 | 350,000 | **7** | 0 | — |
 | `startWithBid`, an artist's first work, two-party | 340,583 | 350,000 | **7** | 0 | — |
-| `startWithBid`, an artist's first work, two-party, VRF | 346,247 | 350,000 | **7** | 0 | — |
-| `startWithBid`, an artist's first work, two-party, VRF, edition master with 64 bytes of params (the bound) | 347,416 | 350,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party, VRF | 346,279 | 350,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party, VRF, edition master with 64 bytes of params (the bound) | 347,404 | 350,000 | **7** | 0 | — |
 | `startWithBid`, an artist's first work, two-party, the three mint-path dependencies replaced | 346,975 | 355,000 (regression; LIM-GAS-11) | 7 | 0 | — |
 | `startWithBid`, an artist's first work, two-party, VRF, the three mint-path dependencies replaced | 352,663 | 361,000 (regression; LIM-GAS-11) | 7 | 0 | — |
-| `startWithBid`, ERC-20 by relayed Permit2 | 355,188 | 365,000 (regression) | 6 | 0 | — |
-| `start`, first work in a new collection | 268,140 | 400,000 | 5 | 0 | 846,977 (r2) |
-| `start`, first work ever (one-time) | 441,183 | 449,000 (regression) | 13 | 0 | 1,601,871 |
-| `startWithBid`, first bid under new sale terms (one-time) | 380,263 | 390,000 (regression) | 9 | 0 | 1,213,250 |
-| `bid` that outbids | 73,530 | 75,000 (regression) | 1 | 0 | 169,060 |
-| `settle`, first payout to a seller wallet | 183,411 | 400,000 | 2 | 1 | 449,934 (sim.) |
-| `settle`, with a bid | 158,411 | 400,000 | 2 | 0 | 257,763 (r2) |
-| `settle`, no bid (to the museum, D140) | 123,990 | 400,000 | 1 | 0 | — |
+| `startWithBid`, ERC-20 by relayed Permit2 | 355,212 | 365,000 (regression) | 6 | 0 | — |
+| `start`, first work in a new collection | 268,160 | 400,000 | 5 | 0 | 846,977 (r2) |
+| `start`, first work ever (one-time) | 441,163 | 449,000 (regression) | 13 | 0 | 1,601,871 |
+| `startWithBid`, first bid under new sale terms (one-time) | 380,275 | 390,000 (regression) | 9 | 0 | 1,213,250 |
+| `bid` that outbids | 73,518 | 75,000 (regression) | 1 | 0 | 169,060 |
+| `settle`, first payout to a seller wallet | 183,399 | 400,000 | 2 | 1 | 449,934 (sim.) |
+| `settle`, with a bid | 158,399 | 400,000 | 2 | 0 | 257,763 (r2) |
+| `settle`, no bid (to the museum, D140) | 123,978 | 400,000 | 1 | 0 | — |
 | `auction` (view, cold, answered by the auction's lens) | 39,294 | 41,000 (regression) | 0 | 0 | — |
 | `minimumBid` (view, cold, answered by the auction's lens) | 38,168 | 39,000 (regression) | 0 | 0 | — |
 | `auctionClock` (view, cold, answered by the auction itself) | 24,260 | 25,000 (regression) | 0 | 0 | — |
-| `authorize`, the mint policy's share of a start, as a call (was `consume`) | 113,458 | 116,000 (regression) | 1 | 0 | part of `start` |
+| `authorize`, the mint policy's share of a start, as a call (was `consume`) | 113,470 | 116,000 (regression) | 1 | 0 | part of `start` |
 | `createEdition` | 252,619 | 275,000 (regression) | 6 | 0 | 887,954 (sim.) |
 | `createEdition`, an edition its sale bound at open | 154,572 | 158,000 (regression) | 2 | 0 | — |
 | re-rate a work (governed `execute`) | 198,346 | 203,000 (regression) | 1 | 0 | — |
@@ -445,8 +445,8 @@ genesis. Against `main` at `59c1d1c1`:
 | `release`, the artist's first ETH release | 93,147 | 96,000 (regression) | 2 | 0 | — |
 | `claimSigned`, the artist's first signed release | 137,592 | 145,000 (regression) | 3 | 0 | — |
 | `claimSigned`, a later signed release (next nonce) | 86,316 | 92,000 (regression) | 0 | 0 | — |
-| Edition auction `open`, steady state (binds the edition) | 272,070 | 275,000 (regression) | 6 | 0 | — |
-| Edition auction `open`, the adapter's first (one-time) | 317,795 | 322,000 (regression) | 8 | 0 | — |
+| Edition auction `open`, steady state (binds the edition) | 272,090 | 275,000 (regression) | 6 | 0 | — |
+| Edition auction `open`, the adapter's first (one-time) | 317,815 | 322,000 (regression) | 8 | 0 | — |
 | Edition `bid`, its 8-step word exists | 68,593 | 110,000 | 1 | 0 | — |
 | Edition `bid`, opens an 8-step word | 85,663 | 110,000 | 2 | 0 | — |
 | Edition `bid`, capped sale | 71,010 | 110,000 | 1 | 0 | — |
