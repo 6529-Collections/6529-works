@@ -411,7 +411,9 @@ contract WorkRecordsTest is RecordsFixture {
         internal
         returns (bytes32)
     {
-        return store.registerManifest(hashes, length, enc, "application/json", keccak256("x"));
+        return store.registerManifest(
+            hashes, length, uint8(enc), "application/json", keccak256("x")
+        );
     }
 
     /// @dev The work's approved record is `bad`: finalize refuses it, and the artist replaces
@@ -540,7 +542,7 @@ contract WorkRecordsTest is RecordsFixture {
             if (upload) store.writeChunk(chunks[i]);
         }
         return store.registerManifest(
-            hashes, length, encoding, "application/json", keccak256(abi.encode(hashes))
+            hashes, length, uint8(encoding), "application/json", keccak256(abi.encode(hashes))
         );
     }
 
@@ -665,7 +667,7 @@ contract WorkRecordsTest is RecordsFixture {
             bytes32[] memory hashes = new bytes32[](1);
             hashes[0] = keccak256(data);
             bytes32 fileId = store.registerManifest(
-                hashes, data.length, encodings[i], "image/png", sha256(data)
+                hashes, data.length, uint8(encodings[i]), "image/png", sha256(data)
             );
             media[1] = MediaFile(fileId, sha256(data), FileRole.PREVIEW);
             PackageItem memory item = _recordsItem(50 + i, media);

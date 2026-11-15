@@ -184,14 +184,26 @@ class StoreClient:
                 return None
             raise
 
-    def attest_chunks_per_call(self) -> int | None:
-        """The store's `ATTEST_CHUNKS_PER_CALL`, or `None` if it has no attestation."""
-        try:
-            return abi.decode_uint(self._call(abi.encode_call(abi.ATTEST_CHUNKS_PER_CALL)))
-        except RevertError as exc:
-            if not exc.data:
-                return None
-            raise
+    def first_missing(self, file_id: bytes, start: int, stop: int) -> int:
+        """`firstMissing(fileId, start, stop, store)`: the first chunk in `[start, stop)` the
+        store does not hold (whole or linked) at its layout length, or the capped `stop`."""
+        data = abi.encode_call(abi.FIRST_MISSING, file_id, start, stop, int.from_bytes(self.store, "big"))
+        return abi.decode_uint(self._call(data))
+
+    def missing_in_pieces(self, file_id: bytes, count: int, step: int = 256) -> list[int]:
+        """Every missing chunk index of a registered file, found with `firstMissing` over ranges
+        of `step` chunks, so no single call grows with the file."""
+        missing: list[int] = []
+        cursor = 0
+        while cursor < count:
+            stop = min(cursor + step, count)
+            found = self.first_missing(file_id, cursor, stop)
+            if found >= stop:
+                cursor = stop
+            else:
+                missing.append(found)
+                cursor = found + 1
+        return missing
 
     def chunk_pointer(self, digest: bytes) -> bytes | None:
         """The contract holding the chunk with this hash, or `None` if it is not stored."""

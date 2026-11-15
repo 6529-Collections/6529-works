@@ -489,7 +489,7 @@ library DeployV1 {
             (hashes[i],) = store.writeChunk(chunk);
         }
         fileId = store.registerManifest(
-            hashes, text.length, IContentStore.Encoding.Identity, mime, sha256(text)
+            hashes, text.length, uint8(IContentStore.Encoding.Identity), mime, sha256(text)
         );
     }
 

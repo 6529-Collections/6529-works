@@ -3,20 +3,31 @@
 Nothing is signed or sent. The tool handles no private key and never reads one: the operator runs
 the emitted `cast send` lines (or feeds the calldata to any other tool) with their own signer.
 
-Order: `registerManifest` first by default, so the commitment exists on chain from the start and
-anyone can see what is missing with `missingChunks` and finish the upload, then one `writeChunk`
-per DISTINCT chunk (a file that repeats a chunk needs it stored once). `--register last` puts the
-registration after the chunks instead. The store is permissionless and idempotent, so any order,
-any repetition and any split between senders is safe.
+Order: the registration first by default, so the commitment exists on chain from the start and
+anyone can see what is missing with `missingChunks` (or `firstMissing`, in pieces) and finish the
+upload, then one `writeChunk` per DISTINCT chunk (a file that repeats a chunk needs it stored
+once). `--register last` puts the registration after the chunks instead. The store is
+permissionless and idempotent, so any order, any repetition and any split between senders is
+safe, and a stopped upload resumes with `--only-missing`.
 
-A `Base64` or `GzipBase64` file then needs `attestBase64(fileId)` before a renderer will inline
-it. Each call reads the chunks it validates, and the call that reaches the end of the file also
-reads the last chunk to find the padding, so the final call cannot succeed until the file is
+Registration in pieces: a manifest of more than `ONE_CALL_MAX_CHUNKS` chunks (or any, with
+`--manifest list`) is registered from list chunks: its chunk-hash list, 767 hashes per chunk, is
+written with ordinary `writeChunk` calls (`writeListChunk`), then one small
+`registerManifestList` call registers the same file ID. One-call registration stores a slot per
+hash and stops fitting a transaction at a few hundred chunks; list chunks never do.
+
+Parts: with `--part-size N`, every chunk longer than N bytes is written as parts of N bytes
+(`writePart`, each an ordinary `writeChunk`) and joined by one `linkChunk`, which records the
+same chunk, with the same hash, as a whole write. Parts keep each transaction small if code
+deposits are ever repriced or capped; whole chunks cost a little less today.
+
+A `Base64` or `GzipBase64` file then needs `attestBase64(fileId, count)` before a renderer will
+inline it. Each call reads the chunks it validates, and the call that reaches the end of the file
+also reads the last chunk to find the padding, so the final call cannot succeed until the file is
 complete. The attest calls therefore come LAST, after the manifest is registered and all chunks
-are stored (earlier calls on a big file could run while the upload is still going, but one
-simple order is easier to review). One call validates at most 48 chunks, so a file needs
-`ceil(chunks / 48)` calls (a repeat call on an attested file is a cheap no-op). Anyone may
-send them.
+are stored. Each call checks `--attest-chunks` chunks (48 by default, the caller's choice), so a
+file needs `ceil(chunks / count)` calls (a repeat call on an attested file is a cheap no-op).
+Anyone may send them.
 
 Each transaction is priced by the offline model in `gas.py` under one schedule (`prague` by
 default, or `glamsterdam`), which sets its gas limit. `with_rpc_limits` can instead take each
@@ -37,12 +48,17 @@ from .errors import RpcError, ToolError
 from .plan import (
     ATTEST_CHUNKS_PER_CALL,
     CHUNK_SIZE,
+    ONE_CALL_MAX_CHUNKS,
+    PER_LIST,
     Manifest,
     Plan,
     attest_call_count,
     check_stored,
+    chunk_hash,
     hex0x,
+    list_chunks,
     split_chunks,
+    split_parts,
 )
 
 CALLS_SCHEMA = "6529-works/content-calls/v1"
@@ -54,8 +70,10 @@ class CallPlan:
     function."""
 
     index: int
-    name: str  # "registerManifest", "writeChunk" or "attestBase64"
-    chunk_indexes: tuple[int, ...]  # manifest positions a writeChunk call fills
+    # "registerManifest", "writeListChunk", "registerManifestList", "writeChunk", "writePart",
+    # "linkChunk" or "attestBase64"
+    name: str
+    chunk_indexes: tuple[int, ...]  # manifest positions a chunk, part or link call fills
     data: bytes
     estimate: gas.GasEstimate
     filename: str
@@ -72,6 +90,9 @@ class CallPlan:
         return "model" if self.rpc_estimate is None else "rpc"
 
 
+MANIFEST_MODES = ("auto", "one", "list")
+
+
 def build_calls(
     manifest: Manifest,
     stored: bytes,
@@ -83,15 +104,22 @@ def build_calls(
     skip_attest: bool = False,
     schedule: gas.Schedule = gas.DEFAULT_SCHEDULE,
     block_gas: int = gas.DEFAULT_BLOCK_GAS,
+    part_size: int | None = None,
+    manifest_mode: str = "auto",
+    attest_chunks: int = ATTEST_CHUNKS_PER_CALL,
 ) -> list[CallPlan]:
     """The transactions for `manifest`, after proving `stored` is the stream it commits to.
 
     `skip_register`, `present_chunk_hashes` and `skip_attest` drop work the chain already has
-    (used with `--only-missing`). A `Base64` or `GzipBase64` file gets its `attestBase64` calls
-    after everything else unless `attest` is false. Each transaction is priced under `schedule`,
-    with `block_gas` as the assumed block gas limit. Raises `ToolError` if any transaction's
-    regular gas would not fit the EIP-7825 cap, or if a base64 file would fail attestation on
-    chain.
+    (used with `--only-missing`): `present_chunk_hashes` holds every hash the store already has
+    (file chunks whole or linked, parts and list chunks). `part_size` writes every chunk longer
+    than it as parts of that many bytes and one `linkChunk`; `manifest_mode` registers the
+    manifest in one call (`one`), from list chunks (`list`), or picks by size (`auto`: one call
+    up to `ONE_CALL_MAX_CHUNKS` chunks). A `Base64` or `GzipBase64` file gets its `attestBase64`
+    calls, `attest_chunks` chunks each, after everything else unless `attest` is false. Each
+    transaction is priced under `schedule`, with `block_gas` as the assumed block gas limit.
+    Raises `ToolError` if any transaction's regular gas would not fit the EIP-7825 cap, or if a
+    base64 file would fail attestation on chain.
     """
     if register not in ("first", "last"):
         raise ToolError("register must be 'first' or 'last'")
@@ -100,23 +128,35 @@ def build_calls(
         manifest.chunk_hashes, split_chunks(stored), manifest.stored_length, manifest.encoding,
         manifest.mime_type, manifest.media_sha256, manifest.file_id, register=register,
         skip_register=skip_register, present_chunk_hashes=present_chunk_hashes, attest=attest,
-        skip_attest=skip_attest, schedule=schedule, block_gas=block_gas,
+        skip_attest=skip_attest, schedule=schedule, block_gas=block_gas, part_size=part_size,
+        manifest_mode=manifest_mode, attest_chunks=attest_chunks,
     )
 
 
 def calls_for_plan(
     plan: Plan, *, schedule: gas.Schedule = gas.DEFAULT_SCHEDULE,
-    block_gas: int = gas.DEFAULT_BLOCK_GAS,
+    block_gas: int = gas.DEFAULT_BLOCK_GAS, part_size: int | None = None,
+    manifest_mode: str = "auto",
 ) -> list[CallPlan]:
     """Every transaction that puts a freshly planned file on chain (registration, each distinct
-    chunk, and the attest calls of a base64 file), for quoting. `plan` already proved its own
-    stream, so nothing is re-checked."""
+    chunk or its parts and link, and the attest calls of a base64 file), for quoting. `plan`
+    already proved its own stream, so nothing is re-checked."""
     return _build(
         plan.chunk_hashes, list(plan.chunks()), plan.stored_length, plan.encoding,
         plan.mime_type, plan.media_sha256, plan.file_id, register="first", skip_register=False,
         present_chunk_hashes=(), attest=True, skip_attest=False, schedule=schedule,
-        block_gas=block_gas,
+        block_gas=block_gas, part_size=part_size, manifest_mode=manifest_mode,
+        attest_chunks=ATTEST_CHUNKS_PER_CALL,
     )
+
+
+def resolve_manifest_mode(mode: str, chunk_count: int) -> str:
+    """`one` or `list` for a manifest of `chunk_count` chunks."""
+    if mode not in MANIFEST_MODES:
+        raise ToolError(f"manifest mode must be one of {', '.join(MANIFEST_MODES)}")
+    if mode == "auto":
+        return "one" if chunk_count <= ONE_CALL_MAX_CHUNKS else "list"
+    return mode
 
 
 def _build(
@@ -135,47 +175,86 @@ def _build(
     skip_attest: bool,
     schedule: gas.Schedule,
     block_gas: int,
+    part_size: int | None,
+    manifest_mode: str,
+    attest_chunks: int,
 ) -> list[CallPlan]:
     present = set(present_chunk_hashes)
-    writes: list[tuple[tuple[int, ...], bytes]] = []
+    emitted: set[bytes] = set()  # hashes a draft already writes, so each is written once
+    mode = resolve_manifest_mode(manifest_mode, len(chunk_hashes))
+    if part_size is not None:
+        split_parts(b"\0" * CHUNK_SIZE, part_size)  # refuse a size that needs too many parts
+
+    def write_draft(name: str, indexes: tuple[int, ...], data: bytes) -> Draft:
+        call = abi.encode_write_chunk(data)
+        return (name, indexes, call, gas.estimate_write_chunk(len(data), call, schedule, block_gas))
+
     positions: dict[bytes, list[int]] = {}
     for index, digest in enumerate(chunk_hashes):
         positions.setdefault(digest, []).append(index)
-    seen: set[bytes] = set()
+    writes: list[Draft] = []
     for index, digest in enumerate(chunk_hashes):
-        if digest in seen:
+        if digest in emitted or digest in present:
             continue
-        seen.add(digest)
-        if digest not in present:
-            writes.append((tuple(positions[digest]), chunks[index]))
+        emitted.add(digest)
+        indexes = tuple(positions[digest])
+        chunk = chunks[index]
+        if part_size is None or len(chunk) <= part_size:
+            writes.append(write_draft("writeChunk", indexes, chunk))
+            continue
+        parts = split_parts(chunk, part_size)
+        hashes = [chunk_hash(part) for part in parts]
+        for part, part_digest in zip(parts, hashes):
+            if part_digest not in emitted and part_digest not in present:
+                emitted.add(part_digest)
+                writes.append(write_draft("writePart", indexes, part))
+        data = abi.encode_link_chunk(hashes)
+        writes.append(
+            ("linkChunk", indexes, data,
+             gas.estimate_link(len(parts), len(chunk), data, schedule, block_gas))
+        )
 
-    drafts: list[tuple[str, tuple[int, ...], bytes, gas.GasEstimate]] = []
-    for indexes, chunk in writes:
-        data = abi.encode_write_chunk(chunk)
-        estimate = gas.estimate_write_chunk(len(chunk), data, schedule, block_gas)
-        drafts.append(("writeChunk", indexes, data, estimate))
+    registration: list[Draft] = []
     if not skip_register:
-        data = abi.encode_register_manifest(
-            chunk_hashes, stored_length, int(encoding), mime_type, media_sha256
-        )
-        estimate = gas.estimate_register(
-            len(chunk_hashes), len(mime_type.encode("utf-8")), data, schedule, block_gas
-        )
-        item = ("registerManifest", (), data, estimate)
-        if register == "first":
-            drafts.insert(0, item)
+        mime_length = len(mime_type.encode("utf-8"))
+        if mode == "one":
+            data = abi.encode_register_manifest(
+                chunk_hashes, stored_length, int(encoding), mime_type, media_sha256
+            )
+            estimate = gas.estimate_register(
+                len(chunk_hashes), mime_length, data, schedule, block_gas
+            )
+            registration.append(("registerManifest", (), data, estimate))
         else:
-            drafts.append(item)
+            lists = list_chunks(chunk_hashes, PER_LIST)
+            list_hashes = [chunk_hash(c) for c in lists]
+            for list_chunk, list_digest in zip(lists, list_hashes):
+                if list_digest not in emitted and list_digest not in present:
+                    emitted.add(list_digest)
+                    registration.append(write_draft("writeListChunk", (), list_chunk))
+            data = abi.encode_register_manifest_list(
+                list_hashes, PER_LIST, stored_length, int(encoding), mime_type, media_sha256
+            )
+            estimate = gas.estimate_register_list(
+                len(lists), len(chunk_hashes), mime_length, data, schedule, block_gas
+            )
+            registration.append(("registerManifestList", (), data, estimate))
+    drafts = registration + writes if register == "first" else writes + registration
+
     if attest and encoding.uses_base64 and not skip_attest:
-        data = abi.encode_call(abi.ATTEST_BASE64, file_id)
+        if attest_chunks < 1:
+            raise ToolError("an attestBase64 call must check at least one chunk")
+        data = abi.encode_call(abi.ATTEST_BASE64, file_id, attest_chunks)
         total = len(chunk_hashes)
-        for start in range(0, total, ATTEST_CHUNKS_PER_CALL):
-            stop = min(start + ATTEST_CHUNKS_PER_CALL, total)
+        for start in range(0, total, attest_chunks):
+            stop = min(start + attest_chunks, total)
             estimate = gas.estimate_attest(
                 stop - start, data, schedule, block_gas, first_call=start == 0
             )
             drafts.append(("attestBase64", tuple(range(start, stop)), data, estimate))
-        assert sum(d[0] == "attestBase64" for d in drafts) == attest_call_count(total)
+        assert sum(d[0] == "attestBase64" for d in drafts) == attest_call_count(
+            total, attest_chunks
+        )
 
     width = max(3, len(str(len(drafts))))
     calls: list[CallPlan] = []
@@ -185,6 +264,7 @@ def _build(
                 raise ToolError(
                     f"{name} would use about {estimate.transaction:,} gas, over the EIP-7825 "
                     f"transaction cap of {gas.TX_GAS_CAP:,}"
+                    + (" (use --manifest list)" if name == "registerManifest" else "")
                 )
             raise ToolError(
                 f"{name} would use about {estimate.regular:,} gas of regular (non-state) gas, "
@@ -195,6 +275,9 @@ def _build(
             CallPlan(n, name, indexes, data, estimate, f"{n:0{width}d}-{name}{suffix}.calldata")
         )
     return calls
+
+
+Draft = tuple[str, tuple[int, ...], bytes, gas.GasEstimate]
 
 
 def quotes(calls: Sequence[CallPlan], gwei: Decimal) -> list[gas.Quote]:
@@ -323,7 +406,7 @@ def calls_document(
             for c in calls
         ],
         "skipped": {
-            "registerManifest": skipped_register,
+            "registerManifest": skipped_register,  # either registration function
             "chunksAlreadyStored": skipped_chunks,
             "attestBase64": skipped_attest,
         },
@@ -383,12 +466,14 @@ def render_script(
     ]
     total = len(calls)
     for c in calls:
-        if c.name == "registerManifest":
-            what = f"registerManifest ({c.estimate.execution:,} gas of execution)"
+        if c.name in ("registerManifest", "registerManifestList"):
+            what = f"{c.name} ({c.estimate.execution:,} gas of execution)"
         elif c.name == "attestBase64":
             what = f"attestBase64, chunks {c.chunk_indexes[0]} to {c.chunk_indexes[-1]}"
+        elif c.name == "writeListChunk":
+            what = "writeListChunk, part of the chunk-hash list"
         else:
-            what = f"writeChunk, chunk {', '.join(map(str, c.chunk_indexes))}"
+            what = f"{c.name}, chunk {', '.join(map(str, c.chunk_indexes))}"
         lines.append(f"# {c.index + 1}/{total} {what}; estimate {c.estimate.transaction:,} gas")
         lines.append(
             f'cast send "$STORE" --data "$(cat {c.filename})" --gas-limit {c.gas_limit}'

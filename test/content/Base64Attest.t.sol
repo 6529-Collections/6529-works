@@ -9,8 +9,10 @@ import { IContentStore } from "src/interfaces/IContentStore.sol";
 
 /// @dev Shared text builders for the base64 tests.
 abstract contract Base64Base is ContentBase {
-    IContentStore.Encoding internal constant B64 = IContentStore.Encoding.Base64;
-    IContentStore.Encoding internal constant GZB64 = IContentStore.Encoding.GzipBase64;
+    uint8 internal constant B64 = uint8(IContentStore.Encoding.Base64);
+    uint8 internal constant GZB64 = uint8(IContentStore.Encoding.GzipBase64);
+    /// @dev The chunk count these tests pass to `attestBase64` (the caller's choice).
+    uint256 internal constant PER_CALL = 48;
     /// @dev EIP-7825 (Fusaka): no transaction may use more gas than this.
     uint256 internal constant TX_GAS_CAP = 16_777_216;
     bytes internal constant ALPHABET =
@@ -52,12 +54,12 @@ abstract contract Base64Base is ContentBase {
     }
 
     function _attest(bytes32 fileId) internal returns (bool) {
-        return store.attestBase64(fileId);
+        return store.attestBase64(fileId, PER_CALL);
     }
 
     /// @dev Transaction gas of one `attestBase64` call: execution + 21,000 + calldata.
     function _attestTxGas(bytes32 fileId) internal returns (uint256 txGas) {
-        bytes memory callData = abi.encodeCall(store.attestBase64, (fileId));
+        bytes memory callData = abi.encodeCall(store.attestBase64, (fileId, PER_CALL));
         txGas = 21_000 + _calldataGas(callData) + _gasOf(callData);
     }
 }
@@ -329,7 +331,7 @@ contract Base64AttestTest is Base64Base {
     function testFuzz_Attest_AnyoneMayCall(address caller) public {
         bytes32 fileId = _publish(_text(100, 0, 5), B64, "image/png");
         vm.prank(caller);
-        assertTrue(store.attestBase64(fileId));
+        assertTrue(store.attestBase64(fileId, PER_CALL));
     }
 
     // ---------------------------------------------------------------- invalid bytes
@@ -515,8 +517,8 @@ contract Base64AttestTest is Base64Base {
     // ---------------------------------------------------------------- files that cannot qualify
 
     function test_Attest_RequiresBase64Encoding() public {
-        IContentStore.Encoding[2] memory wrong =
-            [IContentStore.Encoding.Identity, IContentStore.Encoding.Gzip];
+        uint8[2] memory wrong =
+            [uint8(IContentStore.Encoding.Identity), uint8(IContentStore.Encoding.Gzip)];
         for (uint256 i; i < 2; ++i) {
             bytes32 fileId = _publish(_text(100, 0, 70), wrong[i], "image/png");
             vm.expectRevert(
@@ -615,7 +617,7 @@ contract Base64AttestTest is Base64Base {
         assertEq(vm.getRecordedLogs().length, 0, "no second event");
         assertTrue(store.isBase64Attested(fileId));
         // It does no work: no chunk is read again.
-        assertLt(_gasOf(abi.encodeCall(store.attestBase64, (fileId))), 30_000);
+        assertLt(_gasOf(abi.encodeCall(store.attestBase64, (fileId, PER_CALL))), 30_000);
     }
 
     function test_Attest_AttestationFollowsTheFileIdNotTheBytes() public {
@@ -628,17 +630,41 @@ contract Base64AttestTest is Base64Base {
         assertFalse(store.isBase64Attested(second));
     }
 
-    // ---------------------------------------------------------------- the per-call limit
+    // ---------------------------------------------------------------- the caller's count
 
-    function test_Constants_ArePinned() public view {
-        assertEq(store.ATTEST_CHUNKS_PER_CALL(), 48);
+    /// @dev The caller chooses how many chunks a call checks: 0 checks none and keeps the place,
+    ///      1 moves one chunk, and a count past the end finishes the file.
+    function test_Attest_TheCallerChoosesTheCount() public {
+        (bytes32 fileId,) = _repeatedFile(9); // 10 chunks
+        vm.expectEmit(true, false, false, true, address(store));
+        emit IContentStore.Base64Progress(fileId, 0);
+        assertFalse(store.attestBase64(fileId, 0));
+        vm.expectEmit(true, false, false, true, address(store));
+        emit IContentStore.Base64Progress(fileId, 1);
+        assertFalse(store.attestBase64(fileId, 1));
+        vm.expectEmit(true, false, false, true, address(store));
+        emit IContentStore.Base64Progress(fileId, 4);
+        assertFalse(store.attestBase64(fileId, 3));
+        vm.expectEmit(true, false, false, true, address(store));
+        emit IContentStore.Base64Attested(fileId);
+        assertTrue(store.attestBase64(fileId, type(uint256).max), "no overflow past the end");
+        assertTrue(store.isBase64Attested(fileId));
+    }
+
+    /// @dev A whole file in one call when the caller allows it.
+    function testFuzz_Attest_AnyCountFinishesInCeilCalls(uint256 per) public {
+        per = bound(per, 1, 12);
+        (bytes32 fileId,) = _repeatedFile(10); // 11 chunks
+        uint256 calls;
+        while (!store.attestBase64(fileId, per)) ++calls;
+        assertEq(calls + 1, (11 + per - 1) / per);
     }
 
     /// @dev `2n + 2` chunks listing one valid chunk `2n + 1` times, then a short last chunk
     ///      (`n` is the per-call limit): only two chunks are uploaded, and the file takes three
     ///      calls.
     function test_Attest_LargeFileTakesSeveralCalls() public {
-        uint256 n = store.ATTEST_CHUNKS_PER_CALL();
+        uint256 n = PER_CALL;
         (bytes32 fileId, uint256 total) = _repeatedFile(2 * n + 1);
         assertEq(store.fileInfo(fileId).chunkCount, 2 * n + 2);
         assertEq(total % 4, 0);
@@ -660,14 +686,14 @@ contract Base64AttestTest is Base64Base {
     }
 
     function test_Attest_AFileOfExactlyOneCallIsOneCall() public {
-        uint256 n = store.ATTEST_CHUNKS_PER_CALL();
+        uint256 n = PER_CALL;
         (bytes32 fileId,) = _repeatedFile(n - 1); // n chunks in all
         assertEq(store.fileInfo(fileId).chunkCount, n);
         assertTrue(_attest(fileId));
     }
 
     function test_Attest_ABadChunkInALaterCallRevertsAndLeavesProgress() public {
-        uint256 n = store.ATTEST_CHUNKS_PER_CALL();
+        uint256 n = PER_CALL;
         uint256 bad = n + 36; // in the second call
         bytes memory valid = _text(CHUNK, 0, 110);
         bytes memory poisoned = _text(CHUNK, 0, 111);
@@ -700,7 +726,7 @@ contract Base64AttestTest is Base64Base {
     /// @dev A bad chunk exactly where the second call resumes (index n) must be found by call 2.
     ///      Resuming one chunk late would skip it and let the file be attested.
     function test_Attest_BadChunkAtTheResumeBoundary() public {
-        uint256 n = store.ATTEST_CHUNKS_PER_CALL();
+        uint256 n = PER_CALL;
         uint256 count = 2 * n + 1;
         bytes32 fileId = _distinctChunks(count, _lastLength(count - 1), n, 0x22);
         assertFalse(_attest(fileId));
@@ -714,7 +740,7 @@ contract Base64AttestTest is Base64Base {
     /// @dev `n + 1` chunks: the second call has exactly one chunk to check, and it is bad. A
     ///      completion test that is off by one would attest the file after the first call.
     function test_Attest_TheLastChunkAloneInTheFinalCallIsChecked() public {
-        uint256 n = store.ATTEST_CHUNKS_PER_CALL();
+        uint256 n = PER_CALL;
         uint256 count = n + 1;
         // 5 to 8 bytes, so that the total is still a multiple of 4.
         bytes32 fileId = _distinctChunks(count, _lastLength(count - 1) + 4, n, 0x5c);
@@ -731,7 +757,7 @@ contract Base64AttestTest is Base64Base {
     ///      turn (the first of a call, the last of a call, and the ends of the file): each must
     ///      be reported by index, whichever call reaches it.
     function test_Attest_EveryBoundaryChunkIsValidated() public {
-        uint256 n = store.ATTEST_CHUNKS_PER_CALL();
+        uint256 n = PER_CALL;
         uint256 count = 2 * n + 2;
         uint256[6] memory probes = [uint256(0), n - 1, n, 2 * n - 1, 2 * n, 2 * n + 1];
         for (uint256 p; p < probes.length; ++p) {
@@ -739,7 +765,7 @@ contract Base64AttestTest is Base64Base {
                 _distinctChunks(count, _lastLength(count - 1) + (p + 1) * 4, probes[p], 0x7b);
             bool reverted;
             for (uint256 c; c < 3; ++c) {
-                try store.attestBase64(fileId) returns (bool) { }
+                try store.attestBase64(fileId, PER_CALL) returns (bool) { }
                 catch (bytes memory err) {
                     assertEq(
                         err,
@@ -759,7 +785,7 @@ contract Base64AttestTest is Base64Base {
     /// @dev Calls that stop before the last two chunks do not look for padding, so they succeed
     ///      while those chunks are still missing; the call that reaches them cannot.
     function test_Attest_EarlyCallsNeedNothingFromTheEndOfTheFile() public {
-        uint256 n = store.ATTEST_CHUNKS_PER_CALL();
+        uint256 n = PER_CALL;
         uint256 count = 2 * n + 2;
         bytes memory chunk = _text(CHUNK, 0, 140);
         bytes memory beforeLast = _text(CHUNK, 0, 141);
@@ -801,7 +827,7 @@ contract Base64AttestTest is Base64Base {
     ///      can hold padding, so it reads the last chunk for the padding and cannot run while that
     ///      chunk is missing (found by mutation testing).
     function test_Attest_TheCallThatChecksTheSecondToLastChunkReadsThePadding() public {
-        uint256 n = store.ATTEST_CHUNKS_PER_CALL();
+        uint256 n = PER_CALL;
         bytes memory chunk = _text(CHUNK, 0, 150);
         bytes memory last = _text(_lastLength(n), 1, 151);
         bytes32[] memory hashes = new bytes32[](n + 1);
@@ -823,12 +849,13 @@ contract Base64AttestTest is Base64Base {
         assertTrue(_attest(fileId), "the last chunk");
     }
 
-    /// @dev The largest file the store accepts takes 11 calls, and every call fits the EIP-7825
-    ///      gas cap. One chunk is listed 512 times, which makes the chunk reads warm after the
-    ///      first; the cold, all-distinct worst case is `Base64WorstCaseGasTest`.
+    /// @dev The largest file the store accepts, attested 48 chunks per call: every call fits
+    ///      the EIP-7825 gas cap. One chunk is listed `MAX_CHUNKS` times, which makes the chunk
+    ///      reads warm after the first; the cold, all-distinct worst case is
+    ///      `Base64WorstCaseGasTest`.
     function test_Attest_AtMaxChunksEveryCallFitsTheTransactionGasCap() public {
         uint256 max = store.MAX_CHUNKS();
-        uint256 n = store.ATTEST_CHUNKS_PER_CALL();
+        uint256 n = PER_CALL;
         bytes memory chunk = _text(CHUNK, 0, 120);
         bytes32[] memory hashes = new bytes32[](max);
         for (uint256 i; i < max; ++i) {
@@ -930,7 +957,7 @@ contract Base64GasTest is Base64Base {
     }
 }
 
-/// @dev The most expensive calls. A call checks at most `n = ATTEST_CHUNKS_PER_CALL` chunks, and
+/// @dev The most expensive calls at 48 chunks per call. A call checks `n = PER_CALL` chunks, and
 ///      a call that reaches the end of the file also reads the last one or two chunks for the `=`
 ///      padding. Two shapes, each with every chunk distinct and cold:
 ///      - `reachesEnd`: `n + 1` chunks. The first call checks `n` and reads the last chunk for
@@ -944,7 +971,7 @@ contract Base64WorstCaseGasTest is Base64Base {
 
     function setUp() public {
         store = new ContentStore();
-        uint256 n = store.ATTEST_CHUNKS_PER_CALL();
+        uint256 n = PER_CALL;
         assertLe(n + 2, 64, "the rotation gives 64 distinct chunks");
         assertEq((n * CHUNK) % 4, 0, "n * CHUNK + 4 is a multiple of 4");
         assertEq(((n + 1) * CHUNK + 1) % 4, 0, "(n + 1) * CHUNK + 1 is a multiple of 4");

@@ -39,7 +39,7 @@ JSON manifest.
    made.
 3. Cuts the stream into chunks of exactly `CHUNK_SIZE` (24,575) bytes, the last
    one shorter, and rejects a stream that is empty or needs more than
-   `MAX_CHUNKS` (512) chunks. The input file size is checked first, so an
+   `MAX_CHUNKS` (4,096) chunks. The input file size is checked first, so an
    oversize file is refused before it is read.
 4. Hashes each chunk (`keccak256`), computes the SHA-256 of the **decoded**
    media, and computes the file ID exactly as `ContentStore.manifestId` does.
@@ -60,7 +60,9 @@ see [Works and storage](../../docs/spec/works-and-storage.md#concepts).
 one write per distinct chunk, and the attest calls of a base64 file) under each
 gas schedule, as total gas and as ETH at `--gwei` per gas (default 1). This is
 what a collector pays to make a work on-chain complete; see
-[cost quotes](#cost-quotes).
+[cost quotes](#cost-quotes). With `--part-size BYTES` it also quotes writing each
+chunk as parts of that size joined by `linkChunk`, so whole chunks and parts can
+be compared under both schedules.
 
 `--already-encoded` takes a stream you already have (for example fetched from
 Arweave) instead of media. It must decode cleanly; the media SHA-256 comes from
@@ -72,11 +74,22 @@ gzip stream).
 
 Emits the ordered transactions, **without broadcasting anything**:
 
-- one `registerManifest` (first by default; `--register last` puts it after the
-  chunks), then one `writeChunk` per **distinct** chunk (a file that repeats a
-  chunk needs it stored once);
-- for a `Base64` or `GzipBase64` file, `ceil(chunks / 48)` calls to
-  `attestBase64(fileId)` **last**, after the manifest is registered and every
+- the registration (first by default; `--register last` puts it after the
+  chunks): one `registerManifest` for a manifest of up to 16 chunks, otherwise
+  the chunk-hash list as list chunks (`writeListChunk`, 767 hashes each, ordinary
+  `writeChunk` calls) and one small `registerManifestList`, which registers the
+  same file ID. `--manifest one|list` forces either; one call stores a slot per
+  hash and stops fitting a transaction at a few hundred chunks, list chunks never
+  do, and cost less from a few chunks up;
+- one `writeChunk` per **distinct** chunk (a file that repeats a chunk needs it
+  stored once), or, with `--part-size BYTES`, each chunk longer than BYTES as
+  parts of that size (`writePart`, ordinary `writeChunk` calls) and one
+  `linkChunk`, which stores the same chunk with the same hash. Parts keep every
+  transaction small if code deposits are ever repriced or capped per transaction;
+  today they cost about 6% more under Prague and about 3% more under Glamsterdam
+  for 8,192-byte parts;
+- for a `Base64` or `GzipBase64` file, `ceil(chunks / N)` calls to
+  `attestBase64(fileId, N)` (`--attest-chunks N`, default 48) **last**, after the manifest is registered and every
   chunk is stored, because attestation reads the chunks (see
   [Base64 attestation](#base64-attestation); `--no-attest` leaves them out);
 - ABI-encoded calldata in `<manifest>.calls/NNN-<name>.calldata`, a machine
@@ -106,12 +119,14 @@ manifest commits to (length, every chunk hash, and the decoded media SHA-256),
 and it refuses a manifest whose `fileId` is not the hash of its own fields.
 
 `--only-missing --rpc URL` asks the chain and drops what it already has: a
-registered manifest, any chunk the store already holds, and the attest calls if
-`isBase64Attested` is already true. That is how a collector finishes an upload
-the artist started, and its cost quote is what finishing costs. (Against a
-store that has no `attestBase64` it warns and emits no attest calls; against one
-whose `ATTEST_CHUNKS_PER_CALL` is not 48 it refuses, because the calls are sized
-for 48.)
+registered manifest, any chunk the store already holds (whole or linked, found
+with `firstMissing` over ranges of 256 chunks once the manifest is registered),
+any part or list chunk already written, and the attest calls if
+`isBase64Attested` is already true. That is how a stopped upload resumes, and how
+a collector finishes an upload the artist started; its cost quote is what
+finishing costs. Pass the same `--part-size` and `--manifest` as the first run.
+(Against a store that has no `attestBase64` it warns and emits no attest
+calls.)
 
 Run `send.sh` yourself, with your own signer:
 
@@ -203,7 +218,9 @@ carry the golden CIDs into Foundry, where `CidGolden.t.sol` adds each as a locat
 | Rule | Contract | Here |
 | --- | --- | --- |
 | Chunk size | `CHUNK_SIZE = SSTORE2.MAX_CHUNK_LENGTH = 24_575` | `plan.CHUNK_SIZE` |
-| Chunk count | 1 to `MAX_CHUNKS = 512` | `plan.check_stored_length` |
+| Chunk count | 1 to `MAX_CHUNKS = 4096` | `plan.check_stored_length` |
+| Parts of a linked chunk | 1 to `MAX_PARTS = 256`, any sizes | `plan.split_parts` |
+| Hashes per list chunk | 767 (`CHUNK_SIZE // 32`) | `plan.list_chunks` |
 | Layout | every chunk but the last is full | `plan.split_chunks` |
 | Chunk hash | `keccak256(chunk)` | `keccak.keccak256` (pure Python, not `hashlib.sha3_256`) |
 | File ID | `keccak256(abi.encode(bytes32[] chunkHashes, uint256 length, uint8 encoding, string mimeType, bytes32 sha256Hash))` | `plan.manifest_id` |
@@ -240,9 +257,9 @@ version, and why the encoded stream itself must be kept and published.
 
 A renderer copies a `Base64` or `GzipBase64` file's stored text verbatim into
 token JSON and `data:` URIs, and the store never looks at bytes while chunks are
-uploaded, so such a file is only a claim until `ContentStore.attestBase64(fileId)`
-has validated it. Anyone may call it, it is incremental (at most
-`ATTEST_CHUNKS_PER_CALL` = 48 chunks per call, repeat until it returns true) and
+uploaded, so such a file is only a claim until `ContentStore.attestBase64(fileId, count)`
+has validated it. Anyone may call it, it is incremental (up to `count` chunks per
+call, the caller's choice, repeat until it returns true) and
 permanent, and `isBase64Attested(fileId)` is what the renderer checks.
 
 The rule, which `base64_attestation_problem` in [`encoding.py`](encoding.py)
@@ -258,9 +275,9 @@ What the tooling does about it:
 - **Before anything is emitted**, `plan --already-encoded` and `calls` run the
   rule on the stored text and refuse a stream that would fail on chain, naming the
   chunk the contract would report. (Text this tool encodes itself always passes.)
-- **`calls`** appends the attest calls, `ceil(chunks / 48)` of them: 1 up to 48
-  chunks (about 1.18 MB), 2 for 49 to 96, and 11 for the 512-chunk maximum. Each
-  is the same 36 bytes of calldata, `attestBase64(fileId)`, and each carries its
+- **`calls`** appends the attest calls, `ceil(chunks / 48)` of them by default:
+  1 up to 48 chunks (about 1.18 MB), 2 for 49 to 96, and 86 for the 4,096-chunk
+  maximum. Each is the same 68 bytes of calldata, `attestBase64(fileId, 48)`, and each carries its
   own gas estimate. They come last because each call reads the chunks it
   validates and the call that reaches the end of the file also reads the last
   chunk to find the padding, so the final call cannot succeed before the manifest
@@ -272,7 +289,7 @@ What the tooling does about it:
 
 Cost falls on whoever calls it: about 175,000 gas per chunk, so about 8.5M gas for
 a full call of 48 distinct chunks (about half the Fusaka cap), and about 90M gas
-for a 512-chunk file. Attestation only reads chunks, so Glamsterdam adds only the
+for a 512-chunk file (about 720M for 4,096). Attestation only reads chunks, so Glamsterdam adds only the
 new slot that records it: about 89,000 gas once per file.
 
 ## Manifest JSON
@@ -324,7 +341,10 @@ percent, never above the cap.
 | Transaction | Model (execution) | Measured on `ContentStore` | As a transaction |
 | --- | --- | --- | --- |
 | `writeChunk`, new 24,575-byte chunk | 5,107,875 | 5,020,261 | about 5.5M (33% of the cap) |
-| `registerManifest`, 512 chunks, `text/html` | 11,572,400 | 11,460,012 | about 11.9M (71%) |
+| `registerManifest`, 512 chunks, `text/html` | 11,777,200 | 11,638,687 | about 12.1M (72%) |
+| `writeChunk`, 8,192-byte part | 1,749,360 | 1,710,142 | about 1.86M (11%) |
+| `linkChunk`, 3 parts, 24,575 bytes | 153,575 | 114,196 to 130,196 | about 0.15M (1%) |
+| `registerManifestList`, 4,096 chunks in 6 list chunks, 64-byte MIME | 2,808,200 | 2,414,947 | about 2.4M (14%) |
 | `attestBase64`, the worst call (48 cold chunks, then the last chunk for the padding) | 8,790,000 | about 8,500,000 | about 8.8M (53%) |
 
 `writeChunk` is priced as a new chunk, the worst case; a chunk the store already
@@ -369,10 +389,10 @@ measurement. Against the receipts:
 | `writeChunk`, 24,572 bytes | 38,474,847 | 38,364,370 |
 | `writeChunk`, the 7,048-byte CC0 text | 11,277,679 | 11,238,006 |
 | `writeChunk`, a full 24,575-byte chunk | 38,479,491 | about 38.4M |
-| `registerManifest`, 1 chunk | 596,176 | 577,375 |
-| `registerManifest`, 43 chunks (1 MiB) | 5,313,244 | 5,265,859 (estimate) |
-| `registerManifest`, 256 chunks | 29,235,328 | 28,784,463 (simulated) |
-| `registerManifest`, 512 chunks | 57,986,912 | about 57.6M |
+| `registerManifest`, 1 chunk | 596,576 | 577,375 |
+| `registerManifest`, 43 chunks (1 MiB) | 5,330,480 | 5,265,859 (estimate) |
+| `registerManifest`, 256 chunks | 29,337,752 | 28,784,463 (simulated) |
+| `registerManifest`, 512 chunks | 58,191,604 | about 57.6M |
 
 `test_glamsterdam.py` holds these receipts and fails if the model drops below
 any of them or drifts more than a few percent above.
@@ -411,23 +431,26 @@ and when it needs more than the block gas assumption.
 
 - **The 50M estimate cap.** The public Sepolia RPC caps estimates and
   simulations at 50M gas, and so do geth and reth by default (`--rpc.gascap`).
-  Under Glamsterdam a manifest above about **440 chunks**
-  (about 10.8 MB) costs more than that, so such a node cannot estimate it. Use
-  the offline model's limit (the default, and the fallback of `--gas-limits
-  rpc`) or a self-hosted node with a raised cap.
+  Under Glamsterdam a one-call registration above about **439 chunks**
+  (about 10.8 MB) costs more than that, so such a node cannot estimate it; the
+  default registration from list chunks never does. Use the offline model's
+  limit (the default, and the fallback of `--gas-limits rpc`) or a self-hosted
+  node with a raised cap.
 - **The block.** A transaction has to fit in one block. Sepolia's blocks were
   200M on 11 October 2026; the default assumption is 60M.
 
-**`MAX_CHUNKS` stays 512.** It is the protocol's limit, part of `IContentStore`
-and of every file's layout rule. Under Prague it was sized so that registering
-the largest manifest fits the cap. Under Glamsterdam the regular part still
-fits, but the whole registration is about 57.6M gas. So registering a manifest
-near the limit needs a chain whose blocks hold it with room to spare: Sepolia's
-200M blocks do, but on a chain with 60M blocks it would take almost a whole
-block. It also needs a gas limit from the offline model or from a node with a
-raised RPC gas cap. Chunks are written one per transaction (about 38.4M each),
-so only the registration grows with the file. ADR 0004 (gas budgets under
-Glamsterdam) records the repository's budgets.
+**`MAX_CHUNKS` is 4,096 (about 100.66 MB), and nothing grows with the file.**
+One-call registration (about 22,800 gas per hash under Prague, about 111,000
+under Glamsterdam) is what the tool sends for small manifests only; above 16
+chunks it writes the hash list as list chunks (at most 767 hashes, about 5.4M
+Prague or 38M Glamsterdam each) and registers with one `registerManifestList`
+(about 2.8M Prague and 3.7M Glamsterdam at 4,096 chunks, modelled). A 512-chunk
+manifest then costs about 4.2M Prague and 26.7M Glamsterdam in two transactions,
+against 12.1M and 58.2M in one; 4,096 chunks cost about 32M and 209M in seven,
+each inside the cap with its quarter reserve and under a 50M-capped node's
+estimate. Chunks and parts are written one per transaction, so no transaction
+ever needs more than one chunk's code. ADR 0004 (gas budgets under Glamsterdam)
+records the repository's budgets.
 
 ### Cost quotes
 
@@ -441,7 +464,7 @@ attestation; the gas price includes the base fee):
 | --- | ---: | ---: | ---: | ---: |
 | 256 KiB as `Base64` (11 chunks) | 61M | 0.061 ETH | 415M | 0.41 ETH |
 | 1 MiB as `Base64` (43 chunks) | 245M | 0.24 ETH | 1,655M | 1.65 ETH |
-| 12.58 MB, the largest file (512 chunks, no attestation) | 2,839M | 2.84 ETH | 19,759M | 19.8 ETH |
+| 12.58 MB (512 chunks, no attestation) | 2,839M | 2.84 ETH | 19,759M | 19.8 ETH |
 
 Storage is about 7 times dearer under Glamsterdam: about 1.65 ETH per MiB at 1
 gwei, against about 0.24 ETH under Prague.
@@ -521,10 +544,11 @@ the parts behind the required Contracts check.
 
 ## Performance and limits
 
-- Pure-Python keccak costs about 25 ms per full chunk. A maximum-size file
-  (512 chunks, 12.58 MB) takes about 14 seconds to plan and again to emit calls.
+- Pure-Python keccak costs about 25 ms per full chunk. A 512-chunk file
+  (12.58 MB) takes about 14 seconds to plan and again to emit calls; the
+  4,096-chunk maximum (100.66 MB) about eight times as long.
 - `verify` and `rebuild` make about two RPC calls per chunk; the whole file
-  and its decoded form are held in memory (at most 12.58 MB stored).
+  and its decoded form are held in memory (at most 100.66 MB stored).
 - Not covered: signing or sending (by design), batching through Multicall3 (the
   limit is printed, the batches are not built), and publishing to Arweave or
   IPFS. Gas estimation against live chain state is `--gas-limits rpc`.

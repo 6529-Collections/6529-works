@@ -512,7 +512,7 @@ contract RendererMediaTest is RendererBase {
         for (uint256 i; i < count; ++i) {
             hashes[i] = keccak256(abi.encode("missing", i));
         }
-        fileId = store.registerManifest(hashes, length, IDENTITY, mime, DIGEST);
+        fileId = store.registerManifest(hashes, length, uint8(IDENTITY), mime, DIGEST);
     }
 
     // ---------------------------------------------------------------- the HTML page of a script

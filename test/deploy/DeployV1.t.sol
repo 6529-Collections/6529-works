@@ -640,7 +640,9 @@ contract DeployV1Test is Test {
         chunks[0] = keccak256("never uploaded");
         bytes32 neverSha = sha256("never uploaded");
         bytes32 incomplete = d.contentStore
-            .registerManifest(chunks, 14, IContentStore.Encoding.Identity, "text/plain", neverSha);
+            .registerManifest(
+                chunks, 14, uint8(IContentStore.Encoding.Identity), "text/plain", neverSha
+            );
         Cc0Views views = new Cc0Views(incomplete, d.cc0TextFileId);
         other.cc0TextFileId = incomplete;
         other.workRecords = WorkRecords(address(views));

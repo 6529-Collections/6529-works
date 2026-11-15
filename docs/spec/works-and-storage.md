@@ -41,7 +41,7 @@ active authority (Stream's `artistOf`, then the artist registry's `activeAuthori
 | --- | --- | --- |
 | `openRecord` | Anyone | Stream `coreOf`; content store `sha256Of` (`fileInfo` for a `PREVIEW`) |
 | `setRecord`, `finalize` | The artist | Content store `fileInfo`, `isComplete`; `finalize` also Stream `rendererOf` |
-| `syncOnChain` | Anyone | Content store `fileInfo`, `firstMissing` (store 0) or `chunkHash`; an added store's `readChunk` (forward-all, WS-42) |
+| `syncOnChain` | Anyone | Content store `fileInfo`, `firstMissing` with the store as `source` (which calls an added store's `chunkData`, WS-42) |
 | `relicense` | PARAMETER_SETTER (48 hours), with every party's signature | Artist registry `artistIdOf`, `activeAuthorityOf`; content store `sha256Of` or `isComplete` |
 | `setRoyaltyRate` | FUNDS_SETTER (14 days), with every party's signature | Artist registry; Stream `setRoyaltyRate`; for a linked master, Editions `setRoyaltyRate` |
 | `repinRenderer` | SUCCESSOR_SETTER (30 days), with the artist's signature, until `RENDERER_REPIN` is renounced | The new renderer's ERC-165 |
@@ -91,7 +91,7 @@ or after finalize.
 | Name | Definition | Where it lives |
 | --- | --- | --- |
 | Chunk hash | `keccak256(chunk bytes)` | `ContentStore.chunkHash`, `chunkPointer` |
-| File ID | `keccak256(abi.encode(bytes32[] chunkHashes, uint256 length, uint8 encoding, string mimeType, bytes32 sha256))` | `ContentStore.manifestId`, `MediaFile.fileId` |
+| File ID | `keccak256(abi.encode(bytes32[] chunkHashes, uint256 length, uint8 encoding, string mimeType, bytes32 sha256))`; a manifest whose digest kind is not 0 appends `uint8 digestKind` | `ContentStore.manifestId`, `registerManifestList`, `MediaFile.fileId` |
 | Declared SHA-256 | SHA-256 of the fully decoded file (base64-decoded, then gunzipped, as the encoding requires); never recomputed on-chain | `ContentStore.fileInfo`, `sha256Of`, `MediaFile.sha256Hash` |
 | Content hash | The `PRIMARY` file's declared SHA-256; the product's uniqueness key | `PackageItem.contentHash` |
 | Media hash | `keccak256(abi.encode(MEDIA_DOMAIN, media))`, the commitment to the ordered media list | `PackageItem.mediaHash`, `RecordInfo.mediaHash` |
@@ -189,10 +189,10 @@ stateDiagram-v2
     state "Not registered" as Unregistered
     state "Registered, incomplete" as Incomplete
     [*] --> Unregistered : file ID computed off-chain
-    Unregistered --> Incomplete : registerManifest (anyone)
-    Unregistered --> Complete : registerManifest after every chunk is stored
-    Incomplete --> Incomplete : writeChunk (anyone)
-    Incomplete --> Complete : writeChunk stores the last missing chunk
+    Unregistered --> Incomplete : registerManifest or registerManifestList (anyone)
+    Unregistered --> Complete : registration after every chunk is stored
+    Incomplete --> Incomplete : writeChunk or linkChunk (anyone)
+    Incomplete --> Complete : writeChunk or linkChunk stores the last missing chunk
     note right of Complete
         Derived from the chunks, not recorded. No event.
     end note
@@ -215,8 +215,8 @@ any GUARDIAN may cancel a scheduled call.
 | Not synced to Partly synced or On-chain complete | Anyone | None | `WorkRecords.syncOnChain` |
 | Locator appended (no state change) | The artist before finalize; PLATFORM at any time | Immediate | `WorkDelivery.addLocator` |
 | Preference changed (no state change) | STORAGE_OPERATOR | Immediate | `WorkDelivery.setPreferredKind`, `setCollectionPreferredKind`, `setFilePreference` |
-| File: Not registered to Registered | Anyone | None | `ContentStore.registerManifest` |
-| File: to Complete | Anyone | None | `ContentStore.writeChunk` |
+| File: Not registered to Registered | Anyone | None | `ContentStore.registerManifest`, or `registerManifestList` after `writeChunk` of its list chunks |
+| File: to Complete | Anyone | None | `ContentStore.writeChunk`, `linkChunk` |
 | File: Not attested to Attested | Anyone | None | `ContentStore.attestBase64` |
 | Dependency: to Registered | PARAMETER_SETTER | Standard, 48 hours | `DependencyRegistry.register` |
 | Dependency: Registered to Deprecated | GUARDIAN | Immediate | `DependencyRegistry.deprecate` |
@@ -230,30 +230,47 @@ sequenceDiagram
     participant U as Uploader (anyone)
     participant CS as ContentStore
     Note over U: encode, chunk and hash off-chain (tools/content plan)
-    U->>CS: registerManifest(chunkHashes, length, encoding, mimeType, sha256)
-    CS-->>U: fileId (ManifestRegistered on first registration)
-    loop every missing chunk, any order, any sender
-        U->>CS: writeChunk(bytes)
-        CS-->>U: chunk hash and pointer (ChunkWritten if new)
+    alt a small manifest
+        U->>CS: registerManifest(chunkHashes, length, encoding, mimeType, sha256)
+    else any size up to 4,096 chunks, in pieces
+        loop each list chunk (up to 767 packed hashes)
+            U->>CS: writeChunk(list chunk)
+        end
+        U->>CS: registerManifestList(lists, hashesPerList, length, encoding, mimeType, digest, digestKind)
     end
-    U->>CS: isComplete(fileId)
+    CS-->>U: fileId (ManifestRegistered, with the chunk hashes, on first registration)
+    loop every missing chunk, any order, any sender
+        alt whole
+            U->>CS: writeChunk(bytes)
+        else from parts of any size
+            U->>CS: writeChunk(part), for each part
+            U->>CS: linkChunk(partHashes)
+        end
+    end
+    U->>CS: firstMissing(fileId, from, to, store), range by range
     opt Base64 or GzipBase64 file
         loop until it returns true
-            U->>CS: attestBase64(fileId)
+            U->>CS: attestBase64(fileId, count)
         end
     end
 ```
 
 - **Preconditions.** None: any account, any order, before or after the work is minted. The file
   ID depends only on the manifest, so a package can commit to it before anything is deployed.
-- **Effects.** A new chunk deploys one SSTORE2 contract; repeats are no-ops. Completion is
-  derived (`isComplete`, `missingChunks`) and has no event.
+- **Effects.** A new chunk deploys one SSTORE2 contract; repeats are no-ops. A link records one
+  word and one pointer per part. Completion is derived (`isComplete`, `firstMissing`,
+  `missingChunks`) and has no event; every write's event carries what it recorded, so the index
+  is rebuilt from logs alone (WS-50, WS-51).
+- **Pieces.** Every step is the caller's size: parts of any size, list chunks of 1 to 767
+  hashes, attestation of any count, completeness by range. No step grows with the file beyond a
+  bounded memory copy in `registerManifestList` (about 0.4 MB at 4,096 chunks).
 - **Off-chain proof.** The uploader in [`tools/content`](../../tools/content/README.md) proves
   the encoded stream reproduces every chunk hash and the declared SHA-256 before any transaction
   is emitted, and refuses base64 text that `attestBase64` would reject. For `Gzip`, `Base64` and
   `GzipBase64` files, the encoded stream itself must also be published (Arweave or IPFS): the
   file ID names those exact bytes, and gzip output depends on the compressor.
-- **Gas.** One full chunk fits a transaction under Glamsterdam
+- **Gas.** One full chunk fits a transaction under Glamsterdam; parts keep each write smaller if
+  code is ever repriced or capped per transaction
   ([Parameters and limits](#parameters-and-limits); [uploader](../../tools/content/README.md#glamsterdam)).
 
 ### Open a record
@@ -444,12 +461,8 @@ sequenceDiagram
     A->>WR: syncOnChain(tokenId, storeId, maxChunks)
     loop chunks from the saved cursor, at most maxChunks
         WR->>CS: fileInfo(fileId)
-        alt store 0
-            WR->>CS: firstMissing(fileId, from, to)
-        else an added store
-            WR->>CS: chunkHash(fileId, i)
-            WR->>WR: store.readChunk(hash), checked by keccak256 and length
-        end
+        WR->>CS: firstMissing(fileId, from, to, source)
+        Note over CS: store 0 presence check, or the added store's chunkData re-hashed
     end
     alt no chunk verified
         WR-->>A: revert NotOnChainComplete, earlier calls keep their progress
@@ -499,15 +512,15 @@ metadata. A store, once added, is never removed; a work verified against it stay
 | WS-21 | (First delivery contract.) The preferred locator is the file's index, else the collection kind, else the global kind, else the first registered, else the implicit `ONCHAIN` copy of an on-chain complete work, else the empty locator (kind `NONE`, index `type(uint256).max`). The kind and first-registered tiers consider only the locators the artist added; a locator PLATFORM added is served only through the storage operator's file index. | `WorkDelivery.preferredLocator`, `_firstOfKind`, `LocatorCounts.byArtist` | [`PreferredLocation.t.sol`](../../test/stream/PreferredLocation.t.sol) `testFuzz_preferredLocator_matchesModel`; [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_preferredLocator_mostSpecificWins`, `test_preferredLocator_implicitOnchainFallback`, `test_preferredLocator_fallbacksConsiderOnlyTheArtistsLocators`, `test_preferredLocator_aPlatformOnlyKindFallsThroughToTheArtist`, `test_preferredLocator_platformOnlyLocatorsNeedTheOperatorsPick`, `test_preferredLocator_platformLocatorsAfterFinalizeNeedTheOperatorsPick` |
 | WS-22 | (First delivery contract.) The storage operator can only choose among copies registered for that file, or its on-chain bytes. | `WorkDelivery.setFilePreference`, `preferredLocator` | [`PreferredLocation.t.sol`](../../test/stream/PreferredLocation.t.sol) `testFuzz_preferredLocator_staysWithinFile`; [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_preferenceSetters_reverts` |
 | WS-23 | Every visible change emits ERC-4906 through Stream and notifies Editions for a master; a global or collection preference change refreshes every token and edition. | `WorkRecords._refresh`, `_refreshAll` | [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_preferenceSetters_eventsAndRefresh`, `test_preferenceSetters_notifyAllEditions`, `test_editionMaster_notifiesEditions` |
-| WS-24 | A chunk is at most `CHUNK_SIZE` bytes; writing is idempotent and its pointer depends only on the bytes and the store. | `ContentStore.writeChunk`, `SSTORE2.write` | [`ContentStore.t.sol`](../../test/content/ContentStore.t.sol) `test_WriteChunk_AcceptsMaxAndRejectsOneMore`, `test_WriteChunk_IsIdempotent`, `testFuzz_WriteChunk_IsCallerIndependent` |
-| WS-25 | The file ID commits to the whole manifest and to nothing else (no chain ID, no address); registering again is a no-op; a different claim about the same chunks is a different file. | `ContentStore.manifestId`, `registerManifest` | [`ContentStore.t.sol`](../../test/content/ContentStore.t.sol) `test_FileId_CommitsToWholeManifest`, `test_FileId_IsChainAndDeploymentIndependent`, `test_RegisterManifest_IsIdempotent` |
-| WS-26 | A manifest has 1 to 512 chunks, a length with `(count − 1) × CHUNK_SIZE < length ≤ count × CHUNK_SIZE`, a nonzero SHA-256, a valid MIME type and one of four encodings. | `ContentStore.registerManifest`, `_requireMime` | [`ContentStore.t.sol`](../../test/content/ContentStore.t.sol) `test_RegisterManifest_ChunkCountBounds`, `testFuzz_RegisterManifest_LengthFitsIffInRange`, `test_RegisterManifest_RejectsZeroDigest`, `test_RegisterManifest_AcceptsExactlyTheFourEncodings` |
-| WS-27 | A chunk counts only at the length the layout rule requires; a manifest that breaks the rule, or lists a chunk that cannot exist, never completes and never reads. | `ContentStore._present`, `_readChunk`, `_expectedLength` | [`ContentStore.t.sol`](../../test/content/ContentStore.t.sol) `test_WrongLengthChunkNeverCompletesOrReads`, `test_OverLongFinalChunkNeverCompletesOrReads`, `test_ZeroChunkHashIsAcceptedButNeverCompletes` |
-| WS-28 | Reads fail closed: every touched chunk is read whole and checked against its keccak256; a missing chunk reverts; no read returns partial data. | `ContentStore.read`, `readChunk`, `SSTORE2.readVerified` | [`ContentStore.t.sol`](../../test/content/ContentStore.t.sol) `test_ReadsDetectTamperedChunkCode`, `testFuzz_Read_MatchesReference`, `test_UnknownFileRevertsEverywhere` |
+| WS-24 | A chunk is at most `CHUNK_SIZE` bytes; writing is idempotent (the store deduplicates by `chunkPointer`); the pointer is the address CREATE2 returned, with code of exactly the data plus the STOP byte, and no read or write recomputes an address. | `ContentStore.writeChunk`, `SSTORE2.write` | [`ContentStore.t.sol`](../../test/content/ContentStore.t.sol) `test_WriteChunk_AcceptsMaxAndRejectsOneMore`, `test_WriteChunk_IsIdempotent`, `testFuzz_WriteChunk_IsCallerIndependent`; [`SSTORE2.t.sol`](../../test/libraries/SSTORE2.t.sol) `test_WriteNeverAdoptsCodeAtThePredictedAddress`, `testFuzz_WriteReturnsTheCreatedContract` |
+| WS-25 | The file ID commits to the whole manifest and to nothing else (no chain ID, no address); registering again, by either function, is a no-op; a different claim about the same chunks is a different file. | `ContentStore.manifestId`, `registerManifest`, `registerManifestList` | [`ContentStore.t.sol`](../../test/content/ContentStore.t.sol) `test_FileId_CommitsToWholeManifest`, `test_FileId_IsChainAndDeploymentIndependent`, `test_RegisterManifest_IsIdempotent` |
+| WS-26 | A manifest has 1 to `MAX_CHUNKS` (4,096) chunks, a length with `(count − 1) × CHUNK_SIZE < length ≤ count × CHUNK_SIZE`, a nonzero digest and a valid MIME type; any `uint8` encoding and digest kind (WS-54). | `ContentStore._record`, `_requireMime` | [`ContentStore.t.sol`](../../test/content/ContentStore.t.sol) `test_RegisterManifest_ChunkCountBounds`, `testFuzz_RegisterManifest_LengthFitsIffInRange`, `test_RegisterManifest_RejectsZeroDigest`, `testFuzz_RegisterManifest_RecordsAnyEncodingId`; [`ContentStorePermanence.t.sol`](../../test/content/ContentStorePermanence.t.sol) `test_List_Reverts`, `test_List_RefusesMoreThanMaxChunksBeforeCopying` |
+| WS-27 | A chunk, whole or linked, counts only at the length the layout rule requires; a manifest that breaks the rule, or lists a chunk that cannot exist, never completes and never reads. | `ContentStore._present`, `_readChunk`, `_expectedLength` | [`ContentStore.t.sol`](../../test/content/ContentStore.t.sol) `test_WrongLengthChunkNeverCompletesOrReads`, `test_OverLongFinalChunkNeverCompletesOrReads`, `test_ZeroChunkHashIsAcceptedButNeverCompletes` |
+| WS-28 | Reads fail closed: every touched chunk, whole or linked, is read whole and checked against its keccak256; a missing chunk reverts; no read returns partial data; no read path holds a gas figure, and a reader can always go chunk by chunk. | `ContentStore.read`, `readChunk`, `chunkData`, `_load`, `SSTORE2.readVerified` | [`ContentStore.t.sol`](../../test/content/ContentStore.t.sol) `test_ReadsDetectTamperedChunkCode`, `testFuzz_Read_MatchesReference`, `test_UnknownFileRevertsEverywhere` |
 | WS-29 | Uploads are permissionless and in any order; chunks are shared by hash across files; nothing accepts value. | `ContentStore` (no access control, no payable function) | [`ContentStore.t.sol`](../../test/content/ContentStore.t.sol) `test_RegisterManifest_BeforeChunksExist`, `test_OutOfOrderUploads_CompleteTheFile`, `test_SharedChunksServeEveryFileThatListsThem`, `test_NothingAcceptsValue` |
-| WS-30 | The declared SHA-256 is never recomputed on-chain; `sha256Of` returns it and reverts for an unknown file. | `ContentStore.sha256Of` | [`ContentStore.t.sol`](../../test/content/ContentStore.t.sol) `test_Sha256Of_IsTheDeclaredDigest`, `testFuzz_Sha256Of_MatchesFileInfo` |
-| WS-31 | `attestBase64` accepts only `Base64` and `GzipBase64` files of a length divisible by 4 whose bytes are `[A-Za-z0-9+/]` except a final `=` or `==`; it checks at most 48 chunks per call, resumes, and is one-time per file ID. | `ContentStore.attestBase64`, `_validateBase64`, `_padding`, `Base64Validator.isAlphabet` | [`Base64Attest.t.sol`](../../test/content/Base64Attest.t.sol) `test_EveryByteValueInEveryLane`, `testFuzz_ArbitraryBytesMatchTheOracle`, `test_Attest_RejectsEqualsWhereverItIsNotTheLastOneOrTwoBytes`, `test_Attest_LengthMustBeAMultipleOfFour`, `test_Attest_LargeFileTakesSeveralCalls`, `test_Attest_IsOneTimeAndIdempotent` |
-| WS-32 | The store's constants are fixed, and its worst transactions fit the EIP-7825 cap in Prague gas: a 512-chunk registration and every attestation call. | `ContentStore` constants | [`ContentStore.t.sol`](../../test/content/ContentStore.t.sol) `test_Constants_ArePinned`, `test_RegisterManifest_AtMaxChunksFitsTheTransactionGasCap`; [`Base64Attest.t.sol`](../../test/content/Base64Attest.t.sol) `test_Attest_AtMaxChunksEveryCallFitsTheTransactionGasCap` |
+| WS-30 | The declared digest is never recomputed on-chain; `sha256Of` returns it, reverts for an unknown file, and reverts with `ContentDigestNotSha256` for a digest kind other than 0. | `ContentStore.sha256Of` | [`ContentStore.t.sol`](../../test/content/ContentStore.t.sol) `test_Sha256Of_IsTheDeclaredDigest`, `testFuzz_Sha256Of_MatchesFileInfo` |
+| WS-31 | `attestBase64` accepts only `Base64` and `GzipBase64` files of a length divisible by 4 whose bytes are `[A-Za-z0-9+/]` except a final `=` or `==`; each call checks up to the caller's count of chunks, resumes, and is one-time per file ID. | `ContentStore.attestBase64`, `_validateBase64`, `_padding`, `Base64Validator.isAlphabet` | [`Base64Attest.t.sol`](../../test/content/Base64Attest.t.sol) `test_EveryByteValueInEveryLane`, `testFuzz_ArbitraryBytesMatchTheOracle`, `test_Attest_RejectsEqualsWhereverItIsNotTheLastOneOrTwoBytes`, `test_Attest_LengthMustBeAMultipleOfFour`, `test_Attest_LargeFileTakesSeveralCalls`, `test_Attest_TheCallerChoosesTheCount`, `test_Attest_IsOneTimeAndIdempotent` |
+| WS-32 | The store's constants are fixed safety bounds (`CHUNK_SIZE`, `MAX_CHUNKS` 4,096, `MAX_PARTS` 256, `MAX_MIME_LENGTH` 64), and every operation has a form whose transaction fits the EIP-7825 cap in Prague gas: a part or list chunk of the caller's size, a link, a 4,096-chunk list registration, a one-call registration of 512 chunks, an attestation call of 48. | `ContentStore` constants | [`ContentStore.t.sol`](../../test/content/ContentStore.t.sol) `test_Constants_ArePinned`, `test_RegisterManifest_OneCallOf512FitsTheTransactionGasCap`; [`ContentStorePermanence.t.sol`](../../test/content/ContentStorePermanence.t.sol) `test_Gas_RegisterListOf4096`, `test_Gas_LinkThreeParts`; [`Base64Attest.t.sol`](../../test/content/Base64Attest.t.sol) `test_Attest_AtMaxChunksEveryCallFitsTheTransactionGasCap` |
 | WS-33 | The uploader's file IDs, chunk hashes, calldata and attestation verdicts equal the contract's. | `tools/content` against `ContentStore` | [`UploaderGolden.t.sol`](../../test/content/tooling/UploaderGolden.t.sol) `test_Inline_ChunkHashesFileIdAndCalldataMatch`, `test_Generated_ChunkingFileIdAndCalldataMatch`; [`UploaderAttest.t.sol`](../../test/content/tooling/UploaderAttest.t.sol) `test_GoldenCases_StoreReachesThePythonVerdictForBothBase64Encodings` |
 | WS-34 | A dependency label is 1 to 32 bytes of `[a-z0-9._-]`, left-aligned, then only zero bytes; a `(name, version)` maps to one complete file forever. | `DependencyRegistry.register`, `_requireLabel` | [`DependencyRegistry.t.sol`](../../test/content/DependencyRegistry.t.sol) `test_Register_LabelExamples`, `testFuzz_Register_LabelValidity`, `test_Register_VersionsAreImmutable`, `test_Register_RequiresCompleteContent` |
 | WS-35 | Deprecation is a one-way flag: nothing is deleted and the version still resolves. Both functions are restricted. | `DependencyRegistry.deprecate`, `resolve` | [`DependencyRegistry.t.sol`](../../test/content/DependencyRegistry.t.sol) `test_Deprecate_IsAFlagOnly`, `test_Deprecate_Guards`, `test_Register_OnlyTheRegistrarRole` |
@@ -517,11 +530,17 @@ metadata. A store, once added, is never removed; a work verified against it stay
 | WS-39 | Delivery is a replaceable contract behind `delivery`. `setDelivery(expected, next)` is SUCCESSOR_SETTER and compare-and-set (`DeliveryMismatch`); `next` declares `IWorkDelivery` by ERC-165, is not an EIP-7702 account, serves this contract (`records`) and names the current contract as `predecessor`, which it must keep serving the locators of. Every token's metadata is refreshed. The delivery contract's only calls into `WorkRecords` are the refresh hooks (`NotDelivery` for anyone else). | `WorkRecords.setDelivery`, `refreshMetadata`, `refreshAllMetadata` | [`WorkDelivery.t.sol`](../../test/stream/WorkDelivery.t.sol) `test_setDelivery_swapsAndRefreshesEveryToken`, `test_setDelivery_refusals`, `test_refreshHooks_onlyTheDelivery`, `test_successor_keepsThePredecessorsLocators`, `test_aHostileDeliveryChangesNoFact` |
 | WS-40 | `preferredLocator` is fail-soft: the delivery contract's answer is served only when it is the canonical encoding of `(Location, uint256)` with a URI of at most `Limits.MAX_URI_BYTES`, non-empty for every kind but NONE and ONCHAIN, empty with index `type(uint256).max` for those two, and ONCHAIN only for an on-chain complete work. A refusal or anything else yields the work's own answer: the implicit ONCHAIN copy of a synced work, else the empty locator; never another locator. A delivery call that runs short of gas reverts with `BoundedCallShortfall`. Kinds are `uint8` labels; kinds `LocatorKind` does not name pass through. | `WorkRecords.preferredLocator`, `_isLocation` | [`WorkDelivery.t.sol`](../../test/stream/WorkDelivery.t.sol) `test_preferredLocator_failSoftOnEveryMalformedAnswer`, `test_preferredLocator_passesWellFormedAnswersThrough`, `test_GasRule_preferredLocatorForwarding`, `test_GasRule_aBurningDeliveryRevertsNeverFallsBack` |
 | WS-41 | Store 0 is the content store. `addStore(store, codeHash)` is SUCCESSOR_SETTER, append-only (IDs 1 to 15, never reused or removed), and pins the store's code hash, checked at each use (`UnknownStore` after a change). | `WorkRecords.addStore`, `_storeOf` | [`WorkStores.t.sol`](../../test/stream/WorkStores.t.sol) `test_addStore_isGovernedAppendOnlyAndPinned`, `test_syncOnChain_aStoreWhoseCodeChanged` |
-| WS-42 | A chunk counts from an added store only if the bytes it returns for the manifest's chunk hash hash to it and have the length the layout rule requires; a refusal or any other answer is a missing chunk; running short of gas reverts (`BoundedCallShortfall`). | `WorkRecords._verify` | [`WorkStores.t.sol`](../../test/stream/WorkStores.t.sol) `test_syncOnChain_throughAnAdapter`, `test_syncOnChain_adapterBytesAreVerified`, `test_GasRule_adapterReads` |
+| WS-42 | `syncOnChain` verifies every store through the content store's `firstMissing(fileId, from, to, source)` (WS-52): a chunk counts from an added store only if the bytes it returns for the manifest's chunk hash hash to it and have the length the layout rule requires; wrong bytes are a missing chunk; a store that reverts makes the call revert. The store-switch probe reads `firstMissing` forward-all: a refusal there means the store holds nothing, running short of gas reverts (`BoundedCallShortfall`). | `WorkRecords._verify`, `_startChunk`; `ContentStore.firstMissing` | [`WorkStores.t.sol`](../../test/stream/WorkStores.t.sol) `test_syncOnChain_throughAnAdapter`, `test_syncOnChain_adapterBytesAreVerified`, `test_GasRule_adapterReads` |
 | WS-43 | A file's store is fixed when its last chunk verifies and never changes; a file in progress changes store only when its store lacks the next chunk or its code changed (`StoreInUse` otherwise), restarting at chunk 0. A complete work is never unmarked, and no governance action alters what `tokenURI` inlines for it. | `WorkRecords._startChunk`, `syncOnChain` | [`WorkStores.t.sol`](../../test/stream/WorkStores.t.sol) `test_syncOnChain_switchesStoreOnlyAwayFromAMissingChunk`, `test_syncOnChain_aCompleteFilesStoreNeverChanges`; [`WorkRecordsGovernanceInvariant.t.sol`](../../test/stream/WorkRecordsGovernanceInvariant.t.sol) `invariant_tokenUriOfACompleteWorkNeverChanges`, `invariant_aCompleteWorksFactsNeverChange` |
 | WS-44 | Logs only: `RecordOpened` carries the item (whose item hash is the core's), the media list, the license key and the seed; `RecordSet`, `WorkFinalized`, `LicenseChanged`, `RoyaltyRateSet`, `RendererRepinned` and `PowersRenounced` carry the new state hash; `OnChainSyncProgress` carries the store; `DeliverySet` and `StoreAdded` the governed pointers. | `WorkRecords` events | [`WorkRecordsFuture.t.sol`](../../test/stream/WorkRecordsFuture.t.sol) `test_recordOpened_carriesEveryFactOfTheOpen`; [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_relicense_withEveryConsent`, `test_repinRenderer_errataPath` |
 | WS-45 | Item kinds, seed policies, party roles and media roles are read as `uint8` (`WorkItem`, `WorkMedia`, the ABI of `PackageItem` and `MediaFile`), so an item a future mint policy defines still opens; a seed policy other than NONE and VRF keeps the item's seed; media roles above 15 are refused (four bits each). | `WorkRecords.openRecord` | [`WorkRecordsFuture.t.sol`](../../test/stream/WorkRecordsFuture.t.sol) `test_openRecord_itemValuesTodaysEnumsDoNotName`, `testFuzz_workItemHashesAsPackageItem` |
 | WS-46 | The record bound (`setRecord`: the default renderer; `finalize`: the renderer it pins) and the preview bound (`openRecord`: the default renderer) are the renderer's `IRecordLimits` answer when it answers exactly two words, else `Limits.MAX_RECORD_BYTES` and `Limits.MAX_PREVIEW_BYTES`; the record bound never exceeds one chunk. A read that runs short of gas reverts. | `WorkRecords._limits`, `_checkRecordFile`, `_previewSha` | [`WorkRecordsFuture.t.sol`](../../test/stream/WorkRecordsFuture.t.sol) `test_recordBound_comesFromTheRenderer`, `test_recordBound_finalizeUsesThePinnedRenderer`, `test_previewBound_comesFromTheRenderer`, `test_GasRule_recordBoundRead` |
+| WS-50 | A linked chunk is the concatenation of 1 to `MAX_PARTS` whole chunks, recorded under the keccak256 of the concatenated bytes (at most `CHUNK_SIZE`), re-checked on every read; it counts and reads exactly as the same bytes written whole. Linking is a no-op when the chunk is held whole or linked from as many parts or fewer; only a link from fewer parts replaces one. Parts are never linked chunks. Every link emits `ChunkLinked` with its parts. | `ContentStore.linkChunk`, `_load`, `_present` | [`ContentStorePermanence.t.sol`](../../test/content/ContentStorePermanence.t.sol) `test_Link_IsTheSameChunkAsAWholeWrite`, `testFuzz_Link_AnySplitGivesTheSameChunk`, `test_Link_IsANoOpWhenTheChunkIsHeldWhole`, `test_Link_OnlyFewerPartsReplaceALink`, `test_Link_Reverts`, `test_Link_MaxPartsBuildAFullChunk`, `test_Link_ReadsDetectTamperedParts`, `test_EveryWriteEmitsWhatItRecorded` |
+| WS-51 | `registerManifestList` reads the chunk-hash list from list chunks (stored whole, `hashesPerList` 1 to 767 hashes each, the last 1 to that many) and registers the same file ID, fields and hashes as `registerManifest`; `ManifestRegistered` carries every chunk hash. | `ContentStore.registerManifestList`, `_loadList`, `_hashAt` | [`ContentStorePermanence.t.sol`](../../test/content/ContentStorePermanence.t.sol) `test_List_GivesTheSameFileAsOneCall`, `test_List_AfterOneCallIsANoOp`, `testFuzz_List_AnyStrideGivesTheSameFileId`, `test_List_Reverts` |
+| WS-52 | `firstMissing(fileId, from, to, source)` returns the first index in the caller's range (capped at the chunk count) that `source` does not serve: for the store itself, held whole or linked at the layout length; for another `IChunkStore`, bytes whose keccak256 and length are the manifest's. A source that reverts makes the call revert; it is never read as an answer. | `ContentStore.firstMissing`, `_served` | [`ContentStorePermanence.t.sol`](../../test/content/ContentStorePermanence.t.sol) `test_FirstMissing_RangesAndCursor`, `test_Source_AnotherContentStoreServesTheFile`, `test_Source_WrongBytesAreFoundNotTrusted`, `test_Source_ForwardsAllGasAndNeverAnswersOnShortfall` |
+| WS-53 | `chunkData(chunkHash)` (`IChunkStore`) returns a chunk's verified bytes, whole or linked, and reverts with `ContentChunkUnknown` for one not held. | `ContentStore.chunkData` | [`ContentStorePermanence.t.sol`](../../test/content/ContentStorePermanence.t.sol) `test_ChunkData_RevertsForAnUnknownChunk`, `test_Link_IsTheSameChunkAsAWholeWrite` |
+| WS-54 | Encodings and digest kinds are open `uint8` ids: any value is recorded and is part of the file ID; the store interprets only encodings 2 and 3 (attestation) and digest kind 0 (`sha256Of`, and the file ID without the kind). | `ContentStore.registerManifest`, `registerManifestList`, `attestBase64`, `sha256Of` | [`ContentStore.t.sol`](../../test/content/ContentStore.t.sol) `testFuzz_RegisterManifest_RecordsAnyEncodingId`, `test_UnknownEncodingIdIsStoredAndRead`; [`ContentStorePermanence.t.sol`](../../test/content/ContentStorePermanence.t.sol) `testFuzz_List_DigestKinds` |
+
 The whole path, from upload and attestation through `openRecord`, `finalize` and `syncOnChain` to
 inline rendering, runs on the real stack in
 [`ContentToTokenURI.t.sol`](../../test/integration/ContentToTokenURI.t.sol)
@@ -563,10 +582,13 @@ completion in the content store has no event: derive it from `ManifestRegistered
 | Parameter | Value | Source |
 | --- | --- | --- |
 | Chunk size | 24,575 bytes (EIP-170's 24,576 minus the STOP byte) | `ContentStore.CHUNK_SIZE`, `SSTORE2.MAX_CHUNK_LENGTH` |
-| Chunks per file | 1 to 512 (12,582,400 bytes) | `ContentStore.MAX_CHUNKS` |
+| Chunks per file | 1 to 4,096 (100,659,200 bytes); a safety bound on whole-file loops and on the list registration's memory | `ContentStore.MAX_CHUNKS` |
+| Parts per linked chunk | 1 to 256; a safety bound on the work of one chunk read | `ContentStore.MAX_PARTS` |
+| Hashes per list chunk | 1 to 767 (`CHUNK_SIZE / 32`), chosen per manifest | `ContentStore.registerManifestList` |
 | MIME type | At most 64 bytes, lowercase `type/subtype` from `[a-z0-9+._-]`, one interior slash | `ContentStore.MAX_MIME_LENGTH`, `_requireMime` |
-| Chunks per attestation call | 48 | `ContentStore.ATTEST_CHUNKS_PER_CALL` |
-| Encodings | `Identity` 0, `Gzip` 1, `Base64` 2, `GzipBase64` 3 (part of the file ID) | `IContentStore.Encoding` |
+| Chunks per attestation call | The caller's choice (`maxChunks`); the uploader sends 48 | `ContentStore.attestBase64` |
+| Encodings | Open `uint8` ids (part of the file ID); defined: `Identity` 0, `Gzip` 1, `Base64` 2, `GzipBase64` 3 | `IContentStore.Encoding` |
+| Digest kinds | Open `uint8` ids; 0 is SHA-256 of the decoded file, the only kind `sha256Of` and `WorkRecords` accept | `IContentStore.FileInfo.digestKind` |
 | Media files per work | 1 to 32 | `Limits.MAX_MEDIA_FILES` |
 | Record file | The renderer's bound (WS-46), else 12,288 bytes; `Identity`, one chunk | `IRecordLimits`, `Limits.MAX_RECORD_BYTES` |
 | Inlinable `PREVIEW` file | The renderer's bound (WS-46), else 16,384 stored bytes; an `Identity` file counting four times | `IRecordLimits`, `Limits.MAX_PREVIEW_BYTES` |

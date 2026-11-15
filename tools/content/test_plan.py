@@ -45,8 +45,10 @@ class MimeTest(unittest.TestCase):
 class LayoutTest(unittest.TestCase):
     def test_constants_match_the_contract(self) -> None:
         self.assertEqual(pl.CHUNK_SIZE, 24_575)  # EIP-170 minus the STOP byte
-        self.assertEqual(pl.MAX_CHUNKS, 512)
-        self.assertEqual(pl.MAX_STORED_BYTES, 12_582_400)
+        self.assertEqual(pl.MAX_CHUNKS, 4096)
+        self.assertEqual(pl.MAX_PARTS, 256)
+        self.assertEqual(pl.PER_LIST, 767)
+        self.assertEqual(pl.MAX_STORED_BYTES, 100_659_200)
 
     def test_chunk_counts_at_the_edges(self) -> None:
         cases = {1: 1, 24_574: 1, 24_575: 1, 24_576: 2, 49_150: 2, 49_151: 3, 12_582_400: 512}
@@ -71,18 +73,18 @@ class LayoutTest(unittest.TestCase):
             pl.check_stored_length(0)
 
     def test_max_chunks_is_enforced(self) -> None:
-        pl.check_stored_length(pl.MAX_STORED_BYTES)  # exactly 512 full chunks
-        with self.assertRaisesRegex(ToolError, "at most 512 chunks"):
+        pl.check_stored_length(pl.MAX_STORED_BYTES)  # exactly 4,096 full chunks
+        with self.assertRaisesRegex(ToolError, "at most 4096 chunks"):
             pl.check_stored_length(pl.MAX_STORED_BYTES + 1)
-        self.assertEqual(len(pl.split_chunks(bytes(pl.MAX_STORED_BYTES))), 512)
+        self.assertEqual(len(pl.split_chunks(bytes(pl.MAX_STORED_BYTES))), 4096)
 
     def test_input_limits_follow_the_encoding(self) -> None:
-        self.assertEqual(pl.max_input_bytes(Encoding.IDENTITY, False), 12_582_400)
-        self.assertEqual(pl.max_input_bytes(Encoding.GZIP, True), 12_582_400)
-        self.assertEqual(pl.max_input_bytes(Encoding.BASE64, False), 9_436_800)
+        self.assertEqual(pl.max_input_bytes(Encoding.IDENTITY, False), 100_659_200)
+        self.assertEqual(pl.max_input_bytes(Encoding.GZIP, True), 100_659_200)
+        self.assertEqual(pl.max_input_bytes(Encoding.BASE64, False), 75_494_400)
         self.assertEqual(pl.max_input_bytes(Encoding.GZIP, False), enc.MAX_DECODED_BYTES)
-        # 9,436,800 bytes of media is exactly 512 chunks of base64 text.
-        self.assertEqual(len(enc.base64_encode(bytes(9_436_800))), pl.MAX_STORED_BYTES)
+        # 75,494,400 bytes of media is exactly 4,096 chunks of base64 text.
+        self.assertEqual(len(enc.base64_encode(bytes(75_494_400))), pl.MAX_STORED_BYTES)
 
     def test_oversize_files_fail_before_any_hashing(self) -> None:
         with mock.patch.object(pl, "keccak256", side_effect=AssertionError("hashed")):

@@ -57,12 +57,40 @@ abstract contract ContentBase is Test {
     }
 
     /// @dev Registers the manifest for `file` without uploading any chunk.
-    function _declare(bytes memory file, IContentStore.Encoding encoding, string memory mime)
+    function _declare(bytes memory file, uint8 encoding, string memory mime)
         internal
         returns (bytes32 fileId, bytes[] memory chunks, bytes32[] memory hashes)
     {
         (chunks, hashes) = _split(file);
         fileId = store.registerManifest(hashes, file.length, encoding, mime, sha256(file));
+    }
+
+    /// @dev The packed hashes `[from, to)` of `hashes`: one list chunk's bytes.
+    function _packed(bytes32[] memory hashes, uint256 from, uint256 to)
+        internal
+        pure
+        returns (bytes memory out)
+    {
+        out = new bytes(32 * (to - from));
+        for (uint256 i = from; i < to; ++i) {
+            bytes32 h = hashes[i];
+            assembly ("memory-safe") {
+                mstore(add(add(out, 0x20), mul(sub(i, from), 32)), h)
+            }
+        }
+    }
+
+    /// @dev Writes `hashes` as list chunks of `per` hashes and returns the list chunk hashes.
+    function _writeList(bytes32[] memory hashes, uint256 per)
+        internal
+        returns (bytes32[] memory lists)
+    {
+        uint256 k = (hashes.length + per - 1) / per;
+        lists = new bytes32[](k);
+        for (uint256 j; j < k; ++j) {
+            uint256 to = (j + 1) * per < hashes.length ? (j + 1) * per : hashes.length;
+            (lists[j],) = store.writeChunk(_packed(hashes, j * per, to));
+        }
     }
 
     function _uploadAll(bytes[] memory chunks) internal {
@@ -95,7 +123,7 @@ abstract contract ContentBase is Test {
     }
 
     /// @dev A complete, readable file.
-    function _publish(bytes memory file, IContentStore.Encoding encoding, string memory mime)
+    function _publish(bytes memory file, uint8 encoding, string memory mime)
         internal
         returns (bytes32 fileId)
     {

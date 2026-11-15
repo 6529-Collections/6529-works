@@ -55,7 +55,7 @@ contract ContentToTokenURIFlowTest is IntegrationBase {
 
         // attestBase64 is permissionless and one-time.
         assertFalse(store.isBase64Attested(v.fileId));
-        assertTrue(store.attestBase64(v.fileId), "one chunk: done in one call");
+        assertTrue(store.attestBase64(v.fileId, type(uint256).max), "one chunk: done in one call");
         assertTrue(store.isBase64Attested(v.fileId));
 
         // openRecord is permissionless and checks the committed media.

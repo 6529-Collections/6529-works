@@ -39,21 +39,28 @@ contract HostileStore {
                 bytes32(uint256(1)),
                 json.length,
                 1,
-                IContentStore.Encoding.Identity,
-                "application/json"
+                uint8(IContentStore.Encoding.Identity),
+                "application/json",
+                0
             );
         }
         if (mode == Mode.BombInfo) {
             return IContentStore.FileInfo(
-                bytes32(uint256(1)), length, 1, IContentStore.Encoding.Base64, string(_a(4_000))
+                bytes32(uint256(1)),
+                length,
+                1,
+                uint8(IContentStore.Encoding.Base64),
+                string(_a(4_000)),
+                0
             );
         }
         return IContentStore.FileInfo(
             bytes32(uint256(1)),
             length,
             (length + CHUNK - 1) / CHUNK,
-            IContentStore.Encoding.Base64,
-            "image/png"
+            uint8(IContentStore.Encoding.Base64),
+            "image/png",
+            0
         );
     }
 

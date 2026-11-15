@@ -122,7 +122,7 @@ contract GenesisFlowsTest is Test {
         files[0] = MediaFile(
             d.contentStore
                 .registerManifest(
-                    chunks, media.length, IContentStore.Encoding.Identity, "image/png", sha
+                    chunks, media.length, uint8(IContentStore.Encoding.Identity), "image/png", sha
                 ),
             sha,
             FileRole.PRIMARY

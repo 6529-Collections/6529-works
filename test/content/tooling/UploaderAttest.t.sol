@@ -9,8 +9,10 @@ import { IContentStore } from "src/interfaces/IContentStore.sol";
 
 /// @dev Shared helpers: build a base64 text from golden parts and stage it on the store.
 abstract contract UploaderAttestBase is ContentBase {
-    IContentStore.Encoding internal constant B64 = IContentStore.Encoding.Base64;
-    IContentStore.Encoding internal constant GZB64 = IContentStore.Encoding.GzipBase64;
+    uint8 internal constant B64 = uint8(IContentStore.Encoding.Base64);
+    uint8 internal constant GZB64 = uint8(IContentStore.Encoding.GzipBase64);
+    /// @dev The chunk count the tooling passes to each `attestBase64` call by default.
+    uint256 internal constant PER_CALL = Golden.ATTEST_CHUNKS_PER_CALL;
 
     function _build(Golden.Part[] memory parts) internal pure returns (bytes memory text) {
         uint256 total;
@@ -30,10 +32,7 @@ abstract contract UploaderAttestBase is ContentBase {
     }
 
     /// @dev Registers `text` as a `encoding` file and uploads every chunk.
-    function _stage(bytes memory text, IContentStore.Encoding encoding)
-        internal
-        returns (bytes32 fileId)
-    {
+    function _stage(bytes memory text, uint8 encoding) internal returns (bytes32 fileId) {
         (bytes[] memory chunks, bytes32[] memory hashes) = _split(text);
         fileId = store.registerManifest(hashes, text.length, encoding, "text/plain", DIGEST);
         _uploadAll(chunks);
@@ -51,14 +50,14 @@ contract UploaderAttestTest is UploaderAttestBase {
 
     function test_GoldenCases_StoreReachesThePythonVerdictForBothBase64Encodings() public {
         Golden.Base64Case[] memory cases = Golden.base64Cases();
-        IContentStore.Encoding[2] memory encodings = [B64, GZB64];
+        uint8[2] memory encodings = [B64, GZB64];
         for (uint256 i; i < cases.length; ++i) {
             for (uint256 e; e < 2; ++e) {
                 Golden.Base64Case memory c = cases[i];
                 bytes memory text = _build(c.parts);
                 bytes32 fileId = _stage(text, encodings[e]);
                 if (c.expect == 0) {
-                    assertTrue(store.attestBase64(fileId), c.name);
+                    assertTrue(store.attestBase64(fileId, PER_CALL), c.name);
                     assertTrue(store.isBase64Attested(fileId), c.name);
                 } else {
                     if (c.expect == 1) {
@@ -76,7 +75,7 @@ contract UploaderAttestTest is UploaderAttestBase {
                             )
                         );
                     }
-                    store.attestBase64(fileId);
+                    store.attestBase64(fileId, PER_CALL);
                     assertFalse(store.isBase64Attested(fileId), c.name);
                 }
             }
@@ -98,21 +97,20 @@ contract UploaderAttestTest is UploaderAttestBase {
 
     function _assertVerdict(bytes memory text, uint256 bitmap, uint256 v) internal {
         bytes32 fileId = _stage(text, B64);
-        (bool ok,) = address(store).call(abi.encodeCall(store.attestBase64, (fileId)));
+        (bool ok,) = address(store).call(abi.encodeCall(store.attestBase64, (fileId, PER_CALL)));
         assertEq(ok, (bitmap >> v) & 1 == 1, "byte value verdict");
         assertEq(store.isBase64Attested(fileId), ok);
     }
 
-    /// @dev The call the tooling emits is `attestBase64(fileId)` and nothing else: its calldata is
-    ///      the selector and the ID, 36 bytes, byte-equal to what Solidity encodes.
-    function test_AttestCalldataIsTheSelectorAndTheFileId() public view {
+    /// @dev The call the tooling emits is `attestBase64(fileId, count)` and nothing else: its
+    ///      calldata is the selector, the ID and the count, 68 bytes, byte-equal to what Solidity
+    ///      encodes.
+    function test_AttestCalldataIsTheSelectorTheFileIdAndTheCount() public view {
         bytes32 fileId = keccak256("any file");
-        bytes memory expected = abi.encodeCall(store.attestBase64, (fileId));
-        assertEq(expected.length, 36);
-        assertEq(bytes4(expected), bytes4(0x0cecb241), "attestBase64(bytes32)");
+        bytes memory expected = abi.encodeCall(store.attestBase64, (fileId, PER_CALL));
+        assertEq(expected.length, 68);
+        assertEq(bytes4(expected), bytes4(0x561c986e), "attestBase64(bytes32,uint256)");
         assertEq(bytes4(abi.encodeCall(store.isBase64Attested, (fileId))), bytes4(0x3435213b));
-        assertEq(bytes4(abi.encodeCall(store.ATTEST_CHUNKS_PER_CALL, ())), bytes4(0xc3c78335));
-        assertEq(store.ATTEST_CHUNKS_PER_CALL(), 48, "the tooling sizes its calls for 48");
     }
 }
 
@@ -128,7 +126,7 @@ abstract contract UploaderAttestGasBase is UploaderAttestBase {
         bytes memory text = bytes(Base64.encode(_data(18_400 * chunks, 900 + chunks)));
         fileId = _stage(text, B64);
         for (uint256 i; i < calls; ++i) {
-            store.attestBase64(fileId);
+            store.attestBase64(fileId, PER_CALL);
         }
     }
 
@@ -137,7 +135,7 @@ abstract contract UploaderAttestGasBase is UploaderAttestBase {
     }
 
     function _assertWithinModel(uint256 chunksInCall) internal {
-        bytes memory callData = abi.encodeCall(store.attestBase64, (fileId));
+        bytes memory callData = abi.encodeCall(store.attestBase64, (fileId, PER_CALL));
         uint256 used = _gasOf(callData);
         assertLe(used, _model(chunksInCall), "attestBase64 gas above the Python model");
         assertLe(
