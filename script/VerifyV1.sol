@@ -24,6 +24,8 @@ import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctio
 import { EnglishAuctionLens } from "src/sales/EnglishAuctionLens.sol";
 import { DeployV1 } from "./DeployV1.sol";
 
+import { IWorkLocators } from "src/interfaces/IWorkDelivery.sol";
+
 /// @title VerifyV1
 /// @notice Reads a deployed system back against its genesis configuration and wiring. Static
 ///         checks only, so the integration tests can run them; `script/Verify.s.sol` adds the
@@ -241,7 +243,9 @@ library VerifyV1 {
             if (cfg.grants[i].role == Roles.PLATFORM) platform = cfg.grants[i].account;
         }
         if (platform == address(0)) revert PlatformHolderMissing();
-        _platformCan(d, platform, address(d.workRecords), IWorkRecords.addLocator.selector);
+        address records = address(d.workRecords);
+        address delivery = records == address(0) ? address(0) : d.workRecords.delivery();
+        _platformCan(d, platform, delivery, IWorkLocators.addLocator.selector);
     }
 
     function _platformCan(

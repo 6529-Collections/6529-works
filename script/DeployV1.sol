@@ -34,6 +34,7 @@ import { UniformEditionAuction } from "src/sales/UniformEditionAuction.sol";
 import { UniformEditionAuctionLens } from "src/sales/UniformEditionAuctionLens.sol";
 import { EnglishAuctionLens } from "src/sales/EnglishAuctionLens.sol";
 import { Stream } from "src/stream/Stream.sol";
+import { WorkDelivery } from "src/stream/WorkDelivery.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
 
 /// @title DeployV1
@@ -144,6 +145,9 @@ library DeployV1 {
         Renderer renderer;
         Stream stream;
         WorkRecords workRecords;
+        /// The first delivery contract, created by the work-records constructor (its first
+        /// CREATE); replaceable through `WorkRecords.setDelivery`.
+        WorkDelivery workDelivery;
         Editions editions;
     }
 
@@ -542,6 +546,7 @@ library DeployV1 {
         if (n == keccak256("Renderer")) return address(d.renderer);
         if (n == keccak256("Stream")) return address(d.stream);
         if (n == keccak256("WorkRecords")) return address(d.workRecords);
+        if (n == keccak256("WorkDelivery")) return address(d.workDelivery);
         if (n == keccak256("Editions")) return address(d.editions);
         revert UnknownContract(name);
     }
@@ -595,6 +600,9 @@ library DeployV1 {
             d.stream = Stream(a);
         } else if (n == keccak256("WorkRecords")) {
             d.workRecords = WorkRecords(a);
+            d.workDelivery = WorkDelivery(vm.computeCreateAddress(a, 1));
+        } else if (n == keccak256("WorkDelivery")) {
+            d.workDelivery = WorkDelivery(a);
         } else if (n == keccak256("Editions")) {
             d.editions = Editions(a);
         } else {
@@ -604,7 +612,7 @@ library DeployV1 {
 
     /// @notice Every contract name `addressOf` knows, for records and readback.
     function names() internal pure returns (string[] memory list) {
-        string[24] memory all = [
+        string[25] memory all = [
             "GovernanceConfigurator",
             "WorksAccessManager",
             "ContentStore",
@@ -624,6 +632,7 @@ library DeployV1 {
             "Renderer",
             "Stream",
             "WorkRecords",
+            "WorkDelivery",
             "EnglishAuction",
             "EnglishAuctionLens",
             "UniformEditionAuction",
