@@ -64,7 +64,8 @@ Areas where a small change has large effects, or where the review concentrated:
 - **The governance cancel rules and suspension.** `WorksAccessManager` overrides
   OpenZeppelin's cancel check (three rules) and its membership check (`hasRole`, for the
   guardians' suspension of operational keys), and adds the bounded veto, dead-admin recovery,
-  a pre-registered successor with `migrate` and seat caps (GV-37 to GV-47)
+  a two-step succession (the successor accepts itself) with `migrate`, seat caps and a class-delay
+  floor on every grant (GV-37 to GV-47)
   ([governance spec](../spec/governance.md), [ADR 0002](../adr/0002-access-manager-hardening.md)
   and its addendum).
 - **The deployment and readback guards.** The trust model assumes bare, independent admin and

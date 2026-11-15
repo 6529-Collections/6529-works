@@ -17,7 +17,7 @@ an audit.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 14,155 non-blank, non-comment lines in 98 files under `src/` (budget: 15,000; ADR 0001, amended 1 November 2026, and ADR 0007) |
+| Source lines | 14,195 non-blank, non-comment lines in 99 files under `src/` (budget: 15,000; ADR 0001, amended 1 November 2026, and ADR 0007) |
 | Deployed contracts | 26 per deployment without the optional VRF entropy module and 27 with it: the 23 (or 24) that `DeployV1.order` lists, both auctions' lenses among them (each deployed in its own transaction and pinned by its auction) and the two governed vaults (`FeeRecipientVault`, `MuseumVault`, after the split ledger), plus the AccessManager the governance configurator creates, `StreamViews`, the read-only extension `Stream`'s constructor creates, and `WorkDelivery`, the first delivery contract `WorkRecords`' constructor creates (replaceable by `setDelivery`); and one 66-byte `SplitVault` per payee configuration, deployed on demand by the split ledger |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
@@ -78,8 +78,8 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `WorksAccessManager` | [`src/governance/WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol) | 412 | 20,945 | 23,160 | 3,631 |
-| `GovernanceConfigurator` | [`src/governance/GovernanceConfigurator.sol`](../../src/governance/GovernanceConfigurator.sol) | 51 | 11,473 | 34,949 | 13,103 |
+| `WorksAccessManager` | [`src/governance/WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol) | 447 | 22,714 | 25,290 | 1,862 |
+| `GovernanceConfigurator` | [`src/governance/GovernanceConfigurator.sol`](../../src/governance/GovernanceConfigurator.sol) | 51 | 11,473 | 37,079 | 13,103 |
 
 `WorksAccessManager` is 71 lines over OpenZeppelin's `AccessManager`, whose code is part of
 what it deploys. `GovernanceConfigurator`'s initcode includes the manager it deploys.

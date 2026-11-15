@@ -68,7 +68,7 @@ Anything with authority over existing tokens, existing works' facts or funds alr
 - **Replaceable:** the mint policy (`PackageRegistry`), the economics resolver, the entropy
   module, renderers, sale adapters, `AssetAllowlist` (already replaceable; reclassified), the
   consolidation adapter, the governed vaults' destinations, and the AccessManager itself
-  (`registerSuccessor` and `migrate`, §6).
+  (`registerSuccessor`, `acceptSuccession` and `migrate`, P4).
 
 Rules for permanent contracts (the lanes' shared rules): no `delegatecall`, proxies or
 `selfdestruct`; every state-changing operation can be completed in pieces of a caller-chosen
@@ -231,16 +231,42 @@ post-quantum schemes). Spec: DSP-26, AUC-42, ED-28, ID-38, ECO-42.
 - **Dead-admin recovery:** after a year without admin activity and a 180-day public delay any
   live admin can void, a guardian majority (or, unless a majority objects, a pre-registered
   recovery address) installs a new sole admin.
-- **Successor and `migrate`:** a successor registered through the slow lane takes over at once;
+- **Successor and `migrate`:** two steps. A successor proposed through the slow lane takes
+  over only when it calls `acceptSuccession` itself, after re-pointing a probe contract it
+  governs to the manager (a stock `setAuthority`, the call every permanent contract needs to
+  hand over again); until then the manager keeps every power and the admins can replace or
+  withdraw the proposal under the same rules, so a successor that cannot act never takes over
+  (review D, M-1). What this cannot prove is that the successor keeps that ability later: that
+  is the successor's design obligation, written into the governance spec's successor checklist.
   `migrate` re-points every managed target, in pieces, permissionlessly. A test hands the whole
-  genesis stack to a non-OpenZeppelin authority and operates it (`GovernanceHandover.t.sol`).
-- **Seats and floors:** ADMIN at most 5, GUARDIAN at most 7 seat records; every ADMIN grant
-  waits at least 30 days; the manager cannot remap or close itself; its parameters are
-  compare-and-set within compiled bounds.
+  genesis stack to a non-OpenZeppelin authority and, on every managed contract, makes an
+  immediate, a delayed and a cancelled call under it, moves every contract on again, and
+  exercises the governance manifest, a relayed platform statement and the delivery contract's
+  locator check (`GovernanceHandover.t.sol`).
+- **Seats and floors:** seat caps are governed parameters: ADMIN 5 and GUARDIAN 7 by default,
+  each within 3 to 16; the configurator's own genesis seat counts for neither, so genesis can
+  name up to five admins (three in the layout). Every grant of a role in `Roles` carries at
+  least its class delay, 30 days for ADMIN (review D, L-1: before, only ADMIN was held to it);
+  the manager cannot remap or close itself; its parameters are compare-and-set within compiled
+  bounds. A dead-admin recovery cannot install a guardian as the admin.
 - **Deployment:** a third admin seat (genesis holders now name three admin Safes; the deploy
   guard requires three off anvil); the cold and third admin holders are for the owner to name.
 - **Finding, stated plainly:** with three guardian seats any two are a majority, so the bounded
-  veto only bites with five or more seats (LIM-GV-4); the seat count is the owner's call.
+  veto bites against a colluding pair only from four seats (LIM-GV-4): at 3 seats two colluders
+  shield each other; at 4 a pair has two votes of the three needed and each is removed after the
+  escalated delay, while three honest guardians stop a compromised admin; at 5 the same with
+  three of five; at 7 even three colluders are removed and four honest guardians decide. The
+  seat count is the owner's call. The bounded veto bounds the veto, not the time: a struck
+  removal completes at least 90 days after its first proposal (30 plus the 60-day floor; 150 at
+  the defaults), so replaceable code must not assume a guardian is removed in 30 days. The
+  English auction's 60-day freeze exit does (RFX-SAL-2), so two colluding guardians who keep a
+  deprecated ERC-20 from being re-admitted make its live auctions end unsold first, at any seat
+  count; no funds are lost, ETH cannot be deprecated and genesis admits no ERC-20 (LIM-SAL-15;
+  a fix belongs to the auction, which is replaceable).
+- **Delay classes for existing tokens:** the museum vault holds every museum-held work, so its
+  `setDestination` is in the 30-day class (SUCCESSOR_SETTER); the fee vault's stays at 14 days
+  (FUNDS_SETTER), as does the economics resolver's `setMuseum`, which only routes works that
+  settle or are rescued afterwards (an owner judgement, stated in the trust assumptions).
 - The permanent contracts need no change for a handover: they use stock `AccessManaged`.
 
 **P5, the consensus API.** The permanent contracts' events and native views are protocol API.
@@ -331,7 +357,8 @@ Decided 15 November 2026 ("yes to all"), unless dated otherwise:
 
 Eleven lanes merged in two rounds. The integrator also:
 - wired genesis: the new governed selectors (`setRescueDelay`, `setFederationRegistry`,
-  `setTimer`, `sweepExcess`, both vaults' `setDestination`, `setDelivery`, `addStore`, the
+  `setTimer`, `sweepExcess`, both vaults' `setDestination` (the museum vault's 30 days, the
+  fee vault's 14), `setDelivery`, `addStore`, the
   edition auction's `setLimits`, `AssetAllowlist.setOpeningBid`, the manager's functions), the
   two governed vaults, the delivery contract and a third admin seat; the role matrix is
   regenerated;
@@ -351,9 +378,9 @@ ADRs stay as written; each amended record gets a dated amendment note pointing h
   Federated) moves into v1, specified by a later ADR; the artist registry's directory and
   replaceable federation-registry pointer are built. §11: the artist registry is permanent.
   §7: wallets are 66-byte vaults of one split ledger. §13: the governance additions in P4.
-- **ADR 0002.** The manager gains the bounded veto, dead-admin recovery, a pre-registered
-  successor with `migrate`, seat caps, a 30-day floor on admin grants and no self-remapping
-  (GV-37 to GV-47). Rules 1 to 3, suspension and the delay classes are unchanged outside the
+- **ADR 0002.** The manager gains the bounded veto, dead-admin recovery, a two-step succession
+  (propose, then accept by the successor itself) with `migrate`, seat caps, a class-delay floor
+  on every grant (30 days for admins) and no self-remapping (GV-37 to GV-47). Rules 1 to 3, suspension and the delay classes are unchanged outside the
   escalated lane.
 - **ADR 0004.** The gas rule above governs permanent contracts' calls; budgets stay test
   policy. The start margin is 5,000 after both rounds (2,500 between them). The table is
@@ -413,7 +440,8 @@ ADRs stay as written; each amended record gets a dated amendment note pointing h
 ## Open items
 
 - The owner:
-  - the guardian seat count: 3 (genesis today) or 5 (the bounded veto bites only from 5);
+  - the guardian seat count: 3 (genesis today), or 4 or more (the bounded veto bites against a
+    colluding pair from 4);
   - who holds the cold admin, the third admin seat and the recovery address;
   - the identity timers' ceilings (CHANGE_DELAY 7 to 30 days, OVERRIDE_DELAY 180 to 365,
     DORMANCY 365 to 1,825, CONTEST_TIMEOUT 365 to 730, STANDING_GRACE 30 to 90);

@@ -200,10 +200,10 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 | `execute` with value | ETH sent through `execute` lands in a target | [GV-18][gv]: every governed function is non-payable |
 | Stale operations | An operation written against an old value executes later | [GV-19][gv]: compare-and-set; [GV-7][gv]: operations expire a week after they mature |
 | Whole system | A compromised admin gains control against vigilant guardians | [GV-16, GV-30][gv]: stateful invariant campaigns, with Rule 3 and suspensions |
-| Guardian removal and handover | Colluding guardians shield each other or block a handover | [GV-37][gv]: after a first cancellation the re-proposal waits the escalated delay and only a majority of the guardian seats stops it; with three seats any two are that majority ([LIM-GV-4][lim-gv]) |
+| Guardian removal and handover | Colluding guardians shield each other or block a handover | [GV-37][gv]: after a first cancellation the re-proposal waits the escalated delay and only a majority of the guardian seats stops it; with three seats any two are that majority, so it bites against a colluding pair from four seats ([LIM-GV-4][lim-gv]) |
 | Dead admins | Every admin key is lost and governance stops for good | [GV-42][gv]: after a year of silence and 180 public days a guardian majority, or the pre-registered recovery address, recovers the admin seat; any admin activity voids it ([LIM-GV-19][lim-gv]) |
-| Handover | A successor leaves a target behind, or a migration half-moves | [GV-43 to GV-45][gv]: a registered successor ends this manager's power at once; `migrate` moves every listed target, all-or-nothing per piece ([LIM-GV-20][lim-gv]) |
-| Seats and the manager itself | A fresh admin acts at once, seats are flooded, or the manager remaps its own functions | [GV-38 to GV-40][gv]: every ADMIN grant waits at least 30 days, seats are capped, and the manager configures nothing on itself |
+| Handover | A successor that cannot act takes over and freezes every contract; a successor leaves a target behind, or a migration half-moves | [GV-43 to GV-45][gv]: a proposed successor takes over only when it re-points its probe to the manager and accepts itself, the manager keeping every power until then; `migrate` moves every listed target, all-or-nothing per piece. A successor that later loses the ability to act is its own design risk ([LIM-GV-20][lim-gv]) |
+| Seats and the manager itself | A fresh admin acts at once, seats are flooded, or the manager remaps its own functions | [GV-38 to GV-40][gv]: every grant carries at least its role's class delay (30 days for ADMIN), seats are capped, and the manager configures nothing on itself |
 
 ### Content and rendering
 

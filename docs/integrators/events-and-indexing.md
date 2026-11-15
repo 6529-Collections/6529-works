@@ -499,7 +499,8 @@ parameters ([GV-37 to GV-47][gv]). Role IDs are in
 | `RecoveryAddressSet(address indexed previous, address indexed next)` | `0xe2e82f73…` | `setRecoveryAddress` (ADMIN, slow lane, compare-and-set) | The pre-registered recovery address ([GV-42][gv]). |
 | `RecoveryOpened(address indexed candidate, uint48 readyAt, bool registered, uint256 seats)` | `0xeb8006be…` | `openRecovery` (anyone, after `RECOVERY_SILENCE` without admin activity) | A dead-admin recovery for `candidate`, completable from `readyAt`; for the recovery address (`registered`) guardian votes object, otherwise they approve. Any admin activity voids it. |
 | `RecoveryCompleted(address indexed candidate)` | `0x46f50089…` | `completeRecovery` (anyone, once ready and allowed) | Every former ADMIN record was revoked (their `RoleRevoked` events precede it) and `candidate` is the only admin. |
-| `SuccessorRegistered(address indexed next)` | `0xb805cfa9…` | `registerSuccessor` (ADMIN, slow lane; escalated after a guardian's cancellation) | The manager is handed over: from this block it grants no permission. `migrate` (anyone) then re-points every managed target to `next`, each emitting its `AuthorityUpdated` ([GV-43 to GV-45][gv]). |
+| `SuccessorProposed(address indexed next, address probe)` | `0x685e741d…` | `registerSuccessor` (ADMIN, slow lane; escalated after a guardian's cancellation) | `next` is proposed (zero: the proposal is withdrawn) with the `SuccessionProbe` it must re-point to the manager; the manager keeps every power until `next` accepts ([GV-43][gv]). |
+| `SuccessorAccepted(address indexed next)` | `0x68c11551…` | `acceptSuccession` (only the pending successor, once its probe names the manager) | The manager is handed over: from this block it grants no permission. `migrate` (anyone) then re-points every managed target to `next`, each emitting its own `AuthorityUpdated` ([GV-43, GV-45][gv]). |
 
 ### AccessManaged and EIP-712 events
 
@@ -751,9 +752,10 @@ and a head. Also:
 - **Escalation.** `ActionStruck` marks an action whose next proposal is escalated;
   `OperationEscalated` such an operation, and `GuardianVoted` the votes against it.
 - **Recovery and succession.** `RecoveryOpened`, the guardians' `GuardianVoted`, then
-  `RecoveryCompleted` (or nothing, if an admin acts in the meantime); `SuccessorRegistered`
-  ends the manager's power, and each target's `AuthorityUpdated` records its `migrate`. Alert
-  on all four.
+  `RecoveryCompleted` (or nothing, if an admin acts in the meantime); `SuccessorProposed`
+  names a candidate successor (the manager keeps its power), `SuccessorAccepted` ends the
+  manager's power, and each target's `AuthorityUpdated` records its `migrate`. Alert on all
+  five.
 - **Blind spots.** The manager has no getter for a pending grant-delay or target-admin-delay
   cut (a `RoleGrantDelayChanged` or `TargetAdminDelayUpdated` with a future `since`), a role's
   members, or pending operations, so the deployment CI scans for them
@@ -996,7 +998,8 @@ structs expanded to tuples: 162 signatures.
 | `StatementAppended(bytes32,bytes32,address,uint8,address,uint64,uint64,bytes32,bytes32,(address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))` | `0x5cc78d0bb8cba9859acd138dcd052b94f324e46596996fa42262ccee5d1a45a5` | StatementLog |
 | `StatementRelayed(bytes32,address,uint256)` | `0x080f9921ae00d2f63d13ca84de2d985b72f4a84a0a7b898d568853dc747754fc` | StatementLog |
 | `StoreAdded(uint256,address,bytes32)` | `0x33a0067382509bd225121e0df109204fa1c0f3a77159dd2cfe964663410d72d7` | WorkRecords |
-| `SuccessorRegistered(address)` | `0xb805cfa97d9d0fc5c3b7a3dc90826e7693093bc41c84cff49706ae2f1de86332` | WorksAccessManager |
+| `SuccessorAccepted(address)` | `0x68c115519e93f65dab04a72da0a5af3ddfc43c750d0b47a9f0967f8b287a2df8` | WorksAccessManager |
+| `SuccessorProposed(address,address)` | `0x685e741d2911a7c4d49f13586efb78475861fa118d91b781eb2572ece25b57f1` | WorksAccessManager |
 | `TargetAdminDelayUpdated(address,uint32,uint48)` | `0xa56b76017453f399ec2327ba00375dbfb1fd070ff854341ad6191e6a2e2de19c` | WorksAccessManager |
 | `TargetClosed(address,bool)` | `0x90d4e7bb7e5d933792b3562e1741306f8be94837e1348dacef9b6f1df56eb138` | WorksAccessManager |
 | `TargetFunctionRoleUpdated(address,bytes4,uint64)` | `0x9ea6790c7dadfd01c9f8b9762b3682607af2c7e79e05a9f9fdf5580dde949151` | WorksAccessManager |
