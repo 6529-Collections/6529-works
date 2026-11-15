@@ -37,7 +37,7 @@ import { SaleKind } from "../../src/interfaces/types/SaleTypes.sol";
 contract InterfacesCompileTest is Test {
     function test_interfaceIds() public pure {
         assertEq(type(IMintTarget).interfaceId, bytes4(0xba4ae536), "IMintTarget");
-        assertEq(type(IStream).interfaceId, bytes4(0x1583b98b), "IStream");
+        assertEq(type(IStream).interfaceId, bytes4(0xcacd4413), "IStream");
         assertEq(type(IWorkRecords).interfaceId, bytes4(0xc109676d), "IWorkRecords");
         assertEq(type(IWorkPowers).interfaceId, bytes4(0xbd18229c), "IWorkPowers");
         assertEq(type(IEditions).interfaceId, bytes4(0xe183b26f), "IEditions");
@@ -53,7 +53,7 @@ contract InterfacesCompileTest is Test {
         assertEq(
             type(ICurationSignerVerifier).interfaceId, bytes4(0x9f12d97a), "ICurationSignerVerifier"
         );
-        assertEq(type(IPackageRegistry).interfaceId, bytes4(0x580f2eef), "IPackageRegistry");
+        assertEq(type(IPackageRegistry).interfaceId, bytes4(0xe5668b29), "IPackageRegistry");
         assertEq(type(IContentStore).interfaceId, bytes4(0x3f437f81), "IContentStore");
         assertEq(type(IDependencyRegistry).interfaceId, bytes4(0xe5338d57), "IDependencyRegistry");
         assertEq(type(IRenderer).interfaceId, bytes4(0xa772216d), "IRenderer");

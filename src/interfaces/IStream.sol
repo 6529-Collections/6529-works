@@ -36,9 +36,8 @@ import { PrimaryOutcome, PrimarySettlement, PrimaryTerms } from "./types/SaleTyp
 ///
 ///      An upheld dispute burns the token from auction custody (`IMintTarget.burn`, by the
 ///      adapter that minted it, before the primary sale settled). The governed `releaseContent`
-///      then passes the burned work's stored item hash, and the rightful artist the dispute
-///      outcome names, to `IPackageRegistry.releaseContent`: the content hash is reserved for
-///      that artist's items and the burned item is tombstoned.
+///      then reserves the burned work's content hash for the rightful artist the dispute outcome
+///      names and tombstones the burned item, in Stream, which holds content uniqueness.
 ///
 ///      Satellites are bound once each (`bindWorkRecords`, `bindEditions`): ERC-165 checked, not
 ///      EIP-7702 delegated accounts, serving this Stream (`stream() == address(this)`), never
@@ -225,6 +224,14 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     ///         that minted it, or that adapter is admitted or was removed less than 90 days ago
     ///         (`rescueToMuseum`).
     error WorkNotRescuable(uint256 tokenId);
+    /// @notice The content hash is already used on 6529 Stream (`product` is `PRODUCT_STREAM`),
+    ///         by the item `claimedBy`, or the item is the burned one a release tombstoned.
+    error ContentUsed(bytes32 product, bytes32 contentHash, bytes32 claimedBy);
+    /// @notice A released content hash mints only for the artist `beneficiary`.
+    error ContentReserved(bytes32 contentHash, uint256 beneficiary);
+    /// @notice `releaseContent` names a content hash the burned token did not use, or one
+    ///         already released.
+    error ClaimNotAllowed(bytes32 product, bytes32 contentHash);
     /// @notice The rescue delay may only grow, by at most double, and fit 32 bits.
     error InvalidRescueDelay(uint256 next);
     /// @notice The rescue delay for later removals changed (`setRescueDelay`).
@@ -400,15 +407,32 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
             uint8 seedPolicy,
             uint32 royaltyRate
         );
-    /// @notice After an upheld-dispute burn, passes the burned work's stored item hash,
-    ///         `contentHash` and the rightful artist `beneficiary` the dispute outcome names to
-    ///         `IPackageRegistry.releaseContent`, which checks the pair and reserves the content
-    ///         for that artist, who must be registered. PARAMETER_SETTER role (48 hours); reverts
-    ///         with `NotBurned` for a live or unminted token.
+    /// @notice After an upheld-dispute burn, releases the burned work's content to the rightful
+    ///         artist `beneficiary` the dispute outcome names: the content then mints again only
+    ///         for that artist's items, never by the burned item (tombstoned). Stream holds the
+    ///         record; the mint policy plays no part. PARAMETER_SETTER role (48 hours); reverts
+    ///         with `NotBurned` for a live or unminted token, `ClaimNotAllowed` for another
+    ///         content or a second release, `IArtistRegistry.UnknownArtist` for an unregistered
+    ///         beneficiary.
     /// @param tokenId A burned token ID.
     /// @param contentHash The burned work's content hash (public in `WorkMinted`).
     /// @param beneficiary The artist ID of the rightful artist.
     function releaseContent(uint256 tokenId, bytes32 contentHash, uint256 beneficiary) external;
+    /// @notice The item of the work that minted `contentHash`, or zero while it is unused or
+    ///         released (AUC-44: Stream, not the mint policy, holds content uniqueness).
+    /// @param contentHash The content hash.
+    /// @return itemHash The item hash, or zero.
+    function consumedItemOf(bytes32 contentHash) external view returns (bytes32 itemHash);
+    /// @notice The artist a release reserved `contentHash` for, or zero if never released. It
+    ///         binds only while the content is released.
+    /// @param contentHash The content hash.
+    /// @return artistId The beneficiary's artist ID, or zero.
+    function releasedTo(bytes32 contentHash) external view returns (uint256 artistId);
+    /// @notice Whether `itemHash` is a burned work's item whose content was released: it never
+    ///         mints again.
+    /// @param itemHash The item hash.
+    /// @return True if tombstoned.
+    function isReleased(bytes32 itemHash) external view returns (bool);
     /// @notice The lead artist ID of a live work, kept in the terms word it shares with works
     ///         under the same terms; `IArtistRegistry.isArtist` reads it. Reverts with
     ///         `UnknownWork`.

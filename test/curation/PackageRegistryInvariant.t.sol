@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { StreamContentMock } from "test/mocks/curation/StreamContentMock.sol";
 import { IMintPolicy } from "src/interfaces/IMintPolicy.sol";
 import { StreamMintRequest } from "src/interfaces/types/PackageTypes.sol";
 import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol";
@@ -170,8 +171,8 @@ contract CurationHandler is CurationHelpers {
             _sig(key, registry.moveDigest(t.root, itemHashes[t.i], t.nonce, t.deadline))
         );
         PackageItem memory item = abi.decode(encodedItems[t.i], (PackageItem));
-        vm.prank(t.caller);
-        try registry.authorize(
+        try this.mintAs(
+            t.caller,
             IMintPolicy.MintContext(
                 t.caller, address(_policyStub), address(0), address(_policyStub)
             ),
@@ -190,6 +191,20 @@ contract CurationHandler is CurationHelpers {
         } catch {
             if (t.expected) unexpectedFailure = true;
         }
+    }
+
+    /// @dev Stream mints through its stand-in, which applies Stream's content rule (AUC-44);
+    ///      any other caller calls the registry itself.
+    function mintAs(address caller, IMintPolicy.MintContext calldata c, bytes calldata request)
+        external
+        returns (IMintPolicy.MintRecord memory)
+    {
+        require(msg.sender == address(this), "self only");
+        if (caller == stream) {
+            return StreamContentMock(stream).mintThrough(registry, c, request);
+        }
+        vm.prank(caller);
+        return registry.authorize(c, request);
     }
 
     /// @param honest Name the item Stream consumed for the hash, rather than any item.
@@ -218,10 +233,10 @@ contract CurationHandler is CurationHelpers {
         bytes32 sha = shas[bound(shaSeed, 0, MEDIA - 1)];
         bytes32 itemHash = honest ? streamItemOf[sha] : itemHashes[bound(itemSeed, 0, ITEMS - 1)];
         address caller = callerSeed % 4 == 1 ? editions : stream;
-        bool expected = caller == stream && itemHash != 0 && streamItemOf[sha] == itemHash;
+        bool expected = itemHash != 0 && streamItemOf[sha] == itemHash;
         uint256 beneficiary = uint160(accounts[(itemSeed >> 8) % ARTISTS]);
-        vm.prank(caller);
-        try registry.releaseContent(sha, itemHash, beneficiary) {
+        caller; // Stream holds releases since AUC-44: the stand-in plays Stream's part.
+        try StreamContentMock(stream).release(sha, itemHash, beneficiary, address(artists)) {
             if (!expected) unexpectedSuccess = true;
             streamItemOf[sha] = 0;
             releasedTo[sha] = beneficiary;

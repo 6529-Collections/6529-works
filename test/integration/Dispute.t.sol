@@ -323,10 +323,8 @@ contract DisputeFlowTest is IntegrationBase {
             abi.encodeCall(stream.releaseContent, (tokenId, contentHash, rightfulId));
         _schedule(hotAdmin, address(stream), named);
         vm.warp(block.timestamp + 48 hours);
-        vm.expectEmit(true, true, true, true, address(registry));
-        emit IPackageRegistry.ContentReleased(
-            contentHash, WorksHashing.itemHash(_package(copierRoot)[0].item), rightfulId
-        );
+        vm.expectEmit(true, true, true, true, address(stream));
+        emit IStream.ContentReleased(tokenId, contentHash, rightfulId);
         vm.prank(hotAdmin);
         manager.execute(address(stream), named);
 
