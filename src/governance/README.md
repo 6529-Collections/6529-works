@@ -5,8 +5,8 @@ Works contract: each restricted selector maps to one role, each role is one dela
 guardian can cancel any scheduled operation and suspend a compromised operational key, and a
 one-shot configurator installs the whole genesis configuration in one transaction. The manager
 also bounds the guardian veto on a guardian's removal and on a handover, recovers from lost
-admins, caps the admin and guardian seats, and hands every governed contract to a pre-registered
-successor in one `migrate`. There are no bespoke executor, policy or registry contracts. The rules, role table and flows are in
+admins, caps the admin and guardian seats, and hands every governed contract to a successor that
+has proven it can act, in one `migrate`. There are no bespoke executor, policy or registry contracts. The rules, role table and flows are in
 [Governance](../../docs/spec/governance.md) (`GV-*`); every selector with its role, delay and
 cancel rule is in the generated [role and permission matrix](../../docs/audit/roles.md).
 
@@ -15,7 +15,8 @@ cancel rule is in the generated [role and permission matrix](../../docs/audit/ro
 | File | What it is |
 | --- | --- |
 | `Roles.sol` | Internal library: role IDs 0 to 12, the four delay classes, each role's execution delay, grant delay and label, `isSuspendable`. Every contract imports it; nothing hard-codes a role ID. `MINTER` (6) and `KEEPER` (7) are defined but unused in v1: genesis grants them to nobody and no selector maps to them. |
-| `WorksAccessManager.sol` | Stock `AccessManager` plus: the three cancellation rules and the escalated lane (`_canCancel`, `schedule`, `cancel`); suspension (`suspend`, `isSuspended`, `hasRole`); seat lists, caps and the admin delay floor (`_grantRole`, `_revokeRole`; OpenZeppelin's `renounceRole` runs through `_revokeRole`); the managed list (the target setters); governed parameters, recovery and succession (`setParameter`, `setRecoveryAddress`, `registerSuccessor`, `migrate`, `heartbeat`, `openRecovery`, `approveRecovery`, `objectToRecovery`, `completeRecovery`). |
+| `WorksAccessManager.sol` | Stock `AccessManager` plus: the three cancellation rules and the escalated lane (`_canCancel`, `schedule`, `cancel`); suspension (`suspend`, `isSuspended`, `hasRole`); seat lists, caps and the class-delay floor (`_grantRole`, `_revokeRole`; OpenZeppelin's `renounceRole` runs through `_revokeRole`); the managed list (the target setters); governed parameters, recovery and succession (`setParameter`, `setRecoveryAddress`, `registerSuccessor`, `acceptSuccession`, `migrate`, `heartbeat`, `openRecovery`, `approveRecovery`, `objectToRecovery`, `completeRecovery`). |
+| `SuccessionProbe.sol` | A stock `AccessManaged` contract `registerSuccessor` creates for the proposed successor, which must re-point it to the manager before `acceptSuccession` (proof it can make the `setAuthority` call every permanent contract needs). |
 | `GovernanceConfig.sol` | Internal library: `validate`, `validateWiring`, `isGenesisSelector`, `install`, `verify` (readback) and `hasRecord`. |
 | `GovernanceConfigurator.sol` | Deploys its own `WorksAccessManager`, runs `configure(cfg, manifestHash, wiring)` once for its `deployer`, renounces `ADMIN`, and exposes `verify(cfg)` for readback (which also checks the managed list). |
 | `BoundedParameter.sol` | Internal library for raise-only parameters: at most double per step, never above a ceiling fixed in the target's code. Its one v1 user is the entropy module's callback gas limit. |
@@ -27,10 +28,11 @@ cancel rule is in the generated [role and permission matrix](../../docs/audit/ro
 | Holders of a delayed role | `schedule`, then `execute` (or the target itself) after the delay and within the one-week expiry | GV-4, GV-5, GV-7 |
 | Any active guardian | `cancel` of any scheduled operation, except as Rules 2 and 3 restrict; `suspend(roleId, account)` for a `PLATFORM`, `CURATOR` or `STORAGE_OPERATOR` record | GV-1 to GV-3, GV-25 to GV-28 |
 | `ADMIN` (30 days) | `grantRole`, `revokeRole`, remaps, target closure and authority moves; a grant or revocation of a suspended record lifts it | GV-4, GV-28, GV-38 to GV-40 |
-| `ADMIN` (slow lane, 60 days by default) | `setParameter`, `setRecoveryAddress`, `registerSuccessor` (escalated after a guardian's cancellation) | GV-37, GV-41, GV-43 |
+| `ADMIN` (slow lane, 60 days by default) | `setParameter`, `setRecoveryAddress`, `registerSuccessor` (only proposes; zero withdraws; escalated after a guardian's cancellation) | GV-37, GV-41, GV-43 |
+| The pending successor itself | `acceptSuccession`, once it has re-pointed `successionProbe()` to the manager | GV-43 |
 | Any active guardian | on an escalated operation, `cancel` is one vote; `approveRecovery`, `objectToRecovery` | GV-37, GV-42 |
 | Any active admin | `heartbeat` | GV-42 |
-| Anyone | `openRecovery` and `completeRecovery` when their conditions hold; `migrate(from, to)` once handed over | GV-42, GV-45 |
+| Anyone | `openRecovery` and `completeRecovery` when their conditions hold; `migrate(from, to)` once the successor has accepted | GV-42, GV-45 |
 | A role holder | `renounceRole` for itself, at once; it also lifts its own suspension | GV-28 |
 | The deployer, once | `GovernanceConfigurator.configure`, then `verify` by `eth_call` five days later | GV-8 to GV-13 |
 | Every governed contract | `restricted` asks `canCall`; some read `PLATFORM`, `CURATOR` or `CURATION_SIGNER` directly | [Roles that targets read directly](../../docs/spec/governance.md#roles-that-targets-read-directly) |

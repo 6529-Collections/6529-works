@@ -288,6 +288,7 @@ contract MigrateInvariantTest is StdInvariant, PermanenceFixture {
         }
         vm.stopPrank();
         _scheduleAndExecute(adminSafe, address(manager), _register(address(next)));
+        _accept(next, makeAddr("nextAdmin"));
         handler = new MigrateHandler(manager, address(next));
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = MigrateHandler.migrate.selector;

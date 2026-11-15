@@ -266,7 +266,7 @@
         "role": "ADMIN",
         "class": "successor",
         "delay": 2592000,
-        "note": "Slow lane: scheduled at least SLOW_DELAY (default 60 days) ahead, ADMIN's 30 days included; ESCALATED_DELAY (default 120 days) and a guardian majority after a guardian's cancellation (GV-37, GV-43)"
+        "note": "Slow lane: scheduled at least SLOW_DELAY (default 60 days) ahead, ADMIN's 30 days included; ESCALATED_DELAY (default 120 days) and a guardian majority after a guardian's cancellation (GV-37, GV-43). Only proposes (zero withdraws); nothing is handed over until the successor accepts"
       },
       {
         "signature": "approveRecovery(address)",
@@ -302,9 +302,14 @@
         "note": "Anyone, after RECOVERY_DELAY, if the guardian decision allows it (GV-42)"
       },
       {
+        "signature": "acceptSuccession()",
+        "selector": "0x922fbae1",
+        "note": "Only the pending successor itself, once it has re-pointed successionProbe() to the manager: completes the handover (GV-43)"
+      },
+      {
         "signature": "migrate(uint256,uint256)",
         "selector": "0x3e54bacb",
-        "note": "Anyone, once a successor is registered (GV-45)"
+        "note": "Anyone, once a successor has accepted (GV-45)"
       }
     ],
     "views": [
@@ -345,12 +350,20 @@
         "selector": "0x5421d77f"
       },
       {
+        "signature": "pendingSuccessor()",
+        "selector": "0xed60ed63"
+      },
+      {
         "signature": "recoveryAddress()",
         "selector": "0x710eb26c"
       },
       {
         "signature": "seatHolders(uint64)",
         "selector": "0x59bd67dd"
+      },
+      {
+        "signature": "successionProbe()",
+        "selector": "0x34da8a1c"
       },
       {
         "signature": "successor()",
@@ -998,9 +1011,10 @@
         {
           "signature": "setDestination(uint64,address)",
           "selector": "0x765b2cf1",
-          "role": "FUNDS_SETTER",
-          "class": "funds",
-          "delay": 1209600
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000,
+          "note": "30-day class, not the fee vault's 14: the museum vault holds existing works (every museum-held 1/1), so its destination is an authority over existing tokens (ADR 0007)"
         }
       ],
       "genesisOnly": [],

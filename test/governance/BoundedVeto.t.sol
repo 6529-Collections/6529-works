@@ -268,7 +268,7 @@ contract BoundedVetoTest is PermanenceFixture {
         vm.warp(manager.getSchedule(id));
         vm.prank(adminSafe);
         manager.registerSuccessor(successorA);
-        assertEq(manager.successor(), successorA);
+        assertEq(manager.pendingSuccessor(), successorA);
     }
 
     function test_SeatChangesMidFlightDoNotMoveTheCount() public {
@@ -315,7 +315,35 @@ contract BoundedVetoTest is PermanenceFixture {
         vm.warp(manager.getSchedule(id));
         vm.prank(adminSafe);
         manager.registerSuccessor(successorA);
-        assertEq(manager.successor(), successorA);
+        assertEq(manager.pendingSuccessor(), successorA);
+        // The action executed: its strike is spent, so a later proposal of it (after a
+        // withdrawal) starts in the slow lane again.
+        assertFalse(manager.isStruck(manager.actionOf(address(manager), register)));
+    }
+
+    /// @dev Withdrawing a pending successor, `registerSuccessor(0)`, is keyed on zero: a
+    ///      guardian's strike on a withdrawal escalates only later withdrawals, never a
+    ///      proposal of a real successor, and a strike on one successor never reaches another.
+    function test_AWithdrawalIsItsOwnActionAndCannotShieldAProposal() public {
+        _scheduleAndExecute(adminSafe, address(manager), _register(successorA));
+        bytes memory withdraw = _register(address(0));
+        bytes32 withdrawKey = manager.actionOf(address(manager), withdraw);
+        assertTrue(withdrawKey != bytes32(0));
+        assertTrue(withdrawKey != manager.actionOf(address(manager), _register(successorA)));
+        _strike(adminSafe, withdraw, guardianA);
+        assertTrue(manager.isStruck(withdrawKey));
+        // Replacing A by B is B's action: the slow lane, unaffected by the withdrawal's strike.
+        bytes memory registerB = _register(successorB);
+        bytes32 idB = _schedule(adminSafe, address(manager), registerB);
+        assertEq(manager.getSchedule(idB), block.timestamp + SLOW);
+        // The withdrawal itself is escalated now, and stopped only by a majority.
+        bytes32 idW = _schedule(adminSafe, address(manager), withdraw);
+        assertEq(manager.getSchedule(idW), block.timestamp + ESCALATED);
+        _cancel(guardianA, adminSafe, withdraw);
+        assertTrue(_scheduled(adminSafe, withdraw));
+        _cancel(guardianB, adminSafe, withdraw);
+        assertFalse(_scheduled(adminSafe, withdraw));
+        assertEq(manager.pendingSuccessor(), successorA, "still pending");
     }
 
     function test_AWrappedRegistrationNeverExecutes() public {
@@ -334,7 +362,7 @@ contract BoundedVetoTest is PermanenceFixture {
         );
         vm.prank(adminSafe);
         manager.execute(address(manager), wrapped);
-        assertEq(manager.successor(), address(0));
+        assertEq(manager.pendingSuccessor(), address(0));
     }
 
     function attackerAdmin() internal view returns (address) {

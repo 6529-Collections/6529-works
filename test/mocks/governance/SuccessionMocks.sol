@@ -42,6 +42,32 @@ contract RevertingAuthorityMock {
     }
 }
 
+/// @notice An authority that answers `canCall` (always yes) but can originate no call at all:
+///         a governor whose `execute` is missing or broken. It may be proposed as a successor,
+///         but it can never accept, so the manager keeps its power.
+contract CanCallOnlyAuthorityMock {
+    function canCall(address, address, bytes4) external pure returns (bool, uint32) {
+        return (true, 0);
+    }
+}
+
+/// @notice An authority with one hard-wired call, `accept`, and no general call path: it can
+///         reach the manager but cannot re-point a contract it governs, so it never accepts.
+contract AcceptOnlyAuthorityMock {
+    function canCall(address, address, bytes4) external pure returns (bool, uint32) {
+        return (true, 0);
+    }
+
+    function accept(address manager) external {
+        (bool ok, bytes memory reason) = manager.call(abi.encodeWithSignature("acceptSuccession()"));
+        if (!ok) {
+            assembly ("memory-safe") {
+                revert(add(reason, 0x20), mload(reason))
+            }
+        }
+    }
+}
+
 /// @notice A deliberately non-OpenZeppelin authority implementing only what a 6529 Works
 ///         permanent contract needs from its authority (governance spec, "What a successor must
 ///         implement"): `canCall` with a delay, `consumeScheduledOp` for delayed calls, an

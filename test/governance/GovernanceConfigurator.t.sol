@@ -437,8 +437,9 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
 
     function test_ReadbackDetectsPendingExecutionDelayReduction() public {
         _configured();
+        // A cut below the class is refused (L-1); a raise is read back as a mismatch.
         _adminExecute(
-            abi.encodeCall(IAccessManager.grantRole, (Roles.PARAMETER_SETTER, adminSafe, 0))
+            abi.encodeCall(IAccessManager.grantRole, (Roles.PARAMETER_SETTER, adminSafe, 3 days))
         );
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -455,7 +456,9 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
         bytes memory cut = abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, coldAdmin, 0));
         bytes32 id = _schedule(adminSafe, address(manager), cut);
         vm.warp(manager.getSchedule(id));
-        vm.expectRevert(abi.encodeWithSelector(WorksAccessManager.AdminDelayBelowFloor.selector, 0));
+        vm.expectRevert(
+            abi.encodeWithSelector(WorksAccessManager.DelayBelowClass.selector, Roles.ADMIN, 0)
+        );
         vm.prank(adminSafe);
         manager.execute(address(manager), cut);
 
