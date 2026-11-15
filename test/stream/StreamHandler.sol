@@ -24,8 +24,6 @@ import { MockEconomics, MockRenderer, MockSaleAdapter } from "../mocks/stream/St
 import { IStream } from "src/interfaces/IStream.sol";
 import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
-import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
-
 /// @notice Drives 6529 Stream and its records satellite through random sequences of mints
 ///         (with random fee terms, into random collections), burns, transfers, record edits,
 ///         finalizes, attacks on finalized works, consented, unconsented and replayed royalty
@@ -235,7 +233,7 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         (bool ok, uint256 tokenId) = _live(seed);
         if (!ok || opened[tokenId]) return;
         (PackageItem memory item, MediaFile[] memory media) = _item(tokenId - 1);
-        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
+        records.openRecord(tokenId, item, media);
         opened[tokenId] = true;
     }
 
@@ -290,7 +288,7 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         sigs[1] = _sign(collaboratorKey, structHash);
         (PackageItem memory item,) = _item(tokenId - 1);
         vm.prank(governor);
-        records.setRoyaltyRate(tokenId, rate, toWorkItem(item), state, deadline, sigs);
+        records.setRoyaltyRate(tokenId, rate, item, state, deadline, sigs);
         ghostRate[tokenId] = rate;
         _lastConsent[tokenId] = Consent(rate, state, deadline, sigs[0], sigs[1]);
     }
@@ -308,7 +306,7 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         (PackageItem memory item,) = _item(tokenId - 1);
         bytes32 before = records.workStateHash(tokenId);
         vm.prank(governor);
-        try records.setRoyaltyRate(tokenId, c.rate, toWorkItem(item), c.state, c.deadline, sigs) {
+        try records.setRoyaltyRate(tokenId, c.rate, item, c.state, c.deadline, sigs) {
             // Only an unchanged rate (a no-op) may return without reverting.
             if (records.workStateHash(tokenId) != before) ++violations;
         } catch { }
@@ -326,9 +324,7 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         sigs[0] = new bytes(65);
         sigs[1] = new bytes(65);
         vm.prank(governor);
-        try records.setRoyaltyRate(
-            tokenId, rate, toWorkItem(item), state, uint64(block.timestamp), sigs
-        ) {
+        try records.setRoyaltyRate(tokenId, rate, item, state, uint64(block.timestamp), sigs) {
             ++violations;
         } catch { }
     }

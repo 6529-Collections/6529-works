@@ -391,15 +391,15 @@ contract EnglishAuctionGasTest is Test {
     function _item(PackageItem storage item, uint256 i, address artist, uint256 collection)
         internal
     {
-        item.kind = ItemKind.ORIGINAL;
+        item.kind = uint8(ItemKind.ORIGINAL);
         item.collectionId = collection;
         item.contentHash = sha256(abi.encode("media", i));
         item.mediaHash = keccak256(abi.encode("media list", i));
         item.recordFileId = keccak256(abi.encode("record", i));
-        item.parties.push(Party(artist, PartyRole.ARTIST));
+        item.parties.push(Party(artist, uint8(PartyRole.ARTIST)));
         item.payees.push(ISplitWallet.Payee(uint160(artist), address(0), 100_000));
         item.license = License("CC0-1.0", keccak256("CC0 text"));
-        item.seedPolicy = SeedPolicy.NONE;
+        item.seedPolicy = uint8(SeedPolicy.NONE);
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_DEFAULT, "");
         item.edition = EditionTerms(0, address(0), bytes32(0), "");
     }

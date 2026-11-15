@@ -133,7 +133,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         Work[] memory works = new Work[](MASTERS);
         for (uint256 i; i < MASTERS; ++i) {
             works[i] = _work(artist, collectionId);
-            works[i].item.kind = ItemKind.EDITION_MASTER;
+            works[i].item.kind = uint8(ItemKind.EDITION_MASTER);
             works[i].item.edition = _editionTerms(caps[i]);
         }
         root = _publish(works);

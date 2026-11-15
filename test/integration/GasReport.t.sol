@@ -29,8 +29,6 @@ import { IntegrationBase } from "./IntegrationBase.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
-import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
-
 /// @notice The integration gas report: the budgets of ADR 0001, ADR 0003 and ADR 0004, measured
 ///         on the real, wired contracts. `forge test --match-test test_Gas_Table -vv` prints one
 ///         table (operation, Prague gas, new slots, new accounts); each other `test_Gas_*` gates
@@ -355,8 +353,8 @@ contract IntegrationGasReport is IntegrationBase {
         for (uint256 i; i < ITEMS; ++i) {
             works[i] = _work(lead, collectionId);
             works[i].item.parties = new Party[](2);
-            works[i].item.parties[0] = Party(lead, PartyRole.ARTIST);
-            works[i].item.parties[1] = Party(collaborator, PartyRole.COLLABORATOR);
+            works[i].item.parties[0] = Party(lead, uint8(PartyRole.ARTIST));
+            works[i].item.parties[1] = Party(collaborator, uint8(PartyRole.COLLABORATOR));
             works[i].item.payees = new ISplitWallet.Payee[](2);
             works[i].item.payees[0] = ISplitWallet.Payee(0, collaborator, 20_000);
             works[i].item.payees[1] = ISplitWallet.Payee(uint160(lead), address(0), 80_000);
@@ -396,7 +394,7 @@ contract IntegrationGasReport is IntegrationBase {
     function _rowStartVrf() internal returns (Row memory r) {
         _steadyState();
         Work[] memory works = _eightWorks();
-        works[0].item.seedPolicy = SeedPolicy.VRF;
+        works[0].item.seedPolicy = uint8(SeedPolicy.VRF);
         bytes32 vrfRoot = _publish(works);
         uint256 requestId = entropy.requestSeed(works[0].item, vrfRoot, _proofOf(works, 0));
         coordinator.fulfill(requestId, uint256(keccak256("gas report randomness")));
@@ -412,7 +410,7 @@ contract IntegrationGasReport is IntegrationBase {
     ///      10 by its creator.
     function _masterWorks() internal returns (Work[] memory works) {
         works = _eightWorks();
-        works[0].item.kind = ItemKind.EDITION_MASTER;
+        works[0].item.kind = uint8(ItemKind.EDITION_MASTER);
         works[0].item.edition =
             EditionTerms(EDITION_CAP, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
     }
@@ -629,13 +627,13 @@ contract IntegrationGasReport is IntegrationBase {
         for (uint256 i; i < ITEMS; ++i) {
             works[i] = _work(lead, collectionId);
             works[i].item.parties = new Party[](2);
-            works[i].item.parties[0] = Party(lead, PartyRole.ARTIST);
-            works[i].item.parties[1] = Party(collaborator, PartyRole.COLLABORATOR);
+            works[i].item.parties[0] = Party(lead, uint8(PartyRole.ARTIST));
+            works[i].item.parties[1] = Party(collaborator, uint8(PartyRole.COLLABORATOR));
             works[i].item.payees = new ISplitWallet.Payee[](2);
             works[i].item.payees[0] = ISplitWallet.Payee(0, collaborator, 20_000);
             works[i].item.payees[1] = ISplitWallet.Payee(uint160(lead), address(0), 80_000);
         }
-        works[0].item.seedPolicy = SeedPolicy.VRF;
+        works[0].item.seedPolicy = uint8(SeedPolicy.VRF);
         bytes32 root = _publish(works);
         uint256 requestId = entropy.requestSeed(works[0].item, root, _proofOf(works, 0));
         coordinator.fulfill(requestId, uint256(keccak256("gas report randomness")));
@@ -666,7 +664,7 @@ contract IntegrationGasReport is IntegrationBase {
         for (uint256 i; i < params.length; ++i) {
             params[i] = bytes1(uint8(i % 251 + 1));
         }
-        w.item.kind = ItemKind.EDITION_MASTER;
+        w.item.kind = uint8(ItemKind.EDITION_MASTER);
         w.item.edition = EditionTerms(10, CURRENCY_ETH, SaleKind.FIXED_PRICE, params);
     }
 
@@ -680,13 +678,13 @@ contract IntegrationGasReport is IntegrationBase {
         for (uint256 i; i < ITEMS; ++i) {
             works[i] = _work(lead, collectionId);
             works[i].item.parties = new Party[](2);
-            works[i].item.parties[0] = Party(lead, PartyRole.ARTIST);
-            works[i].item.parties[1] = Party(collaborator, PartyRole.COLLABORATOR);
+            works[i].item.parties[0] = Party(lead, uint8(PartyRole.ARTIST));
+            works[i].item.parties[1] = Party(collaborator, uint8(PartyRole.COLLABORATOR));
             works[i].item.payees = new ISplitWallet.Payee[](2);
             works[i].item.payees[0] = ISplitWallet.Payee(0, collaborator, 20_000);
             works[i].item.payees[1] = ISplitWallet.Payee(uint160(lead), address(0), 80_000);
         }
-        works[0].item.seedPolicy = SeedPolicy.VRF;
+        works[0].item.seedPolicy = uint8(SeedPolicy.VRF);
         _maxParamsMaster(works[0]);
         bytes32 masterRoot = _publish(works);
         uint256 requestId = entropy.requestSeed(works[0].item, masterRoot, _proofOf(works, 0));
@@ -917,7 +915,7 @@ contract IntegrationGasReport is IntegrationBase {
     function _rowReRate() internal returns (Row memory r) {
         uint256 tokenId = auction.auction(_steadyState()).tokenId;
         Work[] memory works = _package(root);
-        records.openRecord(tokenId, toWorkItem(works[0].item), toWorkMedia(works[0].media));
+        records.openRecord(tokenId, works[0].item, works[0].media);
         uint32 rate = 5_000;
         uint64 deadline = uint64(block.timestamp + 30 days);
         bytes32 state = records.workStateHash(tokenId);
@@ -932,8 +930,7 @@ contract IntegrationGasReport is IntegrationBase {
             )
         );
         bytes memory call = abi.encodeCall(
-            records.setRoyaltyRate,
-            (tokenId, rate, toWorkItem(works[0].item), state, deadline, sigs)
+            records.setRoyaltyRate, (tokenId, rate, works[0].item, state, deadline, sigs)
         );
         _schedule(hotAdmin, address(records), call);
         (, uint32 delay) = manager.canCall(hotAdmin, address(records), bytes4(call));

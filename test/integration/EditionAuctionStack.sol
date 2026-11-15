@@ -63,7 +63,7 @@ abstract contract EditionAuctionStack is IntegrationBase {
     ///      capped at `maxCount` (zero for none).
     function _masterWork(address lead, uint32 maxCount) internal returns (Work memory w) {
         w = _work(lead, collectionId);
-        w.item.kind = ItemKind.EDITION_MASTER;
+        w.item.kind = uint8(ItemKind.EDITION_MASTER);
         w.item.edition = EditionTerms(maxCount, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
     }
 

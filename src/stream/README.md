@@ -96,9 +96,10 @@ Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
   never be replaced; `IWorkRecords`' ERC-165 ID (`0x2654eed1`) and `IWorkPowers`' (`0xbd18229c`)
   freeze with it. What may change lives behind its two governed pointers: the delivery contract
   (`setDelivery`) and the store set (`addStore`).
-- **Item enums are read as `uint8`** (`WorkItem`, `WorkMedia`: the same ABI and item hash as
-  `PackageItem` and `MediaFile`), so a kind, seed policy or role a future mint policy adds never
-  makes `openRecord` revert (WS-45). Tests convert with `test/helpers/WorkItems.sol`.
+- **Item fields are open `uint8`s** in the shared `PackageItem` and `MediaFile` (kind, seed
+  policy, party and media roles; the enums only name today's values), so a kind, seed policy or
+  role a future mint policy adds never makes `openRecord` revert (WS-45). The ABI, the item hash
+  and every selector are unchanged: an enum encodes as `uint8`.
 - **`royaltyInfo` makes one view call** (the split factory's `walletFor`) and nothing else, so a
   gas shortfall reverts instead of returning a zero royalty. Do not add reads to it.
 - **Renderer pins fail closed** (DEPS-6): `rendererOf` re-checks the default renderer's and a

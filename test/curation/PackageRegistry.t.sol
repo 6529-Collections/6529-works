@@ -624,7 +624,7 @@ contract PackageRegistryTest is CurationBase {
         item.collectionId = collectionId;
         item.mediaHash = mediaHash;
         item.sale.params = saleParams;
-        item.seedPolicy = SeedPolicy.ARTIST;
+        item.seedPolicy = uint8(SeedPolicy.ARTIST);
         item.seed = seed;
         bytes32 root = WorksHashing.leaf(_hash(item));
         _register(root);
@@ -981,12 +981,29 @@ contract PackageRegistryTest is CurationBase {
         PackageItem memory item = _item(lead, SHA_A);
         item.seed = keccak256("seed"); // seed without SeedPolicy.ARTIST
         _expectInvalidWith(item, _keys(leadKey), reason);
-        item.seedPolicy = SeedPolicy.ARTIST;
+        item.seedPolicy = uint8(SeedPolicy.ARTIST);
         item.seed = 0; // ARTIST policy without a seed
         _expectInvalidWith(item, _keys(leadKey), reason);
-        item.seedPolicy = SeedPolicy.VRF;
+        item.seedPolicy = uint8(SeedPolicy.VRF);
         item.seed = keccak256("seed");
         _expectInvalidWith(item, _keys(leadKey), reason);
+    }
+
+    /// @dev Kinds, seed policies and party roles are open `uint8`s in the package types; the
+    ///      genesis policy refuses every value it does not know for a new item (a value above
+    ///      today's enum used to fail the ABI decode instead).
+    function test_invalidItem_valuesTodaysEnumsDoNotName() public {
+        PackageItem memory item = _item(lead, SHA_A);
+        item.seedPolicy = uint8(SeedPolicy.VRF) + 1;
+        _expectInvalidWith(
+            item, _keys(leadKey), abi.encodeWithSelector(IMintPolicy.InvalidSeedPolicy.selector)
+        );
+        item = _item(lead, SHA_A);
+        item.kind = uint8(ItemKind.EDITION_MASTER) + 1;
+        _expectInvalid(item, _keys(leadKey));
+        item = _masterItem(SHA_A);
+        item.parties[1].role = uint8(PartyRole.COLLABORATOR) + 1; // a second party's role
+        _expectInvalid(item, _keys(leadKey, collabKey));
     }
 
     function test_invalidItem_zeroContentHash() public {
@@ -1041,10 +1058,10 @@ contract PackageRegistryTest is CurationBase {
             item, _keys(leadKey), abi.encodeWithSelector(IMintPolicy.InvalidLeadArtist.selector)
         );
         item = _masterItem(item.contentHash);
-        item.parties[0].role = PartyRole.COLLABORATOR; // the lead must be an ARTIST
+        item.parties[0].role = uint8(PartyRole.COLLABORATOR); // the lead must be an ARTIST
         _expectInvalid(item, _keys(leadKey, collabKey));
         item = _masterItem(item.contentHash);
-        item.parties[1] = Party(lead, PartyRole.COLLABORATOR); // listed twice
+        item.parties[1] = Party(lead, uint8(PartyRole.COLLABORATOR)); // listed twice
         item.payees = new ISplitWallet.Payee[](1);
         item.payees[0] = ISplitWallet.Payee(_id(lead), address(0), 100_000);
         _expectInvalid(item, _keys(leadKey));
@@ -1058,8 +1075,8 @@ contract PackageRegistryTest is CurationBase {
         address next = vm.addr(0xA9);
         artists.recover(_id(lead), next);
         item.parties = new Party[](2);
-        item.parties[0] = Party(lead, PartyRole.ARTIST);
-        item.parties[1] = Party(next, PartyRole.ARTIST);
+        item.parties[0] = Party(lead, uint8(PartyRole.ARTIST));
+        item.parties[1] = Party(next, uint8(PartyRole.ARTIST));
         bytes32 root = WorksHashing.leaf(_hash(item));
         _register(root);
         // Each account accepts (signed by the current authority); both resolve to one artist.
@@ -1073,7 +1090,7 @@ contract PackageRegistryTest is CurationBase {
         PackageItem memory item = _item(lead, SHA_A);
         item.parties = new Party[](17);
         for (uint256 i; i < 17; ++i) {
-            item.parties[i] = Party(vm.addr(0x100 + i), PartyRole.ARTIST);
+            item.parties[i] = Party(vm.addr(0x100 + i), uint8(PartyRole.ARTIST));
         }
         bytes32 root = WorksHashing.leaf(_hash(item));
         _register(root);

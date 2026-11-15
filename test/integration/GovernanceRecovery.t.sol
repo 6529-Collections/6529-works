@@ -11,8 +11,6 @@ import { HASH_SHA256, HashRef } from "src/interfaces/types/HashRef.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
-import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
-
 /// @notice Governance recovery on the real genesis deployment (ADR 0002 decision 5, owner
 ///         decision 2): the cold recovery admin completes a recovery even when the hot admin and
 ///         one guardian (of three) act against it together.
@@ -193,7 +191,7 @@ contract GovernanceRecoveryTest is IntegrationBase {
         works[0] = _work(artist, collectionId);
         bytes32 root = _publish(works);
         tokenId = _sell(root, works, 0, makeAddr("collectorA"), 1 ether);
-        records.openRecord(tokenId, toWorkItem(works[0].item), toWorkMedia(works[0].media));
+        records.openRecord(tokenId, works[0].item, works[0].media);
         fileId = works[0].media[0].fileId;
     }
 

@@ -207,8 +207,8 @@ abstract contract RendererBase is ContentBase {
 
     function _media(bytes32 primary, bytes32 preview) internal view returns (MediaFile[] memory m) {
         m = new MediaFile[](preview == 0 ? 1 : 2);
-        m[0] = MediaFile(primary, _sha(primary), FileRole.PRIMARY);
-        if (preview != 0) m[1] = MediaFile(preview, _sha(preview), FileRole.PREVIEW);
+        m[0] = MediaFile(primary, _sha(primary), uint8(FileRole.PRIMARY));
+        if (preview != 0) m[1] = MediaFile(preview, _sha(preview), uint8(FileRole.PREVIEW));
     }
 
     function _sha(bytes32 fileId) internal view returns (bytes32) {

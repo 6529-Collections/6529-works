@@ -384,9 +384,9 @@ contract RendererMediaTest is RendererBase {
         bytes32 b = _file(_data(100, 32), IDENTITY, PNG);
         _install(primary);
         MediaFile[] memory media = new MediaFile[](3);
-        media[0] = MediaFile(primary, _sha(primary), FileRole.PRIMARY);
-        media[1] = MediaFile(a, _sha(a), FileRole.PREVIEW);
-        media[2] = MediaFile(b, _sha(b), FileRole.PREVIEW);
+        media[0] = MediaFile(primary, _sha(primary), uint8(FileRole.PRIMARY));
+        media[1] = MediaFile(a, _sha(a), uint8(FileRole.PREVIEW));
+        media[2] = MediaFile(b, _sha(b), uint8(FileRole.PREVIEW));
         records.setMedia(ID, media);
 
         assertEq(_str(_out(), ".image"), _dataUri(PNG, first));
@@ -397,8 +397,8 @@ contract RendererMediaTest is RendererBase {
         bytes32 aux = _file(_data(100, 34), IDENTITY, PNG);
         _install(primary);
         MediaFile[] memory media = new MediaFile[](2);
-        media[0] = MediaFile(primary, _sha(primary), FileRole.PRIMARY);
-        media[1] = MediaFile(aux, _sha(aux), FileRole.AUXILIARY);
+        media[0] = MediaFile(primary, _sha(primary), uint8(FileRole.PRIMARY));
+        media[1] = MediaFile(aux, _sha(aux), uint8(FileRole.AUXILIARY));
         records.setMedia(ID, media);
 
         _noMedia(_out());

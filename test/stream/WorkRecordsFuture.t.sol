@@ -9,7 +9,7 @@ import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
-import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
+
 import { MockRenderer } from "../mocks/stream/StreamMocks.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 
@@ -35,7 +35,7 @@ contract FuturePolicy {
         pure
         returns (IMintPolicy.MintRecord memory r)
     {
-        IWorkRecords.WorkItem memory item = abi.decode(request, (IWorkRecords.WorkItem));
+        PackageItem memory item = abi.decode(request, (PackageItem));
         r.itemHash = keccak256(abi.encode(WorksHashing.PACKAGE_ITEM_DOMAIN, item));
         r.artistId = uint160(item.parties[0].account);
         r.collectionId = item.collectionId;
@@ -75,10 +75,10 @@ contract WorkRecordsFutureTest is RecordsFixture {
         vm.prank(governor);
         stream.setDependency("PACKAGE_REGISTRY", address(registry), address(policy));
 
-        IWorkRecords.WorkMedia[] memory media = toWorkMedia(_single(1, true));
+        MediaFile[] memory media = _single(1, true);
         media = _withExtra(media, _mediaFile(2, FileRole.AUXILIARY, true));
         media[1].role = 9;
-        IWorkRecords.WorkItem memory item = toWorkItem(_item(1));
+        PackageItem memory item = _item(1);
         item.kind = 3;
         item.seedPolicy = 3;
         item.seed = keccak256("future seed");
@@ -99,17 +99,16 @@ contract WorkRecordsFutureTest is RecordsFixture {
         assertEq(records.mediaOf(tokenId)[1].role, 9);
     }
 
-    function _withExtra(IWorkRecords.WorkMedia[] memory media, MediaFile memory extra)
+    function _withExtra(MediaFile[] memory media, MediaFile memory extra)
         internal
         pure
-        returns (IWorkRecords.WorkMedia[] memory out)
+        returns (MediaFile[] memory out)
     {
-        out = new IWorkRecords.WorkMedia[](media.length + 1);
+        out = new MediaFile[](media.length + 1);
         for (uint256 i; i < media.length; ++i) {
             out[i] = media[i];
         }
-        out[media.length] =
-            IWorkRecords.WorkMedia(extra.fileId, extra.sha256Hash, uint8(extra.role));
+        out[media.length] = MediaFile(extra.fileId, extra.sha256Hash, uint8(extra.role));
     }
 
     /// @dev `WorkItem` is `PackageItem` byte for byte: the same item hash.
@@ -117,8 +116,7 @@ contract WorkRecordsFutureTest is RecordsFixture {
         PackageItem memory p = _item(salt);
         p.seed = seed;
         assertEq(
-            keccak256(abi.encode(WorksHashing.PACKAGE_ITEM_DOMAIN, toWorkItem(p))),
-            WorksHashing.itemHash(p)
+            keccak256(abi.encode(WorksHashing.PACKAGE_ITEM_DOMAIN, p)), WorksHashing.itemHash(p)
         );
     }
 
@@ -130,7 +128,7 @@ contract WorkRecordsFutureTest is RecordsFixture {
     function test_recordOpened_carriesEveryFactOfTheOpen() public {
         (uint256 tokenId, PackageItem memory item, MediaFile[] memory media) = _minted(5, true);
         vm.recordLogs();
-        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
+        records.openRecord(tokenId, item, media);
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bytes memory data;
         uint256 found;
@@ -141,12 +139,8 @@ contract WorkRecordsFutureTest is RecordsFixture {
             }
         }
         assertEq(found, 1);
-        (
-            IWorkRecords.WorkItem memory logged,
-            IWorkRecords.WorkMedia[] memory loggedMedia,
-            bytes32 key,
-            bytes32 seed
-        ) = abi.decode(data, (IWorkRecords.WorkItem, IWorkRecords.WorkMedia[], bytes32, bytes32));
+        (PackageItem memory logged, MediaFile[] memory loggedMedia, bytes32 key, bytes32 seed) =
+            abi.decode(data, (PackageItem, MediaFile[], bytes32, bytes32));
         (bytes32 itemHash,,,,,) = stream.coreOf(tokenId);
         assertEq(keccak256(abi.encode(WorksHashing.PACKAGE_ITEM_DOMAIN, logged)), itemHash);
         assertEq(keccak256(abi.encode(WorksHashing.MEDIA_DOMAIN, loggedMedia)), item.mediaHash);

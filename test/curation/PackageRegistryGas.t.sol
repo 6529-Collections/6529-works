@@ -109,7 +109,9 @@ contract PackageRegistryGasTest is CurationBase {
         item.payees = new ISplitWallet.Payee[](16);
         uint256[] memory ids = new uint256[](16);
         for (uint256 i; i < 16; ++i) {
-            item.parties[i] = Party(accounts[i], i == 0 ? PartyRole.ARTIST : PartyRole.COLLABORATOR);
+            item.parties[i] = Party(
+                accounts[i], i == 0 ? uint8(PartyRole.ARTIST) : uint8(PartyRole.COLLABORATOR)
+            );
             ids[i] = _id(accounts[i]);
         }
         _sortAscending(ids);

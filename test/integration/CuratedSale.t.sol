@@ -47,8 +47,8 @@ contract CuratedSaleFlowTest is IntegrationBase {
     /// @dev The lead artist with a collaborator paid as a fixed payee: 80/20 of the artist portion.
     function _collaboration(Work memory w) internal view returns (Work memory) {
         w.item.parties = new Party[](2);
-        w.item.parties[0] = Party(artist, PartyRole.ARTIST);
-        w.item.parties[1] = Party(collaborator, PartyRole.COLLABORATOR);
+        w.item.parties[0] = Party(artist, uint8(PartyRole.ARTIST));
+        w.item.parties[1] = Party(collaborator, uint8(PartyRole.COLLABORATOR));
         w.item.payees = new ISplitWallet.Payee[](2);
         w.item.payees[0] = ISplitWallet.Payee(0, collaborator, 20_000);
         w.item.payees[1] = ISplitWallet.Payee(uint256(uint160(artist)), address(0), 80_000);

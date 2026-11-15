@@ -407,7 +407,7 @@ contract VrfEntropyModuleTest is EntropyBase {
     ///      an item the network approved with another policy.
     function test_Gate_ThePolicyCannotBeFlippedToVrf() public {
         PackageItem memory item = _plain(SeedPolicy.ARTIST);
-        item.seedPolicy = SeedPolicy.VRF;
+        item.seedPolicy = uint8(SeedPolicy.VRF);
         item.seed = bytes32(0);
         vm.expectRevert(_notRequestable(_hash(item)));
         module.requestSeed(item, plainRoot(SeedPolicy.ARTIST), new bytes32[](0));

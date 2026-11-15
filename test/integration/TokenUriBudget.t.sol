@@ -16,8 +16,6 @@ import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { StateGrowth } from "../helpers/StateGrowth.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
-import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
-
 /// @notice The `tokenURI` budget proof on the real stack (ADR 0004: at most 8M Prague gas): every
 ///         cap the protocol allows at once, measured cold through `Stream.tokenURI` (and
 ///         `Editions.uri`) with the real WorkRecords, content store, statement log and renderer.
@@ -192,18 +190,19 @@ contract TokenUriBudgetTest is IntegrationBase {
         b.media[0] = MediaFile(
             _upload(text, IContentStore.Encoding.Base64, "text/html", content),
             content,
-            FileRole.PRIMARY
+            uint8(FileRole.PRIMARY)
         );
         _attestAll(b.media[0].fileId);
         (bytes32 preview, bytes32 previewSha) = _preview(base64Preview);
-        b.media[1] = MediaFile(preview, previewSha, FileRole.PREVIEW);
+        b.media[1] = MediaFile(preview, previewSha, uint8(FileRole.PREVIEW));
         bytes memory terms = abi.encodePacked("The terms of the license, #", vm.toString(salt));
         b.licenseText = _storeText(terms, "text/plain");
-        b.media[2] = MediaFile(b.licenseText, sha256(terms), FileRole.AUXILIARY);
+        b.media[2] = MediaFile(b.licenseText, sha256(terms), uint8(FileRole.AUXILIARY));
         for (uint256 i = 3; i < b.media.length; ++i) {
             bytes memory aux =
                 abi.encodePacked("auxiliary ", vm.toString(salt), "/", vm.toString(i));
-            b.media[i] = MediaFile(_storeText(aux, "text/plain"), sha256(aux), FileRole.AUXILIARY);
+            b.media[i] =
+                MediaFile(_storeText(aux, "text/plain"), sha256(aux), uint8(FileRole.AUXILIARY));
         }
     }
 
@@ -222,10 +221,10 @@ contract TokenUriBudgetTest is IntegrationBase {
         w.item = _item(artist, coll, content, b.media, _storeText(json, "application/json"));
         w.item.license =
             License(string.concat("LicenseRef-", string(_fill("x", 53))), b.licenseText);
-        w.item.seedPolicy = SeedPolicy.ARTIST;
+        w.item.seedPolicy = uint8(SeedPolicy.ARTIST);
         w.item.seed = keccak256(abi.encode("seed", salt));
         if (master) {
-            w.item.kind = ItemKind.EDITION_MASTER;
+            w.item.kind = uint8(ItemKind.EDITION_MASTER);
             w.item.edition = EditionTerms(20, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
         }
         b.tokenId = _mintAndOpen(w, master);
@@ -243,7 +242,7 @@ contract TokenUriBudgetTest is IntegrationBase {
             _settleAtEnd(saleId);
             editions.createEdition(tokenId, w.item, root, _proofOf(works, 0));
         }
-        records.openRecord(tokenId, toWorkItem(w.item), toWorkMedia(w.media));
+        records.openRecord(tokenId, w.item, w.media);
         records.syncOnChain(tokenId, 0, type(uint256).max);
     }
 
@@ -423,7 +422,7 @@ contract TokenUriBudgetTest is IntegrationBase {
         media[1] = MediaFile(
             _registerOnly(big, IContentStore.Encoding.Identity, "image/png", sha256(big)),
             sha256(big),
-            FileRole.AUXILIARY
+            uint8(FileRole.AUXILIARY)
         );
         _open(w, media, true);
     }
@@ -435,8 +434,9 @@ contract TokenUriBudgetTest is IntegrationBase {
         MediaFile[] memory media = new MediaFile[](2);
         media[0] = w.media[0];
         bytes32 sha = sha256(stored);
-        media[1] =
-            MediaFile(_registerOnly(stored, encoding, "image/png", sha), sha, FileRole.PREVIEW);
+        media[1] = MediaFile(
+            _registerOnly(stored, encoding, "image/png", sha), sha, uint8(FileRole.PREVIEW)
+        );
         _open(w, media, fits);
     }
 
@@ -450,7 +450,7 @@ contract TokenUriBudgetTest is IntegrationBase {
                 abi.encodeWithSelector(IWorkRecords.InvalidRecordData.selector, tokenId)
             );
         }
-        records.openRecord(tokenId, toWorkItem(w.item), toWorkMedia(media));
+        records.openRecord(tokenId, w.item, media);
         assertEq(records.isOpen(tokenId), fits);
     }
 }

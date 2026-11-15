@@ -232,7 +232,7 @@ contract LeanStream is ERC721, IMintTarget {
         require(ISaleAdapter(msg.sender).saleKind() == SaleKind.ENGLISH_AUCTION, "kind");
         StreamMintRequest calldata request = _request(data);
         PackageItem calldata item = request.item;
-        require(item.seedPolicy != SeedPolicy.VRF, "seed not delivered");
+        require(item.seedPolicy != uint8(SeedPolicy.VRF), "seed not delivered");
         (bytes32 itemHash, uint256 artistId) =
             registry.consume(request.packageRoot, item, request.proof, request.move);
         WorkTerms memory w = resolver.newWorkTerms(item.payees);

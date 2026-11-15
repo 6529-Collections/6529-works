@@ -7,7 +7,7 @@ import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { IUniformEditionAuctionStorage } from "src/interfaces/IUniformEditionAuctionStorage.sol";
-import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
+import { ItemKind, PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { EditionAuctionBase } from "./EditionAuctionBase.sol";
@@ -26,7 +26,7 @@ contract UniformEditionAuctionWindowTest is EditionAuctionBase {
     {
         item = _item(id, maxCount);
         item.edition.params = abi.encode(offset);
-        stream.setWork(id, WorksHashing.itemHash(item), item.kind);
+        stream.setWork(id, WorksHashing.itemHash(item), ItemKind(item.kind));
     }
 
     function _openWithOffset(uint256 offset) internal returns (uint256 saleId) {
@@ -112,7 +112,7 @@ contract UniformEditionAuctionWindowTest is EditionAuctionBase {
         for (uint256 i; i < bad.length; ++i) {
             item = _item(ID, 0);
             item.edition.params = bad[i];
-            stream.setWork(ID, WorksHashing.itemHash(item), item.kind);
+            stream.setWork(ID, WorksHashing.itemHash(item), ItemKind(item.kind));
             vm.expectRevert(
                 abi.encodeWithSelector(
                     ISaleAdapter.InvalidSaleTerms.selector, address(editions), ID

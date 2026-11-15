@@ -8,8 +8,6 @@ import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 import { UploaderGoldenData as Golden } from "../content/tooling/UploaderGoldenData.sol";
 
-import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
-
 /// @notice Flow 3 (integration brief, lane B): content through to `tokenURI` on the real
 ///         contracts. The primary file is uploaded with the uploader tooling's golden calldata;
 ///         the work then goes through `attestBase64`, `openRecord`, `finalize` and `syncOnChain`,
@@ -37,7 +35,7 @@ contract ContentToTokenURIFlowTest is IntegrationBase {
         assertTrue(ok, "golden writeChunk");
         assertTrue(store.isComplete(v.fileId));
         w.media = new MediaFile[](1);
-        w.media[0] = MediaFile(v.fileId, v.mediaSha256, FileRole.PRIMARY);
+        w.media[0] = MediaFile(v.fileId, v.mediaSha256, uint8(FileRole.PRIMARY));
         w.item = _item(artist, collectionId, v.mediaSha256, w.media, _record("Golden Work"));
     }
 
@@ -60,7 +58,7 @@ contract ContentToTokenURIFlowTest is IntegrationBase {
 
         // openRecord is permissionless and checks the committed media.
         vm.prank(collector);
-        records.openRecord(tokenId, toWorkItem(w.item), toWorkMedia(w.media));
+        records.openRecord(tokenId, w.item, w.media);
         uri = stream.tokenURI(tokenId);
         assertFalse(_contains(uri, "record_status"), "the record renders");
         assertTrue(_contains(uri, '"name":"Golden Work"'));
@@ -121,7 +119,7 @@ contract ContentToTokenURIFlowTest is IntegrationBase {
         Work[] memory works = _one(w);
         bytes32 root = _publish(works);
         (, uint256 tokenId) = _start(root, works, 0);
-        records.openRecord(tokenId, toWorkItem(w.item), toWorkMedia(w.media));
+        records.openRecord(tokenId, w.item, w.media);
         records.syncOnChain(tokenId, 0, type(uint256).max);
         vm.prank(artist);
         delivery.addLocator(tokenId, v.fileId, CA.ar("fallback"));

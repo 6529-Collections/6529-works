@@ -13,7 +13,7 @@ import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 import { IRenderer } from "src/interfaces/IRenderer.sol";
 
-import { toWorkItem, toWorkMedia, preferredOf } from "test/helpers/WorkItems.sol";
+import { preferredOf } from "test/helpers/WorkItems.sol";
 
 import { IWorkLocators } from "src/interfaces/IWorkDelivery.sol";
 
@@ -35,7 +35,7 @@ contract WorkRecordsStackTest is IntegrationBase {
         Work memory w = _work(artist, collectionId);
         Work[] memory works = _one(w);
         tokenId = _sell(_publish(works), works, 0, collector, 1 ether);
-        records.openRecord(tokenId, toWorkItem(w.item), toWorkMedia(w.media));
+        records.openRecord(tokenId, w.item, w.media);
         primary = w.media[0].fileId;
     }
 
@@ -219,7 +219,7 @@ contract WorkRecordsStackTest is IntegrationBase {
         assertTrue(_contains(stream.tokenURI(tokenId), '"record_status":"not_open"'));
 
         vm.prank(collector);
-        records.openRecord(tokenId, toWorkItem(w.item), toWorkMedia(w.media));
+        records.openRecord(tokenId, w.item, w.media);
         string memory uri = stream.tokenURI(tokenId);
         assertTrue(_contains(uri, '"record_status":"incomplete"'), "core-only, not a revert");
         assertTrue(_contains(uri, '"name":"Genesis %23'));
@@ -268,9 +268,7 @@ contract WorkRecordsStackTest is IntegrationBase {
         );
         bytes[] memory sigs = new bytes[](1);
         sigs[0] = _sign(artist, digest);
-        return abi.encodeCall(
-            records.relicense, (tokenId, next, toWorkItem(w.item), state, deadline, sigs)
-        );
+        return abi.encodeCall(records.relicense, (tokenId, next, w.item, state, deadline, sigs));
     }
 
     function _expectRelicenseRefused(bytes memory call) internal {
@@ -292,14 +290,14 @@ contract WorkRecordsStackTest is IntegrationBase {
         Work[] memory works = _one(w);
         (, uint256 tokenId) = _start(_publish(works), works, 0);
         vm.expectRevert(IWorkRecords.InvalidLicense.selector);
-        records.openRecord(tokenId, toWorkItem(w.item), toWorkMedia(w.media));
+        records.openRecord(tokenId, w.item, w.media);
         assertFalse(records.isOpen(tokenId));
 
         Work memory v = _work(artist, collectionId);
         v.item.license = License("cc0-1.0", cc0TextFileId);
         works = _one(v);
         (, uint256 other) = _start(_publish(works), works, 0);
-        records.openRecord(other, toWorkItem(v.item), toWorkMedia(v.media));
+        records.openRecord(other, v.item, v.media);
         assertEq(records.licenseOf(other).textFileId, cc0TextFileId);
         assertEq(records.record(other).licenseKey, WorksHashing.CC0_LICENSE_KEY);
     }
@@ -313,7 +311,7 @@ contract WorkRecordsStackTest is IntegrationBase {
         Work memory w = _work(artist, collectionId);
         Work[] memory works = _one(w);
         uint256 tokenId = _sell(_publish(works), works, 0, collector, 1 ether);
-        records.openRecord(tokenId, toWorkItem(w.item), toWorkMedia(w.media));
+        records.openRecord(tokenId, w.item, w.media);
         _expectRelicenseRefused(_relicense(tokenId, w, License("CC0-1.0", reserved)));
         _finalize(tokenId);
         _expectRelicenseRefused(_relicense(tokenId, w, License("CC0-1.0", reserved)));
@@ -330,7 +328,7 @@ contract WorkRecordsStackTest is IntegrationBase {
         w.item.license = License("CC-BY-4.0", byText);
         Work[] memory works = _one(w);
         uint256 tokenId = _sell(_publish(works), works, 0, collector, 1 ether);
-        records.openRecord(tokenId, toWorkItem(w.item), toWorkMedia(w.media));
+        records.openRecord(tokenId, w.item, w.media);
         _expectRelicenseRefused(_relicense(tokenId, w, License("CC0-1.0", other)));
         _govern(
             hotAdmin, address(records), _relicense(tokenId, w, License("CC0-1.0", cc0TextFileId))

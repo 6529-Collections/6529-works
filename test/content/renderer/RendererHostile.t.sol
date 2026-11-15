@@ -40,7 +40,7 @@ contract RendererHostileTest is RendererBase {
         records.setRecord(ID, info);
         records.setOpen(ID, true);
         MediaFile[] memory media = new MediaFile[](1);
-        media[0] = MediaFile(bytes32(uint256(0xf11e)), bytes32(uint256(1)), FileRole.PRIMARY);
+        media[0] = MediaFile(bytes32(uint256(0xf11e)), bytes32(uint256(1)), uint8(FileRole.PRIMARY));
         records.setMedia(ID, media);
         records.setLicense(ID, _license());
     }
@@ -230,7 +230,9 @@ contract RendererHostileTest is RendererBase {
         MediaFile[] memory media = new MediaFile[](33);
         for (uint256 i; i < media.length; ++i) {
             media[i] = MediaFile(
-                bytes32(i + 1), bytes32(i + 1), i == 0 ? FileRole.PRIMARY : FileRole.AUXILIARY
+                bytes32(i + 1),
+                bytes32(i + 1),
+                i == 0 ? uint8(FileRole.PRIMARY) : uint8(FileRole.AUXILIARY)
             );
         }
         records.setMedia(ID, media);

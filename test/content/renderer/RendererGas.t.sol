@@ -325,9 +325,9 @@ contract RendererGasAdversarialTest is RendererBase {
     function _members(uint256 id, bytes memory json, bytes32 primary, bytes32 prev) internal {
         require(json.length <= limit, "record over the limit");
         MediaFile[] memory m = new MediaFile[](prev == 0 ? 2 : 3);
-        m[0] = MediaFile(primary, _sha(primary), FileRole.PRIMARY);
-        m[1] = MediaFile(licenseText, _sha(licenseText), FileRole.AUXILIARY);
-        if (prev != 0) m[2] = MediaFile(prev, _sha(prev), FileRole.PREVIEW);
+        m[0] = MediaFile(primary, _sha(primary), uint8(FileRole.PRIMARY));
+        m[1] = MediaFile(licenseText, _sha(licenseText), uint8(FileRole.AUXILIARY));
+        if (prev != 0) m[2] = MediaFile(prev, _sha(prev), uint8(FileRole.PREVIEW));
         _installRawAt(id, json, m);
         IStreamViews.WorkCore memory core = _core();
         core.collectionId = 1;
@@ -826,9 +826,9 @@ contract RendererGasBudgetTest is RendererBase {
     function _work(uint256 id, bytes memory json, bytes32 primary) internal {
         require(json.length <= limit, "record over the limit");
         MediaFile[] memory m = new MediaFile[](3);
-        m[0] = MediaFile(primary, _sha(primary), FileRole.PRIMARY);
-        m[1] = MediaFile(licenseText, _sha(licenseText), FileRole.AUXILIARY);
-        m[2] = MediaFile(preview, _sha(preview), FileRole.PREVIEW);
+        m[0] = MediaFile(primary, _sha(primary), uint8(FileRole.PRIMARY));
+        m[1] = MediaFile(licenseText, _sha(licenseText), uint8(FileRole.AUXILIARY));
+        m[2] = MediaFile(preview, _sha(preview), uint8(FileRole.PREVIEW));
         _installRawAt(id, json, m);
         IStreamViews.WorkCore memory core = _core();
         core.collectionId = 1;

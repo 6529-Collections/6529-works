@@ -321,7 +321,7 @@ contract Renderer is IRenderer {
             (MediaFile[])
         );
         if (
-            c.media.length == 0 || c.media[0].role != FileRole.PRIMARY
+            c.media.length == 0 || c.media[0].role != uint8(FileRole.PRIMARY)
                 || (c.edition && c.media[0].sha256Hash != c.hash)
         ) revert RendererRecordInvalid(c.token, c.id);
         c.primary = _fileInfo(c.media[0].fileId);
@@ -580,7 +580,7 @@ contract Renderer is IRenderer {
     /// @dev The first PREVIEW image of the work: inline if small and complete, else by locator.
     function _preview(Ctx memory c) private view returns (Media memory m) {
         for (uint256 i = 1; i < c.media.length; ++i) {
-            if (c.media[i].role != FileRole.PREVIEW) continue;
+            if (c.media[i].role != uint8(FileRole.PREVIEW)) continue;
             bytes32 id = c.media[i].fileId;
             IContentStore.FileInfo memory fi = _fileInfo(id);
             if (!_isImage(fi.mimeType)) return m;

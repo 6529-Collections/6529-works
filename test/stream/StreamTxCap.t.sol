@@ -11,8 +11,6 @@ import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 
-import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
-
 /// @notice Worst-case transactions against the EIP-7825 (Fusaka) cap of 16,777,216 gas. Foundry
 ///         pins Prague, which does not enforce the cap, so each test adds the intrinsic cost
 ///         (21,000 plus calldata under EIP-7623's floor pricing) to the measured execution and
@@ -61,7 +59,7 @@ contract StreamTxCapTest is RecordsFixture {
         item = _recordsItem(salt, media);
         item.parties = new Party[](16);
         item.payees = new ISplitWallet.Payee[](16);
-        item.parties[0] = Party(artist, PartyRole.ARTIST);
+        item.parties[0] = Party(artist, uint8(PartyRole.ARTIST));
         item.payees[0] = ISplitWallet.Payee(uint256(uint160(artist)), address(0), 6_250);
         delete partyKeys;
         partyKeys.push(artistKey);
@@ -70,7 +68,7 @@ contract StreamTxCapTest is RecordsFixture {
             address account = vm.addr(key);
             artists.register(account);
             partyKeys.push(key);
-            item.parties[i] = Party(account, PartyRole.COLLABORATOR);
+            item.parties[i] = Party(account, uint8(PartyRole.COLLABORATOR));
             item.payees[i] = ISplitWallet.Payee(uint256(uint160(account)), address(0), 6_250);
         }
         // The split factory needs the payees in canonical order: by artist ID.
@@ -108,8 +106,7 @@ contract StreamTxCapTest is RecordsFixture {
         MediaFile[] memory media = _maxMedia(1);
         PackageItem memory item = _wideItem(1, media);
         uint256 tokenId = _mint(item);
-        bytes memory callData =
-            abi.encodeCall(records.openRecord, (tokenId, toWorkItem(item), toWorkMedia(media)));
+        bytes memory callData = abi.encodeCall(records.openRecord, (tokenId, item, media));
         _call(address(records), outsider, callData, "openRecord, 32 files, 16 parties:");
     }
 
@@ -117,7 +114,7 @@ contract StreamTxCapTest is RecordsFixture {
         MediaFile[] memory media = _single(1, true);
         PackageItem memory item = _wideItem(1, media);
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
+        records.openRecord(tokenId, item, media);
         License memory next = License(string(_repeat("m", 64)), _registerText("next text"));
         bytes32 state = records.workStateHash(tokenId);
         uint64 deadline = uint64(block.timestamp + 1 days);
@@ -135,9 +132,8 @@ contract StreamTxCapTest is RecordsFixture {
         for (uint256 i; i < 16; ++i) {
             sigs[i] = _sign(partyKeys[i], structHash);
         }
-        bytes memory callData = abi.encodeCall(
-            records.relicense, (tokenId, next, toWorkItem(item), state, deadline, sigs)
-        );
+        bytes memory callData =
+            abi.encodeCall(records.relicense, (tokenId, next, item, state, deadline, sigs));
         _call(address(records), governor, callData, "relicense, 16 consents:");
     }
 
@@ -168,7 +164,7 @@ contract StreamTxCapTest is RecordsFixture {
         MediaFile[] memory media = _maxMedia(2);
         PackageItem memory item = _wideItem(2, media);
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
+        records.openRecord(tokenId, item, media);
         for (uint256 i; i < 32; ++i) {
             _upload(200 + i);
         }

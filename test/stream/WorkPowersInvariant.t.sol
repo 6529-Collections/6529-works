@@ -9,8 +9,6 @@ import { MockRenderer } from "../mocks/stream/StreamMocks.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
-import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
-
 /// @notice Stateful invariants of the renounceable powers and lower-only royalty changes
 ///         (ADR 0006): a work's renounced mask never loses a bit, a renounced power's function
 ///         never succeeds again, and a work's royalty rate never rises.
@@ -35,7 +33,7 @@ contract WorkPowersInvariantTest is RecordsFixture {
             PackageItem memory item = _recordsItem(i, media);
             item.license = _license("cc-by-4.0");
             uint256 tokenId = _mint(item);
-            records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
+            records.openRecord(tokenId, item, media);
             handler.addWork(tokenId, item);
         }
         bytes4[] memory selectors = new bytes4[](5);

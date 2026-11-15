@@ -64,13 +64,13 @@ abstract contract CurationHelpers is Test {
         pure
         returns (PackageItem memory i)
     {
-        i.kind = ItemKind.ORIGINAL;
+        i.kind = uint8(ItemKind.ORIGINAL);
         i.collectionId = 1;
         i.contentHash = contentHash;
         i.mediaHash = keccak256(abi.encode("media list", contentHash));
         i.recordFileId = keccak256(abi.encode("record file", contentHash));
         i.parties = new Party[](1);
-        i.parties[0] = Party(artist, PartyRole.ARTIST);
+        i.parties[0] = Party(artist, uint8(PartyRole.ARTIST));
         i.payees = new ISplitWallet.Payee[](1);
         i.payees[0] = ISplitWallet.Payee(_id(artist), address(0), 100_000);
         i.license = License("CC0-1.0", keccak256("cc0"));
@@ -246,10 +246,10 @@ abstract contract CurationBase is CurationHelpers {
     /// @dev An EDITION_MASTER by `lead` with `collab` credited and paid (fixed payee first).
     function _masterItem(bytes32 contentHash) internal view returns (PackageItem memory i) {
         i = _item(lead, contentHash);
-        i.kind = ItemKind.EDITION_MASTER;
+        i.kind = uint8(ItemKind.EDITION_MASTER);
         i.parties = new Party[](2);
-        i.parties[0] = Party(lead, PartyRole.ARTIST);
-        i.parties[1] = Party(collab, PartyRole.COLLABORATOR);
+        i.parties[0] = Party(lead, uint8(PartyRole.ARTIST));
+        i.parties[1] = Party(collab, uint8(PartyRole.COLLABORATOR));
         i.payees = new ISplitWallet.Payee[](2);
         i.payees[0] = ISplitWallet.Payee(0, collab, 20_000);
         i.payees[1] = ISplitWallet.Payee(_id(lead), address(0), 80_000);

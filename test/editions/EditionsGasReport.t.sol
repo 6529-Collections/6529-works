@@ -32,7 +32,7 @@ contract EditionsGasReport is IntegrationBase {
         Work[] memory works = new Work[](2);
         for (uint256 i; i < works.length; ++i) {
             works[i] = _work(artist, collectionId);
-            works[i].item.kind = ItemKind.EDITION_MASTER;
+            works[i].item.kind = uint8(ItemKind.EDITION_MASTER);
             works[i].item.edition = EditionTerms(50, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
         }
         root = _publish(works);

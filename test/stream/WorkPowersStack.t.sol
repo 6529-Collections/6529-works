@@ -10,8 +10,6 @@ import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { IntegrationBase } from "../integration/IntegrationBase.sol";
 
-import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
-
 /// @notice The renounceable powers and lower-only royalty changes on the deployed stack: the
 ///         real artist registry's restraint (nobody acts as the artist while an
 ///         authority-moving override is pending), the governed path through the AccessManager,
@@ -39,16 +37,16 @@ contract WorkPowersStackTest is IntegrationBase {
 
         Work[] memory works = new Work[](2);
         works[0] = _work(artist, collectionId);
-        works[0].item.kind = ItemKind.EDITION_MASTER;
+        works[0].item.kind = uint8(ItemKind.EDITION_MASTER);
         works[0].item.edition = EditionTerms(50, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
         works[1] = _work(artist, collectionId);
         root = _publish(works);
         _keep(root, works);
         masterId = _sell(root, works, 0, collector, 1 ether);
         editions.createEdition(masterId, works[0].item, root, _proofOf(works, 0));
-        records.openRecord(masterId, toWorkItem(works[0].item), toWorkMedia(works[0].media));
+        records.openRecord(masterId, works[0].item, works[0].media);
         workId = _sell(root, works, 1, collector, 1 ether);
-        records.openRecord(workId, toWorkItem(works[1].item), toWorkMedia(works[1].media));
+        records.openRecord(workId, works[1].item, works[1].media);
     }
 
     function _consolidate(address a, address b) internal {
@@ -105,9 +103,8 @@ contract WorkPowersStackTest is IntegrationBase {
                 )
             )
         );
-        return abi.encodeCall(
-            records.setRoyaltyRate, (tokenId, rate, toWorkItem(w.item), state, deadline, sigs)
-        );
+        return
+            abi.encodeCall(records.setRoyaltyRate, (tokenId, rate, w.item, state, deadline, sigs));
     }
 
     /// Regression: ADD-PWR-2

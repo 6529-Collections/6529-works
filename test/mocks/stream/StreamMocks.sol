@@ -87,7 +87,7 @@ contract MockPackageRegistry is Supports165 {
         address creator;
         (r.itemHash, r.artistId, creator) = this.consume(req.packageRoot, item, req.proof, req.move);
         if (
-            item.seedPolicy == SeedPolicy.VRF
+            item.seedPolicy == uint8(SeedPolicy.VRF)
                 && !IEntropyModule(c.entropyModule).isDeliveredContent(item.contentHash)
         ) revert IMintPolicy.SeedNotDelivered(r.itemHash);
         PrimaryTerms memory t;
@@ -123,10 +123,10 @@ contract MockPackageRegistry is Supports165 {
     function _check(PackageItem memory item, address entropy) internal pure {
         if (item.sale.saleKind == 0) revert IMintPolicy.InvalidItemSale();
         if (item.parties.length == 0) revert IMintPolicy.InvalidLeadArtist();
-        SeedPolicy policy = item.seedPolicy;
+        uint8 policy = item.seedPolicy;
         if (
-            (policy == SeedPolicy.ARTIST) != (item.seed != 0)
-                || (policy == SeedPolicy.VRF && entropy == address(0))
+            (policy == uint8(SeedPolicy.ARTIST)) != (item.seed != 0)
+                || (policy == uint8(SeedPolicy.VRF) && entropy == address(0))
         ) revert IMintPolicy.InvalidSeedPolicy();
         if (!SpdxId.isValid(item.license.spdxId)) revert IMintPolicy.InvalidLicenseId();
     }

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { ISplitWallet } from "../economics/interfaces/ISplitWallet.sol";
 import { IWorkDelivery } from "./IWorkDelivery.sol";
-import { EditionTerms, License, SaleTerms } from "./types/PackageTypes.sol";
+import { MediaFile } from "./types/ContentTypes.sol";
+import { License, PackageItem } from "./types/PackageTypes.sol";
 
 /// @title IWorkRecords
 /// @notice The 6529 Stream records satellite: each work's descriptive record, media, license,
@@ -38,10 +38,9 @@ import { EditionTerms, License, SaleTerms } from "./types/PackageTypes.sol";
 ///      to a state its signer did not see. Every visible change asks 6529 Stream to emit
 ///      ERC-4906 and, for an edition master, calls `IEditions.notifyMasterUpdated`.
 ///
-///      Item kinds, seed policies, party roles and media roles are read as `uint8`, so an item a
-///      future mint policy defines with a new value still opens; the ABI of `WorkItem` and
-///      `WorkMedia` is the ABI of `PackageItem` and `MediaFile` (enums encode as `uint8`), and
-///      the item hash is `WorksHashing.itemHash` of the same bytes.
+///      Item kinds, seed policies, party roles and media roles are open `uint8`s in the shared
+///      package types (`PackageItem`, `MediaFile`), so an item a future mint policy defines with a
+///      new value still opens.
 ///
 ///      Logs only: every fact here can be rebuilt from this contract's events, with 6529
 ///      Stream's (rate, default renderer) for the state hash.
@@ -63,37 +62,6 @@ interface IWorkRecords {
         address renderer;
     }
 
-    /// @notice A party of an item (`Party`, with its role read as `uint8`).
-    struct WorkParty {
-        address account;
-        uint8 role;
-    }
-
-    /// @notice A package item (`PackageItem`, with `kind`, `seedPolicy` and party roles read as
-    ///         `uint8`); same ABI encoding and item hash.
-    struct WorkItem {
-        uint8 kind;
-        uint256 collectionId;
-        bytes32 contentHash;
-        bytes32 mediaHash;
-        bytes32 recordFileId;
-        WorkParty[] parties;
-        ISplitWallet.Payee[] payees;
-        License license;
-        uint8 seedPolicy;
-        bytes32 seed;
-        SaleTerms sale;
-        EditionTerms edition;
-    }
-
-    /// @notice A media file (`MediaFile`, with its role read as `uint8`: 0 PRIMARY, 1 PREVIEW,
-    ///         2 AUXILIARY, and any other value up to 15 recorded for future readers).
-    struct WorkMedia {
-        bytes32 fileId;
-        bytes32 sha256Hash;
-        uint8 role;
-    }
-
     /// @notice A work's record was opened from its approved item and media. Carries every fact
     ///         the open fixes, so the record can be rebuilt from logs: the record file, media
     ///         commitment, initial license, seed policy, parties and payees with their shares
@@ -106,7 +74,11 @@ interface IWorkRecords {
     /// @param seed The seed fixed at open: the entropy module's for VRF, zero for NONE, and the
     ///        item's own for ARTIST and for any policy value this contract does not define.
     event RecordOpened(
-        uint256 indexed tokenId, WorkItem item, WorkMedia[] media, bytes32 licenseKey, bytes32 seed
+        uint256 indexed tokenId,
+        PackageItem item,
+        MediaFile[] media,
+        bytes32 licenseKey,
+        bytes32 seed
     );
     /// @notice The artist pointed a work at a new record file.
     /// @param tokenId The work's token ID.
@@ -231,7 +203,7 @@ interface IWorkRecords {
     /// @param tokenId A live 6529 Stream token whose record is not open yet.
     /// @param item The work's approved package item.
     /// @param media The work's media files in approved order, primary first.
-    function openRecord(uint256 tokenId, WorkItem calldata item, WorkMedia[] calldata media)
+    function openRecord(uint256 tokenId, PackageItem calldata item, MediaFile[] calldata media)
         external;
     /// @notice The artist points the work at a new record file, which must meet the structural
     ///         bounds, until finalize. Re-publishing the current file is a no-op.
@@ -275,7 +247,7 @@ interface IWorkRecords {
     /// @notice A work's media, in approved order (primary first).
     /// @param tokenId A work with an open record.
     /// @return Each file's ID, declared SHA-256 and role.
-    function mediaOf(uint256 tokenId) external view returns (WorkMedia[] memory);
+    function mediaOf(uint256 tokenId) external view returns (MediaFile[] memory);
     /// @notice The index of `fileId` in a work's media list.
     /// @param tokenId A work with an open record.
     /// @param fileId One of the work's media files (`FileNotInWork` otherwise).
@@ -328,7 +300,7 @@ interface IWorkRecords {
     function relicense(
         uint256 tokenId,
         License calldata next,
-        WorkItem calldata item,
+        PackageItem calldata item,
         bytes32 expectedStateHash,
         uint64 deadline,
         bytes[] calldata partySignatures
@@ -347,7 +319,7 @@ interface IWorkRecords {
     function setRoyaltyRate(
         uint256 tokenId,
         uint32 rate,
-        WorkItem calldata item,
+        PackageItem calldata item,
         bytes32 expectedStateHash,
         uint64 deadline,
         bytes[] calldata partySignatures

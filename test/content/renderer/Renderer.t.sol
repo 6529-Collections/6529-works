@@ -462,8 +462,8 @@ contract RendererTest is RendererBase {
         bytes32 file = _file(png, IDENTITY, "image/png");
         _install(file);
         MediaFile[] memory media = new MediaFile[](2);
-        media[0] = MediaFile(file, _sha(file), FileRole.PRIMARY);
-        media[1] = MediaFile(text, _sha(text), FileRole.AUXILIARY);
+        media[0] = MediaFile(file, _sha(file), uint8(FileRole.PRIMARY));
+        media[1] = MediaFile(text, _sha(text), uint8(FileRole.AUXILIARY));
         records.setMedia(ID, media);
         records.setLicense(ID, License("LicenseRef-Studio-1", text));
         records.addLocator(ID, text, Locator(LocatorKind.ARWEAVE, "ar://terms"));
@@ -493,8 +493,8 @@ contract RendererTest is RendererBase {
         records.setLicense(ID, License("LicenseRef-Studio-1", bare));
         bytes32 file = _file(png, IDENTITY, "image/png");
         MediaFile[] memory media = new MediaFile[](2);
-        media[0] = MediaFile(file, _sha(file), FileRole.PRIMARY);
-        media[1] = MediaFile(bare, _sha(bare), FileRole.AUXILIARY);
+        media[0] = MediaFile(file, _sha(file), uint8(FileRole.PRIMARY));
+        media[1] = MediaFile(bare, _sha(bare), uint8(FileRole.AUXILIARY));
         records.setMedia(ID, media);
         j = _out();
         assertEq(_str(j, ".license_text_file"), vm.toString(bare));
@@ -714,12 +714,12 @@ contract RendererTest is RendererBase {
         renderer.tokenURI(address(stream), ID);
 
         MediaFile[] memory aux = new MediaFile[](1);
-        aux[0] = MediaFile(file, sha256(png), FileRole.AUXILIARY);
+        aux[0] = MediaFile(file, sha256(png), uint8(FileRole.AUXILIARY));
         records.setMedia(ID, aux);
         _expectInvalidRecord();
         renderer.tokenURI(address(stream), ID);
 
-        aux[0] = MediaFile(file, sha256(png), FileRole.PREVIEW);
+        aux[0] = MediaFile(file, sha256(png), uint8(FileRole.PREVIEW));
         records.setMedia(ID, aux);
         _expectInvalidRecord();
         renderer.tokenURI(address(stream), ID);

@@ -56,7 +56,7 @@ abstract contract SalesStackBase is IntegrationBase {
     }
 
     function _master(Work memory w, EditionTerms memory terms) internal pure returns (Work memory) {
-        w.item.kind = ItemKind.EDITION_MASTER;
+        w.item.kind = uint8(ItemKind.EDITION_MASTER);
         w.item.edition = terms;
         return w;
     }

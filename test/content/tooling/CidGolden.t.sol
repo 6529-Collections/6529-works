@@ -7,8 +7,6 @@ import { ContentAddresses } from "../../helpers/ContentAddresses.sol";
 import { IntegrationBase } from "../../integration/IntegrationBase.sol";
 import { CidGoldenData as Golden } from "./CidGoldenData.sol";
 
-import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
-
 import { IWorkLocators } from "src/interfaces/IWorkDelivery.sol";
 
 /// @dev Cross-language agreement between the `cid` helper (`tools/content/cid.py`) and the real
@@ -27,7 +25,7 @@ contract CidGoldenTest is IntegrationBase {
         Work[] memory works = _one(_work(artist, collectionId));
         bytes32 root = _publish(works);
         tokenId = _sell(root, works, 0, makeAddr("cidGoldenCollector"), 1 ether);
-        records.openRecord(tokenId, toWorkItem(works[0].item), toWorkMedia(works[0].media));
+        records.openRecord(tokenId, works[0].item, works[0].media);
         fileId = works[0].media[0].fileId;
     }
 

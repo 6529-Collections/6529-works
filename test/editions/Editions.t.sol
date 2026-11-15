@@ -207,12 +207,12 @@ contract EditionsTest is EditionsBase {
 
     function test_CreateEdition_RefusesOriginalItem() public {
         PackageItem memory item = _item(10);
-        item.kind = ItemKind.ORIGINAL;
+        item.kind = uint8(ItemKind.ORIGINAL);
         uint256 id = _master(item);
         vm.expectRevert(abi.encodeWithSelector(IEditions.NotEditionMaster.selector, id));
         _createEdition(id, item);
         // Relabelling the item as a master changes its hash, so it matches nothing.
-        item.kind = ItemKind.EDITION_MASTER;
+        item.kind = uint8(ItemKind.EDITION_MASTER);
         vm.expectRevert(abi.encodeWithSelector(IEditions.NotEditionMaster.selector, id));
         _createEdition(id, item);
     }
@@ -414,7 +414,7 @@ contract EditionsTest is EditionsBase {
     ///      master links like any other.
     function test_CreateEdition_SettledVrfMaster() public {
         PackageItem memory item = _item(10);
-        item.seedPolicy = SeedPolicy.VRF;
+        item.seedPolicy = uint8(SeedPolicy.VRF);
         uint256 id = _create(item);
         assertTrue(editions.exists(id));
     }
@@ -560,7 +560,8 @@ contract EditionsTest is EditionsBase {
         item.payees = new ISplitWallet.Payee[](n);
         for (uint256 i; i < n; ++i) {
             address account = address(uint160(0x1000 + i));
-            item.parties[i] = Party(account, i == 0 ? PartyRole.ARTIST : PartyRole.COLLABORATOR);
+            item.parties[i] =
+                Party(account, i == 0 ? uint8(PartyRole.ARTIST) : uint8(PartyRole.COLLABORATOR));
             item.payees[i] = ISplitWallet.Payee(0, account, uint32(100_000 / n));
         }
         item.payees[n - 1].share += uint32(100_000 % n);
@@ -1032,7 +1033,7 @@ contract EditionsTest is EditionsBase {
     function test_BindMinter_ChecksTheMasterAndTheStoredKind() public {
         // A work that is not an edition master: its stored item kind is not EDITION_MASTER.
         PackageItem memory plain = _item(0);
-        plain.kind = ItemKind.ORIGINAL;
+        plain.kind = uint8(ItemKind.ORIGINAL);
         uint256 work = _masterInAuction(plain);
         vm.expectRevert(abi.encodeWithSelector(IEditions.NotEditionMaster.selector, work));
         adapter.bind(editions, work, plain);

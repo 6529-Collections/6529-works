@@ -16,8 +16,6 @@ import { MockRenderer } from "../mocks/stream/StreamMocks.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 
-import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
-
 /// @notice Lower-only royalty changes and the lead artist's renounceable powers over a work
 ///         (`IWorkPowers`, ADR 0006; rules WS-14, WS-37 and WS-38 in Works and storage).
 contract WorkPowersTest is RecordsFixture {
@@ -58,9 +56,7 @@ contract WorkPowersTest is RecordsFixture {
         vm.prank(governor);
         (ok, reason) = address(records)
             .call(
-                abi.encodeCall(
-                    records.setRoyaltyRate, (tokenId, rate, toWorkItem(item), state, deadline, sigs)
-                )
+                abi.encodeCall(records.setRoyaltyRate, (tokenId, rate, item, state, deadline, sigs))
             );
     }
 
@@ -95,11 +91,7 @@ contract WorkPowersTest is RecordsFixture {
         bytes[] memory sigs = _both(_relicenseHash(tokenId, next, state, deadline));
         vm.prank(governor);
         (ok, reason) = address(records)
-            .call(
-                abi.encodeCall(
-                    records.relicense, (tokenId, next, toWorkItem(item), state, deadline, sigs)
-                )
-            );
+            .call(abi.encodeCall(records.relicense, (tokenId, next, item, state, deadline, sigs)));
     }
 
     /// @dev A work under CC BY 4.0, which (unlike CC0) can be relicensed.
@@ -108,16 +100,16 @@ contract WorkPowersTest is RecordsFixture {
         item = _recordsItem(salt, media);
         item.license = _license("cc-by-4.0");
         tokenId = _mint(item);
-        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
+        records.openRecord(tokenId, item, media);
     }
 
     /// @dev A linked edition master with an open record.
     function _master(uint256 salt) internal returns (uint256 tokenId, PackageItem memory item) {
         MediaFile[] memory media = _single(salt, true);
         item = _recordsItem(salt, media);
-        item.kind = ItemKind.EDITION_MASTER;
+        item.kind = uint8(ItemKind.EDITION_MASTER);
         tokenId = _mint(item);
-        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
+        records.openRecord(tokenId, item, media);
         auction.settle(IStream(address(stream)), tokenId);
         editionsMock.link(IStream(address(stream)), tokenId, tokenId);
     }
@@ -200,7 +192,7 @@ contract WorkPowersTest is RecordsFixture {
         _rerate(tokenId, item, 5_000);
         vm.recordLogs();
         vm.prank(governor);
-        records.setRoyaltyRate(tokenId, 5_000, toWorkItem(item), bytes32(0), 0, new bytes[](0));
+        records.setRoyaltyRate(tokenId, 5_000, item, bytes32(0), 0, new bytes[](0));
         assertEq(vm.getRecordedLogs().length, 0);
         assertEq(_version(tokenId), 1);
     }
@@ -562,7 +554,7 @@ contract WorkPowersTest is RecordsFixture {
         bytes32 s1 = records.workStateHash(tokenId);
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.StateHashMismatch.selector, s0, s1));
-        records.setRoyaltyRate(tokenId, 5_000, toWorkItem(item), s0, deadline, sigs);
+        records.setRoyaltyRate(tokenId, 5_000, item, s0, deadline, sigs);
     }
 
     /// Regression: ADD-PWR-2
@@ -615,7 +607,7 @@ contract WorkPowersTest is RecordsFixture {
         media[1] = _mediaFile(2, FileRole.AUXILIARY, false);
         PackageItem memory item = _recordsItem(1, media);
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
+        records.openRecord(tokenId, item, media);
         _renounce(tokenId, BOTH);
         assertEq(records.record(tokenId).version, 1);
 

@@ -127,10 +127,10 @@ contract GenesisFlowsTest is Test {
                     chunks, media.length, uint8(IContentStore.Encoding.Identity), "image/png", sha
                 ),
             sha,
-            FileRole.PRIMARY
+            uint8(FileRole.PRIMARY)
         );
 
-        item.kind = kind;
+        item.kind = uint8(kind);
         item.collectionId = collection;
         item.contentHash = sha;
         item.mediaHash = WorksHashing.mediaHash(files);
@@ -145,11 +145,11 @@ contract GenesisFlowsTest is Test {
             "application/json"
         );
         item.parties = new Party[](1);
-        item.parties[0] = Party(artist, PartyRole.ARTIST);
+        item.parties[0] = Party(artist, uint8(PartyRole.ARTIST));
         item.payees = new ISplitWallet.Payee[](1);
         item.payees[0] = ISplitWallet.Payee(uint256(uint160(artist)), address(0), 100_000);
         item.license = License("CC0-1.0", d.cc0TextFileId);
-        item.seedPolicy = SeedPolicy.NONE;
+        item.seedPolicy = uint8(SeedPolicy.NONE);
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, currency, "");
         item.edition = edition;
 

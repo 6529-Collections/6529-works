@@ -65,7 +65,7 @@ contract VrfSepoliaForkTest is WorksForkBase {
         IVrfSubscriptions(VRF_COORDINATOR).addConsumer(subscriptionId, address(entropy));
         artist = _actor("forkVrfArtist");
         Work memory w = _work(artist, collectionId);
-        w.item.seedPolicy = SeedPolicy.VRF;
+        w.item.seedPolicy = uint8(SeedPolicy.VRF);
         root = _publish(_one(w));
         _keep(root, _one(w));
     }

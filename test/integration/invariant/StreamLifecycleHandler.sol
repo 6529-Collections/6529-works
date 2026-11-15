@@ -35,8 +35,6 @@ import { IntegrationBase } from "../IntegrationBase.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
-import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
-
 /// @notice The handler of the Stream lifecycle invariant suite: one actor set driving 6529 Stream,
 ///         the package registry, the records satellite, the English auction and the artist
 ///         registry on the real stack deployed by `DeployV1` (`IntegrationBase`).
@@ -204,7 +202,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         }
         _withCollaborator(works[1].item, lead);
         works[1].item.license = License("CC-BY-4.0", byTextFileId);
-        works[2].item.seedPolicy = SeedPolicy.ARTIST;
+        works[2].item.seedPolicy = uint8(SeedPolicy.ARTIST);
         works[2].item.seed = keccak256(abi.encode("artist seed", i));
         _withCollaborator(works[3].item, lead);
     }
@@ -213,8 +211,8 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
     ///      the payees in canonical (ascending artist ID) order.
     function _withCollaborator(PackageItem memory item, address lead) internal view {
         item.parties = new Party[](2);
-        item.parties[0] = Party(lead, PartyRole.ARTIST);
-        item.parties[1] = Party(lcCollaborator, PartyRole.COLLABORATOR);
+        item.parties[0] = Party(lead, uint8(PartyRole.ARTIST));
+        item.parties[1] = Party(lcCollaborator, uint8(PartyRole.COLLABORATOR));
         ISplitWallet.Payee memory a = ISplitWallet.Payee(uint160(lead), address(0), 70_000);
         ISplitWallet.Payee memory b =
             ISplitWallet.Payee(uint160(lcCollaborator), address(0), 30_000);
@@ -690,9 +688,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         PoolItem storage it = pool[t.item];
         vm.prank(lcBidders[seed % BIDDERS]);
         records.openRecord(
-            tokenId,
-            toWorkItem(abi.decode(it.item, (PackageItem))),
-            toWorkMedia(abi.decode(it.media, (MediaFile[])))
+            tokenId, abi.decode(it.item, (PackageItem)), abi.decode(it.media, (MediaFile[]))
         );
         t.opened = true;
         t.cc0 = it.cc0;
@@ -1110,9 +1106,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             }
             sigs[i] = _sign(signer, digest);
         }
-        call = abi.encodeCall(
-            records.relicense, (tokenId, next, toWorkItem(item), state, deadline, sigs)
-        );
+        call = abi.encodeCall(records.relicense, (tokenId, next, item, state, deadline, sigs));
     }
 
     function _restrainedAcceptance(bytes32 root, address account, address signer) internal {

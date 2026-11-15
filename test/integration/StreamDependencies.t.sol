@@ -23,8 +23,6 @@ import { PackageRegistry } from "src/curation/PackageRegistry.sol";
 import { ICurationVerifier } from "src/interfaces/ICurationVerifier.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
-import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
-
 /// @dev A replacement dependency that only reports its interface (and, as a mint policy must,
 ///      names the artist registry of the Stream asking): any other call reverts, so a read of it
 ///      on a measured path fails loudly instead of returning plausible data.
@@ -185,7 +183,7 @@ contract StreamDependenciesTest is IntegrationBase {
         Work[] memory works = new Work[](3);
         works[0] = _work(artist, collectionId);
         works[1] = _work(artist, collectionId);
-        works[1].item.seedPolicy = SeedPolicy.VRF;
+        works[1].item.seedPolicy = uint8(SeedPolicy.VRF);
         works[2] = _master(artist);
         bytes32 root = _publish(works);
         _keep(root, works);
@@ -194,7 +192,7 @@ contract StreamDependenciesTest is IntegrationBase {
         for (uint256 i; i < works.length; ++i) {
             uint256 tokenId = _sell(root, works, i, collector, 1 ether);
             tokens.push(tokenId);
-            records.openRecord(tokenId, toWorkItem(works[i].item), toWorkMedia(works[i].media));
+            records.openRecord(tokenId, works[i].item, works[i].media);
             bytes32 state = records.workStateHash(tokenId);
             vm.prank(artist);
             records.finalize(tokenId, state);
@@ -206,9 +204,9 @@ contract StreamDependenciesTest is IntegrationBase {
         Work[] memory pending = new Work[](4);
         pending[0] = _work(artist, collectionId);
         pending[1] = _work(artist, collectionId);
-        pending[1].item.seedPolicy = SeedPolicy.VRF;
+        pending[1].item.seedPolicy = uint8(SeedPolicy.VRF);
         pending[2] = _master(artist);
-        pending[2].item.seedPolicy = SeedPolicy.VRF;
+        pending[2].item.seedPolicy = uint8(SeedPolicy.VRF);
         pending[3] = _work(artist, collectionId);
         pendingRoot = _publish(pending);
         _keep(pendingRoot, pending);
@@ -217,7 +215,7 @@ contract StreamDependenciesTest is IntegrationBase {
         for (uint256 i; i < 3; ++i) {
             tokens.push(_sell(pendingRoot, pending, i, collector, 1 ether));
         }
-        records.openRecord(tokens[3], toWorkItem(pending[0].item), toWorkMedia(pending[0].media));
+        records.openRecord(tokens[3], pending[0].item, pending[0].media);
         editionIds.push(
             editions.createEdition(
                 tokens[PENDING_VRF_MASTER], pending[2].item, pendingRoot, _proofOf(pending, 2)
@@ -230,7 +228,7 @@ contract StreamDependenciesTest is IntegrationBase {
 
     function _master(address lead) internal returns (Work memory w) {
         w = _work(lead, collectionId);
-        w.item.kind = ItemKind.EDITION_MASTER;
+        w.item.kind = uint8(ItemKind.EDITION_MASTER);
         w.item.edition = EditionTerms(0, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
     }
 
@@ -344,12 +342,12 @@ contract StreamDependenciesTest is IntegrationBase {
 
         // A VRF work minted after the replacement takes the new module's seed.
         Work memory w = _work(artist, collectionId);
-        w.item.seedPolicy = SeedPolicy.VRF;
+        w.item.seedPolicy = uint8(SeedPolicy.VRF);
         Work[] memory one = _one(w);
         bytes32 root = _publish(one);
         (, uint256 later) = _start(root, one, 0);
         assertEq(stream.entropyModuleOf(later), address(other));
-        records.openRecord(later, toWorkItem(w.item), toWorkMedia(w.media));
+        records.openRecord(later, w.item, w.media);
         (, seed) = records.seedOf(later);
         assertEq(seed, other.seedOfContent(w.item.contentHash));
     }
@@ -362,7 +360,7 @@ contract StreamDependenciesTest is IntegrationBase {
         DeliveringEntropy second = new DeliveringEntropy();
         _replace("ENTROPY_MODULE", address(second));
         Work memory w = _work(artist, collectionId);
-        w.item.seedPolicy = SeedPolicy.VRF;
+        w.item.seedPolicy = uint8(SeedPolicy.VRF);
         Work[] memory one = _one(w);
         bytes32 root = _publish(one);
         second.deliver(w.item, keccak256("the second era's seed"));
@@ -376,7 +374,7 @@ contract StreamDependenciesTest is IntegrationBase {
         assertEq(stream.entropyModuleOf(secondEra), address(second));
 
         _open(PENDING_VRF, 1);
-        records.openRecord(secondEra, toWorkItem(w.item), toWorkMedia(w.media));
+        records.openRecord(secondEra, w.item, w.media);
         (, bytes32 seed) = records.seedOf(tokens[PENDING_VRF]);
         assertEq(
             seed, entropy.seedOf(IStreamViews(address(stream)).work(tokens[PENDING_VRF]).itemHash)
@@ -390,7 +388,7 @@ contract StreamDependenciesTest is IntegrationBase {
     ///      delivery (`mint` checks the current module), so it is requested again there.
     function test_AVrfRequestInFlightAcrossAReplacement() public {
         Work memory w = _work(artist, collectionId);
-        w.item.seedPolicy = SeedPolicy.VRF;
+        w.item.seedPolicy = uint8(SeedPolicy.VRF);
         Work[] memory one = _one(w);
         bytes32 root = _publish(one);
         bytes32 itemHash = WorksHashing.itemHash(w.item);
@@ -407,7 +405,7 @@ contract StreamDependenciesTest is IntegrationBase {
         next.deliver(w.item, keccak256("the current module's seed"));
         (, uint256 tokenId) = _start(root, one, 0);
         assertEq(stream.entropyModuleOf(tokenId), address(next));
-        records.openRecord(tokenId, toWorkItem(w.item), toWorkMedia(w.media));
+        records.openRecord(tokenId, w.item, w.media);
         (, bytes32 seed) = records.seedOf(tokenId);
         assertEq(seed, keccak256("the current module's seed"));
     }
@@ -415,9 +413,7 @@ contract StreamDependenciesTest is IntegrationBase {
     /// @dev Opens the record of `tokens[index]`, the `item`-th of the pending works.
     function _open(uint256 index, uint256 item) internal {
         Work[] memory pending = _package(pendingRoot);
-        records.openRecord(
-            tokens[index], toWorkItem(pending[item].item), toWorkMedia(pending[item].media)
-        );
+        records.openRecord(tokens[index], pending[item].item, pending[item].media);
     }
 
     /// @dev The replacement is what new works use: a new start consumes through the new
@@ -626,7 +622,7 @@ contract StreamDependenciesTest is IntegrationBase {
     ///      whose own content has no seed cannot start, whatever other content is seeded.
     function test_AVrfStartChecksTheItemsContentAndContentIsMintedOnce() public {
         Work memory w = _work(artist, collectionId);
-        w.item.seedPolicy = SeedPolicy.VRF;
+        w.item.seedPolicy = uint8(SeedPolicy.VRF);
         Work[] memory first = _one(w);
         bytes32 firstRoot = _publish(first);
         uint256 requestId = entropy.requestSeed(w.item, firstRoot, _proofOf(first, 0));
@@ -645,7 +641,7 @@ contract StreamDependenciesTest is IntegrationBase {
         assertTrue(entropy.isDeliveredContent(again.item.contentHash));
 
         (, uint256 tokenId) = _start(secondRoot, second, 0);
-        records.openRecord(tokenId, toWorkItem(again.item), toWorkMedia(again.media));
+        records.openRecord(tokenId, again.item, again.media);
         (, bytes32 seed) = records.seedOf(tokenId);
         assertEq(seed, entropy.seedOfContent(w.item.contentHash), "the content's one seed");
 
@@ -662,7 +658,7 @@ contract StreamDependenciesTest is IntegrationBase {
 
         // Another item, whose own content has no seed, cannot start.
         Work memory unseeded = _work(artist, collectionId);
-        unseeded.item.seedPolicy = SeedPolicy.VRF;
+        unseeded.item.seedPolicy = uint8(SeedPolicy.VRF);
         Work[] memory third = _one(unseeded);
         bytes32 thirdRoot = _publish(third);
         bytes memory thirdData = _mintData(thirdRoot, third, 0);

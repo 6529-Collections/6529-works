@@ -171,8 +171,8 @@ contract StreamTermsTest is StreamFixture {
     function test_Terms_FlagsRoundTrip() public {
         _bindMocks();
         PackageItem memory item = _item(1);
-        item.kind = ItemKind.EDITION_MASTER;
-        item.seedPolicy = SeedPolicy.ARTIST;
+        item.kind = uint8(ItemKind.EDITION_MASTER);
+        item.seedPolicy = uint8(SeedPolicy.ARTIST);
         item.seed = keccak256("seed");
         uint256 id = _mint(item);
         (,,, uint8 kind, uint8 policy,) = stream.coreOf(id);
@@ -193,7 +193,7 @@ contract StreamTermsTest is StreamFixture {
         assertEq(w.collectionId, collectionId);
 
         PackageItem memory vrf = _item(2);
-        vrf.seedPolicy = SeedPolicy.VRF;
+        vrf.seedPolicy = uint8(SeedPolicy.VRF);
         entropy.deliver(vrf, keccak256("vrf"));
         uint256 vrfId = _mint(vrf);
         (,,, kind, policy,) = stream.coreOf(vrfId);

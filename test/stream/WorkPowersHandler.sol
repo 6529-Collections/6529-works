@@ -12,8 +12,6 @@ import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
-import { toWorkItem } from "test/helpers/WorkItems.sol";
-
 /// @notice Drives renunciations, consented royalty changes (lower, equal and higher) and
 ///         consented relicenses on a few open works, keeping a ghost of each work's renounced
 ///         mask, rate and license for `WorkPowersInvariantTest`.
@@ -124,7 +122,7 @@ contract WorkPowersHandler is CommonBase, StdUtils {
         bool allowed = ghostMask[tokenId] & WorkPowers.ROYALTY_RATE == 0 && rate <= current;
         PackageItem memory item = _item(index);
         vm.prank(governor);
-        try records.setRoyaltyRate(tokenId, rate, toWorkItem(item), state, deadline, sigs) {
+        try records.setRoyaltyRate(tokenId, rate, item, state, deadline, sigs) {
             if (!allowed) ++violations;
             if (rate != current) ++reRated;
             ghostRate[tokenId] = rate;
@@ -155,7 +153,7 @@ contract WorkPowersHandler is CommonBase, StdUtils {
         bool allowed = ghostMask[tokenId] & WorkPowers.RELICENSE == 0;
         PackageItem memory item = _item(index);
         vm.prank(governor);
-        try records.relicense(tokenId, next, toWorkItem(item), state, deadline, sigs) {
+        try records.relicense(tokenId, next, item, state, deadline, sigs) {
             if (!allowed) ++violations;
             if (which != ghostLicense[tokenId]) ++relicensed;
             ghostLicense[tokenId] = which;

@@ -37,7 +37,9 @@ enum SeedPolicy {
 ///      artist ID before any transaction.
 struct Party {
     address account;
-    PartyRole role;
+    /// An open `uint8`: today's values are named by `PartyRole`; a later mint policy may define
+    /// more, which permanent contracts record without reverting.
+    uint8 role;
 }
 
 /// @notice A work's license (ADR 0001 section 8, owner direction 11 October 2026).
@@ -101,7 +103,9 @@ struct EditionTerms {
 ///      - `collectionId`: a 6529 Stream collection (chain-specific, below 2^32).
 ///      - `seed`: nonzero only under `SeedPolicy.ARTIST`.
 struct PackageItem {
-    ItemKind kind;
+    /// An open `uint8` (today's values named by `ItemKind`), so a kind a later mint policy
+    /// defines never makes a permanent contract's decode revert.
+    uint8 kind;
     uint256 collectionId;
     bytes32 contentHash;
     bytes32 mediaHash;
@@ -109,7 +113,8 @@ struct PackageItem {
     Party[] parties;
     ISplitWallet.Payee[] payees;
     License license;
-    SeedPolicy seedPolicy;
+    /// An open `uint8` (today's values named by `SeedPolicy`).
+    uint8 seedPolicy;
     bytes32 seed;
     SaleTerms sale;
     EditionTerms edition;

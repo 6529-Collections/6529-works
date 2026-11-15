@@ -32,8 +32,6 @@ import { WorksDeployment } from "./WorksDeployment.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
-import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
-
 /// @notice Actors, package building, signatures and sale helpers shared by the end-to-end flows.
 /// @dev Every helper drives the real contracts the way an off-chain tool or a wallet would: it
 ///      signs EIP-712 digests read from the contracts, builds sorted-pair Merkle trees over
@@ -125,7 +123,7 @@ abstract contract IntegrationBase is WorksDeployment {
         bytes32 sha = sha256(media);
         bytes32 fileId = _registerOnly(media, IContentStore.Encoding.Identity, "image/png", sha);
         w.media = new MediaFile[](1);
-        w.media[0] = MediaFile(fileId, sha, FileRole.PRIMARY);
+        w.media[0] = MediaFile(fileId, sha, uint8(FileRole.PRIMARY));
         w.item = _item(
             lead, collection, sha, w.media, _record(string.concat("Work ", vm.toString(salt)))
         );
@@ -138,17 +136,17 @@ abstract contract IntegrationBase is WorksDeployment {
         MediaFile[] memory media,
         bytes32 recordFileId
     ) internal view returns (PackageItem memory item) {
-        item.kind = ItemKind.ORIGINAL;
+        item.kind = uint8(ItemKind.ORIGINAL);
         item.collectionId = collection;
         item.contentHash = contentHash;
         item.mediaHash = WorksHashing.mediaHash(media);
         item.recordFileId = recordFileId;
         item.parties = new Party[](1);
-        item.parties[0] = Party(lead, PartyRole.ARTIST);
+        item.parties[0] = Party(lead, uint8(PartyRole.ARTIST));
         item.payees = new ISplitWallet.Payee[](1);
         item.payees[0] = ISplitWallet.Payee(uint256(uint160(lead)), address(0), 100_000);
         item.license = License("CC0-1.0", cc0TextFileId);
-        item.seedPolicy = SeedPolicy.NONE;
+        item.seedPolicy = uint8(SeedPolicy.NONE);
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_ETH, "");
         item.edition = EditionTerms(0, address(0), bytes32(0), "");
     }
@@ -509,7 +507,7 @@ abstract contract IntegrationBase is WorksDeployment {
     ) internal returns (Work memory w) {
         bytes32 fileId = _upload(stored, encoding, "image/png", sha);
         w.media = new MediaFile[](1);
-        w.media[0] = MediaFile(fileId, sha, FileRole.PRIMARY);
+        w.media[0] = MediaFile(fileId, sha, uint8(FileRole.PRIMARY));
         w.item = _item(lead, collectionId, sha, w.media, _record(name));
     }
 
@@ -546,7 +544,7 @@ abstract contract IntegrationBase is WorksDeployment {
         uint256[] memory ids = new uint256[](6);
         for (uint256 i; i < 6; ++i) {
             (, ids[i]) = _start(root, works, i);
-            records.openRecord(ids[i], toWorkItem(works[i].item), toWorkMedia(works[i].media));
+            records.openRecord(ids[i], works[i].item, works[i].media);
             if (i < 4) _attestAll(works[i].media[0].fileId);
             records.syncOnChain(ids[i], 0, type(uint256).max);
         }

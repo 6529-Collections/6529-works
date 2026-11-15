@@ -7,8 +7,6 @@ import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
-import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
-
 /// @notice `WorkRecords.syncOnChain` for a work with more chunks than one transaction can check:
 ///         5 media files of 512 chunks (about 63 MB). Each call verifies at most the chunks its
 ///         caller chooses and keeps a chunk cursor, so the work becomes on-chain complete over
@@ -84,14 +82,15 @@ contract SyncOnChainResumeTest is IntegrationBase {
                 "video/mp4",
                 sha
             );
-            media[f] = MediaFile(id, sha, f == 0 ? FileRole.PRIMARY : FileRole.AUXILIARY);
+            media[f] =
+                MediaFile(id, sha, f == 0 ? uint8(FileRole.PRIMARY) : uint8(FileRole.AUXILIARY));
         }
         Work memory w;
         w.media = media;
         w.item = _item(artist, collectionId, media[0].sha256Hash, media, _record("Big work"));
         Work[] memory works = _one(w);
         (, tokenId) = _start(_publish(works), works, 0);
-        records.openRecord(tokenId, toWorkItem(w.item), toWorkMedia(w.media));
+        records.openRecord(tokenId, w.item, w.media);
     }
 
     /// @dev One `syncOnChain` of `budget` chunks as a transaction: storage cooled, plus EIP-2929's
@@ -197,14 +196,16 @@ contract SyncOnChainResumeTest is IntegrationBase {
                 "video/mp4",
                 sha
             );
-            media[f] = MediaFile(fileId, sha, f == 0 ? FileRole.PRIMARY : FileRole.AUXILIARY);
+            media[f] = MediaFile(
+                fileId, sha, f == 0 ? uint8(FileRole.PRIMARY) : uint8(FileRole.AUXILIARY)
+            );
         }
         Work memory w;
         w.media = media;
         w.item = _item(artist, collectionId, media[0].sha256Hash, media, _record(vm.toString(tag)));
         Work[] memory works = _one(w);
         (, id) = _start(_publish(works), works, 0);
-        records.openRecord(id, toWorkItem(w.item), toWorkMedia(w.media));
+        records.openRecord(id, w.item, w.media);
     }
 
     /// @dev Progress is kept up to a missing chunk; a call that can verify nothing reverts, and

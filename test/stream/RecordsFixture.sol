@@ -14,8 +14,6 @@ import { WorkDelivery } from "src/stream/WorkDelivery.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { StreamFixture } from "./StreamFixture.sol";
 
-import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
-
 /// @notice Adds the records satellite, a real content store and a second party to the Stream
 ///         fixture, with helpers for files, items, opening records and EIP-712 consents.
 abstract contract RecordsFixture is StreamFixture {
@@ -105,7 +103,7 @@ abstract contract RecordsFixture is StreamFixture {
         returns (MediaFile memory)
     {
         bytes memory data = _mediaBytes(salt);
-        return MediaFile(_file(data, "image/png", upload), sha256(data), role);
+        return MediaFile(_file(data, "image/png", upload), sha256(data), uint8(role));
     }
 
     function _upload(uint256 salt) internal {
@@ -131,8 +129,8 @@ abstract contract RecordsFixture is StreamFixture {
         item.mediaHash = WorksHashing.mediaHash(media);
         item.recordFileId = _record(salt);
         item.parties = new Party[](2);
-        item.parties[0] = Party(artist, PartyRole.ARTIST);
-        item.parties[1] = Party(collaborator, PartyRole.COLLABORATOR);
+        item.parties[0] = Party(artist, uint8(PartyRole.ARTIST));
+        item.parties[1] = Party(collaborator, uint8(PartyRole.COLLABORATOR));
         item.payees = new ISplitWallet.Payee[](2);
         item.payees[0] = ISplitWallet.Payee(0, collaborator, 20_000);
         item.payees[1] = ISplitWallet.Payee(uint256(uint160(artist)), address(0), 80_000);
@@ -157,7 +155,7 @@ abstract contract RecordsFixture is StreamFixture {
     function _work(uint256 salt) internal returns (uint256 tokenId, PackageItem memory item) {
         MediaFile[] memory media;
         (tokenId, item, media) = _minted(salt, true);
-        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
+        records.openRecord(tokenId, item, media);
     }
 
     // ------------------------------------------------------------------------------- consents

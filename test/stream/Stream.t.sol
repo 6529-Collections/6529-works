@@ -58,8 +58,6 @@ import { StreamFixture } from "./StreamFixture.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 
-import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
-
 contract StreamTest is StreamFixture, GasRuleAssertions {
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
     event MetadataUpdate(uint256 _tokenId);
@@ -464,9 +462,9 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
     ///      reverts for an unminted or burned token.
     function test_coreOf() public {
         PackageItem memory item = _item(1);
-        item.seedPolicy = SeedPolicy.ARTIST;
+        item.seedPolicy = uint8(SeedPolicy.ARTIST);
         item.seed = keccak256("seed");
-        item.kind = ItemKind.EDITION_MASTER;
+        item.kind = uint8(ItemKind.EDITION_MASTER);
         uint256 tokenId = _mint(item);
         (
             bytes32 itemHash,
@@ -493,9 +491,9 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
 
     function test_mint_artistSeedAndEditionMaster() public {
         PackageItem memory item = _item(1);
-        item.seedPolicy = SeedPolicy.ARTIST;
+        item.seedPolicy = uint8(SeedPolicy.ARTIST);
         item.seed = keccak256("seed");
-        item.kind = ItemKind.EDITION_MASTER;
+        item.kind = uint8(ItemKind.EDITION_MASTER);
         uint256 tokenId = _mint(item);
         assertEq(
             uint8(IStreamViews(address(stream)).work(tokenId).kind), uint8(ItemKind.EDITION_MASTER)
@@ -507,7 +505,7 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
 
     function test_mint_vrfNeedsDeliveredSeed() public {
         PackageItem memory item = _item(1);
-        item.seedPolicy = SeedPolicy.VRF;
+        item.seedPolicy = uint8(SeedPolicy.VRF);
         bytes32 itemHash = WorksHashing.itemHash(item);
         bytes memory data = _request(item);
         vm.expectRevert(abi.encodeWithSelector(IStream.SeedNotDelivered.selector, itemHash));
@@ -682,7 +680,7 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         vm.prank(governor);
         noVrf.setDependency("ENTROPY_MODULE", address(0), address(entropy));
         PackageItem memory item = _item(1);
-        item.seedPolicy = SeedPolicy.VRF;
+        item.seedPolicy = uint8(SeedPolicy.VRF);
         entropy.deliver(item, keccak256("vrf"));
         (uint256 tokenId,) = auction.start(noVrf, _request(item));
         assertEq(
@@ -697,7 +695,7 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
     ///      back changes no existing work's answer.
     function test_entropyModuleOf_answersTheModuleCurrentAtMint() public {
         PackageItem memory a = _item(1);
-        a.seedPolicy = SeedPolicy.VRF;
+        a.seedPolicy = uint8(SeedPolicy.VRF);
         entropy.deliver(a, keccak256("a"));
         uint256 first = _mint(a);
         uint256 plain = _mint(2);
@@ -710,7 +708,7 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         stream.setDependency("ENTROPY_MODULE", address(b), address(c));
         vm.stopPrank();
         PackageItem memory d = _item(3);
-        d.seedPolicy = SeedPolicy.VRF;
+        d.seedPolicy = uint8(SeedPolicy.VRF);
         c.deliver(d, keccak256("d"));
         uint256 second = _mint(d);
 
@@ -738,7 +736,7 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         vm.prank(platform);
         noVrf.createCollection("c", bytes32(0));
         PackageItem memory item = _item(1);
-        item.seedPolicy = SeedPolicy.VRF;
+        item.seedPolicy = uint8(SeedPolicy.VRF);
         bytes memory data = _request(item);
         vm.expectRevert(IStream.InvalidSeedPolicy.selector);
         auction.start(noVrf, data);
@@ -826,7 +824,7 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         _expectInvalid(item, abi.encodeWithSelector(IStream.UnknownCollection.selector, 99));
 
         item = _item(1);
-        item.seedPolicy = SeedPolicy.ARTIST;
+        item.seedPolicy = uint8(SeedPolicy.ARTIST);
         _expectInvalid(item, abi.encodeWithSelector(IStream.InvalidSeedPolicy.selector));
 
         item = _item(1);
@@ -834,7 +832,7 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         _expectInvalid(item, abi.encodeWithSelector(IStream.InvalidSeedPolicy.selector));
 
         item = _item(1);
-        item.seedPolicy = SeedPolicy.VRF;
+        item.seedPolicy = uint8(SeedPolicy.VRF);
         item.seed = keccak256("stray");
         _expectInvalid(item, abi.encodeWithSelector(IStream.InvalidSeedPolicy.selector));
 
@@ -1027,10 +1025,10 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
     ///      unseeded edition master and an artist-seeded original.
     function test_mint_kindAndSeedPolicyReadBackApart() public {
         PackageItem memory master = _item(1);
-        master.kind = ItemKind.EDITION_MASTER;
+        master.kind = uint8(ItemKind.EDITION_MASTER);
         uint256 a = _mint(master);
         PackageItem memory original = _item(2);
-        original.seedPolicy = SeedPolicy.ARTIST;
+        original.seedPolicy = uint8(SeedPolicy.ARTIST);
         original.seed = keccak256("seed");
         uint256 b = _mint(original);
         assertEq(uint8(IStreamViews(address(stream)).work(a).kind), uint8(ItemKind.EDITION_MASTER));
@@ -1083,7 +1081,7 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 1));
         stream.primaryTerms(1, "");
         PackageItem memory item = _item(1);
-        item.parties[0] = Party(makeAddr("stranger"), PartyRole.ARTIST);
+        item.parties[0] = Party(makeAddr("stranger"), uint8(PartyRole.ARTIST));
         bytes memory data = _request(item);
         vm.expectRevert(IStream.InvalidLeadArtist.selector);
         stream.primaryTerms(0, data);
@@ -1718,7 +1716,7 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
     function test_linkEdition() public {
         _bindMocks();
         PackageItem memory item = _item(1);
-        item.kind = ItemKind.EDITION_MASTER;
+        item.kind = uint8(ItemKind.EDITION_MASTER);
         _mint(item);
         (address e, uint256 id) = stream.editionOf(1);
         assertEq(e, address(0));
@@ -1740,7 +1738,7 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         _bindMocks();
         _mint(1);
         PackageItem memory master = _item(2);
-        master.kind = ItemKind.EDITION_MASTER;
+        master.kind = uint8(ItemKind.EDITION_MASTER);
         _mint(master);
         // The master's primary sale has not settled.
         vm.expectRevert(abi.encodeWithSelector(IStream.EditionLinkInvalid.selector, 2));
@@ -1763,7 +1761,7 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         _bindMocks();
         _mint(1);
         PackageItem memory master = _item(2);
-        master.kind = ItemKind.EDITION_MASTER;
+        master.kind = uint8(ItemKind.EDITION_MASTER);
         _mint(master);
         auction.settle(stream, 2);
         vm.expectRevert(abi.encodeWithSelector(IStream.EditionLinkInvalid.selector, 2));
@@ -2121,7 +2119,7 @@ contract StreamWithRecordsTest is RecordsFixture {
     function test_linkEdition_needsASettledMaster() public {
         MediaFile[] memory media = _single(1, true);
         PackageItem memory item = _recordsItem(1, media);
-        item.kind = ItemKind.EDITION_MASTER;
+        item.kind = uint8(ItemKind.EDITION_MASTER);
         uint256 tokenId = _mint(item);
         assertFalse(stream.primarySaleSettled(tokenId));
         vm.expectRevert(abi.encodeWithSelector(IStream.EditionLinkInvalid.selector, tokenId));
@@ -2159,7 +2157,7 @@ contract StreamWithRecordsTest is RecordsFixture {
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes[] memory sigs = _both(_royaltyHash(tokenId, 5_000, state, deadline));
         vm.prank(governor);
-        records.setRoyaltyRate(tokenId, 5_000, toWorkItem(item), state, deadline, sigs);
+        records.setRoyaltyRate(tokenId, 5_000, item, state, deadline, sigs);
         (,,,,, uint32 rate) = stream.coreOf(tokenId);
         assertEq(rate, 5_000);
     }
@@ -2173,7 +2171,7 @@ contract StreamWithRecordsTest is RecordsFixture {
         PackageItem memory item = _recordsItem(1, media);
         item.license = License(string(_repeatA(64)), _registerText("long id text"));
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
+        records.openRecord(tokenId, item, media);
         assertEq(bytes(records.licenseOf(tokenId).spdxId).length, 64);
 
         media = _single(2, true);
@@ -2186,12 +2184,7 @@ contract StreamWithRecordsTest is RecordsFixture {
         vm.prank(governor);
         vm.expectRevert(IWorkRecords.InvalidLicense.selector);
         records.relicense(
-            tokenId,
-            License(string(_repeatA(65)), bytes32(0)),
-            toWorkItem(item),
-            bytes32(0),
-            0,
-            new bytes[](0)
+            tokenId, License(string(_repeatA(65)), bytes32(0)), item, bytes32(0), 0, new bytes[](0)
         );
     }
 

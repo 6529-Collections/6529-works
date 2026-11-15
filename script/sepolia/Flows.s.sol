@@ -294,20 +294,20 @@ contract Flows is Script {
         address lead = _artist();
         File memory primary = _primary(i);
         w.media = new MediaFile[](1);
-        w.media[0] = MediaFile(_fileId(a, primary), primary.sha, FileRole.PRIMARY);
+        w.media[0] = MediaFile(_fileId(a, primary), primary.sha, uint8(FileRole.PRIMARY));
         PackageItem memory item;
         bool master = _isMaster(i);
-        item.kind = master ? ItemKind.EDITION_MASTER : ItemKind.ORIGINAL;
+        item.kind = master ? uint8(ItemKind.EDITION_MASTER) : uint8(ItemKind.ORIGINAL);
         item.collectionId = i == ITEM_NEW_COLLECTION ? _collection2() : _collection();
         item.contentHash = primary.sha;
         item.mediaHash = WorksHashing.mediaHash(w.media);
         item.recordFileId = _fileId(a, _recordFile(i));
         item.parties = new Party[](1);
-        item.parties[0] = Party(lead, PartyRole.ARTIST);
+        item.parties[0] = Party(lead, uint8(PartyRole.ARTIST));
         item.payees = new ISplitWallet.Payee[](1);
         item.payees[0] = ISplitWallet.Payee(uint256(uint160(lead)), address(0), 100_000);
         item.license = License("CC0-1.0", a.cc0TextFileId);
-        item.seedPolicy = i == ITEM_VRF ? SeedPolicy.VRF : SeedPolicy.NONE;
+        item.seedPolicy = i == ITEM_VRF ? uint8(SeedPolicy.VRF) : uint8(SeedPolicy.NONE);
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_ETH, "");
         item.edition = master
             ? EditionTerms(

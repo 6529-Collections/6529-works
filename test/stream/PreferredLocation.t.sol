@@ -6,7 +6,7 @@ import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 
-import { toWorkItem, toWorkMedia, preferredOf } from "test/helpers/WorkItems.sol";
+import { preferredOf } from "test/helpers/WorkItems.sol";
 
 /// @notice Fuzzes preferred-location resolution (D10: file override, then collection kind, then
 ///         global kind, then first registered, then the implicit ONCHAIN copy) against a model.
@@ -52,7 +52,7 @@ contract PreferredLocationTest is RecordsFixture {
         PackageItem memory item;
         MediaFile[] memory media;
         (tokenId, item, media) = _minted(1, complete);
-        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
+        records.openRecord(tokenId, item, media);
         file = media[0].fileId;
         if (sync) records.syncOnChain(tokenId, 0, type(uint256).max);
         kinds = new LocatorKind[](count);
@@ -148,8 +148,8 @@ contract PreferredLocationTest is RecordsFixture {
     {
         (uint256 idA, PackageItem memory a, MediaFile[] memory mediaA) = _minted(1, false);
         (uint256 idB, PackageItem memory b, MediaFile[] memory mediaB) = _minted(2, false);
-        records.openRecord(idA, toWorkItem(a), toWorkMedia(mediaA));
-        records.openRecord(idB, toWorkItem(b), toWorkMedia(mediaB));
+        records.openRecord(idA, a, mediaA);
+        records.openRecord(idB, b, mediaB);
         bytes32 fileA = mediaA[0].fileId;
         bytes32 fileB = mediaB[0].fileId;
         vm.startPrank(artist);

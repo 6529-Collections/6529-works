@@ -242,7 +242,7 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
         address creator;
         (r.itemHash, r.artistId, creator) = _consume(req.packageRoot, item, req.proof, req.move);
         if (
-            item.seedPolicy == SeedPolicy.VRF
+            item.seedPolicy == uint8(SeedPolicy.VRF)
                 && !IEntropyModule(context.entropyModule).isDeliveredContent(item.contentHash)
         ) revert SeedNotDelivered(r.itemHash);
         (r.seller, r.feeRecipient, r.feeShare, r.royaltyRate) = _quote(item, context);
@@ -462,10 +462,13 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
     function _checkItem(PackageItem calldata item, address entropy) private pure {
         if (item.sale.saleKind == 0) revert InvalidItemSale();
         if (item.parties.length == 0) revert InvalidLeadArtist();
-        SeedPolicy policy = item.seedPolicy;
+        // Kinds, seed policies and roles are open `uint8`s in the package types; this policy
+        // knows today's values and refuses any other for a new item (a successor may add some).
+        uint8 policy = item.seedPolicy;
         if (
-            (policy == SeedPolicy.ARTIST) != (item.seed != 0)
-                || (policy == SeedPolicy.VRF && entropy == address(0))
+            policy > uint8(SeedPolicy.VRF)
+                || (policy == uint8(SeedPolicy.ARTIST)) != (item.seed != 0)
+                || (policy == uint8(SeedPolicy.VRF) && entropy == address(0))
         ) revert InvalidSeedPolicy();
         if (!SpdxId.isValidCalldata(item.license.spdxId)) revert InvalidLicenseId();
     }
@@ -503,9 +506,10 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
     ///      later revocation of its root does not stop that either).
     function _checkTerms(PackageItem calldata item, bytes32 itemHash) private pure {
         EditionTerms calldata e = item.edition;
-        bool bad =
-            item.contentHash == 0 || (item.seedPolicy == SeedPolicy.ARTIST) == (item.seed == 0);
-        if (item.kind == ItemKind.ORIGINAL) {
+        bool bad = item.contentHash == 0
+            || (item.seedPolicy == uint8(SeedPolicy.ARTIST)) == (item.seed == 0)
+            || item.kind > uint8(ItemKind.EDITION_MASTER);
+        if (item.kind == uint8(ItemKind.ORIGINAL)) {
             bad = bad || e.maxCount != 0 || e.currency != address(0) || e.saleKind != 0
                 || e.params.length != 0;
         } else {
@@ -529,12 +533,13 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
         ISplitWallet.Payee[] calldata payees = item.payees;
         uint256 n = parties.length;
         if (
-            n == 0 || n > Limits.MAX_PARTIES || parties[0].role != PartyRole.ARTIST
+            n == 0 || n > Limits.MAX_PARTIES || parties[0].role != uint8(PartyRole.ARTIST)
                 || payees.length == 0 || payees.length > n
         ) revert InvalidItem(itemHash);
         mapping(address => uint256) storage accepted = _acceptedAs[packageRoot];
         uint256[] memory ids = new uint256[](n);
         for (uint256 i; i < n; ++i) {
+            if (parties[i].role > uint8(PartyRole.COLLABORATOR)) revert InvalidItem(itemHash);
             uint256 id = accepted[parties[i].account];
             if (id == 0) revert PartyNotAccepted(packageRoot, parties[i].account);
             for (uint256 j; j < i; ++j) {

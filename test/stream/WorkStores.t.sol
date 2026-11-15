@@ -8,7 +8,7 @@ import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { Burner, GasRuleAssertions } from "test/helpers/GasRule.sol";
-import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
+
 import { RecordsFixture } from "./RecordsFixture.sol";
 
 /// @notice A store adapter (`IChunkStore`) for tests: serves the chunks put into it, honestly
@@ -99,12 +99,14 @@ contract WorkStoresTest is RecordsFixture, GasRuleAssertions {
         MediaFile[] memory media = new MediaFile[](files.length);
         for (uint256 i; i < files.length; ++i) {
             media[i] = MediaFile(
-                files[i], store.sha256Of(files[i]), i == 0 ? FileRole.PRIMARY : FileRole.AUXILIARY
+                files[i],
+                store.sha256Of(files[i]),
+                i == 0 ? uint8(FileRole.PRIMARY) : uint8(FileRole.AUXILIARY)
             );
         }
         PackageItem memory item = _recordsItem(salt, media);
         tokenId = _mint(item);
-        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
+        records.openRecord(tokenId, item, media);
     }
 
     function _one(bytes32 file) internal pure returns (bytes32[] memory files) {

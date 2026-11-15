@@ -14,7 +14,8 @@ import { IWorkDelivery } from "../interfaces/IWorkDelivery.sol";
 import { IWorkPowers, WorkPowers } from "../interfaces/IWorkPowers.sol";
 import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
-import { License } from "../interfaces/types/PackageTypes.sol";
+import { MediaFile } from "../interfaces/types/ContentTypes.sol";
+import { License, PackageItem } from "../interfaces/types/PackageTypes.sol";
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
 import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
@@ -159,7 +160,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     /// @dev The approved record file and license are stored as they are, so neither can freeze a
     ///      minted work: `finalize` enforces both. One license rule is checked here: a CC0
     ///      license names the deployment's CC0 text, since CC0 can never be left or corrected.
-    function openRecord(uint256 tokenId, WorkItem calldata item, WorkMedia[] calldata media)
+    function openRecord(uint256 tokenId, PackageItem calldata item, MediaFile[] calldata media)
         external
     {
         RecordData storage r = _records[tokenId];
@@ -173,7 +174,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         uint256 files = 0;
         bytes32[32] storage list = _media[tokenId];
         for (uint256 i; i < count; ++i) {
-            WorkMedia calldata file = media[i];
+            MediaFile calldata file = media[i];
             uint256 role = file.role;
             // Reverts with the store's `ContentFileUnknown` for an unregistered file, and with
             // `ContentDigestNotSha256` for a digest that is not SHA-256.
@@ -308,9 +309,9 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     /// @inheritdoc IWorkRecords
     /// @dev Each file's SHA-256 is read from the content store, which declared exactly the
     ///      committed value when the record opened (declarations never change).
-    function mediaOf(uint256 tokenId) external view returns (WorkMedia[] memory media) {
+    function mediaOf(uint256 tokenId) external view returns (MediaFile[] memory media) {
         RecordData storage r = _open(tokenId);
-        media = new WorkMedia[](r.mediaCount);
+        media = new MediaFile[](r.mediaCount);
         uint256 files = r.files;
         bytes32[32] storage list = _media[tokenId];
         for (uint256 i; i < media.length; ++i) {
@@ -318,7 +319,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
             // Four bits.
             // forge-lint: disable-next-line(unsafe-typecast)
             uint8 role = uint8((files >> (8 * i)) & 0xf);
-            media[i] = WorkMedia(fileId, IContentStore(contentStore).sha256Of(fileId), role);
+            media[i] = MediaFile(fileId, IContentStore(contentStore).sha256Of(fileId), role);
         }
     }
 
@@ -398,7 +399,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     function relicense(
         uint256 tokenId,
         License calldata next,
-        WorkItem calldata item,
+        PackageItem calldata item,
         bytes32 expectedStateHash,
         uint64 deadline,
         bytes[] calldata partySignatures
@@ -430,7 +431,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     function setRoyaltyRate(
         uint256 tokenId,
         uint32 rate,
-        WorkItem calldata item,
+        PackageItem calldata item,
         bytes32 expectedStateHash,
         uint64 deadline,
         bytes[] calldata partySignatures
@@ -611,9 +612,9 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
 
     // -------------------------------------------------------------------------------- internal
 
-    /// @dev The item hash of `item`: `WorksHashing.itemHash` of the same ABI bytes.
-    function _itemHash(WorkItem calldata item) private pure returns (bytes32) {
-        return keccak256(abi.encode(WorksHashing.PACKAGE_ITEM_DOMAIN, item));
+    /// @dev The item hash of `item` (`WorksHashing.itemHashCalldata`).
+    function _itemHash(PackageItem calldata item) private pure returns (bytes32) {
+        return WorksHashing.itemHashCalldata(item);
     }
 
     /// @dev Records the code hash `renderer` is pinned with, the first time it is pinned. A
@@ -707,7 +708,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     ///      authority is a contract wallet decides by that wallet's own rule (ERC-1271).
     function _checkConsents(
         uint256 tokenId,
-        WorkItem calldata item,
+        PackageItem calldata item,
         bytes32 structHash,
         uint64 deadline,
         bytes[] calldata signatures

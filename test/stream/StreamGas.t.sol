@@ -209,7 +209,7 @@ contract StreamGasTest is StreamFixture {
     function test_gas_mintShare_artistSeed() public {
         _measure(_item(1));
         PackageItem memory item = _item(2);
-        item.seedPolicy = SeedPolicy.ARTIST;
+        item.seedPolicy = uint8(SeedPolicy.ARTIST);
         item.seed = keccak256("seed");
         uint256 used = _measure(item);
         console2.log("Stream.mint share, ARTIST seed:", used);

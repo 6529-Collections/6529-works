@@ -98,7 +98,7 @@ contract CurationHandler is CurationHelpers {
             item.collectionId = i;
             item.mediaHash = keccak256(abi.encode("media list", i));
             if (i % 2 == 1) {
-                item.kind = ItemKind.EDITION_MASTER;
+                item.kind = uint8(ItemKind.EDITION_MASTER);
                 item.edition = EditionTerms(10, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
             }
             encodedItems[i] = abi.encode(item);

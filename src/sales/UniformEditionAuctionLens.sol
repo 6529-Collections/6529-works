@@ -287,9 +287,8 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
     /// @dev Whether 6529 Stream records master `id`'s primary sale as settled; a refusal reads as
     ///      not settled, a shortfall reverts.
     function _masterSettled(uint256 id) private view returns (bool) {
-        (bool answered, bytes32 word) = BoundedCall.tryReadWordAll(
-            _stream, abi.encodeCall(IStream.primarySaleSettled, (id))
-        );
+        (bool answered, bytes32 word) =
+            BoundedCall.tryReadWordAll(_stream, abi.encodeCall(IStream.primarySaleSettled, (id)));
         return answered && word != 0;
     }
 

@@ -349,12 +349,12 @@ contract DisputeFlowTest is IntegrationBase {
     ///      release it joins the content's delivered draw, with no new request, and starts.
     function test_TheRightfulVrfItemReadsTheContentsSeed() public {
         Work memory original = _work(rightful, collectionId);
-        original.item.seedPolicy = SeedPolicy.VRF;
+        original.item.seedPolicy = uint8(SeedPolicy.VRF);
         Work memory copy = _work(copier, collectionId);
         copy.media = original.media;
         copy.item.contentHash = original.item.contentHash;
         copy.item.mediaHash = original.item.mediaHash;
-        copy.item.seedPolicy = SeedPolicy.VRF;
+        copy.item.seedPolicy = uint8(SeedPolicy.VRF);
         bytes32 copyRoot = _publish(_one(copy));
         bytes32 originalRoot = _publish(_one(original));
         bytes32[] memory none = new bytes32[](0);
@@ -473,7 +473,7 @@ contract DisputeFlowTest is IntegrationBase {
     ///      that work's edition, until an outcome about the token itself takes precedence.
     function test_APreMintOutcomeShowsOnTheWorkAndItsEdition() public {
         Work memory w = _work(rightful, collectionId);
-        w.item.kind = ItemKind.EDITION_MASTER;
+        w.item.kind = uint8(ItemKind.EDITION_MASTER);
         w.item.edition = EditionTerms(10, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
         bytes32 masterRoot = _publish(_one(w));
         bytes32 preMint = _platformStatement(
