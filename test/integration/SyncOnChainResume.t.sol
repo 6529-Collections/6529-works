@@ -99,10 +99,7 @@ contract SyncOnChainResumeTest is IntegrationBase {
     ///      earlier call in the test warmed (each call reads chunk accounts no earlier call read).
     function _sync(uint256 budget) internal returns (uint256 total) {
         (total,) = _measure(
-            keeper,
-            address(records),
-            abi.encodeCall(records.syncOnChain, (tokenId, 0, budget)),
-            0
+            keeper, address(records), abi.encodeCall(records.syncOnChain, (tokenId, 0, budget)), 0
         );
         total += COLD_ACCOUNT_SURCHARGE;
         console2.log("syncOnChain call, whole transaction:", total);

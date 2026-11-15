@@ -10,6 +10,7 @@ import { CidGoldenData as Golden } from "./CidGoldenData.sol";
 import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
 
 import { IWorkLocators } from "src/interfaces/IWorkDelivery.sol";
+
 /// @dev Cross-language agreement between the `cid` helper (`tools/content/cid.py`) and the real
 ///      `WorkRecords`: every CID the helper computes for the golden files is accepted as an
 ///      `ipfs://` locator, and Solidity re-derives each single-block (raw) CID from the SHA-256

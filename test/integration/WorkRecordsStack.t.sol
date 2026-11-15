@@ -16,6 +16,7 @@ import { IRenderer } from "src/interfaces/IRenderer.sol";
 import { toWorkItem, toWorkMedia, preferredOf } from "test/helpers/WorkItems.sol";
 
 import { IWorkLocators } from "src/interfaces/IWorkDelivery.sol";
+
 /// @notice The work-records satellite on the real stack (`IntegrationBase`): locators are
 ///         canonical content addresses and, after finalize, only the platform adds them; an
 ///         approved record file that was never registered renders core-only metadata instead of
