@@ -11,9 +11,8 @@ import { PackageRegistry } from "src/curation/PackageRegistry.sol";
 import { AssetAllowlist } from "src/economics/AssetAllowlist.sol";
 import { ClaimRouter } from "src/economics/ClaimRouter.sol";
 import { EconomicsResolver } from "src/economics/EconomicsResolver.sol";
-import { ReleaseVerifier } from "src/economics/ReleaseVerifier.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
-import { SplitFactory } from "src/economics/SplitFactory.sol";
+import { SplitLedger } from "src/economics/SplitLedger.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
@@ -122,8 +121,7 @@ library DeployV1 {
         DependencyRegistry dependencyRegistry;
         ConsolidationAdapter consolidationAdapter;
         ArtistRegistry artistRegistry;
-        ReleaseVerifier releaseVerifier;
-        SplitFactory splitFactory;
+        SplitLedger splitFactory;
         ClaimRouter claimRouter;
         AssetAllowlist assetAllowlist;
         EconomicsResolver economicsResolver;
@@ -211,13 +209,12 @@ library DeployV1 {
     ///         Each lens is its own entry, just before its auction, so no deployment carries two
     ///         contracts' code (F8, the rc.2 review's GAS M-2).
     function order(Params memory p) internal pure returns (string[] memory list) {
-        string[22] memory all = [
+        string[21] memory all = [
             "GovernanceConfigurator",
             "ContentStore",
             "DependencyRegistry",
             "ConsolidationAdapter",
             "ArtistRegistry",
-            "ReleaseVerifier",
             "SplitFactory",
             "ClaimRouter",
             "AssetAllowlist",
@@ -268,13 +265,12 @@ library DeployV1 {
             return
                 _code(type(ArtistRegistry).creationCode, abi.encode(m, adapter, adapter.codehash));
         }
-        if (n == keccak256("ReleaseVerifier")) return type(ReleaseVerifier).creationCode;
         if (n == keccak256("SplitFactory")) {
-            return _code(
-                type(SplitFactory).creationCode, abi.encode(d.artistRegistry, d.releaseVerifier)
-            );
+            return _code(type(SplitLedger).creationCode, abi.encode(d.artistRegistry));
         }
-        if (n == keccak256("ClaimRouter")) return type(ClaimRouter).creationCode;
+        if (n == keccak256("ClaimRouter")) {
+            return _code(type(ClaimRouter).creationCode, abi.encode(d.splitFactory));
+        }
         if (n == keccak256("AssetAllowlist")) {
             return _code(type(AssetAllowlist).creationCode, abi.encode(m, p.ethIncrementFloor));
         }
@@ -525,7 +521,6 @@ library DeployV1 {
         if (n == keccak256("DependencyRegistry")) return address(d.dependencyRegistry);
         if (n == keccak256("ConsolidationAdapter")) return address(d.consolidationAdapter);
         if (n == keccak256("ArtistRegistry")) return address(d.artistRegistry);
-        if (n == keccak256("ReleaseVerifier")) return address(d.releaseVerifier);
         if (n == keccak256("SplitFactory")) return address(d.splitFactory);
         if (n == keccak256("ClaimRouter")) return address(d.claimRouter);
         if (n == keccak256("AssetAllowlist")) return address(d.assetAllowlist);
@@ -561,10 +556,8 @@ library DeployV1 {
             d.consolidationAdapter = ConsolidationAdapter(a);
         } else if (n == keccak256("ArtistRegistry")) {
             d.artistRegistry = ArtistRegistry(a);
-        } else if (n == keccak256("ReleaseVerifier")) {
-            d.releaseVerifier = ReleaseVerifier(a);
         } else if (n == keccak256("SplitFactory")) {
-            d.splitFactory = SplitFactory(a);
+            d.splitFactory = SplitLedger(a);
         } else if (n == keccak256("ClaimRouter")) {
             d.claimRouter = ClaimRouter(a);
         } else if (n == keccak256("AssetAllowlist")) {
@@ -604,14 +597,13 @@ library DeployV1 {
 
     /// @notice Every contract name `addressOf` knows, for records and readback.
     function names() internal pure returns (string[] memory list) {
-        string[24] memory all = [
+        string[23] memory all = [
             "GovernanceConfigurator",
             "WorksAccessManager",
             "ContentStore",
             "DependencyRegistry",
             "ConsolidationAdapter",
             "ArtistRegistry",
-            "ReleaseVerifier",
             "SplitFactory",
             "ClaimRouter",
             "AssetAllowlist",
