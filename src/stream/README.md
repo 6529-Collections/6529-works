@@ -13,7 +13,8 @@ selection in [Rendering and tokenURI](../../docs/spec/rendering-and-tokenuri.md#
 | File | What it is |
 | --- | --- |
 | `Stream.sol` | The permanent core ([`IStream`](../interfaces/IStream.sol), one flat ERC-165 id; [`IMintTarget`](../interfaces/IMintTarget.sol)): mints what its mint policy ([`IMintPolicy`](../interfaces/IMintPolicy.sol), the package registry) admits into an admitted adapter's custody, collections and serials, the terms locked at mint, `royaltyInfo`, settle, burn, rescue and museum routing, the edition link, `rendererOf` and `tokenURI`, contract URI and marketplace owner. |
-| `StreamViews.sol` | The genesis read-only extension ([`IStreamExtension`](../interfaces/IStreamExtension.sol), [`IStreamViews`](../interfaces/IStreamViews.sol)), deployed by Stream's constructor and reached only by STATICCALL from its fallback: `work`, `collection`, `totalSupply`, `contractURI`, `owner`, and the collection-name rule. |
+| `StreamViews.sol` | The genesis read-only extension ([`IStreamExtension`](../interfaces/IStreamExtension.sol), [`IStreamViews`](../interfaces/IStreamViews.sol)), deployed by Stream's constructor and reached only by STATICCALL from its fallback, which forwards only its three views: `work`, `collection`, `totalSupply`, and the collection-name rule. Informational: nothing permanent or pinned reads it (AUC-49). |
+| `StreamLayout.sol` | The permanent storage slots of Stream that `extsload` readers (a pinned renderer, the extension) use: the token words, a collection's words and name, the counters, the owner and the contract URI (AUC-49). |
 | `WorkRecords.sol` | The permanent records satellite ([`IWorkRecords`](../interfaces/IWorkRecords.sol), [`IWorkPowers`](../interfaces/IWorkPowers.sol)): opening a work's record, the record file, media list, license and seed, the state hash, finalize and renderer pins, amendments (the royalty rate only down), the lead artist's renounced powers, on-chain completeness and each file's store, and the governed pointers to the delivery contract and the store set. |
 | `WorkDelivery.sol` | The first, replaceable delivery contract ([`IWorkDelivery`, `IWorkLocators`](../interfaces/IWorkDelivery.sol)), deployed by `WorkRecords`' constructor: locators, kinds, preferences and the URI grammar. |
 | `SpdxId.sol` | Internal library: the license-ID rule Stream applies at mint and `WorkRecords` at deployment and relicense. |
@@ -47,9 +48,11 @@ Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
   reads, so genesis mints read no extra slot. Replacing the entropy module appends the module it
   replaces, with the last token ID minted, to `_entropyEras`; `entropyModuleOf(tokenId)` walks
   it (ENT-18).
-- **Extension and layout.** `StreamViews` reads Stream through `extsload` with compiled slot
-  numbers (`COUNTS_SLOT` 11, `OWNER_SLOT` 12, `CONTRACT_URI_SLOT` 13, `COLLECTIONS_SLOT` 17,
-  `TOKENS_SLOT` 18): any change to Stream's storage order needs a new extension.
+- **Extension and layout.** `StreamViews` and a pinned renderer read Stream through `extsload`
+  at `StreamLayout`'s slots (counters 11, owner 12, contract URI 13, collections 17, tokens 18),
+  part of the permanent interface and pinned by `StreamLayout.t.sol`: Stream's storage order
+  can never change. The fallback forwards only the three `IStreamViews` selectors; `owner`,
+  `contractURI` and `extension` are native.
   `collectionCount` and `totalMinted` stay native because `WorkRecords` reads them.
 - **Pluggable 1/1 sale (owner decision 15).** `_minterKinds` records each adapter's sale kind
   at its first admission, after every earlier mapping, so the storage layout of the other

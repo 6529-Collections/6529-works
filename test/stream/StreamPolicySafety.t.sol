@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Vm } from "forge-std/Vm.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
@@ -29,7 +30,9 @@ contract HostilePolicy is IMintPolicy {
         REVERT,
         BURN,
         REENTER,
-        MALFORMED
+        MALFORMED,
+        WRAP_OFFSET,
+        WRAP_LENGTH
     }
 
     Mode public mode;
@@ -72,6 +75,18 @@ contract HostilePolicy is IMintPolicy {
             assembly ("memory-safe") {
                 mstore(0, 0x20)
                 return(0, 0x40)
+            }
+        }
+        if (m == Mode.WRAP_OFFSET || m == Mode.WRAP_LENGTH) {
+            // The record's own encoding with `params` pointed out of the answer: an offset that
+            // wraps when 0x20 is added, or a length that wraps the end check.
+            bytes memory raw = abi.encode(_record);
+            bool offset = m == Mode.WRAP_OFFSET;
+            assembly ("memory-safe") {
+                switch offset
+                case 1 { mstore(add(raw, 0x240), sub(0, 0x20)) }
+                default { mstore(add(raw, 0x260), sub(0, 0x200)) }
+                return(add(raw, 0x20), mload(raw))
             }
         }
         if (m == Mode.REENTER) _reenter(msg.sender, context.adapter);
@@ -280,6 +295,100 @@ contract StreamPolicySafetyTest is StreamFixture {
         hostile.setRecord(r);
         vm.expectRevert(why);
         auction.start(stream, data);
+    }
+
+    /// @dev I-4 (review A): the bounds of the answer's `params` are checked without addition, so
+    ///      an offset or a length chosen to wrap is refused like any other out-of-bounds field
+    ///      (`InvalidMintRequest`), and nothing is minted.
+    function test_MP1_AWrappingParamsOffsetOrLengthIsRefused() public {
+        uint256 minted = stream.totalMinted();
+        hostile.setRecord(_record(6));
+        hostile.setMode(HostilePolicy.Mode.WRAP_OFFSET);
+        bytes memory data = _request(_item(96));
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        auction.start(stream, data);
+        hostile.setMode(HostilePolicy.Mode.WRAP_LENGTH);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        auction.start(stream, data);
+        assertEq(stream.totalMinted(), minted);
+        // The same record, encoded honestly, mints.
+        hostile.setMode(HostilePolicy.Mode.ANSWER);
+        auction.start(stream, data);
+        assertEq(stream.totalMinted(), minted + 1);
+    }
+
+    /// @dev Rule 6, I-3 (review A): `WorkMinted` carries the seed policy beside the kind, as
+    ///      `coreOf` returns them, so a logs-only reader learns a VRF or ARTIST seed at the mint.
+    function test_MP1_WorkMintedCarriesTheKindAndSeedPolicy() public {
+        IMintPolicy.MintRecord memory r = _record(7);
+        r.kind = 1;
+        r.seedPolicy = 2;
+        hostile.setRecord(r);
+        vm.recordLogs();
+        (uint256 id,) = auction.start(stream, _request(_item(95)));
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bool found;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].topics[0] != IStream.WorkMinted.selector) continue;
+            found = true;
+            (, uint64 serial, uint8 flags) = abi.decode(logs[i].data, (bytes32, uint64, uint8));
+            assertGt(serial, 0);
+            assertEq(flags, 1 | (2 << 2), "kind in bits 0-1, seed policy in bits 2-3");
+        }
+        assertTrue(found);
+        (,,, uint8 kind, uint8 seedPolicy,) = stream.coreOf(id);
+        assertEq(kind, 1);
+        assertEq(seedPolicy, 2);
+    }
+
+    /// @dev L-1 (review A): a content released after an upheld dispute, minted again by the
+    ///      rightful artist and burned again after a second upheld dispute, can be released
+    ///      again: only the released bit and the token field are compared, not the beneficiary
+    ///      bits a re-mint keeps. A second release of the same burn is still refused.
+    function test_MP1_AContentCanBeReleasedAgainAfterARemint() public {
+        address first = makeAddr("firstRightful");
+        address second = makeAddr("secondRightful");
+        artists.register(first);
+        artists.register(second);
+        IMintPolicy.MintRecord memory r = _record(8);
+        hostile.setRecord(r);
+        (uint256 copyId,) = auction.start(stream, _request(_item(94)));
+        auction.burn(stream, copyId, 1);
+        vm.prank(governor);
+        stream.releaseContent(copyId, r.contentHash, uint160(first));
+
+        // The rightful artist mints the content again (another item); it is burned in turn.
+        r.itemHash = keccak256("the first rightful artist's item");
+        r.artistId = uint160(first);
+        hostile.setRecord(r);
+        (uint256 againId,) = auction.start(stream, _request(_item(93)));
+        assertEq(stream.consumedItemOf(r.contentHash), r.itemHash);
+        auction.burn(stream, againId, 1);
+
+        vm.expectEmit(address(stream));
+        emit IStream.ContentReleased(againId, r.contentHash, uint160(second));
+        vm.prank(governor);
+        stream.releaseContent(againId, r.contentHash, uint160(second));
+        assertEq(stream.releasedTo(r.contentHash), uint160(second));
+        assertTrue(stream.isReleased(r.itemHash));
+
+        vm.prank(governor);
+        vm.expectRevert(
+            abi.encodeWithSelector(IStream.ClaimNotAllowed.selector, PRODUCT_STREAM, r.contentHash)
+        );
+        stream.releaseContent(againId, r.contentHash, uint160(second));
+        vm.prank(governor);
+        vm.expectRevert(
+            abi.encodeWithSelector(IStream.ClaimNotAllowed.selector, PRODUCT_STREAM, r.contentHash)
+        );
+        stream.releaseContent(copyId, r.contentHash, uint160(second));
+
+        // The second rightful artist mints it.
+        r.itemHash = keccak256("the second rightful artist's item");
+        r.artistId = uint160(second);
+        hostile.setRecord(r);
+        (uint256 lastId,) = auction.start(stream, _request(_item(92)));
+        assertEq(stream.ownerOf(lastId), address(auction));
     }
 
     /// @dev AUC-44: a policy answering a content hash already minted is refused by Stream.

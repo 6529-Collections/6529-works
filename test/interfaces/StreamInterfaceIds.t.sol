@@ -22,7 +22,7 @@ contract StreamInterfaceIdsTest is Test {
     }
 
     function _streamSignatures() internal pure returns (string[] memory s) {
-        s = new string[](43);
+        s = new string[](46);
         s[0] = "mint(address,uint256,uint256,bytes)";
         s[1] = "primaryTerms(uint256,bytes)";
         s[2] = "burn(uint256,uint256)";
@@ -66,22 +66,23 @@ contract StreamInterfaceIdsTest is Test {
         s[40] = "consumedItemOf(bytes32)";
         s[41] = "releasedTo(bytes32)";
         s[42] = "isReleased(bytes32)";
+        s[43] = "contractURI()";
+        s[44] = "owner()";
+        s[45] = "extension()";
     }
 
     function test_IStreamIdIsTheWholeNativeSurface() public pure {
         assertEq(type(IStream).interfaceId, _xor(_streamSignatures()), "IStream from its selectors");
-        assertEq(type(IStream).interfaceId, bytes4(0xcacd4413), "IStream golden");
+        assertEq(type(IStream).interfaceId, bytes4(0x829e6c7d), "IStream golden");
     }
 
     function test_IStreamViewsId() public pure {
-        string[] memory s = new string[](5);
+        string[] memory s = new string[](3);
         s[0] = "work(uint256)";
         s[1] = "collection(uint256)";
         s[2] = "totalSupply()";
-        s[3] = "contractURI()";
-        s[4] = "owner()";
         assertEq(type(IStreamViews).interfaceId, _xor(s), "IStreamViews from its selectors");
-        assertEq(type(IStreamViews).interfaceId, bytes4(0xd53fe015), "IStreamViews golden");
+        assertEq(type(IStreamViews).interfaceId, bytes4(0xb039ffcb), "IStreamViews golden");
     }
 
     function test_IMintPolicyAndExtensionIds() public pure {
@@ -91,11 +92,13 @@ contract StreamInterfaceIdsTest is Test {
         p[2] = "artistRegistry()";
         assertEq(type(IMintPolicy).interfaceId, _xor(p), "IMintPolicy from its selectors");
         assertEq(type(IMintPolicy).interfaceId, bytes4(0x621ba19b), "IMintPolicy golden");
-        assertEq(
-            type(IStreamExtension).interfaceId,
-            bytes4(keccak256("isValidCollectionName(string)")),
-            "IStreamExtension"
-        );
+        // Flat: the collection-name rule and the three views it serves.
+        string[] memory e = new string[](4);
+        e[0] = "isValidCollectionName(string)";
+        e[1] = "work(uint256)";
+        e[2] = "collection(uint256)";
+        e[3] = "totalSupply()";
+        assertEq(type(IStreamExtension).interfaceId, _xor(e), "IStreamExtension");
     }
 
     /// @dev Every selector named above is the one the interface declares.

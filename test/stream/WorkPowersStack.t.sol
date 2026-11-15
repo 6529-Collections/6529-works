@@ -43,7 +43,7 @@ contract WorkPowersStackTest is IntegrationBase {
         root = _publish(works);
         _keep(root, works);
         masterId = _sell(root, works, 0, collector, 1 ether);
-        editions.createEdition(masterId, works[0].item, root, _proofOf(works, 0));
+        editions.createEdition(masterId, works[0].item);
         records.openRecord(masterId, works[0].item, works[0].media);
         workId = _sell(root, works, 1, collector, 1 ether);
         records.openRecord(workId, works[1].item, works[1].media);

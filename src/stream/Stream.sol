@@ -42,8 +42,12 @@ import { StreamViews } from "./StreamViews.sol";
 ///      own invariants on that record (the adapter's recorded sale kind, a nonzero item hash, lead
 ///      artist and seller, bounded economics, an existing collection, kind and seed policy within
 ///      their stored width), interns the terms and mints into the adapter's custody. The policy
-///      has no write function into Stream. Informational views and collection-name rules are
-///      served by a read-only extension reached through the fallback by STATICCALL.
+///      has no write function into Stream. Three informational views (`IStreamViews`) and the
+///      collection-name rule are served by a read-only extension, the views through the
+///      fallback by STATICCALL. Nothing permanent or pinned reads the extension: every fact of
+///      an existing work is native (`coreOf` and the other `IStream` views) or read through
+///      `extsload` at the fixed slots `IStream.extsload` documents (`StreamLayout`; a test pins
+///      them to the compiler's layout). Those slots are part of the permanent interface.
 ///
 ///      Storage is shaped by the auction-start budget (ADR 0004): 350K Prague gas and at most 6
 ///      new slots, 7 with a bid, per steady-state start. A mint writes the ERC-721 owner and
@@ -251,14 +255,23 @@ contract Stream is ERC721, AccessManaged, IStream {
         emit OwnershipTransferred(address(0), owner_);
     }
 
-    /// @notice Serves every selector Stream does not implement from the read-only extension, by
-    ///         STATICCALL: the extension can write nothing, and a native selector never reaches
-    ///         it. Its answer, or its revert, is passed on as it is.
+    /// @notice Serves the three `IStreamViews` selectors (`work`, `collection`, `totalSupply`)
+    ///         from the read-only extension, by STATICCALL: the extension can write nothing, and
+    ///         its answer, or its revert, is passed on as it is. Every other selector Stream does
+    ///         not implement reverts with no data, so a replaced extension can never answer a
+    ///         receiver hook, a signature check, `owner()` or anything else on Stream's behalf.
     fallback() external {
-        address extension = _dependency(3, _genesisExtension);
+        address views = extension();
+        bytes4 work = IStreamViews.work.selector;
+        bytes4 collection = IStreamViews.collection.selector;
+        bytes4 supply = IStreamViews.totalSupply.selector;
         assembly {
+            let s := and(calldataload(0), shl(224, 0xffffffff))
+            if iszero(or(or(eq(s, work), eq(s, collection)), eq(s, supply))) {
+                revert(0, 0)
+            }
             calldatacopy(0, 0, calldatasize())
-            let ok := staticcall(gas(), extension, 0, calldatasize(), 0, 0)
+            let ok := staticcall(gas(), views, 0, calldatasize(), 0, 0)
             returndatacopy(0, 0, returndatasize())
             if iszero(ok) { revert(0, returndatasize()) }
             return(0, returndatasize())
@@ -346,7 +359,11 @@ contract Stream is ERC721, AccessManaged, IStream {
         if (tokenId == 0 || tokenId > _counts.minted || _ownerOf(tokenId) != address(0)) {
             revert NotBurned(tokenId);
         }
-        if (_contents[contentHash] != tokenId) revert ClaimNotAllowed(PRODUCT_STREAM, contentHash);
+        // Only the released bit and the token field: a re-mint keeps the earlier beneficiary's
+        // bits, and a content released once may be released again after a later burn.
+        if (_contents[contentHash] & (CONTENT_RELEASED | CONTENT_TOKEN) != tokenId) {
+            revert ClaimNotAllowed(PRODUCT_STREAM, contentHash);
+        }
         if (
             beneficiary > type(uint160).max
                 || IArtistRegistry(artistRegistry).authorityOf(beneficiary) == address(0)
@@ -407,7 +424,13 @@ contract Stream is ERC721, AccessManaged, IStream {
     /// @dev Gated, like `burn`, on the minting adapter's index, so a removed adapter still
     ///      settles its sales. The outcome is two `TokenData.flags` bits beside `SETTLED`; only
     ///      SOLD writes a new slot (`_sales`). An unsold work moves from the adapter's custody
-    ///      to the museum the economics resolver names now, with no receiver callback.
+    ///      to the museum the economics resolver names now, with no receiver callback. That read
+    ///      is the one dependence of a settlement on replaceable code (L-5, governance trust): a
+    ///      resolver that reverts or names zero blocks unsold settlements and rescues, never a
+    ///      SOLD one, until governance repairs it (the 30-day class); the work waits in the
+    ///      adapter's custody, and no money waits on it (an unbid sale holds no bid, and a
+    ///      frozen-out bidder may withdraw). A native fallback would add a custody state for a
+    ///      fault the same governance must repair anyway, so there is none.
     function settlePrimary(
         uint256 tokenId,
         PrimaryOutcome outcome,
@@ -502,7 +525,7 @@ contract Stream is ERC721, AccessManaged, IStream {
         restricted
         returns (uint256 collectionId)
     {
-        if (!IStreamExtension(_dependency(3, _genesisExtension)).isValidCollectionName(name)) {
+        if (!IStreamExtension(extension()).isValidCollectionName(name)) {
             revert InvalidCollectionName();
         }
         collectionId = ++_counts.collections;
@@ -664,6 +687,11 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IStream
+    function extension() public view returns (address) {
+        return _dependency(3, _genesisExtension);
+    }
+
+    /// @inheritdoc IStream
     /// @dev Bounded by the number of entropy replacements, each a 30-day governance action.
     function entropyModuleOf(uint256 tokenId) external view returns (address) {
         uint256 eras = _entropyEras.length;
@@ -730,10 +758,12 @@ contract Stream is ERC721, AccessManaged, IStream {
     function setRoyaltyRate(uint256 tokenId, uint32 rate) external {
         _onlyBound(workRecords);
         (TokenData storage t, Terms memory shared) = _shared(tokenId);
-        if (rate > shared.royaltyRate) revert InvalidRoyaltyRate(rate);
-        emit RoyaltyRateChanged(tokenId, shared.royaltyRate, rate);
+        uint32 previous = shared.royaltyRate;
+        if (rate > previous) revert InvalidRoyaltyRate(rate);
         shared.royaltyRate = uint24(rate);
+        // New terms are announced (`TermsInterned`) before the change that first uses them.
         t.termsId = _termsId(shared);
+        emit RoyaltyRateChanged(tokenId, previous, rate);
     }
 
     /// @inheritdoc IStream
@@ -771,6 +801,16 @@ contract Stream is ERC721, AccessManaged, IStream {
     // --------------------------------------------------------------------- marketplace metadata
 
     /// @inheritdoc IStream
+    function contractURI() external view returns (string memory) {
+        return _contractURI;
+    }
+
+    /// @inheritdoc IStream
+    function owner() external view returns (address) {
+        return _owner;
+    }
+
+    /// @inheritdoc IStream
     function setContractURI(string calldata uri) external restricted {
         emit ContractURISet(_contractURI, uri);
         _contractURI = uri;
@@ -786,7 +826,9 @@ contract Stream is ERC721, AccessManaged, IStream {
 
     /// @inheritdoc IERC165
     /// @dev `IStream` is the whole native surface (one id); `IStreamViews` the views the
-    ///      extension serves through the fallback (its own id).
+    ///      extension serves through the fallback (its own id). Every extension installed answers
+    ///      `IStreamExtension`, whose flat id covers those three views, so the claim holds for any
+    ///      extension (`setDependency` checks it).
     function supportsInterface(bytes4 interfaceId)
         public
         view
@@ -857,10 +899,12 @@ contract Stream is ERC721, AccessManaged, IStream {
             let tail := sub(size, 0x20)
             if iszero(bad) {
                 returndatacopy(r, 0x20, tail)
+                // Bounds checked without addition, so no offset or length can wrap: `tail` is at
+                // least 0x240, `off` at most `tail - 0x20`, and the length at most what follows.
                 let off := mload(add(r, 0x200))
-                bad := or(lt(off, 0x220), gt(add(off, 0x20), tail))
+                bad := or(lt(off, 0x220), gt(off, sub(tail, 0x20)))
                 if iszero(bad) {
-                    bad := gt(add(add(off, 0x20), mload(add(r, off))), tail)
+                    bad := gt(mload(add(r, off)), sub(sub(tail, 0x20), off))
                 }
                 // kind and seed policy (uint8), royalty rate and fee share (uint32), currency,
                 // seller, fee recipient and creator (160 bits).
@@ -960,7 +1004,7 @@ contract Stream is ERC721, AccessManaged, IStream {
         if (kind == ECONOMICS) return (1, type(IEconomicsResolver).interfaceId, economics());
         if (kind == ENTROPY_MODULE) return (2, type(IEntropyModule).interfaceId, entropyModule());
         if (kind == EXTENSION) {
-            return (3, type(IStreamExtension).interfaceId, _dependency(3, _genesisExtension));
+            return (3, type(IStreamExtension).interfaceId, extension());
         }
         revert UnknownDependency(kind);
     }
@@ -995,7 +1039,8 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @dev `WorkMinted`, written out by hand: twelve fields are more than the legacy code
-    ///      generator can keep on the stack. The data words follow the event's declaration.
+    ///      generator can keep on the stack. The data words follow the event's declaration;
+    ///      `flags` is the kind and seed policy as `TokenData.flags` stores them at mint.
     function _emitMinted(
         IMintPolicy.MintRecord memory r,
         uint256 tokenId,
@@ -1008,7 +1053,8 @@ contract Stream is ERC721, AccessManaged, IStream {
             let p := mload(0x40)
             mstore(p, mload(r)) // itemHash
             mstore(add(p, 0x20), serial)
-            mstore(add(p, 0x40), mload(add(r, 0x60))) // kind
+            // flags: the kind (bits 0-1) and seed policy (bits 2-3), each two bits (`_checked`)
+            mstore(add(p, 0x40), or(mload(add(r, 0x60)), shl(2, mload(add(r, 0x80)))))
             mstore(add(p, 0x60), mload(add(r, 0xc0))) // packageRoot
             mstore(add(p, 0x80), mload(add(r, 0xe0))) // contentHash
             mstore(add(p, 0xa0), mload(add(r, 0x100))) // mediaHash

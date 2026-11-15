@@ -7,26 +7,20 @@ import { IStream } from "../interfaces/IStream.sol";
 import { IStreamViews } from "../interfaces/IStreamViews.sol";
 import { IStreamExtension } from "../interfaces/IStreamExtension.sol";
 import { Utf8 } from "../libraries/Utf8.sol";
+import { StreamLayout } from "./StreamLayout.sol";
 
 /// @title StreamViews
-/// @notice 6529 Stream's genesis read-only extension (`IStreamExtension`): the informational
-///         views of `IStream` and the collection-name rule. Stream reaches it only by STATICCALL
+/// @notice 6529 Stream's genesis read-only extension (`IStreamExtension`): the three
+///         informational views of `IStreamViews` and the collection-name rule. Stream reaches it only by STATICCALL
 ///         from its fallback, so it can write nothing.
 /// @dev Stateless and bound to no Stream: the token it answers for is the caller, the Stream
 ///      whose fallback forwarded the call (`msg.sender`). It reads that Stream's native views
-///      and, through `IStream.extsload`, the storage words of `Stream`'s layout (the slot
-///      constants below, checked against `forge inspect Stream storage-layout` by the tests).
+///      and, through `IStream.extsload`, the storage words of `Stream`'s layout (`StreamLayout`,
+///      checked against `forge inspect Stream storage-layout` by the tests).
 ///      Called directly by anyone else it answers about the caller, which is harmless.
-contract StreamViews is IStreamExtension, IStreamViews {
+contract StreamViews is IStreamExtension {
     /// @notice The longest accepted collection name, in bytes.
     uint256 public constant MAX_NAME_BYTES = 256;
-
-    /// @dev `Stream`'s storage slots (its layout is fixed for good: Stream is never redeployed).
-    uint256 private constant COUNTS_SLOT = 11;
-    uint256 private constant OWNER_SLOT = 12;
-    uint256 private constant CONTRACT_URI_SLOT = 13;
-    uint256 private constant COLLECTIONS_SLOT = 17;
-    uint256 private constant TOKENS_SLOT = 18;
 
     /// @inheritdoc IStreamExtension
     /// @dev The name goes into every work's metadata, where a control character, `<`, `"` or
@@ -50,7 +44,7 @@ contract StreamViews is IStreamExtension, IStreamViews {
         IStreamViews.WorkCore memory w;
         (w.itemHash, w.artistId, w.collectionId, w.kind, w.seedPolicy, w.royaltyRate) =
             s.coreOf(tokenId);
-        uint256 word = uint256(_word(s, keccak256(abi.encode(tokenId, TOKENS_SLOT))));
+        uint256 word = uint256(_word(s, StreamLayout.tokenSlot(tokenId)));
         // The token word packs the seller (low 160 bits) and the serial (the next 32).
         // forge-lint: disable-next-line(unsafe-typecast)
         w.seller = address(uint160(word));
@@ -69,7 +63,7 @@ contract StreamViews is IStreamExtension, IStreamViews {
         returns (IStreamViews.Collection memory)
     {
         IStream s = IStream(msg.sender);
-        bytes32 base = keccak256(abi.encode(collectionId, COLLECTIONS_SLOT));
+        bytes32 base = StreamLayout.collectionSlot(collectionId);
         bytes32[] memory head = s.extsload(base, 2);
         uint256 word = uint256(head[0]);
         if (word & 0xff == 0) revert IStream.UnknownCollection(collectionId);
@@ -86,26 +80,15 @@ contract StreamViews is IStreamExtension, IStreamViews {
         return uint64(counts) - uint64(counts >> 64);
     }
 
-    /// @notice `IStream.contractURI` of the calling Stream (ERC-7572).
-    /// @return The URI, empty until set.
-    function contractURI() external view returns (string memory) {
-        return _string(IStream(msg.sender), CONTRACT_URI_SLOT);
-    }
-
-    /// @notice `IStream.owner` of the calling Stream (the marketplace owner).
-    /// @return The marketplace owner.
-    function owner() external view returns (address) {
-        return address(uint160(uint256(_word(IStream(msg.sender), bytes32(OWNER_SLOT)))));
-    }
-
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return interfaceId == type(IERC165).interfaceId
-            || interfaceId == type(IStreamExtension).interfaceId;
+            || interfaceId == type(IStreamExtension).interfaceId
+            || interfaceId == type(IStreamViews).interfaceId;
     }
 
     function _counts() private view returns (uint256) {
-        return uint256(_word(IStream(msg.sender), bytes32(COUNTS_SLOT)));
+        return uint256(_word(IStream(msg.sender), bytes32(StreamLayout.COUNTS_SLOT)));
     }
 
     function _word(IStream s, bytes32 slot) private view returns (bytes32) {

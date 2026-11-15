@@ -72,7 +72,7 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         assertEq(stream.entropyModule(), address(entropy));
         assertEq(stream.splitFactory(), address(splitFactory));
         assertEq(stream.defaultRenderer(), address(renderer));
-        assertEq(IStreamViews(address(stream)).owner(), marketOwner);
+        assertEq(stream.owner(), marketOwner);
         assertEq(stream.workRecords(), address(0));
         assertEq(stream.editions(), address(0));
         assertEq(stream.name(), "6529 Stream");
@@ -1606,6 +1606,11 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
     function test_setRoyaltyRate_fromRecords() public {
         _bindMocks();
         _mint(1);
+        // New terms are announced before the change that first uses them (I-3, review A).
+        vm.expectEmit(address(stream));
+        emit IStream.TermsInterned(
+            _termsIdOf(uint160(artist), 5_000, 25_000, 1, 1), 5_000, 25_000, 1, 1
+        );
         vm.expectEmit(address(stream));
         emit IStream.RoyaltyRateChanged(1, 6_529, 5_000);
         recordsMock.setRoyaltyRate(stream, 1, 5_000);
@@ -1939,7 +1944,7 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         emit IStream.ContractURIUpdated();
         vm.prank(governor);
         stream.setContractURI("ipfs://contract");
-        assertEq(IStreamViews(address(stream)).contractURI(), "ipfs://contract");
+        assertEq(stream.contractURI(), "ipfs://contract");
         vm.expectEmit(address(stream));
         emit IStream.ContractURISet("ipfs://contract", "ipfs://next");
         vm.prank(governor);
@@ -1957,7 +1962,7 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         emit IStream.OwnershipTransferred(marketOwner, next);
         vm.prank(governor);
         stream.setOwner(marketOwner, next);
-        assertEq(IStreamViews(address(stream)).owner(), next);
+        assertEq(stream.owner(), next);
         vm.prank(governor);
         vm.expectRevert(IStream.ExpectedValueMismatch.selector);
         stream.setOwner(marketOwner, next);
