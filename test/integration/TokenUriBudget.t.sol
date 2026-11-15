@@ -406,14 +406,12 @@ contract TokenUriBudgetTest is IntegrationBase {
 
     // ------------------------------------------------------------------ the preview cap
 
-    /// @dev `openRecord` refuses an inlinable PREVIEW file (`Identity` or `Base64`) over the cap,
-    ///      `Identity` counted four times, so the renderer never inlines a preview the budget
-    ///      does not cover; a work whose media passes opens. A gzip preview is never inlined, so
-    ///      it is not bounded.
-    function test_PreviewCap_OpenRecordRefusesALargerPreview() public {
+    /// @dev `openRecord` holds no renderer budget: a PREVIEW of any size opens, and the renderer
+    ///      decides what it inlines (its preview bound keeps `tokenURI` within 8M).
+    function test_PreviewCap_OpenRecordAcceptsAnyPreview() public {
         uint256 cap = Limits.MAX_PREVIEW_BYTES;
-        _expectPreview(_bytes(cap / 4 + 1, 1), IContentStore.Encoding.Identity, false);
-        _expectPreview(_bytes(cap + 4, 2), IContentStore.Encoding.Base64, false);
+        _expectPreview(_bytes(cap / 4 + 1, 1), IContentStore.Encoding.Identity, true);
+        _expectPreview(_bytes(cap + 4, 2), IContentStore.Encoding.Base64, true);
         _expectPreview(_bytes(4 * cap, 3), IContentStore.Encoding.Gzip, true);
         _expectPreview(_bytes(4 * cap, 6), IContentStore.Encoding.GzipBase64, true);
         _expectPreview(_bytes(cap / 4, 4), IContentStore.Encoding.Identity, true);
