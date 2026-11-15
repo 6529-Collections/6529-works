@@ -22,8 +22,42 @@ import {
     ReentrantRecipient,
     ToggleRecipient
 } from "../mocks/economics/EconomicsMocks.sol";
+import { MockERC20 } from "../mocks/economics/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
+
+/// @dev A token with two addresses over one balance (the legacy-proxy shape): the alias reads and
+///      moves the primary's balances.
+contract DoubleEntryToken is MockERC20 {
+    address public immutable aliasToken;
+
+    constructor() MockERC20("Legacy", "LGC") {
+        aliasToken = address(new DoubleEntryAlias(this));
+    }
+
+    function aliasTransfer(address from, address to, uint256 amount) external {
+        require(msg.sender == aliasToken, "alias only");
+        _balances[from] -= amount;
+        _balances[to] += amount;
+    }
+}
+
+contract DoubleEntryAlias {
+    DoubleEntryToken internal immutable primary;
+
+    constructor(DoubleEntryToken primary_) {
+        primary = primary_;
+    }
+
+    function balanceOf(address account) external view returns (uint256) {
+        return primary.balanceOf(account);
+    }
+
+    function transfer(address to, uint256 amount) external returns (bool) {
+        primary.aliasTransfer(msg.sender, to, amount);
+        return true;
+    }
+}
 
 contract RevenueEscrowTest is EconomicsBase {
     address internal depositor = makeAddr("depositor");
@@ -603,6 +637,28 @@ contract RevenueEscrowTest is EconomicsBase {
         assertEq(escrow.flush(other, address(token)), 300);
         assertEq(address(escrow).balance, 0);
         assertEq(token.balanceOf(address(escrow)), 0);
+    }
+
+    /// @dev Review C F3, the documented limit of `sweepExcess`: its bound is per token address. For
+    ///      a token with two addresses over one balance, a sweep of the address nothing was
+    ///      credited under reads the shared balance against a zero total and takes the credits'
+    ///      backing. No on-chain check can see an alias, so the NatSpec and ECO-40 state the limit
+    ///      and governance must not sweep such tokens; this test pins it.
+    function test_SweepExcess_ADoubleEntryTokensAliasIsADocumentedLimit() public {
+        DoubleEntryToken legacy = new DoubleEntryToken();
+        legacy.mint(depositor, 100);
+        vm.startPrank(depositor);
+        legacy.approve(address(escrow), 100);
+        escrow.depositERC20(wallet, address(legacy), 100);
+        vm.stopPrank();
+        address treasury = makeAddr("treasury");
+        vm.expectRevert(
+            abi.encodeWithSelector(IRevenueEscrow.NothingToSweep.selector, address(legacy))
+        );
+        escrow.sweepExcess(address(legacy), treasury);
+        assertEq(escrow.sweepExcess(legacy.aliasToken(), treasury), 100, "the alias sweeps");
+        assertEq(escrow.owed(wallet, address(legacy)), 100, "the credit is still recorded");
+        assertEq(legacy.balanceOf(address(escrow)), 0, "but no longer backed");
     }
 
     /// @dev Nothing beyond the credits, or less than the credits (a negative rebase), is never an

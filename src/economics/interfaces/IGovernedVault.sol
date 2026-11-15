@@ -71,14 +71,19 @@ interface IGovernedVault {
     /// @return sent The amount sent.
     function forward(address asset, uint256 amount) external returns (uint256 sent);
 
-    /// @notice Moves ERC-721 `tokenId` of `token` to the destination with `transferFrom` (no
-    ///         receiver callback, as 6529 Stream moves a work to the museum). Anyone may call.
+    /// @notice Moves ERC-721 `tokenId` of `token` to the destination with `safeTransferFrom`,
+    ///         so a destination contract that does not accept ERC-721s (a split vault, a plain
+    ///         contract) refuses the move and the work stays in the vault. Anyone may call: the
+    ///         vault holds no key, and the destination, which governance sets on the funds path
+    ///         (14 days, guardian-cancellable), is the decision. Setting a museum vault's
+    ///         destination therefore lets anyone move every work it holds there.
     /// @param token The ERC-721 contract.
     /// @param tokenId The token to move.
     function forwardERC721(address token, uint256 tokenId) external;
 
-    /// @notice Moves `amount` of ERC-1155 token `id` of `token` to the destination. Anyone may
-    ///         call.
+    /// @notice Moves `amount` of ERC-1155 token `id` of `token` to the destination with
+    ///         `safeTransferFrom`, so a destination contract that does not accept ERC-1155s
+    ///         refuses the move. Anyone may call, as for {forwardERC721}.
     /// @param token The ERC-1155 contract.
     /// @param id The token ID.
     /// @param amount The number of tokens to move.
@@ -102,6 +107,8 @@ interface IGovernedVault {
     /// @notice Names the destination as this vault's escrow recovery replacement
     ///         (`consentToRecovery`), so governance can move a credit the vault cannot take, for
     ///         example when a token blocks the vault. Anyone may call; it only ever names the
+    ///         current destination. A consent that a later {setDestination} made stale is
+    ///         refused by the escrow, which requires a governed vault's replacement to be its
     ///         current destination.
     /// @param escrow The revenue escrow holding the vault's credit.
     function consentToRecovery(IRevenueEscrow escrow) external;
