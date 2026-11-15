@@ -95,14 +95,14 @@ class PlanCommandTest(TempDirCase):
         source = self.media_file("big.bin", bytes(pl.MAX_STORED_BYTES + 1))
         code, out, err = run("plan", str(source), "--mime", "a/b", "--encoding", "identity")
         self.assertEqual(code, 2)
-        self.assertIn("at most 12,582,400 bytes", err)
+        self.assertIn("at most 100,659,200 bytes", err)
         self.assertEqual(out, "")
         self.assertEqual([p.name for p in self.dir.iterdir()], ["big.bin"])
 
     def test_the_input_limit_depends_on_the_encoding(self) -> None:
         source = self.media_file("big.bin", bytes(pl.MAX_STORED_BYTES // 4 * 3 + 1))
         code, _, err = run("plan", str(source), "--mime", "a/b", "--encoding", "base64")
-        self.assertEqual((code, "at most 9,436,800 bytes" in err), (2, True))
+        self.assertEqual((code, "at most 75,494,400 bytes" in err), (2, True))
         # The same file is fine as gzip, which shrinks it far below the limit.
         code, _, err = run("plan", str(source), "--mime", "a/b", "--encoding", "gzip")
         self.assertEqual(code, 0, err)

@@ -23,8 +23,8 @@ contract UploaderGoldenTest is ContentBase {
 
     // ------------------------------------------------------------------ helpers
 
-    function _enc(uint8 value) internal pure returns (IContentStore.Encoding) {
-        return IContentStore.Encoding(value);
+    function _enc(uint8 value) internal pure returns (uint8) {
+        return value;
     }
 
     /// @dev Everything about a vector that needs only its stored bytes: Solidity's own chunking,
@@ -37,14 +37,16 @@ contract UploaderGoldenTest is ContentBase {
             assertEq(hashes[i], v.chunkHashes[i], v.name);
         }
         assertEq(
-            store.manifestId(hashes, stored.length, _enc(v.encoding), v.mimeType, v.mediaSha256),
+            store.manifestId(
+                hashes, stored.length, uint8(_enc(v.encoding)), v.mimeType, v.mediaSha256
+            ),
             v.fileId,
             v.name
         );
         assertEq(
             abi.encodeCall(
                 store.registerManifest,
-                (hashes, stored.length, _enc(v.encoding), v.mimeType, v.mediaSha256)
+                (hashes, stored.length, uint8(_enc(v.encoding)), v.mimeType, v.mediaSha256)
             ),
             v.registerCalldata,
             v.name
@@ -164,6 +166,37 @@ contract UploaderGoldenTest is ContentBase {
         assertEq(chunks[1].length, 1);
     }
 
+    // ------------------------------------------------------------------ registration from lists
+
+    /// @dev For every vector, the hash list written as list chunks of `LIST_STRIDE` hashes: the
+    ///      Python `registerManifestList` calldata is byte-equal to Solidity's and registers the
+    ///      same file ID as the one-call registration.
+    function test_All_ListCalldataMatchesAndRegistersTheSameFile() public {
+        Golden.Vector[][3] memory groups = [Golden.samples(), Golden.generated(), Golden.hashOnly()];
+        for (uint256 g; g < 3; ++g) {
+            for (uint256 i; i < groups[g].length; ++i) {
+                Golden.Vector memory v = groups[g][i];
+                bytes32[] memory lists = _writeList(v.chunkHashes, Golden.LIST_STRIDE);
+                bytes memory expected = abi.encodeCall(
+                    store.registerManifestList,
+                    (
+                        lists,
+                        Golden.LIST_STRIDE,
+                        v.storedLength,
+                        v.encoding,
+                        v.mimeType,
+                        v.mediaSha256,
+                        uint8(0)
+                    )
+                );
+                assertEq(expected, v.registerListCalldata, v.name);
+                (bool ok, bytes memory ret) = address(store).call(v.registerListCalldata);
+                assertTrue(ok, v.name);
+                assertEq(abi.decode(ret, (bytes32)), v.fileId, v.name);
+            }
+        }
+    }
+
     // ------------------------------------------------------------------ large gzip: hashes only
 
     function test_HashOnly_FileIdAndRegistrationMatch() public {
@@ -172,7 +205,11 @@ contract UploaderGoldenTest is ContentBase {
             Golden.Vector memory v = vectors[i];
             assertEq(
                 store.manifestId(
-                    v.chunkHashes, v.storedLength, _enc(v.encoding), v.mimeType, v.mediaSha256
+                    v.chunkHashes,
+                    v.storedLength,
+                    uint8(_enc(v.encoding)),
+                    v.mimeType,
+                    v.mediaSha256
                 ),
                 v.fileId,
                 v.name
@@ -180,7 +217,13 @@ contract UploaderGoldenTest is ContentBase {
             assertEq(
                 abi.encodeCall(
                     store.registerManifest,
-                    (v.chunkHashes, v.storedLength, _enc(v.encoding), v.mimeType, v.mediaSha256)
+                    (
+                        v.chunkHashes,
+                        v.storedLength,
+                        uint8(_enc(v.encoding)),
+                        v.mimeType,
+                        v.mediaSha256
+                    )
                 ),
                 v.registerCalldata,
                 v.name
@@ -236,7 +279,8 @@ contract UploaderGoldenTest is ContentBase {
         uint256 mimeLength,
         uint256 seed
     ) public {
-        chunkCount = bound(chunkCount, 1, store.MAX_CHUNKS());
+        // One call stores a slot per hash; the tooling sends it for small manifests only.
+        chunkCount = bound(chunkCount, 1, 1024);
         mimeLength = bound(mimeLength, 3, store.MAX_MIME_LENGTH());
         bytes32[] memory hashes = new bytes32[](chunkCount);
         for (uint256 i; i < chunkCount; ++i) {
@@ -247,7 +291,7 @@ contract UploaderGoldenTest is ContentBase {
             (
                 hashes,
                 (chunkCount - 1) * CHUNK + 1,
-                IContentStore.Encoding(bound(seed, 0, 3)),
+                uint8(bound(seed, 0, 3)),
                 _mime(mimeLength),
                 DIGEST
             )
@@ -256,19 +300,85 @@ contract UploaderGoldenTest is ContentBase {
         assertLe(
             used, _modelRegister(chunkCount, mimeLength), "registerManifest gas above the model"
         );
-        assertLe(
-            21_000 + _calldataGas(callData) + used, Golden.TX_GAS_CAP, "transaction above the cap"
+    }
+
+    /// @dev `linkChunk` stays under the model for any split of a chunk the tooling can send
+    ///      (parts written in an earlier transaction, so every read is cold).
+    function testFuzz_GasModel_LinkNeverExceedsTheModel(uint256 length, uint256 size, uint256 seed)
+        public
+    {
+        length = bound(length, 2, CHUNK);
+        size = bound(size, (length + 255) / 256, length - 1);
+        bytes memory chunk = _data(length, seed);
+        uint256 n = (length + size - 1) / size;
+        bytes32[] memory parts = new bytes32[](n);
+        for (uint256 i; i < n; ++i) {
+            uint256 start = i * size;
+            uint256 len = length - start < size ? length - start : size;
+            (parts[i],) = store.writeChunk(_slice(chunk, start, len));
+            vm.cool(store.chunkPointer(parts[i]));
+        }
+        vm.cool(address(store));
+        uint256 used = _gasOf(abi.encodeCall(store.linkChunk, (parts)));
+        uint256 model =
+            Golden.GAS_LINK_BASE + Golden.GAS_LINK_PER_PART * n + Golden.GAS_LINK_PER_BYTE * length;
+        assertLe(used, model, "linkChunk gas above the Python model");
+    }
+
+    /// @dev `registerManifestList` stays under the model for any size up to `MAX_CHUNKS` and any
+    ///      stride (list chunks written earlier, cold).
+    function testFuzz_GasModel_RegisterListNeverExceedsTheModel(
+        uint256 chunkCount,
+        uint256 per,
+        uint256 mimeLength,
+        uint256 seed
+    ) public {
+        chunkCount = bound(chunkCount, 1, store.MAX_CHUNKS());
+        per = bound(per, (chunkCount + 63) / 64, CHUNK / 32); // at most 64 list chunks
+        mimeLength = bound(mimeLength, 3, store.MAX_MIME_LENGTH());
+        bytes32[] memory hashes = new bytes32[](chunkCount);
+        for (uint256 i; i < chunkCount; ++i) {
+            hashes[i] = keccak256(abi.encode(seed, i));
+        }
+        bytes32[] memory lists = _writeList(hashes, per);
+        for (uint256 j; j < lists.length; ++j) {
+            vm.cool(store.chunkPointer(lists[j]));
+        }
+        vm.cool(address(store));
+        uint256 used = _gasOf(
+            abi.encodeCall(
+                store.registerManifestList,
+                (lists, per, (chunkCount - 1) * CHUNK + 1, 1, _mime(mimeLength), DIGEST, uint8(0))
+            )
         );
+        uint256 model = Golden.GAS_REGISTER_LIST_BASE + Golden.GAS_REGISTER_LIST_PER_LIST
+            * lists.length + Golden.GAS_REGISTER_LIST_PER_CHUNK * chunkCount
+            + Golden.GAS_REGISTER_PER_MIME_BYTE * mimeLength
+            + (mimeLength > 31 ? Golden.GAS_REGISTER_LONG_MIME : 0);
+        assertLe(used, model, "registerManifestList gas above the Python model");
     }
 
     /// @dev The worst bounded inputs, modelled, stay inside the Fusaka cap with the quarter of
     ///      the cap the repository keeps in reserve.
     function test_GasModel_WorstCasesFitTheCapWithMargin() public view {
+        // One-call registration of 512 chunks: the head and a full hash list, all nonzero bytes.
+        uint256 registerCalldata = 4 + 32 * (5 + 2 + 512) + 64;
+        uint256 registerTx = 21_000 + _modelRegister(512, 64) + 16 * registerCalldata;
+        assertLe(registerTx, Golden.TX_GAS_CAP * 3 / 4, "one-call register of 512 lacks margin");
+
+        // Registration at MAX_CHUNKS from list chunks of 767 hashes.
         uint256 maxChunks = store.MAX_CHUNKS();
-        // Calldata of the largest registration: the head and a full hash list, all nonzero bytes.
-        uint256 registerCalldata = 4 + 32 * (5 + 2 + maxChunks) + 64;
-        uint256 registerTx = 21_000 + _modelRegister(maxChunks, 64) + 16 * registerCalldata;
-        assertLe(registerTx, Golden.TX_GAS_CAP * 3 / 4, "register at the limit lacks margin");
+        uint256 lists = (maxChunks + CHUNK / 32 - 1) / (CHUNK / 32);
+        uint256 listTx = 21_000 + Golden.GAS_REGISTER_LIST_BASE + Golden.GAS_REGISTER_LIST_PER_LIST
+            * lists + Golden.GAS_REGISTER_LIST_PER_CHUNK * maxChunks
+            + Golden.GAS_REGISTER_PER_MIME_BYTE * 64 + Golden.GAS_REGISTER_LONG_MIME + 16
+            * (4 + 32 * (8 + lists + 2) + 64);
+        assertLe(listTx, Golden.TX_GAS_CAP * 3 / 4, "list register at the limit lacks margin");
+
+        // A full link of 256 parts.
+        uint256 linkTx = 21_000 + Golden.GAS_LINK_BASE + Golden.GAS_LINK_PER_PART * 256
+            + Golden.GAS_LINK_PER_BYTE * CHUNK + 16 * (4 + 32 * (2 + 256));
+        assertLe(linkTx, Golden.TX_GAS_CAP * 3 / 4, "a full link lacks margin");
 
         uint256 writeCalldata = 4 + 64 + CHUNK + 31;
         uint256 writeTx = 21_000 + _modelWriteChunk(CHUNK) + 16 * writeCalldata;

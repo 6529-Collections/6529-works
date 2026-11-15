@@ -194,6 +194,12 @@ def verify_file(
     report.stored_length = info.length
     report.chunk_count = info.chunk_count
     report.declared_media_sha256 = info.sha256
+    if info.digest_kind != 0:
+        report.problems.append(
+            f"the manifest declares digest kind {info.digest_kind}; this tool checks SHA-256 "
+            "(kind 0) files only"
+        )
+        return Result(report)
     try:
         encoding = Encoding.from_id(info.encoding)
     except ToolError:

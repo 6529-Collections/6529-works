@@ -38,7 +38,9 @@ from tools.content.rpc import JsonRpc
 
 ARTIFACT = ROOT / "out" / "ContentStore.sol" / "ContentStore.json"
 REQUIRED = os.environ.get("CONTENT_E2E_REQUIRE") == "1"
-MANIFEST_REGISTERED = keccak256(b"ManifestRegistered(bytes32,uint256,uint256,uint8,bytes32,string)")
+MANIFEST_REGISTERED = keccak256(
+    b"ManifestRegistered(bytes32,uint256,uint8,uint8,bytes32,string,bytes32[])"
+)
 BASE64_PROGRESS = keccak256(b"Base64Progress(bytes32,uint256)")
 BASE64_ATTESTED = keccak256(b"Base64Attested(bytes32)")
 
@@ -228,13 +230,14 @@ class AnvilEndToEndTest(unittest.TestCase):
         self.assertEqual(self.cli("verify", other_mime, "-q")[0], 1)  # unknown until registered
         self.assertEqual(self.cli("verify", honest, "-q")[0], 0)
 
-    def test_registration_at_the_chunk_limit_is_inside_the_model_and_the_cap(self) -> None:
-        hashes = [keccak256(b"limit" + i.to_bytes(2, "big")) for i in range(pl.MAX_CHUNKS)]
+    def test_one_call_registration_of_512_is_inside_the_model_and_the_cap(self) -> None:
+        hashes = [keccak256(b"limit" + i.to_bytes(2, "big")) for i in range(512)]
         mime = "a/" + "b" * 62
+        length = 512 * pl.CHUNK_SIZE
         data = abi.encode_register_manifest(
-            hashes, pl.MAX_STORED_BYTES, int(Encoding.GZIP), mime, bytes([9] * 32)
+            hashes, length, int(Encoding.GZIP), mime, bytes([9] * 32)
         )
-        estimate = gas.estimate_register(pl.MAX_CHUNKS, len(mime), data)
+        estimate = gas.estimate_register(512, len(mime), data)
         self.assertTrue(estimate.within_cap and estimate.has_margin)
         call = calls.CallPlan(0, "registerManifest", (), data, estimate, "x")
         receipt = send_call(call)
@@ -243,9 +246,76 @@ class AnvilEndToEndTest(unittest.TestCase):
         self.assertLessEqual(used, estimate.transaction)
         self.assertLess(used, gas.TX_GAS_CAP * 3 // 4)
         # ... and the contract agrees on the ID.
-        expected = pl.manifest_id(hashes, pl.MAX_STORED_BYTES, Encoding.GZIP, mime, bytes([9] * 32))
+        expected = pl.manifest_id(hashes, length, Encoding.GZIP, mime, bytes([9] * 32))
         topics = [log["topics"][1] for log in receipt["logs"]]
         self.assertEqual(topics, ["0x" + expected.hex()])
+
+    def test_registration_at_the_chunk_limit_goes_in_pieces(self) -> None:
+        # 4,096 chunk hashes: six list chunks, then one small registration, each inside the
+        # model and the cap with the quarter reserve; the contract agrees on the file ID.
+        hashes = tuple(keccak256(b"max" + i.to_bytes(2, "big")) for i in range(pl.MAX_CHUNKS))
+        mime = "a/" + "b" * 62
+        manifest = pl.Manifest(
+            pl.manifest_id(hashes, pl.MAX_STORED_BYTES, Encoding.GZIP, mime, bytes([9] * 32)),
+            mime, Encoding.GZIP, bytes([9] * 32), None, pl.MAX_STORED_BYTES, None, hashes, None,
+        )
+        from unittest import mock
+
+        with mock.patch.object(calls, "check_stored"), mock.patch.object(calls, "split_chunks") as split:
+            split.return_value = [b""] * len(hashes)
+            built = calls.build_calls(
+                manifest, b"", present_chunk_hashes=hashes, attest=False, manifest_mode="list"
+            )
+        self.assertEqual([c.name for c in built], ["writeListChunk"] * 6 + ["registerManifestList"])
+        for call in built:
+            self.assertTrue(call.estimate.within_cap and call.estimate.has_margin, call.name)
+            receipt = send_call(call)
+            self.assertEqual(receipt["status"], "0x1", call.name)
+            self.assertLessEqual(int(receipt["gasUsed"], 16), call.estimate.transaction, call.name)
+        topics = [log["topics"][1] for log in receipt["logs"]]
+        self.assertEqual(topics, ["0x" + manifest.file_id.hex()])
+
+    def test_parts_and_list_registration_stage_verify_and_resume(self) -> None:
+        # Parts of 8,192 bytes linked into chunks, the manifest from list chunks: the file
+        # verifies and rebuilds, and a stopped upload resumes with only what is missing.
+        media = counter_bytes(136, 2 * pl.CHUNK_SIZE + 700)
+        plan = pl.plan_from_media(media, "application/octet-stream", Encoding.IDENTITY)
+        built = calls.build_calls(
+            manifest_of(plan), plan.stored, part_size=8192, manifest_mode="list"
+        )
+        names = [c.name for c in built]
+        self.assertEqual(
+            names,
+            ["writeListChunk", "registerManifestList"]
+            + ["writePart"] * 3 + ["linkChunk"] + ["writePart"] * 3 + ["linkChunk"]
+            + ["writeChunk"],
+        )
+        for call in built[:5]:  # the list, its registration and the parts of chunk 0
+            self.assertEqual(send_call(call)["status"], "0x1")
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest_path = Path(tmp) / "m.json"
+            manifest_path.write_text(json.dumps(pl.manifest_dict(plan, "m.stored", None)), encoding="utf-8")
+            (Path(tmp) / "m.stored").write_bytes(plan.stored)
+            code, out, err = run(
+                "calls", str(manifest_path), "--store", checksum_address(_store),
+                "--rpc", _url, "--only-missing", "--json", "--part-size", "8192",
+                "--manifest", "list",
+            )
+            self.assertEqual(code, 0, err)
+            remaining = [t["name"] for t in json.loads(out)["transactions"]]
+            self.assertEqual(
+                remaining,
+                ["linkChunk"] + ["writePart"] * 3 + ["linkChunk", "writeChunk"],
+            )
+        for call in built[5:]:
+            receipt = send_call(call)
+            self.assertEqual(receipt["status"], "0x1", call.name)
+            self.assertLessEqual(int(receipt["gasUsed"], 16), call.estimate.transaction, call.name)
+        self.assertEqual(self.cli("verify", plan, "-q")[0], 0)
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "media.bin"
+            self.assertEqual(self.cli("rebuild", plan, "-o", str(target), "-q")[0], 0)
+            self.assertEqual(target.read_bytes(), media)
 
     def test_a_full_chunk_write_is_inside_the_model_and_the_cap(self) -> None:
         chunk = counter_bytes(36, pl.CHUNK_SIZE)
@@ -386,7 +456,7 @@ class AnvilEndToEndTest(unittest.TestCase):
                     )
                     self.assertEqual(receipt["status"], "0x1")
                 with self.assertRaises(RevertError) as ctx:
-                    _rpc.eth_call(_store, abi.encode_call(abi.ATTEST_BASE64, file_id))
+                    _rpc.eth_call(_store, abi.encode_call(abi.ATTEST_BASE64, file_id, 48))
                 self.assertEqual(str(ctx.exception), expected.format(id="0x" + file_id.hex()))
                 attested = _rpc.eth_call(_store, abi.encode_call(abi.IS_BASE64_ATTESTED, file_id))
                 self.assertFalse(abi.decode_bool(attested))
