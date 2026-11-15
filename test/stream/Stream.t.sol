@@ -1528,6 +1528,8 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         public
     {
         vm.assume(payee != address(0) && fee != address(0));
+        // The ledger refuses itself as a fixed payee (ECO: a share it could never pay out).
+        vm.assume(payee != address(splitFactory) && fee != address(splitFactory));
         PackageItem memory item = _item(1);
         item.payees[0] = ISplitWallet.Payee(0, payee, 100_000);
         address sellerWallet = _sellerOf(item.payees);
