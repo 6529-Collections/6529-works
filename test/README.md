@@ -53,7 +53,7 @@ description of the contract.
 | `curation/PackageRegistry.sol`, `Eip712CurationVerifier.sol` | [`curation/`](curation/): `PackageRegistry`, `PackageRegistryGas`, `PackageRegistryInvariant`, `Eip712CurationVerifier` |
 | `identity/ArtistRegistry.sol` | [`identity/ArtistRegistry.t.sol`](identity/ArtistRegistry.t.sol), [`ArtistRegistryStanding.t.sol`](identity/ArtistRegistryStanding.t.sol) (the standing snapshot and its worst-case gas), `ContestedOverrides`, `RestrainedFlag`, `ArtistRegistry.invariant` |
 | `identity/ConsolidationAdapter.sol` | [`identity/ConsolidationAdapter.t.sol`](identity/ConsolidationAdapter.t.sol); against the real contract in `fork/` |
-| `records/StatementLog.sol` | [`records/`](records/): `StatementLog`, `StatementLogPolicy`, `StatementLogGolden`, `StatementLogOwnerRead`, `StatementLog.invariant` |
+| `records/StatementLog.sol` | [`records/`](records/): `StatementLog`, `StatementLogPolicy`, `StatementLogGolden`, `StatementLogOwnerRead`, `StatementLogGasRule` (every call out at 1x to 100x its cost and short of gas), `StatementLog.invariant` |
 | `content/ContentStore.sol`, `DependencyRegistry.sol`, `Base64Validator.sol` | [`content/`](content/): `ContentStore`, `ContentStoreInvariant`, `DependencyRegistry`, `Base64Attest` |
 | `content/Renderer.sol`, `JsonScan.sol`, `DataUri.sol`, `HtmlScript.sol` | [`content/renderer/`](content/renderer/): `Renderer` (metadata, escaping, license, disputes, editions, failing closed), `RendererRecords` (what a record may hold), `RendererMedia`, `RendererHostile`, `RendererGas`, `RendererOracles`, `JsonScan`, `TextHelpers` |
 | `economics/*` | [`economics/`](economics/): one suite per contract (`AssetAllowlist`, `ClaimRouter`, `EconomicsResolver`, `ReleaseVerifier`, `RevenueEscrow`, `RevenuePayment`, `SplitFactory`, `SplitWallet`), `SplitMath` (`Splits`), `HostileTokens` (`TokenTransfer` and hostile ERC-20s), `GasCap`, `invariant/` |
@@ -76,7 +76,7 @@ description of the contract.
 | `deploy/` | The deploy library, the deploy and Verify scripts, genesis | integration |
 | `fork/` | The stack against the real delegation contract, Permit2 and the VRF coordinator; skipped without an RPC URL ([its README](fork/README.md)) | fork |
 | `symbolic/` | Halmos proofs (`check_*`), compiled only under the `symbolic` profile | symbolic |
-| `helpers/` | Shared fixtures (`GovernanceFixture`), oracles (`TextOracles`, the frozen RC1 code in `Pr744Utf8` and `Pr744Escape`, and `UniformClearingReference`, the edition auction's brute-force clearing and FIFO fill, with its own test), the state-growth meter (`StateGrowth`, with its own test), revert data (`SignatureReverts`) and locator builders (`ContentAddresses`) | support |
+| `helpers/` | Shared fixtures (`GovernanceFixture`), oracles (`TextOracles`, the frozen RC1 code in `Pr744Utf8` and `Pr744Escape`, and `UniformClearingReference`, the edition auction's brute-force clearing and FIFO fill, with its own test), the state-growth meter (`StateGrowth`, with its own test), the gas-rule stress harness (`GasRule`: a `Burner` that makes a dependency cost a multiple of a base, and `GasRuleAssertions`), revert data (`SignatureReverts`) and locator builders (`ContentAddresses`) | support |
 | `mocks/` | Stand-ins and adversaries, by module ([below](#mocks)) | support |
 | `fixtures/` | Byte-exact data: the CC0 legal code, Permit2's mainnet runtime code, and the oracle vectors from `tools/content/oracles.py` | support |
 

@@ -429,11 +429,8 @@ contract StatementLogPolicyTest is StatementLogFixture {
         token.setMode(StreamCoreMock.Mode.UNKNOWN_WORK);
         assertEq(stmtLog.latestDisputeOutcome(address(token), 1), bytes32(0), "no such work");
 
-        StreamCoreMock.Mode[3] memory failures = [
-            StreamCoreMock.Mode.OTHER_REVERT,
-            StreamCoreMock.Mode.OUT_OF_GAS,
-            StreamCoreMock.Mode.SHORT_ANSWER
-        ];
+        StreamCoreMock.Mode[2] memory failures =
+            [StreamCoreMock.Mode.OTHER_REVERT, StreamCoreMock.Mode.SHORT_ANSWER];
         for (uint256 i; i < failures.length; ++i) {
             token.setMode(failures[i]);
             vm.expectRevert(
@@ -441,6 +438,12 @@ contract StatementLogPolicyTest is StatementLogFixture {
             );
             stmtLog.latestDisputeOutcome(address(token), 1);
         }
+        // Running out of gas is a shortfall, not a failed read: it reverts with its own error.
+        token.setMode(StreamCoreMock.Mode.OUT_OF_GAS);
+        vm.expectRevert(
+            abi.encodeWithSelector(BoundedCall.BoundedCallShortfall.selector, address(token))
+        );
+        stmtLog.latestDisputeOutcome(address(token), 1);
 
         // A token's own outcome is answered without reading `coreOf` at all.
         Statement memory own = _statement(address(token), 1);

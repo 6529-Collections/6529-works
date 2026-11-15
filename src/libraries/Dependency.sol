@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { ERC165Checker } from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
+import { BoundedCall } from "./BoundedCall.sol";
 import { DelegatedEOA } from "./DelegatedEOA.sol";
 
 /// @title Dependency
@@ -13,7 +13,10 @@ import { DelegatedEOA } from "./DelegatedEOA.sol";
 ///         shows which of these it applies.
 /// @dev Internal functions only, so nothing here is a linked library. "Dependency" means an
 ///      installed contract (a registry, resolver, renderer, satellite, coordinator or listed
-///      token), not a `DependencyRegistry` entry.
+///      token), not a `DependencyRegistry` entry. ERC-165 is probed by
+///      `BoundedCall.supportsInterface`, which forwards all the gas EIP-150 allows and reverts
+///      with `BoundedCall.BoundedCallShortfall` when a probe runs short, so a shortfall is never
+///      reported as a refused dependency.
 library Dependency {
     /// @notice `dependency` is refused: it has no code, is an EIP-7702 delegated account, does
     ///         not declare the required interface through ERC-165, or its code hash is not the
@@ -35,11 +38,12 @@ library Dependency {
     }
 
     /// @notice `isInstallable(dependency)`, plus ERC-165 support for `interfaceId`.
+    /// @dev Reverts with `BoundedCall.BoundedCallShortfall` when an ERC-165 probe runs short.
     /// @param dependency The address to check.
     /// @param interfaceId The ERC-165 interface it must support.
     /// @return Whether it can be installed as `interfaceId`.
     function isInstallable(address dependency, bytes4 interfaceId) internal view returns (bool) {
-        return isInstallable(dependency) && ERC165Checker.supportsInterface(dependency, interfaceId);
+        return isInstallable(dependency) && BoundedCall.supportsInterface(dependency, interfaceId);
     }
 
     /// @notice Reverts with `InvalidDependency` unless `dependency` has code and is not an EIP-7702

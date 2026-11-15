@@ -101,6 +101,13 @@ Every page has the same headings, so a reader can jump straight to what they nee
   [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md) defines it; Sepolia figures are
   Glamsterdam receipts from [flows.md](../../deployments/11155111/flows.md).
 - **"Anyone"** means a permissionless function: no role and no allow-list.
+- **Calls out of permanent contracts** compile in no gas number. They use the forward-all
+  family of [`BoundedCall`](../../src/libraries/BoundedCall.sol): all the gas EIP-150 allows is
+  forwarded, at most a stated number of return bytes is copied, and a call that fails while
+  leaving at most 1/8 of the gas held before it reverts with `BoundedCallShortfall(target)`, so
+  running short never reads as a refusal or a default answer. The library's NatSpec states why
+  1/8 and the residuals; the statement log's rule is
+  [DSP-26](disputes-and-statements.md#rules-and-invariants).
 
 ## Differences from the ADRs
 
