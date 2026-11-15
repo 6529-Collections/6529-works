@@ -277,7 +277,8 @@ signer or as an `asset` reverts with `BoundedCallShortfall` rather than `Invalid
 `released` and `totalReleased` change before the transfer and their getters ignore the lock, so
 only `observed` and `releasable` are safe to read inside a release callback; an ERC-721 sent to
 a vault with `transferFrom` cannot leave it, and a legacy NFT with `transfer(address,uint256)`
-could be released by count as a token ID.
+could be released by count as a token ID
+([`LedgerEdgeCases.t.sol`](../../test/economics/LedgerEdgeCases.t.sol) pins the first three).
 
 **The escrow** keeps credits by `(wallet, asset)`. Deposits are permissionless; anyone flushes a
 credit, only to its wallet, and a failed flush keeps it (ECO-27). Governed `recover` moves a
