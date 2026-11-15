@@ -154,6 +154,8 @@ contract MasterEditionFlowTest is IntegrationBase {
         assertEq(t.saleKind, FIXED_PRICE);
         assertEq(t.currency, address(usd));
         assertEq(abi.decode(t.params, (uint256)), FIXED_UNIT_PRICE, "its params, as approved");
+        // Each mint carries the price it sold at, in the terms' currency (ED-26).
+        fixedPrice.setPrice(address(usd), FIXED_UNIT_PRICE);
         fixedPrice.buy(editions, workId, buyer, 25);
         assertEq(editions.balanceOf(buyer, workId), 25);
         assertEq(editions.edition(workId).minter, address(fixedPrice));

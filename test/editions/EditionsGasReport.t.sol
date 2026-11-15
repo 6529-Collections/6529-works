@@ -19,7 +19,8 @@ import { IntegrationBase } from "../integration/IntegrationBase.sol";
 contract EditionsGasReport is IntegrationBase {
     /// @dev Regression ceilings, with headroom over the measured values.
     uint256 internal constant CREATE_CEILING = 273_000;
-    uint256 internal constant MINT_CEILING = 69_000;
+    uint256 internal constant MINT_CEILING = 74_000;
+    uint256 internal constant SEAL_CEILING = 40_000;
 
     address internal artist;
     bytes32 internal root;
@@ -56,7 +57,9 @@ contract EditionsGasReport is IntegrationBase {
     }
 
     function _mintData(address to) internal view returns (bytes memory) {
-        return abi.encodeCall(editions.mint, (to, workId, 1, ""));
+        return abi.encodeCall(
+            editions.mint, (to, workId, 1, abi.encode(CURRENCY_ETH, uint256(0.01 ether)))
+        );
     }
 
     function test_Gas_CreateEdition() public {
@@ -79,6 +82,23 @@ contract EditionsGasReport is IntegrationBase {
         _row("mint, later copy (new holder)", total, execution);
         assertLe(total, MINT_CEILING, "later mint");
         assertEq(editions.edition(workId).minted, 2);
+    }
+
+    /// @dev The seal a sale's settlement adds (`sealSupply`): the seller's and the artist's
+    ///      words, both written already, so no new slot.
+    function test_Gas_SealSupply() public {
+        Work[] memory works = _package(root);
+        editions.createEdition(workId, works[1].item, root, _proofOf(works, 1));
+        _measure(address(editionAuction), address(editions), _mintData(makeAddr("buyer1")), 0);
+        (uint256 total, uint256 execution) = _measure(
+            address(editionAuction),
+            address(editions),
+            abi.encodeCall(editions.sealSupply, (workId, 10)),
+            0
+        );
+        _row("sealSupply (bound edition, at settlement)", total, execution);
+        assertLe(total, SEAL_CEILING, "seal");
+        assertTrue(editions.edition(workId).supplySealed);
     }
 
     function _row(string memory label, uint256 total, uint256 execution) internal pure {

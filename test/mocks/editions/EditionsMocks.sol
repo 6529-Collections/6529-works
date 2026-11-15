@@ -385,9 +385,22 @@ contract EditionsStreamMock {
 contract EditionsAdapterMock is ERC1155Holder {
     bytes32 public saleKind;
     PrimaryTerms internal _last;
+    /// @dev The currency and unit price this adapter reports with each mint.
+    address public currency;
+    uint256 public unitPrice = 0.01 ether;
 
     constructor(bytes32 kind) {
         saleKind = kind;
+    }
+
+    /// @dev Sets the currency and unit price reported with each mint.
+    function setPrice(address currency_, uint256 unitPrice_) external {
+        (currency, unitPrice) = (currency_, unitPrice_);
+    }
+
+    /// @dev What a sale adapter does when its sale settles (`IEditions.sealSupply`).
+    function seal(IEditions target, uint256 id, uint256 count) external {
+        target.sealSupply(id, count);
     }
 
     /// @dev Changes the kind this adapter answers (an adapter whose answer is not constant).
@@ -403,7 +416,7 @@ contract EditionsAdapterMock is ERC1155Holder {
         external
         returns (uint256 tokenId, PrimaryTerms memory terms)
     {
-        (tokenId, terms) = target.mint(to, id, amount, "");
+        (tokenId, terms) = target.mint(to, id, amount, abi.encode(currency, unitPrice));
         _last = terms;
     }
 
@@ -517,7 +530,11 @@ contract ReentrantReceiver1155 is ERC1155Holder {
                     .call(abi.encodeCall(adapter.buy, (editions, id, address(this), 1)));
             } else if (mode == Mode.DIRECT) {
                 (ok, reason) = address(editions)
-                    .call(abi.encodeCall(IMintTarget.mint, (address(this), id, 1, "")));
+                    .call(
+                        abi.encodeCall(
+                            IMintTarget.mint, (address(this), id, 1, abi.encode(address(0), 0))
+                        )
+                    );
             } else {
                 PackageItem memory item = abi.decode(_item, (PackageItem));
                 (bytes32 root, bytes32[] memory proof) = EditionsPackages.packageOf(item, 0);
@@ -561,6 +578,6 @@ contract HashedParamsAdapterMock is ERC1155Holder {
     }
 
     function buy(IMintTarget target, uint256 id, address to, uint256 amount) external {
-        target.mint(to, id, amount, "");
+        target.mint(to, id, amount, abi.encode(address(0), uint256(0)));
     }
 }

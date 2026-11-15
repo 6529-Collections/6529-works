@@ -10,9 +10,9 @@ import { EditionsBase } from "./EditionsBase.sol";
 import { EditionsHandler } from "./EditionsHandler.sol";
 
 /// @notice Stateful invariants of 6529 Stream Editions over three editions: one capped at 20,
-///         one uncapped, and one capped at 30, minted through two admitted uniform-auction
-///         adapters (each edition binds to the first that mints it) and probed by an admitted
-///         adapter of the wrong sale kind.
+///         one uncapped, and one capped at 30, minted and sealed through two uniform-auction
+///         adapters that governance removes and re-admits (each edition binds to the first that
+///         mints it) and probed by an admitted adapter of the wrong sale kind.
 contract EditionsInvariantTest is StdInvariant, EditionsBase {
     EditionsHandler internal handler;
     uint256[] internal ids;
@@ -37,10 +37,11 @@ contract EditionsInvariantTest is StdInvariant, EditionsBase {
         EditionsAdapterMock wrongKind = new EditionsAdapterMock(SaleKind.ENGLISH_AUCTION);
         vm.prank(governor);
         editions.setAdmittedMinter(address(wrongKind), true);
-        handler =
-            new EditionsHandler(editions, stream, adapter, secondAdapter, wrongKind, ids, items);
+        handler = new EditionsHandler(
+            editions, stream, adapter, secondAdapter, wrongKind, governor, ids, items
+        );
 
-        bytes4[] memory selectors = new bytes4[](9);
+        bytes4[] memory selectors = new bytes4[](11);
         selectors[0] = EditionsHandler.buy.selector;
         selectors[1] = EditionsHandler.buy.selector; // mints twice as often
         selectors[2] = EditionsHandler.buyWithWrongKind.selector;
@@ -50,6 +51,8 @@ contract EditionsInvariantTest is StdInvariant, EditionsBase {
         selectors[6] = EditionsHandler.warp.selector;
         selectors[7] = EditionsHandler.recreate.selector;
         selectors[8] = EditionsHandler.moveMaster.selector;
+        selectors[9] = EditionsHandler.seal.selector;
+        selectors[10] = EditionsHandler.toggleAdmission.selector;
         targetSelector(FuzzSelector({ addr: address(handler), selectors: selectors }));
         targetContract(address(handler));
     }
@@ -61,6 +64,23 @@ contract EditionsInvariantTest is StdInvariant, EditionsBase {
         assertEq(handler.unexpected(), 0, "an outcome differed from the edition terms");
         assertEq(handler.overCapMints(), 0, "a copy was minted beyond the cap");
         assertEq(handler.unboundMints(), 0, "a copy was minted by an unbound adapter");
+        assertEq(handler.removedUnsealedMints(), 0, "a removed adapter minted an unsealed edition");
+    }
+
+    /// @notice ED-25: once sealed, an edition's supply never exceeds the sealed count, its
+    ///         maximum is that count, and it stays sealed; before the seal only the bound adapter
+    ///         minted (checked per call by `unboundMints` and `unexpected`).
+    function invariant_SealedSupplyNeverExceedsTheSealedCount() public view {
+        assertEq(handler.overSealMints(), 0, "a copy was minted past the seal");
+        for (uint256 i; i < ids.length; ++i) {
+            IEditions.Edition memory e = editions.edition(ids[i]);
+            assertEq(e.supplySealed, handler.ghostSealed(ids[i]), "seal flag");
+            assertLe(e.minted, e.maxSupply, "minted within the maximum");
+            if (e.supplySealed) {
+                assertEq(e.maxSupply, handler.ghostSealCount(ids[i]), "sealed count");
+                assertLe(e.minted, handler.ghostSealCount(ids[i]), "sealed supply");
+            }
+        }
     }
 
     /// @notice Supply: `minted` counts every copy ever minted, never exceeds the cap, and the

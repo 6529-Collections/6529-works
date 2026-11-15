@@ -12,11 +12,14 @@ import {
     EditionsStreamMock
 } from "../mocks/editions/EditionsMocks.sol";
 
-/// @notice Drives 6529 Stream Editions with mints through either of two admitted uniform-auction
-///         adapters, an admitted adapter of the wrong sale kind and a non-minter, burns from
+/// @notice Drives 6529 Stream Editions with mints through either of two uniform-auction
+///         adapters (each removed and re-admitted by governance at random), seals by either of
+///         them, an admitted adapter of the wrong sale kind and a non-minter, burns from
 ///         adapter custody, transfers between holders, time warps, secondary sales of the master
 ///         and repeated `createEdition` calls. Before each mint it predicts the outcome from the
-///         edition's creator cap and its binding to the first adapter that minted it; any
+///         edition's maximum (the creator's cap, then the sealed count), its binding to the first
+///         adapter that minted it and the adapter's admission (a removed adapter mints only a
+///         sealed edition); any
 ///         accepted call the model rejects, or rejected call it accepts, is counted in
 ///         `unexpected`. Ghost counters mirror minted, burned and the bound adapter.
 contract EditionsHandler is Test {
@@ -25,6 +28,7 @@ contract EditionsHandler is Test {
     EditionsAdapterMock internal immutable adapterA;
     EditionsAdapterMock internal immutable adapterB;
     EditionsAdapterMock internal immutable wrongKind;
+    address internal immutable governor;
 
     uint256[] internal _ids;
     bytes[] internal _items;
@@ -33,6 +37,15 @@ contract EditionsHandler is Test {
     mapping(uint256 => uint256) public ghostMinted;
     mapping(uint256 => uint256) public ghostBurned;
     mapping(uint256 => address) public ghostMinter;
+    mapping(uint256 => bool) public ghostSealed;
+    mapping(uint256 => uint256) public ghostSealCount;
+    mapping(address => bool) public ghostRemoved;
+    /// @notice Copies accepted past a sealed count.
+    uint256 public overSealMints;
+    /// @notice Copies accepted from a removed adapter whose edition was not sealed.
+    uint256 public removedUnsealedMints;
+    /// @notice Successful seals, for coverage.
+    uint256 public seals;
     /// @notice Calls whose outcome differed from the model.
     uint256 public unexpected;
     /// @notice Copies accepted beyond an edition's creator cap.
@@ -48,6 +61,7 @@ contract EditionsHandler is Test {
         EditionsAdapterMock adapterA_,
         EditionsAdapterMock adapterB_,
         EditionsAdapterMock wrongKind_,
+        address governor_,
         uint256[] memory ids_,
         PackageItem[] memory items
     ) {
@@ -56,6 +70,7 @@ contract EditionsHandler is Test {
         adapterA = adapterA_;
         adapterB = adapterB_;
         wrongKind = wrongKind_;
+        governor = governor_;
         _ids = ids_;
         for (uint256 i; i < items.length; ++i) {
             _items.push(abi.encode(items[i]));
@@ -72,27 +87,70 @@ contract EditionsHandler is Test {
     function buy(uint256 editionSeed, bool second, uint256 holderSeed, uint256 amount) external {
         uint256 id = _ids[editionSeed % _ids.length];
         IEditions.Edition memory e = editions.edition(id);
-        uint256 cap = e.terms.maxCount == 0 ? type(uint48).max : e.terms.maxCount;
+        uint256 cap = e.maxSupply;
         amount = bound(amount, 1, e.terms.maxCount == 0 ? 5_000 : uint256(e.terms.maxCount) + 2);
         EditionsAdapterMock adapter = second ? adapterB : adapterA;
         address to = _holders[holderSeed % _holders.length];
+        bool removed = ghostRemoved[address(adapter)];
         bool bound_ = e.minter == address(0) || e.minter == address(adapter);
+        // A removed adapter binds nothing, and mints only an edition it sealed.
+        bool admittedFor = !removed || (e.minter == address(adapter) && e.supplySealed);
         bool withinCap = amount <= cap - e.minted;
 
         try adapter.buy(editions, id, to, amount) {
-            if (!bound_ || !withinCap) ++unexpected;
+            if (!bound_ || !admittedFor || !withinCap) ++unexpected;
             if (!bound_) unboundMints += amount;
+            if (!admittedFor) removedUnsealedMints += amount;
             if (e.minted + amount > cap) overCapMints += amount;
+            if (ghostSealed[id] && e.minted + amount > ghostSealCount[id]) overSealMints += amount;
             if (ghostMinter[id] == address(0)) ghostMinter[id] = address(adapter);
             ghostMinted[id] += amount;
             ++mints;
         } catch (bytes memory reason) {
-            if (!bound_) {
+            if (!bound_ && !removed) {
                 if (!_is(reason, IEditions.MinterMismatch.selector)) ++unexpected;
+            } else if (!bound_ || !admittedFor) {
+                // Removed: an unbound or unsealed edition refuses it as not admitted, and
+                // another adapter's edition as a mismatch.
+                if (
+                    !_is(reason, IMintTarget.NotAdmittedMinter.selector)
+                        && !_is(reason, IEditions.MinterMismatch.selector)
+                ) ++unexpected;
             } else if (withinCap || !_is(reason, IEditions.EditionUnavailable.selector)) {
                 ++unexpected;
             }
         }
+    }
+
+    /// @dev The bound adapter's settlement: seals at a count between the copies minted and the
+    ///      maximum when `valid`, or at an out-of-range count otherwise; any other adapter, an
+    ///      unbound edition or a second seal is refused.
+    function seal(uint256 editionSeed, bool second, uint256 count, bool valid) external {
+        uint256 id = _ids[editionSeed % _ids.length];
+        IEditions.Edition memory e = editions.edition(id);
+        EditionsAdapterMock adapter = second ? adapterB : adapterA;
+        uint256 headroom = e.maxSupply - e.minted;
+        count = valid
+            ? e.minted + bound(count, 0, headroom < 10_000 ? headroom : 10_000)
+            : (e.minted != 0 && count % 2 == 0 ? e.minted - 1 : e.maxSupply + 1);
+        bool expectOk = e.minter == address(adapter) && !e.supplySealed && valid;
+        try adapter.seal(editions, id, count) {
+            if (!expectOk) ++unexpected;
+            ghostSealed[id] = true;
+            ghostSealCount[id] = count;
+            ++seals;
+        } catch {
+            if (expectOk) ++unexpected;
+        }
+    }
+
+    /// @dev Governance removes or re-admits an adapter (the 30-day class in deployment).
+    function toggleAdmission(bool second) external {
+        EditionsAdapterMock adapter = second ? adapterB : adapterA;
+        bool removed = ghostRemoved[address(adapter)];
+        vm.prank(governor);
+        editions.setAdmittedMinter(address(adapter), removed);
+        ghostRemoved[address(adapter)] = !removed;
     }
 
     function buyWithWrongKind(uint256 editionSeed, uint256 amount) external {
@@ -109,7 +167,7 @@ contract EditionsHandler is Test {
         uint256 id = _ids[editionSeed % _ids.length];
         amount = bound(amount, 1, 10);
         vm.prank(_holders[1]);
-        try editions.mint(_holders[1], id, amount, "") {
+        try editions.mint(_holders[1], id, amount, abi.encode(address(0), uint256(1))) {
             ++unexpected;
         } catch (bytes memory reason) {
             if (!_is(reason, IMintTarget.NotAdmittedMinter.selector)) ++unexpected;

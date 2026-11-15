@@ -152,7 +152,7 @@ abstract contract EditionsBase is Test {
         return editions.createEdition(id, item, root, proof);
     }
 
-    function _create(PackageItem memory item) internal returns (uint256 id) {
+    function _create(PackageItem memory item) internal virtual returns (uint256 id) {
         id = _master(item);
         _createEdition(id, item);
     }
