@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
+import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
 import { PermanenceFixture } from "./PermanenceFixture.sol";
@@ -88,7 +89,7 @@ contract SeatsAndParametersTest is PermanenceFixture {
         _scheduleReady(fast);
         vm.expectRevert(
             abi.encodeWithSelector(
-                WorksAccessManager.AdminDelayBelowFloor.selector, ADMIN_DELAY - 1
+                WorksAccessManager.DelayBelowClass.selector, Roles.ADMIN, ADMIN_DELAY - 1
             )
         );
         vm.prank(adminSafe);
@@ -197,5 +198,127 @@ contract SeatsAndParametersTest is PermanenceFixture {
         );
         vm.prank(adminSafe);
         manager.execute(address(manager), stale);
+    }
+
+    // ------------------------------------------------------------------ class delays (L-1)
+
+    /// @dev Every role with a nonzero class refuses a grant below it, however the grant is
+    ///      reached; at the class it is accepted.
+    function test_EveryDelayedRoleRefusesAGrantBelowItsClass() public {
+        uint64[5] memory roles = [
+            Roles.ADMIN,
+            Roles.UNPAUSER,
+            Roles.PARAMETER_SETTER,
+            Roles.FUNDS_SETTER,
+            Roles.SUCCESSOR_SETTER
+        ];
+        for (uint256 i; i < roles.length; ++i) {
+            uint32 class = Roles.executionDelay(roles[i]);
+            address holder = makeAddr(string.concat("holder", vm.toString(i)));
+            bytes memory below = _grant(roles[i], holder, class - 1);
+            _scheduleReady(below);
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    WorksAccessManager.DelayBelowClass.selector, roles[i], class - 1
+                )
+            );
+            vm.prank(adminSafe);
+            manager.execute(address(manager), below);
+            _adminExecute(_grant(roles[i], holder, class));
+            (, uint32 delay) = manager.hasRole(roles[i], holder);
+            assertEq(delay, class);
+        }
+    }
+
+    /// @dev A re-grant cannot cut an existing holder below its class either.
+    function test_AReGrantCannotCutAHolderBelowItsClass() public {
+        bytes memory cut = _grant(Roles.FUNDS_SETTER, adminSafe, 0);
+        _scheduleReady(cut);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WorksAccessManager.DelayBelowClass.selector, Roles.FUNDS_SETTER, 0
+            )
+        );
+        vm.prank(adminSafe);
+        manager.execute(address(manager), cut);
+    }
+
+    /// @dev A role-admin change does not open a way around the class: the new role admin's
+    ///      own grant of `FUNDS_SETTER` is refused below 14 days.
+    function test_ARoleAdminChangeCannotGrantBelowTheClass() public {
+        uint64 custom = 100;
+        address deputy = makeAddr("deputy");
+        _adminExecute(abi.encodeCall(IAccessManager.setRoleAdmin, (Roles.FUNDS_SETTER, custom)));
+        _adminExecute(_grant(custom, deputy, 0)); // a role outside `Roles` has no class
+        vm.warp(block.timestamp + manager.getRoleGrantDelay(custom));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WorksAccessManager.DelayBelowClass.selector, Roles.FUNDS_SETTER, 0
+            )
+        );
+        vm.prank(deputy);
+        manager.grantRole(Roles.FUNDS_SETTER, outsider, 0);
+        vm.prank(deputy);
+        manager.grantRole(Roles.FUNDS_SETTER, outsider, Roles.FUNDS);
+        (uint48 since, uint32 delay,,) = manager.getAccess(Roles.FUNDS_SETTER, outsider);
+        assertGt(since, 0);
+        assertEq(delay, Roles.FUNDS);
+    }
+
+    /// @dev Fuzz: for every role in `Roles`, a grant executes exactly when its delay is at least
+    ///      the class (seated roles excluded: their caps and pairing rules are tested above).
+    function testFuzz_AGrantExecutesOnlyAtOrAboveItsClass(uint8 roleSeed, uint32 delay) public {
+        uint64 role = uint64(bound(roleSeed, 2, Roles.COUNT - 1)); // not ADMIN or GUARDIAN
+        delay = uint32(bound(delay, 0, 60 days));
+        bytes memory grant = _grant(role, makeAddr("fuzzed"), delay);
+        _scheduleReady(grant);
+        uint32 class = Roles.executionDelay(role);
+        if (delay < class) {
+            vm.expectRevert(
+                abi.encodeWithSelector(WorksAccessManager.DelayBelowClass.selector, role, delay)
+            );
+        }
+        vm.prank(adminSafe);
+        manager.execute(address(manager), grant);
+    }
+
+    // ------------------------------------------------------------------ genesis admins (L-2)
+
+    /// @dev Genesis with `admins` admins: the configurator's own seat takes none of the five.
+    function _configureWithAdmins(uint256 admins) internal returns (bool ok, bytes memory err) {
+        _deployUnconfigured();
+        GovernanceConfig.Config memory cfg = _config();
+        GovernanceConfig.Grant[] memory base = cfg.grants;
+        // The default layout names two admins; add the rest.
+        GovernanceConfig.Grant[] memory grants =
+            new GovernanceConfig.Grant[](base.length + admins - 2);
+        for (uint256 i; i < base.length; ++i) {
+            grants[i] = base[i];
+        }
+        for (uint256 i; i < admins - 2; ++i) {
+            grants[base.length + i] = GovernanceConfig.Grant(
+                Roles.ADMIN, makeAddr(string.concat("genesis admin", vm.toString(i)))
+            );
+        }
+        cfg.grants = grants;
+        (ok, err) = address(configurator)
+            .call(abi.encodeCall(configurator.configure, (cfg, MANIFEST, _noWiring())));
+        if (ok) {
+            _settle();
+            configurator.verify(cfg);
+        }
+    }
+
+    function test_GenesisNamesThreeFourOrFiveAdmins() public {
+        for (uint256 n = 3; n <= 5; ++n) {
+            (bool ok,) = _configureWithAdmins(n);
+            assertTrue(ok, "configured");
+            assertEq(manager.seatHolders(Roles.ADMIN).length, n);
+        }
+        (bool six, bytes memory err) = _configureWithAdmins(6);
+        assertFalse(six);
+        assertEq(
+            err, abi.encodeWithSelector(WorksAccessManager.SeatCapReached.selector, Roles.ADMIN, 5)
+        );
     }
 }

@@ -214,10 +214,13 @@ role: PLATFORM, CURATOR or STORAGE_OPERATOR.
 `WorksAccessManager` gains, for governance that must last decades: a bounded veto on a
 guardian's removal and on a successor registration (a struck action waits an escalated delay
 and only a majority of guardian seats, at least two, can stop it), dead-admin recovery (a year
-of admin silence, then a 180-day public delay any live admin can void), a pre-registered
-successor with one permissionless `migrate`, ADMIN and GUARDIAN seat caps, a 30-day floor on
-every ADMIN grant, and no remapping or closing of the manager itself (GV-37 to GV-47 in the
+of admin silence, then a 180-day public delay any live admin can void), a two-step succession
+(the admins propose; the successor itself accepts after re-pointing a probe contract to the
+manager, so one that cannot act never takes over) with one permissionless `migrate`, ADMIN and
+GUARDIAN seat caps, a class-delay floor on every grant (30 days for ADMIN; before review D's
+L-1 fix only ADMIN grants were held to their class), and no remapping or closing of the manager
+itself (GV-37 to GV-47 in the
 [governance specification](../spec/governance.md#rules-and-invariants)). Genesis names a third
-admin Safe. Rules 1 to 3, suspension and the delay classes are unchanged outside the escalated
-lane. With three guardian seats any two are a majority, so the bounded veto bites only with five
-or more (LIM-GV-4).
+admin Safe. Rules 1 to 3 and suspension are unchanged outside the escalated lane. With three
+guardian seats any two are a majority, so the bounded veto bites against a colluding pair only
+from four seats (LIM-GV-4).

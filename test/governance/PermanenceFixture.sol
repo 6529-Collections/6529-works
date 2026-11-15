@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
+import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
@@ -20,6 +22,16 @@ abstract contract PermanenceFixture is GovernanceFixture {
 
     function _register(address next) internal pure returns (bytes memory) {
         return abi.encodeCall(WorksAccessManager.registerSuccessor, (next));
+    }
+
+    /// @dev `nextAdmin`, a zero-delay admin of the OpenZeppelin successor `next`, proves the
+    ///      pending successor can act: it re-points the probe to the manager, then accepts.
+    function _accept(AccessManager next, address nextAdmin) internal {
+        address probe = manager.successionProbe();
+        vm.startPrank(nextAdmin);
+        next.execute(probe, abi.encodeCall(IAccessManaged.setAuthority, (address(manager))));
+        next.execute(address(manager), abi.encodeCall(WorksAccessManager.acceptSuccession, ()));
+        vm.stopPrank();
     }
 
     function _setParameter(WorksAccessManager.Parameter which, uint32 expected, uint32 value)

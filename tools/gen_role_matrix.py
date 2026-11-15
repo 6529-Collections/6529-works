@@ -147,6 +147,11 @@ NOTES: dict[tuple[str, str], str] = {
         "Compare-and-set; also a genesis wiring call (ETH for each product).",
     ("AssetAllowlist", "deprecateAsset(address)"):
         "Halts sales in the asset; withdrawals and claims never stop.",
+    ("FeeRecipientVault", "setDestination(uint64,address)"):
+        "Where every held and future network fee goes; compare-and-set on the vault's revision.",
+    ("MuseumVault", "setDestination(uint64,address)"):
+        "Where every museum-held work and payout goes: authority over existing tokens, so the "
+        "30-day class, not the fee vault's 14 days; compare-and-set on the vault's revision.",
     ("RevenueEscrow", "recover(address,address,address)"): "Only to an identical-configuration "
      "replacement wallet, or to the replacement the account itself named.",
     ("DependencyRegistry", "register(bytes32,bytes32,bytes32)"):
@@ -170,7 +175,8 @@ MANAGER_NOTES: dict[str, str] = {
 # ADMIN role's execution delay; "target" adds the target's admin delay (the larger applies).
 MANAGER_FUNCTIONS: tuple[tuple[str, str, str, str], ...] = (
     ("grantRole(uint64,address,uint32)", "The role's admin (ADMIN for every role)", "admin",
-     "The grant then waits the role's grant delay."),
+     "The grant then waits the role's grant delay. Refused below the role's class delay "
+     "(`DelayBelowClass`), whoever the role's admin is."),
     ("revokeRole(uint64,address)", "The role's admin (ADMIN for every role)", "admin",
      "Only a guardian or its scheduler can cancel it, and the account it revokes only if it "
      "scheduled it."),
@@ -185,7 +191,9 @@ MANAGER_FUNCTIONS: tuple[tuple[str, str, str, str], ...] = (
      "A reduction takes effect after its length, and never sooner than `minSetback()`."),
     ("setTargetFunctionRole(address,bytes4[],uint64)", "ADMIN", "target", ""),
     ("setTargetClosed(address,bool)", "ADMIN", "target", ""),
-    ("updateAuthority(address,address)", "ADMIN", "target", ""),
+    ("updateAuthority(address,address)", "ADMIN", "target",
+     "Moves one target to another authority: no slow lane and no bounded veto, so any one "
+     "guardian can stop it, every time; it checks nothing about the new authority."),
     ("setAuthority(address)", "ADMIN, scheduled on the target itself", "target",
      "Stock OpenZeppelin lets only ADMIN cancel this; the guardians can too."),
 )

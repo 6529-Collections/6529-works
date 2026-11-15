@@ -332,11 +332,42 @@ contract DeadAdminRecoveryTest is PermanenceFixture {
     }
 
     function test_NoRecoveryAfterAHandover() public {
-        address next = address(new AccessManager(makeAddr("next")));
-        bytes memory register = _register(next);
-        _scheduleAndExecute(adminSafe, address(manager), register);
+        AccessManager next = new AccessManager(makeAddr("next"));
+        _scheduleAndExecute(adminSafe, address(manager), _register(address(next)));
+        _accept(next, makeAddr("next"));
         vm.warp(block.timestamp + SILENCE);
         vm.expectRevert(WorksAccessManager.HandedOver.selector);
         _open(newAdmin);
+    }
+
+    // ------------------------------------------------------------------ separation of roles
+
+    /// @dev Review I-4: a guardian majority cannot make one of its own seats the sole admin
+    ///      while it keeps its veto, by approval or as the registered recovery address.
+    function test_ARecoveryCannotSeatAGuardianAsAdmin() public {
+        vm.warp(block.timestamp + SILENCE);
+        _open(guardianC);
+        vm.prank(guardianA);
+        manager.approveRecovery(guardianC);
+        vm.prank(guardianB);
+        manager.approveRecovery(guardianC);
+        vm.warp(block.timestamp + RECOVERY);
+        vm.expectRevert(
+            abi.encodeWithSelector(WorksAccessManager.InvalidCandidate.selector, guardianC)
+        );
+        manager.completeRecovery(guardianC);
+        assertTrue(_isAdmin(adminSafe), "nothing changed");
+        // Once it leaves the guardian body (both roles), the same seat can be installed.
+        vm.startPrank(guardianC);
+        manager.renounceRole(Roles.GUARDIAN, guardianC);
+        vm.expectRevert( // still a pauser: refused
+            abi.encodeWithSelector(WorksAccessManager.InvalidCandidate.selector, guardianC)
+        );
+        manager.completeRecovery(guardianC);
+        manager.renounceRole(Roles.PAUSER, guardianC);
+        vm.stopPrank();
+        manager.completeRecovery(guardianC);
+        assertTrue(_isAdmin(guardianC));
+        assertFalse(_hasAdminRecord(adminSafe));
     }
 }

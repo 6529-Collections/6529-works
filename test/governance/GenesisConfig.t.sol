@@ -508,19 +508,20 @@ contract GenesisConfigTest is Test {
                 vm.parseJsonUint(json, string.concat(f, ".delay")), Roles.executionDelay(roles[i])
             );
         }
-        bytes4[4] memory open = [
+        bytes4[5] memory open = [
             WorksAccessManager.heartbeat.selector,
             WorksAccessManager.openRecovery.selector,
             WorksAccessManager.completeRecovery.selector,
+            WorksAccessManager.acceptSuccession.selector,
             WorksAccessManager.migrate.selector
         ];
         assertEq(_count(".manager.open"), open.length, "manager.open");
         for (uint256 i; i < open.length; ++i) {
             assertEq(_selector(string.concat(_at(".manager.open", i), ".selector")), open[i]);
         }
-        assertEq(_count(".manager.views"), 12, "manager.views");
+        assertEq(_count(".manager.views"), 14, "manager.views");
         assertEq(_selector(".manager.views[0].selector"), WorksAccessManager.isSuspended.selector);
-        for (uint256 i; i < 12; ++i) {
+        for (uint256 i; i < 14; ++i) {
             string memory v = _at(".manager.views", i);
             assertEq(
                 _selector(string.concat(v, ".selector")),

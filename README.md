@@ -93,7 +93,7 @@ products pay 75% to the artist's side and 25% to the network, and royalties are 
 | [`Renderer`](src/content/README.md) | `tokenURI` and `fullTokenURI` for works and editions | 721 |
 | [`StatementLog`](src/records/README.md) | Append-only signed statements: dispute outcomes, curation evidence, manifests | 309 |
 | [`VrfEntropyModule`](src/entropy/README.md) | Optional Chainlink VRF seed per work, delivered before the start | 252 |
-| [`WorksAccessManager`](src/governance/README.md), [`GovernanceConfigurator`](src/governance/README.md) | One AccessManager for everything; guardians cancel and suspend, a bounded veto, dead-admin recovery and a successor handover | 412 + 51 |
+| [`WorksAccessManager`](src/governance/README.md), [`GovernanceConfigurator`](src/governance/README.md) | One AccessManager for everything; guardians cancel and suspend, a bounded veto, dead-admin recovery and a successor handover | 447 + 51 |
 
 nSLOC counts non-blank lines without comments. The [audit scope](docs/audit/scope.md) lists every
 file, its bytecode size and how the figures are measured; `tools/check_docs_facts.py` keeps

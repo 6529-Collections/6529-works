@@ -18,9 +18,10 @@ selector-by-selector view is the generated [role and permission matrix](../audit
 
 | Contract | Source | Interface | Responsibility |
 | --- | --- | --- | --- |
-| `WorksAccessManager` | [`src/governance/WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol) | OpenZeppelin `IAccessManager`, plus `suspend`, `isSuspended`, the slow-lane setters (`setParameter`, `setRecoveryAddress`, `registerSuccessor`), `migrate`, the recovery calls (`heartbeat`, `openRecovery`, `approveRecovery`, `objectToRecovery`, `completeRecovery`) and their views | Stock `AccessManager` 5.7.0 with overrides: `_canCancel` adds the [cancellation rules](#cancellation-rules) and the [escalated lane](#bounded-veto-and-the-escalated-lane); `schedule` and `cancel` add the slow and escalated delays, strikes and guardian votes; `hasRole` reports a [suspended](#suspension-of-operational-keys) holder, and everyone once handed over, as not a member; `canCall` answers nothing once handed over; `_grantRole` and `_revokeRole` keep the seat lists, the admin delay floor and suspensions; the target setters keep the managed list and refuse to configure the manager itself. |
+| `WorksAccessManager` | [`src/governance/WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol) | OpenZeppelin `IAccessManager`, plus `suspend`, `isSuspended`, the slow-lane setters (`setParameter`, `setRecoveryAddress`, `registerSuccessor`), `acceptSuccession`, `migrate`, the recovery calls (`heartbeat`, `openRecovery`, `approveRecovery`, `objectToRecovery`, `completeRecovery`) and their views | Stock `AccessManager` 5.7.0 with overrides: `_canCancel` adds the [cancellation rules](#cancellation-rules) and the [escalated lane](#bounded-veto-and-the-escalated-lane); `schedule` and `cancel` add the slow and escalated delays, strikes and guardian votes; `hasRole` reports a [suspended](#suspension-of-operational-keys) holder, and everyone once handed over, as not a member; `canCall` answers nothing once handed over; `_grantRole` and `_revokeRole` keep the seat lists, the class-delay floor and suspensions; the target setters keep the managed list and refuse to configure the manager itself. |
 | `GovernanceConfigurator` | [`src/governance/GovernanceConfigurator.sol`](../../src/governance/GovernanceConfigurator.sol) | Its own: `configure`, `verify`, `worksManager`, `deployer` | Deploys its own manager, installs the genesis configuration and wiring, renounces `ADMIN`, emits `GovernanceConfigured`, and reads the manager back. |
 | `GovernanceConfig` | [`src/governance/GovernanceConfig.sol`](../../src/governance/GovernanceConfig.sol) | Internal library | `validate`, `validateWiring`, `isGenesisSelector`, `install`, `verify` and `hasRecord`. |
+| `SuccessionProbe` | [`src/governance/SuccessionProbe.sol`](../../src/governance/SuccessionProbe.sol) | OpenZeppelin `IAccessManaged` only | A stock `AccessManaged` contract `registerSuccessor` creates with the proposed successor as its authority; the successor proves it can re-point a contract by moving it to the manager before it accepts. |
 | `Roles` | [`src/governance/Roles.sol`](../../src/governance/Roles.sol) | Internal library | Role IDs 0 to 12, the four delay classes, each role's execution delay, grant delay and label, and `isSuspendable`. No contract hard-codes a role ID. |
 | `BoundedParameter` | [`src/governance/BoundedParameter.sol`](../../src/governance/BoundedParameter.sol) | Internal library | Raise-only parameters: at most double per step, never above a ceiling fixed in the target's code. |
 | Every governed contract | for example [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | OpenZeppelin `IAccessManaged` | `authority()` is the manager, and each governed function is `restricted`. |
@@ -54,7 +55,8 @@ Terms are also in the [glossary](../glossary.md). On this page "epoch" means a
 
 A delay belongs to a (role, holder) pair, so a [delay class](../glossary.md#delay-class) is
 a role whose holders always carry the class delay, and every governed selector maps to exactly
-one role. The classes are immediate (0, `Roles.IMMEDIATE`), standard (48 hours,
+one role. The manager enforces it: any grant or re-grant of a role in `Roles` below the role's
+class delay reverts (`DelayBelowClass`), whoever the role's admin is (GV-38). The classes are immediate (0, `Roles.IMMEDIATE`), standard (48 hours,
 `Roles.STANDARD`), funds (14 days, `Roles.FUNDS`) and successor (30 days, `Roles.SUCCESSOR`),
 which also holds all meta-governance. `GovernanceConfig.install` takes every delay and role
 guardian from `Roles`, so a configuration names only holders and selector mappings.
@@ -67,7 +69,7 @@ addresses, not the structure. Delays come from `Roles.executionDelay` and `Roles
 
 | Role | ID | Holder at genesis | Execution delay | Grant delay | Used for |
 | --- | --- | --- | --- | --- | --- |
-| `ADMIN` | 0 | Hot admin Safe; cold recovery admin Safe | 30 days | 30 days | Every unmapped selector: the one-shot `bind*` calls, each target's `setAuthority`, the manager's own functions |
+| `ADMIN` | 0 | Hot admin Safe; cold recovery admin Safe; third admin Safe | 30 days | 30 days | Every unmapped selector: the one-shot `bind*` calls, each target's `setAuthority`, the manager's own functions |
 | `GUARDIAN` | 1 | Three guardian Safes | Immediate | 30 days | The auction's dispute pause, `vetoChange`, `revokePackage`, `disableSigner`, `deprecateAsset`, `DependencyRegistry.deprecate`; the manager itself checks it for cancelling and `suspend` |
 | `PAUSER` | 2 | The same three guardian Safes | Immediate | 48 hours | `pause()` on the English auction |
 | `UNPAUSER` | 3 | Hot admin Safe | 48 hours | 48 hours | The English auction's `unpause()` and `resume(saleId)` |
@@ -77,8 +79,8 @@ addresses, not the structure. Delays come from `Roles.executionDelay` and `Roles
 | `KEEPER` | 7 | None | Immediate | 48 hours | Unused in v1 |
 | `PLATFORM` | 8 | Platform key | Immediate | 48 hours | `Stream.createCollection`, `StatementLog.appendPlatform`; `WorkDelivery.addLocator` |
 | `PARAMETER_SETTER` | 9 | Hot admin Safe | 48 hours | 48 hours | Auction settings and limits (`setConfig`, the edition auction's `setLimits`), opening bids (`AssetAllowlist.setOpeningBid`), defaults for new works, contract URIs, dispute outcomes, `relicense`, `stageOverride`, the entropy module's `setConfig` |
-| `FUNDS_SETTER` | 10 | Hot admin Safe | 14 days | 14 days | Network fee terms, `setOwner`, `WorkRecords.setRoyaltyRate`, asset admission, default currencies, `RevenueEscrow.recover` |
-| `SUCCESSOR_SETTER` | 11 | Hot admin Safe | 30 days | 30 days | Verifier, renderer, consolidation source, artist resolver, VRF and federation registry swaps; Stream's dependencies (`setDependency`, owner decision 16) and the artist registry's `register` caller (`setPackageRegistry`); `lowerCallbackGasLimit`; re-enabling a signer; admitted minters and sale targets; `resolveContested`; `WorkRecords.setDelivery` and `addStore`; `appendGovernanceManifest` |
+| `FUNDS_SETTER` | 10 | Hot admin Safe | 14 days | 14 days | Network fee terms, `setOwner`, `WorkRecords.setRoyaltyRate`, asset admission, default currencies, `RevenueEscrow.recover` and `sweepExcess`, the fee vault's `setDestination`, the resolver's `setMuseum` |
+| `SUCCESSOR_SETTER` | 11 | Hot admin Safe | 30 days | 30 days | Verifier, renderer, consolidation source, artist resolver, VRF and federation registry swaps; Stream's dependencies (`setDependency`, owner decision 16) and the artist registry's `register` caller (`setPackageRegistry`); `lowerCallbackGasLimit`; re-enabling a signer; admitted minters and sale targets; `resolveContested`; `WorkRecords.setDelivery` and `addStore`; `appendGovernanceManifest`; the museum vault's `setDestination` (it holds existing works) |
 | `CURATOR` | 12 | Curator key | Immediate | 30 days | `StatementLog.appendCurator` (curation evidence) |
 | `PUBLIC` | `type(uint64).max` | Everyone | none | none | Never mapped: `GovernanceConfig` rejects it |
 
@@ -344,24 +346,37 @@ everything except two protected actions, and bounds it there:
 | --- | --- | --- | --- |
 | 2 | 2 | They are the whole body and shield each other | Removes the honest one after the escalated delay: no honest majority exists |
 | 3 (genesis) | 2 | They are a majority and still shield each other (residual, LIM-GV-4) | The two honest guardians stop it |
-| 5 | 3 | Cannot shield each other: each is removed after the escalated delay | The three honest guardians stop it |
-| 7 (cap) | 4 | Cannot shield each other | The four honest guardians stop it |
+| 4 | 3 | Cannot shield each other: two votes of four are no majority, so each is removed after the escalated delay | The three honest guardians stop it; with one of them offline, two honest votes no longer do |
+| 5 | 3 | Cannot shield each other | The three honest guardians stop it |
+| 7 (cap) | 4 | Three colluding guardians cannot shield each other either | The four honest guardians stop it |
 
-The bounded veto therefore helps against a colluding pair only with at least four guardian
-seats; with the three of the genesis layout it changes nothing for them
+The bounded veto therefore bites against a colluding pair from four guardian seats; with the
+three of the genesis layout it changes nothing for them
 (`test_Residual_TwoColludingGuardiansOfThreeAreAMajority`,
-`test_TwoColludingGuardiansOfFiveCannotShieldEachOther`).
+`test_TwoColludingGuardiansOfFiveCannotShieldEachOther`). It bounds the veto, not the time: a
+struck removal completes no sooner than the first proposal's 30 days plus `ESCALATED_DELAY`
+(at least 60 days, 120 by default), so at least 90 days. A replaceable contract whose own
+timer assumes a guardian is removed sooner must not rely on that; the English auction's 60-day
+freeze exit is one (LIM-SAL-15).
 
 ### Seats and the manager's own configuration
 
-- **Seat caps** (GV-40). At most `ADMIN_SEATS` (default 5) `ADMIN` records and
-  `GUARDIAN_SEATS` (default 7) `GUARDIAN` records, active or pending; a grant over the cap reverts
-  with `SeatCapReached`. A lower cap refuses new seats only. `seatHolders(role)` lists them, so
-  "majority" is well defined and neither role can be diluted.
-- **Admin delay floor** (GV-38). Every `ADMIN` grant carries at least the 30-day execution
-  delay (`AdminDelayBelowFloor`), except the configurator's own seat in the constructor. A fresh
-  zero-delay admin is impossible, so every admin action, the slow and escalated lanes included,
-  is scheduled.
+- **Seat caps** (GV-40). At most `ADMIN_SEATS` (default 5, bounds 3 to 16) `ADMIN` records
+  and `GUARDIAN_SEATS` (default 7, bounds 3 to 16) `GUARDIAN` records, active or pending; a grant
+  over the cap reverts with `SeatCapReached`. A lower cap refuses new seats only.
+  `seatHolders(role)` lists them, so "majority" is well defined and neither role can be diluted.
+  The configurator's constructor seat counts for no cap, so genesis can name up to five admins
+  and seven guardians; the genesis layout names three admins, leaving two admin seats of
+  headroom (`test_GenesisNamesThreeFourOrFiveAdmins`; `tools/check_genesis.py` check 9 refuses a
+  genesis file over the default caps).
+- **Class-delay floor** (GV-38). Every grant or re-grant of a role in `Roles` carries at least
+  that role's class delay (`DelayBelowClass`): 30 days for `ADMIN` and `SUCCESSOR_SETTER`, 14
+  days for `FUNDS_SETTER`, 48 hours for `PARAMETER_SETTER` and `UNPAUSER`. Only the
+  configurator's own seat in the constructor is exempt, and recovery installs its candidate at
+  30 days. A fresh zero-delay admin or setter is impossible, so every admin action, the slow and
+  escalated lanes included, and every setter action is scheduled and cancellable for its class
+  delay. A role outside `Roles` has no class; mapping a governed selector to one is a 30-day
+  remap any guardian can cancel.
 - **The manager configures nothing on itself** (GV-39): `setTargetFunctionRole` and
   `setTargetClosed` on the manager revert with `ManagerSelfConfiguration`. Its added functions
   therefore always resolve to `ADMIN` and cannot be closed off.
@@ -378,7 +393,7 @@ the manager (GV-41). The lower bound is the guarantee; the default is only the s
 | `ESCALATED_DELAY`: a re-proposal after a strike | 120 days | 60 to 730 days | At least twice the admin delay for the guardians to gather a majority |
 | `RECOVERY_SILENCE`: admin inactivity before a recovery opens | 365 days | 180 to 1,095 days | Half a year of total admin silence at least |
 | `RECOVERY_DELAY`: public delay before it completes | 180 days | 90 to 730 days | With the silence, at least 270 days, against 30 for a compromised admin |
-| `ADMIN_SEATS` | 5 | 3 to 16 | Room for three independent admins; 16 bounds the recovery's loop |
+| `ADMIN_SEATS` | 5 | 3 to 16 | Room for the three genesis admins and two more; 16 bounds the recovery's loop |
 | `GUARDIAN_SEATS` | 7 | 3 to 16 | Room for three guardians; 16 bounds the work |
 
 ### Dead-admin recovery
@@ -411,7 +426,11 @@ stateDiagram-v2
   (`objectToRecovery`).
 - **Complete.** Anyone, after `RECOVERY_DELAY`: every `ADMIN` record is revoked and the candidate
   becomes the only admin, active at once with the 30-day delay (`RecoveryCompleted`). From there it
-  rebuilds the roles through the ordinary lanes, guardians watching.
+  rebuilds the roles through the ordinary lanes, guardians watching. A candidate that holds or
+  awaits `GUARDIAN` or `PAUSER` is refused (`InvalidCandidate`): a guardian majority cannot make
+  one of its own seats the only admin while it keeps its veto, the separation
+  `GovernanceConfig` requires at genesis. A guardian that should become the admin leaves the
+  guardian body first (`test_ARecoveryCannotSeatAGuardianAsAdmin`).
 - **Not a shortcut.** It needs a year of total admin silence and 180 more public days (at least
   270 days at the floors), and a guardian majority or the admins' own choice of recovery address;
   compromising a live admin needs 30 days and is stopped by one guardian.
@@ -426,21 +445,59 @@ stateDiagram-v2
 
 The manager is not upgradeable; its successor is any authority meeting the requirements below.
 
-1. **Register** (GV-43). `registerSuccessor(next)`, `ADMIN`, slow lane, bounded veto. `next` must
-   have code and answer `canCall` with two words (`InvalidSuccessor`). When it executes the
-   manager is handed over (`SuccessorRegistered`): from then on `canCall` and `hasRole` answer
-   nothing, so no role, no scheduled operation and no recovery has any power left.
-2. **Managed list** (GV-44). Every target the manager configures, at genesis or later, joins
+1. **Propose** (GV-43). `registerSuccessor(next)`, `ADMIN`, slow lane, bounded veto keyed on
+   `next`. `next` must have code and answer `canCall` with two words (`InvalidSuccessor`). It only
+   records `pendingSuccessor` and creates a `SuccessionProbe` whose authority is `next`
+   (`SuccessorProposed(next, probe)`). The manager keeps every power: guardians cancel, suspend
+   and vote, admins schedule, recovery runs. A later `registerSuccessor` under the same rules
+   replaces the proposal; `registerSuccessor(address(0))` withdraws it. A replaced or withdrawn
+   proposal can never accept. Executing a registration ends its strike, so a re-proposal after
+   a withdrawal starts in the slow lane again.
+2. **Accept** (GV-43). The pending successor itself, through its own governance, first calls
+   `setAuthority(manager)` on its probe (only it can: a stock `AccessManaged.setAuthority`
+   accepts only its authority as caller), then calls `acceptSuccession()`
+   (`NotPendingSuccessor` for anyone else, the manager itself included; `SuccessionUnproven`
+   while the probe does not name the manager). Only then is the manager handed over
+   (`SuccessorAccepted`): from then on `canCall` and `hasRole` answer nothing, so no role, no
+   scheduled operation and no recovery has any power left.
+3. **Managed list** (GV-44). Every target the manager configures, at genesis or later, joins
    `managedTargets()` (`TargetManaged`): setting a target's admin delay or mapping one of its
    selectors enrols it. A contract that is never configured is never listed and stays under the
    old manager after a handover: onboarding sets the target's admin delay.
-3. **Migrate** (GV-45). `migrate(from, to)`, anyone, once handed over: every listed target in
-   that index range that still names the manager is moved to the successor
+4. **Migrate** (GV-45). `migrate(from, to)`, anyone, once the successor has accepted: every
+   listed target in that index range that still names the manager is moved to the successor
    (`setAuthority(next)`, forwarding all gas; the targets emit `AuthorityUpdated`). A piece is all
    or nothing, a moved target is skipped, and the range is the caller's choice, so a failing
-   target blocks only the pieces that include it. The admin can register and migrate in one
-   `multicall`. The whole genesis stack (14 targets) migrates in one call of about 92,000 gas
-   (`test_EveryGovernedContractMovesInOneTransaction`).
+   target blocks only the pieces that include it. The successor can accept and migrate in one
+   `multicall` on the manager. The whole genesis stack (17 targets) migrates in one call of
+   about 112,000 gas (`test_EveryGovernedContractMovesInOneTransaction`).
+
+**What acceptance proves, and what it cannot.** The genesis manager's succession code is the
+only route to any later authority, so a successor that answers `canCall` but cannot itself make
+calls must never take over: it would freeze every governed function of every permanent
+contract for good (review D, M-1; `test_ASuccessorThatCannotCallNeverTakesOver`,
+`test_ASuccessorThatCannotCallNeverTakesOverTheStack`). Acceptance establishes, on the day it
+happens, that the successor can originate a call to an arbitrary target with an arbitrary
+selector, and that a stock `AccessManaged.setAuthority`, the exact call every permanent
+contract needs to hand over again, succeeds when it makes it (through its delayed path too, if
+it schedules one). It does not establish that the successor's `canCall` answers the permanent
+contracts' selectors as intended, that its own lanes stay working, or that it can still make
+calls later: a successor that can act today but loses the ability later (an upgradeable proxy
+pointed at a broken implementation, a governor whose quorum can no longer be reached) is the
+successor's own design risk, which no check in this manager can remove. The checklist below
+states what the successor's design must guarantee. A successor hardwired to make exactly these
+two calls and nothing else would pass too; review of the successor is not optional.
+
+**Per-target moves.** `updateAuthority(target, x)`, an `execute` of `target.setAuthority(x)`
+and remapping a target's selectors are 30-day admin operations (the target admin delay) with no
+slow lane and no bounded veto: any one guardian can stop each, every time, and none checks
+anything about `x`. They reach for one target what succession reaches for all, sooner, so the
+guardians' real window against a compromised admin's hostile hand-over is 30 days, not the slow
+lane's 60. They stay: moving one replaceable contract, or rescuing a target that refuses
+`migrate`, needs them, and slowing two of the three paths would not change the window, since a
+selector remap reaches the same end. The slow lane and the probe exist for the whole-system
+handover: time for the network to examine the successor, a veto a guardian minority cannot hold
+forever, and proof the successor can act.
 
 #### What a successor must implement
 
@@ -466,6 +523,14 @@ authority that is not an OpenZeppelin `AccessManager`:
    immediate answers for relayed statements; governance manifests move to the successor's subject.
 7. Its own delay classes, an immediate emergency lane for the tightening selectors and suspension,
    and its own successor and recovery paths.
+8. The two acceptance calls, made by the successor itself: `setAuthority(manager)` on its
+   `SuccessionProbe`, then `acceptSuccession()` on the manager.
+9. Lasting ability to act: the successor must keep, for as long as it governs, a working path
+   to call any governed target (`setAuthority` included) and to answer `canCall` for every
+   permanent contract's selectors. Acceptance proves this only on its own day; an upgrade or
+   reconfiguration that removes it later freezes every contract the successor governs, with no
+   remedy here. If the successor can be upgraded, the upgrade path itself must be governed at
+   least as slowly as this manager's slow lane and veto-able.
 
 ### Contract-account seats
 
@@ -760,7 +825,7 @@ GOV-n".
 | GV-2 | Nobody but its scheduler can cancel a `revokeRole(role, account)` on the manager when `account` is the canceller, for every role, `ADMIN` included. | `WorksAccessManager._canCancel`, `_revokesRoleOf` | `GuardianCancel.t.sol`: `test_GuardianCannotCancelItsOwnReplacement`, `test_CompromisedAdminCannotCancelItsOwnRevocation`, `testFuzz_NobodyCancelsTheirOwnRevocation`, `test_RevocationWithTrailingCalldataIsStillProtected`, `test_SchedulerCanWithdrawItsOwnSelfRevocation`, `test_Rule2OnlyProtectsRolesOnTheManager` |
 | GV-3 | A revocation wrapped in `multicall` or a nested `execute` never executes, and a scheduled `renounceRole` of another account fails. | OpenZeppelin `AccessManager._canCallSelf` (execution identifier) and `renounceRole` (confirmation) | `GuardianCancel.t.sol`: `test_MulticallWrappedRevocationNeverExecutes`, `test_NestedExecuteRevocationNeverExecutes`, `test_ScheduledRenounceCannotRemoveGuardian`, `test_MalformedRevocationCanAlwaysBeCancelled`, `test_DirtyRoleIdRevocationCannotBeScheduled` |
 | GV-4 | Meta-governance is never faster than the slowest class: `ADMIN` has a 30-day execution delay, every target (the manager included) a 30-day admin delay, and every grant delay is at least its role's execution delay. | `Roles.executionDelay`, `Roles.grantDelay`, `GovernanceConfig.install` (`TARGET_ADMIN_DELAY`) | [`Hardening.t.sol`](../../test/governance/Hardening.t.sol): `test_MetaGovernanceIsNeverFasterThanTheSlowestClass`, `test_RemappingAFundsSelectorToAFasterRoleTakesThirtyDays`; [`Roles.t.sol`](../../test/governance/Roles.t.sol): `test_GrantDelayNeverShorterThanExecutionDelay`, `test_ExecutionDelayTable`, `test_GrantDelayTable` |
-| GV-5 | Shortening a delay waits: after its 30-day operation, a grant-delay or target-admin-delay cut applies after the longer of 5 days and the cut, an execution-delay cut after the cut. A fresh zero-delay holder waits 30 days plus the grant delay. | OpenZeppelin `Time.Delay.withUpdate`, `AccessManager._grantRole` | `Hardening.t.sol`: `test_AdminCannotShortenGrantDelayWithoutWaiting`, `test_AdminCannotShortenTargetAdminDelayWithoutWaiting`, `test_AdminCannotShortenItsOwnExecutionDelayWithoutWaiting`, `test_FreshZeroDelayHolderWaitsScheduleAndGrantDelay` |
+| GV-5 | Shortening a delay waits: after its 30-day operation, a grant-delay or target-admin-delay cut applies after the longer of 5 days and the cut, an execution-delay cut after the cut. A fresh zero-delay holder waits 30 days plus the grant delay. | OpenZeppelin `Time.Delay.withUpdate`, `AccessManager._grantRole` | `Hardening.t.sol`: `test_AdminCannotShortenGrantDelayWithoutWaiting`, `test_AdminCannotShortenTargetAdminDelayWithoutWaiting`, `test_AdminCannotShortenItsOwnExecutionDelayWithoutWaiting`, `test_AFreshHolderCarriesTheClassDelayAndWaitsTheGrantDelay` |
 | GV-6 | A guardian cannot schedule an operation: it holds only zero-delay roles, and `schedule` reverts for a caller with no delay. | `GovernanceConfig._checkPair` and `verify` (guardians hold only `GUARDIAN` and `PAUSER`), `AccessManager.schedule` | `Hardening.t.sol`: `test_GuardianCannotSchedule` |
 | GV-7 | A scheduled operation executes only after its delay and only within one week of becoming ready. Its ID binds it to its scheduler, and executing consumes it. | OpenZeppelin `AccessManager.execute`, `hashOperation`, `_consumeScheduledOp` | `Hardening.t.sol`: `test_ScheduledOperationExpiresAfterOneWeek`, `test_ExpiredMetaOperationCannotBeExecuted`; `GuardianCancel.t.sol`: `test_AdminCannotExecuteBeforeTheDelay` |
 | GV-8 | A configuration has at least two guardians and a holder for `ADMIN`, `PAUSER` and `UNPAUSER`; a guardian holds only `GUARDIAN` and `PAUSER`; nobody holds both `PAUSER` and `UNPAUSER`; no grant is to the zero address, repeated, of an unknown role, or to the installer. | `GovernanceConfig._validateGrants`, `_checkPair`, `install` | [`GovernanceConfigurator.t.sol`](../../test/governance/GovernanceConfigurator.t.sol): `test_RejectsFewerThanTwoGuardians`, `test_AcceptsTheTwoGuardianFloor`, `test_RejectsMissingAdminPauserOrUnpauser`, `test_RejectsInvalidGrants`, `test_RejectsGuardianHoldingAnyOtherRole`, `test_RejectsSharedPauseAndUnpauseHolder` |
@@ -803,15 +868,15 @@ DEPS-4).
 | GV-34 | The deploy refuses an EIP-7702 delegated sender, and off anvil requires an explicit `DEPLOY_NAMESPACE` under which every address predictable before the broadcast is free. | `Deploy.s.sol` (`prepare`, `params`, `checkAddressesFree`) | `DeployScript.t.sol`: `test_ADelegatedDeployerIsRefused`, `test_OffAnvilTheNamespaceIsExplicit`, `test_ATakenAddressIsRefusedBeforeTheBroadcast` |
 | GV-35 | A replacement Stream dependency (`setDependency`) that answers `authority()` with one word must name Stream's own AccessManager, so a package registry, artist registry, economics resolver or entropy module governed by another manager is never installed; one with no one-word `authority()` answer passes, and a word that is not an address is refused. The read forwards all gas (the gas rule, ADR 0007): a failure that leaves at most 1/8 of the gas reverts with `BoundedCallShortfall`, never passing as "no answer". | `Stream.setDependency` | [`StreamDependencies.t.sol`](../../test/integration/StreamDependencies.t.sol): `test_AReplacementUnderAForeignAuthorityIsRefused`, `test_AReplacementWithNoAuthorityAnswerInstalls`, `test_ASlowAuthorityAnswerIsStillRead`, `test_GasRule_setDependencyAuthorityProbe` |
 | GV-36 | On mainnet (chain 1), the deploy and Verify refuse a genesis that names the deployer EOA as any role holder, or whose community council roles (ADMIN, UNPAUSER, PARAMETER_SETTER, FUNDS_SETTER, SUCCESSOR_SETTER), security council roles (GUARDIAN, PAUSER) and curation signers (CURATION_SIGNER) share an account across groups (owner decision 18). The security council holds the three guardian Safes GOV-4 requires, with disjoint signers. They also refuse the deployer EOA as the museum, the marketplace owner or the network fee recipient. | `DeployGuards.checkRoleGroups`, `roleGroup`, `checkRecipients`; `Deploy.s.sol` (`prepare`), `Verify.s.sol` (`_checkGuards`) | `DeployScript.t.sol`: `test_MainnetSeparatesTheRoleGroupsFromEachOtherAndTheDeployer`, `test_VerifyRepeatsTheRoleGroupGuardOnMainnet`, `test_RoleGroupsAreTheDecidedOnes`, `test_MainnetRefusesTheDeployerAsAPinnedRecipient`, `test_VerifyRefusesTheDeployerAsAPinnedRecipientOnMainnet` |
-| GV-37 | Bounded veto: a guardian's cancellation of a protected action it did not schedule strikes it; a later proposal of a struck action waits `ESCALATED_DELAY` and is stopped only by its scheduler or by a majority of the guardian seats counted when it was scheduled, never fewer than two, each voter seated then; no admin can stop it. | `WorksAccessManager.schedule`, `cancel`, `_canCancel`, `actionOf` | [`BoundedVeto.t.sol`](../../test/governance/BoundedVeto.t.sol): `test_AGuardiansFirstCancellationWorksAsBeforeAndStrikesTheAction`, `test_OnlyAGuardiansCancellationStrikes`, `test_AReProposalEntersTheEscalatedLane`, `test_TheSameActionWhoeverProposesItAndWithTrailingBytes`, `test_DirtyArgumentsAreNotProtectedAndCannotStrikeTheCleanAction`, `test_ASingleGuardianCannotStopAnEscalatedOperation`, `test_AMajorityOfTheSeatsStopsIt`, `test_NoAdminOrOutsiderCanStopItButTheSchedulerMayWithdraw`, `test_ItExecutesAfterTheEscalatedDelayAndTheStrikeEndsWithTheRemoval`, `test_TheNamedGuardianVotesWithItsSeat`, `test_Residual_TwoColludingGuardiansOfThreeAreAMajority`, `test_TwoColludingGuardiansOfFiveCannotShieldEachOther`, `test_WithTwoSeatsBothGuardiansMustVote`, `test_ASoleGuardianNeverStopsAnEscalatedOperation`, `test_SeatChangesMidFlightDoNotMoveTheCount`, `test_ASuccessorRegistrationHasTheBoundedVetoToo` |
-| GV-38 | Every `ADMIN` grant carries at least the 30-day execution delay, except the configurator's constructor seat. | `WorksAccessManager._grantRole` | [`SeatsAndParameters.t.sol`](../../test/governance/SeatsAndParameters.t.sol): `test_AnAdminDelayBelowThirtyDaysIsRefused`; `Hardening.t.sol`: `test_AdminCannotShortenItsOwnExecutionDelayWithoutWaiting` |
+| GV-37 | Bounded veto: a guardian's cancellation of a protected action it did not schedule strikes it; a later proposal of a struck action waits `ESCALATED_DELAY` and is stopped only by its scheduler or by a majority of the guardian seats counted when it was scheduled, never fewer than two, each voter seated then; no admin can stop it. | `WorksAccessManager.schedule`, `cancel`, `_canCancel`, `actionOf` | [`BoundedVeto.t.sol`](../../test/governance/BoundedVeto.t.sol): `test_AGuardiansFirstCancellationWorksAsBeforeAndStrikesTheAction`, `test_OnlyAGuardiansCancellationStrikes`, `test_AReProposalEntersTheEscalatedLane`, `test_TheSameActionWhoeverProposesItAndWithTrailingBytes`, `test_DirtyArgumentsAreNotProtectedAndCannotStrikeTheCleanAction`, `test_ASingleGuardianCannotStopAnEscalatedOperation`, `test_AMajorityOfTheSeatsStopsIt`, `test_NoAdminOrOutsiderCanStopItButTheSchedulerMayWithdraw`, `test_ItExecutesAfterTheEscalatedDelayAndTheStrikeEndsWithTheRemoval`, `test_TheNamedGuardianVotesWithItsSeat`, `test_Residual_TwoColludingGuardiansOfThreeAreAMajority`, `test_TwoColludingGuardiansOfFiveCannotShieldEachOther`, `test_WithTwoSeatsBothGuardiansMustVote`, `test_ASoleGuardianNeverStopsAnEscalatedOperation`, `test_SeatChangesMidFlightDoNotMoveTheCount`, `test_ASuccessorRegistrationHasTheBoundedVetoToo`, `test_AWithdrawalIsItsOwnActionAndCannotShieldAProposal`; `Succession.t.sol`: `test_AnAdminCannotAcceptForTheSuccessor` |
+| GV-38 | Every grant or re-grant of a role in `Roles` carries at least that role's class delay (30 days for `ADMIN`), whoever the role's admin is, except the configurator's constructor seat. | `WorksAccessManager._grantRole` | [`SeatsAndParameters.t.sol`](../../test/governance/SeatsAndParameters.t.sol): `test_AnAdminDelayBelowThirtyDaysIsRefused`, `test_EveryDelayedRoleRefusesAGrantBelowItsClass`, `test_AReGrantCannotCutAHolderBelowItsClass`, `test_ARoleAdminChangeCannotGrantBelowTheClass`, `testFuzz_AGrantExecutesOnlyAtOrAboveItsClass`; `Hardening.t.sol`: `test_AdminCannotShortenItsOwnExecutionDelayWithoutWaiting`, `test_AFreshHolderCarriesTheClassDelayAndWaitsTheGrantDelay` |
 | GV-39 | The manager's own selectors cannot be remapped and the manager cannot be closed. | `WorksAccessManager._setTargetFunctionRole`, `_setTargetClosed` | `SeatsAndParameters.t.sol`: `test_TheManagersOwnSelectorsCannotBeRemapped`; `GovernanceConfigurator.t.sol`: `test_ReadbackDetectsTheManagerClosedAsATarget`; `BoundedVeto.t.sol`: `test_AWrappedRegistrationNeverExecutes` |
-| GV-40 | At most `ADMIN_SEATS` admin and `GUARDIAN_SEATS` guardian records, active or pending; a lower cap refuses new seats only; the seat lists match the records. | `WorksAccessManager._grantRole`, `_revokeRole`, `seatHolders` | `SeatsAndParameters.t.sol`: `test_SeatsAreCountedFromGenesis`, `test_AdminSeatsAreCappedAndAFreedSeatCanBeFilled`, `test_GuardianSeatsAreCappedAndPendingGrantsCount`, `test_ARegrantToAnExistingHolderTakesNoNewSeat`, `test_ALowerSeatCapRefusesNewSeatsOnly` |
+| GV-40 | At most `ADMIN_SEATS` admin and `GUARDIAN_SEATS` guardian records, active or pending, the configurator's constructor seat not counted; a lower cap refuses new seats only; the seat lists match the records. | `WorksAccessManager._grantRole`, `_revokeRole`, `seatHolders`; `tools/check_genesis.py` (check 9) | `SeatsAndParameters.t.sol`: `test_SeatsAreCountedFromGenesis`, `test_GenesisNamesThreeFourOrFiveAdmins`, `test_AdminSeatsAreCappedAndAFreedSeatCanBeFilled`, `test_GuardianSeatsAreCappedAndPendingGrantsCount`, `test_ARegrantToAnExistingHolderTakesNoNewSeat`, `test_ALowerSeatCapRefusesNewSeatsOnly` |
 | GV-41 | Each manager parameter changes only by `setParameter`, `ADMIN` in the slow lane, compare-and-set, within its compiled bounds; `setRecoveryAddress` and `registerSuccessor` also wait `SLOW_DELAY`. | `WorksAccessManager.setParameter`, `parameterBounds`, `schedule` | `SeatsAndParameters.t.sol`: `test_DefaultsAndCompiledBounds`, `test_AParameterMovesThroughTheSlowLaneWithinItsBounds`, `test_AnyGuardianStopsAParameterChangeWithoutAStrike`, `test_TheRecoveryAddressIsSetInTheSlowLane` |
-| GV-42 | A recovery opens only after `RECOVERY_SILENCE` without admin activity, completes only `RECOVERY_DELAY` later with no admin activity since it opened, and then only with a guardian majority's approval or, for the recovery address, without a majority's objection; it revokes every admin and installs the candidate with the 30-day delay. | `WorksAccessManager.openRecovery`, `approveRecovery`, `objectToRecovery`, `completeRecovery`, `heartbeat`, `_touch` | [`DeadAdminRecovery.t.sol`](../../test/governance/DeadAdminRecovery.t.sol): every test, among them `test_AnyAdminActionDuringTheDelayVoidsTheRecovery`, `test_RecoveryIsNeverFasterThanCompromisingAnAdmin`, `test_AdminsAndGuardiansBothDead_OnlyTheRecoveryAddressRecovers` |
-| GV-43 | `registerSuccessor` needs a code-bearing authority that answers `canCall`; once it executes, the manager answers no `canCall` and no `hasRole`, so nothing can be scheduled, executed, suspended or recovered. | `WorksAccessManager.registerSuccessor`, `canCall`, `hasRole` | [`Succession.t.sol`](../../test/governance/Succession.t.sol): `test_RegistrationWaitsTheSlowDelayAndEndsTheManagersPower`, `test_ASuccessorMustHaveCodeAndAnswerCanCall`; [`GovernanceHandover.t.sol`](../../test/integration/GovernanceHandover.t.sol): `test_TheOldManagerKeepsNoPower` |
-| GV-44 | Every target the manager configures, at genesis or later, is on the managed list once; never the manager. Readback requires every configured target listed and the manager not handed over. | `WorksAccessManager._setTargetAdminDelay`, `_setTargetFunctionRole`, `_manage`; `GovernanceConfigurator.verify` | `Succession.t.sol`: `test_GenesisTargetsAndLaterTargetsAreManaged`; `GovernanceHandover.t.sol`: `test_EveryGovernedContractMovesInOneTransaction`, `test_AContractAddedAfterGenesisMovesToo` |
-| GV-45 | `migrate(from, to)` is open to anyone once handed over, moves every listed target in the range that still names the manager, forwards all gas, and reverts as a whole if any of them fails. | `WorksAccessManager.migrate` | `Succession.t.sol`: `test_OneTransactionMovesEveryManagedTarget`, `test_RegisteringAndMigratingInOneMulticall`, `test_PiecesAreIdempotentAndSkipTargetsThatLeftEarlier`, `test_ARefusingTargetBlocksOnlyThePiecesThatContainIt`, `test_Stress_ATargetThatBurnsMoreGasStillMoves`; `GovernanceHandover.t.sol`: `test_ImmediateDelayedAndCancelledCallsWorkUnderTheSuccessor`, `test_ACuratedSaleRunsUnderTheSuccessor`, `test_TheSuccessorCanMoveContractsOnAgain` |
+| GV-42 | A recovery opens only after `RECOVERY_SILENCE` without admin activity, completes only `RECOVERY_DELAY` later with no admin activity since it opened, and then only with a guardian majority's approval or, for the recovery address, without a majority's objection; it revokes every admin and installs the candidate with the 30-day delay; a candidate holding or awaiting `GUARDIAN` or `PAUSER` is refused. | `WorksAccessManager.openRecovery`, `approveRecovery`, `objectToRecovery`, `completeRecovery`, `heartbeat`, `_touch` | [`DeadAdminRecovery.t.sol`](../../test/governance/DeadAdminRecovery.t.sol): every test, among them `test_ARecoveryCannotSeatAGuardianAsAdmin`, `test_AnyAdminActionDuringTheDelayVoidsTheRecovery`, `test_RecoveryIsNeverFasterThanCompromisingAnAdmin`, `test_AdminsAndGuardiansBothDead_OnlyTheRecoveryAddressRecovers` |
+| GV-43 | `registerSuccessor` needs a code-bearing authority that answers `canCall` and only proposes it (zero withdraws); the manager keeps every power until the pending successor itself re-points its probe to the manager and calls `acceptSuccession`; from then on the manager answers no `canCall` and no `hasRole`, so nothing can be scheduled, executed, suspended or recovered. | `WorksAccessManager.registerSuccessor`, `acceptSuccession`, `canCall`, `hasRole`; `SuccessionProbe` | [`Succession.t.sol`](../../test/governance/Succession.t.sol): `test_RegistrationWaitsTheSlowDelayAndOnlyProposes`, `test_AcceptanceEndsTheManagersPower`, `test_ASuccessorThatCannotCallNeverTakesOver`, `test_AnAdminCannotAcceptForTheSuccessor`, `test_AcceptanceNeedsTheProbeRepointed`, `test_AReplacedOrWithdrawnProposalCannotAccept`, `test_WhilePendingRecoveryAndGuardiansStillWork`, `test_ASuccessorMustHaveCodeAndAnswerCanCall`; [`GovernanceHandover.t.sol`](../../test/integration/GovernanceHandover.t.sol): `test_TheOldManagerKeepsNoPower`, `test_ASuccessorThatCannotCallNeverTakesOverTheStack` |
+| GV-44 | Every target the manager configures, at genesis or later, is on the managed list once; never the manager. Readback requires every configured target, and every deployed contract the manager governs, listed, and the manager not handed over. | `WorksAccessManager._setTargetAdminDelay`, `_setTargetFunctionRole`, `_manage`; `GovernanceConfigurator.verify`; `VerifyV1.check` | `Succession.t.sol`: `test_GenesisTargetsAndLaterTargetsAreManaged`; `GovernanceHandover.t.sol`: `test_EveryGovernedContractMovesInOneTransaction`, `test_AContractAddedAfterGenesisMovesToo`; [`VerifyGenesisState.t.sol`](../../test/deploy/VerifyGenesisState.t.sol): `test_AGovernedButUnmanagedContractFails` |
+| GV-45 | `migrate(from, to)` is open to anyone once handed over, moves every listed target in the range that still names the manager, forwards all gas, and reverts as a whole if any of them fails. Under the successor every managed contract keeps working. | `WorksAccessManager.migrate` | `Succession.t.sol`: `test_OneTransactionMovesEveryManagedTarget`, `test_TheSuccessorAcceptsAndMigratesInOneMulticall`, `test_PiecesAreIdempotentAndSkipTargetsThatLeftEarlier`, `test_ARefusingTargetBlocksOnlyThePiecesThatContainIt`, `test_Stress_ATargetThatBurnsMoreGasStillMoves`; `GovernanceHandover.t.sol`: `test_ImmediateDelayedAndCancelledCallsWorkUnderTheSuccessor`, `test_EveryManagedContractOperatesUnderTheSuccessor`, `test_RelayedStatementsAndTheLocatorCheckAskTheSuccessor`, `test_ACuratedSaleRunsUnderTheSuccessor`, `test_TheSuccessorCanMoveContractsOnAgain`, `test_TheSuccessorMovesEveryContractOnAgain` |
 | GV-46 | A contract account can hold `ADMIN` or `GUARDIAN` and use every power of the seat. | `WorksAccessManager` (authorises `msg.sender` only) | [`ContractSeat.t.sol`](../../test/governance/ContractSeat.t.sol): `test_AContractAdminSeatSchedulesExecutesAndProvesLiveness`, `test_AContractGuardianSeatCancelsAndVotes`, `test_ASeatRotatesItsKeyAndKeepsItsRoles` |
 | GV-47 | Under stateful campaigns: an escalated operation is stopped exactly when a guardian majority voted; no recovery completes after an admin acted or before silence plus delay; every successful `migrate` piece moves its whole range; no grant exceeds a seat cap. | All of GV-37 to GV-45 | [`PermanenceInvariant.t.sol`](../../test/governance/PermanenceInvariant.t.sol): `invariant_OnlyAGuardianMajorityStopsTheEscalatedLane`, `invariant_RecoveryNeverCompletesWhileAnAdminActs`, `invariant_MigrateIsAllOrNothingPerPiece`, `invariant_SeatCapsHold` |
 
@@ -834,14 +899,15 @@ expires with no event, yet a later `cancel` still emits `OperationCanceled`.
 | Every admin and guardian lost | As above, and no guardian decision. | Only the pre-registered recovery address; without one, none. |
 | Compromised guardian Safe | It can cancel any operation and take every immediate tightening action (pause, suspend, revoke a package root, which is final), but cannot schedule, lift a suspension, move funds or change identities ([LIM-GV-13](../audit/known-limitations.md#trust-and-governance)). | An admin schedules `revokeRole(GUARDIAN, g)` and `revokeRole(PAUSER, g)`, which neither `g` nor another admin can cancel (Rules 2 and 3); then grants the replacement and lifts `g`'s suspensions (about 60 days in all). |
 | Compromised `PLATFORM`, `CURATOR` or `STORAGE_OPERATOR` key | It acts for its role at once: collections, locators, sales it may open, statements, preferences. | Any guardian suspends it in the same block; the admin revokes it and grants a replacement, or lifts a mistaken suspension ([flow](#a-guardian-suspends-a-compromised-platform-key)). |
-| Fewer than two honest guardians online, or colluding guardians | A compromised admin removes the one online guardian in 30 days, then nothing stops a takeover (`test_Residual_LivenessNeedsTwoHonestGuardiansOnline`). Colluding guardians shield each other from removal, and block a handover, only while they are a majority of the guardian seats: with three seats any two are (`test_Residual_TwoColludingGuardiansOfThreeAreAMajority`); with five a pair is removed after the escalated delay. | The [bounded veto](#bounded-veto-and-the-escalated-lane); four or more independent, monitored guardian seats ([LIM-GV-4, LIM-GV-5](../audit/known-limitations.md#trust-and-governance)). |
+| Fewer than two honest guardians online, or colluding guardians | A compromised admin removes the one online guardian in 30 days, then nothing stops a takeover (`test_Residual_LivenessNeedsTwoHonestGuardiansOnline`). Colluding guardians shield each other from removal, and block a handover, only while they are a majority of the guardian seats: with three seats any two are (`test_Residual_TwoColludingGuardiansOfThreeAreAMajority`); from four seats a pair is removed after the escalated delay, at least 90 days after the first proposal. Meanwhile they can keep a deprecated ERC-20 from being re-admitted, so live auctions in it reach the English auction's 60-day freeze exit and end unsold (no funds lost; LIM-SAL-15). | The [bounded veto](#bounded-veto-and-the-escalated-lane); four or more independent, monitored guardian seats ([LIM-GV-4, LIM-GV-5](../audit/known-limitations.md#trust-and-governance)). |
 | Compromised curation signer | It can sign approvals. | A guardian calls `disableSigner` at once, which also ends its signer epoch; revoking the role takes 30 days. |
 | The configurator's or another predictable address is taken | The deploy stops before the broadcast (`ConfiguratorAddressTaken`, `AddressTaken`). A squatted configurator obeys only the operator. | A new `DEPLOY_NAMESPACE`, kept private until the broadcast, and a private RPC on mainnet. |
 | An admin or guardian Safe gains a module, a guard, a contract or delegated owner, or a shared signer after genesis | Nothing on chain stops it; Verify fails (GV-29, [LIM-GV-15](../audit/known-limitations.md#trust-and-governance)). | Make the Safe bare again, or rotate it. |
 | An operation expires or is stale | `execute` reverts (`AccessManagerExpired`, or the setter's `ExpectedValueMismatch`). | Schedule it again, with the current value. |
 | A delay reduction executes | It is pending and invisible to `verify` until it lands. | Verify's event scan fails. Guardians should have cancelled it; only another 30-day operation restores the delay. |
-| A target's authority is moved (`updateAuthority` executed) | The target leaves this manager for good. | Prevention only: guardians cancel during the 30 days. Verify fails with `WrongAuthority`. |
-| A successor is registered | The manager loses all power; listed targets still naming it are frozen until someone runs `migrate`. | Anyone runs `migrate`; the admin registers and migrates in one `multicall`. |
+| A target's authority is moved (`updateAuthority` executed) | The target leaves this manager for good; nothing checks the new authority, so a dead one freezes that target. | Prevention only: guardians cancel during the 30 days. Verify fails with `WrongAuthority`. |
+| A successor is proposed | Nothing changes yet: the manager keeps every power. A successor that cannot act never accepts. | The admins replace or withdraw the proposal in the slow lane. |
+| A successor accepts | The manager loses all power; listed targets still naming it are frozen until someone runs `migrate`. | Anyone runs `migrate`; the successor accepts and migrates in one `multicall`. |
 
 ## Parameters and limits
 
@@ -855,13 +921,13 @@ expires with no event, yet a later `cancel` still emits `OperationCanceled`.
 | Minimum guardians (code) | 2 | `GovernanceConfig.MIN_GUARDIANS` |
 | Slow lane, escalated lane, recovery silence and delay, seat caps | Defaults 60 days, 120 days, 365 days, 180 days, 5 admin and 7 guardian seats, each within compiled bounds | `WorksAccessManager.Parameter`, `parameterBounds` ([Governed parameters](#governed-parameters)) |
 | Minimum admin execution delay | 30 days | `Roles.SUCCESSOR`, enforced by `WorksAccessManager._grantRole` |
-| Minimum admin Safes, guardian Safes, curation signers (off anvil) | 2, 3, 2 | `DeployGuards.MIN_ADMINS`, `MIN_GUARDIANS`, `MIN_CURATION_SIGNERS` |
+| Minimum admin Safes, guardian Safes, curation signers (off anvil) | 3, 3, 2 | `DeployGuards.MIN_ADMINS`, `MIN_GUARDIANS`, `MIN_CURATION_SIGNERS` |
 | Safe thresholds | At least 2 off anvil; recommended 2-of-3 for each guardian, 3-of-5 for the cold admin | `DeployGuards.MIN_THRESHOLD`; [ADR 0003, owner decisions 2 and 3](../adr/0003-build-time-decisions.md#owner-decisions-11-october-2026) |
 | Allowed Safe singletons (off anvil) | Safe 1.3.0 L1 and L2 (each at two addresses) and Safe 1.4.1 L1 and L2, each with its pinned runtime code hash | `DeployGuards.canonicalSafeSingletons`; [runbook, step 2](../../script/README.md#2-safe-pre-flight) |
 | Mainnet VRF coordinator | `0xD7f86b4b8Cae7D942340FF628F82735b7a20893a` (Chainlink VRF v2.5), with its pinned runtime code hash | `DeployGuards.CANONICAL_VRF_COORDINATOR`, `CANONICAL_VRF_COORDINATOR_CODEHASH` |
 | Placeholder holder range refused off anvil | Addresses up to `0xFFFF` | `DeployGuards.MAX_PLACEHOLDER` |
 | Genesis wiring calls | At most 64; 18 in the committed example | `GovernanceConfig.MAX_WIRING_CALLS`; `wiring` in [`config/genesis.example.json`](../../config/genesis.example.json) |
-| Genesis `configure` gas | 6,792,419 with 64 wiring calls on cold accounts (Prague pricing), 40.5% of the EIP-7825 cap of 16,777,216, gated below 60%; Sepolia's in [`deployments/11155111/README.md`](../../deployments/11155111/README.md), other budgets in [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table) | [`GenesisConfig.t.sol`](../../test/governance/GenesisConfig.t.sol) `test_MaximumWiringFitsTheTransactionGasCap`; `Genesis.t.sol` `test_GenesisConfigureFitsTheTransactionCap` |
+| Genesis `configure` gas | 8,436,744 with 64 wiring calls on cold accounts and worst-case calldata (Prague pricing), 50.3% of the EIP-7825 cap of 16,777,216, gated below 60%; Sepolia's in [`deployments/11155111/README.md`](../../deployments/11155111/README.md), other budgets in [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table) | [`GenesisConfig.t.sol`](../../test/governance/GenesisConfig.t.sol) `test_MaximumWiringFitsTheTransactionGasCap`; `Genesis.t.sol` `test_GenesisConfigureFitsTheTransactionCap` |
 | Raise step and ceiling | At most double per step; ceiling fixed per target | `BoundedParameter.raise` |
 | Entropy callback gas limit | Raised to at most 2,500,000; lowered to at least 100,000 | `VrfEntropyModule.MAX_CALLBACK_GAS`, `MIN_CALLBACK_GAS` |
 

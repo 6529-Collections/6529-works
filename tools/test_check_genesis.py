@@ -552,6 +552,44 @@ class CheckGenesisTest(unittest.TestCase):
         self.assertIn("manager: views cancel(address) is a method of the base "
                       "lib/oz/Base.sol:Base", problems)
 
+    # -- seat caps (check 9) -------------------------------------------------------------
+
+    def _seats(self, admins: int, guardians: int) -> None:
+        self.repo.config["holders"] = [
+            {"role": "ADMIN", "account": f"0x{i:040x}"} for i in range(1, admins + 1)
+        ] + [{"role": "GUARDIAN", "account": f"0x{i:040x}"} for i in range(100, 100 + guardians)]
+
+    def test_seat_caps_are_read_from_the_manager_source(self) -> None:
+        self.repo.source(
+            "g/Manager.sol",
+            "contract Manager {\n    // _params = [uint32(1), 2, 3, 4, 9, 9];\n"
+            "    constructor() { _params = [uint32(60 days), 120 days, 365 days, 180 days, 5, 7]; }"
+            "\n}\n",
+        )
+        self.repo.config["manager"] = {"artifact": "src/g/Manager.sol:Manager"}
+        self.assertEqual(cg.seat_caps(self.repo.root, self.repo.config), {"ADMIN": 5, "GUARDIAN": 7})
+        self.repo.config["manager"] = {"artifact": "src/g/Missing.sol:Manager"}
+        self.assertIsNone(cg.seat_caps(self.repo.root, self.repo.config))
+
+    def test_genesis_may_name_up_to_the_seat_caps(self) -> None:
+        caps = {"ADMIN": 5, "GUARDIAN": 7}
+        for admins in (3, 4, 5):
+            self._seats(admins, 3)
+            self.assertEqual(cg.check_seats(self.repo.config, caps), [])
+        self._seats(6, 8)
+        self.assertEqual(
+            cg.check_seats(self.repo.config, caps),
+            ["holders: 6 ADMIN holders exceed the manager's default seat cap of 5; configure "
+             "would revert with SeatCapReached",
+             "holders: 8 GUARDIAN holders exceed the manager's default seat cap of 7; configure "
+             "would revert with SeatCapReached"],
+        )
+
+    def test_a_holder_listed_twice_takes_one_seat(self) -> None:
+        self._seats(5, 3)
+        self.repo.config["holders"].append({"role": "ADMIN", "account": "0x" + "0" * 39 + "1"})
+        self.assertEqual(cg.check_seats(self.repo.config, {"ADMIN": 5, "GUARDIAN": 7}), [])
+
     def test_only_zero_delay_operational_roles_are_suspendable(self) -> None:
         self._manager()
         roles = {r["name"]: r for r in self.repo.config["roles"]}

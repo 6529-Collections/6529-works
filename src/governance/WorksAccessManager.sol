@@ -7,6 +7,7 @@ import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { Time } from "@openzeppelin/contracts/utils/types/Time.sol";
 import { Roles } from "./Roles.sol";
+import { SuccessionProbe } from "./SuccessionProbe.sol";
 
 /// @title WorksAccessManager
 /// @notice The OpenZeppelin 5.7.0 `AccessManager` that governs every 6529 Works contract, with
@@ -27,10 +28,13 @@ import { Roles } from "./Roles.sol";
 ///           a recovery that, `RECOVERY_DELAY` later, makes one account the only admin: approved
 ///           by a guardian majority, or, for the pre-registered recovery address, not objected
 ///           to by one. Any admin activity voids it;
-///         - a pre-registered successor: `registerSuccessor` (slow lane) ends this manager's
-///           power and {migrate} re-points every managed target to the successor, in pieces
-///           anyone may run;
-///         - seat caps for `ADMIN` and `GUARDIAN`, and a 30-day floor on every admin's delay.
+///         - a two-step succession: `registerSuccessor` (slow lane) proposes a successor and
+///           this manager keeps all its power until that successor proves it can act, by
+///           re-pointing a probe contract to this manager and calling {acceptSuccession}
+///           itself; only then does this manager's power end, and {migrate} re-points every
+///           managed target to the successor, in pieces anyone may run;
+///         - seat caps for `ADMIN` and `GUARDIAN`, and every holder of a role in {Roles} at
+///           least its class delay (30 days for every admin).
 ///         Each number is a governed parameter within bounds compiled here ({parameterBounds}):
 ///         the lower bounds are the guarantee, the initial values only defaults.
 /// @dev Stock cancellation is selector-scoped: the scheduler, an admin, or the guardian of the
@@ -86,11 +90,20 @@ contract WorksAccessManager is AccessManager {
     /// @notice When an active ADMIN holder last scheduled, executed, consumed or cancelled an
     ///         operation, or called {heartbeat}.
     uint48 public lastAdminActivity;
-    /// @notice The registered successor authority; nonzero once this manager is handed over.
+    /// @notice The successor authority; nonzero once it accepted and this manager is handed over.
     address public successor;
     uint48 private _guardianSerial;
     /// @notice The pre-registered recovery address, or zero.
     address public recoveryAddress;
+    /// @notice The proposed successor, until it accepts or a later registration replaces or
+    ///         withdraws it; zero when none is proposed.
+    address public pendingSuccessor;
+    /// @notice The {SuccessionProbe} the pending successor must re-point to this manager before
+    ///         it can accept; zero when none is proposed.
+    address public successionProbe;
+    /// @dev The constructor's admin (the one-shot configurator), which takes no admin seat.
+    ///      Storage, not immutable, so the runtime code hash does not depend on it.
+    address private _initialAdmin;
     address[] private _managed;
     mapping(address target => bool) private _isManaged;
     mapping(bytes32 action => bool) private _struck;
@@ -149,9 +162,15 @@ contract WorksAccessManager is AccessManager {
     /// @notice A recovery completed: every former admin was revoked and `candidate` is the admin.
     /// @param candidate The new admin.
     event RecoveryCompleted(address indexed candidate);
-    /// @notice This manager was handed over to `next` and has no power from now on.
+    /// @notice `next` was proposed as the successor (or, when zero, the proposal withdrawn).
+    ///         This manager keeps all its power until `next` accepts.
+    /// @param next The proposed successor, or zero.
+    /// @param probe The {SuccessionProbe} governed by `next` that `next` must re-point to this
+    ///        manager before {acceptSuccession}, or zero.
+    event SuccessorProposed(address indexed next, address probe);
+    /// @notice `next` accepted: this manager was handed over and has no power from now on.
     /// @param next The successor authority that {migrate} moves every managed target to.
-    event SuccessorRegistered(address indexed next);
+    event SuccessorAccepted(address indexed next);
     /// @notice `target` joined the managed list that {migrate} hands over.
     /// @param target The target.
     event TargetManaged(address indexed target);
@@ -160,8 +179,9 @@ contract WorksAccessManager is AccessManager {
     error RoleNotSuspendable(uint64 roleId);
     /// @notice `account` has no record for `roleId`, or is already suspended.
     error NotSuspendable(uint64 roleId, address account);
-    /// @notice An ADMIN grant carries an execution delay below the 30-day class.
-    error AdminDelayBelowFloor(uint32 executionDelay);
+    /// @notice A grant of `roleId` carries an execution delay below the role's class delay
+    ///         (`Roles.executionDelay`).
+    error DelayBelowClass(uint64 roleId, uint32 executionDelay);
     /// @notice `roleId` already has its cap of `cap` records.
     error SeatCapReached(uint64 roleId, uint256 cap);
     /// @notice This manager's own selectors cannot be remapped and it cannot be closed.
@@ -176,8 +196,12 @@ contract WorksAccessManager is AccessManager {
     error ParameterOutOfBounds(Parameter which, uint32 value);
     /// @notice `next` is this manager, has no code, or cannot answer `canCall`.
     error InvalidSuccessor(address next);
-    /// @notice No successor is registered.
+    /// @notice No successor has accepted.
     error NoSuccessor();
+    /// @notice The caller is not the pending successor.
+    error NotPendingSuccessor(address caller);
+    /// @notice The pending successor has not re-pointed `probe` to this manager.
+    error SuccessionUnproven(address probe);
     /// @notice This manager has been handed over to its successor.
     error HandedOver();
     /// @notice `candidate` is the zero address or this manager, or the vote is of the wrong
@@ -195,8 +219,10 @@ contract WorksAccessManager is AccessManager {
     ///         lacks a majority's approval, or a majority objected to the registered one.
     error RecoveryRefused(address candidate);
 
-    /// @param initialAdmin The one-shot configurator, which renounces the admin role once done.
+    /// @param initialAdmin The one-shot configurator, which renounces the admin role once done;
+    ///        while it holds it, it takes no admin seat.
     constructor(address initialAdmin) AccessManager(initialAdmin) {
+        _initialAdmin = initialAdmin;
         _params = [uint32(60 days), 120 days, 365 days, 180 days, 5, 7];
         lastAdminActivity = Time.timestamp();
     }
@@ -259,24 +285,48 @@ contract WorksAccessManager is AccessManager {
         emit RecoveryAddressSet(current, next);
     }
 
-    /// @notice Hands this manager over to `next`: from then on it answers no `canCall` and no
-    ///         `hasRole`, and {migrate} moves every managed target to `next`. `ADMIN`, slow lane,
-    ///         escalated after a guardian's cancellation (bounded veto). One way.
-    /// @dev `next` must have code and answer `canCall` with two words. What else it must
-    ///      implement is in the governance spec ("What a successor must implement").
-    /// @param next The successor authority.
+    /// @notice Proposes `next` as the successor, replacing any earlier proposal, or withdraws
+    ///         the proposal when `next` is zero. Nothing is handed over yet: this manager keeps
+    ///         all its power until `next` accepts ({acceptSuccession}). Creates a
+    ///         {SuccessionProbe} governed by `next`. `ADMIN`, slow lane, escalated after a
+    ///         guardian's cancellation (bounded veto, keyed on `next`).
+    /// @dev A nonzero `next` must have code and answer `canCall` with two words. What else it
+    ///      must implement is in the governance spec ("What a successor must implement").
+    /// @param next The proposed successor authority, or zero to withdraw.
     function registerSuccessor(address next) external onlyAuthorized {
-        if (next == address(this) || next.code.length == 0) revert InvalidSuccessor(next);
-        try IAccessManager(next).canCall(address(this), address(this), bytes4(0)) { }
-        catch {
-            revert InvalidSuccessor(next);
+        address probe;
+        if (next != address(0)) {
+            if (next == address(this) || next.code.length == 0) revert InvalidSuccessor(next);
+            try IAccessManager(next).canCall(address(this), address(this), bytes4(0)) { }
+            catch {
+                revert InvalidSuccessor(next);
+            }
+            probe = address(new SuccessionProbe(next));
         }
+        pendingSuccessor = next;
+        successionProbe = probe;
+        delete _struck[_successionKey(next)];
+        emit SuccessorProposed(next, probe);
+    }
+
+    /// @notice Completes the handover: from now on this manager answers no `canCall` and no
+    ///         `hasRole`, and {migrate} moves every managed target to the caller. Only the
+    ///         pending successor itself, and only once it has re-pointed {successionProbe} to
+    ///         this manager, which proves it can originate calls and get a stock
+    ///         `setAuthority` accepted on a contract it governs. One way.
+    function acceptSuccession() external {
+        address next = pendingSuccessor;
+        if (next == address(0) || _msgSender() != next) revert NotPendingSuccessor(_msgSender());
+        address probe = successionProbe;
+        if (IAccessManaged(probe).authority() != address(this)) revert SuccessionUnproven(probe);
         successor = next;
-        emit SuccessorRegistered(next);
+        delete pendingSuccessor;
+        delete successionProbe;
+        emit SuccessorAccepted(next);
     }
 
     /// @notice Moves every managed target with an index in `[from, to)` that still answers this
-    ///         manager as its authority to the successor. Anyone, once a successor is registered.
+    ///         manager as its authority to the successor. Anyone, once a successor has accepted.
     ///         All or nothing: a failing target reverts the whole call, so a caller leaves a
     ///         failing index out of its range and nothing else waits on it.
     /// @dev Each call to a target forwards all available gas. `to` is clamped to the list length.
@@ -344,10 +394,15 @@ contract WorksAccessManager is AccessManager {
     }
 
     /// @notice Completes a ready recovery: revokes every `ADMIN` record and grants `candidate`
-    ///         `ADMIN` with the 30-day delay, active at once. Anyone.
+    ///         `ADMIN` with the 30-day delay, active at once. Anyone. Refused while `candidate`
+    ///         holds or awaits `GUARDIAN` or `PAUSER`: the veto stays separate from the action
+    ///         (`InvalidCandidate`).
     /// @param candidate The candidate.
     function completeRecovery(address candidate) external {
         Recovery memory r = _liveRecovery(candidate);
+        (uint48 guardianSince,,,) = getAccess(Roles.GUARDIAN, candidate);
+        (uint48 pauserSince,,,) = getAccess(Roles.PAUSER, candidate);
+        if (guardianSince != 0 || pauserSince != 0) revert InvalidCandidate(candidate);
         if (Time.timestamp() < r.readyAt) revert RecoveryNotReady(candidate, r.readyAt);
         if (_decided(r.votes, r.seats) == r.registered) revert RecoveryRefused(candidate);
         delete _recoveries[candidate];
@@ -407,7 +462,9 @@ contract WorksAccessManager is AccessManager {
         bytes4 selector = bytes4(data[:4]);
         uint256 a = uint256(bytes32(data[4:0x24]));
         if (selector == this.registerSuccessor.selector) {
-            return a >> 160 == 0 ? keccak256(abi.encode(selector, a)) : bytes32(0);
+            // Casting to uint160 is safe: the upper 96 bits were just checked to be zero.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            return a >> 160 == 0 ? _successionKey(address(uint160(a))) : bytes32(0);
         }
         if (selector != this.revokeRole.selector || data.length < 0x44) return 0;
         uint256 b = uint256(bytes32(data[0x24:0x44]));
@@ -550,16 +607,19 @@ contract WorksAccessManager is AccessManager {
     }
 
     /// @inheritdoc AccessManager
-    /// @dev Enforces the ADMIN delay floor and the seat caps, numbers new guardian seats and
-    ///      lifts a suspension. The floor and caps do not apply to the constructor's admin.
+    /// @dev Enforces the class delays (every grant or re-grant of a role in {Roles} carries at
+    ///      least `Roles.executionDelay`, whoever is the role's admin) and the seat caps,
+    ///      numbers new guardian seats and lifts a suspension. Neither applies to the
+    ///      constructor's admin, and that admin's seat does not count against the cap.
     function _grantRole(uint64 roleId, address account, uint32 grantDelay, uint32 executionDelay)
         internal
         override
         returns (bool newMember)
     {
         bool constructing = address(this).code.length == 0;
-        if (roleId == Roles.ADMIN && executionDelay < Roles.SUCCESSOR && !constructing) {
-            revert AdminDelayBelowFloor(executionDelay);
+        if (!constructing && roleId < Roles.COUNT && executionDelay < Roles.executionDelay(roleId))
+        {
+            revert DelayBelowClass(roleId, executionDelay);
         }
         _lift(roleId, account);
         newMember = super._grantRole(roleId, account, grantDelay, executionDelay);
@@ -568,7 +628,11 @@ contract WorksAccessManager is AccessManager {
             uint256 cap = _params[
                 uint8(roleId == Roles.ADMIN ? Parameter.ADMIN_SEATS : Parameter.GUARDIAN_SEATS)
             ];
-            if (seats.length() >= cap && !constructing) revert SeatCapReached(roleId, cap);
+            if (!constructing) {
+                uint256 used = seats.length();
+                if (roleId == Roles.ADMIN && seats.contains(_initialAdmin)) --used;
+                if (used >= cap) revert SeatCapReached(roleId, cap);
+            }
             seats.add(account);
             if (roleId == Roles.GUARDIAN) _serialOf[account] = ++_guardianSerial;
         }
@@ -697,6 +761,10 @@ contract WorksAccessManager is AccessManager {
 
     function _removalKey(address account) private pure returns (bytes32) {
         return keccak256(abi.encode(IAccessManager.revokeRole.selector, account));
+    }
+
+    function _successionKey(address next) private pure returns (bytes32) {
+        return keccak256(abi.encode(WorksAccessManager.registerSuccessor.selector, next));
     }
 
     /// @dev True when `data`, a `revokeRole` call, names `account`. Never reverts: shorter
