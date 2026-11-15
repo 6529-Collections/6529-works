@@ -401,7 +401,7 @@ ADRs stay as written; each amended record gets a dated amendment note pointing h
 
 - **Sizes** (runtime bytes, the `default` profile): see
   [Audit scope](../audit/scope.md) for every contract; Stream falls from 24,373 to 22,616,
-  WorkRecords from 23,946 to 22,206, the split wallet from 5,097 to 66 bytes, the renderer from
+  WorkRecords from 23,946 to 22,216, the split wallet from 5,097 to 66 bytes, the renderer from
   24,365 to 23,714 and the English auction ends at 24,062; no exemption remains.
 - **Gas:** ADR 0004's table, re-measured on the merged tree.
 - **Interfaces:** pre-launch reshaping of `IStream`, `IPackageRegistry`, `IEditions`,
