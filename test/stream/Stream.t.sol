@@ -181,6 +181,7 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
     // ------------------------------------------------------------------------ admitted minters
 
     function test_setAdmittedMinter() public {
+        MockSaleAdapter other = new MockSaleAdapter(SaleKind.ENGLISH_AUCTION);
         vm.expectEmit(address(stream));
         emit IMintTarget.AdmittedMinterSet(address(other), 2, true, other.saleKind());
         vm.prank(governor);
@@ -1088,6 +1089,7 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
     function test_settlePrimary_soldRecordsTheSale() public {
         _mint(1);
         _mint(2);
+        MockSaleAdapter other = new MockSaleAdapter(SaleKind.ENGLISH_AUCTION);
         vm.prank(governor);
         stream.setAdmittedMinter(address(other), true);
         vm.expectRevert(abi.encodeWithSelector(IStream.NotMintingAdapter.selector, address(other)));
@@ -1362,6 +1364,7 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
     ///      holds it.
     function test_burn_onlyByMintingAdapter() public {
         _mint(1);
+        MockSaleAdapter other = new MockSaleAdapter(SaleKind.ENGLISH_AUCTION);
         vm.prank(governor);
         stream.setAdmittedMinter(address(other), true);
         auction.deliver(address(stream), 1, address(other));
@@ -2022,6 +2025,7 @@ contract StreamWithRecordsTest is RecordsFixture {
     ///      it holds it.
     function test_burn_refusesAnAdmittedAdapterThatDidNotMint() public {
         uint256 tokenId = _mint(1);
+        MockSaleAdapter other = new MockSaleAdapter(SaleKind.ENGLISH_AUCTION);
         vm.prank(governor);
         stream.setAdmittedMinter(address(other), true);
         address collector = makeAddr("collector");
