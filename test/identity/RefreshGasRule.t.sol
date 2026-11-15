@@ -13,7 +13,8 @@ import {
 } from "../mocks/identity/IdentityWorksMocks.sol";
 import {
     BurningConsolidationSource,
-    MalformedConsolidationSource
+    MalformedConsolidationSource,
+    StipendConsolidationSource
 } from "../mocks/identity/PermanenceMocks.sol";
 import { IdentityFixture } from "./IdentityFixture.sol";
 
@@ -49,18 +50,31 @@ contract RefreshGasRuleTest is IdentityFixture {
         ArtistIdentity memory next = _identity(artist, payout);
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes memory signature = _sign(artistKey, _digest(next, deadline));
-        _sweep(
-            stranger,
-            abi.encodeCall(
-                IArtistRegistry.stageChange, (artistId, next, artist, deadline, signature, "")
-            ),
-            artistId,
-            unrecorded
+        bytes memory data = abi.encodeCall(
+            IArtistRegistry.stageChange, (artistId, next, artist, deadline, signature, "")
         );
+        _sweep(stranger, data, artistId, unrecorded);
+        // A source with a larger fixed stipend leaves a staging enough gas to finish after a
+        // skip, so only the rethrow keeps that gas limit from skipping the refresh.
+        address fresh = _installStipendSource();
+        _sweepRange(stranger, data, artistId, fresh, 200_000, 3_000_000, 20_000);
     }
 
     function test_GasRule_StageOverrideNeverSkipsForGas() public {
         _sweep(governor, _overrideCall(), artistId, unrecorded);
+        address fresh = _installStipendSource();
+        _sweepRange(governor, _overrideCall(), artistId, fresh, 200_000, 3_000_000, 20_000);
+    }
+
+    /// @dev Installs a fixed-gas source needing 1,000,000 gas per read, which reports a fresh
+    ///      wallet; returns that wallet.
+    function _installStipendSource() internal returns (address fresh) {
+        fresh = makeAddr("stipendWallet");
+        StipendConsolidationSource source = new StipendConsolidationSource(fresh, 1_000_000);
+        vm.prank(successorSetter);
+        registry.setConsolidationSource(
+            adapter, IConsolidationSource(address(source)), address(source).codehash
+        );
     }
 
     function test_GasRule_ExecuteChangeNeverSkipsForGas() public {

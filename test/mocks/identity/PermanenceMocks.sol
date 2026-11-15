@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
+import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { InterfaceStub } from "./IdentityWorksMocks.sol";
 
 /// @notice A smart account that approves digests on chain and answers ERC-1271 from storage,
@@ -196,5 +197,51 @@ contract MalformedConsolidationSource is InterfaceStub {
             mstore(0, not(0))
             return(0, 0x20)
         }
+    }
+}
+
+/// @notice A fixed-gas consolidation source that needs `stipend` gas for every read and, when
+///         its caller cannot give it that much, says so with `BoundedCallInsufficientGas` (the
+///         `IConsolidationSource` convention) while gas is still left. It reports one wallet,
+///         established since the epoch's first second.
+contract StipendConsolidationSource is InterfaceStub {
+    address public immutable wallet;
+    uint256 public immutable stipend;
+
+    constructor(address wallet_, uint256 stipend_)
+        InterfaceStub(type(IConsolidationSource).interfaceId)
+    {
+        (wallet, stipend) = (wallet_, stipend_);
+    }
+
+    function establishedWallets(address) external view returns (address[] memory wallets) {
+        _need();
+        wallets = new address[](1);
+        wallets[0] = wallet;
+    }
+
+    function isEstablished(address, address w) external view returns (bool) {
+        _need();
+        return w == wallet;
+    }
+
+    function consolidations(address)
+        external
+        view
+        returns (address[] memory wallets, uint64[] memory times)
+    {
+        _need();
+        wallets = new address[](1);
+        times = new uint64[](1);
+        (wallets[0], times[0]) = (wallet, 1);
+    }
+
+    function effectiveAt(address, address w) external view returns (uint64) {
+        _need();
+        return w == wallet ? 1 : 0;
+    }
+
+    function _need() private view {
+        if (gasleft() < stipend) revert BoundedCall.BoundedCallInsufficientGas(stipend);
     }
 }
