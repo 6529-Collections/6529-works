@@ -160,9 +160,8 @@ contract CuratedSaleFlowTest is IntegrationBase {
     ///      pushed by a keeper or the claim router, the artist (artist-resolved) pulls.
     function _releaseSellerWallet(address seller, ISplitWallet.Payee[] memory payees) internal {
         assertEq(splitFactory.createWallet(payees, bytes32(0)), seller, "predicted = deployed");
-        ISplitWallet wallet = ISplitWallet(seller);
         IClaimRouter.Claim[] memory claims = new IClaimRouter.Claim[](1);
-        claims[0] = IClaimRouter.Claim(seller, CURRENCY_ETH, 0);
+        claims[0] = IClaimRouter.Claim(payees, bytes32(0), CURRENCY_ETH, 0);
         vm.prank(keeper);
         claimRouter.claim(claims, false);
         assertEq(collaborator.balance, 0.3 ether, "20% of the artist portion, pushed");
@@ -171,9 +170,9 @@ contract CuratedSaleFlowTest is IntegrationBase {
         vm.expectRevert(
             abi.encodeWithSelector(ISplitWallet.NotPayoutAddress.selector, keeper, artist)
         );
-        wallet.release(CURRENCY_ETH, 1);
+        splitFactory.release(payees, bytes32(0), CURRENCY_ETH, 1);
         vm.prank(artist);
-        wallet.release(CURRENCY_ETH, 1);
+        splitFactory.release(payees, bytes32(0), CURRENCY_ETH, 1);
         assertEq(artist.balance, 1.2 ether, "80% of the artist portion, pulled");
     }
 
@@ -202,7 +201,7 @@ contract CuratedSaleFlowTest is IntegrationBase {
         uint256 sellerBefore = terms.seller.balance;
         for (uint256 i; i < 2; ++i) {
             vm.prank(keeper);
-            ISplitWallet(receiver).release(CURRENCY_ETH, i);
+            splitFactory.release(royaltyPayees, bytes32(0), CURRENCY_ETH, i);
         }
         assertEq(networkFee.balance - feeBefore, amount / 4, "25% of royalties to the network");
         assertEq(terms.seller.balance - sellerBefore, amount - amount / 4, "75% to the seller");
@@ -293,7 +292,7 @@ contract CuratedSaleFlowTest is IntegrationBase {
         assertEq(usd.balanceOf(networkFee), 50e18);
         splitFactory.createWallet(w.item.payees, bytes32(0));
         vm.prank(artist);
-        ISplitWallet(terms.seller).release(address(usd), 1);
+        splitFactory.release(w.item.payees, bytes32(0), address(usd), 1);
         assertEq(usd.balanceOf(artist), 120e18, "the artist pulls ERC-20 too");
     }
 

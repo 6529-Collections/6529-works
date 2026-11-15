@@ -3,17 +3,18 @@ pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
 import { ClaimRouter } from "src/economics/ClaimRouter.sol";
-import { ReleaseVerifier } from "src/economics/ReleaseVerifier.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
-import { SplitWallet } from "src/economics/SplitWallet.sol";
+import { SplitLedger } from "src/economics/SplitLedger.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
 import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
+import { ISplitLedger } from "src/economics/interfaces/ISplitLedger.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import {
     BlocklistToken,
     FeeOnTransferToken,
+    ForceSender,
     MockArtistResolver,
     NoReturnToken,
     RebasingToken,
@@ -36,12 +37,14 @@ contract EconomicsHandler is Test {
     uint256 internal constant D = 100_000;
 
     struct Setup {
-        SplitWallet[] wallets;
+        address[] wallets;
+        ISplitWallet.Payee[][] payeeLists;
+        bytes32[] salts;
         ToggleRecipient toggle;
         RevenueEscrow escrow;
         ClaimRouter router;
         PaymentHarness payer;
-        ReleaseVerifier verifier;
+        SplitLedger ledger;
         BlocklistToken usdc;
         FeeOnTransferToken fee;
         RebasingToken rebase;
@@ -53,7 +56,7 @@ contract EconomicsHandler is Test {
 
     /// @dev One release attempt. Mode 0: `release`; 1: `releaseTo`; 2: signed.
     struct Attempt {
-        SplitWallet w;
+        address w;
         uint256 index;
         address asset;
         address caller;
@@ -63,12 +66,12 @@ contract EconomicsHandler is Test {
         address signer;
     }
 
-    SplitWallet[] public wallets;
+    address[] public wallets;
     ToggleRecipient public toggle;
     RevenueEscrow public escrow;
     ClaimRouter public router;
     PaymentHarness public payer;
-    ReleaseVerifier public verifier;
+    SplitLedger public ledger;
     BlocklistToken public usdc;
     FeeOnTransferToken public fee;
     RebasingToken public rebase;
@@ -98,6 +101,14 @@ contract EconomicsHandler is Test {
     mapping(bytes32 => uint256) public outcomes;
     /// @notice The replacement the non-wallet target (`toggle`) consented to, or zero (MONEY-2).
     address public toggleConsent;
+    /// @notice What the escrow holds beyond every credit, per asset: tokens transferred to it
+    ///         and ETH force-sent to it without a deposit, less what `sweepExcess` took.
+    mapping(address asset => uint256) public ghostExcess;
+    /// @notice Where governed sweeps send the excess: never an actor or a target.
+    address public beneficiary = makeAddr("sweepBeneficiary");
+    /// @notice Each wallet's payee list and salt: the ledger stores neither.
+    mapping(address wallet => ISplitWallet.Payee[]) internal _payees;
+    mapping(address wallet => bytes32) public saltOf;
 
     uint256 internal nonce;
     IReleaseVerifier.Authorization internal lastAuth;
@@ -106,11 +117,17 @@ contract EconomicsHandler is Test {
 
     constructor(Setup memory s) {
         wallets = s.wallets;
+        for (uint256 i; i < s.wallets.length; ++i) {
+            saltOf[s.wallets[i]] = s.salts[i];
+            for (uint256 j; j < s.payeeLists[i].length; ++j) {
+                _payees[s.wallets[i]].push(s.payeeLists[i][j]);
+            }
+        }
         toggle = s.toggle;
         escrow = s.escrow;
         router = s.router;
         payer = s.payer;
-        verifier = s.verifier;
+        ledger = s.ledger;
         usdc = s.usdc;
         fee = s.fee;
         rebase = s.rebase;
@@ -178,13 +195,17 @@ contract EconomicsHandler is Test {
     function replaySigned() external {
         if (!hasLast) return;
         IReleaseVerifier.Authorization memory a = lastAuth;
-        SplitWallet w = SplitWallet(payable(a.wallet));
+        address w = a.wallet;
         (address payout,) = _payoutOf(w, a.payee);
         bytes memory expected = a.account != payout
             ? abi.encodeWithSelector(ISplitWallet.NotPayoutAddress.selector, a.account, payout)
             : abi.encodeWithSelector(IReleaseVerifier.NonceAlreadyUsed.selector, a.account, a.nonce);
-        (bool ok, bytes memory ret) =
-            address(w).call(abi.encodeCall(ISplitWallet.releaseWithAuthorization, (a, lastSig)));
+        (bool ok, bytes memory ret) = address(ledger)
+            .call(
+                abi.encodeCall(
+                    ISplitLedger.releaseWithAuthorization, (_payees[w], saltOf[w], a, lastSig)
+                )
+            );
         assertFalse(ok, "replay succeeded");
         assertEq(ret, expected, "replay error");
         ++outcomes["signed.replay"];
@@ -273,7 +294,7 @@ contract EconomicsHandler is Test {
     }
 
     function receiveDirect(uint256 walletSeed, uint256 assetSeed, uint256 amount) external {
-        SplitWallet w = _wallet(walletSeed);
+        address w = _wallet(walletSeed);
         address asset = assets[assetSeed % 5];
         amount = bound(amount, 1, asset == ETH ? 50 ether : 1e24);
         if (asset == ETH) vm.deal(address(w), address(w).balance + amount);
@@ -403,6 +424,70 @@ contract EconomicsHandler is Test {
         ++outcomes[from == address(toggle) ? bytes32("recover.consented") : bytes32("recover.ok")];
     }
 
+    // ------------------------------------------------------------------ escrow excess
+
+    /// @notice Transfers ERC-20s straight to the escrow, without a deposit: owed to nobody.
+    function strayToken(uint256 assetSeed, uint256 amount) external {
+        address asset = assets[1 + assetSeed % 2];
+        amount = bound(amount, 1, 1e24);
+        BlocklistToken(asset).mint(address(escrow), amount);
+        ghostExcess[asset] += amount;
+        ++outcomes["excess.token"];
+    }
+
+    /// @notice Force-sends ETH to the escrow, which has no `receive`.
+    function forceETH(uint256 amount) external {
+        amount = bound(amount, 1, 50 ether);
+        vm.deal(address(this), amount);
+        new ForceSender{ value: amount }(payable(address(escrow)));
+        ghostExcess[ETH] += amount;
+        ++outcomes["excess.eth"];
+    }
+
+    /// @notice Governed sweep of the excess (the handler is admin with zero delay here). It must
+    ///         take exactly the excess and leave every credit, and the total owed, untouched.
+    function sweep(uint256 assetSeed) external {
+        address asset = assets[assetSeed % 3];
+        uint256 excess = ghostExcess[asset];
+        uint256 totalBefore = escrow.totalOwed(asset);
+        uint256[] memory owedBefore = _credits(asset);
+        bytes memory expected;
+        if (excess == 0) {
+            expected = abi.encodeWithSelector(IRevenueEscrow.NothingToSweep.selector, asset);
+        } else if (asset == address(fee) && excess * fee.feeBps() / 10_000 != 0) {
+            expected = abi.encodeWithSelector(TokenTransfer.TokenBalanceMismatch.selector, asset);
+        }
+        uint256 beneficiaryBefore = _bal(asset, beneficiary);
+        (bool ok, bytes memory ret) =
+            address(escrow).call(abi.encodeCall(IRevenueEscrow.sweepExcess, (asset, beneficiary)));
+        if (expected.length != 0) {
+            assertFalse(ok, "sweep should revert");
+            assertEq(ret, expected, "sweep error");
+            ++outcomes["sweep.reverted"];
+        } else {
+            assertTrue(ok, "sweep reverted");
+            assertEq(abi.decode(ret, (uint256)), excess, "sweep takes exactly the excess");
+            assertEq(_bal(asset, beneficiary) - beneficiaryBefore, excess, "beneficiary delta");
+            ghostExcess[asset] = 0;
+            assertEq(_bal(asset, address(escrow)), escrow.totalOwed(asset), "nothing left over");
+            ++outcomes["sweep.ok"];
+        }
+        assertEq(escrow.totalOwed(asset), totalBefore, "sweep moved the total owed");
+        uint256[] memory owedAfter = _credits(asset);
+        for (uint256 i; i < owedAfter.length; ++i) {
+            assertEq(owedAfter[i], owedBefore[i], "sweep moved a credit");
+        }
+    }
+
+    /// @dev Every target's credit in `asset`, wallets first, the non-wallet target last.
+    function _credits(address asset) internal view returns (uint256[] memory owed) {
+        owed = new uint256[](wallets.length + 1);
+        for (uint256 i; i < wallets.length; ++i) {
+            owed[i] = escrow.owed(wallets[i], asset);
+        }
+        owed[wallets.length] = escrow.owed(address(toggle), asset);
+    }
+
     // ------------------------------------------------------------------ environment
 
     function setArtistPayout(uint256 artistSeed, uint256 actorSeed) external {
@@ -437,10 +522,15 @@ contract EconomicsHandler is Test {
 
     function revokeNonce(uint256 actorSeed) external {
         vm.prank(_actor(actorSeed));
-        verifier.revokeNonce(++nonce);
+        ledger.revokeNonce(++nonce);
     }
 
     // ------------------------------------------------------------------ views for the invariants
+
+    /// @notice `wallet`'s payee list.
+    function payeesOf(address wallet) external view returns (ISplitWallet.Payee[] memory) {
+        return _payees[wallet];
+    }
 
     function walletCount() external view returns (uint256) {
         return wallets.length;
@@ -458,7 +548,7 @@ contract EconomicsHandler is Test {
         returns (Attempt memory t)
     {
         t.w = _wallet(walletSeed);
-        t.index = payeeSeed % t.w.payeeCount();
+        t.index = payeeSeed % _payees[t.w].length;
         t.asset = asset;
         (address payout,) = _payoutOf(t.w, t.index);
         t.caller = payout;
@@ -488,7 +578,7 @@ contract EconomicsHandler is Test {
             );
             return (err, 0);
         }
-        uint256 share = t.w.payee(t.index).share;
+        uint256 share = _payees[t.w][t.index].share;
         uint256 due = current * share / D - ghostReleased[address(t.w)][t.asset][t.index];
         amount = t.requested == type(uint256).max ? due : t.requested;
         if (amount == 0) {
@@ -535,7 +625,7 @@ contract EconomicsHandler is Test {
         uint256 current = _observed(t.w, t.asset);
         uint256 walletBefore = _bal(t.asset, address(t.w));
         uint256 recipientBefore = _bal(t.asset, t.recipient);
-        uint256 releasedBefore = t.w.totalReleased(t.asset);
+        uint256 releasedBefore = ledger.totalReleased(t.w, t.asset);
         (bool ok, bytes memory ret) = _send(t);
         bytes32 kind = t.mode == 0
             ? bytes32("release")
@@ -543,7 +633,7 @@ contract EconomicsHandler is Test {
         if (expected.length != 0) {
             assertFalse(ok, "release should revert");
             assertEq(ret, expected, "release error");
-            assertEq(t.w.totalReleased(t.asset), releasedBefore, "residue: released");
+            assertEq(ledger.totalReleased(t.w, t.asset), releasedBefore, "residue: released");
             assertEq(_bal(t.asset, address(t.w)), walletBefore, "residue: wallet");
             ++outcomes[keccak256(abi.encode(kind, bytes4(expected)))];
             return;
@@ -563,17 +653,25 @@ contract EconomicsHandler is Test {
 
     function _send(Attempt memory t) internal returns (bool ok, bytes memory ret) {
         if (t.mode == 0) {
+            bytes memory data =
+                abi.encodeCall(ISplitWallet.release, (_payees[t.w], saltOf[t.w], t.asset, t.index));
             vm.prank(t.caller);
-            return address(t.w).call(abi.encodeCall(ISplitWallet.release, (t.asset, t.index)));
+            return address(ledger).call(data);
         }
         if (t.mode == 1) {
+            bytes memory data = abi.encodeCall(
+                ISplitWallet.releaseTo, (_payees[t.w], saltOf[t.w], t.asset, t.index, t.recipient)
+            );
             vm.prank(t.caller);
-            return address(t.w)
-                .call(abi.encodeCall(ISplitWallet.releaseTo, (t.asset, t.index, t.recipient)));
+            return address(ledger).call(data);
         }
         (IReleaseVerifier.Authorization memory a, bytes memory sig) = _signed(t);
-        (ok, ret) =
-            address(t.w).call(abi.encodeCall(ISplitWallet.releaseWithAuthorization, (a, sig)));
+        (ok, ret) = address(ledger)
+            .call(
+                abi.encodeCall(
+                    ISplitLedger.releaseWithAuthorization, (_payees[t.w], saltOf[t.w], a, sig)
+                )
+            );
         if (ok) {
             lastAuth = a;
             lastSig = sig;
@@ -596,7 +694,7 @@ contract EconomicsHandler is Test {
             ++nonce,
             block.timestamp + 1 days
         );
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(keyOf[t.signer], verifier.releaseDigest(a));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(keyOf[t.signer], ledger.releaseDigest(a));
         sig = abi.encodePacked(r, s, v);
     }
 
@@ -611,7 +709,7 @@ contract EconomicsHandler is Test {
         if (!signed && artist) return 0;
         if (signed && t.signer != payout) return 0;
         address recipient = signed ? t.recipient : payout;
-        uint256 due = _observed(t.w, t.asset) * t.w.payee(t.index).share / D
+        uint256 due = _observed(t.w, t.asset) * _payees[t.w][t.index].share / D
             - ghostReleased[address(t.w)][t.asset][t.index];
         for (uint256 j; j < k; ++j) {
             if (items[j].w == t.w && items[j].asset == t.asset && items[j].index == t.index) {
@@ -628,7 +726,9 @@ contract EconomicsHandler is Test {
     function _submitPlain(Attempt[] memory items) internal returns (uint256[] memory) {
         IClaimRouter.Claim[] memory claims = new IClaimRouter.Claim[](items.length);
         for (uint256 k; k < items.length; ++k) {
-            claims[k] = IClaimRouter.Claim(address(items[k].w), items[k].asset, items[k].index);
+            claims[k] = IClaimRouter.Claim(
+                _payees[items[k].w], saltOf[items[k].w], items[k].asset, items[k].index
+            );
         }
         return router.claim(claims, true);
     }
@@ -637,22 +737,22 @@ contract EconomicsHandler is Test {
         IClaimRouter.SignedClaim[] memory claims = new IClaimRouter.SignedClaim[](items.length);
         for (uint256 k; k < items.length; ++k) {
             (IReleaseVerifier.Authorization memory a, bytes memory sig) = _signed(items[k]);
-            claims[k] = IClaimRouter.SignedClaim(a, sig);
+            claims[k] = IClaimRouter.SignedClaim(a, sig, _payees[items[k].w], saltOf[items[k].w]);
         }
         return router.claimSigned(claims, true);
     }
 
-    function _payoutOf(SplitWallet w, uint256 index)
+    function _payoutOf(address w, uint256 index)
         internal
         view
         returns (address account, bool artist)
     {
-        ISplitWallet.Payee memory p = w.payee(index);
+        ISplitWallet.Payee memory p = _payees[w][index];
         if (p.artistId == 0) return (p.account, false);
         return (artistPayout[p.artistId], true);
     }
 
-    function _observed(SplitWallet w, address asset) internal view returns (uint256) {
+    function _observed(address w, address asset) internal view returns (uint256) {
         return _bal(asset, address(w)) + ghostTotal[address(w)][asset];
     }
 
@@ -670,7 +770,7 @@ contract EconomicsHandler is Test {
         return actors[seed % actors.length];
     }
 
-    function _wallet(uint256 seed) internal view returns (SplitWallet) {
+    function _wallet(uint256 seed) internal view returns (address) {
         return wallets[seed % wallets.length];
     }
 

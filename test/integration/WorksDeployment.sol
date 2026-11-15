@@ -10,9 +10,8 @@ import { PackageRegistry } from "src/curation/PackageRegistry.sol";
 import { AssetAllowlist } from "src/economics/AssetAllowlist.sol";
 import { ClaimRouter } from "src/economics/ClaimRouter.sol";
 import { EconomicsResolver } from "src/economics/EconomicsResolver.sol";
-import { ReleaseVerifier } from "src/economics/ReleaseVerifier.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
-import { SplitFactory } from "src/economics/SplitFactory.sol";
+import { SplitLedger } from "src/economics/SplitLedger.sol";
 import { Editions } from "src/editions/Editions.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
@@ -74,8 +73,9 @@ abstract contract WorksDeployment is Test {
     DependencyRegistry internal dependencies;
     ConsolidationAdapter internal consolidation;
     ArtistRegistry internal artists;
-    ReleaseVerifier internal releaseVerifier;
-    SplitFactory internal splitFactory;
+    /// @dev The split ledger, which is also the release verifier (one contract, two names).
+    SplitLedger internal releaseVerifier;
+    SplitLedger internal splitFactory;
     ClaimRouter internal claimRouter;
     AssetAllowlist internal allowlist;
     EconomicsResolver internal economics;
@@ -165,7 +165,7 @@ abstract contract WorksDeployment is Test {
         dependencies = d.dependencyRegistry;
         consolidation = d.consolidationAdapter;
         artists = d.artistRegistry;
-        releaseVerifier = d.releaseVerifier;
+        releaseVerifier = d.splitFactory;
         splitFactory = d.splitFactory;
         claimRouter = d.claimRouter;
         allowlist = d.assetAllowlist;

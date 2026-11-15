@@ -41,6 +41,7 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
     uint256 internal artistId;
     bytes32 internal root;
     address internal seller;
+    ISplitWallet.Payee[] internal sellerPayees;
 
     function setUp() public override {
         super.setUp();
@@ -62,6 +63,9 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
         // One sale accrues 0.75 ETH in the artist's (artist-resolved) seller wallet.
         _sell(root, works, 0, collector, 1 ether);
         splitFactory.createWallet(works[0].item.payees, bytes32(0));
+        for (uint256 i; i < works[0].item.payees.length; ++i) {
+            sellerPayees.push(works[0].item.payees[i]);
+        }
         assertEq(seller.balance, 0.75 ether);
     }
 
@@ -112,7 +116,7 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
         assertEq(artists.payoutAddress(artistId), address(0));
         vm.prank(artist);
         vm.expectRevert(abi.encodeWithSelector(ISplitWallet.PayoutUnresolved.selector, artistId));
-        ISplitWallet(seller).release(CURRENCY_ETH, 0);
+        splitFactory.release(sellerPayees, bytes32(0), CURRENCY_ETH, 0);
 
         vm.expectRevert(
             abi.encodeWithSelector(IArtistRegistry.ChangeNotDue.selector, artistId, p.executableAt)
@@ -128,9 +132,9 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
         vm.expectRevert(
             abi.encodeWithSelector(ISplitWallet.NotPayoutAddress.selector, artist, newKey)
         );
-        ISplitWallet(seller).release(CURRENCY_ETH, 0);
+        splitFactory.release(sellerPayees, bytes32(0), CURRENCY_ETH, 0);
         vm.prank(newKey);
-        ISplitWallet(seller).release(CURRENCY_ETH, 0);
+        splitFactory.release(sellerPayees, bytes32(0), CURRENCY_ETH, 0);
         assertEq(newKey.balance, 0.75 ether, "recovered identity pulls the accrued balance");
 
         // The new authority signs moves; a move signed by the old key no longer verifies.
@@ -229,7 +233,7 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
         vm.warp(p.executableAt);
         artists.executeChange(artistId);
         vm.prank(newKey);
-        ISplitWallet(seller).release(CURRENCY_ETH, 0);
+        splitFactory.release(sellerPayees, bytes32(0), CURRENCY_ETH, 0);
         assertEq(newKey.balance, 0.75 ether);
     }
 
@@ -263,7 +267,7 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
         assertEq(artists.payoutAddress(artistId), address(0), "frozen during the dispute");
         vm.prank(artist); // the thief cannot pull with the payout key
         vm.expectRevert(abi.encodeWithSelector(ISplitWallet.PayoutUnresolved.selector, artistId));
-        ISplitWallet(seller).release(CURRENCY_ETH, 0);
+        splitFactory.release(sellerPayees, bytes32(0), CURRENCY_ETH, 0);
 
         bytes32 vote = _platformStatement(
             address(artists), artistId, StatementKinds.DISPUTE_OUTCOME, "ar://identity-vote"
@@ -277,7 +281,7 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
         );
         assertEq(artists.authorityOf(artistId), newKey, "recovered by the vote");
         vm.prank(newKey);
-        ISplitWallet(seller).release(CURRENCY_ETH, 0);
+        splitFactory.release(sellerPayees, bytes32(0), CURRENCY_ETH, 0);
         assertEq(newKey.balance, 0.75 ether);
     }
 
@@ -329,7 +333,7 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
         assertEq(artists.reservedFor(newKey), artistId, "reserved for the artist");
         vm.prank(artist);
         vm.expectRevert(abi.encodeWithSelector(ISplitWallet.PayoutUnresolved.selector, artistId));
-        ISplitWallet(seller).release(CURRENCY_ETH, 0);
+        splitFactory.release(sellerPayees, bytes32(0), CURRENCY_ETH, 0);
 
         // Day 30 of the notice: the artist accepts a package with the new key, and anyone relays
         // it. The acceptance would create a separate identity: it reverts instead.
@@ -349,9 +353,9 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
         vm.expectRevert(
             abi.encodeWithSelector(ISplitWallet.NotPayoutAddress.selector, artist, newKey)
         );
-        ISplitWallet(seller).release(CURRENCY_ETH, 0);
+        splitFactory.release(sellerPayees, bytes32(0), CURRENCY_ETH, 0);
         vm.prank(newKey);
-        ISplitWallet(seller).release(CURRENCY_ETH, 0);
+        splitFactory.release(sellerPayees, bytes32(0), CURRENCY_ETH, 0);
         assertEq(newKey.balance, 0.75 ether, "the recovered artist collects");
         assertEq(artist.balance, 0);
 
@@ -468,7 +472,9 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
             seller, CURRENCY_ETH, 0, account, recipient, amount, nonce, block.timestamp + 30 days
         );
         claims = new IClaimRouter.SignedClaim[](1);
-        claims[0] = IClaimRouter.SignedClaim(a, _sign(account, releaseVerifier.releaseDigest(a)));
+        claims[0] = IClaimRouter.SignedClaim(
+            a, _sign(account, releaseVerifier.releaseDigest(a)), sellerPayees, bytes32(0)
+        );
     }
 
     /// @dev The artist's signed release authorization, relayed through the claim router, pays

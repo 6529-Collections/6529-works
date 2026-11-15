@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { SplitWallet } from "src/economics/SplitWallet.sol";
 import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
 import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
 import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
@@ -17,42 +16,45 @@ contract GasCapTest is EconomicsBase {
     uint256 internal constant TX_GAS_CAP = 16_777_216;
     /// @dev "Well under": at most 75% of the cap.
     uint256 internal constant BUDGET = TX_GAS_CAP * 3 / 4;
-    /// @dev An ERC-1271 check that spends its whole 200,000-gas allowance.
+    /// @dev An ERC-1271 check that spends nearly the whole of today's 200,000-gas allowance.
     uint256 internal constant SMART_ACCOUNT_BURN = 190_000;
+    /// @dev Payees per worst-case item: every item carries its wallet's payee list in calldata,
+    ///      and the router and the ledger copy and hash it, so the longest list allowed
+    ///      (`Splits.MAX_PAYEES`) is the worst case.
+    uint256 internal constant WORST_PAYEES = 64;
 
     BlocklistToken internal usdc;
-    IClaimRouter.Claim[] internal worstClaims;
-    IClaimRouter.SignedClaim[] internal worstSigned;
+    address[] internal plainWallets;
+    address[] internal signedWallets;
+    IReleaseVerifier.Authorization[] internal signedAuths;
+    bytes internal signature;
     address[] internal touched;
     ISplitWallet.Payee[] internal maxPayees;
 
     function setUp() public override {
         super.setUp();
         usdc = new BlocklistToken();
-        // Worst plain items: a distinct wallet each, an ERC-20 with extra checks, a first release
-        // (fresh storage) to a fresh account.
+        // Worst plain items: a distinct 64-payee wallet each, an ERC-20 with extra checks, a
+        // first release (fresh storage) to a fresh account.
         uint256 max = router.MAX_CLAIMS();
         for (uint256 i; i < max; ++i) {
-            SplitWallet w = _wallet(
-                _list(_fixed(address(uint160(0xE00000 + i)), D - 1), _artist(1000 + i, 1))
-            );
+            address w = _wallet(_longList(address(uint160(0xE00000 + i)), 0, 1000 + i * 100));
             usdc.mint(address(w), 1e24);
-            worstClaims.push(IClaimRouter.Claim(address(w), address(usdc), 0));
+            plainWallets.push(w);
             touched.push(address(w));
         }
         // Worst signed items: artist pulls by a 4 KiB ERC-1271 signature from a smart account
         // that spends its whole check allowance, to a fresh recipient.
-        bytes memory signature = new bytes(4096);
-        for (uint256 i; i < signature.length; ++i) {
+        signature = new bytes(4096);
+        for (uint256 i; i < 4096; ++i) {
             signature[i] = 0xff;
         }
         for (uint256 i; i < router.MAX_SIGNED_CLAIMS(); ++i) {
             Mock1271Account safe = new Mock1271Account();
             safe.setBurn(SMART_ACCOUNT_BURN);
             resolver.set(2000 + i, address(safe));
-            SplitWallet w = _wallet(
-                _list(_fixed(address(uint160(0xC00000 + i)), 1), _artist(2000 + i, D - 1))
-            );
+            address w =
+                _wallet(_longList(address(uint160(0xC00000 + i)), 2000 + i, 100_000 + i * 100));
             usdc.mint(address(w), 1e24);
             IReleaseVerifier.Authorization memory a = _auth(
                 w,
@@ -64,18 +66,35 @@ contract GasCapTest is EconomicsBase {
                 i
             );
             safe.accept(verifier.releaseDigest(a));
-            worstSigned.push(IClaimRouter.SignedClaim(a, signature));
+            signedWallets.push(w);
+            signedAuths.push(a);
             touched.push(address(w));
             touched.push(address(safe));
         }
-        // The largest wallet: 64 artist-resolved payees, two storage slots each.
+        // The largest wallet: 64 artist-resolved payees (one storage slot for the whole wallet).
         for (uint256 i; i < 64; ++i) {
             maxPayees.push(_artist(5000 + i, i == 0 ? D - 63 : 1));
         }
     }
 
+    function _worstClaims() internal view returns (IClaimRouter.Claim[] memory claims) {
+        claims = new IClaimRouter.Claim[](plainWallets.length);
+        for (uint256 i; i < claims.length; ++i) {
+            address w = plainWallets[i];
+            claims[i] = IClaimRouter.Claim(_payeesOf(w), _salts[w], address(usdc), 0);
+        }
+    }
+
+    function _worstSigned() internal view returns (IClaimRouter.SignedClaim[] memory claims) {
+        claims = new IClaimRouter.SignedClaim[](signedWallets.length);
+        for (uint256 i; i < claims.length; ++i) {
+            address w = signedWallets[i];
+            claims[i] = IClaimRouter.SignedClaim(signedAuths[i], signature, _payeesOf(w), _salts[w]);
+        }
+    }
+
     function test_WorstCaseAtomicClaimBatchFitsTheCap() public {
-        IClaimRouter.Claim[] memory claims = worstClaims;
+        IClaimRouter.Claim[] memory claims = _worstClaims();
         _cool();
         uint256 start = gasleft();
         uint256[] memory amounts = router.claim(claims, false);
@@ -85,7 +104,7 @@ contract GasCapTest is EconomicsBase {
     }
 
     function test_WorstCaseAtomicSignedBatchFitsTheCap() public {
-        IClaimRouter.SignedClaim[] memory claims = worstSigned;
+        IClaimRouter.SignedClaim[] memory claims = _worstSigned();
         _cool();
         uint256 start = gasleft();
         uint256[] memory amounts = router.claimSigned(claims, false);
@@ -100,16 +119,16 @@ contract GasCapTest is EconomicsBase {
     ///      continue-mode batch succeeds, as `eth_estimateGas` would, and require every worst-case
     ///      item to be paid there and the total to fit the cap.
     function test_ContinueClaimBatchAtItsEstimatedGasPaysEveryItem() public {
-        bytes memory input = abi.encodeCall(IClaimRouter.claim, (worstClaims, true));
+        bytes memory input = abi.encodeCall(IClaimRouter.claim, (_worstClaims(), true));
         (uint256 estimate, uint256 paid) = _estimate(input, 1_000_000, 16_000_000);
-        assertEq(paid, worstClaims.length, "every item paid at the estimate");
+        assertEq(paid, plainWallets.length, "every item paid at the estimate");
         _assertFits("continue claim batch at its estimate", input, estimate);
     }
 
     function test_ContinueSignedBatchAtItsEstimatedGasPaysEveryItem() public {
-        bytes memory input = abi.encodeCall(IClaimRouter.claimSigned, (worstSigned, true));
+        bytes memory input = abi.encodeCall(IClaimRouter.claimSigned, (_worstSigned(), true));
         (uint256 estimate, uint256 paid) = _estimate(input, 1_000_000, 16_000_000);
-        assertEq(paid, worstSigned.length, "every item paid at the estimate");
+        assertEq(paid, signedWallets.length, "every item paid at the estimate");
         _assertFits("continue signed batch at its estimate", input, estimate);
     }
 
@@ -124,6 +143,24 @@ contract GasCapTest is EconomicsBase {
             abi.encodeCall(ISplitFactory.createWallet, (payees, bytes32(0))),
             used
         );
+    }
+
+    /// @dev A canonical `WORST_PAYEES`-payee list: fixed payee `first` at index 0 (the item's
+    ///      payee in plain claims), then, if `signer` is non-zero, artist `signer` at index 1 with
+    ///      the bulk share (the signed claims' payee), then one-unit artists from `filler` up.
+    function _longList(address first, uint256 signer, uint256 filler)
+        internal
+        pure
+        returns (ISplitWallet.Payee[] memory payees)
+    {
+        payees = new ISplitWallet.Payee[](WORST_PAYEES);
+        uint256 rest = WORST_PAYEES - (signer == 0 ? 1 : 2);
+        payees[0] = _fixed(first, signer == 0 ? uint32(D - rest) : 1);
+        uint256 k = 1;
+        if (signer != 0) payees[k++] = _artist(signer, uint32(D - 1 - rest));
+        for (uint256 j; j < rest; ++j) {
+            payees[k++] = _artist(filler + j, 1);
+        }
     }
 
     function _estimate(bytes memory input, uint256 lo, uint256 hi)

@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { ReleaseVerifier } from "src/economics/ReleaseVerifier.sol";
-import { SplitWallet } from "src/economics/SplitWallet.sol";
 import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
+import { SplitLedger } from "src/economics/SplitLedger.sol";
 import { Mock1271Account, RejectingRecipient } from "../mocks/economics/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 
 contract ReleaseVerifierTest is EconomicsBase {
-    SplitWallet internal wallet;
+    address internal wallet;
     uint256 internal iAlice;
     uint256 internal iArtist;
     address internal relayer = makeAddr("relayer");
@@ -109,37 +108,37 @@ contract ReleaseVerifierTest is EconomicsBase {
         bytes memory sig = _sign(alicePk, a);
         vm.expectEmit(true, true, false, true, address(verifier));
         emit IReleaseVerifier.NonceUsed(alice, 1, false);
-        vm.expectEmit(true, true, true, true, address(wallet));
-        emit ISplitWallet.Released(ETH, iAlice, recipient, alice, 2 ether, 10 ether);
+        vm.expectEmit(true, true, true, true, address(ledger));
+        emit ISplitWallet.Released(wallet, ETH, recipient, iAlice, alice, 2 ether, 10 ether);
         vm.prank(relayer);
-        assertEq(wallet.releaseWithAuthorization(a, sig), 2 ether);
+        assertEq(_releaseSigned(a, sig), 2 ether);
         assertEq(recipient.balance, 2 ether);
-        assertEq(wallet.releasable(ETH, iAlice), 3 ether);
+        assertEq(_releasable(wallet, ETH, iAlice), 3 ether);
         assertTrue(verifier.nonceUsed(alice, 1));
     }
 
     function test_ArtistPullsBySignature() public {
         IReleaseVerifier.Authorization memory a = _a(iArtist, artistPayout, 2 ether, 1);
         vm.prank(relayer);
-        assertEq(wallet.releaseWithAuthorization(a, _sign(artistPk, a)), 2 ether);
+        assertEq(_releaseSigned(a, _sign(artistPk, a)), 2 ether);
         assertEq(recipient.balance, 2 ether);
     }
 
     function test_MaxAmountReleasesEverythingAndERC20Works() public {
         IReleaseVerifier.Authorization memory a = _a(iAlice, alice, type(uint256).max, 7);
         a.asset = address(token);
-        assertEq(wallet.releaseWithAuthorization(a, _sign(alicePk, a)), 500);
+        assertEq(_releaseSigned(a, _sign(alicePk, a)), 500);
         assertEq(token.balanceOf(recipient), 500);
     }
 
     function test_ReplayAndRevokedNoncesRevert() public {
         IReleaseVerifier.Authorization memory a = _a(iAlice, alice, 1 ether, 1);
         bytes memory sig = _sign(alicePk, a);
-        wallet.releaseWithAuthorization(a, sig);
+        _releaseSigned(a, sig);
         vm.expectRevert(
             abi.encodeWithSelector(IReleaseVerifier.NonceAlreadyUsed.selector, alice, 1)
         );
-        wallet.releaseWithAuthorization(a, sig);
+        _releaseSigned(a, sig);
 
         IReleaseVerifier.Authorization memory b = _a(iAlice, alice, 1 ether, 2);
         bytes memory sigB = _sign(alicePk, b);
@@ -150,7 +149,7 @@ contract ReleaseVerifierTest is EconomicsBase {
         vm.expectRevert(
             abi.encodeWithSelector(IReleaseVerifier.NonceAlreadyUsed.selector, alice, 2)
         );
-        wallet.releaseWithAuthorization(b, sigB);
+        _releaseSigned(b, sigB);
         vm.expectRevert(
             abi.encodeWithSelector(IReleaseVerifier.NonceAlreadyUsed.selector, alice, 2)
         );
@@ -182,12 +181,12 @@ contract ReleaseVerifierTest is EconomicsBase {
         // A signed release with the next nonce in a used word still works, and only once.
         IReleaseVerifier.Authorization memory a = _a(iAlice, alice, 1 ether, 2);
         bytes memory sig = _sign(alicePk, a);
-        wallet.releaseWithAuthorization(a, sig);
+        _releaseSigned(a, sig);
         assertTrue(verifier.nonceUsed(alice, 2));
         vm.expectRevert(
             abi.encodeWithSelector(IReleaseVerifier.NonceAlreadyUsed.selector, alice, 2)
         );
-        wallet.releaseWithAuthorization(a, sig);
+        _releaseSigned(a, sig);
         assertEq(recipient.balance, 1 ether);
     }
 
@@ -236,7 +235,7 @@ contract ReleaseVerifierTest is EconomicsBase {
     }
 
     function test_OneRevocationCoversEveryWallet() public {
-        SplitWallet other = _wallet(_list(_fixed(alice, 50_000), _fixed(bob, 50_000)));
+        address other = _wallet(_list(_fixed(alice, 50_000), _fixed(bob, 50_000)));
         vm.deal(address(other), 10 ether);
         IReleaseVerifier.Authorization memory a =
             _auth(other, ETH, _indexOf(other, alice), alice, recipient, 1 ether, 9);
@@ -246,7 +245,7 @@ contract ReleaseVerifierTest is EconomicsBase {
         vm.expectRevert(
             abi.encodeWithSelector(IReleaseVerifier.NonceAlreadyUsed.selector, alice, 9)
         );
-        other.releaseWithAuthorization(a, sig);
+        _releaseSigned(a, sig);
     }
 
     function test_ReplayIsKeyedOnTheNonceNotTheSignatureBytes() public {
@@ -254,12 +253,12 @@ contract ReleaseVerifierTest is EconomicsBase {
         bytes32 digest = verifier.releaseDigest(a);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(alicePk, digest);
         (, bytes32 vs) = vm.signCompact(alicePk, digest);
-        wallet.releaseWithAuthorization(a, abi.encodePacked(r, s, v));
+        _releaseSigned(a, abi.encodePacked(r, s, v));
         // The ERC-2098 encoding of the same signature is different bytes, but the same nonce.
         vm.expectRevert(
             abi.encodeWithSelector(IReleaseVerifier.NonceAlreadyUsed.selector, alice, 1)
         );
-        wallet.releaseWithAuthorization(a, abi.encodePacked(r, vs));
+        _releaseSigned(a, abi.encodePacked(r, vs));
         assertEq(recipient.balance, 1 ether);
     }
 
@@ -267,34 +266,34 @@ contract ReleaseVerifierTest is EconomicsBase {
         IReleaseVerifier.Authorization memory a = _a(iAlice, alice, 1 ether, 1);
         bytes memory sig = _sign(alicePk, a);
         vm.warp(a.deadline);
-        wallet.releaseWithAuthorization(a, sig);
+        _releaseSigned(a, sig);
         IReleaseVerifier.Authorization memory b = _a(iAlice, alice, 1 ether, 2);
         b.deadline = block.timestamp - 1;
         bytes memory sigB = _sign(alicePk, b);
         vm.expectRevert(
             abi.encodeWithSelector(SignatureVerifier.SignatureExpired.selector, b.deadline)
         );
-        wallet.releaseWithAuthorization(b, sigB);
+        _releaseSigned(b, sigB);
     }
 
     function test_WrongSignerOrTamperedFieldReverts() public {
         IReleaseVerifier.Authorization memory a = _a(iAlice, alice, 1 ether, 1);
         bytes memory bobSig = _sign(bobPk, a);
         vm.expectRevert(abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, alice));
-        wallet.releaseWithAuthorization(a, bobSig);
+        _releaseSigned(a, bobSig);
 
         bytes memory sig = _sign(alicePk, a);
         a.recipient = relayer;
         vm.expectRevert(abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, alice));
-        wallet.releaseWithAuthorization(a, sig);
+        _releaseSigned(a, sig);
         a.recipient = recipient;
         a.amount = 2 ether;
         vm.expectRevert(abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, alice));
-        wallet.releaseWithAuthorization(a, sig);
+        _releaseSigned(a, sig);
         a.amount = 1 ether;
         a.asset = address(token);
         vm.expectRevert(abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, alice));
-        wallet.releaseWithAuthorization(a, sig);
+        _releaseSigned(a, sig);
         assertFalse(verifier.nonceUsed(alice, 1));
     }
 
@@ -302,7 +301,7 @@ contract ReleaseVerifierTest is EconomicsBase {
         IReleaseVerifier.Authorization memory a = _a(iAlice, bob, 1 ether, 1);
         bytes memory sig = _sign(bobPk, a);
         vm.expectRevert(abi.encodeWithSelector(ISplitWallet.NotPayoutAddress.selector, bob, alice));
-        wallet.releaseWithAuthorization(a, sig);
+        _releaseSigned(a, sig);
     }
 
     function test_ArtistSignatureFromReplacedKeyStopsWorking() public {
@@ -313,9 +312,9 @@ contract ReleaseVerifierTest is EconomicsBase {
         vm.expectRevert(
             abi.encodeWithSelector(ISplitWallet.NotPayoutAddress.selector, artistPayout, recovered)
         );
-        wallet.releaseWithAuthorization(a, sig);
+        _releaseSigned(a, sig);
         resolver.set(ARTIST, artistPayout);
-        assertEq(wallet.releaseWithAuthorization(a, sig), 1 ether);
+        assertEq(_releaseSigned(a, sig), 1 ether);
     }
 
     /// @dev Documents a review nit, ported from `test_R2_H1_OldSignatureDiesOnChangeAndRevivesOnReturn`:
@@ -329,11 +328,11 @@ contract ReleaseVerifierTest is EconomicsBase {
         vm.expectRevert(
             abi.encodeWithSelector(ISplitWallet.NotPayoutAddress.selector, artistPayout, b)
         );
-        wallet.releaseWithAuthorization(a, sig);
+        _releaseSigned(a, sig);
 
         resolver.set(ARTIST, artistPayout);
         uint256 snap = vm.snapshotState();
-        assertEq(wallet.releaseWithAuthorization(a, sig), 2 ether, "revived on return");
+        assertEq(_releaseSigned(a, sig), 2 ether, "revived on return");
         vm.revertToState(snap);
 
         // The mitigation: revoke the nonce explicitly.
@@ -342,7 +341,7 @@ contract ReleaseVerifierTest is EconomicsBase {
         vm.expectRevert(
             abi.encodeWithSelector(IReleaseVerifier.NonceAlreadyUsed.selector, artistPayout, 42)
         );
-        wallet.releaseWithAuthorization(a, sig);
+        _releaseSigned(a, sig);
     }
 
     /// @dev Documents a review nit: anyone may push a fixed payee's balance to its own account
@@ -353,38 +352,65 @@ contract ReleaseVerifierTest is EconomicsBase {
         IReleaseVerifier.Authorization memory a = _a(iAlice, alice, 5 ether, 1);
         bytes memory sig = _sign(alicePk, a);
         vm.prank(makeAddr("anyone"));
-        wallet.release(ETH, iAlice);
+        _release(wallet, ETH, iAlice);
         assertEq(alice.balance, 5 ether);
         vm.expectRevert(
             abi.encodeWithSelector(ISplitWallet.AmountExceedsReleasable.selector, 5 ether, 0)
         );
-        wallet.releaseWithAuthorization(a, sig);
+        _releaseSigned(a, sig);
         assertFalse(verifier.nonceUsed(alice, 1));
 
         vm.deal(address(wallet), address(wallet).balance + 2 ether);
         IReleaseVerifier.Authorization memory all = _a(iAlice, alice, type(uint256).max, 2);
-        assertEq(wallet.releaseWithAuthorization(all, _sign(alicePk, all)), 1 ether);
+        assertEq(_releaseSigned(all, _sign(alicePk, all)), 1 ether);
     }
 
+    /// @dev An authorization names its wallet, and the ledger derives the wallet from the payee
+    ///      list and salt submitted with it: submitted with another wallet's configuration, or
+    ///      with this wallet's payees under another salt, it reverts with `WrongWallet` before
+    ///      any signature check, and its nonce stays unused. There is no other entry point that
+    ///      consumes a nonce without executing the release (the old `consume` is gone).
     function test_OnlyTheNamedWalletConsumesAnAuthorization() public {
-        SplitWallet other = _wallet(_list(_fixed(alice, 50_000), _fixed(bob, 50_000)));
+        address other = _wallet(_list(_fixed(alice, 50_000), _fixed(bob, 50_000)));
         vm.deal(address(other), 10 ether);
-        // Signed for `wallet`, submitted to `other`: the verifier refuses the wrong caller.
         IReleaseVerifier.Authorization memory a = _a(_indexOf(other, alice), alice, 1 ether, 1);
         bytes memory sig = _sign(alicePk, a);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IReleaseVerifier.WrongWallet.selector, address(wallet), address(other)
-            )
-        );
-        other.releaseWithAuthorization(a, sig);
-        // Nobody else can burn the nonce by calling the verifier directly.
-        vm.expectRevert(
-            abi.encodeWithSelector(IReleaseVerifier.WrongWallet.selector, address(wallet), relayer)
+            abi.encodeWithSelector(ISplitWallet.WrongWallet.selector, address(wallet), other)
         );
         vm.prank(relayer);
-        verifier.consume(a, sig);
+        ledger.releaseWithAuthorization(_payeesOf(other), _salts[other], a, sig);
+
+        bytes32 salt = bytes32(uint256(1));
+        address sibling = ledger.walletFor(_payeesOf(wallet), salt);
+        vm.expectRevert(
+            abi.encodeWithSelector(ISplitWallet.WrongWallet.selector, address(wallet), sibling)
+        );
+        ledger.releaseWithAuthorization(_payeesOf(wallet), salt, a, sig);
         assertFalse(verifier.nonceUsed(alice, 1));
+        assertEq(alice.balance + recipient.balance, 0);
+    }
+
+    /// @dev A signed release from a wallet that is not deployed yet moves nothing and consumes
+    ///      nothing: the ledger checks the outcome of the move (the balance fell by exactly the
+    ///      amount), so a call to an address without code cannot be counted as a release.
+    function test_SignedReleaseFromAnUndeployedWalletRevertsWithoutConsumingNonce() public {
+        ISplitWallet.Payee[] memory payees = _list(_fixed(alice, D));
+        address predicted = _remember(payees, bytes32(0));
+        vm.deal(predicted, 1 ether);
+        IReleaseVerifier.Authorization memory a =
+            _auth(predicted, ETH, 0, alice, recipient, 1 ether, 4);
+        bytes memory sig = _sign(alicePk, a);
+        vm.expectRevert(abi.encodeWithSelector(ISplitWallet.WalletNotDeployed.selector, predicted));
+        _releaseSigned(a, sig);
+        assertFalse(verifier.nonceUsed(alice, 4));
+        assertEq(predicted.balance, 1 ether);
+        assertEq(ledger.totalReleased(predicted, ETH), 0);
+
+        // Once anyone deploys it, the same signature works.
+        ledger.createWallet(payees, bytes32(0));
+        assertEq(_releaseSigned(a, sig), 1 ether);
+        assertEq(recipient.balance, 1 ether);
     }
 
     function test_SignatureDoesNotReplayOnAnotherChainOrVerifier() public {
@@ -393,9 +419,9 @@ contract ReleaseVerifierTest is EconomicsBase {
         uint256 chain = block.chainid;
         vm.chainId(chain + 1);
         vm.expectRevert(abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, alice));
-        wallet.releaseWithAuthorization(a, sig);
+        _releaseSigned(a, sig);
         vm.chainId(chain);
-        ReleaseVerifier other = new ReleaseVerifier();
+        SplitLedger other = new SplitLedger(resolver);
         assertTrue(other.releaseDigest(a) != verifier.releaseDigest(a));
     }
 
@@ -405,11 +431,11 @@ contract ReleaseVerifierTest is EconomicsBase {
         vm.expectRevert(
             abi.encodeWithSelector(ISplitWallet.AmountExceedsReleasable.selector, 6 ether, 5 ether)
         );
-        wallet.releaseWithAuthorization(a, sig);
+        _releaseSigned(a, sig);
         assertFalse(verifier.nonceUsed(alice, 1));
         // New receipts make the same signature usable: amounts are bounds, not snapshots.
         vm.deal(address(wallet), 12 ether);
-        assertEq(wallet.releaseWithAuthorization(a, sig), 6 ether);
+        assertEq(_releaseSigned(a, sig), 6 ether);
     }
 
     function test_FailedPaymentRollsBackNonce() public {
@@ -419,29 +445,29 @@ contract ReleaseVerifierTest is EconomicsBase {
         vm.expectRevert(
             abi.encodeWithSelector(ISplitWallet.ETHTransferFailed.selector, a.recipient, 1 ether)
         );
-        wallet.releaseWithAuthorization(a, sig);
+        _releaseSigned(a, sig);
         assertFalse(verifier.nonceUsed(alice, 1));
-        assertEq(wallet.totalReleased(ETH), 0);
+        assertEq(ledger.totalReleased(wallet, ETH), 0);
     }
 
     function test_CompactERC2098SignatureIsAccepted() public {
         IReleaseVerifier.Authorization memory a = _a(iAlice, alice, 1 ether, 1);
         (bytes32 r, bytes32 vs) = vm.signCompact(alicePk, verifier.releaseDigest(a));
-        assertEq(wallet.releaseWithAuthorization(a, abi.encodePacked(r, vs)), 1 ether);
+        assertEq(_releaseSigned(a, abi.encodePacked(r, vs)), 1 ether);
     }
 
     function test_ContractPayeeSignsWithERC1271() public {
         Mock1271Account safe = new Mock1271Account();
-        SplitWallet w = _solo(address(safe));
+        address w = _solo(address(safe));
         vm.deal(address(w), 1 ether);
         IReleaseVerifier.Authorization memory a =
             _auth(w, ETH, 0, address(safe), recipient, 1 ether, 1);
         vm.expectRevert(
             abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, address(safe))
         );
-        w.releaseWithAuthorization(a, "");
+        _releaseSigned(a, "");
         safe.accept(verifier.releaseDigest(a));
-        assertEq(w.releaseWithAuthorization(a, ""), 1 ether);
+        assertEq(_releaseSigned(a, ""), 1 ether);
         assertEq(recipient.balance, 1 ether);
     }
 
@@ -451,7 +477,7 @@ contract ReleaseVerifierTest is EconomicsBase {
         first = bound(first, 1, 5 ether);
         second = bound(second, 1, 10 ether);
         IReleaseVerifier.Authorization memory a = _a(iAlice, alice, first, 1);
-        wallet.releaseWithAuthorization(a, _sign(alicePk, a));
+        _releaseSigned(a, _sign(alicePk, a));
         IReleaseVerifier.Authorization memory b = _a(iAlice, alice, second, 2);
         bytes memory sigB = _sign(alicePk, b);
         if (first + second > 5 ether) {
@@ -461,9 +487,9 @@ contract ReleaseVerifierTest is EconomicsBase {
                 )
             );
         }
-        wallet.releaseWithAuthorization(b, sigB);
-        assertLe(wallet.released(ETH, iAlice), 5 ether);
-        assertEq(recipient.balance, wallet.released(ETH, iAlice));
+        _releaseSigned(b, sigB);
+        assertLe(ledger.released(wallet, ETH, iAlice), 5 ether);
+        assertEq(recipient.balance, ledger.released(wallet, ETH, iAlice));
     }
 
     function _json(IReleaseVerifier.Authorization memory a) internal view returns (string memory) {

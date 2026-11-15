@@ -5,9 +5,8 @@ import { Test } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { AssetAllowlist } from "src/economics/AssetAllowlist.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
-import { ReleaseVerifier } from "src/economics/ReleaseVerifier.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
-import { SplitFactory } from "src/economics/SplitFactory.sol";
+import { SplitLedger } from "src/economics/SplitLedger.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
@@ -100,7 +99,7 @@ abstract contract AuctionBase is Test {
         manager = new AccessManager(address(this));
         allowlist = new AssetAllowlist(address(manager), ETH_FLOOR);
         escrow = new RevenueEscrow(
-            address(manager), new SplitFactory(new MockArtistResolver(), new ReleaseVerifier())
+            address(manager), new SplitLedger(new MockArtistResolver())
         );
         statements = new StatementLog(address(manager), address(0), bytes32(0));
         permit2 = new MockPermit2();

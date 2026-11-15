@@ -210,7 +210,7 @@ contract IntegrationGasReport is IntegrationBase {
         if (account == address(artists)) return "ArtistRegistry";
         if (account == address(escrow)) return "RevenueEscrow";
         if (account == address(economics)) return "EconomicsResolver";
-        if (account == address(splitFactory)) return "SplitFactory";
+        if (account == address(splitFactory)) return "SplitLedger";
         if (account == address(statements)) return "StatementLog";
         if (account == address(entropy)) return "VrfEntropyModule";
         if (account == PERMIT2) return "Permit2";
@@ -1025,7 +1025,9 @@ contract IntegrationGasReport is IntegrationBase {
             block.timestamp + 1 days
         );
         IClaimRouter.SignedClaim[] memory claims = new IClaimRouter.SignedClaim[](1);
-        claims[0] = IClaimRouter.SignedClaim(a, _sign(artistA, releaseVerifier.releaseDigest(a)));
+        claims[0] = IClaimRouter.SignedClaim(
+            a, _sign(artistA, releaseVerifier.releaseDigest(a)), _soloPayees(), bytes32(0)
+        );
         return abi.encodeCall(IClaimRouter.claimSigned, (claims, false));
     }
 
@@ -1044,15 +1046,15 @@ contract IntegrationGasReport is IntegrationBase {
         _growthIs(r, 4, 1);
     }
 
-    /// @dev The artist pulls its first ETH from the seller wallet: the payee's and the wallet's
-    ///      release totals (ETH keeps no receipts high-water mark).
+    /// @dev The artist pulls its first ETH from the seller wallet through the split ledger: the
+    ///      payee's and the wallet's release totals (ETH keeps no receipts high-water mark).
     function _rowReleaseFirst() internal returns (Row memory r) {
         address wallet = _fundedWallet();
         r = _row(
             "release, the artist's first ETH release",
             artistA,
-            wallet,
-            abi.encodeCall(ISplitWallet.release, (CURRENCY_ETH, 0)),
+            address(splitFactory),
+            abi.encodeCall(ISplitWallet.release, (_soloPayees(), bytes32(0), CURRENCY_ETH, 0)),
             0
         );
         _gasAtMost(r, RELEASE_FIRST_CEILING, "regression ceiling");

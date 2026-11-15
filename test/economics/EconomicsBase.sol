@@ -6,10 +6,8 @@ import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessMana
 import { AssetAllowlist } from "src/economics/AssetAllowlist.sol";
 import { ClaimRouter } from "src/economics/ClaimRouter.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
-import { ReleaseVerifier } from "src/economics/ReleaseVerifier.sol";
 import { RevenuePayment } from "src/economics/RevenuePayment.sol";
-import { SplitFactory } from "src/economics/SplitFactory.sol";
-import { SplitWallet } from "src/economics/SplitWallet.sol";
+import { SplitLedger } from "src/economics/SplitLedger.sol";
 import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
@@ -44,8 +42,11 @@ abstract contract EconomicsBase is Test {
     AccessManager internal manager;
     AssetAllowlist internal allowlist;
     MockArtistResolver internal resolver;
-    ReleaseVerifier internal verifier;
-    SplitFactory internal factory;
+    /// @dev The split ledger. `factory` and `verifier` name the same contract, for the tests
+    ///      written when the factory, the wallets and the release verifier were separate.
+    SplitLedger internal ledger;
+    SplitLedger internal factory;
+    SplitLedger internal verifier;
     RevenueEscrow internal escrow;
     ClaimRouter internal router;
     PaymentHarness internal payer;
@@ -66,10 +67,11 @@ abstract contract EconomicsBase is Test {
         allowlist = new AssetAllowlist(address(manager), ETH_FLOOR);
         resolver = new MockArtistResolver();
         resolver.set(ARTIST, artistPayout);
-        verifier = new ReleaseVerifier();
-        factory = new SplitFactory(resolver, verifier);
-        escrow = new RevenueEscrow(address(manager), factory);
-        router = new ClaimRouter();
+        ledger = new SplitLedger(resolver);
+        factory = ledger;
+        verifier = ledger;
+        escrow = new RevenueEscrow(address(manager), ledger);
+        router = new ClaimRouter(ledger);
         payer = new PaymentHarness(escrow);
         token = new MockERC20("Token", "TKN");
     }
@@ -145,31 +147,97 @@ abstract contract EconomicsBase is Test {
         _sorted(l);
     }
 
-    function _wallet(ISplitWallet.Payee[] memory payees) internal returns (SplitWallet) {
-        return SplitWallet(payable(factory.createWallet(payees, bytes32(0))));
+    /// @dev The payee list and salt of every wallet a test deployed or registered, keyed by
+    ///      wallet: the ledger stores neither, and every release names its wallet by both.
+    mapping(address wallet => ISplitWallet.Payee[]) internal _payeeLists;
+    mapping(address wallet => bytes32) internal _salts;
+
+    /// @dev Deploys the salt-zero wallet for `payees` and remembers its list.
+    function _wallet(ISplitWallet.Payee[] memory payees) internal returns (address wallet) {
+        return _wallet(payees, bytes32(0));
+    }
+
+    function _wallet(ISplitWallet.Payee[] memory payees, bytes32 salt)
+        internal
+        returns (address wallet)
+    {
+        wallet = ledger.createWallet(payees, salt);
+        _remember(payees, salt);
+    }
+
+    /// @dev Records the wallet of `payees` and `salt` without deploying anything; returns it.
+    function _remember(ISplitWallet.Payee[] memory payees, bytes32 salt)
+        internal
+        returns (address wallet)
+    {
+        wallet = ledger.walletFor(payees, salt);
+        _salts[wallet] = salt;
+        delete _payeeLists[wallet];
+        for (uint256 i; i < payees.length; ++i) {
+            _payeeLists[wallet].push(payees[i]);
+        }
+    }
+
+    function _payeesOf(address wallet) internal view returns (ISplitWallet.Payee[] memory) {
+        return _payeeLists[wallet];
+    }
+
+    /// @dev `ledger.release` with the remembered list: one external call, so `vm.prank` and
+    ///      `vm.expectRevert` apply to it.
+    function _release(address wallet, address asset, uint256 index) internal returns (uint256) {
+        return ledger.release(_payeesOf(wallet), _salts[wallet], asset, index);
+    }
+
+    function _releaseTo(address wallet, address asset, uint256 index, address recipient)
+        internal
+        returns (uint256)
+    {
+        return ledger.releaseTo(_payeesOf(wallet), _salts[wallet], asset, index, recipient);
+    }
+
+    function _releasable(address wallet, address asset, uint256 index)
+        internal
+        view
+        returns (uint256)
+    {
+        return ledger.releasable(_payeesOf(wallet), _salts[wallet], asset, index);
+    }
+
+    /// @dev Where payee `index` of `wallet` is paid now: its account, or the resolver's answer.
+    function _payoutAddress(address wallet, uint256 index) internal view returns (address) {
+        ISplitWallet.Payee memory p = _payeesOf(wallet)[index];
+        return p.artistId == 0 ? p.account : resolver.payoutAddress(p.artistId);
+    }
+
+    /// @dev `ledger.releaseWithAuthorization` with the list of the wallet the authorization names.
+    function _releaseSigned(IReleaseVerifier.Authorization memory a, bytes memory signature)
+        internal
+        returns (uint256)
+    {
+        return ledger.releaseWithAuthorization(_payeesOf(a.wallet), _salts[a.wallet], a, signature);
     }
 
     /// @dev A one-payee wallet paying `account` everything.
-    function _solo(address account) internal returns (SplitWallet) {
+    function _solo(address account) internal returns (address) {
         return _wallet(_list(_fixed(account, D)));
     }
 
     /// @dev The standard three-payee wallet: alice 50%, bob 30%, artist 7 (resolved) 20%.
-    function _trio() internal returns (SplitWallet) {
+    function _trio() internal returns (address) {
         return _wallet(_list(_fixed(alice, 50_000), _fixed(bob, 30_000), _artist(ARTIST, 20_000)));
     }
 
     /// @dev The index of fixed payee `account` in `wallet`.
-    function _indexOf(SplitWallet wallet, address account) internal view returns (uint256) {
-        ISplitWallet.Payee[] memory list = wallet.payees();
+    function _indexOf(address wallet, address account) internal view returns (uint256) {
+        ISplitWallet.Payee[] memory list = _payeesOf(wallet);
         for (uint256 i; i < list.length; ++i) {
             if (list[i].artistId == 0 && list[i].account == account) return i;
         }
         revert("no such payee");
     }
 
-    function _artistIndex(SplitWallet wallet, uint256 artistId) internal view returns (uint256) {
-        ISplitWallet.Payee[] memory list = wallet.payees();
+    function _artistIndex(address wallet, uint256 artistId) internal view returns (uint256) {
+        ISplitWallet.Payee[] memory list = _payeesOf(wallet);
         for (uint256 i; i < list.length; ++i) {
             if (list[i].artistId == artistId) return i;
         }
@@ -178,7 +246,7 @@ abstract contract EconomicsBase is Test {
 
     /// @dev An authorization for payee `index` of `wallet`, valid for an hour.
     function _auth(
-        SplitWallet wallet,
+        address wallet,
         address asset,
         uint256 index,
         address account,
@@ -187,14 +255,7 @@ abstract contract EconomicsBase is Test {
         uint256 nonce
     ) internal view returns (IReleaseVerifier.Authorization memory) {
         return IReleaseVerifier.Authorization(
-            address(wallet),
-            asset,
-            index,
-            account,
-            recipient,
-            amount,
-            nonce,
-            block.timestamp + 1 hours
+            wallet, asset, index, account, recipient, amount, nonce, block.timestamp + 1 hours
         );
     }
 
@@ -203,7 +264,7 @@ abstract contract EconomicsBase is Test {
         view
         returns (bytes memory)
     {
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, verifier.releaseDigest(a));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, ledger.releaseDigest(a));
         return abi.encodePacked(r, s, v);
     }
 }

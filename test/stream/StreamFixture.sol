@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { SplitFactory } from "src/economics/SplitFactory.sol";
+import { SplitLedger } from "src/economics/SplitLedger.sol";
 import { IArtistPayoutResolver } from "src/economics/interfaces/IArtistPayoutResolver.sol";
-import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { Splits } from "src/economics/Splits.sol";
 import { Test } from "forge-std/Test.sol";
@@ -55,7 +54,7 @@ abstract contract StreamFixture is Test {
     AccessManager internal manager;
     MockPackageRegistry internal registry;
     MockArtistRegistry internal artists;
-    SplitFactory internal splitFactory;
+    SplitLedger internal splitFactory;
     MockEconomics internal econ;
     MockEntropy internal entropy;
     MockRenderer internal renderer;
@@ -72,9 +71,7 @@ abstract contract StreamFixture is Test {
         registry = new MockPackageRegistry();
         artists = new MockArtistRegistry();
         renderer = new MockRenderer("default");
-        splitFactory = new SplitFactory(
-            IArtistPayoutResolver(address(artists)), IReleaseVerifier(address(renderer))
-        );
+        splitFactory = new SplitLedger(IArtistPayoutResolver(address(artists)));
         seller = _sellerOf(_item(0).payees);
         econ = new MockEconomics(_defaultTerms(), address(splitFactory));
         entropy = new MockEntropy();

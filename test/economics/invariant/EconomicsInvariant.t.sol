@@ -4,10 +4,8 @@ pragma solidity ^0.8.24;
 import { Test } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { ClaimRouter } from "src/economics/ClaimRouter.sol";
-import { ReleaseVerifier } from "src/economics/ReleaseVerifier.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
-import { SplitFactory } from "src/economics/SplitFactory.sol";
-import { SplitWallet } from "src/economics/SplitWallet.sol";
+import { SplitLedger } from "src/economics/SplitLedger.sol";
 import { Splits } from "src/economics/Splits.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import {
@@ -21,8 +19,9 @@ import {
 import { PaymentHarness } from "../EconomicsBase.sol";
 import { EconomicsHandler } from "./EconomicsHandler.sol";
 
-/// @notice Stateful invariants for split wallets, the release verifier, the revenue escrow,
-///         payments and batch claims (ADR 0001 test plan: value conservation and split sums).
+/// @notice Stateful invariants for the split ledger and its wallets (releases, signed releases),
+///         the revenue escrow (credits, recovery, the governed sweep of unowed funds), payments
+///         and batch claims (ADR 0001 test plan: value conservation and split sums).
 ///         Runs and depth come from `foundry.toml` (256 x 128, `fail_on_revert`).
 contract EconomicsInvariantTest is Test {
     address internal constant ETH = address(0);
@@ -36,16 +35,16 @@ contract EconomicsInvariantTest is Test {
     RebasingToken internal rebase;
     NoReturnToken internal silent;
     ToggleRecipient internal toggle;
-    SplitWallet[] internal wallets;
+    SplitLedger internal ledger;
+    address[] internal wallets;
     address[5] internal assets;
 
     function setUp() public {
         AccessManager manager = new AccessManager(address(this));
         MockArtistResolver resolver = new MockArtistResolver();
-        ReleaseVerifier verifier = new ReleaseVerifier();
-        SplitFactory factory = new SplitFactory(resolver, verifier);
-        escrow = new RevenueEscrow(address(manager), factory);
-        router = new ClaimRouter();
+        ledger = new SplitLedger(resolver);
+        escrow = new RevenueEscrow(address(manager), ledger);
+        router = new ClaimRouter(ledger);
         payer = new PaymentHarness(escrow);
         usdc = new BlocklistToken();
         fee = new FeeOnTransferToken();
@@ -71,20 +70,26 @@ contract EconomicsInvariantTest is Test {
             _two(_p(vm.addr(keys[0]), 1), _p(vm.addr(keys[4]), 99_999))
         ];
         // Originals first (salt 0), then equivalent replacements (salt 1) for escrow recovery.
+        ISplitWallet.Payee[][] memory lists = new ISplitWallet.Payee[][](2 * configs.length);
+        bytes32[] memory salts = new bytes32[](2 * configs.length);
         for (uint256 salt; salt < 2; ++salt) {
             for (uint256 i; i < configs.length; ++i) {
-                wallets.push(SplitWallet(payable(factory.createWallet(configs[i], bytes32(salt)))));
+                wallets.push(ledger.createWallet(configs[i], bytes32(salt)));
+                lists[wallets.length - 1] = configs[i];
+                salts[wallets.length - 1] = bytes32(salt);
             }
         }
 
         handler = new EconomicsHandler(
             EconomicsHandler.Setup(
                 wallets,
+                lists,
+                salts,
                 toggle,
                 escrow,
                 router,
                 payer,
-                verifier,
+                ledger,
                 usdc,
                 fee,
                 rebase,
@@ -94,10 +99,10 @@ contract EconomicsInvariantTest is Test {
                 artistIds
             )
         );
-        // The handler exercises governed recovery as the admin (zero delay in this campaign).
+        // The handler exercises governed recovery and sweeps as the admin (zero delay here).
         manager.grantRole(manager.ADMIN_ROLE(), address(handler), 0);
 
-        bytes4[] memory selectors = new bytes4[](17);
+        bytes4[] memory selectors = new bytes4[](20);
         selectors[0] = EconomicsHandler.release.selector;
         selectors[1] = EconomicsHandler.releaseTo.selector;
         selectors[2] = EconomicsHandler.releaseSigned.selector;
@@ -115,6 +120,9 @@ contract EconomicsInvariantTest is Test {
         selectors[14] = EconomicsHandler.toggleOpen.selector;
         selectors[15] = EconomicsHandler.revokeNonce.selector;
         selectors[16] = EconomicsHandler.consentToggle.selector;
+        selectors[17] = EconomicsHandler.strayToken.selector;
+        selectors[18] = EconomicsHandler.forceETH.selector;
+        selectors[19] = EconomicsHandler.sweep.selector;
         targetSelector(FuzzSelector({ addr: address(handler), selectors: selectors }));
         targetContract(address(handler));
     }
@@ -123,14 +131,14 @@ contract EconomicsInvariantTest is Test {
     ///         per-payee releases add up to the wallet's total.
     function invariant_WalletConservesValue() public view {
         for (uint256 w; w < wallets.length; ++w) {
-            SplitWallet wallet = wallets[w];
+            address wallet = wallets[w];
             for (uint256 k; k < assets.length; ++k) {
                 address asset = assets[k];
                 uint256 sum;
-                for (uint256 i; i < wallet.payeeCount(); ++i) {
-                    sum += wallet.released(asset, i);
+                for (uint256 i; i < handler.payeesOf(wallet).length; ++i) {
+                    sum += ledger.released(wallet, asset, i);
                 }
-                assertEq(sum, wallet.totalReleased(asset), "per-payee sum");
+                assertEq(sum, ledger.totalReleased(wallet, asset), "per-payee sum");
                 if (asset == address(rebase)) continue;
                 assertEq(
                     sum + _balance(asset, address(wallet)),
@@ -146,16 +154,18 @@ contract EconomicsInvariantTest is Test {
     ///         for an ERC-20, the model's for ETH (which keeps no mark on-chain).
     function invariant_ReleasedWithinEntitlement() public view {
         for (uint256 w; w < wallets.length; ++w) {
-            SplitWallet wallet = wallets[w];
+            address wallet = wallets[w];
             for (uint256 k; k < assets.length; ++k) {
                 address asset = assets[k];
                 uint256 recorded = asset == ETH
                     ? handler.modelHigh(address(wallet), ETH)
-                    : wallet.recordedObserved(asset);
-                for (uint256 i; i < wallet.payeeCount(); ++i) {
-                    uint256 released = wallet.released(asset, i);
+                    : ledger.recordedObserved(wallet, asset);
+                for (uint256 i; i < handler.payeesOf(wallet).length; ++i) {
+                    uint256 released = ledger.released(wallet, asset, i);
                     assertEq(released, handler.ghostReleased(address(wallet), asset, i));
-                    assertLe(released, Splits.entitlement(recorded, wallet.payee(i).share));
+                    assertLe(
+                        released, Splits.entitlement(recorded, handler.payeesOf(wallet)[i].share)
+                    );
                 }
             }
         }
@@ -168,7 +178,7 @@ contract EconomicsInvariantTest is Test {
             address asset = assets[k];
             uint256 released;
             for (uint256 w; w < wallets.length; ++w) {
-                released += wallets[w].totalReleased(asset);
+                released += ledger.totalReleased(wallets[w], asset);
             }
             assertEq(released, handler.paidOut(asset), "released == paid out");
             if (asset == address(rebase)) continue;
@@ -185,14 +195,14 @@ contract EconomicsInvariantTest is Test {
     ///         records no mark, and its live receipts never fall below the model's mark.
     function invariant_ObservedNeverDecreases() public view {
         for (uint256 w; w < wallets.length; ++w) {
-            assertEq(wallets[w].recordedObserved(ETH), 0, "no ETH mark");
-            assertLe(handler.modelHigh(address(wallets[w]), ETH), wallets[w].observed(ETH));
+            assertEq(ledger.recordedObserved(wallets[w], ETH), 0, "no ETH mark");
+            assertLe(handler.modelHigh(address(wallets[w]), ETH), ledger.observed(wallets[w], ETH));
             for (uint256 k = 1; k < assets.length; ++k) {
                 address asset = assets[k];
-                uint256 recorded = wallets[w].recordedObserved(asset);
+                uint256 recorded = ledger.recordedObserved(wallets[w], asset);
                 assertEq(recorded, handler.modelHigh(address(wallets[w]), asset));
                 if (asset != address(rebase)) {
-                    assertLe(recorded, wallets[w].observed(asset));
+                    assertLe(recorded, ledger.observed(wallets[w], asset));
                 }
             }
         }
@@ -201,17 +211,52 @@ contract EconomicsInvariantTest is Test {
     /// @notice Unreleasable dust stays below the number of payees.
     function invariant_DustIsBounded() public view {
         for (uint256 w; w < wallets.length; ++w) {
-            SplitWallet wallet = wallets[w];
-            uint256 n = wallet.payeeCount();
+            address wallet = wallets[w];
+            uint256 n = handler.payeesOf(wallet).length;
             for (uint256 k; k < assets.length; ++k) {
                 address asset = assets[k];
                 if (asset == address(rebase)) continue;
                 uint256 due;
                 for (uint256 i; i < n; ++i) {
-                    due += wallet.releasable(asset, i);
+                    due += _releasable(wallet, asset, i);
                 }
                 assertLe(_balance(asset, address(wallet)) - due, n - 1, "dust bound");
             }
+        }
+    }
+
+    /// @notice Per wallet and asset (rebasing excluded): everything received is released or
+    ///         releasable, up to rounding dust below the payee count. So no payee can take more
+    ///         than its share (which `invariant_ReleasedWithinEntitlement` checks payee by payee)
+    ///         and no unit of revenue is left without an owner beyond that dust.
+    function invariant_ReleasedPlusReleasableMatchesReceived() public view {
+        for (uint256 w; w < wallets.length; ++w) {
+            address wallet = wallets[w];
+            uint256 n = handler.payeesOf(wallet).length;
+            for (uint256 k; k < assets.length; ++k) {
+                address asset = assets[k];
+                if (asset == address(rebase)) continue;
+                uint256 accounted = ledger.totalReleased(wallet, asset);
+                for (uint256 i; i < n; ++i) {
+                    accounted += _releasable(wallet, asset, i);
+                }
+                uint256 received = handler.received(wallet, asset);
+                assertLe(accounted, received, "never more than received");
+                assertLe(received - accounted, n - 1, "released + releasable == received");
+            }
+        }
+    }
+
+    /// @notice The escrow's excess over what it owes is exactly what reached it without a
+    ///         deposit and was not swept: a sweep never takes owed funds.
+    function invariant_EscrowExcessIsExactlyTheUnowed() public view {
+        for (uint256 k; k < 3; ++k) {
+            address asset = assets[k];
+            assertEq(
+                _balance(asset, address(escrow)) - escrow.totalOwed(asset),
+                handler.ghostExcess(asset),
+                "excess == unowed arrivals - sweeps"
+            );
         }
     }
 
@@ -249,7 +294,7 @@ contract EconomicsInvariantTest is Test {
     function test_HandlerReachesEveryPath() public {
         for (uint256 i; i < 1500; ++i) {
             uint256 r = uint256(keccak256(abi.encode(i)));
-            uint256 action = r % 16;
+            uint256 action = r % 19;
             if (action == 0) {
                 handler.release(r >> 8, r >> 16, r >> 24, r >> 32);
             } else if (action == 1) {
@@ -280,11 +325,17 @@ contract EconomicsInvariantTest is Test {
                 handler.rebaseTo(r >> 8);
             } else if (action == 14) {
                 handler.consentToggle(r >> 8);
+            } else if (action == 15) {
+                handler.strayToken(r >> 8, r >> 16);
+            } else if (action == 16) {
+                handler.forceETH(r >> 8);
+            } else if (action == 17) {
+                handler.sweep(r >> 8);
             } else {
                 handler.toggleOpen();
             }
         }
-        bytes32[17] memory paths = [
+        bytes32[21] memory paths = [
             keccak256(abi.encode(bytes32("release"), "ok")),
             keccak256(abi.encode(bytes32("releaseTo"), "ok")),
             keccak256(abi.encode(bytes32("signed"), "ok")),
@@ -302,7 +353,11 @@ contract EconomicsInvariantTest is Test {
             bytes32("consent.set"),
             bytes32("recover.consented"),
             // A no-return token released from a wallet (regression RFX-ECO-1).
-            bytes32("release.noReturn")
+            bytes32("release.noReturn"),
+            bytes32("excess.token"),
+            bytes32("excess.eth"),
+            bytes32("sweep.ok"),
+            bytes32("sweep.reverted")
         ];
         for (uint256 i; i < paths.length; ++i) {
             assertGt(handler.outcomes(paths[i]), 0, vm.toString(i));
@@ -314,6 +369,16 @@ contract EconomicsInvariantTest is Test {
         invariant_DustIsBounded();
         invariant_EscrowIsSolventAndMatchesTheModel();
         invariant_IntermediariesHoldNothing();
+        invariant_ReleasedPlusReleasableMatchesReceived();
+        invariant_EscrowExcessIsExactlyTheUnowed();
+    }
+
+    function _releasable(address wallet, address asset, uint256 index)
+        internal
+        view
+        returns (uint256)
+    {
+        return ledger.releasable(handler.payeesOf(wallet), handler.saltOf(wallet), asset, index);
     }
 
     function _balance(address asset, address account) internal view returns (uint256) {

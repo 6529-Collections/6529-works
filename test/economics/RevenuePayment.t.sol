@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { SplitWallet } from "src/economics/SplitWallet.sol";
 import { RevenuePayment } from "src/economics/RevenuePayment.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
@@ -18,7 +17,7 @@ import { EconomicsBase } from "./EconomicsBase.sol";
 
 contract RevenuePaymentTest is EconomicsBase {
     uint256 internal constant GAS = 50_000;
-    SplitWallet internal wallet;
+    address internal wallet;
     BlocklistToken internal usdc;
 
     function setUp() public override {
@@ -38,9 +37,9 @@ contract RevenuePaymentTest is EconomicsBase {
     function test_PayETHToUndeployedWalletIsKeptForIt() public {
         address future = factory.walletFor(_list(_fixed(bob, D)), bytes32(0));
         assertFalse(payer.payETH(future, 1 ether, GAS));
-        SplitWallet w = _solo(bob);
+        address w = _solo(bob);
         assertEq(address(w), future);
-        w.release(ETH, 0);
+        _release(w, ETH, 0);
         assertEq(bob.balance, 1 ether);
     }
 
@@ -143,7 +142,7 @@ contract RevenuePaymentTest is EconomicsBase {
         assertEq(usdc.balanceOf(address(wallet)), 400);
         uint256 iArtist = _artistIndex(wallet, ARTIST);
         vm.prank(artistPayout);
-        wallet.release(address(usdc), iArtist);
+        _release(wallet, address(usdc), iArtist);
         assertEq(usdc.balanceOf(artistPayout), 100);
     }
 

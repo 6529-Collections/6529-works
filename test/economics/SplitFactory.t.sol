@@ -2,56 +2,28 @@
 pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
-import { ReleaseVerifier } from "src/economics/ReleaseVerifier.sol";
-import { SplitFactory } from "src/economics/SplitFactory.sol";
-import { SplitWallet } from "src/economics/SplitWallet.sol";
+import { SplitLedger } from "src/economics/SplitLedger.sol";
+import { SplitVault } from "src/economics/SplitVault.sol";
+import { Splits } from "src/economics/Splits.sol";
 import { IArtistPayoutResolver } from "src/economics/interfaces/IArtistPayoutResolver.sol";
-import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
 import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { MockArtistResolver } from "../mocks/economics/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 
-/// @dev Another contract that deploys a `SplitWallet` itself, answering the wallet's constructor
-///      the way the factory does.
-contract SelfDeployer {
-    IArtistPayoutResolver public immutable resolver;
-    IReleaseVerifier public immutable verifier;
-    ISplitWallet.Payee[] internal _pending;
-
-    constructor(IArtistPayoutResolver resolver_, IReleaseVerifier verifier_) {
-        resolver = resolver_;
-        verifier = verifier_;
-    }
-
-    function pendingPayees() external view returns (ISplitWallet.Payee[] memory) {
-        return _pending;
-    }
-
-    function deploy(ISplitWallet.Payee[] calldata payees) external returns (SplitWallet) {
-        for (uint256 i; i < payees.length; ++i) {
-            _pending.push(payees[i]);
-        }
-        return new SplitWallet();
-    }
-}
-
+/// @notice The split ledger's wallet side: prediction, deployment and the payee-list rules.
 contract SplitFactoryTest is EconomicsBase {
     bytes32 internal constant ZERO_SALT = bytes32(0);
 
-    function test_ConstructorPinsDependencies() public view {
+    function test_ConstructorRecordsTheResolverAndTheVaultInitCode() public view {
         assertEq(address(factory.resolver()), address(resolver));
-        assertEq(factory.resolverCodeHash(), address(resolver).codehash);
-        assertEq(address(factory.verifier()), address(verifier));
-        assertEq(factory.verifierCodeHash(), address(verifier).codehash);
+        assertEq(factory.walletInitCodeHash(), keccak256(SplitVault.INIT_CODE));
     }
 
     function test_ConstructorRejectsDependenciesWithoutCode() public {
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, alice));
-        new SplitFactory(IArtistPayoutResolver(alice), verifier);
-        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, bob));
-        new SplitFactory(resolver, IReleaseVerifier(bob));
+        new SplitLedger(IArtistPayoutResolver(alice));
     }
 
     /// @dev Regression for review L-1 (ported from `test_PoC_FactoryAcceptsDelegatedEOAResolver`,
@@ -60,42 +32,16 @@ contract SplitFactoryTest is EconomicsBase {
         address eoa = makeAddr("delegated-eoa");
         vm.etch(eoa, abi.encodePacked(hex"ef0100", address(resolver)));
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
-        new SplitFactory(IArtistPayoutResolver(eoa), verifier);
-        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
-        new SplitFactory(resolver, IReleaseVerifier(eoa));
+        new SplitLedger(IArtistPayoutResolver(eoa));
     }
 
-    function test_CreateWalletFailsClosedIfAPinnedDependencyChanges() public {
+    /// @dev No code-hash pin: after EIP-6780 the resolver's code cannot change, and a pin would
+    ///      only freeze every deployment if code-hash semantics ever changed. The old factory
+    ///      reverted here with `DependencyCodeChanged`.
+    function test_CreateWalletIgnoresTheResolversCodeHash() public {
         vm.etch(address(resolver), address(router).code);
-        vm.expectRevert(
-            abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, address(resolver))
-        );
-        factory.createWallet(_list(_fixed(alice, D)), ZERO_SALT);
-        SplitFactory fresh = new SplitFactory(new MockArtistResolver(), verifier);
-        vm.etch(address(verifier), address(router).code);
-        vm.expectRevert(
-            abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, address(verifier))
-        );
-        fresh.createWallet(_list(_fixed(alice, D)), ZERO_SALT);
-    }
-
-    /// @dev Code whose hash sorts below the pinned one, as well as above: any change fails.
-    function test_CreateWalletFailsClosedWhicheverWayADependencyHashMoves() public {
-        address[2] memory deps = [address(resolver), address(verifier)];
-        for (uint256 d; d < 2; ++d) {
-            bytes32 pinned = deps[d].codehash;
-            bytes memory lower;
-            for (uint256 i; lower.length == 0; ++i) {
-                bytes memory code = abi.encodePacked(bytes1(0x60), bytes1(uint8(i)), bytes1(0x00));
-                if (keccak256(code) < pinned) lower = code;
-            }
-            SplitFactory fresh = new SplitFactory(new MockArtistResolver(), verifier);
-            if (d == 1) fresh = new SplitFactory(resolver, new ReleaseVerifier());
-            address dep = d == 0 ? address(fresh.resolver()) : address(fresh.verifier());
-            vm.etch(dep, lower);
-            vm.expectRevert(abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, dep));
-            fresh.createWallet(_list(_fixed(alice, D)), ZERO_SALT);
-        }
+        address wallet = factory.createWallet(_list(_fixed(alice, D)), ZERO_SALT);
+        assertTrue(factory.isWallet(wallet));
     }
 
     function test_CreateWalletDeploysAtPredictedAddressWithConfiguration() public {
@@ -114,25 +60,21 @@ contract SplitFactoryTest is EconomicsBase {
         assertEq(wallet, predicted);
         assertTrue(factory.isWallet(wallet));
         assertEq(factory.configOf(wallet), config);
-        SplitWallet w = SplitWallet(payable(wallet));
-        assertEq(w.factory(), address(factory));
-        assertEq(address(w.resolver()), address(resolver));
-        assertEq(w.resolverCodeHash(), address(resolver).codehash);
-        assertEq(address(w.verifier()), address(verifier));
-        assertEq(w.payeeCount(), 3);
-        assertEq(keccak256(abi.encode(w.payees())), config);
-        for (uint256 i; i < 3; ++i) {
-            assertEq(keccak256(abi.encode(w.payee(i))), keccak256(abi.encode(payees[i])));
-        }
+        assertEq(wallet.code, abi.encodePacked(hex"73", address(ledger), SplitVault.RUNTIME_TAIL));
     }
 
     function test_SaltGivesAnEquivalentWalletWithTheSameConfigHash() public {
         ISplitWallet.Payee[] memory payees = _list(_fixed(alice, 60_000), _fixed(bob, 40_000));
-        address original = factory.createWallet(payees, ZERO_SALT);
-        address replacement = factory.createWallet(payees, bytes32(uint256(1)));
+        address original = _wallet(payees, ZERO_SALT);
+        address replacement = _wallet(payees, bytes32(uint256(1)));
         assertTrue(original != replacement);
         assertEq(factory.configOf(original), factory.configOf(replacement));
         assertEq(replacement, factory.walletFor(payees, bytes32(uint256(1))));
+        // Each keeps its own accounting.
+        vm.deal(replacement, 1 ether);
+        _release(replacement, ETH, _indexOf(replacement, alice));
+        assertEq(alice.balance, 0.6 ether);
+        assertEq(ledger.totalReleased(original, ETH), 0);
     }
 
     function test_CreateWalletIsIdempotentAndSilentOnRepeat() public {
@@ -144,7 +86,18 @@ contract SplitFactoryTest is EconomicsBase {
         assertEq(vm.getRecordedLogs().length, 0);
     }
 
-    function test_AddressCommitsToSharesKindsDependenciesAndSalt() public {
+    /// @dev Permissionless: any caller may create a wallet for any canonical list, the 90/10
+    ///      configurations of federated contracts included.
+    function test_AnyoneCreatesAWalletForAnyCanonicalList() public {
+        address stranger = makeAddr("stranger");
+        ISplitWallet.Payee[] memory federated = _list(_fixed(bob, 10_000), _artist(ARTIST, 90_000));
+        vm.prank(stranger);
+        address wallet = factory.createWallet(federated, ZERO_SALT);
+        assertEq(wallet, factory.walletFor(federated, ZERO_SALT));
+        assertTrue(factory.isWallet(wallet));
+    }
+
+    function test_AddressCommitsToSharesKindsLedgerAndSalt() public {
         ISplitWallet.Payee[] memory base = _list(_fixed(alice, 60_000), _fixed(bob, 40_000));
         address a = factory.walletFor(base, ZERO_SALT);
         address b = factory.walletFor(_list(_fixed(alice, 40_000), _fixed(bob, 60_000)), ZERO_SALT);
@@ -152,10 +105,8 @@ contract SplitFactoryTest is EconomicsBase {
             factory.walletFor(_list(_fixed(alice, 60_000), _artist(ARTIST, 40_000)), ZERO_SALT);
         address d = factory.walletFor(base, bytes32(uint256(7)));
         assertTrue(a != b && a != c && b != c && a != d);
-        SplitFactory otherResolver = new SplitFactory(new MockArtistResolver(), verifier);
-        assertTrue(otherResolver.walletFor(base, ZERO_SALT) != a);
-        SplitFactory otherVerifier = new SplitFactory(resolver, new ReleaseVerifier());
-        assertTrue(otherVerifier.walletFor(base, ZERO_SALT) != a);
+        SplitLedger otherLedger = new SplitLedger(new MockArtistResolver());
+        assertTrue(otherLedger.walletFor(base, ZERO_SALT) != a);
     }
 
     function test_RejectsEmptyAndOversizedPayeeLists() public {
@@ -219,6 +170,13 @@ contract SplitFactoryTest is EconomicsBase {
         third[2] = _artist(2, 40_000);
         vm.expectRevert(abi.encodeWithSelector(ISplitWallet.PayeesNotCanonical.selector, 2));
         factory.createWallet(third, ZERO_SALT);
+
+        // The same artist twice is a duplicate too.
+        ISplitWallet.Payee[] memory sameArtist = new ISplitWallet.Payee[](2);
+        sameArtist[0] = _artist(4, 50_000);
+        sameArtist[1] = _artist(4, 50_000);
+        vm.expectRevert(abi.encodeWithSelector(ISplitWallet.PayeesNotCanonical.selector, 1));
+        factory.walletFor(sameArtist, ZERO_SALT);
     }
 
     function test_RejectsSharesNotSummingToDenominator() public {
@@ -234,12 +192,12 @@ contract SplitFactoryTest is EconomicsBase {
             many[i] = _fixed(address(uint160(i + 1)), i == 0 ? D - 63 : 1);
         }
         uint256 before = gasleft();
-        address wallet = factory.createWallet(many, ZERO_SALT);
+        factory.createWallet(many, ZERO_SALT);
         emit log_named_uint("64-payee wallet deployment gas", before - gasleft());
-        assertEq(SplitWallet(payable(wallet)).payeeCount(), 64);
-        before = gasleft();
-        _wallet(_list(_fixed(alice, 75_000), _artist(ARTIST, 25_000)));
-        emit log_named_uint("2-payee wallet deployment gas", before - gasleft());
+        address wallet = _remember(many, ZERO_SALT);
+        assertTrue(factory.isWallet(wallet));
+        vm.deal(wallet, 1 ether);
+        assertEq(_release(wallet, ETH, 63), Splits.entitlement(1 ether, 1));
     }
 
     function test_FundsSentBeforeDeploymentAreSplitAfterwards() public {
@@ -247,66 +205,43 @@ contract SplitFactoryTest is EconomicsBase {
         address predicted = factory.walletFor(payees, ZERO_SALT);
         vm.deal(predicted, 4 ether);
         token.mint(predicted, 400);
-        SplitWallet wallet = _wallet(payees);
-        wallet.release(ETH, _indexOf(wallet, alice));
-        wallet.release(address(token), _indexOf(wallet, bob));
+        address wallet = _wallet(payees);
+        _release(wallet, ETH, _indexOf(wallet, alice));
+        _release(wallet, address(token), _indexOf(wallet, bob));
         assertEq(alice.balance, 3 ether);
         assertEq(token.balanceOf(bob), 100);
     }
 
-    /// @dev Anyone can deploy a `SplitWallet` elsewhere, but only by answering its constructor
-    ///      like the factory, which then records it as the wallet's factory; the split factory
-    ///      never recognises it. An account without code cannot deploy one at all.
-    function test_DirectDeploymentValidatesAndRecordsDeployer() public {
-        SelfDeployer deployer = new SelfDeployer(resolver, verifier);
-        vm.expectRevert(abi.encodeWithSelector(ISplitWallet.SharesDoNotSum.selector, 1));
-        deployer.deploy(_list(_fixed(alice, 1)));
-        SplitWallet direct = deployer.deploy(_list(_fixed(alice, D)));
-        assertEq(direct.factory(), address(deployer));
-        assertEq(direct.payeeCount(), 1);
-        assertFalse(factory.isWallet(address(direct)));
-        vm.prank(bob);
-        vm.expectRevert();
-        new SplitWallet();
-    }
-
     /// @dev QUALITY-12: every wallet has the same init code, and the address is the documented
-    ///      CREATE2 derivation over the configuration hash and the salt.
+    ///      CREATE2 derivation over the ledger, the configuration hash and the salt.
     function test_AddressIsTheDocumentedCreate2Derivation() public {
-        assertEq(factory.walletInitCodeHash(), keccak256(type(SplitWallet).creationCode));
+        assertEq(factory.walletInitCodeHash(), keccak256(SplitVault.INIT_CODE));
         ISplitWallet.Payee[] memory payees =
             _list(_fixed(alice, 50_000), _fixed(bob, 30_000), _artist(ARTIST, 20_000));
         bytes32 salt = bytes32(uint256(42));
         bytes32 walletSalt = keccak256(abi.encode(keccak256(abi.encode(payees)), salt));
-        address expected =
-            vm.computeCreate2Address(walletSalt, factory.walletInitCodeHash(), address(factory));
+        address expected = vm.computeCreate2Address(
+            walletSalt, keccak256(SplitVault.INIT_CODE), address(factory)
+        );
         assertEq(factory.walletFor(payees, salt), expected);
         assertEq(factory.createWallet(payees, salt), expected);
-        SplitFactory other = new SplitFactory(resolver, verifier);
+        SplitLedger other = new SplitLedger(resolver);
         assertEq(other.walletInitCodeHash(), factory.walletInitCodeHash());
-        assertTrue(other.walletFor(payees, salt) != expected, "the factory is in the address");
+        assertTrue(other.walletFor(payees, salt) != expected, "the ledger is in the address");
     }
 
-    /// @dev The pending list exists only while `createWallet` deploys: before and after, even
-    ///      within one transaction, it is empty, and wallets created back to back each get their
-    ///      own list.
-    function test_PendingPayeesExistOnlyDuringCreation() public {
-        assertEq(factory.pendingPayees().length, 0);
+    /// @dev Wallets created back to back each record their own payee hash.
+    function test_ConfigOfRecordsEachWalletsPayeeHash() public {
         ISplitWallet.Payee[] memory three =
             _list(_fixed(alice, 50_000), _fixed(bob, 30_000), _artist(ARTIST, 20_000));
         ISplitWallet.Payee[] memory one = _list(_artist(ARTIST, D));
-        SplitWallet a = SplitWallet(payable(factory.createWallet(three, ZERO_SALT)));
-        assertEq(factory.pendingPayees().length, 0);
-        SplitWallet b = SplitWallet(payable(factory.createWallet(one, ZERO_SALT)));
-        assertEq(factory.pendingPayees().length, 0);
-        assertEq(keccak256(abi.encode(a.payees())), keccak256(abi.encode(three)));
-        assertEq(keccak256(abi.encode(b.payees())), keccak256(abi.encode(one)));
-        assertEq(factory.configOf(address(a)), keccak256(abi.encode(three)));
-        assertEq(factory.configOf(address(b)), keccak256(abi.encode(one)));
+        address a = factory.createWallet(three, ZERO_SALT);
+        address b = factory.createWallet(one, ZERO_SALT);
+        assertEq(factory.configOf(a), keccak256(abi.encode(three)));
+        assertEq(factory.configOf(b), keccak256(abi.encode(one)));
     }
 
-    /// @dev Predicting no longer hashes the wallet's creation code: `walletFor` costs a few
-    ///      thousand gas, whatever the wallet's size (it was about 7,900 for one payee).
+    /// @dev Predicting hashes a few words, never the wallet's code.
     function test_WalletForIsCheap() public {
         ISplitWallet.Payee[] memory one = _list(_artist(ARTIST, D));
         factory.walletFor(one, ZERO_SALT);
@@ -317,12 +252,12 @@ contract SplitFactoryTest is EconomicsBase {
         assertLt(used, 5_000);
     }
 
-    /// @dev The factory checks that CREATE2 put the wallet where it predicted: with the
+    /// @dev The ledger checks that CREATE2 put the wallet where it predicted: with the
     ///      prediction's hash forced to differ from the real init code, deployment reverts.
     function test_CreateWalletRevertsIfTheDeployedAddressDiffers() public {
         ISplitWallet.Payee[] memory payees = _list(_fixed(alice, D));
         bytes32 slot = bytes32(0);
-        // `walletInitCodeHash` is an immutable: patch it in a copy of the factory's runtime code.
+        // `walletInitCodeHash` is an immutable: patch it in a copy of the ledger's runtime code.
         bytes memory code = address(factory).code;
         bytes32 real = factory.walletInitCodeHash();
         uint256 hits;
@@ -353,9 +288,9 @@ contract SplitFactoryTest is EconomicsBase {
         factory.createWallet(payees, slot);
     }
 
-    /// @dev The largest payee list, with extreme field values, survives the transient hand-off
-    ///      to the wallet's constructor exactly.
-    function test_PayeeListSurvivesTheHandOffExactly() public {
+    /// @dev The largest payee list, with extreme field values, is logged exactly, and the logged
+    ///      list is the one a release names the wallet by.
+    function test_MaximumPayeeListIsLoggedExactly() public {
         ISplitWallet.Payee[] memory many = new ISplitWallet.Payee[](64);
         for (uint256 i; i < 32; ++i) {
             many[i] = _fixed(address(uint160(type(uint160).max - 31 + i)), i == 0 ? D - 63 : 1);
@@ -363,10 +298,16 @@ contract SplitFactoryTest is EconomicsBase {
         for (uint256 i = 32; i < 64; ++i) {
             many[i] = _artist(type(uint256).max - 63 + i, 1);
         }
-        SplitWallet w = SplitWallet(payable(factory.createWallet(many, ZERO_SALT)));
-        assertEq(keccak256(abi.encode(w.payees())), keccak256(abi.encode(many)));
-        assertEq(w.payee(0).share, D - 63);
-        assertEq(w.payee(63).artistId, type(uint256).max);
+        vm.recordLogs();
+        address w = factory.createWallet(many, ZERO_SALT);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        (, ISplitWallet.Payee[] memory logged) =
+            abi.decode(logs[0].data, (bytes32, ISplitWallet.Payee[]));
+        assertEq(keccak256(abi.encode(logged)), keccak256(abi.encode(many)));
+        assertEq(logged[0].share, D - 63);
+        assertEq(logged[63].artistId, type(uint256).max);
+        vm.deal(w, 1 ether);
+        assertEq(ledger.release(logged, ZERO_SALT, ETH, 0), Splits.entitlement(1 ether, D - 63));
     }
 
     function testFuzz_PredictionMatchesDeployment(uint32 share, uint160 x, uint160 y, bytes32 salt)
@@ -384,5 +325,6 @@ contract SplitFactoryTest is EconomicsBase {
         assertEq(logs.length, 1);
         assertEq(logs[0].topics[1], bytes32(uint256(uint160(predicted))));
         assertEq(logs[0].topics[2], keccak256(abi.encode(payees)));
+        assertEq(predicted.code.length, 66);
     }
 }

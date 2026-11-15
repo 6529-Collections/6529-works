@@ -5,9 +5,8 @@ import { Test, console2 } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { AssetAllowlist } from "src/economics/AssetAllowlist.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
-import { ReleaseVerifier } from "src/economics/ReleaseVerifier.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
-import { SplitFactory } from "src/economics/SplitFactory.sol";
+import { SplitLedger } from "src/economics/SplitLedger.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
@@ -68,7 +67,7 @@ contract EnglishAuctionGasTest is Test {
 
     AccessManager internal manager;
     AssetAllowlist internal allowlist;
-    SplitFactory internal factory;
+    SplitLedger internal factory;
     LeanArtistRegistry internal artists;
     LeanPackageRegistry internal registry;
     LeanEconomicsResolver internal resolver;
@@ -85,7 +84,7 @@ contract EnglishAuctionGasTest is Test {
     function setUp() public {
         manager = new AccessManager(address(this));
         allowlist = new AssetAllowlist(address(manager), 0.001 ether);
-        factory = new SplitFactory(new MockArtistResolver(), new ReleaseVerifier());
+        factory = new SplitLedger(new MockArtistResolver());
         artists = new LeanArtistRegistry();
         registry = new LeanPackageRegistry(artists);
         resolver = new LeanEconomicsResolver(factory, network);

@@ -40,7 +40,7 @@ contract SplitsSymbolicTest is Test {
     }
 
     /// @dev External so a revert in `validate` can be caught and turned into a failure.
-    function validate(ISplitWallet.Payee[] memory payees) external pure {
+    function validate(ISplitWallet.Payee[] calldata payees) external pure {
         Splits.validate(payees);
     }
 
