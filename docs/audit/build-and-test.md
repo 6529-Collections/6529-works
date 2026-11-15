@@ -226,8 +226,9 @@ size gate measures.
 The margin floor applies to contracts declared in `src/`; test contracts and mocks are held to
 EIP-170 only. The floor itself is a constant in the checker, so it cannot be lowered from the
 exemptions file. Each exemption records the contract's margin when it was granted and a reason;
-`Stream`, `Renderer` and `UniformEditionAuction` were below the floor when the gate was added and
-are exempt at the margins they had then. A change that frees bytes in an exempt contract should
+`Stream`, `Renderer` and `UniformEditionAuction` were below the floor when the gate was added;
+since the permanence integration ([ADR 0007](../adr/0007-permanence.md)) every contract is back
+above it and the file lists no exemption. A change that frees bytes in an exempt contract should
 raise its record (the checker prints the new margin), and one that brings it back to 512 bytes
 removes the exemption. A change that needs bytes from an exempt contract below its record
 changes the record in the same pull request and says why.

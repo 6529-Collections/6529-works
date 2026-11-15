@@ -434,7 +434,9 @@ class MarginTest(unittest.TestCase):
     def test_the_committed_exemptions_are_well_formed(self) -> None:
         path = Path(__file__).with_name("size-margins.json")
         exempt = cb.load_margins(path, cb.MIN_RUNTIME_MARGIN)
-        self.assertTrue(exempt, "the committed file lists the contracts below the floor")
+        # Every entry is below the floor (an empty file is well formed: no contract needs an
+        # exemption since the permanence integration, ADR 0007).
+        self.assertIsInstance(exempt, dict)
         for name, entry in exempt.items():
             self.assertLess(entry["margin"], cb.MIN_RUNTIME_MARGIN, name)
 
