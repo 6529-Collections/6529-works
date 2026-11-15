@@ -282,7 +282,8 @@ contract Renderer is IRenderer {
             c.workId = c.id;
         }
         c.core = abi.decode(
-            _word(c.stream, IStreamViews.work.selector, c.workId, SMALL_GAS, 288), (IStreamViews.WorkCore)
+            _word(c.stream, IStreamViews.work.selector, c.workId, SMALL_GAS, 288),
+            (IStreamViews.WorkCore)
         );
         c.records = abi.decode(
             _read(c.stream, abi.encodeCall(IStream.workRecords, ()), SMALL_GAS, 32), (address)

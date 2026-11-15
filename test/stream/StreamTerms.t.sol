@@ -93,7 +93,11 @@ contract StreamTermsTest is StreamFixture {
         uint256 b = _mint(2);
         recordsMock.setRoyaltyRate(IStream(address(stream)), a, 5_000);
         assertEq(IStreamViews(address(stream)).work(a).royaltyRate, 5_000);
-        assertEq(IStreamViews(address(stream)).work(b).royaltyRate, 6_529, "the shared terms did not change");
+        assertEq(
+            IStreamViews(address(stream)).work(b).royaltyRate,
+            6_529,
+            "the shared terms did not change"
+        );
         (, uint256 amountB) = stream.royaltyInfo(b, 1 ether);
         assertEq(amountB, 0.06529 ether);
         (bytes32 key, uint256 word) = _key(uint160(artist), 5_000, 25_000, 1, 1);
@@ -117,7 +121,10 @@ contract StreamTermsTest is StreamFixture {
         assertEq(tb.feeRecipient, otherFee);
         assertEq(tb.feeShare, 10_000);
         assertEq(IStreamViews(address(stream)).work(b).royaltyRate, 2_000);
-        assertEq(IStreamViews(address(stream)).work(b).royaltyReceiver, _royaltyWallet(seller, otherFee, 10_000));
+        assertEq(
+            IStreamViews(address(stream)).work(b).royaltyReceiver,
+            _royaltyWallet(seller, otherFee, 10_000)
+        );
     }
 
     /// @dev Different artists' works keep their own artist and creator.

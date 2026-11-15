@@ -172,9 +172,13 @@ contract CurationHandler is CurationHelpers {
         PackageItem memory item = abi.decode(encodedItems[t.i], (PackageItem));
         vm.prank(t.caller);
         try registry.authorize(
-            IMintPolicy.MintContext(t.caller, address(_policyStub), address(0), address(_policyStub)),
+            IMintPolicy.MintContext(
+                t.caller, address(_policyStub), address(0), address(_policyStub)
+            ),
             abi.encode(StreamMintRequest(t.root, item, proof, move))
-        ) returns (IMintPolicy.MintRecord memory rec) {
+        ) returns (
+            IMintPolicy.MintRecord memory rec
+        ) {
             bytes32 itemHash = rec.itemHash;
             if (!t.expected || itemHash != itemHashes[t.i]) {
                 unexpectedSuccess = true;

@@ -218,7 +218,9 @@ contract RendererHostileTest is RendererBase {
         stream.setCollection(1, IStreamViews.Collection(_text(5_000), bytes32(0), 1));
         vm.expectRevert(
             abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector, address(stream), IStreamViews.collection.selector
+                IRenderer.RendererReadFailed.selector,
+                address(stream),
+                IStreamViews.collection.selector
             )
         );
         renderer.tokenURI(address(stream), ID);

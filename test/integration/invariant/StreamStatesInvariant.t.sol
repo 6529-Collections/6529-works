@@ -173,7 +173,12 @@ contract StreamStatesInvariantTest is IntegrationBase {
             PrimaryOutcome outcome = PrimaryOutcome(outcomeSeed % 5);
             bool sold = outcome == PrimaryOutcome.SOLD;
             try adapter.settleWith(
-                IStream(address(stream)), id, outcome, sold ? collector : address(0), CURRENCY_ETH, sold ? 1 : 0
+                IStream(address(stream)),
+                id,
+                outcome,
+                sold ? collector : address(0),
+                CURRENCY_ETH,
+                sold ? 1 : 0
             ) {
                 if (outcome == PrimaryOutcome.NONE || outcome == PrimaryOutcome.RESCUED) {
                     _violation("an adapter reported NONE or RESCUED");
@@ -296,7 +301,9 @@ contract StreamStatesInvariantTest is IntegrationBase {
 
     /// @dev The work state of `id` per the spec's table, from what Stream stores.
     function _state(uint256 id) internal view returns (S, PrimaryOutcome outcome) {
-        if (id > IStream(address(stream)).totalMinted()) return (S.NEVER_MINTED, PrimaryOutcome.NONE);
+        if (id > IStream(address(stream)).totalMinted()) {
+            return (S.NEVER_MINTED, PrimaryOutcome.NONE);
+        }
         (outcome,,) = stream.primarySale(id);
         address holder = _holder(id);
         // Every settled state has a holder; only a cancelled work has none.

@@ -20,7 +20,8 @@ contract PauseWindowTest is IntegrationBase {
 
     /// Regression: GOV-5 (docs/security/internal-review-2026-10.md)
     function test_Resume_ScheduledBeforeThePauseWaitsTwoDaysAfterIt() public {
-        uint256 saleId = auction.saleIdOf(address(stream), IStream(address(stream)).totalMinted() + 1);
+        uint256 saleId =
+            auction.saleIdOf(address(stream), IStream(address(stream)).totalMinted() + 1);
         bytes memory resume = abi.encodeCall(auction.resume, (saleId));
         _schedule(hotAdmin, address(auction), resume);
 

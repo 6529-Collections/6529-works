@@ -73,6 +73,10 @@ contract StreamTermsGrindTest is StreamFixture {
         emit log_named_uint("victim later start, new Stream slots", later);
         emit log_named_uint("victim later start, gas", gasLater);
         assertEq(first, later + 2, "one slot more than the ADR row");
-        assertEq(stream.artistOf(IStreamViews(address(stream)).totalSupply()), uint160(VICTIM), "views still correct");
+        assertEq(
+            stream.artistOf(IStreamViews(address(stream)).totalSupply()),
+            uint160(VICTIM),
+            "views still correct"
+        );
     }
 }

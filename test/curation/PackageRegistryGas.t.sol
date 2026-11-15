@@ -46,8 +46,7 @@ contract PackageRegistryGasTest is CurationBase {
     function test_gas_consume_typical() public {
         (bytes32 root, PackageItem memory item, bytes32[] memory proof) = _packaged(16, 3);
         MoveAuthorization memory move = _move(leadKey, root, _hash(item), 0);
-        uint256 used =
-            _measure(stream, _authorizeCall(root, item, proof, move));
+        uint256 used = _measure(stream, _authorizeCall(root, item, proof, move));
         emit log_named_uint("consume, 1 party, depth 4", used);
         assertLe(used, CONSUME_BUDGET);
     }
@@ -56,8 +55,7 @@ contract PackageRegistryGasTest is CurationBase {
     function test_gas_consume_newNonceWord() public {
         (bytes32 root, PackageItem memory item, bytes32[] memory proof) = _packaged(16, 3);
         MoveAuthorization memory move = _move(leadKey, root, _hash(item), 300);
-        uint256 used =
-            _measure(stream, _authorizeCall(root, item, proof, move));
+        uint256 used = _measure(stream, _authorizeCall(root, item, proof, move));
         emit log_named_uint("consume, 1 party, depth 4, new nonce word", used);
         assertLe(used, CONSUME_NEW_WORD_BUDGET);
     }
@@ -70,9 +68,7 @@ contract PackageRegistryGasTest is CurationBase {
         _accept(root, leadKey);
         _accept(root, collabKey);
         MoveAuthorization memory move = _move(leadKey, root, _hash(item), 0);
-        uint256 used = _measure(
-            stream, _authorizeCall(root, item, new bytes32[](0), move)
-        );
+        uint256 used = _measure(stream, _authorizeCall(root, item, new bytes32[](0), move));
         emit log_named_uint("consume, 2 parties, depth 0", used);
         assertLe(used, CONSUME_TWO_PARTIES_BUDGET);
     }
@@ -86,9 +82,7 @@ contract PackageRegistryGasTest is CurationBase {
         _accept(root, leadKey);
         _accept(root, collabKey);
         MoveAuthorization memory move = _move(leadKey, root, _hash(item), 0);
-        uint256 consumed = _measure(
-            stream, _authorizeCall(root, item, new bytes32[](0), move)
-        );
+        uint256 consumed = _measure(stream, _authorizeCall(root, item, new bytes32[](0), move));
         uint256 claimed = _measure(
             editions, abi.encodeCall(PackageRegistry.claimContent, (item.contentHash, _hash(item)))
         );
@@ -233,7 +227,8 @@ contract StreamLikeHarness is IERC165 {
         returns (uint256 decodeGas, uint256 consumeGas)
     {
         uint256 g0 = gasleft();
-        IMintPolicy.MintContext memory c = IMintPolicy.MintContext(msg.sender, stub, address(0), stub);
+        IMintPolicy.MintContext memory c =
+            IMintPolicy.MintContext(msg.sender, stub, address(0), stub);
         uint256 g1 = gasleft();
         r.authorize(c, data);
         return (g0 - g1, g1 - gasleft());

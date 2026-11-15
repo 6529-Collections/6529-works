@@ -714,8 +714,8 @@ contract Stream is ERC721, AccessManaged, IStream {
         TokenData storage t = _live(tokenId);
         uint8 flags = t.flags;
         if (
-            flags & FIELD_MASK != KIND_EDITION_MASTER || flags & SETTLED == 0
-                || flags & LINKED != 0 || editionId != tokenId
+            flags & FIELD_MASK != KIND_EDITION_MASTER || flags & SETTLED == 0 || flags & LINKED != 0
+                || editionId != tokenId
         ) revert EditionLinkInvalid(tokenId);
         t.flags = flags | LINKED;
         emit EditionLinked(tokenId, msg.sender, editionId);
@@ -783,11 +783,10 @@ contract Stream is ERC721, AccessManaged, IStream {
     ///      the offset of `params` to rebase. A policy revert is passed on. Every word must be a
     ///      clean value of its field's type and `params` must lie inside the answer
     ///      (`InvalidMintRequest`), so the record is never read out of type.
-    function _authorize(
-        address policy,
-        IMintPolicy.MintContext memory context,
-        bytes calldata data
-    ) private returns (IMintPolicy.MintRecord memory r) {
+    function _authorize(address policy, IMintPolicy.MintContext memory context, bytes calldata data)
+        private
+        returns (IMintPolicy.MintRecord memory r)
+    {
         bytes4 selector = IMintPolicy.authorize.selector;
         bytes4 malformed = InvalidMintRequest.selector;
         assembly ("memory-safe") {

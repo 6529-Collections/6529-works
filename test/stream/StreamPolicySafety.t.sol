@@ -251,7 +251,9 @@ contract StreamPolicySafetyTest is StreamFixture {
             r,
             data,
             abi.encodeWithSelector(
-                IMintTarget.SaleKindMismatch.selector, SaleKind.FIXED_PRICE, SaleKind.ENGLISH_AUCTION
+                IMintTarget.SaleKindMismatch.selector,
+                SaleKind.FIXED_PRICE,
+                SaleKind.ENGLISH_AUCTION
             )
         );
         // Kind and seed policy values a later policy may define (up to 3) are stored as given.

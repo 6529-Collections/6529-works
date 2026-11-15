@@ -53,7 +53,9 @@ contract VrfWorkFlowTest is IntegrationBase {
         assertEq(entropy.seedOf(itemHash), bytes32(word));
 
         (uint256 saleId, uint256 tokenId) = _start(root, works, 0);
-        assertEq(uint8(IStreamViews(address(stream)).work(tokenId).seedPolicy), uint8(SeedPolicy.VRF));
+        assertEq(
+            uint8(IStreamViews(address(stream)).work(tokenId).seedPolicy), uint8(SeedPolicy.VRF)
+        );
         string memory seedTrait =
             string.concat('{"trait_type":"Seed","value":"', Strings.toHexString(word, 32), '"}');
         assertTrue(

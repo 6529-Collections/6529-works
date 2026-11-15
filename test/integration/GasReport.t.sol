@@ -939,7 +939,9 @@ contract IntegrationGasReport is IntegrationBase {
         );
         _gasAtMost(r, RERATE_CEILING, "regression ceiling");
         _growthIs(r, 1, 0);
-        if (pass == Pass.BOTH) assertEq(IStreamViews(address(stream)).work(tokenId).royaltyRate, rate);
+        if (pass == Pass.BOTH) {
+            assertEq(IStreamViews(address(stream)).work(tokenId).royaltyRate, rate);
+        }
     }
 
     // ------------------------------------------------------------------ identity

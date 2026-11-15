@@ -72,7 +72,10 @@ contract StreamInvariantTest is RecordsFixture {
     /// @dev Live supply is minted minus burned, and equals the sum of all balances.
     function invariant_supplyIsMintedMinusBurned() public view {
         assertEq(IStream(address(stream)).totalMinted(), handler.ghostMinted());
-        assertEq(IStreamViews(address(stream)).totalSupply(), handler.ghostMinted() - handler.ghostBurned());
+        assertEq(
+            IStreamViews(address(stream)).totalSupply(),
+            handler.ghostMinted() - handler.ghostBurned()
+        );
         uint256 held = stream.balanceOf(address(auction));
         for (uint256 i; i < handler.actorCount(); ++i) {
             held += stream.balanceOf(handler.actors(i));
@@ -107,7 +110,9 @@ contract StreamInvariantTest is RecordsFixture {
             if (handler.burned(id)) continue;
             (address receiver, uint256 amount) = stream.royaltyInfo(id, 1 ether);
             assertEq(receiver, handler.ghostReceiver(id));
-            assertEq(IStreamViews(address(stream)).work(id).royaltyReceiver, handler.ghostReceiver(id));
+            assertEq(
+                IStreamViews(address(stream)).work(id).royaltyReceiver, handler.ghostReceiver(id)
+            );
             assertEq(IStreamViews(address(stream)).work(id).seller, handler.ghostSeller(id));
             assertEq(IStreamViews(address(stream)).work(id).royaltyRate, handler.ghostRate(id));
             assertEq(amount, uint256(handler.ghostRate(id)) * 1 ether / 100_000);
@@ -120,7 +125,9 @@ contract StreamInvariantTest is RecordsFixture {
     function invariant_serialsPerCollection() public view {
         for (uint256 i; i < handler.collectionCount(); ++i) {
             uint256 c = handler.collections(i);
-            assertEq(IStreamViews(address(stream)).collection(c).minted, handler.ghostCollectionMinted(c));
+            assertEq(
+                IStreamViews(address(stream)).collection(c).minted, handler.ghostCollectionMinted(c)
+            );
         }
         uint256 minted = IStream(address(stream)).totalMinted();
         for (uint256 id = 1; id <= minted; ++id) {

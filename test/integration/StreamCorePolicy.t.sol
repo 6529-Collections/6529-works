@@ -171,9 +171,7 @@ contract StreamCorePolicyTest is IntegrationBase {
             abi.encodeCall(IWorkRecords.pinnedRenderer, (tokenId)),
             abi.encode(type(uint256).max)
         );
-        vm.expectRevert(
-            abi.encodeWithSelector(IStream.RendererPinUnreadable.selector, tokenId)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IStream.RendererPinUnreadable.selector, tokenId));
         stream.rendererOf(tokenId);
     }
 
@@ -189,17 +187,14 @@ contract StreamCorePolicyTest is IntegrationBase {
 
     function test_ArtistRegistry_IsPermanent() public {
         address current = stream.artistRegistry();
-        bytes memory call = abi.encodeCall(
-            stream.setDependency, (bytes32("ARTIST_REGISTRY"), current, current)
-        );
+        bytes memory call =
+            abi.encodeCall(stream.setDependency, (bytes32("ARTIST_REGISTRY"), current, current));
         _schedule(hotAdmin, address(stream), call);
         (, uint32 delay) = manager.canCall(hotAdmin, address(stream), bytes4(call));
         vm.warp(block.timestamp + delay);
         vm.prank(hotAdmin);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IStream.UnknownDependency.selector, bytes32("ARTIST_REGISTRY")
-            )
+            abi.encodeWithSelector(IStream.UnknownDependency.selector, bytes32("ARTIST_REGISTRY"))
         );
         manager.execute(address(stream), call);
     }

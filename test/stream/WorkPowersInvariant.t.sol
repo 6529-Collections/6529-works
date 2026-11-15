@@ -61,7 +61,9 @@ contract WorkPowersInvariantTest is RecordsFixture {
         assertEq(handler.violations(), 0);
         for (uint256 i; i < handler.workCount(); ++i) {
             uint256 tokenId = handler.tokenIds(i);
-            assertEq(IStreamViews(address(stream)).work(tokenId).royaltyRate, handler.ghostRate(tokenId));
+            assertEq(
+                IStreamViews(address(stream)).work(tokenId).royaltyRate, handler.ghostRate(tokenId)
+            );
             assertEq(
                 abi.encode(records.licenseOf(tokenId)), abi.encode(handler.ghostLicenseOf(tokenId))
             );

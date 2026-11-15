@@ -1267,7 +1267,11 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         for (uint256 h; h < holders.length; ++h) {
             held += stream.balanceOf(holders[h]);
         }
-        assertEq(held, IStreamViews(address(stream)).totalSupply(), "every live token is held by one known holder");
+        assertEq(
+            held,
+            IStreamViews(address(stream)).totalSupply(),
+            "every live token is held by one known holder"
+        );
         for (uint256 tokenId = 1; tokenId <= ghostMinted; ++tokenId) {
             TokenGhost storage t = tok[tokenId];
             IEnglishAuction.AuctionState state = auction.auction(t.saleId).state;
@@ -1292,8 +1296,14 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
     /// @dev Token IDs run from 1 without gaps, each assigned once to one item; burned IDs are
     ///      never reused.
     function _assertIds() internal view {
-        assertEq(IStream(address(stream)).totalMinted(), ghostMinted, "every start assigned one new ID");
-        assertEq(IStreamViews(address(stream)).totalSupply(), ghostMinted - ghostBurned, "supply is minted minus burned");
+        assertEq(
+            IStream(address(stream)).totalMinted(), ghostMinted, "every start assigned one new ID"
+        );
+        assertEq(
+            IStreamViews(address(stream)).totalSupply(),
+            ghostMinted - ghostBurned,
+            "supply is minted minus burned"
+        );
         for (uint256 tokenId = 1; tokenId <= ghostMinted; ++tokenId) {
             TokenGhost storage t = tok[tokenId];
             assertEq(pool[t.item].tokenId, tokenId, "one item, one token ID");

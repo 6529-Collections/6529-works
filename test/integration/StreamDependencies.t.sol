@@ -299,7 +299,8 @@ contract StreamDependenciesTest is IntegrationBase {
     ///      ERC-165, so no existing token's metadata or royalty reads a replaced contract.
     function test_ReplacingEachDependencyLeavesExistingTokensUnchanged() public {
         bytes32 before = _snapshot();
-        bytes32 vrfSeed = entropy.seedOf(IStreamViews(address(stream)).work(tokens[PENDING_VRF]).itemHash);
+        bytes32 vrfSeed =
+            entropy.seedOf(IStreamViews(address(stream)).work(tokens[PENDING_VRF]).itemHash);
         address genesisEntropy = stream.entropyModule();
         for (uint256 i; i < KINDS.length; ++i) {
             _replace(KINDS[i], address(new DependencyStandIn(_interfaceOf(KINDS[i]))));
@@ -376,7 +377,9 @@ contract StreamDependenciesTest is IntegrationBase {
         _open(PENDING_VRF, 1);
         records.openRecord(secondEra, w.item, w.media);
         (, bytes32 seed) = records.seedOf(tokens[PENDING_VRF]);
-        assertEq(seed, entropy.seedOf(IStreamViews(address(stream)).work(tokens[PENDING_VRF]).itemHash));
+        assertEq(
+            seed, entropy.seedOf(IStreamViews(address(stream)).work(tokens[PENDING_VRF]).itemHash)
+        );
         (, seed) = records.seedOf(secondEra);
         assertEq(seed, keccak256("the second era's seed"));
     }

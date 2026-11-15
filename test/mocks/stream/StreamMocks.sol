@@ -93,8 +93,7 @@ contract MockPackageRegistry is Supports165 {
         PackageItem memory item = req.item;
         _check(item, c.entropyModule);
         address creator;
-        (r.itemHash, r.artistId, creator) =
-            this.consume(req.packageRoot, item, req.proof, req.move);
+        (r.itemHash, r.artistId, creator) = this.consume(req.packageRoot, item, req.proof, req.move);
         if (
             item.seedPolicy == SeedPolicy.VRF
                 && !IEntropyModule(c.entropyModule).isDeliveredContent(item.contentHash)
@@ -103,7 +102,7 @@ contract MockPackageRegistry is Supports165 {
         (t, r.royaltyRate) = _quote(item, c);
         (r.saleKind, r.currency, r.params) = (t.saleKind, t.currency, t.params);
         (r.seller, r.feeRecipient, r.feeShare, r.creator) =
-            (t.seller, t.feeRecipient, t.feeShare, creator);
+        (t.seller, t.feeRecipient, t.feeShare, creator);
         r.collectionId = item.collectionId;
         r.kind = uint8(item.kind);
         r.seedPolicy = uint8(item.seedPolicy);

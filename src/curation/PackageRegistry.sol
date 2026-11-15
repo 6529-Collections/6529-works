@@ -520,8 +520,7 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
         view
         returns (address seller, address feeRecipient, uint32 feeShare, uint32 royaltyRate)
     {
-        ProductEconomics memory e =
-            IEconomicsResolver(context.economics).economics(PRODUCT_STREAM);
+        ProductEconomics memory e = IEconomicsResolver(context.economics).economics(PRODUCT_STREAM);
         seller = ISplitFactory(context.splitFactory).walletFor(item.payees, bytes32(0));
         if (
             e.royaltyRate > Splits.DENOMINATOR || e.feeShare >= Splits.DENOMINATOR

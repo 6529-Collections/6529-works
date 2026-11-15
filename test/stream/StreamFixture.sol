@@ -108,8 +108,8 @@ abstract contract StreamFixture is Test {
     ) internal pure returns (uint24) {
         return uint24(
             uint256(
-                keccak256(abi.encode(artistId, royaltyRate, feeShare, feeRecipientId, minterId))
-            )
+            keccak256(abi.encode(artistId, royaltyRate, feeShare, feeRecipientId, minterId))
+        )
         ) & 0x7fffff;
     }
 

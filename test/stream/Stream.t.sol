@@ -181,7 +181,6 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
     // ------------------------------------------------------------------------ admitted minters
 
     function test_setAdmittedMinter() public {
-        MockSaleAdapter other = new MockSaleAdapter(SaleKind.ENGLISH_AUCTION);
         vm.expectEmit(address(stream));
         emit IMintTarget.AdmittedMinterSet(address(other), 2, true, other.saleKind());
         vm.prank(governor);
@@ -493,8 +492,12 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         item.seed = keccak256("seed");
         item.kind = ItemKind.EDITION_MASTER;
         uint256 tokenId = _mint(item);
-        assertEq(uint8(IStreamViews(address(stream)).work(tokenId).kind), uint8(ItemKind.EDITION_MASTER));
-        assertEq(uint8(IStreamViews(address(stream)).work(tokenId).seedPolicy), uint8(SeedPolicy.ARTIST));
+        assertEq(
+            uint8(IStreamViews(address(stream)).work(tokenId).kind), uint8(ItemKind.EDITION_MASTER)
+        );
+        assertEq(
+            uint8(IStreamViews(address(stream)).work(tokenId).seedPolicy), uint8(SeedPolicy.ARTIST)
+        );
     }
 
     function test_mint_vrfNeedsDeliveredSeed() public {
@@ -506,7 +509,9 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         auction.start(stream, data);
         entropy.deliver(item, keccak256("vrf"));
         (uint256 tokenId,) = auction.start(stream, data);
-        assertEq(uint8(IStreamViews(address(stream)).work(tokenId).seedPolicy), uint8(SeedPolicy.VRF));
+        assertEq(
+            uint8(IStreamViews(address(stream)).work(tokenId).seedPolicy), uint8(SeedPolicy.VRF)
+        );
     }
 
     // --------------------------------------------------- governed dependencies (decision 16)
@@ -567,6 +572,50 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         _assertShortfallNeverAnswers(burner, governor, address(stream), call);
     }
 
+    /// @dev AUC-41: the rescue delay starts at its 90-day floor and only lengthens, at most
+    ///      doubling; a removal locks the delay in force then, so lengthening it later does not
+    ///      delay works already counting. Without the governed delay, the 90 days were compiled.
+    function test_setRescueDelay() public {
+        assertEq(stream.rescueDelay(), 90 days);
+        assertEq(stream.RESCUE_DELAY_FLOOR(), 90 days);
+        uint256 tokenId = _mint(1);
+        vm.prank(governor);
+        stream.setAdmittedMinter(address(auction), false); // locks 90 days for its works
+        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidRescueDelay.selector, 90 days));
+        stream.setRescueDelay(90 days);
+        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidRescueDelay.selector, 180 days + 1));
+        stream.setRescueDelay(180 days + 1);
+        vm.expectEmit(address(stream));
+        emit IStream.RescueDelaySet(90 days, 180 days);
+        stream.setRescueDelay(180 days);
+        assertEq(stream.rescueDelay(), 180 days);
+        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidRescueDelay.selector, 120 days));
+        stream.setRescueDelay(120 days);
+        vm.prank(outsider);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)
+        );
+        stream.setRescueDelay(200 days);
+        // The removal made before the change keeps its 90 days.
+        vm.warp(block.timestamp + 90 days - 1);
+        vm.expectRevert(abi.encodeWithSelector(IStream.WorkNotRescuable.selector, tokenId));
+        stream.rescueToMuseum(tokenId);
+        vm.warp(block.timestamp + 1);
+        stream.rescueToMuseum(tokenId);
+        assertEq(stream.ownerOf(tokenId), econ.museum());
+        // A removal after the change waits the new delay.
+        vm.prank(governor);
+        stream.setAdmittedMinter(address(auction), true);
+        uint256 later = _mint(2);
+        vm.prank(governor);
+        stream.setAdmittedMinter(address(auction), false);
+        vm.warp(block.timestamp + 90 days);
+        vm.expectRevert(abi.encodeWithSelector(IStream.WorkNotRescuable.selector, later));
+        stream.rescueToMuseum(later);
+        vm.warp(block.timestamp + 90 days);
+        stream.rescueToMuseum(later);
+    }
+
     function test_setDependency_reverts() public {
         address next = address(new MockPackageRegistry());
         vm.prank(outsider);
@@ -607,7 +656,9 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         (uint256 second,) = auction.start(stream, _request(_item(2)));
         assertEq(second, first + 1);
         assertEq(stream.ownerOf(first), address(auction));
-        assertEq(IStreamViews(address(stream)).work(first).itemHash, WorksHashing.itemHash(_item(1)));
+        assertEq(
+            IStreamViews(address(stream)).work(first).itemHash, WorksHashing.itemHash(_item(1))
+        );
     }
 
     /// @dev A Stream deployed without an entropy module can install one later; VRF works then
@@ -629,7 +680,9 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         item.seedPolicy = SeedPolicy.VRF;
         entropy.deliver(item, keccak256("vrf"));
         (uint256 tokenId,) = auction.start(noVrf, _request(item));
-        assertEq(uint8(IStreamViews(address(noVrf)).work(tokenId).seedPolicy), uint8(SeedPolicy.VRF));
+        assertEq(
+            uint8(IStreamViews(address(noVrf)).work(tokenId).seedPolicy), uint8(SeedPolicy.VRF)
+        );
         assertEq(noVrf.entropyModuleOf(tokenId), address(entropy));
     }
 
@@ -990,7 +1043,10 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         assertEq(read.creator, artist);
         assertEq(stream.primaryTerms(2, "garbage").feeShare, 10_000);
         assertEq(stream.primaryTerms(2, "").feeRecipient, otherFee);
-        assertEq(IStreamViews(address(stream)).work(2).royaltyReceiver, _royaltyWallet(seller, otherFee, 10_000));
+        assertEq(
+            IStreamViews(address(stream)).work(2).royaltyReceiver,
+            _royaltyWallet(seller, otherFee, 10_000)
+        );
 
         // The creator is resolved when read, so recovery redirects a no-bid return.
         address recovered = makeAddr("recovered");
@@ -1032,7 +1088,6 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
     function test_settlePrimary_soldRecordsTheSale() public {
         _mint(1);
         _mint(2);
-        MockSaleAdapter other = new MockSaleAdapter(SaleKind.ENGLISH_AUCTION);
         vm.prank(governor);
         stream.setAdmittedMinter(address(other), true);
         vm.expectRevert(abi.encodeWithSelector(IStream.NotMintingAdapter.selector, address(other)));
@@ -1307,7 +1362,6 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
     ///      holds it.
     function test_burn_onlyByMintingAdapter() public {
         _mint(1);
-        MockSaleAdapter other = new MockSaleAdapter(SaleKind.ENGLISH_AUCTION);
         vm.prank(governor);
         stream.setAdmittedMinter(address(other), true);
         auction.deliver(address(stream), 1, address(other));
@@ -1968,7 +2022,6 @@ contract StreamWithRecordsTest is RecordsFixture {
     ///      it holds it.
     function test_burn_refusesAnAdmittedAdapterThatDidNotMint() public {
         uint256 tokenId = _mint(1);
-        MockSaleAdapter other = new MockSaleAdapter(SaleKind.ENGLISH_AUCTION);
         vm.prank(governor);
         stream.setAdmittedMinter(address(other), true);
         address collector = makeAddr("collector");

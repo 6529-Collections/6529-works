@@ -243,7 +243,10 @@ contract MasterEditionFlowTest is IntegrationBase {
         editions.createEdition(workId, works[2].item, root, _proofOf(works, 2));
         (, uint256 amount) = editions.royaltyInfo(workId, 1 ether);
         assertEq(amount, 0.05 ether, "the master's current rate");
-        assertEq(editions.edition(workId).royaltyRate, IStreamViews(address(stream)).work(workId).royaltyRate);
+        assertEq(
+            editions.edition(workId).royaltyRate,
+            IStreamViews(address(stream)).work(workId).royaltyRate
+        );
     }
 
     /// @dev Zero-fee terms with no fee recipient (formerly finding L-1, fixed by #35): the

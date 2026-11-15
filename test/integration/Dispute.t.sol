@@ -121,7 +121,11 @@ contract DisputeFlowTest is IntegrationBase {
             abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, tokenId)
         );
         stream.ownerOf(tokenId);
-        assertEq(IStreamViews(address(stream)).totalSupply(), IStream(address(stream)).totalMinted() - 1, "a gap: the ID is never reused");
+        assertEq(
+            IStreamViews(address(stream)).totalSupply(),
+            IStream(address(stream)).totalMinted() - 1,
+            "a gap: the ID is never reused"
+        );
         uint256 before = bidder.balance;
         vm.prank(bidder);
         auction.claim(CURRENCY_ETH, bidder);
@@ -384,7 +388,10 @@ contract DisputeFlowTest is IntegrationBase {
         assertEq(coordinator.nextId(), nextId, "no second draw");
         assertEq(entropy.seedOf(originalItem), bytes32(uint256(77)));
         (, uint256 rightfulToken) = _start(originalRoot, _one(original), 0);
-        assertEq(uint8(IStreamViews(address(stream)).work(rightfulToken).seedPolicy), uint8(SeedPolicy.VRF));
+        assertEq(
+            uint8(IStreamViews(address(stream)).work(rightfulToken).seedPolicy),
+            uint8(SeedPolicy.VRF)
+        );
     }
 
     /// @dev A guardian vetoes a mistaken release during its delay.

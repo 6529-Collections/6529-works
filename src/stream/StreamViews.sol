@@ -63,7 +63,11 @@ contract StreamViews is IStreamExtension, IStreamViews {
     /// @notice `IStream.collection` of the calling Stream.
     /// @param collectionId A collection ID (`IStream.UnknownCollection` otherwise).
     /// @return The collection's name, metadata hash and minted count.
-    function collection(uint256 collectionId) external view returns (IStreamViews.Collection memory) {
+    function collection(uint256 collectionId)
+        external
+        view
+        returns (IStreamViews.Collection memory)
+    {
         IStream s = IStream(msg.sender);
         bytes32 base = keccak256(abi.encode(collectionId, COLLECTIONS_SLOT));
         bytes32[] memory head = s.extsload(base, 2);
@@ -121,8 +125,7 @@ contract StreamViews is IStreamExtension, IStreamViews {
             return text;
         }
         uint256 size = (head - 1) >> 1;
-        bytes32[] memory words =
-            s.extsload(keccak256(abi.encode(slot)), (size + 31) >> 5);
+        bytes32[] memory words = s.extsload(keccak256(abi.encode(slot)), (size + 31) >> 5);
         text = new string(size);
         assembly ("memory-safe") {
             let n := mload(words)
