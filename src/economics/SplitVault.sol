@@ -53,8 +53,7 @@ pragma solidity ^0.8.24;
 ///      ```
 library SplitVault {
     /// @notice The init code every split wallet is created with.
-    bytes internal constant INIT_CODE =
-        hex"33607360a01b1760581b5f52602d601760153960425ff3"
+    bytes internal constant INIT_CODE = hex"33607360a01b1760581b5f52602d601760153960425ff3"
         hex"3314601f573660365700" hex"5b5f5f6040360380" hex"60405f375f6020355f355af1"
         hex"603a575b5f5ffd5b3d5f5f3e3d5ff3";
 

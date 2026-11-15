@@ -116,7 +116,9 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
         nonReentrant
         returns (uint256 amount)
     {
-        if (recipient == address(0) || recipient == address(this)) revert InvalidWallet(recipient);
+        if (recipient == address(0) || recipient == address(this)) {
+            revert InvalidWallet(recipient);
+        }
         uint256 balance = asset == address(0)
             ? address(this).balance
             : TokenTransfer.balanceOf(asset, address(this));

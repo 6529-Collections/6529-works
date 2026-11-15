@@ -251,8 +251,9 @@ contract SplitWalletTest is EconomicsBase {
         resolver.set(ARTIST, address(0));
         vm.expectRevert(abi.encodeWithSelector(ISplitWallet.PayoutUnresolved.selector, ARTIST));
         _release(wallet, ETH, iArtist);
+        // A resolver that refuses (here with gas to spare) leaves the payee unresolved.
         resolver.setDown(true);
-        vm.expectRevert(bytes("resolver down"));
+        vm.expectRevert(abi.encodeWithSelector(ISplitWallet.PayoutUnresolved.selector, ARTIST));
         _release(wallet, ETH, iArtist);
         _release(wallet, ETH, iAlice);
         assertEq(alice.balance, 0.5 ether);

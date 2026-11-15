@@ -23,8 +23,9 @@ import { SplitVault } from "./SplitVault.sol";
 ///      the gas left, but never less than its minimum.
 ///      Continue mode does not report a gas shortfall below {SHORTFALL_REVERT_CEILING} as an
 ///      item's failure. An item offered less than the ceiling that fails after spending all but
-///      EIP-150's 1/64 reserve of its gas (in its own frame or in a call it made), or that fails
-///      because an ERC-1271 check could not get its gas (`BoundedCallInsufficientGas`), reverts
+///      EIP-150's 1/64 reserve of its gas (in its own frame or in a call it made), or whose
+///      revert reports a shortfall deeper down (`BoundedCallShortfall`, which the ledger raises
+///      when a payee or token behind the vault ran out, or `BoundedCallInsufficientGas`), reverts
 ///      the batch with {ClaimInsufficientGas}, so `eth_estimateGas` raises the limit. At the
 ///      estimate, every item is paid, fails with gas to spare, or failed despite at least the
 ///      ceiling and is skipped. The ceiling, about twice what a first signed release needs on
@@ -56,8 +57,8 @@ contract ClaimRouter is IClaimRouter {
     /// @inheritdoc IClaimRouter
     uint256 public constant MIN_ITEM_GAS = 200_000;
     /// @inheritdoc IClaimRouter
-    /// @dev In Prague gas a worst-case signed item (a 200,000-gas ERC-1271 check, a 4 KiB
-    ///      signature in calldata, a cold release) costs under 400,000, so a full batch stays
+    /// @dev In Prague gas a worst-case signed item (a 190,000-gas ERC-1271 check, a 4 KiB
+    ///      signature in calldata, a 64-payee list, a cold release) costs under 500,000, so a full batch stays
     ///      under the cap in both modes; see `test/economics/GasCap.t.sol`. The Glamsterdam note
     ///      on {MAX_CLAIMS} applies here too.
     uint256 public constant MAX_SIGNED_CLAIMS = 20;
@@ -182,15 +183,16 @@ contract ClaimRouter is IClaimRouter {
                 returndatacopy(add(reason, 0x20), 0, length)
             }
             // A failure below the ceiling that spent all but the 1/64 reserve of the item's
-            // gas (the ledger's, or a payee's or token's under it), or an ERC-1271 check that
-            // could not get its gas, may be a shortfall: revert so estimation raises the
-            // limit, instead of reporting a failure the caller paid for.
+            // gas (the ledger's, or a payee's or token's under it), or that reports a shortfall
+            // further down, may be a shortfall: revert so estimation raises the limit, instead
+            // of reporting a failure the caller paid for.
             if (
                 item.keepGoing && callGas < SHORTFALL_REVERT_CEILING
                     && (spent > callGas - callGas / 64
                         // The first four bytes of the revert data: its error selector.
                         // forge-lint: disable-next-line(unsafe-typecast)
-                        || bytes4(reason) == BoundedCall.BoundedCallInsufficientGas.selector)
+                        || bytes4(reason) == BoundedCall.BoundedCallInsufficientGas.selector
+                        || bytes4(reason) == BoundedCall.BoundedCallShortfall.selector)
             ) revert ClaimInsufficientGas(item.index, callGas);
         }
         if (!item.keepGoing) revert ClaimCallFailed(item.index, item.wallet, size, reason);

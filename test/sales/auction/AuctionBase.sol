@@ -98,9 +98,7 @@ abstract contract AuctionBase is Test {
         carol = vm.addr(carolPk);
         manager = new AccessManager(address(this));
         allowlist = new AssetAllowlist(address(manager), ETH_FLOOR);
-        escrow = new RevenueEscrow(
-            address(manager), new SplitLedger(new MockArtistResolver())
-        );
+        escrow = new RevenueEscrow(address(manager), new SplitLedger(new MockArtistResolver()));
         statements = new StatementLog(address(manager), address(0), bytes32(0));
         permit2 = new MockPermit2();
         stream = new MockMintTarget();

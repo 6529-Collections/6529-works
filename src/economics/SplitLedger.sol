@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Create2 } from "@openzeppelin/contracts/utils/Create2.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 import { IArtistPayoutResolver } from "./interfaces/IArtistPayoutResolver.sol";
@@ -80,10 +81,7 @@ contract SplitLedger is ISplitLedger, EIP712 {
     // ------------------------------------------------------------------ wallets
 
     /// @inheritdoc ISplitFactory
-    function createWallet(Payee[] calldata payees, bytes32 salt)
-        external
-        returns (address wallet)
-    {
+    function createWallet(Payee[] calldata payees, bytes32 salt) external returns (address wallet) {
         Splits.validate(payees);
         bytes32 configHash = keccak256(abi.encode(payees));
         bytes32 walletSalt = _walletSalt(configHash, salt);
@@ -174,6 +172,7 @@ contract SplitLedger is ISplitLedger, EIP712 {
         );
         _unlock(wallet);
     }
+
     // ------------------------------------------------------------------ nonces
 
     /// @inheritdoc IReleaseVerifier
@@ -220,6 +219,7 @@ contract SplitLedger is ISplitLedger, EIP712 {
         uint256 current = _balance(wallet, asset) + totalReleased[wallet][asset];
         return _due(wallet, asset, index, share, current);
     }
+
     // ------------------------------------------------------------------ internals
 
     /// @dev Effects before the transfer; the wallet's lock blocks every reentry path into it.
@@ -250,7 +250,7 @@ contract SplitLedger is ISplitLedger, EIP712 {
         emit Released(wallet, asset, recipient, index, account, amount, current);
 
         if (asset == address(0)) {
-            (bool ok,,) = _instruct(wallet, recipient, amount, "");
+            (bool ok,) = _instruct(wallet, recipient, amount, "");
             if (!ok) revert ETHTransferFailed(recipient, amount);
             // The outcome, not the call, proves the move: a call to an address without code
             // "succeeds" and moves nothing.
@@ -280,9 +280,9 @@ contract SplitLedger is ISplitLedger, EIP712 {
         uint256 balance
     ) private {
         uint256 toBefore = TokenTransfer.balanceOf(asset, recipient);
-        (bool ok, uint256 size, uint256 word) =
+        (bool ok, bytes memory data) =
             _instruct(wallet, asset, 0, abi.encodeCall(IERC20.transfer, (recipient, amount)));
-        if (!ok || (size != 0 && (size != 32 || word != 1))) {
+        if (!ok || (data.length != 0 && (data.length != 32 || uint256(bytes32(data)) != 1))) {
             revert TokenTransfer.TokenCallFailed(asset, IERC20.transfer.selector);
         }
         if (
@@ -292,17 +292,17 @@ contract SplitLedger is ISplitLedger, EIP712 {
     }
 
     /// @dev Tells `wallet` to call `target` with `value` of its own wei and `data`, forwarding all
-    ///      gas, and copies at most one word of the callee's return data.
+    ///      gas, and copies at most one word of the callee's return data (a longer return is a
+    ///      refusal). A failure that left at most 1/8 of the gas held before the call, as an
+    ///      out-of-gas two frames down (the vault, then the recipient or token) does, reverts with
+    ///      `BoundedCall.BoundedCallShortfall` instead of reading as a refusal.
     function _instruct(address wallet, address target, uint256 value, bytes memory data)
         private
-        returns (bool ok, uint256 size, uint256 word)
+        returns (bool ok, bytes memory answer)
     {
-        bytes memory instruction = abi.encodePacked(uint256(uint160(target)), value, data);
-        assembly ("memory-safe") {
-            ok := call(gas(), wallet, 0, add(instruction, 0x20), mload(instruction), 0x00, 0x20)
-            size := returndatasize()
-            word := mload(0x00)
-        }
+        return BoundedCall.tryCallAll(
+            wallet, 0, abi.encodePacked(uint256(uint160(target)), value, data), 32
+        );
     }
 
     /// @dev Reverts if an ERC-20's receipts fell below the recorded high-water mark. Otherwise
@@ -334,21 +334,23 @@ contract SplitLedger is ISplitLedger, EIP712 {
         );
     }
 
-    function _payee(Payee[] calldata payees, uint256 index)
-        private
-        pure
-        returns (Payee calldata)
-    {
+    function _payee(Payee[] calldata payees, uint256 index) private pure returns (Payee calldata) {
         if (index >= payees.length) revert UnknownPayee(index);
         return payees[index];
     }
+
     /// @dev A fixed payee's account, or an artist-resolved payee's current payout address from the
-    ///      resolver; `artist` says which.
+    ///      resolver; `artist` says which. The read forwards all gas: a resolver that refuses, or
+    ///      answers zero or something that is not an address, leaves the payee unresolved, and one
+    ///      that runs short reverts with `BoundedCall.BoundedCallShortfall`.
     function _payout(Payee calldata p) private view returns (address account, bool artist) {
-        if (p.artistId == 0) return (p.account, false);
-        account = resolver.payoutAddress(p.artistId);
-        if (account == address(0)) revert PayoutUnresolved(p.artistId);
-        return (account, true);
+        uint256 artistId = p.artistId;
+        if (artistId == 0) return (p.account, false);
+        (bool ok, bytes32 word) = BoundedCall.tryReadWordAll(
+            address(resolver), abi.encodeCall(IArtistPayoutResolver.payoutAddress, (artistId))
+        );
+        if (!ok || word == 0 || uint256(word) >> 160 != 0) revert PayoutUnresolved(artistId);
+        return (address(uint160(uint256(word))), true);
     }
 
     /// @dev The CREATE2 salt: the payee configuration hash and the caller's salt.

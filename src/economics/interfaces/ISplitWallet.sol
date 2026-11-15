@@ -113,10 +113,7 @@ interface ISplitWallet {
     /// @param asset The asset to look up (ETH is `address(0)`).
     /// @param index The payee's index.
     /// @return The cumulative amount released for the payee, in the asset's base units.
-    function released(address wallet, address asset, uint256 index)
-        external
-        view
-        returns (uint256);
+    function released(address wallet, address asset, uint256 index) external view returns (uint256);
 
     /// @notice The amount of `asset` released from `wallet` for all payees.
     /// @param wallet The split wallet.
