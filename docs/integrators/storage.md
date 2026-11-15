@@ -50,19 +50,26 @@ below applies to them too.
 ## 2. Read a file from the content store
 
 ```bash
-cast call $STORE "fileInfo(bytes32)((bytes32,uint256,uint256,uint8,string))" $FILE_ID
-cast call $STORE "missingChunks(bytes32)(uint256[])" $FILE_ID
+cast call $STORE "fileInfo(bytes32)((bytes32,uint256,uint256,uint8,string,uint8))" $FILE_ID
+cast call $STORE "firstMissing(bytes32,uint256,uint256,address)(uint256)" $FILE_ID 0 256 $STORE
 cast call $STORE "readChunk(bytes32,uint256)(bytes)" $FILE_ID 0
 ```
 
-1. Call `fileInfo(fileId)`. It returns the declared SHA-256 of the decoded file, the stored
-   `length`, the `chunkCount`, the `encoding` (`0` `Identity`, `1` `Gzip`, `2` `Base64`, `3`
-   `GzipBase64`) and the MIME type. It reverts with `ContentFileUnknown` if no manifest is
-   registered under that ID.
-2. Check `missingChunks(fileId)` (or `isComplete(fileId)`). An empty list means every chunk is
-   stored at the length the layout rule requires.
+1. Call `fileInfo(fileId)`. It returns the declared digest of the decoded file, the stored
+   `length`, the `chunkCount`, the `encoding`, the MIME type and the `digestKind`. Encodings and
+   digest kinds are open numeric ids: the defined encodings are `0` `Identity`, `1` `Gzip`, `2`
+   `Base64`, `3` `GzipBase64`, and digest kind `0` means the digest is the SHA-256 (the only kind
+   works use; `sha256Of` reverts for any other). Treat an id you do not know as opaque bytes. It
+   reverts with `ContentFileUnknown` if no manifest is registered under that ID.
+2. Check completeness: `firstMissing(fileId, from, to, store)` returns the first chunk in the
+   range that is not stored (or the capped `to`), so a file of any size is checked in ranges of
+   your choice; `isComplete(fileId)` and `missingChunks(fileId)` check the whole file in one
+   call.
 3. Read chunks `0` to `chunkCount − 1` with `readChunk(fileId, i)` and concatenate them. Every
-   chunk but the last is exactly 24,575 bytes (`CHUNK_SIZE`).
+   chunk but the last is exactly 24,575 bytes (`CHUNK_SIZE`). A chunk may be stored whole or
+   linked from smaller parts; both read the same. `chunkPointer(hash)` is zero for a linked
+   chunk, so reading code directly (`eth_getCode`) needs the parts from its `ChunkLinked` event,
+   or use `chunkData(hash)`.
 4. For a byte range, `read(fileId, offset, length)` works too, but every chunk it touches is read
    whole, and memory cost grows faster than linearly: reading 1 MB in one call costs about 9.7M
    gas in Prague terms ([content module](../../src/content/README.md#developer-notes)). Prefer `readChunk`
@@ -260,9 +267,12 @@ the repository root.
    python -m tools.content calls art.png.content.json --store $STORE --schedule glamsterdam
    ```
 
-   This writes `art.png.content.calls/` with one `registerManifest`, one `writeChunk` per
-   distinct chunk, and, for a base64 file, `ceil(chunks / 48)` `attestBase64` calls last, plus
-   `calls.json` and `send.sh`. Use `--schedule glamsterdam` on Sepolia; Prague gas limits run out
+   This writes `art.png.content.calls/` with the registration (one `registerManifest` for up
+   to 16 chunks, otherwise the hash list as list chunks and one `registerManifestList`), one
+   `writeChunk` per distinct chunk, and, for a base64 file, `ceil(chunks / 48)` `attestBase64`
+   calls last, plus `calls.json` and `send.sh`. `--part-size BYTES` writes each chunk as parts
+   joined by `linkChunk` (the same chunk; smaller transactions), `--attest-chunks N` sets the
+   chunks per attest call. Use `--schedule glamsterdam` on Sepolia; Prague gas limits run out
    of gas there.
 4. **Send them with your own signer:**
 
@@ -297,8 +307,9 @@ python -m tools.content calls stream.bin.content.json --store $STORE --schedule 
     --only-missing --rpc "$ETH_RPC_URL"
 ```
 
-`--only-missing` drops a registered manifest, every chunk the store already holds, and the
-attestation calls if the file is already attested. Its quote is what finishing costs.
+`--only-missing` drops a registered manifest, every chunk the store already holds (whole or
+linked), parts and list chunks already written, and the attestation calls if the file is
+already attested. Its quote is what finishing costs; a stopped upload resumes the same way.
 
 **What the uploader proves before emitting anything:**
 
@@ -324,9 +335,14 @@ contract code: about 1,548 gas per stored byte on Sepolia, so about 1.65 ETH per
 
 - **One full chunk per transaction.** Two full chunks are more than a node with the default 50M
   RPC gas cap can estimate ([uploader](../../tools/content/README.md#glamsterdam)).
-- **Large manifests.** Registration grows with the chunk count; above about 440 chunks a node with
-  a 50M estimate cap cannot estimate it, so use the uploader's offline model, which is the default
-  ([uploader](../../tools/content/README.md#gas-schedules-the-cap-and-quotes)).
+- **Large manifests go in pieces.** A file holds up to 4,096 chunks (about 100.66 MB). One-call
+  registration grows with the chunk count, so above 16 chunks the uploader writes the hash list
+  as list chunks and registers with one small `registerManifestList`: 512 chunks cost about
+  26.7M Glamsterdam gas in two transactions instead of 58.2M in one, and no transaction grows
+  with the file ([uploader](../../tools/content/README.md#gas-schedules-the-cap-and-quotes)).
+- **Parts.** A full chunk written as three 8,192-byte parts and one `linkChunk` costs about 6%
+  more under Prague and 3% more under Glamsterdam, in transactions a third the size; it keeps
+  on-chain storage possible if code deposits are ever repriced or capped per transaction.
 
 `plan` and `calls` print a quote for any file under both schedules
 ([cost quotes](../../tools/content/README.md#cost-quotes)). Mainnet's Glamsterdam parameters may
@@ -336,8 +352,8 @@ differ from Sepolia's; re-measure there. The full figures are in the
 
 ## 8. Who pays, and when
 
-- **Anyone can pay, at any time, in any order.** `writeChunk`, `registerManifest`,
-  `attestBase64` and `syncOnChain` are permissionless, and the mint never waits for them. The
+- **Anyone can pay, at any time, in any order.** `writeChunk`, `linkChunk`, `registerManifest`,
+  `registerManifestList`, `attestBase64` and `syncOnChain` are permissionless, and the mint never waits for them. The
   store has no payable function: gas is the only cost (WS-17, WS-29).
 - **The artist, the platform or a collector** may pay for any part. The approved record file
   should be complete before the work is shown (until then it renders core-only metadata marked
