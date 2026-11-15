@@ -89,14 +89,13 @@ Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
 - **Renderer pins fail closed** (DEPS-6): `rendererOf` re-checks the default renderer's and a
   finalized work's pinned code hash at every call and reverts instead of falling back.
 - **`syncOnChain`** verifies at most the caller's `maxChunks` from a chunk cursor (no compiled
-  budget), against store 0 by the content store's `firstMissing` or against an added store by
-  re-hashing the bytes it serves; it emits `OnChainSyncProgress` with the store after every call
-  that progressed, and the call that finishes emits `WorkOnChainComplete`. `firstMissing` is the
-  store lane's ranged check (a placeholder is in `ContentStore` until it lands).
+  budget) through the content store's `firstMissing(fileId, from, to, source)`, which checks its
+  own chunks or re-hashes what an added store serves; it emits `OnChainSyncProgress` with the store after every call
+  that progressed, and the call that finishes emits `WorkOnChainComplete`.
 - **Forwarding.** `preferredLocator` asks the delivery contract with all the gas the EIP-150
   rule allows (`BoundedCall.tryReadAll`) and checks the answer (`_isLocation`); a refusal or a
   malformed answer serves the work's own (WS-40), a shortfall reverts. The renderer's bounds
-  (`IRecordLimits`) and adapter chunks are read the same way.
+  (`IRecordLimits`) and the store-switch probe are read the same way.
 - **Locator adders** (`WorkDelivery`). `LocatorCounts` keeps, beside the two quota counts, a
   16-bit mask of the indices the artist added; the preferred-location fallbacks read only those
   (WS-21), and `LocatorAdded` names the adder, so a successor can rebuild it.

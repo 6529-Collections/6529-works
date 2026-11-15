@@ -246,11 +246,13 @@ interface IWorkRecords {
     /// @notice Marks media on-chain, in pieces of the caller's choosing. Permissionless; never
     ///         changes the state hash. Each call verifies at most `maxChunks` chunks, in media
     ///         order, from where the last call stopped (a chunk cursor), against store
-    ///         `storeId`: for the content store (0) that the chunk is stored at its required
-    ///         length; for any other store that the bytes it serves for the manifest's chunk hash
-    ///         hash to it and have the required length. A file's store is fixed when its last
-    ///         chunk verifies and never changes; a file in progress stays with its store unless
-    ///         that store is missing its next chunk (`StoreInUse`). When the last file
+    ///         `storeId`, through `IContentStore.firstMissing`: for the content store (0) that
+    ///         the chunk is stored at its required length; for any other store (`IChunkStore`)
+    ///         that the bytes it serves for the manifest's chunk hash hash to it and have the
+    ///         required length (a store that reverts makes the call revert). A file's store is
+    ///         fixed when its last chunk verifies and never changes; a file in progress stays with
+    ///         its store unless that store is missing its next chunk or refuses to say
+    ///         (`StoreInUse`). When the last file
     ///         completes, the work is on-chain complete for good. Reverts with
     ///         `NotOnChainComplete` when no chunk could be verified; a call that verified some
     ///         keeps its progress. A complete work is a no-op.
@@ -420,7 +422,7 @@ interface IWorkRecords {
     /// @notice Adds a store `syncOnChain` may verify media against. SUCCESSOR_SETTER role (the
     ///         slow class; any guardian may cancel). Append-only: an ID is never reused, a store
     ///         never removed, and no existing file's store or completeness ever changes. The
-    ///         store must implement `IChunkSource`; its code hash is pinned and checked at each
+    ///         store must implement `IChunkStore`; its code hash is pinned and checked at each
     ///         use.
     /// @param source The store contract (`Dependency.InvalidDependency` if it has no code, is an
     ///        EIP-7702 delegated account or does not have `codeHash`).
@@ -435,18 +437,6 @@ interface IWorkRecords {
     function storeCount() external view returns (uint256);
 }
 
-/// @title IChunkSource
-/// @notice A store adapter: serves the bytes of content-store manifests' chunks by their
-///         keccak256 hash, for media `syncOnChain` verifies against a store other than the
-///         content store. `IWorkRecords` checks every answer against the hash and the length the
-///         manifest requires, so a source can never alter bytes, only fail to serve them.
-interface IChunkSource {
-    /// @notice The chunk whose keccak256 is `chunkHash`.
-    /// @param chunkHash A manifest's chunk hash.
-    /// @return The chunk's bytes; a source that does not hold it reverts.
-    function readChunk(bytes32 chunkHash) external view returns (bytes memory);
-}
-
 /// @title IRecordLimits
 /// @notice The record and preview bounds a renderer can show within its own `tokenURI` budget.
 ///         `IWorkRecords` reads them from the renderer a work is shown by when it checks a record
@@ -459,18 +449,4 @@ interface IRecordLimits {
     /// @return maxPreviewBytes The largest inlinable preview, in stored bytes, an `Identity`
     ///         file counting four times.
     function recordLimits() external view returns (uint256 maxRecordBytes, uint256 maxPreviewBytes);
-}
-
-/// @title IContentStoreRange
-/// @notice What `IWorkRecords.syncOnChain` needs from the content store: a ranged completeness
-///         check, so a file of any size is verified in pieces.
-interface IContentStoreRange {
-    /// @notice The first chunk index in `[from, to)` not stored at the length the manifest
-    ///         requires, or `to` when every chunk in the range is.
-    /// @param fileId A registered file ID (`ContentFileUnknown` otherwise).
-    /// @param from The first index checked.
-    /// @param to One past the last index checked, at most the file's chunk count
-    ///        (`ContentChunkIndexOutOfBounds` otherwise).
-    /// @return The first missing index, or `to`.
-    function firstMissing(bytes32 fileId, uint256 from, uint256 to) external view returns (uint256);
 }

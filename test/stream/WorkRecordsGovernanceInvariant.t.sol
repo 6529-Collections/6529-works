@@ -123,7 +123,8 @@ contract WorkRecordsGovernanceInvariantTest is RecordsFixture {
 
     function setUp() public override {
         super.setUp();
-        Renderer real = new Renderer(IContentStore(address(store)), IStatementLog(address(0)), 256 * 1024);
+        Renderer real =
+            new Renderer(IContentStore(address(store)), IStatementLog(address(0)), 256 * 1024);
         vm.prank(governor);
         stream.setDefaultRenderer(address(renderer), address(real), address(real).codehash);
         (tokenId,) = _work(1);

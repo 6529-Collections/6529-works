@@ -126,11 +126,12 @@ contract WorkDeliveryTest is RecordsFixture, GasRuleAssertions {
 
     function test_setDelivery_swapsAndRefreshesEveryToken() public {
         _work(1);
+        _work(2);
         DeliveryStub stub = new DeliveryStub(address(records), address(delivery));
         vm.expectEmit(address(records));
         emit IWorkRecords.DeliverySet(address(delivery), address(stub));
         vm.expectEmit(address(stream));
-        emit BatchMetadataUpdate(1, 1);
+        emit BatchMetadataUpdate(1, 2);
         vm.prank(governor);
         records.setDelivery(address(delivery), address(stub));
         assertEq(records.delivery(), address(stub));
@@ -160,7 +161,9 @@ contract WorkDeliveryTest is RecordsFixture, GasRuleAssertions {
 
         // A successor must name the delivery it replaces, so no swap forgets the chain.
         DeliveryStub orphan = new DeliveryStub(address(records), address(0));
-        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(orphan)));
+        vm.expectRevert(
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(orphan))
+        );
         records.setDelivery(address(delivery), address(orphan));
 
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, outsider));
@@ -171,6 +174,7 @@ contract WorkDeliveryTest is RecordsFixture, GasRuleAssertions {
 
     function test_refreshHooks_onlyTheDelivery() public {
         (uint256 tokenId,) = _work(1);
+        _work(2);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.NotDelivery.selector, outsider));
         vm.prank(outsider);
         records.refreshMetadata(tokenId);
@@ -178,7 +182,7 @@ contract WorkDeliveryTest is RecordsFixture, GasRuleAssertions {
         vm.prank(outsider);
         records.refreshAllMetadata();
         vm.expectEmit(address(stream));
-        emit BatchMetadataUpdate(1, 1);
+        emit BatchMetadataUpdate(1, 2);
         vm.prank(address(delivery));
         records.refreshAllMetadata();
     }

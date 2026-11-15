@@ -11,8 +11,9 @@ import { Burner, GasRuleAssertions } from "test/helpers/GasRule.sol";
 import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 
-/// @notice A store adapter (`IChunkSource`) for tests: serves the chunks put into it, honestly
-///         (mode 0), with a flipped first byte (1), or not at all (2).
+/// @notice A store adapter (`IChunkStore`) for tests: serves the chunks put into it, honestly
+///         (mode 0), with a flipped first byte (1), or reverts (2); a chunk it does not hold is
+///         served as empty bytes, which the store's check counts as missing.
 contract ChunkSourceMock {
     mapping(bytes32 hash => bytes) internal _chunks;
     uint8 public mode;
@@ -29,11 +30,10 @@ contract ChunkSourceMock {
         mode = mode_;
     }
 
-    function readChunk(bytes32 hash) external view returns (bytes memory data) {
+    function chunkData(bytes32 hash) external view returns (bytes memory data) {
         if (mode == 2) revert("source down");
         data = _chunks[hash];
-        if (data.length == 0) revert("not held");
-        if (mode == 1) data[0] = data[0] ^ 0x01;
+        if (mode == 1 && data.length != 0) data[0] = data[0] ^ 0x01;
     }
 }
 
@@ -84,7 +84,7 @@ contract WorkStoresTest is RecordsFixture, GasRuleAssertions {
         fileId = store.registerManifest(
             hashes,
             (count - 1) * size + 100,
-            IContentStore.Encoding.Identity,
+            uint8(IContentStore.Encoding.Identity),
             "video/mp4",
             keccak256(abi.encode("big", salt))
         );
@@ -120,7 +120,9 @@ contract WorkStoresTest is RecordsFixture, GasRuleAssertions {
         records.addStore(address(source), address(source).codehash);
 
         vm.startPrank(governor);
-        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(source)));
+        vm.expectRevert(
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(source))
+        );
         records.addStore(address(source), keccak256("other code"));
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, outsider));
         records.addStore(outsider, outsider.codehash);
@@ -165,8 +167,9 @@ contract WorkStoresTest is RecordsFixture, GasRuleAssertions {
         assertTrue(complete);
     }
 
-    /// @dev Bytes that do not hash to the manifest's chunk, a refusing adapter, and bytes of a
-    ///      length the layout rule does not allow are all missing chunks.
+    /// @dev Bytes that do not hash to the manifest's chunk and bytes of a length the layout rule
+    ///      does not allow are missing chunks; an adapter that reverts makes the call revert,
+    ///      never counts as a verdict.
     function test_syncOnChain_adapterBytesAreVerified() public {
         uint256 id = _addStore(address(source));
         (bytes32 file, bytes[] memory chunks) = _bigFile(2, 2);
@@ -177,7 +180,7 @@ contract WorkStoresTest is RecordsFixture, GasRuleAssertions {
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.NotOnChainComplete.selector, tokenId));
         records.syncOnChain(tokenId, id, 10);
         source.setMode(2);
-        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.NotOnChainComplete.selector, tokenId));
+        vm.expectRevert(bytes("source down"));
         records.syncOnChain(tokenId, id, 10);
 
         // A one-chunk manifest declaring 100 bytes for a 50-byte chunk: the hash matches, the
@@ -187,7 +190,7 @@ contract WorkStoresTest is RecordsFixture, GasRuleAssertions {
         bytes32[] memory hashes = new bytes32[](1);
         hashes[0] = keccak256(half);
         bytes32 odd = store.registerManifest(
-            hashes, 100, IContentStore.Encoding.Identity, "image/png", keccak256("odd")
+            hashes, 100, uint8(IContentStore.Encoding.Identity), "image/png", keccak256("odd")
         );
         source.put(half);
         uint256 oddId = _workOf(3, _one(odd));
@@ -270,8 +273,9 @@ contract WorkStoresTest is RecordsFixture, GasRuleAssertions {
     }
 
     /// @dev Gas rule: with the adapter costing 1x to 100x its base, verification gives the same
-    ///      result; with too little gas it reverts with the shortfall error, never as a missing
-    ///      chunk (which would let a caller switch the file's store).
+    ///      result; with too little gas the call reverts (the adapter's out-of-gas bubbles up
+    ///      through the content store's plain call), never succeeds with less progress and never
+    ///      reads as a missing chunk.
     function test_GasRule_adapterReads() public {
         Burner burner = new Burner(address(source), 30_000);
         uint256 id = _addStore(address(burner));
@@ -280,11 +284,23 @@ contract WorkStoresTest is RecordsFixture, GasRuleAssertions {
         source.put(chunks[1]);
         uint256 tokenId = _workOf(8, _one(file));
         bytes memory data = abi.encodeCall(records.syncOnChain, (tokenId, id, 10));
-        Outcome memory o = _assertSameAtEveryMultiple(burner, outsider, address(records), data);
-        assertTrue(o.ok);
-        for (uint256 i; i < 3; ++i) {
-            burner.burnerSetMultiple(i == 0 ? 1 : i == 1 ? 4 : 10);
-            _assertShortfallNeverAnswers(burner, outsider, address(records), data);
+        Outcome memory full = _assertSameAtEveryMultiple(burner, outsider, address(records), data);
+        assertTrue(full.ok);
+        bytes memory missing =
+            abi.encodeWithSelector(IWorkRecords.NotOnChainComplete.selector, tokenId);
+        for (uint256 m; m < 3; ++m) {
+            burner.burnerSetMultiple(m == 0 ? 1 : m == 1 ? 4 : 10);
+            for (uint256 g = 100_000; g < 3_000_000; g += 47_000) {
+                Outcome memory o = _try(outsider, address(records), data, g);
+                if (o.ok) {
+                    assertEq(o.data, full.data, "a cheaper success must be the same success");
+                    continue;
+                }
+                assertTrue(keccak256(o.data) != keccak256(missing), "shortfall read as missing");
+            }
         }
+        // The progress a success leaves is the whole file.
+        records.syncOnChain(tokenId, id, 10);
+        assertTrue(records.record(tokenId).onChainComplete);
     }
 }

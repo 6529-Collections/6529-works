@@ -144,7 +144,8 @@ contract WorkRecordsFutureTest is RecordsFixture, GasRuleAssertions {
         for (uint256 i; i < media.length; ++i) {
             out[i] = media[i];
         }
-        out[media.length] = IWorkRecords.WorkMedia(extra.fileId, extra.sha256Hash, uint8(extra.role));
+        out[media.length] =
+            IWorkRecords.WorkMedia(extra.fileId, extra.sha256Hash, uint8(extra.role));
     }
 
     /// @dev `WorkItem` is `PackageItem` byte for byte: the same item hash.
@@ -248,12 +249,12 @@ contract WorkRecordsFutureTest is RecordsFixture, GasRuleAssertions {
         _setDefault(address(new LimitsRenderer(Limits.MAX_RECORD_BYTES, 100)));
         MediaFile[] memory media = new MediaFile[](2);
         media[0] = _mediaFile(10, FileRole.PRIMARY, true);
-        media[1] = _mediaFile(11, FileRole.PREVIEW, true); // 64 bytes, counted 256
+        media[1] = _mediaFile(11, FileRole.PREVIEW, true); // 128 bytes, counted 512
         PackageItem memory item = _recordsItem(10, media);
         uint256 tokenId = _mint(item);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidRecordData.selector, tokenId));
         records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
-        _setDefault(address(new LimitsRenderer(Limits.MAX_RECORD_BYTES, 256)));
+        _setDefault(address(new LimitsRenderer(Limits.MAX_RECORD_BYTES, 512)));
         records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
     }
 

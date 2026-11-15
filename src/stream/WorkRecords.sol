@@ -12,12 +12,7 @@ import { IRenderer } from "../interfaces/IRenderer.sol";
 import { IStream } from "../interfaces/IStream.sol";
 import { IWorkDelivery } from "../interfaces/IWorkDelivery.sol";
 import { IWorkPowers, WorkPowers } from "../interfaces/IWorkPowers.sol";
-import {
-    IChunkSource,
-    IContentStoreRange,
-    IRecordLimits,
-    IWorkRecords
-} from "../interfaces/IWorkRecords.sol";
+import { IRecordLimits, IWorkRecords } from "../interfaces/IWorkRecords.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
 import { License } from "../interfaces/types/PackageTypes.sol";
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
@@ -822,9 +817,10 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         ) revert UnknownRecordFile(fileId);
     }
 
-    /// @dev The declared SHA-256 of a PREVIEW file of work `tokenId`. One the renderer can
-    ///      inline (`Identity` or `Base64`) must be within `bound`, an `Identity` file counting
-    ///      four times; a gzip one is served by locator only.
+    /// @dev The declared SHA-256 of a PREVIEW file of work `tokenId` (its digest kind must be 0,
+    ///      SHA-256, as `sha256Of` requires of every other file). One the renderer can inline
+    ///      (`Identity` or `Base64`) must be within `bound`, an `Identity` file counting four
+    ///      times; a gzip one is served by locator only.
     function _previewSha(uint256 tokenId, bytes32 fileId, uint256 bound)
         private
         view
@@ -833,14 +829,17 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         uint256 length;
         uint256 encoding;
         (sha, length,, encoding) = _fileInfo(fileId, false);
+        if (encoding >> 8 != 0) revert InvalidRecordData(tokenId);
         if (encoding == uint256(IContentStore.Encoding.Identity)) length *= 4;
         else if (encoding != uint256(IContentStore.Encoding.Base64)) length = 0;
         if (length > bound) revert InvalidRecordData(tokenId);
     }
 
-    /// @dev A file's declared SHA-256, stored length, chunk count and encoding, read in place
-    ///      from the trusted store's `fileInfo` answer (one dynamic tuple: offset, sha256Hash,
-    ///      length, chunkCount, encoding, then the MIME type). A store revert propagates, except
+    /// @dev A file's declared digest, stored length, chunk count and encoding, read in place
+    ///      from the trusted store's `fileInfo` answer (one dynamic tuple: offset, digest, length,
+    ///      chunkCount, encoding, the MIME type's offset, digestKind, then the MIME type). The
+    ///      digest kind is returned in `encoding`'s second byte, so a digest that is not SHA-256
+    ///      (kind 0) never matches an expected encoding. A store revert propagates, except
     ///      that for a record file (`isRecord`) the store's `ContentFileUnknown` reverts with
     ///      `UnknownRecordFile`.
     function _fileInfo(bytes32 fileId, bool isRecord)
@@ -859,11 +858,13 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
             revert UnknownRecordFile(fileId);
         }
         assembly ("memory-safe") {
-            if or(iszero(ok), lt(mload(info), 0xc0)) { revert(add(info, 0x20), mload(info)) }
+            if or(iszero(ok), lt(mload(info), 0x100)) {
+                revert(add(info, 0x20), mload(info))
+            }
             sha := mload(add(info, 0x40))
             length := mload(add(info, 0x60))
             chunks := mload(add(info, 0x80))
-            encoding := mload(add(info, 0xa0))
+            encoding := or(mload(add(info, 0xa0)), shl(8, mload(add(info, 0xe0))))
         }
     }
 
@@ -896,7 +897,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
             uint256 shift = 8 * c.next + 4;
             c.files = (c.files & ~(uint256(0xf) << shift)) | (storeId << shift);
             (uint256 reached, uint256 chunks) =
-                _verify(storeId, source, _media[tokenId][c.next], c.chunk, c.budget);
+                _verify(source, _media[tokenId][c.next], c.chunk, c.budget);
             c.budget -= reached - c.chunk;
             c.chunk = reached;
             if (reached < chunks) return;
@@ -907,7 +908,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
 
     /// @dev Where the file in progress resumes: its cursor when it stays with its store or has
     ///      none yet, else chunk 0 once its store proves to lack the next chunk (`StoreInUse`
-    ///      while it still holds it). A store whose code changed holds nothing.
+    ///      while it still holds it). A store whose code changed, or whose check refuses
+    ///      (reverts with gas to spare), holds nothing; running short of gas reverts.
     function _startChunk(uint256 tokenId, RecordData storage r, uint256 storeId, uint256 next)
         private
         view
@@ -918,52 +920,32 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         if (held == storeId || chunk == 0) return chunk;
         (address heldSource, bool heldIntact) = _storeOf(held);
         if (heldIntact) {
-            (uint256 reached,) = _verify(held, heldSource, _media[tokenId][next], chunk, 1);
-            if (reached != chunk) revert StoreInUse(tokenId, held);
+            (bool ok, bytes32 word) = BoundedCall.tryReadWordAll(
+                contentStore,
+                abi.encodeCall(
+                    IContentStore.firstMissing,
+                    (_media[tokenId][next], chunk, chunk + 1, heldSource)
+                )
+            );
+            if (ok && uint256(word) != chunk) revert StoreInUse(tokenId, held);
         }
         return 0;
     }
 
-    /// @dev Verifies at most `budget` chunks of `fileId` from `from` against store `storeId`.
-    ///      The content store answers by its ranged presence check (its chunks are CREATE2 code
-    ///      named by their hash). Any other store must return, for the manifest's chunk hash,
-    ///      ABI-encoded bytes with that keccak256 and the length the layout rule requires; a
-    ///      refusal or any other answer is a missing chunk, and running short of gas reverts.
+    /// @dev Verifies at most `budget` chunks of `fileId` from `from` against `source` with the
+    ///      content store's ranged check, which presence-checks its own chunks and re-hashes and
+    ///      length-checks what any other source (`IChunkStore`) returns; a source that reverts
+    ///      makes the call revert.
     /// @return reached The first chunk not verified (missing, or past the budget).
     /// @return chunks The file's chunk count.
-    function _verify(uint256 storeId, address source, bytes32 fileId, uint256 from, uint256 budget)
+    function _verify(address source, bytes32 fileId, uint256 from, uint256 budget)
         private
         view
         returns (uint256 reached, uint256 chunks)
     {
-        uint256 length;
-        (, length, chunks,) = _fileInfo(fileId, false);
+        (,, chunks,) = _fileInfo(fileId, false);
         uint256 to = chunks - from > budget ? from + budget : chunks;
-        if (storeId == 0) {
-            return (IContentStoreRange(source).firstMissing(fileId, from, to), chunks);
-        }
-        for (reached = from; reached < to; ++reached) {
-            bytes32 hash = IContentStore(contentStore).chunkHash(fileId, reached);
-            (bool ok, bytes memory data) = BoundedCall.tryReadAll(
-                source, abi.encodeCall(IChunkSource.readChunk, (hash)), 0x40 + CHUNK + 1
-            );
-            uint256 expected = reached + 1 < chunks ? CHUNK : length - (chunks - 1) * CHUNK;
-            assembly ("memory-safe") {
-                // An answer `(offset 0x20, length, bytes)`, whose bytes hash to the chunk hash.
-                // Padding is not inspected: the hash binds the bytes.
-                ok := and(ok, gt(mload(data), 0x3f))
-                if ok {
-                    ok := and(
-                        and(eq(mload(add(data, 0x20)), 0x20), eq(mload(add(data, 0x40)), expected)),
-                        and(
-                            iszero(lt(mload(data), add(0x40, expected))),
-                            eq(keccak256(add(data, 0x60), expected), hash)
-                        )
-                    )
-                }
-            }
-            if (!ok) return (reached, chunks);
-        }
+        reached = IContentStore(contentStore).firstMissing(fileId, from, to, source);
     }
 
     /// @dev Whether `data` is the canonical encoding of `(Location, uint256)` that may be
