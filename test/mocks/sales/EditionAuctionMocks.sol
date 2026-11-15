@@ -106,11 +106,17 @@ contract MockOneOfOneAuction {
     }
 }
 
-/// @dev 6529 Stream's reads: `coreOf` (the stored item hash and kind), `economics` and
-///      `primarySaleSettled` (set by the test).
+/// @dev 6529 Stream's reads: `coreOf` (the stored item hash and kind), `economics`,
+///      `primarySaleSettled` and `rescueDelay` (set by the test).
 contract MockMasterStream {
     address public economics;
     mapping(uint256 id => bool) public primarySaleSettled;
+    /// @dev Stream's rescue delay, its 90-day floor until the test lengthens it.
+    uint256 public rescueDelay = 90 days;
+
+    function setRescueDelay(uint256 next) external {
+        rescueDelay = next;
+    }
 
     function setSettled(uint256 id, bool value) external {
         primarySaleSettled[id] = value;

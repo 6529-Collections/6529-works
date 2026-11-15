@@ -4,6 +4,8 @@ pragma solidity ^0.8.24;
 import { IEditions } from "src/interfaces/IEditions.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
+import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
+import { IUniformEditionAuctionStorage } from "src/interfaces/IUniformEditionAuctionStorage.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { EditionAuctionBase } from "./EditionAuctionBase.sol";
 
@@ -245,6 +247,42 @@ contract UniformEditionAuctionAbandonTest is EditionAuctionBase {
         _claimAll(saleId);
         assertEq(address(auction).balance, 0);
         _assertConserved();
+    }
+
+    /// @dev L-3 (review A): the adapter enforces the time floor itself, from its own words. A
+    ///      lens that answers early (here its `checkAbandon` is made to pass) cannot void a sale
+    ///      or seal its edition before the stored close plus the locked delay.
+    function test_Abandon_TheAdapterRefusesALensThatAnswersEarly() public {
+        _setOneOfOne(IEnglishAuction.AuctionState.ENDED);
+        address l = IUniformEditionAuctionStorage(address(auction)).lens();
+        vm.mockCall(l, abi.encodeWithSelector(IUniformEditionAuctionLens.checkAbandon.selector), "");
+        uint256 floor = uint256(_oneEnd()) + 15 minutes + 150 days;
+        vm.warp(floor - 1);
+        _expectNotAbandonable();
+        assertFalse(editions.sealed_(ID), "nothing sealed");
+        vm.warp(floor);
+        auction.abandon(saleId);
+        assertTrue(editions.sealed_(ID));
+    }
+
+    /// @dev L-4 (review A): the 120-day minimum assumed Stream's 90-day rescue floor. When
+    ///      Stream's rescue delay is longer, the lens and the adapter both wait the difference.
+    function test_Abandon_WaitsForALongerRescueDelay() public {
+        _setOneOfOne(IEnglishAuction.AuctionState.ENDED);
+        uint256 deadline = _deadline();
+        stream.setRescueDelay(200 days);
+        (, uint256 at) = ua.abandonable(saleId);
+        assertEq(at, deadline + 110 days);
+        vm.warp(deadline);
+        _expectNotAbandonable();
+        // Even a lens that answers early cannot shorten it.
+        address l = IUniformEditionAuctionStorage(address(auction)).lens();
+        vm.mockCall(l, abi.encodeWithSelector(IUniformEditionAuctionLens.checkAbandon.selector), "");
+        vm.warp(deadline + 110 days - 1);
+        _expectNotAbandonable();
+        vm.clearMockedCalls();
+        vm.warp(deadline + 110 days);
+        _abandonAndRefund();
     }
 
     function test_Abandon_UnknownSale() public {

@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { IMintPolicy } from "src/interfaces/IMintPolicy.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
+import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
 import { EditionAuctionStack } from "./EditionAuctionStack.sol";
+import { DependencyStandIn } from "./StreamDependencies.t.sol";
 
 /// @notice The permanence changes of the edition auction on the real, wired stack: an edition's
 ///         own open period, the exit when its master can never be settled, and its split
@@ -79,7 +83,7 @@ contract EditionAuctionPermanenceTest is EditionAuctionStack {
         assertEq(
             uint8(auction.auction(oneSaleId).state), uint8(IEnglishAuction.AuctionState.SETTLED)
         );
-        editions.createEdition(tokenId, w.item, root, _proofOf(_one(w), 0));
+        editions.createEdition(tokenId, w.item);
         IEditions.Edition memory ed = IEditions(address(editions)).edition(tokenId);
         assertEq(ed.maxSupply, 0, "no copy can ever exist");
         assertTrue(ed.supplySealed);
@@ -141,5 +145,101 @@ contract EditionAuctionPermanenceTest is EditionAuctionStack {
         vm.prank(fan);
         (uint256 won,) = editionAuction.claimBid(saleId, 1, fan);
         assertEq(won, 2);
+    }
+
+    /// @dev M-1 (review A): creating a settled master's edition reads only permanent facts (the
+    ///      item hash Stream stored, Stream's content record), never the replaceable mint
+    ///      policy. A master sells and settles; before its edition is created, governance
+    ///      replaces the policy with a blank successor that answers nothing but ERC-165 and its
+    ///      artist registry. The edition is still created, its sale settles, and the edition
+    ///      bidder claims the copy. Before the fix `createEdition` read `packageOf` and
+    ///      `claimContent` from the successor and reverted, and the sale could only be abandoned.
+    function test_M1_APolicyReplacementNeverStrandsASettledMastersEdition() public {
+        (, Work memory w, uint256 oneSaleId, uint256 tokenId, uint256 saleId) =
+            _startMaster(_actor("swapArtist"), 0);
+        _editionBid(saleId, fan, 40, 1);
+        _ethBid(oneSaleId, other, 1 ether);
+        _settleAtEnd(oneSaleId);
+        assertTrue(stream.primarySaleSettled(tokenId), "the master settled before the swap");
+        assertFalse(editions.exists(tokenId), "its edition not created yet");
+
+        address previous = stream.packageRegistry();
+        address blank = address(new DependencyStandIn(type(IMintPolicy).interfaceId));
+        _govern(
+            hotAdmin,
+            address(stream),
+            abi.encodeCall(stream.setDependency, ("PACKAGE_REGISTRY", previous, blank))
+        );
+        assertEq(stream.packageRegistry(), blank);
+
+        vm.prank(makeAddr("anyone"));
+        editions.createEdition(tokenId, w.item);
+        assertTrue(editions.exists(tokenId));
+        _settleEditions(saleId);
+        vm.prank(fan);
+        (uint256 won,) = editionAuction.claimBid(saleId, 1, fan);
+        assertEq(won, 1);
+        assertEq(editions.balanceOf(fan, tokenId), 1, "the edition copy");
+    }
+
+    /// @dev L-4 (review A): the abandonment delay's 120-day minimum assumed Stream's 90-day
+    ///      rescue floor. Governance lengthens Stream's rescue delay to 180 days; a master that
+    ///      cannot settle then keeps its edition sale open for the 90 extra days too, in the lens
+    ///      and in the adapter, so a rescue under the longer delay can still land first.
+    function test_L4_ALongerRescueDelayLengthensTheAbandonment() public {
+        _govern(hotAdmin, address(stream), abi.encodeCall(stream.setRescueDelay, (180 days)));
+        (,, uint256 oneSaleId, uint256 tokenId, uint256 saleId) =
+            _startMaster(_actor("slowRescueArtist"), 0);
+        _editionBid(saleId, fan, 40, 1);
+        vm.mockCallRevert(
+            address(economics), abi.encodeWithSelector(IEconomicsResolver.museum.selector), "broken"
+        );
+        vm.warp(auction.auction(oneSaleId).endTime);
+        vm.expectRevert();
+        auction.settle(oneSaleId);
+        uint256 end = ea.endTimes(saleId).endTime;
+        (, uint256 abandonAt) =
+            IUniformEditionAuctionLens(address(editionAuction)).abandonable(saleId);
+        assertEq(abandonAt, end + 150 days + 90 days, "the delay plus the rescue lengthening");
+        vm.warp(end + 150 days);
+        vm.expectRevert(
+            abi.encodeWithSelector(IUniformEditionAuction.NotAbandonable.selector, saleId)
+        );
+        editionAuction.abandon(saleId);
+        vm.warp(end + 240 days - 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(IUniformEditionAuction.NotAbandonable.selector, saleId)
+        );
+        editionAuction.abandon(saleId);
+        vm.warp(end + 240 days);
+        vm.expectEmit(address(editions));
+        emit IEditions.EditionSupplySealed(tokenId, 0);
+        editionAuction.abandon(saleId);
+    }
+
+    /// @dev Review C, F16: `open` confirms each payout wallet through the ledger
+    ///      (`createWallet`, idempotent for a wallet it deployed), never by code at the predicted
+    ///      address. Code planted at the seller's predicted address is refused, so no edition
+    ///      revenue can be routed to it; a wallet the ledger deployed earlier is confirmed and the
+    ///      sale opens.
+    function test_F16_OpenNeverAcceptsCodeAtAPredictedWalletAddress() public {
+        Work memory w = _masterWork(_actor("plantedArtist"), 0);
+        bytes32 root = _publish(_one(w));
+        (, uint256 tokenId) = _start(root, _one(w), 0);
+        address seller = _editionSeller(w);
+        vm.etch(seller, hex"00");
+        bytes memory data = abi.encode(w.item);
+        vm.expectRevert(
+            abi.encodeWithSelector(ISplitFactory.WalletAddressMismatch.selector, seller, address(0))
+        );
+        editionAuction.open(address(editions), tokenId, data);
+
+        // A wallet the ledger deployed earlier is confirmed, not refused.
+        Work memory v = _masterWork(_actor("deployedArtist"), 0);
+        bytes32 root2 = _publish(_one(v));
+        (, uint256 tokenId2) = _start(root2, _one(v), 0);
+        splitFactory.createWallet(v.item.payees, bytes32(0));
+        assertTrue(splitFactory.isWallet(_editionSeller(v)));
+        editionAuction.open(address(editions), tokenId2, abi.encode(v.item));
     }
 }

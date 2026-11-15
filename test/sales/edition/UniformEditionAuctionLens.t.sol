@@ -66,9 +66,11 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         address recordedFee = makeAddr("recordedFee");
         editions.setExists(ID, true);
         editions.setLocked(ID, recordedSeller, recordedFee, 10_000);
-        // The recorded wallets exist already (an existing edition's were deployed at its sale).
-        vm.etch(recordedSeller, hex"00");
+        // The ledger confirms the recorded wallet (`createWallet` is idempotent for a wallet it
+        // deployed at the edition's earlier sale; review C, F16: code alone is never enough).
+        economics.setWalletOverride(recordedSeller);
         uint256 saleId = _open(0);
+        economics.setWalletOverride(address(0));
         IUniformEditionAuction.Auction memory a = ua.auction(saleId);
         assertEq(a.seller, recordedSeller);
         assertEq(a.feeRecipient, recordedFee);
