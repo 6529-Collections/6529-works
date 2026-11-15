@@ -26,7 +26,7 @@ selection in [Rendering and tokenURI](../../docs/spec/rendering-and-tokenuri.md#
 | PLATFORM | `createCollection` | AUC-12 |
 | Editions | `linkEdition` once per settled master | AUC-11, ED-2 |
 | The bound `WorkRecords` | `setRoyaltyRate`, `emitMetadataUpdate` | AUC-6, WS-23 |
-| Anyone | `openRecord`, `syncOnChain(tokenId, storeId, maxChunks)`; the views (`work`, `coreOf`, `artistOf`, `royaltyInfo`, `rendererOf`, `tokenURI`, `record`, `mediaOf`, `licenseOf`, `seedOf`, `preferredLocator`, ...) | WS-1 to WS-3, WS-17, WS-40 to WS-43, AUC-7, RND-1 |
+| Anyone | `openRecord`, `syncOnChain(tokenId, 0, maxChunks)` (the content store; an added store is the work's artist's choice); the views (`work`, `coreOf`, `artistOf`, `royaltyInfo`, `rendererOf`, `tokenURI`, `record`, `mediaOf`, `licenseOf`, `seedOf`, `preferredLocator`, ...) | WS-1 to WS-3, WS-17, WS-40 to WS-43, AUC-7, RND-1 |
 | The lead artist's active authority | `setRecord`, `finalize`; `WorkDelivery.addLocator` before finalize; EIP-712 consents to amendments; the `RenouncePowers` signature anyone may relay to `renounce` | WS-7 to WS-9, WS-19, WS-37, WS-38 |
 | PLATFORM; STORAGE_OPERATOR | `WorkDelivery.addLocator` (after finalize only PLATFORM); its three preference setters | WS-19, WS-22 |
 | The current delivery contract | `WorkRecords.refreshMetadata`, `refreshAllMetadata` | WS-39 |
@@ -49,7 +49,9 @@ Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
   it (ENT-18).
 - **Extension and layout.** `StreamViews` reads Stream through `extsload` with compiled slot
   numbers (`COUNTS_SLOT` 11, `OWNER_SLOT` 12, `CONTRACT_URI_SLOT` 13, `COLLECTIONS_SLOT` 17,
-  `TOKENS_SLOT` 18): any change to Stream's storage order needs a new extension.
+  `TOKENS_SLOT` 18): any change to Stream's storage order needs a new extension. The renderer
+  reads slots 17 and 18 the same way, and never Stream's fallback, so no extension replacement
+  touches a work's metadata (RND-22).
   `collectionCount` and `totalMinted` stay native because `WorkRecords` reads them.
 - **Pluggable 1/1 sale (owner decision 15).** `_minterKinds` records each adapter's sale kind
   at its first admission, after every earlier mapping, so the storage layout of the other
@@ -104,14 +106,18 @@ Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
   gas shortfall reverts instead of returning a zero royalty. Do not add reads to it.
 - **Renderer pins fail closed** (DEPS-6): `rendererOf` re-checks the default renderer's and a
   finalized work's pinned code hash at every call and reverts instead of falling back.
-- **`syncOnChain`** verifies at most the caller's `maxChunks` from a chunk cursor (no compiled
-  budget) through the content store's `firstMissing(fileId, from, to, source)`, which checks its
-  own chunks or re-hashes what an added store serves; it emits `OnChainSyncProgress` with the store after every call
-  that progressed, and the call that finishes emits `WorkOnChainComplete`.
+- **`syncOnChain`** verifies at most the caller's `maxChunks` (no compiled budget) through the
+  content store's `firstMissing(fileId, from, to, source)`, which checks its own chunks or
+  re-hashes what an added store serves. Two walks: the content store's, anyone's, cursor in word
+  0; an added store's, the artist's only, cursor in `_storeCursors` (one slot per work, written
+  only on that walk). An added store is checked one chunk per call, so a refusal is a missing
+  chunk. Each file that completes emits `MediaFileComplete` with its store, every call that
+  progressed `OnChainSyncProgress`, and the call that finishes `WorkOnChainComplete` (WS-42,
+  WS-43).
 - **Forwarding.** `preferredLocator` asks the delivery contract with all the gas the EIP-150
   rule allows (`BoundedCall.tryReadAll`) and checks the answer (`_isLocation`); a refusal or a
-  malformed answer serves the work's own (WS-40), a shortfall reverts. The store-switch probe is
-  read the same way. No renderer budget is held: a record is one chunk, and the pinned
+  malformed answer serves the work's own (WS-40; a URI that is not UTF-8 is malformed), a
+  shortfall reverts. No renderer budget is held: a record is one chunk, and the pinned
   renderer decides what it can show.
 - **Locator adders** (`WorkDelivery`). `LocatorCounts` keeps, beside the two quota counts, a
   16-bit mask of the indices the artist added; the preferred-location fallbacks read only those

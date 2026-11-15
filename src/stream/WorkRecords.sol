@@ -22,6 +22,7 @@ import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 import { SSTORE2 } from "../libraries/SSTORE2.sol";
+import { Utf8 } from "../libraries/Utf8.sol";
 import { SpdxId } from "./SpdxId.sol";
 import { WorkDelivery } from "./WorkDelivery.sol";
 
@@ -35,8 +36,8 @@ import { WorkDelivery } from "./WorkDelivery.sol";
 ///      opens with the permissionless `openRecord`, checked against the item hash the core
 ///      stored, and every per-token function reverts with `RecordNotOpen` until then.
 ///
-///      Gas rule: a call whose outcome this contract interprets (the delivery contract, a store
-///      adapter in the store-switch probe, a wallet's ERC-1271 check, an ERC-165 probe) goes
+///      Gas rule: a call whose outcome this contract interprets (the delivery contract, a chunk
+///      check against an added store, a wallet's ERC-1271 check, an ERC-165 probe) goes
 ///      through `BoundedCall`'s forward-all reads, so running short of gas reverts with
 ///      `BoundedCallShortfall` and never reads as a refusal. Every other call (6529 Stream, the
 ///      artist registry, Editions, the entropy module, the content store) is a plain Solidity
@@ -71,11 +72,17 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     /// @dev The chunk size of every content-store manifest, and the largest record file (one
     ///      chunk keeps the record checks O(1)).
     uint256 private constant CHUNK = SSTORE2.MAX_CHUNK_LENGTH;
+    /// @dev The most chunks of a license text that must be complete on-chain (finalize, and
+    ///      relicensing a finalized work): a safety bound against unbounded work, so the
+    ///      presence check is at most 16 chunk reads (about 393 KB of text) in one transaction.
+    uint256 private constant MAX_LICENSE_TEXT_CHUNKS = 16;
 
-    /// @dev Word 0: the pin, version, media count, how many leading media files are complete,
-    ///      flags, the chunk cursor in the next file, and the renounced powers (`WorkPowers`
-    ///      bits, only ever added). `files` holds a byte per media file, file `i` at bits `8i`:
-    ///      its role in the low four bits, its store in the high four.
+    /// @dev Word 0: the pin, version, media count, how many leading media files are complete in
+    ///      the content store, flags, the content store's chunk cursor in the next file, and the
+    ///      renounced powers (`WorkPowers` bits, only ever added). `files` holds a byte per media
+    ///      file, file `i` at bits `8i`: its role in the low four bits, and in the high four the
+    ///      added store it is complete in (zero: the content store when `i < syncedFiles`, else
+    ///      not complete).
     struct RecordData {
         address renderer;
         uint32 version;
@@ -89,8 +96,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         uint256 files;
     }
 
-    /// @dev A `syncOnChain` cursor in memory: complete files, the chunk in the next file, the
-    ///      `files` word, the media count and the chunks left in the call's budget.
+    /// @dev A `syncOnChain` cursor in memory: the file and chunk reached, the `files` word, the
+    ///      media count and the chunks left in the call's budget.
     struct Sync {
         uint256 next;
         uint256 chunk;
@@ -124,6 +131,9 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     /// @dev The code hash each renderer was first pinned with (finalize or the errata repin),
     ///      checked again by `pinnedRenderer`.
     mapping(address renderer => bytes32 codeHash) private _rendererCodeHashes;
+    /// @dev The artist's added-store walk, beside the content store's cursor in word 0: the store
+    ///      ID from bit 32, the file from bit 24 and the chunk in the low 24 bits.
+    mapping(uint256 tokenId => uint256) private _storeCursors;
 
     /// @param authority_ The AccessManager governing this contract and its first delivery
     ///        contract.
@@ -245,9 +255,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         // The default renderer, its code checked against Stream's pin (not finalized: no pin).
         address renderer = IStream(stream).rendererOf(tokenId);
         _checkRecordFile(r.recordFileId);
-        _requireLicenseText(
-            flags & CUSTOM_LICENSE != 0 ? _licenses[tokenId].textFileId : cc0TextFileId, true
-        );
+        _requireLicenseText(_frozenLicense(tokenId, flags), true);
         _pinCode(renderer, renderer.codehash);
         r.renderer = renderer;
         r.flags = flags | FINALIZED;
@@ -258,32 +266,60 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
 
     /// @inheritdoc IWorkRecords
     /// @dev Media is fixed by approval and verified bytes are permanent, so verified progress
-    ///      only moves forward: the cursor (`syncedFiles`, `chunk`) lives in the record's first
-    ///      word and each file's store in its byte of `files`, so no slot is added. The store of
-    ///      a file in progress may change only when it lacks the file's next chunk, so no caller
-    ///      can undo another's progress; a file's store is final once the file completes.
+    ///      only moves forward. Two walks that never touch each other: the content store's,
+    ///      permissionless, whose cursor (`syncedFiles`, `chunk`) lives in the record's first
+    ///      word; and the artist's walk over one added store at a time (`_storeCursors`), which
+    ///      only the artist can move or restart. The content store's walk never calls an added
+    ///      store, so nothing an added store does can keep a file whose chunks are all in the
+    ///      content store from completing there.
     function syncOnChain(uint256 tokenId, uint256 storeId, uint256 maxChunks) external {
         RecordData storage r = _open(tokenId);
-        if (r.flags & ON_CHAIN != 0 || maxChunks == 0) return;
+        uint256 synced = r.syncedFiles;
+        uint256 count = r.mediaCount;
+        uint8 flags = r.flags;
+        if (maxChunks == 0 || synced == count || (storeId != 0 && flags & ON_CHAIN != 0)) return;
         (address source, bool intact) = _storeOf(storeId);
         if (!intact) revert UnknownStore(storeId);
-        Sync memory c = Sync(r.syncedFiles, 0, r.files, r.mediaCount, maxChunks);
-        c.chunk = _startChunk(tokenId, r, storeId, c.next);
+        Sync memory c = Sync(synced, r.chunk, r.files, count, maxChunks);
+        if (storeId != 0) {
+            _onlyArtist(tokenId);
+            // Resumes only on the same store and ahead of the content store's walk.
+            uint256 cursor = _storeCursors[tokenId];
+            uint256 file = (cursor >> 24) & 0xff;
+            c.chunk = 0;
+            if (cursor >> 32 == storeId && file >= synced) {
+                (c.next, c.chunk) = (file, cursor & 0xffffff);
+            }
+        }
         _advance(tokenId, storeId, source, c);
         if (c.budget == maxChunks) revert NotOnChainComplete(tokenId);
-        // At most `Limits.MAX_MEDIA_FILES` (32), and below a manifest's chunk count, which the
-        // content store bounds far below 2^24.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        r.syncedFiles = uint8(c.next);
-        // forge-lint: disable-next-line(unsafe-typecast)
-        r.chunk = uint24(c.chunk);
+        if (storeId == 0) {
+            // At most `Limits.MAX_MEDIA_FILES` (32), and below a manifest's chunk count, which
+            // the content store bounds far below 2^24.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            r.syncedFiles = uint8(c.next);
+            // forge-lint: disable-next-line(unsafe-typecast)
+            r.chunk = uint24(c.chunk);
+            synced = c.next;
+        } else {
+            _storeCursors[tokenId] = (storeId << 32) | (c.next << 24) | c.chunk;
+        }
         r.files = c.files;
         emit OnChainSyncProgress(tokenId, c.next, c.chunk, storeId);
-        if (c.next == c.count) {
-            r.flags |= ON_CHAIN;
-            emit WorkOnChainComplete(tokenId);
-            _refresh(tokenId);
+        // On-chain complete once every file is complete in some store. The content store's walk
+        // may go on afterwards (an upgrade); its last file refreshes the metadata again.
+        uint256 i = synced;
+        while (i < count && (c.files >> (8 * i + 4)) & 0xf != 0) {
+            ++i;
         }
+        if (i != count) return;
+        if (flags & ON_CHAIN == 0) {
+            r.flags = flags | ON_CHAIN;
+            emit WorkOnChainComplete(tokenId);
+        } else if (synced != count) {
+            return;
+        }
+        _refresh(tokenId);
     }
 
     /// @inheritdoc IWorkRecords
@@ -338,7 +374,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         RecordData storage r = _open(tokenId);
         if (index >= r.mediaCount) revert FileNotInWork(tokenId, bytes32(index));
         storeId = (r.files >> (8 * index + 4)) & 0xf;
-        complete = index < r.syncedFiles;
+        complete = index < r.syncedFiles || storeId != 0;
     }
 
     /// @inheritdoc IWorkRecords
@@ -376,8 +412,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         }
     }
 
-    /// @dev The artist registry resolving every party's active authority: 6529 Stream's, read
-    ///      on every use, so a governed replacement there applies at once.
+    /// @dev The artist registry resolving every party's active authority: 6529 Stream's, which
+    ///      6529 Stream sets once at genesis and never replaces.
     function _artistRegistry() private view returns (address) {
         return IStream(stream).artistRegistry();
     }
@@ -509,6 +545,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         if (powers & WorkPowers.RENDERER_REPIN != 0 && r.flags & FINALIZED == 0) {
             revert WorkNotFinalized(tokenId);
         }
+        // A license that can no longer change must be one the renderer can show.
+        if (powers & WorkPowers.RELICENSE != 0) _frozenLicense(tokenId, r.flags);
         bytes32 structHash = keccak256(
             abi.encode(
                 Typehashes.RENOUNCE_POWERS,
@@ -755,13 +793,29 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         _refresh(tokenId);
     }
 
-    /// @dev A license's text must be a registered content-store file, and complete on-chain
-    ///      when `stored`.
+    /// @dev A license's text must be a registered content-store file, and complete on-chain,
+    ///      in at most `MAX_LICENSE_TEXT_CHUNKS` chunks, when `stored`.
     function _requireLicenseText(bytes32 textFileId, bool stored) private view {
         IContentStore cs = IContentStore(contentStore);
-        if (stored ? !cs.isComplete(textFileId) : cs.sha256Of(textFileId) == 0) {
+        if (stored) {
+            (,, uint256 chunks,) = _fileInfo(textFileId, false);
+            if (chunks > MAX_LICENSE_TEXT_CHUNKS || !cs.isComplete(textFileId)) {
+                revert InvalidLicense();
+            }
+        } else if (cs.sha256Of(textFileId) == 0) {
             revert InvalidLicense();
         }
+    }
+
+    /// @dev The text file of the work's license, once a stored license's identifier passes the
+    ///      rule the mint policy applies (`SpdxId`: 1 to 64 bytes of `[A-Za-z0-9.+-]`, so UTF-8),
+    ///      which `openRecord` does not check: a license that freezes (finalize, renouncing
+    ///      RELICENSE) is one the renderer can show.
+    function _frozenLicense(uint256 tokenId, uint8 flags) private view returns (bytes32) {
+        if (flags & CUSTOM_LICENSE == 0) return cc0TextFileId;
+        License storage license = _licenses[tokenId];
+        if (!SpdxId.isValid(license.spdxId)) revert InvalidLicense();
+        return license.textFileId;
     }
 
     /// @dev The record file's structural bounds: registered, one chunk (at most `CHUNK`
@@ -830,54 +884,35 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     }
 
     /// @dev Moves the sync cursor `c` of work `tokenId` over at most `c.budget` chunks verified
-    ///      against store `storeId`, setting each touched file's store in `c.files`.
-    function _advance(uint256 tokenId, uint256 storeId, address source, Sync memory c)
-        private
-        view
-    {
+    ///      against store `storeId`, recording each file that completes. The content store's walk
+    ///      verifies every file there, one complete in an added store included (an upgrade); an
+    ///      added store's walk skips files already complete.
+    function _advance(uint256 tokenId, uint256 storeId, address source, Sync memory c) private {
         while (c.next < c.count && c.budget != 0) {
             uint256 shift = 8 * c.next + 4;
-            c.files = (c.files & ~(uint256(0xf) << shift)) | (storeId << shift);
+            if (storeId != 0 && (c.files >> shift) & 0xf != 0) {
+                ++c.next;
+                c.chunk = 0;
+                continue;
+            }
             (uint256 reached, uint256 chunks) =
                 _verify(source, _media[tokenId][c.next], c.chunk, c.budget);
             c.budget -= reached - c.chunk;
             c.chunk = reached;
             if (reached < chunks) return;
+            c.files = (c.files & ~(uint256(0xf) << shift)) | (storeId << shift);
+            emit MediaFileComplete(tokenId, c.next, storeId);
             ++c.next;
             c.chunk = 0;
         }
     }
 
-    /// @dev Where the file in progress resumes: its cursor when it stays with its store or has
-    ///      none yet, else chunk 0 once its store proves to lack the next chunk (`StoreInUse`
-    ///      while it still holds it). A store whose code changed, or whose check refuses
-    ///      (reverts with gas to spare), holds nothing; running short of gas reverts.
-    function _startChunk(uint256 tokenId, RecordData storage r, uint256 storeId, uint256 next)
-        private
-        view
-        returns (uint256 chunk)
-    {
-        chunk = r.chunk;
-        uint256 held = (r.files >> (8 * next + 4)) & 0xf;
-        if (held == storeId || chunk == 0) return chunk;
-        (address heldSource, bool heldIntact) = _storeOf(held);
-        if (heldIntact) {
-            (bool ok, bytes32 word) = BoundedCall.tryReadWordAll(
-                contentStore,
-                abi.encodeCall(
-                    IContentStore.firstMissing,
-                    (_media[tokenId][next], chunk, chunk + 1, heldSource)
-                )
-            );
-            if (ok && uint256(word) != chunk) revert StoreInUse();
-        }
-        return 0;
-    }
-
     /// @dev Verifies at most `budget` chunks of `fileId` from `from` against `source` with the
-    ///      content store's ranged check, which presence-checks its own chunks and re-hashes and
-    ///      length-checks what any other source (`IChunkStore`) returns; a source that reverts
-    ///      makes the call revert.
+    ///      content store's check, which presence-checks its own chunks (a ranged call) and
+    ///      re-hashes and length-checks what an added store (`IChunkStore`) returns. An added
+    ///      store is checked one chunk at a time, forward-all: a chunk it refuses (reverts, or
+    ///      serves other bytes) is missing, so the progress before it stands; running short of
+    ///      gas reverts with `BoundedCallShortfall` and never reads as missing.
     /// @return reached The first chunk not verified (missing, or past the budget).
     /// @return chunks The file's chunk count.
     function _verify(address source, bytes32 fileId, uint256 from, uint256 budget)
@@ -887,13 +922,22 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     {
         (,, chunks,) = _fileInfo(fileId, false);
         uint256 to = chunks - from > budget ? from + budget : chunks;
-        reached = IContentStore(contentStore).firstMissing(fileId, from, to, source);
+        if (source == contentStore) {
+            return (IContentStore(contentStore).firstMissing(fileId, from, to, source), chunks);
+        }
+        for (reached = from; reached < to; ++reached) {
+            (bool ok, bytes32 word) = BoundedCall.tryReadWordAll(
+                contentStore,
+                abi.encodeCall(IContentStore.firstMissing, (fileId, reached, reached + 1, source))
+            );
+            if (!ok || uint256(word) != reached + 1) break;
+        }
     }
 
     /// @dev Whether `data` is the canonical encoding of `(Location, uint256)` that may be
-    ///      served: a URI of at most `Limits.MAX_URI_BYTES` with zero padding, empty exactly for
-    ///      kinds NONE and ONCHAIN (whose index must be `NONE`), and ONCHAIN only when the work
-    ///      is on-chain complete.
+    ///      served: a UTF-8 URI of at most `Limits.MAX_URI_BYTES`, empty exactly for kinds NONE
+    ///      and ONCHAIN (whose index must be `NONE`), and ONCHAIN only when the work is on-chain
+    ///      complete. The padding is not checked: readers take the URI by its length.
     function _isLocation(bytes memory data, bool onChain) private pure returns (bool) {
         if (data.length < 0xa0) return false;
         uint256 head;
@@ -913,7 +957,13 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         if (data.length != 0xa0 + ((length + 31) & ~uint256(31))) return false;
         bool bare = kind == KIND_NONE || kind == KIND_ONCHAIN;
         if (bare != (length == 0) || (bare && index != NONE)) return false;
-        return kind != KIND_ONCHAIN || onChain;
+        if (kind == KIND_ONCHAIN && !onChain) return false;
+        // The URI as a `bytes` in place: its length word, then its bytes.
+        bytes memory uri;
+        assembly ("memory-safe") {
+            uri := add(data, 0xa0)
+        }
+        return Utf8.isValid(uri);
     }
 
     /// @dev ERC-4906 through the core, and a linked edition master's edition through 6529

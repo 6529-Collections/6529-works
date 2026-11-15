@@ -38,9 +38,11 @@ import { License, PackageItem } from "./types/PackageTypes.sol";
 ///      to a state its signer did not see. Every visible change asks 6529 Stream to emit
 ///      ERC-4906 and, for an edition master, calls `IEditions.notifyMasterUpdated`.
 ///
-///      Item kinds, seed policies, party roles and media roles are open `uint8`s in the shared
-///      package types (`PackageItem`, `MediaFile`), so an item a future mint policy defines with a
-///      new value still opens.
+///      Item kinds, seed policies and party roles are open `uint8`s in the shared package types
+///      (`PackageItem`, `MediaFile`), so an item a future mint policy defines with a new value
+///      still opens. Media roles are open too, but only 0 to 15: a file's role is stored in four
+///      bits (a storage-layout bound fixed for good), so an item with a media role above 15 can
+///      never open (`InvalidRecordData`), and a mint policy must refuse one.
 ///
 ///      Logs only: every fact here can be rebuilt from this contract's events, with 6529
 ///      Stream's (rate, default renderer) for the state hash.
@@ -91,15 +93,25 @@ interface IWorkRecords {
     ///        with the code hash 6529 Stream installed it with.
     /// @param stateHash The work's state hash after finalize.
     event WorkFinalized(uint256 indexed tokenId, address renderer, bytes32 stateHash);
-    /// @notice Every media file of the work is stored on-chain; one-way.
+    /// @notice Every media file of the work is complete in some store (the content store or an
+    ///         added store, per file: `MediaFileComplete`); one-way.
     /// @param tokenId The work's token ID.
     event WorkOnChainComplete(uint256 indexed tokenId);
-    /// @notice `syncOnChain` progress: the first `files` media files are complete, and the next
-    ///         one is verified up to chunk `chunk`. Every file this call touched is held by
-    ///         store `storeId`, so a file's store is that of the event in which `files` first
-    ///         passed its index.
+    /// @notice Media file `index` of the work is complete in store `storeId`: every chunk was
+    ///         verified there. A file complete in an added store may later complete in the
+    ///         content store (0), which then is its store for good (an upgrade, never undone);
+    ///         the latest event for a file names its store.
     /// @param tokenId The work's token ID.
-    /// @param files The number of leading media files complete so far.
+    /// @param index The media index.
+    /// @param storeId The store (0 is the content store).
+    event MediaFileComplete(uint256 indexed tokenId, uint256 index, uint256 storeId);
+    /// @notice `syncOnChain` progress of the walk over store `storeId`. For the content store
+    ///         (0): the first `files` media files are complete there and the next is verified up
+    ///         to chunk `chunk`. For an added store: the artist's walk stands at chunk `chunk` of
+    ///         file `files`. Progress is bookkeeping, not a fact: facts are `MediaFileComplete`
+    ///         and `WorkOnChainComplete`.
+    /// @param tokenId The work's token ID.
+    /// @param files The content store's complete leading files, or the added walk's file.
     /// @param chunk The next chunk to verify in file `files` (zero when none is in progress).
     /// @param storeId The store this call verified against.
     event OnChainSyncProgress(
@@ -166,15 +178,13 @@ interface IWorkRecords {
     error NotOnChainComplete(uint256 tokenId);
     /// @notice The license ID is invalid, the deployment's default license is not CC0, a license
     ///         text file declares no SHA-256, a CC0 license names a text other than the
-    ///         deployment's CC0 text, or a license text that must be permanent is not complete.
+    ///         deployment's CC0 text, or a license text that must be permanent is not complete
+    ///         or has more than 16 chunks.
     error InvalidLicense();
     /// @notice The work is not finalized (an errata repin, and renouncing it, need one).
     error WorkNotFinalized(uint256 tokenId);
     /// @notice No store has this ID, or its code changed since it was added.
     error UnknownStore(uint256 storeId);
-    /// @notice The work's file in progress is held by store `storeId`, which still serves its
-    ///         next chunk; only a store missing that chunk can be switched away from.
-    error StoreInUse();
     /// @notice Every store ID is taken (at most 15 stores beside the content store).
     error StoreLimitReached();
     /// @notice Only the current delivery contract may call this.
@@ -213,24 +223,33 @@ interface IWorkRecords {
     function setRecord(uint256 tokenId, bytes32 recordFileId, bytes32 expectedStateHash) external;
     /// @notice The artist finalizes the work: the record becomes immutable and Stream's current
     ///         default renderer is pinned with its code hash (ADR 0001 section 10). The record
-    ///         file must meet the structural bounds (one chunk; see the contract notes) and the
-    ///         license text must be complete on-chain.
+    ///         file must meet the structural bounds (one chunk; see the contract notes), the
+    ///         license text must be complete on-chain in at most 16 chunks, and a stored license's
+    ///         ID must pass the mint rule (`SpdxId`), which `openRecord` does not apply
+    ///         (`InvalidLicense`); renouncing RELICENSE checks the same ID.
     /// @param tokenId A work with an open record, not finalized.
     /// @param expectedStateHash The work's current state hash (`StateHashMismatch` otherwise).
     function finalize(uint256 tokenId, bytes32 expectedStateHash) external;
-    /// @notice Marks media on-chain, in pieces of the caller's choosing. Permissionless; never
-    ///         changes the state hash. Each call verifies at most `maxChunks` chunks, in media
-    ///         order, from where the last call stopped (a chunk cursor), against store
-    ///         `storeId`, through `IContentStore.firstMissing`: for the content store (0) that
-    ///         the chunk is stored at its required length; for any other store (`IChunkStore`)
-    ///         that the bytes it serves for the manifest's chunk hash hash to it and have the
-    ///         required length (a store that reverts makes the call revert). A file's store is
-    ///         fixed when its last chunk verifies and never changes; a file in progress stays with
-    ///         its store unless that store is missing its next chunk or refuses to say
-    ///         (`StoreInUse`). When the last file
-    ///         completes, the work is on-chain complete for good. Reverts with
-    ///         `NotOnChainComplete` when no chunk could be verified; a call that verified some
-    ///         keeps its progress. A complete work is a no-op.
+    /// @notice Marks media on-chain, in pieces of the caller's choosing; never changes the state
+    ///         hash. Each call verifies at most `maxChunks` chunks, in media order, through
+    ///         `IContentStore.firstMissing` against store `storeId`. Two independent walks:
+    ///         - The content store (0): anyone; a cursor from where the last such call stopped;
+    ///           each chunk must be stored at its required length. It verifies every file, one
+    ///           complete in an added store included, which then becomes complete in the content
+    ///           store (an upgrade). No added store is called on this walk.
+    ///         - An added store: only the work's artist (`NotWorkArtist`), until the work is
+    ///           on-chain complete; one walk at a time, resumed on the same store and restarted at
+    ///           the first file not complete in the content store when the artist names another;
+    ///           it skips files already complete. Each chunk is checked alone: the bytes the store
+    ///           serves for the manifest's chunk hash must hash to it and have the required length,
+    ///           and a chunk the store refuses (reverts, or serves other bytes) is missing.
+    ///         A file's completion is recorded per store (`MediaFileComplete`, `mediaStore`):
+    ///         never undone, and only ever moved to the content store. When every file is complete
+    ///         in some store, the work is on-chain complete for good (`WorkOnChainComplete`).
+    ///         Reverts with `NotOnChainComplete` when no chunk could be verified, and with
+    ///         `BoundedCall.BoundedCallShortfall` when an added store's check runs short of gas; a
+    ///         call that verified some keeps its progress. A call with nothing left to do on its
+    ///         walk is a no-op.
     /// @param tokenId A work with an open record.
     /// @param storeId A store ID (`UnknownStore` otherwise).
     /// @param maxChunks The most chunks to verify in this call; zero is a no-op.
@@ -253,13 +272,13 @@ interface IWorkRecords {
     /// @param fileId One of the work's media files (`FileNotInWork` otherwise).
     /// @return index The file's index, from 0.
     function mediaIndex(uint256 tokenId, bytes32 fileId) external view returns (uint256 index);
-    /// @notice The store of media file `index` and whether that file is complete; a complete
-    ///         file's store never changes.
+    /// @notice The store media file `index` is complete in, and whether it is complete. A file
+    ///         complete in the content store stays there for good; one complete in an added
+    ///         store stays complete, and moves only to the content store (`syncOnChain`).
     /// @param tokenId A work with an open record.
     /// @param index A media index (`FileNotInWork` with a zero file ID otherwise).
-    /// @return storeId The file's store (0 is the content store); for a file not yet complete,
-    ///         the store its verification has used so far.
-    /// @return complete Whether the file is complete.
+    /// @return storeId The file's store (0 is the content store); zero for a file not complete.
+    /// @return complete Whether the file is complete in some store.
     function mediaStore(uint256 tokenId, uint256 index)
         external
         view
@@ -359,8 +378,8 @@ interface IWorkRecords {
     function setDelivery(address expected, address next) external;
     /// @notice The locator `tokenURI` serves for a file: the delivery contract's answer, checked.
     ///         Fail-soft: when the delivery contract refuses (reverts, or has no code) or answers
-    ///         anything but a canonical `(IWorkDelivery.Location, uint256)` with a URI of at
-    ///         most `Limits.MAX_URI_BYTES` bytes, a non-empty URI for every kind but NONE and
+    ///         anything but a canonical `(IWorkDelivery.Location, uint256)` with a UTF-8 URI of
+    ///         at most `Limits.MAX_URI_BYTES` bytes, a non-empty URI for every kind but NONE and
     ///         ONCHAIN, an empty one for those two, and ONCHAIN only for an on-chain complete
     ///         work, the answer is the work's own: the implicit ONCHAIN copy of an on-chain
     ///         complete work, else the empty locator (kind NONE). Index `type(uint256).max`
@@ -385,11 +404,15 @@ interface IWorkRecords {
 
     // ----- stores -----
 
-    /// @notice Adds a store `syncOnChain` may verify media against. SUCCESSOR_SETTER role (the
-    ///         slow class; any guardian may cancel). Append-only: an ID is never reused, a store
-    ///         never removed, and no existing file's store or completeness ever changes. The
-    ///         store must implement `IChunkStore`; its code hash is pinned and checked at each
-    ///         use.
+    /// @notice Adds a store `syncOnChain` may verify media against, at a work's artist's choice.
+    ///         SUCCESSOR_SETTER role (the slow class; any guardian may cancel). Append-only: an
+    ///         ID is never reused, a store never removed, and no existing file's completeness
+    ///         ever changes. The store must implement `IChunkStore`; its code hash is pinned and
+    ///         checked at each use. The pin fixes the store's code, not what it reads: a store
+    ///         may stop serving, and a file complete in it stays recorded as complete there
+    ///         (`MediaFileComplete` names the store), so the duty to keep serving bytes once
+    ///         served (`IChunkStore`) is a review condition for adding a store, not enforced
+    ///         here. Readers should prefer the content store's copy (`IContentStore.isComplete`).
     /// @param source The store contract (`Dependency.InvalidDependency` if it has no code, is an
     ///        EIP-7702 delegated account or does not have `codeHash`).
     /// @param codeHash The store's code hash.
