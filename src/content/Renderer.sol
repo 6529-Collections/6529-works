@@ -678,9 +678,10 @@ contract Renderer is IRenderer {
 
     /// @dev The preferred locator of a file: its URL, or none for a file without one (the
     ///      satellite answers kind NONE) and for the implicit on-chain locator, which has no URL.
-    ///      The records satellite (permanent) serves only a UTF-8 URI of a delivery contract's
-    ///      answer, so no delivery contract can make `_str` revert here. A failed read reverts:
-    ///      no media is better than media that depends on a gas cap.
+    ///      The records satellite (permanent) serves a delivery contract's URI only in printable
+    ///      ASCII without `"` or `\` (WS-40), so none can make `_str` revert here, and `_str`
+    ///      escapes for JSON regardless. A failed read reverts: no media is better than media
+    ///      that depends on a gas cap.
     function _locator(Ctx memory c, bytes32 id) private view returns (Media memory m) {
         (IWorkDelivery.Location memory l,) = abi.decode(
             _read(

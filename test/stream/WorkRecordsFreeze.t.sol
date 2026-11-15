@@ -176,25 +176,38 @@ contract WorkRecordsFreezeTest is RecordsFixture {
 
     // ------------------------------------------------------------------ M2: locator shape
 
-    /// @dev A delivery answer whose URI is not UTF-8 is not served: the work's own answer is.
-    function test_preferredLocator_aUriThatIsNotUtf8IsNotServed() public {
+    /// @dev A served URI is printable ASCII without `"` or `\` (WS-40): a delivery answer with a
+    ///      byte from 0x80 (UTF-8 or not), a control byte, a space, DEL, a quote or a backslash
+    ///      is not served; the work's own answer is.
+    function test_preferredLocator_onlyPrintableAsciiIsServed() public {
         (uint256 tokenId,) = _work(600);
         bytes32 file = records.mediaOf(tokenId)[0].fileId;
         RawLocatorDelivery raw = new RawLocatorDelivery(address(records), address(delivery));
         vm.prank(governor);
         records.setDelivery(address(delivery), address(raw));
-        bytes[3] memory bad = [bytes(hex"ff"), hex"61723a2f2fc0af", hex"eda080"];
+        bytes[9] memory bad = [
+            bytes(hex"61723a2f2fff"),
+            hex"61723a2f2fc3a9", // "ar://" and a valid UTF-8 "e acute"
+            hex"eda080",
+            hex"61723a2f2f0a",
+            hex"61723a2f2f09",
+            bytes("ar:// x"),
+            hex"61723a2f2f7f",
+            bytes('ar://"x'),
+            hex"61723a2f2f5c"
+        ];
         for (uint256 i; i < bad.length; ++i) {
             raw.set(abi.encode(IWorkDelivery.Location(1, string(bad[i])), uint256(0)));
             (IWorkDelivery.Location memory l, uint256 index) =
                 records.preferredLocator(tokenId, file);
-            assertEq(l.kind, uint8(LocatorKind.NONE));
-            assertEq(bytes(l.uri).length, 0);
-            assertEq(index, type(uint256).max);
+            assertEq(l.kind, uint8(LocatorKind.NONE), vm.toString(i));
+            assertEq(bytes(l.uri).length, 0, vm.toString(i));
+            assertEq(index, type(uint256).max, vm.toString(i));
         }
-        raw.set(abi.encode(IWorkDelivery.Location(1, unicode"ar://é"), uint256(2)));
+        string memory good = "ar://A-z_0~9!#$%&'()*+,./:;<=>?@[]^`{|}";
+        raw.set(abi.encode(IWorkDelivery.Location(1, good), uint256(2)));
         (IWorkDelivery.Location memory ok, uint256 at) = records.preferredLocator(tokenId, file);
-        assertEq(ok.uri, unicode"ar://é");
+        assertEq(ok.uri, good);
         assertEq(at, 2);
     }
 }

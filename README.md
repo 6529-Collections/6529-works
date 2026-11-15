@@ -79,7 +79,7 @@ products pay 75% to the artist's side and 25% to the network, and royalties are 
 | Contract | Purpose | nSLOC |
 | --- | --- | ---: |
 | [`Stream`](src/stream/README.md), [`StreamViews`](src/stream/README.md) | The permanent shared ERC-721: mints what the replaceable mint policy authorizes, locks terms, royalties, the edition link; informational views in a read-only extension | 774 + 88 |
-| [`WorkRecords`](src/stream/README.md), [`WorkDelivery`](src/stream/README.md) | Each work's permanent record, media, license, seed, finalize and renderer pin, on-chain completeness across an append-only store set; locators and preferences in a replaceable delivery contract | 713 + 183 |
+| [`WorkRecords`](src/stream/README.md), [`WorkDelivery`](src/stream/README.md) | Each work's permanent record, media, license, seed, finalize and renderer pin, on-chain completeness across an append-only store set; locators and preferences in a replaceable delivery contract | 716 + 183 |
 | [`Editions`](src/editions/README.md) | 6529 Stream Editions, the shared ERC-1155, linked to Stream masters; supply sealed at settlement, prices logged | 493 |
 | [`PackageRegistry`](src/curation/README.md) | Stream's replaceable mint policy: package roots, party consent, the move signature, consume-once items, content uniqueness | 420 |
 | [`Eip712CurationVerifier`](src/curation/README.md) | Accepts curation signers' EIP-712 approvals | 103 |

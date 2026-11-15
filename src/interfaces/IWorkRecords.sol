@@ -378,11 +378,13 @@ interface IWorkRecords {
     function setDelivery(address expected, address next) external;
     /// @notice The locator `tokenURI` serves for a file: the delivery contract's answer, checked.
     ///         Fail-soft: when the delivery contract refuses (reverts, or has no code) or answers
-    ///         anything but a canonical `(IWorkDelivery.Location, uint256)` with a UTF-8 URI of
-    ///         at most `Limits.MAX_URI_BYTES` bytes, a non-empty URI for every kind but NONE and
-    ///         ONCHAIN, an empty one for those two, and ONCHAIN only for an on-chain complete
-    ///         work, the answer is the work's own: the implicit ONCHAIN copy of an on-chain
-    ///         complete work, else the empty locator (kind NONE). Index `type(uint256).max`
+    ///         anything but a canonical `(IWorkDelivery.Location, uint256)` with a URI of at
+    ///         most `Limits.MAX_URI_BYTES` bytes of printable ASCII (`0x21` to `0x7e`, but `"` and
+    ///         `\`; no space or control byte, nothing from `0x80`: percent-encoding spells the
+    ///         rest), a non-empty URI for every kind but NONE and ONCHAIN, an empty one for those
+    ///         two, and ONCHAIN only for an on-chain complete work, the answer is the work's own:
+    ///         the implicit ONCHAIN copy of an on-chain complete work, else the empty locator
+    ///         (kind NONE). Index `type(uint256).max`
     ///         stands for both. A delivery call that runs short of gas reverts with
     ///         `BoundedCall.BoundedCallShortfall`, never falls back. Kinds are `uint8` labels
     ///         (`LocatorKind` names 0 to 3); any other kind is passed through.

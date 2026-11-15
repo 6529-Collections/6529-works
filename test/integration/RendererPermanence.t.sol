@@ -198,18 +198,26 @@ contract RendererPermanenceTest is IntegrationBase {
 
     // ------------------------------------------------------------------ the delivery contract
 
-    /// @dev Review B M2: a delivery contract that answers a URI which is not UTF-8 makes no
-    ///      `tokenURI` revert: the records satellite serves the work's own answer (no locator),
-    ///      so the renderer shows no `media_url`. A UTF-8 URI is served as before.
-    function test_ANonUtf8LocatorIsNoLocator() public {
+    /// @dev Review B M2: a delivery contract answering a URI with a byte from 0x80, a control
+    ///      byte, a quote or a backslash changes no byte of a finalized work's `tokenURI` (the
+    ///      records satellite serves the work's own answer: no locator) and never makes it
+    ///      revert. A printable-ASCII URI is served as before.
+    function test_AnUnusableLocatorLeavesTokenUriUnchanged() public {
+        string memory before = stream.tokenURI(byLocator);
+        assertFalse(_contains(before, "media_url"), "no locator to begin with");
         RawDelivery raw = new RawDelivery(address(records), records.delivery());
         _setDelivery(address(raw));
-        raw.set(
-            abi.encode(IWorkDelivery.Location(1, string(bytes(hex"61723a2f2fff"))), uint256(0)),
-            false
-        );
-        string memory uri = stream.tokenURI(byLocator);
-        assertFalse(_contains(uri, "media_url"), "no locator");
+        bytes[5] memory bad = [
+            bytes(hex"61723a2f2fff"),
+            hex"61723a2f2fc3a9",
+            hex"61723a2f2f0a",
+            bytes('ar://x","image":"y'),
+            hex"61723a2f2f5c22"
+        ];
+        for (uint256 i; i < bad.length; ++i) {
+            raw.set(abi.encode(IWorkDelivery.Location(1, string(bad[i])), uint256(0)), false);
+            assertEq(stream.tokenURI(byLocator), before, vm.toString(i));
+        }
         raw.set(abi.encode(IWorkDelivery.Location(1, "ar://fine"), uint256(0)), false);
         assertTrue(_contains(stream.tokenURI(byLocator), '"media_url":"ar://fine"'));
     }

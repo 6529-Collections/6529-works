@@ -22,7 +22,6 @@ import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 import { SSTORE2 } from "../libraries/SSTORE2.sol";
-import { Utf8 } from "../libraries/Utf8.sol";
 import { SpdxId } from "./SpdxId.sol";
 import { WorkDelivery } from "./WorkDelivery.sol";
 
@@ -69,6 +68,11 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     /// @dev The most bytes of a delivery answer copied: the canonical encoding of a location
     ///      with a URI of `Limits.MAX_URI_BYTES` (a bound against unbounded copying).
     uint256 private constant LOCATION_RETURN = 0xa0 + Limits.MAX_URI_BYTES;
+    /// @dev The bytes a served locator URI may hold, as a bit set: printable ASCII `0x21` to
+    ///      `0x7e` but `"` and `\`. No space (RFC 3986 has none; `%20` spells it), no control
+    ///      byte, no byte from `0x80` (percent-encoding spells any other character), so a served
+    ///      URI is UTF-8 by construction and needs no JSON escaping.
+    uint256 private constant URI_BYTES = 0x7fffffffeffffffffffffffa00000000;
     /// @dev The chunk size of every content-store manifest, and the largest record file (one
     ///      chunk keeps the record checks O(1)).
     uint256 private constant CHUNK = SSTORE2.MAX_CHUNK_LENGTH;
@@ -935,9 +939,9 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     }
 
     /// @dev Whether `data` is the canonical encoding of `(Location, uint256)` that may be
-    ///      served: a UTF-8 URI of at most `Limits.MAX_URI_BYTES`, empty exactly for kinds NONE
-    ///      and ONCHAIN (whose index must be `NONE`), and ONCHAIN only when the work is on-chain
-    ///      complete. The padding is not checked: readers take the URI by its length.
+    ///      served: a URI of at most `Limits.MAX_URI_BYTES` of `URI_BYTES`, empty exactly for
+    ///      kinds NONE and ONCHAIN (whose index must be `NONE`), and ONCHAIN only when the work is
+    ///      on-chain complete. The padding is not checked: readers take the URI by its length.
     function _isLocation(bytes memory data, bool onChain) private pure returns (bool) {
         if (data.length < 0xa0) return false;
         uint256 head;
@@ -958,12 +962,14 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         bool bare = kind == KIND_NONE || kind == KIND_ONCHAIN;
         if (bare != (length == 0) || (bare && index != NONE)) return false;
         if (kind == KIND_ONCHAIN && !onChain) return false;
-        // The URI as a `bytes` in place: its length word, then its bytes.
-        bytes memory uri;
+        bool ok = true;
         assembly ("memory-safe") {
-            uri := add(data, 0xa0)
+            let p := add(data, 0xc0)
+            for { let end := add(p, length) } lt(p, end) { p := add(p, 1) } {
+                ok := and(ok, shr(byte(0, mload(p)), URI_BYTES))
+            }
         }
-        return Utf8.isValid(uri);
+        return ok;
     }
 
     /// @dev ERC-4906 through the core, and a linked edition master's edition through 6529

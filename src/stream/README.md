@@ -116,7 +116,7 @@ Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
   WS-43).
 - **Forwarding.** `preferredLocator` asks the delivery contract with all the gas the EIP-150
   rule allows (`BoundedCall.tryReadAll`) and checks the answer (`_isLocation`); a refusal or a
-  malformed answer serves the work's own (WS-40; a URI that is not UTF-8 is malformed), a
+  malformed answer serves the work's own (WS-40; a URI with a byte outside printable ASCII, `"` or `\` is malformed), a
   shortfall reverts. No renderer budget is held: a record is one chunk, and the pinned
   renderer decides what it can show.
 - **Locator adders** (`WorkDelivery`). `LocatorCounts` keeps, beside the two quota counts, a

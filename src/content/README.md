@@ -80,7 +80,7 @@ Integrators start at [Reading a work](../../docs/integrators/reading-a-work.md) 
 - **Native reads only.** A work's facts come from Stream's `coreOf` and `extsload` (slots 17
   and 18, in `_native`), never its fallback, which reaches the replaceable view extension: a
   finalized work pins this renderer, so nothing replaceable may decide what it shows (RND-22).
-  Locators come from `WorkRecords.preferredLocator`, which serves only UTF-8 URIs, and the
+  Locators come from `WorkRecords.preferredLocator`, which serves only printable-ASCII URIs without `"` or `\`, and the
   PREVIEW is read only when used, so an inlined image primary never asks the delivery contract.
 - **`window.works` is a public API.** Finalized works pin their renderer, so version 1's fields
   never change meaning; a change needs a new `v` and a new renderer.
