@@ -228,7 +228,7 @@ abstract contract WorksDeployment is Test {
         bytes32 sha
     ) internal returns (bytes32 fileId) {
         bytes32[] memory hashes = _writeChunks(stored);
-        fileId = store.registerManifest(hashes, stored.length, encoding, mime, sha);
+        fileId = store.registerManifest(hashes, stored.length, uint8(encoding), mime, sha);
     }
 
     /// @dev Registers the manifest of `stored` without uploading any chunk (the off-chain default).
@@ -238,7 +238,9 @@ abstract contract WorksDeployment is Test {
         string memory mime,
         bytes32 sha
     ) internal returns (bytes32 fileId) {
-        fileId = store.registerManifest(_chunkHashes(stored), stored.length, encoding, mime, sha);
+        fileId = store.registerManifest(
+            _chunkHashes(stored), stored.length, uint8(encoding), mime, sha
+        );
     }
 
     function _writeChunks(bytes memory stored) internal returns (bytes32[] memory hashes) {

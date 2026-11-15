@@ -78,7 +78,7 @@ contract SyncOnChainResumeTest is IntegrationBase {
             bytes32 id = store.registerManifest(
                 hashes,
                 CHUNKS * store.CHUNK_SIZE(),
-                IContentStore.Encoding.Identity,
+                uint8(IContentStore.Encoding.Identity),
                 "video/mp4",
                 sha
             );
@@ -143,7 +143,7 @@ contract SyncOnChainResumeTest is IntegrationBase {
             bytes32 fileId = store.registerManifest(
                 hashes,
                 counts[f] * store.CHUNK_SIZE(),
-                IContentStore.Encoding.Identity,
+                uint8(IContentStore.Encoding.Identity),
                 "video/mp4",
                 sha
             );

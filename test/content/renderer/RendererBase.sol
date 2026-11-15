@@ -91,7 +91,8 @@ abstract contract RendererBase is ContentBase {
         returns (bytes32 fileId)
     {
         (bytes[] memory chunks, bytes32[] memory hashes) = _split(stored);
-        fileId = store.registerManifest(hashes, stored.length, encoding, mime, sha256(stored));
+        fileId =
+            store.registerManifest(hashes, stored.length, uint8(encoding), mime, sha256(stored));
         _uploadAll(chunks);
     }
 
@@ -99,8 +100,8 @@ abstract contract RendererBase is ContentBase {
     ///      base64 stays unattested, which is what a renderer must find out.
     function _attest(bytes32 fileId) internal {
         // A file of many chunks takes several calls; a file that is not strict base64 reverts.
-        try store.attestBase64(fileId) returns (bool done) {
-            while (!done) done = store.attestBase64(fileId);
+        try store.attestBase64(fileId, 48) returns (bool done) {
+            while (!done) done = store.attestBase64(fileId, 48);
         } catch { }
     }
 
@@ -115,7 +116,8 @@ abstract contract RendererBase is ContentBase {
         string memory mime
     ) internal returns (bytes32 fileId) {
         (bytes[] memory chunks, bytes32[] memory hashes) = _split(stored);
-        fileId = store.registerManifest(hashes, stored.length, encoding, mime, sha256(stored));
+        fileId =
+            store.registerManifest(hashes, stored.length, uint8(encoding), mime, sha256(stored));
         for (uint256 i; i + 1 < chunks.length; ++i) {
             store.writeChunk(chunks[i]);
         }

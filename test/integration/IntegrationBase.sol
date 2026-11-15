@@ -853,11 +853,11 @@ abstract contract IntegrationBase is WorksDeployment {
     }
 
     /// @dev Runs the permissionless base64 attestation to completion, bounded: each call checks
-    ///      `ATTEST_CHUNKS_PER_CALL` chunks, so a file of at most `MAX_CHUNKS` needs few calls.
+    ///      48 chunks, so a file of at most `MAX_CHUNKS` needs few calls.
     function _attestAll(bytes32 fileId) internal {
-        uint256 calls = store.MAX_CHUNKS() / store.ATTEST_CHUNKS_PER_CALL() + 1;
+        uint256 calls = store.MAX_CHUNKS() / 48 + 1;
         for (uint256 i; i < calls; ++i) {
-            if (store.attestBase64(fileId)) return;
+            if (store.attestBase64(fileId, 48)) return;
         }
         revert("attestBase64 did not complete");
     }

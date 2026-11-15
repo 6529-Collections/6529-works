@@ -270,7 +270,9 @@ contract Flows is Script {
 
     function _fileId(Addrs memory a, File memory f) internal view returns (bytes32) {
         return IContentStore(a.store)
-            .manifestId(_chunkHashes(a, f.stored), f.stored.length, f.encoding, f.mime, f.sha);
+            .manifestId(
+                _chunkHashes(a, f.stored), f.stored.length, uint8(f.encoding), f.mime, f.sha
+            );
     }
 
     function _registered(Addrs memory a, bytes32 fileId) internal view returns (bool) {
@@ -455,7 +457,13 @@ contract Flows is Script {
                     0,
                     abi.encodeCall(
                         IContentStore.registerManifest,
-                        (_chunkHashes(a, f.stored), f.stored.length, f.encoding, f.mime, f.sha)
+                        (
+                            _chunkHashes(a, f.stored),
+                            f.stored.length,
+                            uint8(f.encoding),
+                            f.mime,
+                            f.sha
+                        )
                     )
                 );
             }
@@ -465,7 +473,7 @@ contract Flows is Script {
                     "any",
                     a.store,
                     0,
-                    abi.encodeCall(IContentStore.attestBase64, (fileId))
+                    abi.encodeCall(IContentStore.attestBase64, (fileId, type(uint256).max))
                 );
             }
         }
@@ -489,7 +497,13 @@ contract Flows is Script {
                     0,
                     abi.encodeCall(
                         IContentStore.registerManifest,
-                        (_chunkHashes(a, r.stored), r.stored.length, r.encoding, r.mime, r.sha)
+                        (
+                            _chunkHashes(a, r.stored),
+                            r.stored.length,
+                            uint8(r.encoding),
+                            r.mime,
+                            r.sha
+                        )
                     )
                 );
             }
@@ -502,7 +516,13 @@ contract Flows is Script {
                     0,
                     abi.encodeCall(
                         IContentStore.registerManifest,
-                        (_chunkHashes(a, p.stored), p.stored.length, p.encoding, p.mime, p.sha)
+                        (
+                            _chunkHashes(a, p.stored),
+                            p.stored.length,
+                            uint8(p.encoding),
+                            p.mime,
+                            p.sha
+                        )
                     )
                 );
             }
