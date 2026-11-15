@@ -16,16 +16,22 @@ import { DelegatedEOA } from "./DelegatedEOA.sol";
 ///      - 64-byte ERC-2098 signatures are accepted for EOAs (OZ's bytes overload rejects them);
 ///      - an EIP-7702 delegated EOA is first checked by `ecrecover` against the account itself,
 ///        then by ERC-1271 through its delegate (OZ only tries ERC-1271);
-///      - ERC-1271 forwards a constant gas cap after a 63/64-rule check that reverts on
-///        shortfall (OZ forwards all gas), and requires exactly 32 bytes of return data
-///        holding exactly the magic value (OZ accepts longer return data);
+///      - ERC-1271 forwards all the gas EIP-150 allows, as OZ does, but a check that fails while
+///        leaving only the retained share reverts with `BoundedCall.BoundedCallShortfall`
+///        instead of reading as "invalid" (`BoundedCall.tryReadWordAll`), and it requires
+///        exactly 32 bytes of return data holding exactly the magic value (OZ accepts longer
+///        return data);
 ///      - signatures longer than {MAX_SIGNATURE_LENGTH} are rejected before any call.
+///      No gas number is compiled in: what a wallet's check may cost is bounded only by the
+///      transaction's gas, so a future repricing or a heavier account cannot be locked out.
 library SignatureVerifier {
-    /// @notice The largest signature, in bytes, that is considered at all.
-    uint256 internal constant MAX_SIGNATURE_LENGTH = 4096;
-
-    /// @notice Gas forwarded to an ERC-1271 `isValidSignature` call.
-    uint256 internal constant ERC1271_GAS_LIMIT = 200_000;
+    /// @notice The largest signature, in bytes, that is considered at all: 64 KiB. A safety
+    ///         bound against unbounded memory work, not a policy: it is above every standardised
+    ///         signature, including the largest post-quantum one (SLH-DSA, FIPS 205, at most
+    ///         49,856 bytes) with room for an ERC-1271 wallet's own wrapping, and it bounds the
+    ///         memory a check copies (the signature twice, about 45,000 gas) whatever the
+    ///         calldata carries, for callers that check several signatures in one transaction.
+    uint256 internal constant MAX_SIGNATURE_LENGTH = 65_536;
 
     /// @notice The signature is not a valid signature of the payload by `signer`: malformed,
     ///         from another key, or refused by `signer`'s ERC-1271 check.
@@ -59,8 +65,8 @@ library SignatureVerifier {
     /// @param signature The signature bytes: 65 or 64 (ERC-2098) bytes for an EOA, anything up to
     ///        {MAX_SIGNATURE_LENGTH} for an ERC-1271 contract.
     /// @return Whether the signature verifies.
-    /// @dev Reverts with `BoundedCall.BoundedCallInsufficientGas` when an ERC-1271 check is
-    ///      needed and the caller cannot forward {ERC1271_GAS_LIMIT} in full.
+    /// @dev Reverts with `BoundedCall.BoundedCallShortfall` when an ERC-1271 check fails while
+    ///      leaving only the share of gas EIP-150 retained: the transaction needs more gas.
     function isValid(address signer, bytes32 digest, bytes memory signature)
         internal
         view
@@ -92,7 +98,8 @@ library SignatureVerifier {
         return err == ECDSA.RecoverError.NoError && recovered == signer;
     }
 
-    /// @notice ERC-1271 with a constant gas cap and an exact 32-byte magic-value return.
+    /// @notice ERC-1271, forwarding all the gas EIP-150 allows, with an exact 32-byte
+    ///         magic-value return. A shortfall reverts with `BoundedCall.BoundedCallShortfall`.
     /// @param signer The contract asked to approve the signature.
     /// @param digest The signed digest.
     /// @param signature The signature bytes, passed through unchanged.
@@ -102,16 +109,9 @@ library SignatureVerifier {
         view
         returns (bool)
     {
-        (bool ok, bytes memory result) = BoundedCall.tryRead(
-            signer,
-            abi.encodeCall(IERC1271.isValidSignature, (digest, signature)),
-            ERC1271_GAS_LIMIT,
-            32,
-            0
+        (bool ok, bytes32 word) = BoundedCall.tryReadWordAll(
+            signer, abi.encodeCall(IERC1271.isValidSignature, (digest, signature))
         );
-        if (!ok || result.length != 32) return false;
-        // Exactly 32 bytes were returned, so the conversion reads all of them.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        return bytes32(result) == bytes32(IERC1271.isValidSignature.selector);
+        return ok && word == bytes32(IERC1271.isValidSignature.selector);
     }
 }
