@@ -113,11 +113,13 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     ///      count; the edition auction counts in 32 bits), not a policy number.
     uint256 private constant UNCAPPED = type(uint40).max;
 
-    /// @dev What `createEdition` reads of its master from `IStreamCore.coreOf`.
+    /// @dev What `createEdition` reads of its master from `IStreamCore.coreOf`, and the package
+    ///      registry, read from 6529 Stream once per call.
     struct Master {
         bytes32 itemHash;
         uint256 artistId;
         uint32 royaltyRate;
+        address registry;
     }
 
     /// @dev An admitted adapter: its status, the ID an edition binds it by, and the key of the
@@ -267,7 +269,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         // Protocol calls, after every effect above: a reentrant `createEdition` hits EditionExists.
         // The registry accepts only the item Stream consumed for this content hash, once.
         _call(
-            address(packageRegistry()),
+            master.registry,
             abi.encodeCall(IPackageRegistry.claimContent, (item.contentHash, itemHash))
         );
         _call(stream, abi.encodeCall(IStreamCore.linkEdition, (workId, workId)));
@@ -623,11 +625,9 @@ contract Editions is IEditions, ERC1155, AccessManaged {
                 || item.contentHash == 0 || proof.length > Limits.MAX_PROOF_DEPTH
                 || !MerkleProof.verifyCalldata(proof, packageRoot, WorksHashing.leaf(itemHash))
         ) revert NotEditionMaster(workId);
+        master.registry = address(packageRegistry());
         (, bytes32 evidenceHash,) = abi.decode(
-            _read(
-                address(packageRegistry()),
-                abi.encodeCall(IPackageRegistry.packageOf, (packageRoot))
-            ),
+            _read(master.registry, abi.encodeCall(IPackageRegistry.packageOf, (packageRoot))),
             (uint8, bytes32, address)
         );
         if (evidenceHash == 0) revert NotEditionMaster(workId);
