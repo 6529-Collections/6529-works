@@ -389,7 +389,8 @@ genesis. Against `main` at `59c1d1c1`:
   2%). A winner's `claimBid` rose by 4,891 (the unit price in the mint data, the currency check
   and `EditionPrimaryMint`); the capped-sweep `settle` rose by 12,636 to 162,246 (the interim
   wiring's `sealSupply` at settlement), crossing 153,000: its ceiling moves to **166,000**.
-  Both stay under their test ceilings of 100,000 and 400,000 elsewhere.
+  Each settlement call that clears now also seals: the worst-case call rose by 12,636 to
+  240,761 of execution, under its 350,000 ceiling.
 - **The re-rate** rose by 8,196 to 198,346: an admin's governed `execute` updates the manager's
   admin-liveness clock and checks its hand-over flag (GV-42, GV-43; one cold ADMIN-membership
   read, one shared-slot read, a write), less 1,193 from the leaner re-rate in Stream. It crossed
@@ -457,7 +458,7 @@ genesis. Against `main` at `59c1d1c1`:
 | Edition `withdrawBid`, capped, 1/1 paused | 88,031 | 90,000 (regression) | 1 | 0 | — |
 | Edition `settle`, 40 used steps | 151,504 | 400,000 | 1 | 0 | — |
 | Edition `settle`, capped, one departure swept | 162,246 | 166,000 (regression) | 1 | 0 | — |
-| Edition `settle`, every step used (512 steps, departures at the cut), each call | at most 228,125 of execution | 350,000 of execution | 0 to 2 (the call that clears and leaves its sweep unfinished writes the result and its settler's progress) | 0 | — |
+| Edition `settle`, every step used (512 steps, departures at the cut), each call | at most 240,761 of execution | 350,000 of execution | 0 to 2 (the call that clears and leaves its sweep unfinished writes the result and its settler's progress) | 0 | — |
 | Edition `settle`, a 96-departure chunk with departures scattered over the log's words (336 steps), each call; review PoC, not in CI | at most 307,070 of execution | 350,000 of execution | 0 to 2 | 0 | — |
 | Edition `claimBid`, a winner and new holder | 98,553 | 100,000 | 1 | 0 | — |
 | Edition `claimBid`, refund only | 47,496 | 49,000 (regression) | 0 | 0 | — |

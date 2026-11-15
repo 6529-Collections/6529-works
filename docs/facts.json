@@ -809,7 +809,7 @@
       },
       {
         "operation": "Edition settle, every step used (512 steps, departures at the cut), each call",
-        "pragueGas": 228125,
+        "pragueGas": 240761,
         "pragueGasIsMaximum": true,
         "pragueGasIsExecution": true,
         "pragueCeiling": {
