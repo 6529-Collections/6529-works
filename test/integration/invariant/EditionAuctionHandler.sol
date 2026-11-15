@@ -456,6 +456,70 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         }
     }
 
+    /// @notice Anyone abandons an edition auction (EA-19), a quarter of the time after warping to
+    ///         its end plus the 150-day delay. The handler's model predicts the outcome: due once
+    ///         the delay has passed, the sale has paid nothing (open, or a scan still running),
+    ///         and its 1/1 is neither in progress nor settled with its master and edition.
+    function abandon(uint256 seed, uint256 warpSeed) external {
+        for (uint256 k; k < MASTERS; ++k) {
+            uint256 i = (seed % MASTERS + k) % MASTERS;
+            Piece storage p = pieces[i];
+            if (!p.opened || p.settled || p.voided) continue;
+            uint256 deadline = _endTime(i) + 150 days;
+            if (warpSeed % 4 == 0 && block.timestamp < deadline) {
+                vm.warp(deadline);
+                // A dispute pause that lapsed in the jump moves the 1/1's end, and so the
+                // sale's: the deadline is read again.
+                deadline = _endTime(i) + 150 days;
+            }
+            IEnglishAuction.AuctionState s = _state1of1(i);
+            IUniformEditionAuction.AuctionStatus st = ea.auction(p.editionSaleId).status;
+            bool unpaid = st == IUniformEditionAuction.AuctionStatus.OPEN
+                || st == IUniformEditionAuction.AuctionStatus.CLOSED
+                || (st == IUniformEditionAuction.AuctionStatus.SETTLING
+                    && _lens()
+                            .storageWord(
+                                IUniformEditionAuctionStorage.Space.SCAN, p.editionSaleId, 0
+                            ) != 0);
+            bool due = unpaid && block.timestamp >= deadline
+                && s != IEnglishAuction.AuctionState.ACTIVE
+                && s != IEnglishAuction.AuctionState.PAUSED
+                && !(s == IEnglishAuction.AuctionState.SETTLED
+                    && p.masterSettled
+                    && p.editionCreated);
+            try editionAuction.abandon(p.editionSaleId) {
+                if (!due) _violation("abandoned an edition auction that could still settle");
+                p.voided = true;
+                ++hits["abandon"];
+            } catch (bytes memory why) {
+                if (due) _violation(_abandonDiag(i, why, deadline));
+                ++hits["abandonRefused"];
+            }
+            return;
+        }
+    }
+
+    function _abandonDiag(uint256 i, bytes memory why, uint256 deadline)
+        internal
+        view
+        returns (string memory)
+    {
+        uint256 sale = pieces[i].editionSaleId;
+        (, uint256 at) = ea.abandonable(sale);
+        return string.concat(
+            "refused a due abandonment ",
+            vm.toString(why),
+            " deadline ",
+            vm.toString(deadline),
+            " lens ",
+            vm.toString(at),
+            " end ",
+            vm.toString(uint256(ea.endTimes(sale).endTime)),
+            " now ",
+            vm.toString(block.timestamp)
+        );
+    }
+
     /// @notice The bidder claims a bid of a settled or void auction (to itself), or anyone
     ///         pushes it with `claimBidFor`; a second claim is refused.
     function claim(uint256 seed, uint256 bidSeed, uint256 mode) external {
@@ -698,7 +762,8 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             _violation("a wide book's first call left the sale outside SETTLING");
         }
         if (
-            editionAuction.storageWord(IUniformEditionAuctionStorage.Space.SCAN, sale, 0) == 0
+            IUniformEditionAuctionLens(address(editionAuction))
+                        .storageWord(IUniformEditionAuctionStorage.Space.SCAN, sale, 0) == 0
                 || ea.settlement(sale).count != 0
         ) {
             _violation("a partial scan stored no progress, or a result");

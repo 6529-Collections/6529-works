@@ -5,6 +5,7 @@ import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.so
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { UniformClearingReference as Ref } from "../helpers/UniformClearingReference.sol";
 import { EditionAuctionStack } from "./EditionAuctionStack.sol";
+import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
 
 /// @notice Differential fuzzing of the edition auction on the real stack against the slow,
 ///         obvious definition of D138 (`UniformClearingReference`, the Solidity twin of
@@ -313,7 +314,10 @@ contract EditionAuctionDifferentialTest is EditionAuctionStack {
             }
         }
         for (uint256 i; i < 4; ++i) {
-            if (editionAuction.claimable(bidders[i], CURRENCY_ETH) == 0) continue;
+            if (
+                IUniformEditionAuctionLens(address(editionAuction))
+                        .claimable(bidders[i], CURRENCY_ETH) == 0
+            ) continue;
             vm.prank(bidders[i]);
             editionAuction.claim(CURRENCY_ETH, bidders[i]);
         }

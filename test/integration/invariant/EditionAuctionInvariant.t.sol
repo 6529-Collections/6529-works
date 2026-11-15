@@ -39,7 +39,10 @@ import { EditionAuctionHandler } from "./EditionAuctionHandler.sol";
 ///             by its bidder or pushed by anyone.
 ///         Every action also predicts its outcome; any disagreement fails the campaign.
 contract EditionAuctionInvariantTest is EditionAuctionHandler {
-    uint256 internal constant ACTIONS = 23;
+    uint256 internal constant ACTIONS = 24;
+    /// @dev Actions `test_EveryActionRuns` replays: every one but `abandon`, whose 150-day jumps
+    ///      the campaign exercises (its outcome is predicted and checked on every call).
+    uint256 internal constant STEP_ACTIONS = 23;
     /// @dev Replayed sequences in `test_EveryActionRuns`.
     uint256 internal constant RUNS = 128;
 
@@ -74,6 +77,7 @@ contract EditionAuctionInvariantTest is EditionAuctionHandler {
         s[20] = this.createEdition.selector;
         s[21] = this.fifoHole.selector;
         s[22] = this.wideBook.selector;
+        s[23] = this.abandon.selector;
     }
 
     /// @notice Every invariant above. In CI the state is asserted every fourth call and after
@@ -165,7 +169,7 @@ contract EditionAuctionInvariantTest is EditionAuctionHandler {
 
     /// @dev One handler call chosen and parameterised from `seed`, as the fuzzer would.
     function _step(uint256 seed) internal {
-        uint256 which = seed % ACTIONS;
+        uint256 which = seed % STEP_ACTIONS;
         (uint256 a, uint256 b, uint256 c) = (
             uint256(keccak256(abi.encode(seed, 1))),
             uint256(keccak256(abi.encode(seed, 2))),
