@@ -173,15 +173,29 @@ contract GenesisConfigTest is Test {
         if (_eq(name, "WorkRecords")) {
             return _s(
                 [
+                    IWorkRecords.relicense.selector,
+                    IWorkRecords.setRoyaltyRate.selector,
+                    IWorkRecords.repinRenderer.selector,
+                    IWorkRecords.setDelivery.selector,
+                    IWorkRecords.addStore.selector,
+                    z,
+                    z
+                ],
+                5
+            );
+        }
+        if (_eq(name, "WorkDelivery")) {
+            return _s(
+                [
                     IWorkLocators.setPreferredKind.selector,
                     IWorkLocators.setCollectionPreferredKind.selector,
                     IWorkLocators.setFilePreference.selector,
                     IWorkLocators.addLocator.selector,
-                    IWorkRecords.relicense.selector,
-                    IWorkRecords.setRoyaltyRate.selector,
-                    IWorkRecords.repinRenderer.selector
+                    z,
+                    z,
+                    z
                 ],
-                7
+                4
             );
         }
         if (_eq(name, "Editions")) {
@@ -427,7 +441,7 @@ contract GenesisConfigTest is Test {
             }
             total += listed.length;
         }
-        assertEq(total, 69, "59 mapped, 9 genesis-only, 1 deferred");
+        assertEq(total, 71, "61 mapped, 9 genesis-only, 1 deferred");
     }
 
     function test_RoleTableMatchesRolesSol() public view {

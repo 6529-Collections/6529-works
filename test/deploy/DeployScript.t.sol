@@ -204,7 +204,7 @@ contract DeployScriptTest is Test {
         assertEq(vm.parseJsonAddress(record, ".params.museum"), address(0xC003), "placeholder");
         assertEq(d.economicsResolver.museum(), address(0xC003));
         (uint256 targets, uint256 calls, uint256 holders) = verifier.verify(record);
-        assertEq(targets, 13);
+        assertEq(targets, 14);
         assertEq(calls, 18);
         assertEq(holders, 17);
     }
@@ -283,7 +283,7 @@ contract DeployScriptTest is Test {
         verifier.setFile("config/manifest.json", MANIFEST);
         vm.warp(block.timestamp + 5 days);
         (uint256 targets, uint256 calls, uint256 holders) = verifier.verify(record);
-        assertEq(targets, 13);
+        assertEq(targets, 14);
         assertEq(calls, 18);
         assertEq(holders, 17);
         // Against another pin it does not verify.
