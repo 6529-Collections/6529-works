@@ -607,8 +607,8 @@ sequenceDiagram
 ## Events
 
 The events of these contracts are listed under
-[SplitFactory and SplitWallet](../integrators/events-and-indexing.md#splitfactory-and-splitwallet),
-[ReleaseVerifier and ClaimRouter](../integrators/events-and-indexing.md#releaseverifier-and-claimrouter),
+[SplitLedger (split wallets)](../integrators/events-and-indexing.md#splitledger-split-wallets),
+[ClaimRouter](../integrators/events-and-indexing.md#claimrouter),
 [RevenueEscrow](../integrators/events-and-indexing.md#revenueescrow) and
 [AssetAllowlist and EconomicsResolver](../integrators/events-and-indexing.md#assetallowlist-and-economicsresolver).
 

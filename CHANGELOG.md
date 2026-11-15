@@ -2,6 +2,75 @@
 
 ## Unreleased
 
+- Permanence ([ADR 0007](docs/adr/0007-permanence.md); owner instruction of 14 and 15 November
+  2026), first integration round. Pre-launch interface reshaping; three lanes (WorkRecords and
+  delivery, the English auction's refused-settlement exit, the edition auction) follow:
+  - **Gas rule for permanent contracts.** `BoundedCall` gains a forward-all family
+    (`tryReadAll`, `tryCallAll`, `tryReadWordAll`, ERC-165 probes) that forwards all the gas
+    EIP-150 allows and reverts with `BoundedCallShortfall(target)` when a failed call left at
+    most 1/8 of the gas before it. `SignatureVerifier` drops the 200,000-gas ERC-1271 cap and
+    accepts signatures up to 65,536 bytes; `Dependency` and `ProtocolContracts` stop using
+    OpenZeppelin's 30,000-gas probe; `StatementLog` drops `OWNER_READ_GAS`, records any
+    non-zero hash-algorithm ID uninterpreted and accepts URIs up to 8,192 bytes (DSP-2,
+    DSP-26). A stress harness (`test/helpers/GasRule.sol`) runs each call out at 1x to 100x
+    its cost (LIM-GAS-13).
+  - **6529 Stream: a permanent core with a replaceable mint policy** (AUC-38 to AUC-43).
+    `mint` hands the request to `PackageRegistry.authorize` (which replaces `consume`; its
+    `ItemConsumed` is gone) and checks its own invariants on the answer; a read-only
+    `StreamViews` extension serves the informational views; the artist registry is fixed;
+    `ItemKind` and `SeedPolicy` are `uint8`; lower-only royalty in the core; `rendererOf`
+    fails closed; the rescue delay is governed above a 90-day floor (`setRescueDelay`);
+    `WorkMinted` and `TermsInterned` carry the locked terms, with `FeeRecipientRegistered`,
+    `ContentReleased` and `RescueDelaySet`. `IStream` is one flat interface ID (`0x1583b98b`),
+    `IStreamViews` another. Stream falls from 24,373 to 21,838 bytes and its size exemption is
+    removed.
+  - **6529 Stream Editions** seals an edition's supply at its sale's settlement
+    (`sealSupply(id, count)`, once; a removed adapter mints only an edition it sealed; closes
+    LIM-EA-10) and holds no duration; `mint`'s data is `abi.encode(currency, unitPrice)`,
+    logged by `EditionPrimaryMint`; `createEdition` emits `EditionTermsLocked`; every call out
+    forwards all gas, the receiver hook included; royalty is lower-only in Editions too
+    (ED-25 to ED-28; `IEditions` `0xfbeabb2a`). The edition auction carries an interim wiring
+    (it seals at its final count and passes the unit price), superseded by its own lane: its
+    margin is 210 bytes, a temporary exemption in `tools/size-margins.json`.
+  - **ArtistRegistry**: a permanent federation directory (per-token entries with the code hash
+    it reads itself, exit by the token, a replaceable federation registry
+    `setFederationRegistry`, consented federated identities `registerFederated`); the five
+    identity timers governed between floors and ceilings (`setTimer`) and locked at staging;
+    best-effort refresh on every recovery path, with a shortfall always reverting; payout-only
+    overrides need dormancy (ID-33 to ID-39).
+  - **Split ledger replaces the split factory, wallets and release verifier.** One permanent
+    `SplitLedger` deploys every split wallet as a 66-byte `SplitVault` at the same CREATE2
+    derivation, keeps every wallet's accounting, verifies signed releases and executes every
+    release through the vault: a one-payee wallet costs 95,950 Prague gas (was 1,185,635),
+    about 0.43M under Glamsterdam (was about 8.5M). Releases name a wallet by payee list and
+    salt; `Released` gains the wallet; no code-hash re-checks; `ClaimRouter(ledger)`.
+    `RevenueEscrow.sweepExcess` (FUNDS_SETTER, 14 days) sweeps only `balance - totalOwed`.
+    The network fee recipient and the museum are `GovernedVault` contracts at genesis
+    (`setDestination`, FUNDS_SETTER, 14 days), whose first destinations are the deployment's
+    `NETWORK_FEE_RECIPIENT` and `MUSEUM` (ECO-39 to ECO-42, LIM-ECO-7).
+  - **ContentStore**: `linkChunk` (a full chunk from parts of any size), `registerManifestList`
+    (manifests up to 4,096 chunks in pieces, same file IDs), `firstMissing` (ranged
+    completeness, also against any `IChunkStore`), `attestBase64(fileId, maxChunks)`, open
+    `uint8` encoding and digest-kind IDs, `ManifestRegistered` with the chunk hashes;
+    `MAX_CHUNKS` 512 to 4,096; `SSTORE2.write` trusts the deployed address. The uploader gains
+    `--part-size`, `--manifest`, `--attest-chunks` and a resumable `--only-missing` (WS-50 to
+    WS-54).
+  - **WorksAccessManager**: a bounded veto on a guardian's removal and on a successor
+    registration, dead-admin recovery, a pre-registered successor with a permissionless
+    `migrate`, seat caps, a 30-day floor on admin grants and no remapping of itself (GV-37 to
+    GV-47); genesis names a third admin Safe and the deploy requires three off anvil; Verify
+    refuses a handed-over manager or an unlisted target.
+  - **Genesis and deployment.** New governed selectors (`setRescueDelay`,
+    `setFederationRegistry`, `setTimer`, `sweepExcess`, both vaults' `setDestination`, the
+    manager's functions and a new `open` group), the role matrix regenerated; `DeployV1`
+    deploys the split ledger and both vaults.
+  - **Budgets.** The source-line budget rises from 13,000 to 15,000 (owner decision, 15
+    November 2026; `tools/check_budgets.py`). ADR 0004's table is re-measured: the tightest
+    start row is 347,416 and the suite's start margin is 2,500 (was 5,000); the re-rate
+    (203,000), the bound `createEdition` (158,000) and the edition auction's capped-sweep
+    `settle` (166,000) regression ceilings move with stated reasons; no start budget or slot
+    maximum is raised.
+
 - Work powers and conventions ([ADR 0006](docs/adr/0006-work-powers-and-conventions.md)):
   - **Lower-only royalty changes.** `WorkRecords.setRoyaltyRate` refuses a rate above the
     work's current one (`RoyaltyRateNotLowered`), before any signature is checked; the rate new

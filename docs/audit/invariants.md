@@ -39,8 +39,8 @@ actions still checks its own effects.
 
 [`StreamInvariant.t.sol`](../../test/stream/StreamInvariant.t.sol), handler
 [`StreamHandler`](../../test/stream/StreamHandler.sol). Real `Stream`, `WorkRecords` and
-`SplitFactory`; mocks `MockSaleAdapter`, `MockEconomics` and two `MockRenderer`s. 40 items in
-three collections.
+`SplitLedger`; mocks `MockSaleAdapter`, `MockEconomics` and two `MockRenderer`s. 40 items in three
+collections.
 
 | ID | Invariant | Test | Handler actions |
 | --- | --- | --- | --- |
@@ -67,6 +67,17 @@ WS-38).
 | INV-STR-13 | No renounced power's function succeeds again, every call the rules allow succeeds, and the rate and license are the ones the handler applied. | `invariant_aRenouncedPowerNeverSucceedsAgain` | `renounce`, `changeRoyalty`, `relicense` |
 | INV-STR-14 | A work's royalty rate never rises: never above its mint rate, and never at any step. | `invariant_royaltyRateNeverRises` | `changeRoyalty` |
 
+### The mint policy
+
+[`StreamPolicySafety.t.sol`](../../test/stream/StreamPolicySafety.t.sol), handler
+`PolicyHandler` in the same file (`StreamPolicyInvariantTest`). Real `Stream`; a `HostilePolicy`
+installed as the mint policy answers arbitrary records, reverts, burns gas, returns malformed data
+or re-enters Stream's writes, next to honest mints.
+
+| ID | Invariant | Test | Handler actions |
+| --- | --- | --- | --- |
+| INV-STR-15 | MP-1 ([AUC-38](../spec/stream-and-auctions.md#rules-and-invariants)): whatever the mint policy answers, no existing token's views change, and each stays held by the adapter that minted it. | `invariant_MP1_ExistingTokensNeverChange` | honest mints and every hostile policy mode |
+
 ## 6529 Stream Editions
 
 [`Editions.invariant.t.sol`](../../test/editions/Editions.invariant.t.sol), handler
@@ -82,6 +93,7 @@ adapter of another kind. INV-ED-3, the OPEN window, left with the edition format
 | INV-ED-2 | `edition(id).minted` counts every copy ever minted and never exceeds a nonzero cap, and balances sum to minted minus burned. | `invariant_SupplyAccounting` | `buy`, `burnFromCustody`, `transfer` |
 | INV-ED-4 | Through repeated `createEdition` calls and resales of the master, neither the link (`masterOf`: Stream, master ID, content hash; `Stream.editionOf`: Editions, edition ID) nor `royaltyInfo`'s receiver and amount change. | `invariant_LinkAndRoyaltyFixed` | `recreate`, `moveMaster` |
 | INV-ED-5 | An edition is bound to the adapter that bound it (`bindMinter`, when its sale opens) or first minted it, and never rebinds; an edition neither bound nor minted has no bound adapter. | `invariant_BoundToTheFirstMinter` | `buy` |
+| INV-ED-6 | A sealed edition ([ED-25](../spec/editions-and-sales.md#rules-and-invariants)) never mints past its sealed count, a removed adapter mints only an edition it sealed, and a seal is never reopened. | `invariant_SealedSupplyNeverExceedsTheSealedCount` | `seal`, `toggleAdmission`, `buy` |
 
 ## Curation
 
@@ -108,8 +120,9 @@ exactness (INV-CUR-1, INV-CUR-6) tests it.
 ## Economics
 
 [`EconomicsInvariant.t.sol`](../../test/economics/invariant/EconomicsInvariant.t.sol), handler
-[`EconomicsHandler`](../../test/economics/invariant/EconomicsHandler.sol). Real `SplitFactory`,
-`SplitWallet` (three payee sets, each at two salts so a replacement exists), `ReleaseVerifier`,
+[`EconomicsHandler`](../../test/economics/invariant/EconomicsHandler.sol). Real `SplitLedger`
+and its 66-byte `SplitVault` wallets (three payee sets, each at two salts so a replacement exists;
+the ledger also verifies signed releases),
 `RevenueEscrow`, `ClaimRouter`, OpenZeppelin `AccessManager`, and `RevenuePayment` in a
 `PaymentHarness`; mock `MockArtistResolver`. Assets: ETH, a USDC-style blocklist token, a
 fee-on-transfer token and a rebasing token. The handler predicts outcomes from its own ghost
@@ -128,6 +141,8 @@ state, never `releasable`, and measures releases by balance deltas.
 | INV-ECO-9 | A replayed signed release fails with `NonceAlreadyUsed`, or with `NotPayoutAddress` once the artist's payout changed. | handler check: `replaySigned` | `releaseSigned`, `revokeNonce`, `setArtistPayout` |
 | INV-ECO-10 | Governed recovery moves a split wallet's credit only to its equivalent replacement (same payees, another salt) and another account's only to the replacement that account consented to, consuming the consent. | handler check: `recover`, `consentToggle` | as named |
 | INV-ECO-11 | A claim batch pays each item its predicted amount, and the recipients' balances rise by exactly the batch total. | handler check: `claimBatch` | as named |
+| INV-ECO-12 | Per wallet and asset, what was released plus what is still releasable equals what the wallet received (the ledger's accounting matches the vault's balances). | `invariant_ReleasedPlusReleasableMatchesReceived` | release actions, `pay`, `receiveDirect` |
+| INV-ECO-13 | The escrow's excess over `totalOwed` is exactly what `sweepExcess` may move, and a sweep never reduces a credit ([ECO-40](../spec/economics-and-payouts.md#rules-and-invariants)). | `invariant_EscrowExcessIsExactlyTheUnowed` | `pay`, `deposit`, `flush`, `recover`, `sweep` |
 
 ## English auction
 
@@ -204,7 +219,7 @@ an unbid 1/1 going to the museum.
 ## Stream's interned terms
 
 [`StreamTermsInvariant.t.sol`](../../test/stream/StreamTermsInvariant.t.sol), handler
-`TermsHandler` in the same file. Real `Stream` and `SplitFactory`; mocks as above, two admitted
+`TermsHandler` in the same file. Real `Stream` and `SplitLedger`; mocks as above, two admitted
 adapters and two fee recipients. The handler mints under 36 terms that share six 23-bit
 positions (real collisions, found offline), re-rates tokens toward colliding rates, and squats
 empty positions with foreign words so that terms must overflow.
@@ -236,6 +251,8 @@ or the exact error before every call.
 | INV-ID-8 | The guardian's `stageOverride` and `stageChange` revert, used payloads and override acceptances never restage, `resolveContested` succeeds only for a live contest citing a latest outcome that differs from the pre-contest one (to uphold, after the 180-day notice), and `expireContest` only 365 days after the contest. | handler check: `guardianRedirect`, `replayLast`, `replayAcceptance`, `resolve`, `expire` | as named |
 | INV-ID-9 | A refresh drops an established wallet only after 30 days missing and a pending one once its consolidation ends, marks missing exactly the established wallets no longer consolidated, stamps new entries with the source's `effectiveAt`, and records every consolidated key unless the snapshot is full. | handler check: `refreshStanding` | `refreshStanding`, `toggleConsolidation`, `warp` |
 | INV-ID-10 | The `restrained` flag in the authority's storage word is set exactly while the pending change is an override that moves the authority, lapsed or not. | `invariant_RestrainedFlagMatchesThePendingChange` | as INV-ID-1 |
+| INV-ID-11 | Each identity timer stays between its floor and ceiling, and the contest timeout exceeds the override delay by at least 185 days ([ID-35](../spec/identity-and-recovery.md#rules-and-invariants)). | `invariant_TimersStayWithinTheirBounds` | `setTimer`, stagings |
+| INV-ID-12 | The federation directory equals the model (one entry per token, ACTIVE and DELISTED only by the federation registry, LEFT only by the token, terminal), and no federation call changes the artist's authority, payout, standing or pending change ([ID-33, ID-34](../spec/identity-and-recovery.md#rules-and-invariants)). | `invariant_FederationDirectoryMatchesTheModel`; handler check: every federation call | `fedList`, `fedStatus`, `fedExit`, `fedRegister` |
 
 ## Statements
 
@@ -289,6 +306,20 @@ revocations another account scheduled (Rule 3).
 | INV-GV-3 | No non-suspendable role is ever suspended; each fixed key's suspension equals the model (set by `suspend`, cleared by an executed 30-day lift); a suspended key fails `hasRole`, an unsuspended one passes; the CURATOR key's `canCall` on the target is immediate, with zero delay, exactly when unsuspended. | `invariant_SuspensionsStayContained` | `guardianSuspends`, `scheduleLift`, `executeBenign`, `warp` |
 | INV-GV-4 | A guardian's suspension of an unsuspended fixed key succeeds; its attempt on a non-suspendable role (ADMIN on the hot admin, another role on a guardian) never does. | handler check: `guardianSuspends` (`fail_on_revert`; `nonSuspendableSuspended` checked by INV-GV-3) | as named |
 
+### The manager's permanence functions
+
+[`PermanenceInvariant.t.sol`](../../test/governance/PermanenceInvariant.t.sol): four campaigns on a
+real `WorksAccessManager` (the escalation campaign with five guardian seats, two admins and an
+outsider)
+([GV-37 to GV-45](../spec/governance.md#rules-and-invariants)).
+
+| ID | Invariant | Test | Handler actions |
+| --- | --- | --- | --- |
+| INV-GV-5 | Once a guardian struck a protected action, only its scheduler or a majority of the guardian seats counted at scheduling, at least two, stops the re-proposal. | `invariant_OnlyAGuardianMajorityStopsTheEscalatedLane` | `cancelAs`, `leave`, `warp` |
+| INV-GV-6 | A dead-admin recovery never completes while an admin acts. | `invariant_RecoveryNeverCompletesWhileAnAdminActs` | `open`, `approve`, `complete`, `heartbeat`, `warp` |
+| INV-GV-7 | `migrate` is all-or-nothing per piece: every target of a completed piece answers to the successor, and none of a failed piece moved. | `invariant_MigrateIsAllOrNothingPerPiece` | `migrate` |
+| INV-GV-8 | The ADMIN and GUARDIAN seat caps hold. | `invariant_SeatCapsHold` | `grant`, `revoke`, `setCap` |
+
 ## Properties tested by fuzz and unit tests
 
 Properties with no campaign of their own, or tested more directly outside one: by fuzz tests
@@ -331,6 +362,9 @@ Properties with no campaign of their own, or tested more directly outside one: b
 | PROP-ID-1 | A change never executes before its delay, a contested override's uphold window is always open, and the adapter's "established" answer matches a model. | [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) `testFuzz_ExecuteChange_RespectsTheDelay`; [`ContestedOverrides.t.sol`](../../test/identity/ContestedOverrides.t.sol) `testFuzz_Contest_TheUpholdWindowIsAlwaysOpen`; [`ConsolidationAdapter.t.sol`](../../test/identity/ConsolidationAdapter.t.sol) `testFuzz_IsEstablished_MatchesModel` |
 | PROP-DSP-1 | Any append sequence matches the model, relays round-trip and never replay, and the nonce bitmap tracks exactly the spent nonces. | [`StatementLog.t.sol`](../../test/records/StatementLog.t.sol) `testFuzz_SequenceMatchesModel`, `testFuzz_RelayRoundTripAndReplay`, `testFuzz_NonceBitmapTracksExactlyTheSpentNonces` |
 | PROP-HASH-1 | The item hash binds the collection and the shares and does not depend on the chain. | [`WorksHashing.t.sol`](../../test/interfaces/WorksHashing.t.sol) `testFuzz_itemHash_bindsCollection`, `testFuzz_itemHash_bindsShares`, `testFuzz_itemHash_independentOfChain` |
+| PROP-STR-2 | The artist registry is fixed in Stream: `setDependency("ARTIST_REGISTRY")` reverts and a replacement mint policy naming another registry is refused ([AUC-39](../spec/stream-and-auctions.md#rules-and-invariants)). | [`Stream.t.sol`](../../test/stream/Stream.t.sol) `test_setDependency_refusesAPolicyWithAnotherArtistRegistry` |
+| PROP-STR-3 | `rendererOf` never falls back to the default renderer on a records fault or a shortfall: only "no pin" and `RecordNotOpen` serve it ([AUC-42](../spec/stream-and-auctions.md#rules-and-invariants)). | `Stream.t.sol` `test_rendererOf_failsClosedOnARecordsFault`, `test_GasRule_rendererOf` |
+| PROP-ECO-10 | A governed vault forwards what it holds only to its destination, which only a compare-and-set FUNDS_SETTER action changes ([ECO-41](../spec/economics-and-payouts.md#rules-and-invariants)). | [`GovernedVault.t.sol`](../../test/economics/GovernedVault.t.sol) `test_AnyoneForwardsETHToTheDestinationOnly`, `test_SetDestinationIsCompareAndSet`, `test_SetDestinationIsGovernedInTheFundsClass` |
 
 ### Content and rendering
 
@@ -353,7 +387,7 @@ Figures: [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table). Rul
 | PROP-GAS-4 | The harness's cold-account correction is exact (a `start` from a fully cold state equals the corrected figure after warming every account), adds nothing for accounts already cold, and refuses storage it does not cool. | [`GasHarness.t.sol`](../../test/integration/GasHarness.t.sol) `test_TheColdAccountCorrectionIsExact`, `test_NothingIsAddedForAccountsAlreadyCold`, `test_RequireCooledRefusesStorageItDoesNotCool` |
 | PROP-GAS-5 | The state-growth counter counts a slot once, ignores overwrites, zero-to-zero, reverted writes, out-of-gas and `INVALID` frames and transient storage, and counts `CREATE` and ETH sent to a fresh account or an empty precompile as new accounts. | [`StateGrowth.t.sol`](../../test/helpers/StateGrowth.t.sol) (24 tests) |
 | PROP-GAS-6 | With every record, media and locator cap filled on the real stack, Stream's `tokenURI` and Editions' `uri` cost at most 8M Prague gas (`TOKEN_URI_BUDGET`) and create no state. | [`TokenUriBudget.t.sol`](../../test/integration/TokenUriBudget.t.sol) `test_Budget_*`; `GasReport.t.sol` `test_Gas_TokenURIBySize`; [`RendererGas.t.sol`](../../test/content/renderer/RendererGas.t.sol) `RendererGasTest`, `RendererGasBudgetTest` |
-| PROP-GAS-7 | Worst-case bounded inputs fit the EIP-7825 cap of 16,777,216 gas in Prague gas, intrinsic and calldata included: claim batches and the largest split wallet; mint, `openRecord`, relicense with 16 consents, the longest locator, the preferred-locator scan and `syncOnChain`; `consume` and `registerPackage`; `createEdition`; every `settle` call of the edition auction's worst cases (every step of the widest ladder used, the cap binding at step 0, the longest departure sweep); settlement with every fallback; `stageChange`, `stageOverride` and `refreshStanding` (under half the cap); manifest registration and attestation at `MAX_CHUNKS`; genesis `configure`. | [`GasCap.t.sol`](../../test/economics/GasCap.t.sol), [`StreamTxCap.t.sol`](../../test/stream/StreamTxCap.t.sol), [`PackageRegistryGas.t.sol`](../../test/curation/PackageRegistryGas.t.sol), `Editions.t.sol` `test_Gas_CreateEditionWorstCaseFitsTxCap`, [`EditionAuctionGasReport.t.sol`](../../test/integration/EditionAuctionGasReport.t.sol) `test_Gas_EditionAuction_SettleWorstCase`, `test_Gas_EditionAuction_SettleWorstCase512`, `test_Gas_EditionAuction_SweepChunkWorstCase`, [`EnglishAuctionGas.t.sol`](../../test/sales/auction/EnglishAuctionGas.t.sol) `test_SettleGas_FitsTheTransactionCap`, [`EnglishAuctionHostile.t.sol`](../../test/sales/auction/EnglishAuctionHostile.t.sol) `test_SettleWorstCaseFitsTheFusakaCap`, [`ArtistRegistryStanding.t.sol`](../../test/identity/ArtistRegistryStanding.t.sol) `test_WorstCase_*`, `ContentStore.t.sol` `test_RegisterManifest_AtMaxChunksFitsTheTransactionGasCap`, `Base64Attest.t.sol` `test_Attest_AtMaxChunksEveryCallFitsTheTransactionGasCap`, [`Genesis.t.sol`](../../test/integration/Genesis.t.sol) `test_GenesisConfigureFitsTheTransactionCap`, [`GenesisConfig.t.sol`](../../test/governance/GenesisConfig.t.sol) `test_MaximumWiringFitsTheTransactionGasCap` |
+| PROP-GAS-7 | Worst-case bounded inputs fit the EIP-7825 cap of 16,777,216 gas in Prague gas, intrinsic and calldata included: claim batches and the largest payee list; mint, `openRecord`, relicense with 16 consents, the longest locator, the preferred-locator scan and `syncOnChain`; `consume` and `registerPackage`; `createEdition`; every `settle` call of the edition auction's worst cases (every step of the widest ladder used, the cap binding at step 0, the longest departure sweep); settlement with every fallback; `stageChange`, `stageOverride` and `refreshStanding` (under half the cap); manifest registration and attestation at `MAX_CHUNKS`; genesis `configure`. | [`GasCap.t.sol`](../../test/economics/GasCap.t.sol), [`StreamTxCap.t.sol`](../../test/stream/StreamTxCap.t.sol), [`PackageRegistryGas.t.sol`](../../test/curation/PackageRegistryGas.t.sol), `Editions.t.sol` `test_Gas_CreateEditionWorstCaseFitsTxCap`, [`EditionAuctionGasReport.t.sol`](../../test/integration/EditionAuctionGasReport.t.sol) `test_Gas_EditionAuction_SettleWorstCase`, `test_Gas_EditionAuction_SettleWorstCase512`, `test_Gas_EditionAuction_SweepChunkWorstCase`, [`EnglishAuctionGas.t.sol`](../../test/sales/auction/EnglishAuctionGas.t.sol) `test_SettleGas_FitsTheTransactionCap`, [`EnglishAuctionHostile.t.sol`](../../test/sales/auction/EnglishAuctionHostile.t.sol) `test_SettleWorstCaseFitsTheFusakaCap`, [`ArtistRegistryStanding.t.sol`](../../test/identity/ArtistRegistryStanding.t.sol) `test_WorstCase_*`, `ContentStore.t.sol` `test_RegisterManifest_OneCallOf512FitsTheTransactionGasCap`, `Base64Attest.t.sol` `test_Attest_AtMaxChunksEveryCallFitsTheTransactionGasCap`, [`Genesis.t.sol`](../../test/integration/Genesis.t.sol) `test_GenesisConfigureFitsTheTransactionCap`, [`GenesisConfig.t.sol`](../../test/governance/GenesisConfig.t.sol) `test_MaximumWiringFitsTheTransactionGasCap` |
 | PROP-GAS-8 | The VRF callback creates no storage slot and, repriced as ADR 0004 models Glamsterdam, uses at most half of `MIN_CALLBACK_GAS` (100,000). | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol) `test_Callback_UsesUnderHalfTheFloorUnderGlamsterdam` |
 
 ## Gaps

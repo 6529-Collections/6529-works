@@ -41,8 +41,10 @@ See: [editions and sales](spec/editions-and-sales.md).
 
 ### 6529 Stream Federated
 
-The v1.1 tier, built only if needed: artist-deployed contracts sold through the shared
-[sale adapters](#sale-adapter). v1 installs no federation registry.
+Artist-deployed contracts (a Federated Stream 721 and its linked Federated Stream Editions)
+sold through the shared [sale adapters](#sale-adapter) and listed in the artist registry's
+federation directory. In v1 by owner decision of 15 November 2026 ([ADR 0007](adr/0007-permanence.md)),
+specified by a later ADR; it earns no TDH. No federation registry is installed yet.
 
 See: [federated README](../src/federated/README.md).
 
@@ -327,7 +329,8 @@ See: [works and storage](spec/works-and-storage.md).
 ### contest
 
 A [captured wallet](#captured-wallet)'s cancel of a pending [override](#override), which then
-waits for a TDH vote or lapses after 365 days (`ArtistRegistry.CONTEST_TIMEOUT`).
+waits for a TDH vote or lapses after `CONTEST_TIMEOUT` (365 days at genesis, governed within
+compiled bounds and locked at staging; `ArtistRegistry.timer`).
 
 See: [identity and recovery](spec/identity-and-recovery.md).
 
@@ -506,8 +509,9 @@ See: [stream and auctions](spec/stream-and-auctions.md).
 
 ### dormancy
 
-A year without the artist's own signed activity (`ArtistRegistry.DORMANCY`), required before an
-ESTATE or LOST_KEY [override](#override).
+`DORMANCY` (365 days at genesis, governed) without the artist's own signed activity, required
+before an ESTATE or LOST_KEY [override](#override), and before any override that moves the payout
+but keeps the authority (`ArtistRegistry.timer`).
 
 See: [identity and recovery](spec/identity-and-recovery.md).
 
@@ -629,8 +633,8 @@ See: [`Editions.sol`](../src/editions/Editions.sol).
 
 ### ERC-1271
 
-Signature validation for contract accounts, accepted for every protocol signature with 200,000
-gas (`SignatureVerifier.ERC1271_GAS_LIMIT`).
+Signature validation for contract accounts, accepted for every protocol signature, forwarding
+all gas (a check that runs short reverts with `BoundedCallShortfall`).
 
 See: [`SignatureVerifier.sol`](../src/libraries/SignatureVerifier.sol).
 
@@ -759,6 +763,15 @@ The signed JSON document describing one [configuration epoch](#configuration-epo
 hash is on-chain.
 
 See: [governance](spec/governance.md).
+
+### governed vault
+
+A small governed contract (`GovernedVault`) holding what is paid to it and forwarding it only to a
+destination FUNDS_SETTER sets (14 days, compare-and-set). Genesis deploys two: the network fee
+recipient (`FeeRecipientVault`) and the [6529 Network Museum](#6529-network-museum)
+(`MuseumVault`).
+
+See: [economics and payouts](spec/economics-and-payouts.md).
 
 ### grant delay
 
@@ -909,6 +922,14 @@ effect.
 
 See: [governance](spec/governance.md).
 
+### mint policy
+
+The replaceable contract 6529 Stream hands each mint request to, unread (`IMintPolicy`; the
+package registry at genesis). It does consent, item rules, VRF delivery and the terms quote and
+answers a record Stream re-checks; it has no write path into Stream and decides new mints only.
+
+See: [Stream and auctions](spec/stream-and-auctions.md).
+
 ### move
 
 The lead artist's revocable EIP-712 `MoveToStream` signature authorizing a Stream mint, checked
@@ -1013,8 +1034,8 @@ See: [identity and recovery](spec/identity-and-recovery.md).
 
 ### payout resolver
 
-The contract split wallets ask for an artist's payout address: the artist registry, pinned by
-code hash.
+The contract the split ledger asks for an artist's payout address: the artist registry, an
+immutable of the ledger with no code-hash pin.
 
 See: [economics and payouts](spec/economics-and-payouts.md).
 
@@ -1035,6 +1056,14 @@ Uniswap's signature-transfer contract. A `PERMIT2` payment's witness binds the a
 relayer can submit it.
 
 See: [buying, bidding and settling](integrators/buying-bidding-settling.md).
+
+### permanent contract
+
+A contract with authority over existing tokens, existing works' facts or funds already owed. It
+is never redeployed, holds invariants rather than policy numbers, forwards all gas on calls out and
+takes no instruction from replaceable code ([ADR 0007](adr/0007-permanence.md)).
+
+See: [trust assumptions](audit/trust-assumptions.md).
 
 ### pin
 
@@ -1281,6 +1310,14 @@ out, and claims then mint the copies.
 
 See: [stream and auctions](spec/stream-and-auctions.md), [editions and sales](spec/editions-and-sales.md).
 
+### shortfall
+
+A call into another contract that failed leaving at most 1/8 of the gas held before it. A
+permanent contract reverts with `BoundedCallShortfall` on one, and never reads it as a refusal or a
+default answer.
+
+See: [`BoundedCall.sol`](../src/libraries/BoundedCall.sol).
+
 ### signed release
 
 A payee's EIP-712 `ReleaseAuthorization` that anyone may submit, with a revocable nonce.
@@ -1301,10 +1338,20 @@ the bid, never past a governed backstop.
 
 See: [editions and sales](spec/editions-and-sales.md#timing-alongside-the-11).
 
+### split ledger
+
+The permanent contract (`SplitLedger`, deployed under the name `SplitFactory`) that deploys every
+[split wallet](#split-wallet), keeps each wallet's accounting, verifies signed releases and executes
+every release through the wallet. It replaced the split factory, the per-wallet contract and the
+release verifier ([ADR 0007](adr/0007-permanence.md)).
+
+See: [economics and payouts](spec/economics-and-payouts.md).
+
 ### split wallet
 
-An immutable pull-payment wallet (`SplitWallet`) whose CREATE2 address commits to its
-[canonical payee list](#canonical-payee-list).
+A 66-byte pull-payment vault (`SplitVault`) that the [split ledger](#split-ledger) deploys at a
+CREATE2 address committing to its [canonical payee list](#canonical-payee-list) and a salt. It
+executes only its ledger's instructions; the ledger keeps its accounting.
 
 See: [economics and payouts](spec/economics-and-payouts.md).
 
@@ -1324,8 +1371,8 @@ See: [identity and recovery](spec/identity-and-recovery.md).
 ### standing
 
 A consolidated wallet's right to cancel or contest an artist's pending identity change. A
-refresh records it once the consolidation is 30 days old, and it lasts 30 days
-(`ArtistRegistry.STANDING_GRACE`) after the consolidation ends.
+refresh records it once the consolidation is 30 days old, and it lasts `STANDING_GRACE` (30 days
+at genesis, governed; `ArtistRegistry.timer`) after the consolidation ends.
 
 See: [identity and recovery](spec/identity-and-recovery.md).
 

@@ -35,8 +35,9 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 | Bidder ETH and ERC-20 | The standing high bid; outbid and refunded bids as per-account credits | The bidder: `claim`, and `withdrawBid` while paused or frozen. Settlement pays out only the winning bid | Lock-up, theft, hostile tokens, a currency that never returns |
 | Edition bidders' ETH | Every live edition bid's escrow in `UniformEditionAuction`, until it is claimed or withdrawn; refunds credited by `claimBidFor` | The bidder: `claimBid` after settlement, `withdrawBid` while the 1/1 is paused (a bid placed or last raised before the pause's minute). Settlement pays out only `count × price` | Lock-up, a wrong clearing or allocation, double claims, an unsold copy |
 | Sale proceeds in flight | Payments from the two auctions' `settle` to the seller wallet and fee recipient; failed ERC-20 settlement payouts credited in the English auction | `RevenuePayment` (pay, else escrow); `EnglishAuction.claimFor` | A refusing wallet, a blocking token, gas starvation |
-| Split wallet balances | Each `SplitWallet`, for ETH and any ERC-20 | Fixed payees: anyone, to the payee. Artist payees: only the current payout address, or its signature | A push to a lost key, a redirected payout, a replayed release, hostile tokens |
-| Escrow credits | `RevenueEscrow` | Anyone flushes a credit to its own wallet; governed `recover` moves it to an equivalent wallet or a consented replacement | Governance taking credits, a blocked wallet |
+| Split wallet balances | Each 66-byte `SplitVault` wallet, for ETH and any ERC-20; its accounting in the permanent `SplitLedger` | Fixed payees: anyone, to the payee. Artist payees: only the current payout address, or its signature | A push to a lost key, a redirected payout, a replayed release, hostile tokens |
+| Escrow credits | `RevenueEscrow` | Anyone flushes a credit to its own wallet; governed `recover` moves it to an equivalent wallet or a consented replacement; governed `sweepExcess` moves only the balance above `totalOwed` | Governance taking credits, a blocked wallet |
+| Network fee and museum holdings | `FeeRecipientVault` and `MuseumVault` (governed vaults) | Anyone forwards to the vault's destination; FUNDS_SETTER changes the destination (14 days, compare-and-set) | A hostile destination change, a refusing destination |
 | Artist identity and payout routing | `ArtistRegistry` | The artist (7-day change); governance (180-day override); captured wallets cancel or contest; guardians veto | Key theft, planted wallets, abuse of recovery, a broken identity source |
 | Curation integrity | `PackageRegistry` and `Eip712CurationVerifier` | The curation signer approves; guardians revoke; only the bound Stream consumes | Forged or leaked approvals, signer compromise, reuse, squatting, copies |
 | Metadata integrity and permanence | `WorkRecords`, `ContentStore`, the renderer | The artist until finalize; governance with every party's consent; PLATFORM and STORAGE_OPERATOR for copies and routing; nobody for stored bytes | JSON injection, unbounded gas, look-alike traits, script break-out, renderer substitution, locator repointing |
@@ -71,6 +72,7 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 | --- | --- | --- |
 | `start`, `startWithBid` | Start a work whose terms can never settle (the escrow as seller or fee recipient) | [AUC-14][auc]: refused at start, while nothing is in custody (CALLS-1) |
 | `start` | Start an unapproved, revoked, reused or copied item, or one without the artist's move | [AUC-3][auc], [CUR-1, CUR-6, CUR-10, CUR-12][cur]: every mint consumes an approved, accepted, moved item, once per content hash; a VRF item also needs its seed ([AUC-4][auc]) |
+| Stream's mint policy | A replaced or hostile mint policy (`PackageRegistry`) changes existing tokens or mints outside Stream's invariants | [AUC-38][auc]: the policy decides new mints only and has no write path into Stream, which re-checks every record it answers; the artist registry is fixed ([AUC-39][auc]); a successor must honour its predecessor's consumed items ([LIM-GV-22][lim-gv]) |
 | `startWithBid` | A searcher front-runs a start with the same move | Accepted: the victim loses only gas, and a move has no "not before" ([LIM-SAL-9][lim-sal], MARKET-4) |
 | `bid` | A zero or dust bid claims a work | [AUC-16][auc]: a minimum first bid and a minimum increment |
 | `bid` | Sniping in the last seconds | [AUC-17][auc]: a late bid extends the end by the anti-snipe window |
@@ -116,7 +118,7 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 | Dispute of the 1/1 | Editions of a work later cancelled stay sold | [EA-13][ed]: a cancelled 1/1 voids the sale with full refunds; bidders whose bids were placed or last raised before the pause's minute may withdraw during it ([LIM-EA-14, LIM-EA-16][lim-ea]) |
 | Whole lifecycle | Value leaks, or the clearing drifts from its definition | [EA-14][ed]: ETH conservation, the per-unit reference, FIFO and the clocks, as stateful invariants on the real stack |
 
-### Split wallets and releases
+### Split wallets and releases (the split ledger)
 
 | Entry point | Threat | Mitigation |
 | --- | --- | --- |
@@ -124,7 +126,9 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 | `release` during a recovery | The key being recovered from pulls the balance | [ECO-18][eco], [ID-16][id]: the payout resolves to zero while a change would move it, and the wallet refuses |
 | Payout rotation | A payout points at a contract that can never pull | [ECO-19][eco], [ID-17][id]: such payouts are refused (MONEY-4); a predicted wallet address cannot be ([LIM-ID-12][lim-id]) |
 | `releaseWithAuthorization` | A signed release is replayed, on this or another chain or wallet | [ECO-20, ECO-21][eco]: bound to wallet, chain and deadline; replay keyed on the nonce |
-| Resolver | Replaced code at the resolver's address redirects artist shares | [ECO-18][eco]: the resolver's code hash is checked at every artist-payee release |
+| Resolver | Replaced code at the resolver's address redirects artist shares | The resolver is the permanent artist registry, which has no code to replace (no proxy, no `selfdestruct` after EIP-6780); the ledger pins no code hash, so no change can freeze artist shares ([ECO-12][eco]); while the payout is unresolved only artist-resolved payees stop ([ECO-18][eco]) |
+| The vault | A call other than the ledger's moves funds out of a wallet | [ECO-39][eco]: a vault executes only its ledger's instructions, accepts plain ETH within a 2,300-gas stipend and refuses any other call with calldata; every move is proved by its balances |
+| A dependency that burns gas | A payee, token, resolver or signer that costs 1x to 100x its base changes a release, or a shortfall reads as a refusal | [ECO-42][eco]: no gas number in the ledger; a failure leaving at most 1/8 of the gas reverts with `BoundedCallShortfall` |
 | `ClaimRouter.claim` | A stranger routes an artist's share through the batch router | [ECO-16, ECO-29][eco]: plain items serve fixed payees only, and the router cannot redirect a release |
 | `ClaimRouter` continue mode | An item silently runs out of gas and is skipped | [ECO-30][eco]: a shortfall below the ceiling reverts the batch (MONEY-3) |
 | Value accounting | Releases exceed entitlements, or rebases distort them | [ECO-13, ECO-14, ECO-24][eco]: cumulative entitlements, conservation, and a high-water mark that freezes on a shrinking balance |
@@ -135,6 +139,7 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 | --- | --- | --- |
 | `RevenueEscrow.recover` (FUNDS_SETTER, 14 days) | Governance moves a blocked wallet's credit where it chooses | [ECO-28][eco]: only to an equivalent wallet or the consented replacement (MONEY-2) |
 | `RevenueEscrow.flush` | A hostile token re-enters, or a flush loses the credit | [ECO-27][eco]: a flush pays only the credited wallet, and a failed transfer reverts it; a transient guard blocks reentry (`test_FlushReentryIsBlocked` in [`RevenueEscrow.t.sol`](../../test/economics/RevenueEscrow.t.sol)) |
+| `RevenueEscrow.sweepExcess` (FUNDS_SETTER, 14 days) | Governance takes credited funds | [ECO-40][eco]: it moves only `balance - totalOwed[asset]`, and no credit is reduced |
 
 ### Curation
 
@@ -143,8 +148,8 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 | `registerPackage` | A forged attestation, or one from another chain or deployment | [CUR-4, CUR-5][cur]: an active signer, its current epoch, this domain, and the canonical encoding only |
 | `registerPackage` | A leaked attestation is registered before anyone can react | [CUR-2][cur]: a root revoked in advance never registers |
 | Signer compromise | A compromised signer keeps approving, or its old approvals revive | [CUR-17][cur]: an immediate, one-way disable; [CUR-4][cur]: approvals bind the signer epoch (SIGS-2). Registered roots stay usable, so guardians revoke them per root ([CUR-16][cur]) |
-| `consume` | An item, or its content, is used twice | [CUR-12][cur]: one consume per content hash, through any root |
-| `consume` | A copier consumes a work's content hash first | Off-chain first: the signer checks every declared SHA-256 ([LIM-GV-2][lim-gv]). On-chain: an upheld dispute burns the copy and [CUR-14][cur] reserves the hash for the rightful artist (SIGS-1) |
+| `authorize` (the mint policy's `consume`) | An item, or its content, is used twice | [CUR-12][cur]: one consume per content hash, through any root |
+| `authorize` | A copier consumes a work's content hash first | Off-chain first: the signer checks every declared SHA-256 ([LIM-GV-2][lim-gv]). On-chain: an upheld dispute burns the copy and [CUR-14][cur] reserves the hash for the rightful artist (SIGS-1) |
 | Copied works | A copier gets another artist's work approved | As above, and guardians revoke every root listing the copier's items ([CUR-16][cur]); after a sale a dispute yields only a statement ([DSP-22][dsp]) |
 | `acceptPackage` | Pre-signed acceptances with different profiles race | [CUR-7][cur]: the first relayed sets the profile; the rest revert |
 | `revokePackage` | Revoking a root strands a sold master's edition | [ED-1][ed]: a registered root counts, revoked or not (SIGS-4) |
@@ -192,6 +197,10 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 | `execute` with value | ETH sent through `execute` lands in a target | [GV-18][gv]: every governed function is non-payable |
 | Stale operations | An operation written against an old value executes later | [GV-19][gv]: compare-and-set; [GV-7][gv]: operations expire a week after they mature |
 | Whole system | A compromised admin gains control against vigilant guardians | [GV-16, GV-30][gv]: stateful invariant campaigns, with Rule 3 and suspensions |
+| Guardian removal and handover | Colluding guardians shield each other or block a handover | [GV-37][gv]: after a first cancellation the re-proposal waits the escalated delay and only a majority of the guardian seats stops it; with three seats any two are that majority ([LIM-GV-4][lim-gv]) |
+| Dead admins | Every admin key is lost and governance stops for good | [GV-42][gv]: after a year of silence and 180 public days a guardian majority, or the pre-registered recovery address, recovers the admin seat; any admin activity voids it ([LIM-GV-19][lim-gv]) |
+| Handover | A successor leaves a target behind, or a migration half-moves | [GV-43 to GV-45][gv]: a registered successor ends this manager's power at once; `migrate` moves every listed target, all-or-nothing per piece ([LIM-GV-20][lim-gv]) |
+| Seats and the manager itself | A fresh admin acts at once, seats are flooded, or the manager remaps its own functions | [GV-38 to GV-40][gv]: every ADMIN grant waits at least 30 days, seats are capped, and the manager configures nothing on itself |
 
 ### Content and rendering
 
@@ -204,6 +213,7 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 | Script works | The artist's script breaks out of the renderer's page | [RND-19][rnd]: `</script` and `<!--` neutralized; large scripts served by locator |
 | Renderer reads | A hostile token, satellite or store returns garbage and the renderer reports plausible metadata | [RND-6, RND-7][rnd]: bounded reads that revert on failure or starvation |
 | Renderer pins | Code under a pinned renderer address changes | [RND-2, RND-3][rnd]: checked at every use, with no fallback (DEPS-6) |
+| `rendererOf` | A records fault or a starved read serves the default renderer for a pinned work | [AUC-42][auc]: only "no pin" and `RecordNotOpen` serve the default; any other revert is passed on and a shortfall reverts |
 | `addLocator` | A locator is repointed, or listed twice | [WS-18, WS-19][ws]: canonical content addresses, no duplicates, quotas, PLATFORM alone after finalize (CONTENT-3, LIFECYCLE-3) |
 | Preferences | The storage operator points a file at another file's copy | [WS-22][ws]: only the file's own copies |
 | Licenses | A CC0 work is relicensed, or names another CC0 text | [WS-5, WS-12][ws]: the pinned CC0 text, irrevocably |

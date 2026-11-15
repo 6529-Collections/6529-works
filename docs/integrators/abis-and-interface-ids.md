@@ -8,7 +8,9 @@ candidate), and every r4 contract is verified on Sourcify. The superseded r3 run
 `v1.0.0-rc.1` (`e5fe78c`), see
 [Changes since the Sepolia r3 build](#changes-since-the-sepolia-r3-build); the superseded r2
 runs an earlier build, see
-[Changes since the Sepolia r2 build](#changes-since-the-sepolia-r2-build). Addresses are in
+[Changes since the Sepolia r2 build](#changes-since-the-sepolia-r2-build). The permanence
+restructuring ([ADR 0007](../adr/0007-permanence.md)) changed many interfaces after r4, see
+[Changes in the permanence restructuring](#changes-in-the-permanence-restructuring). Addresses are in
 [Addresses](addresses.md), events in [Events and indexing](events-and-indexing.md).
 
 > Pre-audit. See the [project status](../../README.md#status).
@@ -41,6 +43,14 @@ declare events and errors their interfaces do not (the entropy module's `ConfigS
 errors of the libraries they use, such as `Dependency` and `SignatureVerifier`). A revert can
 come from a contract further down the call, so decode it against every contract on the path.
 
+**6529 Stream answers its informational views through an extension.** `work`, `collection`,
+`totalSupply`, `contractURI` and `owner` (`IStreamViews`) are served by `StreamViews`, a
+stateless contract 6529 Stream's constructor deploys, through a read-only `staticcall` fallback;
+call them on 6529 Stream's address. The `Stream` artifact's `abi` lacks them: merge it with
+`IStreamViews`. `IStream` is one flat interface that also re-declares the `IMintTarget` and
+ERC-2981 functions, so its ID covers 6529 Stream's whole native surface
+([AUC-40](../spec/stream-and-auctions.md#rules-and-invariants)).
+
 **The English auction is the exception: call it with `IEnglishAuction`.** Its views live on its
 lens, `EnglishAuctionLens`, deployed on its own just before the auction and pinned by its
 constructor (`lens()`): the auction forwards every call it does not declare to the lens with a
@@ -67,8 +77,8 @@ the pause start its `withdrawBid` compares a bid's minute with.
 
 ### Contract names
 
-Deployment records name contracts by their contract name, except `CurationVerifier` and
-`EntropyModule`.
+Deployment records name contracts by their contract name, except `CurationVerifier`,
+`EntropyModule`, `SplitFactory` (the split ledger) and the two governed vaults.
 
 | Deployment record name | Source and contract |
 | --- | --- |
@@ -79,9 +89,9 @@ Deployment records name contracts by their contract name, except `CurationVerifi
 | `Renderer` | [`src/content/Renderer.sol`](../../src/content/Renderer.sol) |
 | `ConsolidationAdapter` | [`src/identity/ConsolidationAdapter.sol`](../../src/identity/ConsolidationAdapter.sol) |
 | `ArtistRegistry` | [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol) |
-| `ReleaseVerifier` | [`src/economics/ReleaseVerifier.sol`](../../src/economics/ReleaseVerifier.sol) |
-| `SplitFactory` | [`src/economics/SplitFactory.sol`](../../src/economics/SplitFactory.sol) |
-| (each split wallet, deployed by the factory) | [`src/economics/SplitWallet.sol`](../../src/economics/SplitWallet.sol) |
+| `SplitFactory` | [`src/economics/SplitLedger.sol`](../../src/economics/SplitLedger.sol), contract `SplitLedger`: the split ledger, which is also the release verifier (the record keeps the name `SplitFactory`) |
+| (each split wallet, deployed by the ledger) | A 66-byte vault, raw bytecode documented in [`src/economics/SplitVault.sol`](../../src/economics/SplitVault.sol) (a library holding the code, not a contract artifact) |
+| `FeeRecipientVault`, `MuseumVault` | [`src/economics/GovernedVault.sol`](../../src/economics/GovernedVault.sol), contract `GovernedVault`: the network fee recipient and the museum the economics resolver names |
 | `ClaimRouter` | [`src/economics/ClaimRouter.sol`](../../src/economics/ClaimRouter.sol) |
 | `AssetAllowlist` | [`src/economics/AssetAllowlist.sol`](../../src/economics/AssetAllowlist.sol) |
 | `EconomicsResolver` | [`src/economics/EconomicsResolver.sol`](../../src/economics/EconomicsResolver.sol) |
@@ -90,7 +100,7 @@ Deployment records name contracts by their contract name, except `CurationVerifi
 | `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) |
 | `StatementLog` | [`src/records/StatementLog.sol`](../../src/records/StatementLog.sol) |
 | `EntropyModule` | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol), contract `VrfEntropyModule` |
-| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) |
+| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol); its informational views are answered by `StreamViews` ([`src/stream/StreamViews.sol`](../../src/stream/StreamViews.sol)), which its constructor creates, through 6529 Stream's own address |
 | `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) |
 | `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) |
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) |
@@ -116,6 +126,28 @@ Sourcify needs them to verify the bytecode.
 The metadata hash covers every source file byte for byte, NatSpec included, so only a build
 from the deployment's commit matches the deployed bytecode exactly. The deployment records
 hold each contract's code hash, which [`Verify.s.sol`](../../script/Verify.s.sol) compares.
+
+## Changes in the permanence restructuring
+
+[ADR 0007](../adr/0007-permanence.md) (14 and 15 November 2026) reshapes the permanent contracts
+before launch. Sepolia r4 (`1e7022b`) predates every change below, and the earlier changes on
+`main` listed in the [changelog](../../CHANGELOG.md).
+
+| File | Change |
+| --- | --- |
+| [`IStream.sol`](../../src/interfaces/IStream.sol), [`IStreamViews.sol`](../../src/interfaces/IStreamViews.sol), [`IStreamExtension.sol`](../../src/interfaces/IStreamExtension.sol), [`IMintPolicy.sol`](../../src/interfaces/IMintPolicy.sol) | `IStream` is one flat interface (ID `0x1583b98b`): it re-declares the `IMintTarget` and ERC-2981 functions it serves. The informational views (`work`, `collection`, `totalSupply`, `contractURI`, `owner`) moved to `IStreamViews` (`0xd53fe015`), served by the `StreamViews` extension (`IStreamExtension`, `0xababe87a`). A mint hands the adapter's request to the mint policy, `IMintPolicy` (`0x621ba19b`: `authorize`, `preview`, `artistRegistry`). New `setRescueDelay(uint256)` (`0x5968b5f3`), events `TermsInterned`, `FeeRecipientRegistered`, `ContentReleased`, `RescueDelaySet`; `WorkMinted` gains the indexed lead artist, the seller wallet and a terms ID, and carries the item kind as `uint8`. `setDependency("ARTIST_REGISTRY")` reverts: the artist registry is fixed. `rendererOf` fails closed (`RendererPinUnreadable`). |
+| [`IMintTarget.sol`](../../src/interfaces/IMintTarget.sol) | `AdmittedMinterSet(address,uint24,bool,bytes32)` (topic0 `0xa70d819c…`): the adapter ID widens to 24 bits and the event carries the sale kind. 6529 Stream Editions mints with `data` exactly `abi.encode(address currency, uint256 unitPrice)`. The ID is unchanged (`0xba4ae536`). |
+| [`IPackageRegistry.sol`](../../src/interfaces/IPackageRegistry.sol) | `consume` and `ItemConsumed` are removed; the registry is 6529 Stream's mint policy (`IMintPolicy.authorize((address,address,address,address),bytes)`). ID `0x580f2eef`. |
+| [`IEditions.sol`](../../src/interfaces/IEditions.sol) | New `sealSupply(uint256,uint256)` (`0x1a690945`), events `EditionTermsLocked`, `EditionPrimaryMint`, `EditionSupplySealed`, errors `EditionSealed`, `InvalidSealCount`, `CurrencyMismatch`; `Edition` gains `maxSupply` and `supplySealed`. ID `0xfbeabb2a`. |
+| [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol), [`types/IdentityTypes.sol`](../../src/interfaces/types/IdentityTypes.sol) | A per-token federation directory: `listFederatedContract` takes the token's facts, new `setFederationRegistry`, `registerFederated`, `setFederatedStatus`, `recordFederationExit`, `federatedListing`; governed timers `setTimer`, `timer`, `timerBounds`; events `FederatedContractListed` (new shape), `FederatedContractStatus`, `FederationRegistrySet`, `TimerSet`; `federatedContracts`, `STANDING_GRACE()`, `CONTEST_TIMEOUT()` and `FederatedListFull` are removed. `PendingChange` gains `uint48 contestTimeout` after `kind`, so `ChangeStaged`'s topic0 is `0x58e2b3fa…`. ID `0x2ccfc40e`. |
+| [`IContentStore.sol`](../../src/interfaces/IContentStore.sol), [`IChunkStore.sol`](../../src/interfaces/IChunkStore.sol) | New `linkChunk`, `registerManifestList`, `firstMissing`, `chunkData` (`IChunkStore`, `0x81c8e452`), `attestBase64(bytes32,uint256)`; encodings and digest kinds are open `uint8` ids (the `registerManifest` selector and every existing file ID are unchanged); `ManifestRegistered` carries the digest kind and the chunk hashes, and `ChunkLinked` is new. ID `0xca09e241`. |
+| [`ISplitLedger.sol`](../../src/economics/interfaces/ISplitLedger.sol), [`ISplitFactory.sol`](../../src/economics/interfaces/ISplitFactory.sol), [`ISplitWallet.sol`](../../src/economics/interfaces/ISplitWallet.sol), [`IReleaseVerifier.sol`](../../src/economics/interfaces/IReleaseVerifier.sol) | One `SplitLedger` replaces the split factory, the split wallets and the release verifier; a wallet is a 66-byte vault at the same CREATE2 derivation. Releases name the wallet by its payee list and salt: `release(payees, salt, asset, index)`, `releaseTo`, `releaseWithAuthorization(payees, salt, authorization, signature)`. `Released` is emitted by the ledger and gains the wallet as topic 1. Removed: `verifier`, `resolverCodeHash`, `verifierCodeHash`, `pendingPayees`, `consume`, `payoutAddress`. |
+| [`IClaimRouter.sol`](../../src/economics/interfaces/IClaimRouter.sol) | `ClaimRouter(ledger)`; a `Claim` is `(payees, salt, asset, payee)` and a `SignedClaim` `(authorization, signature, payees, salt)`. ID `0x5a97db73`. |
+| [`IRevenueEscrow.sol`](../../src/economics/interfaces/IRevenueEscrow.sol) | New `sweepExcess(address,address)` (`0xfc6e9367`, FUNDS_SETTER) and event `ExcessSwept`. ID `0xac48ee84`. |
+| [`IGovernedVault.sol`](../../src/economics/interfaces/IGovernedVault.sol) | New: the governed vault the fee recipient and the museum use (ID `0xe804f32d`). |
+| [`types/HashRef.sol`](../../src/interfaces/types/HashRef.sol), [`IStatementLog.sol`](../../src/interfaces/IStatementLog.sol) | The statement log accepts any non-zero hash algorithm ID and records it uninterpreted, and URIs up to 8,192 bytes; `OWNER_READ_GAS` is removed. The ID is unchanged. |
+| [`libraries/SignatureVerifier.sol`](../../src/libraries/SignatureVerifier.sol) | No ERC-1271 gas cap; signatures up to 65,536 bytes for every protocol signature. A dependency that runs short of gas reverts with `BoundedCall.BoundedCallShortfall(address)` (`0x5b20679f`) in the permanent contracts. |
+| `WorksAccessManager` | New `setParameter`, `setRecoveryAddress`, `registerSuccessor`, `approveRecovery`, `objectToRecovery`, `heartbeat`, `openRecovery`, `completeRecovery`, `migrate` and views; ten new events ([Events and indexing](events-and-indexing.md#governanceconfigurator-and-worksaccessmanager)). The role matrix maps the new selectors. |
 
 ## Changes since the Sepolia r3 build
 
@@ -252,20 +284,26 @@ declarations rather than `git diff --stat`, which also counts comment changes.
 ## ERC-165 interface IDs
 
 An interface ID is the XOR of the selectors of the functions the interface itself declares,
-not inherited ones, so `IStream`'s ID does not cover ERC-721 or ERC-2981. `test_interfaceIds`
+not inherited ones. `IStream` re-declares the `IMintTarget` and ERC-2981 functions so that its
+ID covers 6529 Stream's whole native surface; ERC-721's functions keep ERC-721's IDs. `test_interfaceIds`
 in [`test/interfaces/InterfacesCompile.t.sol`](../../test/interfaces/InterfacesCompile.t.sol)
-pins the IDs of every interface in `src/interfaces/`; the r2 column is the same test at
-`400f96d`. The economics interfaces in `src/economics/interfaces/` (except
+pins the IDs of every interface in `src/interfaces/`, and
+[`StreamInterfaceIds.t.sol`](../../test/interfaces/StreamInterfaceIds.t.sol) recomputes
+`IStream`, `IStreamViews`, `IMintPolicy` and `IStreamExtension` from their selector lists; the
+r2 column is the same test at `400f96d`. The economics interfaces in `src/economics/interfaces/` (except
 `IArtistPayoutResolver`) are pinned by no test: their IDs were computed from the compiled
 selectors.
 
 | Interface | Source | ID on `main` | ID on r2 | Deployed contract that answers `supportsInterface` |
 | --- | --- | --- | --- | --- |
 | `IMintTarget` | [`IMintTarget.sol`](../../src/interfaces/IMintTarget.sol) | `0xba4ae536` | `0x4f4f5133` | Stream, Editions |
-| `IStream` | [`IStream.sol`](../../src/interfaces/IStream.sol) | `0x37709465` | `0x4b62279d` | Stream |
+| `IStream` | [`IStream.sol`](../../src/interfaces/IStream.sol) | `0x1583b98b` | `0x4b62279d` | Stream |
+| `IStreamViews` | [`IStreamViews.sol`](../../src/interfaces/IStreamViews.sol) | `0xd53fe015` | none | Stream (answered through its `StreamViews` extension) |
+| `IStreamExtension` | [`IStreamExtension.sol`](../../src/interfaces/IStreamExtension.sol) | `0xababe87a` | none | StreamViews |
+| `IMintPolicy` | [`IMintPolicy.sol`](../../src/interfaces/IMintPolicy.sol) | `0x621ba19b` | none | PackageRegistry (6529 Stream's mint policy) |
 | `IWorkRecords` | [`IWorkRecords.sol`](../../src/interfaces/IWorkRecords.sol) | `0xc109676d` | `0x3f3d6835` | WorkRecords |
 | `IWorkPowers` | [`IWorkPowers.sol`](../../src/interfaces/IWorkPowers.sol) | `0xbd18229c` | none | WorkRecords ([ADR 0006](../adr/0006-work-powers-and-conventions.md)) |
-| `IEditions` | [`IEditions.sol`](../../src/interfaces/IEditions.sol) | `0xe183b26f` | `0xa5bd946e` | Editions |
+| `IEditions` | [`IEditions.sol`](../../src/interfaces/IEditions.sol) | `0xfbeabb2a` | `0xa5bd946e` | Editions |
 | `ISaleAdapter` | [`ISaleAdapter.sol`](../../src/interfaces/ISaleAdapter.sol) | `0x312dc1e1` | `0x312dc1e1` | EnglishAuction, UniformEditionAuction (and FixedPriceSale, DutchSale on r1 to r3) |
 | `IEnglishAuction` | [`IEnglishAuction.sol`](../../src/interfaces/IEnglishAuction.sol) | `0x75122f3e` | `0xc1a8b12f` | EnglishAuction |
 | `IEnglishAuctionClock` | [`IEnglishAuctionClock.sol`](../../src/interfaces/IEnglishAuctionClock.sol) | `0x968c7b07` | none | None: an integration view of EnglishAuction (`auctionClock`), never reported through ERC-165 |
@@ -273,24 +311,27 @@ selectors.
 | `IFixedPriceSale`, `IDutchSale`, `IMintSale` | Removed by ADR 0005 | none | `0xfedd2754`, `0xb1c10995`, none | FixedPriceSale and DutchSale on r1 to r3 (r3: `0x773a4920`, `0x382667e1`) |
 | `ICurationVerifier` | [`ICurationVerifier.sol`](../../src/interfaces/ICurationVerifier.sol) | `0x492733ca` | `0x492733ca` | Eip712CurationVerifier |
 | `ICurationSignerVerifier` | [`ICurationVerifier.sol`](../../src/interfaces/ICurationVerifier.sol) | `0x9f12d97a` | `0xb7ab1d96` | Eip712CurationVerifier |
-| `IPackageRegistry` | [`IPackageRegistry.sol`](../../src/interfaces/IPackageRegistry.sol) | `0xe7669f7c` | `0xc0f6f835` | PackageRegistry |
-| `IContentStore` | [`IContentStore.sol`](../../src/interfaces/IContentStore.sol) | `0x3f437f81` | `0x3f437f81` | None: ContentStore does not implement ERC-165 |
+| `IPackageRegistry` | [`IPackageRegistry.sol`](../../src/interfaces/IPackageRegistry.sol) | `0x580f2eef` | `0xc0f6f835` | PackageRegistry |
+| `IContentStore` | [`IContentStore.sol`](../../src/interfaces/IContentStore.sol) | `0xca09e241` | `0x3f437f81` | None: ContentStore does not implement ERC-165 |
+| `IChunkStore` | [`IChunkStore.sol`](../../src/interfaces/IChunkStore.sol) | `0x81c8e452` (computed) | none | None: the interface a store adapter implements (`chunkData`); ContentStore implements it without ERC-165 |
 | `IDependencyRegistry` | [`IDependencyRegistry.sol`](../../src/interfaces/IDependencyRegistry.sol) | `0xe5338d57` | `0xe5338d57` | None: DependencyRegistry does not implement ERC-165 |
 | `IRenderer` | [`IRenderer.sol`](../../src/interfaces/IRenderer.sol) | `0xa772216d` | `0xa772216d` | Renderer |
 | `IEconomicsResolver` | [`IEconomicsResolver.sol`](../../src/interfaces/IEconomicsResolver.sol) | `0x9ba8ecb3` | `0x310247d8` | EconomicsResolver |
 | `IStatementLog` | [`IStatementLog.sol`](../../src/interfaces/IStatementLog.sol) | `0xbb5574c7` | `0x276fbc56` | None: StatementLog does not implement ERC-165 |
 | `IArtistRoleResolver` | [`IArtistRoleResolver.sol`](../../src/interfaces/IArtistRoleResolver.sol) | `0x3074ca00` | `0x3074ca00` | ArtistRegistry |
 | `IArtistPayoutResolver` | [`IArtistPayoutResolver.sol`](../../src/economics/interfaces/IArtistPayoutResolver.sol) | `0x9b2c1793` | `0x9b2c1793` | ArtistRegistry |
-| `IArtistRegistry` | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) | `0xee1e8c55` | `0x3e70f8a1` | ArtistRegistry |
+| `IArtistRegistry` | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) | `0x2ccfc40e` | `0x3e70f8a1` | ArtistRegistry |
 | `IConsolidationSource` | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) | `0x88836e34` | `0x88836e34` | ConsolidationAdapter |
 | `IEntropyModule` | [`IEntropyModule.sol`](../../src/interfaces/IEntropyModule.sol) | `0x14c06eb4` | `0x3a410101` | VrfEntropyModule |
-| `IFederationRegistry` | [`IFederationRegistry.sol`](../../src/interfaces/IFederationRegistry.sol) | `0xeefee933` | `0xeefee933` | None: no implementation in v1 |
-| `IClaimRouter` | [`IClaimRouter.sol`](../../src/economics/interfaces/IClaimRouter.sol) | `0x31a9798a` (computed) | not answered on r2 | ClaimRouter (on `main` only) |
-| `IRevenueEscrow` | [`IRevenueEscrow.sol`](../../src/economics/interfaces/IRevenueEscrow.sol) | `0x50267de3` (computed) | not answered on r2 | RevenueEscrow (on `main` only) |
+| `IFederationRegistry` | [`IFederationRegistry.sol`](../../src/interfaces/IFederationRegistry.sol) | `0xeefee933` | `0xeefee933` | None: no implementation on this tree (federation is in v1, specified by a later ADR) |
+| `IClaimRouter` | [`IClaimRouter.sol`](../../src/economics/interfaces/IClaimRouter.sol) | `0x5a97db73` (computed) | not answered on r2 | ClaimRouter |
+| `IRevenueEscrow` | [`IRevenueEscrow.sol`](../../src/economics/interfaces/IRevenueEscrow.sol) | `0xac48ee84` (computed) | not answered on r2 | RevenueEscrow |
+| `IGovernedVault` | [`IGovernedVault.sol`](../../src/economics/interfaces/IGovernedVault.sol) | `0xe804f32d` (computed) | none | GovernedVault (`FeeRecipientVault`, `MuseumVault`), which also answers `IERC721Receiver` and `IERC1155Receiver` |
 | `IAssetAllowlist` | [`IAssetAllowlist.sol`](../../src/economics/interfaces/IAssetAllowlist.sol) | `0xa8952cd8` (computed) | | None: AssetAllowlist does not implement ERC-165 |
-| `IReleaseVerifier` | [`IReleaseVerifier.sol`](../../src/economics/interfaces/IReleaseVerifier.sol) | `0x50c67982` (computed) | | None: ReleaseVerifier does not implement ERC-165 |
-| `ISplitFactory` | [`ISplitFactory.sol`](../../src/economics/interfaces/ISplitFactory.sol) | `0xfd1edda8` (computed) | | None: SplitFactory does not implement ERC-165 |
-| `ISplitWallet` | [`ISplitWallet.sol`](../../src/economics/interfaces/ISplitWallet.sol) | `0x535afbe4` (computed) | | None: split wallets do not implement ERC-165 |
+| `ISplitLedger` | [`ISplitLedger.sol`](../../src/economics/interfaces/ISplitLedger.sol) | `0x00324607` (computed; its own function only, `releaseWithAuthorization`) | none | None: SplitLedger does not implement ERC-165 |
+| `IReleaseVerifier` | [`IReleaseVerifier.sol`](../../src/economics/interfaces/IReleaseVerifier.sol) | `0xdbcaded2` (computed) | | None: SplitLedger, which implements it, does not implement ERC-165 |
+| `ISplitFactory` | [`ISplitFactory.sol`](../../src/economics/interfaces/ISplitFactory.sol) | `0x16584a04` (computed) | | None: SplitLedger, which implements it, does not implement ERC-165 |
+| `ISplitWallet` | [`ISplitWallet.sol`](../../src/economics/interfaces/ISplitWallet.sol) | `0x66980f0a` (computed) | | None: SplitLedger, which implements it, does not implement ERC-165; the vaults have no functions |
 
 Every contract that implements `supportsInterface` also answers `0x01ffc9a7` (`IERC165`), and
 the tokens and the auction answer these standard interfaces:
@@ -303,11 +344,12 @@ the tokens and the auction answer these standard interfaces:
 | `IERC1155MetadataURI` | `0x0e89341c` | Editions |
 | `IERC2981` | `0x2a55205a` | Stream, Editions |
 | ERC-4906 | `0x49064906` | Stream, Editions: the EIP's constant, hard-coded because OpenZeppelin's `IERC4906` declares no functions, so `type(IERC4906).interfaceId` would be zero |
-| `IERC721Receiver` | `0x150b7a02` | EnglishAuction (it accepts only the token it mints during a start) |
+| `IERC721Receiver` | `0x150b7a02` | EnglishAuction (it accepts only the token it mints during a start), GovernedVault |
+| ERC-1155 receiver (`IERC1155Receiver`) | `0x4e2312e0` | GovernedVault |
 
 **Contracts without ERC-165.** The content store, dependency registry, statement log, asset
-allowlist, release verifier, split factory, split wallets, configurator and AccessManager have
-no `supportsInterface`. The IDs of `IContentStore`, `IDependencyRegistry` and `IStatementLog`
+allowlist, split ledger, split wallets (vaults), configurator and AccessManager have no
+`supportsInterface`. The IDs of `IContentStore`, `IDependencyRegistry` and `IStatementLog`
 are pinned to catch a surface change, not because anything answers them. Installs check code
 and no EIP-7702 delegation instead ([GV-22](../spec/governance.md#rules-and-invariants)), and
 `bindStatementLog` checks that the log's
@@ -349,7 +391,7 @@ for one contract on one chain. Each contract reports its domain through EIP-5267
 | WorkRecords | `6529 Works Records` | `1` | `Typehashes.WORK_RECORDS_NAME` |
 | ArtistRegistry | `6529 Works Artist Registry` | `1` | `Typehashes.ARTIST_REGISTRY_NAME` |
 | StatementLog | `6529 Works Statement Log` | `1` | the constructor of [`StatementLog.sol`](../../src/records/StatementLog.sol) |
-| ReleaseVerifier | `6529 Works Release Verifier` | `1` | the constructor of [`ReleaseVerifier.sol`](../../src/economics/ReleaseVerifier.sol) |
+| SplitLedger (the release verifier) | `6529 Works Release Verifier` | `1` | the constructor of [`SplitLedger.sol`](../../src/economics/SplitLedger.sol) |
 
 The `Typehashes` constants are in
 [`src/interfaces/types/Typehashes.sol`](../../src/interfaces/types/Typehashes.sol).
@@ -379,13 +421,13 @@ Type strings exactly as in code; typehashes pinned by `test_signedPayloadTypehas
 | `StatementLog` `HASHREF_TYPEHASH` | `HashRef(uint16 algorithm,bytes32 digest)` | `0x121a61476ab0828add4a5b9b9f2bb805adcfa15d81ff19494f98b0fd3e0bd6ed` | (a member type) |
 | `StatementLog` `STATEMENT_TYPEHASH` | `Statement(address token,uint256 id,bytes32 kind,bytes32 schema,HashRef content,string uri,bytes32 fileId,bytes32 supersedes)HashRef(uint16 algorithm,bytes32 digest)` | `0xc5917de59a1e9cd194c71a1bfa5d2b7a821403b15a6c26ba9ed4aaa207f324f6` | (a member type, and the statement's identity in the entry hash) |
 | `StatementLog` `AUTHORIZATION_TYPEHASH` | `Authorization(uint8 role,address signer,uint256 nonce,uint64 deadline,Statement statement)HashRef(uint16 algorithm,bytes32 digest)Statement(address token,uint256 id,bytes32 kind,bytes32 schema,HashRef content,string uri,bytes32 fileId,bytes32 supersedes)` | `0x31b41af4c88eb6a6042a07475f214b72f1819151382b4f7c6600f092bf061f89` | Statement log; the relayed signer |
-| `ReleaseVerifier.RELEASE_TYPEHASH` | `ReleaseAuthorization(address wallet,address asset,uint256 payee,address account,address recipient,uint256 amount,uint256 nonce,uint256 deadline)` | `0xf64c722b2f9f611784cae451d729d2046031dd1ccede35af5642984d5c6f2925` | Release verifier; the payee's payout address |
+| `SplitLedger.RELEASE_TYPEHASH` | `ReleaseAuthorization(address wallet,address asset,uint256 payee,address account,address recipient,uint256 amount,uint256 nonce,uint256 deadline)` | `0xf64c722b2f9f611784cae451d729d2046031dd1ccede35af5642984d5c6f2925` | Split ledger; the payee's payout address |
 
 The three statement-log values are pinned by `test_Golden_TypeHashesAndDomainTags` in
 [`StatementLogGolden.t.sol`](../../test/records/StatementLogGolden.t.sol). The release
 typehash is checked against its type string by `test_GoldenTypehashDomainAndDigest` in
-[`ReleaseVerifier.t.sol`](../../test/economics/ReleaseVerifier.t.sol); its hex value was
-computed for this page.
+[`ReleaseVerifier.t.sol`](../../test/economics/ReleaseVerifier.t.sol), which tests the split
+ledger's verifier; its hex value was computed for this page.
 
 ### How each struct hash is built
 
@@ -404,7 +446,7 @@ ABI-encoded as a 32-byte word:
 | IdentityChange | `keccak256(abi.encode(IDENTITY_CHANGE, artistId, authority, payout, profileId, profileDocHash, nonce, deadline))` | `ArtistRegistry.changeDigest` |
 | OverrideAcceptance | `keccak256(abi.encode(OVERRIDE_ACCEPTANCE, artistId, uint8(kind), authority, payout, profileId, profileDocHash, evidenceHash, deadline))` | `ArtistRegistry.overrideDigest` |
 | Authorization (statement relay) | `keccak256(abi.encode(AUTHORIZATION_TYPEHASH, uint8(role), signer, nonce, deadline, statementHash))`, with `statementHash` [below](#statement-entry-hash-and-chain-head) | `StatementLog.authorizationDigest` |
-| ReleaseAuthorization | `keccak256(abi.encode(RELEASE_TYPEHASH, wallet, asset, payee, account, recipient, amount, nonce, deadline))` | `ReleaseVerifier.releaseDigest` |
+| ReleaseAuthorization | `keccak256(abi.encode(RELEASE_TYPEHASH, wallet, asset, payee, account, recipient, amount, nonce, deadline))` | `SplitLedger.releaseDigest` |
 
 `stateHash` is the work's current [state hash](#work-state-hash), so a relicense, rate change
 or repin signature applies only to the state its signers saw. Every party signs the same
@@ -552,7 +594,7 @@ an input; a renunciation moves the state hash through the version it bumps.
 | --- | --- | --- |
 | Artist ID | `artistIdOf(account)` when nonzero, else `uint256(uint160(account))` | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) |
 | Auction sale ID | `uint256(keccak256(abi.encode(token, tokenId)))` | `EnglishAuction.saleIdOf` |
-| Split wallet address | `CREATE2(factory, keccak256(abi.encode(configHash, salt)), walletInitCodeHash)` with `configHash = keccak256(abi.encode(payees))`, `payees` a `(uint256 artistId, address account, uint32 share)[]` in canonical order | [`ISplitFactory.sol`](../../src/economics/interfaces/ISplitFactory.sol); read `walletInitCodeHash()` from the factory |
+| Split wallet address | `CREATE2(ledger, keccak256(abi.encode(configHash, salt)), walletInitCodeHash)` with `configHash = keccak256(abi.encode(payees))`, `payees` a `(uint256 artistId, address account, uint32 share)[]` in canonical order; `walletInitCodeHash = keccak256(SplitVault.INIT_CODE)`, free of compiler metadata | [`ISplitFactory.sol`](../../src/economics/interfaces/ISplitFactory.sol), [`SplitVault.sol`](../../src/economics/SplitVault.sol); read `walletInitCodeHash()` from the ledger |
 | Seller wallet | The salt-zero wallet for the item's payees | `IEconomicsResolver.newWorkTerms` |
 | Royalty receiver | The seller when the fee share is zero; otherwise the salt-zero wallet for the two fixed payees `(0, seller, 100,000 - feeShare)` and `(0, feeRecipient, feeShare)`, sorted ascending by address | `Splits.royaltyPayees` in [`Splits.sol`](../../src/economics/Splits.sol) |
 | Sale kind | `keccak256("ENGLISH_AUCTION")` `0x42bdbbaa…`, `keccak256("UNIFORM_AUCTION")` `0x81234ccc…`; reserved: `keccak256("FIXED_PRICE")` `0xce977739…`, `keccak256("DUTCH")` `0x57099dca…` | [`SaleTypes.sol`](../../src/interfaces/types/SaleTypes.sol) |

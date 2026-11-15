@@ -33,8 +33,8 @@ and r4's (with every edition-auction step) are in
 | `VrfEntropyModule` | [IEntropyModule](../../src/interfaces/IEntropyModule.sol) | request a VRF seed |
 | `AssetAllowlist` | [IAssetAllowlist](../../src/economics/interfaces/IAssetAllowlist.sol) | read a currency's status and increment floor |
 | `RevenueEscrow` | [IRevenueEscrow](../../src/economics/interfaces/IRevenueEscrow.sol) | flush refused payouts |
-| `SplitWallet`, `SplitFactory` | [ISplitWallet](../../src/economics/interfaces/ISplitWallet.sol), [ISplitFactory](../../src/economics/interfaces/ISplitFactory.sol) | deploy a wallet, release a share |
-| `ReleaseVerifier` | [IReleaseVerifier](../../src/economics/interfaces/IReleaseVerifier.sol) | build and revoke signed releases |
+| `SplitLedger` (deployment name `SplitFactory`) | [ISplitLedger](../../src/economics/interfaces/ISplitLedger.sol) (with [ISplitFactory](../../src/economics/interfaces/ISplitFactory.sol), [ISplitWallet](../../src/economics/interfaces/ISplitWallet.sol) and [IReleaseVerifier](../../src/economics/interfaces/IReleaseVerifier.sol)) | deploy a wallet, release a share, build and revoke signed releases |
+| `FeeRecipientVault`, `MuseumVault` | [IGovernedVault](../../src/economics/interfaces/IGovernedVault.sol) | forward what the fee recipient or the museum holds to its destination |
 | `ClaimRouter` | [IClaimRouter](../../src/economics/interfaces/IClaimRouter.sol) | batch releases |
 
 The sale adapters share [`ISaleAdapter`](../../src/interfaces/ISaleAdapter.sol): `SaleStarted`,
@@ -183,7 +183,7 @@ returns the digest to sign.
 - **Signer.** The active authority of the lead artist's ID
   (`IArtistRegistry.activeAuthorityOf(artistId)`), where the artist ID is
   `PackageRegistry.acceptedAs(root, item.parties[0].account)`.
-- **Signature forms.** 65-byte ECDSA, 64-byte ERC-2098, ERC-1271 (at most 4,096 bytes) and
+- **Signature forms.** 65-byte ECDSA, 64-byte ERC-2098, ERC-1271 (at most 65,536 bytes) and
   EIP-7702 accounts ([SignatureVerifier.sol](../../src/libraries/SignatureVerifier.sol)).
 - **Nonce.** Any unused `uint256`, single use per artist ID. Use them in order from 0: the first
   255 share an existing storage word, which keeps the start within its gas budget. The artist
@@ -264,16 +264,18 @@ sequenceDiagram
     end
     Starter->>Auction: start(stream, mintData)
     Auction->>Stream: mint(auction, 0, 1, mintData)
-    Stream->>Registry: consume(packageRoot, item, proof, move)
-    Registry-->>Stream: itemHash, artistId
-    Note over Stream: checks the VRF seed, assigns the token ID and serial
+    Stream->>Registry: authorize(context, mintData)
+    Note over Registry: consent, item rules, VRF seed, consumes the item, quotes the terms
+    Registry-->>Stream: the work's record
+    Note over Stream: checks the record, interns the terms, assigns the token ID and serial
     Stream-->>Auction: tokenId, PrimaryTerms
     Note over Auction: locks currency, opening bid, increment share, window
     Auction-->>Starter: saleId, SaleStarted
 ```
 
-**Events.** `ItemConsumed` ([PackageRegistry](events-and-indexing.md#packageregistry)), the mint's
-`Transfer` and `WorkMinted` ([Stream](events-and-indexing.md#stream)), and `SaleStarted`, whose
+**Events.** `TermsInterned` and `FeeRecipientRegistered` when the terms are new, the mint's
+`Transfer` and `WorkMinted` ([Stream](events-and-indexing.md#stream); the package registry, as
+the mint policy, emits nothing), and `SaleStarted`, whose
 `price` is the locked opening bid and `endTime` the initial end, plus `BidPlaced` for
 `startWithBid` ([EnglishAuction](events-and-indexing.md#englishauction)).
 
@@ -525,7 +527,12 @@ whose sale kind the edition's terms name
 - An edition is bound to one adapter, the only one that may mint it (ED-5): the one whose sale
   opened it (`bindMinter`, possibly before the edition exists), or else the first to mint it.
   `EditionMinterBound` names it ([Editions](events-and-indexing.md#editions)).
-- `EditionUnavailable(editionId)` from a mint means the creator's cap is reached (ED-6).
+- A mint's `data` is exactly `abi.encode(address currency, uint256 unitPrice)`, the currency and
+  price paid per copy; Editions logs it as `EditionPrimaryMint` (ED-26).
+- When the bound adapter's sale settles, it seals the supply at the count sold
+  (`sealSupply`, `EditionSupplySealed`, ED-25): no copy past it can be minted.
+- `EditionUnavailable(editionId)` from a mint means the creator's cap, or the sealed supply, is
+  reached (ED-6).
 
 The fixed-price and Dutch adapters of `v1.0.0-rc.1` were removed by ADR 0005.
 
@@ -723,7 +730,7 @@ Refunds are never pushed; every amount owed has a pull function:
 | An ERC-20 auction payout that failed (MONEY-1) | `EnglishAuction` | Anyone, for the wallet | `claimFor(wallet, token)` |
 | A token whose delivery failed | `EnglishAuction` | The winning bidder, to any address, or the recipient, to itself (to any address from 30 days after the end); with no bids on a token other than 6529 Stream, also its artist | `claimDelivery(saleId, to)` |
 | A payout a wallet or token refused | `RevenueEscrow` | Anyone | `flush(wallet, asset)` |
-| A payee's share of sales or royalties | the `SplitWallet` | Depends on the payee (below) | `release`, `releaseTo`, `releaseWithAuthorization` |
+| A payee's share of sales or royalties | the `SplitLedger`, for the wallet | Depends on the payee (below) | `release`, `releaseTo`, `releaseWithAuthorization` |
 
 ### Credits on a sale adapter
 
@@ -753,36 +760,42 @@ replacement only by a governed `recover` (ECO-28,
 ### Split wallets
 
 Sale proceeds go to the [seller wallet](../glossary.md#seller-wallet) (`seller` in
-`Stream.work(tokenId)` or `Editions.edition(editionId)`; for a work,
-`SplitFactory.walletFor(item.payees, bytes32(0))`), royalties to the
-[royalty wallet](../glossary.md#royalty-wallet) (`royaltyReceiver` in the same records). Both are
-predicted CREATE2 addresses (ECO-9).
+`Stream.work(tokenId)` or `Editions.edition(editionId)`, and in `WorkMinted` or
+`EditionTermsLocked`; for a work, `SplitLedger.walletFor(item.payees, bytes32(0))`), royalties to
+the [royalty wallet](../glossary.md#royalty-wallet) (`royaltyReceiver` in the same records). Both
+are predicted CREATE2 addresses of 66-byte vaults the split ledger deploys and commands (ECO-9,
+ECO-39); the ledger keeps every wallet's accounting and emits its events.
 
 - **Deploy before you release.** Funds sent to a predicted address wait there (ECO-11). Anyone
-  deploys the wallet with `SplitFactory.createWallet(payees, salt)`, with the payees and salt (zero)
+  deploys the wallet with `SplitLedger.createWallet(payees, salt)`, with the payees and salt (zero)
   the address was predicted from. Its cost is in the
-  [ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table): mostly code, which
-  Glamsterdam reprices.
-- **Releasable amount.** `releasable(asset, index)`; ETH is `address(0)` (ECO-13).
+  [ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table): 66 bytes of code and
+  one storage word (LIM-ECO-7).
+- **Name the wallet by its payees.** Every release call names the wallet by its payee list and
+  salt, which the ledger hashes to the address; read them from `WalletCreated` or the work's
+  terms. A release from an undeployed wallet reverts (`WalletNotDeployed`).
+- **Releasable amount.** `releasable(payees, salt, asset, index)`; ETH is `address(0)` (ECO-13).
 
 | Function | Who may call | Pays to |
 | --- | --- | --- |
-| `release(asset, index)` | Anyone, for a [fixed payee](../glossary.md#fixed-payee); only the current payout address, for an [artist-resolved payee](../glossary.md#artist-resolved-payee) | The payee's account or payout address |
-| `releaseTo(asset, index, recipient)` | Only the payee's current payout address | `recipient` |
-| `releaseWithAuthorization(authorization, signature)` | Anyone, with the payee's signature | The signed `recipient` |
+| `release(payees, salt, asset, index)` | Anyone, for a [fixed payee](../glossary.md#fixed-payee); only the current payout address, for an [artist-resolved payee](../glossary.md#artist-resolved-payee) | The payee's account or payout address |
+| `releaseTo(payees, salt, asset, index, recipient)` | Only the payee's current payout address | `recipient` |
+| `releaseWithAuthorization(payees, salt, authorization, signature)` | Anyone, with the payee's signature (`WrongWallet` unless `authorization.wallet` is the wallet the payees and salt name) | The signed `recipient` |
 
 A royalty wallet's two payees (the seller wallet and the fee recipient) are fixed, so anyone may
 push royalties on to them; a seller wallet's artist-resolved payees are pull-only (ECO-15, ECO-16).
 
 The errors (`NotPayoutAddress`, `NothingToRelease`, `PayoutUnresolved` and others) are declared
-in [ISplitWallet.sol](../../src/economics/interfaces/ISplitWallet.sol).
+in [ISplitWallet.sol](../../src/economics/interfaces/ISplitWallet.sol) and
+[ISplitLedger.sol](../../src/economics/interfaces/ISplitLedger.sol). A wallet has no rescue:
+every unit in it is some payee's.
 
 ### Signed releases
 
-A payee signs an EIP-712 authorization in the release verifier's domain (name
-`6529 Works Release Verifier`, version `1`, the chain ID, the verifier's address), with the type
-string exactly as in `ReleaseVerifier.RELEASE_TYPEHASH`
-([ReleaseVerifier.sol](../../src/economics/ReleaseVerifier.sol)):
+A payee signs an EIP-712 authorization in the split ledger's domain (name
+`6529 Works Release Verifier`, version `1`, the chain ID, the ledger's address), with the type
+string exactly as in `SplitLedger.RELEASE_TYPEHASH`
+([SplitLedger.sol](../../src/economics/SplitLedger.sol)):
 
 ```text
 ReleaseAuthorization(address wallet,address asset,uint256 payee,address account,address recipient,uint256 amount,uint256 nonce,uint256 deadline)
@@ -807,8 +820,9 @@ function claimSigned(IClaimRouter.SignedClaim[] calldata claims, bool continueOn
     external returns (uint256[] memory amounts);
 ```
 
-The router is stateless: it calls `release` for each `Claim(wallet, asset, payee)` and
-`releaseWithAuthorization` for each `SignedClaim(authorization, signature)`, and never holds or
+The router is stateless: it calls the ledger's `release` for each
+`Claim(payees, salt, asset, payee)` and `releaseWithAuthorization` for each
+`SignedClaim(authorization, signature, payees, salt)`, and never holds or
 redirects funds (ECO-29). Plain items pay fixed payees only; a plain item for an artist-resolved
 payee fails. A batch holds at most 50 plain items (`MAX_CLAIMS`) or 20 signed ones
 (`MAX_SIGNED_CLAIMS`), and more revert with `TooManyClaims(count)`
@@ -817,14 +831,16 @@ payee fails. A batch holds at most 50 plain items (`MAX_CLAIMS`) or 20 signed on
 - **Atomic mode** (`continueOnFailure == false`): any failed item reverts the batch with
   `ClaimCallFailed(index, wallet, size, reason)`.
 - **Continue mode**: a failed item emits `ClaimFailed(wallet, asset, payee, index, size, reason)`,
-  releases 0, and the batch goes on. The batch reverts with `ClaimInsufficientGas(index, available)`
+  releases 0, and the batch goes on. A dependency that ran short of gas inside the ledger
+  (`BoundedCallShortfall`) is treated as a shortfall, not as a failed item. The batch reverts with `ClaimInsufficientGas(index, available)`
   when an item's even share of the gas left is below `MIN_ITEM_GAS` (`MIN_SIGNED_ITEM_GAS`), or when
   an item offered less than `SHORTFALL_REVERT_CEILING` runs dry, so gas estimation raises the limit
   instead of silently skipping it.
 
 Keeper guidance ([LIM-GAS-6](../audit/known-limitations.md#gas-and-glamsterdam)):
 - Estimate every batch; a full batch of first releases may not fit one transaction, and then
-  reverts whole, so split it.
+  reverts whole, so split it. Each item carries its wallet's payee list, so a batch of long
+  payee lists is large calldata: split it below common node transaction-size limits.
 - A party to an item (a gas-burning co-payee, a signed release's recipient, a token issuer) can
   make it look short of gas after you estimated. Simulate privately, isolate contract payees and
   unfamiliar tokens, and drop an item whose revert names its index.
@@ -848,7 +864,7 @@ function royaltyInfo(uint256 tokenId, uint256 salePrice)
 | Unknown token | `UnknownWork(tokenId)` | `UnknownEdition(editionId)` |
 | Rate change event | `RoyaltyRateChanged` ([Stream](events-and-indexing.md#stream)) | `RoyaltyRateChanged` and `MetadataUpdate` ([Editions](events-and-indexing.md#editions)) |
 
-- **Gas.** Stream's `royaltyInfo` makes one view call to the split factory; its gas as a whole
+- **Gas.** Stream's `royaltyInfo` makes one view call to the split ledger; its gas as a whole
   call is in the [ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table).
   Short of gas it reverts, never returning a zero royalty; supply comfortably more.
 - **Advisory.** Stream and Editions transfer as plain ERC-721 and ERC-1155 tokens and do not enforce

@@ -9,7 +9,7 @@ body:
       value: |
         The v1 scope is fixed by [ADR 0001](https://github.com/6529-Collections/6529-works/blob/main/docs/adr/0001-v1-scope.md).
         A change outside it needs a new ADR first, so say so below.
-        Budgets that every change must respect: 8-12K non-comment lines of Solidity, EIP-170,
+        Budgets that every change must respect: at most 15,000 non-comment lines of Solidity, EIP-170,
         at most 5 linked libraries, no delegatecall and no proxies, CI under 15 minutes.
   - type: dropdown
     id: area

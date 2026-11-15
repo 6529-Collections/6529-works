@@ -181,3 +181,12 @@ ADRs stay as written; [ADR 0001](0001-v1-scope.md) gets a pointer to this record
 ## Open items
 
 The items in §4, and the sibling change specifying the conventions in §3.
+
+## Amendment note (15 November 2026, [ADR 0007](0007-permanence.md))
+
+The owner decided that the errata repin becomes optionally renounceable: a third `WorkPowers`
+bit, `RENDERER_REPIN`, renounceable only after finalize; once renounced, a pinned renderer that
+a protocol change breaks can never be repaired for that work. This supersedes §2's "The errata
+repin cannot be renounced" and the rejected alternative "Make the errata repin renounceable"
+once it lands: **pending** (the records lane, in the second integration round). Until then the
+behaviour above stands.

@@ -19,6 +19,12 @@ mutants; this file is the reviewed reference, and
   current code against the floors. ADR 0005 later removed `DutchPricing`, `DutchSale`,
   `FixedPriceSale` and `MintSaleBase`; their rows below are kept as measured, and their floors
   left [`tools/mutation-floors.json`](../../tools/mutation-floors.json) with them.
+  [ADR 0007](../adr/0007-permanence.md) (15 November 2026) later replaced `ReleaseVerifier`,
+  `SplitFactory` and `SplitWallet` with `SplitLedger` and `SplitVault`, and removed three
+  constants whose rows below are therefore obsolete: `SignatureVerifier.ERC1271_GAS_LIMIT`
+  (protocol signature checks forward all gas), `StatementLog.OWNER_READ_GAS` (the owner read
+  forwards all gas) and `StatementLog.MAX_URI_BYTES` at 2,048 (now 8,192). Those rows are kept
+  as measured; the new files have no baseline yet.
 - **Tools.** `slither-mutate` from slither-analyzer 0.11.6 through `tools/mutation.py` (its
   fixed ROR and LIR, and the CONST rule), Foundry 1.7.1 and solc 0.8.37. Tests ran under the
   `lite` profile.

@@ -563,6 +563,10 @@ before that chain.
 
 ### 16. 6529 Stream Federated
 
+(Amendment note, 15 November 2026: federation is in v1, no longer deferred to v1.1, and is
+specified by a later ADR; the artist registry's permanent federation directory and replaceable
+federation-registry pointer are built. See [ADR 0007](0007-permanence.md) and [Amendments](#amendments).)
+
 Federation lets an artist run their own contract, built from the network's
 audited templates, as a registered member of the 6529 network.
 
@@ -745,7 +749,7 @@ AccessManager governs all of them. The VRF module is optional.
 
 **Engineering budgets, enforced as CI gates:**
 - **Size:** 8–12K non-comment lines of production Solidity. (Amended 1 November 2026: the
-  gate is 13,000 lines; see [Amendments](#amendments).)
+  gate is 13,000 lines; amended 15 November 2026: 15,000 lines; see [Amendments](#amendments).)
 - **Structure:** at most 5 linked libraries; no delegatecall; no proxies.
 - **Contract size:** EIP-170 enforced in every Foundry profile.
 - **CI time:** full build and test in under 15 minutes.
@@ -911,6 +915,20 @@ AccessManager governs all of them. The VRF module is optional.
 
   Nothing on chain changes: the contracts check the curation signer's attestation of an
   approved package, whatever wave approved it (§3, "Trust boundary").
+
+- **15 November 2026: permanence ([ADR 0007](0007-permanence.md), owner instruction of 14 and 15 November
+  2026).**
+  - **Source-size budget.** The gate rises from 13,000 to 15,000 lines (`MAX_LINES` in
+    `tools/check_budgets.py`), for federation in v1 and the permanence hardening. The other
+    budgets are unchanged.
+  - **§16 moves into v1.** Federated Stream and Federated Stream Editions ship in v1 and are
+    specified by a later ADR. Federated contracts earn no TDH; 6529 Stream and 6529 Stream
+    Editions do.
+  - **§11.** The artist registry is permanent: 6529 Stream's pointer is set once at genesis.
+  - **§7.** Split wallets are 66-byte vaults of one permanent split ledger, which also verifies
+    signed releases; the fee recipient and the museum are governed vaults.
+  - **§13.** The AccessManager gains a bounded veto, dead-admin recovery, a pre-registered
+    successor with `migrate`, seat caps and a third admin seat (ADR 0002's amendment note).
 
 ## Open items
 

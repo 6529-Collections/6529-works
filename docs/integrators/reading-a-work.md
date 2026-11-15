@@ -417,7 +417,7 @@ who made them.
 | `royaltyInfo(id, salePrice)` | Editions | receiver, amount | Read from storage, no external call. Receiver locked at creation; the rate follows the master's. |
 | `licenseOf(tokenId)` | WorkRecords | `(spdxId, textFileId)` | Reverts with `RecordNotOpen` until the record opens. Defaults to the deployment's CC0. |
 | `licenseOf(editionId)` | Editions | the master's license | Reverts with `UnknownEdition`, or `RecordNotOpen` until the master's record opens. |
-| `work(tokenId)` | Stream | item hash, artist ID, collection, serial, kind, seed policy, seller, royalty receiver, royalty rate | Reverts with `UnknownWork`. |
+| `work(tokenId)` | Stream (`IStreamViews`, answered by its `StreamViews` extension) | item hash, artist ID, collection, serial, kind, seed policy, seller, royalty receiver, royalty rate | Reverts with `UnknownWork`. Kind and seed policy are `uint8`. |
 | `coreOf(tokenId)` | Stream | item hash, artist ID, collection, kind, seed policy, royalty rate | The cheap read. |
 | `primarySaleSettled(tokenId)` | Stream | bool | True once the auction settled; false before, and for burned IDs. |
 | `primarySale(tokenId)` | Stream | outcome, currency, price | NONE, SOLD, UNBID, FROZEN_OUT or RESCUED; the price is held in 96 bits, the exact one is in `PrimarySaleSettled` ([DCL-32][dcl]). |
@@ -428,7 +428,7 @@ who made them.
 | `record(tokenId)` | WorkRecords | record file ID, media hash, license key, version, `finalized`, `onChainComplete`, pinned renderer | |
 | `mediaOf(tokenId)`, `locators(tokenId, fileId)`, `preferredLocator(tokenId, fileId)` | WorkRecords | the media list (primary first), every registered copy, the served copy | See [Storage](storage.md). |
 | `seedOf(tokenId)` | WorkRecords | seed policy and seed | |
-| `rendererOf(tokenId)` | Stream | renderer address | Reverts if the renderer's code changed (below). |
+| `rendererOf(tokenId)` | Stream | renderer address | Reverts if the renderer's code changed (below). Only a work with no pin, or whose record is not open, gets the default renderer; any other fault of the records satellite reverts (`RendererPinUnreadable` for a malformed answer), and a call short of gas reverts with `BoundedCallShortfall` ([AUC-42](../spec/stream-and-auctions.md#rules-and-invariants)). |
 | `collection(collectionId)` | Stream | name, metadata hash, works minted | |
 | `contractURI()` | Stream, Editions | ERC-7572 contract-level metadata URI | Changes emit `ContractURIUpdated`. |
 | `owner()` | Stream, Editions | the marketplace owner | Held by 6529 for marketplace settings such as creator earnings; it has no on-chain powers. |

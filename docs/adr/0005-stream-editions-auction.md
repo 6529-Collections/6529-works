@@ -205,7 +205,7 @@ The edition auction's parameters are one `AuctionConfig`, set by `setConfig(expe
 | Steps per decade (the step size) | 48 | 24, 48, 96 or 192 | PARAMETER_SETTER, 48 hours |
 | Base price | 0.0001 ETH | 10^12 to 10^17 wei; a power of ten since [§8](#8-amendment-31-october-2026-base-prices-are-powers-of-ten) | PARAMETER_SETTER, 48 hours |
 | Steps | 336 | 64 to 512, with a top step of at least 10 ETH | PARAMETER_SETTER, 48 hours |
-| Close offset after the 1/1 (D140) | 15 minutes | 0 to 1 day | PARAMETER_SETTER, 48 hours |
+| Close offset after the 1/1 (D140) | 15 minutes | 0 to 1 day (to become per sale: [§14](#14-amendment-15-november-2026-sealed-supply-adr-0007)) | PARAMETER_SETTER, 48 hours |
 | Soft-close window (D141) | 5 minutes | 1 minute to 1 hour | PARAMETER_SETTER, 48 hours |
 | Extension backstop (decision 5) | 24 hours | 1 hour to 7 days | PARAMETER_SETTER, 48 hours |
 | The museum (decision 11) | The 6529 Network Museum Safe | Nonzero, not a protocol contract | FUNDS_SETTER, 14 days |
@@ -529,6 +529,21 @@ free; 6529 Stream Editions by 12. Gas: `settle` with a bid costs 52 more and wit
 more (the extra outcome check and its decoding, and the new deployment addresses). Every start
 row moved by at most 32 with the new addresses, and the budgeted ETH start rows keep their 5,000
 of margin under 350,000 (the tightest is 344,917).
+
+### 14. Amendment (15 November 2026): sealed supply ([ADR 0007](0007-permanence.md))
+
+- **Built.** 6529 Stream Editions seals an edition's supply when its sale settles: the bound
+  adapter calls `sealSupply(id, count)` once, the maximum drops to the count sold, and no
+  contract can mint past it; a removed adapter mints only an edition it sealed (ED-25; closes
+  LIM-EA-10). `mint`'s data is `abi.encode(currency, unitPrice)`, logged by
+  `EditionPrimaryMint`, and `createEdition` emits `EditionTermsLocked` (ED-26, ED-27).
+  Editions holds no duration.
+- **Interim.** The edition auction seals at its final count and passes the unit price in each
+  claim: a minimal patch, superseded by the edition-auction lane.
+- **Pending.** §4's governed close offset (0 to 1 day) is to become a per-sale offset chosen in
+  the edition's artist-signed terms, with any bound a governed parameter of the auction and the
+  maximum for the owner to confirm; bids stay firm, so bidders' ETH is locked for the whole
+  window.
 
 ## What this amends
 

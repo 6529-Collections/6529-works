@@ -26,7 +26,7 @@ decisions win. The precise contract surfaces are the interfaces in
   +-----------------+    +------------------+       +--------------------+
   | IPackageRegistry|--->| ICurationVerifier|       |  IEnglishAuction   |  shared sale
   | approve, accept |    | (v1: ICuration-  |       |  IUniformEdition-  |  adapters
-  | consume, unique |    |  SignerVerifier) |       |  Auction           |  (ISaleAdapter)
+  | mint policy     |    |  SignerVerifier) |       |  Auction           |  (ISaleAdapter)
   +-----------------+    +------------------+       +--------------------+
      |  ^   bound: Stream, Editions                    | IMintTarget  |
      |  |                                              v              v
@@ -36,14 +36,14 @@ decisions win. The precise contract surfaces are the interfaces in
      |  |  |  Resolver)      |             | royalty, link  |  +-------------+
      |  |  +-----------------+             +----------------+        ^
      |  |       ^ consolidation               | bound    ^            | notify
-     |  +-------+-- consume (bound) ----------+          |            |
+     |  +-------+-- authorize (mint policy) --+          |            |
      |                                       +----------------+       |
      |   +--------------------+    terms     |  IWorkRecords  |-------+
      |   | IEconomicsResolver |<-------------|  record files, |
      |   +--------------------+              |  media, license|
      |        | allowlist, splits (economics)|  finalize, pins|
      |        v                              |  locators      |
-     |   SplitFactory*, SplitWallet*,        +----------------+
+     |   SplitLedger*, GovernedVault*,       +----------------+
      |   RevenueEscrow*, AssetAllowlist*            | reads        tokenURI
      |                                              v                 |
      |   +---------------+   bytes   +-------------+   +-----------------+
@@ -53,14 +53,14 @@ decisions win. The precise contract surfaces are the interfaces in
      |   +---------------+           +-------------+   +-----------------+
      |
      +-- IEntropyModule (optional VRF, one seed per content hash, before the start)
-         IFederationRegistry (v1.1 placeholder; read by the sale adapters)
+         IFederationRegistry (v1, a later ADR; read by the sale adapters, lists in IArtistRegistry)
 ```
 
 `*` marks the economics lane's interfaces (`src/economics/interfaces/`).
 
 | Interface | Contract (lane folder) | ADR 0001 |
 | --- | --- | --- |
-| `IStream` (+ `IMintTarget`) | 6529 Stream core ERC-721 (`src/stream/`) | §1, §4, §7, §12 |
+| `IStream` (+ `IMintTarget`), `IStreamViews`, `IMintPolicy` | 6529 Stream core ERC-721, its read-only extension `StreamViews`, and the replaceable mint policy it calls (the package registry) (`src/stream/`) | §1, §4, §7, §12 |
 | `IWorkRecords` | work records satellite (`src/stream/`) | §8, §10 |
 | `IEditions` (+ `IMintTarget`) | 6529 Stream Editions ERC-1155 (`src/editions/`) | §6 |
 | `IPackageRegistry`, `ICurationVerifier` (v1: `ICurationSignerVerifier`) | package registry, v1 verifier (`src/curation/`) | §3 |
@@ -70,7 +70,7 @@ decisions win. The precise contract surfaces are the interfaces in
 | `IArtistRegistry` (+ `IArtistRoleResolver`), `IConsolidationSource` | artist registry, consolidation adapter (`src/identity/`) | §11 |
 | `IStatementLog` | statement log (`src/records/`) | §12, §15 |
 | `IEntropyModule` | optional VRF module (`src/entropy/`) | §9 |
-| `IFederationRegistry` | v1.1 placeholder, no v1 implementation (`src/federated/`) | §16 |
+| `IFederationRegistry` | in v1 by [ADR 0007](adr/0007-permanence.md), specified by a later ADR; no implementation in this tree yet (`src/federated/`) | §16 |
 
 Shared types live in [`src/interfaces/types/`](../src/interfaces/types/):
 - package items, parties, licenses and sale terms (`PackageTypes`);
@@ -102,7 +102,7 @@ signatures, each in its contract's domain.
 | record file ID | the content-store file ID of a work's JSON descriptive record: one chunk of at most 12,288 bytes, `Identity` encoding, at most 16 artists; editable until finalize |
 | license key | keccak256 of the ASCII-lowercased SPDX ID (the ID itself keeps its case, from `[A-Za-z0-9.+-]`); CC0 is `keccak256("cc0-1.0")` |
 | file ID | `keccak256(abi.encode(chunkHashes, length, encoding, mimeType, sha256Hash))` (`IContentStore.manifestId`) |
-| split wallet | the economics split factory's CREATE2 address over a canonical payee list (fixed payees by address, then artist-resolved payees by artist ID); predicted before deployment |
+| split wallet | the split ledger's CREATE2 address of a 66-byte vault over a canonical payee list (fixed payees by address, then artist-resolved payees by artist ID) and a salt; predicted before deployment |
 | artist ID | `artistIdOf(account)` if nonzero, otherwise `uint256(uint160(account))`; fits in 160 bits and never changes |
 | product ID | `PRODUCT_STREAM`, `PRODUCT_EDITIONS`, `PRODUCT_FEDERATED` (`keccak256` of the name) |
 | token ID | one global sequence on 6529 Stream, from 1, assigned at sale start, never reused |
@@ -152,14 +152,16 @@ default when the sale starts".
    `IEnglishAuction.start(stream, abi.encode(StreamMintRequest))` or
    `startWithBid`.
    - The auction calls `IStream.mint`, which checks the admitted-minter mapping
-     and calls `IPackageRegistry.consume`.
-     Consume checks the proof, `acceptedAs` for each party (no registry calls),
+     and hands the request, unread, to the mint policy (`IMintPolicy.authorize`,
+     the package registry at genesis; [ADR 0007](adr/0007-permanence.md)). The
+     policy checks the proof, `acceptedAs` for each party (no registry calls),
      the payees, the move signature, and single use plus uniqueness in one
-     storage word.
+     storage word, and answers a flat record Stream re-checks against its own
+     invariants.
    - A VRF item reverts unless its seed is delivered.
    - Stream assigns the token ID and serial and locks the fee terms from
-     `IEconomicsResolver.economics` and the predicted seller wallet from
-     `ISplitFactory.walletFor` over the item's payees (what `newWorkTerms`
+     the policy's record (`IEconomicsResolver.economics`) and the predicted seller
+     wallet from the split ledger's `walletFor` over the item's payees (what `newWorkTerms`
      returns, without its royalty-receiver derivation). It stores two words per
      token, the seller with the packed serial, collection, flags and terms ID,
      and the item hash; the terms (the lead artist and the fee terms) are one
@@ -200,14 +202,15 @@ default when the sale starts".
      Stream work and the artist for any other token (owner decisions 9 and 10).
      The resolver never accepts a fee recipient it can recognise as unable to
      be paid (the escrow, the claim router, a sale adapter, Stream, Editions,
-     the registries, the work records, the release verifier).
+     the registries, the work records).
    - Settlement reports the outcome to the token, `IMintTarget.settlePrimary`
      (owner decision 17): SOLD with the buyer, currency and price, UNBID, or
      FROZEN_OUT. Stream records it, even when delivery is still pending, so a
      winner who never claims cannot block the edition, and returns the seller
      and fee terms the auction pays by.
    - With no bids, Stream itself moves a 6529 Stream work to the 6529 Network
-     Museum, `EconomicsResolver.museum()` resolved at settlement (D140), for
+     Museum (a governed vault at genesis), `EconomicsResolver.museum()` resolved
+     at settlement (D140), for
      every admitted 1/1 adapter. Any other token's work, federated or listed,
      goes to its artist's active authority, and while a recovery override is
      pending its settlement waits.
@@ -393,7 +396,7 @@ default when the sale starts".
 | Admin Safe and setter roles | Governed setters behind the delay classes (48 hours, 14 days, 30 days), compare-and-set; genesis bindings, once | Change a work's royalty rate or license without every party, or its renderer pin without the artist; move an escrow credit anywhere but an identical replacement wallet, or the replacement its holder named (`consentToRecovery`) |
 | Lead artist (active authority) | Move to Stream; edit the record until finalize; finalize; co-sign amendments | Change the approved media, parties, payees or sale terms |
 | Sale adapters (admitted) | Mint through `IMintTarget` on the token's own terms | Mint outside an approved item or an edition's terms |
-| Bound contracts | Stream consumes items; Editions claims content hashes; the package registry registers artists; the federation registry lists federated contracts under artists; WorkRecords sets royalty rates and asks Stream and Editions for ERC-4906 | Act for anyone else: each binding is one caller, set once at genesis |
+| Bound contracts | Stream's mint policy consumes items; Editions claims content hashes; the package registry registers artists; the federation registry lists federated contracts in the artist registry's per-token directory (replaceable by `setFederationRegistry`, 30 days; no authority over artists, payouts or canonical tokens); WorkRecords sets royalty rates and asks Stream and Editions for ERC-4906 | Act for anyone else: each binding is one caller, set once at genesis |
 | VRF coordinator | Deliver a seed once per requested content | Choose which items are VRF, or change a delivered seed |
 | 6529 delegation contract | Supply consolidations used as recovery cancellers and stagers | Execute a change before 7 days, or bypass the guardian veto |
 
@@ -411,16 +414,16 @@ authoritative list, generated from `config/genesis.example.json`, is the
 
 | Role | Selectors |
 | --- | --- |
-| ADMIN (genesis, once each) | `IStream.bindWorkRecords`, `bindEditions`; `IPackageRegistry.bindStream`, `bindEditions`; `IArtistRegistry.bindPackageRegistry`, `bindStream`, `bindSplitFactory`, `bindStatementLog`; `IEditions.bindWorkRecords`. `IArtistRegistry.bindFederationRegistry` is deferred to v1.1 (a 30-day ADMIN action then) |
+| ADMIN (genesis, once each) | `IStream.bindWorkRecords`, `bindEditions`; `IPackageRegistry.bindStream`, `bindEditions`; `IArtistRegistry.bindPackageRegistry`, `bindStream`, `bindSplitFactory`, `bindStatementLog`; `IEditions.bindWorkRecords`. `IArtistRegistry.bindFederationRegistry` is deferred until the federation registry ships (a 30-day ADMIN action then) |
 | GUARDIAN | `IEnglishAuction.pause(saleId, disputeRef)`, `IArtistRegistry.vetoChange`, `IPackageRegistry.revokePackage` (also pre-revokes unregistered roots), `ICurationSignerVerifier.disableSigner`, `IDependencyRegistry.deprecate`; economics `IAssetAllowlist.deprecateAsset`; the manager's own `WorksAccessManager.suspend` (checked by the manager, not mapped) |
 | PAUSER | the sale adapters' emergency `pause()` |
 | UNPAUSER (48 hours) | `IEnglishAuction.resume`; the sale adapters' `unpause()` |
 | STORAGE_OPERATOR | `IWorkRecords.setPreferredKind`, `setCollectionPreferredKind`, `setFilePreference` |
 | PLATFORM | `IStream.createCollection`; `IWorkRecords.addLocator` (also the artist); statement log `appendPlatform` (DISPUTE_OUTCOME) |
 | CURATOR | statement log `appendCurator` (CURATION_EVIDENCE) |
-| PARAMETER_SETTER (48 hours) | `IStream.setContractURI`, `releaseContent`, `IEditions.setContractURI`, `IWorkRecords.relicense`, `IEnglishAuction.cancel`, `setConfig`, `setOpeningBid`, `IEconomicsResolver.setRoyaltyRate`, `setDefaultLicense`, `IArtistRegistry.stageOverride`, `IDependencyRegistry.register`, `IEntropyModule.setConfig`, `IFederationRegistry.setStatus`, `setArtistDelisted` (v1.1); economics `IAssetAllowlist.setIncrementFloor` (economics setters are guarded by an expected revision) |
-| FUNDS_SETTER (14 days) | `IWorkRecords.setRoyaltyRate`, `IStream.setOwner`, `IEditions.setOwner`, `IEconomicsResolver.setFeeTerms`; economics `IAssetAllowlist.admitAsset`, `setDefaultCurrency`, `IRevenueEscrow.recover` (ADR 0002, ADR 0003) |
-| SUCCESSOR_SETTER (30 days) | `IMintTarget.setAdmittedMinter` (6529 Stream and 6529 Stream Editions), `IStream.setDefaultRenderer`, `IWorkRecords.repinRenderer`, `IPackageRegistry.setVerifier`, `ICurationSignerVerifier.enableSigner`, `IArtistRegistry.setConsolidationSource`, `resolveContested`, `IEntropyModule.setCoordinator`, entropy `lowerCallbackGasLimit`, `ISaleAdapter.setTarget`, `setFederationRegistry`; statement log `setArtistResolver`, `appendGovernanceManifest` |
+| PARAMETER_SETTER (48 hours) | `IStream.setContractURI`, `releaseContent`, `IEditions.setContractURI`, `IWorkRecords.relicense`, `IEnglishAuction.cancel`, `setConfig`, `setOpeningBid`, `IEconomicsResolver.setRoyaltyRate`, `setDefaultLicense`, `IArtistRegistry.stageOverride`, `IDependencyRegistry.register`, `IEntropyModule.setConfig`, `IFederationRegistry.setStatus`, `setArtistDelisted` (when it ships); economics `IAssetAllowlist.setIncrementFloor` (economics setters are guarded by an expected revision) |
+| FUNDS_SETTER (14 days) | `IWorkRecords.setRoyaltyRate`, `IStream.setOwner`, `IEditions.setOwner`, `IEconomicsResolver.setFeeTerms`; economics `IAssetAllowlist.admitAsset`, `setDefaultCurrency`, `IRevenueEscrow.recover`, `sweepExcess`; the governed vaults' `setDestination` (ADR 0002, ADR 0003, ADR 0007) |
+| SUCCESSOR_SETTER (30 days) | `IMintTarget.setAdmittedMinter` (6529 Stream and 6529 Stream Editions), `IStream.setDefaultRenderer`, `setDependency`, `setRescueDelay`, `IWorkRecords.repinRenderer`, `IPackageRegistry.setVerifier`, `ICurationSignerVerifier.enableSigner`, `IArtistRegistry.setConsolidationSource`, `resolveContested`, `setFederationRegistry`, `setTimer`, `IEntropyModule.setCoordinator`, entropy `lowerCallbackGasLimit`, `ISaleAdapter.setTarget`, `setFederationRegistry`; statement log `setArtistResolver`, `appendGovernanceManifest` |
 
 There is no SYSTEM role: contract-to-contract calls use the one-shot bindings in
 the first row, so they skip the AccessManager hop. Sale adapters are admitted
@@ -431,12 +434,12 @@ accounts and checks ERC-165, except where the target does not implement it:
 checks for code and that the log's artist resolver is the registry. Every installed dependency
 is checked at install for code, ERC-165 support where it has it, and no EIP-7702
 delegation. The curation verifier, the default renderer, the consolidation
-source, the VRF coordinator, the statement log's artist resolver, the split
-factory's payout resolver and release verifier, and the sale adapters'
-federation registry are also pinned to a reviewed code hash and checked against
-it again at use. Stream's package registry, artist registry, economics resolver
-and entropy module, and the admitted sale adapters, are checked at install only,
-with no code-hash pin. The auditor pack lists every pin and its test
+source, the VRF coordinator, the statement log's artist resolver and the sale
+adapters' federation registry are also pinned to a reviewed code hash and checked
+against it again at use. The split ledger pins no code hash of its payout resolver
+(ADR 0007). Stream's mint policy, economics resolver and entropy module, and the
+admitted sale adapters, are checked at install only, with no code-hash pin; its
+artist registry is fixed at deployment. The auditor pack lists every pin and its test
 ([trust assumptions](audit/trust-assumptions.md#pinned-code-hashes)).
 
 Renderer pins are checked again at use (DEPS-6): `Stream.rendererOf`, which
@@ -464,7 +467,7 @@ setters for funds, recipients, verifiers and renderers are compare-and-set.
     and derives the royalty receiver. A start under existing terms writes 5 new
     slots, 6 with a bid; a first start under new terms writes the terms word too
     (one word more on a hashed-position collision, an accepted limitation). The
-    registry stores one word per consumed item.
+    mint policy stores one word per consumed item.
   - Mint checks an admitted-minter mapping, not an AccessManager hop.
   - The auction locks the increment floor at the first bid, not at start, and
     reads seller and fee terms back from the token.
@@ -477,4 +480,4 @@ setters for funds, recipients, verifiers and renderers are compare-and-set.
   in mind. On Sepolia, state-creation gas above the cap was accepted (ADR 0004).
 - **Contract size.** Stream core stays within EIP-170 because records, licenses,
   finalize and locators live in `IWorkRecords`.
-- **Lines.** Interfaces and shared types count toward the 12K-line budget.
+- **Lines.** Interfaces and shared types count toward the 15,000-line budget (ADR 0007).
