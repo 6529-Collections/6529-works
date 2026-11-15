@@ -17,7 +17,7 @@ which runs alongside the master's 1/1 English auction and closes after it. Anyon
 per-copy price on a fixed ladder and a quantity; the clearing decides how many copies exist and
 the one price every winner pays; exactly that many are minted as winners claim. Genesis deploys
 it, admits it on 6529 Stream Editions and lists Editions as its target. Its rules are `EA-1` to
-`EA-16` below. ADR 0005 removed the fixed-price and Dutch adapters, with their rules
+`EA-20` below. ADR 0005 removed the fixed-price and Dutch adapters, with their rules
 (ED-9 to ED-24); they remain at the `v1.0.0-rc.1` tag, and a fixed-price sale can be restored as
 a newly admitted adapter without redeploying Editions
 ([§3](../adr/0005-stream-editions-auction.md#3-adding-a-sale-method-decision-14)).
@@ -54,9 +54,13 @@ and the English auction, and reads Stream from Editions (each checked by ERC-165
 economics resolver: a sale pays the terms `Editions.bindMinter` returns (EA-2). It pins its
 lens, deployed before it in its own transaction (ADR 0005 §12): the lens must have the
 expected code hash, and its Editions, Stream, English auction and escrow must be the
-adapter's. It then installs the launch configuration (`DeployV1.editionAuctionDefaults` at
-genesis). It serves only the tokens `setTarget` lists, which in v1 is Editions alone; genesis
-lists it.
+adapter's. It then installs the launch limits and configuration
+(`DeployV1.editionAuctionLimits` and `editionAuctionDefaults` at genesis). It serves only the
+tokens `setTarget` lists, which in v1 is Editions alone; genesis lists it. It keeps no
+federation registry: it sells only 6529 Stream Editions, `federationRegistry()` answers zero
+and `setFederationRegistry` is refused (`TargetNotAllowed`). Every view of the adapter, its
+own settings included, is the lens's, which finds each storage word from the adapter's layout
+and reads it with `storageAt`.
 
 ## Concepts
 
@@ -86,7 +90,7 @@ The [glossary](../glossary.md) defines [master](../glossary.md#master),
 | `maxCount` | The creator's optional cap on the copies ever minted, by every adapter together; 0 for none (the count then stops at 2^40 - 1, as `minted` is a `uint40`, until the sale's seal sets the final count, ED-25). |
 | `currency` | The sale method's currency, opaque to Editions and the package registry. The edition auction takes `CURRENCY_ETH` (`address(0)`). |
 | `saleKind` | A nonzero sale-kind label ([`SaleKind`](../../src/interfaces/types/SaleTypes.sol)). Only an admitted adapter reporting this kind may mint. rc.2's edition auction is `UNIFORM_AUCTION`; `FIXED_PRICE` and `DUTCH` are reserved labels of the removed rc.1 adapters. |
-| `params` | The sale method's parameters, at most 64 bytes (two words), opaque to Editions and the package registry. The edition auction takes none. |
+| `params` | The sale method's parameters, at most 64 bytes (two words), opaque to Editions and the package registry. The edition auction takes none (the governed default close offset) or exactly `abi.encode(uint256 closeOffset)`, the artist's close offset in seconds (EA-17); as stored, a one-word params costs `createEdition` two more storage words. |
 
 The terms fix no size, format, window or price. `EditionRules.isValid` never reverts and
 accepts any terms with a nonzero `saleKind` and at most `EditionRules.MAX_PARAMS_BYTES` of
@@ -222,7 +226,8 @@ and no departures.
 - **Opening.** Anyone opens an edition's sale with `open(editions, id, abi.encode(item))`, from
   the 1/1's start until the edition close (`BiddingClosed`); the keeper batches it with the
   1/1's `start`. The item must hash to the item Stream stored for the master, so no proof is
-  needed, with edition terms of this sale kind, in ETH and without params (`InvalidSaleTerms`).
+  needed, with edition terms of this sale kind, in ETH, and params either empty or exactly
+  `abi.encode(uint256 closeOffset)` (`InvalidSaleTerms`; EA-17).
   Opening binds the edition to the adapter (`Editions.bindMinter(id, item)`, [ADR 0005 §6](../adr/0005-stream-editions-auction.md#6-amendment-31-october-2026-the-edition-is-bound-when-its-sale-opens)) before it
   records the sale, so a second adapter of the same kind cannot open it (`MinterMismatch`), and
   locks the cap, the current governed configuration and the `PRODUCT_EDITIONS` payout terms (the
@@ -231,8 +236,19 @@ and no departures.
   recorded, so the edition always reports the split its sale paid. Opening is refused while the
   adapter is paused (`SalePaused`), for a token it does not serve (`TargetNotAllowed`), for a
   missing or cancelled 1/1 (`NoOneOfOneAuction`) and a second time, voided sales included
-  (`AuctionExists`).
-- **The close.** `closeAt` is the 1/1's current `endTime` plus `closeOffset`, and the sale ends
+  (`AuctionExists`). Before locking anything it deploys the seller's and the royalty
+  receiver's split wallets if they have no code, so no payment from the sale and no royalty on
+  its copies can reach an undeployed wallet (EA-20).
+- **The edition's open period (EA-17).** The close offset is the artist's: signed in the
+  edition terms' params as `abi.encode(uint256 closeOffset)` seconds, from zero up to the
+  governed maximum (`limits().maxCloseOffset`, 30 days at launch), or, with empty params, the
+  governed default (`config().closeOffset`, 15 minutes). The sale locks it at open, in a terms
+  record of the current parameters with that offset (`auction(saleId).terms.closeOffset`,
+  `AuctionOpened`), so no later governance change moves an open sale's close. 6529 Stream
+  Editions holds no duration: the maximum is a parameter of this adapter, not a rule of the
+  token. Bids stay firm for the whole window and copies mint only after the close; once the
+  1/1 has settled no dispute can pause it, so no withdrawal opens again.
+- **The close.** `closeAt` is the 1/1's current `endTime` plus the sale's close offset, and the sale ends
   at `endTime = max(closeAt, softEnd)` (D140). The 1/1's `endTime` already includes its
   anti-snipe extensions and any resumed pause, so a late 1/1 bid moves the edition close with it
   (EA-10). `endTimes(saleId)` reads every clock live: the 1/1's end and state, `closeAt`,
@@ -252,6 +268,17 @@ and no departures.
   VOID, every bid is refunded in full and nothing is minted or paid. A bid is refused once the
   adapter reads the cancellation, which it does for every bid within `softWindow` of the close;
   a bid accepted before then is refunded with the rest.
+- **A master that can never be settled (EA-19).** A sale that has paid nothing (OPEN, or
+  SETTLING with its scan still running) is abandoned by anyone with `abandon(saleId)` once its
+  end plus its abandonment delay (locked at open; 150 days at launch, at least 120) has
+  passed, while its 1/1 is neither in progress (ACTIVE or PAUSED) nor settled with its master
+  settled in Stream and its edition created. A 1/1 auction that refuses to answer counts as
+  stuck, with the end last read. The sale is VOID (`AuctionVoided`): every bid is refunded in
+  full, nothing is minted or paid, and the edition is sealed at zero
+  (`EditionSupplySealed(id, 0)`), so no copy of it can ever exist, even if the master settles
+  later. `abandonable(saleId)` tells when. The delay outlasts governance's 30-day repair of a
+  dependency plus Stream's 90-day rescue, so a sale waiting on either is never abandoned for
+  it.
 - **Independence (D141).** Copies sell whether or not the 1/1 drew a bid; an unbid 1/1 goes to the
   [6529 Network Museum](stream-and-auctions.md#settle-with-no-bid) and its editions sell all the
   same. No edition bid means no copies: the auction settles with a count of zero, pays nothing,
@@ -273,8 +300,9 @@ and no departures.
   contract, until it returns true: never through a shared public relayer such as Multicall3,
   whose callers would share one sweep ([keeper runbook](../../script/README.md#the-edition-auction-keeper)).
 - **Payouts.** Settlement pays `count × price`: the network fee, `floor(revenue × feeShare /
-  100,000)`, to the locked fee recipient and the rest to the seller split wallet, each through
-  the revenue escrow if refused ([economics](economics-and-payouts.md#wallet-payments-and-the-escrow)).
+  100,000)`, to the locked fee recipient and the rest to the seller split wallet, each with the
+  governed payout gas (`limits().payoutGas`, 100,000 at launch) and through the revenue escrow
+  if refused or if it needs more ([economics](economics-and-payouts.md#wallet-payments-and-the-escrow)).
   It emits `ISaleAdapter.SaleSettled` with a zero buyer and recipient and the count as the
   quantity: the one event the TDH pipeline weights by network share (P29 §1.2).
 - **`claimBid(saleId, bidId, to)`** is for the bidder: it mints the copies the bid won to `to`
@@ -427,6 +455,8 @@ stateDiagram-v2
     Paused --> Paused : bid, raise, withdraw a bid from before the pause's minute
     Paused --> Open : the 1/1 resumes, the close follows its new end
     Paused --> Void : the 1/1 is cancelled, then settle
+    Closed --> Void : abandon, its master stuck past the end plus the delay
+    Settling --> Void : abandon, its scan stalled for want of the edition
     Open --> Closed : the clock passes the close
     Extended --> Closed : the clock passes the close
     Closed --> Settled : settle, after the 1/1 settles, in one call
@@ -446,6 +476,7 @@ stateDiagram-v2
 | 1/1 paused to void | PARAMETER_SETTER on the 1/1, then anyone | standard, 48 hours; between 48 hours and 7 days after the pause | `EnglishAuction.cancel`, then `settle` |
 | Open to closed | the clock | none | `block.timestamp` reaches the close |
 | Closed to settled or settling | anyone, once the 1/1 settled (and the edition exists when copies sold) | none | `settle` |
+| Closed, or settling with its scan running, to void | anyone, once the sale's end plus its abandonment delay passed and its master cannot settle (EA-19) | the locked delay (150 days at launch) | `abandon` |
 | Settling to settled | anyone, each settler sweeping on its own | none | `settle` again: the rest of the scan, then of the caller's own sweep; the first settler to complete it settles the sale |
 | A bid claimed | the bidder; anyone for `claimBidFor` | none | `claimBid`, `claimBidFor` |
 
@@ -454,6 +485,10 @@ stateDiagram-v2
   `UnpauseTooEarly(allowedAt)` until 48 hours after the pause (GOV-5).
 - **Targets.** `setTarget(token, listed)` (SUCCESSOR_SETTER, 30 days) lists the tokens the adapter
   serves; genesis lists 6529 Stream Editions. Unlisting stops new opens only.
+- **Limits.** `setLimits(expected, next)` (PARAMETER_SETTER, 48 hours, compare-and-set on the
+  packed word `maxCloseOffset | voidDelayDays << 32 | payoutGas << 48`) sets the close
+  offset's maximum, the abandonment delay and the payout gas (`LimitsSet`); open sales keep
+  the offset and delay they locked (EA-18).
 
 ## Flows
 
@@ -562,15 +597,16 @@ sequenceDiagram
     Keeper->>EA: open(editions, workId, abi.encode(item)), in the same batch
     EA->>Auction: auction(saleIdOf(stream, workId)): exists, not cancelled, before the close
     EA->>Stream: coreOf(workId): the stored item hash
-    Note over EA: hash matches, UNIFORM_AUCTION in ETH, empty params
+    Note over EA: hash matches, UNIFORM_AUCTION in ETH, params empty or the artist's close offset
     alt the edition exists
         EA->>Ed: edition(workId): the economics it recorded
     else not yet
         EA->>Econ: newWorkTerms(PRODUCT_EDITIONS, item.payees)
     end
+    EA->>Econ: splitFactory().createWallet(payees, 0), for the seller and royalty wallets without code
     EA->>Ed: bindMinter(workId, item)
     Note over Ed: bound to this adapter (EditionMinterBound); before creation, the same economics recorded
-    Note over EA: lock cap, configuration, seller, fee recipient and share
+    Note over EA: lock cap, configuration with the sale's close offset, seller, fee recipient and share, abandonment delay
     EA-->>Keeper: SaleStarted and AuctionOpened, saleIdOf(editions, workId)
 ```
 
@@ -588,7 +624,7 @@ sequenceDiagram
     Note over Auction: the 1/1 end moves to the bid plus the window
     Bidder->>EA: raise(saleId, bidId, higherStep) with exactly the difference
     EA->>Auction: auction(1/1 saleId).endTime, read live
-    Note over EA: endTime = max(new 1/1 end + closeOffset, softEnd)
+    Note over EA: endTime = max(new 1/1 end + the sale's close offset, softEnd)
     Bidder->>EA: bid less than softWindow before endTime
     Note over EA: softEnd = min(now + softWindow, backstop)
 ```
@@ -629,10 +665,10 @@ sequenceDiagram
     participant Ed as Editions
     Bidder->>EA: claimBid(saleId, bidId, to)
     Note over EA: won = all above the step, none below, clamp(cutoff - position) at it
-    EA->>Ed: mint(to, workId, won, empty)
+    EA->>Ed: mint(to, workId, won, abi.encode(ETH, price))
     EA-->>Bidder: refund = escrow - won x price, sent to to
     Anyone->>EA: claimBidFor(saleId, bidId)
-    EA->>Ed: mint(bidder, workId, won, empty)
+    EA->>Ed: mint(bidder, workId, won, abi.encode(ETH, price))
     Note over EA: the refund is credited, claim(CURRENCY_ETH, to) pays it
 ```
 
@@ -710,7 +746,7 @@ Bids at 1.00, 0.196, 0.100, 0.0511 and 0.0100 ETH (steps 192, 158, 144, 130 and 
 | ED-26 | Every primary mint carries `abi.encode(currency, unitPrice)` from the bound adapter and emits `EditionPrimaryMint(editionId, to, amount, currency, unitPrice)` before its `TransferSingle`; the currency is the terms' own unless they name `CURRENCY_DEFAULT`. The price is the adapter's report. | `Editions.mint` | [EditionsSeal.t.sol](../../test/editions/EditionsSeal.t.sol): `test_Mint_LogsCurrencyAndUnitPriceBeforeTheTransfer`, `test_Mint_CurrencyMustBeTheTermsOwn`; [Editions.t.sol](../../test/editions/Editions.t.sol): `test_Mint_RejectsUnknownEditionZeroAmountAndData` |
 | ED-27 | `createEdition` emits `EditionTermsLocked` with the locked seller, royalty receiver, initial rate, fee recipient and fee share; with `EditionCreated`, `EditionMinterBound`, `EditionSupplySealed`, `EditionPrimaryMint`, `RoyaltyRateChanged`, `AdmittedMinterSet` and the ERC-1155 transfers, Editions' logs alone rebuild every edition's terms, binding, supply, holders and price history. | `Editions.createEdition` | [Editions.t.sol](../../test/editions/Editions.t.sol): `test_CreateEdition_LinksBothWaysAndLocksTerms` |
 | ED-28 | Every call out of Editions (Stream, the package registry, the economics resolver, the artist registry, the work-records satellite, the renderer, an adapter's `saleKind`, a recipient's ERC-1155 hook) forwards all the gas EIP-150 allows; a call that runs short reverts with `BoundedCallShortfall`, any other failure with the callee's reason (or `BoundedCallFailed`, or `ERC1155InvalidReceiver` for a hook), so no shortfall yields an answer or a fallback. | `Editions._read`, `Editions._call`, `Editions._updateWithAcceptanceCheck` | [EditionsGasRule.t.sol](../../test/editions/EditionsGasRule.t.sol): `test_GasRule_UriThroughTheRenderer`, `test_GasRule_UriNeverFallsBack`, `test_GasRule_LicenseThroughWorkRecords`, `test_GasRule_CreatorThroughTheArtistRegistry`, `test_GasRule_CreateEditionThroughTheEconomicsResolver`, `test_GasRule_BindMinterThroughTheEconomicsResolver`, `test_GasRule_MintThroughTheRecipientsHook`; [Editions.t.sol](../../test/editions/Editions.t.sol): `test_Receiver_GasBurnerCannotMint` |
-| EA-1 | Anyone opens an edition's sale, once (voided sales included), from its 1/1's start until the edition close, with the master's stored item, of this sale kind, in ETH and without params, binding the edition to the adapter (`Editions.bindMinter`), so no second adapter of the kind can open it; not while the adapter is paused, for a token it does not serve, or for a missing or cancelled 1/1. | `UniformEditionAuction.open`; `UniformEditionAuctionLens.masterTerms`; `Editions.bindMinter` | [UniformEditionAuction.t.sol](../../test/sales/edition/UniformEditionAuction.t.sol): `test_Open_LocksTermsAndEmits`, `test_Open_ChecksTokenAndId`, `test_Open_NeedsALiveOneOfOne`, `test_Open_ChecksTheItem`, `test_Open_Timing`, `test_Open_AfterTheOneOfOneSettled_BeforeTheClose`; [EditionAuction.t.sol](../../test/integration/EditionAuction.t.sol): `test_Flow_OpenChecksTheMasterOnTheRealStack`; [UniformEditionAuctionLens.t.sol](../../test/sales/edition/UniformEditionAuctionLens.t.sol): `test_Open_BindsTheEditionWithTheItemItReceived`; [EditionAuctionBinding.t.sol](../../test/integration/EditionAuctionBinding.t.sol): `test_Binding_ASecondAdapterOfTheKindCannotOpenABoundEdition`, `test_Binding_AnAttackerBindsOnlyTheMatchingKind` |
+| EA-1 | Anyone opens an edition's sale, once (voided sales included), from its 1/1's start until the edition close, with the master's stored item, of this sale kind, in ETH and with params empty or one word (EA-17), binding the edition to the adapter (`Editions.bindMinter`), so no second adapter of the kind can open it; not while the adapter is paused, for a token it does not serve, or for a missing or cancelled 1/1. | `UniformEditionAuction.open`; `UniformEditionAuctionLens.masterTerms`; `Editions.bindMinter` | [UniformEditionAuction.t.sol](../../test/sales/edition/UniformEditionAuction.t.sol): `test_Open_LocksTermsAndEmits`, `test_Open_ChecksTokenAndId`, `test_Open_NeedsALiveOneOfOne`, `test_Open_ChecksTheItem`, `test_Open_Timing`, `test_Open_AfterTheOneOfOneSettled_BeforeTheClose`; [EditionAuction.t.sol](../../test/integration/EditionAuction.t.sol): `test_Flow_OpenChecksTheMasterOnTheRealStack`; [UniformEditionAuctionLens.t.sol](../../test/sales/edition/UniformEditionAuctionLens.t.sol): `test_Open_BindsTheEditionWithTheItemItReceived`; [EditionAuctionBinding.t.sol](../../test/integration/EditionAuctionBinding.t.sol): `test_Binding_ASecondAdapterOfTheKindCannotOpenABoundEdition`, `test_Binding_AnAttackerBindsOnlyTheMatchingKind` |
 | EA-2 | A sale locks at open the creator's cap, the current configuration and the `PRODUCT_EDITIONS` payout terms: exactly the ones 6529 Stream Editions locks for the edition and returns from `bindMinter` (or, if the edition exists, already recorded), so the edition reports the split its sale paid, whichever economics resolver is current; `setConfig` changes only later sales. | `open`, `setConfig`; `Editions.bindMinter` | [UniformEditionAuction.t.sol](../../test/sales/edition/UniformEditionAuction.t.sol): `test_Open_LocksTermsAndEmits`, `test_Open_ChecksThePayout`, `test_Open_InternsTheFeeRecipient`, `test_SetConfig_CompareAndSetAndLocksPerSale`; [UniformEditionAuctionLens.t.sol](../../test/sales/edition/UniformEditionAuctionLens.t.sol): `test_Open_PaysTheEconomicsEditionsReturns`; [Editions.t.sol](../../test/editions/Editions.t.sol): `test_F1_BindMinterReturnsTheLockedEconomics`; [EditionAuctionFixA.t.sol](../../test/integration/EditionAuctionFixA.t.sol): `test_F1_TheEditionAuctionFollowsAnEconomicsReplacement`, `test_F1_AnAuctionDeployedBeforeTheSwitchPaysTheReplacement`; [EditionAuctionBinding.t.sol](../../test/integration/EditionAuctionBinding.t.sol): `test_Binding_TheEditionReportsTheSplitItsSalePaid` |
 | EA-3 | Step `i` costs `basePrice × M[(i mod N) × 192 / N] × 10^(i div N) / 100`, exact and strictly increasing for every allowed ladder, from one mantissa table every client shares. | `StepLadder.price`, `isValid` | [StepLadder.t.sol](../../test/interfaces/StepLadder.t.sol): `test_MantissasMatchTheGoldenVector`, `test_DefaultLadderMatchesTheGoldenVector`, `test_OtherLaddersMatchTheGoldenVector`, `test_EveryLadderRisesAndNests`, `testFuzz_DecadesAndSteps`; [UniformEditionAuction.t.sol](../../test/sales/edition/UniformEditionAuction.t.sol): `test_StepPrices_MatchStepLadder` |
 | EA-4 | A bid pays exactly `quantity × stepPrice(step)` in ETH, for a step on the ladder and a quantity of at least 1, with units below 2^32, while bidding is open; a raise moves a whole bid up for exactly the difference. | `bid`, `raise` | [UniformEditionAuction.t.sol](../../test/sales/edition/UniformEditionAuction.t.sol): `test_Bid_EscrowsExactlyAndEmits`, `test_Bid_Rejects`, `test_Bid_UnitsStayBelow2To32`, `test_Bid_ClosedAfterTheEnd`, `test_Raise_PaysTheDifferenceAndMoves`, `test_Raise_Rejects`; [EditionAuctionInvariant.t.sol](../../test/integration/invariant/EditionAuctionInvariant.t.sol): `invariant_editionAuction` |
@@ -719,13 +755,17 @@ Bids at 1.00, 0.196, 0.100, 0.0511 and 0.0100 ETH (steps 192, 158, 144, 130 and 
 | EA-7 | Without a cap no step is split; when a cap binds inside a step, its units fill in position order, a raise rejoins at the back of its new step, and the marginal bid is partly filled. | `bid`, `raise`, `withdrawBid`; `UniformClearing` | [UniformEditionAuction.t.sol](../../test/sales/edition/UniformEditionAuction.t.sol): `test_Raise_RejoinsAtTheBackInACappedSale`; [UniformEditionAuctionVectors.t.sol](../../test/sales/edition/UniformEditionAuctionVectors.t.sol): `test_Vector_07_Trace3Cap60FifoHole`, `test_Vector_14_FifoHoles`; [UniformEditionAuctionLens.t.sol](../../test/sales/edition/UniformEditionAuctionLens.t.sol): `test_Lens_OutcomesQueueAndQuotesUnderACap`; [EditionAuctionInvariant.t.sol](../../test/integration/invariant/EditionAuctionInvariant.t.sol): `invariant_editionAuction` |
 | EA-8 | Settlement sweeps the clearing step's departures in strictly increasing position, all of them, each settler on its own across as many calls as it needs; the first complete sweep fixes the cutoff, and an order that skips a departure strands only its sender's sweep. A bid at the cut step then wins `clamp(cutoff − position, 0, quantity)`, and the units won sum to the step's share. | `settle` | [UniformEditionAuction.t.sol](../../test/sales/edition/UniformEditionAuction.t.sol): `test_Settle_CapWithFifoAndHoles_ChunkedSweep`, `test_Settle_RationedStepWithoutDeparturesSettlesAtOnce`, `test_Settle_RejectsAnOutOfOrderSweep`; [UniformEditionAuctionLens.t.sol](../../test/sales/edition/UniformEditionAuctionLens.t.sol): `test_Lens_SettlementOrderAcrossTheSweep`; [EditionAuction.t.sol](../../test/integration/EditionAuction.t.sol): `test_Flow_CapFifoHole`; [EditionAuctionDifferential.t.sol](../../test/integration/EditionAuctionDifferential.t.sol): `testFuzz_Clearing_EqualsTheBruteForceReference`; [SweepSkipRegression.t.sol](../../test/sales/edition/SweepSkipRegression.t.sol): `test_Settle_ASkippedDepartureCannotStrandTheSale`, `test_Settle_ASkippingSettlerStrandsOnlyItself`, `test_Settle_TwoSettlersInterleaveChunks`; [EditionAuctionInvariant.t.sol](../../test/integration/invariant/EditionAuctionInvariant.t.sol): `invariant_editionAuction` |
 | EA-9 | Exactly `count` copies exist once every winning bid is claimed, never more; each bid is claimed once, minting its units won and refunding `escrow − won × price`; only the bound adapter mints, even after its removal. | `claimBid`, `claimBidFor` | [UniformEditionAuction.t.sol](../../test/sales/edition/UniformEditionAuction.t.sol): `test_Settle_PaysAndClaimsMintExactlyK`, `test_Claims_RejectAndCredit`, `test_Claims_RejectAWrongMint`; [PieceLifecycle.t.sol](../../test/integration/PieceLifecycle.t.sol): `test_AOneOfOneAndItsEditionsSellSideBySide`; [EditionAuctionInvariant.t.sol](../../test/integration/invariant/EditionAuctionInvariant.t.sol): `invariant_editionAuction`; [EditionAuctionBinding.t.sol](../../test/integration/EditionAuctionBinding.t.sol): `test_Binding_ARemovedAdaptersWinnersStillClaim` |
-| EA-10 | The sale ends at `max(1/1 end + closeOffset, softEnd)`, the 1/1's end read live; a bid or raise within `softWindow` of the end sets `softEnd = min(now + softWindow, backstop)`; while the 1/1 is paused bids are accepted at any time and move no clock. | `bid`, `raise`; the lens's `endTimes` | [UniformEditionAuction.t.sol](../../test/sales/edition/UniformEditionAuction.t.sol): `test_SoftClose_ExtendsOnlyInTheWindow`, `test_SoftClose_Backstop`, `test_Coupling_FollowsTheOneOfOneAntiSnipe`, `test_Coupling_PausedOneOfOneAcceptsBidsWithoutExtending`; [EditionAuction.t.sol](../../test/integration/EditionAuction.t.sol): `test_Flow_OneOfOneAntiSnipeMovesTheEditionClose`; [PieceLifecycle.t.sol](../../test/integration/PieceLifecycle.t.sol): `test_AOneOfOneAndItsEditionsSellSideBySide`; [EditionAuctionInvariant.t.sol](../../test/integration/invariant/EditionAuctionInvariant.t.sol): `invariant_editionAuction` |
+| EA-10 | The sale ends at `max(1/1 end + the sale's close offset, softEnd)`, the 1/1's end read live; a bid or raise within `softWindow` of the end sets `softEnd = min(now + softWindow, backstop)`; while the 1/1 is paused bids are accepted at any time and move no clock. | `bid`, `raise`; the lens's `endTimes` | [UniformEditionAuction.t.sol](../../test/sales/edition/UniformEditionAuction.t.sol): `test_SoftClose_ExtendsOnlyInTheWindow`, `test_SoftClose_Backstop`, `test_Coupling_FollowsTheOneOfOneAntiSnipe`, `test_Coupling_PausedOneOfOneAcceptsBidsWithoutExtending`; [EditionAuction.t.sol](../../test/integration/EditionAuction.t.sol): `test_Flow_OneOfOneAntiSnipeMovesTheEditionClose`; [PieceLifecycle.t.sol](../../test/integration/PieceLifecycle.t.sol): `test_AOneOfOneAndItsEditionsSellSideBySide`; [EditionAuctionInvariant.t.sol](../../test/integration/invariant/EditionAuctionInvariant.t.sol): `invariant_editionAuction` |
 | EA-11 | Settlement waits for the end and a settled or cancelled 1/1, and for the edition when copies sold; the live result before settling is the stored one. Copies sell whether or not the 1/1 drew a bid, and no edition bid sells none. | `settle` | [UniformEditionAuction.t.sol](../../test/sales/edition/UniformEditionAuction.t.sol): `test_Settle_NotReady`, `test_Settle_ZeroBidsMintsNothing`; [EditionAuction.t.sol](../../test/integration/EditionAuction.t.sol): `test_Flow_EditionsSellWithoutOneOfOneBids`, `test_Flow_NoEditionBidsNoEditions`; [PieceLifecycle.t.sol](../../test/integration/PieceLifecycle.t.sol): `test_AnUnbidOneOfOneGoesToTheMuseumWhileItsEditionsSell` |
-| EA-12 | Settlement pays `count × price` once: the network fee, `floor(revenue × feeShare / 100,000)`, to the locked fee recipient and the rest to the seller, each through the escrow if refused; a sale paying the escrow is refused at open. | `settle`, `open` | [UniformEditionAuction.t.sol](../../test/sales/edition/UniformEditionAuction.t.sol): `test_Settle_PaysAndClaimsMintExactlyK`, `test_Settle_RefusedPayoutsGoToTheEscrow`, `test_Open_ChecksThePayout`; [UniformEditionAuctionHostile.t.sol](../../test/sales/edition/UniformEditionAuctionHostile.t.sol): `test_RefusingAndReentrantWalletsAreEscrowed`, `test_GasBurningSellerIsEscrowedWithinItsAllowance`, `test_Settle_NeedsGasForTheFullPayoutAllowance`; [PieceLifecycle.t.sol](../../test/integration/PieceLifecycle.t.sol): `test_AOneOfOneAndItsEditionsSellSideBySide` |
-| EA-13 | A cancelled 1/1 voids its edition sale: the next settlement marks it VOID at once, nothing is minted or paid, and every bid is refunded in full. | `settle`, `bid`, `claimBid` | [UniformEditionAuction.t.sol](../../test/sales/edition/UniformEditionAuction.t.sol): `test_Settle_VoidOnCancel`, `test_Coupling_CancelledOneOfOneRefusesBidsNearTheClose`; [UniformEditionAuctionLens.t.sol](../../test/sales/edition/UniformEditionAuctionLens.t.sol): `test_Lens_VoidSale`; [EditionAuction.t.sol](../../test/integration/EditionAuction.t.sol): `test_Flow_DisputeWithdrawAndVoid` |
+| EA-12 | Settlement pays `count × price` once: the network fee, `floor(revenue × feeShare / 100,000)`, to the locked fee recipient and the rest to the seller, each with the governed payout gas and through the escrow if refused or short of it; a sale paying the escrow is refused at open. | `settle`, `open` | [UniformEditionAuction.t.sol](../../test/sales/edition/UniformEditionAuction.t.sol): `test_Settle_PaysAndClaimsMintExactlyK`, `test_Settle_RefusedPayoutsGoToTheEscrow`, `test_Open_ChecksThePayout`; [UniformEditionAuctionHostile.t.sol](../../test/sales/edition/UniformEditionAuctionHostile.t.sol): `test_RefusingAndReentrantWalletsAreEscrowed`, `test_GasBurningSellerIsEscrowedWithinItsAllowance`, `test_Settle_NeedsGasForTheFullPayoutAllowance`; [PieceLifecycle.t.sol](../../test/integration/PieceLifecycle.t.sol): `test_AOneOfOneAndItsEditionsSellSideBySide` |
+| EA-13 | A cancelled 1/1 voids its edition sale: the next settlement marks it VOID at once, nothing is minted or paid, and every bid is refunded in full (an abandoned sale is VOID the same way, EA-19). | `settle`, `bid`, `claimBid` | [UniformEditionAuction.t.sol](../../test/sales/edition/UniformEditionAuction.t.sol): `test_Settle_VoidOnCancel`, `test_Coupling_CancelledOneOfOneRefusesBidsNearTheClose`; [UniformEditionAuctionLens.t.sol](../../test/sales/edition/UniformEditionAuctionLens.t.sol): `test_Lens_VoidSale`; [EditionAuction.t.sol](../../test/integration/EditionAuction.t.sol): `test_Flow_DisputeWithdrawAndVoid` |
 | EA-14 | The adapter holds exactly every unclaimed bid's escrow, less its won units at the clearing price once settled, plus its credits. | every value-moving entry point | [EditionAuctionInvariant.t.sol](../../test/integration/invariant/EditionAuctionInvariant.t.sol): `invariant_editionAuction`, `test_EveryActionRuns`; [EditionAuctionDifferential.t.sol](../../test/integration/EditionAuctionDifferential.t.sol): `testFuzz_Clearing_EqualsTheBruteForceReference` |
-| EA-15 | `setConfig` is compare-and-set within bounds fixed in code (PARAMETER_SETTER, 48 hours); `pause` stops new opens only, and `unpause` lands no earlier than 48 hours after the pause; the adapter serves only the tokens `setTarget` lists. | `setConfig`, `pause`, `unpause`, `setTarget` | [UniformEditionAuction.t.sol](../../test/sales/edition/UniformEditionAuction.t.sol): `test_SetConfig_CompareAndSetAndLocksPerSale`, `test_SetConfig_Bounds`, `test_Governance_IsRestricted`, `test_Pause_BlocksOpensOnly`, `test_SetTarget_OnlyEditions`, `test_SetFederationRegistry` |
+| EA-15 | `setConfig` is compare-and-set within bounds fixed in code (PARAMETER_SETTER, 48 hours), the default close offset at most the governed maximum; `pause` stops new opens only, and `unpause` lands no earlier than 48 hours after the pause; the adapter serves only the tokens `setTarget` lists, and keeps no federation registry. | `setConfig`, `pause`, `unpause`, `setTarget`; the lens's `setFederationRegistry` | [UniformEditionAuction.t.sol](../../test/sales/edition/UniformEditionAuction.t.sol): `test_SetConfig_CompareAndSetAndLocksPerSale`, `test_SetConfig_Bounds`, `test_Governance_IsRestricted`, `test_Pause_BlocksOpensOnly`, `test_SetTarget_OnlyEditions`, `test_SetFederationRegistry_IsRefused` |
 | EA-16 | Claims are never blocked by a pause, never re-entered, and never strand a refund: `claimBidFor` credits it to the bidder and `claim` pays credits out; a bidder whose hook refuses the copies claims to another address. | `claimBid`, `claimBidFor`, `claim` | [UniformEditionAuction.t.sol](../../test/sales/edition/UniformEditionAuction.t.sol): `test_Claims_RejectAndCredit`; [UniformEditionAuctionHostile.t.sol](../../test/sales/edition/UniformEditionAuctionHostile.t.sol): `test_Reentry_ThroughTheCopyHookIsRefused`, `test_Reentry_ThroughTheRefundIsRefused`, `test_CopyRefusingBidder_ClaimsElsewhere` |
+| EA-17 | An edition's close offset is the artist's, signed in the edition terms' params (`abi.encode(uint256 seconds)`), from zero to the governed maximum, or the governed default when the params are empty; the sale locks it at open in a terms record of the current parameters with that offset, and no later change of the default, the maximum or the configuration moves its close. Any other params, or an offset past the maximum, are refused. | `open`; the lens's `masterTerms` | [UniformEditionAuctionWindow.t.sol](../../test/sales/edition/UniformEditionAuctionWindow.t.sol): `test_Window_EmptyParamsLockTheDefault`, `test_Window_TheArtistsOffsetIsLocked`, `test_Window_AnOffsetEqualToTheDefaultWritesNoRecord`, `test_Window_RefusesAnOffsetPastTheMaximumOrMalformedParams`, `test_Window_AChangeMidSaleHasNoEffect`, `test_Window_ThirtyDaysBidsFirmUntilTheClose`, `test_Window_ZeroClosesWithTheOneOfOne`, `test_Window_TheSoftCloseFollowsALongClose`, `test_Window_ACancelDuringALongWindowVoidsAtOnce`, `testFuzz_Window_TheCloseIsTheOneOfOneEndPlusTheOffset`; [EditionAuctionPermanence.t.sol](../../test/integration/EditionAuctionPermanence.t.sol): `test_Window_ASevenDayEditionOnTheRealStack` |
+| EA-18 | `setLimits` is compare-and-set within bounds fixed in code (PARAMETER_SETTER, 48 hours): a maximum close offset of 1 to 3,650 days and at least the default, an abandonment delay of 120 to 730 days, a payout gas of 30,000 to 3,000,000; a sale locks its abandonment delay at open. Every stored time is 32 bits: an open whose ID, 1/1 end or time reaches 2^32 is refused, and a soft end or 1/1 end read later that reaches it reverts (`ClockOverflow`), never wrapping. | `setLimits`, `open`, `bid`, `raise`; the lens's `masterTerms` | [UniformEditionAuctionWindow.t.sol](../../test/sales/edition/UniformEditionAuctionWindow.t.sol): `test_SetLimits_CompareAndSetBoundsAndEvent`, `test_SetLimits_TheMaximumNeverFallsBelowTheDefault`, `test_Clocks_RevertAtTheBoundInsteadOfWrapping`; [UniformEditionAuctionAbandon.t.sol](../../test/sales/edition/UniformEditionAuctionAbandon.t.sol): `test_Abandon_TheDelayIsLockedAtOpen` |
+| EA-19 | A sale that has paid nothing (OPEN, or SETTLING with its scan running) is voided by anyone once its end plus its locked abandonment delay has passed, unless its 1/1 is ACTIVE or PAUSED, or SETTLED with the master settled in Stream and the edition created; a 1/1 auction that refuses to answer counts as stuck, with the end last read. Every bid is then refunded in full, nothing is minted or paid, and the edition is sealed at zero for good. No sale that has paid is ever voided. | `abandon`; the lens's `abandonable`, `checkAbandon` | [UniformEditionAuctionAbandon.t.sol](../../test/sales/edition/UniformEditionAuctionAbandon.t.sol): `test_Abandon_AMasterNeverSettled`, `test_Abandon_AMasterSettledLateSettlesInstead`, `test_Abandon_AMasterSettledAfterTheVoidStaysVoid`, `test_Abandon_NeverWhileTheOneOfOneIsInProgress`, `test_Abandon_ACancelledMaster`, `test_Abandon_ARescuedMasterSettlesInstead`, `test_Abandon_ARescuedMasterWhoseAuctionNeverCloses`, `test_Abandon_AnEditionNeverCreated`, `test_Abandon_ASettledAuctionWithAnUnsettledMaster`, `test_Abandon_ABrokenEnglishAuction`, `test_Abandon_AScanStalledForWantOfTheEdition`, `test_Abandon_NeverAPaidSale`, `testFuzz_Abandon_MatchesTheViewAndConserves`; [EditionAuctionPermanence.t.sol](../../test/integration/EditionAuctionPermanence.t.sol): `test_Abandon_AStreamMasterThatCannotSettle`, `test_Abandon_ARepairedMasterSettlesInstead`; [EditionAuctionInvariant.t.sol](../../test/integration/invariant/EditionAuctionInvariant.t.sol): `invariant_editionAuction` |
+| EA-20 | No payment from a sale reaches an undeployed wallet: `open` deploys the seller's and royalty receiver's split wallets (through the economics resolver's split factory) when they have no code, and refuses a factory that derives another address. Every call out reverts on failure; the reads whose refusal has a meaning (the 1/1's clock at open and in the abandonment check, Stream's settlement record) forward all gas and revert with `BoundedCallShortfall` when they run short; the payout gas is the one governed figure. | `open`; the lens's `masterTerms`, `abandonable`; `settle` | [UniformEditionAuctionGasRule.t.sol](../../test/sales/edition/UniformEditionAuctionGasRule.t.sol): `test_GasRule_OpenReadsTheClock`, `test_GasRule_AbandonReadsTheClock`, `test_GasRule_AbandonReadsStreamsRecord`, `test_PayoutGas_IsTheGovernedFigure`, `test_PayoutGas_ABurnerIsEscrowedAtAnyFigure`; [UniformEditionAuctionWindow.t.sol](../../test/sales/edition/UniformEditionAuctionWindow.t.sol): `test_GasRule_ARefusedOrStarvedClockAtOpen`; [EditionAuctionPermanence.t.sol](../../test/integration/EditionAuctionPermanence.t.sol): `test_Wallets_DeployedAtOpenBeforeAnyPayment`; [EditionAuctionGasReport.t.sol](../../test/integration/EditionAuctionGasReport.t.sol): `test_Gas_EditionAuction_OpenDeploysWallets` |
 | ED-9 to ED-24 | Retired: the fixed-price and Dutch sale rules, removed with their adapters by ADR 0005. The IDs are not reused; the `v1.0.0-rc.1` specification has them. | none | none |
 
 ## Events
@@ -763,6 +803,10 @@ of Editions are ED-27's list; the adapter's events are conveniences.
 | The recipient's ERC-1155 hook reverts | The claim reverts; nothing is lost | Claim to another recipient. |
 | The 1/1 is paused for a dispute | Bidding at any time; bids placed or last raised before the pause's minute may be withdrawn | The dispute's outcome: a resume moves the close; a cancel voids the sale. |
 | The 1/1 is cancelled | The sale is VOID at the next `settle` | Every bidder claims a full refund. |
+| The master can never be settled (a dependency governance never repairs, a broken 1/1 auction), or its edition is never created | `settle` waits (`SettlementNotReady`, `EditionNotCreated`) | After the sale's end plus its abandonment delay, anyone calls `abandon`: full refunds, the edition sealed at zero (EA-19). |
+| The master is merely slow (a dispute, a pending repair or rescue) | `abandon` reverts with `NotAbandonable` | Wait: the delay (at least 120 days) outlasts a dependency repair and a rescue; settle once the master settles. |
+| An edition names a close offset past the maximum, or malformed params | `open` reverts with `InvalidSaleTerms` | Governance may raise the maximum (`setLimits`); the signed terms cannot change. |
+| A time reaches 2^32 seconds (2106) | `open` refuses (`InvalidSaleTerms`); a bid that would set a soft end past it reverts (`ClockOverflow`) | Replace the adapter before then. |
 
 ## Parameters and limits
 
@@ -791,16 +835,25 @@ and genesis deploys them (`DeployV1.editionAuctionDefaults`).
 | Steps per decade (`stepsPerDecade`), the step size | 48 (steps 4.3% to 5.3% apart) | 24, 48, 96 or 192 | `StepLadder.DEFAULT_STEPS_PER_DECADE`, `isStepsPerDecade` |
 | Steps (`stepCount`) | 336, up to 953 ETH | 64 to 512, with a top step of at least 10 ETH | `StepLadder.DEFAULT_STEP_COUNT`, `MIN_STEP_COUNT`, `MAX_STEP_COUNT`, `MIN_TOP_PRICE` |
 | Breadth margin (`marginShare`), out of 100,000 | 10,000 (10%) | 0 to 50,000 | `UniformEditionAuction._MAX_MARGIN_SHARE` |
-| Close offset after the 1/1's end (`closeOffset`) | 15 minutes | 0 to 1 day | `_MAX_CLOSE_OFFSET` |
+| Default close offset after the 1/1's end (`closeOffset`), for terms that name none | 15 minutes | 0 to `limits().maxCloseOffset` | `setConfig` |
 | Soft-close window and extension (`softWindow`) | 5 minutes | 1 minute to 1 hour | `_MIN_SOFT_WINDOW`, `_MAX_SOFT_WINDOW` |
 | Extension backstop past `closeAt` (`maxExtension`) | 24 hours | 1 hour to 7 days | `_MIN_MAX_EXTENSION`, `_MAX_MAX_EXTENSION` |
+
+Its governed limits are one packed word, set by `setLimits(expected, next)` (compare-and-set,
+PARAMETER_SETTER, 48 hours) within bounds fixed in code; a sale locks its close offset and
+abandonment delay when it opens (EA-17, EA-18). Genesis deploys `DeployV1.editionAuctionLimits`.
+
+| Limit | Launch value | Bounds | Source |
+| --- | --- | --- | --- |
+| Longest close offset an edition may name (`maxCloseOffset`) | 30 days (owner to confirm) | 1 day to 3,650 days, and at least the default | `_MIN_MAX_CLOSE_OFFSET`, `_MAX_MAX_CLOSE_OFFSET` |
+| Abandonment delay after the end (`voidDelayDays`) | 150 days | 120 to 730 days | `_MIN_VOID_DELAY_DAYS`, `_MAX_VOID_DELAY_DAYS` |
+| Gas forwarded with each payout (`payoutGas`) | 100,000; a refusal, or a payee needing more, is escrowed | 30,000 to 3,000,000 | `_MIN_PAYOUT_GAS`, `_MAX_PAYOUT_GAS` |
 
 Fixed in code, and changed only by a new adapter: the clearing rule, firm bids, ETH, FIFO at
 the cut step, the mantissa table and the bounds.
 
 | Limit | Value | Source |
 | --- | --- | --- |
-| Gas forwarded with each payout | 100,000; a refusal is escrowed | `UniformEditionAuction.PAYOUT_GAS` |
 | Book words scanned per `settle` call | at most 24, eight steps each; a wider book takes more calls | `_SCAN_WORDS` |
 | Departures swept per `settle` call | at most 16 in the call that clears the book, 96 in each later call, of the caller's own sweep | `_SWEEP_FIRST`, `_SWEEP_CHUNK` |
 | Sales | one per edition; the sale ID is `saleIdOf(editions, id)` | `open` |

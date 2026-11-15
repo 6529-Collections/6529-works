@@ -17,8 +17,8 @@ dispute pause) and [Editions and sales](../../docs/spec/editions-and-sales.md) (
 | --- | --- |
 | `EnglishAuction.sol` | [`IEnglishAuction`](../interfaces/IEnglishAuction.sol): permissionless start into its own custody, anti-snipe bids, pull credits, settlement with pending delivery and escrow fallback, the outcome reported to the token (`settlePrimary`), the dispute pause, the currency freeze, the emergency pause. |
 | `EnglishAuctionLens.sol` | The English auction's read side, deployed before it and pinned by its constructor: every view the auction does not declare, decoded from its caller's storage words (`storageWords`). |
-| `UniformEditionAuction.sol` | [`IUniformEditionAuction`](../interfaces/IUniformEditionAuction.sol)'s writes and [`IUniformEditionAuctionStorage`](../interfaces/IUniformEditionAuctionStorage.sol): the bid book (step totals, bids, FIFO departure logs), the coupling with the 1/1's end, settlement in calls of bounded gas, claims through `IMintTarget.mint`, governance. |
-| `UniformEditionAuctionLens.sol` | [`IUniformEditionAuctionLens`](../interfaces/IUniformEditionAuctionLens.sol): every view, computed from the adapter's storage words, and the package-item check `open` consults. Stateless and bound to no adapter (it reads its caller): deployed in its own transaction, then pinned by the adapter's constructor (code hash and wiring) and forwards its views to it. |
+| `UniformEditionAuction.sol` | [`IUniformEditionAuction`](../interfaces/IUniformEditionAuction.sol)'s writes and [`IUniformEditionAuctionStorage`](../interfaces/IUniformEditionAuctionStorage.sol): the bid book (step totals, bids, FIFO departure logs), the coupling with the 1/1's end, the edition's own close offset, settlement in calls of bounded gas, claims through `IMintTarget.mint`, the abandonment exit, governance (configuration and limits). |
+| `UniformEditionAuctionLens.sol` | [`IUniformEditionAuctionLens`](../interfaces/IUniformEditionAuctionLens.sol): every view (the adapter's own settings included), computed from the adapter's storage words, which it locates from the adapter's layout; the package-item check `open` consults, which also resolves the close offset and deploys the sale's split wallets; and the abandonment check. Stateless and bound to no adapter (it reads its caller): deployed in its own transaction, then pinned by the adapter's constructor (code hash and wiring) and forwards its views to it. |
 | `UniformClearing.sol` | Internal library, pure: the D138 clearing on [`StepLadder`](../interfaces/types/StepLadder.sol)'s prices, the FIFO split of the cut step and the what-if quote, shared by the lens, the adapter's sweep and the Halmos proofs. |
 
 Edition bids are ETH; only the English auction calls Permit2
@@ -31,9 +31,9 @@ Edition bids are ETH; only the English auction calls Permit2
 | Anyone | `start`, `startWithBid`, `bid`, `settle`, `claimFor` | AUC-14 to AUC-25, AUC-29 |
 | A bidder | `claim` of its credits; `withdrawBid` (the high bidder, while paused or frozen); `claimDelivery` (the winning bidder to any address; the recipient it named to itself, or anywhere from 30 days after the end) | AUC-18, AUC-21, DSP-15 |
 | Guardians and governance | The dispute `pause(saleId, …)`, `resume`, `cancel`; `pause()`, `unpause()`; `setConfig`, `setOpeningBid`, `setTarget`, `setFederationRegistry` | AUC-13, AUC-26, AUC-30, DSP-13 to DSP-19; [role matrix](../../docs/audit/roles.md#englishauction) |
-| Anyone (edition auction) | `open`, `bid`, `settle`, `claimBidFor`, every view | EA-1, EA-4, EA-8 to EA-13 |
+| Anyone (edition auction) | `open`, `bid`, `settle`, `claimBidFor`, `abandon`, every view | EA-1, EA-4, EA-8 to EA-13, EA-17, EA-19, EA-20 |
 | An edition bidder | `raise`, `claimBid`; `withdrawBid` while the 1/1 is paused for a dispute; `claim` of its credits | EA-5, EA-9, EA-16 |
-| Governance (edition auction) | `pause()`, `unpause()`, `setConfig`, `setTarget`, `setFederationRegistry` | EA-15; [role matrix](../../docs/audit/roles.md#uniformeditionauction) |
+| Governance (edition auction) | `pause()`, `unpause()`, `setConfig`, `setLimits`, `setTarget` (no federation registry) | EA-15, EA-18; [role matrix](../../docs/audit/roles.md#uniformeditionauction) |
 
 Call sequences and errors: [Buying, bidding and settling](../../docs/integrators/buying-bidding-settling.md);
 events and their ordering: [Events and indexing](../../docs/integrators/events-and-indexing.md#englishauction).
@@ -50,6 +50,13 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
   `auctionClock` (`IEnglishAuctionClock`), which the edition auction reads and any new on-chain
   consumer should. Nothing sweeps assets sent to the auction outside its flows; the auction
   now has room for a governed rescue, so adding one is a scope decision (LIM-SAL-10).
+- **Edition auction storage and the lens.** The lens reads the adapter's words with
+  `storageAt(slot)`, computing each slot from the adapter's layout (its `_SLOT_*` constants),
+  so a change to the adapter's state variables must change the lens too
+  (`test_StorageWord_TheLensFollowsTheAdaptersLayout`). A sale whose edition names its own
+  close offset interns one terms record (24-bit IDs); the abandonment delay sits in the payout
+  word's last 16 bits; the limits share the settings word. Stored times are 32 bits, checked
+  (EA-18).
 - **English auction storage.** A steady-state start writes one `Sale` word and shares a terms
   record per distinct combination; seller and fee terms come back from the token at settlement,
   from the call that reports the outcome (`IMintTarget.settlePrimary`, owner decision 17).
