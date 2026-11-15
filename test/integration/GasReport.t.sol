@@ -28,6 +28,8 @@ import { StateGrowth } from "../helpers/StateGrowth.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 
+import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
+
 /// @notice The integration gas report: the budgets of ADR 0001, ADR 0003 and ADR 0004, measured
 ///         on the real, wired contracts. `forge test --match-test test_Gas_Table -vv` prints one
 ///         table (operation, Prague gas, new slots, new accounts); each other `test_Gas_*` gates
@@ -904,7 +906,7 @@ contract IntegrationGasReport is IntegrationBase {
     function _rowReRate() internal returns (Row memory r) {
         uint256 tokenId = auction.auction(_steadyState()).tokenId;
         Work[] memory works = _package(root);
-        records.openRecord(tokenId, works[0].item, works[0].media);
+        records.openRecord(tokenId, toWorkItem(works[0].item), toWorkMedia(works[0].media));
         uint32 rate = 5_000;
         uint64 deadline = uint64(block.timestamp + 30 days);
         bytes32 state = records.workStateHash(tokenId);
@@ -919,7 +921,8 @@ contract IntegrationGasReport is IntegrationBase {
             )
         );
         bytes memory call = abi.encodeCall(
-            records.setRoyaltyRate, (tokenId, rate, works[0].item, state, deadline, sigs)
+            records.setRoyaltyRate,
+            (tokenId, rate, toWorkItem(works[0].item), state, deadline, sigs)
         );
         _schedule(hotAdmin, address(records), call);
         (, uint32 delay) = manager.canCall(hotAdmin, address(records), bytes4(call));

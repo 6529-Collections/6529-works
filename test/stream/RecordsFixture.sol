@@ -10,8 +10,11 @@ import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { PackageItem, Party, PartyRole } from "src/interfaces/types/PackageTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { WorkDelivery } from "src/stream/WorkDelivery.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { StreamFixture } from "./StreamFixture.sol";
+
+import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
 
 /// @notice Adds the records satellite, a real content store and a second party to the Stream
 ///         fixture, with helpers for files, items, opening records and EIP-712 consents.
@@ -26,6 +29,7 @@ abstract contract RecordsFixture is StreamFixture {
 
     ContentStore internal store;
     WorkRecords internal records;
+    WorkDelivery internal delivery;
 
     function setUp() public virtual override {
         super.setUp();
@@ -39,15 +43,20 @@ abstract contract RecordsFixture is StreamFixture {
         }
         records =
             new WorkRecords(address(manager), address(stream), address(store), _license("cc0-1.0"));
+        delivery = WorkDelivery(records.delivery());
         stream.bindWorkRecords(address(records));
         stream.bindEditions(address(editionsMock));
-        _map(address(records), records.addLocator.selector, Roles.PLATFORM);
+        _map(address(delivery), delivery.addLocator.selector, Roles.PLATFORM);
         _map(address(records), records.relicense.selector, Roles.PARAMETER_SETTER);
         _map(address(records), records.setRoyaltyRate.selector, Roles.FUNDS_SETTER);
         _map(address(records), records.repinRenderer.selector, Roles.SUCCESSOR_SETTER);
-        _map(address(records), records.setPreferredKind.selector, Roles.STORAGE_OPERATOR);
-        _map(address(records), records.setCollectionPreferredKind.selector, Roles.STORAGE_OPERATOR);
-        _map(address(records), records.setFilePreference.selector, Roles.STORAGE_OPERATOR);
+        _map(address(records), records.setDelivery.selector, Roles.SUCCESSOR_SETTER);
+        _map(address(records), records.addStore.selector, Roles.SUCCESSOR_SETTER);
+        _map(address(delivery), delivery.setPreferredKind.selector, Roles.STORAGE_OPERATOR);
+        _map(
+            address(delivery), delivery.setCollectionPreferredKind.selector, Roles.STORAGE_OPERATOR
+        );
+        _map(address(delivery), delivery.setFilePreference.selector, Roles.STORAGE_OPERATOR);
         manager.grantRole(Roles.STORAGE_OPERATOR, storageOperator, 0);
     }
 
@@ -144,7 +153,7 @@ abstract contract RecordsFixture is StreamFixture {
     function _work(uint256 salt) internal returns (uint256 tokenId, PackageItem memory item) {
         MediaFile[] memory media;
         (tokenId, item, media) = _minted(salt, true);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
     }
 
     // ------------------------------------------------------------------------------- consents

@@ -11,6 +11,8 @@ import { HASH_SHA256, HashRef } from "src/interfaces/types/HashRef.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
+import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
+
 /// @notice Governance recovery on the real genesis deployment (ADR 0002 decision 5, owner
 ///         decision 2): the cold recovery admin completes a recovery even when the hot admin and
 ///         one guardian (of three) act against it together.
@@ -191,7 +193,7 @@ contract GovernanceRecoveryTest is IntegrationBase {
         works[0] = _work(artist, collectionId);
         bytes32 root = _publish(works);
         tokenId = _sell(root, works, 0, makeAddr("collectorA"), 1 ether);
-        records.openRecord(tokenId, works[0].item, works[0].media);
+        records.openRecord(tokenId, toWorkItem(works[0].item), toWorkMedia(works[0].media));
         fileId = works[0].media[0].fileId;
     }
 
@@ -204,7 +206,7 @@ contract GovernanceRecoveryTest is IntegrationBase {
         (uint256 tokenId, bytes32 fileId) = _soldWork(artist);
 
         _suspend(guardian2, Roles.PLATFORM, platform);
-        _closed(platform, address(records), records.addLocator.selector);
+        _closed(platform, address(records), delivery.addLocator.selector);
         _closed(platform, address(statements), statements.appendPlatform.selector);
         _closed(platform, address(stream), stream.createCollection.selector);
 
@@ -216,7 +218,7 @@ contract GovernanceRecoveryTest is IntegrationBase {
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, platform)
         );
-        records.addLocator(
+        delivery.addLocator(
             tokenId,
             fileId,
             Locator(LocatorKind.ARWEAVE, "ar://M1rror0000000000000000000000000000000000000")
@@ -229,7 +231,7 @@ contract GovernanceRecoveryTest is IntegrationBase {
 
         // The artist still adds a locator to its own work.
         vm.prank(artist);
-        records.addLocator(
+        delivery.addLocator(
             tokenId,
             fileId,
             Locator(LocatorKind.ARWEAVE, "ar://Art1st0000000000000000000000000000000000000")
@@ -245,7 +247,7 @@ contract GovernanceRecoveryTest is IntegrationBase {
         manager.execute(address(manager), lift);
         assertFalse(manager.isSuspended(Roles.PLATFORM, platform));
         vm.prank(platform);
-        records.addLocator(
+        delivery.addLocator(
             tokenId,
             fileId,
             Locator(LocatorKind.ARWEAVE, "ar://M1rror0000000000000000000000000000000000000")
@@ -263,7 +265,7 @@ contract GovernanceRecoveryTest is IntegrationBase {
                 IAccessManaged.AccessManagedUnauthorized.selector, storageOperator
             )
         );
-        records.setPreferredKind(LocatorKind.IPFS);
+        delivery.setPreferredKind(LocatorKind.IPFS);
 
         _suspend(guardian3, Roles.CURATOR, curator);
         vm.prank(curator);

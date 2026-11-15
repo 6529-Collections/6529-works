@@ -29,6 +29,9 @@ import {
     WiringTargetMock
 } from "../mocks/governance/GenesisWiringMocks.sol";
 
+import { IWorkLocators } from "src/interfaces/IWorkDelivery.sol";
+import { WorkDelivery } from "src/stream/WorkDelivery.sol";
+
 /// @notice Checks the committed genesis configuration, `config/genesis.example.json`, against
 ///         the compiled selectors, {Roles} and {GovernanceConfig}; installs it with its wiring
 ///         on a fresh manager and reads it back; and sizes the wiring bound against the
@@ -170,10 +173,10 @@ contract GenesisConfigTest is Test {
         if (_eq(name, "WorkRecords")) {
             return _s(
                 [
-                    IWorkRecords.setPreferredKind.selector,
-                    IWorkRecords.setCollectionPreferredKind.selector,
-                    IWorkRecords.setFilePreference.selector,
-                    IWorkRecords.addLocator.selector,
+                    IWorkLocators.setPreferredKind.selector,
+                    IWorkLocators.setCollectionPreferredKind.selector,
+                    IWorkLocators.setFilePreference.selector,
+                    IWorkLocators.addLocator.selector,
                     IWorkRecords.relicense.selector,
                     IWorkRecords.setRoyaltyRate.selector,
                     IWorkRecords.repinRenderer.selector

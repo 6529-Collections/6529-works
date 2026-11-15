@@ -16,6 +16,8 @@ import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { FixedPriceOneOfOneMock } from "../mocks/stream/OneOfOneSaleMocks.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
+import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
+
 /// @notice Owner decision 15 on the real genesis deployment: 6529 Stream's 1/1 sale is pluggable.
 ///         A sale method added after launch is an adapter governance admits on Stream (the
 ///         30-day SUCCESSOR_SETTER class), with no new Stream; it sells exactly the items that
@@ -109,7 +111,7 @@ contract StreamSaleMethodsTest is IntegrationBase {
         assertEq(fee, PRICE / 4, "the 25% network share");
         assertEq(seller.balance, PRICE - fee, "the artist's split");
         // The work is a full 6529 Stream work: its record opens like any other.
-        records.openRecord(tokenId, works[0].item, works[0].media);
+        records.openRecord(tokenId, toWorkItem(works[0].item), toWorkMedia(works[0].media));
         assertTrue(records.isOpen(tokenId));
 
         // The English auction cannot start this sale method's item, nor the adapter an English
@@ -149,7 +151,9 @@ contract StreamSaleMethodsTest is IntegrationBase {
 
         vm.warp(deadline);
         vm.expectEmit(address(stream));
-        emit IStreamCore.PrimarySaleSettled(tokenId, PrimaryOutcome.UNBID, address(0), CURRENCY_ETH, 0);
+        emit IStreamCore.PrimarySaleSettled(
+            tokenId, PrimaryOutcome.UNBID, address(0), CURRENCY_ETH, 0
+        );
         vm.expectEmit(address(stream));
         emit IERC721.Transfer(address(fixedPrice), museum, tokenId);
         fixedPrice.closeUnsold(address(stream), tokenId);

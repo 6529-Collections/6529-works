@@ -11,21 +11,26 @@ library WorkPowers {
     uint16 internal constant ROYALTY_RATE = 1;
     /// @notice Any further license change (`IWorkRecords.relicense`).
     uint16 internal constant RELICENSE = 2;
+    /// @notice Any further errata renderer repin (`IWorkRecords.repinRenderer`); renounceable
+    ///         only once the work is finalized.
+    uint16 internal constant RENDERER_REPIN = 4;
     /// @notice Every renounceable power.
-    uint16 internal constant ALL = 3;
+    uint16 internal constant ALL = 7;
 }
 
 /// @title IWorkPowers
 /// @notice The 6529 Stream records satellite's renounceable powers, a second interface beside
-///         `IWorkRecords` (whose interface ID 6529 Stream and 6529 Stream Editions check when
-///         binding, so it does not change). The lead artist's active authority may give up,
-///         for one work and for good, any further royalty-rate change and any further license
-///         change. Both already need every party's signature, the lead artist's included, plus
-///         a governed action, so the lead artist alone could always withhold them; renouncing
-///         makes that refusal permanent and public, and grants nothing.
-/// @dev The errata renderer repin (`IWorkRecords.repinRenderer`) cannot be renounced: a pinned
-///      renderer that a future gas repricing or another change breaks could then never be
-///      repaired.
+///         `IWorkRecords`. The lead artist's active authority may give up, for one work and for
+///         good, any further royalty-rate change, any further license change and, once the work
+///         is finalized, any further errata renderer repin. Each already needs the lead
+///         artist's signature plus a governed action, so the lead artist alone could always
+///         withhold it; renouncing makes that refusal permanent and public, and grants nothing.
+/// @dev Renouncing `RENDERER_REPIN` (ADR 0006 as amended, owner decision 15 November 2026)
+///      fixes the work's pinned renderer for good: if a later protocol change (a gas repricing,
+///      a change to code hashes, a renderer dependency that stops answering) breaks that
+///      renderer, the work's metadata can never be repaired, and `tokenURI` may revert or show
+///      less for good. The media, record and license stay on-chain and readable by any other
+///      renderer off-chain.
 ///
 ///      Royalty changes are lower-only: `setRoyaltyRate` refuses a rate above the work's
 ///      current rate with `RoyaltyRateNotLowered` (an unchanged rate stays a no-op). The rate a
@@ -42,7 +47,8 @@ interface IWorkPowers {
         uint256 indexed tokenId, uint16 powers, uint16 renounced, bytes32 stateHash
     );
 
-    /// @notice `powers` has a bit that names no renounceable power (`WorkPowers.ALL`).
+    /// @notice `powers` has a bit that names no renounceable power (`WorkPowers.ALL`). Renouncing
+    ///         `RENDERER_REPIN` before finalize reverts with `IWorkRecords.WorkNotFinalized`.
     error UnknownPower(uint16 powers);
     /// @notice The work's lead artist renounced this power; its function always reverts.
     error PowerRenounced(uint256 tokenId, uint16 power);
@@ -53,7 +59,8 @@ interface IWorkPowers {
     ///         artist's active authority signs `Typehashes.RENOUNCE_POWERS` over the work's
     ///         state hash and a deadline, as for the errata repin, so nobody acts as the artist
     ///         while the artist registry restrains the authority. Allowed before and after
-    ///         finalize. Bits are only ever added: renouncing only bits already renounced
+    ///         finalize, except `RENDERER_REPIN`, which needs a finalized work (a work has no pin
+    ///         to repair before). Bits are only ever added: renouncing only bits already renounced
     ///         (zero included) is a no-op that still requires an open record and known bits
     ///         but checks no state hash, deadline or signature; otherwise the version bumps, so
     ///         the signature can never apply again and every pending consent for the work

@@ -53,6 +53,8 @@ import { StreamFixture } from "./StreamFixture.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 
+import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
+
 contract StreamTest is StreamFixture {
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
     event MetadataUpdate(uint256 _tokenId);
@@ -2052,7 +2054,7 @@ contract StreamWithRecordsTest is RecordsFixture {
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes[] memory sigs = _both(_royaltyHash(tokenId, 5_000, state, deadline));
         vm.prank(governor);
-        records.setRoyaltyRate(tokenId, 5_000, item, state, deadline, sigs);
+        records.setRoyaltyRate(tokenId, 5_000, toWorkItem(item), state, deadline, sigs);
         (,,,,, uint32 rate) = stream.coreOf(tokenId);
         assertEq(rate, 5_000);
     }
@@ -2066,7 +2068,7 @@ contract StreamWithRecordsTest is RecordsFixture {
         PackageItem memory item = _recordsItem(1, media);
         item.license = License(string(_repeatA(64)), _registerText("long id text"));
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         assertEq(bytes(records.licenseOf(tokenId).spdxId).length, 64);
 
         media = _single(2, true);
@@ -2079,7 +2081,12 @@ contract StreamWithRecordsTest is RecordsFixture {
         vm.prank(governor);
         vm.expectRevert(IWorkRecords.InvalidLicense.selector);
         records.relicense(
-            tokenId, License(string(_repeatA(65)), bytes32(0)), item, bytes32(0), 0, new bytes[](0)
+            tokenId,
+            License(string(_repeatA(65)), bytes32(0)),
+            toWorkItem(item),
+            bytes32(0),
+            0,
+            new bytes[](0)
         );
     }
 

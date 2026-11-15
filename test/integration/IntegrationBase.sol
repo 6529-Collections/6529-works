@@ -31,6 +31,8 @@ import { StateGrowth } from "../helpers/StateGrowth.sol";
 import { WorksDeployment } from "./WorksDeployment.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 
+import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
+
 /// @notice Actors, package building, signatures and sale helpers shared by the end-to-end flows.
 /// @dev Every helper drives the real contracts the way an off-chain tool or a wallet would: it
 ///      signs EIP-712 digests read from the contracts, builds sorted-pair Merkle trees over
@@ -543,9 +545,9 @@ abstract contract IntegrationBase is WorksDeployment {
         uint256[] memory ids = new uint256[](6);
         for (uint256 i; i < 6; ++i) {
             (, ids[i]) = _start(root, works, i);
-            records.openRecord(ids[i], works[i].item, works[i].media);
+            records.openRecord(ids[i], toWorkItem(works[i].item), toWorkMedia(works[i].media));
             if (i < 4) _attestAll(works[i].media[0].fileId);
-            records.syncOnChain(ids[i]);
+            records.syncOnChain(ids[i], 0, type(uint256).max);
         }
         // Every gas figure first: none can be measured after a state-diff recording. Each view
         // is called once before it is measured, so every account it reaches is warm and the
@@ -603,7 +605,7 @@ abstract contract IntegrationBase is WorksDeployment {
     ///      delegation contract, Permit2 and the test ERC-20. A report that measures calls into
     ///      other accounts (split wallets) adds them.
     function _cooled() internal view virtual returns (address[] memory all) {
-        address[24] memory list = [
+        address[25] memory list = [
             address(store),
             address(dependencies),
             address(consolidation),
@@ -620,6 +622,7 @@ abstract contract IntegrationBase is WorksDeployment {
             address(entropy),
             address(stream),
             address(records),
+            address(delivery),
             address(editions),
             address(auction),
             address(editionAuction),

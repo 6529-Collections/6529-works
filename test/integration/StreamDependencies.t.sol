@@ -22,6 +22,8 @@ import { PackageRegistry } from "src/curation/PackageRegistry.sol";
 import { ICurationVerifier } from "src/interfaces/ICurationVerifier.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
+import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
+
 /// @dev A replacement dependency that only reports its interface: any other call reverts, so a
 ///      read of it on a measured path fails loudly instead of returning plausible data.
 contract DependencyStandIn is IERC165 {
@@ -186,7 +188,7 @@ contract StreamDependenciesTest is IntegrationBase {
         for (uint256 i; i < works.length; ++i) {
             uint256 tokenId = _sell(root, works, i, collector, 1 ether);
             tokens.push(tokenId);
-            records.openRecord(tokenId, works[i].item, works[i].media);
+            records.openRecord(tokenId, toWorkItem(works[i].item), toWorkMedia(works[i].media));
             bytes32 state = records.workStateHash(tokenId);
             vm.prank(artist);
             records.finalize(tokenId, state);
@@ -209,7 +211,7 @@ contract StreamDependenciesTest is IntegrationBase {
         for (uint256 i; i < 3; ++i) {
             tokens.push(_sell(pendingRoot, pending, i, collector, 1 ether));
         }
-        records.openRecord(tokens[3], pending[0].item, pending[0].media);
+        records.openRecord(tokens[3], toWorkItem(pending[0].item), toWorkMedia(pending[0].media));
         editionIds.push(
             editions.createEdition(
                 tokens[PENDING_VRF_MASTER], pending[2].item, pendingRoot, _proofOf(pending, 2)
@@ -295,7 +297,8 @@ contract StreamDependenciesTest is IntegrationBase {
     ///      ERC-165, so no existing token's metadata or royalty reads a replaced contract.
     function test_ReplacingEachDependencyLeavesExistingTokensUnchanged() public {
         bytes32 before = _snapshot();
-        bytes32 vrfSeed = entropy.seedOf(IStream(address(stream)).work(tokens[PENDING_VRF]).itemHash);
+        bytes32 vrfSeed =
+            entropy.seedOf(IStream(address(stream)).work(tokens[PENDING_VRF]).itemHash);
         address genesisEntropy = stream.entropyModule();
         for (uint256 i; i < KINDS.length; ++i) {
             _replace(KINDS[i], address(new DependencyStandIn(_interfaceOf(KINDS[i]))));
@@ -343,7 +346,7 @@ contract StreamDependenciesTest is IntegrationBase {
         bytes32 root = _publish(one);
         (, uint256 later) = _start(root, one, 0);
         assertEq(stream.entropyModuleOf(later), address(other));
-        records.openRecord(later, w.item, w.media);
+        records.openRecord(later, toWorkItem(w.item), toWorkMedia(w.media));
         (, seed) = records.seedOf(later);
         assertEq(seed, other.seedOfContent(w.item.contentHash));
     }
@@ -370,7 +373,7 @@ contract StreamDependenciesTest is IntegrationBase {
         assertEq(stream.entropyModuleOf(secondEra), address(second));
 
         _open(PENDING_VRF, 1);
-        records.openRecord(secondEra, w.item, w.media);
+        records.openRecord(secondEra, toWorkItem(w.item), toWorkMedia(w.media));
         (, bytes32 seed) = records.seedOf(tokens[PENDING_VRF]);
         assertEq(seed, entropy.seedOf(IStream(address(stream)).work(tokens[PENDING_VRF]).itemHash));
         (, seed) = records.seedOf(secondEra);
@@ -399,7 +402,7 @@ contract StreamDependenciesTest is IntegrationBase {
         next.deliver(w.item, keccak256("the current module's seed"));
         (, uint256 tokenId) = _start(root, one, 0);
         assertEq(stream.entropyModuleOf(tokenId), address(next));
-        records.openRecord(tokenId, w.item, w.media);
+        records.openRecord(tokenId, toWorkItem(w.item), toWorkMedia(w.media));
         (, bytes32 seed) = records.seedOf(tokenId);
         assertEq(seed, keccak256("the current module's seed"));
     }
@@ -407,7 +410,9 @@ contract StreamDependenciesTest is IntegrationBase {
     /// @dev Opens the record of `tokens[index]`, the `item`-th of the pending works.
     function _open(uint256 index, uint256 item) internal {
         Work[] memory pending = _package(pendingRoot);
-        records.openRecord(tokens[index], pending[item].item, pending[item].media);
+        records.openRecord(
+            tokens[index], toWorkItem(pending[item].item), toWorkMedia(pending[item].media)
+        );
     }
 
     /// @dev The replacement is what new works use: a new start consumes through the new
@@ -445,7 +450,9 @@ contract StreamDependenciesTest is IntegrationBase {
         address foreign = address(new AccessManager(address(this)));
         for (uint256 i; i < KINDS.length; ++i) {
             address next = address(new ManagedStandIn(_interfaceOf(KINDS[i]), foreign));
-            _refuse(KINDS[i], next, abi.encodeWithSelector(IStreamCore.InvalidBinding.selector, next));
+            _refuse(
+                KINDS[i], next, abi.encodeWithSelector(IStreamCore.InvalidBinding.selector, next)
+            );
         }
         PackageRegistry real = new PackageRegistry(
             foreign,
@@ -603,7 +610,7 @@ contract StreamDependenciesTest is IntegrationBase {
         assertTrue(entropy.isDeliveredContent(again.item.contentHash));
 
         (, uint256 tokenId) = _start(secondRoot, second, 0);
-        records.openRecord(tokenId, again.item, again.media);
+        records.openRecord(tokenId, toWorkItem(again.item), toWorkMedia(again.media));
         (, bytes32 seed) = records.seedOf(tokenId);
         assertEq(seed, entropy.seedOfContent(w.item.contentHash), "the content's one seed");
 

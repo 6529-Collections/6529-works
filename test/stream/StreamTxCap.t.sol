@@ -11,6 +11,8 @@ import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 
+import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
+
 /// @notice Worst-case transactions against the EIP-7825 (Fusaka) cap of 16,777,216 gas. Foundry
 ///         pins Prague, which does not enforce the cap, so each test adds the intrinsic cost
 ///         (21,000 plus calldata under EIP-7623's floor pricing) to the measured execution and
@@ -106,7 +108,8 @@ contract StreamTxCapTest is RecordsFixture {
         MediaFile[] memory media = _maxMedia(1);
         PackageItem memory item = _wideItem(1, media);
         uint256 tokenId = _mint(item);
-        bytes memory callData = abi.encodeCall(records.openRecord, (tokenId, item, media));
+        bytes memory callData =
+            abi.encodeCall(records.openRecord, (tokenId, toWorkItem(item), toWorkMedia(media)));
         _call(address(records), outsider, callData, "openRecord, 32 files, 16 parties:");
     }
 
@@ -114,7 +117,7 @@ contract StreamTxCapTest is RecordsFixture {
         MediaFile[] memory media = _single(1, true);
         PackageItem memory item = _wideItem(1, media);
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         License memory next = License(string(_repeat("m", 64)), _registerText("next text"));
         bytes32 state = records.workStateHash(tokenId);
         uint64 deadline = uint64(block.timestamp + 1 days);
@@ -132,8 +135,9 @@ contract StreamTxCapTest is RecordsFixture {
         for (uint256 i; i < 16; ++i) {
             sigs[i] = _sign(partyKeys[i], structHash);
         }
-        bytes memory callData =
-            abi.encodeCall(records.relicense, (tokenId, next, item, state, deadline, sigs));
+        bytes memory callData = abi.encodeCall(
+            records.relicense, (tokenId, next, toWorkItem(item), state, deadline, sigs)
+        );
         _call(address(records), governor, callData, "relicense, 16 consents:");
     }
 
@@ -142,8 +146,8 @@ contract StreamTxCapTest is RecordsFixture {
         (uint256 tokenId,) = _work(1);
         bytes32 file = records.mediaOf(tokenId)[0].fileId;
         Locator memory locator = CA.ipfsLocator("longest");
-        bytes memory callData = abi.encodeCall(records.addLocator, (tokenId, file, locator));
-        _call(address(records), platform, callData, "addLocator, 66-byte URI:");
+        bytes memory callData = abi.encodeCall(delivery.addLocator, (tokenId, file, locator));
+        _call(address(delivery), platform, callData, "addLocator, 66-byte URI:");
     }
 
     function test_txCap_preferredLocatorScansSixteen() public {
@@ -152,10 +156,10 @@ contract StreamTxCapTest is RecordsFixture {
         // The platform's 8 and the artist's 8: the most a file can hold.
         for (uint256 i; i < 16; ++i) {
             vm.prank(i < 8 ? platform : artist);
-            records.addLocator(tokenId, file, CA.ar(vm.toString(i)));
+            delivery.addLocator(tokenId, file, CA.ar(vm.toString(i)));
         }
         vm.prank(storageOperator);
-        records.setPreferredKind(LocatorKind.IPFS);
+        delivery.setPreferredKind(LocatorKind.IPFS);
         bytes memory callData = abi.encodeCall(records.preferredLocator, (tokenId, file));
         _call(address(records), outsider, callData, "preferredLocator, 16 scanned:");
     }
@@ -164,11 +168,11 @@ contract StreamTxCapTest is RecordsFixture {
         MediaFile[] memory media = _maxMedia(2);
         PackageItem memory item = _wideItem(2, media);
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         for (uint256 i; i < 32; ++i) {
             _upload(200 + i);
         }
-        bytes memory callData = abi.encodeCall(records.syncOnChain, (tokenId));
+        bytes memory callData = abi.encodeCall(records.syncOnChain, (tokenId, 0, type(uint256).max));
         _call(address(records), outsider, callData, "syncOnChain, 32 files:");
     }
 }

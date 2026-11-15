@@ -12,6 +12,8 @@ import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
+import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
+
 /// @notice Flow 3, continued: the governed amendments of a work's record on the real contracts
 ///         (relicense with every party's consent, a new default renderer, the errata repin) and
 ///         the artist and owner statements the statement log resolves through the artist
@@ -35,7 +37,7 @@ contract RecordAmendmentsFlowTest is IntegrationBase {
         _keep(root, works);
         for (uint256 i; i < 3; ++i) {
             uint256 tokenId = _sell(root, works, i, owner, 1 ether);
-            records.openRecord(tokenId, works[i].item, works[i].media);
+            records.openRecord(tokenId, toWorkItem(works[i].item), toWorkMedia(works[i].media));
         }
     }
 
@@ -62,7 +64,8 @@ contract RecordAmendmentsFlowTest is IntegrationBase {
         bytes[] memory sigs = new bytes[](1);
         sigs[0] = _sign(artist, digest);
         return abi.encodeCall(
-            records.relicense, (tokenId, next, _package(root)[index].item, state, deadline, sigs)
+            records.relicense,
+            (tokenId, next, toWorkItem(_package(root)[index].item), state, deadline, sigs)
         );
     }
 

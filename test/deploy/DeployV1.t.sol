@@ -40,6 +40,9 @@ import { DelegationManagementMock } from "../mocks/identity/DelegationManagement
 import { Dependency } from "src/libraries/Dependency.sol";
 import { IEnglishAuctionFull } from "test/helpers/IEnglishAuctionFull.sol";
 
+import { IWorkLocators } from "src/interfaces/IWorkDelivery.sol";
+import { WorkDelivery } from "src/stream/WorkDelivery.sol";
+
 /// @notice The deploy library the script broadcasts and the integration tests reuse: every
 ///         merged v1 contract, the genesis configuration from config/genesis.example.json, the
 ///         genesis wiring, and the readback.
@@ -546,7 +549,7 @@ contract DeployV1Test is Test {
             abi.encodeWithSelector(
                 VerifyV1.PlatformPathClosed.selector,
                 address(d.workRecords),
-                IWorkRecords.addLocator.selector
+                IWorkLocators.addLocator.selector
             )
         );
         this.checkPlatformPathExternal(d, cfg);

@@ -6,7 +6,7 @@ import { Locator, LocatorKind } from "src/interfaces/types/ContentTypes.sol";
 /// @notice Well-formed locator URIs for tests, derived from a seed: `ar://` and a 43-character
 ///         base64url transaction ID, and `ipfs://` and a CIDv1 of the fixed profile (base32,
 ///         sha2-256, raw leaves `bafkrei...` or a dag-pb root `bafybei...`), as
-///         `WorkRecords.addLocator` accepts them. The digest is `keccak256(seed)`: the tests need
+///         `WorkDelivery.addLocator` accepts them. The digest is `keccak256(seed)`: the tests need
 ///         distinct, canonical addresses, not the hash of any real file.
 library ContentAddresses {
     bytes internal constant B64URL =

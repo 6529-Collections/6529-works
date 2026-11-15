@@ -17,6 +17,8 @@ import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { StateGrowth } from "../helpers/StateGrowth.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
+import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
+
 /// @notice The `tokenURI` budget proof on the real stack (ADR 0004: at most 8M Prague gas): every
 ///         cap the protocol allows at once, measured cold through `Stream.tokenURI` (and
 ///         `Editions.uri`) with the real WorkRecords, content store, statement log and renderer.
@@ -242,8 +244,8 @@ contract TokenUriBudgetTest is IntegrationBase {
             _settleAtEnd(saleId);
             editions.createEdition(tokenId, w.item, root, _proofOf(works, 0));
         }
-        records.openRecord(tokenId, w.item, w.media);
-        records.syncOnChain(tokenId);
+        records.openRecord(tokenId, toWorkItem(w.item), toWorkMedia(w.media));
+        records.syncOnChain(tokenId, 0, type(uint256).max);
     }
 
     /// @dev 16 locators on the license text, of the longest kind (IPFS, 66 bytes) last and
@@ -254,12 +256,12 @@ contract TokenUriBudgetTest is IntegrationBase {
         for (uint256 i; i < 16; ++i) {
             string memory seed = string.concat(vm.toString(salt), "/", vm.toString(i));
             vm.prank(i < 8 ? platform : artist);
-            records.addLocator(
+            delivery.addLocator(
                 b.tokenId, b.licenseText, i == 15 ? CA.ipfsLocator(seed) : CA.ar(seed)
             );
         }
         vm.prank(storageOperator);
-        records.setPreferredKind(LocatorKind.IPFS);
+        delivery.setPreferredKind(LocatorKind.IPFS);
     }
 
     // ------------------------------------------------------------------ measuring
@@ -451,7 +453,7 @@ contract TokenUriBudgetTest is IntegrationBase {
                 abi.encodeWithSelector(IWorkRecords.InvalidRecordData.selector, tokenId)
             );
         }
-        records.openRecord(tokenId, w.item, media);
+        records.openRecord(tokenId, toWorkItem(w.item), toWorkMedia(media));
         assertEq(records.isOpen(tokenId), fits);
     }
 }

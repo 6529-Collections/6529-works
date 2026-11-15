@@ -23,6 +23,8 @@ import { Dependency } from "src/libraries/Dependency.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 
+import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
+
 /// @notice IDENTITY-1 (owner decision A, 14 October 2026) on the real contracts: while a recovery
 ///         override that would move the authority is pending (staged or contested, until it
 ///         executes, is vetoed, voided or lapses), nobody acts as the artist. The key it recovers
@@ -227,7 +229,7 @@ contract RecoveryRestraintTest is IntegrationBase {
     function test_RestrainedKeyCannotAmendTheRecord() public {
         Work[] memory works = _package(root);
         uint256 tokenId = _sell(root, works, 2, collector, 1 ether);
-        records.openRecord(tokenId, works[2].item, works[2].media);
+        records.openRecord(tokenId, toWorkItem(works[2].item), toWorkMedia(works[2].media));
         PendingChange memory p = _stageRecovery();
         bytes32 fileId = works[2].media[0].fileId;
         bytes32 state = records.workStateHash(tokenId);
@@ -236,7 +238,7 @@ contract RecoveryRestraintTest is IntegrationBase {
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, artist)
         );
-        records.addLocator(tokenId, fileId, Locator(LocatorKind.ARWEAVE, THIEF_TX));
+        delivery.addLocator(tokenId, fileId, Locator(LocatorKind.ARWEAVE, THIEF_TX));
         vm.expectRevert(
             abi.encodeWithSelector(IWorkRecords.NotWorkArtist.selector, tokenId, artist)
         );
@@ -259,7 +261,7 @@ contract RecoveryRestraintTest is IntegrationBase {
         vm.warp(p.executableAt);
         artists.executeChange(artistId);
         vm.startPrank(newKey);
-        records.addLocator(tokenId, fileId, Locator(LocatorKind.ARWEAVE, REAL_TX));
+        delivery.addLocator(tokenId, fileId, Locator(LocatorKind.ARWEAVE, REAL_TX));
         statements.append(Role.ARTIST, _statement(tokenId));
         bytes32 done = records.workStateHash(tokenId);
         records.finalize(tokenId, done);
@@ -294,7 +296,7 @@ contract RecoveryRestraintTest is IntegrationBase {
     function test_PreSignedRoyaltyConsentRefusedWhileRestrained() public {
         Work[] memory works = _package(root);
         uint256 tokenId = _sell(root, works, 2, collector, 1 ether);
-        records.openRecord(tokenId, works[2].item, works[2].media);
+        records.openRecord(tokenId, toWorkItem(works[2].item), toWorkMedia(works[2].media));
         uint32 rate = 5000;
         uint64 deadline = uint64(block.timestamp + 60 days);
         bytes32 state = records.workStateHash(tokenId);
@@ -305,7 +307,8 @@ contract RecoveryRestraintTest is IntegrationBase {
         bytes[] memory sigs = new bytes[](1);
         sigs[0] = _sign(artist, digest);
         bytes memory call = abi.encodeCall(
-            records.setRoyaltyRate, (tokenId, rate, works[2].item, state, deadline, sigs)
+            records.setRoyaltyRate,
+            (tokenId, rate, toWorkItem(works[2].item), state, deadline, sigs)
         );
         _schedule(hotAdmin, address(records), call);
         _stageRecovery();

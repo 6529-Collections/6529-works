@@ -15,7 +15,8 @@ who verify a work's bytes. `WorkRecords` is the records satellite of 6529 Stream
 
 | Contract | Source | Interface | Responsibility |
 | --- | --- | --- | --- |
-| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | [`IWorkRecords`](../../src/interfaces/IWorkRecords.sol), [`IWorkPowers`](../../src/interfaces/IWorkPowers.sol) | Opens each work's record from its approved item; the record file pointer, media list, license and ARTIST seed; the state hash and version; finalize and the renderer pin; on-chain completeness; amendments (relicense, a lower royalty rate, errata repin); the lead artist's renounced powers; locators and preferred location. Governed through AccessManager. |
+| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | [`IWorkRecords`](../../src/interfaces/IWorkRecords.sol), [`IWorkPowers`](../../src/interfaces/IWorkPowers.sol) | Permanent. Opens each work's record from its approved item; the record file pointer, media list, license and seed; the state hash and version; finalize and the renderer pin; on-chain completeness and each media file's store; amendments (relicense, a lower royalty rate, errata repin); the lead artist's renounced powers; the governed pointers to the delivery contract and the store set. Governed through AccessManager. |
+| `WorkDelivery` | [`src/stream/WorkDelivery.sol`](../../src/stream/WorkDelivery.sol) | [`IWorkDelivery`, `IWorkLocators`](../../src/interfaces/IWorkDelivery.sol) | Replaceable (WS-39). Locators, locator kinds, preferences and the URI grammar; deployed by `WorkRecords`' constructor as the first delivery contract. No authority over any fact. |
 | `SpdxId` (library) | [`src/stream/SpdxId.sol`](../../src/stream/SpdxId.sol) | none | The license-ID rule: 1 to 64 bytes of `[A-Za-z0-9.+-]`, original case kept. Stream applies it at mint, `WorkRecords` at deployment and relicense. |
 | `ContentStore` | [`src/content/ContentStore.sol`](../../src/content/ContentStore.sol) | [`IContentStore`](../../src/interfaces/IContentStore.sol) | Chunks, manifests, completeness, verified chunk and range reads, base64 attestation. No owner, no governance, no payable function. |
 | `Base64Validator` (library) | [`src/content/Base64Validator.sol`](../../src/content/Base64Validator.sol) | none | The strict RFC 4648 alphabet check behind `attestBase64`, 32 bytes per step. |
@@ -40,15 +41,17 @@ active authority (Stream's `artistOf`, then the artist registry's `activeAuthori
 | --- | --- | --- |
 | `openRecord` | Anyone | Stream `coreOf`; content store `sha256Of` (`fileInfo` for a `PREVIEW`) |
 | `setRecord`, `finalize` | The artist | Content store `fileInfo`, `isComplete`; `finalize` also Stream `rendererOf` |
-| `syncOnChain` | Anyone | Content store `fileInfo`, `isComplete` |
+| `syncOnChain` | Anyone | Content store `fileInfo`, `firstMissing` (store 0) or `chunkHash`; an added store's `readChunk` (forward-all, WS-42) |
 | `relicense` | PARAMETER_SETTER (48 hours), with every party's signature | Artist registry `artistIdOf`, `activeAuthorityOf`; content store `sha256Of` or `isComplete` |
 | `setRoyaltyRate` | FUNDS_SETTER (14 days), with every party's signature | Artist registry; Stream `setRoyaltyRate`; for a linked master, Editions `setRoyaltyRate` |
-| `repinRenderer` | SUCCESSOR_SETTER (30 days), with the artist's signature | The new renderer's ERC-165 |
+| `repinRenderer` | SUCCESSOR_SETTER (30 days), with the artist's signature, until `RENDERER_REPIN` is renounced | The new renderer's ERC-165 |
+| `setDelivery`, `addStore` | SUCCESSOR_SETTER (30 days) | The new contract's ERC-165, `records`, `predecessor` (`setDelivery`); its code hash (`addStore`) |
+| `refreshMetadata`, `refreshAllMetadata` | The current delivery contract only | Stream `emitMetadataUpdate`; Editions |
 | `renounce` | Anyone, with the artist's signature (not restricted, so no role) | Artist registry `activeAuthorityOf` |
-| `addLocator` | The artist before finalize; anyone else only as the AccessManager allows (PLATFORM, immediate at genesis) | For a caller other than the artist, the AccessManager's `canCall` |
-| `setPreferredKind`, `setCollectionPreferredKind`, `setFilePreference` | STORAGE_OPERATOR, immediate | `setCollectionPreferredKind`: Stream `collectionCount` |
+| `WorkDelivery.addLocator` | The artist before finalize; anyone else only as the AccessManager allows (PLATFORM, immediate at genesis) | `WorkRecords` `record`, `mediaIndex`, `refreshMetadata`; for a caller other than the artist, the AccessManager's `canCall` |
+| `WorkDelivery.setPreferredKind`, `setCollectionPreferredKind`, `setFilePreference` | STORAGE_OPERATOR, immediate | `WorkRecords` refresh hooks; `setCollectionPreferredKind`: Stream `collectionCount` |
 | `setAuthority` | The current AccessManager (OpenZeppelin `AccessManaged`) | None |
-| Views: `isOpen`, `record`, `mediaOf`, `licenseOf`, `workStateHash`, `pinnedRenderer`, `seedOf`, `renouncedPowers`, `locators`, `preferredLocator`, `preferredKind`, `collectionPreferredKind`, `filePreference`, `stream` | Anyone; Stream reads `stream`, `isOpen` and `pinnedRenderer`, Editions `licenseOf`, and the renderer the rest it needs | Stream `coreOf`; `workStateHash` also Stream `defaultRenderer`; `mediaOf` the content store's `sha256Of`; `openRecord` Stream's `entropyModuleOf`, then that module's `seedOf` (a VRF seed is stored at open) |
+| Views: `isOpen`, `record`, `mediaOf`, `mediaIndex`, `mediaStore`, `syncCursor`, `licenseOf`, `workStateHash`, `pinnedRenderer`, `rendererCodeHash`, `seedOf`, `renouncedPowers`, `preferredLocator` (forwarded, WS-40), `delivery`, `store`, `storeCount`, `stream` | Anyone; Stream reads `stream`, `isOpen` and `pinnedRenderer`, Editions `licenseOf`, and the renderer the rest it needs | Stream `coreOf`; `workStateHash` also Stream `defaultRenderer`; `mediaOf` the content store's `sha256Of`; `openRecord` Stream's `entropyModuleOf`, then that module's `seedOf` (a VRF seed is stored at open) |
 
 Per-token functions also read Stream's `coreOf` and `editionOf`. Metadata refreshes follow
 WS-23: `emitMetadataUpdate(id, id)` and `notifyMasterUpdated` per token, or
@@ -105,11 +108,26 @@ consent bind it, so nothing applies twice or to a state its signer did not see (
 renounced powers are not in the hash; a renunciation bumps the version, which is.
 
 **Renounced powers.** The lead artist may give up, for one work and for good, any further
-royalty-rate change and any further relicense (`IWorkPowers`, [ADR 0006](../adr/0006-work-powers-and-conventions.md)).
-They are bits of a `uint16` mask (`WorkPowers.ROYALTY_RATE` 1, `WorkPowers.RELICENSE` 2) kept in
-the spare last two bytes of the record's first storage word, so no slot is added; bits are only
-ever added (WS-37, WS-38). The errata repin is not renounceable: a pinned renderer that a future
-gas repricing breaks could then never be repaired.
+royalty-rate change, any further relicense and, once the work is finalized, any further errata
+repin (`IWorkPowers`, [ADR 0006](../adr/0006-work-powers-and-conventions.md), amended by the owner
+on 15 November 2026). They are bits of a `uint16` mask (`WorkPowers.ROYALTY_RATE` 1,
+`RELICENSE` 2, `RENDERER_REPIN` 4) kept in the last two bytes of the record's first storage word,
+so no slot is added; bits are only ever added (WS-37, WS-38). **Limitation:** once
+`RENDERER_REPIN` is renounced, a pinned renderer that a later protocol change breaks (a gas
+repricing, a change to code hashes, a dependency that stops answering) can never be repaired for
+that work; its `tokenURI` may revert or show less for good. The media, record and license stay
+on-chain and readable by any other renderer off-chain.
+
+**Delivery.** Where copies of a work's media are served from (locators, kinds, preferences and
+the URI grammar) is a replaceable contract behind `WorkRecords.delivery` (WS-39): "Final fixes
+the content and output format, not the URL" (ADR 0001 §10). The delivery contract can never
+change a fact: media, hashes, records, licenses, rates, powers, pins or completeness. Every
+successor names its predecessor and must keep serving its locators (`IWorkDelivery`).
+
+**Stores.** Store 0 is the content store; governance may add stores (adapters serving chunk
+bytes by their keccak256) for good, so a future medium can count as on-chain complete for new
+syncs (WS-41 to WS-43). Each media file records once, when it completes, which store holds it;
+existing files' stores and a work's completeness never change.
 
 **License.** An SPDX-style identifier in its original case plus the file ID of the full text,
 compared by license key (`keccak256` of the ASCII-lowercased identifier). The default is CC0
@@ -119,7 +137,7 @@ The governed default license for new packages is a different setting
 ([Economics and payouts](economics-and-payouts.md)).
 
 **On-chain complete and `ONCHAIN`.** The flag covers media only and is one-way, because
-on-chain bytes are permanent. `ONCHAIN` is the content store itself as a copy: implicit for an
+verified bytes are permanent. `ONCHAIN` is the content store itself as a copy: implicit for an
 on-chain complete work, never registered as a locator.
 
 **Chunk layout.** A chunk is at most `CHUNK_SIZE` (24,575) bytes stored as contract code, and
@@ -152,8 +170,8 @@ stateDiagram-v2
     state "Partly synced" as Partial
     state "On-chain complete" as Complete
     [*] --> NotSynced : openRecord
-    NotSynced --> Partial : syncOnChain stops at its chunk budget
-    Partial --> Partial : syncOnChain stops at its chunk budget
+    NotSynced --> Partial : syncOnChain verifies some chunks (caller's budget)
+    Partial --> Partial : syncOnChain verifies more chunks
     NotSynced --> Complete : syncOnChain finds every file complete
     Partial --> Complete : syncOnChain finds the rest complete
     note right of Complete
@@ -191,10 +209,12 @@ any GUARDIAN may cancel a scheduled call.
 | Open or Finalized: new license | PARAMETER_SETTER, plus every party's `Relicense` signature | Standard, 48 hours | `WorkRecords.relicense` |
 | Open or Finalized: lower royalty rate | FUNDS_SETTER, plus every party's `RoyaltyRateChange` signature | Funds, 14 days | `WorkRecords.setRoyaltyRate` |
 | Open or Finalized: powers renounced (one-way) | Anyone, with the artist's `RenouncePowers` signature | None | `WorkRecords.renounce` |
-| Finalized: new renderer pin (errata) | SUCCESSOR_SETTER, plus the artist's `RendererRepin` signature | Successor, 30 days | `WorkRecords.repinRenderer` |
+| Finalized: new renderer pin (errata), until `RENDERER_REPIN` is renounced | SUCCESSOR_SETTER, plus the artist's `RendererRepin` signature | Successor, 30 days | `WorkRecords.repinRenderer` |
+| New delivery contract (no state change of any work) | SUCCESSOR_SETTER | Successor, 30 days | `WorkRecords.setDelivery` |
+| New store (no state change of any work) | SUCCESSOR_SETTER | Successor, 30 days | `WorkRecords.addStore` |
 | Not synced to Partly synced or On-chain complete | Anyone | None | `WorkRecords.syncOnChain` |
-| Locator appended (no state change) | The artist before finalize; PLATFORM at any time | Immediate | `WorkRecords.addLocator` |
-| Preference changed (no state change) | STORAGE_OPERATOR | Immediate | `WorkRecords.setPreferredKind`, `setCollectionPreferredKind`, `setFilePreference` |
+| Locator appended (no state change) | The artist before finalize; PLATFORM at any time | Immediate | `WorkDelivery.addLocator` |
+| Preference changed (no state change) | STORAGE_OPERATOR | Immediate | `WorkDelivery.setPreferredKind`, `setCollectionPreferredKind`, `setFilePreference` |
 | File: Not registered to Registered | Anyone | None | `ContentStore.registerManifest` |
 | File: to Complete | Anyone | None | `ContentStore.writeChunk` |
 | File: Not attested to Attested | Anyone | None | `ContentStore.attestBase64` |
@@ -251,15 +271,18 @@ sequenceDiagram
     loop each media file
         WR->>CS: sha256Of(fileId), or fileInfo(fileId) for a PREVIEW
     end
-    Note over WR: store record file ID, media, roles, non-default license, the seed (ARTIST or VRF)
-    WR-->>A: RecordOpened(tokenId, recordFileId, mediaHash)
+    Note over WR: store record file ID, media, roles, non-default license, the seed
+    WR-->>A: RecordOpened(tokenId, item, media, licenseKey, seed)
     WR->>S: emitMetadataUpdate(tokenId, tokenId)
     opt the work is a linked edition master
         WR->>E: notifyMasterUpdated(tokenId)
     end
 ```
 
-- **Checks.** WS-2, WS-3 and WS-5; the media chunks need not be uploaded. The record file and a
+- **Checks.** WS-2, WS-3, WS-5 and WS-45; the media chunks need not be uploaded.
+- **Event.** `RecordOpened` carries the whole item (parties, payees with shares, license, seed
+  policy), the media list, the license key and the seed (WS-44). `openRecord` is off the
+  auction-start path. The record file and a
   non-CC0 license text are stored as approved (WS-4), so neither can freeze a minted work;
   `finalize` enforces both.
 - **Trust obligation.** These checks do not run at mint, so a mis-committed item mints and can
@@ -303,18 +326,21 @@ sequenceDiagram
     participant Ar as Artist (before finalize)
     participant P as Platform (PLATFORM)
     participant SO as Storage operator (STORAGE_OPERATOR)
+    participant WD as WorkDelivery
     participant WR as WorkRecords
-    Ar->>WR: addLocator(tokenId, fileId, Arweave or IPFS address)
-    P->>WR: addLocator(tokenId, fileId, Arweave or IPFS address)
-    WR-->>P: LocatorAdded(tokenId, fileId, index, locator)
-    Note over SO,WR: immediate, no delay
-    SO->>WR: setFilePreference(tokenId, fileId, index)
-    SO->>WR: setCollectionPreferredKind(collectionId, kind)
-    SO->>WR: setPreferredKind(kind)
+    Ar->>WD: addLocator(tokenId, fileId, Arweave or IPFS address)
+    P->>WD: addLocator(tokenId, fileId, Arweave or IPFS address)
+    WD-->>P: LocatorAdded(tokenId, fileId, index, locator, addedBy, byArtist)
+    Note over SO,WD: immediate, no delay
+    SO->>WD: setFilePreference(tokenId, fileId, index)
+    SO->>WD: setCollectionPreferredKind(collectionId, kind)
+    SO->>WD: setPreferredKind(kind)
+    WD->>WR: refreshMetadata or refreshAllMetadata
     Note over WR: ERC-4906 through Stream, Editions notified
 ```
 
-- **Rules.** WS-18 to WS-22; after finalize the artist's call fails with
+- **Rules.** WS-18 to WS-22 (the first delivery contract's; a successor may differ, WS-39);
+  after finalize the artist's call fails with
   `AccessManagedUnauthorized`. The URIs registered for a file are one set, so whichever of the
   artist and the platform registers a URI first holds it against its own quota. `ONCHAIN` matches only an on-chain complete work, read from the
   stored flag, never from a content-store scan.
@@ -415,23 +441,36 @@ sequenceDiagram
     participant A as Anyone
     participant WR as WorkRecords
     participant CS as ContentStore
-    A->>WR: syncOnChain(tokenId)
-    loop media files from the saved position, whole files within 512 chunks
-        WR->>CS: fileInfo(fileId) for the chunk count
-        WR->>CS: isComplete(fileId)
+    A->>WR: syncOnChain(tokenId, storeId, maxChunks)
+    loop chunks from the saved cursor, at most maxChunks
+        WR->>CS: fileInfo(fileId)
+        alt store 0
+            WR->>CS: firstMissing(fileId, from, to)
+        else an added store
+            WR->>CS: chunkHash(fileId, i)
+            WR->>WR: store.readChunk(hash), checked by keccak256 and length
+        end
     end
-    alt a file is incomplete
+    alt no chunk verified
         WR-->>A: revert NotOnChainComplete, earlier calls keep their progress
-    else the budget stops the loop
-        WR-->>A: OnChainSyncProgress(tokenId, files)
-    else every file is complete
+    else some verified
+        WR-->>A: OnChainSyncProgress(tokenId, files, chunk, storeId)
+    end
+    opt every file is complete
         WR-->>A: WorkOnChainComplete(tokenId) and ERC-4906
     end
 ```
 
-A file of up to `MAX_CHUNKS` (512) always fits one call's budget. A full call of 512 cold
-chunks stays under 30% of the 16,777,216-gas transaction cap in Prague gas
+The caller chooses the budget, so a work completes in pieces whatever the gas schedule: one
+chunk per call always progresses. A call of 512 cold content-store chunks stays under 30% of
+the 16,777,216-gas transaction cap in Prague gas
 ([`SyncOnChainResume.t.sol`](../../test/integration/SyncOnChainResume.t.sol)).
+
+### Replace the delivery contract, add a store
+
+SUCCESSOR_SETTER schedules `setDelivery(expected, next)` or `addStore(store, codeHash)`; after
+30 days, unless a guardian cancelled, it executes. `setDelivery` refreshes every token's
+metadata. A store, once added, is never removed; a work verified against it stays complete.
 
 ## Rules and invariants
 
@@ -453,12 +492,12 @@ chunks stays under 30% of the 16,777,216-gas transaction cap in Prague gas
 | WS-14 | A royalty-rate change needs FUNDS_SETTER and every party's `RoyaltyRateChange` signature, only lowers the rate (`RoyaltyRateNotLowered` above the current one; the current one is a no-op), and applies to Stream and a linked edition. The rate at mint is the economics resolver's and is not affected. | `WorkRecords.setRoyaltyRate`, `_applyRate` | [`WorkPowers.t.sol`](../../test/stream/WorkPowers.t.sol) `test_setRoyaltyRate_lowersTheRate`, `test_setRoyaltyRate_refusesAHigherRate`, `test_setRoyaltyRate_anEqualRateChangesNothing`, `test_setRoyaltyRate_aLowerRateFollowsToTheLinkedEdition`, `test_setRoyaltyRate_theMintRateIsUnaffected`; [`WorkPowersInvariant.t.sol`](../../test/stream/WorkPowersInvariant.t.sol) `invariant_royaltyRateNeverRises`; [`WorkPowersStack.t.sol`](../../test/stream/WorkPowersStack.t.sol) `test_EditionFollowsTheMastersLowerRate`; [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_setRoyaltyRate_withEveryConsent`, `test_setRoyaltyRate_reverts`, `test_setRoyaltyRate_followsToLinkedEdition`; [`Stream.t.sol`](../../test/stream/Stream.t.sol) `test_coreOf_reportsTheCurrentRate`; [`RecoveryRestraint.t.sol`](../../test/integration/RecoveryRestraint.t.sol) `test_PreSignedRoyaltyConsentRefusedWhileRestrained` |
 | WS-15 | The errata repin needs a finalized work, SUCCESSOR_SETTER and the artist's `RendererRepin` signature binding the code hash; the renderer has code, is not EIP-7702 delegated, matches the hash and supports `IRenderer`. | `WorkRecords.repinRenderer` | [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_repinRenderer_errataPath`, `test_repinRenderer_reverts`; [`RecordAmendments.t.sol`](../../test/integration/RecordAmendments.t.sol) `test_NewDefaultRendererAndTheErrataRepin` |
 | WS-16 | A renderer address is pinned with one code hash forever. `pinnedRenderer` reverts with `DependencyCodeChanged` once the code differs, so `tokenURI` fails closed; pinning it again with another hash reverts. | `WorkRecords._pinCode`, `pinnedRenderer` | [`RendererCodePin.t.sol`](../../test/integration/RendererCodePin.t.sol) `test_PinnedRendererWithChangedCodeIsRefused`, `test_RepinRefusesARendererWhoseCodeChangedSincePinned`, `test_DefaultRendererWithChangedCodeIsRefused` |
-| WS-17 | `syncOnChain` is permissionless, one-way and resumable: whole files within 512 chunks per call, a revert at the first incomplete file keeps earlier progress, a repeat after completion emits nothing, and the state hash is unchanged. | `WorkRecords.syncOnChain` | [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_syncOnChain`; [`SyncOnChainResume.t.sol`](../../test/integration/SyncOnChainResume.t.sol) `test_SyncOnChain_ResumesAcrossCalls`, `test_SyncOnChain_KeepsItsPlaceUntilAFileCompletes`; [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_syncOnChain_needsEveryFile` |
-| WS-18 | A locator is `ar://` and a 43-character base64url transaction ID whose last character has zero padding bits (48 bytes), or `ipfs://` and a 59-character base32 CIDv1 starting `bafkrei` or `bafybei`, then `a`–`h`, with zero padding bits in the last character (66 bytes). Nothing else, and never kind `NONE` or `ONCHAIN`. | `WorkRecords._checkUri` | [`WorkRecordsStack.t.sol`](../../test/integration/WorkRecordsStack.t.sol) `test_Locator_OnlyContentAddressesAreAccepted`, `test_Locator_OneSpellingPerAddress`; [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_addLocator_reverts` |
-| WS-19 | Before finalize, 8 locators per file from the artist and 8 from the platform; a URI already registered for the file is refused; after finalize only PLATFORM adds, up to 16 in all. | `WorkRecords.addLocator` | [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_addLocator_byArtistAndPlatform`, `test_addLocator_rejectsDuplicateUri`, `test_addLocator_platformTakesTheArtistsUnusedSlotsAfterFinalize`, `test_addLocator_separateQuotasShareOneDuplicateSet`; [`WorkRecordsStack.t.sol`](../../test/integration/WorkRecordsStack.t.sol) `test_Locator_ArtistCannotAddAfterFinalize` |
-| WS-20 | Locators are append-only and belong to one of the work's media files (`FileNotInWork`). | `WorkRecords.addLocator`, `_requireMedia`; no removal function exists | [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_addLocator_reverts`, `test_preferenceSetters_reverts` |
-| WS-21 | The preferred locator is the file's index, else the collection kind, else the global kind, else the first registered, else the implicit `ONCHAIN` copy of an on-chain complete work, else the empty locator (kind `NONE`, index `type(uint256).max`). The kind and first-registered tiers consider only the locators the artist added; a locator PLATFORM added is served only through the storage operator's file index. | `WorkRecords.preferredLocator`, `_firstOfKind`, `LocatorCounts.byArtist` | [`PreferredLocation.t.sol`](../../test/stream/PreferredLocation.t.sol) `testFuzz_preferredLocator_matchesModel`; [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_preferredLocator_mostSpecificWins`, `test_preferredLocator_implicitOnchainFallback`, `test_preferredLocator_fallbacksConsiderOnlyTheArtistsLocators`, `test_preferredLocator_aPlatformOnlyKindFallsThroughToTheArtist`, `test_preferredLocator_platformOnlyLocatorsNeedTheOperatorsPick`, `test_preferredLocator_platformLocatorsAfterFinalizeNeedTheOperatorsPick` |
-| WS-22 | The storage operator can only choose among copies registered for that file, or its on-chain bytes. | `WorkRecords.setFilePreference`, `preferredLocator` | [`PreferredLocation.t.sol`](../../test/stream/PreferredLocation.t.sol) `testFuzz_preferredLocator_staysWithinFile`; [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_preferenceSetters_reverts` |
+| WS-17 | `syncOnChain` is permissionless, one-way and resumable per chunk: a call verifies at most the caller's `maxChunks` from the saved cursor (kept in the record's spare bits, no new slot), keeps its progress up to a missing chunk, reverts with `NotOnChainComplete` only when it verified nothing; zero chunks and a complete work are no-ops; the state hash is unchanged. | `WorkRecords.syncOnChain`, `_advance`, `_verify` | [`SyncOnChainResume.t.sol`](../../test/integration/SyncOnChainResume.t.sol) `test_SyncOnChain_ResumesAcrossCalls`, `test_SyncOnChain_TheCursorIsPerChunk`, `test_SyncOnChain_OneChunkACallAlwaysProgresses`, `test_SyncOnChain_KeepsItsPlaceAtAMissingChunk`, `test_SyncOnChain_ZeroBudgetAndUnknownStore`; [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_syncOnChain`, `test_syncOnChain_needsEveryFile` |
+| WS-18 | (First delivery contract.) A locator is `ar://` and a 43-character base64url transaction ID whose last character has zero padding bits (48 bytes), or `ipfs://` and a 59-character base32 CIDv1 starting `bafkrei` or `bafybei`, then `a`–`h`, with zero padding bits in the last character (66 bytes). Nothing else, and never kind `NONE` or `ONCHAIN`. | `WorkDelivery._checkUri` | [`WorkRecordsStack.t.sol`](../../test/integration/WorkRecordsStack.t.sol) `test_Locator_OnlyContentAddressesAreAccepted`, `test_Locator_OneSpellingPerAddress`; [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_addLocator_reverts` |
+| WS-19 | (First delivery contract.) Before finalize, 8 locators per file from the artist and 8 from the platform; a URI already registered for the file is refused; after finalize only PLATFORM adds, up to 16 in all. | `WorkDelivery.addLocator` | [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_addLocator_byArtistAndPlatform`, `test_addLocator_rejectsDuplicateUri`, `test_addLocator_platformTakesTheArtistsUnusedSlotsAfterFinalize`, `test_addLocator_separateQuotasShareOneDuplicateSet`; [`WorkRecordsStack.t.sol`](../../test/integration/WorkRecordsStack.t.sol) `test_Locator_ArtistCannotAddAfterFinalize` |
+| WS-20 | (First delivery contract.) Locators are append-only and belong to one of the work's media files (`FileNotInWork`). | `WorkDelivery.addLocator`, `WorkRecords.mediaIndex`; no removal function exists | [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_addLocator_reverts`, `test_preferenceSetters_reverts` |
+| WS-21 | (First delivery contract.) The preferred locator is the file's index, else the collection kind, else the global kind, else the first registered, else the implicit `ONCHAIN` copy of an on-chain complete work, else the empty locator (kind `NONE`, index `type(uint256).max`). The kind and first-registered tiers consider only the locators the artist added; a locator PLATFORM added is served only through the storage operator's file index. | `WorkDelivery.preferredLocator`, `_firstOfKind`, `LocatorCounts.byArtist` | [`PreferredLocation.t.sol`](../../test/stream/PreferredLocation.t.sol) `testFuzz_preferredLocator_matchesModel`; [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_preferredLocator_mostSpecificWins`, `test_preferredLocator_implicitOnchainFallback`, `test_preferredLocator_fallbacksConsiderOnlyTheArtistsLocators`, `test_preferredLocator_aPlatformOnlyKindFallsThroughToTheArtist`, `test_preferredLocator_platformOnlyLocatorsNeedTheOperatorsPick`, `test_preferredLocator_platformLocatorsAfterFinalizeNeedTheOperatorsPick` |
+| WS-22 | (First delivery contract.) The storage operator can only choose among copies registered for that file, or its on-chain bytes. | `WorkDelivery.setFilePreference`, `preferredLocator` | [`PreferredLocation.t.sol`](../../test/stream/PreferredLocation.t.sol) `testFuzz_preferredLocator_staysWithinFile`; [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_preferenceSetters_reverts` |
 | WS-23 | Every visible change emits ERC-4906 through Stream and notifies Editions for a master; a global or collection preference change refreshes every token and edition. | `WorkRecords._refresh`, `_refreshAll` | [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_preferenceSetters_eventsAndRefresh`, `test_preferenceSetters_notifyAllEditions`, `test_editionMaster_notifiesEditions` |
 | WS-24 | A chunk is at most `CHUNK_SIZE` bytes; writing is idempotent and its pointer depends only on the bytes and the store. | `ContentStore.writeChunk`, `SSTORE2.write` | [`ContentStore.t.sol`](../../test/content/ContentStore.t.sol) `test_WriteChunk_AcceptsMaxAndRejectsOneMore`, `test_WriteChunk_IsIdempotent`, `testFuzz_WriteChunk_IsCallerIndependent` |
 | WS-25 | The file ID commits to the whole manifest and to nothing else (no chain ID, no address); registering again is a no-op; a different claim about the same chunks is a different file. | `ContentStore.manifestId`, `registerManifest` | [`ContentStore.t.sol`](../../test/content/ContentStore.t.sol) `test_FileId_CommitsToWholeManifest`, `test_FileId_IsChainAndDeploymentIndependent`, `test_RegisterManifest_IsIdempotent` |
@@ -473,9 +512,16 @@ chunks stays under 30% of the 16,777,216-gas transaction cap in Prague gas
 | WS-34 | A dependency label is 1 to 32 bytes of `[a-z0-9._-]`, left-aligned, then only zero bytes; a `(name, version)` maps to one complete file forever. | `DependencyRegistry.register`, `_requireLabel` | [`DependencyRegistry.t.sol`](../../test/content/DependencyRegistry.t.sol) `test_Register_LabelExamples`, `testFuzz_Register_LabelValidity`, `test_Register_VersionsAreImmutable`, `test_Register_RequiresCompleteContent` |
 | WS-35 | Deprecation is a one-way flag: nothing is deleted and the version still resolves. Both functions are restricted. | `DependencyRegistry.deprecate`, `resolve` | [`DependencyRegistry.t.sol`](../../test/content/DependencyRegistry.t.sol) `test_Deprecate_IsAFlagOnly`, `test_Deprecate_Guards`, `test_Register_OnlyTheRegistrarRole` |
 | WS-36 | The governed selectors of `WorkRecords` and `DependencyRegistry` map to the roles and delays in this page, and the genesis configuration installs them. | [`config/genesis.example.json`](../../config/genesis.example.json), `GovernanceConfigurator` | [`GenesisConfig.t.sol`](../../test/governance/GenesisConfig.t.sol) `test_JsonMatchesTheCompiledSelectors`, `test_EveryEntryMatchesItsSignatureAndClassDelay`, `test_GenesisConfigurationInstallsWiresAndReadsBack` |
-| WS-37 | `renounce` needs an open record, known bits only (`UnknownPower`), the current state hash and the signature of the lead artist's active authority before its deadline; nobody renounces while the authority is restrained. Bits are only added; renouncing nothing new is a no-op. | `WorkRecords.renounce`, `_checkArtistConsent` | [`WorkPowers.t.sol`](../../test/stream/WorkPowers.t.sol) `test_renounce_onlyTheLeadArtistSigns`, `test_renounce_aFormerAuthorityCannot`, `test_renounce_nobodyWhileTheAuthorityIsRestrained`, `test_renounce_refusesAnExpiredSignature`, `test_renounce_refusesAStaleStateHash`, `test_renounce_aSignatureNeverAppliesTwice`, `test_renounce_refusesUnknownBits`, `test_renounce_twiceIsAHarmlessNoOp`, `test_renounce_needsAnOpenRecord`, `test_renounce_emitsPowersRenouncedAndBumpsTheVersion`, `test_renounce_beforeAndAfterFinalize`; [`WorkPowersStack.t.sol`](../../test/stream/WorkPowersStack.t.sol) `test_NobodyRenouncesWhileTheArtistIsRestrained`; [`WorkPowersInvariant.t.sol`](../../test/stream/WorkPowersInvariant.t.sol) `invariant_renouncedMaskNeverLosesABit` |
-| WS-38 | Once a power is renounced its function always reverts with `PowerRenounced` for that work, a no-op included: `setRoyaltyRate` for `ROYALTY_RATE`, `relicense` for `RELICENSE`. The errata repin cannot be renounced. A linked edition follows its master. | `WorkRecords._checkPower` | [`WorkPowers.t.sol`](../../test/stream/WorkPowers.t.sol) `test_renounce_royaltyRateThenEveryRateChangeReverts`, `test_renounce_relicenseThenEveryRelicenseReverts`, `test_renounce_bothAtOnce`, `test_renounce_neverTheErrataRepin`, `test_renounce_theLinkedEditionFollowsTheMaster`; [`WorkPowersStack.t.sol`](../../test/stream/WorkPowersStack.t.sol) `test_RenouncingOnTheMasterFixesItsEdition`; [`WorkPowersInvariant.t.sol`](../../test/stream/WorkPowersInvariant.t.sol) `invariant_aRenouncedPowerNeverSucceedsAgain` |
-
+| WS-37 | `renounce` needs an open record, known bits only (`UnknownPower`), a finalized work for `RENDERER_REPIN` (`WorkNotFinalized`), the current state hash and the signature of the lead artist's active authority before its deadline; nobody renounces while the authority is restrained. Bits are only added; renouncing nothing new is a no-op. | `WorkRecords.renounce`, `_checkArtistConsent` | [`WorkPowers.t.sol`](../../test/stream/WorkPowers.t.sol) `test_renounce_onlyTheLeadArtistSigns`, `test_renounce_aFormerAuthorityCannot`, `test_renounce_nobodyWhileTheAuthorityIsRestrained`, `test_renounce_refusesAnExpiredSignature`, `test_renounce_refusesAStaleStateHash`, `test_renounce_aSignatureNeverAppliesTwice`, `test_renounce_refusesUnknownBits`, `test_renounce_twiceIsAHarmlessNoOp`, `test_renounce_needsAnOpenRecord`, `test_renounce_emitsPowersRenouncedAndBumpsTheVersion`, `test_renounce_beforeAndAfterFinalize`, `test_renounce_rendererRepinOnlyAfterFinalizeThenRepinRevertsForGood`; [`WorkPowersStack.t.sol`](../../test/stream/WorkPowersStack.t.sol) `test_NobodyRenouncesWhileTheArtistIsRestrained`; [`WorkPowersInvariant.t.sol`](../../test/stream/WorkPowersInvariant.t.sol) `invariant_renouncedMaskNeverLosesABit` |
+| WS-38 | Once a power is renounced its function always reverts with `PowerRenounced` for that work, a no-op included: `setRoyaltyRate` for `ROYALTY_RATE`, `relicense` for `RELICENSE`, `repinRenderer` for `RENDERER_REPIN`. A linked edition follows its master. | `WorkRecords._checkPower` | [`WorkPowers.t.sol`](../../test/stream/WorkPowers.t.sol) `test_renounce_royaltyRateThenEveryRateChangeReverts`, `test_renounce_relicenseThenEveryRelicenseReverts`, `test_renounce_bothAtOnce`, `test_renounce_rendererRepinOnlyAfterFinalizeThenRepinRevertsForGood`, `test_renounce_theLinkedEditionFollowsTheMaster`; [`WorkPowersStack.t.sol`](../../test/stream/WorkPowersStack.t.sol) `test_RenouncingOnTheMasterFixesItsEdition`; [`WorkPowersInvariant.t.sol`](../../test/stream/WorkPowersInvariant.t.sol) `invariant_aRenouncedPowerNeverSucceedsAgain` |
+| WS-39 | Delivery is a replaceable contract behind `delivery`. `setDelivery(expected, next)` is SUCCESSOR_SETTER and compare-and-set (`DeliveryMismatch`); `next` declares `IWorkDelivery` by ERC-165, is not an EIP-7702 account, serves this contract (`records`) and names the current contract as `predecessor`, which it must keep serving the locators of. Every token's metadata is refreshed. The delivery contract's only calls into `WorkRecords` are the refresh hooks (`NotDelivery` for anyone else). | `WorkRecords.setDelivery`, `refreshMetadata`, `refreshAllMetadata` | [`WorkDelivery.t.sol`](../../test/stream/WorkDelivery.t.sol) `test_setDelivery_swapsAndRefreshesEveryToken`, `test_setDelivery_refusals`, `test_refreshHooks_onlyTheDelivery`, `test_successor_keepsThePredecessorsLocators`, `test_aHostileDeliveryChangesNoFact` |
+| WS-40 | `preferredLocator` is fail-soft: the delivery contract's answer is served only when it is the canonical encoding of `(Location, uint256)` with a URI of at most `Limits.MAX_URI_BYTES`, non-empty for every kind but NONE and ONCHAIN, empty with index `type(uint256).max` for those two, and ONCHAIN only for an on-chain complete work. A refusal or anything else yields the work's own answer: the implicit ONCHAIN copy of a synced work, else the empty locator; never another locator. A delivery call that runs short of gas reverts with `BoundedCallShortfall`. Kinds are `uint8` labels; kinds `LocatorKind` does not name pass through. | `WorkRecords.preferredLocator`, `_isLocation` | [`WorkDelivery.t.sol`](../../test/stream/WorkDelivery.t.sol) `test_preferredLocator_failSoftOnEveryMalformedAnswer`, `test_preferredLocator_passesWellFormedAnswersThrough`, `test_GasRule_preferredLocatorForwarding`, `test_GasRule_aBurningDeliveryRevertsNeverFallsBack` |
+| WS-41 | Store 0 is the content store. `addStore(store, codeHash)` is SUCCESSOR_SETTER, append-only (IDs 1 to 15, never reused or removed), and pins the store's code hash, checked at each use (`UnknownStore` after a change). | `WorkRecords.addStore`, `_storeOf` | [`WorkStores.t.sol`](../../test/stream/WorkStores.t.sol) `test_addStore_isGovernedAppendOnlyAndPinned`, `test_syncOnChain_aStoreWhoseCodeChanged` |
+| WS-42 | A chunk counts from an added store only if the bytes it returns for the manifest's chunk hash hash to it and have the length the layout rule requires; a refusal or any other answer is a missing chunk; running short of gas reverts (`BoundedCallShortfall`). | `WorkRecords._verify` | [`WorkStores.t.sol`](../../test/stream/WorkStores.t.sol) `test_syncOnChain_throughAnAdapter`, `test_syncOnChain_adapterBytesAreVerified`, `test_GasRule_adapterReads` |
+| WS-43 | A file's store is fixed when its last chunk verifies and never changes; a file in progress changes store only when its store lacks the next chunk or its code changed (`StoreInUse` otherwise), restarting at chunk 0. A complete work is never unmarked, and no governance action alters what `tokenURI` inlines for it. | `WorkRecords._startChunk`, `syncOnChain` | [`WorkStores.t.sol`](../../test/stream/WorkStores.t.sol) `test_syncOnChain_switchesStoreOnlyAwayFromAMissingChunk`, `test_syncOnChain_aCompleteFilesStoreNeverChanges`; [`WorkRecordsGovernanceInvariant.t.sol`](../../test/stream/WorkRecordsGovernanceInvariant.t.sol) `invariant_tokenUriOfACompleteWorkNeverChanges`, `invariant_aCompleteWorksFactsNeverChange` |
+| WS-44 | Logs only: `RecordOpened` carries the item (whose item hash is the core's), the media list, the license key and the seed; `RecordSet`, `WorkFinalized`, `LicenseChanged`, `RoyaltyRateSet`, `RendererRepinned` and `PowersRenounced` carry the new state hash; `OnChainSyncProgress` carries the store; `DeliverySet` and `StoreAdded` the governed pointers. | `WorkRecords` events | [`WorkRecordsFuture.t.sol`](../../test/stream/WorkRecordsFuture.t.sol) `test_recordOpened_carriesEveryFactOfTheOpen`; [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_relicense_withEveryConsent`, `test_repinRenderer_errataPath` |
+| WS-45 | Item kinds, seed policies, party roles and media roles are read as `uint8` (`WorkItem`, `WorkMedia`, the ABI of `PackageItem` and `MediaFile`), so an item a future mint policy defines still opens; a seed policy other than NONE and VRF keeps the item's seed; media roles above 15 are refused (four bits each). | `WorkRecords.openRecord` | [`WorkRecordsFuture.t.sol`](../../test/stream/WorkRecordsFuture.t.sol) `test_openRecord_itemValuesTodaysEnumsDoNotName`, `testFuzz_workItemHashesAsPackageItem` |
+| WS-46 | The record bound (`setRecord`: the default renderer; `finalize`: the renderer it pins) and the preview bound (`openRecord`: the default renderer) are the renderer's `IRecordLimits` answer when it answers exactly two words, else `Limits.MAX_RECORD_BYTES` and `Limits.MAX_PREVIEW_BYTES`; the record bound never exceeds one chunk. A read that runs short of gas reverts. | `WorkRecords._limits`, `_checkRecordFile`, `_previewSha` | [`WorkRecordsFuture.t.sol`](../../test/stream/WorkRecordsFuture.t.sol) `test_recordBound_comesFromTheRenderer`, `test_recordBound_finalizeUsesThePinnedRenderer`, `test_previewBound_comesFromTheRenderer`, `test_GasRule_recordBoundRead` |
 The whole path, from upload and attestation through `openRecord`, `finalize` and `syncOnChain` to
 inline rendering, runs on the real stack in
 [`ContentToTokenURI.t.sol`](../../test/integration/ContentToTokenURI.t.sol)
@@ -501,9 +547,12 @@ completion in the content store has no event: derive it from `ManifestRegistered
 | A manifest breaks the layout rule or lists an impossible chunk | Accepted but never completes or reads (WS-27); its work never becomes on-chain complete. | None for that file ID; served by locator. Tooling refuses such manifests. |
 | A `Base64` file is not yet attested | Never inlined; served by locator. | Anyone calls `attestBase64` until it returns true. |
 | Base64 text breaks the strict alphabet | `attestBase64` reverts with `ContentBase64Invalid(fileId, index)` forever. | None for that file ID. Tooling refuses such text before upload. |
-| A pinned renderer's code no longer matches its pinned hash | `pinnedRenderer` reverts with `DependencyCodeChanged`, so `tokenURI` fails closed. | The errata repin (30 days). An unfinalized work's changed default renderer is replaced by `Stream.setDefaultRenderer` (30 days). |
+| A pinned renderer's code no longer matches its pinned hash | `pinnedRenderer` reverts with `DependencyCodeChanged`, so `tokenURI` fails closed. | The errata repin (30 days), unless `RENDERER_REPIN` was renounced: then none, for good. An unfinalized work's changed default renderer is replaced by `Stream.setDefaultRenderer` (30 days). |
+| The delivery contract reverts or answers malformed data | `preferredLocator` serves the work's own answer (ONCHAIN for a synced work, else none), WS-40. | SUCCESSOR_SETTER replaces it (30 days); the successor must keep its predecessor's locators. |
+| The delivery contract burns all the gas it is given | `preferredLocator` reverts (shortfall), and so does `tokenURI` for works served by locator; inlined works are unaffected. | Replace it (30 days). |
+| An added store stops serving bytes | Works it completed stay complete (the flag and the file's store are permanent); readers that inline from it fail. | None on-chain for those files; that persistence is the trust governance accepted when adding the store. |
 | The artist's key is lost | No `setRecord`, `finalize`, repin or artist consent; locators by PLATFORM, preferences and `syncOnChain` still work. | Recover the authority through the artist registry ([Identity and recovery](identity-and-recovery.md)), then sign. |
-| A power was renounced in error, or by an authority later found to be the wrong one | The power's function reverts for that work for good (WS-38); the work keeps its current rate and license. | None on-chain, by design: renunciation is permanent. The errata repin stays available. |
+| A power was renounced in error, or by an authority later found to be the wrong one | The power's function reverts for that work for good (WS-38); the work keeps its current rate and license. | None on-chain, by design: renunciation is permanent. The errata repin stays available unless `RENDERER_REPIN` itself was renounced. |
 | The state changed between signing and execution, or a consent expired or lost its authority | `StateHashMismatch`, `SignatureExpired(deadline)` or `InvalidConsent(tokenId, partyIndex)` at execution. | Read the new state hash, collect new signatures with a deadline past the delay, schedule again. |
 | A locator names the wrong content or goes dark | Not detected on-chain; `tokenURI` may serve it. | STORAGE_OPERATOR at once prefers another registered copy; the off-chain monitor re-pins or re-uploads. |
 | The PLATFORM or STORAGE_OPERATOR key is compromised | Junk locators (up to its quota), which no fallback serves (WS-21), or preferences pointing at a bad copy. | A guardian suspends the key; governance replaces it (30 days, then the 48-hour grant delay); the new operator restores the preferences. |
@@ -519,15 +568,17 @@ completion in the content store has no event: derive it from `ManifestRegistered
 | Chunks per attestation call | 48 | `ContentStore.ATTEST_CHUNKS_PER_CALL` |
 | Encodings | `Identity` 0, `Gzip` 1, `Base64` 2, `GzipBase64` 3 (part of the file ID) | `IContentStore.Encoding` |
 | Media files per work | 1 to 32 | `Limits.MAX_MEDIA_FILES` |
-| Record file | At most 12,288 bytes, `Identity`, one chunk | `Limits.MAX_RECORD_BYTES` |
-| Inlinable `PREVIEW` file | At most 16,384 stored bytes, an `Identity` file counting four times | `Limits.MAX_PREVIEW_BYTES` |
+| Record file | The renderer's bound (WS-46), else 12,288 bytes; `Identity`, one chunk | `IRecordLimits`, `Limits.MAX_RECORD_BYTES` |
+| Inlinable `PREVIEW` file | The renderer's bound (WS-46), else 16,384 stored bytes; an `Identity` file counting four times | `IRecordLimits`, `Limits.MAX_PREVIEW_BYTES` |
 | License identifier | 1 to 64 bytes of `[A-Za-z0-9.+-]` | `Limits.MAX_LICENSE_ID_BYTES`, `SpdxId` |
 | CC0 license key | `keccak256("cc0-1.0")` | `WorksHashing.CC0_LICENSE_KEY` |
 | CC0 legal code | 7,048 bytes, `text/plain`, SHA-256 `0xa2010f34…0499` | [`script/README.md`](../../script/README.md#6-the-cc0-license-text) (`DeployV1.CC0_LEGALCODE_SHA256`) |
-| Locators per file | 16 in all; 8 by the artist and 8 by the platform before finalize | `Limits.MAX_LOCATORS_PER_FILE`, `WorkRecords.LOCATOR_QUOTA` |
-| Chunks per `syncOnChain` call | 512, in whole files | `WorkRecords.SYNC_CHUNKS` |
+| Locators per file (first delivery contract) | 16 in all; 8 by the artist and 8 by the platform before finalize | `Limits.MAX_LOCATORS_PER_FILE`, `WorkDelivery.LOCATOR_QUOTA` |
+| Chunks per `syncOnChain` call | The caller's `maxChunks` (no compiled number) | `WorkRecords.syncOnChain` |
+| Stores | The content store (0) and up to 15 added | `WorkRecords.MAX_STORES` (four bits per file) |
+| Delivery answer copied | At most `0xa0 + Limits.MAX_URI_BYTES` bytes | `WorkRecords.LOCATION_RETURN` |
 | EIP-712 domain | `"6529 Works Records"`, version `"1"` | `Typehashes.WORK_RECORDS_NAME`, `DOMAIN_VERSION` |
-| Renounceable powers | `ROYALTY_RATE` 1, `RELICENSE` 2 (mask `ALL` 3); any other bit is refused | `WorkPowers` in `IWorkPowers.sol` |
+| Renounceable powers | `ROYALTY_RATE` 1, `RELICENSE` 2, `RENDERER_REPIN` 4 (only after finalize) (mask `ALL` 7); any other bit is refused | `WorkPowers` in `IWorkPowers.sol` |
 | Storage cost on Sepolia (Glamsterdam) | About 1,548 gas per stored byte (Prague about 218) | [`flows.md`](../../deployments/11155111/flows.md#1-content), [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#consequences) |
 
 ## Differences from the ADRs
@@ -538,6 +589,8 @@ See the [register](README.md#differences-from-the-adrs).
 
 - **Code:** [`WorkRecords.sol`](../../src/stream/WorkRecords.sol),
   [`IWorkRecords.sol`](../../src/interfaces/IWorkRecords.sol),
+  [`WorkDelivery.sol`](../../src/stream/WorkDelivery.sol),
+  [`IWorkDelivery.sol`](../../src/interfaces/IWorkDelivery.sol),
   [`IWorkPowers.sol`](../../src/interfaces/IWorkPowers.sol),
   [`SpdxId.sol`](../../src/stream/SpdxId.sol),
   [`ContentStore.sol`](../../src/content/ContentStore.sol),
