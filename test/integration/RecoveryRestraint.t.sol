@@ -392,7 +392,7 @@ contract RecoveryRestraintTest is IntegrationBase {
         bytes32 digest =
             artists.changeDigest(artistId, next, artists.changeNonce(artistId), deadline);
         artists.stageChange(
-            artistId, next, wallet, deadline, _sign(wallet, digest), _sign(newKey, digest)
+            artistId, next, artist, deadline, _sign(artist, digest), _sign(newKey, digest)
         );
         assertEq(artists.activeAuthorityOf(artistId), artist);
         (, uint256 tokenId) = _start(root, _package(root), 1);

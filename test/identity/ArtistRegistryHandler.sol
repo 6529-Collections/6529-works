@@ -5,7 +5,7 @@ import { Test } from "forge-std/Test.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
 import { ConsolidationAdapter } from "src/identity/ConsolidationAdapter.sol";
-import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
+import { IArtistRegistry, IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
 import {
     ArtistIdentity,
     ChangeKind,
@@ -37,6 +37,8 @@ struct IdentityActors {
     DelegationManagementMock delegation;
     SplitFactoryWalletsMock factory;
     DisputeOutcomeLogMock outcomes;
+    /// @dev A replacement source that names every wallet (review C, F2), swapped in and out.
+    IConsolidationSource hostile;
     uint256 artistId;
     address guardian;
     address governor;
@@ -67,6 +69,7 @@ contract ArtistRegistryHandler is Test {
     DelegationManagementMock internal immutable delegation;
     SplitFactoryWalletsMock internal immutable factory;
     DisputeOutcomeLogMock internal immutable outcomes;
+    IConsolidationSource internal immutable hostile;
     address internal immutable successorSetter;
     uint256 internal immutable artistId;
     address internal immutable guardian;
@@ -87,6 +90,14 @@ contract ArtistRegistryHandler is Test {
     uint256 public resolved;
     uint256 public lapsed;
     mapping(bytes32 pair => bool) internal consolidated;
+    /// @dev Whether the hostile source is installed, whether the pending change was signed by a
+    ///      consolidated wallet, and the count of such stagings made while the artist was live
+    ///      (the F2 invariant: always zero) or made at all (coverage).
+    bool public hostileInstalled;
+    bool public ghostWalletStaged;
+    uint256 public walletStagedWhileLive;
+    uint256 public walletStagings;
+    uint256 public sourceSwaps;
 
     /// @dev The governed timers, in `IArtistRegistry.Timer` order, and the delay and contest
     ///      timeout locked by the pending change.
@@ -141,6 +152,7 @@ contract ArtistRegistryHandler is Test {
         delegation = a.delegation;
         factory = a.factory;
         outcomes = a.outcomes;
+        hostile = a.hostile;
         successorSetter = a.successorSetter;
         artistId = a.artistId;
         guardian = a.guardian;
@@ -171,8 +183,14 @@ contract ArtistRegistryHandler is Test {
         registry.stageChange(artistId, next, u.signer, deadline, u.signature, u.acceptance);
         if (err.length != 0) return;
         lastUsed = u;
-        ghostLastActivity = uint64(block.timestamp);
-        _onStaged(ChangeKind.STANDARD);
+        bool byWallet = u.signer != ghostAuthority;
+        if (byWallet) {
+            ++walletStagings;
+            if (!_dormant()) ++walletStagedWhileLive;
+        } else {
+            ghostLastActivity = uint64(block.timestamp);
+        }
+        _onStaged(ChangeKind.STANDARD, byWallet);
     }
 
     /// @dev A used payload never stages again: the nonce it signed is consumed.
@@ -332,7 +350,10 @@ contract ArtistRegistryHandler is Test {
         );
         vm.prank(guardian);
         registry.stageOverride(artistId, ChangeKind.CONTESTED, next, keccak256("e"), 0, "");
-        _expect(_stageError(guardian, next));
+        bytes memory err = _stageError(guardian, next);
+        // Under the hostile source a dormant artist's guardian passes the signer check, and
+        // its empty signature is then refused.
+        _expect(err.length != 0 ? err : SignatureReverts.invalid(guardian));
         registry.stageChange(artistId, next, guardian, type(uint64).max, "", "");
     }
 
@@ -374,9 +395,10 @@ contract ArtistRegistryHandler is Test {
         ++executed;
     }
 
+    /// @dev The authority's alone (review C, F2): no consolidated wallet heartbeats.
     function heartbeat(uint256 callerSeed) external {
         address caller = _caller(callerSeed);
-        bool ok = _signs(caller);
+        bool ok = caller == ghostAuthority;
         if (!ok) _expect(_notAuthorized(caller));
         vm.prank(caller);
         registry.heartbeat(artistId);
@@ -401,6 +423,8 @@ contract ArtistRegistryHandler is Test {
     function refreshStanding() external {
         Standing[] memory before = registry.standingOf(artistId);
         registry.refreshStanding(artistId);
+        // The model is the delegation contract's; a hostile source records what it likes.
+        if (hostileInstalled) return;
         Standing[] memory next = registry.standingOf(artistId);
         assertLe(next.length, 16);
         for (uint256 i; i < before.length; ++i) {
@@ -453,6 +477,18 @@ contract ArtistRegistryHandler is Test {
         consolidated[pair] = !consolidated[pair];
     }
 
+    /// @dev Governance swaps the consolidation source between the adapter and a source that
+    ///      names every wallet as established since the epoch (review C, F2).
+    function toggleSource() external {
+        IConsolidationSource current = registry.consolidationSource();
+        IConsolidationSource next =
+            hostileInstalled ? IConsolidationSource(address(adapter)) : hostile;
+        vm.prank(successorSetter);
+        registry.setConsolidationSource(current, next, address(next).codehash);
+        hostileInstalled = !hostileInstalled;
+        ++sourceSwaps;
+    }
+
     /// @dev Flags or unflags a payout candidate as a deployed split wallet.
     function flagSplitWallet(uint256 seed) external {
         address w = payouts[1 + seed % 2];
@@ -497,6 +533,8 @@ contract ArtistRegistryHandler is Test {
         address token = fedTokens[i];
         uint256 j = partnerSeed % 8;
         address partner = partnerSeed % 3 == 0 ? address(0) : fedTokens[j];
+        // The adapter is canonical only while it is the installed source.
+        if (hostileInstalled && (token == address(adapter) || partner == address(adapter))) return;
         bool ok = ghostStatus[token] == IArtistRegistry.FederationStatus.NONE && fedInstallable[i]
             && !fedCanonical[i] && (partner == address(0) || !fedCanonical[j]);
         if (ok) {
@@ -619,10 +657,13 @@ contract ArtistRegistryHandler is Test {
         ok = err.length == 0;
         if (!ok) return ok;
         if (consumes) usedDigest[u.digest] = true;
-        _onStaged(u.kind);
+        _onStaged(u.kind, false);
     }
 
-    /// @dev The registry's check order for `stageChange` up to the signature.
+    /// @dev The registry's check order for `stageChange` up to the signature: a signer other
+    ///      than the authority must never have been the artist's authority (RFX-ID-1), the artist
+    ///      must be dormant (review C, F2; checked before the source), and the current source
+    ///      must name the signer as established.
     function _stageError(address signer, ArtistIdentity memory next)
         private
         view
@@ -631,15 +672,23 @@ contract ArtistRegistryHandler is Test {
         if (registry.pendingChange(artistId).kind != ChangeKind.NONE) {
             return abi.encodeWithSelector(IArtistRegistry.ChangePending.selector, artistId);
         }
-        if (!_signs(signer)) return _notAuthorized(signer);
+        if (signer != ghostAuthority) {
+            if (ghostWasAuthority[signer]) return _notAuthorized(signer);
+            if (!_dormant()) {
+                return abi.encodeWithSelector(
+                    IArtistRegistry.NotDormant.selector, artistId, ghostLastActivity
+                );
+            }
+            bool established = hostileInstalled
+                ? signer != ghostAuthority
+                : adapter.isEstablished(ghostAuthority, signer);
+            if (!established) return _notAuthorized(signer);
+        }
         return _nextError(next);
     }
 
-    /// @dev `_requireSigner`: the authority, or a wallet established with it now that was never
-    ///      the artist's authority (RFX-ID-1).
-    function _signs(address account) private view returns (bool) {
-        return account == ghostAuthority
-            || (!ghostWasAuthority[account] && adapter.isEstablished(ghostAuthority, account));
+    function _dormant() private view returns (bool) {
+        return block.timestamp >= uint256(ghostLastActivity) + ghostTimers[2];
     }
 
     /// @dev `_checkNext`: a valid payout, and a new authority that has never been the artist's
@@ -677,10 +726,13 @@ contract ArtistRegistryHandler is Test {
         return "";
     }
 
-    function _onStaged(ChangeKind kind) private {
+    function _onStaged(ChangeKind kind, bool byWallet) private {
         PendingChange memory p = registry.pendingChange(artistId);
         assertEq(uint8(p.kind), uint8(kind));
-        ghostStagedDelay = kind == ChangeKind.STANDARD ? ghostTimers[0] : ghostTimers[1];
+        ghostWalletStaged = byWallet;
+        // A wallet-signed change waits the override delay (review C, F2).
+        ghostStagedDelay =
+            kind == ChangeKind.STANDARD && !byWallet ? ghostTimers[0] : ghostTimers[1];
         ghostStagedTimeout = ghostTimers[3];
         assertEq(p.executableAt, p.stagedAt + ghostStagedDelay, "the delay is locked at staging");
         assertEq(p.contestTimeout, ghostStagedTimeout, "the contest timeout is locked at staging");

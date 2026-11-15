@@ -116,3 +116,85 @@ contract BurningEditionsMock {
         return (stream, id, keccak256("content"));
     }
 }
+
+/// @notice A replaced consolidation source that names wallets it was never told about: every
+///         account other than the one asked about is "established" with it, since the Unix
+///         epoch's first second, and its scan reports `named`. Models the worst a governed source
+///         swap could install (review C, F2).
+contract EveryoneEstablishedSource is InterfaceStub {
+    address[] internal named;
+
+    constructor(address[] memory named_) InterfaceStub(type(IConsolidationSource).interfaceId) {
+        named = named_;
+    }
+
+    function establishedWallets(address account) external view returns (address[] memory) {
+        (address[] memory wallets,) = _scan(account);
+        return wallets;
+    }
+
+    function isEstablished(address account, address wallet) external pure returns (bool) {
+        return account != wallet;
+    }
+
+    function consolidations(address account)
+        external
+        view
+        returns (address[] memory, uint64[] memory)
+    {
+        return _scan(account);
+    }
+
+    function effectiveAt(address account, address wallet) external pure returns (uint64) {
+        return account == wallet ? 0 : 1;
+    }
+
+    function _scan(address account)
+        private
+        view
+        returns (address[] memory wallets, uint64[] memory times)
+    {
+        wallets = new address[](named.length);
+        times = new uint64[](named.length);
+        uint256 n;
+        for (uint256 i; i < named.length; ++i) {
+            if (named[i] == account) continue;
+            (wallets[n], times[n]) = (named[i], 1);
+            ++n;
+        }
+        assembly ("memory-safe") {
+            mstore(wallets, n)
+            mstore(times, n)
+        }
+    }
+}
+
+/// @notice A consolidation source whose scan answers bytes that are not a canonical ABI encoding
+///         of `(address[], uint64[])` (an offset past the end of the data), and whose direct
+///         read answers a `uint64` word with high bits set (review C, F7).
+contract MalformedConsolidationSource is InterfaceStub {
+    constructor() InterfaceStub(type(IConsolidationSource).interfaceId) { }
+
+    function establishedWallets(address) external pure returns (address[] memory) {
+        return new address[](0);
+    }
+
+    function isEstablished(address, address) external pure returns (bool) {
+        return false;
+    }
+
+    function consolidations(address) external pure returns (address[] memory, uint64[] memory) {
+        assembly {
+            mstore(0, 0x1000)
+            mstore(0x20, 0x40)
+            return(0, 0x40)
+        }
+    }
+
+    function effectiveAt(address, address) external pure returns (uint64) {
+        assembly {
+            mstore(0, not(0))
+            return(0, 0x20)
+        }
+    }
+}

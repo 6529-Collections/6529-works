@@ -33,11 +33,13 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///         {isArtist}. Its address never changes: split wallets pin it, and the identity source
 ///         is swapped inside it ({setConsolidationSource}).
 /// @dev Every identity change is staged, waits and can be stopped:
-///      - STANDARD changes are signed by the authority or an established consolidated wallet
-///        that was never this artist's authority, as `Typehashes.IDENTITY_CHANGE`; a new
-///        authority countersigns the same digest. They wait the change delay; the previous
-///        authority, any wallet captured at staging, or the guardian ({vetoChange}) can stop
-///        them.
+///      - STANDARD changes are signed as `Typehashes.IDENTITY_CHANGE` by the authority (they
+///        wait the change delay) or, only for a dormant artist, by an established consolidated
+///        wallet that was never this artist's authority (they wait the override delay and
+///        record no activity): the consolidation source is replaceable, so it never decides
+///        anything for a live artist. A new authority countersigns the same digest. The
+///        previous authority, any wallet captured at staging, or the guardian ({vetoChange})
+///        can stop them.
 ///      - Overrides (CONTESTED, ESTATE, LOST_KEY) are governed, carry an evidence hash as public
 ///        notice and wait the override delay; ESTATE and LOST_KEY, and any override that moves
 ///        the payout but keeps the authority, need the dormancy period without signed activity
@@ -83,7 +85,8 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      source that fails is never read as "not consolidated": `refreshStanding` reverts, and
 ///      every other refresh (registration, staging, heartbeat, execution) is skipped with
 ///      {StandingRefreshSkipped}, so a dead, reverting or repriced source can block neither
-///      recovery nor an artist's proof of activity. A gas shortfall reverts instead.
+///      recovery nor an artist's proof of activity. A gas shortfall reverts instead, whether
+///      this registry observes it or the source reports it (`IConsolidationSource`).
 ///
 ///      Payout freeze. While a pending change would move the payout, {payoutAddress} returns
 ///      zero, so split wallets hold accrued balances until the outcome; the artist's own pulls
@@ -107,9 +110,10 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      at every end of a change, so {activeAuthorityOf} reads the pending change (for a lapsed
 ///      contest) only while it is set.
 ///
-///      Dormancy counts the artist's own activity: registration, a staged change, a heartbeat,
-///      a cancel by the old key or a captured wallet, a nonce revocation, and an execution
-///      (which restarts the clock for the identity it installs). Overrides and vetoes never do.
+///      Dormancy counts the artist's own activity: registration, a change the authority signed,
+///      the authority's heartbeat, a cancel by the old key or a captured wallet, a nonce
+///      revocation, and an execution (which restarts the clock for the identity it installs).
+///      Overrides, vetoes and changes a consolidated wallet signed never do.
 ///
 ///      Federation directory (ADR 0001 section 16): one entry per federated token, written by the
 ///      current federation registry except LEFT, which only the token writes. Nothing that decides
@@ -191,7 +195,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         _checkSource(source, sourceCodeHash);
         consolidationSource = source;
         consolidationSourceCodeHash = sourceCodeHash;
-        emit ConsolidationSourceSet(address(0), address(source));
+        emit ConsolidationSourceSet(address(0), address(source), sourceCodeHash);
         _timerWord = FLOORS;
         for (uint256 i; i <= uint256(Timer.STANDING_GRACE); ++i) {
             emit TimerSet(Timer(i), _field(FLOORS, i));
@@ -274,7 +278,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         _checkSource(next, nextCodeHash);
         consolidationSource = next;
         consolidationSourceCodeHash = nextCodeHash;
-        emit ConsolidationSourceSet(address(expected), address(next));
+        emit ConsolidationSourceSet(address(expected), address(next), nextCodeHash);
     }
 
     /// @inheritdoc IArtistRegistry
@@ -341,8 +345,13 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IArtistRegistry
-    /// @dev Consumes the nonce and records activity. `authorityAcceptance` is ignored when the
-    ///      authority does not change.
+    /// @dev Consumes the nonce. `authorityAcceptance` is ignored when the authority does not
+    ///      change. Signed by the authority: records activity and waits the change delay. Signed
+    ///      by a consolidated wallet (the replaceable consolidation source decides which): only
+    ///      once the artist is dormant, checked before the source is read, so a live artist's
+    ///      authority and payout never depend on the source; such a change records no activity
+    ///      and waits the override delay, so a source has no faster path to a dormant artist
+    ///      than a governed override, and the authority's own cancel stops it.
     function stageChange(
         uint256 artistId,
         ArtistIdentity calldata next,
@@ -353,7 +362,16 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     ) external {
         Artist storage a = _artist(artistId);
         if (_pending[artistId].kind != ChangeKind.NONE) revert ChangePending(artistId);
-        _requireSigner(artistId, a, signer);
+        bool byWallet = signer != a.authority;
+        if (byWallet) {
+            // A key the artist rotated away from signs nothing for it, even while it stays
+            // consolidated with the new authority.
+            if (artistIdOf[signer] == artistId) revert NotAuthorized(artistId, signer);
+            _requireDormant(artistId, a);
+            if (!_source().isEstablished(a.authority, signer)) {
+                revert NotAuthorized(artistId, signer);
+            }
+        }
         _checkNext(artistId, next);
         bytes32 digest = changeDigest(artistId, next, a.nonce, deadline);
         SignatureVerifier.checkDeadline(deadline);
@@ -361,8 +379,15 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         if (next.authority != a.authority) {
             SignatureVerifier.check(next.authority, digest, authorityAcceptance);
         }
-        _recordActivity(artistId, a);
-        _stage(artistId, a, ChangeKind.STANDARD, next, bytes32(0));
+        if (!byWallet) _recordActivity(artistId, a);
+        _stage(
+            artistId,
+            a,
+            ChangeKind.STANDARD,
+            next,
+            bytes32(0),
+            byWallet ? Timer.OVERRIDE_DELAY : Timer.CHANGE_DELAY
+        );
     }
 
     /// @inheritdoc IArtistRegistry
@@ -384,12 +409,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         if (kind < ChangeKind.CONTESTED || evidenceHash == bytes32(0)) revert InvalidIdentity();
         _checkNext(artistId, next);
         bool payoutOnly = next.authority == a.authority && next.payout != a.payout;
-        if (
-            (kind != ChangeKind.CONTESTED || payoutOnly)
-                // Dormancy and deadlines are wall-clock bounds; validator drift is immaterial.
-                // forge-lint: disable-next-line(block-timestamp)
-                && block.timestamp < uint256(a.lastActivity) + timer(Timer.DORMANCY)
-        ) revert NotDormant(artistId, a.lastActivity);
+        if (kind != ChangeKind.CONTESTED || payoutOnly) _requireDormant(artistId, a);
         if (next.authority != a.authority) {
             bytes32 digest = overrideDigest(artistId, kind, next, evidenceHash, deadline);
             if (_acceptanceUsed[digest]) revert AcceptanceUsed(digest);
@@ -400,7 +420,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         ChangeKind pending = _pending[artistId].kind;
         if (pending > ChangeKind.STANDARD) revert ChangePending(artistId);
         if (pending != ChangeKind.NONE) _clear(artistId, msg.sender, true);
-        _stage(artistId, a, kind, next, evidenceHash);
+        _stage(artistId, a, kind, next, evidenceHash, Timer.OVERRIDE_DELAY);
     }
 
     /// @inheritdoc IArtistRegistry
@@ -506,11 +526,13 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IArtistRegistry
-    /// @dev The refresh is best-effort: a failing source must not keep a live artist from
-    ///      proving activity, or the artist would become dormant and overridable.
+    /// @dev The current authority only: a wallet named by a replaceable source could otherwise
+    ///      keep any artist live and block dormancy-gated recovery. The refresh is best-effort:
+    ///      a failing source must not keep a live artist from proving activity, or the artist
+    ///      would become dormant and overridable.
     function heartbeat(uint256 artistId) external {
         Artist storage a = _artist(artistId);
-        _requireSigner(artistId, a, msg.sender);
+        if (msg.sender != a.authority) revert NotAuthorized(artistId, msg.sender);
         _recordActivity(artistId, a);
         _refresh(artistId, a.authority, true);
     }
@@ -784,15 +806,14 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         if (p.kind == ChangeKind.NONE) revert NoPendingChange(artistId);
     }
 
-    /// @dev `account` must be the authority or an established consolidated wallet of it, and
-    ///      never a previous authority of this artist: a key the artist rotated away from signs
-    ///      nothing for it, even while it stays consolidated with the new authority.
-    function _requireSigner(uint256 artistId, Artist storage a, address account) private view {
-        address current = a.authority;
-        if (
-            account != current
-                && (artistIdOf[account] == artistId || !_source().isEstablished(current, account))
-        ) revert NotAuthorized(artistId, account);
+    /// @dev Reverts with {NotDormant} unless the artist has had no signed activity for the
+    ///      dormancy period.
+    function _requireDormant(uint256 artistId, Artist storage a) private view {
+        // Dormancy is a wall-clock bound; validator drift is immaterial.
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp < uint256(a.lastActivity) + timer(Timer.DORMANCY)) {
+            revert NotDormant(artistId, a.lastActivity);
+        }
     }
 
     function _checkNext(uint256 artistId, ArtistIdentity calldata next) private view {
@@ -818,7 +839,8 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         address factory = splitFactory;
         return !(account == address(0) || account == address(this) || account == packageRegistry
                 || (s != address(0) && (account == s || account == IStream(s).editions()))
-                || (factory != address(0) && ISplitFactory(factory).isWallet(account))
+                || (factory != address(0)
+                    && (account == factory || ISplitFactory(factory).isWallet(account)))
                 || ProtocolContracts.isProtocolContract(account));
     }
 
@@ -858,14 +880,15 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
 
     /// @dev Refreshes standing (best-effort), captures the snapshot's effective entries (missing
     ///      ones within their grace included; the refresh has removed the rest, unless it was
-    ///      skipped, which removes nobody), consumes the nonce, locks the delay and the contest
-    ///      timeout, and reserves a new authority until the change ends.
+    ///      skipped, which removes nobody), consumes the nonce, locks the wait `delay` and the
+    ///      contest timeout, and reserves a new authority until the change ends.
     function _stage(
         uint256 artistId,
         Artist storage a,
         ChangeKind kind,
         ArtistIdentity calldata next,
-        bytes32 evidenceHash
+        bytes32 evidenceHash,
+        Timer delay
     ) private {
         address current = a.authority;
         _refresh(artistId, current, true);
@@ -886,8 +909,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         p.next = next;
         p.previousAuthority = current;
         p.stagedAt = uint64(block.timestamp);
-        p.executableAt = uint64(block.timestamp)
-            + timer(kind == ChangeKind.STANDARD ? Timer.CHANGE_DELAY : Timer.OVERRIDE_DELAY);
+        p.executableAt = uint64(block.timestamp) + timer(delay);
         p.evidenceHash = evidenceHash;
         p.cancellers = cancellers;
         a.restrained = kind > ChangeKind.STANDARD && next.authority != current;
@@ -954,13 +976,13 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
             if (since != 0) {
                 // A pending entry follows its live clock, later as well as earlier (a revocation
                 // and re-registration no refresh saw); an established one only moves earlier.
+                // Every change, and a missing entry found again, is announced (logs-only rule).
+                uint48 clock = e.effectiveAt;
                 // forge-lint: disable-next-line(block-timestamp)
-                if (since < e.effectiveAt || e.effectiveAt > block.timestamp) {
-                    e.effectiveAt = _clamp48(since);
-                }
-                if (e.missingSince != 0) {
-                    e.missingSince = 0;
-                    emit StandingAdded(artistId, wallet, e.effectiveAt);
+                if (since < clock || clock > block.timestamp) clock = _clamp48(since);
+                if (clock != e.effectiveAt || e.missingSince != 0) {
+                    (e.effectiveAt, e.missingSince) = (clock, 0);
+                    emit StandingAdded(artistId, wallet, clock);
                 }
                 // forge-lint: disable-next-line(block-timestamp)
             } else if (e.missingSince == 0 && e.effectiveAt <= block.timestamp) {
@@ -993,12 +1015,21 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     }
 
     /// @dev Ends a best-effort refresh on any source failure; rethrows every failure of a
-    ///      refresh that must succeed. A gas shortfall reverts in both cases.
+    ///      refresh that must succeed. A gas shortfall reverts in both cases: one this call
+    ///      observes (at most 1/8 of the gas left), and one the source reports, by the
+    ///      `IConsolidationSource` convention, as `BoundedCallInsufficientGas` or
+    ///      `BoundedCallShortfall` (a fixed-gas source refuses to start while gas is still left).
     function _skipRefresh(uint256 artistId, bytes memory reason, bool bestEffort, uint256 gasBefore)
         private
     {
         _revertOnShortfall(address(consolidationSource), gasBefore);
-        if (!bestEffort) {
+        // The first four bytes of the revert data: its error selector.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        bytes4 selector = bytes4(reason);
+        if (
+            !bestEffort || selector == BoundedCall.BoundedCallInsufficientGas.selector
+                || selector == BoundedCall.BoundedCallShortfall.selector
+        ) {
             assembly ("memory-safe") {
                 revert(add(reason, 0x20), mload(reason))
             }

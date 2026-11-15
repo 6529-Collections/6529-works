@@ -597,6 +597,8 @@ contract ArtistRegistryStandingTest is IdentityFixture {
     /// @dev About 5.31M gas: under half of the 16,777,216 EIP-7825 cap with calldata included.
     function test_WorstCase_StageChangeGas() public {
         _setupWorstCase();
+        // A wallet signs only for a dormant artist (review C, F2).
+        vm.warp(block.timestamp + 365 days);
         ArtistIdentity memory next = _identity(newAuthority, payout);
         uint64 deadline = uint64(block.timestamp + 1);
         bytes32 digest = _digest(next, deadline);
