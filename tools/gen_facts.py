@@ -419,6 +419,7 @@ def edition_auction(root: Path, c: Constants, denominator: int) -> dict:
     (`DeployV1.editionAuctionDefaults`), which ADR 0005 §4 and the step ladder's code defaults
     must equal, and the bounds fixed in code."""
     launch = _deploy_edition_defaults(root)
+    limits = _deploy_edition_limits(root)
     decided = _edition_launch(root)
     for key, value in launch.items():
         if decided[key] != value:
@@ -471,7 +472,17 @@ def edition_auction(root: Path, c: Constants, denominator: int) -> dict:
         "closeOffsetSeconds": {
             "default": launch["closeOffset"],
             "min": 0,
-            "max": c.integer(EDITION_AUCTION, "_MAX_CLOSE_OFFSET"),
+            "max": limits["maxCloseOffset"],
+        },
+        "maxCloseOffsetSeconds": {
+            "default": limits["maxCloseOffset"],
+            "min": c.integer(EDITION_AUCTION, "_MIN_MAX_CLOSE_OFFSET"),
+            "max": c.integer(EDITION_AUCTION, "_MAX_MAX_CLOSE_OFFSET"),
+        },
+        "abandonmentDelayDays": {
+            "default": limits["voidDelayDays"],
+            "min": c.integer(EDITION_AUCTION, "_MIN_VOID_DELAY_DAYS"),
+            "max": c.integer(EDITION_AUCTION, "_MAX_VOID_DELAY_DAYS"),
         },
         "softCloseWindowSeconds": {
             "default": launch["softWindow"],
@@ -483,7 +494,11 @@ def edition_auction(root: Path, c: Constants, denominator: int) -> dict:
             "min": c.integer(EDITION_AUCTION, "_MIN_MAX_EXTENSION"),
             "max": c.integer(EDITION_AUCTION, "_MAX_MAX_EXTENSION"),
         },
-        "payoutGas": c.integer(EDITION_AUCTION, "PAYOUT_GAS"),
+        "payoutGas": {
+            "default": limits["payoutGas"],
+            "min": c.integer(EDITION_AUCTION, "_MIN_PAYOUT_GAS"),
+            "max": c.integer(EDITION_AUCTION, "_MAX_PAYOUT_GAS"),
+        },
         "settlementPerCall": {
             "bookWordsScanned": c.integer(EDITION_AUCTION, "_SCAN_WORDS"),
             "departuresSweptByTheClearingCall": c.integer(EDITION_AUCTION, "_SWEEP_FIRST"),
@@ -501,6 +516,18 @@ def _deploy_edition_defaults(root: Path) -> dict:
     fields = dict(re.findall(r"(\w+)\s*:\s*([^,]+?)\s*(?:,|$)", m.group(1).strip()))
     if set(fields) != set(EDITION_ROWS):
         raise FactError(f"{DEPLOY_LIBRARY}: editionAuctionDefaults sets {sorted(fields)}")
+    return {key: literal(value) for key, value in fields.items()}
+
+
+def _deploy_edition_limits(root: Path) -> dict:
+    """`DeployV1.editionAuctionLimits()`: the governed limits genesis deploys (ADR 0005 §14)."""
+    source = strip_comments(read(root, DEPLOY_LIBRARY))
+    m = re.search(r"function editionAuctionLimits\b.*?Limits\(\{(.*?)\}\)", source, re.S)
+    if not m:
+        raise FactError(f"{DEPLOY_LIBRARY}: no editionAuctionLimits")
+    fields = dict(re.findall(r"(\w+)\s*:\s*([^,]+?)\s*(?:,|$)", m.group(1).strip()))
+    if set(fields) != {"maxCloseOffset", "voidDelayDays", "payoutGas"}:
+        raise FactError(f"{DEPLOY_LIBRARY}: editionAuctionLimits sets {sorted(fields)}")
     return {key: literal(value) for key, value in fields.items()}
 
 

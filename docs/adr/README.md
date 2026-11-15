@@ -7,7 +7,7 @@
 | [0003](0003-build-time-decisions.md) | Build-time decisions for v1 | Accepted (11 October 2026); gas budgets amended by 0004; sales, MARKET-6 and selectors amended by 0005 |
 | [0004](0004-gas-budgets-under-glamsterdam.md) | Gas budgets under Glamsterdam | Accepted (13 October 2026); rows and budgets added by 0005; gas rule and start margin amended by 0007 |
 | [0005](0005-stream-editions-auction.md) | The edition auction and 6529 Stream Editions | Accepted (31 October 2026); amended 31 October and 1 November 2026 (§6 to §11), and by 0007 (§14) |
-| [0006](0006-work-powers-and-conventions.md) | Work powers and conventions | Accepted by owner instruction (13 November 2026); amended by 0007 (pending) |
+| [0006](0006-work-powers-and-conventions.md) | Work powers and conventions | Accepted by owner instruction (13 November 2026); amended by 0007 (`RENDERER_REPIN`) |
 | [0007](0007-permanence.md) | Permanence | Accepted by owner instruction (14-15 November 2026) |
 
 Earlier decisions for the RC1 reference implementation are in the ADR index of the

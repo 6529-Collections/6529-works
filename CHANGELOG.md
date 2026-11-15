@@ -3,8 +3,7 @@
 ## Unreleased
 
 - Permanence ([ADR 0007](docs/adr/0007-permanence.md); owner instruction of 14 and 15 November
-  2026), first integration round. Pre-launch interface reshaping; three lanes (WorkRecords and
-  delivery, the English auction's refused-settlement exit, the edition auction) follow:
+  2026), two integration rounds. Pre-launch interface reshaping:
   - **Gas rule for permanent contracts.** `BoundedCall` gains a forward-all family
     (`tryReadAll`, `tryCallAll`, `tryReadWordAll`, ERC-165 probes) that forwards all the gas
     EIP-150 allows and reverts with `BoundedCallShortfall(target)` when a failed call left at
@@ -21,17 +20,47 @@
     `ItemKind` and `SeedPolicy` are `uint8`; lower-only royalty in the core; `rendererOf`
     fails closed; the rescue delay is governed above a 90-day floor (`setRescueDelay`);
     `WorkMinted` and `TermsInterned` carry the locked terms, with `FeeRecipientRegistered`,
-    `ContentReleased` and `RescueDelaySet`. `IStream` is one flat interface ID (`0x1583b98b`),
-    `IStreamViews` another. Stream falls from 24,373 to 21,838 bytes and its size exemption is
-    removed.
+    `ContentReleased` and `RescueDelaySet`. Stream holds content uniqueness itself (a content
+    hash mints once whatever the policy; `releaseContent` moved from the registry to Stream,
+    AUC-44). `IStream` is one flat interface ID (`0xcacd4413`), `IStreamViews` another;
+    `IPackageRegistry` is `0xe5668b29`. Stream falls from 24,373 to 22,616 bytes and its size
+    exemption is removed.
   - **6529 Stream Editions** seals an edition's supply at its sale's settlement
     (`sealSupply(id, count)`, once; a removed adapter mints only an edition it sealed; closes
     LIM-EA-10) and holds no duration; `mint`'s data is `abi.encode(currency, unitPrice)`,
     logged by `EditionPrimaryMint`; `createEdition` emits `EditionTermsLocked`; every call out
     forwards all gas, the receiver hook included; royalty is lower-only in Editions too
-    (ED-25 to ED-28; `IEditions` `0xfbeabb2a`). The edition auction carries an interim wiring
-    (it seals at its final count and passes the unit price), superseded by its own lane: its
-    margin is 210 bytes, a temporary exemption in `tools/size-margins.json`.
+    (ED-25 to ED-28; `IEditions` `0xfbeabb2a`).
+  - **WorkRecords** (permanent): delivery (locators, kinds, preferences, URI grammar) moves to a
+    replaceable `WorkDelivery` behind `setDelivery` (SUCCESSOR_SETTER), with fail-soft,
+    forward-all `preferredLocator` forwarding; `syncOnChain(tokenId, storeId, maxChunks)` with a
+    chunk cursor and a governed, append-only store set (`addStore`); the third renounceable
+    power `RENDERER_REPIN` (amends ADR 0006); only structural bounds (a record is one chunk;
+    previews unbounded here, the renderer decides); `RecordOpened` carries the item, media,
+    license key and seed, and every amendment event the state hash (WS-39 to WS-46).
+    `IWorkRecords` `0x2654eed1`; new `IWorkDelivery`, `IWorkLocators`.
+  - **Shared package types.** `PackageItem.kind`, `seedPolicy`, `Party.role` and
+    `MediaFile.role` are open `uint8`s (the enums name today's values); selectors, interface
+    IDs, topics and item hashes are unchanged; the genesis mint policy refuses values it does
+    not know for new items.
+  - **Renderer.** Every read forwards all gas (no compiled caps; a shortfall reverts with
+    `BoundedCallShortfall`), the preview bound is `Limits.MAX_PREVIEW_BYTES` (16,384), and the
+    locator kind is an open `uint8`. 24,321 to 23,714 bytes; its size exemption is removed.
+  - **English auction.** `settleOrRefund` ends a federated sale whose token will not settle,
+    after a governed refusal delay and in a frame of exactly the governed refusal gas, crediting
+    the bid (AUC-45 to AUC-48; LIM-SAL-16 solved for federated sales; 6529 Stream's sales never
+    take it). Opening bids move to the asset allowlist (`AssetAllowlist.setOpeningBid`,
+    PARAMETER_SETTER, compare-and-set on the asset's revision; read with the currency's status
+    in one call): the auction is 24,062 bytes (margin 514) and its exemption is removed; no
+    payment method is removed. `IEnglishAuction` `0xb9e9cdd3`, `IEnglishAuctionRefusal`
+    `0x625761b5`.
+  - **Edition auction.** It seals the edition at the clearing count and prices every mint; an
+    edition's terms may name its close offset (`params = abi.encode(uint256 seconds)`) up to a
+    governed maximum (30 days at launch); governed limits (`setLimits`: maximum close offset,
+    abandonment delay, payout gas, formerly `PAYOUT_GAS`); `abandon` voids a sale that has
+    paid nothing 150 days after its end (full refunds, the edition sealed at zero); `open`
+    deploys the seller and royalty wallets; no federation registry on the adapter
+    (EA-17 to EA-20). `IUniformEditionAuction` `0x94ff7508`; margin 696 bytes.
   - **ArtistRegistry**: a permanent federation directory (per-token entries with the code hash
     it reads itself, exit by the token, a replaceable federation registry
     `setFederationRegistry`, consented federated identities `registerFederated`); the five
@@ -61,15 +90,18 @@
     GV-47); genesis names a third admin Safe and the deploy requires three off anvil; Verify
     refuses a handed-over manager or an unlisted target.
   - **Genesis and deployment.** New governed selectors (`setRescueDelay`,
-    `setFederationRegistry`, `setTimer`, `sweepExcess`, both vaults' `setDestination`, the
-    manager's functions and a new `open` group), the role matrix regenerated; `DeployV1`
-    deploys the split ledger and both vaults.
+    `setFederationRegistry`, `setTimer`, `sweepExcess`, both vaults' `setDestination`,
+    `setDelivery`, `addStore`, the edition auction's `setLimits`, `AssetAllowlist.setOpeningBid`,
+    the manager's functions and a new `open` group), the role matrix regenerated; `DeployV1`
+    deploys the split ledger, both vaults (genesis addresses 0xa013 and 0xa014) and the edition
+    auction's limits; `tools/size-margins.json` holds no exemption.
   - **Budgets.** The source-line budget rises from 13,000 to 15,000 (owner decision, 15
     November 2026; `tools/check_budgets.py`). ADR 0004's table is re-measured: the tightest
-    start row is 347,404 and the suite's start margin is 2,500 (was 5,000); the re-rate
-    (203,000), the bound `createEdition` (158,000) and the edition auction's capped-sweep
-    `settle` (166,000) regression ceilings move with stated reasons; no start budget or slot
-    maximum is raised.
+    start row is 344,817 and the suite's start margin stays 5,000; the re-rate (203,000), the
+    bound `createEdition` (158,000), `authorize` (94,000, 0 new slots), the edition auction's
+    `open` (290,000 and 337,000) and capped-sweep `settle` (174,000) regression ceilings move
+    with stated reasons, and a new row measures an edition `open` that deploys both wallets
+    (434,052 gas, ceiling 443,000); no start budget or slot maximum is raised.
 
 - Work powers and conventions ([ADR 0006](docs/adr/0006-work-powers-and-conventions.md)):
   - **Lower-only royalty changes.** `WorkRecords.setRoyaltyRate` refuses a rate above the

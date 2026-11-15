@@ -42,7 +42,7 @@ decisions win. The precise contract surfaces are the interfaces in
      |   | IEconomicsResolver |<-------------|  record files, |
      |   +--------------------+              |  media, license|
      |        | allowlist, splits (economics)|  finalize, pins|
-     |        v                              |  locators      |
+     |        v                              |  delivery ptr  |
      |   SplitLedger*, GovernedVault*,       +----------------+
      |   RevenueEscrow*, AssetAllowlist*            | reads        tokenURI
      |                                              v                 |
@@ -155,9 +155,9 @@ default when the sale starts".
      and hands the request, unread, to the mint policy (`IMintPolicy.authorize`,
      the package registry at genesis; [ADR 0007](adr/0007-permanence.md)). The
      policy checks the proof, `acceptedAs` for each party (no registry calls),
-     the payees, the move signature, and single use plus uniqueness in one
-     storage word, and answers a flat record Stream re-checks against its own
-     invariants.
+     the payees and the move signature, and answers a flat record Stream
+     re-checks against its own invariants. Stream then claims the content hash
+     in its own record: a content mints once whatever policy is installed.
    - A VRF item reverts unless its seed is delivered.
    - Stream assigns the token ID and serial and locks the fee terms from
      the policy's record (`IEconomicsResolver.economics`) and the predicted seller
@@ -171,8 +171,9 @@ default when the sale starts".
 7. **Open the record (permissionless, off the start path).**
    `IWorkRecords.openRecord(tokenId, item, media)` checks the item against
    Stream's item hash, and the media against the media hash, the content hash
-   and the content store's declared SHA-256, and caps each PREVIEW file's size
-   (`Limits.MAX_PREVIEW_BYTES`). It then stores the record file ID,
+   and the content store's declared SHA-256 (refusing a digest that is not SHA-256), and
+   checks that the record is one chunk; the pinned renderer decides what it shows. It then
+   emits `RecordOpened` with the item, media, license key and seed, and stores the record file ID,
    the media file IDs and an ARTIST seed. Until then every per-token
    `IWorkRecords` call reverts with `RecordNotOpen`, and the renderer shows
    core-only metadata.
@@ -268,13 +269,18 @@ default when the sale starts".
      of a synced work, otherwise an empty one.
    - After finalize only the PLATFORM role adds locators.
    - It cannot add, remove or alter locators.
+   - Locators, kinds and preferences live in the delivery contract (`WorkDelivery` at genesis),
+     which governance replaces with `setDelivery` (SUCCESSOR_SETTER, 30 days); `WorkRecords`
+     serves its answer only when well formed, else the work's own answer, and it changes no fact.
 3. The artist calls `finalize(tokenId, expectedStateHash)` once the record file
    is on-chain complete: the record becomes immutable and Stream's default
    renderer is pinned.
-4. Anyone uploads the media's chunks and calls `syncOnChain`; the work is then
-   permanently on-chain complete. A call checks whole files up to 512 chunks and
-   keeps its place, so a large work takes a few calls, each within the
-   per-transaction cap. This does not change the state hash.
+4. Anyone uploads the media's chunks and calls `syncOnChain(tokenId, storeId,
+   maxChunks)`; the work is then permanently on-chain complete. A call checks the
+   caller's number of chunks and keeps its place (a chunk cursor), so a file of any
+   size up to the store's 4,096 chunks syncs in pieces, each within the per-transaction
+   cap. A file may sync from an added store (`addStore`), whose bytes are re-hashed. This
+   does not change the state hash.
 5. Amendments need agreement plus a governed action:
    - **Relicensing:** every party, PARAMETER_SETTER role. CC0 is irrevocable, and a
      CC0 license (approved or set this way) names the deployment's CC0 text.
@@ -284,8 +290,9 @@ default when the sale starts".
    - **Errata repin:** the artist, SUCCESSOR_SETTER role and its 30-day delay.
 6. The lead artist may renounce, for one work and for good, any further royalty
    change and any further license change (`IWorkPowers.renounce`, ADR 0006): its
-   signature only, no role and no delay, relayed by anyone. The errata repin
-   cannot be renounced.
+   signature only, no role and no delay, relayed by anyone. After finalize it may
+   also renounce the errata repin (`RENDERER_REPIN`), after which the work's
+   renderer pin never moves.
 
 ### Recovery
 
@@ -368,8 +375,8 @@ default when the sale starts".
      it), naming the rightful artist's ID from the outcome. The beneficiary must
      be a registered artist (`UnknownArtist` otherwise), so schedule the release
      once the rightful artist has an identity (its first package acceptance
-     creates it). Stream passes the burned work's item hash to
-     `IPackageRegistry.releaseContent`: the content hash is reserved for items
+     creates it). Stream itself (`Stream.releaseContent`, its own content record)
+     reserves the content hash for items
      whose lead artist is the beneficiary, and the burned item is tombstoned. A
      release happens once per burned work, so the guardians check the
      beneficiary during the delay.
@@ -396,7 +403,7 @@ default when the sale starts".
 | Admin Safe and setter roles | Governed setters behind the delay classes (48 hours, 14 days, 30 days), compare-and-set; genesis bindings, once | Change a work's royalty rate or license without every party, or its renderer pin without the artist; move an escrow credit anywhere but an identical replacement wallet, or the replacement its holder named (`consentToRecovery`) |
 | Lead artist (active authority) | Move to Stream; edit the record until finalize; finalize; co-sign amendments | Change the approved media, parties, payees or sale terms |
 | Sale adapters (admitted) | Mint through `IMintTarget` on the token's own terms | Mint outside an approved item or an edition's terms |
-| Bound contracts | Stream's mint policy consumes items; Editions claims content hashes; the package registry registers artists; the federation registry lists federated contracts in the artist registry's per-token directory (replaceable by `setFederationRegistry`, 30 days; no authority over artists, payouts or canonical tokens); WorkRecords sets royalty rates and asks Stream and Editions for ERC-4906 | Act for anyone else: each binding is one caller, set once at genesis |
+| Bound contracts | Stream's mint policy authorizes items (Stream records each content hash); Editions claims content hashes; the package registry registers artists; the federation registry lists federated contracts in the artist registry's per-token directory (replaceable by `setFederationRegistry`, 30 days; no authority over artists, payouts or canonical tokens); WorkRecords sets royalty rates and asks Stream and Editions for ERC-4906 | Act for anyone else: each binding is one caller, set once at genesis |
 | VRF coordinator | Deliver a seed once per requested content | Choose which items are VRF, or change a delivered seed |
 | 6529 delegation contract | Supply consolidations used as recovery cancellers and stagers | Execute a change before 7 days, or bypass the guardian veto |
 
@@ -418,12 +425,12 @@ authoritative list, generated from `config/genesis.example.json`, is the
 | GUARDIAN | `IEnglishAuction.pause(saleId, disputeRef)`, `IArtistRegistry.vetoChange`, `IPackageRegistry.revokePackage` (also pre-revokes unregistered roots), `ICurationSignerVerifier.disableSigner`, `IDependencyRegistry.deprecate`; economics `IAssetAllowlist.deprecateAsset`; the manager's own `WorksAccessManager.suspend` (checked by the manager, not mapped) |
 | PAUSER | the sale adapters' emergency `pause()` |
 | UNPAUSER (48 hours) | `IEnglishAuction.resume`; the sale adapters' `unpause()` |
-| STORAGE_OPERATOR | `IWorkRecords.setPreferredKind`, `setCollectionPreferredKind`, `setFilePreference` |
-| PLATFORM | `IStream.createCollection`; `IWorkRecords.addLocator` (also the artist); statement log `appendPlatform` (DISPUTE_OUTCOME) |
+| STORAGE_OPERATOR | the delivery contract's `setPreferredKind`, `setCollectionPreferredKind`, `setFilePreference` |
+| PLATFORM | `IStream.createCollection`; the delivery contract's `addLocator` (also the artist); statement log `appendPlatform` (DISPUTE_OUTCOME) |
 | CURATOR | statement log `appendCurator` (CURATION_EVIDENCE) |
-| PARAMETER_SETTER (48 hours) | `IStream.setContractURI`, `releaseContent`, `IEditions.setContractURI`, `IWorkRecords.relicense`, `IEnglishAuction.cancel`, `setConfig`, `setOpeningBid`, `IEconomicsResolver.setRoyaltyRate`, `setDefaultLicense`, `IArtistRegistry.stageOverride`, `IDependencyRegistry.register`, `IEntropyModule.setConfig`, `IFederationRegistry.setStatus`, `setArtistDelisted` (when it ships); economics `IAssetAllowlist.setIncrementFloor` (economics setters are guarded by an expected revision) |
+| PARAMETER_SETTER (48 hours) | `IStream.setContractURI`, `releaseContent`, `IEditions.setContractURI`, `IWorkRecords.relicense`, `IEnglishAuction.cancel`, `setConfig`, `IUniformEditionAuction.setLimits`, `IEconomicsResolver.setRoyaltyRate`, `setDefaultLicense`, `IArtistRegistry.stageOverride`, `IDependencyRegistry.register`, `IEntropyModule.setConfig`, `IFederationRegistry.setStatus`, `setArtistDelisted` (when it ships); economics `IAssetAllowlist.setIncrementFloor`, `setOpeningBid` (economics setters are guarded by an expected revision) |
 | FUNDS_SETTER (14 days) | `IWorkRecords.setRoyaltyRate`, `IStream.setOwner`, `IEditions.setOwner`, `IEconomicsResolver.setFeeTerms`; economics `IAssetAllowlist.admitAsset`, `setDefaultCurrency`, `IRevenueEscrow.recover`, `sweepExcess`; the governed vaults' `setDestination` (ADR 0002, ADR 0003, ADR 0007) |
-| SUCCESSOR_SETTER (30 days) | `IMintTarget.setAdmittedMinter` (6529 Stream and 6529 Stream Editions), `IStream.setDefaultRenderer`, `setDependency`, `setRescueDelay`, `IWorkRecords.repinRenderer`, `IPackageRegistry.setVerifier`, `ICurationSignerVerifier.enableSigner`, `IArtistRegistry.setConsolidationSource`, `resolveContested`, `setFederationRegistry`, `setTimer`, `IEntropyModule.setCoordinator`, entropy `lowerCallbackGasLimit`, `ISaleAdapter.setTarget`, `setFederationRegistry`; statement log `setArtistResolver`, `appendGovernanceManifest` |
+| SUCCESSOR_SETTER (30 days) | `IMintTarget.setAdmittedMinter` (6529 Stream and 6529 Stream Editions), `IStream.setDefaultRenderer`, `setDependency`, `setRescueDelay`, `IWorkRecords.repinRenderer`, `setDelivery`, `addStore`, `IPackageRegistry.setVerifier`, `ICurationSignerVerifier.enableSigner`, `IArtistRegistry.setConsolidationSource`, `resolveContested`, `setFederationRegistry`, `setTimer`, `IEntropyModule.setCoordinator`, entropy `lowerCallbackGasLimit`, `ISaleAdapter.setTarget`, `setFederationRegistry`; statement log `setArtistResolver`, `appendGovernanceManifest` |
 
 There is no SYSTEM role: contract-to-contract calls use the one-shot bindings in
 the first row, so they skip the AccessManager hop. Sale adapters are admitted
@@ -466,8 +473,8 @@ setters for funds, recipients, verifiers and renderers are compare-and-set.
     terms ID; the item hash) and one shared terms word per artist and economics,
     and derives the royalty receiver. A start under existing terms writes 5 new
     slots, 6 with a bid; a first start under new terms writes the terms word too
-    (one word more on a hashed-position collision, an accepted limitation). The
-    mint policy stores one word per consumed item.
+    (one word more on a hashed-position collision, an accepted limitation), and
+    one word per minted content hash (its content record).
   - Mint checks an admitted-minter mapping, not an AccessManager hop.
   - The auction locks the increment floor at the first bid, not at start, and
     reads seller and fee terms back from the token.
@@ -478,6 +485,6 @@ setters for funds, recipients, verifiers and renderers are compare-and-set.
 - **Transaction cap.** Every transaction's regular gas must fit the
   EIP-7825 cap of 16,777,216; `Limits` bounds every user-supplied array with that
   in mind. On Sepolia, state-creation gas above the cap was accepted (ADR 0004).
-- **Contract size.** Stream core stays within EIP-170 because records, licenses,
-  finalize and locators live in `IWorkRecords`.
+- **Contract size.** Stream core stays within EIP-170 because records, licenses and
+  finalize live in `IWorkRecords`, and locators in its replaceable delivery contract.
 - **Lines.** Interfaces and shared types count toward the 15,000-line budget (ADR 0007).

@@ -36,6 +36,10 @@ are under [Flows](../../docs/spec/curation.md#flows).
 
 - **Storage.** The consume writes nothing new for content: Stream holds content uniqueness
   and releases (AUC-44), and `consumedItemOf`, `releasedTo` and `isReleased` answer from it.
+- **Open item values.** `PackageItem.kind`, `seedPolicy` and `Party.role` are `uint8`s, so the
+  permanent contracts decode any value; this policy refuses, for a new item, any kind, seed
+  policy or party role it does not know (`InvalidItem`, `InvalidSeedPolicy`; CUR-9). A successor
+  policy may accept new values.
   Editions claims live here (`_editionItems`), checked against Stream's record, so the linked
   pair is the one cross-product reuse of a content hash.
 - **Start-path budget.** `authorize` runs inside every auction start, so it is held to its

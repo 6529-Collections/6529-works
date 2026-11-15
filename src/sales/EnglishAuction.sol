@@ -120,11 +120,11 @@ contract EnglishAuction is
     ///      to an address other than the recipient it named (RFX-SAL-1); after it the recipient
     ///      may too.
     uint256 private constant _REDIRECT_DELAY = 30 days;
-    /// @dev Bounds of the governed refusal delay (AUC-39): long enough for a passing failure to
+    /// @dev Bounds of the governed refusal delay (AUC-46): long enough for a passing failure to
     ///      clear, short enough that no token holds a standing bid for long.
     uint32 private constant _MIN_REFUSAL_DELAY = 1 days;
     uint32 private constant _MAX_REFUSAL_DELAY = 30 days;
-    /// @dev The least refusal gas (AUC-40). The auction's own worst case in one settlement, both
+    /// @dev The least refusal gas (AUC-47). The auction's own worst case in one settlement, both
     ///      ERC-20 payout frames spending their whole 1,000,000 (credits written instead) and the
     ///      delivery its 300,000, with a cooperating token, measured 2,434,325 Prague gas
     ///      (`test_TheFloorCoversTheAuctionsWorstCase`); the floor leaves about 565,000 for the
@@ -175,7 +175,7 @@ contract EnglishAuction is
         uint40 pausedAt;
     }
 
-    /// @dev The governed refusal parameters (AUC-39, AUC-40), in their own slot, which no start
+    /// @dev The governed refusal parameters (AUC-46, AUC-47), in their own slot, which no start
     ///      reads: a federated start locks the delay with its network fee recipient
     ///      ({_federatedTerms}); every other sale reads it when the exit is used.
     struct Refusal {
@@ -226,7 +226,7 @@ contract EnglishAuction is
     mapping(address account => mapping(address currency => uint256)) private _credits;
     /// @dev A federated terms record's network fee recipient (low 160 bits), read from the
     ///      economics resolver when the first sale under it starts, and refusal delay (the next 32
-    ///      bits), both locked there and part of the record's key (MARKET-3, AUC-39, AUC-41). Zero
+    ///      bits), both locked there and part of the record's key (MARKET-3, AUC-46, AUC-48). Zero
     ///      for a listed token's record, whose key and gas are as before.
     mapping(uint16 termsId => uint256) private _federatedTerms;
     Refusal private _refusal;
@@ -450,7 +450,7 @@ contract EnglishAuction is
         _emitSettled(saleId, s, lt, price, fee);
     }
 
-    /// @notice Settles an ended sale, or closes it with refunds when its token refuses (AUC-38).
+    /// @notice Settles an ended sale, or closes it with refunds when its token refuses (AUC-45).
     ///         Permissionless, from the sale's end plus its locked refusal delay, and not while
     ///         its currency is frozen short of the freeze exit. {settle}'s whole settlement runs
     ///         in a frame of exactly the refusal gas, which the caller must be able to forward in
@@ -466,7 +466,7 @@ contract EnglishAuction is
     ///      The escrow probe forwards all gas and accepts only the escrow's `ZeroAmount` refusal;
     ///      anything else, a shortfall included, reverts (`BoundedCall.tryCallAll`'s rule, written
     ///      out: the library call costs about 300 bytes this contract does not have). The attempt
-    ///      is the one bounded call (AUC-40): it gets exactly `refusalGas`, and a caller that
+    ///      is the one bounded call (AUC-47): it gets exactly `refusalGas`, and a caller that
     ///      cannot forward it in full is refused before anything happens (the comparison is
     ///      `BoundedCall.hasSufficientGas`'s), so a shortfall is never taken for a refusal. It
     ///      cannot forward all gas instead: a token that burns everything it is given would then
@@ -475,7 +475,7 @@ contract EnglishAuction is
     ///      whole call reverts, so a shortfall never closes a sale.
     function settleOrRefund(uint256 saleId) external {
         Sale storage s = _require(saleId, IEnglishAuction.AuctionState.ENDED);
-        // AUC-38: only a federated sale (its terms record carries the locked delay, never zero)
+        // AUC-45: only a federated sale (its terms record carries the locked delay, never zero)
         // may close as refused. A listed token's settlement is curated not to fail, and a 6529
         // Stream sale whose settlement fails waits for governance to repair its dependency.
         uint256 federatedTerms = _federatedTerms[s.termsId];
@@ -733,7 +733,7 @@ contract EnglishAuction is
     ///         duration, an increment share of 1,000 to 100,000 (1% to 100%), a refusal delay of
     ///         1 to 30 days, and a refusal gas that is kept or raised, at most doubled, between
     ///         the gas of the auction's own bounded calls in one settlement and 15,000,000
-    ///         (AUC-39, AUC-40). PARAMETER_SETTER role, compare-and-set.
+    ///         (AUC-46, AUC-47). PARAMETER_SETTER role, compare-and-set.
     /// @param expected The parameters the caller expects are current; a stale value reverts.
     /// @param next The new parameters, within the bounds above.
     function setConfig(
@@ -928,7 +928,7 @@ contract EnglishAuction is
     ///      the governed parameters, and a federated token's fee from its registry entry, whose
     ///      code hash must match the token's, with the network fee recipient it is paid to and
     ///      the refusal delay, packed as {_federatedTerms} stores them (zero for a listed token:
-    ///      MARKET-3, AUC-39, AUC-41).
+    ///      MARKET-3, AUC-46, AUC-48).
     function _lockTerms(
         address token,
         uint256 tokenId,
@@ -986,7 +986,7 @@ contract EnglishAuction is
 
     /// @dev The sale's terms: the locked currency, the token's seller and fee terms, and for a
     ///      federated token the registry fee share and the resolver's federated network fee
-    ///      recipient, both locked at start, never a fee the token reports (MARKET-3, AUC-41).
+    ///      recipient, both locked at start, never a fee the token reports (MARKET-3, AUC-48).
     function _lock(Sale storage s, address seller, address feeRecipient, uint32 feeShare)
         private
         view
@@ -1161,7 +1161,7 @@ contract EnglishAuction is
         // No payout reaches zero, the escrow or this adapter: an ERC-20 payout's frame would
         // otherwise fail into a credit no one can claim, and this adapter's fallback refuses ETH.
         // A token naming one at settlement fails the settlement: for a federated sale, a refusal
-        // (AUC-38, AUC-41). The start refuses them for the terms it is given.
+        // (AUC-45, AUC-48). The start refuses them for the terms it is given.
         if (wallet == address(0) || wallet == _escrow || wallet == address(this)) {
             revert IRevenueEscrow.InvalidWallet(wallet);
         }
@@ -1469,7 +1469,7 @@ contract EnglishAuction is
 
     function _setConfig(IEnglishAuction.AuctionConfig memory next) private {
         Refusal storage r = _refusal;
-        // AUC-40, ADR 0001 section 13.9: the refusal gas is raise-only once set (the constructor
+        // AUC-47, ADR 0001 section 13.9: the refusal gas is raise-only once set (the constructor
         // sets it from zero), at most doubled per step, within its floor and ceiling. Both fit
         // 32 bits, so the shift cannot overflow.
         uint256 gasNow = r.refusalGas;

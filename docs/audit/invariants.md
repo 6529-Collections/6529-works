@@ -77,6 +77,19 @@ or re-enters Stream's writes, next to honest mints.
 | ID | Invariant | Test | Handler actions |
 | --- | --- | --- | --- |
 | INV-STR-15 | MP-1 ([AUC-38](../spec/stream-and-auctions.md#rules-and-invariants)): whatever the mint policy answers, no existing token's views change, and each stays held by the adapter that minted it. | `invariant_MP1_ExistingTokensNeverChange` | honest mints and every hostile policy mode |
+| INV-STR-16 | No content mints twice ([AUC-44](../spec/stream-and-auctions.md#rules-and-invariants)): whatever the mint policy answers, Stream's content record (`consumedItemOf`) names the item of the one token that minted each content hash, and no second mint of a content hash succeeds. | `invariant_MP1_ExistingTokensNeverChange` (with `test_MP1_AnAlreadyMintedContentIsRefused`, `test_MP1_ABlankPolicyCannotReMintExistingContent`) | honest mints and every hostile policy mode |
+
+### Work records under hostile governance
+
+[`WorkRecordsGovernanceInvariant.t.sol`](../../test/stream/WorkRecordsGovernanceInvariant.t.sol).
+Real `WorkRecords` and `Renderer`; the handler installs a chain of hostile delivery contracts
+(`setDelivery`), adds hostile stores (`addStore`), syncs, sets preferences and swaps the default
+renderer, around a complete, finalized work ([WS-39 to WS-43](../spec/works-and-storage.md#rules-and-invariants)).
+
+| ID | Invariant | Test | Handler actions |
+| --- | --- | --- | --- |
+| INV-STR-17 | A complete, finalized work's `tokenURI` never changes. | `invariant_tokenUriOfACompleteWorkNeverChanges` | `setDelivery`, `addStore`, sync, preferences, `setDefaultRenderer` |
+| INV-STR-18 | A complete work's facts (record, media, license, rate, powers, pin, completeness and each file's store) never change. | `invariant_aCompleteWorksFactsNeverChange` | as above |
 
 ## 6529 Stream Editions
 
@@ -101,7 +114,9 @@ adapter of another kind. INV-ED-3, the OPEN window, left with the edition format
 handler `CurationHandler` in the same file. Real `PackageRegistry` and
 `Eip712CurationVerifier`; mock `MockArtistRegistry`. Twenty items by three artists: 0 to 9 in
 package A, 6 to 15 in package B, 16 to 19 in none; items `i` and `i + 8` share a content hash;
-a third root C starts unregistered. The handler is an exact model of nine actions: `consume`,
+a third root C starts unregistered; Stream's content record ([AUC-44](../spec/stream-and-auctions.md#rules-and-invariants)) is
+`StreamContentMock`, which the registry's `consumedItemOf`, `releasedTo` and `isReleased` answer
+from. The handler is an exact model of nine actions: `consume` (a mint through the mock),
 `claimEdition`, `release`, `revokeMove`, `rotate`, `revokePackage`, `registerLate`,
 `acceptLate` and `rebind`.
 
@@ -171,7 +186,7 @@ suite's `afterInvariant` drives every sale to an end after each run.
   cooperating stand-in; bids (ETH, or the ERC-20 directly or through Permit2), time, refusal
   parameter and federated fee-recipient changes, registry delistings, currency freezes and
   re-admissions, dispute pauses and cancels, `settle`, `settleOrRefund`, claims and the artist's
-  delivery claims (AUC-38 to AUC-41).
+  delivery claims ([the refusal exit](../spec/stream-and-auctions.md#a-token-that-will-not-settle)).
 
 | ID | Invariant | Test | Handler actions |
 | --- | --- | --- | --- |
@@ -417,7 +432,8 @@ and Halmos proofs are in [Testing](../testing/README.md).
 - **`WorkRecords`** runs inside the Stream campaign, which never drives `relicense`,
   `repinRenderer`, `syncOnChain` or the preferred-location settings, and the work powers
   campaign (INV-STR-12 to INV-STR-14), which drives `renounce`, `setRoyaltyRate` and
-  `relicense` but not `repinRenderer`, `syncOnChain` or the preferred-location settings.
+  `relicense` (and, since the records lane, `finalize` and `repinRenderer`); the governance
+  campaign (INV-STR-17, INV-STR-18) drives delivery, stores and sync around one complete work.
 - **`ContentStore`, `DependencyRegistry` and `Renderer`**: fuzz and unit tests only
   (PROP-CNT-1, PROP-CNT-2, PROP-RND-1).
 - **Curation signer changes**: the campaign never disables, re-enables or swaps an

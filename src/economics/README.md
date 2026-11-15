@@ -12,7 +12,7 @@ address derivation, the payee-list rules and both escrow-recovery flows.
 | File | What it is |
 | --- | --- |
 | `EconomicsResolver.sol` | Governed per-product economics for new works (fee share and recipient, royalty rate, default license), `newWorkTerms` and `resolveCurrency`; and the 6529 Network Museum (`museum`, `setMuseum`), where an unbid canonical work goes (ECO-37). |
-| `AssetAllowlist.sol` | Replaceable (no permanent contract references it; withdrawals never read it). Governed currencies: status, increment floor and `statusClock` per asset, and a default currency per product, each compare-and-set on its own revision. |
+| `AssetAllowlist.sol` | Replaceable (no permanent contract references it; withdrawals never read it). Governed currencies: status, increment floor, the English auction's opening bid (`setOpeningBid`, in the status word) and `statusClock` per asset, and a default currency per product, each compare-and-set on its own revision. |
 | `SplitLedger.sol` | Permanent, permissionless, unowned. `walletFor` predicts and `createWallet` deploys a split wallet (a `SplitVault`) at its CREATE2 address; keeps every wallet's accounting; executes `release`, `releaseTo` and signed `releaseWithAuthorization` (EIP-712, per-account nonce bitmaps shared across wallets, `revokeNonce`). Fixed payees by account, artist-resolved payees by artist ID through the artist registry's `payoutAddress`. |
 | `SplitVault.sol` | The wallet's 66 bytes of raw EVM code (documented byte by byte): holds ETH and ERC-20s, accepts plain ETH from anyone, moves funds only on its ledger's instruction. |
 | `GovernedVault.sol` | The network fee recipient and the museum as contracts: receive ETH, ERC-20s, ERC-721s and ERC-1155s; forward only to a destination governance sets (FUNDS_SETTER, 14 days). |
@@ -42,9 +42,11 @@ Payment, release and recovery sequences are under
 - **Sale adapters never compute wallets.** The token supplies the seller and fee terms through
   `primaryTerms`; an adapter pays them with `RevenuePayment.payETH` or `payERC20`, which falls
   back to the escrow. A wallet need not be deployed: funds sent to its predicted address are
-  split once anyone calls `createWallet`, which is why deployment stays off the start path. It
-  costs about 96K Prague gas (about 0.43M Glamsterdam), so deploy each seller and royalty wallet
-  at its first sale: a deployed wallet never depends on deploying anything again (LIM-ECO-7).
+  split once anyone calls `createWallet`, which is why deployment stays off the 1/1 start path.
+  It costs about 96K Prague gas (about 0.43M Glamsterdam), so deploy each seller and royalty
+  wallet at its first sale: a deployed wallet never depends on deploying anything again
+  (LIM-ECO-7). The edition auction's `open` does this for its seller and royalty wallets
+  (EA-20).
 - **Releases name the wallet by its configuration.** `release(payees, salt, asset, index)`: the
   ledger stores only `configOf` (for `isWallet` and the escrow) and derives the address from the
   list and salt, which callers read from `WalletCreated` or the work's terms.

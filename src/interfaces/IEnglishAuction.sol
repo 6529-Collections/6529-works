@@ -57,10 +57,10 @@ interface IEnglishAuction is ISaleAdapter {
     /// @param extensionWindow The anti-snipe window and extension, in seconds.
     /// @param incrementShare The minimum relative increment, out of 100,000 (5,000 at launch).
     /// @param refusalDelay Seconds after a sale's end before a refused settlement may close it
-    ///        with refunds (`IEnglishAuctionRefusal.settleOrRefund`, AUC-39); only a federated
+    ///        with refunds (`IEnglishAuctionRefusal.settleOrRefund`, AUC-46); only a federated
     ///        sale can be refused, and it locks the value current at its start.
     /// @param refusalGas The gas a settlement attempt is given, and must be given in full, for
-    ///        its failure to count as the token's refusal (AUC-40): raise-only, at most doubled
+    ///        its failure to count as the token's refusal (AUC-47): raise-only, at most doubled
     ///        per step, applying at once to every sale.
     struct AuctionConfig {
         uint32 duration;

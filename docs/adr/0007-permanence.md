@@ -5,19 +5,19 @@ Status: Accepted by owner instruction, 14-15 November 2026. Recorded by the deli
 source-line budget; §16, federation moves into v1), [ADR 0002](0002-access-manager-hardening.md)
 (governance), [ADR 0004](0004-gas-budgets-under-glamsterdam.md) (the gas rule for permanent
 contracts; the start margin), [ADR 0005](0005-stream-editions-auction.md) (edition supply is
-sealed at settlement; the per-sale window is pending) and
-[ADR 0006](0006-work-powers-and-conventions.md) (the renderer repin becomes renounceable:
-pending).
+sealed at settlement; a per-sale open period with a governed maximum; an abandonment exit;
+wallets at open) and [ADR 0006](0006-work-powers-and-conventions.md) (the renderer repin becomes
+renounceable).
 
 This is this repository's ADR 0007. The "ADR 0007 (no proxies)" that ADR 0001 retains under
 "Superseded or amended" is the 6529Stream repository's, a different record; its rule (no
 proxies, no `delegatecall`) is kept here.
 
-The record below describes what was built in the first integration round of
-15 November 2026 (seven lanes merged). Three lanes are still open: the records lane
-(`WorkRecords` and a delivery contract), the English auction's exit for a token whose
-settlement fails (LIM-SAL-16), and the edition auction's own wiring of the sealed supply and
-per-sale window. Each item they own is marked **pending**.
+The record below describes what was built, in two integration rounds on 15 November 2026:
+eleven lanes (the shared gas helper, Stream, Editions, identity, money, store, governance, then
+Stream's uniqueness record, WorkRecords, the English auction's refusal exit and the edition
+auction), plus the integrator's changes listed in §6. Federation's templates and registry are
+the one package not built (§3, P6).
 
 ## Context
 
@@ -83,10 +83,14 @@ event sufficient to rebuild the new state without a call (§8).
 2. **A shortfall never yields an answer.** A call that fails having left at most **1/8** of the
    gas held just before it reverts the whole transaction with
    `BoundedCallShortfall(target)`; only a failure with more than 1/8 left is a refusal.
-   - *Why 1/8, not the 1/64 first proposed:* out-of-gas leaves the caller its retained 1/64,
-     and through k all-forwarding frames (a Safe proxy, its implementation, an owner wallet) at
-     most 1 - (63/64)^k: 11.8% at k = 8. With 1/8, an honest out-of-gas up to eight frames deep
-     is a shortfall at any transaction gas limit. Residuals, in NatSpec and LIM-GAS-13: a
+   - *Why 1/8, not the 1/64 first proposed:* a callee that runs out of gas leaves its caller
+     the 1/64 EIP-150 retained, but through k all-forwarding frames (a Safe proxy, its
+     implementation, an owner wallet) the caller can be left up to 1 - (63/64)^k of what it
+     held: 11.8% at k = 8. A 1/64 test would read such an honest out-of-gas inside a proxy as a
+     refusal, a success-shaped answer the rule forbids; with 1/8, an out-of-gas up to eight
+     frames deep is a shortfall at any transaction gas limit. The price is the residual below:
+     a refusal that burns more than about 7/8 of its gas first reads as a shortfall until it is
+     resent with more gas, which only delays a refusal and never turns one into an answer. Residuals, in NatSpec and LIM-GAS-13: a
      refusal that itself burns more than about 7/8 of its gas reads as a shortfall until resent
      with more gas; a callee that catches its own out-of-gas and returns has answered;
      OpenZeppelin's `restricted` reports a starved authority check as unauthorized (the
@@ -118,6 +122,10 @@ post-quantum schemes). Spec: DSP-26, AUC-42, ED-28, ID-38, ECO-42.
   (`StreamPolicySafety.t.sol`, with an invariant).
 - The artist registry is an immutable with no setter (AUC-39); entropy eras, settle, burn,
   rescue and museum routing stay native; every view another contract reads stays native.
+- **Content uniqueness is in the core** (AUC-44): Stream keeps the consumed-content record
+  (a content hash mints once, whatever mint policy is installed; `releaseContent` and its
+  tombstones are Stream's), so a replaced or blank policy cannot re-mint existing content. The
+  one new slot per start moved from the registry to Stream; no start row gained a slot.
 - Informational views (`work`, `collection`, `totalSupply`, `contractURI`, `owner`) and
   collection-name validation move to `StreamViews`, a read-only extension Stream's constructor
   deploys and reaches by `STATICCALL`.
@@ -142,8 +150,26 @@ post-quantum schemes). Spec: DSP-26, AUC-42, ED-28, ID-38, ECO-42.
   completeness against the store or any `IChunkStore` adapter (`firstMissing`); caller-sized
   `attestBase64`; open `uint8` encoding and digest-kind IDs; `ManifestRegistered` carries the
   chunk hashes; `SSTORE2.write` trusts the deployed address.
-- `WorkRecords` (delivery satellite, chunk cursors for `syncOnChain`, events with licence, seed
-  and state hashes, store adapters, the third work power): **pending** (records lane).
+- `WorkRecords` stays the permanent, bind-once fact holder (WS-39 to WS-46). What may change
+  sits behind two governed pointers: a replaceable delivery contract (`WorkDelivery`: locators,
+  kinds, preferences, the URI grammar; `setDelivery`, SUCCESSOR_SETTER, 30 days, which must
+  name its predecessor), forwarded fail-soft with all the gas (a revert or malformed answer
+  serves the work's own answer, a shortfall reverts); and an append-only store set (`addStore`,
+  code hash pinned), so a future medium can count as on-chain complete for new works and
+  collector upgrades while no existing work is ever re-pointed or unmarked. `syncOnChain(tokenId,
+  storeId, maxChunks)` resumes from a chunk cursor in a spare word, with no compiled budget, so
+  files of any size (up to the store's 4,096 chunks) sync. The third work power,
+  `RENDERER_REPIN`, is renounceable after finalize (amends ADR 0006). `RecordOpened` carries the
+  whole item, media list, licence key and seed; every amendment event carries the state hash.
+  Bounds are structural only: a record is one chunk; a preview has no bound in WorkRecords; the
+  pinned renderer decides what it shows.
+- The shared package types carry kind, seed policy and party and media roles as open `uint8`s
+  (the enums only name today's values), so no permanent contract's decode can revert on a
+  value a later mint policy defines; the genesis mint policy refuses values it does not know
+  for new items. Selectors, interface IDs, topics and item hashes are unchanged.
+- The default renderer (replaceable, but pinned by every finalized work, possibly for good once
+  the repin is renounced) forwards all gas on every read and compiles no gas figure; its
+  preview bound is `Limits.MAX_PREVIEW_BYTES`.
 
 **P3, money, Editions, identity and the statement log.**
 - **Split ledger** (ECO-39 to ECO-42): one permanent `SplitLedger` replaces the split factory,
@@ -180,6 +206,21 @@ post-quantum schemes). Spec: DSP-26, AUC-42, ED-28, ID-38, ECO-42.
   the guarantees) and ceilings, locked at staging. Every refresh but `refreshStanding` is
   best-effort, a shortfall always reverts, source times are clamped, and a payout-only override
   needs dormancy.
+- **Edition auction** (replaceable; EA-17 to EA-20): seals at its final count and prices every
+  mint; an edition's close offset is chosen per sale in the artist-signed terms, up to a
+  governed maximum (`setLimits`: maximum close offset, abandonment delay, payout gas); a sale
+  that has paid nothing can be abandoned after its end plus a locked delay (full refunds, the
+  edition sealed at zero); `open` deploys the seller and royalty wallets, so rule 4 holds for
+  edition sales.
+- **English auction** (replaceable; AUC-45 to AUC-48): `settleOrRefund` ends a federated sale
+  whose token will not settle (after a governed refusal delay, in a frame given exactly the
+  governed refusal gas, so the keeper's gas limit cannot steer the outcome), crediting the bid;
+  6529 Stream's own sales never take this exit (LIM-SAL-16). It solves LIM-SAL-16 for federated
+  sales, as the owner asked, and lays down nine guarantees a federated template must meet
+  (gas within the refusal gas less the auction's measured 2.43M, no early `primarySale`, no
+  third-party guard, no buyer code in settlement, settlement independent of identity state,
+  payees locked and payable, an honest `ownerOf`, one settlement by the minting adapter, fixed
+  code). Opening bids moved to the asset allowlist (§6).
 - **Statement log:** forward-all reads; any non-zero hash-algorithm ID recorded uninterpreted
   (1 to 3 keep their names); URIs up to 8,192 bytes (DSP-2, DSP-26).
 
@@ -223,8 +264,9 @@ above); the rest is **in v1, specified by a later ADR**.
 
 **P7, policy numbers** (study I). No number in a permanent contract had a setter. Decided:
 - moved out with the packages: signature size and ERC-1271 gas (forward all gas, 64 KiB), the
-  federated list cap (per-token directory), collection-name length (the views extension);
-  locator count and URI grammar (delivery satellite, **pending**);
+  federated list cap (per-token directory), collection-name length (the views extension),
+  locator count and URI grammar (the delivery contract), record and preview size budgets (the
+  pinned renderer);
 - closed lists become open IDs recorded but not interpreted: hash algorithms, content
   encodings and digest kinds, item kind and seed policy;
 - governed floors that can only be lengthened: the artist registry's timers (with ceilings,
@@ -240,21 +282,21 @@ above); the rest is **in v1, specified by a later ADR**.
   (owner decision, 15 November 2026), for federation and the hardening above;
   `tools/check_budgets.py` enforces it. Lines are still spent carefully.
 - **Start margin:** the 350K steady-state start budget and the slot maxima are unchanged; the
-  suite's margin under 350K falls from 5,000 to **2,500**, what the merged rows support
-  (ADR 0004 amendment of 15 November 2026). The mint-policy hop costs more than estimated
+  suite's margin under 350K falls from 5,000 to what the merged rows support (ADR 0004's
+  table; set in `START_MARGIN`). The mint-policy hop costs more than estimated
   (about +1.4K on steady starts, +3.8K on an artist's first start, not +0.5 to 1.0K), and 350K
   fits only because the policy's redundant `ItemConsumed` event was dropped (`WorkMinted`
   carries everything it said).
-- **EIP-170:** every contract keeps 512 bytes of margin except the recorded exemptions; the
-  edition auction's interim wiring (below) leaves it at 210 bytes, a temporary exemption the
-  edition-auction lane must clear.
+- **EIP-170:** every contract keeps 512 bytes of margin, with no exemption left
+  (`tools/size-margins.json` is empty): the renderer gained margin by dropping its gas caps, and
+  the English auction by moving opening bids to the allowlist (§6).
 
 ### 5. Owner decisions
 
 Decided 15 November 2026 ("yes to all"), unless dated otherwise:
 
 - The artist registry is permanent: Stream's pointer is set once at genesis.
-- Store adapters for future on-chain media: yes (**pending**, records lane).
+- Store adapters for future on-chain media: yes (built: the append-only store set).
 - Hardened manager: one year of admin silence, a 180-day public delay, guardian majority in the
   slow lane; a third admin seat. The cold admin, third admin and recovery-address holders, and
   the guardian seat count, are the owner's to name.
@@ -262,11 +304,12 @@ Decided 15 November 2026 ("yes to all"), unless dated otherwise:
   the close offset becomes per sale, chosen in the edition's artist-signed terms, with any
   bound a governed parameter of the replaceable auction, never a compiled constant. Bids are
   firm, so bidders' ETH is locked for the whole window, and editions mint only after the close.
-  The seal is built (Editions); the per-sale window and its maximum are **pending** (edition
-  auction lane; the maximum is still open with the owner).
+  Built: the seal (Editions) and the per-sale window with a governed maximum (30 days at
+  launch) and an abandonment exit (150 days at launch); both launch values are for the owner to
+  confirm.
 - The errata repin becomes optionally renounceable: a third `WorkPowers` bit,
   `RENDERER_REPIN`, only after finalize; once renounced, a pinned renderer a protocol change
-  breaks can never be repaired for that work (**pending**, records lane).
+  breaks can never be repaired for that work (built; amends ADR 0006).
 - TDH: 6529 Stream and 6529 Stream Editions earn TDH; Federated Stream and Federated Stream
   Editions do not. Eligibility is by contract address; no on-chain flag.
 - Consensus reads logs only: every fact the consensus study found needing a call is emitted by a
@@ -279,19 +322,26 @@ Decided 15 November 2026 ("yes to all"), unless dated otherwise:
 - Federation ships in v1 (§3, P6), with the defaults listed there.
 - The line budget may increase; set at 15,000 once federation was sized.
 - LIM-SAL-16 (a token whose settlement calls fail holds the bid forever) is to be solved, not
-  documented (**pending**, English auction lane).
+  documented. Built for federated sales (`settleOrRefund`); 6529 Stream's sales never take
+  the exit, because a refused Stream sale would strand its master's edition sale (review F1);
+  a listed token other than Stream must prove at its 30-day listing review that its
+  settlement cannot fail.
 
-### 6. Delivered in this round, and the interim
+### 6. Integration
 
-Seven lanes merged in order: the gas helper and harness; Stream; Editions; identity; money;
-store; governance. Genesis now maps the new governed selectors (`setRescueDelay`,
-`setFederationRegistry`, `setTimer`, `sweepExcess`, both vaults' `setDestination`, the manager's
-functions) and wires the two vaults; the role matrix is regenerated.
-
-**Interim:** Editions requires its bound adapter to seal supply and to pass price data, so the
-edition auction calls `sealSupply` at its final count and passes `abi.encode(CURRENCY_ETH,
-unitPrice)` in each claim. That is a minimal patch, superseded by the edition-auction lane,
-which also brings the per-sale window.
+Eleven lanes merged in two rounds. The integrator also:
+- wired genesis: the new governed selectors (`setRescueDelay`, `setFederationRegistry`,
+  `setTimer`, `sweepExcess`, both vaults' `setDestination`, `setDelivery`, `addStore`, the
+  edition auction's `setLimits`, `AssetAllowlist.setOpeningBid`, the manager's functions), the
+  two governed vaults, the delivery contract and a third admin seat; the role matrix is
+  regenerated;
+- moved the English auction's opening bids to the asset allowlist, which already owns each
+  currency's increment floor: the bid sits in the asset's status word, so a start reads status
+  and opening bid in one call, and the auction regains its 512-byte margin without dropping a
+  payment method (the review's suggestion; the EIP-2612 permit path stays);
+- made the shared package types' enum fields open `uint8`s, removing the records lane's copies;
+- moved the default renderer to forward-all reads and the preview bound to
+  `Limits.MAX_PREVIEW_BYTES`.
 
 ## What this amends
 
@@ -306,13 +356,13 @@ ADRs stay as written; each amended record gets a dated amendment note pointing h
   (GV-37 to GV-47). Rules 1 to 3, suspension and the delay classes are unchanged outside the
   escalated lane.
 - **ADR 0004.** The gas rule above governs permanent contracts' calls; budgets stay test
-  policy. The start margin is 2,500. The table is re-measured with reasons for each moved
-  regression ceiling.
-- **ADR 0005.** An edition's supply is sealed at its sale's settlement (§2's editions mint
-  "only after the close" now also stop at the sealed count); the per-sale close offset replacing
-  §4's governed 0-to-1-day offset is pending.
-- **ADR 0006.** §2's "the errata repin cannot be renounced" is to be superseded by a third,
-  optional power (pending, records lane).
+  policy. The start margin is 5,000 after both rounds (2,500 between them). The table is
+  re-measured with reasons for each moved regression ceiling.
+- **ADR 0005.** An edition's supply is sealed at its sale's settlement; §4's governed
+  0-to-1-day close offset becomes a per-sale offset up to a governed maximum, with an
+  abandonment exit and wallets deployed at open (its §14).
+- **ADR 0006.** §2's "the errata repin cannot be renounced" is superseded by a third, optional
+  power, `RENDERER_REPIN`.
 
 ## Not fixable (documented)
 
@@ -331,14 +381,13 @@ ADRs stay as written; each amended record gets a dated amendment note pointing h
   failed somewhere, and each number is a bet on future prices.
 - **A 1/64 shortfall threshold.** Rejected for 1/8: it would read an honest out-of-gas inside a
   Safe proxy as a refusal.
-- **A consumed-content bit in Stream's core.** Measured: +21,350 gas and one more slot per start,
-  which breaks 350K and the slot maximum. Uniqueness stays in the policy
-  (`PackageRegistry._streamItems`); a successor policy must honour its predecessor's
-  `consumedItemOf` (LIM-GV-22). Revisited by the Stream lane's later tip (round 2).
+- **A consumed-content bit added in Stream's core on top of the policy's record.** Measured:
+  +21,350 gas and one more slot per start, over 350K and the slot maximum. Built instead: the
+  record itself moved from the policy into Stream, at no extra slot (LIM-GV-22 closed).
 - **Locked terms inline in `WorkMinted`** (option A): cheaper on first-terms rows, dearer on
   steady rows; the owner preferred a terms ID with `TermsInterned`.
 - **Licence, seed and parties in `WorkMinted`:** +3.3K and +5.5K to +7.9K per start, over 350K;
-  they go in `RecordOpened` instead (pending, records lane).
+  they go in `RecordOpened` instead, off the start path.
 - **A separate release verifier:** it would have to trust the ledger, a circular pin; merged.
 - **A permissionless or time-based edition seal:** without the adapter's count any seal could
   strand winners, and the owner forbade a compiled duration.
@@ -351,9 +400,9 @@ ADRs stay as written; each amended record gets a dated amendment note pointing h
 ## Consequences
 
 - **Sizes** (runtime bytes, the `default` profile): see
-  [Audit scope](../audit/scope.md) for every contract; Stream falls from 24,373 to 21,838
-  (margin 2,738, its exemption removed), the split wallet from 5,097 to 66 bytes; the
-  integration report lists the full table.
+  [Audit scope](../audit/scope.md) for every contract; Stream falls from 24,373 to 22,616,
+  WorkRecords from 23,946 to 22,206, the split wallet from 5,097 to 66 bytes, the renderer from
+  24,365 to 23,714 and the English auction ends at 24,062; no exemption remains.
 - **Gas:** ADR 0004's table, re-measured on the merged tree.
 - **Interfaces:** pre-launch reshaping of `IStream`, `IPackageRegistry`, `IEditions`,
   `IArtistRegistry`, `IContentStore`, the money interfaces and the manager; the IDs are in
@@ -363,12 +412,16 @@ ADRs stay as written; each amended record gets a dated amendment note pointing h
 
 ## Open items
 
-- The owner: the guardian seat count (five recommended), the cold admin, third admin and
-  recovery-address holders, the identity timers' ceilings, the maximum open period of an
-  uncapped edition, and whether a core consumed bit is wanted.
-- Round 2: the records lane, the English auction's refused-settlement exit, the edition auction
-  (sealed supply and per-sale window, restoring its EIP-170 margin), and the Stream lane's
-  later tip.
+- The owner:
+  - the guardian seat count: 3 (genesis today) or 5 (the bounded veto bites only from 5);
+  - who holds the cold admin, the third admin seat and the recovery address;
+  - the identity timers' ceilings (CHANGE_DELAY 7 to 30 days, OVERRIDE_DELAY 180 to 365,
+    DORMANCY 365 to 1,825, CONTEST_TIMEOUT 365 to 730, STANDING_GRACE 30 to 90);
+  - the English auction's size: it now keeps 514 bytes of margin; any later growth needs a
+    decision (dropping the EIP-2612 permit path frees about 412 bytes);
+  - launch values of the edition auction's maximum open period (30 days) and abandonment delay
+    (150 days);
+  - unanimous-party consent for amendments (unchanged until the owner chooses).
 - A federation ADR, then the federation lane.
 - Two independent reviews (contracts; governance), then a Sepolia redeploy and a Glamsterdam
   measurement of every row.

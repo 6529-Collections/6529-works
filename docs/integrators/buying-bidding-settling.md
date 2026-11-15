@@ -160,7 +160,8 @@ package tooling's proofs verify directly.
 **Check before you submit:**
 
 1. `PackageRegistry.packageOf(root)` returns `APPROVED`.
-2. `PackageRegistry.consumedItemOf(item.contentHash)` is zero.
+2. `Stream.consumedItemOf(item.contentHash)` is zero and `Stream.releasedTo(item.contentHash)` is
+   zero or the item's lead artist (the registry's views of the same names answer from Stream).
 3. `PackageRegistry.acceptedAs(root, party.account)` is nonzero for every `item.parties[i]`.
 4. `Stream.collection(item.collectionId)` does not revert.
 5. The move is unexpired and `PackageRegistry.isMoveNonceUsed(artistId, nonce)` is false.
@@ -249,6 +250,13 @@ active. An unusable currency reverts with `CurrencyNotConfigured(product)` or
 `AssetNotActive(asset)`. Read the locked currency from `SaleStarted.currency` or
 `auction(saleId).currency`, never from the current default.
 
+The start also locks the currency's opening bid, the least first bid, which the asset allowlist
+holds with the currency's status (`AssetAllowlist.openingBid(asset)`, also answered by the
+auction's `openingBid(currency)`; 0.05 ETH at genesis, owner decision 19). Governance changes it
+with `AssetAllowlist.setOpeningBid(asset, expectedRevision, bid)` (PARAMETER_SETTER, 48 hours,
+compare-and-set on the asset's revision, at most 1,000 increment floors); a change reaches only
+auctions started afterwards.
+
 ```mermaid
 sequenceDiagram
     participant Artist as Lead artist
@@ -322,8 +330,9 @@ function auction(uint256 saleId) external view returns (Auction memory);
 itself (`InvalidRecipient(recipient)`).
 
 - **The amount.** The bid is `payment.amount` exactly; there is no "bid up to" form. Read
-  `minimumBid(saleId)` just before you submit (the rule is AUC-16). Live parameters are in
-  `config()` and `AssetAllowlist.incrementFloor(currency)`; launch defaults are in the
+  `minimumBid(saleId)` just before you submit (the rule is AUC-16): the first bid is at least the
+  opening bid the sale locked. Live parameters are in `config()`,
+  `AssetAllowlist.incrementFloor(currency)` and `AssetAllowlist.openingBid(currency)`; launch defaults are in the
   [script README](../../script/README.md#environment-reference). A bid above `type(uint96).max`
   reverts with OpenZeppelin's `SafeCastOverflowedUintDowncast`.
 - **[Anti-snipe](../glossary.md#anti-snipe).** A bid in the last `extensionWindow` moves the end
@@ -493,7 +502,7 @@ no earlier than 14 days after it (ECO-33).
 ### A token that will not settle
 
 `settleOrRefund(saleId)` ends a federated sale whose token keeps `settle` from completing
-(AUC-38); for a listed token's sale, 6529 Stream's included, it reverts with
+(AUC-45); for a listed token's sale, 6529 Stream's included, it reverts with
 `SaleNotRefusable`. From `refusableAt(saleId)` (the end plus the refusal delay the sale locked,
 7 days at launch), anyone may call it. It
 attempts `settle` with exactly the refusal gas (4,000,000 at launch, `config().refusalGas`): if
@@ -568,9 +577,17 @@ The fixed-price and Dutch adapters of `v1.0.0-rc.1` were removed by ADR 0005.
   margin, close offset, soft-close window, maximum extension), the creator's cap (`maxCount`, zero for
   none), the seller and fee terms, the status and the book's extent.
 - `endTimes(saleId)` returns every clock, read live: the 1/1's end and state, `closeAt` (the 1/1's
-  end plus the offset), `softEnd`, `endTime`, the backstop, and `biddingOpen` and
+  end plus the sale's close offset), `softEnd`, `endTime`, the backstop, and `biddingOpen` and
   `withdrawalsOpen`. Show `endTime` as the close; it moves with the 1/1's anti-snipe and with
   late edition bids.
+- **The open period is the edition's own** (EA-17). The edition terms' params are empty, for the
+  governed default close offset (`config().closeOffset`, 15 minutes at launch), or exactly
+  `abi.encode(uint256 closeOffset)`: the artist's offset in seconds after the 1/1's end, at most
+  `limits().maxCloseOffset` (30 days at launch, governed by `setLimits`, PARAMETER_SETTER). The
+  sale locks it at open in `terms.closeOffset`. **Bids are firm for the whole open period**: a bid
+  can be withdrawn only while the 1/1 is paused for a dispute, never once the 1/1 settled, so show
+  the close prominently before a bid on a long window (LIM-EA-14). Copies mint only after the
+  close and settlement.
 
 ### Opening
 
@@ -583,8 +600,11 @@ the 1/1's `start`. `data` is `abi.encode(item)`, the master's package item exact
 its hash must equal the item hash Stream stored (`IStream.coreOf`), so no proof is needed. A sale
 nobody opens before the close never sells copies by this adapter (LIM-EA-11).
 
-`open` binds the edition to the adapter (`Editions.bindMinter`, `EditionMinterBound`) before it
-records the sale: a second adapter of the same kind cannot open it (`MinterMismatch`), and only
+`open` first deploys the seller's and the royalty receiver's split wallets if they have no code
+(`createWallet` on the split ledger), so no payment from the sale, and no royalty on its copies,
+reaches an undeployed wallet (EA-20); the first sale of a payee configuration therefore costs more
+(about 434K Prague gas with both wallets new). It then binds the edition to the adapter
+(`Editions.bindMinter`, `EditionMinterBound`) before it records the sale: a second adapter of the same kind cannot open it (`MinterMismatch`), and only
 the bound adapter ever mints it, even after governance removes it. If the edition does not exist
 yet, the binding records the sale's `PRODUCT_EDITIONS` economics in Editions; if it does, the
 sale pays the economics it recorded. A sale once opened, voided ones included, is never opened
@@ -664,7 +684,17 @@ function sweepOf(uint256 saleId, address settler)
 Permissionless once the end has passed and the 1/1 is settled, or at any time once the 1/1 is
 cancelled, which voids the sale (`SettlementNotReady` otherwise). When copies sold, the edition
 must exist first: call `Editions.createEdition` (permissionless once the master's sale settled;
-`EditionNotCreated` otherwise).
+`EditionNotCreated` otherwise). The call that clears seals the edition at the count sold
+(`Editions.sealSupply`, `EditionSupplySealed`).
+
+**Abandonment** (EA-19). A sale that has paid nothing (still open, or settling with its scan
+unfinished) is voided by anyone's `abandon(saleId)` once its end plus the abandonment delay it
+locked at open has passed (150 days at launch, governed by `setLimits` within 120 to 730 days),
+when its 1/1 is neither in progress nor settled with its master and edition (for example a 1/1
+that can never settle, or an edition nobody created). Every bid's claim then refunds its whole
+escrow, and the edition is sealed at zero copies (`AuctionVoided`, then Editions'
+`EditionSupplySealed(id, 0)`). `abandonable(saleId)` tells whether it may be called now
+(`NotAbandonable` otherwise).
 
 Settlement runs in calls of bounded gas, each of which advances it, so no book is too large to
 settle. A call scans at most 24 words of the book (eight steps each); the call that finishes the
@@ -710,7 +740,8 @@ function claimBidFor(uint256 saleId, uint256 bidId) external returns (uint256 un
 ### Events
 
 `AuctionOpened`, `BidPlaced`, `BidRaised`, `BidWithdrawn`, `AuctionCleared`, `DeparturesSwept`,
-`AuctionSettled`, `AuctionVoided` and `BidClaimed`, with `ISaleAdapter`'s `SaleStarted`,
+`AuctionSettled`, `AuctionVoided` (also from `abandon`), `BidClaimed` and `LimitsSet`, with
+`ISaleAdapter`'s `SaleStarted`,
 `SaleSettled` (one per sale: the count as the quantity, a zero buyer), `Credited` and `Claimed`,
 and Editions' `TransferSingle` per claim
 ([UniformEditionAuction](events-and-indexing.md#uniformeditionauction),
@@ -728,9 +759,11 @@ and Editions' `TransferSingle` per claim
 | `UnknownBid(saleId, bidId)`, `NotBidder(caller)` | No live bid with this ID; the caller is not its bidder. |
 | `WithdrawalsClosed(saleId)` | A withdrawal outside a 1/1 dispute pause, or of a bid placed or last raised during it (or in its minute). |
 | `SettlementNotReady(saleId)`, `EditionNotCreated(token, id)` | Too early to settle; create the edition first. |
+| `NotAbandonable(saleId)` | `abandon` before the end plus the locked abandonment delay, for a sale that paid, or while its 1/1 is in progress or settled with its edition. |
+| `ClockOverflow(time)` | A stored time would pass 2^32 seconds (7 February 2106): no sale opens from then, and a bid whose soft end would pass it reverts (LIM-EA-15). |
 | `InvalidSettlementOrder(index)` | The order is out of range or not in increasing position. |
 | `InvalidAuctionState(saleId, status)` | The sale is not in a state that allows the call, such as a claim before settlement. |
-| `SalePaused()`, `TargetNotAllowed(token)`, `InvalidSaleTerms(token, id)` | `open` while paused, for a token not served, or with terms that are not this kind's. |
+| `SalePaused()`, `TargetNotAllowed(token)`, `InvalidSaleTerms(token, id)` | `open` while paused, for a token not served, or with terms that are not this kind's (params other than empty or one word, or a close offset above `limits().maxCloseOffset`), or a deployed wallet that is not at the locked address. |
 | `InvalidRecipient(to)`, `NothingToClaim(account, currency)` | `withdrawBid`, `claimBid` or `claim` to zero, or `claimBid` to the adapter; `claim` with no credit. |
 | `ClaimFailed(to)` | `to` refused the ETH; the bid stays claimable. |
 

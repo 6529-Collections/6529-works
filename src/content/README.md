@@ -64,11 +64,14 @@ Integrators start at [Reading a work](../../docs/integrators/reading-a-work.md) 
 - **A bad record degrades, a broken dependency reverts.** A record that is not open, not
   complete or not acceptable gives core-only metadata with a `record_status` (RND-9); a failed
   read, too little gas, or a state the deployed contracts make impossible (RND-16) reverts.
-  Every external read is a `BoundedCall` with its own gas and return cap (RND-6, RND-7), so a
-  caller must supply well over the gas the call uses.
+  Every external read forwards all the gas it may with a return-size cap
+  (`BoundedCall.tryReadAll`, the gas rule of ADR 0007): no gas figure is compiled in, since a
+  finalized work pins its renderer, possibly for good; a read that runs short reverts with
+  `BoundedCallShortfall`.
 - **The 8M budget is a joint bound.** The record caps (size, units, attributes, `%` and `#`,
-  number length, nesting) were chosen together with the inline limits and `WorkRecords`'
-  preview cap, so that a record at every cap beside the dearest media stays under 8M Prague
+  number length, nesting) were chosen together with the inline limits and the renderer's
+  preview bound (`PREVIEW_LIMIT`, `Limits.MAX_PREVIEW_BYTES`; `WorkRecords` holds none), so
+  that a record at every cap beside the dearest media stays under 8M Prague
   gas. The dearest inputs are white space inside `attributes` (walked twice), `%` and `#`, and
   JSON units. Raising any cap, or changing `JsonScan`, `JsonEscape`, `Utf8`, `HtmlScript` or the
   read path, means rerunning [`RendererGas.t.sol`](../../test/content/renderer/RendererGas.t.sol)

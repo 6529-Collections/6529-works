@@ -16,7 +16,7 @@ consume them, and the artist registry resolves artist payouts for them.
 | `SplitLedger` (permanent) | [`src/economics/SplitLedger.sol`](../../src/economics/SplitLedger.sol) | [`ISplitLedger`](../../src/economics/interfaces/ISplitLedger.sol) = [`ISplitFactory`](../../src/economics/interfaces/ISplitFactory.sol) + [`ISplitWallet`](../../src/economics/interfaces/ISplitWallet.sol) + [`IReleaseVerifier`](../../src/economics/interfaces/IReleaseVerifier.sol) | The one split contract: permissionless and unowned. Predicts (`walletFor`) and deploys (`createWallet`) every split wallet at its CREATE2 address, records each wallet's payee hash (`configOf`), keeps every wallet's accounting, executes every release, and checks EIP-712 release authorizations with unordered, revocable nonces. No owner, governance, allowlist, rescue, `delegatecall` or code-hash pin. |
 | `SplitVault` (one per payee configuration) | [`src/economics/SplitVault.sol`](../../src/economics/SplitVault.sol) | none (raw bytecode) | A split wallet's code: 66 bytes that accept ETH from anyone and move funds only when the ledger that deployed them says so. No storage, no decision. |
 | `GovernedVault` | [`src/economics/GovernedVault.sol`](../../src/economics/GovernedVault.sol) | [`IGovernedVault`](../../src/economics/interfaces/IGovernedVault.sol) | The network fee recipient and the museum as contracts that outlive any key: receives ETH, ERC-20s, ERC-721s and ERC-1155s and moves them only to a destination governance sets (FUNDS_SETTER, 14 days). |
-| `AssetAllowlist` (replaceable) | [`src/economics/AssetAllowlist.sol`](../../src/economics/AssetAllowlist.sol) | [`IAssetAllowlist`](../../src/economics/interfaces/IAssetAllowlist.sol) | Governed payment currencies: a status per asset, an increment floor, a default currency per product, and a deprecation clock for sale adapters. No permanent contract references it and no withdrawal reads it: a new allowlist reaches new sales through a new economics resolver and new adapters (ECO-25). |
+| `AssetAllowlist` (replaceable) | [`src/economics/AssetAllowlist.sol`](../../src/economics/AssetAllowlist.sol) | [`IAssetAllowlist`](../../src/economics/interfaces/IAssetAllowlist.sol) | Governed payment currencies: a status per asset, an increment floor, the English auction's opening bid (in the status word), a default currency per product, and a deprecation clock for sale adapters. No permanent contract references it and no withdrawal reads it: a new allowlist reaches new sales through a new economics resolver and new adapters (ECO-25). |
 | `RevenueEscrow` | [`src/economics/RevenueEscrow.sol`](../../src/economics/RevenueEscrow.sol) | [`IRevenueEscrow`](../../src/economics/interfaces/IRevenueEscrow.sol) | Holds credits for refused payments. Anyone flushes a credit to its wallet; governance moves one only to an identical wallet or to a replacement its holder consented to, and may sweep only what nobody is owed (`sweepExcess`). |
 | `EconomicsResolver` | [`src/economics/EconomicsResolver.sol`](../../src/economics/EconomicsResolver.sol) | [`IEconomicsResolver`](../../src/interfaces/IEconomicsResolver.sol) | Governed per-product fee recipient, fee share, royalty rate and default license. Derives the terms a new work locks (`newWorkTerms`) and the currency a new sale locks (`resolveCurrency`). |
 | `ClaimRouter` | [`src/economics/ClaimRouter.sol`](../../src/economics/ClaimRouter.sol) | [`IClaimRouter`](../../src/economics/interfaces/IClaimRouter.sol) | Stateless batch claims across split wallets. Holds no funds. |
@@ -55,9 +55,9 @@ revision 1, with one fee recipient for all three products (`NETWORK_FEE_RECIPIEN
 [`script/Deploy.s.sol`](../../script/Deploy.s.sol), which off anvil refuses an address with no
 code, balance or nonce). The genesis wiring makes ETH each product's default currency at zero
 delay ([`config/genesis.example.json`](../../config/genesis.example.json)). For a federated token
-(v1.1, only if needed) the sale adapters take the fee share from the federation registry and the
-recipient from `networkFeeRecipient(PRODUCT_FEDERATED)`; the English auction locks both when a
-sale starts ([AUC-41](stream-and-auctions.md#rules-and-invariants)).
+(federation is in v1, specified by a later ADR) the English auction takes the fee share from the
+federation registry and the recipient from `networkFeeRecipient(PRODUCT_FEDERATED)`, and locks
+both when a sale starts ([AUC-48](stream-and-auctions.md#rules-and-invariants)).
 
 The constructor also sets the **6529 Network Museum** (D140, owner decision 11), `museum()`: the
 account a 6529 Stream work goes to when its 1/1 sale ends unsold, unbid or frozen out. 6529 Stream
@@ -132,8 +132,14 @@ in it halt); withdrawals never read it (ECO-25). Admission is a sanity probe, no
 standard ERC-20 (ECO-32): governance vets that the token returns `true` on transfer, takes no fee
 and does not rebase, and that vetting is the guard against non-standard tokens (see
 [token strictness](#wallet-payments-and-the-escrow)). `statusClock(asset)` lets sale adapters stop
-a sale's clock while its currency is deprecated (MARKET-1, MARKET-2). Switching a product to USDC is "admit the asset, then change
-the default", with no contract change.
+a sale's clock while its currency is deprecated (MARKET-1, MARKET-2). Each asset also holds the
+English auction's opening bid, the least first bid an auction in it locks at start
+(`setOpeningBid`, PARAMETER_SETTER, 48 hours, compare-and-set on the asset's revision, at most
+`OPENING_BID_FLOORS` (1,000) increment floors and `type(uint96).max`; 0.05 ETH for ETH at
+genesis). It shares the status word, so a start reads both in one call (`activeOpeningBid`,
+`defaultCurrencyOpeningBid`); it moved here from the auction in the permanence restructuring
+([ADR 0007](../adr/0007-permanence.md)). Switching a product to USDC is "admit the asset, then
+change the default", with no contract change.
 
 ### Payee lists, wallets and the split ledger
 
@@ -322,6 +328,7 @@ stateDiagram-v2
 | --- | --- | --- | --- |
 | Asset: none or deprecated to active | FUNDS_SETTER | 14 days; a re-admission also at least 14 days after the deprecation | `AssetAllowlist.admitAsset` |
 | Asset: new floor | PARAMETER_SETTER | 48 hours | `AssetAllowlist.setIncrementFloor` |
+| Asset: new opening bid | PARAMETER_SETTER | 48 hours; zero for ETH's in the genesis wiring | `AssetAllowlist.setOpeningBid` |
 | Asset: active to deprecated | GUARDIAN | Immediate | `AssetAllowlist.deprecateAsset` |
 | Product: new default currency | FUNDS_SETTER | 14 days; zero in the genesis wiring | `AssetAllowlist.setDefaultCurrency` |
 | Product: new fee recipient and fee share | FUNDS_SETTER | 14 days | `EconomicsResolver.setFeeTerms` |

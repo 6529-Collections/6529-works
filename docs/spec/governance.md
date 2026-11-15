@@ -72,13 +72,13 @@ addresses, not the structure. Delays come from `Roles.executionDelay` and `Roles
 | `PAUSER` | 2 | The same three guardian Safes | Immediate | 48 hours | `pause()` on the English auction |
 | `UNPAUSER` | 3 | Hot admin Safe | 48 hours | 48 hours | The English auction's `unpause()` and `resume(saleId)` |
 | `CURATION_SIGNER` | 4 | Two curation signer keys (EOAs) | Immediate | 30 days | Nothing is mapped: the curation verifier reads membership |
-| `STORAGE_OPERATOR` | 5 | Storage operator key | Immediate | 48 hours | WorkRecords' preferred-location setters |
+| `STORAGE_OPERATOR` | 5 | Storage operator key | Immediate | 48 hours | The delivery contract's (`WorkDelivery`) preferred-location setters |
 | `MINTER` | 6 | None | Immediate | 30 days | Unused in v1 |
 | `KEEPER` | 7 | None | Immediate | 48 hours | Unused in v1 |
-| `PLATFORM` | 8 | Platform key | Immediate | 48 hours | `Stream.createCollection`, `StatementLog.appendPlatform`; read by hand for `addLocator` |
-| `PARAMETER_SETTER` | 9 | Hot admin Safe | 48 hours | 48 hours | Auction settings and opening bids, defaults for new works, contract URIs, dispute outcomes, `relicense`, `stageOverride`, the entropy module's `setConfig` |
+| `PLATFORM` | 8 | Platform key | Immediate | 48 hours | `Stream.createCollection`, `StatementLog.appendPlatform`; `WorkDelivery.addLocator` |
+| `PARAMETER_SETTER` | 9 | Hot admin Safe | 48 hours | 48 hours | Auction settings and limits (`setConfig`, the edition auction's `setLimits`), opening bids (`AssetAllowlist.setOpeningBid`), defaults for new works, contract URIs, dispute outcomes, `relicense`, `stageOverride`, the entropy module's `setConfig` |
 | `FUNDS_SETTER` | 10 | Hot admin Safe | 14 days | 14 days | Network fee terms, `setOwner`, `WorkRecords.setRoyaltyRate`, asset admission, default currencies, `RevenueEscrow.recover` |
-| `SUCCESSOR_SETTER` | 11 | Hot admin Safe | 30 days | 30 days | Verifier, renderer, consolidation source, artist resolver, VRF and federation registry swaps; Stream's dependencies (`setDependency`, owner decision 16) and the artist registry's `register` caller (`setPackageRegistry`); `lowerCallbackGasLimit`; re-enabling a signer; admitted minters and sale targets; `resolveContested`; `appendGovernanceManifest` |
+| `SUCCESSOR_SETTER` | 11 | Hot admin Safe | 30 days | 30 days | Verifier, renderer, consolidation source, artist resolver, VRF and federation registry swaps; Stream's dependencies (`setDependency`, owner decision 16) and the artist registry's `register` caller (`setPackageRegistry`); `lowerCallbackGasLimit`; re-enabling a signer; admitted minters and sale targets; `resolveContested`; `WorkRecords.setDelivery` and `addStore`; `appendGovernanceManifest` |
 | `CURATOR` | 12 | Curator key | Immediate | 30 days | `StatementLog.appendCurator` (curation evidence) |
 | `PUBLIC` | `type(uint64).max` | Everyone | none | none | Never mapped: `GovernanceConfig` rejects it |
 
@@ -553,11 +553,11 @@ committed example's 15 are listed in order in the [matrix](../audit/roles.md#gen
 | Selector | Why it is wired |
 | --- | --- |
 | `bindWorkRecords`, `bindEditions`, `bindStream`, `bindPackageRegistry`, `bindSplitFactory`, `bindStatementLog` | The one-shot bindings |
-| `bindFederationRegistry` (artist registry) | Allowed but not wired: the federation registry ships in v1.1, then bound by a 30-day `ADMIN` action |
+| `bindFederationRegistry` (artist registry) | Allowed but not wired: the federation registry is in v1, specified by a later ADR, and is bound when it ships by a 30-day `ADMIN` action (later replaced by `setFederationRegistry`, SUCCESSOR_SETTER) |
 | `setAdmittedMinter(address,bool)` | Admits each sale adapter to its token. A later one is admitted the same way, in the 30-day class; for 6529 Stream the review checks that the adapter reports each sale's true outcome to Stream (Stream itself moves an unbid or frozen-out work to the museum, owner decision 17), and the other obligations ADR 0005 lists: burns only on an upheld dispute, settles, pays the locked shares (ADR 0005, owner decision 15) |
 | `setTarget(address,bool)` | Lists each token on its sale adapter |
 | `setDefaultCurrency(bytes32,uint64,address)` | Each product's first default currency, ETH, the only active asset at genesis. Without it no auction could start for 14 days, because `EnglishAuction.start` reads `PRODUCT_STREAM`'s. |
-| `setOpeningBid(address,uint256,uint256)` | The English auction's ETH opening bid, 0.05 ETH (owner decision 19), so a 1/1's first bid is at least that from the first sale; later a 48-hour PARAMETER_SETTER action |
+| `setOpeningBid(address,uint64,uint256)` (asset allowlist) | ETH's opening bid, 0.05 ETH (owner decision 19), which the English auction locks at start, so a 1/1's first bid is at least that from the first sale; later a 48-hour PARAMETER_SETTER action |
 | `appendGovernanceManifest(...)` | The epoch-0 manifest |
 
 **Readback** (`GovernanceConfigurator.verify`, by `eth_call`, at least 5 days later). It
@@ -591,8 +591,8 @@ sequenceDiagram
     participant Hot as Hot admin Safe
     participant M as WorksAccessManager
     participant G as Guardian Safe
-    participant A as EnglishAuction
-    Hot->>M: schedule(A, setOpeningBid(currency, expected, next), 0)
+    participant A as AssetAllowlist
+    Hot->>M: schedule(A, setOpeningBid(asset, revision, bid), 0)
     M-->>G: OperationScheduled(id, nonce, ready time, Hot, A, data)
     Note over G: decode data, compare with the published intent
     alt the guardian objects
@@ -601,14 +601,15 @@ sequenceDiagram
     else no objection within 48 hours
         Hot->>M: execute(A, data)
         M-->>Hot: OperationExecuted(id, nonce)
-        M->>A: setOpeningBid(currency, expected, next)
-        Note over A: OpeningBidSet(currency, previous, next)
+        M->>A: setOpeningBid(asset, revision, bid)
+        Note over A: OpeningBidSet(asset, previous, bid, revision + 1)
     end
 ```
 
-- `EnglishAuction.setOpeningBid` maps to `PARAMETER_SETTER` (48 hours). At execution it
-  reverts if the opening bid changed since the operation was written (`ExpectedValueMismatch`,
-  GV-19) or the value is above its ceiling (`OpeningBidAboveCeiling`).
+- `AssetAllowlist.setOpeningBid` maps to `PARAMETER_SETTER` (48 hours). At execution it
+  reverts if any change to the asset (its status, floor or opening bid) bumped its revision
+  since the operation was written (`RevisionMismatch`, GV-19) or the value is above its ceiling
+  (`OpeningBidAboveCeiling`). The English auction locks the value at each start.
 
 ### A guardian cancels a hostile admin operation
 
@@ -781,7 +782,7 @@ GOV-n".
 | GV-19 | Setters for funds, recipients, verifiers, renderers and sale parameters are compare-and-set: they take the expected current value (or revision), so a stale operation reverts. | Each setter (`ExpectedValueMismatch`, revision checks) | `Hardening.t.sol`: `test_StaleCompareAndSetOperationReverts`; `AssetAllowlist.t.sol`: `test_QueuedAdmissionCannotReviveAfterEmergencyDeprecation`, `test_DefaultCurrencyIsCompareAndSet` |
 | GV-20 | Every governed setter emits an event: value setters the old and the new value, per-key toggles (`setTarget`, `setAdmittedMinter`) the key and its new state. | Each setter's event | [`VrfEntropyGovernance.t.sol`](../../test/entropy/VrfEntropyGovernance.t.sol): `test_SetConfig_UpdatesAndEmits`, `test_SetCoordinator_SwapsAndEmits`; [`StatementLog.t.sol`](../../test/records/StatementLog.t.sol): `test_SetArtistResolver_SwapsAndEmits`; `Hardening.t.sol`: `test_DirectionRulesLiveInTheTarget` |
 | GV-21 | Raise-only parameters use `BoundedParameter`: a nonzero initial value within the ceiling, and each raise above the current value, at most double it, and never above the ceiling. The one v1 user is the entropy callback gas limit (`setConfig`, ceiling `MAX_CALLBACK_GAS`); its separate 30-day `lowerCallbackGasLimit` sets a value below the current limit and at least `MIN_CALLBACK_GAS`. | `BoundedParameter.initial`, `raise`; `VrfEntropyModule` | [`BoundedParameter.t.sol`](../../test/governance/BoundedParameter.t.sol): `testFuzz_RaiseMatchesSpecification`, `testFuzz_RaiseSequenceStaysBounded`, `test_RaiseRejectsMoreThanDouble`; `VrfEntropyGovernance.t.sol`: `test_SetConfig_GasLimitCanOnlyBeRaised`; [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_ALoweringStaysAboveTheFloorAndBelowTheCurrentLimit` |
-| GV-22 | Dependencies installed by governed setters are checked for code, no EIP-7702 delegation and ERC-165 where implemented. Sale targets are listed with the same check (ERC-721 on the English auction; the edition auction lists only the Editions its constructor checked). All but admitted minters and sale targets are also pinned to a code hash re-checked at every use (DEPS-6). | `Dependency` (the one shared check), used by `PackageRegistry.setVerifier` and `registerPackage`, `VrfEntropyModule`, `StatementLog`, `EnglishAuction` (`isTarget`), `UniformEditionAuction` (constructor, `setFederationRegistry`), `Stream.setDependency`, `Stream.rendererOf`, `WorkRecords.pinnedRenderer`, `ArtistRegistry` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_registerPackage_refusesAVerifierWhoseCodeChanged`; [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Pin_ACoordinatorWhoseCodeChangedIsRefused`; `StatementLog.t.sol`: `test_Artist_AResolverWhoseCodeChangedIsRefused`; [`EnglishAuctionFederation.t.sol`](../../test/sales/auction/EnglishAuctionFederation.t.sol): `test_Federation_CodeHashesArePinned`; [`EnglishAuctionDisputes.t.sol`](../../test/sales/auction/EnglishAuctionDisputes.t.sol): `test_SetTarget_RejectsNonTokens`; [`UniformEditionAuction.t.sol`](../../test/sales/edition/UniformEditionAuction.t.sol): `test_SetTarget_OnlyEditions`, `test_SetFederationRegistry`; [`RendererCodePin.t.sol`](../../test/integration/RendererCodePin.t.sol): `test_PinnedRendererWithChangedCodeIsRefused`, `test_FinalizeRefusesADefaultRendererWhoseCodeChanged`; [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol): `test_ConsolidationSource_CodeHashRecheckedAtUse` |
+| GV-22 | Dependencies installed by governed setters are checked for code, no EIP-7702 delegation and ERC-165 where implemented. Sale targets are listed with the same check (ERC-721 on the English auction; the edition auction lists only the Editions its constructor checked). All but admitted minters and sale targets are also pinned to a code hash re-checked at every use (DEPS-6). | `Dependency` (the one shared check), used by `PackageRegistry.setVerifier` and `registerPackage`, `VrfEntropyModule`, `StatementLog`, `EnglishAuction` (`isTarget`), `UniformEditionAuction` (constructor, `setFederationRegistry`), `Stream.setDependency`, `Stream.rendererOf`, `WorkRecords.pinnedRenderer`, `ArtistRegistry` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_registerPackage_refusesAVerifierWhoseCodeChanged`; [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Pin_ACoordinatorWhoseCodeChangedIsRefused`; `StatementLog.t.sol`: `test_Artist_AResolverWhoseCodeChangedIsRefused`; [`EnglishAuctionFederation.t.sol`](../../test/sales/auction/EnglishAuctionFederation.t.sol): `test_Federation_CodeHashesArePinned`; [`EnglishAuctionDisputes.t.sol`](../../test/sales/auction/EnglishAuctionDisputes.t.sol): `test_SetTarget_RejectsNonTokens`; [`UniformEditionAuction.t.sol`](../../test/sales/edition/UniformEditionAuction.t.sol): `test_SetTarget_OnlyEditions`, `test_SetFederationRegistry_IsRefused`; [`RendererCodePin.t.sol`](../../test/integration/RendererCodePin.t.sol): `test_PinnedRendererWithChangedCodeIsRefused`, `test_FinalizeRefusesADefaultRendererWhoseCodeChanged`; [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol): `test_ConsolidationSource_CodeHashRecheckedAtUse` |
 | GV-23 | A delay that reverses a tightening action counts from that action, not from scheduling: `unpause`, `resume` and the dispute `cancel` run no earlier than 48 hours after the pause (review finding GOV-5), a re-admission no earlier than 14 days after the deprecation (MARKET-2). | `EnglishAuction._requireUnpausable`, `UniformEditionAuction.unpause`, `AssetAllowlist.admitAsset` | [`PauseWindow.t.sol`](../../test/sales/PauseWindow.t.sol): `test_Unpause_ScheduledBeforeThePauseWaitsTwoDaysAfterIt`, `test_Resume_ScheduledBeforeThePauseWaitsTwoDaysAfterIt`; `AssetAllowlist.t.sol`: `test_DeprecateThenReadmit`; [`UniformEditionAuction.t.sol`](../../test/sales/edition/UniformEditionAuction.t.sol): `test_Pause_BlocksOpensOnly` |
 | GV-24 | Contract-to-contract calls use one-shot bindings, not roles: each bind resolves to `ADMIN`, runs once, and genesis wires all of v1's. | Each `bind*` (`AlreadyBound`), `GovernanceConfig.isGenesisSelector` | `GenesisWiring.t.sol`: `test_RepeatedOneShotBindAbortsTheWholeConfiguration`, `test_WiringExecutesGenesisCallsInTheConfiguringTransaction`; [`Genesis.t.sol`](../../test/integration/Genesis.t.sol): `test_WiringIsInPlaceAndTheReadbackPasses` |
 

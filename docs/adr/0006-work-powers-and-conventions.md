@@ -184,9 +184,15 @@ The items in §4, and the sibling change specifying the conventions in §3.
 
 ## Amendment note (15 November 2026, [ADR 0007](0007-permanence.md))
 
-The owner decided that the errata repin becomes optionally renounceable: a third `WorkPowers`
-bit, `RENDERER_REPIN`, renounceable only after finalize; once renounced, a pinned renderer that
-a protocol change breaks can never be repaired for that work. This supersedes §2's "The errata
-repin cannot be renounced" and the rejected alternative "Make the errata repin renounceable"
-once it lands: **pending** (the records lane, in the second integration round). Until then the
-behaviour above stands.
+The errata repin becomes optionally renounceable (owner decision): a third `WorkPowers` bit,
+`RENDERER_REPIN` (bit 2, value 4), renounceable only once the work is finalized
+(`WorkNotFinalized` before); once renounced, `repinRenderer` reverts with `PowerRenounced` for
+that work for good, a no-op included. `WorkPowers.ALL` is 7. §2's "The errata repin cannot be
+renounced" and the alternative "Make the errata repin renounceable. Rejected" are superseded.
+The accepted risk this adds: a pinned renderer that a later protocol change breaks can never be
+repaired for a work whose artist renounced the repin (LIM-CNT-16); the default renderer now
+forwards all gas on every read, so a repricing alone makes it dearer, not broken. The promise
+card's `renderer` row shows the renunciation, and the grade counts only the royalty and
+license powers. Current rules: WS-37, WS-38 in
+[Works and storage](../spec/works-and-storage.md#rules-and-invariants). `IWorkPowers`' ID is
+unchanged (`0xbd18229c`); `IWorkRecords`' ID is `0x2654eed1` (pre-launch reshaping).

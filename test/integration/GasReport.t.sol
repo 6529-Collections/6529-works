@@ -65,11 +65,11 @@ contract IntegrationGasReport is IntegrationBase {
     /// @dev Test ceilings in Prague gas, kept by ADR 0004.
     uint256 internal constant SETTLE_CEILING = 400_000;
     /// @dev The margin every start row with Stream's genesis dependencies keeps under the 350K
-    ///      budget: the largest round value the measured rows support since the mint policy
-    ///      (on the permanence integration of 15 November 2026 the tightest row is 347,404,
-    ///      2,596 under the budget). It was 5,000 (the review of #81) before the start path
-    ///      gained the policy call and the locked-terms events.
-    uint256 internal constant START_MARGIN = 2500;
+    ///      budget (the review of #81): the largest round value the measured rows support. The
+    ///      mint policy and the locked-terms events took it to 2,500 during the permanence
+    ///      integration; moving the opening bid into the asset allowlist's status word (one read
+    ///      fewer per start) restored it: the tightest row is 344,817, 5,183 under the budget.
+    uint256 internal constant START_MARGIN = 5000;
     /// @dev After governance replaced Stream's three mint-path dependencies (the mint policy,
     ///      the economics resolver and the entropy module; owner decision 16), a mint reads each
     ///      it uses from storage: about 2,100 more per dependency. The binding rows are then
@@ -324,7 +324,7 @@ contract IntegrationGasReport is IntegrationBase {
     function _rowStart() internal returns (Row memory r) {
         _steadyState();
         r = _row("start, steady state", starter, address(auction), _startData(2), 0);
-        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 2.5K margin");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
         _growthIs(r, 5, 0);
         _slotsAtMost(r, START_MAX_SLOTS);
     }
@@ -333,7 +333,7 @@ contract IntegrationGasReport is IntegrationBase {
         _steadyState();
         bytes memory data = _startWithBidData(root, _package(root), 2);
         r = _row("startWithBid, steady state", bidder, address(auction), data, 1 ether);
-        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 2.5K margin");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
         _growthIs(r, 6, 0);
         _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
     }
@@ -369,7 +369,7 @@ contract IntegrationGasReport is IntegrationBase {
         bytes memory data =
             abi.encodeCall(auction.start, (address(stream), _mintData(twoRoot, works, 1)));
         r = _row("start, steady state, two-party work", starter, address(auction), data, 0);
-        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 2.5K margin");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
         _growthIs(r, 5, 0);
         _slotsAtMost(r, START_MAX_SLOTS);
     }
@@ -385,7 +385,7 @@ contract IntegrationGasReport is IntegrationBase {
         r = _row(
             "startWithBid, steady state, two-party work", bidder, address(auction), data, 1 ether
         );
-        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 2.5K margin");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
         _growthIs(r, 6, 0);
         _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
     }
@@ -401,7 +401,7 @@ contract IntegrationGasReport is IntegrationBase {
         bytes memory data =
             abi.encodeCall(auction.start, (address(stream), _mintData(vrfRoot, works, 0)));
         r = _row("start, steady state, VRF work", starter, address(auction), data, 0);
-        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 2.5K margin");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
         _growthIs(r, 5, 0);
         _slotsAtMost(r, START_MAX_SLOTS);
     }
@@ -422,7 +422,7 @@ contract IntegrationGasReport is IntegrationBase {
         bytes memory data =
             abi.encodeCall(auction.start, (address(stream), _mintData(masterRoot, works, 0)));
         r = _row("start, steady state, edition master", starter, address(auction), data, 0);
-        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 2.5K margin");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
         _growthIs(r, 5, 0);
         _slotsAtMost(r, START_MAX_SLOTS);
     }
@@ -531,7 +531,7 @@ contract IntegrationGasReport is IntegrationBase {
         bytes memory data =
             abi.encodeCall(auction.start, (address(stream), _mintData(cRoot, works, 0)));
         r = _row("start, an artist's first work", starter, address(auction), data, 0);
-        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 2.5K margin");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
         _growthIs(r, 6, 0);
         _slotsAtMost(r, START_MAX_SLOTS);
     }
@@ -547,7 +547,7 @@ contract IntegrationGasReport is IntegrationBase {
             _startWithBidData(cRoot, works, 0),
             1 ether
         );
-        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 2.5K margin");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
         _growthIs(r, 7, 0);
         _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
     }
@@ -562,7 +562,7 @@ contract IntegrationGasReport is IntegrationBase {
             _bindingData(false),
             1 ether
         );
-        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 2.5K margin");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
         _growthIs(r, 7, 0);
         _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
     }
@@ -651,7 +651,7 @@ contract IntegrationGasReport is IntegrationBase {
             _bindingData(true),
             1 ether
         );
-        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 2.5K margin");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
         _growthIs(r, 7, 0);
         _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
     }
@@ -698,7 +698,7 @@ contract IntegrationGasReport is IntegrationBase {
         );
         console2.log(r.label, r.total);
         // At 1,024 bytes this row was 361,211, at 256 348,132 and at 128 345,988 (ADR 0005 §12).
-        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 2.5K margin");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
         _growthIs(r, 7, 0);
     }
 
@@ -716,7 +716,7 @@ contract IntegrationGasReport is IntegrationBase {
             0
         );
         console2.log(r.label, r.total);
-        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 2.5K margin");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
         _growthIs(r, 5, 0);
     }
 

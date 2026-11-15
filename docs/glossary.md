@@ -50,6 +50,14 @@ See: [federated README](../src/federated/README.md).
 
 ## A
 
+### abandonment
+
+The edition auction's exit for a sale that paid nothing and whose master cannot settle or whose
+edition was never created: after its end plus its locked abandonment delay (150 days at launch),
+anyone calls `abandon`, every bid is refunded and the edition sealed at zero (EA-19).
+
+See: [editions and sales](spec/editions-and-sales.md).
+
 ### acceptance
 
 A party's EIP-712 `PackageAcceptance` signature over a package root. An account with no
@@ -292,9 +300,9 @@ See: [identity and recovery](spec/identity-and-recovery.md).
 
 ### consume
 
-The package registry's single-use check when a Stream auction start mints
-(`PackageRegistry.consume`). It verifies the item and the [move](#move), and marks the content
-used.
+The check a Stream mint makes that an item may mint once: the [mint policy](#mint-policy)
+(`PackageRegistry.authorize`) verifies the item and the [move](#move), and Stream records the
+content hash as used, whatever policy is installed (`Stream.consumedItemOf`, AUC-44).
 
 See: [curation](spec/curation.md).
 
@@ -449,6 +457,15 @@ How long a governed action waits: immediate, standard (48 hours), funds (14 days
 (30 days) (`Roles.STANDARD`, `FUNDS`, `SUCCESSOR`).
 
 See: [governance](spec/governance.md).
+
+### delivery contract
+
+The replaceable contract behind `WorkRecords.delivery()` that holds locators, kinds, preferences
+and the URI grammar (`WorkDelivery` at genesis; replaced by `setDelivery`, SUCCESSOR_SETTER, 30
+days). `WorkRecords` forwards `preferredLocator` to it and serves only a well-formed answer; it can
+change no fact.
+
+See: [works and storage](spec/works-and-storage.md).
 
 ### delegation contract
 
@@ -667,7 +684,7 @@ See: [reading a work](integrators/reading-a-work.md).
 ### errata repin
 
 The only way to change a finalized work's renderer (`WorkRecords.repinRenderer`, 30 days), with
-the lead artist's signature.
+the lead artist's signature, until the lead artist renounces it (`RENDERER_REPIN`).
 
 See: [rendering and tokenURI](spec/rendering-and-tokenuri.md).
 
@@ -710,8 +727,8 @@ See: [storage](integrators/storage.md).
 
 ### file role
 
-A media file's role (`FileRole`): PRIMARY (the artwork, first), PREVIEW (a small still image) or
-AUXILIARY.
+A media file's role (named by `FileRole`, an open `uint8`): PRIMARY (the artwork, first), PREVIEW
+(a small still image) or AUXILIARY; readers treat a role they do not know as auxiliary.
 
 See: [works and storage](spec/works-and-storage.md).
 
@@ -826,7 +843,10 @@ See: [curation](spec/curation.md).
 
 ### item kind
 
-What an item mints (`ItemKind`): ORIGINAL or EDITION_MASTER.
+What an item mints: ORIGINAL (0) or EDITION_MASTER (1), named by `ItemKind`. The field is an open
+`uint8`, as are the seed policy and party and media roles, so a value a later mint policy defines
+never makes a permanent contract's decode revert; the genesis policy refuses values it does not
+know for new items.
 
 See: [curation](spec/curation.md).
 
@@ -978,7 +998,9 @@ See: [works and storage](spec/works-and-storage.md).
 
 ### opening bid
 
-A currency's governed minimum first bid (`openingBid`), locked by each auction at its start.
+A currency's governed minimum first bid in the English auction, held by the
+[asset allowlist](#asset-allowlist) in the asset's status word (`AssetAllowlist.setOpeningBid`,
+PARAMETER_SETTER) and locked by each auction at its start (`openingBid`).
 
 See: [stream and auctions](spec/stream-and-auctions.md).
 
@@ -1147,8 +1169,9 @@ See: [entropy](spec/entropy.md).
 
 ### record
 
-A work's descriptive JSON file in the content store, at most 12,288 bytes
-(`Limits.MAX_RECORD_BYTES`), which the lead artist may replace until [finalize](#finalize).
+A work's descriptive JSON file in the content store, one chunk (`WorkRecords` checks only
+that); the renderer shows a record of at most 12,288 bytes (`Limits.MAX_RECORD_BYTES`). The lead
+artist may replace it until [finalize](#finalize).
 
 See: [works and storage](spec/works-and-storage.md).
 
@@ -1190,7 +1213,8 @@ See: [rendering and tokenURI](spec/rendering-and-tokenuri.md).
 
 A power over one work (`ROYALTY_RATE`, any further royalty change; `RELICENSE`, any further
 license change) that the lead artist gave up for good through `IWorkPowers.renounce`; the
-function then always reverts for that work. The errata repin cannot be renounced.
+function then always reverts for that work; and, after finalize, `RENDERER_REPIN`, the
+[errata repin](#errata-repin), after which the work's renderer pin never moves again.
 
 See: [works and storage](spec/works-and-storage.md#rules-and-invariants).
 
@@ -1439,6 +1463,14 @@ Each artist's list of at most 16 wallets with [standing](#standing) (`standingOf
 evicted early, so a thief cannot strip it.
 
 See: [identity and recovery](spec/identity-and-recovery.md).
+
+### store set
+
+`WorkRecords`' append-only list of content stores a file may sync from: store 0 is the content
+store, and `addStore` (SUCCESSOR_SETTER, 30 days) adds an `IChunkStore` with its code hash
+pinned. A file's store is final once it is complete.
+
+See: [works and storage](spec/works-and-storage.md).
 
 ### storage operator
 

@@ -40,9 +40,8 @@ merged in PRs #51 to #57 and are cited by finding ID. No external audit has star
 
 Areas where a small change has large effects, or where the review concentrated:
 
-- **Contract size.** `UniformEditionAuction` has the smallest EIP-170 margin (a temporary
-  exemption for the interim edition wiring), then `Renderer`, `WorkRecords` and
-  `EnglishAuction`; both auctions' views are
+- **Contract size.** `EnglishAuction` has the smallest EIP-170 margin (just over the 512-byte
+  floor), then `UniformEditionAuction` and `Renderer`; no contract is exempt. Both auctions' views are
   answered by their lenses through a read-only `staticcall` fallback
   ([scope](scope.md#contracts-in-scope)).
 - **The auction start path.** `EnglishAuction.start` → `Stream.mint` → the mint policy's

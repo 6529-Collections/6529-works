@@ -28,9 +28,9 @@ Edition bids are ETH; only the English auction calls Permit2
 
 | Caller | Calls | Rules |
 | --- | --- | --- |
-| Anyone | `start`, `startWithBid`, `bid`, `settle`, `settleOrRefund`, `claimFor` | AUC-14 to AUC-25, AUC-29, AUC-38 to AUC-41 |
+| Anyone | `start`, `startWithBid`, `bid`, `settle`, `settleOrRefund`, `claimFor` | AUC-14 to AUC-25, AUC-29, AUC-45 to AUC-48 |
 | A bidder | `claim` of its credits; `withdrawBid` (the high bidder, while paused or frozen); `claimDelivery` (the winning bidder to any address; the recipient it named to itself, or anywhere from 30 days after the end) | AUC-18, AUC-21, DSP-15 |
-| Guardians and governance | The dispute `pause(saleId, …)`, `resume`, `cancel`; `pause()`, `unpause()`; `setConfig`, `setOpeningBid`, `setTarget`, `setFederationRegistry` | AUC-13, AUC-26, AUC-30, DSP-13 to DSP-19; [role matrix](../../docs/audit/roles.md#englishauction) |
+| Guardians and governance | The dispute `pause(saleId, …)`, `resume`, `cancel`; `pause()`, `unpause()`; `setConfig`, `setTarget`, `setFederationRegistry` (the opening bid is the asset allowlist's `setOpeningBid`) | AUC-13, AUC-26, AUC-30, DSP-13 to DSP-19; [role matrix](../../docs/audit/roles.md#englishauction) |
 | Anyone (edition auction) | `open`, `bid`, `settle`, `claimBidFor`, `abandon`, every view | EA-1, EA-4, EA-8 to EA-13, EA-17, EA-19, EA-20 |
 | An edition bidder | `raise`, `claimBid`; `withdrawBid` while the 1/1 is paused for a dispute; `claim` of its credits | EA-5, EA-9, EA-16 |
 | Governance (edition auction) | `pause()`, `unpause()`, `setConfig`, `setLimits`, `setTarget` (no federation registry) | EA-15, EA-18; [role matrix](../../docs/audit/roles.md#uniformeditionauction) |
@@ -48,9 +48,10 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
   rules must change its lens too (`EnglishAuctionLensDifferential.t.sol`,
   `EnglishAuctionLens.t.sol`). Hot-path views stay on the auction: `saleKind`, and
   `auctionClock` (`IEnglishAuctionClock`), which the edition auction reads and any new on-chain
-  consumer should. Nothing sweeps assets sent to the auction outside its flows; the auction
-  now has room for a governed rescue, so adding one is a scope decision (LIM-SAL-10). The English auction is below the
-  512-byte floor by a recorded exemption (`tools/size-margins.json`) since its refusal exit.
+  consumer should. Nothing sweeps assets sent to an auction outside its flows; the edition
+  auction now has room for a governed rescue, so adding one is a scope decision (LIM-SAL-10). The
+  English auction keeps 514 bytes of EIP-170 margin since its opening bids moved to the asset
+  allowlist (ADR 0007): little room, so new English-auction surface goes to its lens.
 - **Edition auction storage and the lens.** The lens reads the adapter's words with
   `storageAt(slot)`, computing each slot from the adapter's layout (its `_SLOT_*` constants),
   so a change to the adapter's state variables must change the lens too
@@ -61,7 +62,7 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
 - **English auction storage.** A steady-state start writes one `Sale` word and shares a terms
   record per distinct combination; seller and fee terms come back from the token at settlement,
   from the call that reports the outcome (`IMintTarget.settlePrimary`, owner decision 17).
-- **A token that will not settle (AUC-38).** For federated sales only (a nonzero
+- **A token that will not settle (AUC-45).** For federated sales only (a nonzero
   `_federatedTerms` word, which also holds the locked delay), `settleOrRefund` calls `settle` on
   the auction
   itself with exactly `refusalGas` (the one governed gas bound, raise-only) and, if that fails,
@@ -103,7 +104,7 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
   from the pause in code, because AccessManager counts a delay from scheduling (GV-23).
 - **ERC-20 transfers.** The English auction's Permit2 pull checks only balance deltas, not the
   return word, so admitting only standard ERC-20s is the guard (ECO-23, LIM-SAL-7). It reads the
-  federated fee recipient at start and locks it for the sale (AUC-41,
+  federated fee recipient at start and locks it for the sale (AUC-48,
   [federated](../federated/README.md#before-installing-a-registry)).
 - **Gas.** Per-operation Prague gas and slots are in
   [ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table);

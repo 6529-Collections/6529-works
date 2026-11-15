@@ -131,7 +131,9 @@ the encoded stream) only if every check passed.
 
 A [locator](../glossary.md#locator) is `(kind, uri)`: kind `1` `ARWEAVE` or `2` `IPFS`. Kind `0`
 `NONE` is the unset value of a preference, and kind `3` `ONCHAIN` is the content store itself,
-implicit and never registered. `WorkRecords.addLocator` accepts exactly these shapes (WS-18):
+implicit and never registered. Locators live in the replaceable delivery contract
+(`WorkDelivery`, at `WorkRecords.delivery()`), whose `addLocator` accepts exactly these shapes
+(WS-18):
 
 | Kind | URI | Length | Character rules |
 | --- | --- | --- | --- |
@@ -194,9 +196,15 @@ is `length` bytes and decodes to that, it is the stored stream.
 ## 5. Which copy to serve: the preferred locator
 
 ```bash
+DELIVERY=$(cast call $RECORDS "delivery()(address)")
 cast call $RECORDS "preferredLocator(uint256,bytes32)((uint8,string),uint256)" $TOKEN_ID $FILE_ID
-cast call $RECORDS "locators(uint256,bytes32)((uint8,string)[])" $TOKEN_ID $FILE_ID
+cast call $DELIVERY "locators(uint256,bytes32)((uint8,string)[])" $TOKEN_ID $FILE_ID
 ```
+
+`WorkRecords.preferredLocator` forwards to the delivery contract and serves its answer only when
+it is well-formed; otherwise it serves the work's own answer (the on-chain copy of a synced work,
+else none), never another locator (WS-40). The kind is an open `uint8`: a later delivery contract
+may add kinds.
 
 `preferredLocator` returns the [preferred locator](../glossary.md#preferred-locator), the copy
 `tokenURI` serves, and its registration index. The most specific setting wins: the file's
@@ -290,10 +298,12 @@ the repository root.
    ```
 
 6. **Mark the work on-chain complete** once every media file of the work is complete. Anyone may
-   call it; a large work may take several calls, each resuming where the last stopped:
+   call it, naming the store to verify against (0 is the content store) and how many chunks to
+   verify in this call; each call resumes from the cursor the last one left
+   (`OnChainSyncProgress`), so a file of any size syncs in pieces (WS-41 to WS-43):
 
    ```bash
-   cast send $RECORDS "syncOnChain(uint256)" $TOKEN_ID $SIGNER
+   cast send $RECORDS "syncOnChain(uint256,uint256,uint256)" $TOKEN_ID 0 256 $SIGNER
    ```
 
 **Finishing someone else's upload.** Uploads can stop and resume in any order, by anyone. To

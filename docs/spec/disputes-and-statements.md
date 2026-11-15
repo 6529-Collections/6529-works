@@ -304,23 +304,22 @@ sequenceDiagram
     participant S as Hot admin Safe
     participant M as WorksAccessManager
     participant T as Stream
-    participant R as PackageRegistry
     participant AR as ArtistRegistry
     S->>M: execute releaseContent after the cancel
     M->>T: releaseContent(tokenId, contentHash, beneficiary)
     Note over T: token must be burned, else NotBurned
-    T->>R: releaseContent(contentHash, burned token itemHash, beneficiary)
-    Note over R: itemHash must hold contentHash, else ClaimNotAllowed
-    R->>AR: authorityOf(beneficiary)
-    Note over R: an unregistered beneficiary reverts with UnknownArtist
-    Note over R: content reserved for the beneficiary, item tombstoned, ContentReleased
+    Note over T: the burned token must hold contentHash, else ClaimNotAllowed
+    T->>AR: authorityOf(beneficiary)
+    Note over T: an unregistered beneficiary reverts with UnknownArtist
+    Note over T: content reserved for the beneficiary, item tombstoned, ContentReleased
 ```
 
 - **The outcome** must still be the token's latest when the cancel executes, so a later outcome
   invalidates a scheduled cancel (DSP-18, LIFECYCLE-4).
 - **`cancel`** sets `pausedTotal` to the time since the pause and credits the high bid. A
   cancelled sale keeps the last amount in `Auction.bid`; its `bidder` is zero.
-- **`releaseContent`** (DSP-21) reserves the content for the beneficiary's items
+- **`releaseContent`** (DSP-21) is 6529 Stream's alone, since Stream holds content uniqueness
+  (AUC-44; the package registry keeps no content record). It reserves the content for the beneficiary's items
   (`ContentReserved` for anyone else) and tombstones the burned item (`ContentUsed`). The
   beneficiary comes from the outcome document, unchecked on chain, so the guardians check it
   during the delay. A VRF item of the rightful artist joins the content's delivered seed
@@ -508,7 +507,7 @@ Test files: `SL` is [`StatementLog.t.sol`](../../test/records/StatementLog.t.sol
 | DSP-18 | `cancel` cites the token's own latest outcome, recorded after the pause; an earlier outcome, a superseded one or an item outcome cannot cancel. | `EnglishAuction.pause` (`outcomeFrom`), `cancel`, `_ownOutcome` | EAD `test_Cancel_NeedsTheRecordedOutcome`; [`AuctionDisputeCancel.t.sol`](../../test/sales/auction/AuctionDisputeCancel.t.sol) `test_Cancel_RefusesAnOutcomeRecordedBeforeThePause`, `test_Cancel_RefusesAnItemOutcomeRecordedBeforeTheMint`, `test_Cancel_OnlyTheLatestOutcomeCancels` |
 | DSP-19 | `cancel` runs only while the pause is live, credits the high bid and burns the token. | `EnglishAuction.cancel`, `Stream.burn` | EAD `test_Cancel_UpheldDisputeRefundsAndBurns`, `test_Cancel_WithNoBids`, `test_Cancel_OnlyWhileThePauseIsLive`, `test_Cancel_PauseWindowBoundary`, `test_Cancel_ThroughTheStandardDelay`; DI `test_CancelIsRefusedOnceThePauseHasLapsed` |
 | DSP-20 | Only the adapter that minted a token burns it, while holding it and before its primary sale settled, even after the adapter's removal. | `Stream.burn` | [`Stream.t.sol`](../../test/stream/Stream.t.sol) `test_burn_onlyByMintingAdapter`, `test_burn_byRemovedMintingAdapter`, `test_burn_neverAfterSettlement`, `test_burn_refusedAfterSettlement` |
-| DSP-21 | `releaseContent` is governed, needs a burned token, the item that held the content and a registered beneficiary, happens once per burned item, reserves the content for the beneficiary's items and tombstones the burned item. | `Stream.releaseContent`, `PackageRegistry.releaseContent`, `PackageRegistry.consume` | DI `test_ReleaseIsGovernedNamesAnArtistAndHappensOnce`, `test_ReleasedContentIsReservedForTheNamedArtist`, `test_AGuardianCancelsAPendingRelease`; [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol) `test_releaseContent_tombstonesTheItemEverywhere`, `test_releaseContent_revertsOnMismatch`, `test_releaseContent_onlyBoundStream`; `Stream.t.sol` `test_releaseContent_reverts` |
+| DSP-21 | `releaseContent` is governed, needs a burned token, the item that held the content and a registered beneficiary, happens once per burned item, reserves the content for the beneficiary's items and tombstones the burned item. | `Stream.releaseContent`, `Stream._claimContent` (6529 Stream holds content uniqueness and releases, AUC-44) | DI `test_ReleaseIsGovernedNamesAnArtistAndHappensOnce`, `test_ReleasedContentIsReservedForTheNamedArtist`, `test_AGuardianCancelsAPendingRelease`; `Stream.t.sol` `test_releaseContent_afterBurnLetsTheRealArtistMint`, `test_releaseContent_reverts` |
 | DSP-22 | After a sale, a dispute moves nothing: no path burns or transfers a settled work. | `Stream.burn` (`SaleAlreadySettled`) | DI `test_DisputeAfterASaleIsAStatementOnly`; `Stream.t.sol` `test_burn_neverAfterSettlement` |
 | DSP-23 | Through pauses, withdrawals, resumptions and cancels, the auction's balance covers every live bid and credit, value is conserved, and custody is exact. | `EnglishAuction` | [`AuctionHaltsInvariant.t.sol`](../../test/sales/auction/invariant/AuctionHaltsInvariant.t.sol) `invariant_BalanceCoversOwed`, `invariant_ValueIsConserved`, `invariant_ExactCustody` |
 | DSP-24 | Metadata shows the display rule's answer for a work, and the master's for an edition, and fails closed when the log cannot be read. | `Renderer._chainTraits` | [`Renderer.t.sol`](../../test/content/renderer/Renderer.t.sol) `test_Dispute_ShownWhenTheLogHasAnOutcome`, `test_Dispute_ReadsTheMastersSubjectForAnEdition`, `test_Dispute_ABrokenLogFailsClosed` |

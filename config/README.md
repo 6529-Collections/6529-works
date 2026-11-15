@@ -62,8 +62,9 @@ The deploy script follows one rule:
   - each product's first default currency (`setDefaultCurrency`, ETH for `PRODUCT_STREAM`,
     `PRODUCT_EDITIONS` and `PRODUCT_FEDERATED`): `EnglishAuction.start` reads it, and the
     setter is otherwise a 14-day FUNDS_SETTER action;
-  - the English auction's ETH opening bid of 0.05 ETH (`setOpeningBid`, owner decision 19),
-    later a 48-hour PARAMETER_SETTER action;
+  - the ETH opening bid of 0.05 ETH that the English auction locks at start
+    (`AssetAllowlist.setOpeningBid(ETH, 1, 0.05 ether)`, owner decision 19; ETH is at revision 1
+    from its admission at deployment), later a 48-hour PARAMETER_SETTER action;
   - the epoch-0 governance manifest (`appendGovernanceManifest` on the statement log).
 
   Nothing else can be wired: `GovernanceConfig.isGenesisSelector` is an allow-list.
@@ -73,7 +74,9 @@ The deploy script follows one rule:
   `holders`. The verifier keeps no signer list to wire.
 
 `ArtistRegistry.bindFederationRegistry` is listed under `deferred` and is not wired.
-The federation registry ships in v1.1, and binding it then is a 30-day `ADMIN` action.
+Federation is in v1, specified by a later ADR ([ADR 0007](../docs/adr/0007-permanence.md)):
+binding the federation registry when it ships is a 30-day `ADMIN` action, and replacing it
+afterwards is `setFederationRegistry` (SUCCESSOR_SETTER, 30 days).
 
 ## Checks
 

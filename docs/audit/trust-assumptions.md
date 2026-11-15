@@ -55,8 +55,11 @@ attacker's view is the [threat model](threat-model.md); accepted risks are in
   `StatementLog`, `ContentStore`, `ArtistRegistry` (Stream holds it as an immutable with no setter,
   [AUC-39][auc]), the `SplitLedger` and its 66-byte `SplitVault` wallets (the ledger is also the
   release verifier), and the `RevenueEscrow` as custodian of its credits. Replaceable under
-  governance: the mint policy (`PackageRegistry`, [AUC-38][auc]), the economics resolver, the
-  entropy module, the default renderer, sale adapters, `AssetAllowlist`, the consolidation adapter,
+  governance: the mint policy (`PackageRegistry`, [AUC-38][auc]; content uniqueness stays in
+  Stream, [AUC-44][auc]), `WorkRecords`' delivery contract (`setDelivery`) and its append-only store
+  set (`addStore`, [WS-39, WS-41][ws]), the economics resolver, the entropy module, the default
+  renderer, sale adapters, `AssetAllowlist` (which also holds each currency's opening bid), the
+  consolidation adapter,
   the two governed vaults' destinations (`FeeRecipientVault`, `MuseumVault`, [ECO-41][eco]), the
   artist registry's federation-registry pointer and timers ([ID-35][id]), and the
   `WorksAccessManager` itself, which hands over to a registered successor with `migrate`
@@ -64,8 +67,9 @@ attacker's view is the [threat model](threat-model.md); accepted risks are in
 - **The gas rule.** A permanent contract's call into another contract forwards all the gas EIP-150
   allows; a call that fails leaving at most 1/8 of the gas held before it reverts the transaction
   with `BoundedCallShortfall`, and is never read as a refusal or a default answer ([ID-38][id],
-  [DSP-26][dsp], [AUC-42][auc], [ECO-42][eco]; [LIM-GAS-13][lim-gas]). Fixed gas allowances remain
-  only in replaceable contracts (the sale adapters, the claim router, the renderer).
+  [DSP-26][dsp], [AUC-42][auc], [ECO-42][eco]; [LIM-GAS-13][lim-gas]). The renderer, pinned per
+  finalized work, follows the same rule. Fixed gas allowances remain only in replaceable
+  contracts (the English auction, the edition auction's governed payout gas, the claim router).
 - **Off-chain trust is explicit:** the curation signer, the TDH vote that PLATFORM records and the
   admin Safe executes, and Arweave and IPFS until a work is on-chain complete
   ([ADR 0001, accepted risks](../adr/0001-v1-scope.md#accepted-risks)).
@@ -83,9 +87,9 @@ the deploy enforces the Safe counts; the admin split is policy.
 | --- | --- | --- | --- | --- |
 | ADMIN | 30 days (30 days) | Grant and revoke roles, map selectors, set target admin delays, onboard targets; `bindFederationRegistry` when the federation registry ships | Grant any role to any account (30 days, then the role's grant delay). Remap a selector or close a target. Move a target to another authority (`updateAuthority`, or `setAuthority` on the target). Cancel another account's operations, except a role revocation | Act faster than 30 days, or shorten a delay without waiting ([GV-4, GV-5][gv]). Cancel its own revocation (Rule 2) or another account's (Rule 3). Suspend a key |
 | UNPAUSER | 48 hours (48 hours) | Lift an adapter's emergency pause; resume a dispute-paused auction | Resume a disputed auction, after which an upheld `cancel` can no longer land | Act before 48 hours after the pause, even if scheduled earlier ([GV-23][gv], GOV-5) |
-| PARAMETER_SETTER | 48 hours (48 hours) | Sale parameters and defaults for new works; the edition auction's configuration for new sales; upheld disputes; recovery overrides; relicensing with consent; dependency registration; the VRF configuration | Stage a recovery override against any artist, which from the staging restrains the artist or freezes the payout for the 180-day notice; a payout-only override needs no consent ([LIM-ID-8][lim-id]). Set the royalty rate and license of later works. Move auction parameters within bounds, and the opening bid up to 1,000 increment floors (`EnglishAuction.OPENING_BID_FLOORS`). Move the edition auction's margin, ladder, offset, soft-close window and backstop within their bounds, for sales opened afterwards ([EA-2, EA-15][ed]). Point the entropy module at another subscription | Relicense without every party, or leave CC0 ([WS-12, WS-13][ws]). Cancel an auction a guardian did not pause, or cite an earlier outcome ([DSP-18][dsp]). Release an unburned work's content ([AUC-10][auc]). Lower the VRF callback limit ([ENT-10][ent]) |
+| PARAMETER_SETTER | 48 hours (48 hours) | Sale parameters and defaults for new works; the edition auction's configuration for new sales; upheld disputes; recovery overrides; relicensing with consent; dependency registration; the VRF configuration | Stage a recovery override against any artist, which from the staging restrains the artist or freezes the payout for the 180-day notice; a payout-only override needs no consent ([LIM-ID-8][lim-id]). Set the royalty rate and license of later works. Move auction parameters within bounds, and a currency's opening bid up to 1,000 increment floors (`AssetAllowlist.setOpeningBid`, `OPENING_BID_FLOORS`). Move the edition auction's margin, ladder, default offset, soft-close window and backstop, and its limits (`setLimits`: maximum close offset, abandonment delay, payout gas), within their bounds, for sales opened afterwards ([EA-2, EA-15, EA-18][ed]). Point the entropy module at another subscription | Relicense without every party, or leave CC0 ([WS-12, WS-13][ws]). Cancel an auction a guardian did not pause, or cite an earlier outcome ([DSP-18][dsp]). Release an unburned work's content ([AUC-10][auc]). Lower the VRF callback limit ([ENT-10][ent]) |
 | FUNDS_SETTER | 14 days (14 days) | Network fee terms for new works; a minted work's royalty rate with every party's consent; currencies; escrow recovery and `sweepExcess` (only the unowed balance, [ECO-40][eco]); the marketplace `owner()`; the 6529 Network Museum; the destinations of the fee recipient's and the museum's governed vaults (`setDestination`) | Redirect the network fee of every work started afterwards, approved works included, at a share just under 100% ([ECO-2][eco]). Admit a hostile ERC-20, since the admission probe is not proof ([ECO-32][eco]). Change the marketplace owner. Point the museum at an account it controls, which then receives every unbid canonical work settled afterwards, running auctions included ([AUC-24][auc]) | Reach a minted work's fee terms ([ECO-6][eco]) or rate ([WS-14][ws]). Move an escrow credit except to an equivalent wallet or a consented replacement ([ECO-28][eco], MONEY-2). Re-admit a currency within 14 days of its deprecation ([ECO-33][eco]). Set the museum to zero or to a protocol contract that could never hold a work |
-| SUCCESSOR_SETTER | 30 days (30 days) | Verifier, default renderer, consolidation source, VRF coordinator, artist resolver and federation registry swaps; Stream's mint policy, economics resolver and entropy module (never its artist registry, [AUC-39][auc]); the artist registry's timers within compiled bounds ([ID-35][id]); lengthening Stream's rescue delay, never below 90 days ([AUC-41][auc]); admitting sale adapters; the errata repin; re-enabling a signer; resolving contests; governance manifests | Install a verifier that approves anything, a renderer that misrepresents every unfinalized work, a sale adapter that takes custody of every work it starts, a consolidation source that grants or denies standing, or an artist resolver that vouches for anyone. Swap the VRF coordinator. Uphold or void a contest on a recorded outcome | Repin a finalized work without the artist ([RND-5][rnd]). Reinstall a retired verifier ([CUR-18][cur]). Install a dependency that is delegated, lacks its interface or differs from the reviewed code hash ([GV-22][gv]). Resolve a contest on an outcome older than it ([ID-14][id]). Change a delivered seed ([ENT-4][ent]) |
+| SUCCESSOR_SETTER | 30 days (30 days) | Verifier, default renderer, consolidation source, VRF coordinator, artist resolver and federation registry swaps; Stream's mint policy, economics resolver and entropy module (never its artist registry, [AUC-39][auc]); the artist registry's timers within compiled bounds ([ID-35][id]); lengthening Stream's rescue delay, never below 90 days ([AUC-41][auc]); `WorkRecords`' delivery contract and added stores ([WS-39, WS-41][ws]); admitting sale adapters; the errata repin; re-enabling a signer; resolving contests; governance manifests | Install a verifier that approves anything, a renderer that misrepresents every unfinalized work, a sale adapter that takes custody of every work it starts, a consolidation source that grants or denies standing, or an artist resolver that vouches for anyone. Swap the VRF coordinator. Uphold or void a contest on a recorded outcome | Repin a finalized work without the artist ([RND-5][rnd]). Reinstall a retired verifier ([CUR-18][cur]). Install a dependency that is delegated, lacks its interface or differs from the reviewed code hash ([GV-22][gv]). Resolve a contest on an outcome older than it ([ID-14][id]). Change a delivered seed ([ENT-4][ent]) |
 | GUARDIAN, PAUSER | immediate (30 days, 48 hours) | Veto: cancel, pause, revoke, disable, deprecate, suspend | See [Guardian Safes](#guardian-safes) | See [Guardian Safes](#guardian-safes) |
 
 Every governed function is non-payable, and setters for funds, recipients, verifiers and renderers
@@ -183,7 +187,8 @@ by the genesis wiring and then locked ([GV-24][gv]).
 | --- | --- | --- | --- |
 | `Stream.bindWorkRecords`, `bindEditions` | Code, no EIP-7702, ERC-165, and its `stream()` is this Stream | `setRoyaltyRate`, `emitMetadataUpdate`; `linkEdition` once per settled master | [AUC-11][auc] |
 | `Editions.bindWorkRecords` | Code, no EIP-7702, ERC-165 | `setRoyaltyRate`, `notifyMasterUpdated`, `notifyAllUpdated` | [ED-7][ed] |
-| `PackageRegistry.bindStream`, `bindEditions` | Code, no EIP-7702, ERC-165 | `authorize` (Stream's mint-policy call, [AUC-38][auc]), `releaseContent`; `claimContent` for the consumed item | [CUR-15][cur] |
+| `PackageRegistry.bindStream`, `bindEditions` | Code, no EIP-7702, ERC-165 | `authorize` (Stream's mint-policy call, [AUC-38][auc]); `claimContent` for the consumed item, which reads Stream's content record ([AUC-44][auc]) | [CUR-15][cur] |
+| `WorkRecords.setDelivery` (SUCCESSOR_SETTER, 30 days, compare-and-set; the first is deployed by `WorkRecords`' constructor) | ERC-165 `IWorkDelivery`, no EIP-7702, `records()` is this `WorkRecords`, `predecessor()` the current one | `refreshMetadata`, `refreshAllMetadata` only | [WS-39][ws] |
 | `ArtistRegistry.bindPackageRegistry`, `bindStream`, `bindSplitFactory`, `bindStatementLog` | Code and no EIP-7702; ERC-165 for the first two; the log's resolver is this registry | `register`; `isWallet`; `latestDisputeOutcome` | [ID-29][id] |
 | `ArtistRegistry.setPackageRegistry` (a 30-day SUCCESSOR_SETTER action, compare-and-set) | As `bindPackageRegistry` | `register`, moved to Stream's successor package registry | [ID-30][id] |
 | `ArtistRegistry.bindFederationRegistry`, then `setFederationRegistry` (SUCCESSOR_SETTER, 30 days, compare-and-set) | Code, no EIP-7702, ERC-165, never zero | `registerFederated` (with the account's own signature, checked by the artist registry), `listFederatedContract` and `setFederatedStatus` on a per-token directory entry; none of them touches an identity, payout, standing or canonical token | [ID-33, ID-34][id] |
@@ -236,8 +241,9 @@ nothing after EIP-6780 and could freeze every artist share ([ECO-12][eco]).
 | Consolidation source | `ArtistRegistry` | Constructor, `setConsolidationSource` | Every read | Staging and refreshes revert; registration and execution skip their refresh | [ID-26][id] |
 | VRF coordinator | `VrfEntropyModule` | Constructor, `setCoordinator` | Every request and delivery | `DependencyCodeChanged` | [ENT-7][ent] |
 | Artist resolver | `StatementLog` | Constructor, `setArtistResolver` | Every ARTIST authorization | `DependencyCodeChanged` | [DSP-7][dsp] |
-| Federation registry (v1.1) | Each sale adapter | `setFederationRegistry` | Every `isTarget` | The registry is ignored | `test_Federation_CodeHashesArePinned` in [`EnglishAuctionFederation.t.sol`](../../test/sales/auction/EnglishAuctionFederation.t.sol) |
+| Federation registry (in v1, a later ADR) | The English auction (the edition auction keeps none) | `setFederationRegistry` | Every `isTarget` | The registry is ignored | `test_Federation_CodeHashesArePinned` in [`EnglishAuctionFederation.t.sol`](../../test/sales/auction/EnglishAuctionFederation.t.sol) |
 | Default renderer; a finalized work's renderer | `Stream`; `WorkRecords` | `setDefaultRenderer`; `finalize`, `repinRenderer` | Every `tokenURI` and `uri` | Revert, with no fallback | [RND-2, RND-3][rnd] |
+| An added store | `WorkRecords` | `addStore` (append-only) | Every sync and switch through it | `UnknownStore` | [WS-41][ws] |
 | Stream; the artist registry; the package registry | `Editions`; `PackageRegistry`; `VrfEntropyModule` | Constructor | Not checked again | Construction reverts | [ENT-16][ent] (the module's) |
 
 ### Resolvers and renderer pins
@@ -255,7 +261,13 @@ nothing after EIP-6780 and could freeze every artist share ([ECO-12][eco]).
 - **Renderers.** A default-renderer swap reaches every unfinalized work at once; a finalized work's
   pin moves only with the lead artist's signature, and a changed pinned renderer leaves the work
   without metadata until a repin ([RND-1, RND-5][rnd],
-  [LIM-CNT-10][lim-cnt]).
+  [LIM-CNT-10][lim-cnt]). Once the lead artist renounces the repin (`RENDERER_REPIN`, after
+  finalize), the pin never moves again ([LIM-CNT-16][lim-cnt]).
+- **Delivery.** `WorkRecords` forwards `preferredLocator` to the governed delivery contract with
+  all gas and serves its answer only when it is well formed; a reverting or malformed answer
+  falls back to the work's own answer, a shortfall reverts. The delivery contract can call
+  `WorkRecords` only through its two refresh hooks and changes no fact ([WS-39, WS-40][ws];
+  [LIM-GV-23, LIM-GV-24][lim-gv]).
 - **Renunciations.** `WorkRecords.renounce` is authenticated only by the lead artist's active
   authority: no role, no delay and no guardian veto. The artist registry's restraint rule, which
   reports no active authority while an authority-moving override is pending, stops a contested

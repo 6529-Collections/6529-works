@@ -24,7 +24,12 @@ mutants; this file is the reviewed reference, and
   constants whose rows below are therefore obsolete: `SignatureVerifier.ERC1271_GAS_LIMIT`
   (protocol signature checks forward all gas), `StatementLog.OWNER_READ_GAS` (the owner read
   forwards all gas) and `StatementLog.MAX_URI_BYTES` at 2,048 (now 8,192). Those rows are kept
-  as measured; the new files have no baseline yet.
+  as measured; the new files have no baseline yet. The second integration round removed
+  `Renderer`'s read gas caps (`SMALL_GAS`, `MEDIA_GAS`, `CHUNK_GAS`, `COMPLETE_GAS`,
+  `AFTER_GAS`: its reads forward all gas), set its `PREVIEW_LIMIT` to
+  `Limits.MAX_PREVIEW_BYTES`, moved `WorkRecords`' locators and preferences to the new
+  `WorkDelivery` and the English auction's opening bids to `AssetAllowlist`; the rows for those
+  constants and functions are kept as measured, and `WorkDelivery` has no baseline yet.
 - **Tools.** `slither-mutate` from slither-analyzer 0.11.6 through `tools/mutation.py` (its
   fixed ROR and LIR, and the CONST rule), Foundry 1.7.1 and solc 0.8.37. Tests ran under the
   `lite` profile.

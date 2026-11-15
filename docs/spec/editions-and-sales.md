@@ -32,7 +32,7 @@ a newly admitted adapter without redeploying Editions
 | `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | [`IUniformEditionAuctionLens`](../../src/interfaces/IUniformEditionAuctionLens.sol) | Its read side, created by its constructor: every view of `IUniformEditionAuction`, answered through the adapter's own address, and the master check `open` consults. |
 | `UniformClearing` (internal library) | [`src/sales/UniformClearing.sol`](../../src/sales/UniformClearing.sol) | none | The D138 clearing over step totals and the units a bid wins at the cut step, shared by settlement and the lens. |
 | `StepLadder` (internal library) | [`src/interfaces/types/StepLadder.sol`](../../src/interfaces/types/StepLadder.sol) | none | The step ladder: the 192 mantissas, `price(basePrice, stepsPerDecade, step)` and the ladder's bounds. |
-| Federation registry (v1.1, not implemented in v1) | none | [`IFederationRegistry`](../../src/interfaces/IFederationRegistry.sol) | What the adapters will read to serve 6529 Stream Federated contracts. v1 installs no registry. |
+| Federation registry (in v1, specified by a later ADR; not implemented on this tree) | none | [`IFederationRegistry`](../../src/interfaces/IFederationRegistry.sol) | What the English auction will read to serve 6529 Stream Federated contracts. The edition auction keeps no federation registry: it sells only 6529 Stream Editions. |
 
 The types live in [`SaleTypes.sol`](../../src/interfaces/types/SaleTypes.sol) and
 [`PackageTypes.sol`](../../src/interfaces/types/PackageTypes.sol); collaborators are specified

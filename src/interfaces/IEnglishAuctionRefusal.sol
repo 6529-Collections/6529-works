@@ -2,8 +2,8 @@
 pragma solidity ^0.8.24;
 
 /// @title IEnglishAuctionRefusal
-/// @notice The English auction's exit for a sale whose token will not let it settle (AUC-38 to
-///         AUC-41). The settlement is attempted in full, in a frame given exactly the governed
+/// @notice The English auction's exit for a sale whose token will not let it settle (AUC-45 to
+///         AUC-48). The settlement is attempted in full, in a frame given exactly the governed
 ///         refusal gas (`IEnglishAuction.AuctionConfig.refusalGas`); only if that attempt fails,
 ///         and no earlier than the sale's end plus its refusal delay, does the sale close with the
 ///         standing bid credited back and the work left for its artist to claim. Federated sales

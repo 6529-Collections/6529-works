@@ -9,8 +9,9 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 ///         pull-based credits.
 /// @dev Adapters mint only through `IMintTarget` and lock `LockedTerms` when a sale starts,
 ///      reading them back from the token where it stores them. Proceeds are pushed to the seller
-///      split wallet (a predicted CREATE2 address that may not be deployed: adapters pay it by
-///      plain transfer and never deploy it on a sale path) and to the fee recipient; a push that
+///      split wallet (a predicted CREATE2 address; the edition auction deploys it, and the royalty
+///      wallet, at open, so it never pays an undeployed wallet, EA-20; other adapters pay it by
+///      plain transfer) and to the fee recipient; a push that
 ///      fails is deposited in the revenue escrow instead. Refunds and overpayments are credited
 ///      here and claimed by the account. Every ERC-20 movement is checked by exact balance delta.
 ///      Federation readiness: a token is served when governance listed it, or when the
