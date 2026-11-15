@@ -22,9 +22,11 @@ import { EditionTerms, License, SaleTerms } from "./types/PackageTypes.sol";
 ///      stores only its file ID. A record opens with the approved file and the approved media,
 ///      stored as they are, so an approved record file can never keep a minted work from
 ///      opening. Structural bounds, enforced by `setRecord` and `finalize`, each O(1): the
-///      record file is registered in the content store, complete, `Identity`, one chunk, and
-///      within the record bound of the renderer that will show it (`IRecordLimits`, else
-///      `Limits.MAX_RECORD_BYTES`). The JSON itself is validated by the renderer.
+///      record file is registered in the content store, complete, `Identity` with a SHA-256
+///      digest, and one chunk (`IContentStore.CHUNK_SIZE`, 24,575 bytes), a structural bound that
+///      keeps every check O(1). No renderer budget is held here: the pinned renderer decides what
+///      it can show (it validates the JSON and its size, and renders core-only metadata with a
+///      record status for a record it refuses), and what it inlines of a preview.
 ///
 ///      "The artist" is the active authority of the work's lead artist ID. The state hash
 ///      commits to the token ID, the version, the record file ID, the license key and text, the
@@ -200,13 +202,13 @@ interface IWorkRecords {
     error UnknownStore(uint256 storeId);
     /// @notice The work's file in progress is held by store `storeId`, which still serves its
     ///         next chunk; only a store missing that chunk can be switched away from.
-    error StoreInUse(uint256 tokenId, uint256 storeId);
+    error StoreInUse();
     /// @notice Every store ID is taken (at most 15 stores beside the content store).
     error StoreLimitReached();
     /// @notice Only the current delivery contract may call this.
-    error NotDelivery(address caller);
+    error NotDelivery();
     /// @notice The current delivery contract is not the one the governed call expected.
-    error DeliveryMismatch(address expected, address current);
+    error DeliveryMismatch();
 
     /// @notice The 6529 Stream core this satellite serves (immutable).
     /// @return The 6529 Stream contract.
@@ -219,7 +221,8 @@ interface IWorkRecords {
     ///         against `item.mediaHash`, the first file's SHA-256 against `item.contentHash`,
     ///         each file's declared SHA-256 against the content store, 1 to
     ///         `Limits.MAX_MEDIA_FILES` files with the PRIMARY (role 0) first and alone, roles
-    ///         below 16, and each inlinable PREVIEW within the default renderer's preview bound.
+    ///         below 16. A PREVIEW has no bound here beyond the store's own (a file of at most
+    ///         `MAX_CHUNKS` chunks, read chunk by chunk): the renderer decides what it inlines.
     ///         Stores the record file ID, the media, the seed and a non-CC0 license as approved
     ///         (a CC0 license must name the deployment's CC0 text, `InvalidLicense`), and emits
     ///         `RecordOpened` with every fact it fixed.
@@ -238,7 +241,7 @@ interface IWorkRecords {
     function setRecord(uint256 tokenId, bytes32 recordFileId, bytes32 expectedStateHash) external;
     /// @notice The artist finalizes the work: the record becomes immutable and Stream's current
     ///         default renderer is pinned with its code hash (ADR 0001 section 10). The record
-    ///         file must meet the structural bounds (the pinned renderer's record bound) and the
+    ///         file must meet the structural bounds (one chunk; see the contract notes) and the
     ///         license text must be complete on-chain.
     /// @param tokenId A work with an open record, not finalized.
     /// @param expectedStateHash The work's current state hash (`StateHashMismatch` otherwise).
@@ -289,11 +292,6 @@ interface IWorkRecords {
         external
         view
         returns (uint256 storeId, bool complete);
-    /// @notice A work's `syncOnChain` cursor.
-    /// @param tokenId A work with an open record.
-    /// @return files The leading media files complete so far.
-    /// @return chunk The next chunk to verify in file `files`.
-    function syncCursor(uint256 tokenId) external view returns (uint256 files, uint256 chunk);
     /// @notice A work's license: the stored one, or CC0 when none is stored.
     /// @param tokenId A work with an open record.
     /// @return The license's SPDX ID and text file ID.
@@ -308,10 +306,6 @@ interface IWorkRecords {
     /// @param tokenId A work with an open record.
     /// @return The pinned renderer, or zero before finalize.
     function pinnedRenderer(uint256 tokenId) external view returns (address);
-    /// @notice The code hash a renderer was first pinned with, or zero if never pinned.
-    /// @param renderer Any address.
-    /// @return The pinned code hash.
-    function rendererCodeHash(address renderer) external view returns (bytes32);
     /// @notice The work's seed and seed policy, both fixed at `openRecord`.
     /// @param tokenId A live work with an open record.
     /// @return policy The work's seed policy.
@@ -432,21 +426,4 @@ interface IWorkRecords {
     /// @param storeId A store ID (`UnknownStore` otherwise).
     /// @return The store contract.
     function store(uint256 storeId) external view returns (address);
-    /// @notice How many stores exist, the content store included.
-    /// @return The number of store IDs in use (IDs run from 0 to the count minus one).
-    function storeCount() external view returns (uint256);
-}
-
-/// @title IRecordLimits
-/// @notice The record and preview bounds a renderer can show within its own `tokenURI` budget.
-///         `IWorkRecords` reads them from the renderer a work is shown by when it checks a record
-///         file (`setRecord`, `finalize`) or a preview (`openRecord`), and uses
-///         `Limits.MAX_RECORD_BYTES` and `Limits.MAX_PREVIEW_BYTES` for a renderer that does not
-///         answer. A record is always at most one content-store chunk.
-interface IRecordLimits {
-    /// @notice The renderer's bounds.
-    /// @return maxRecordBytes The largest record file, in stored bytes, it renders.
-    /// @return maxPreviewBytes The largest inlinable preview, in stored bytes, an `Identity`
-    ///         file counting four times.
-    function recordLimits() external view returns (uint256 maxRecordBytes, uint256 maxPreviewBytes);
 }

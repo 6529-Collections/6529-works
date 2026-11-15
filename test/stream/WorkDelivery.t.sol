@@ -146,11 +146,7 @@ contract WorkDeliveryTest is RecordsFixture, GasRuleAssertions {
         records.setDelivery(address(delivery), address(good));
 
         vm.startPrank(governor);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IWorkRecords.DeliveryMismatch.selector, address(good), address(delivery)
-            )
-        );
+        vm.expectRevert(IWorkRecords.DeliveryMismatch.selector);
         records.setDelivery(address(good), address(good));
 
         DeliveryStub otherRecords = new DeliveryStub(address(0xBEEF), address(delivery));
@@ -175,10 +171,10 @@ contract WorkDeliveryTest is RecordsFixture, GasRuleAssertions {
     function test_refreshHooks_onlyTheDelivery() public {
         (uint256 tokenId,) = _work(1);
         _work(2);
-        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.NotDelivery.selector, outsider));
+        vm.expectRevert(IWorkRecords.NotDelivery.selector);
         vm.prank(outsider);
         records.refreshMetadata(tokenId);
-        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.NotDelivery.selector, outsider));
+        vm.expectRevert(IWorkRecords.NotDelivery.selector);
         vm.prank(outsider);
         records.refreshAllMetadata();
         vm.expectEmit(address(stream));

@@ -12,7 +12,7 @@ import { IRenderer } from "../interfaces/IRenderer.sol";
 import { IStream } from "../interfaces/IStream.sol";
 import { IWorkDelivery } from "../interfaces/IWorkDelivery.sol";
 import { IWorkPowers, WorkPowers } from "../interfaces/IWorkPowers.sol";
-import { IRecordLimits, IWorkRecords } from "../interfaces/IWorkRecords.sol";
+import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
 import { License } from "../interfaces/types/PackageTypes.sol";
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
@@ -35,8 +35,8 @@ import { WorkDelivery } from "./WorkDelivery.sol";
 ///      stored, and every per-token function reverts with `RecordNotOpen` until then.
 ///
 ///      Gas rule: a call whose outcome this contract interprets (the delivery contract, a store
-///      adapter, a renderer's bounds, a wallet's ERC-1271 check, an ERC-165 probe) goes through
-///      `BoundedCall`'s forward-all reads, so running short of gas reverts with
+///      adapter in the store-switch probe, a wallet's ERC-1271 check, an ERC-165 probe) goes
+///      through `BoundedCall`'s forward-all reads, so running short of gas reverts with
 ///      `BoundedCallShortfall` and never reads as a refusal. Every other call (6529 Stream, the
 ///      artist registry, Editions, the entropy module, the content store) is a plain Solidity
 ///      call: it forwards all the gas EIP-150 allows and any failure, running short included,
@@ -53,9 +53,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     uint8 private constant FINALIZED = 2;
     uint8 private constant ON_CHAIN = 4;
     uint8 private constant CUSTOM_LICENSE = 8;
-    /// @dev Media roles with meaning here (the rest are recorded, not interpreted).
+    /// @dev The one media role with meaning here (the rest are recorded, not interpreted).
     uint8 private constant PRIMARY = 0;
-    uint8 private constant PREVIEW = 1;
     /// @dev Seed policies with meaning here (`SeedPolicy`).
     uint8 private constant SEED_NONE = 0;
     uint8 private constant SEED_VRF = 2;
@@ -172,21 +171,13 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
                 || media[0].sha256Hash != item.contentHash
         ) revert InvalidRecordData(tokenId);
         uint256 files = 0;
-        uint256 previewBound = NONE;
         bytes32[32] storage list = _media[tokenId];
         for (uint256 i; i < count; ++i) {
             WorkMedia calldata file = media[i];
             uint256 role = file.role;
-            bytes32 declared;
-            if (role == PREVIEW) {
-                if (previewBound == NONE) {
-                    (, previewBound) = _limits(IStream(stream).defaultRenderer());
-                }
-                declared = _previewSha(tokenId, file.fileId, previewBound);
-            } else {
-                // Reverts with the store's `ContentFileUnknown` for an unregistered file.
-                declared = IContentStore(contentStore).sha256Of(file.fileId);
-            }
+            // Reverts with the store's `ContentFileUnknown` for an unregistered file, and with
+            // `ContentDigestNotSha256` for a digest that is not SHA-256.
+            bytes32 declared = IContentStore(contentStore).sha256Of(file.fileId);
             if (declared != file.sha256Hash || role > 15 || (role == PRIMARY) != (i == 0)) {
                 revert InvalidRecordData(tokenId);
             }
@@ -233,7 +224,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         _onlyArtist(tokenId);
         if (recordFileId == r.recordFileId) return;
         _checkState(tokenId, expectedStateHash);
-        _checkRecordFile(recordFileId, IStream(stream).defaultRenderer());
+        _checkRecordFile(recordFileId);
         r.recordFileId = recordFileId;
         ++r.version;
         emit RecordSet(tokenId, recordFileId, workStateHash(tokenId));
@@ -242,8 +233,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
 
     /// @inheritdoc IWorkRecords
     /// @dev The approved record file reaches here unchecked when the artist never replaced it,
-    ///      so finalize applies the structural bounds itself, with the record bound of the
-    ///      renderer it pins. The license text must be complete on-chain.
+    ///      so finalize applies the structural bounds itself. The license text must be complete
+    ///      on-chain.
     function finalize(uint256 tokenId, bytes32 expectedStateHash) external {
         RecordData storage r = _open(tokenId);
         uint8 flags = r.flags;
@@ -252,7 +243,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         _checkState(tokenId, expectedStateHash);
         // The default renderer, its code checked against Stream's pin (not finalized: no pin).
         address renderer = IStream(stream).rendererOf(tokenId);
-        _checkRecordFile(r.recordFileId, renderer);
+        _checkRecordFile(r.recordFileId);
         _requireLicenseText(
             flags & CUSTOM_LICENSE != 0 ? _licenses[tokenId].textFileId : cc0TextFileId, true
         );
@@ -350,12 +341,6 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     }
 
     /// @inheritdoc IWorkRecords
-    function syncCursor(uint256 tokenId) external view returns (uint256 files, uint256 chunk) {
-        RecordData storage r = _open(tokenId);
-        return (r.syncedFiles, r.chunk);
-    }
-
-    /// @inheritdoc IWorkRecords
     function licenseOf(uint256 tokenId) public view returns (License memory) {
         if (_open(tokenId).flags & CUSTOM_LICENSE != 0) return _licenses[tokenId];
         return License(_cc0SpdxId, cc0TextFileId);
@@ -388,11 +373,6 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         if (renderer != address(0)) {
             Dependency.checkUnchanged(renderer, _rendererCodeHashes[renderer]);
         }
-    }
-
-    /// @inheritdoc IWorkRecords
-    function rendererCodeHash(address renderer) external view returns (bytes32) {
-        return _rendererCodeHashes[renderer];
     }
 
     /// @dev The artist registry resolving every party's active authority: 6529 Stream's, read
@@ -479,7 +459,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     function repinRenderer(
         uint256 tokenId,
         address renderer,
-        bytes32 rendererCodeHash_,
+        bytes32 rendererCodeHash,
         bytes32 expectedStateHash,
         uint64 deadline,
         bytes calldata artistSignature
@@ -489,24 +469,22 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         if (r.flags & FINALIZED == 0) revert WorkNotFinalized(tokenId);
         address previous = r.renderer;
         if (renderer == previous) return;
-        Dependency.checkPinned(renderer, type(IRenderer).interfaceId, rendererCodeHash_);
+        Dependency.checkPinned(renderer, type(IRenderer).interfaceId, rendererCodeHash);
         bytes32 structHash = keccak256(
             abi.encode(
                 Typehashes.RENDERER_REPIN,
                 tokenId,
                 renderer,
-                rendererCodeHash_,
+                rendererCodeHash,
                 _checkState(tokenId, expectedStateHash),
                 deadline
             )
         );
         _checkArtistConsent(tokenId, structHash, deadline, artistSignature);
-        _pinCode(renderer, rendererCodeHash_);
+        _pinCode(renderer, rendererCodeHash);
         r.renderer = renderer;
         ++r.version;
-        emit RendererRepinned(
-            tokenId, previous, renderer, rendererCodeHash_, workStateHash(tokenId)
-        );
+        emit RendererRepinned(tokenId, previous, renderer, rendererCodeHash, workStateHash(tokenId));
         _refresh(tokenId);
     }
 
@@ -556,7 +534,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     /// @inheritdoc IWorkRecords
     function setDelivery(address expected, address next) external restricted {
         address current = delivery;
-        if (current != expected) revert DeliveryMismatch(expected, current);
+        if (current != expected) revert DeliveryMismatch();
         Dependency.check(next, type(IWorkDelivery).interfaceId);
         if (
             IWorkDelivery(next).records() != address(this)
@@ -620,11 +598,6 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     /// @inheritdoc IWorkRecords
     function store(uint256 storeId) external view returns (address source) {
         (source,) = _storeOf(storeId);
-    }
-
-    /// @inheritdoc IWorkRecords
-    function storeCount() external view returns (uint256) {
-        return _stores.length + 1;
     }
 
     /// @notice ERC-165: `IWorkRecords`, which 6529 Stream and 6529 Stream Editions check when
@@ -694,7 +667,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     }
 
     function _onlyDelivery() private view {
-        if (msg.sender != delivery) revert NotDelivery(msg.sender);
+        if (msg.sender != delivery) revert NotDelivery();
     }
 
     function _checkState(uint256 tokenId, bytes32 expected) private view returns (bytes32 state) {
@@ -790,49 +763,17 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         }
     }
 
-    /// @dev A renderer's record and preview bounds (`IRecordLimits`), or the compiled ones when
-    ///      it does not answer exactly two words; the record bound never exceeds one chunk.
-    function _limits(address renderer)
-        private
-        view
-        returns (uint256 maxRecord, uint256 maxPreview)
-    {
-        (bool ok, bytes memory data) = BoundedCall.tryReadAll(
-            renderer, abi.encodeCall(IRecordLimits.recordLimits, ()), 64
-        );
-        if (!ok || data.length != 64) return (Limits.MAX_RECORD_BYTES, Limits.MAX_PREVIEW_BYTES);
-        (maxRecord, maxPreview) = abi.decode(data, (uint256, uint256));
-        if (maxRecord > CHUNK) maxRecord = CHUNK;
-    }
-
-    /// @dev The record file's structural bounds: registered, at most `renderer`'s record bound
-    ///      (at most one chunk), `Identity`, and complete. Each check is O(1). Only the store's
-    ///      `ContentFileUnknown` reads as unregistered; any other failure propagates.
-    function _checkRecordFile(bytes32 fileId, address renderer) private view {
+    /// @dev The record file's structural bounds: registered, one chunk (at most `CHUNK`
+    ///      bytes, so every check is O(1)), `Identity` with a SHA-256 digest, and complete. What a
+    ///      renderer can show is the renderer's to decide: it refuses a record it cannot render
+    ///      (core-only metadata with a record status). Only the store's `ContentFileUnknown`
+    ///      reads as unregistered; any other failure propagates.
+    function _checkRecordFile(bytes32 fileId) private view {
         (, uint256 length,, uint256 encoding) = _fileInfo(fileId, true);
-        (uint256 maxRecord,) = _limits(renderer);
         if (
-            length > maxRecord || encoding != uint256(IContentStore.Encoding.Identity)
+            length > CHUNK || encoding != uint256(IContentStore.Encoding.Identity)
                 || !IContentStore(contentStore).isComplete(fileId)
         ) revert UnknownRecordFile(fileId);
-    }
-
-    /// @dev The declared SHA-256 of a PREVIEW file of work `tokenId` (its digest kind must be 0,
-    ///      SHA-256, as `sha256Of` requires of every other file). One the renderer can inline
-    ///      (`Identity` or `Base64`) must be within `bound`, an `Identity` file counting four
-    ///      times; a gzip one is served by locator only.
-    function _previewSha(uint256 tokenId, bytes32 fileId, uint256 bound)
-        private
-        view
-        returns (bytes32 sha)
-    {
-        uint256 length;
-        uint256 encoding;
-        (sha, length,, encoding) = _fileInfo(fileId, false);
-        if (encoding >> 8 != 0) revert InvalidRecordData(tokenId);
-        if (encoding == uint256(IContentStore.Encoding.Identity)) length *= 4;
-        else if (encoding != uint256(IContentStore.Encoding.Base64)) length = 0;
-        if (length > bound) revert InvalidRecordData(tokenId);
     }
 
     /// @dev A file's declared digest, stored length, chunk count and encoding, read in place
@@ -927,7 +868,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
                     (_media[tokenId][next], chunk, chunk + 1, heldSource)
                 )
             );
-            if (ok && uint256(word) != chunk) revert StoreInUse(tokenId, held);
+            if (ok && uint256(word) != chunk) revert StoreInUse();
         }
         return 0;
     }

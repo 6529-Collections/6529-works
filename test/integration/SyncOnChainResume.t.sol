@@ -134,9 +134,6 @@ contract SyncOnChainResumeTest is IntegrationBase {
         vm.expectEmit(address(records));
         emit IWorkRecords.OnChainSyncProgress(id, 0, 100, 0);
         records.syncOnChain(id, 0, 100);
-        (uint256 files, uint256 chunk) = records.syncCursor(id);
-        assertEq(files, 0);
-        assertEq(chunk, 100);
         vm.expectEmit(address(records));
         emit IWorkRecords.OnChainSyncProgress(id, 1, 50, 0);
         records.syncOnChain(id, 0, 100);
@@ -156,11 +153,12 @@ contract SyncOnChainResumeTest is IntegrationBase {
         counts[0] = 5;
         uint256 id = _plantedWork(400, counts);
         for (uint256 j; j < 5; ++j) {
+            // The event carries the cursor a keeper resumes from.
+            vm.expectEmit(address(records));
+            emit IWorkRecords.OnChainSyncProgress(id, j + 1 == 5 ? 1 : 0, j + 1 == 5 ? 0 : j + 1, 0);
             uint256 before = gasleft();
             records.syncOnChain(id, 0, 1);
             assertLt(before - gasleft(), 100_000, "one chunk and the bookkeeping");
-            (, uint256 chunk) = records.syncCursor(id);
-            assertEq(chunk, j + 1 == 5 ? 0 : j + 1);
         }
         assertTrue(records.record(id).onChainComplete);
     }

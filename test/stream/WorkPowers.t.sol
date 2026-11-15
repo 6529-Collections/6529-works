@@ -585,7 +585,7 @@ contract WorkPowersTest is RecordsFixture {
     ///      bytes32,uint64,bytes)` (0x7dec8a35) xor `renouncedPowers(uint256)` (0xc0f4a8a9).
     function test_supportsInterface_advertisesIWorkPowers() public view {
         assertEq(type(IWorkPowers).interfaceId, bytes4(0xbd18229c));
-        assertEq(type(IWorkRecords).interfaceId, bytes4(0xc92a5eea));
+        assertEq(type(IWorkRecords).interfaceId, bytes4(0x2654eed1));
         assertTrue(records.supportsInterface(type(IWorkPowers).interfaceId));
         assertTrue(records.supportsInterface(type(IWorkRecords).interfaceId));
         assertTrue(records.supportsInterface(0x01ffc9a7));

@@ -53,6 +53,8 @@ contract GovernanceHandler is CommonBase, StdUtils {
     uint256 internal immutable tokenId;
     MockRenderer internal immutable other;
     uint256 public actions;
+    /// @dev Store IDs in use, the content store included (from `StoreAdded`).
+    uint256 public stores = 1;
 
     constructor(
         Stream stream_,
@@ -78,15 +80,16 @@ contract GovernanceHandler is CommonBase, StdUtils {
     }
 
     function addStore() external {
-        if (records.storeCount() == 16) return;
+        if (stores == 16) return;
         HostileSource s = new HostileSource();
         vm.prank(governor);
         records.addStore(address(s), address(s).codehash);
+        ++stores;
         ++actions;
     }
 
     function sync(uint256 storeId, uint256 budget) external {
-        storeId = bound(storeId, 0, records.storeCount() - 1);
+        storeId = bound(storeId, 0, stores - 1);
         records.syncOnChain(tokenId, storeId, bound(budget, 0, 64));
         ++actions;
     }

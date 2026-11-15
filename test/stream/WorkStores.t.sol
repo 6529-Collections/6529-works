@@ -44,6 +44,8 @@ contract ChunkSourceMock {
 ///         its next chunk; and the gas rule on adapter reads.
 contract WorkStoresTest is RecordsFixture, GasRuleAssertions {
     ChunkSourceMock internal source;
+    /// @dev Store IDs in use, the content store included (from `StoreAdded`).
+    uint256 internal stores = 1;
 
     function setUp() public override(RecordsFixture) {
         RecordsFixture.setUp();
@@ -51,7 +53,9 @@ contract WorkStoresTest is RecordsFixture, GasRuleAssertions {
     }
 
     function _addStore(address s) internal returns (uint256 id) {
-        id = records.storeCount();
+        id = stores++;
+        vm.expectEmit(address(records));
+        emit IWorkRecords.StoreAdded(id, s, s.codehash);
         vm.prank(governor);
         records.addStore(s, s.codehash);
     }
@@ -111,8 +115,9 @@ contract WorkStoresTest is RecordsFixture, GasRuleAssertions {
     // ------------------------------------------------------------------------- the store set
 
     function test_addStore_isGovernedAppendOnlyAndPinned() public {
-        assertEq(records.storeCount(), 1);
         assertEq(records.store(0), address(store));
+        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.UnknownStore.selector, 1));
+        records.store(1);
         vm.prank(outsider);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)
@@ -137,8 +142,8 @@ contract WorkStoresTest is RecordsFixture, GasRuleAssertions {
         vm.expectRevert(IWorkRecords.StoreLimitReached.selector);
         records.addStore(address(extra), address(extra).codehash);
         vm.stopPrank();
-        assertEq(records.storeCount(), 16);
         assertEq(records.store(1), address(source));
+        assertTrue(records.store(15) != address(0));
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.UnknownStore.selector, 16));
         records.store(16);
     }
@@ -206,14 +211,13 @@ contract WorkStoresTest is RecordsFixture, GasRuleAssertions {
         source.put(chunks[0]);
         source.put(chunks[1]);
         uint256 tokenId = _workOf(4, _one(file));
+        vm.expectEmit(address(records));
+        emit IWorkRecords.OnChainSyncProgress(tokenId, 0, 1, id);
         records.syncOnChain(tokenId, id, 1);
-        (uint256 files, uint256 chunk) = records.syncCursor(tokenId);
-        assertEq(files, 0);
-        assertEq(chunk, 1);
         for (uint256 j; j < 3; ++j) {
             store.writeChunk(chunks[j]);
         }
-        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.StoreInUse.selector, tokenId, id));
+        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.StoreInUse.selector));
         records.syncOnChain(tokenId, 0, 10);
         vm.expectEmit(address(records));
         emit IWorkRecords.OnChainSyncProgress(tokenId, 0, 2, id);

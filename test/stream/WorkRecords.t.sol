@@ -579,22 +579,11 @@ contract WorkRecordsTest is RecordsFixture {
         // Stored, but not `Identity` encoding.
         _expectBadRecord(2, _recordFile(_oneChunk(json), IContentStore.Encoding.Gzip, true));
         _expectBadRecord(3, _recordFile(_oneChunk(json), IContentStore.Encoding.Base64, true));
-        // Two stored chunks, and so longer than `MAX_RECORD_BYTES`.
+        // Two stored chunks: the bound is one chunk (a structural limit, not a renderer budget).
         bytes[] memory two = new bytes[](2);
         two[0] = new bytes(store.CHUNK_SIZE());
         two[1] = "}";
         _expectBadRecord(4, _recordFile(two, IContentStore.Encoding.Identity, true));
-        // One chunk, one byte over the bound (when the bound is below a full chunk).
-        if (Limits.MAX_RECORD_BYTES < store.CHUNK_SIZE()) {
-            _expectBadRecord(
-                5,
-                _recordFile(
-                    _oneChunk(new bytes(Limits.MAX_RECORD_BYTES + 1)),
-                    IContentStore.Encoding.Identity,
-                    true
-                )
-            );
-        }
     }
 
     /// @dev A full chunk is accepted, and the JSON is not parsed here: the renderer validates
@@ -619,21 +608,15 @@ contract WorkRecordsTest is RecordsFixture {
         assertEq(records.record(tokenId).recordFileId, notJson);
     }
 
-    /// @dev A PREVIEW file is at most `Limits.MAX_PREVIEW_BYTES`, an `Identity` one counting four
-    ///      times; an unregistered one reverts with the store's error, like any media file.
-    function test_openRecord_previewCap() public {
+    /// @dev WorkRecords holds no renderer budget: a PREVIEW file of any size opens (the pinned
+    ///      renderer decides what it inlines); an unregistered one reverts with the store's
+    ///      error, like any media file.
+    function test_openRecord_previewIsNotBoundedHere() public {
         MediaFile[] memory media = new MediaFile[](2);
         media[0] = _mediaFile(40, FileRole.PRIMARY, false);
-        bytes memory big = new bytes(Limits.MAX_PREVIEW_BYTES / 4 + 1);
+        bytes memory big = new bytes(Limits.MAX_PREVIEW_BYTES + 1);
         media[1] = MediaFile(_file(big, "image/png", false), sha256(big), FileRole.PREVIEW);
         PackageItem memory item = _recordsItem(40, media);
-        _expectBadOpen(_mint(item), item, media);
-
-        // At the cap it opens.
-        media[0] = _mediaFile(41, FileRole.PRIMARY, false);
-        bytes memory fits = new bytes(Limits.MAX_PREVIEW_BYTES / 4);
-        media[1] = MediaFile(_file(fits, "image/png", false), sha256(fits), FileRole.PREVIEW);
-        item = _recordsItem(41, media);
         uint256 tokenId = _mint(item);
         records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         assertTrue(records.isOpen(tokenId));
@@ -648,17 +631,14 @@ contract WorkRecordsTest is RecordsFixture {
         records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
     }
 
-    /// @dev The cap is exactly 16,384 bytes (16 KiB, as the README states): a preview declared
-    ///      `Base64` of that length opens, one byte more does not, and an `Identity` one counts
-    ///      four times its length.
-    function test_openRecord_previewCapIsExact() public {
+    function test_openRecord_previewsOfEveryLengthOpen() public {
         uint256[3] memory lengths = [uint256(16_384), 16_385, 4_096];
         IContentStore.Encoding[3] memory encodings = [
             IContentStore.Encoding.Base64,
             IContentStore.Encoding.Base64,
             IContentStore.Encoding.Identity
         ];
-        bool[3] memory opens = [true, false, true];
+        bool[3] memory opens = [true, true, true];
         for (uint256 i; i < 3; ++i) {
             MediaFile[] memory media = new MediaFile[](2);
             media[0] = _mediaFile(50 + i, FileRole.PRIMARY, false);
@@ -711,8 +691,6 @@ contract WorkRecordsTest is RecordsFixture {
         records.mediaIndex(tokenId, bytes32(0));
         vm.expectRevert(notOpen);
         records.mediaStore(tokenId, 0);
-        vm.expectRevert(notOpen);
-        records.syncCursor(tokenId);
         vm.expectRevert(notOpen);
         preferredOf(records, tokenId, bytes32(0));
         assertFalse(records.isOpen(tokenId));

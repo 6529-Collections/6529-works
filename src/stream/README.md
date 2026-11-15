@@ -78,7 +78,7 @@ Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
   slot. Media is one word per file plus one `files` word, a byte per file: the role in the low
   four bits, the store in the high four.
 - **Permanent, so frozen at launch.** `WorkRecords` is bound once by Stream and Editions and can
-  never be replaced; `IWorkRecords`' ERC-165 ID (`0xc92a5eea`) and `IWorkPowers`' (`0xbd18229c`)
+  never be replaced; `IWorkRecords`' ERC-165 ID (`0x2654eed1`) and `IWorkPowers`' (`0xbd18229c`)
   freeze with it. What may change lives behind its two governed pointers: the delivery contract
   (`setDelivery`) and the store set (`addStore`).
 - **Item enums are read as `uint8`** (`WorkItem`, `WorkMedia`: the same ABI and item hash as
@@ -94,8 +94,9 @@ Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
   that progressed, and the call that finishes emits `WorkOnChainComplete`.
 - **Forwarding.** `preferredLocator` asks the delivery contract with all the gas the EIP-150
   rule allows (`BoundedCall.tryReadAll`) and checks the answer (`_isLocation`); a refusal or a
-  malformed answer serves the work's own (WS-40), a shortfall reverts. The renderer's bounds
-  (`IRecordLimits`) and the store-switch probe are read the same way.
+  malformed answer serves the work's own (WS-40), a shortfall reverts. The store-switch probe is
+  read the same way. No renderer budget is held: a record is one chunk, and the pinned
+  renderer decides what it can show.
 - **Locator adders** (`WorkDelivery`). `LocatorCounts` keeps, beside the two quota counts, a
   16-bit mask of the indices the artist added; the preferred-location fallbacks read only those
   (WS-21), and `LocatorAdded` names the adder, so a successor can rebuild it.

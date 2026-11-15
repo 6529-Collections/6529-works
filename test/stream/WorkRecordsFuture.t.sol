@@ -9,7 +9,6 @@ import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
-import { Burner, GasRuleAssertions } from "test/helpers/GasRule.sol";
 import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
 import { MockRenderer } from "../mocks/stream/StreamMocks.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
@@ -62,45 +61,10 @@ contract FuturePolicy {
     }
 }
 
-/// @notice A renderer that states its record and preview bounds (`IRecordLimits`).
-contract LimitsRenderer is MockRenderer {
-    uint256 internal immutable _record;
-    uint256 internal immutable _preview;
-
-    constructor(uint256 record_, uint256 preview_) MockRenderer("limits") {
-        _record = record_;
-        _preview = preview_;
-    }
-
-    function recordLimits() external view returns (uint256, uint256) {
-        return (_record, _preview);
-    }
-}
-
-/// @notice A renderer whose bounds answer is not two words.
-contract MalformedLimitsRenderer is MockRenderer {
-    constructor() MockRenderer("malformed") { }
-
-    function recordLimits() external pure returns (uint256, uint256, uint256) {
-        return (1, 1, 1);
-    }
-}
-
 /// @notice What makes `WorkRecords` last: items a future mint policy defines still open
 ///         (`uint8` decoding), `RecordOpened` carries every fact the open fixes (logs-only
-///         consensus), and record and preview bounds come from the renderer that will show the
-///         work, with the compiled bounds as the fallback.
-contract WorkRecordsFutureTest is RecordsFixture, GasRuleAssertions {
-    function setUp() public override(RecordsFixture) {
-        RecordsFixture.setUp();
-    }
-
-    function _setDefault(address next) internal {
-        address current = stream.defaultRenderer();
-        vm.prank(governor);
-        stream.setDefaultRenderer(current, next, next.codehash);
-    }
-
+///         consensus), and the record bound is structural (one chunk), not a renderer's budget.
+contract WorkRecordsFutureTest is RecordsFixture {
     // ------------------------------------------------------------------- future item values
 
     /// @dev Kind 3, seed policy 3, a party role 7 and a media role 9 (none named by today's
@@ -192,88 +156,42 @@ contract WorkRecordsFutureTest is RecordsFixture, GasRuleAssertions {
         assertEq(logged.payees[0].share, 20_000);
     }
 
-    // ------------------------------------------------------------- bounds from the renderer
+    // ------------------------------------------------------------------ the record bound
 
     function _recordOf(uint256 length) internal returns (bytes32) {
         bytes memory data = new bytes(length);
         data[0] = "{";
         data[length - 1] = "}";
-        return _file(data, "application/json", true);
-    }
-
-    /// @dev A renderer that shows 20,000-byte records lets a 13,000-byte record be set; the
-    ///      compiled 12,288 refuses it under a renderer that states nothing or answers badly.
-    function test_recordBound_comesFromTheRenderer() public {
-        (uint256 tokenId,) = _work(1);
-        bytes32 big = _recordOf(13_000);
-        bytes32 state = records.workStateHash(tokenId);
-        vm.prank(artist);
-        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.UnknownRecordFile.selector, big));
-        records.setRecord(tokenId, big, state);
-
-        _setDefault(address(new MalformedLimitsRenderer()));
-        state = records.workStateHash(tokenId);
-        vm.prank(artist);
-        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.UnknownRecordFile.selector, big));
-        records.setRecord(tokenId, big, state);
-
-        LimitsRenderer wide = new LimitsRenderer(20_000, Limits.MAX_PREVIEW_BYTES);
-        _setDefault(address(wide));
-        state = records.workStateHash(tokenId);
-        vm.prank(artist);
-        records.setRecord(tokenId, big, state);
-        state = records.workStateHash(tokenId);
-        vm.prank(artist);
-        records.finalize(tokenId, state);
-        assertEq(records.pinnedRenderer(tokenId), address(wide));
-    }
-
-    /// @dev Finalize checks the record against the renderer it pins: a default renderer with a
-    ///      tighter bound refuses a record set under a wider one.
-    function test_recordBound_finalizeUsesThePinnedRenderer() public {
-        (uint256 tokenId,) = _work(2);
-        _setDefault(address(new LimitsRenderer(20_000, Limits.MAX_PREVIEW_BYTES)));
-        bytes32 big = _recordOf(13_000);
-        bytes32 state = records.workStateHash(tokenId);
-        vm.prank(artist);
-        records.setRecord(tokenId, big, state);
-        _setDefault(address(new LimitsRenderer(1_000, Limits.MAX_PREVIEW_BYTES)));
-        state = records.workStateHash(tokenId);
-        vm.prank(artist);
-        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.UnknownRecordFile.selector, big));
-        records.finalize(tokenId, state);
-    }
-
-    /// @dev The preview bound at open is the default renderer's.
-    function test_previewBound_comesFromTheRenderer() public {
-        _setDefault(address(new LimitsRenderer(Limits.MAX_RECORD_BYTES, 100)));
-        MediaFile[] memory media = new MediaFile[](2);
-        media[0] = _mediaFile(10, FileRole.PRIMARY, true);
-        media[1] = _mediaFile(11, FileRole.PREVIEW, true); // 128 bytes, counted 512
-        PackageItem memory item = _recordsItem(10, media);
-        uint256 tokenId = _mint(item);
-        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidRecordData.selector, tokenId));
-        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
-        _setDefault(address(new LimitsRenderer(Limits.MAX_RECORD_BYTES, 512)));
-        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
-    }
-
-    /// @dev Gas rule on the bounds read: the renderer costing 1x to 100x its base gives the same
-    ///      result, and running short reverts with the shortfall error, never falls back to the
-    ///      compiled bound.
-    function test_GasRule_recordBoundRead() public {
-        (uint256 tokenId,) = _work(3);
-        LimitsRenderer wide = new LimitsRenderer(20_000, Limits.MAX_PREVIEW_BYTES);
-        Burner burner = new Burner(address(wide), 20_000);
-        _setDefault(address(burner));
-        bytes32 big = _recordOf(13_000);
-        bytes32 state = records.workStateHash(tokenId);
-        bytes memory data = abi.encodeCall(records.setRecord, (tokenId, big, state));
-        Outcome memory o = _assertSameAtEveryMultiple(burner, artist, address(records), data);
-        assertTrue(o.ok);
-        for (uint256 i; i < 3; ++i) {
-            burner.burnerSetMultiple(i == 0 ? 1 : i == 1 ? 4 : 10);
-            _assertShortfallNeverAnswers(burner, artist, address(records), data);
+        bytes32[] memory hashes = new bytes32[]((length + 24_574) / 24_575);
+        for (uint256 i; i < hashes.length; ++i) {
+            uint256 from = i * 24_575;
+            uint256 to = from + 24_575 > length ? length : from + 24_575;
+            bytes memory part = new bytes(to - from);
+            for (uint256 j; j < part.length; ++j) {
+                part[j] = data[from + j];
+            }
+            hashes[i] = keccak256(part);
+            store.writeChunk(part);
         }
+        return store.registerManifest(hashes, length, uint8(0), "application/json", sha256(data));
+    }
+
+    /// @dev The record bound is structural, not a renderer's budget: a one-chunk record of any
+    ///      length (24,575 bytes here) is set and finalized; a two-chunk record never is.
+    function test_recordBound_isOneChunk() public {
+        (uint256 tokenId,) = _work(1);
+        bytes32 two = _recordOf(24_576);
+        bytes32 state = records.workStateHash(tokenId);
+        vm.prank(artist);
+        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.UnknownRecordFile.selector, two));
+        records.setRecord(tokenId, two, state);
+
+        bytes32 one = _recordOf(24_575);
+        vm.prank(artist);
+        records.setRecord(tokenId, one, state);
+        state = records.workStateHash(tokenId);
+        vm.prank(artist);
+        records.finalize(tokenId, state);
+        assertEq(records.record(tokenId).recordFileId, one);
     }
 }
