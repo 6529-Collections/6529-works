@@ -203,7 +203,11 @@ contract WorkRecordsStackTest is IntegrationBase {
         bytes32[] memory hashes = new bytes32[](1);
         hashes[0] = keccak256(json);
         bytes32 recordFile = store.manifestId(
-            hashes, json.length, IContentStore.Encoding.Identity, "application/json", sha256(json)
+            hashes,
+            json.length,
+            uint8(IContentStore.Encoding.Identity),
+            "application/json",
+            sha256(json)
         );
         w.item = _item(artist, collectionId, w.media[0].sha256Hash, w.media, recordFile);
         Work[] memory works = _one(w);
@@ -224,7 +228,11 @@ contract WorkRecordsStackTest is IntegrationBase {
 
         // Registered: still incomplete until the bytes are there; then the record renders.
         store.registerManifest(
-            hashes, json.length, IContentStore.Encoding.Identity, "application/json", sha256(json)
+            hashes,
+            json.length,
+            uint8(IContentStore.Encoding.Identity),
+            "application/json",
+            sha256(json)
         );
         assertTrue(_contains(stream.tokenURI(tokenId), '"record_status":"incomplete"'));
         store.writeChunk(json);

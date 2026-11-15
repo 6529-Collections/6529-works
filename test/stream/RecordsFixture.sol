@@ -61,7 +61,7 @@ abstract contract RecordsFixture is StreamFixture {
         bytes32[] memory hashes = new bytes32[](1);
         hashes[0] = keccak256(data);
         fileId = store.registerManifest(
-            hashes, data.length, IContentStore.Encoding.Identity, mime, sha256(data)
+            hashes, data.length, uint8(IContentStore.Encoding.Identity), mime, sha256(data)
         );
         if (upload) store.writeChunk(data);
     }
@@ -78,7 +78,11 @@ abstract contract RecordsFixture is StreamFixture {
         bytes32[] memory hashes = new bytes32[](1);
         hashes[0] = keccak256(text);
         fileId = store.registerManifest(
-            hashes, text.length, IContentStore.Encoding.Identity, "text/plain", keccak256(text)
+            hashes,
+            text.length,
+            uint8(IContentStore.Encoding.Identity),
+            "text/plain",
+            keccak256(text)
         );
         assertEq(fileId, _textFileId(text));
     }

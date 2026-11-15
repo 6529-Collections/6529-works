@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from decimal import Decimal
 from pathlib import Path
 from unittest import mock
 
@@ -185,6 +186,129 @@ class BuildCallsTest(unittest.TestCase):
         plan = pl.plan_from_media(b"x", "a/b", Encoding.IDENTITY)
         with self.assertRaises(ToolError):
             calls.build_calls(manifest_for(plan), plan.stored, register="middle")
+
+
+class PiecewiseCallsTest(unittest.TestCase):
+    """Parts joined by `linkChunk`, registration from list chunks, the attest count, and their
+    quotes under both schedules."""
+
+    def build(self, media: bytes, **kwargs):
+        plan = pl.plan_from_media(media, "application/octet-stream", Encoding.IDENTITY)
+        return plan, calls.build_calls(manifest_for(plan), plan.stored, **kwargs)
+
+    def test_parts_rebuild_each_chunk_and_the_link_names_them(self) -> None:
+        plan, built = self.build(counter_bytes(70, 2 * pl.CHUNK_SIZE + 100), part_size=8192)
+        names = [c.name for c in built]
+        self.assertEqual(
+            names,
+            ["registerManifest"] + (["writePart"] * 3 + ["linkChunk"]) * 2 + ["writeChunk"],
+        )
+        chunks = list(plan.chunks())
+        for k, link in enumerate(c for c in built if c.name == "linkChunk"):
+            parts = [c for c in built if c.name == "writePart" and c.chunk_indexes == (k,)]
+            data = [abi.decode_bytes(c.data[4:]) for c in parts]
+            self.assertEqual(b"".join(data), chunks[k])
+            self.assertEqual(link.data, abi.encode_link_chunk([pl.chunk_hash(d) for d in data]))
+            self.assertEqual(link.data[:4].hex(), "ae15d2c7")
+
+    def test_part_size_bounds(self) -> None:
+        self.assertEqual(len(pl.split_parts(bytes(pl.CHUNK_SIZE), 96)), 256)
+        with self.assertRaisesRegex(ToolError, "at most 256"):
+            pl.split_parts(bytes(pl.CHUNK_SIZE), 95)
+        with self.assertRaises(ToolError):
+            pl.split_parts(b"x", 0)
+        with self.assertRaises(ToolError):
+            self.build(counter_bytes(71, 1000), part_size=95)
+
+    def test_present_parts_and_links_are_skipped(self) -> None:
+        plan, full = self.build(counter_bytes(72, pl.CHUNK_SIZE), part_size=10_000)
+        parts = [c for c in full if c.name == "writePart"]
+        first = pl.chunk_hash(abi.decode_bytes(parts[0].data[4:]))
+        _, resumed = self.build(
+            counter_bytes(72, pl.CHUNK_SIZE), part_size=10_000, skip_register=True,
+            present_chunk_hashes=[first],
+        )
+        self.assertEqual([c.name for c in resumed], ["writePart", "writePart", "linkChunk"])
+        _, done = self.build(
+            counter_bytes(72, pl.CHUNK_SIZE), part_size=10_000, skip_register=True,
+            present_chunk_hashes=plan.chunk_hashes,
+        )
+        self.assertEqual(done, [])
+
+    def test_auto_registers_large_manifests_from_list_chunks(self) -> None:
+        small = calls.resolve_manifest_mode("auto", pl.ONE_CALL_MAX_CHUNKS)
+        large = calls.resolve_manifest_mode("auto", pl.ONE_CALL_MAX_CHUNKS + 1)
+        self.assertEqual((small, large), ("one", "list"))
+        with self.assertRaises(ToolError):
+            calls.resolve_manifest_mode("half", 3)
+
+    def test_list_registration_is_the_packed_hashes_and_one_small_call(self) -> None:
+        plan, built = self.build(counter_bytes(73, 3 * pl.CHUNK_SIZE), manifest_mode="list")
+        self.assertEqual(
+            [c.name for c in built], ["writeListChunk", "registerManifestList"] + ["writeChunk"] * 3
+        )
+        listed = abi.decode_bytes(built[0].data[4:])
+        self.assertEqual(listed, b"".join(plan.chunk_hashes))
+        expected = abi.encode_register_manifest_list(
+            [pl.chunk_hash(listed)], pl.PER_LIST, plan.stored_length, int(plan.encoding),
+            plan.mime_type, plan.media_sha256,
+        )
+        self.assertEqual(built[1].data, expected)
+        self.assertEqual(built[1].data[:4].hex(), "c6b06d62")
+
+    def test_list_chunks_split_at_767_hashes(self) -> None:
+        hashes = [bytes([i % 251 + 1]) * 32 for i in range(pl.MAX_CHUNKS)]
+        lists = pl.list_chunks(hashes)
+        self.assertEqual([len(c) // 32 for c in lists], [767] * 5 + [261])
+        self.assertTrue(all(len(c) <= pl.CHUNK_SIZE for c in lists))
+        self.assertEqual(b"".join(lists), b"".join(hashes))
+
+    def test_the_largest_manifest_registers_in_pieces_inside_the_cap(self) -> None:
+        # 4,096 chunks under both schedules: every transaction keeps the quarter reserve, and
+        # under Glamsterdam none is above a 50M-capped node's estimate.
+        hashes = tuple(bytes([1 + i % 250, i // 250 + 1]) * 16 for i in range(pl.MAX_CHUNKS))
+        manifest = pl.Manifest(
+            pl.manifest_id(hashes, pl.MAX_STORED_BYTES, Encoding.IDENTITY, "a/b", bytes([5] * 32)),
+            "a/b", Encoding.IDENTITY, bytes([5] * 32), None, pl.MAX_STORED_BYTES, None, hashes,
+            None,
+        )
+        for schedule in (gas.PRAGUE, gas.GLAMSTERDAM):
+            with self.subTest(schedule=schedule.name), mock.patch.object(
+                calls, "check_stored"
+            ), mock.patch.object(calls, "split_chunks") as split:
+                split.return_value = [b""] * len(hashes)
+                built = calls.build_calls(
+                    manifest, b"", present_chunk_hashes=hashes, schedule=schedule
+                )
+                self.assertEqual(
+                    [c.name for c in built], ["writeListChunk"] * 6 + ["registerManifestList"]
+                )
+                for c in built:
+                    self.assertTrue(c.estimate.within_cap and c.estimate.has_margin, c.name)
+                    self.assertFalse(c.estimate.above_estimate_cap, c.name)
+        one = abi.encode_register_manifest(list(hashes), pl.MAX_STORED_BYTES, 0, "a/b", bytes(32))
+        self.assertFalse(gas.estimate_register(pl.MAX_CHUNKS, 3, one).within_cap)
+
+    def test_parts_cost_a_little_more_under_both_schedules(self) -> None:
+        plan = pl.plan_from_media(counter_bytes(74, pl.CHUNK_SIZE), "a/b", Encoding.IDENTITY)
+        whole = calls.calls_for_plan(plan)
+        parted = calls.calls_for_plan(plan, part_size=8192)
+        q_whole = {q.schedule: q.gas for q in calls.quotes(whole, Decimal(1))}
+        q_parts = {q.schedule: q.gas for q in calls.quotes(parted, Decimal(1))}
+        for name, low, high in (("prague", 1.03, 1.15), ("glamsterdam", 1.01, 1.06)):
+            with self.subTest(schedule=name):
+                ratio = q_parts[name] / q_whole[name]
+                self.assertGreater(ratio, low)
+                self.assertLess(ratio, high)
+
+    def test_the_attest_count_is_the_callers(self) -> None:
+        plan = pl.plan_from_media(counter_bytes(75, 100_000), "a/b", Encoding.BASE64)
+        built = calls.build_calls(manifest_for(plan), plan.stored, attest_chunks=2)
+        attests = [c for c in built if c.name == "attestBase64"]
+        self.assertEqual([c.chunk_indexes for c in attests], [(0, 1), (2, 3), (4, 5)])
+        self.assertEqual(attests[0].data, abi.encode_call(abi.ATTEST_BASE64, plan.file_id, 2))
+        with self.assertRaises(ToolError):
+            calls.build_calls(manifest_for(plan), plan.stored, attest_chunks=0)
 
 
 class RenderTest(unittest.TestCase):

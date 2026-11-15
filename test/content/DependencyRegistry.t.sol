@@ -42,7 +42,7 @@ contract DependencyRegistryTest is ContentBase {
         vm.stopPrank();
 
         library_ = _data(CHUNK + 4000, 1); // two chunks, stored gzipped
-        fileId = _publish(library_, IContentStore.Encoding.Gzip, JS);
+        fileId = _publish(library_, uint8(IContentStore.Encoding.Gzip), JS);
     }
 
     // ---------------------------------------------------------------- register
@@ -57,7 +57,9 @@ contract DependencyRegistryTest is ContentBase {
             registry.resolve(THREE, R170);
         assertEq(resolved, fileId);
         assertFalse(deprecated);
-        assertTrue(file.encoding == IContentStore.Encoding.Gzip, "gzip flag from the manifest");
+        assertTrue(
+            file.encoding == uint8(IContentStore.Encoding.Gzip), "gzip flag from the manifest"
+        );
         assertEq(file.mimeType, JS, "MIME type from the manifest");
         assertEq(file.length, library_.length);
         assertEq(store.read(resolved, 0, file.length), library_);
@@ -83,7 +85,7 @@ contract DependencyRegistryTest is ContentBase {
         vm.startPrank(registrar);
         registry.register(THREE, R170, fileId);
 
-        bytes32 other = _publish(_data(500, 2), IContentStore.Encoding.Identity, JS);
+        bytes32 other = _publish(_data(500, 2), uint8(IContentStore.Encoding.Identity), JS);
         bytes memory exists = abi.encodeWithSelector(
             IDependencyRegistry.DependencyVersionExists.selector, THREE, R170
         );
@@ -98,7 +100,7 @@ contract DependencyRegistryTest is ContentBase {
     }
 
     function test_Register_NamesAndVersionsAreIndependent() public {
-        bytes32 other = _publish(_data(500, 3), IContentStore.Encoding.Identity, JS);
+        bytes32 other = _publish(_data(500, 3), uint8(IContentStore.Encoding.Identity), JS);
         vm.startPrank(registrar);
         registry.register(THREE, R170, fileId);
         registry.register(THREE, R171, other);
@@ -115,7 +117,8 @@ contract DependencyRegistryTest is ContentBase {
 
     function test_Register_RequiresCompleteContent() public {
         bytes memory file = _data(2 * CHUNK, 4);
-        (bytes32 id, bytes[] memory chunks,) = _declare(file, IContentStore.Encoding.Gzip, JS);
+        (bytes32 id, bytes[] memory chunks,) =
+            _declare(file, uint8(IContentStore.Encoding.Gzip), JS);
         store.writeChunk(chunks[1]); // one of two chunks
 
         vm.expectRevert(
@@ -250,7 +253,7 @@ contract DependencyRegistryTest is ContentBase {
         assertEq(store.read(fileId, 0, library_.length), library_);
 
         // Deprecation neither frees the version for reuse nor affects other versions.
-        bytes32 other = _publish(_data(500, 5), IContentStore.Encoding.Identity, JS);
+        bytes32 other = _publish(_data(500, 5), uint8(IContentStore.Encoding.Identity), JS);
         vm.startPrank(registrar);
         vm.expectRevert(
             abi.encodeWithSelector(

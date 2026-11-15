@@ -207,9 +207,11 @@ class AttestCallsTest(unittest.TestCase):
                     self.assertEqual(names.count("attestBase64"), 1)
                     self.assertEqual(names.count("registerManifest"), 1)
                     attest = built[-1]
-                    self.assertEqual(attest.data, abi.encode_call(abi.ATTEST_BASE64, plan.file_id))
-                    self.assertEqual(len(attest.data), 36)
-                    self.assertEqual(attest.data[:4].hex(), "0cecb241")
+                    self.assertEqual(
+                        attest.data, abi.encode_call(abi.ATTEST_BASE64, plan.file_id, 48)
+                    )
+                    self.assertEqual(len(attest.data), 68)
+                    self.assertEqual(attest.data[:4].hex(), "561c986e")
                     self.assertEqual(attest.filename.split("-")[1], "attestBase64")
 
     def test_identity_and_gzip_files_get_no_attest_call(self) -> None:
@@ -266,8 +268,6 @@ class AttestCallsTest(unittest.TestCase):
         # The worst call also reads the file's last chunk cold to find the padding.
         self.assertGreaterEqual(gas.attest_execution(48), 8_485_707)
         with self.assertRaises(ValueError):
-            gas.attest_execution(49)
-        with self.assertRaises(ValueError):
             gas.attest_execution(0)
 
     def test_no_attest_and_skip_attest(self) -> None:
@@ -298,7 +298,7 @@ class AttestCallsTest(unittest.TestCase):
             built, plan.file_id, STORE_ADDRESS, skipped_register=False, skipped_chunks=0
         )
         last = doc["transactions"][-1]
-        self.assertEqual((last["name"], last["calldataBytes"]), ("attestBase64", 36))
+        self.assertEqual((last["name"], last["calldataBytes"]), ("attestBase64", 68))
         self.assertEqual(doc["skipped"]["attestBase64"], False)
 
 
@@ -497,21 +497,16 @@ class CallsCommandAttestTest(unittest.TestCase):
         self.assertIn("no attestBase64", err)
         self.assertNotIn("attestBase64", [t["name"] for t in json.loads(out)["transactions"]])
 
-    def test_a_store_with_a_different_attest_batch_size_is_refused(self) -> None:
-        manifest = self.plan("base64", counter_bytes(12, 40_000))
-        with FakeChain() as chain:
-            original = chain.store.call
-
-            def different(data: bytes) -> bytes:
-                if data[:4] == abi.ATTEST_CHUNKS_PER_CALL:
-                    return abi.uint_word(100)
-                return original(data)
-
-            chain.store.call = different  # type: ignore[method-assign]
-            code, _, err = run(
-                "calls", str(manifest), "--store", STORE, "--rpc", chain.url, "--only-missing"
-            )
-        self.assertEqual((code, "ATTEST_CHUNKS_PER_CALL is 100" in err), (2, True))
+    def test_the_caller_chooses_the_attest_count(self) -> None:
+        manifest = self.plan("base64", counter_bytes(12, 90_000))  # 5 chunks of base64 text
+        code, out, err = run(
+            "calls", str(manifest), "--store", STORE, "--json", "--attest-chunks", "2"
+        )
+        self.assertEqual(code, 0, err)
+        attests = [t for t in json.loads(out)["transactions"] if t["name"] == "attestBase64"]
+        self.assertEqual([t["chunkIndexes"] for t in attests], [[0, 1], [2, 3], [4]])
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            main(["calls", str(manifest), "--store", STORE, "--attest-chunks", "0", "--force"])
 
 
 if __name__ == "__main__":

@@ -3,9 +3,12 @@
 **Prague** (`PRAGUE`, the default, used by anvil and the tests). The constants are upper bounds
 fitted to measurements of `ContentStore` (Foundry 1.7.1, Solidity 0.8.37, optimizer 200 runs,
 cold storage): `writeChunk` costs about 63,500 + 201.5 gas per byte for a new chunk, and
-`registerManifest` costs about 98,000 + 22,186 per chunk, plus about 350 per MIME byte and one
-extra storage slot pair once the MIME type is longer than 31 bytes. The model sits one to two
-percent above the measurements at the limits so it survives small compiler drift.
+`registerManifest` costs about 98,000 + 22,540 per chunk (one slot and one event word per hash),
+plus about 350 per MIME byte and one extra storage slot pair once the MIME type is longer than 31
+bytes. `linkChunk` costs about 40,000 + 24,500 to 27,000 per part (one slot each) and half a gas per byte
+copied; `registerManifestList` about 95,000 + 30,000 per list chunk + 560 per chunk hash (memory,
+hashing and the event's word; no slot per hash). The model sits one to two percent above the
+measurements at the limits so it survives small compiler drift.
 `test/content/tooling/UploaderGolden.t.sol` asserts, on a real `ContentStore`, that the measured
 gas never exceeds this model, and that the generated constants there equal the ones below. Under
 Prague every unit of gas counts against the EIP-7825 cap.
@@ -19,6 +22,8 @@ Glamsterdam on 6 October 2026, from the receipts of 11 and 12 October 2026
 - `writeChunk` receipts for 191, 1,024, 8,192 and 24,572 bytes, each against its Prague replay,
   rise by 247,459 + 1,330.19 gas per byte, within 20 gas. A new chunk is one new contract with
   `n + 1` code bytes (the STOP byte and the data) and one new slot (its `chunkPointer`).
+- `linkChunk` writes 1 + `parts` new slots (the link's length and count, then each part's
+  pointer); `registerManifestList` writes 4 + `lists` (the list chunks' pointers, no slot per hash).
 - `registerManifest` writes 4 + `chunks` new slots (plus the long-MIME slots). Per chunk hash it
   cost 110,593 (simulated `gasUsed`, 1 to 256 chunks) to 111,497 (`eth_estimateGas`, 1 to 43
   chunks) on Sepolia, against 22,186 on Prague: 88,400 to 89,300 more per new slot.
@@ -57,10 +62,21 @@ WRITE_CHUNK_BYTE_GAS = 205
 # `registerManifest` execution: base + per-chunk * count + per-MIME-byte * len(mime), plus a
 # one-time charge once the MIME type needs more than one storage slot (longer than 31 bytes).
 REGISTER_BASE_GAS = 100_000
-REGISTER_CHUNK_GAS = 22_400
+REGISTER_CHUNK_GAS = 22_800
 REGISTER_MIME_BYTE_GAS = 400
 REGISTER_LONG_MIME_GAS = 45_000
 SHORT_STRING_MAX = 31
+# `linkChunk` execution for a new link of `parts` parts and `length` bytes: base + per-part *
+# parts + per-byte * length (measured 114,196 for 3 parts and 6,315,503 for 256, cold).
+LINK_BASE_GAS = 45_000
+LINK_PART_GAS = 28_000
+LINK_BYTE_GAS = 1
+# `registerManifestList` execution: base + per-list-chunk * lists + per-chunk * chunks, plus the
+# MIME terms of `registerManifest` (measured 419,782 for 512 chunks in one list chunk and
+# 2,414,947 for 4,096 in six, cold, with a 64-byte MIME type).
+REGISTER_LIST_BASE_GAS = 100_000
+REGISTER_LIST_LIST_GAS = 30_000
+REGISTER_LIST_CHUNK_GAS = 600
 # `attestBase64` execution validating k chunks: base + per-chunk * k. A call reads and checks
 # each of its k chunks. A call that reaches the end of the file also reads the file's last chunk
 # to find the `=` padding (about 20,000 more when that chunk is not one of the k); earlier calls
@@ -162,10 +178,30 @@ def register_execution(chunk_count: int, mime_length: int) -> int:
 
 
 def attest_execution(chunks_in_call: int) -> int:
-    """Model of the gas one `attestBase64` call uses to validate this many chunks (at most 48)."""
-    if not 1 <= chunks_in_call <= 48:
-        raise ValueError("one attestBase64 call validates 1 to 48 chunks")
+    """Model of the gas one `attestBase64` call uses to validate this many chunks (the caller
+    chooses how many; the cap check refuses a call that would not fit)."""
+    if chunks_in_call < 1:
+        raise ValueError("an attestBase64 call validates at least one chunk")
     return ATTEST_BASE_GAS + ATTEST_CHUNK_GAS * chunks_in_call
+
+
+def link_execution(parts: int, length: int) -> int:
+    """Model of the gas `linkChunk` uses to record a new link."""
+    if not 1 <= parts <= 256 or not 0 <= length <= CHUNK_SIZE:
+        raise ValueError("a link joins 1 to 256 parts of at most one chunk")
+    return LINK_BASE_GAS + LINK_PART_GAS * parts + LINK_BYTE_GAS * length
+
+
+def register_list_execution(list_count: int, chunk_count: int, mime_length: int) -> int:
+    """Model of the gas `registerManifestList` uses for a new manifest."""
+    long_mime = REGISTER_LONG_MIME_GAS if mime_length > SHORT_STRING_MAX else 0
+    return (
+        REGISTER_LIST_BASE_GAS
+        + REGISTER_LIST_LIST_GAS * list_count
+        + REGISTER_LIST_CHUNK_GAS * chunk_count
+        + REGISTER_MIME_BYTE_GAS * mime_length
+        + long_mime
+    )
 
 
 def write_chunk_footprint(length: int) -> Footprint:
@@ -177,6 +213,17 @@ def register_footprint(chunk_count: int, mime_length: int) -> Footprint:
     """A new manifest: the `File` fields, one slot per chunk hash, and a long MIME type's data."""
     mime_slots = -(-mime_length // 32) if mime_length > SHORT_STRING_MAX else 0
     return Footprint(slots=REGISTER_FIXED_SLOTS + chunk_count + mime_slots)
+
+
+def link_footprint(parts: int) -> Footprint:
+    """A new link: one slot for its length and part count, one per part pointer."""
+    return Footprint(slots=1 + parts)
+
+
+def register_list_footprint(list_count: int, mime_length: int) -> Footprint:
+    """A manifest from list chunks: the `File` fields and one slot per list chunk pointer."""
+    mime_slots = -(-mime_length // 32) if mime_length > SHORT_STRING_MAX else 0
+    return Footprint(slots=REGISTER_FIXED_SLOTS + list_count + mime_slots)
 
 
 def attest_footprint(first_call: bool) -> Footprint:
@@ -304,6 +351,26 @@ def estimate_register(
     execution = register_execution(chunk_count, mime_length)
     return _estimate(
         execution, calldata, register_footprint(chunk_count, mime_length), schedule, block_gas
+    )
+
+
+def estimate_link(
+    parts: int, length: int, calldata: bytes, schedule: Schedule = PRAGUE,
+    block_gas: int = DEFAULT_BLOCK_GAS,
+) -> GasEstimate:
+    return _estimate(
+        link_execution(parts, length), calldata, link_footprint(parts), schedule, block_gas
+    )
+
+
+def estimate_register_list(
+    list_count: int, chunk_count: int, mime_length: int, calldata: bytes,
+    schedule: Schedule = PRAGUE, block_gas: int = DEFAULT_BLOCK_GAS,
+) -> GasEstimate:
+    execution = register_list_execution(list_count, chunk_count, mime_length)
+    return _estimate(
+        execution, calldata, register_list_footprint(list_count, mime_length), schedule,
+        block_gas,
     )
 
 

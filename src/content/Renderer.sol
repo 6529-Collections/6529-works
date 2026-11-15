@@ -344,7 +344,7 @@ contract Renderer is IRenderer {
         );
         if (!known) return (RecordState.Incomplete, j);
         IContentStore.FileInfo memory fi = abi.decode(info, (IContentStore.FileInfo));
-        if (fi.encoding != IContentStore.Encoding.Identity || fi.length > MAX_RECORD_BYTES) {
+        if (fi.encoding != uint8(IContentStore.Encoding.Identity) || fi.length > MAX_RECORD_BYTES) {
             return (RecordState.Invalid, j);
         }
         if (!_complete(id)) return (RecordState.Incomplete, j);
@@ -598,19 +598,19 @@ contract Renderer is IRenderer {
         view
         returns (Media memory m)
     {
-        IContentStore.Encoding enc = fi.encoding;
+        uint8 enc = fi.encoding;
         if (primary && _isScript(fi.mimeType)) {
             // `fullTokenURI` (strict) has no 8M promise: its limit is the size check before.
-            return enc == IContentStore.Encoding.Identity && (fi.length <= SCRIPT_LIMIT || c.strict)
-                && !c.deps
+            return enc == uint8(IContentStore.Encoding.Identity)
+                && (fi.length <= SCRIPT_LIMIT || c.strict) && !c.deps
                 ? _shell(c, id, fi.length)
                 : m;
         }
-        if (enc == IContentStore.Encoding.Base64) {
+        if (enc == uint8(IContentStore.Encoding.Base64)) {
             // Concatenated as stored, so only text the store has checked as strict base64.
             if (!_attested(id)) return m;
             m.mode = Mode.Copy;
-        } else if (enc == IContentStore.Encoding.Identity) {
+        } else if (enc == uint8(IContentStore.Encoding.Identity)) {
             m.mode = Mode.Encode;
         } else {
             return m;
@@ -1015,7 +1015,7 @@ contract Renderer is IRenderer {
     ///      renderer has to base64-encode it (about 80 gas a byte, against 10 for copying base64
     ///      text that is already encoded).
     function _weight(IContentStore.FileInfo memory fi) private pure returns (uint256) {
-        return fi.encoding == IContentStore.Encoding.Identity ? 8 * fi.length : fi.length;
+        return fi.encoding == uint8(IContentStore.Encoding.Identity) ? 8 * fi.length : fi.length;
     }
 
     function _isScript(string memory mime) private pure returns (bool) {
