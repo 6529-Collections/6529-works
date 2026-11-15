@@ -27,8 +27,8 @@ contract StreamTermsTest is StreamFixture {
         returns (bytes32 key, uint256 word)
     {
         key = keccak256(abi.encode(uint160(artistId), rate, feeShare, fee, minter));
-        word = artistId | uint256(rate) << 160 | uint256(feeShare) << 192 | uint256(fee) << 224
-            | uint256(minter) << 240;
+        word = artistId | uint256(rate) << 160 | uint256(feeShare) << 184 | uint256(fee) << 208
+            | uint256(minter) << 232;
     }
 
     function _termsSlot(uint24 id) internal pure returns (bytes32) {
@@ -86,20 +86,20 @@ contract StreamTermsTest is StreamFixture {
     }
 
     /// @dev A re-rate moves only that token to the terms with its new rate: the artist's other
-    ///      works keep theirs, and re-rating back finds the original terms again.
+    ///      works keep theirs. Rates only go down (ADR 0006), so re-rating back up reverts.
     function test_Terms_ReRateMovesOnlyThatToken() public {
         _bindMocks();
         uint256 a = _mint(1);
         uint256 b = _mint(2);
-        recordsMock.setRoyaltyRate(IStream(address(stream)), a, 10_000);
-        assertEq(IStreamViews(address(stream)).work(a).royaltyRate, 10_000);
+        recordsMock.setRoyaltyRate(IStream(address(stream)), a, 5_000);
+        assertEq(IStreamViews(address(stream)).work(a).royaltyRate, 5_000);
         assertEq(IStreamViews(address(stream)).work(b).royaltyRate, 6_529, "the shared terms did not change");
         (, uint256 amountB) = stream.royaltyInfo(b, 1 ether);
         assertEq(amountB, 0.06529 ether);
-        (bytes32 key, uint256 word) = _key(uint160(artist), 10_000, 25_000, 1, 1);
+        (bytes32 key, uint256 word) = _key(uint160(artist), 5_000, 25_000, 1, 1);
         assertEq(uint256(vm.load(address(stream), _termsSlot(uint24(uint256(key)) & HASHED))), word);
+        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidRoyaltyRate.selector, 6_529));
         recordsMock.setRoyaltyRate(IStream(address(stream)), a, 6_529);
-        assertEq(IStreamViews(address(stream)).work(a).royaltyRate, 6_529);
         assertEq(IStreamViews(address(stream)).work(a).royaltyReceiver, _defaultRoyaltyWallet());
     }
 
@@ -155,8 +155,8 @@ contract StreamTermsTest is StreamFixture {
         assertFalse(_contains(writes, _termsSlot(OVERFLOW | 2)), "no second overflow entry");
         assertEq(stream.artistOf(b), uint160(artist));
         // A re-rate reaches the overflow range the same way.
-        recordsMock.setRoyaltyRate(IStream(address(stream)), b, 7_000);
-        assertEq(IStreamViews(address(stream)).work(b).royaltyRate, 7_000);
+        recordsMock.setRoyaltyRate(IStream(address(stream)), b, 6_000);
+        assertEq(IStreamViews(address(stream)).work(b).royaltyRate, 6_000);
         assertEq(IStreamViews(address(stream)).work(a).royaltyRate, 6_529);
     }
 

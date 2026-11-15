@@ -81,8 +81,8 @@ library Pool {
     }
 
     function word(T memory t) internal pure returns (uint256) {
-        return uint256(t.a) | uint256(t.r) << 160 | uint256(t.s) << 192 | uint256(t.f) << 224
-            | uint256(t.m) << 240;
+        return uint256(t.a) | uint256(t.r) << 160 | uint256(t.s) << 184 | uint256(t.f) << 208
+            | uint256(t.m) << 232;
     }
 }
 
@@ -169,15 +169,17 @@ contract TermsHandler is Test {
         _record(tokenId);
     }
 
-    /// @dev Re-rates a token, preferring a pool rate that collides under the token's other terms.
+    /// @dev Re-rates a token down, preferring a lower pool rate that collides under the token's
+    ///      other terms.
     function reRate(uint256 tokenSeed, uint256 rateSeed) external {
         if (tokens.length == 0) return;
         uint256 tokenId = tokens[tokenSeed % tokens.length];
         Pool.T memory cur = shadow[tokenId];
-        uint32 rate = uint32(rateSeed % 100_001);
+        // Rates only go down (ADR 0006, enforced by Stream itself).
+        uint32 rate = uint32(rateSeed % (uint256(cur.r) + 1));
         for (uint256 k; k < pool.length; ++k) {
             Pool.T memory c = pool[(rateSeed % pool.length + k) % pool.length];
-            if (c.a == cur.a && c.s == cur.s && c.f == cur.f && c.m == cur.m && c.r != cur.r) {
+            if (c.a == cur.a && c.s == cur.s && c.f == cur.f && c.m == cur.m && c.r < cur.r) {
                 rate = c.r;
                 break;
             }

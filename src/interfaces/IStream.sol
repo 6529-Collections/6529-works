@@ -280,6 +280,9 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     ///         `IEditions(target).stream()` must be this contract). ADMIN role.
     /// @param target The 6529 Stream Editions contract to bind.
     function bindEditions(address target) external;
+    /// @notice The split factory that derives every seller and royalty wallet, fixed for good.
+    /// @return The split factory.
+    function splitFactory() external view returns (address);
     /// @notice The bound `IWorkRecords` satellite.
     /// @return The satellite, or zero before it is bound.
     function workRecords() external view returns (address);

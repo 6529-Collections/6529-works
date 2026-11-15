@@ -98,6 +98,21 @@ abstract contract StreamFixture is Test {
         collectionId = stream.createCollection("Genesis", keccak256("genesis"));
     }
 
+    /// @dev The terms ID Stream interns a terms word at when its hashed position is free.
+    function _termsIdOf(
+        uint160 artistId,
+        uint24 royaltyRate,
+        uint24 feeShare,
+        uint24 feeRecipientId,
+        uint24 minterId
+    ) internal pure returns (uint24) {
+        return uint24(
+            uint256(
+                keccak256(abi.encode(artistId, royaltyRate, feeShare, feeRecipientId, minterId))
+            )
+        ) & 0x7fffff;
+    }
+
     function _defaultTerms() internal view returns (WorkTerms memory) {
         return WorkTerms(seller, feeRecipient, 25_000, royaltyWallet, 6_529);
     }

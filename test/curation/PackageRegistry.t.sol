@@ -615,10 +615,10 @@ contract PackageRegistryTest is CurationBase {
 
     /// @dev The registry hashes the item from calldata (`WorksHashing.itemHashCalldata`);
     ///      whatever the dynamic fields hold, the result is `WorksHashing.itemHash`.
+    /// The license ID is fixed: the policy refuses one outside the `SpdxId` grammar before hashing.
     function testFuzz_consume_itemHashMatchesWorksHashing(
         uint256 collectionId,
         bytes32 mediaHash,
-        string calldata spdxId,
         bytes calldata saleParams,
         bytes32 seed
     ) public {
@@ -626,7 +626,6 @@ contract PackageRegistryTest is CurationBase {
         PackageItem memory item = _item(lead, SHA_A);
         item.collectionId = collectionId;
         item.mediaHash = mediaHash;
-        item.license.spdxId = spdxId;
         item.sale.params = saleParams;
         item.seedPolicy = SeedPolicy.ARTIST;
         item.seed = seed;
@@ -982,16 +981,18 @@ contract PackageRegistryTest is CurationBase {
 
     // ------------------------------------------------------------------ item validation
 
+    /// @dev The policy's item rules (`InvalidSeedPolicy`) run before the consume.
     function test_invalidItem_seedPolicy() public {
+        bytes memory reason = abi.encodeWithSelector(IMintPolicy.InvalidSeedPolicy.selector);
         PackageItem memory item = _item(lead, SHA_A);
         item.seed = keccak256("seed"); // seed without SeedPolicy.ARTIST
-        _expectInvalid(item, _keys(leadKey));
+        _expectInvalidWith(item, _keys(leadKey), reason);
         item.seedPolicy = SeedPolicy.ARTIST;
         item.seed = 0; // ARTIST policy without a seed
-        _expectInvalid(item, _keys(leadKey));
+        _expectInvalidWith(item, _keys(leadKey), reason);
         item.seedPolicy = SeedPolicy.VRF;
         item.seed = keccak256("seed");
-        _expectInvalid(item, _keys(leadKey));
+        _expectInvalidWith(item, _keys(leadKey), reason);
     }
 
     function test_invalidItem_zeroContentHash() public {
@@ -1042,7 +1043,9 @@ contract PackageRegistryTest is CurationBase {
     function test_invalidItem_parties() public {
         PackageItem memory item = _item(lead, SHA_A);
         item.parties = new Party[](0);
-        _expectInvalid(item, _keys(leadKey));
+        _expectInvalidWith(
+            item, _keys(leadKey), abi.encodeWithSelector(IMintPolicy.InvalidLeadArtist.selector)
+        );
         item = _masterItem(item.contentHash);
         item.parties[0].role = PartyRole.COLLABORATOR; // the lead must be an ARTIST
         _expectInvalid(item, _keys(leadKey, collabKey));
@@ -1683,6 +1686,16 @@ contract PackageRegistryTest is CurationBase {
         MoveAuthorization memory move = _move(leadKey_, root, _hash(item), 0);
         vm.prank(stream);
         vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.InvalidItem.selector, _hash(item)));
+        _policyCall(registry, root, item, new bytes32[](0), move);
+    }
+
+    function _expectInvalidWith(PackageItem memory item, uint256[] memory keys, bytes memory reason)
+        internal
+    {
+        bytes32 root = _prepare(item, keys);
+        MoveAuthorization memory move = _move(keys[0], root, _hash(item), 0);
+        vm.prank(stream);
+        vm.expectRevert(reason);
         _policyCall(registry, root, item, new bytes32[](0), move);
     }
 

@@ -86,6 +86,9 @@ contract MockPackageRegistry is Supports165 {
         external
         returns (IMintPolicy.MintRecord memory r)
     {
+        if (request.length < 160 || uint256(bytes32(request[:32])) != 32) {
+            revert IMintTarget.InvalidMintRequest();
+        }
         StreamMintRequest memory req = abi.decode(request, (StreamMintRequest));
         PackageItem memory item = req.item;
         _check(item, c.entropyModule);
@@ -115,6 +118,9 @@ contract MockPackageRegistry is Supports165 {
         view
         returns (PrimaryTerms memory terms)
     {
+        if (request.length < 160 || uint256(bytes32(request[:32])) != 32) {
+            revert IMintTarget.InvalidMintRequest();
+        }
         StreamMintRequest memory req = abi.decode(request, (StreamMintRequest));
         _check(req.item, c.entropyModule);
         uint256 artistId = IArtistRegistry(artistRegistry).artistIdOf(req.item.parties[0].account);
@@ -215,24 +221,45 @@ contract MockPackageRegistry is Supports165 {
     }
 }
 
-/// @notice A registry that returns constants, so a gas measurement sees only Stream's share.
-contract ConstantPackageRegistry is Supports165 {
+/// @notice A mint policy without consent or uniqueness checks, so a gas measurement sees only
+///         Stream's share plus the terms quote every policy makes (the context's economics and
+///         the split factory's seller wallet): a fresh item hash per call, a constant lead artist.
+contract ConstantMintPolicy is Supports165 {
     uint256 internal immutable artist;
+    address public immutable artistRegistry;
 
-    constructor(uint256 artistId) {
+    constructor(uint256 artistId, address artists) {
         artist = artistId;
+        artistRegistry = artists;
     }
 
     function _interface() internal pure override returns (bytes4) {
-        return type(IPackageRegistry).interfaceId;
+        return type(IMintPolicy).interfaceId;
     }
 
-    function consume(bytes32, PackageItem calldata, bytes32[] calldata, MoveAuthorization calldata)
+    function authorize(IMintPolicy.MintContext calldata c, bytes calldata request)
         external
         view
-        returns (bytes32, uint256, address)
+        returns (IMintPolicy.MintRecord memory r)
     {
-        return (keccak256(abi.encode(gasleft())), artist, address(uint160(artist)));
+        PackageItem memory item = abi.decode(request, (StreamMintRequest)).item;
+        ProductEconomics memory e = IEconomicsResolver(c.economics).economics(PRODUCT_STREAM);
+        r.itemHash = keccak256(abi.encode(gasleft()));
+        r.artistId = artist;
+        r.collectionId = item.collectionId;
+        r.kind = uint8(item.kind);
+        r.seedPolicy = uint8(item.seedPolicy);
+        r.royaltyRate = e.royaltyRate;
+        r.contentHash = item.contentHash;
+        r.mediaHash = item.mediaHash;
+        r.recordFileId = item.recordFileId;
+        r.saleKind = item.sale.saleKind;
+        r.currency = item.sale.currency;
+        r.seller = ISplitFactory(c.splitFactory).walletFor(item.payees, bytes32(0));
+        r.feeRecipient = e.feeRecipient;
+        r.feeShare = e.feeShare;
+        r.creator = address(uint160(artist));
+        r.params = item.sale.params;
     }
 }
 
@@ -512,7 +539,7 @@ contract ConstantAuction is IERC721Receiver, Supports165 {
 }
 
 /// @notice A records-satellite mock: holds renderer pins and drives the core's hooks. Its
-///         `pinnedRenderer` can be made to fail in each way `Stream.rendererOf` tolerates.
+///         `pinnedRenderer` can be made to fail in each way `Stream.rendererOf` must handle.
 contract MockWorkRecords is Supports165 {
     /// @notice The Stream this satellite serves, which `bindWorkRecords` checks.
     address public immutable stream;
@@ -520,8 +547,7 @@ contract MockWorkRecords is Supports165 {
     mapping(uint256 => bool) public isOpen;
     /// @notice 0 none; 1 revert; 2 run out of gas; 3 answer nothing; 4 answer two words;
     ///         5 a word that is not an address; 6 an address without code; 7 revert with
-    ///         `DependencyCodeChanged` for the pin; 8 answer the pin only when given nearly all
-    ///         of `Stream.RECORDS_GAS`, else revert.
+    ///         `DependencyCodeChanged` for the pin; 8 revert with `RecordNotOpen`.
     uint8 public fault;
 
     function setFault(uint8 fault_) external {
@@ -529,9 +555,8 @@ contract MockWorkRecords is Supports165 {
     }
 
     function pinnedRenderer(uint256 tokenId) external view returns (address) {
-        uint256 given = gasleft();
         uint8 f = fault;
-        if (f == 8 && given < 99_000) revert("records starved");
+        if (f == 8) revert IWorkRecords.RecordNotOpen(tokenId);
         if (f == 1) revert("records fault");
         if (f == 2) {
             uint256 i;

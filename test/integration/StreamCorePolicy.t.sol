@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
 import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
+import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
@@ -71,6 +72,14 @@ contract StreamCorePolicyTest is IntegrationBase {
                 termsId = id;
             }
         }
+    }
+
+    /// @dev Stream answers the native surface's id and the extension views' id.
+    function test_SupportsBothInterfaceIds() public view {
+        assertTrue(stream.supportsInterface(type(IStream).interfaceId), "IStream");
+        assertTrue(stream.supportsInterface(type(IStreamViews).interfaceId), "IStreamViews");
+        assertTrue(stream.supportsInterface(type(IMintTarget).interfaceId), "IMintTarget");
+        assertFalse(stream.supportsInterface(0xffffffff));
     }
 
     function test_CoreOf_KindAndSeedAsUint8() public {
