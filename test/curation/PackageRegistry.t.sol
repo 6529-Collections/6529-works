@@ -605,7 +605,7 @@ contract PackageRegistryTest is CurationBase {
         IMintPolicy.MintRecord memory rec =
             _policyCall(registry, root, item, new bytes32[](0), move);
         (bytes32 h, uint256 artistId, address authority) =
-            (rec.itemHash, rec.artistId, rec.terms.creator);
+            (rec.itemHash, rec.artistId, rec.creator);
         assertEq(h, itemHash);
         assertEq(artistId, _id(lead));
         assertEq(authority, lead, "the active authority that signed the move");

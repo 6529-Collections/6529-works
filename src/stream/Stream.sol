@@ -261,13 +261,15 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         if (!minter.admitted) revert NotAdmittedMinter(msg.sender);
         if (to != msg.sender || id != 0 || amount != 1) revert InvalidMintRequest();
         (address policy, IMintPolicy.MintContext memory context) = _context(msg.sender);
-        IMintPolicy.MintRecord memory r = IMintPolicy(policy).authorize(context, data);
-        terms = r.terms;
-        if (minter.kindKey != _kindKey(terms.saleKind)) {
-            revert SaleKindMismatch(terms.saleKind, _minterKinds[minter.id]);
+        IMintPolicy.MintRecord memory r = _authorize(policy, context, data);
+        if (minter.kindKey != _kindKey(r.saleKind)) {
+            revert SaleKindMismatch(r.saleKind, _minterKinds[minter.id]);
         }
         tokenId = _store(r, _termsId(_checked(r, minter.id)));
         _mint(to, tokenId);
+        terms = PrimaryTerms(
+            r.saleKind, r.currency, 0, r.params, r.seller, r.feeRecipient, r.feeShare, r.creator
+        );
     }
 
     /// @inheritdoc IMintTarget
@@ -736,6 +738,64 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         c.splitFactory = splitFactory;
     }
 
+    /// @dev Calls the policy and reads its answer in place: the flat `MintRecord` encoding (after
+    ///      the tuple's offset word) is the record's memory layout, one word per field, with only
+    ///      the offset of `params` to rebase. A policy revert is passed on. Every word must be a
+    ///      clean value of its field's type and `params` must lie inside the answer
+    ///      (`InvalidMintRequest`), so the record is never read out of type.
+    function _authorize(
+        address policy,
+        IMintPolicy.MintContext memory context,
+        bytes calldata data
+    ) private returns (IMintPolicy.MintRecord memory r) {
+        bytes memory input = abi.encodeCall(IMintPolicy.authorize, (context, data));
+        bytes4 malformed = InvalidMintRequest.selector;
+        assembly ("memory-safe") {
+            let ok := call(gas(), policy, 0, add(input, 0x20), mload(input), 0, 0)
+            let size := returndatasize()
+            r := mload(0x40)
+            if iszero(ok) {
+                returndatacopy(r, 0, size)
+                revert(r, size)
+            }
+            // The offset word (0x20), 17 head words and the length word of `params`.
+            let bad := lt(size, 0x260)
+            if iszero(bad) {
+                returndatacopy(0, 0, 0x20)
+                bad := iszero(eq(mload(0), 0x20))
+            }
+            let tail := sub(size, 0x20)
+            if iszero(bad) {
+                returndatacopy(r, 0x20, tail)
+                let off := mload(add(r, 0x200))
+                bad := or(lt(off, 0x220), gt(add(off, 0x20), tail))
+                if iszero(bad) {
+                    bad := gt(add(add(off, 0x20), mload(add(r, off))), tail)
+                }
+                // kind and seed policy (uint8), royalty rate and fee share (uint32), currency,
+                // seller, fee recipient and creator (160 bits).
+                bad := or(bad, shr(8, or(mload(add(r, 0x60)), mload(add(r, 0x80)))))
+                bad := or(bad, shr(32, or(mload(add(r, 0xa0)), mload(add(r, 0x1c0)))))
+                bad := or(
+                    bad,
+                    shr(
+                        160,
+                        or(
+                            or(mload(add(r, 0x160)), mload(add(r, 0x180))),
+                            or(mload(add(r, 0x1a0)), mload(add(r, 0x1e0)))
+                        )
+                    )
+                )
+                mstore(add(r, 0x200), add(r, off))
+            }
+            if bad {
+                mstore(0, malformed)
+                revert(0, 4)
+            }
+            mstore(0x40, add(r, and(add(tail, 0x1f), not(0x1f))))
+        }
+    }
+
     /// @dev The core's invariants on the policy's record, whatever the policy: a nonzero item
     ///      hash, a nonzero lead artist ID that fits 160 bits, kind and seed policy within their
     ///      stored two bits (`InvalidMintRequest`); a nonzero seller, a royalty rate up to 100,000
@@ -745,15 +805,14 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         private
         returns (Terms memory)
     {
-        PrimaryTerms memory p = r.terms;
         if (
             r.itemHash == 0 || r.artistId == 0 || r.artistId > type(uint160).max
                 || r.kind > FIELD_MASK || r.seedPolicy > FIELD_MASK
         ) revert InvalidMintRequest();
         if (
-            p.seller == address(0) || r.royaltyRate > Splits.DENOMINATOR
-                || p.feeShare >= Splits.DENOMINATOR
-                || (p.feeShare != 0 && (p.feeRecipient == address(0) || p.feeRecipient == p.seller))
+            r.seller == address(0) || r.royaltyRate > Splits.DENOMINATOR
+                || r.feeShare >= Splits.DENOMINATOR
+                || (r.feeShare != 0 && (r.feeRecipient == address(0) || r.feeRecipient == r.seller))
         ) revert InvalidWorkTerms();
         return Terms(
             // Checked above: the artist ID fits 160 bits and both rates fit 24.
@@ -762,8 +821,8 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
             // forge-lint: disable-next-line(unsafe-typecast)
             uint24(r.royaltyRate),
             // forge-lint: disable-next-line(unsafe-typecast)
-            uint24(p.feeShare),
-            _feeRecipientId(p.feeRecipient),
+            uint24(r.feeShare),
+            _feeRecipientId(r.feeRecipient),
             minterId
         );
     }
@@ -843,7 +902,7 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         if (!c.exists) revert UnknownCollection(r.collectionId);
         tokenId = ++_counts.minted;
         uint32 serial = ++c.minted;
-        address seller = r.terms.seller;
+        address seller = r.seller;
         TokenData storage t = _tokens[tokenId];
         t.seller = seller;
         t.serial = serial;

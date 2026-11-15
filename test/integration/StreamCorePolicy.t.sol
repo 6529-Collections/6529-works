@@ -14,7 +14,6 @@ import { IntegrationBase } from "./IntegrationBase.sol";
 ///         royalty floor, `rendererOf`'s fail-closed pin read and the permanent artist registry.
 contract StreamCorePolicyTest is IntegrationBase {
     bytes32 internal root;
-    Work[] internal works;
     address internal lead;
 
     function setUp() public override {
@@ -26,9 +25,6 @@ contract StreamCorePolicyTest is IntegrationBase {
         }
         root = _publish(w);
         _keep(root, w);
-        for (uint256 i; i < 4; ++i) {
-            works.push(w[i]);
-        }
     }
 
     function _first() internal returns (uint256 tokenId) {
@@ -67,7 +63,7 @@ contract StreamCorePolicyTest is IntegrationBase {
             ) {
                 minted = true;
                 assertEq(uint256(logs[i].topics[3]), stream.artistOf(tokenId), "artistId topic");
-                (,,,,,,,, address seller, uint24 id) = abi.decode(
+                (,,,,,,, address seller, uint24 id) = abi.decode(
                     logs[i].data,
                     (bytes32, uint64, uint8, bytes32, bytes32, bytes32, bytes32, address, uint24)
                 );
@@ -81,7 +77,7 @@ contract StreamCorePolicyTest is IntegrationBase {
         uint256 tokenId = _first();
         (,,, uint8 kind, uint8 seed,) = stream.coreOf(tokenId);
         assertEq(kind, uint8(ItemKind.ORIGINAL));
-        assertEq(seed, uint8(works[0].item.seedPolicy));
+        assertEq(seed, uint8(_package(root)[0].item.seedPolicy));
     }
 
     // ------------------------------------------------------------------ the read-only extension

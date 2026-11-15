@@ -96,8 +96,11 @@ contract MockPackageRegistry is Supports165 {
             item.seedPolicy == SeedPolicy.VRF
                 && !IEntropyModule(c.entropyModule).isDeliveredContent(item.contentHash)
         ) revert IMintPolicy.SeedNotDelivered(r.itemHash);
-        (r.terms, r.royaltyRate) = _quote(item, c);
-        r.terms.creator = creator;
+        PrimaryTerms memory t;
+        (t, r.royaltyRate) = _quote(item, c);
+        (r.saleKind, r.currency, r.params) = (t.saleKind, t.currency, t.params);
+        (r.seller, r.feeRecipient, r.feeShare, r.creator) =
+            (t.seller, t.feeRecipient, t.feeShare, creator);
         r.collectionId = item.collectionId;
         r.kind = uint8(item.kind);
         r.seedPolicy = uint8(item.seedPolicy);

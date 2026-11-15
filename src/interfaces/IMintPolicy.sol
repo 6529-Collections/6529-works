@@ -43,8 +43,14 @@ interface IMintPolicy is IERC165 {
     /// @param contentHash The decoded SHA-256 of the primary media.
     /// @param mediaHash The commitment to the media list.
     /// @param recordFileId The approved descriptive record's file ID.
-    /// @param terms The primary-sale terms: sale kind, currency, params, seller, fee recipient,
-    ///        fee share and creator (the lead artist's active authority).
+    /// @param saleKind The item's sale kind (the adapter's, as Stream checks).
+    /// @param currency The sale currency as approved.
+    /// @param seller The seller wallet (the artist portion's split wallet).
+    /// @param feeRecipient The network fee recipient.
+    /// @param feeShare The network fee share, out of 100,000.
+    /// @param creator The lead artist's active authority, which signed the move.
+    /// @param params The sale method's params as approved.
+    /// @dev Flat, one word per field and `params` last, so Stream reads the answer in place.
     struct MintRecord {
         bytes32 itemHash;
         uint256 artistId;
@@ -56,7 +62,13 @@ interface IMintPolicy is IERC165 {
         bytes32 contentHash;
         bytes32 mediaHash;
         bytes32 recordFileId;
-        PrimaryTerms terms;
+        bytes32 saleKind;
+        address currency;
+        address seller;
+        address feeRecipient;
+        uint32 feeShare;
+        address creator;
+        bytes params;
     }
 
     /// @notice The item names no sale kind.

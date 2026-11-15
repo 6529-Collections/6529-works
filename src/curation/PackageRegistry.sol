@@ -250,8 +250,11 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
             item.seedPolicy == SeedPolicy.VRF
                 && !IEntropyModule(context.entropyModule).isDeliveredContent(item.contentHash)
         ) revert SeedNotDelivered(r.itemHash);
-        (r.terms, r.royaltyRate) = _quote(item, context);
-        r.terms.creator = creator;
+        PrimaryTerms memory t;
+        (t, r.royaltyRate) = _quote(item, context);
+        (r.saleKind, r.currency, r.params) = (t.saleKind, t.currency, t.params);
+        (r.seller, r.feeRecipient, r.feeShare, r.creator) =
+            (t.seller, t.feeRecipient, t.feeShare, creator);
         r.collectionId = item.collectionId;
         r.kind = uint8(item.kind);
         r.seedPolicy = uint8(item.seedPolicy);
