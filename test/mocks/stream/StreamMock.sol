@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IStream } from "src/interfaces/IStream.sol";
-import { IStreamCore } from "src/interfaces/IStreamCore.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice The minimal 6529 Stream stand-in: the reads other contracts make of Stream, answered
 ///         from fixtures the test sets. The renderer reads `work`, `collection`, `workRecords`
@@ -23,8 +23,8 @@ contract StreamMock {
     address public workRecords;
     address public editions;
     address public entropyModule;
-    mapping(uint256 => IStream.WorkCore) internal cores;
-    mapping(uint256 => IStream.Collection) internal collections;
+    mapping(uint256 => IStreamViews.WorkCore) internal cores;
+    mapping(uint256 => IStreamViews.Collection) internal collections;
     mapping(bytes4 => bool) internal failing;
 
     function supportsInterface(bytes4 id) external pure returns (bool) {
@@ -50,7 +50,7 @@ contract StreamMock {
         entropyModule = module;
     }
 
-    function setWork(uint256 id, IStream.WorkCore calldata core) external {
+    function setWork(uint256 id, IStreamViews.WorkCore calldata core) external {
         cores[id] = core;
     }
 
@@ -59,13 +59,13 @@ contract StreamMock {
         cores[id].artistId = artistId;
     }
 
-    function setCollection(uint256 id, IStream.Collection calldata collection_) external {
+    function setCollection(uint256 id, IStreamViews.Collection calldata collection_) external {
         collections[id] = collection_;
     }
 
     // ----- reads
 
-    function work(uint256 id) external view returns (IStream.WorkCore memory) {
+    function work(uint256 id) external view returns (IStreamViews.WorkCore memory) {
         _gate(msg.sig);
         return cores[id];
     }
@@ -76,7 +76,7 @@ contract StreamMock {
         return entropyModule;
     }
 
-    function collection(uint256 id) external view returns (IStream.Collection memory) {
+    function collection(uint256 id) external view returns (IStreamViews.Collection memory) {
         _gate(msg.sig);
         return collections[id];
     }
@@ -84,7 +84,7 @@ contract StreamMock {
     function artistOf(uint256 id) external view returns (uint256 artistId) {
         _gate(msg.sig);
         artistId = cores[id].artistId;
-        if (artistId == 0) revert IStreamCore.UnknownWork(id);
+        if (artistId == 0) revert IStream.UnknownWork(id);
     }
 
     function _gate(bytes4 selector) internal view {

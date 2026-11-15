@@ -9,7 +9,6 @@ import { console2 } from "forge-std/console2.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IStream } from "src/interfaces/IStream.sol";
-import { IStreamCore } from "src/interfaces/IStreamCore.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { PrimaryOutcome } from "src/interfaces/types/SaleTypes.sol";
 import { HostileActor } from "../mocks/sales/AuctionMocks.sol";
@@ -85,7 +84,7 @@ contract StrandedWorkRescueTest is IntegrationBase {
         (PrimaryOutcome before,,) = stream.primarySale(tokenId);
         (bool ok, bytes memory reason) = _governed(_rescueCall(tokenId));
         assertFalse(ok, "refused");
-        assertEq(reason, abi.encodeWithSelector(IStreamCore.WorkNotRescuable.selector, tokenId));
+        assertEq(reason, abi.encodeWithSelector(IStream.WorkNotRescuable.selector, tokenId));
         assertEq(stream.ownerOf(tokenId), holder, "not moved");
         (PrimaryOutcome after_,,) = stream.primarySale(tokenId);
         assertEq(uint8(after_), uint8(before), "outcome unchanged");
@@ -108,11 +107,11 @@ contract StrandedWorkRescueTest is IntegrationBase {
         manager.schedule(address(stream), call, 0);
         vm.warp(block.timestamp + 30 days);
         vm.expectEmit(address(stream));
-        emit IStreamCore.PrimarySaleSettled(tokenId, PrimaryOutcome.RESCUED, address(0), address(0), 0);
+        emit IStream.PrimarySaleSettled(tokenId, PrimaryOutcome.RESCUED, address(0), address(0), 0);
         vm.expectEmit(address(stream));
         emit IERC721.Transfer(address(auction), museum, tokenId);
         vm.expectEmit(address(stream));
-        emit IStreamCore.WorkRescued(tokenId, address(auction), museum);
+        emit IStream.WorkRescued(tokenId, address(auction), museum);
         vm.prank(hotAdmin);
         uint256 gasBefore = gasleft();
         manager.execute(address(stream), call);
@@ -127,7 +126,7 @@ contract StrandedWorkRescueTest is IntegrationBase {
 
         // The stranded adapter can do nothing more with it.
         vm.startPrank(address(auction));
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.SaleAlreadySettled.selector, tokenId));
+        vm.expectRevert(abi.encodeWithSelector(IStream.SaleAlreadySettled.selector, tokenId));
         stream.settlePrimary(tokenId, PrimaryOutcome.UNBID, address(0), address(0), 0);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -188,7 +187,7 @@ contract StrandedWorkRescueTest is IntegrationBase {
         vm.warp(block.timestamp + 30 days);
         vm.prank(hotAdmin);
         vm.expectRevert(
-            abi.encodeWithSelector(IStreamCore.AdmissionUnchanged.selector, address(auction), false)
+            abi.encodeWithSelector(IStream.AdmissionUnchanged.selector, address(auction), false)
         );
         manager.execute(address(stream), again_);
         vm.prank(hotAdmin);
@@ -315,7 +314,7 @@ contract StrandedWorkRescueTest is IntegrationBase {
         assertTrue(ok);
         assertEq(stream.ownerOf(tokenId), economics.museum(), "the museum");
         assertEq(stream.balanceOf(elsewhere), 0, "never elsewhere");
-        assertEq(IStreamCore.rescueToMuseum.selector, bytes4(keccak256("rescueToMuseum(uint256)")));
+        assertEq(IStream.rescueToMuseum.selector, bytes4(keccak256("rescueToMuseum(uint256)")));
     }
 
     /// @dev A zero museum (only a replacement resolver could name one) refuses the rescue,
@@ -348,7 +347,7 @@ contract StrandedWorkRescueTest is IntegrationBase {
     function test_Rescue_IsTheSuccessorClass() public {
         (, uint256 tokenId) = _startItem(0);
         (bool immediate, uint32 delay) =
-            manager.canCall(hotAdmin, address(stream), IStreamCore.rescueToMuseum.selector);
+            manager.canCall(hotAdmin, address(stream), IStream.rescueToMuseum.selector);
         assertFalse(immediate);
         assertEq(delay, 30 days);
         address[2] memory callers = [collector, guardian1];

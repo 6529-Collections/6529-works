@@ -9,6 +9,7 @@ import { Payment, PaymentMethod, PrimaryOutcome } from "src/interfaces/types/Sal
 import { MockSaleAdapter } from "../../mocks/stream/StreamMocks.sol";
 import { IntegrationBase } from "../IntegrationBase.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice Owner decision 28: 6529 Stream's work lifecycle and sale-method lifecycle are the
 ///         tables in `docs/spec/stream-and-auctions.md` ("A work's lifecycle", "A sale

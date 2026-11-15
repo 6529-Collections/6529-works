@@ -12,7 +12,7 @@ import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStream } from "src/interfaces/IStream.sol";
-import { IStreamCore } from "src/interfaces/IStreamCore.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import {
@@ -250,7 +250,7 @@ contract EditionsStreamMock {
     bytes public reentryItem;
     bytes public reentryError;
 
-    mapping(uint256 => IStream.WorkCore) internal _works;
+    mapping(uint256 => IStreamViews.WorkCore) internal _works;
     mapping(uint256 => address) internal _owners;
     mapping(uint256 => bool) internal _settled;
     mapping(uint256 => address) public pinnedRenderer;
@@ -284,7 +284,7 @@ contract EditionsStreamMock {
         bytes32 itemHash = WorksHashing.itemHashCalldata(item);
         EditionsRegistryMock(packageRegistry).consume(itemHash, item.contentHash);
         id = ++totalMinted;
-        IStream.WorkCore storage w = _works[id];
+        IStreamViews.WorkCore storage w = _works[id];
         w.itemHash = itemHash;
         w.artistId = uint256(uint160(item.parties[0].account));
         w.collectionId = item.collectionId;
@@ -300,7 +300,7 @@ contract EditionsStreamMock {
         _settled[id] = true;
     }
 
-    /// @dev A consented re-rate of the master (`IStreamCore.setRoyaltyRate` from `WorkRecords`).
+    /// @dev A consented re-rate of the master (`IStream.setRoyaltyRate` from `WorkRecords`).
     function setMasterRoyaltyRate(uint256 id, uint32 rate) external {
         _works[id].royaltyRate = rate;
     }
@@ -308,7 +308,7 @@ contract EditionsStreamMock {
     /// @dev An upheld dispute burns the master in custody.
     function burnMaster(uint256 id) external {
         // As 6529 Stream: a settled token is never burned (after a sale nothing is confiscated).
-        if (_settled[id]) revert IStreamCore.SaleAlreadySettled(id);
+        if (_settled[id]) revert IStream.SaleAlreadySettled(id);
         delete _owners[id];
     }
 
@@ -323,8 +323,8 @@ contract EditionsStreamMock {
             || interfaceId == type(IStream).interfaceId;
     }
 
-    function work(uint256 id) external view returns (IStream.WorkCore memory) {
-        if (_owners[id] == address(0)) revert IStreamCore.UnknownWork(id);
+    function work(uint256 id) external view returns (IStreamViews.WorkCore memory) {
+        if (_owners[id] == address(0)) revert IStream.UnknownWork(id);
         return _works[id];
     }
 
@@ -333,8 +333,8 @@ contract EditionsStreamMock {
         view
         returns (bytes32, uint256, uint256, uint8, uint8, uint32)
     {
-        if (_owners[id] == address(0)) revert IStreamCore.UnknownWork(id);
-        IStream.WorkCore storage w = _works[id];
+        if (_owners[id] == address(0)) revert IStream.UnknownWork(id);
+        IStreamViews.WorkCore storage w = _works[id];
         return (w.itemHash, w.artistId, w.collectionId, w.kind, w.seedPolicy, w.royaltyRate);
     }
 
@@ -344,7 +344,7 @@ contract EditionsStreamMock {
 
     function ownerOf(uint256 id) external view returns (address holder) {
         holder = _owners[id];
-        if (holder == address(0)) revert IStreamCore.UnknownWork(id);
+        if (holder == address(0)) revert IStream.UnknownWork(id);
     }
 
     function rendererOf(uint256 id) external view returns (address r) {
@@ -358,12 +358,12 @@ contract EditionsStreamMock {
     }
 
     function linkEdition(uint256 tokenId, uint256 editionId) external {
-        if (msg.sender != editions) revert IStreamCore.UnboundCaller(msg.sender);
+        if (msg.sender != editions) revert IStream.UnboundCaller(msg.sender);
         if (
             editionId != tokenId || _works[tokenId].kind != uint8(ItemKind.EDITION_MASTER)
                 || _linked[tokenId] != 0
         ) {
-            revert IStreamCore.EditionLinkInvalid(tokenId);
+            revert IStream.EditionLinkInvalid(tokenId);
         }
         if (linkMode == LinkMode.IGNORE) return;
         if (linkMode == LinkMode.REENTER) {

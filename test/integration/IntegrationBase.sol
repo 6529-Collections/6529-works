@@ -30,6 +30,7 @@ import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { StateGrowth } from "../helpers/StateGrowth.sol";
 import { WorksDeployment } from "./WorksDeployment.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice Actors, package building, signatures and sale helpers shared by the end-to-end flows.
 /// @dev Every helper drives the real contracts the way an off-chain tool or a wallet would: it

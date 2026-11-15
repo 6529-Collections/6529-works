@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
@@ -307,7 +308,7 @@ contract StreamTermsInvariantTest is StreamFixture {
 
     function _checkViews(uint256 id) internal view {
         Pool.T memory t = handler.expected(id);
-        IStream.WorkCore memory w = IStream(address(stream)).work(id);
+        IStreamViews.WorkCore memory w = IStreamViews(address(stream)).work(id);
         assertEq(w.artistId, t.a, "artist");
         assertEq(w.royaltyRate, t.r, "rate");
         assertEq(stream.artistOf(id), t.a);

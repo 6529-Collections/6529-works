@@ -20,6 +20,7 @@ import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice Flow 5 (integration brief, lane B): a dispute on the real contracts. A copier's
 ///         package reaches auction; a guardian pauses it; PLATFORM appends the
@@ -120,7 +121,7 @@ contract DisputeFlowTest is IntegrationBase {
             abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, tokenId)
         );
         stream.ownerOf(tokenId);
-        assertEq(IStream(address(stream)).totalSupply(), IStream(address(stream)).totalMinted() - 1, "a gap: the ID is never reused");
+        assertEq(IStreamViews(address(stream)).totalSupply(), IStream(address(stream)).totalMinted() - 1, "a gap: the ID is never reused");
         uint256 before = bidder.balance;
         vm.prank(bidder);
         auction.claim(CURRENCY_ETH, bidder);
@@ -383,7 +384,7 @@ contract DisputeFlowTest is IntegrationBase {
         assertEq(coordinator.nextId(), nextId, "no second draw");
         assertEq(entropy.seedOf(originalItem), bytes32(uint256(77)));
         (, uint256 rightfulToken) = _start(originalRoot, _one(original), 0);
-        assertEq(uint8(IStream(address(stream)).work(rightfulToken).seedPolicy), uint8(SeedPolicy.VRF));
+        assertEq(uint8(IStreamViews(address(stream)).work(rightfulToken).seedPolicy), uint8(SeedPolicy.VRF));
     }
 
     /// @dev A guardian vetoes a mistaken release during its delay.

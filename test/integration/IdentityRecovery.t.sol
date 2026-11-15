@@ -23,6 +23,7 @@ import {
 import { IntegrationBase } from "./IntegrationBase.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice Flow 4 (integration brief, lane B): artist identity and recovery on the real
 ///         contracts, with the 6529 delegation contract as the identity lane's faithful mock.

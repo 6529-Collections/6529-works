@@ -8,6 +8,7 @@ import { IEditions } from "src/interfaces/IEditions.sol";
 import { IRenderer } from "src/interfaces/IRenderer.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
@@ -62,11 +63,11 @@ contract RendererTest is RendererBase {
         r.attributes[0] = Trait("Palette", "Warm");
         r.attributes[1] = Trait("Edition size", "1");
         _install(file, r);
-        IStream.WorkCore memory core = _core();
+        IStreamViews.WorkCore memory core = _core();
         core.collectionId = 3;
         core.serial = 12;
         stream.setWork(ID, core);
-        stream.setCollection(3, IStream.Collection("Spring", bytes32(0), 12));
+        stream.setCollection(3, IStreamViews.Collection("Spring", bytes32(0), 12));
 
         string memory j = _out();
 
@@ -101,12 +102,12 @@ contract RendererTest is RendererBase {
             r.artists[i] = vm.toString(i);
         }
         _install(file, r);
-        IStream.WorkCore memory core = _core();
+        IStreamViews.WorkCore memory core = _core();
         core.collectionId = 3;
         core.serial = 12;
         core.seedPolicy = uint8(SeedPolicy.ARTIST);
         stream.setWork(ID, core);
-        stream.setCollection(3, IStream.Collection("Spring", bytes32(0), 12));
+        stream.setCollection(3, IStreamViews.Collection("Spring", bytes32(0), 12));
         records.setSeed(ID, SeedPolicy.ARTIST, bytes32(uint256(0xabc)));
         disputeLog.set(address(stream), ID, bytes32(uint256(0xd15b)));
         RendererEditionsMock editions = new RendererEditionsMock(address(stream));
@@ -156,7 +157,7 @@ contract RendererTest is RendererBase {
     function test_Metadata_Seed() public {
         bytes32 file = _file(png, IDENTITY, "image/png");
         _install(file);
-        IStream.WorkCore memory core = _core();
+        IStreamViews.WorkCore memory core = _core();
         core.seedPolicy = uint8(SeedPolicy.ARTIST);
         stream.setWork(ID, core);
         records.setSeed(ID, SeedPolicy.ARTIST, bytes32(uint256(0xabc)));
@@ -173,13 +174,13 @@ contract RendererTest is RendererBase {
     function test_CoreOnly_UntilTheRecordIsOpen() public {
         bytes32 file = _file(png, IDENTITY, "image/png");
         _install(file);
-        IStream.WorkCore memory core = _core();
+        IStreamViews.WorkCore memory core = _core();
         core.collectionId = 3;
         core.serial = 12;
         core.artistId = 0xabc;
         core.seedPolicy = uint8(SeedPolicy.VRF);
         stream.setWork(ID, core);
-        stream.setCollection(3, IStream.Collection("Spring", bytes32(0), 12));
+        stream.setCollection(3, IStreamViews.Collection("Spring", bytes32(0), 12));
         RendererEntropyMock entropy = new RendererEntropyMock();
         entropy.set(core.itemHash, bytes32(uint256(0xfeed)));
         stream.setEntropyModule(address(entropy));
@@ -351,10 +352,10 @@ contract RendererTest is RendererBase {
         renderer.tokenURI(address(stream), ID);
 
         records.setLicense(ID, _license());
-        IStream.WorkCore memory core = _core();
+        IStreamViews.WorkCore memory core = _core();
         core.collectionId = 1;
         stream.setWork(ID, core);
-        stream.setCollection(1, IStream.Collection(bad, bytes32(0), 1));
+        stream.setCollection(1, IStreamViews.Collection(bad, bytes32(0), 1));
         vm.expectRevert(IRenderer.RendererInvalidUtf8.selector);
         renderer.tokenURI(address(stream), ID);
 
@@ -372,11 +373,11 @@ contract RendererTest is RendererBase {
     function test_Escaping_PercentAndHashInStreamAndSatelliteStrings() public {
         bytes32 file = _file(_data(THRESHOLD + 1, 6), IDENTITY, "image/png");
         _install(file);
-        IStream.WorkCore memory core = _core();
+        IStreamViews.WorkCore memory core = _core();
         core.collectionId = 1;
         core.serial = 4;
         stream.setWork(ID, core);
-        stream.setCollection(1, IStream.Collection("50% off #1", bytes32(0), 4));
+        stream.setCollection(1, IStreamViews.Collection("50% off #1", bytes32(0), 4));
         records.addLocator(ID, file, Locator(LocatorKind.IPFS, "ipfs://a%b#c"));
         records.setLicense(ID, License("Nonsense%License#1", bytes32(0)));
 
@@ -646,15 +647,15 @@ contract RendererTest is RendererBase {
     function test_FailsClosed_EveryReadOfTheStreamAndRecords() public {
         bytes32 file = _file(png, IDENTITY, "image/png");
         _install(file);
-        IStream.WorkCore memory core = _core();
+        IStreamViews.WorkCore memory core = _core();
         core.collectionId = 1;
         core.seedPolicy = uint8(SeedPolicy.ARTIST);
         stream.setWork(ID, core);
-        stream.setCollection(1, IStream.Collection("C", bytes32(0), 1));
+        stream.setCollection(1, IStreamViews.Collection("C", bytes32(0), 1));
         records.setSeed(ID, SeedPolicy.ARTIST, bytes32(uint256(1)));
         renderer.tokenURI(address(stream), ID); // the baseline works
 
-        bytes4[2] memory onStream = [IStream.work.selector, IStream.collection.selector];
+        bytes4[2] memory onStream = [IStreamViews.work.selector, IStreamViews.collection.selector];
         for (uint256 i; i < onStream.length; ++i) {
             stream.fail(onStream[i], true);
             vm.expectRevert(
@@ -687,17 +688,17 @@ contract RendererTest is RendererBase {
     function test_FailsClosed_NotAToken() public {
         vm.expectRevert(
             abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector, address(0xdead), IStream.work.selector
+                IRenderer.RendererReadFailed.selector, address(0xdead), IStreamViews.work.selector
             )
         );
         renderer.tokenURI(address(0xdead), 1);
     }
 
     function test_FailsClosed_ABurnedOrUnknownToken() public {
-        stream.fail(IStream.work.selector, true); // `UnknownWork` in the real Stream
+        stream.fail(IStreamViews.work.selector, true); // `UnknownWork` in the real Stream
         vm.expectRevert(
             abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector, address(stream), IStream.work.selector
+                IRenderer.RendererReadFailed.selector, address(stream), IStreamViews.work.selector
             )
         );
         renderer.tokenURI(address(stream), ID);

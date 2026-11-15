@@ -15,12 +15,13 @@ import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
 import { IRenderer } from "../interfaces/IRenderer.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
 import { IStream } from "../interfaces/IStream.sol";
-import { IStreamCore } from "../interfaces/IStreamCore.sol";
+import { IStreamViews } from "../interfaces/IStreamViews.sol";
 import { IStreamExtension } from "../interfaces/IStreamExtension.sol";
 import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
 import { ISplitFactory } from "../economics/interfaces/ISplitFactory.sol";
 import { Splits } from "../economics/Splits.sol";
 import { PrimaryOutcome, PrimarySettlement, PrimaryTerms } from "../interfaces/types/SaleTypes.sol";
+import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 import { StreamViews } from "./StreamViews.sol";
 
@@ -60,7 +61,7 @@ import { StreamViews } from "./StreamViews.sol";
 ///      replaceable one by one by governance (`setDependency`, the 30-day class); a replacement
 ///      changes nothing about an existing work (its terms, its seed's module, its renderer pin).
 ///      The records satellite and 6529 Stream Editions are bound once each. No delegatecall.
-contract Stream is ERC721, AccessManaged, IStreamCore {
+contract Stream is ERC721, AccessManaged, IStream {
     /// @dev How long after its removal a sale adapter's stranded works may be moved to the
     ///      museum (`rescueToMuseum`, owner decision 20).
     uint256 private constant RESCUE_DELAY = 90 days;
@@ -89,6 +90,9 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
     /// @dev Terms IDs below `OVERFLOW` are the hashed positions; from it, the overflow range.
     uint24 private constant HASHED = 0x7fffff;
     uint24 private constant OVERFLOW = 0x800000;
+    /// @dev The most revert data `rendererOf` passes on from the records satellite (a safety
+    ///      bound on copying, not a gas number; a longer revert is passed on empty).
+    uint256 private constant PIN_REVERT_BYTES = 256;
 
     /// @dev A token's two words (QUALITY-6). `termsId` names the token's `Terms` in `_terms`.
     struct TokenData {
@@ -145,7 +149,7 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
     /// @notice The split factory that derives seller and royalty wallets (the first economics
     ///         resolver's). Immutable: every wallet ever derived stays valid.
     address public immutable splitFactory;
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     address public immutable artistRegistry;
     /// @dev The genesis dependencies, what `_dependency` returns until `setDependency` replaces
     ///      one (owner decision 16).
@@ -154,11 +158,11 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
     address private immutable _genesisEntropyModule;
     address private immutable _genesisExtension;
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     address public workRecords;
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     address public editions;
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     address public defaultRenderer;
     /// @dev The code hash `defaultRenderer` was installed with, checked again by `rendererOf`.
     bytes32 private _defaultRendererCodeHash;
@@ -312,7 +316,7 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         _burn(id);
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     /// @dev PARAMETER_SETTER role, 48 hours: the upheld-dispute class of the auction's `cancel`.
     ///      The release is recorded by the permanent token (`ContentReleased`) as well as by the
     ///      registry.
@@ -397,7 +401,7 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         settlement.feeShare = shared.feeShare;
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     /// @dev SUCCESSOR_SETTER role (the 30-day class). A work is stranded only while its minting
     ///      adapter holds it unsettled after governance removed that adapter. RESCUED is both
     ///      outcome bits, a combination no adapter can report (owner decision 28).
@@ -427,7 +431,7 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
 
     // ----------------------------------------------------------------- collections and works
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     /// @dev The name goes into every work's metadata; which names the renderers can carry is the
     ///      view extension's rule (`IStreamExtension.isValidCollectionName`), not the core's.
     function createCollection(string calldata name, bytes32 metadataHash)
@@ -446,7 +450,17 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         emit CollectionCreated(collectionId, name, metadataHash);
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
+    function collectionCount() external view returns (uint256) {
+        return _counts.collections;
+    }
+
+    /// @inheritdoc IStream
+    function totalMinted() external view returns (uint256) {
+        return _counts.minted;
+    }
+
+    /// @inheritdoc IStream
     function coreOf(uint256 tokenId)
         external
         view
@@ -471,18 +485,18 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         );
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     function artistOf(uint256 tokenId) external view returns (uint256) {
         (, Terms memory shared) = _shared(tokenId);
         return shared.artistId;
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     function primarySaleSettled(uint256 tokenId) external view returns (bool) {
         return _ownerOf(tokenId) != address(0) && _tokens[tokenId].flags & SETTLED != 0;
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     /// @dev A settled token is never burned (`burn` refuses it), so its flags decide.
     function primarySale(uint256 tokenId)
         external
@@ -519,7 +533,7 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         }
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     function extsload(bytes32 slot, uint256 n) external view returns (bytes32[] memory words) {
         words = new bytes32[](n);
         assembly ("memory-safe") {
@@ -532,7 +546,7 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
 
     // ------------------------------------------------------------------------------- rendering
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     function setDefaultRenderer(address expected, address next, bytes32 nextCodeHash)
         external
         restricted
@@ -548,7 +562,7 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         if (bound != address(0)) IEditions(bound).notifyAllUpdated();
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     /// @dev The default renderer's code must still be the code it was installed with (DEPS-6).
     ///      A work's own pin is checked the same way by `IWorkRecords.pinnedRenderer` (WS-16).
     function rendererOf(uint256 tokenId) public view returns (address renderer) {
@@ -571,22 +585,22 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
 
     // ---------------------------------------------------------------------------- dependencies
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     function packageRegistry() public view returns (address) {
         return _dependency(0, _genesisPolicy);
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     function economics() public view returns (address) {
         return _dependency(1, _genesisEconomics);
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     function entropyModule() public view returns (address) {
         return _dependency(2, _genesisEntropyModule);
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     /// @dev Bounded by the number of entropy replacements, each a 30-day governance action.
     function entropyModuleOf(uint256 tokenId) external view returns (address) {
         uint256 eras = _entropyEras.length;
@@ -597,14 +611,15 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         return entropyModule();
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     /// @dev SUCCESSOR_SETTER role (the 30-day class). The entropy module may be installed on a
     ///      Stream deployed without one, but never removed; replacing it records the module it
     ///      replaces with the last token ID minted so far (`entropyModuleOf`). A replacement
     ///      policy must resolve parties through Stream's own artist registry. A replacement that
     ///      answers `authority()` with one word must name Stream's own AccessManager
     ///      (`InvalidBinding`); the read gets all the gas the call has, and a failure that left
-    ///      only EIP-150's 1/64 reverts (`GasShortfall`), so the check cannot be starved away.
+    ///      a shortfall reverts (`BoundedCall.BoundedCallShortfall`), so the check cannot be
+    ///      starved away.
     function setDependency(bytes32 kind, address expected, address next) external restricted {
         (uint8 index, bytes4 interfaceId, address current) = _dependencyOf(kind);
         if (current != expected) revert ExpectedValueMismatch();
@@ -612,10 +627,9 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         if (index == 0 && IMintPolicy(next).artistRegistry() != artistRegistry) {
             revert InvalidBinding(next);
         }
-        uint256 before = gasleft();
-        (bool ok, bytes memory a) = next.staticcall(abi.encodeCall(this.authority, ()));
-        if (!ok && gasleft() <= before / 64) revert GasShortfall();
-        if (ok && a.length == 32 && abi.decode(a, (address)) != authority()) {
+        (bool ok, bytes32 word) =
+            BoundedCall.tryReadWordAll(next, abi.encodeCall(this.authority, ()));
+        if (ok && (uint256(word) >> 160 != 0 || address(uint160(uint256(word))) != authority())) {
             revert InvalidBinding(next);
         }
         if (index == 2) _entropyEras.push(uint256(_counts.minted) << 160 | uint160(current));
@@ -626,7 +640,7 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
 
     // ------------------------------------------------------------------------ satellite hooks
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     /// @dev The target must serve this token (`stream() == address(this)`).
     function bindWorkRecords(address target) external restricted {
         if (workRecords != address(0)) revert AlreadyBound(WORK_RECORDS);
@@ -636,7 +650,7 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         emit Bound(WORK_RECORDS, target);
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     /// @dev The target must serve this token (`stream() == address(this)`).
     function bindEditions(address target) external restricted {
         if (editions != address(0)) revert AlreadyBound(EDITIONS);
@@ -646,7 +660,7 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         emit Bound(EDITIONS, target);
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     /// @dev The payees (and so the receiver) are fixed at mint; only the rate changes (D19), and
     ///      only downwards, enforced here whatever the satellite checks. The token moves to the
     ///      terms that differ from its own only by the rate, interned if new.
@@ -659,14 +673,14 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         t.termsId = _termsId(shared);
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     function emitMetadataUpdate(uint256 fromTokenId, uint256 toTokenId) external {
         _onlyBound(workRecords);
         if (fromTokenId == toTokenId) emit MetadataUpdate(fromTokenId);
         else emit BatchMetadataUpdate(fromTokenId, toTokenId);
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     /// @dev Written once and never changed; the edition ID must equal the token ID, and the
     ///      master's primary sale must have settled (D14, checked here as well as in Editions).
     function linkEdition(uint256 tokenId, uint256 editionId) external {
@@ -682,7 +696,7 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         emit MetadataUpdate(tokenId);
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     function editionOf(uint256 tokenId)
         external
         view
@@ -693,14 +707,14 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
 
     // --------------------------------------------------------------------- marketplace metadata
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     function setContractURI(string calldata uri) external restricted {
         emit ContractURISet(_contractURI, uri);
         _contractURI = uri;
         emit ContractURIUpdated();
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     function setOwner(address expected, address next) external restricted {
         if (_owner != expected) revert ExpectedValueMismatch();
         _owner = next;
@@ -708,8 +722,8 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
     }
 
     /// @inheritdoc IERC165
-    /// @dev `IStream` is answered for the whole surface: the native core and the views the
-    ///      extension serves through the fallback.
+    /// @dev `IStream` is the whole native surface (one id); `IStreamViews` the views the
+    ///      extension serves through the fallback (its own id).
     function supportsInterface(bytes4 interfaceId)
         public
         view
@@ -718,8 +732,8 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
     {
         return interfaceId == bytes4(0x49064906) || interfaceId == type(IERC2981).interfaceId
             || interfaceId == type(IMintTarget).interfaceId
-            || interfaceId == type(IStreamCore).interfaceId
-            || interfaceId == type(IStream).interfaceId || super.supportsInterface(interfaceId);
+            || interfaceId == type(IStream).interfaceId
+            || interfaceId == type(IStreamViews).interfaceId || super.supportsInterface(interfaceId);
     }
 
     // -------------------------------------------------------------------------------- internal
@@ -836,10 +850,10 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
     }
 
     /// @dev The work's pin in the records satellite, or zero for the default renderer. The
-    ///      satellite gets all the gas this call has (EIP-150 keeps 1/64 back). Its answer is
-    ///      used only when it is one address word (zero: no pin yet) or `RecordNotOpen` (a record
-    ///      not opened yet); any other revert is passed on, running out of gas included, and a
-    ///      malformed answer reverts with `RendererPinUnreadable`. A finalized work's pinned
+    ///      satellite gets all the gas this call has (`BoundedCall.tryReadAll`; a shortfall
+    ///      reverts with `BoundedCallShortfall`). Its answer is used only when it is one address
+    ///      word (zero: no pin yet) or `RecordNotOpen` (a record not opened yet); any other revert
+    ///      is passed on, and a malformed answer reverts with `RendererPinUnreadable`. A finalized work's pinned
     ///      renderer whose code changed reverts with `DependencyCodeChanged` from the satellite
     ///      (WS-16). Fail closed: no fault and no shortfall serves another renderer.
     function _pinnedRenderer(address records, uint256 tokenId)
@@ -847,30 +861,17 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         view
         returns (address renderer)
     {
-        bytes4 selector = IWorkRecords.pinnedRenderer.selector;
-        bytes4 notOpen = IWorkRecords.RecordNotOpen.selector;
-        bytes4 unreadable = RendererPinUnreadable.selector;
-        assembly ("memory-safe") {
-            let ptr := mload(0x40)
-            mstore(ptr, selector)
-            mstore(add(ptr, 4), tokenId)
-            let ok := staticcall(gas(), records, ptr, 0x24, 0, 0)
-            let size := returndatasize()
-            returndatacopy(ptr, 0, size)
-            switch ok
-            case 1 {
-                let word := mload(ptr)
-                if or(iszero(eq(size, 0x20)), shr(160, word)) {
-                    mstore(ptr, unreadable)
-                    mstore(add(ptr, 4), tokenId)
-                    revert(ptr, 0x24)
-                }
-                renderer := word
-            }
-            default {
-                if iszero(and(eq(size, 0x24), eq(shr(224, mload(ptr)), shr(224, notOpen)))) {
-                    revert(ptr, size)
-                }
+        (bool ok, bytes memory answer) = BoundedCall.tryReadAll(
+            records, abi.encodeCall(IWorkRecords.pinnedRenderer, (tokenId)), PIN_REVERT_BYTES
+        );
+        if (ok) {
+            uint256 word = uint256(bytes32(answer));
+            if (answer.length != 32 || word >> 160 != 0) revert RendererPinUnreadable(tokenId);
+            return address(uint160(word));
+        }
+        if (answer.length != 0x24 || bytes4(answer) != IWorkRecords.RecordNotOpen.selector) {
+            assembly ("memory-safe") {
+                revert(add(answer, 0x20), mload(answer))
             }
         }
     }

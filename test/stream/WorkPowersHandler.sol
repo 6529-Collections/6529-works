@@ -10,6 +10,7 @@ import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { Stream } from "src/stream/Stream.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice Drives renunciations, consented royalty changes (lower, equal and higher) and
 ///         consented relicenses on a few open works, keeping a ghost of each work's renounced
@@ -61,7 +62,7 @@ contract WorkPowersHandler is CommonBase, StdUtils {
     function addWork(uint256 tokenId, PackageItem memory item) external {
         tokenIds.push(tokenId);
         _items.push(abi.encode(item));
-        ghostRate[tokenId] = IStream(address(stream)).work(tokenId).royaltyRate;
+        ghostRate[tokenId] = IStreamViews(address(stream)).work(tokenId).royaltyRate;
     }
 
     function workCount() external view returns (uint256) {

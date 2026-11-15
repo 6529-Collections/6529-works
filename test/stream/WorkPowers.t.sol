@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { Vm } from "forge-std/Vm.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IStream } from "src/interfaces/IStream.sol";
-import { IStreamCore } from "src/interfaces/IStreamCore.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { IWorkPowers, WorkPowers } from "src/interfaces/IWorkPowers.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
@@ -139,16 +139,16 @@ contract WorkPowersTest is RecordsFixture {
     function test_setRoyaltyRate_lowersTheRate() public {
         (uint256 tokenId, PackageItem memory item) = _work(1);
         vm.expectEmit(address(stream));
-        emit IStreamCore.RoyaltyRateChanged(tokenId, 6_529, 5_000);
+        emit IStream.RoyaltyRateChanged(tokenId, 6_529, 5_000);
         vm.expectEmit(true, false, false, false, address(records));
         emit IWorkRecords.RoyaltyRateSet(tokenId, 6_529, 5_000, bytes32(0));
         _rerate(tokenId, item, 5_000);
         (, uint256 amount) = stream.royaltyInfo(tokenId, 1 ether);
         assertEq(amount, 0.05 ether);
-        assertEq(IStream(address(stream)).work(tokenId).royaltyRate, 5_000);
+        assertEq(IStreamViews(address(stream)).work(tokenId).royaltyRate, 5_000);
         assertEq(_version(tokenId), 1);
         _rerate(tokenId, item, 0);
-        assertEq(IStream(address(stream)).work(tokenId).royaltyRate, 0);
+        assertEq(IStreamViews(address(stream)).work(tokenId).royaltyRate, 0);
     }
 
     /// Regression: ADD-PWR-1
@@ -178,7 +178,7 @@ contract WorkPowersTest is RecordsFixture {
                 IWorkPowers.RoyaltyRateNotLowered.selector, tokenId, 5_000, 6_529
             )
         );
-        assertEq(IStream(address(stream)).work(tokenId).royaltyRate, 5_000);
+        assertEq(IStreamViews(address(stream)).work(tokenId).royaltyRate, 5_000);
     }
 
     /// Regression: ADD-PWR-1
@@ -200,11 +200,11 @@ contract WorkPowersTest is RecordsFixture {
     function test_setRoyaltyRate_aLowerRateFollowsToTheLinkedEdition() public {
         (uint256 tokenId, PackageItem memory item) = _master(1);
         _rerate(tokenId, item, 4_000);
-        assertEq(IStream(address(stream)).work(tokenId).royaltyRate, 4_000);
+        assertEq(IStreamViews(address(stream)).work(tokenId).royaltyRate, 4_000);
         assertEq(editionsMock.rateOf(tokenId), 4_000);
         (bool ok,) = _rateCall(tokenId, item, 5_000);
         assertFalse(ok);
-        assertEq(IStream(address(stream)).work(tokenId).royaltyRate, 4_000);
+        assertEq(IStreamViews(address(stream)).work(tokenId).royaltyRate, 4_000);
         assertEq(editionsMock.rateOf(tokenId), 4_000);
     }
 
@@ -218,8 +218,8 @@ contract WorkPowersTest is RecordsFixture {
         terms.royaltyRate = 10_000;
         econ.setTerms(terms);
         (uint256 second, PackageItem memory secondItem) = _work(2);
-        assertEq(IStream(address(stream)).work(second).royaltyRate, 10_000);
-        assertEq(IStream(address(stream)).work(first).royaltyRate, 5_000);
+        assertEq(IStreamViews(address(stream)).work(second).royaltyRate, 10_000);
+        assertEq(IStreamViews(address(stream)).work(first).royaltyRate, 5_000);
         _rerate(second, secondItem, 9_000);
         (bool ok,) = _rateCall(second, secondItem, 10_000);
         assertFalse(ok);
@@ -242,7 +242,7 @@ contract WorkPowersTest is RecordsFixture {
             assertFalse(ok);
             assertEq(reason, refused);
         }
-        assertEq(IStream(address(stream)).work(tokenId).royaltyRate, 6_529);
+        assertEq(IStreamViews(address(stream)).work(tokenId).royaltyRate, 6_529);
         (bool relicensed,) = _relicenseCall(tokenId, item, _license("cc0-1.0"));
         assertTrue(relicensed);
         assertEq(records.licenseOf(tokenId).spdxId, "cc0-1.0");
@@ -265,7 +265,7 @@ contract WorkPowersTest is RecordsFixture {
         }
         assertEq(records.licenseOf(tokenId).spdxId, "cc-by-4.0");
         _rerate(tokenId, item, 5_000);
-        assertEq(IStream(address(stream)).work(tokenId).royaltyRate, 5_000);
+        assertEq(IStreamViews(address(stream)).work(tokenId).royaltyRate, 5_000);
     }
 
     /// Regression: ADD-PWR-2
@@ -542,7 +542,7 @@ contract WorkPowersTest is RecordsFixture {
         _renounce(tokenId, ROYALTY);
         (bool ok,) = _rateCall(tokenId, item, 4_000);
         assertFalse(ok);
-        assertEq(IStream(address(stream)).work(tokenId).royaltyRate, 5_000);
+        assertEq(IStreamViews(address(stream)).work(tokenId).royaltyRate, 5_000);
         assertEq(editionsMock.rateOf(tokenId), 5_000);
     }
 

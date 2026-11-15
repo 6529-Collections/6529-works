@@ -5,6 +5,7 @@ import { Vm } from "forge-std/Vm.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { StreamFixture } from "./StreamFixture.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice The accepted limitation of Stream's hashed terms positions (QUALITY-6, ADR 0004): an
 ///         artist ID ground offline (89,317 tries over addresses, a brute-force search of
@@ -72,6 +73,6 @@ contract StreamTermsGrindTest is StreamFixture {
         emit log_named_uint("victim later start, new Stream slots", later);
         emit log_named_uint("victim later start, gas", gasLater);
         assertEq(first, later + 2, "one slot more than the ADR row");
-        assertEq(stream.artistOf(IStream(address(stream)).totalSupply()), uint160(VICTIM), "views still correct");
+        assertEq(stream.artistOf(IStreamViews(address(stream)).totalSupply()), uint160(VICTIM), "views still correct");
     }
 }

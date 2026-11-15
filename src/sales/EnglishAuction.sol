@@ -23,7 +23,6 @@ import { IMintTarget } from "../interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
 import { IStatementLog } from "../interfaces/IStatementLog.sol";
 import { IStream } from "../interfaces/IStream.sol";
-import { IStreamCore } from "../interfaces/IStreamCore.sol";
 import { ISignatureTransfer } from "../interfaces/external/ISignatureTransfer.sol";
 import {
     CURRENCY_DEFAULT,
@@ -1180,7 +1179,7 @@ contract EnglishAuction is
     function _rescued(Sale storage s) private view returns (bool rescued) {
         address token = s.token;
         uint256 tokenId = s.tokenId;
-        bytes4 selector = IStreamCore.primarySale.selector;
+        bytes4 selector = IStream.primarySale.selector;
         // Scratch space only (0x00 to 0x3f): the selector and the ID in, the first word out.
         assembly ("memory-safe") {
             mstore(0, selector)

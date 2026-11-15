@@ -15,7 +15,7 @@ import { PrimaryTerms } from "./types/SaleTypes.sol";
 ///      invariants on the answer (the adapter's sale kind, a nonzero lead artist and seller,
 ///      bounded economics, an existing collection, the kind and seed policy within their stored
 ///      width), interns the terms and mints into the adapter's custody. Governance replaces the
-///      policy (`IStreamCore.setDependency("PACKAGE_REGISTRY", ...)`, the 30-day class); a successor
+///      policy (`IStream.setDependency("PACKAGE_REGISTRY", ...)`, the 30-day class); a successor
 ///      must keep its predecessor's consumed items and content claims authoritative.
 interface IMintPolicy is IERC165 {
     /// @notice What Stream tells the policy about a mint: the calling adapter and Stream's own
@@ -23,7 +23,7 @@ interface IMintPolicy is IERC165 {
     /// @param adapter The admitted sale adapter that called `IMintTarget.mint`.
     /// @param economics Stream's economics resolver.
     /// @param entropyModule Stream's current entropy module (zero if none): the module whose
-    ///        delivery a seeded work's mint checks, which `IStreamCore.entropyModuleOf` reports.
+    ///        delivery a seeded work's mint checks, which `IStream.entropyModuleOf` reports.
     /// @param splitFactory Stream's split factory, which derives every seller and royalty wallet.
     struct MintContext {
         address adapter;

@@ -7,7 +7,7 @@ import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { IStream } from "src/interfaces/IStream.sol";
-import { IStreamCore } from "src/interfaces/IStreamCore.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { MockRenderer } from "../mocks/stream/StreamMocks.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 import { StreamHandler } from "./StreamHandler.sol";
@@ -72,12 +72,12 @@ contract StreamInvariantTest is RecordsFixture {
     /// @dev Live supply is minted minus burned, and equals the sum of all balances.
     function invariant_supplyIsMintedMinusBurned() public view {
         assertEq(IStream(address(stream)).totalMinted(), handler.ghostMinted());
-        assertEq(IStream(address(stream)).totalSupply(), handler.ghostMinted() - handler.ghostBurned());
+        assertEq(IStreamViews(address(stream)).totalSupply(), handler.ghostMinted() - handler.ghostBurned());
         uint256 held = stream.balanceOf(address(auction));
         for (uint256 i; i < handler.actorCount(); ++i) {
             held += stream.balanceOf(handler.actors(i));
         }
-        assertEq(held, IStream(address(stream)).totalSupply());
+        assertEq(held, IStreamViews(address(stream)).totalSupply());
     }
 
     /// @dev IDs are assigned in order, never skipped at mint, and burned IDs stay dead.
@@ -94,8 +94,8 @@ contract StreamInvariantTest is RecordsFixture {
                 stream.ownerOf(id);
             }
         }
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnknownWork.selector, minted + 1));
-        IStream(address(stream)).work(minted + 1);
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, minted + 1));
+        IStreamViews(address(stream)).work(minted + 1);
     }
 
     /// @dev The royalty receiver is the one the handler derived from the mint's fee terms
@@ -107,9 +107,9 @@ contract StreamInvariantTest is RecordsFixture {
             if (handler.burned(id)) continue;
             (address receiver, uint256 amount) = stream.royaltyInfo(id, 1 ether);
             assertEq(receiver, handler.ghostReceiver(id));
-            assertEq(IStream(address(stream)).work(id).royaltyReceiver, handler.ghostReceiver(id));
-            assertEq(IStream(address(stream)).work(id).seller, handler.ghostSeller(id));
-            assertEq(IStream(address(stream)).work(id).royaltyRate, handler.ghostRate(id));
+            assertEq(IStreamViews(address(stream)).work(id).royaltyReceiver, handler.ghostReceiver(id));
+            assertEq(IStreamViews(address(stream)).work(id).seller, handler.ghostSeller(id));
+            assertEq(IStreamViews(address(stream)).work(id).royaltyRate, handler.ghostRate(id));
             assertEq(amount, uint256(handler.ghostRate(id)) * 1 ether / 100_000);
         }
         assertEq(handler.violations(), 0);
@@ -120,12 +120,12 @@ contract StreamInvariantTest is RecordsFixture {
     function invariant_serialsPerCollection() public view {
         for (uint256 i; i < handler.collectionCount(); ++i) {
             uint256 c = handler.collections(i);
-            assertEq(IStream(address(stream)).collection(c).minted, handler.ghostCollectionMinted(c));
+            assertEq(IStreamViews(address(stream)).collection(c).minted, handler.ghostCollectionMinted(c));
         }
         uint256 minted = IStream(address(stream)).totalMinted();
         for (uint256 id = 1; id <= minted; ++id) {
             if (handler.burned(id)) continue;
-            IStream.WorkCore memory w = IStream(address(stream)).work(id);
+            IStreamViews.WorkCore memory w = IStreamViews(address(stream)).work(id);
             assertEq(w.collectionId, handler.ghostCollection(id));
             assertEq(w.serial, handler.ghostSerial(id));
         }

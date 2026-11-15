@@ -20,7 +20,6 @@ import { IEditions } from "src/interfaces/IEditions.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStream } from "src/interfaces/IStream.sol";
-import { IStreamCore } from "src/interfaces/IStreamCore.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
@@ -284,7 +283,7 @@ contract EditionsTest is EditionsBase {
 
     function test_CreateEdition_RefusesUnknownMaster() public {
         PackageItem memory item = _item(10);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnknownWork.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 1));
         _createEdition(1, item);
     }
 
@@ -296,7 +295,7 @@ contract EditionsTest is EditionsBase {
         vm.expectRevert(abi.encodeWithSelector(IEditions.NotEditionMaster.selector, id));
         _createEdition(id, item);
         stream.burnMaster(id); // dispute upheld
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnknownWork.selector, id));
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, id));
         _createEdition(id, item);
 
         PackageItem memory sold = _item(10);
@@ -519,7 +518,7 @@ contract EditionsTest is EditionsBase {
         PackageItem memory item = _item(10);
         uint256 id = _master(item);
         stream.bind(address(workRecordsMock), outsider);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnboundCaller.selector, address(editions)));
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnboundCaller.selector, address(editions)));
         _createEdition(id, item);
     }
 
@@ -1020,7 +1019,7 @@ contract EditionsTest is EditionsBase {
         adapter.bind(editions, work, plain);
         // A token Stream never minted: Stream refuses it.
         PackageItem memory never = _item(0);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnknownWork.selector, 999_999));
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 999_999));
         adapter.bind(editions, 999_999, never);
 
         // After creation: the stored kind, whatever item is passed.
@@ -1154,7 +1153,7 @@ contract EditionsTest is EditionsBase {
     function test_Mint_MasterWithEditionIsNeverBurned() public {
         uint256 id = _create(_item(10));
         adapter.buy(editions, id, buyer, 1);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.SaleAlreadySettled.selector, id));
+        vm.expectRevert(abi.encodeWithSelector(IStream.SaleAlreadySettled.selector, id));
         stream.burnMaster(id);
         adapter.buy(editions, id, buyer, 1);
         assertEq(editions.edition(id).minted, 2);

@@ -21,6 +21,7 @@ import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { MockEconomics, MockRenderer, MockSaleAdapter } from "../mocks/stream/StreamMocks.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice Drives 6529 Stream and its records satellite through random sequences of mints
 ///         (with random fee terms, into random collections), burns, transfers, record edits,

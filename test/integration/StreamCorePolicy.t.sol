@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { Vm } from "forge-std/Vm.sol";
 import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { IStream } from "src/interfaces/IStream.sol";
-import { IStreamCore } from "src/interfaces/IStreamCore.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { ItemKind, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
@@ -56,9 +56,9 @@ contract StreamCorePolicyTest is IntegrationBase {
     {
         for (uint256 i; i < logs.length; ++i) {
             if (logs[i].emitter != address(stream)) continue;
-            if (logs[i].topics[0] == IStreamCore.TermsInterned.selector) interned = true;
+            if (logs[i].topics[0] == IStream.TermsInterned.selector) interned = true;
             if (
-                logs[i].topics[0] == IStreamCore.WorkMinted.selector
+                logs[i].topics[0] == IStream.WorkMinted.selector
                     && uint256(logs[i].topics[1]) == tokenId
             ) {
                 minted = true;
@@ -67,7 +67,7 @@ contract StreamCorePolicyTest is IntegrationBase {
                     logs[i].data,
                     (bytes32, uint64, uint8, bytes32, bytes32, bytes32, bytes32, address, uint24)
                 );
-                assertEq(seller, IStream(address(stream)).work(tokenId).seller, "seller");
+                assertEq(seller, IStreamViews(address(stream)).work(tokenId).seller, "seller");
                 termsId = id;
             }
         }
@@ -85,7 +85,7 @@ contract StreamCorePolicyTest is IntegrationBase {
     function test_Extension_ServesInformationalViews() public {
         uint256 tokenId = _first();
         IStream views = IStream(address(stream));
-        IStream.WorkCore memory w = views.work(tokenId);
+        IStreamViews.WorkCore memory w = IStreamViews(address(views)).work(tokenId);
         (bytes32 itemHash, uint256 artistId, uint256 cid,,, uint32 rate) = stream.coreOf(tokenId);
         assertEq(w.itemHash, itemHash);
         assertEq(w.artistId, artistId);
@@ -95,24 +95,24 @@ contract StreamCorePolicyTest is IntegrationBase {
         (address receiver,) = stream.royaltyInfo(tokenId, 1 ether);
         assertEq(w.royaltyReceiver, receiver);
         assertEq(views.totalMinted(), tokenId);
-        assertEq(views.totalSupply(), tokenId);
+        assertEq(IStreamViews(address(views)).totalSupply(), tokenId);
         assertEq(views.collectionCount(), collectionId);
-        IStream.Collection memory c = views.collection(collectionId);
+        IStreamViews.Collection memory c = IStreamViews(address(views)).collection(collectionId);
         assertEq(c.minted, 1);
         assertGt(bytes(c.name).length, 0);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnknownCollection.selector, 999));
-        views.collection(999);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnknownWork.selector, 999));
-        views.work(999);
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownCollection.selector, 999));
+        IStreamViews(address(views)).collection(999);
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 999));
+        IStreamViews(address(views)).work(999);
     }
 
     function test_Extension_LongCollectionNameRoundTrips() public {
         string memory name = "A collection whose name is longer than thirty-one bytes, stored long";
         vm.prank(platform);
         uint256 id = stream.createCollection(name, keccak256("m"));
-        assertEq(IStream(address(stream)).collection(id).name, name);
+        assertEq(IStreamViews(address(stream)).collection(id).name, name);
         vm.prank(platform);
-        vm.expectRevert(IStreamCore.InvalidCollectionName.selector);
+        vm.expectRevert(IStream.InvalidCollectionName.selector);
         stream.createCollection("bad<name", 0);
     }
 
@@ -129,7 +129,7 @@ contract StreamCorePolicyTest is IntegrationBase {
         uint256 tokenId = _first();
         (,,,,, uint32 rate) = stream.coreOf(tokenId);
         vm.prank(address(records));
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.InvalidRoyaltyRate.selector, rate + 1));
+        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidRoyaltyRate.selector, rate + 1));
         stream.setRoyaltyRate(tokenId, rate + 1);
         vm.prank(address(records));
         stream.setRoyaltyRate(tokenId, rate - 1);
@@ -163,7 +163,7 @@ contract StreamCorePolicyTest is IntegrationBase {
             abi.encode(type(uint256).max)
         );
         vm.expectRevert(
-            abi.encodeWithSelector(IStreamCore.RendererPinUnreadable.selector, tokenId)
+            abi.encodeWithSelector(IStream.RendererPinUnreadable.selector, tokenId)
         );
         stream.rendererOf(tokenId);
     }
@@ -189,7 +189,7 @@ contract StreamCorePolicyTest is IntegrationBase {
         vm.prank(hotAdmin);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IStreamCore.UnknownDependency.selector, bytes32("ARTIST_REGISTRY")
+                IStream.UnknownDependency.selector, bytes32("ARTIST_REGISTRY")
             )
         );
         manager.execute(address(stream), call);

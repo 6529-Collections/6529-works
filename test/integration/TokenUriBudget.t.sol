@@ -5,7 +5,6 @@ import { console2 } from "forge-std/console2.sol";
 import { Base64 } from "@openzeppelin/contracts/utils/Base64.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IStream } from "src/interfaces/IStream.sol";
-import { IStreamCore } from "src/interfaces/IStreamCore.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
@@ -392,7 +391,7 @@ contract TokenUriBudgetTest is IntegrationBase {
         ];
         for (uint256 i; i < refused.length; ++i) {
             vm.prank(platform);
-            vm.expectRevert(IStreamCore.InvalidCollectionName.selector);
+            vm.expectRevert(IStream.InvalidCollectionName.selector);
             stream.createCollection(string(refused[i]), bytes32(0));
         }
         vm.startPrank(platform);

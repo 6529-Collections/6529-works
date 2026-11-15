@@ -434,7 +434,7 @@ interface IUniformEditionAuction is ISaleAdapter {
     /// @param id The edition ID (the master's token ID).
     /// @param data Token-specific terms. For 6529 Stream Editions: `abi.encode(PackageItem)`
     ///        of the master's EDITION_MASTER item, whose `WorksHashing.itemHash` must equal the
-    ///        item hash 6529 Stream stored for `id` (`IStreamCore.coreOf`), so no proof is needed;
+    ///        item hash 6529 Stream stored for `id` (`IStream.coreOf`), so no proof is needed;
     ///        its edition terms must name `SaleKind.UNIFORM_AUCTION`, `CURRENCY_ETH` and empty
     ///        params, and their `maxCount` is the cap.
     /// @return saleId `saleIdOf(token, id)`.

@@ -33,6 +33,7 @@ import { ContentAddresses } from "../../helpers/ContentAddresses.sol";
 import { HostileActor } from "../../mocks/sales/AuctionMocks.sol";
 import { IntegrationBase } from "../IntegrationBase.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice The handler of the Stream lifecycle invariant suite: one actor set driving 6529 Stream,
 ///         the package registry, the records satellite, the English auction and the artist
@@ -1266,7 +1267,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         for (uint256 h; h < holders.length; ++h) {
             held += stream.balanceOf(holders[h]);
         }
-        assertEq(held, IStream(address(stream)).totalSupply(), "every live token is held by one known holder");
+        assertEq(held, IStreamViews(address(stream)).totalSupply(), "every live token is held by one known holder");
         for (uint256 tokenId = 1; tokenId <= ghostMinted; ++tokenId) {
             TokenGhost storage t = tok[tokenId];
             IEnglishAuction.AuctionState state = auction.auction(t.saleId).state;
@@ -1292,7 +1293,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
     ///      never reused.
     function _assertIds() internal view {
         assertEq(IStream(address(stream)).totalMinted(), ghostMinted, "every start assigned one new ID");
-        assertEq(IStream(address(stream)).totalSupply(), ghostMinted - ghostBurned, "supply is minted minus burned");
+        assertEq(IStreamViews(address(stream)).totalSupply(), ghostMinted - ghostBurned, "supply is minted minus burned");
         for (uint256 tokenId = 1; tokenId <= ghostMinted; ++tokenId) {
             TokenGhost storage t = tok[tokenId];
             assertEq(pool[t.item].tokenId, tokenId, "one item, one token ID");

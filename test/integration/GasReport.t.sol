@@ -27,6 +27,7 @@ import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { StateGrowth } from "../helpers/StateGrowth.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice The integration gas report: the budgets of ADR 0001, ADR 0003 and ADR 0004, measured
 ///         on the real, wired contracts. `forge test --match-test test_Gas_Table -vv` prints one
@@ -933,7 +934,7 @@ contract IntegrationGasReport is IntegrationBase {
         );
         _gasAtMost(r, RERATE_CEILING, "regression ceiling");
         _growthIs(r, 1, 0);
-        if (pass == Pass.BOTH) assertEq(IStream(address(stream)).work(tokenId).royaltyRate, rate);
+        if (pass == Pass.BOTH) assertEq(IStreamViews(address(stream)).work(tokenId).royaltyRate, rate);
     }
 
     // ------------------------------------------------------------------ identity

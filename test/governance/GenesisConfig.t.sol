@@ -20,7 +20,6 @@ import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.so
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStream } from "src/interfaces/IStream.sol";
-import { IStreamCore } from "src/interfaces/IStreamCore.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
 import {
@@ -148,13 +147,13 @@ contract GenesisConfigTest is Test {
         if (_eq(name, "Stream")) {
             bytes4[] memory out = _s(
                 [
-                    IStreamCore.createCollection.selector,
-                    IStreamCore.setContractURI.selector,
-                    IStreamCore.setOwner.selector,
-                    IStreamCore.setDefaultRenderer.selector,
+                    IStream.createCollection.selector,
+                    IStream.setContractURI.selector,
+                    IStream.setOwner.selector,
+                    IStream.setDefaultRenderer.selector,
                     IMintTarget.setAdmittedMinter.selector,
-                    IStreamCore.bindWorkRecords.selector,
-                    IStreamCore.bindEditions.selector
+                    IStream.bindWorkRecords.selector,
+                    IStream.bindEditions.selector
                 ],
                 7
             );
@@ -162,9 +161,9 @@ contract GenesisConfigTest is Test {
             for (uint256 i; i < 7; ++i) {
                 all[i] = out[i];
             }
-            all[7] = IStreamCore.releaseContent.selector;
-            all[8] = IStreamCore.setDependency.selector;
-            all[9] = IStreamCore.rescueToMuseum.selector;
+            all[7] = IStream.releaseContent.selector;
+            all[8] = IStream.setDependency.selector;
+            all[9] = IStream.rescueToMuseum.selector;
             return all;
         }
         if (_eq(name, "WorkRecords")) {

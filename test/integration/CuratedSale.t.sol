@@ -8,7 +8,7 @@ import { Splits } from "src/economics/Splits.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStream } from "src/interfaces/IStream.sol";
-import { IStreamCore } from "src/interfaces/IStreamCore.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { CURRENCY_ETH, PRODUCT_STREAM, WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import { ItemKind, Party, PartyRole } from "src/interfaces/types/PackageTypes.sol";
 import { Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
@@ -73,7 +73,7 @@ contract CuratedSaleFlowTest is IntegrationBase {
         bytes memory data = _mintData(root, works, 0);
         bytes32 itemHash = WorksHashing.itemHash(works[0].item);
         vm.expectEmit(true, true, true, false, address(stream));
-        emit IStreamCore.WorkMinted(
+        emit IStream.WorkMinted(
             1,
             collectionId,
             uint160(artist),
@@ -189,7 +189,7 @@ contract CuratedSaleFlowTest is IntegrationBase {
     ) internal {
         (address receiver, uint256 amount) = stream.royaltyInfo(tokenId, 10 ether);
         assertEq(receiver, terms.royaltyReceiver, "receiver = the resolver's derivation");
-        assertEq(receiver, IStream(address(stream)).work(tokenId).royaltyReceiver);
+        assertEq(receiver, IStreamViews(address(stream)).work(tokenId).royaltyReceiver);
         assertEq(amount, 0.6529 ether, "6.529%");
         assertEq(terms.royaltyRate, 6_529);
 

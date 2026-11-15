@@ -11,6 +11,7 @@ import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { Stream } from "src/stream/Stream.sol";
 import { StreamFixture } from "./StreamFixture.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice Stream wired to the real `EconomicsResolver` and `SplitFactory` (review L3): the
 ///         receiver Stream derives is exactly the one the resolver quotes and the factory
@@ -53,7 +54,7 @@ contract StreamEconomicsTest is StreamFixture {
         WorkTerms memory w = resolver.newWorkTerms(PRODUCT_STREAM, item.payees);
         assertTrue(w.feeShare != 0);
 
-        assertEq(IStream(address(wired)).work(tokenId).royaltyReceiver, w.royaltyReceiver);
+        assertEq(IStreamViews(address(wired)).work(tokenId).royaltyReceiver, w.royaltyReceiver);
         (address receiver, uint256 amount) = wired.royaltyInfo(tokenId, 1 ether);
         assertEq(receiver, w.royaltyReceiver);
         assertEq(amount, uint256(w.royaltyRate) * 1 ether / Splits.DENOMINATOR);
@@ -81,7 +82,7 @@ contract StreamEconomicsTest is StreamFixture {
         (address receiver,) = wired.royaltyInfo(tokenId, 1 ether);
         assertEq(receiver, w.royaltyReceiver);
         assertEq(receiver, w.seller);
-        assertEq(IStream(address(wired)).work(tokenId).royaltyReceiver, w.royaltyReceiver);
+        assertEq(IStreamViews(address(wired)).work(tokenId).royaltyReceiver, w.royaltyReceiver);
 
         address other = makeAddr("otherFee");
         resolver.setFeeTerms(PRODUCT_STREAM, 2, other, 12_345);

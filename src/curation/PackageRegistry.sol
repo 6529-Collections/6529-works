@@ -13,7 +13,6 @@ import { ICurationVerifier } from "../interfaces/ICurationVerifier.sol";
 import { IMintPolicy } from "../interfaces/IMintPolicy.sol";
 import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
 import { IStream } from "../interfaces/IStream.sol";
-import { IStreamCore } from "../interfaces/IStreamCore.sol";
 import { ISplitFactory } from "../economics/interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "../economics/interfaces/ISplitWallet.sol";
 import { Splits } from "../economics/Splits.sol";
@@ -66,7 +65,7 @@ import { SpdxId } from "../stream/SpdxId.sol";
 ///      that check. The one cross-product reuse, the linked pair, is enforced from the Editions
 ///      side: an edition may claim only the content hash its master item consumed on Stream.
 ///      When an upheld dispute burns a work during its auction, the governed
-///      `IStreamCore.releaseContent` passes on the rightful artist the dispute outcome names: the
+///      `IStream.releaseContent` passes on the rightful artist the dispute outcome names: the
 ///      content hash is reserved for that artist, so only an item whose lead artist it is may
 ///      consume it, and the burned item is tombstoned so it can never be consumed again,
 ///      through any root. The reservation is checked only on a released slot, so a fresh

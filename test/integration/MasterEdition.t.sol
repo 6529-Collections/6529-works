@@ -12,6 +12,7 @@ import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { EditionsAdapterMock } from "../mocks/editions/EditionsMocks.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice Flow 2 (integration brief, lane B): an edition master and its linked 6529 Stream
 ///         Editions edition on the real contracts. The master settles; `createEdition` proves the
@@ -242,7 +243,7 @@ contract MasterEditionFlowTest is IntegrationBase {
         editions.createEdition(workId, works[2].item, root, _proofOf(works, 2));
         (, uint256 amount) = editions.royaltyInfo(workId, 1 ether);
         assertEq(amount, 0.05 ether, "the master's current rate");
-        assertEq(editions.edition(workId).royaltyRate, IStream(address(stream)).work(workId).royaltyRate);
+        assertEq(editions.edition(workId).royaltyRate, IStreamViews(address(stream)).work(workId).royaltyRate);
     }
 
     /// @dev Zero-fee terms with no fee recipient (formerly finding L-1, fixed by #35): the

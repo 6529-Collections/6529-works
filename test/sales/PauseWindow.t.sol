@@ -8,6 +8,7 @@ import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { IntegrationBase } from "../integration/IntegrationBase.sol";
 import { SalesStackBase } from "./SalesStackBase.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice The guardians' window after a pause, on the real stack: the 48-hour UNPAUSER class
 ///         counts from the pause. An adapter's `unpause` or the auction's `resume(saleId)`

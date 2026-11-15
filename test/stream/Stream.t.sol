@@ -15,6 +15,7 @@ import { Roles } from "src/governance/Roles.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { CURRENCY_DEFAULT, WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
@@ -67,13 +68,13 @@ contract StreamTest is StreamFixture {
         assertEq(stream.entropyModule(), address(entropy));
         assertEq(stream.splitFactory(), address(splitFactory));
         assertEq(stream.defaultRenderer(), address(renderer));
-        assertEq(IStream(address(stream)).owner(), marketOwner);
+        assertEq(IStreamViews(address(stream)).owner(), marketOwner);
         assertEq(stream.workRecords(), address(0));
         assertEq(stream.editions(), address(0));
         assertEq(stream.name(), "6529 Stream");
         assertEq(stream.symbol(), "STREAM");
         assertEq(IStream(address(stream)).totalMinted(), 0);
-        assertEq(IStream(address(stream)).totalSupply(), 0);
+        assertEq(IStreamViews(address(stream)).totalSupply(), 0);
         assertEq(IStream(address(stream)).collectionCount(), 1);
         assertTrue(stream.isAdmittedMinter(address(auction)));
     }
@@ -397,7 +398,7 @@ contract StreamTest is StreamFixture {
         assertEq(terms.feeShare, 25_000);
         assertEq(terms.creator, artist);
 
-        IStream.WorkCore memory w = stream.work(1);
+        IStreamViews.WorkCore memory w = stream.work(1);
         assertEq(w.itemHash, itemHash);
         assertEq(w.artistId, uint256(uint160(artist)));
         assertEq(w.collectionId, collectionId);
@@ -462,7 +463,7 @@ contract StreamTest is StreamFixture {
             SeedPolicy seedPolicy,
             uint32 royaltyRate
         ) = stream.coreOf(tokenId);
-        IStream.WorkCore memory w = stream.work(tokenId);
+        IStreamViews.WorkCore memory w = stream.work(tokenId);
         assertEq(itemHash, WorksHashing.itemHash(item));
         assertEq(itemHash, w.itemHash);
         assertEq(artistId, w.artistId);
@@ -1348,7 +1349,7 @@ contract StreamTest is StreamFixture {
         emit IStream.CollectionCreated(2, unicode"Ünïcode", keccak256("m"));
         vm.prank(platform);
         assertEq(stream.createCollection(unicode"Ünïcode", keccak256("m")), 2);
-        IStream.Collection memory c = stream.collection(2);
+        IStreamViews.Collection memory c = stream.collection(2);
         assertEq(c.name, unicode"Ünïcode");
         assertEq(c.metadataHash, keccak256("m"));
         assertEq(c.minted, 0);
@@ -1501,7 +1502,7 @@ contract StreamTest is StreamFixture {
         vm.expectEmit(address(stream));
         emit IStream.RoyaltyRateChanged(1, 6_529, 10_000);
         recordsMock.setRoyaltyRate(stream, 1, 10_000);
-        IStream.WorkCore memory w = stream.work(1);
+        IStreamViews.WorkCore memory w = stream.work(1);
         assertEq(w.royaltyReceiver, _defaultRoyaltyWallet());
         assertEq(w.royaltyRate, 10_000);
         vm.expectRevert(abi.encodeWithSelector(IStream.InvalidRoyaltyRate.selector, 100_001));

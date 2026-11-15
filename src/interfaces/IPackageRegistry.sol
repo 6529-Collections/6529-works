@@ -158,7 +158,7 @@ interface IPackageRegistry is IERC165 {
     ///         `PRODUCT_STREAM` claim, reserves it for items whose lead artist is `beneficiary`,
     ///         and tombstones `itemHash` so it can never be consumed again. Once per burned item;
     ///         `beneficiary` must be a registered artist (`IArtistRegistry.UnknownArtist`
-    ///         otherwise). Bound 6529 Stream only, through the governed `IStreamCore.releaseContent`.
+    ///         otherwise). Bound 6529 Stream only, through the governed `IStream.releaseContent`.
     /// @param contentHash The content hash to release.
     /// @param itemHash The burned item that consumed `contentHash`.
     /// @param beneficiary The artist ID the content hash is reserved for.

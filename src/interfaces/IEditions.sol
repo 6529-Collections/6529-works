@@ -13,11 +13,11 @@ import { EditionTerms, License, PackageItem } from "./types/PackageTypes.sol";
 ///         (ADR 0001 section 6, as amended by ADR 0005).
 /// @dev The edition ID equals the master's Stream token ID, so the link is one ID in both
 ///      contracts. An edition is created only after the master's sale has settled
-///      (`IStreamCore.primarySaleSettled`), so a burned or disputed master never gets one. The link is
+///      (`IStream.primarySaleSettled`), so a burned or disputed master never gets one. The link is
 ///      written once, from the approved package item, in both directions in the same
 ///      transaction, and never changes. An edition renders its master's media and record and
 ///      carries its master's license: `uri(id)` is served by the master's renderer
-///      (`IStreamCore.rendererOf(id)`). Copies are minted only by an admitted sale adapter whose
+///      (`IStream.rendererOf(id)`). Copies are minted only by an admitted sale adapter whose
 ///      `saleKind()` equals the edition's terms, within the creator's cap
 ///      (`EditionTerms.maxCount`): any adapter governance admits (`setAdmittedMinter`, 30-day
 ///      class), so a sale method is added by deploying and admitting an adapter, never by
@@ -149,7 +149,7 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
 
     /// @notice Creates the edition of master `workId` from its approved package item once the
     ///         master's sale has settled, records `(stream, workId, contentHash)` and calls
-    ///         `IStreamCore.linkEdition`. Permissionless: the item is checked against the master's
+    ///         `IStream.linkEdition`. Permissionless: the item is checked against the master's
     ///         stored item hash, and `proof` places it in `packageRoot`, which the package
     ///         registry must have registered (it may have been revoked since: a revocation stops
     ///         unconsumed items, not the edition of a master already sold). Claims the content
@@ -202,7 +202,7 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
 
     /// @notice Binds 6529 Stream's work-records satellite, once (ERC-165 for `IWorkRecords`, not
     ///         an EIP-7702 delegated account). ADMIN role.
-    /// @param target The work-records satellite 6529 Stream bound (`IStreamCore.workRecords()`).
+    /// @param target The work-records satellite 6529 Stream bound (`IStream.workRecords()`).
     function bindWorkRecords(address target) external;
     /// @notice The bound work-records satellite.
     /// @return The satellite's address, or zero before it is bound.

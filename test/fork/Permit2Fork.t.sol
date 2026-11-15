@@ -7,6 +7,7 @@ import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { DeployGuards } from "script/DeployGuards.sol";
 import { WorksForkBase } from "./WorksForkBase.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @dev The two reads of the canonical Permit2 these tests use.
 interface IPermit2Reads {

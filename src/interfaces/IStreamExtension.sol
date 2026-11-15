@@ -8,10 +8,10 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 ///         does not implement to, by STATICCALL, so the extension can never write state and
 ///         never shadows a native selector. It serves the informational views of `IStream`
 ///         (`work`, `collection`, `collectionCount`, `totalMinted`, `totalSupply`, `contractURI`,
-///         `owner`), reading Stream through `IStreamCore.extsload` and its native views with the
+///         `owner`), reading Stream through `IStream.extsload` and its native views with the
 ///         caller (`msg.sender`, the Stream that forwarded) as the token, and judges collection
 ///         names for `createCollection`. Replaceable by governance
-///         (`IStreamCore.setDependency("EXTENSION")`, the 30-day class). No contract may rely on an
+///         (`IStream.setDependency("EXTENSION")`, the 30-day class). No contract may rely on an
 ///         answer it serves for authorization.
 interface IStreamExtension is IERC165 {
     /// @notice Whether `name` may name a collection: what the current renderers can escape

@@ -37,6 +37,7 @@ import { DeployV1 } from "script/DeployV1.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
 import { IEnglishAuctionFull } from "test/helpers/IEnglishAuctionFull.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice Integration finding G-1 on the deployed system: items priced in `CURRENCY_DEFAULT`
 ///         start without waiting out FUNDS_SETTER's 14-day `setDefaultCurrency`, because

@@ -76,8 +76,8 @@ interface IMintTarget {
     ///         was cancelled (ADR 0001 section 12: an upheld dispute burns the token, leaving a
     ///         gap in the ID sequence). 6529 Stream: only the adapter that minted the token, even
     ///         if it has since been removed, so a cancelled sale can always burn, and another
-    ///         adapter holding the token never can (`IStreamCore.NotMintingAdapter`); and only before
-    ///         the primary sale settles (`IStreamCore.SaleAlreadySettled`): after a sale nothing is
+    ///         adapter holding the token never can (`IStream.NotMintingAdapter`); and only before
+    ///         the primary sale settles (`IStream.SaleAlreadySettled`): after a sale nothing is
     ///         confiscated. 6529 Stream Editions: any adapter ever admitted, from its own balance.
     /// @param id The token ID (the edition ID for 6529 Stream Editions).
     /// @param amount The number to burn: 1 for 6529 Stream, nonzero for 6529 Stream Editions.
@@ -89,10 +89,10 @@ interface IMintTarget {
     ///         (6529 Stream: edition creation). Returns the terms the adapter pays by and, when the
     ///         token took the work itself, where it went (`PrimarySettlement`). Every mint target
     ///         implements it, so a sale can always settle.
-    ///         6529 Stream: only the adapter that minted the token (`IStreamCore.NotMintingAdapter`),
-    ///         once (`IStreamCore.SaleAlreadySettled`). It records the outcome (`IStreamCore.primarySale`)
-    ///         and emits `IStreamCore.PrimarySaleSettled` with the buyer. SOLD needs a buyer; UNBID
-    ///         and FROZEN_OUT take no buyer and no price (`IStreamCore.InvalidSaleOutcome`, which
+    ///         6529 Stream: only the adapter that minted the token (`IStream.NotMintingAdapter`),
+    ///         once (`IStream.SaleAlreadySettled`). It records the outcome (`IStream.primarySale`)
+    ///         and emits `IStream.PrimarySaleSettled` with the buyer. SOLD needs a buyer; UNBID
+    ///         and FROZEN_OUT take no buyer and no price (`IStream.InvalidSaleOutcome`, which
     ///         also refuses NONE and RESCUED, governance's outcome, owner decision 28), and
     ///         Stream itself moves the work from the adapter's custody to the 6529 Network Museum
     ///         (`IEconomicsResolver.museum()`, read now) and returns the museum as `holder`, with

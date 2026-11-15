@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { IERC2981 } from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IStream } from "../interfaces/IStream.sol";
-import { IStreamCore } from "../interfaces/IStreamCore.sol";
+import { IStreamViews } from "../interfaces/IStreamViews.sol";
 import { IStreamExtension } from "../interfaces/IStreamExtension.sol";
 import { Utf8 } from "../libraries/Utf8.sol";
 
@@ -14,10 +14,10 @@ import { Utf8 } from "../libraries/Utf8.sol";
 ///         from its fallback, so it can write nothing.
 /// @dev Stateless and bound to no Stream: the token it answers for is the caller, the Stream
 ///      whose fallback forwarded the call (`msg.sender`). It reads that Stream's native views
-///      and, through `IStreamCore.extsload`, the storage words of `Stream`'s layout (the slot
+///      and, through `IStream.extsload`, the storage words of `Stream`'s layout (the slot
 ///      constants below, checked against `forge inspect Stream storage-layout` by the tests).
 ///      Called directly by anyone else it answers about the caller, which is harmless.
-contract StreamViews is IStreamExtension {
+contract StreamViews is IStreamExtension, IStreamViews {
     /// @notice The longest accepted collection name, in bytes.
     uint256 public constant MAX_NAME_BYTES = 256;
 
@@ -45,9 +45,9 @@ contract StreamViews is IStreamExtension {
     /// @notice `IStream.work` of the calling Stream.
     /// @param tokenId A live token ID (the Stream's `UnknownWork` otherwise).
     /// @return The work's stored fields and its royalty receiver.
-    function work(uint256 tokenId) external view returns (IStream.WorkCore memory) {
-        IStreamCore s = IStreamCore(msg.sender);
-        IStream.WorkCore memory w;
+    function work(uint256 tokenId) external view returns (IStreamViews.WorkCore memory) {
+        IStream s = IStream(msg.sender);
+        IStreamViews.WorkCore memory w;
         (w.itemHash, w.artistId, w.collectionId, w.kind, w.seedPolicy, w.royaltyRate) =
             s.coreOf(tokenId);
         uint256 word = uint256(_word(s, keccak256(abi.encode(tokenId, TOKENS_SLOT))));
@@ -61,30 +61,18 @@ contract StreamViews is IStreamExtension {
     }
 
     /// @notice `IStream.collection` of the calling Stream.
-    /// @param collectionId A collection ID (`IStreamCore.UnknownCollection` otherwise).
+    /// @param collectionId A collection ID (`IStream.UnknownCollection` otherwise).
     /// @return The collection's name, metadata hash and minted count.
-    function collection(uint256 collectionId) external view returns (IStream.Collection memory) {
-        IStreamCore s = IStreamCore(msg.sender);
+    function collection(uint256 collectionId) external view returns (IStreamViews.Collection memory) {
+        IStream s = IStream(msg.sender);
         bytes32 base = keccak256(abi.encode(collectionId, COLLECTIONS_SLOT));
         bytes32[] memory head = s.extsload(base, 2);
         uint256 word = uint256(head[0]);
-        if (word & 0xff == 0) revert IStreamCore.UnknownCollection(collectionId);
+        if (word & 0xff == 0) revert IStream.UnknownCollection(collectionId);
         // The counter word packs `exists` (low byte) and `minted` (the next 32 bits).
         // forge-lint: disable-next-line(unsafe-typecast)
         uint64 minted = uint32(word >> 8);
-        return IStream.Collection(_string(s, uint256(base) + 2), head[1], minted);
-    }
-
-    /// @notice `IStream.collectionCount` of the calling Stream.
-    /// @return The number of collections created.
-    function collectionCount() external view returns (uint256) {
-        return uint32(_counts() >> 128);
-    }
-
-    /// @notice `IStream.totalMinted` of the calling Stream.
-    /// @return The number of tokens ever minted.
-    function totalMinted() external view returns (uint256) {
-        return uint64(_counts());
+        return IStreamViews.Collection(_string(s, uint256(base) + 2), head[1], minted);
     }
 
     /// @notice `IStream.totalSupply` of the calling Stream.
@@ -97,13 +85,13 @@ contract StreamViews is IStreamExtension {
     /// @notice `IStream.contractURI` of the calling Stream (ERC-7572).
     /// @return The URI, empty until set.
     function contractURI() external view returns (string memory) {
-        return _string(IStreamCore(msg.sender), CONTRACT_URI_SLOT);
+        return _string(IStream(msg.sender), CONTRACT_URI_SLOT);
     }
 
     /// @notice `IStream.owner` of the calling Stream (the marketplace owner).
     /// @return The marketplace owner.
     function owner() external view returns (address) {
-        return address(uint160(uint256(_word(IStreamCore(msg.sender), bytes32(OWNER_SLOT)))));
+        return address(uint160(uint256(_word(IStream(msg.sender), bytes32(OWNER_SLOT)))));
     }
 
     /// @inheritdoc IERC165
@@ -113,16 +101,16 @@ contract StreamViews is IStreamExtension {
     }
 
     function _counts() private view returns (uint256) {
-        return uint256(_word(IStreamCore(msg.sender), bytes32(COUNTS_SLOT)));
+        return uint256(_word(IStream(msg.sender), bytes32(COUNTS_SLOT)));
     }
 
-    function _word(IStreamCore s, bytes32 slot) private view returns (bytes32) {
+    function _word(IStream s, bytes32 slot) private view returns (bytes32) {
         return s.extsload(slot, 1)[0];
     }
 
     /// @dev A storage `string` at `slot` (Solidity's layout: short strings in place with twice
     ///      their length in the low byte; long ones as `2 * length + 1`, data at `keccak(slot)`).
-    function _string(IStreamCore s, uint256 slot) private view returns (string memory text) {
+    function _string(IStream s, uint256 slot) private view returns (string memory text) {
         uint256 head = uint256(_word(s, bytes32(slot)));
         if (head & 1 == 0) {
             uint256 length = (head & 0xff) >> 1;

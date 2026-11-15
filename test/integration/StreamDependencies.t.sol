@@ -8,7 +8,7 @@ import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStream } from "src/interfaces/IStream.sol";
-import { IStreamCore } from "src/interfaces/IStreamCore.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { CURRENCY_ETH, PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
 import {
     EditionTerms,
@@ -255,7 +255,7 @@ contract StreamDependenciesTest is IntegrationBase {
         _schedule(hotAdmin, address(stream), call);
         vm.warp(block.timestamp + delay);
         vm.expectEmit(address(stream));
-        emit IStreamCore.DependencySet(kind, previous, next);
+        emit IStream.DependencySet(kind, previous, next);
         vm.prank(hotAdmin);
         manager.execute(address(stream), call);
         assertEq(_current(kind), next);
@@ -295,7 +295,7 @@ contract StreamDependenciesTest is IntegrationBase {
     ///      ERC-165, so no existing token's metadata or royalty reads a replaced contract.
     function test_ReplacingEachDependencyLeavesExistingTokensUnchanged() public {
         bytes32 before = _snapshot();
-        bytes32 vrfSeed = entropy.seedOf(IStream(address(stream)).work(tokens[PENDING_VRF]).itemHash);
+        bytes32 vrfSeed = entropy.seedOf(IStreamViews(address(stream)).work(tokens[PENDING_VRF]).itemHash);
         address genesisEntropy = stream.entropyModule();
         for (uint256 i; i < KINDS.length; ++i) {
             _replace(KINDS[i], address(new DependencyStandIn(_interfaceOf(KINDS[i]))));
@@ -324,7 +324,7 @@ contract StreamDependenciesTest is IntegrationBase {
     ///      records open; works minted after it take its seeds.
     function test_ReplacingTheEntropyModuleNeverChangesAnExistingWorksSeed() public {
         bytes32 before = _snapshot();
-        bytes32 itemHash = IStream(address(stream)).work(tokens[PENDING_VRF]).itemHash;
+        bytes32 itemHash = IStreamViews(address(stream)).work(tokens[PENDING_VRF]).itemHash;
         bytes32 vrfSeed = entropy.seedOf(itemHash);
         address genesisEntropy = address(entropy);
         OtherSeedsEntropy other = new OtherSeedsEntropy();
@@ -372,7 +372,7 @@ contract StreamDependenciesTest is IntegrationBase {
         _open(PENDING_VRF, 1);
         records.openRecord(secondEra, w.item, w.media);
         (, bytes32 seed) = records.seedOf(tokens[PENDING_VRF]);
-        assertEq(seed, entropy.seedOf(IStream(address(stream)).work(tokens[PENDING_VRF]).itemHash));
+        assertEq(seed, entropy.seedOf(IStreamViews(address(stream)).work(tokens[PENDING_VRF]).itemHash));
         (, seed) = records.seedOf(secondEra);
         assertEq(seed, keccak256("the second era's seed"));
     }
@@ -393,7 +393,7 @@ contract StreamDependenciesTest is IntegrationBase {
         coordinator.fulfill(requestId, uint256(keccak256("in flight")));
         assertTrue(entropy.isDelivered(itemHash), "fulfilled by the module that took it");
         bytes memory data = _mintData(root, one, 0);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.SeedNotDelivered.selector, itemHash));
+        vm.expectRevert(abi.encodeWithSelector(IStream.SeedNotDelivered.selector, itemHash));
         auction.start(address(stream), data);
 
         next.deliver(w.item, keccak256("the current module's seed"));
@@ -445,7 +445,7 @@ contract StreamDependenciesTest is IntegrationBase {
         address foreign = address(new AccessManager(address(this)));
         for (uint256 i; i < KINDS.length; ++i) {
             address next = address(new ManagedStandIn(_interfaceOf(KINDS[i]), foreign));
-            _refuse(KINDS[i], next, abi.encodeWithSelector(IStreamCore.InvalidBinding.selector, next));
+            _refuse(KINDS[i], next, abi.encodeWithSelector(IStream.InvalidBinding.selector, next));
         }
         PackageRegistry real = new PackageRegistry(
             foreign,
@@ -457,7 +457,7 @@ contract StreamDependenciesTest is IntegrationBase {
         _refuse(
             "PACKAGE_REGISTRY",
             address(real),
-            abi.encodeWithSelector(IStreamCore.InvalidBinding.selector, address(real))
+            abi.encodeWithSelector(IStream.InvalidBinding.selector, address(real))
         );
         // One word that is not an address is refused too (its decoding fails, with no data,
         // which the manager reports as `FailedCall`).
@@ -626,7 +626,7 @@ contract StreamDependenciesTest is IntegrationBase {
         bytes memory thirdData = _mintData(thirdRoot, third, 0);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IStreamCore.SeedNotDelivered.selector, WorksHashing.itemHash(unseeded.item)
+                IStream.SeedNotDelivered.selector, WorksHashing.itemHash(unseeded.item)
             )
         );
         auction.start(address(stream), thirdData);

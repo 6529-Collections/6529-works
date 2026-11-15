@@ -6,7 +6,7 @@ import { Vm } from "forge-std/Vm.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IStream } from "src/interfaces/IStream.sol";
-import { IStreamCore } from "src/interfaces/IStreamCore.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { IWorkPowers } from "src/interfaces/IWorkPowers.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
@@ -147,10 +147,10 @@ contract WorkRecordsTest is RecordsFixture {
         _expectBadOpen(other, otherItem, media);
         _expectBadOpen(other, otherItem, new MediaFile[](0));
 
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnknownWork.selector, 9));
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 9));
         records.openRecord(9, otherItem, otherMedia);
         auction.burn(stream, other, 1);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnknownWork.selector, other));
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, other));
         records.openRecord(other, otherItem, otherMedia);
     }
 
@@ -374,7 +374,7 @@ contract WorkRecordsTest is RecordsFixture {
         bytes[] memory sigs = _both(_royaltyHash(tokenId, 5_000, state, deadline));
         vm.prank(governor);
         records.setRoyaltyRate(tokenId, 5_000, item, state, deadline, sigs);
-        assertEq(IStream(address(stream)).work(tokenId).royaltyRate, 5_000);
+        assertEq(IStreamViews(address(stream)).work(tokenId).royaltyRate, 5_000);
 
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.LicenseIrrevocable.selector, tokenId));
@@ -1403,7 +1403,7 @@ contract WorkRecordsTest is RecordsFixture {
         uint64 deadline = uint64(block.timestamp + 15 days);
         bytes[] memory sigs = _both(_royaltyHash(tokenId, 5_000, state, deadline));
         vm.expectEmit(address(stream));
-        emit IStreamCore.RoyaltyRateChanged(tokenId, 6_529, 5_000);
+        emit IStream.RoyaltyRateChanged(tokenId, 6_529, 5_000);
         // The new state hash: version 1 at the new rate.
         vm.expectEmit(true, false, false, false, address(records));
         emit IWorkRecords.RoyaltyRateSet(tokenId, 6_529, 5_000, bytes32(0));
@@ -1476,7 +1476,7 @@ contract WorkRecordsTest is RecordsFixture {
         bytes[] memory sigs = _both(_royaltyHash(tokenId, 5_000, state, deadline));
         vm.prank(governor);
         records.setRoyaltyRate(tokenId, 5_000, item, state, deadline, sigs);
-        assertEq(IStream(address(stream)).work(tokenId).royaltyRate, 5_000);
+        assertEq(IStreamViews(address(stream)).work(tokenId).royaltyRate, 5_000);
         assertEq(editionsMock.rateOf(tokenId), 5_000);
     }
 
@@ -1498,7 +1498,7 @@ contract WorkRecordsTest is RecordsFixture {
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.StateHashMismatch.selector, s0, s1));
         records.setRoyaltyRate(tokenId, 5_000, item, s0, deadline, toC);
-        assertEq(IStream(address(stream)).work(tokenId).royaltyRate, 6_000);
+        assertEq(IStreamViews(address(stream)).work(tokenId).royaltyRate, 6_000);
     }
 
     /// Regression: M4 in the reviews of #22
@@ -2243,7 +2243,7 @@ contract WorkRecordsTest is RecordsFixture {
         (uint256 tokenId,) = _work(1);
         bytes32 file = _primary(tokenId);
         vm.startPrank(storageOperator);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnknownCollection.selector, 7));
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownCollection.selector, 7));
         records.setCollectionPreferredKind(7, LocatorKind.IPFS);
         vm.expectRevert(IWorkRecords.InvalidLocator.selector);
         records.setFilePreference(tokenId, file, 0);
@@ -2312,7 +2312,7 @@ contract WorkRecordsTest is RecordsFixture {
         vm.prank(storageOperator);
         records.setCollectionPreferredKind(collectionId, LocatorKind.IPFS);
         vm.prank(storageOperator);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnknownCollection.selector, newer + 1));
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownCollection.selector, newer + 1));
         records.setCollectionPreferredKind(newer + 1, LocatorKind.IPFS);
     }
 

@@ -11,7 +11,7 @@ import {
 import { SaleTerms } from "src/interfaces/types/PackageTypes.sol";
 import { PrimaryOutcome, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { IStream } from "src/interfaces/IStream.sol";
-import { IStreamCore } from "src/interfaces/IStreamCore.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { FixedPriceOneOfOneMock } from "../mocks/stream/OneOfOneSaleMocks.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
@@ -149,7 +149,7 @@ contract StreamSaleMethodsTest is IntegrationBase {
 
         vm.warp(deadline);
         vm.expectEmit(address(stream));
-        emit IStreamCore.PrimarySaleSettled(tokenId, PrimaryOutcome.UNBID, address(0), CURRENCY_ETH, 0);
+        emit IStream.PrimarySaleSettled(tokenId, PrimaryOutcome.UNBID, address(0), CURRENCY_ETH, 0);
         vm.expectEmit(address(stream));
         emit IERC721.Transfer(address(fixedPrice), museum, tokenId);
         fixedPrice.closeUnsold(address(stream), tokenId);

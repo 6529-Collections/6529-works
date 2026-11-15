@@ -17,7 +17,7 @@ import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { IStream } from "src/interfaces/IStream.sol";
-import { IStreamCore } from "src/interfaces/IStreamCore.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import {
     CURRENCY_DEFAULT,
     CURRENCY_ETH,
@@ -196,7 +196,7 @@ contract DeployV1Test is Test {
         assertEq(d.englishAuctionLens.statementLog(), address(d.statementLog));
         assertEq(address(d.englishAuctionLens.allowlist()), address(d.assetAllowlist));
         assertEq(address(d.englishAuctionLens.economicsResolver()), address(d.economicsResolver));
-        assertEq(IStream(address(d.stream)).owner(), makeAddr("marketOwner"));
+        assertEq(IStreamViews(address(d.stream)).owner(), makeAddr("marketOwner"));
         // The real renderer, pinned by Stream.
         assertEq(d.stream.defaultRenderer(), address(d.renderer));
         assertEq(address(d.renderer.contentStore()), address(d.contentStore));
@@ -507,7 +507,7 @@ contract DeployV1Test is Test {
         (DeployV1.Deployment memory d,,) = _genesis(_params());
         // A zero bind argument must not match a getter that does not exist.
         GovernanceConfig.Call memory wrongTarget = GovernanceConfig.Call(
-            address(d.assetAllowlist), abi.encodeCall(IStreamCore.bindWorkRecords, (address(0)))
+            address(d.assetAllowlist), abi.encodeCall(IStream.bindWorkRecords, (address(0)))
         );
         vm.expectRevert(
             abi.encodeWithSelector(

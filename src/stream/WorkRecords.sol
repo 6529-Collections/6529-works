@@ -10,7 +10,6 @@ import { IEditions } from "../interfaces/IEditions.sol";
 import { IEntropyModule } from "../interfaces/IEntropyModule.sol";
 import { IRenderer } from "../interfaces/IRenderer.sol";
 import { IStream } from "../interfaces/IStream.sol";
-import { IStreamCore } from "../interfaces/IStreamCore.sol";
 import { IWorkPowers, WorkPowers } from "../interfaces/IWorkPowers.sol";
 import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "../interfaces/types/ContentTypes.sol";
@@ -611,7 +610,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     {
         // Collection IDs run from 1 to the count and are never removed.
         if (collectionId == 0 || collectionId > IStream(stream).collectionCount()) {
-            revert IStreamCore.UnknownCollection(collectionId);
+            revert IStream.UnknownCollection(collectionId);
         }
         emit CollectionPreferredKindSet(collectionId, _collectionKinds[collectionId], kind);
         _collectionKinds[collectionId] = kind;
@@ -772,7 +771,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
             && keccak256(bytes(license.spdxId)) == keccak256(bytes(_cc0SpdxId));
     }
 
-    /// @dev The core's per-work facts (`IStreamCore.coreOf`); reverts with `UnknownWork` for a
+    /// @dev The core's per-work facts (`IStream.coreOf`); reverts with `UnknownWork` for a
     ///      burned or unminted token.
     function _core(uint256 tokenId)
         private
@@ -789,7 +788,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         (itemHash, artistId, collectionId, kind, policy, rate) = IStream(stream).coreOf(tokenId);
     }
 
-    /// @dev The work's linked edition (`IStreamCore.editionOf`), or zero.
+    /// @dev The work's linked edition (`IStream.editionOf`), or zero.
     function _edition(uint256 tokenId) private view returns (address editions, uint256 editionId) {
         (editions, editionId) = IStream(stream).editionOf(tokenId);
     }
