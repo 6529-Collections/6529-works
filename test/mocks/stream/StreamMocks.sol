@@ -65,9 +65,15 @@ contract MockPackageRegistry is Supports165 {
     bytes internal _reentryCall;
 
     address public artistRegistry;
+    /// @dev Models a successor policy that omits the license-identifier rule.
+    bool public skipLicenseCheck;
 
     function _interface() internal pure override returns (bytes4) {
         return type(IMintPolicy).interfaceId;
+    }
+
+    function setSkipLicenseCheck(bool on) external {
+        skipLicenseCheck = on;
     }
 
     function setArtistRegistry(address registry) external {
@@ -120,7 +126,7 @@ contract MockPackageRegistry is Supports165 {
         terms.creator = IArtistRegistry(artistRegistry).activeAuthorityOf(artistId);
     }
 
-    function _check(PackageItem memory item, address entropy) internal pure {
+    function _check(PackageItem memory item, address entropy) internal view {
         if (item.sale.saleKind == 0) revert IMintPolicy.InvalidItemSale();
         if (item.parties.length == 0) revert IMintPolicy.InvalidLeadArtist();
         uint8 policy = item.seedPolicy;
@@ -128,7 +134,9 @@ contract MockPackageRegistry is Supports165 {
             (policy == uint8(SeedPolicy.ARTIST)) != (item.seed != 0)
                 || (policy == uint8(SeedPolicy.VRF) && entropy == address(0))
         ) revert IMintPolicy.InvalidSeedPolicy();
-        if (!SpdxId.isValid(item.license.spdxId)) revert IMintPolicy.InvalidLicenseId();
+        if (!skipLicenseCheck && !SpdxId.isValid(item.license.spdxId)) {
+            revert IMintPolicy.InvalidLicenseId();
+        }
     }
 
     function _quote(PackageItem memory item, IMintPolicy.MintContext calldata c)

@@ -55,7 +55,8 @@ canonical, as DCL-1 requires of every convention document.
 `CHECK_FLOOR` of DCL-5. `INPUT` holds `package` (the item, the ordered media list and
 `ContentStore.fileInfo` per file, including the license text file), `policy` (the wave's
 `requiresDeclarations`, `waivable`, `allowsTimeCapsule` and, optionally, `workPowers`; without
-it the names are `ROYALTY_RATE` and `RELICENSE`, the `WorkPowers` names of DCL-8),
+it the names are `ROYALTY_RATE`, `RELICENSE` and `RENDERER_REPIN`, the `WorkPowers` names of
+DCL-8),
 `contents` (content-store bytes as `ContentStore.read` returns them, `{"file": path}` or
 `{"hex": "0x…"}`: the declarations file's, and optionally a media file's) and `observed`: what the
 signer's own tooling saw at each storage receipt (`{"file": path}` of the fetched bytes, which
@@ -94,7 +95,8 @@ fetching is left to the caller, who must pin every `eth_call` to the same block 
 `IWorkPowers` is optional, for a deployment whose `WorkRecords` does not report it: absent, the
 card says `"available": false` and every intended renunciation is `unknown`. Present, it is
 `renouncedMask`, the `renouncedPowers(tokenId)` read. The names default to `ROYALTY_RATE`
-(bit 0) and `RELICENSE` (bit 1), and the covered rows to `royalty_rate` and `license` (DCL-8,
+(bit 0), `RELICENSE` (bit 1) and `RENDERER_REPIN` (bit 2), and the covered rows to
+`royalty_rate`, `license` and `renderer` (DCL-8,
 DCL-27); `powers` and `covers` may be given explicitly, but the card schema accepts only the
 `WorkPowers` names.
 
