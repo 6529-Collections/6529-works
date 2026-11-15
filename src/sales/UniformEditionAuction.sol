@@ -25,12 +25,13 @@ import { StepLadder } from "../interfaces/types/StepLadder.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 import { UniformClearing } from "./UniformClearing.sol";
 
-/// @title UniformEditionAuction
-/// @notice The uniform-price edition auction (ADR 0005; D138-D141), the one sale of 6529 Stream
-///         Editions. See {IUniformEditionAuction} for the rules; this contract adds the storage
-///         layout and the bounds. Every view, of a sale or of the adapter's own settings, lives
-///         on its lens ({UniformEditionAuctionLens}), deployed on its own and pinned by the
-///         constructor.
+/// @title UniformEditionAuctionBase
+/// @notice The uniform-price edition auction (ADR 0005; D138-D141), shared by its two
+///         deployments: {UniformEditionAuction}, the one sale of 6529 Stream Editions, and
+///         {FederatedEditionAuction}, the sale of federated pairs' editions (ADR 0008). See
+///         {IUniformEditionAuction} for the rules; this contract adds the storage layout and the
+///         bounds. Every view, of a sale or of the adapter's own settings, lives on its lens
+///         ({UniformEditionAuctionLensBase}), deployed on its own and pinned by the constructor.
 /// @dev Storage (`IUniformEditionAuctionStorage.Space` documents every word). Per sale: a state word
 ///      written at open and updated by every bid, raise and withdrawal (`SaleWord`), a payout word
 ///      written at open (`PayoutWord`) and a result word written at settlement (`ResultWord`).
@@ -72,11 +73,12 @@ import { UniformClearing } from "./UniformClearing.sol";
 ///      payee that refuses or needs more is paid through the revenue escrow and never blocks
 ///      settlement; `RevenuePayment.payETH` requires the full figure to be available first.
 ///
-///      v1 serves one token, 6529 Stream Editions (`editions`), whose master contract is
-///      `stream`: `setTarget` lists nothing else. Every entry point that moves value is
+///      Which edition contract a sale sells, and whose 1/1 anchors it, are the deployment's
+///      (`_checkTarget`, `_editionsOf`, `_masterOf`): one immutable pair for 6529 Stream
+///      Editions, a per-sale record for federated pairs. Every entry point that moves value is
 ///      non-reentrant; claims delete the bid before they mint (an ERC-1155 acceptance call) or
 ///      send ETH.
-contract UniformEditionAuction is
+abstract contract UniformEditionAuctionBase is
     IUniformEditionAuctionStorage,
     AccessManaged,
     ReentrancyGuardTransient
@@ -134,7 +136,8 @@ contract UniformEditionAuction is
     uint256 private constant _SWEEP_CHUNK = 96;
 
     /// @dev The current parameters' ID, the interning counters, the open pause (when it began,
-    ///      zero while not paused), whether `_editions` is listed, and the governed limits
+    ///      zero while not paused), whether 6529 Stream Editions is listed (unused by a federated
+    ///      deployment), and the governed limits
     ///      (`IUniformEditionAuction.Limits`): read once per open (`Space.SETTINGS` documents
     ///      the packing).
     struct Settings {
@@ -149,23 +152,18 @@ contract UniformEditionAuction is
     }
 
     /// @dev The revenue escrow that receives refused payouts.
-    address private immutable _escrow;
+    address internal immutable _escrow;
     /// @dev The English auction whose 1/1 sales anchor the edition sales.
     address private immutable _englishAuction;
     /// @inheritdoc IUniformEditionAuctionStorage
     address public immutable lens;
-    /// @dev 6529 Stream Editions, the one token this adapter sells.
-    address private immutable _editions;
-    /// @dev 6529 Stream, the master contract of `_editions`, whose 1/1s the English auction
-    ///      sells.
-    address private immutable _stream;
 
-    Settings private _settings;
+    Settings internal _settings;
     mapping(uint256 termsId => IUniformEditionAuction.AuctionConfig) private _terms;
     mapping(address recipient => uint16) private _feeRecipientIds;
     mapping(uint256 index => address) private _feeRecipients;
     mapping(uint256 saleId => SaleWord) private _sales;
-    mapping(uint256 saleId => PayoutWord) private _payouts;
+    mapping(uint256 saleId => PayoutWord) internal _payouts;
     mapping(uint256 saleId => ResultWord) private _results;
     /// @dev A scan in progress, packed as `ScanWord` is (from the least significant bit).
     mapping(uint256 saleId => uint256) private _scans;
@@ -181,19 +179,17 @@ contract UniformEditionAuction is
 
     /// @param authority_ The AccessManager governing the setters and the pause.
     /// @param escrow_ The revenue escrow for refused payouts.
-    /// @param editions_ 6529 Stream Editions (ERC-165 `IEditions`, not EIP-7702 delegated); its
-    ///        6529 Stream is read from it.
     /// @param englishAuction_ The English auction (ERC-165 `IEnglishAuction`) that sells the 1/1s.
     /// @param lens_ The lens, deployed beforehand in its own transaction (so this contract's
     ///        deployment fits a block): it must have code, no EIP-7702 delegation, the code hash
-    ///        `lensCodeHash` and this adapter's Editions, Stream, English auction and escrow.
+    ///        `lensCodeHash` and this adapter's English auction and escrow; the deployment checks
+    ///        the rest of its wiring.
     /// @param lensCodeHash The lens's reviewed code hash.
     /// @param config_ The initial governed parameters.
     /// @param limits_ The initial governed limits.
     constructor(
         address authority_,
         address escrow_,
-        address editions_,
         address englishAuction_,
         address lens_,
         bytes32 lensCodeHash,
@@ -201,20 +197,14 @@ contract UniformEditionAuction is
         IUniformEditionAuction.Limits memory limits_
     ) AccessManaged(authority_) {
         Dependency.check(escrow_);
-        Dependency.check(editions_, type(IEditions).interfaceId);
         Dependency.check(englishAuction_, type(IEnglishAuction).interfaceId);
-        address stream_ = IEditions(editions_).stream();
-        Dependency.check(stream_, type(IStream).interfaceId);
         Dependency.checkPinned(lens_, lensCodeHash);
         IUniformEditionAuctionLens l = IUniformEditionAuctionLens(lens_);
-        if (
-            l.editions() != editions_ || l.stream() != stream_
-                || l.englishAuction() != englishAuction_ || l.escrow() != escrow_
-        ) revert Dependency.InvalidDependency(lens_);
+        if (l.englishAuction() != englishAuction_ || l.escrow() != escrow_) {
+            revert Dependency.InvalidDependency(lens_);
+        }
         _escrow = escrow_;
         _englishAuction = englishAuction_;
-        _editions = editions_;
-        _stream = stream_;
         lens = lens_;
         _setLimits(
             uint256(limits_.maxCloseOffset) | uint256(limits_.voidDelayDays) << 32
@@ -231,7 +221,7 @@ contract UniformEditionAuction is
     ///      adapter can ever mint the copies this sale clears. The lens's `masterTerms` checks
     ///      the item, resolves the close offset and deploys the split wallets; a close offset
     ///      other than the current default interns one terms record for this sale.
-    /// @param token The edition contract: `_editions`.
+    /// @param token The edition contract (`_checkTarget`).
     /// @param id The edition ID, the master's 6529 Stream token ID.
     /// @param data `abi.encode(PackageItem)` of the master's EDITION_MASTER item.
     /// @return saleId `saleIdOf(token, id)`.
@@ -242,8 +232,8 @@ contract UniformEditionAuction is
     {
         Settings memory st = _settings;
         if (st.pausedAt != 0) revert ISaleAdapter.SalePaused();
-        if (token != _editions || !st.listed) revert ISaleAdapter.TargetNotAllowed(token);
         saleId = _saleIdOf(token, id);
+        _checkTarget(token, saleId, st.listed);
         SaleWord storage a = _sales[saleId];
         if (a.status != IUniformEditionAuction.AuctionStatus.NONE) {
             revert IUniformEditionAuction.AuctionExists(saleId);
@@ -269,7 +259,7 @@ contract UniformEditionAuction is
         // F1: the sale pays exactly the economics 6529 Stream Editions locks for the edition and
         // returns, their one source (the lens checked a preview of them above, and deployed the
         // wallets it names).
-        (address seller, address feeRecipient, uint256 feeShare) = _bindEdition(id, data);
+        (address seller, address feeRecipient, uint256 feeShare) = _bindEdition(token, id, data);
         uint16 feeRecipientId = feeShare == 0 ? 0 : _feeRecipientId(token, id, feeRecipient);
         // Safe: the lens's `masterTerms` refuses an ID, a 1/1 end or a time of 2^32 or more
         // (`InvalidSaleTerms`), so a sale never opens past 2106 rather than wrapping; a fee share
@@ -293,7 +283,7 @@ contract UniformEditionAuction is
             uint64(closeAt)
         );
         emit IUniformEditionAuction.AuctionOpened(
-            saleId, token, id, _stream, m.maxCount, t, uint64(closeAt)
+            saleId, token, id, _masterOf(saleId), m.maxCount, t, uint64(closeAt)
         );
         // forge-lint: disable-end(unsafe-typecast)
     }
@@ -525,7 +515,7 @@ contract UniformEditionAuction is
                 && (status != IUniformEditionAuction.AuctionStatus.SETTLING || _scans[saleId] == 0)
         ) revert IUniformEditionAuction.InvalidAuctionState(saleId, status);
         _void(saleId, a);
-        _seal(_payouts[saleId].id, 0);
+        _sealVoid(saleId, _payouts[saleId].id);
     }
 
     // ------------------------------------------------------------------------- governance
@@ -573,18 +563,6 @@ contract UniformEditionAuction is
         if (block.timestamp < allowedAt) revert ISaleAdapter.UnpauseTooEarly(allowedAt);
         _settings.pausedAt = 0;
         emit ISaleAdapter.Unpaused(msg.sender);
-    }
-
-    /// @notice Lists or unlists `token` (`ISaleAdapter.setTarget`); SUCCESSOR_SETTER.
-    /// @dev Only `_editions` can be listed in v1. Unlisting stops new opens; running sales finish.
-    ///      This adapter serves no federated token, so it keeps no federation registry: the
-    ///      lens answers `federationRegistry` with zero and refuses `setFederationRegistry`.
-    /// @param token The token: 6529 Stream Editions.
-    /// @param listed Whether it is served.
-    function setTarget(address token, bool listed) external restricted {
-        if (token != _editions) revert ISaleAdapter.TargetNotAllowed(token);
-        _settings.listed = listed;
-        emit ISaleAdapter.TargetSet(token, listed);
     }
 
     // ------------------------------------------------------------------------------ views
@@ -768,8 +746,9 @@ contract UniformEditionAuction is
         bool rationed = count < demand;
         // forge-lint: disable-end(unsafe-typecast)
         PayoutWord memory p = _payouts[saleId];
-        if (count != 0 && !IEditions(_editions).exists(p.id)) {
-            revert IUniformEditionAuction.EditionNotCreated(_editions, p.id);
+        address editions = _editionsOf(saleId);
+        if (count != 0 && !IEditions(editions).exists(p.id)) {
+            revert IUniformEditionAuction.EditionNotCreated(editions, p.id);
         }
         // Safe: counts below 2^32 and steps below 512.
         // forge-lint: disable-start(unsafe-typecast)
@@ -779,7 +758,7 @@ contract UniformEditionAuction is
         // forge-lint: disable-end(unsafe-typecast)
         // The count is final here (rationing picks winners, not the count): seal the edition at
         // it, so no copy past what the winners are owed can ever be minted (ED-12).
-        _seal(p.id, count);
+        IEditions(editions).sealSupply(p.id, count);
         price = count == 0 ? 0 : _price(t, step);
         emit IUniformEditionAuction.AuctionCleared(
             saleId, count, step, price, count * price, rationed, cutUnits
@@ -877,7 +856,7 @@ contract UniformEditionAuction is
         }
         emit ISaleAdapter.SaleSettled(
             saleId,
-            _editions,
+            _editionsOf(saleId),
             p.id,
             address(0),
             address(0),
@@ -923,9 +902,10 @@ contract UniformEditionAuction is
         delete _bids[saleId][bidId];
         emit IUniformEditionAuction.BidClaimed(saleId, bidId, b.bidder, to, unitsWon, refund);
         if (unitsWon != 0) {
+            address editions = _editionsOf(saleId);
             (uint256 minted,) =
-                IMintTarget(_editions).mint(to, id, unitsWon, abi.encode(CURRENCY_ETH, unitPrice));
-            if (minted != id) revert ISaleAdapter.InvalidSaleTerms(_editions, id);
+                IMintTarget(editions).mint(to, id, unitsWon, abi.encode(CURRENCY_ETH, unitPrice));
+            if (minted != id) revert ISaleAdapter.InvalidSaleTerms(editions, id);
         }
     }
 
@@ -1220,11 +1200,29 @@ contract UniformEditionAuction is
         emit IUniformEditionAuction.AuctionVoided(saleId);
     }
 
-    /// @dev Seals edition `id` at `count` copies (`IEditions.sealSupply`): the count a settlement
-    ///      sold, or zero for an abandoned sale.
-    function _seal(uint256 id, uint256 count) private {
-        IEditions(_editions).sealSupply(id, count);
-    }
+    // ------------------------------------------------------------------------- the deployment
+
+    /// @dev Reverts with `ISaleAdapter.TargetNotAllowed` unless this deployment sells `token`
+    ///      (`listed`: the settings word's flag), and records what `_editionsOf` and `_masterOf`
+    ///      answer for `saleId`.
+    function _checkTarget(address token, uint256 saleId, bool listed) internal virtual;
+
+    /// @dev The edition contract sale `saleId` sells.
+    function _editionsOf(uint256 saleId) internal view virtual returns (address);
+
+    /// @dev The contract whose 1/1 anchors sale `saleId`, sold by the English auction.
+    function _masterOf(uint256 saleId) internal view virtual returns (address);
+
+    /// @dev The fee recipient and share a sale of `token` locks, given the `feeRecipient` and
+    ///      `feeShare` the edition contract returned when it bound the edition.
+    function _feeTerms(address token, address feeRecipient, uint256 feeShare)
+        internal
+        view
+        virtual
+        returns (address, uint256);
+
+    /// @dev Seals an abandoned sale's edition at zero (`IEditions.sealSupply`).
+    function _sealVoid(uint256 saleId, uint256 id) internal virtual;
 
     /// @dev Step `step`'s price under `t`: `basePrice × M[(step mod N)·192/N] × 10^(step div N) /
     ///      100`, `StepLadder.price` from {_MANTISSAS}.
@@ -1259,12 +1257,13 @@ contract UniformEditionAuction is
     /// @dev Sale `saleId`'s 1/1, read live from the English auction itself
     ///      (`IEnglishAuctionClock.auctionClock`): its state, end and dispute-pause start.
     function _oneOfOneClock(uint256 saleId)
-        private
+        internal
         view
+        virtual
         returns (IEnglishAuction.AuctionState state, uint64 endTime, uint64 pausedAt)
     {
         (state, endTime, pausedAt) = IEnglishAuctionClock(_englishAuction)
-            .auctionClock(_saleIdOf(_stream, _payouts[saleId].id));
+            .auctionClock(_saleIdOf(_masterOf(saleId), _payouts[saleId].id));
     }
 
     /// @dev The derived sale ID, `uint256(keccak256(abi.encode(token, id)))`
@@ -1286,11 +1285,10 @@ contract UniformEditionAuction is
     ///      offset (0x40) and `data` past its first word, and this contract needs no item codec.
     ///      A `data` the lens decoded through another offset hands Editions a different item,
     ///      whose hash is not the master's: the open reverts (`NotEditionMaster`).
-    function _bindEdition(uint256 id, bytes calldata data)
+    function _bindEdition(address target, uint256 id, bytes calldata data)
         private
         returns (address seller, address feeRecipient, uint256 feeShare)
     {
-        address target = _editions;
         bytes4 selector = IEditions.bindMinter.selector;
         // Invariants: `data` is at least one word long (the lens decoded an item from it before
         // this runs), so `n` does not wrap. The call is built in memory from the free memory
@@ -1314,6 +1312,7 @@ contract UniformEditionAuction is
             feeRecipient := mload(add(p, 0x20))
             feeShare := mload(add(p, 0x40))
         }
+        (feeRecipient, feeShare) = _feeTerms(target, feeRecipient, feeShare);
     }
 
     /// @dev Reverts with `UnknownAuction` for a sale never opened, and `InvalidAuctionState`
@@ -1333,5 +1332,92 @@ contract UniformEditionAuction is
     function _bidOf(uint256 saleId, uint256 bidId) private view returns (BidWord memory b) {
         b = _bids[saleId][bidId];
         if (b.bidder == address(0)) revert IUniformEditionAuction.UnknownBid(saleId, bidId);
+    }
+}
+
+/// @title UniformEditionAuction
+/// @notice The uniform-price edition auction of 6529 Stream Editions (ADR 0005): the one token
+///         this deployment sells (`setTarget` lists nothing else), whose master contract is 6529
+///         Stream. All logic is {UniformEditionAuctionBase}'s.
+contract UniformEditionAuction is UniformEditionAuctionBase {
+    /// @dev 6529 Stream Editions, the one token this adapter sells.
+    address private immutable _editions;
+    /// @dev 6529 Stream, the master contract of `_editions`, whose 1/1s the English auction
+    ///      sells.
+    address private immutable _stream;
+
+    /// @param authority_ The AccessManager governing the setters and the pause.
+    /// @param escrow_ The revenue escrow for refused payouts.
+    /// @param editions_ 6529 Stream Editions (ERC-165 `IEditions`, not EIP-7702 delegated); its
+    ///        6529 Stream is read from it.
+    /// @param englishAuction_ The English auction (ERC-165 `IEnglishAuction`) that sells the 1/1s.
+    /// @param lens_ The lens, deployed beforehand in its own transaction: it must have code, no
+    ///        EIP-7702 delegation, the code hash `lensCodeHash` and this adapter's Editions,
+    ///        Stream, English auction and escrow.
+    /// @param lensCodeHash The lens's reviewed code hash.
+    /// @param config_ The initial governed parameters.
+    /// @param limits_ The initial governed limits.
+    constructor(
+        address authority_,
+        address escrow_,
+        address editions_,
+        address englishAuction_,
+        address lens_,
+        bytes32 lensCodeHash,
+        IUniformEditionAuction.AuctionConfig memory config_,
+        IUniformEditionAuction.Limits memory limits_
+    )
+        UniformEditionAuctionBase(
+            authority_, escrow_, englishAuction_, lens_, lensCodeHash, config_, limits_
+        )
+    {
+        Dependency.check(editions_, type(IEditions).interfaceId);
+        address stream_ = IEditions(editions_).stream();
+        Dependency.check(stream_, type(IStream).interfaceId);
+        IUniformEditionAuctionLens l = IUniformEditionAuctionLens(lens_);
+        if (l.editions() != editions_ || l.stream() != stream_) {
+            revert Dependency.InvalidDependency(lens_);
+        }
+        _editions = editions_;
+        _stream = stream_;
+    }
+
+    /// @notice Lists or unlists `token` (`ISaleAdapter.setTarget`); SUCCESSOR_SETTER.
+    /// @dev Only `_editions` can be listed. Unlisting stops new opens; running sales finish.
+    ///      This deployment serves no federated token, so it keeps no federation registry: the
+    ///      lens answers `federationRegistry` with zero and refuses `setFederationRegistry`.
+    /// @param token The token: 6529 Stream Editions.
+    /// @param listed Whether it is served.
+    function setTarget(address token, bool listed) external restricted {
+        if (token != _editions) revert ISaleAdapter.TargetNotAllowed(token);
+        _settings.listed = listed;
+        emit ISaleAdapter.TargetSet(token, listed);
+    }
+
+    /// @dev Only 6529 Stream Editions, while listed.
+    function _checkTarget(address token, uint256, bool listed) internal view override {
+        if (token != _editions || !listed) revert ISaleAdapter.TargetNotAllowed(token);
+    }
+
+    function _editionsOf(uint256) internal view override returns (address) {
+        return _editions;
+    }
+
+    function _masterOf(uint256) internal view override returns (address) {
+        return _stream;
+    }
+
+    /// @dev The terms 6529 Stream Editions returned (F1: their one source).
+    function _feeTerms(address, address feeRecipient, uint256 feeShare)
+        internal
+        pure
+        override
+        returns (address, uint256)
+    {
+        return (feeRecipient, feeShare);
+    }
+
+    function _sealVoid(uint256, uint256 id) internal override {
+        IEditions(_editions).sealSupply(id, 0);
     }
 }
