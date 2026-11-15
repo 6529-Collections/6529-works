@@ -86,8 +86,6 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
     /// @dev Binding names (`Bound`, `AlreadyBound`).
     bytes32 private constant STREAM = "STREAM";
     bytes32 private constant EDITIONS = "EDITIONS";
-    /// @dev A Stream content slot whose item was burned and released: free for a new item.
-    bytes32 private constant RELEASED = bytes32(uint256(1));
 
     struct Package {
         PackageStatus status;
@@ -109,11 +107,8 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
 
     mapping(bytes32 root => Package) private _packages;
     mapping(bytes32 root => mapping(address account => uint256 artistId)) private _acceptedAs;
-    mapping(bytes32 contentHash => bytes32 itemHash) private _streamItems;
     mapping(bytes32 contentHash => bytes32 itemHash) private _editionItems;
     mapping(uint256 artistId => mapping(uint256 word => uint256 bits)) private _moveNonces;
-    mapping(bytes32 itemHash => bool) private _released;
-    mapping(bytes32 contentHash => uint256 artistId) private _releasedTo;
     /// @dev Verifiers replaced by `setVerifier`: never installable again.
     mapping(address verifier => bool) private _retired;
 
@@ -303,21 +298,9 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
             proof.length > Limits.MAX_PROOF_DEPTH
                 || !MerkleProof.verifyCalldata(proof, packageRoot, WorksHashing.leaf(itemHash))
         ) revert ItemNotInPackage(packageRoot, itemHash);
-        bytes32 contentHash = item.contentHash;
-        bytes32 prior = _streamItems[contentHash];
-        if (prior != 0) {
-            if (prior != RELEASED) revert ContentUsed(PRODUCT_STREAM, contentHash, prior);
-            // Only a released slot can hold a tombstoned item: fresh content skips this read. A
-            // burned item reverts as if it still held the content, like a second consume.
-            if (_released[itemHash]) revert ContentUsed(PRODUCT_STREAM, contentHash, itemHash);
-        }
         _checkTerms(item, itemHash);
         artistId = _checkParties(packageRoot, item, itemHash);
-        if (prior == RELEASED && artistId != _releasedTo[contentHash]) {
-            revert ContentReserved(contentHash, _releasedTo[contentHash]);
-        }
         authority = _useMove(packageRoot, itemHash, artistId, move);
-        _streamItems[contentHash] = itemHash;
     }
 
     /// @inheritdoc IPackageRegistry
@@ -325,36 +308,13 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
     ///      (the linked pair), and with `ContentUsed` when an edition already claimed it.
     function claimContent(bytes32 contentHash, bytes32 itemHash) external {
         if (msg.sender != editions) revert UnboundCaller(msg.sender);
-        if (uint256(itemHash) <= uint256(RELEASED) || _streamItems[contentHash] != itemHash) {
+        if (itemHash == 0 || IStream(stream).consumedItemOf(contentHash) != itemHash) {
             revert ClaimNotAllowed(PRODUCT_EDITIONS, contentHash);
         }
         bytes32 prior = _editionItems[contentHash];
         if (prior != 0) revert ContentUsed(PRODUCT_EDITIONS, contentHash, prior);
         _editionItems[contentHash] = itemHash;
         emit ContentClaimed(contentHash, itemHash);
-    }
-
-    /// @inheritdoc IPackageRegistry
-    /// @dev Reverts with `ClaimNotAllowed(PRODUCT_STREAM, contentHash)` unless `itemHash` holds
-    ///      the slot, so a release happens once per burned item. The beneficiary must be a
-    ///      registered artist: the artist registry's `authorityOf` reverts with `UnknownArtist`
-    ///      for zero or an unknown ID, so the release waits until the rightful artist has an
-    ///      identity. Editions are created only after a
-    ///      master's sale settles, so a burned work never has an edition claim to release; the
-    ///      Editions slot is left untouched.
-    function releaseContent(bytes32 contentHash, bytes32 itemHash, uint256 beneficiary) external {
-        if (msg.sender != stream) revert UnboundCaller(msg.sender);
-        // Zero (never consumed) and the release marker are not item hashes.
-        if (uint256(itemHash) <= uint256(RELEASED) || _streamItems[contentHash] != itemHash) {
-            revert ClaimNotAllowed(PRODUCT_STREAM, contentHash);
-        }
-        if (_artists.authorityOf(beneficiary) == address(0)) {
-            revert IArtistRegistry.UnknownArtist(beneficiary);
-        }
-        _streamItems[contentHash] = RELEASED;
-        _released[itemHash] = true;
-        _releasedTo[contentHash] = beneficiary;
-        emit ContentReleased(contentHash, itemHash, beneficiary);
     }
 
     /// @inheritdoc IPackageRegistry
@@ -417,21 +377,22 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
     }
 
     /// @inheritdoc IPackageRegistry
+    /// @dev Stream holds content uniqueness (AUC-44); this answers from it.
     function consumedItemOf(bytes32 contentHash) external view returns (bytes32 itemHash) {
-        itemHash = _streamItems[contentHash];
-        if (itemHash == RELEASED) itemHash = 0;
+        return IStream(stream).consumedItemOf(contentHash);
     }
 
     /// @notice Whether `itemHash` was burned and released, so it can never be consumed again.
     /// @param itemHash The item hash.
     /// @return True if `releaseContent` tombstoned the item.
     function isReleased(bytes32 itemHash) external view returns (bool) {
-        return _released[itemHash];
+        return IStream(stream).isReleased(itemHash);
     }
 
     /// @inheritdoc IPackageRegistry
+    /// @dev Answered from Stream (AUC-44).
     function releasedTo(bytes32 contentHash) external view returns (uint256 artistId) {
-        return _releasedTo[contentHash];
+        return IStream(stream).releasedTo(contentHash);
     }
 
     /// @inheritdoc IPackageRegistry

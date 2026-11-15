@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { StreamContentMock } from "test/mocks/curation/StreamContentMock.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { PackageRegistry } from "src/curation/PackageRegistry.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
@@ -28,17 +29,17 @@ import { CurationBase } from "./CurationBase.sol";
 ///      cap. Neither path reads the content store: uniqueness keys on the item's declared hash.
 contract PackageRegistryGasTest is CurationBase {
     /// @dev Regression gates, measured with every account and slot cold, which overstates a
-    ///      real start where some of them are already warm. `authorize` also runs the item
-    ///      rules and the terms quote Stream ran before the mint policy (here against stub
-    ///      economics and factory). Measured: 66,175 (first work), 83,295 (a nonce past the
-    ///      artist's first bitmap word), 70,499 (two parties) and 99,378 for a two-party master
-    ///      plus its edition claim; each gate is about 3% above.
-    uint256 internal constant CONSUME_BUDGET = 68_000;
-    uint256 internal constant CONSUME_NEW_WORD_BUDGET = 86_000;
-    uint256 internal constant CONSUME_TWO_PARTIES_BUDGET = 73_000;
+    ///      real start where some of them are already warm. `authorize` runs the item rules, the
+    ///      consume and the terms quote (stub economics and factory); since AUC-44 it writes no
+    ///      content record (Stream does). Measured: 43,787 (first work), 60,907 (a nonce past
+    ///      the artist's first bitmap word), 48,111 (two parties), 29,647 (edition claim) and
+    ///      77,758 for a two-party master plus its edition claim; each gate is about 3% above.
+    uint256 internal constant CONSUME_BUDGET = 46_000;
+    uint256 internal constant CONSUME_NEW_WORD_BUDGET = 63_000;
+    uint256 internal constant CONSUME_TWO_PARTIES_BUDGET = 50_000;
     uint256 internal constant CLAIM_BUDGET = 31_000;
     /// @dev `authorize` on the auction start plus `claimContent` on the edition's creation.
-    uint256 internal constant PAIR_BUDGET = 103_000;
+    uint256 internal constant PAIR_BUDGET = 81_000;
     uint256 internal constant TX_GAS_CAP = 16_777_216;
 
     /// @dev A one-party ORIGINAL in a 16-item package (proof depth 4): an artist's first start.
@@ -83,6 +84,7 @@ contract PackageRegistryGasTest is CurationBase {
         _accept(root, collabKey);
         MoveAuthorization memory move = _move(leadKey, root, _hash(item), 0);
         uint256 consumed = _measure(stream, _authorizeCall(root, item, new bytes32[](0), move));
+        StreamContentMock(stream).setConsumed(item.contentHash, _hash(item)); // Stream's record
         uint256 claimed = _measure(
             editions, abi.encodeCall(PackageRegistry.claimContent, (item.contentHash, _hash(item)))
         );
@@ -134,7 +136,7 @@ contract PackageRegistryGasTest is CurationBase {
         uint256 total = _txGas(data, used);
         emit log_named_uint("consume worst case, execution", used);
         emit log_named_uint("consume worst case, whole transaction", total);
-        assertEq(registry.consumedItemOf(item.contentHash), _hash(item));
+        assertEq(registry.consumedItemOf(item.contentHash), bytes32(0), "Stream records it");
         assertLt(total, TX_GAS_CAP / 16);
     }
 
@@ -230,9 +232,14 @@ contract StreamLikeHarness is IERC165 {
         IMintPolicy.MintContext memory c =
             IMintPolicy.MintContext(msg.sender, stub, address(0), stub);
         uint256 g1 = gasleft();
-        r.authorize(c, data);
-        return (g0 - g1, g1 - gasleft());
+        IMintPolicy.MintRecord memory rec = r.authorize(c, data);
+        consumeGas = g1 - gasleft();
+        consumedItemOf[rec.contentHash] = rec.itemHash; // as Stream records it (AUC-44)
+        return (g0 - g1, consumeGas);
     }
+
+    /// @notice What Stream would answer: the item that minted each content.
+    mapping(bytes32 contentHash => bytes32 itemHash) public consumedItemOf;
 
     function claim(IPackageRegistry r, bytes32 contentHash, bytes32 itemHash)
         external
@@ -291,7 +298,7 @@ contract PackageRegistryStreamShapeGasTest is CurationBase {
         (uint256 decodeGas, uint256 consumeGas) = _start(item, root, _proof(leaves, 5));
         emit log_named_uint("Stream-side decode of the mint request", decodeGas);
         emit log_named_uint("consume from Stream, 1 party, depth 6", consumeGas);
-        assertLe(consumeGas, 72_000); // measured 69,010
+        assertLe(consumeGas, 48_000); // measured 46,549
     }
 
     /// @dev A two-party master and its edition claim, each from the bound caller.
@@ -306,6 +313,6 @@ contract PackageRegistryStreamShapeGasTest is CurationBase {
         uint256 claimGas = harness.claim(registry, item.contentHash, _hash(item));
         emit log_named_uint("consume from Stream, 2 parties", consumeGas);
         emit log_named_uint("claimContent from Editions", claimGas);
-        assertLe(consumeGas + claimGas, 105_000); // measured 101,092
+        assertLe(consumeGas + claimGas, 82_000); // measured 79,399
     }
 }

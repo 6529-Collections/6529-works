@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
+import { IMintPolicy } from "src/interfaces/IMintPolicy.sol";
 import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
 import { Burner, GasRuleAssertions } from "test/helpers/GasRule.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
@@ -422,7 +424,7 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         assertEq(stream.totalMinted(), 1);
         assertEq(IStreamViews(address(stream)).totalSupply(), 1);
         assertEq(IStreamViews(address(stream)).collection(collectionId).minted, 1);
-        assertTrue(registry.isConsumed(itemHash));
+        assertEq(stream.consumedItemOf(item.contentHash), itemHash, "Stream holds the record");
         assertEq(registry.lastRoot(), keccak256("root"));
         assertEq(registry.lastProofLength(), 2);
         assertEq(registry.lastMoveNonce(), 7);
@@ -875,14 +877,34 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
 
     function test_mint_bubblesRegistryRevert() public {
         PackageItem memory item = _item(1);
+        item.sale.saleKind = 0;
+        vm.expectRevert(IMintPolicy.InvalidItemSale.selector);
+        auction.start(stream, _request(item));
+    }
+
+    /// @dev AUC-44: Stream, not the policy, refuses a second mint of a content hash, by the
+    ///      same item or another (here the mock policy keeps no record at all).
+    function test_mint_contentMintsOnce() public {
+        PackageItem memory item = _item(1);
         _mint(item);
-        bytes memory data = _request(item);
+        bytes32 itemHash = WorksHashing.itemHash(item);
+        bytes memory again = _request(item);
         vm.expectRevert(
             abi.encodeWithSelector(
-                MockPackageRegistry.ItemConsumedAlready.selector, WorksHashing.itemHash(item)
+                IStream.ContentUsed.selector, PRODUCT_STREAM, item.contentHash, itemHash
             )
         );
-        auction.start(stream, data);
+        auction.start(stream, again);
+        PackageItem memory other = _item(1);
+        other.recordFileId = keccak256("another record, the same content");
+        bytes memory otherData = _request(other);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IStream.ContentUsed.selector, PRODUCT_STREAM, item.contentHash, itemHash
+            )
+        );
+        auction.start(stream, otherData);
+        assertEq(stream.consumedItemOf(item.contentHash), itemHash);
     }
 
     function test_mint_revertsForUnusableArtistId() public {
@@ -1255,75 +1277,99 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         assertEq(_mint(3), 3);
     }
 
-    /// @dev Curation review: an upheld dispute burns the copier's work; releasing its content
-    ///      hash lets the real artist mint the same media, and tombstones the copier's item.
+    /// @dev Curation review, AUC-44: an upheld dispute burns the copier's work; releasing its
+    ///      content hash, in Stream, lets the rightful artist mint the same media and tombstones
+    ///      the copier's item.
     function test_releaseContent_afterBurnLetsTheRealArtistMint() public {
+        address rightful = makeAddr("rightful");
+        artists.register(rightful);
         PackageItem memory copy = _item(1);
         bytes32 copyHash = WorksHashing.itemHash(copy);
         uint256 tokenId = _mint(copy);
 
         PackageItem memory original = _item(1);
-        original.recordFileId = keccak256("the original record");
+        original.parties[0].account = rightful;
+        original.payees[0] = ISplitWallet.Payee(uint256(uint160(rightful)), address(0), 100_000);
         bytes memory data = _request(original);
         vm.expectRevert(
             abi.encodeWithSelector(
-                MockPackageRegistry.ContentUsed.selector, copy.contentHash, copyHash
+                IStream.ContentUsed.selector, PRODUCT_STREAM, copy.contentHash, copyHash
             )
         );
         auction.start(stream, data);
 
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IStream.NotBurned.selector, tokenId));
-        stream.releaseContent(tokenId, copy.contentHash, 7);
+        stream.releaseContent(tokenId, copy.contentHash, uint160(rightful));
         auction.burn(stream, tokenId, 1);
 
         vm.prank(governor);
         vm.expectRevert(
             abi.encodeWithSelector(
-                MockPackageRegistry.NotConsumedBy.selector, keccak256("other"), copyHash
+                IStream.ClaimNotAllowed.selector, PRODUCT_STREAM, keccak256("other")
             )
         );
-        stream.releaseContent(tokenId, keccak256("other"), 7);
+        stream.releaseContent(tokenId, keccak256("other"), uint160(rightful));
+        vm.prank(governor);
+        vm.expectRevert(abi.encodeWithSelector(MockArtistRegistry.UnknownArtist.selector, 7));
+        stream.releaseContent(tokenId, copy.contentHash, 7);
 
         // Governed (PARAMETER_SETTER): nobody else may release.
         vm.prank(outsider);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)
         );
-        stream.releaseContent(tokenId, copy.contentHash, 7);
+        stream.releaseContent(tokenId, copy.contentHash, uint160(rightful));
 
-        vm.expectEmit(address(registry));
-        emit MockPackageRegistry.ContentReleased(copy.contentHash, copyHash, 7);
+        vm.expectEmit(address(stream));
+        emit IStream.ContentReleased(tokenId, copy.contentHash, uint160(rightful));
         vm.prank(governor);
-        stream.releaseContent(tokenId, copy.contentHash, 7);
-        assertTrue(registry.isTombstoned(copyHash));
-        assertEq(registry.consumedItemOf(copy.contentHash), bytes32(0));
+        stream.releaseContent(tokenId, copy.contentHash, uint160(rightful));
+        assertTrue(stream.isReleased(copyHash));
+        assertEq(stream.consumedItemOf(copy.contentHash), bytes32(0));
+        assertEq(stream.releasedTo(copy.contentHash), uint160(rightful));
+
+        // Reserved for the rightful artist; the copier's item never again.
+        PackageItem memory third = _item(1);
+        third.recordFileId = keccak256("a third item, the copier's artist");
+        bytes memory thirdData = _request(third);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IStream.ContentReserved.selector, copy.contentHash, uint160(rightful)
+            )
+        );
+        auction.start(stream, thirdData);
+        bytes memory copyData = _request(copy);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IStream.ContentUsed.selector, PRODUCT_STREAM, copy.contentHash, copyHash
+            )
+        );
+        auction.start(stream, copyData);
 
         (uint256 realId,) = auction.start(stream, data);
         assertEq(realId, tokenId + 1);
-        assertEq(registry.consumedItemOf(copy.contentHash), WorksHashing.itemHash(original));
+        assertEq(stream.consumedItemOf(copy.contentHash), WorksHashing.itemHash(original));
+        assertEq(stream.releasedTo(copy.contentHash), uint160(rightful), "the record stays");
     }
 
     function test_releaseContent_reverts() public {
         vm.startPrank(governor);
         vm.expectRevert(abi.encodeWithSelector(IStream.NotBurned.selector, 0));
-        stream.releaseContent(0, bytes32(0), 7);
+        stream.releaseContent(0, bytes32(0), uint160(artist));
         vm.expectRevert(abi.encodeWithSelector(IStream.NotBurned.selector, 1));
-        stream.releaseContent(1, bytes32(0), 7);
+        stream.releaseContent(1, bytes32(0), uint160(artist));
         vm.stopPrank();
         uint256 tokenId = _mint(1);
         auction.burn(stream, tokenId, 1);
         bytes32 contentHash = _item(1).contentHash;
         vm.startPrank(governor);
-        stream.releaseContent(tokenId, contentHash, 7);
+        stream.releaseContent(tokenId, contentHash, uint160(artist));
         // A second release finds nothing to free.
-        bytes32 itemHash = WorksHashing.itemHash(_item(1));
         vm.expectRevert(
-            abi.encodeWithSelector(
-                MockPackageRegistry.NotConsumedBy.selector, contentHash, itemHash
-            )
+            abi.encodeWithSelector(IStream.ClaimNotAllowed.selector, PRODUCT_STREAM, contentHash)
         );
-        stream.releaseContent(tokenId, contentHash, 7);
+        stream.releaseContent(tokenId, contentHash, uint160(artist));
         vm.stopPrank();
     }
 

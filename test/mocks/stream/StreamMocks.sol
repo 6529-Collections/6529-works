@@ -51,18 +51,10 @@ abstract contract Supports165 is IERC165 {
 ///         each item once and returns the lead party's address as the artist ID, unless an
 ///         override is set; quotes the terms from the context's economics and split factory.
 contract MockPackageRegistry is Supports165 {
-    error ItemConsumedAlready(bytes32 itemHash);
-    error ContentUsed(bytes32 contentHash, bytes32 claimedBy);
     error NotBoundCaller(address caller);
-    error NotConsumedBy(bytes32 contentHash, bytes32 itemHash);
 
-    event ContentReleased(
-        bytes32 indexed contentHash, bytes32 indexed itemHash, uint256 indexed beneficiary
-    );
+    uint256 public consumes;
 
-    mapping(bytes32 => bool) public isConsumed;
-    mapping(bytes32 => bool) public isTombstoned;
-    mapping(bytes32 => bytes32) public consumedItemOf;
     address public stream;
     uint256 public artistOverride;
     bool public overrideArtist;
@@ -170,17 +162,6 @@ contract MockPackageRegistry is Supports165 {
         _reentryCall = call;
     }
 
-    /// @dev Mirrors the requested registry semantics: bound Stream only, for the exact pair.
-    function releaseContent(bytes32 contentHash, bytes32 itemHash, uint256 beneficiary) external {
-        if (msg.sender != stream) revert NotBoundCaller(msg.sender);
-        if (consumedItemOf[contentHash] != itemHash || itemHash == 0) {
-            revert NotConsumedBy(contentHash, itemHash);
-        }
-        delete consumedItemOf[contentHash];
-        isTombstoned[itemHash] = true;
-        emit ContentReleased(contentHash, itemHash, beneficiary);
-    }
-
     function setArtistOverride(uint256 artistId) external {
         artistOverride = artistId;
         overrideArtist = true;
@@ -193,11 +174,8 @@ contract MockPackageRegistry is Supports165 {
         MoveAuthorization calldata move
     ) external returns (bytes32 itemHash, uint256 artistId, address authority) {
         itemHash = WorksHashing.itemHashCalldata(item);
-        if (isConsumed[itemHash]) revert ItemConsumedAlready(itemHash);
-        bytes32 claimedBy = consumedItemOf[item.contentHash];
-        if (claimedBy != 0) revert ContentUsed(item.contentHash, claimedBy);
-        isConsumed[itemHash] = true;
-        consumedItemOf[item.contentHash] = itemHash;
+        // Content uniqueness is Stream's (AUC-44): the mock keeps no record of its own.
+        ++consumes;
         lastRoot = packageRoot;
         lastProofLength = proof.length;
         lastMoveNonce = move.nonce;

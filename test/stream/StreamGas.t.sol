@@ -28,10 +28,12 @@ import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 ///         (review G-2).
 contract StreamGasTest is StreamFixture {
     /// @dev Regression guards for Stream's share of the start, per case. Since G-2 the share
-    ///      includes the seller-wallet `walletFor` that the resolver's `newWorkTerms` used to do.
+    ///      includes the seller-wallet `walletFor` that the resolver's `newWorkTerms` used to do,
+    ///      and since AUC-44 the content record the package registry wrote before (measured:
+    ///      139,318 typical, 156,418 idle adapter, 252,503 first mint ever).
     uint256 internal constant MINT_SHARE_BUDGET = 150_000;
     uint256 internal constant IDLE_ADAPTER_BUDGET = 165_000;
-    uint256 internal constant FIRST_MINT_BUDGET = 240_000;
+    uint256 internal constant FIRST_MINT_BUDGET = 258_000;
     /// @dev The two-payee start share with the real resolver and factory: 156,827 before G-2.
     uint256 internal constant REAL_ECONOMICS_BUDGET = 150_000;
 

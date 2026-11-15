@@ -61,14 +61,6 @@ interface IPackageRegistry is IERC165 {
     /// @param contentHash The master's content hash.
     /// @param itemHash The master item, which consumed `contentHash` on 6529 Stream.
     event ContentClaimed(bytes32 indexed contentHash, bytes32 indexed itemHash);
-    /// @notice An upheld-dispute burn released a content hash to the artist `beneficiary`;
-    ///         `itemHash` is tombstoned.
-    /// @param contentHash The released content hash.
-    /// @param itemHash The burned item that had consumed it.
-    /// @param beneficiary The artist ID the content hash is now reserved for.
-    event ContentReleased(
-        bytes32 indexed contentHash, bytes32 indexed itemHash, uint256 indexed beneficiary
-    );
     /// @notice An artist revoked an unused move nonce.
     /// @param artistId The artist whose nonce was revoked.
     /// @param nonce The revoked move nonce.
@@ -153,16 +145,6 @@ interface IPackageRegistry is IERC165 {
         PartyAcceptance calldata acceptance,
         bytes calldata signature
     ) external returns (uint256 artistId);
-    /// @notice Releases `contentHash` after an upheld-dispute burn to the artist `beneficiary`
-    ///         the dispute outcome names: checks that `itemHash` consumed it, clears its
-    ///         `PRODUCT_STREAM` claim, reserves it for items whose lead artist is `beneficiary`,
-    ///         and tombstones `itemHash` so it can never be consumed again. Once per burned item;
-    ///         `beneficiary` must be a registered artist (`IArtistRegistry.UnknownArtist`
-    ///         otherwise). Bound 6529 Stream only, through the governed `IStream.releaseContent`.
-    /// @param contentHash The content hash to release.
-    /// @param itemHash The burned item that consumed `contentHash`.
-    /// @param beneficiary The artist ID the content hash is reserved for.
-    function releaseContent(bytes32 contentHash, bytes32 itemHash, uint256 beneficiary) external;
     /// @notice Claims a master's content hash under `PRODUCT_EDITIONS`; `consumedItemOf` must
     ///         already record `itemHash` for it. Bound 6529 Stream Editions only.
     /// @param contentHash The master's content hash.

@@ -30,6 +30,7 @@ import { IMintPolicy } from "src/interfaces/IMintPolicy.sol";
 import { ProductEconomics } from "src/interfaces/types/EconomicsTypes.sol";
 import { CurationArtistRegistryMock } from "test/mocks/curation/CurationArtistRegistryMock.sol";
 import { MockBoundCaller } from "test/mocks/curation/MockBoundCaller.sol";
+import { StreamContentMock } from "test/mocks/curation/StreamContentMock.sol";
 
 /// @dev Pure fixtures shared by the curation tests and the invariant handler: items, Merkle
 ///      trees with sorted-pair hashing, and the three signature forms.
@@ -207,7 +208,7 @@ abstract contract CurationBase is CurationHelpers {
         registry = _newRegistry();
         artists.bindPackageRegistry(address(registry));
         // Stand-ins for the bound 6529 Stream and 6529 Stream Editions, with their ERC-165 answers.
-        stream = address(new MockBoundCaller(type(IStream).interfaceId));
+        stream = address(new StreamContentMock());
         editions = address(new MockBoundCaller(type(IEditions).interfaceId));
 
         vm.startPrank(admin);
@@ -309,8 +310,9 @@ abstract contract CurationBase is CurationHelpers {
         IMintPolicy.MintContext memory c = IMintPolicy.MintContext(
             stream, address(_policyStub), address(0), address(_policyStub)
         );
-        vm.prank(stream);
-        return registry.authorize(c, abi.encode(StreamMintRequest(root, item, proof, move)));
+        // Through the Stream stand-in, which applies Stream's content rule (AUC-44).
+        return StreamContentMock(stream)
+            .mintThrough(registry, c, abi.encode(StreamMintRequest(root, item, proof, move)));
     }
 
     /// @dev `IMintPolicy.authorize` on `target` with the caller the test set up (no prank).
@@ -332,10 +334,9 @@ abstract contract CurationBase is CurationHelpers {
         registry.claimContent(contentHash, itemHash);
     }
 
-    /// @dev Stream's dispute-burn path, releasing to `beneficiary`.
+    /// @dev Stream's dispute-burn release (held by Stream since AUC-44), on the stand-in.
     function _release(bytes32 contentHash, bytes32 itemHash, uint256 beneficiary) internal {
-        vm.prank(stream);
-        registry.releaseContent(contentHash, itemHash, beneficiary);
+        StreamContentMock(stream).release(contentHash, itemHash, beneficiary, address(artists));
     }
 
     /// @dev A registered one-item package by `lead`, accepted, with its move signed at nonce 0.

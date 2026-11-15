@@ -20,6 +20,7 @@ import { IStreamExtension } from "../interfaces/IStreamExtension.sol";
 import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
 import { ISplitFactory } from "../economics/interfaces/ISplitFactory.sol";
 import { Splits } from "../economics/Splits.sol";
+import { PRODUCT_STREAM } from "../interfaces/types/EconomicsTypes.sol";
 import { PrimaryOutcome, PrimarySettlement, PrimaryTerms } from "../interfaces/types/SaleTypes.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Dependency } from "../libraries/Dependency.sol";
@@ -95,6 +96,9 @@ contract Stream is ERC721, AccessManaged, IStream {
     /// @dev The most revert data `rendererOf` passes on from the records satellite (a safety
     ///      bound on copying, not a gas number; a longer revert is passed on empty).
     uint256 private constant PIN_REVERT_BYTES = 256;
+    /// @dev `_contents` word: released, and the token-ID field.
+    uint256 private constant CONTENT_RELEASED = 1 << 255;
+    uint256 private constant CONTENT_TOKEN = type(uint64).max;
 
     /// @dev A token's two words (QUALITY-6). `termsId` names the token's `Terms` in `_terms`.
     struct TokenData {
@@ -195,6 +199,14 @@ contract Stream is ERC721, AccessManaged, IStream {
     /// @dev A sold work's currency (the low 160 bits) and price (the high 96, saturated): one
     ///      word, written only for SOLD (owner decision 17).
     mapping(uint256 tokenId => uint256 sale) private _sales;
+    /// @dev Content uniqueness (AUC-44), held by the core whatever the mint policy: per content
+    ///      hash, the token that minted it (low 64 bits), the artist a release reserved it for
+    ///      (bits 64 to 223, kept after a later mint) and `CONTENT_RELEASED` while released.
+    ///      Zero while no work has used the content. The first mint of a content writes it: the
+    ///      one new slot the package registry wrote before.
+    mapping(bytes32 contentHash => uint256 claim) private _contents;
+    /// @dev Items whose work was burned and whose content was released: never minted again.
+    mapping(bytes32 itemHash => bool) private _tombstoned;
 
     /// @param authority_ The AccessManager governing this contract.
     /// @param policy_ The mint policy (the package registry), which must use `artistRegistry_`.
@@ -323,8 +335,10 @@ contract Stream is ERC721, AccessManaged, IStream {
 
     /// @inheritdoc IStream
     /// @dev PARAMETER_SETTER role, 48 hours: the upheld-dispute class of the auction's `cancel`.
-    ///      The release is recorded by the permanent token (`ContentReleased`) as well as by the
-    ///      registry.
+    ///      Only a burned token's own content (`ClaimNotAllowed` otherwise, also once released),
+    ///      and only for a registered artist (`IArtistRegistry.UnknownArtist`: the artist
+    ///      registry's `authorityOf` reverts so for zero or an unknown ID). The content is then
+    ///      reserved for `beneficiary`'s items and the burned item is tombstoned, in Stream.
     function releaseContent(uint256 tokenId, bytes32 contentHash, uint256 beneficiary)
         external
         restricted
@@ -332,9 +346,32 @@ contract Stream is ERC721, AccessManaged, IStream {
         if (tokenId == 0 || tokenId > _counts.minted || _ownerOf(tokenId) != address(0)) {
             revert NotBurned(tokenId);
         }
-        IPackageRegistry(packageRegistry())
-            .releaseContent(contentHash, _tokens[tokenId].itemHash, beneficiary);
+        if (_contents[contentHash] != tokenId) revert ClaimNotAllowed(PRODUCT_STREAM, contentHash);
+        if (
+            beneficiary > type(uint160).max
+                || IArtistRegistry(artistRegistry).authorityOf(beneficiary) == address(0)
+        ) revert IArtistRegistry.UnknownArtist(beneficiary);
+        _contents[contentHash] = CONTENT_RELEASED | beneficiary << 64 | tokenId;
+        _tombstoned[_tokens[tokenId].itemHash] = true;
         emit ContentReleased(tokenId, contentHash, beneficiary);
+    }
+
+    /// @inheritdoc IStream
+    function consumedItemOf(bytes32 contentHash) external view returns (bytes32 itemHash) {
+        uint256 claim = _contents[contentHash];
+        if (claim != 0 && claim & CONTENT_RELEASED == 0) {
+            itemHash = _tokens[claim & CONTENT_TOKEN].itemHash;
+        }
+    }
+
+    /// @inheritdoc IStream
+    function releasedTo(bytes32 contentHash) external view returns (uint256 artistId) {
+        return uint160(_contents[contentHash] >> 64);
+    }
+
+    /// @inheritdoc IStream
+    function isReleased(bytes32 itemHash) external view returns (bool) {
+        return _tombstoned[itemHash];
     }
 
     /// @inheritdoc IMintTarget
@@ -859,8 +896,9 @@ contract Stream is ERC721, AccessManaged, IStream {
         returns (Terms memory)
     {
         if (
-            r.itemHash == 0 || r.artistId == 0 || r.artistId > type(uint160).max
-                || r.kind > FIELD_MASK || r.seedPolicy > FIELD_MASK
+            r.itemHash == 0 || r.contentHash == 0 || r.artistId == 0
+                || r.artistId > type(uint160).max || r.kind > FIELD_MASK
+                || r.seedPolicy > FIELD_MASK
         ) revert InvalidMintRequest();
         if (
             r.seller == address(0) || r.royaltyRate > Splits.DENOMINATOR
@@ -941,6 +979,7 @@ contract Stream is ERC721, AccessManaged, IStream {
         CollectionData storage c = _collections[r.collectionId];
         if (!c.exists) revert UnknownCollection(r.collectionId);
         tokenId = ++_counts.minted;
+        _claimContent(r, tokenId);
         uint32 serial = ++c.minted;
         address seller = r.seller;
         TokenData storage t = _tokens[tokenId];
@@ -979,6 +1018,25 @@ contract Stream is ERC721, AccessManaged, IStream {
             // topics: the signature, tokenId, collectionId, artistId
             log4(p, 0x120, topic0, tokenId, mload(add(r, 0x40)), mload(add(r, 0x20)))
         }
+    }
+
+    /// @dev Content uniqueness (AUC-44): a content hash mints once, whatever the policy says. A
+    ///      released content mints again only for the artist the release reserved it for
+    ///      (`ContentReserved`) and never by its tombstoned item (`ContentUsed`), as the package
+    ///      registry did before; the reservation stays readable after (`releasedTo`).
+    function _claimContent(IMintPolicy.MintRecord memory r, uint256 tokenId) private {
+        bytes32 content = r.contentHash;
+        uint256 claim = _contents[content];
+        if (claim != 0) {
+            if (claim & CONTENT_RELEASED == 0) {
+                revert ContentUsed(PRODUCT_STREAM, content, _tokens[claim & CONTENT_TOKEN].itemHash);
+            }
+            if (_tombstoned[r.itemHash]) revert ContentUsed(PRODUCT_STREAM, content, r.itemHash);
+            uint256 beneficiary = uint160(claim >> 64);
+            if (r.artistId != beneficiary) revert ContentReserved(content, beneficiary);
+            claim &= ~(CONTENT_RELEASED | CONTENT_TOKEN);
+        }
+        _contents[content] = claim | tokenId;
     }
 
     /// @dev The index (from 1) of a fee recipient, registered on first use.

@@ -22,7 +22,7 @@ contract StreamInterfaceIdsTest is Test {
     }
 
     function _streamSignatures() internal pure returns (string[] memory s) {
-        s = new string[](40);
+        s = new string[](43);
         s[0] = "mint(address,uint256,uint256,bytes)";
         s[1] = "primaryTerms(uint256,bytes)";
         s[2] = "burn(uint256,uint256)";
@@ -63,11 +63,14 @@ contract StreamInterfaceIdsTest is Test {
         s[37] = "linkEdition(uint256,uint256)";
         s[38] = "setContractURI(string)";
         s[39] = "setOwner(address,address)";
+        s[40] = "consumedItemOf(bytes32)";
+        s[41] = "releasedTo(bytes32)";
+        s[42] = "isReleased(bytes32)";
     }
 
     function test_IStreamIdIsTheWholeNativeSurface() public pure {
         assertEq(type(IStream).interfaceId, _xor(_streamSignatures()), "IStream from its selectors");
-        assertEq(type(IStream).interfaceId, bytes4(0x1583b98b), "IStream golden");
+        assertEq(type(IStream).interfaceId, bytes4(0xcacd4413), "IStream golden");
     }
 
     function test_IStreamViewsId() public pure {

@@ -599,9 +599,7 @@ contract PackageRegistryTest is CurationBase {
     function test_consume() public {
         (bytes32 root, PackageItem memory item, MoveAuthorization memory move) = _ready(SHA_A);
         bytes32 itemHash = _hash(item);
-        vm.prank(stream);
-        IMintPolicy.MintRecord memory rec =
-            _policyCall(registry, root, item, new bytes32[](0), move);
+        IMintPolicy.MintRecord memory rec = _authorize(root, item, new bytes32[](0), move);
         (bytes32 h, uint256 artistId, address authority) = (rec.itemHash, rec.artistId, rec.creator);
         assertEq(h, itemHash);
         assertEq(artistId, _id(lead));
@@ -682,13 +680,12 @@ contract PackageRegistryTest is CurationBase {
         (bytes32 root, PackageItem memory item, MoveAuthorization memory move) = _ready(SHA_A);
         _consume(root, item, new bytes32[](0), move);
         MoveAuthorization memory fresh = _move(leadKey, root, _hash(item), 1);
-        vm.prank(stream);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IPackageRegistry.ContentUsed.selector, PRODUCT_STREAM, SHA_A, _hash(item)
             )
         );
-        _policyCall(registry, root, item, new bytes32[](0), fresh);
+        _authorize(root, item, new bytes32[](0), fresh);
     }
 
     function test_consume_itemIsSingleUseAcrossPackages() public {
@@ -706,13 +703,12 @@ contract PackageRegistryTest is CurationBase {
         _consume(rootA, item, new bytes32[](0), _move(leadKey, rootA, _hash(item), 0));
         MoveAuthorization memory move = _move(leadKey, rootB, _hash(item), 1);
         bytes32[] memory proof = _proof(leaves, 0);
-        vm.prank(stream);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IPackageRegistry.ContentUsed.selector, PRODUCT_STREAM, SHA_A, _hash(item)
             )
         );
-        _policyCall(registry, rootB, item, proof, move);
+        _authorize(rootB, item, proof, move);
     }
 
     /// @dev Two different items declaring the same content hash (other media lists and record
@@ -729,13 +725,12 @@ contract PackageRegistryTest is CurationBase {
         _accept(root, collabKey);
         _consume(root, items[0], proofs[0], _move(leadKey, root, _hash(items[0]), 0));
         MoveAuthorization memory move = _move(collabKey, root, _hash(items[1]), 0);
-        vm.prank(stream);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IPackageRegistry.ContentUsed.selector, PRODUCT_STREAM, SHA_A, _hash(items[0])
             )
         );
-        _policyCall(registry, root, items[1], proofs[1], move);
+        _authorize(root, items[1], proofs[1], move);
         assertEq(registry.consumedItemOf(SHA_A), _hash(items[0]));
     }
 
@@ -1228,193 +1223,8 @@ contract PackageRegistryTest is CurationBase {
 
     // ------------------------------------------------------------------- releaseContent
 
-    /// @dev Review PoC 1, inverted: a copier's item consumes the rightful artist's media; an
-    ///      upheld dispute burns the token and Stream releases the hash to the rightful artist,
-    ///      whose identity exists (its acceptance of its own package created it); the artist
-    ///      then mints.
-    function test_releaseContent_rightfulArtistConsumesAfterBurn() public {
-        uint256 copierKey = 0xBAD;
-        PackageItem memory copy = _item(vm.addr(copierKey), SHA_A);
-        bytes32 copyRoot = WorksHashing.leaf(_hash(copy));
-        _register(copyRoot);
-        _accept(copyRoot, copierKey);
-        _consume(copyRoot, copy, new bytes32[](0), _move(copierKey, copyRoot, _hash(copy), 0));
-        PackageItem memory real = _item(lead, SHA_A);
-        real.recordFileId = keccak256("the real record");
-        bytes32 realRoot = WorksHashing.leaf(_hash(real));
-        _register(realRoot);
-        _accept(realRoot, leadKey);
-
-        vm.expectEmit(address(registry));
-        emit IPackageRegistry.ContentReleased(SHA_A, _hash(copy), uint160(lead));
-        _release(SHA_A, _hash(copy), uint160(lead));
-        assertEq(registry.consumedItemOf(SHA_A), bytes32(0));
-        assertEq(registry.releasedTo(SHA_A), uint160(lead));
-        assertTrue(registry.isReleased(_hash(copy)));
-
-        _consume(realRoot, real, new bytes32[](0), _move(leadKey, realRoot, _hash(real), 0));
-        assertEq(registry.consumedItemOf(SHA_A), _hash(real));
-        // The rightful master's edition can then claim the hash.
-        _claim(SHA_A, _hash(real));
-        assertEq(registry.editionClaimOf(SHA_A), _hash(real));
-    }
-
-    /// @dev The burned item is tombstoned: no root, nonce or later release brings it back.
-    function test_releaseContent_tombstonesTheItemEverywhere() public {
-        uint256 copierKey = 0xBAD;
-        PackageItem memory copy = _item(vm.addr(copierKey), SHA_A);
-        bytes32[] memory leaves = new bytes32[](2);
-        leaves[0] = WorksHashing.leaf(_hash(copy));
-        leaves[1] = keccak256("another item");
-        bytes32 single = leaves[0];
-        bytes32 pair = _root(leaves);
-        _register(single);
-        _register(pair);
-        _accept(single, copierKey);
-        _accept(pair, copierKey);
-        PackageItem memory other = _item(lead, SHA_A);
-        other.collectionId = 9;
-        bytes32 otherRoot = WorksHashing.leaf(_hash(other));
-        _register(otherRoot);
-        _accept(otherRoot, leadKey);
-        _consume(single, copy, new bytes32[](0), _move(copierKey, single, _hash(copy), 0));
-        _release(SHA_A, _hash(copy), uint160(lead));
-
-        bytes32[] memory proof = _proof(leaves, 0);
-        bytes32[2] memory roots = [single, pair];
-        for (uint256 r; r < 2; ++r) {
-            MoveAuthorization memory move = _move(copierKey, roots[r], _hash(copy), 10 + r);
-            vm.prank(stream);
-            vm.expectRevert(
-                abi.encodeWithSelector(
-                    IPackageRegistry.ContentUsed.selector, PRODUCT_STREAM, SHA_A, _hash(copy)
-                )
-            );
-            _policyCall(registry, roots[r], copy, r == 0 ? new bytes32[](0) : proof, move);
-        }
-        // Even after the hash is consumed and released again by another item, to the copier.
-        _consume(otherRoot, other, new bytes32[](0), _move(leadKey, otherRoot, _hash(other), 0));
-        _release(SHA_A, _hash(other), uint160(vm.addr(copierKey)));
-        MoveAuthorization memory again = _move(copierKey, single, _hash(copy), 20);
-        vm.prank(stream);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IPackageRegistry.ContentUsed.selector, PRODUCT_STREAM, SHA_A, _hash(copy)
-            )
-        );
-        _policyCall(registry, single, copy, new bytes32[](0), again);
-    }
-
-    function test_releaseContent_revertsOnMismatch() public {
-        (bytes32 root, PackageItem memory item, MoveAuthorization memory move) = _ready(SHA_A);
-        _consume(root, item, new bytes32[](0), move);
-        bytes32[3] memory wrongItems = [keccak256("another item"), bytes32(0), bytes32(uint256(1))];
-        for (uint256 i; i < wrongItems.length; ++i) {
-            vm.prank(stream);
-            vm.expectRevert(
-                abi.encodeWithSelector(
-                    IPackageRegistry.ClaimNotAllowed.selector, PRODUCT_STREAM, SHA_A
-                )
-            );
-            registry.releaseContent(SHA_A, wrongItems[i], _id(lead));
-        }
-        // An unconsumed hash, and a second release of the same item.
-        vm.prank(stream);
-        vm.expectRevert(
-            abi.encodeWithSelector(IPackageRegistry.ClaimNotAllowed.selector, PRODUCT_STREAM, SHA_B)
-        );
-        registry.releaseContent(SHA_B, _hash(item), _id(lead));
-        // A release names a registered artist: zero and unknown IDs are refused.
-        uint256[2] memory unknown = [uint256(0), uint160(makeAddr("never an artist"))];
-        for (uint256 i; i < unknown.length; ++i) {
-            vm.prank(stream);
-            vm.expectRevert(
-                abi.encodeWithSelector(IArtistRegistry.UnknownArtist.selector, unknown[i])
-            );
-            registry.releaseContent(SHA_A, _hash(item), unknown[i]);
-        }
-        _release(SHA_A, _hash(item), _id(lead));
-        vm.prank(stream);
-        vm.expectRevert(
-            abi.encodeWithSelector(IPackageRegistry.ClaimNotAllowed.selector, PRODUCT_STREAM, SHA_A)
-        );
-        registry.releaseContent(SHA_A, _hash(item), _id(lead));
-        assertEq(registry.releasedTo(SHA_A), _id(lead), "a release happens once");
-        // The release marker is not an item: it can neither be released nor claimed.
-        bytes32 marker = bytes32(uint256(1));
-        vm.prank(stream);
-        vm.expectRevert(
-            abi.encodeWithSelector(IPackageRegistry.ClaimNotAllowed.selector, PRODUCT_STREAM, SHA_A)
-        );
-        registry.releaseContent(SHA_A, marker, _id(lead));
-        vm.prank(editions);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IPackageRegistry.ClaimNotAllowed.selector, PRODUCT_EDITIONS, SHA_A
-            )
-        );
-        registry.claimContent(SHA_A, marker);
-    }
-
-    function test_releaseContent_onlyBoundStream() public {
-        (bytes32 root, PackageItem memory item, MoveAuthorization memory move) = _ready(SHA_A);
-        _consume(root, item, new bytes32[](0), move);
-        address[4] memory callers = [admin, guardian, lead, editions];
-        for (uint256 i; i < callers.length; ++i) {
-            vm.prank(callers[i]);
-            vm.expectRevert(
-                abi.encodeWithSelector(IPackageRegistry.UnboundCaller.selector, callers[i])
-            );
-            registry.releaseContent(SHA_A, _hash(item), _id(lead));
-        }
-        assertEq(registry.consumedItemOf(SHA_A), _hash(item));
-    }
-
-    /// Regression: SIGS-1 (docs/security/internal-review-2026-10.md)
-    /// @dev SIGS-1: a released content hash is reserved for the named artist. Another artist's
-    ///      approved item with the same content (here the copier's second copy) is refused, in
-    ///      the same block as the release, while the named artist's item consumes. Fresh content
-    ///      is unaffected by any reservation.
-    function test_releaseContent_reservesTheContentForTheNamedArtist() public {
-        uint256 copierKey = 0xBAD;
-        PackageItem memory copy = _item(vm.addr(copierKey), SHA_A);
-        PackageItem memory sibling = _item(vm.addr(copierKey), SHA_A);
-        sibling.recordFileId = keccak256("another record");
-        bytes32[] memory leaves = new bytes32[](2);
-        leaves[0] = WorksHashing.leaf(_hash(copy));
-        leaves[1] = WorksHashing.leaf(_hash(sibling));
-        bytes32 copyRoot = _root(leaves);
-        _register(copyRoot);
-        _accept(copyRoot, copierKey);
-        PackageItem memory real = _item(lead, SHA_A);
-        real.recordFileId = keccak256("the real record");
-        bytes32 realRoot = WorksHashing.leaf(_hash(real));
-        _register(realRoot);
-        _accept(realRoot, leadKey);
-        _consume(copyRoot, copy, _proof(leaves, 0), _move(copierKey, copyRoot, _hash(copy), 0));
-        _release(SHA_A, _hash(copy), uint160(lead));
-
-        MoveAuthorization memory move = _move(copierKey, copyRoot, _hash(sibling), 1);
-        vm.prank(stream);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IPackageRegistry.ContentReserved.selector, SHA_A, uint256(uint160(lead))
-            )
-        );
-        _policyCall(registry, copyRoot, sibling, _proof(leaves, 1), move);
-
-        _consume(realRoot, real, new bytes32[](0), _move(leadKey, realRoot, _hash(real), 0));
-        assertEq(registry.consumedItemOf(SHA_A), _hash(real));
-        // Consumed again, the content is used: the reservation no longer matters.
-        move = _move(copierKey, copyRoot, _hash(sibling), 2);
-        vm.prank(stream);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IPackageRegistry.ContentUsed.selector, PRODUCT_STREAM, SHA_A, _hash(real)
-            )
-        );
-        _policyCall(registry, copyRoot, sibling, _proof(leaves, 1), move);
-    }
+    // Content uniqueness and the post-dispute release are Stream's (AUC-44): see
+    // `test/stream/StreamContent.t.sol` and `test/integration/Dispute.t.sol`.
 
     // ---------------------------------------------------------------------- setVerifier
 

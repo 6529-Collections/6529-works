@@ -88,8 +88,8 @@ contract IntegrationGasReport is IntegrationBase {
     uint256 internal constant PERMIT2_START_CEILING = 365_000;
     uint256 internal constant BID_CEILING = 75_000;
     /// @dev The mint policy's `authorize` (consent, item rules, consume, terms quote): measured
-    ///      113,576 since it also runs the rules and quote Stream ran before (2% up, rounded).
-    uint256 internal constant CONSUME_CEILING = 116_000;
+    ///      91,180; it writes no slot since Stream holds content uniqueness (AUC-44). 2% up.
+    uint256 internal constant CONSUME_CEILING = 94_000;
     uint256 internal constant CREATE_EDITION_CEILING = 275_000;
     uint256 internal constant REFRESH_FIRST_CEILING = 131_000;
     /// @dev Moved from 192,000 (permanence integration, 15 November 2026): an admin's governed
@@ -868,7 +868,7 @@ contract IntegrationGasReport is IntegrationBase {
             0
         );
         _gasAtMost(r, CONSUME_CEILING, "regression ceiling");
-        _growthIs(r, 1, 0);
+        _growthIs(r, 0, 0);
     }
 
     // ------------------------------------------------------------------ 6529 Stream Editions

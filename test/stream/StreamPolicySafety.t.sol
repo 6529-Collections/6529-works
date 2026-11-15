@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
+import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IMintPolicy } from "src/interfaces/IMintPolicy.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { PrimaryOutcome, PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { Stream } from "src/stream/Stream.sol";
-import { MockSaleAdapter } from "../mocks/stream/StreamMocks.sol";
+import { MockPackageRegistry, MockSaleAdapter } from "../mocks/stream/StreamMocks.sol";
 import { StreamFixture } from "./StreamFixture.sol";
 
 /// @dev `coreOf`'s six words, hashed.
@@ -169,6 +172,7 @@ contract StreamPolicySafetyTest is StreamFixture {
     /// @dev A record that passes every core check, built from `seed`.
     function _record(uint256 seed) internal view returns (IMintPolicy.MintRecord memory r) {
         r.itemHash = keccak256(abi.encode("item", seed));
+        r.contentHash = keccak256(abi.encode("policy content", seed));
         r.artistId = uint160(artist);
         r.collectionId = collectionId;
         r.royaltyRate = uint32(seed % 100_001);
@@ -218,6 +222,9 @@ contract StreamPolicySafetyTest is StreamFixture {
         IMintPolicy.MintRecord memory r = _record(3);
         bytes memory data = _request(_item(96));
         r.itemHash = 0;
+        _expectRefused(r, data, abi.encodeWithSelector(IMintTarget.InvalidMintRequest.selector));
+        r = _record(3);
+        r.contentHash = 0;
         _expectRefused(r, data, abi.encodeWithSelector(IMintTarget.InvalidMintRequest.selector));
         r = _record(3);
         r.artistId = 0;
@@ -275,6 +282,41 @@ contract StreamPolicySafetyTest is StreamFixture {
         auction.start(stream, data);
     }
 
+    /// @dev AUC-44: a policy answering a content hash already minted is refused by Stream.
+    function test_MP1_AnAlreadyMintedContentIsRefused() public {
+        IMintPolicy.MintRecord memory r = _record(5);
+        r.contentHash = keccak256(abi.encode("content", 1)); // existing[0]'s content
+        (bytes32 heldItem,,,,,) = stream.coreOf(existing[0]);
+        hostile.setRecord(r);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IStream.ContentUsed.selector, PRODUCT_STREAM, r.contentHash, heldItem
+            )
+        );
+        auction.start(stream, _request(_item(93)));
+    }
+
+    /// @dev AUC-44: replacing the policy with a blank one (no record of any earlier mint)
+    ///      cannot mint existing content again: the record is Stream's.
+    function test_MP1_ABlankPolicyCannotReMintExistingContent() public {
+        MockPackageRegistry blank = new MockPackageRegistry();
+        blank.setArtistRegistry(address(artists));
+        blank.bindStream(address(stream));
+        vm.prank(governor);
+        stream.setDependency("PACKAGE_REGISTRY", address(hostile), address(blank));
+        PackageItem memory again = _item(2); // existing[1]'s item, the very same
+        bytes memory data = _request(again);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IStream.ContentUsed.selector,
+                PRODUCT_STREAM,
+                again.contentHash,
+                WorksHashing.itemHash(again)
+            )
+        );
+        auction.start(stream, data);
+    }
+
     /// @dev Only an admitted adapter mints, into its own custody, whatever the policy says.
     function test_MP1_NoMintOutsideAnAdmittedAdaptersCustody() public {
         hostile.setRecord(_record(4));
@@ -327,10 +369,19 @@ contract PolicyHandler {
         try adapter.start(stream, owner.requestFor(++salt)) returns (
             uint256 tokenId, PrimaryTerms memory
         ) {
+            bytes32 content = owner.recordFrom(seed).contentHash;
+            if (tokenOfContent[content] != 0) duplicateMinted = true;
+            tokenOfContent[content] = tokenId;
+            contents.push(content);
             tokens.push(tokenId);
             viewOf[tokenId] = owner.viewOf(tokenId);
         } catch { }
     }
+
+    /// @dev Content hashes minted so far, by the token that minted each.
+    mapping(bytes32 contentHash => uint256 tokenId) public tokenOfContent;
+    bytes32[] public contents;
+    bool public duplicateMinted;
 }
 
 /// @notice MP-1 as a stateful invariant: after any sequence of hostile-policy mints, every
@@ -355,6 +406,7 @@ contract StreamPolicyInvariantTest is StreamFixture {
 
     function recordFrom(uint256 seed) external view returns (IMintPolicy.MintRecord memory r) {
         r.itemHash = keccak256(abi.encode("item", seed));
+        r.contentHash = keccak256(abi.encode("policy content", seed % 64));
         r.artistId = seed % 7 == 0 ? 0 : uint160(artist);
         r.collectionId = seed % 11 == 0 ? 2 : collectionId;
         r.kind = uint8(seed % 5);
@@ -392,6 +444,11 @@ contract StreamPolicyInvariantTest is StreamFixture {
             uint256 id = handler.tokens(i);
             assertEq(viewOf(id), handler.viewOf(id), "an existing token changed");
             assertEq(stream.ownerOf(id), address(auction), "held by the adapter that minted it");
+            // AUC-44: each minted content is Stream's record of the one token that minted it.
+            bytes32 content = handler.contents(i);
+            (bytes32 itemHash,,,,,) = stream.coreOf(handler.tokenOfContent(content));
+            assertEq(stream.consumedItemOf(content), itemHash, "Stream's content record");
         }
+        assertFalse(handler.duplicateMinted(), "a content minted twice");
     }
 }

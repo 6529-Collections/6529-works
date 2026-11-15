@@ -66,6 +66,10 @@ Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
   `pinnedRenderer` with all the gas it has (`BoundedCall.tryReadAll`): only "no pin" and
   `RecordNotOpen` serve the default renderer; other reverts pass on, a malformed answer reverts
   `RendererPinUnreadable`, and a shortfall reverts `BoundedCallShortfall`.
+- **Content uniqueness (AUC-44).** `_contents[contentHash]` packs the minting token ID, a
+  release's beneficiary and a released flag; `_claimContent` checks and sets it in `_store` (the
+  cold read and the one new slot the registry paid before). `releaseContent` and the tombstones
+  (`_tombstoned`) are Stream's; a burn leaves the record.
 - **Rescue delay (AUC-41).** `Counts.rescueDelay` (zero means the 90-day floor) is read at an
   adapter's removal and locked in its `Minter.rescueDelay`.
 - **Start-path storage (QUALITY-6).** A mint writes the ERC-721 owner, two token words (seller,
