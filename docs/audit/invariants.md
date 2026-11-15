@@ -116,17 +116,15 @@ handler `CurationHandler` in the same file. Real `PackageRegistry` and
 package A, 6 to 15 in package B, 16 to 19 in none; items `i` and `i + 8` share a content hash;
 a third root C starts unregistered; Stream's content record ([AUC-44](../spec/stream-and-auctions.md#rules-and-invariants)) is
 `StreamContentMock`, which the registry's `consumedItemOf`, `releasedTo` and `isReleased` answer
-from. The handler is an exact model of nine actions: `consume` (a mint through the mock),
-`claimEdition`, `release`, `revokeMove`, `rotate`, `revokePackage`, `registerLate`,
-`acceptLate` and `rebind`.
+from. The handler is an exact model of eight actions: `consume` (a mint through the mock),
+`release`, `revokeMove`, `rotate`, `revokePackage`, `registerLate`, `acceptLate` and `rebind`.
 
 | ID | Invariant | Test | Handler actions |
 | --- | --- | --- | --- |
 | INV-CUR-1 | No call the model forbids succeeds (revoked or unregistered root, foreign or wrong proof, stale key, spent or revoked move nonce, expired move, used or released content, unbound caller, second binding). | `invariant_noUnexpectedSuccess` | all nine |
-| INV-CUR-2 | Every call the model allows succeeds, so the model is exact. | `invariant_noUnexpectedFailure` | all nine |
+| INV-CUR-2 | Every call the model allows succeeds, so the model is exact. | `invariant_noUnexpectedFailure` | all eight |
 | INV-CUR-3 | Each item is consumed at most once, never if it is in no package, and `isReleased` matches the model. | `invariant_itemConsumedAtMostOnce` | `consume`, `release` |
-| INV-CUR-4 | Per content hash, `consumedItemOf` and `editionClaimOf` equal the model's single live Stream item and edition claim. | `invariant_contentRecordsMatch` | `consume`, `claimEdition`, `release` |
-| INV-CUR-5 | An edition claims only a content hash Stream consumed, naming the consuming item, and claims never outnumber consumptions, so the linked pair is the only reuse across products. | `invariant_editionsReuseOnlyTheirMaster` | `claimEdition` |
+| INV-CUR-4 | Per content hash, `consumedItemOf` equals the model's single live Stream item. | `invariant_contentRecordsMatch` | `consume`, `release` |
 | INV-CUR-6 | Every artist's 31 move-nonce flags and every root's status equal the model. | `invariant_noncesAndStatuses` | `revokeMove`, `rotate`, `revokePackage`, `registerLate`, `acceptLate` |
 
 No dedicated invariant covers the single use of a package's registration; the model's
@@ -157,7 +155,7 @@ state, never `releasable`, and measures releases by balance deltas.
 | INV-ECO-10 | Governed recovery moves a split wallet's credit only to its equivalent replacement (same payees, another salt) and another account's only to the replacement that account consented to, consuming the consent. | handler check: `recover`, `consentToggle` | as named |
 | INV-ECO-11 | A claim batch pays each item its predicted amount, and the recipients' balances rise by exactly the batch total. | handler check: `claimBatch` | as named |
 | INV-ECO-12 | Per wallet and asset, what was released plus what is still releasable equals what the wallet received (the ledger's accounting matches the vault's balances). | `invariant_ReleasedPlusReleasableMatchesReceived` | release actions, `pay`, `receiveDirect` |
-| INV-ECO-13 | The escrow's excess over `totalOwed` is exactly what `sweepExcess` may move, and a sweep never reduces a credit ([ECO-40](../spec/economics-and-payouts.md#rules-and-invariants)). | `invariant_EscrowExcessIsExactlyTheUnowed` | `pay`, `deposit`, `flush`, `recover`, `sweep` |
+| INV-ECO-13 | The escrow's excess over `totalOwed` is exactly what `sweepExcess` may move, and for every asset the handler uses (ETH and single-address, non-rebasing tokens) a sweep never reduces a credit's backing ([ECO-40](../spec/economics-and-payouts.md#rules-and-invariants); two-address and rebasing tokens: LIM-ECO-8). | `invariant_EscrowExcessIsExactlyTheUnowed` | `pay`, `deposit`, `flush`, `recover`, `sweep` |
 
 ## English auction
 
@@ -282,6 +280,7 @@ or the exact error before every call.
 | INV-ID-10 | The `restrained` flag in the authority's storage word is set exactly while the pending change is an override that moves the authority, lapsed or not. | `invariant_RestrainedFlagMatchesThePendingChange` | as INV-ID-1 |
 | INV-ID-11 | Each identity timer stays between its floor and ceiling, and the contest timeout exceeds the override delay by at least 185 days ([ID-35](../spec/identity-and-recovery.md#rules-and-invariants)). | `invariant_TimersStayWithinTheirBounds` | `setTimer`, stagings |
 | INV-ID-12 | The federation directory equals the model (one entry per token, ACTIVE and DELISTED only by the federation registry, LEFT only by the token, terminal), and no federation call changes the artist's authority, payout, standing or pending change ([ID-33, ID-34](../spec/identity-and-recovery.md#rules-and-invariants)). | `invariant_FederationDirectoryMatchesTheModel`; handler check: every federation call | `fedList`, `fedStatus`, `fedExit`, `fedRegister` |
+| INV-ID-13 | The consolidation source never acts for a live artist: no consolidated-wallet staging succeeds within `DORMANCY` of the artist's last signed activity, and a pending wallet-signed change waits at least 180 days, while the handler swaps in a source that names every wallet ([ID-40](../spec/identity-and-recovery.md#rules-and-invariants)). | `invariant_ASourceNeverActsForALiveArtist` | `stageStandard`, `toggleSource`, `warp`, `heartbeat` |
 
 ## Statements
 

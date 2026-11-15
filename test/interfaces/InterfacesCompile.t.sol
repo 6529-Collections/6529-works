@@ -25,6 +25,7 @@ import { IRenderer } from "../../src/interfaces/IRenderer.sol";
 import { ISaleAdapter } from "../../src/interfaces/ISaleAdapter.sol";
 import { IStatementLog } from "../../src/interfaces/IStatementLog.sol";
 import { IStream } from "../../src/interfaces/IStream.sol";
+import { IStreamExtension } from "../../src/interfaces/IStreamExtension.sol";
 import { IUniformEditionAuction } from "../../src/interfaces/IUniformEditionAuction.sol";
 import { IWorkPowers } from "../../src/interfaces/IWorkPowers.sol";
 import { IWorkRecords } from "../../src/interfaces/IWorkRecords.sol";
@@ -39,6 +40,7 @@ contract InterfacesCompileTest is Test {
     function test_interfaceIds() public pure {
         assertEq(type(IMintTarget).interfaceId, bytes4(0xba4ae536), "IMintTarget");
         assertEq(type(IStream).interfaceId, bytes4(0x829e6c7d), "IStream");
+        assertEq(type(IStreamExtension).interfaceId, bytes4(0x1b9217b1), "IStreamExtension");
         assertEq(type(IWorkRecords).interfaceId, bytes4(0x2654eed1), "IWorkRecords");
         assertEq(type(IWorkPowers).interfaceId, bytes4(0xbd18229c), "IWorkPowers");
         assertEq(type(IEditions).interfaceId, bytes4(0xee6d6c6f), "IEditions");

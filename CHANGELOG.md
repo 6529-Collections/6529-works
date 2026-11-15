@@ -3,7 +3,37 @@
 ## Unreleased
 
 - Permanence ([ADR 0007](docs/adr/0007-permanence.md); owner instruction of 14 and 15 November
-  2026), two integration rounds. Pre-launch interface reshaping:
+  2026), two integration rounds and the fixes of four independent reviews. Pre-launch interface
+  reshaping:
+  - **Review fixes** (ADR 0007, "Independent review"):
+    - Stream: the fallback forwards only `work`, `collection` and `totalSupply`; `owner()`,
+      `contractURI()` and `extension()` are native; `StreamLayout` fixes the storage slots a
+      pinned renderer reads with `extsload` (AUC-49); `releaseContent` works again after a
+      re-mint; `WorkMinted`'s `kind` field is now `flags` (kind and seed policy);
+      `TermsInterned` precedes `RoyaltyRateChanged`; the policy answer's bounds never wrap.
+      `IStream` `0x829e6c7d`, `IStreamViews` `0xb039ffcb`, `IStreamExtension` `0x1b9217b1`.
+    - Editions: `createEdition(workId, item)` reads only Stream's stored item and content
+      record, never the mint policy; the registry's `claimContent`, `editionClaimOf` and
+      `ContentClaimed` are removed. `IEditions` `0xee6d6c6f`, `IPackageRegistry` `0x91325cdf`.
+    - Edition auction: `abandon` enforces its time floor and adds Stream's rescue-delay
+      lengthening; `settle` reads its words once; `open` confirms payout wallets through the
+      ledger's `createWallet`.
+    - WorkRecords: two independent sync walks (the content store by anyone, an added store by
+      the artist only), `MediaFileComplete` per file and store, `StoreInUse` removed, frozen
+      licenses checked, served locators printable ASCII. Renderer: native reads at
+      `StreamLayout` slots, the preview read only when shown, a refused seed read is no seed.
+    - ArtistRegistry: a consolidated wallet stages a STANDARD change only for a dormant artist,
+      waiting the override delay; heartbeats are the authority's; a starved source reverts
+      every refresh; `StandingAdded` on every `effectiveAt` change; `ConsolidationSourceSet`
+      carries the code hash; the split ledger is refused as a payout. Split ledger: payees that
+      can never be paid are refused. GovernedVault forwards works by safe transfer;
+      RevenueEscrow refuses a vault's stale recovery consent; ClaimRouter continue mode takes
+      at most 8 items.
+    - WorksAccessManager: two-step succession (the successor accepts after re-pointing a probe
+      it governs); every grant carries its class delay; the configurator's seat does not count
+      (genesis may name up to five admins); a recovery cannot seat a guardian. The museum
+      vault's destination is SUCCESSOR_SETTER (30 days). Verify checks recipients, the genesis
+      manager state and that every governed contract is listed.
   - **Gas rule for permanent contracts.** `BoundedCall` gains a forward-all family
     (`tryReadAll`, `tryCallAll`, `tryReadWordAll`, ERC-165 probes) that forwards all the gas
     EIP-150 allows and reverts with `BoundedCallShortfall(target)` when a failed call left at
@@ -97,7 +127,7 @@
     auction's limits; `tools/size-margins.json` holds no exemption.
   - **Budgets.** The source-line budget rises from 13,000 to 15,000 (owner decision, 15
     November 2026; `tools/check_budgets.py`). ADR 0004's table is re-measured: the tightest
-    start row is 344,817 and the suite's start margin stays 5,000; the re-rate (203,000), the
+    start row is 344,980 and the suite's start margin stays 5,000; the re-rate (203,000), the
     bound `createEdition` (158,000), `authorize` (94,000, 0 new slots), the edition auction's
     `open` (290,000 and 337,000) and capped-sweep `settle` (174,000) regression ceilings move
     with stated reasons, and a new row measures an edition `open` that deploys both wallets

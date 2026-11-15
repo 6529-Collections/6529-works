@@ -698,8 +698,9 @@ See: [economics and payouts](spec/economics-and-payouts.md).
 
 ### established wallet
 
-A wallet consolidated with an account in both directions for at least 30 days. It may stage a
-[standard change](#standard-change) and gain [standing](#standing).
+A wallet consolidated with an account in both directions for at least 30 days. It gains
+[standing](#standing), and, only for a dormant artist (no signed activity for DORMANCY), may stage
+a [standard change](#standard-change), which then waits the override delay.
 
 See: [identity and recovery](spec/identity-and-recovery.md).
 

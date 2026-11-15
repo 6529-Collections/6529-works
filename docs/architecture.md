@@ -225,12 +225,11 @@ default when the sale starts".
 1. The item has kind `EDITION_MASTER` and edition terms. The master is auctioned
    as above.
 2. Once `IStream.primarySaleSettled(workId)` is true, anyone calls
-   `IEditions.createEdition(workId, item, packageRoot, proof)`.
-   - Editions checks the item against the master's item hash and the package,
-     which the registry must have registered (a later revocation of the root
-     does not strand the edition of a master already sold from it), and claims
-     the content hash under
-     `PRODUCT_EDITIONS`.
+   `IEditions.createEdition(workId, item)`.
+   - Editions checks the item against the item hash 6529 Stream stored for the
+     master and Stream's content record (`consumedItemOf`); it never reads the
+     mint policy, so a replaced or revoked policy cannot strand the edition of a
+     master already sold (ED-3).
    - It locks economics, records `(stream, workId, contentHash)` and calls
      `IStream.linkEdition`.
    - A burned or disputed master never gets an edition.
@@ -296,9 +295,12 @@ default when the sale starts".
 
 ### Recovery
 
-1. A lost key: an established consolidated wallet (6529 delegation, use case
+1. A lost key: once the artist has had no signed activity for a year
+   (DORMANCY), an established consolidated wallet (6529 delegation, use case
    999, at least 30 days old, not expired) stages a STANDARD change, with the
-   new authority's signed acceptance. A stolen key cannot be recovered this
+   new authority's signed acceptance; it waits the 180-day override delay. The
+   consolidation source is replaceable, so it never acts for a live artist
+   (ID-40). A stolen key cannot be recovered this
    way, because the thief, as the previous authority, can cancel any STANDARD
    change; a stolen key goes through the override in step 4.
 2. The registry captures cancellers at staging: the effective wallets in the
@@ -405,7 +407,7 @@ default when the sale starts".
 | Sale adapters (admitted) | Mint through `IMintTarget` on the token's own terms | Mint outside an approved item or an edition's terms |
 | Bound contracts | Stream's mint policy authorizes items (Stream records each content hash); Editions claims content hashes; the package registry registers artists; the federation registry lists federated contracts in the artist registry's per-token directory (replaceable by `setFederationRegistry`, 30 days; no authority over artists, payouts or canonical tokens); WorkRecords sets royalty rates and asks Stream and Editions for ERC-4906 | Act for anyone else: each binding is one caller, set once at genesis |
 | VRF coordinator | Deliver a seed once per requested content | Choose which items are VRF, or change a delivered seed |
-| 6529 delegation contract | Supply consolidations used as recovery cancellers and stagers | Execute a change before 7 days, or bypass the guardian veto |
+| 6529 delegation contract | Supply consolidations used as recovery cancellers, and as recovery stagers for dormant artists | Act for a live artist, execute a wallet-signed change before the 180-day override delay, or bypass the guardian veto |
 
 On-chain content uniqueness is defense in depth: the curation signer's SHA-256
 check, covered by the evidence hash, is the primary control. Every external

@@ -68,7 +68,7 @@ contract IntegrationGasReport is IntegrationBase {
     ///      budget (the review of #81): the largest round value the measured rows support. The
     ///      mint policy and the locked-terms events took it to 2,500 during the permanence
     ///      integration; moving the opening bid into the asset allowlist's status word (one read
-    ///      fewer per start) restored it: the tightest row is 344,817, 5,183 under the budget.
+    ///      fewer per start) restored it: the tightest row is 344,980, 5,020 under the budget.
     uint256 internal constant START_MARGIN = 5000;
     /// @dev After governance replaced Stream's three mint-path dependencies (the mint policy,
     ///      the economics resolver and the entropy module; owner decision 16), a mint reads each

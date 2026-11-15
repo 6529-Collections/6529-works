@@ -201,7 +201,8 @@ funds. `ArtistRegistry._payoutAllowed` refuses the zero address, the registry, t
 registry, 6529 Stream and its Editions once Stream is bound, the bound split factory (the split
 ledger) and any split wallet of it (`isWallet`), and any contract that declares, by ERC-165, the interface of the revenue escrow, the
 claim router, a sale adapter, a mint target, the artist or package registry or the work records
-(`ProtocolContracts`). A refusal reverts at registration and staging (`InvalidIdentity`), and at
+(`ProtocolContracts`; it recognises neither the split ledger, refused above by address, nor a
+`GovernedVault`, a valid payout). A refusal reverts at registration and staging (`InvalidIdentity`), and at
 execution clears the change instead of applying it, so a stale change cannot keep the payout
 frozen (ID-17). A predicted split wallet has no code before deployment and passes until then
 (LIM-ID-12). Contracts that declare none of these interfaces (the release verifier, the content

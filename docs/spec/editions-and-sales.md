@@ -640,7 +640,7 @@ sequenceDiagram
     participant Ed as Editions
     participant EA as UniformEditionAuction
     participant Pay as Fee recipient and seller
-    Keeper->>Ed: createEdition(workId, item, root, proof), once the 1/1 settled
+    Keeper->>Ed: createEdition(workId, item), once the 1/1 settled
     loop until settle returns true, from the keeper's own address
         Keeper->>EA: settlementOrderFor(saleId, keeper), a view: the rest of its own sweep
         Keeper->>EA: settle(saleId, order)

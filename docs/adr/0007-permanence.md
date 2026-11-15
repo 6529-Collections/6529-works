@@ -126,9 +126,12 @@ post-quantum schemes). Spec: DSP-26, AUC-42, ED-28, ID-38, ECO-42.
   (a content hash mints once, whatever mint policy is installed; `releaseContent` and its
   tombstones are Stream's), so a replaced or blank policy cannot re-mint existing content. The
   one new slot per start moved from the registry to Stream; no start row gained a slot.
-- Informational views (`work`, `collection`, `totalSupply`, `contractURI`, `owner`) and
-  collection-name validation move to `StreamViews`, a read-only extension Stream's constructor
-  deploys and reaches by `STATICCALL`.
+- Three informational views (`work`, `collection`, `totalSupply`) and collection-name
+  validation move to `StreamViews`, a read-only extension Stream's constructor deploys and
+  reaches by `STATICCALL`; the fallback forwards only those three selectors, and `owner`,
+  `contractURI` and `extension` are native. Nothing permanent or pinned reads the extension
+  (AUC-49): readers that need a work's facts use native views and `extsload` at the slots
+  `StreamLayout` publishes, part of Stream's permanent interface (review A, H-1 and L-2).
 - `IStream` is one flat interface ID covering the whole native surface; `IStreamViews` has its
   own (AUC-40).
 - `ItemKind` and `SeedPolicy` are carried as `uint8`, so a future kind cannot brick records.
@@ -137,8 +140,8 @@ post-quantum schemes). Spec: DSP-26, AUC-42, ED-28, ID-38, ECO-42.
 - The rescue delay is governed with a 90-day floor (`RESCUE_DELAY_FLOOR`, the guarantee):
   `setRescueDelay` only lengthens it, at most doubling per change (AUC-41).
 - Consensus events (AUC-43): `WorkMinted` carries the token, collection, lead artist (indexed),
-  item hash, serial, kind, package root, content hash, media hash, record file, seller and a
-  terms ID; `TermsInterned` carries rate, fee share, fee recipient and minter on each new terms
+  item hash, serial, flags (item kind and seed policy), package root, content hash, media hash,
+  record file, seller and a terms ID; `TermsInterned` carries rate, fee share, fee recipient and minter on each new terms
   word; `FeeRecipientRegistered`, `ContentReleased`, `RescueDelaySet`; `AdmittedMinterSet`
   carries the sale kind. No `recipient` on `PrimarySaleSettled` (owner, §5).
 
@@ -154,11 +157,17 @@ post-quantum schemes). Spec: DSP-26, AUC-42, ED-28, ID-38, ECO-42.
   sits behind two governed pointers: a replaceable delivery contract (`WorkDelivery`: locators,
   kinds, preferences, the URI grammar; `setDelivery`, SUCCESSOR_SETTER, 30 days, which must
   name its predecessor), forwarded fail-soft with all the gas (a revert or malformed answer
-  serves the work's own answer, a shortfall reverts); and an append-only store set (`addStore`,
+  serves the work's own answer, a shortfall reverts; a served URI is printable ASCII, so it is
+  UTF-8 and JSON-safe by construction); and an append-only store set (`addStore`,
   code hash pinned), so a future medium can count as on-chain complete for new works and
-  collector upgrades while no existing work is ever re-pointed or unmarked. `syncOnChain(tokenId,
-  storeId, maxChunks)` resumes from a chunk cursor in a spare word, with no compiled budget, so
-  files of any size (up to the store's 4,096 chunks) sync. The third work power,
+  collector upgrades while no existing work is ever re-pointed or unmarked. On-chain sync is two
+  independent walks, each resumable from its own cursor with no compiled budget, so files of any
+  size (up to the store's 4,096 chunks) sync: anyone walks the content store, which never calls
+  an added store; only the work's artist walks an added store of their choosing. Completion is
+  recorded per file and per store (`MediaFileComplete`): a file complete in an added store can
+  later complete in the content store, never the reverse; a work is on-chain complete when
+  every file is complete in some store. A store that stops serving or burns gas can only fail
+  its own verification, never hold a file (review B, M1 and review D, L-3). The third work power,
   `RENDERER_REPIN`, is renounceable after finalize (amends ADR 0006). `RecordOpened` carries the
   whole item, media list, licence key and seed; every amendment event carries the state hash.
   Bounds are structural only: a record is one chunk; a preview has no bound in WorkRecords; the
@@ -169,7 +178,10 @@ post-quantum schemes). Spec: DSP-26, AUC-42, ED-28, ID-38, ECO-42.
   for new items. Selectors, interface IDs, topics and item hashes are unchanged.
 - The default renderer (replaceable, but pinned by every finalized work, possibly for good once
   the repin is renounced) forwards all gas on every read and compiles no gas figure; its
-  preview bound is `Limits.MAX_PREVIEW_BYTES`.
+  preview bound is `Limits.MAX_PREVIEW_BYTES`. It reads a work's facts only through Stream's
+  native views and `extsload` at `StreamLayout`'s slots, never the fallback, so no extension
+  replacement changes or breaks an existing work's metadata; it reads the preview only when it
+  shows it, and treats a refused seed read as no seed.
 
 **P3, money, Editions, identity and the statement log.**
 - **Split ledger** (ECO-39 to ECO-42): one permanent `SplitLedger` replaces the split factory,
@@ -191,7 +203,10 @@ post-quantum schemes). Spec: DSP-26, AUC-42, ED-28, ID-38, ECO-42.
   destinations.
 - **Editions** (ED-25 to ED-28): the bound adapter seals an edition's supply at its sale's
   settlement (`sealSupply`, once; the maximum drops to the count sold, and a removed adapter
-  mints only an edition it sealed), closing LIM-EA-10. Editions holds no duration. `mint`'s
+  mints only an edition it sealed), closing LIM-EA-10. Editions holds no duration.
+  `createEdition(workId, item)` reads only Stream's stored item hash and content record, never
+  the mint policy, so a replaced or blank policy cannot strand a settled master's edition
+  (review A, M-1); the registry's edition claims are gone. `mint`'s
   data is `abi.encode(currency, unitPrice)`, logged by `EditionPrimaryMint`; `createEdition`
   emits `EditionTermsLocked`. Every call out forwards all gas, the ERC-1155 receiver hook
   included; `uri` inherits the fail-closed `rendererOf`; royalty is lower-only in Editions too.
@@ -202,8 +217,12 @@ post-quantum schemes). Spec: DSP-26, AUC-42, ED-28, ID-38, ECO-42.
   64-entry list; listings record the code hash the registry reads itself and move only between
   ACTIVE and DELISTED, while LEFT is set by the token, terminal; canonical addresses are
   refused. A hostile federation registry has no authority over any artist's identity, payout,
-  standing or timers. The five identity timers become governed between floors (today's values,
-  the guarantees) and ceilings, locked at staging. Every refresh but `refreshStanding` is
+  standing or timers. The consolidation source, being replaceable, never acts for a live
+  artist: a wallet it names may stage a STANDARD change only for a dormant artist (a year
+  without signed activity), the change waits the override delay (180 days) and records no
+  activity, and heartbeats are the authority's alone (ID-40; review C, F2; amends ADR 0001 §11,
+  owner to confirm the delay). The five identity timers become governed between floors (today's
+  values, the guarantees) and ceilings, locked at staging. Every refresh but `refreshStanding` is
   best-effort, a shortfall always reverts, source times are clamped, and a payout-only override
   needs dormancy.
 - **Edition auction** (replaceable; EA-17 to EA-20): seals at its final count and prices every
@@ -370,6 +389,50 @@ Eleven lanes merged in two rounds. The integrator also:
 - moved the default renderer to forward-all reads and the preview bound to
   `Limits.MAX_PREVIEW_BYTES`.
 
+## Independent review, 15 November 2026
+
+Four independent reviews of the integrated tree (Stream and sales; records and storage; money
+and identity; governance and deployment) reported 1 High, 4 Medium and the Low and Info findings
+below; every one was handled before this record's last revision. Fixed means the code now holds
+the stated guarantee, with a test that fails without the change; documented means a known
+limitation row states the residual; owner means the owner decides.
+
+| Review | Finding | Severity | Resolution: what holds now |
+| --- | --- | --- | --- |
+| A | H-1 | High | Fixed: nothing permanent or pinned reads the view extension; the renderer reads native views and `StreamLayout` slots, and replacing the extension leaves every work unchanged (AUC-49, RND-22). |
+| A | M-1 | Medium | Fixed: `createEdition` needs only Stream's stored item and content record; a policy replacement never strands an edition. |
+| A | L-1 | Low | Fixed: a content hash can be released again after a re-mint and a second upheld dispute. |
+| A | L-2 | Low | Fixed: the fallback forwards only the three view selectors. |
+| A | L-3, L-4 | Low | Fixed: the edition auction enforces its abandonment time floor itself and adds any lengthening of Stream's rescue delay. |
+| A | L-5 | Low | Documented: unsold and rescued works go to the museum the replaceable resolver names; no funds wait on it (LIM-SAL-18). |
+| A | I-1 to I-4 | Info | Fixed: settle reads its words once; replaced-dependency ceilings back to measured plus 2%; event order and completeness; non-wrapping bounds on the policy's answer. |
+| B | M1 | Medium | Fixed: two independent sync walks; added stores are the artist's choice; completion per file per store; a failing store never holds a file. |
+| B | M2 | Medium | Fixed in part, documented: served locators are printable ASCII; a work whose media are inlined never asks the delivery contract; a delivery contract that burns all gas still reverts `tokenURI` for locator-served works until replaced, by the gas rule (LIM-GV-24). |
+| B | L1, L2, L5 | Low | Documented: media roles are 0 to 15 for good; a store's serving duty is a review condition; a refused chunk read counts as missing. |
+| B | L3 | Low | Fixed: a license the renderer cannot show cannot be frozen by finalize or by renouncing relicense. |
+| B | L4 | Low | Fixed: an unopened VRF work awaiting its seed renders without one. |
+| B | Info | Info | Fixed or bounded: a permanent license text is at most 16 chunks; the 8M `tokenURI` bound covers chunks linked from at most four parts (LIM-CNT-22); the default renderer inlines only from the content store (LIM-CNT-21). |
+| C | F1 | Low | Fixed: a gas-starved consolidation source reverts every refresh, never reads as a failing source. |
+| C | F2 | Low | Fixed (owner to confirm the delay): a consolidation source never acts for a live artist (ID-40; LIM-ID-18). |
+| C | F3 | Low | Documented: `sweepExcess` is bounded per token address (LIM-ECO-8). |
+| C | F4 | Low | Fixed: a governed vault forwards works by safe transfer. |
+| C | F5 | Low | Fixed: the claim router's continue mode takes at most 8 items, within the transaction cap. |
+| C | F6, F15 | Low, Info | Fixed: every change of a standing entry and of the consolidation source (with its code hash) is logged. |
+| C | F7, F8 | Info | Documented (LIM-ID-17, LIM-ID-19). |
+| C | F9 | Info | Fixed: payee lists that can never be paid are refused; the registry refuses the split ledger as a payout. |
+| C | F10 to F13 | Info | Documented: the ledger's fail-closed edges (LIM-ECO-9). |
+| C | F14 | Info | Fixed: an escrow recovery consent does not survive a governed vault's destination change. |
+| C | F16 | Info | Fixed: the edition auction confirms each payout wallet through the ledger, never by code at the address. |
+| D | M-1 | Medium | Fixed: two-step succession; a successor takes over only by accepting itself after re-pointing a probe it governs. |
+| D | L-1 | Low | Fixed: every role grant carries at least its class delay. |
+| D | L-2 | Low | Fixed: the configurator's seat does not count, so genesis may name up to five admins. |
+| D | L-3 | Low | Fixed with review B's M1: added stores are the artist's choice. |
+| D | L-4 | Low | Documented: the English auction's 60-day freeze exit can fire before an escalated guardian removal; auctions end unsold, nothing is lost (LIM-SAL-15). |
+| D | I-1 to I-4 | Info | Per-target authority moves stay 30 days with a single-guardian veto (documented); a dead-admin recovery cannot seat a guardian (fixed); Verify checks recipients, the genesis manager state and that every governed contract is listed (fixed). |
+
+The bounded veto, as fixed and measured, bites against a colluding pair from four guardian
+seats; the seat count remains the owner's decision.
+
 ## What this amends
 
 ADRs stay as written; each amended record gets a dated amendment note pointing here.
@@ -449,7 +512,9 @@ ADRs stay as written; each amended record gets a dated amendment note pointing h
     decision (dropping the EIP-2612 permit path frees about 412 bytes);
   - launch values of the edition auction's maximum open period (30 days) and abandonment delay
     (150 days);
-  - unanimous-party consent for amendments (unchanged until the owner chooses).
+  - unanimous-party consent for amendments (unchanged until the owner chooses);
+  - consolidated-wallet recovery for a dormant artist: built as dormancy plus the 180-day
+    override delay; the alternative is dormancy plus 7 days (owner to confirm).
 - A federation ADR, then the federation lane.
 - Two independent reviews (contracts; governance), then a Sepolia redeploy and a Glamsterdam
   measurement of every row.

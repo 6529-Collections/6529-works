@@ -78,10 +78,10 @@ products pay 75% to the artist's side and 25% to the network, and royalties are 
 
 | Contract | Purpose | nSLOC |
 | --- | --- | ---: |
-| [`Stream`](src/stream/README.md), [`StreamViews`](src/stream/README.md) | The permanent shared ERC-721: mints what the replaceable mint policy authorizes, locks terms, royalties, the edition link; informational views in a read-only extension | 774 + 88 |
+| [`Stream`](src/stream/README.md), [`StreamViews`](src/stream/README.md) | The permanent shared ERC-721: mints what the replaceable mint policy authorizes, locks terms, royalties, the edition link; informational views in a read-only extension | 793 + 79 |
 | [`WorkRecords`](src/stream/README.md), [`WorkDelivery`](src/stream/README.md) | Each work's permanent record, media, license, seed, finalize and renderer pin, on-chain completeness across an append-only store set; locators and preferences in a replaceable delivery contract | 716 + 183 |
-| [`Editions`](src/editions/README.md) | 6529 Stream Editions, the shared ERC-1155, linked to Stream masters; supply sealed at settlement, prices logged | 493 |
-| [`PackageRegistry`](src/curation/README.md) | Stream's replaceable mint policy: package roots, party consent, the move signature, consume-once items, content uniqueness | 420 |
+| [`Editions`](src/editions/README.md) | 6529 Stream Editions, the shared ERC-1155, linked to Stream masters; supply sealed at settlement, prices logged | 473 |
+| [`PackageRegistry`](src/curation/README.md) | Stream's replaceable mint policy: package roots, party consent, the move signature, consume-once items, content uniqueness | 402 |
 | [`Eip712CurationVerifier`](src/curation/README.md) | Accepts curation signers' EIP-712 approvals | 103 |
 | [`EnglishAuction`](src/sales/README.md), [`EnglishAuctionLens`](src/sales/README.md) | Stream's primary sale: anti-snipe clock, pull refunds, pending claims, dispute pause; its views answered by a lens | 898 + 311 |
 | [`UniformEditionAuction`](src/sales/README.md), [`UniformEditionAuctionLens`](src/sales/README.md) | The edition auction: firm ETH bids on a step ladder beside the 1/1, one clearing price, FIFO at a capped step, claims | 904 + 857 |
@@ -90,7 +90,7 @@ products pay 75% to the artist's side and 25% to the network, and royalties are 
 | [`RevenueEscrow`](src/economics/README.md), [`ClaimRouter`](src/economics/README.md), [`GovernedVault`](src/economics/README.md) | Failed-payment escrow, batch claims, the fee recipient's and museum's governed vaults | 122 + 132 + 108 |
 | [`ArtistRegistry`](src/identity/README.md), [`ConsolidationAdapter`](src/identity/README.md) | Permanent artist identity and payouts, governed recovery timers, the federation directory; consolidations through the adapter | 720 + 133 |
 | [`ContentStore`](src/content/README.md), [`DependencyRegistry`](src/content/README.md) | Content-addressed on-chain chunks and shared libraries | 412 + 66 |
-| [`Renderer`](src/content/README.md) | `tokenURI` and `fullTokenURI` for works and editions | 758 |
+| [`Renderer`](src/content/README.md) | `tokenURI` and `fullTokenURI` for works and editions | 756 |
 | [`StatementLog`](src/records/README.md) | Append-only signed statements: dispute outcomes, curation evidence, manifests | 309 |
 | [`VrfEntropyModule`](src/entropy/README.md) | Optional Chainlink VRF seed per work, delivered before the start | 252 |
 | [`WorksAccessManager`](src/governance/README.md), [`GovernanceConfigurator`](src/governance/README.md) | One AccessManager for everything; guardians cancel and suspend, a bounded veto, dead-admin recovery and a successor handover | 447 + 51 |
