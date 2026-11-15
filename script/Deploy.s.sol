@@ -240,7 +240,9 @@ contract Deploy is ScriptIO {
         p.auction = IEnglishAuction.AuctionConfig(
             SafeCast.toUint32(_envUint("AUCTION_DURATION", 24 hours)),
             SafeCast.toUint32(_envUint("AUCTION_EXTENSION_WINDOW", 15 minutes)),
-            SafeCast.toUint32(_envUint("AUCTION_INCREMENT_SHARE", 5_000))
+            SafeCast.toUint32(_envUint("AUCTION_INCREMENT_SHARE", 5_000)),
+            SafeCast.toUint32(_envUint("AUCTION_REFUSAL_DELAY", 7 days)),
+            SafeCast.toUint32(_envUint("AUCTION_REFUSAL_GAS", 4_000_000))
         );
         p.editionAuction = _editionAuction();
         _vrf(p, local);
@@ -417,6 +419,8 @@ contract Deploy is ScriptIO {
         vm.serializeUint(o, "auctionDuration", p.auction.duration);
         vm.serializeUint(o, "auctionExtensionWindow", p.auction.extensionWindow);
         vm.serializeUint(o, "auctionIncrementShare", p.auction.incrementShare);
+        vm.serializeUint(o, "auctionRefusalDelay", p.auction.refusalDelay);
+        vm.serializeUint(o, "auctionRefusalGas", p.auction.refusalGas);
         vm.serializeUint(o, "editionBasePrice", p.editionAuction.basePrice);
         vm.serializeUint(o, "editionStepsPerDecade", p.editionAuction.stepsPerDecade);
         vm.serializeUint(o, "editionStepCount", p.editionAuction.stepCount);

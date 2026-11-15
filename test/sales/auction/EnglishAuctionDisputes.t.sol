@@ -341,7 +341,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
     function test_Resume_ReopeningIsNeverShorterThanTheLockedWindow() public {
         IEnglishAuction.AuctionConfig memory c = auction.config();
         IEnglishAuction.AuctionConfig memory wide =
-            IEnglishAuction.AuctionConfig(7 days, 1 days, SHARE);
+            IEnglishAuction.AuctionConfig(7 days, 1 days, SHARE, REFUSAL_DELAY, REFUSAL_GAS);
         vm.prank(setter);
         auction.setConfig(c, wide);
         uint256 withdrawn = _start();
@@ -355,7 +355,10 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         vm.prank(alice);
         auction.withdrawBid(withdrawn);
         vm.prank(setter);
-        auction.setConfig(wide, IEnglishAuction.AuctionConfig(1 hours, 1 minutes, SHARE));
+        auction.setConfig(
+            wide,
+            IEnglishAuction.AuctionConfig(1 hours, 1 minutes, SHARE, REFUSAL_DELAY, REFUSAL_GAS)
+        );
         vm.warp(pausedAt + auction.MAX_PAUSE() + 1);
         uint256 resumedAt = pausedAt + auction.MAX_PAUSE();
         assertEq(auction.auction(withdrawn).endTime, resumedAt + 1 days, "withdrawn: the window");
@@ -587,7 +590,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
 
     function test_SetConfig_CompareAndSet() public {
         IEnglishAuction.AuctionConfig memory next =
-            IEnglishAuction.AuctionConfig(12 hours, 10 minutes, 10_000);
+            IEnglishAuction.AuctionConfig(12 hours, 10 minutes, 10_000, REFUSAL_DELAY, REFUSAL_GAS);
         vm.prank(setter);
         vm.expectRevert(ISaleAdapter.ExpectedValueMismatch.selector);
         auction.setConfig(next, next);

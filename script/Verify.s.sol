@@ -193,7 +193,9 @@ contract Verify is ScriptIO {
         p.auction = IEnglishAuction.AuctionConfig(
             SafeCast.toUint32(_uint(record, "auctionDuration")),
             SafeCast.toUint32(_uint(record, "auctionExtensionWindow")),
-            SafeCast.toUint32(_uint(record, "auctionIncrementShare"))
+            SafeCast.toUint32(_uint(record, "auctionIncrementShare")),
+            SafeCast.toUint32(_uint(record, "auctionRefusalDelay")),
+            SafeCast.toUint32(_uint(record, "auctionRefusalGas"))
         );
         p.editionAuction = IUniformEditionAuction.AuctionConfig(
             SafeCast.toUint96(_uint(record, "editionBasePrice")),

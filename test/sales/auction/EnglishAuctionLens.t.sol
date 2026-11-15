@@ -209,7 +209,10 @@ contract EnglishAuctionLensTest is AuctionBase {
         uint256 saleId = _start();
         _bidEth(saleId, alice, 1 ether);
         vm.prank(setter);
-        auction.setConfig(_config(), IEnglishAuction.AuctionConfig(2 hours, WINDOW, SHARE));
+        auction.setConfig(
+            _config(),
+            IEnglishAuction.AuctionConfig(2 hours, WINDOW, SHARE, REFUSAL_DELAY, REFUSAL_GAS)
+        );
         vm.prank(setter);
         auction.setOpeningBid(ETH, 0, 0.1 ether);
         vm.prank(pauser);
@@ -529,10 +532,17 @@ contract EnglishAuctionLensLayoutTest is AuctionBase {
     uint256 internal constant SALES_SLOT = 8;
     uint256 internal constant OPENING_BIDS_SLOT = 9;
     uint256 internal constant CREDITS_SLOT = 10;
+    /// @dev `_federatedTerms`: a federated terms record's locked network fee recipient (bytes
+    ///      0..19) and refusal delay (20..23).
+    uint256 internal constant FEDERATED_TERMS_SLOT = 11;
+    /// @dev `Refusal`, bytes: refusalDelay 0..3, refusalGas 4..7.
+    uint256 internal constant REFUSAL_SLOT = 12;
 
     /// @dev Distinct governed parameters, so every settings and terms field differs.
     function _distinct() internal pure returns (IEnglishAuction.AuctionConfig memory) {
-        return IEnglishAuction.AuctionConfig(3 days + 7, 23 hours + 13, 12_345);
+        return IEnglishAuction.AuctionConfig(
+            3 days + 7, 23 hours + 13, 12_345, 9 days + 11, REFUSAL_GAS + 123_457
+        );
     }
 
     /// @dev The governed words: settings, opening bids, listings and the federation registry.
@@ -541,13 +551,15 @@ contract EnglishAuctionLensLayoutTest is AuctionBase {
         vm.record();
         vm.prank(setter);
         auction.setConfig(_config(), c);
-        _wroteOnly(_s(SETTINGS_SLOT), "setConfig");
+        _wroteOnly(_s(SETTINGS_SLOT, REFUSAL_SLOT), "setConfig");
         assertEq(_field(SETTINGS_SLOT, 0, 4), c.duration, "Settings.duration");
         assertEq(_field(SETTINGS_SLOT, 4, 4), c.extensionWindow, "Settings.extensionWindow");
         assertEq(_field(SETTINGS_SLOT, 8, 4), c.incrementShare, "Settings.incrementShare");
+        assertEq(_field(REFUSAL_SLOT, 0, 4), c.refusalDelay, "Refusal.refusalDelay");
+        assertEq(_field(REFUSAL_SLOT, 4, 4), c.refusalGas, "Refusal.refusalGas");
         vm.record();
         IEnglishAuction.AuctionConfig memory got = auction.config();
-        _readExactly(_s(SETTINGS_SLOT), "config");
+        _readExactly(_s(SETTINGS_SLOT, REFUSAL_SLOT), "config");
         assertEq(abi.encode(got), abi.encode(c), "config");
 
         vm.warp(block.timestamp + 1234);
@@ -749,8 +761,9 @@ contract EnglishAuctionLensLayoutTest is AuctionBase {
         uint256 saleId = _start();
         uint256 base = _saleSlot(saleId);
         uint256 tb = _termsSlot(saleId);
-        IEnglishAuction.AuctionConfig memory shorter =
-            IEnglishAuction.AuctionConfig(2 hours + 5, 1 minutes, 1000);
+        IEnglishAuction.AuctionConfig memory shorter = IEnglishAuction.AuctionConfig(
+            2 hours + 5, 1 minutes, 1000, c.refusalDelay, c.refusalGas
+        );
         vm.prank(setter);
         auction.setConfig(c, shorter);
         vm.warp(_field(base, 24, 4) - 30 minutes);
@@ -765,8 +778,9 @@ contract EnglishAuctionLensLayoutTest is AuctionBase {
         assertEq(a.endTime, pausedAt + 7 days + c.extensionWindow, "the locked window");
         _assertClock(saleId, a);
 
-        IEnglishAuction.AuctionConfig memory longer =
-            IEnglishAuction.AuctionConfig(2 days + 9, 1 minutes, 1000);
+        IEnglishAuction.AuctionConfig memory longer = IEnglishAuction.AuctionConfig(
+            2 days + 9, 1 minutes, 1000, c.refusalDelay, c.refusalGas
+        );
         vm.prank(setter);
         auction.setConfig(shorter, longer);
         a = auction.auction(saleId);
@@ -781,12 +795,15 @@ contract EnglishAuctionLensLayoutTest is AuctionBase {
         uint256 saleId = auction.start(address(fed), "");
         uint256 base = _saleSlot(saleId);
         uint256 tb = _termsSlot(saleId);
-        _wrote(_s(base, tb, tb + 1), "start, federated");
+        uint256 feeSlot = uint256(keccak256(abi.encode(_termsId(saleId), FEDERATED_TERMS_SLOT)));
+        _wrote(_s(base, tb, tb + 1, feeSlot), "start, federated");
         assertEq(_field(tb + 1, 18, 4), 10_000, "Terms.registryFee");
         assertEq(_field(tb + 1, 22, 1), 1, "Terms.federated");
+        assertEq(_field(feeSlot, 0, 20), uint160(federatedNetwork), "the locked fee recipient");
+        assertEq(_field(feeSlot, 20, 4), REFUSAL_DELAY, "the locked refusal delay");
         vm.record();
         LockedTerms memory lt = auction.lockedTerms(saleId);
-        _readExactly(_s(base, tb, tb + 1), "lockedTerms");
+        _readExactly(_s(base, tb, tb + 1, feeSlot), "lockedTerms");
         assertEq(lt.feeRecipient, federatedNetwork, "the federated network");
         assertEq(lt.feeShare, 10_000, "the registry fee");
         vm.record();
@@ -827,7 +844,12 @@ contract EnglishAuctionLensLayoutTest is AuctionBase {
 
     /// @dev The sale's terms record, through the terms ID the auction stored in the sale.
     function _termsSlot(uint256 saleId) internal view returns (uint256) {
-        return uint256(keccak256(abi.encode(_field(_saleSlot(saleId), 28, 2), TERMS_SLOT)));
+        return uint256(keccak256(abi.encode(_termsId(saleId), TERMS_SLOT)));
+    }
+
+    /// @dev The terms ID the auction stored in the sale.
+    function _termsId(uint256 saleId) internal view returns (uint256) {
+        return _field(_saleSlot(saleId), 28, 2);
     }
 
     /// @dev The auction's reads since `vm.record()` were exactly `want`, in order: the lens's

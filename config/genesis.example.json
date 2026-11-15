@@ -631,8 +631,8 @@
           "delay": 172800
         },
         {
-          "signature": "setConfig((uint32,uint32,uint32),(uint32,uint32,uint32))",
-          "selector": "0x8a5268b2",
+          "signature": "setConfig((uint32,uint32,uint32,uint32,uint32),(uint32,uint32,uint32,uint32,uint32))",
+          "selector": "0x1b380907",
           "role": "PARAMETER_SETTER",
           "class": "standard",
           "delay": 172800

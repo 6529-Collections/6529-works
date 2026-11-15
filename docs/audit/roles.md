@@ -159,7 +159,7 @@ Source: [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol).
 | `pause(uint256,bytes32)` | `0xa9f8f393` | `GUARDIAN` | Immediate | immediate | No: executes at once | Dispute pause: one per auction, lasting at most 7 days (`MAX_PAUSE`). |
 | `resume(uint256)` | `0x414000b5` | `UNPAUSER` | Standard | 48 hours | Yes: any guardian, during the delay | Refused until 48 hours after the pause, whenever it was scheduled. |
 | `cancel(uint256,bytes32)` | `0xeafb64d5` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Upheld dispute: while paused, citing the token's DISPUTE_OUTCOME recorded after the pause. |
-| `setConfig((uint32,uint32,uint32),(uint32,uint32,uint32))` | `0x8a5268b2` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Duration, anti-snipe window and increment share; compare-and-set. |
+| `setConfig((…),(…))` | `0x1b380907` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Duration, anti-snipe window, increment share, refusal delay and raise-only refusal gas; compare-and-set. |
 | `setOpeningBid(address,uint256,uint256)` | `0x5d918358` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Per currency; compare-and-set, with a ceiling. |
 | `setTarget(address,bool)` | `0x80ffe77f` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Also a genesis wiring call. |
 | `setFederationRegistry(address,address)` | `0x747e3199` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | v1.1: no registry is installed in v1. |
@@ -314,5 +314,6 @@ for the call they carry.
 | `0xa054305a` | `appendCurator((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))` |
 | `0x8479b292` | `appendPlatform((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))` |
 | `0x5cab7fab` | `appendGovernanceManifest((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))` |
+| `0x1b380907` | `setConfig((uint32,uint32,uint32,uint32,uint32),(uint32,uint32,uint32,uint32,uint32))` |
 | `0x3a59bb19` | `setConfig((uint96,uint16,uint16,uint32,uint32,uint32,uint32),(uint96,uint16,uint16,uint32,uint32,uint32,uint32))` |
 | `0x058832db` | `setConfig((uint256,bytes32,uint32,uint16,bool),(uint256,bytes32,uint32,uint16,bool))` |

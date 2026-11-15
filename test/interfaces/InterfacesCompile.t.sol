@@ -16,6 +16,7 @@ import { IEconomicsResolver } from "../../src/interfaces/IEconomicsResolver.sol"
 import { IEditions } from "../../src/interfaces/IEditions.sol";
 import { IEnglishAuction } from "../../src/interfaces/IEnglishAuction.sol";
 import { IEnglishAuctionClock } from "../../src/interfaces/IEnglishAuctionClock.sol";
+import { IEnglishAuctionRefusal } from "../../src/interfaces/IEnglishAuctionRefusal.sol";
 import { IEntropyModule } from "../../src/interfaces/IEntropyModule.sol";
 import { IFederationRegistry } from "../../src/interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "../../src/interfaces/IMintTarget.sol";
@@ -42,9 +43,14 @@ contract InterfacesCompileTest is Test {
         assertEq(type(IWorkPowers).interfaceId, bytes4(0xbd18229c), "IWorkPowers");
         assertEq(type(IEditions).interfaceId, bytes4(0xe183b26f), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");
-        assertEq(type(IEnglishAuction).interfaceId, bytes4(0x75122f3e), "IEnglishAuction");
+        // `setConfig` takes the refusal delay and gas (AUC-39, AUC-40).
+        assertEq(type(IEnglishAuction).interfaceId, bytes4(0xe4784e8b), "IEnglishAuction");
         // An integration view, never reported through ERC-165.
         assertEq(type(IEnglishAuctionClock).interfaceId, bytes4(0x968c7b07), "IEnglishAuctionClock");
+        // The refusal exit (AUC-38), never reported through ERC-165.
+        assertEq(
+            type(IEnglishAuctionRefusal).interfaceId, bytes4(0x625761b5), "IEnglishAuctionRefusal"
+        );
         assertEq(
             type(IUniformEditionAuction).interfaceId, bytes4(0x69e7405b), "IUniformEditionAuction"
         );

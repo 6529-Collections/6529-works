@@ -113,8 +113,10 @@ NOTES: dict[tuple[str, str], str] = {
         "pause.",
     ("EnglishAuction", "setOpeningBid(address,uint256,uint256)"):
         "Per currency; compare-and-set, with a ceiling.",
-    ("EnglishAuction", "setConfig((uint32,uint32,uint32),(uint32,uint32,uint32))"):
-        "Duration, anti-snipe window and increment share; compare-and-set.",
+    ("EnglishAuction", "setConfig((uint32,uint32,uint32,uint32,uint32),"
+     "(uint32,uint32,uint32,uint32,uint32))"):
+        "Duration, anti-snipe window, increment share, refusal delay and raise-only refusal "
+        "gas; compare-and-set.",
     ("*", "setTarget(address,bool)"): "Also a genesis wiring call.",
     ("*", "setFederationRegistry(address,address)"): "v1.1: no registry is installed in v1.",
     ("UniformEditionAuction", "setConfig((uint96,uint16,uint16,uint32,uint32,uint32,uint32),"
