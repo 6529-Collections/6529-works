@@ -486,7 +486,7 @@ repeat acceptance emits no `PackageAccepted`: read `isMoveNonceUsed` and `accept
 | A copier's work is minted from another artist's content. | During the auction an upheld dispute burns it; after the sale, a statement only. | `releaseContent` (48 hours) reserves the content for the rightful artist. |
 | A release names an artist with no identity. | `UnknownArtist`. | The rightful artist first registers, by a first acceptance. |
 | A mistaken content release is scheduled. | The content would be reserved for the wrong artist. | Any guardian cancels it within the 48 hours. |
-| An ERC-1271 check cannot get its full 200,000-gas allowance. | `BoundedCall.BoundedCallInsufficientGas`. | Resubmit with more gas. |
+| An ERC-1271 check runs short of gas. | `BoundedCall.BoundedCallShortfall(signer)`. | Resubmit with more gas. |
 
 ## Parameters and limits
 
@@ -496,8 +496,8 @@ repeat acceptance emits no `PackageAccepted`: read `isMoveNonceUsed` and `accept
 | Merkle proof nodes | at most 32 | `Limits.MAX_PROOF_DEPTH` |
 | Share denominator | 100,000 | `Splits.DENOMINATOR`, [`Splits.sol`](../../src/economics/Splits.sol) |
 | Move nonces per bitmap word | 255 (bit 255 is the sentinel) | `PackageRegistry.NONCES_PER_WORD` |
-| Signature length | at most 4,096 bytes | `SignatureVerifier.MAX_SIGNATURE_LENGTH` |
-| ERC-1271 gas allowance | 200,000 | `SignatureVerifier.ERC1271_GAS_LIMIT` |
+| Signature length | at most 65,536 bytes | `SignatureVerifier.MAX_SIGNATURE_LENGTH` |
+| ERC-1271 gas allowance | all the gas EIP-150 allows; a shortfall reverts | `SignatureVerifier.isValidERC1271` |
 | EIP-712 domain version | `"1"` | `Typehashes.DOMAIN_VERSION` |
 | `CURATION_SIGNER` and `CURATOR` grant delay | 30 days | `Roles.grantDelay`, [`Roles.sol`](../../src/governance/Roles.sol) |
 | Curation signer keys at deployment | at least 2 (off a local chain) | `DeployGuards.MIN_CURATION_SIGNERS`, [`DeployGuards.sol`](../../script/DeployGuards.sol) |

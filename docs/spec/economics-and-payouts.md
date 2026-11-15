@@ -411,7 +411,7 @@ sequenceDiagram
   The nonce is unused: nonces are unordered, single use and per account across all wallets
   (ECO-20, ECO-21), and `revokeNonce(nonce)` burns one everywhere. Signatures go through
   [`SignatureVerifier`](../../src/libraries/SignatureVerifier.sol) (ECDSA, ERC-2098, EIP-7702
-  accounts and capped ERC-1271).
+  accounts and ERC-1271 forwarding all gas).
 - **Effects.** `amount` is released exactly, or everything releasable for `type(uint256).max`.
   `consume` refuses any caller but the named wallet (`WrongWallet`). A failed release consumes
   nothing, and amounts are bounds, so the same signature works once enough has accrued (ECO-22).
@@ -603,7 +603,7 @@ Accepted risks are listed once, with their IDs, in
 | Minimum gas per item in continue mode: plain; signed | 200,000; 450,000 | `ClaimRouter.MIN_ITEM_GAS`, `MIN_SIGNED_ITEM_GAS` |
 | Shortfall revert ceiling | 1,500,000 | `ClaimRouter.SHORTFALL_REVERT_CEILING` |
 | Revert data kept per failed item | 256 bytes | `ClaimRouter._MAX_REASON_BYTES` (private) |
-| ERC-1271 gas; signature length | 200,000; at most 4,096 bytes | `SignatureVerifier.ERC1271_GAS_LIMIT`, `MAX_SIGNATURE_LENGTH` |
+| ERC-1271 gas; signature length | all the gas EIP-150 allows (a shortfall reverts with `BoundedCallShortfall`); at most 65,536 bytes | `SignatureVerifier.isValidERC1271`, `MAX_SIGNATURE_LENGTH` |
 | Release nonces per bitmap word | 256 | `ReleaseVerifier._useNonce` |
 | Release verifier domain | `6529 Works Release Verifier`, version `1` | `ReleaseVerifier` constructor |
 | Per-transaction gas cap tested | 16,777,216 (EIP-7825), budget 75% of it | [`GasCap.t.sol`](../../test/economics/GasCap.t.sol) |
