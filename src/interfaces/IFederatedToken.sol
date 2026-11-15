@@ -56,12 +56,17 @@ interface IFederatedToken is IMintTarget {
     /// @param admitted Whether it may now mint.
     event MinterSet(address indexed adapter, bool admitted);
     /// @notice ERC-4906: one token's metadata changed.
+    /// @param _tokenId The token.
     event MetadataUpdate(uint256 _tokenId);
     /// @notice ERC-4906: a range of tokens' metadata changed.
+    /// @param _fromTokenId The first token.
+    /// @param _toTokenId The last token.
     event BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId);
     /// @notice ERC-7572: the contract-level metadata changed.
     event ContractURIUpdated();
     /// @notice The marketplace owner changed (no on-chain power).
+    /// @param previousOwner The owner before.
+    /// @param newOwner The owner after.
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     /// @notice The caller is not the artist's active authority.

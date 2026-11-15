@@ -78,7 +78,9 @@ contract FederatedEditionAuctionLens is UniformEditionAuctionLensBase {
     ///         sale), or CANCELLED once the federation registry no longer serves `token`.
     /// @param token The edition contract.
     /// @param id The edition ID (the master's token ID).
-    /// @return The 1/1's state, end and pause start.
+    /// @return The 1/1's state.
+    /// @return Its end.
+    /// @return When its dispute pause began, zero if none.
     function clock(address token, uint256 id)
         external
         view

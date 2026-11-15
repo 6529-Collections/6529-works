@@ -96,7 +96,8 @@ contract FederatedEditions is ERC1155, FederatedMembership, IFederatedEditions {
 
     /// @inheritdoc IFederatedEditions
     function bindMinter(uint256 editionId, PackageItem calldata item)
-        external
+        public
+        virtual
         returns (WorkTerms memory)
     {
         _onlyMinter();

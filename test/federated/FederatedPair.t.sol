@@ -5,6 +5,8 @@ import { FederatedEditionAuction } from "src/federated/FederatedEditionAuction.s
 import { FederatedEditionAuctionLens } from "src/federated/FederatedEditionAuctionLens.sol";
 import { FederatedEditions } from "src/federated/FederatedEditions.sol";
 import { FederatedStream } from "src/federated/FederatedStream.sol";
+import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
+import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { IFederatedEditions } from "src/interfaces/IFederatedEditions.sol";
 import { IFederatedStream } from "src/interfaces/IFederatedStream.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
@@ -13,6 +15,21 @@ import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.so
 import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { FederationBase } from "./FederationBase.sol";
+
+/// @notice An editions copy that reports no network fee when an adapter binds it: different code,
+///         so governance must approve its hash, as an audit would a faulty version.
+contract FeeDodgingEditions is FederatedEditions {
+    constructor(Config memory c) FederatedEditions(c) { }
+
+    function bindMinter(uint256 editionId, PackageItem calldata item)
+        public
+        override
+        returns (WorkTerms memory w)
+    {
+        w = super.bindMinter(editionId, item);
+        (w.feeRecipient, w.feeShare) = (w.seller, 0);
+    }
+}
 
 /// @notice A federated pair end to end on the real stack: the master's 1/1 on the English
 ///         auction, its edition on the federated edition auction, the network's locked share on
@@ -98,6 +115,8 @@ contract FederatedPairTest is FederationBase {
         assertEq(pairEditions.balanceOf(b, tokenId), wonB);
         assertEq(wonA + wonB, st.count);
         assertTrue(pairEditions.edition(tokenId).supplySealed);
+        // FED-36: the edition renders through its master's renderer.
+        assertTrue(_contains(pairEditions.uri(tokenId), "data:application/json"));
         assertEq(pairEditions.edition(tokenId).maxSupply, st.count);
         (address receiver, uint256 royalty) = pairEditions.royaltyInfo(tokenId, 1 ether);
         (address masterReceiver,) = pairStream.royaltyInfo(tokenId, 1 ether);
@@ -143,6 +162,49 @@ contract FederatedPairTest is FederationBase {
         IUniformEditionAuction.Auction memory v = fl.auction(saleId);
         assertEq(v.feeShare, fedRegistry.entry(address(pairEditions)).feeShare);
         assertEq(v.feeRecipient, economics.networkFeeRecipient(keccak256("PRODUCT_FEDERATED")));
+    }
+
+    /// @dev FED-54: the fee locked at open is the registry's, whatever the token answers.
+    function test_Pair_ATokenThatReportsNoFeeStillPaysTheRegistryShare() public {
+        FederatedStream s = _deployStream(fedArtist);
+        FeeDodgingEditions dodge = new FeeDodgingEditions(
+            IFederatedEditions.Config(
+                "Dodge",
+                "DGE",
+                address(artists),
+                address(splitFactory),
+                uint160(fedArtist),
+                FED_SHARE,
+                networkFee,
+                address(s),
+                fedArtist
+            )
+        );
+        _govern(
+            hotAdmin,
+            address(fedRegistry),
+            abi.encodeCall(
+                fedRegistry.approveTemplate,
+                (address(dodge).codehash, 98, IFederationRegistry.Form.ERC1155)
+            )
+        );
+        vm.prank(fedArtist);
+        s.linkEditions(address(dodge));
+        _join(address(s), fedArtist);
+        _join(address(dodge), fedArtist);
+        Work memory w = _fedMaster(fedArtist, 0);
+        (uint256 oneSaleId, uint256 tokenId) = _startFed(s, fedArtist, w, RATE);
+        uint256 saleId = fea.open(address(dodge), tokenId, abi.encode(w.item));
+        assertEq(fl.auction(saleId).feeShare, FED_SHARE, "the registry's share");
+        assertEq(fl.auction(saleId).feeRecipient, networkFee);
+        _editionBidFed(saleId, makeAddr("a"), 100, 2);
+        _settleAtEnd(oneSaleId);
+        dodge.createEdition(tokenId, w.item);
+        vm.warp(fl.endTimes(saleId).endTime);
+        uint256 before = networkFee.balance;
+        fea.settle(saleId, new uint256[](0));
+        IUniformEditionAuction.Settlement memory st = fl.settlement(saleId);
+        assertEq(networkFee.balance - before, st.count * st.price * FED_SHARE / 100_000);
     }
 
     function test_Pair_OnlyServedContractsOpen() public {

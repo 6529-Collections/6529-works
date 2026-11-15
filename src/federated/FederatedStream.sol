@@ -262,6 +262,8 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
 
     /// @notice Accepts only this contract's own token, back from its minting adapter while its
     ///         sale is unsettled (`reclaim`); it is then unsold (`WorkReturned`).
+    /// @param from The previous holder: the token's minting adapter.
+    /// @param tokenId The token.
     /// @return The ERC-721 acceptance selector.
     function onERC721Received(address, address from, uint256 tokenId, bytes calldata)
         external
@@ -502,7 +504,8 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
 
     /// @notice A work's seed policy and seed (`IWorkRecords.seedOf`): none or the artist's.
     /// @param tokenId A live token.
-    /// @return The policy and the seed.
+    /// @return The policy.
+    /// @return The seed, zero under NONE.
     function seedOf(uint256 tokenId) external view returns (uint8, bytes32) {
         (, Work storage w) = _work(tokenId);
         return (w.seedPolicy, w.seed);

@@ -104,79 +104,136 @@ interface IFederatedStream is IFederatedToken {
     /// @param tokenId The token.
     event WorkReturned(uint256 indexed tokenId);
     /// @notice The artist pointed a work at a new record file.
+    /// @param workId The work.
+    /// @param recordFileId The new record file.
     event RecordChanged(uint256 indexed workId, bytes32 recordFileId);
     /// @notice The artist finalized a work, pinning a renderer.
+    /// @param workId The work.
+    /// @param renderer The pinned renderer.
+    /// @param codeHash Its code hash.
     event Finalized(uint256 indexed workId, address renderer, bytes32 codeHash);
     /// @notice The artist lowered a work's royalty rate.
+    /// @param workId The work.
+    /// @param previous The rate before.
+    /// @param next The rate after.
     event RoyaltyRateChanged(uint256 indexed workId, uint32 previous, uint32 next);
     /// @notice The artist set (or cleared, kind zero) a media file's locator.
+    /// @param workId The work.
+    /// @param index The media file's index.
+    /// @param kind The locator kind (`LocatorKind`, an open number).
+    /// @param uri The locator.
     event LocatorSet(uint256 indexed workId, uint256 index, uint8 kind, string uri);
     /// @notice Every media file of a work is complete in the content store.
+    /// @param workId The work.
     event OnChainComplete(uint256 indexed workId);
     /// @notice The artist set the default renderer.
+    /// @param renderer The renderer.
+    /// @param codeHash Its code hash.
     event DefaultRendererSet(address renderer, bytes32 codeHash);
     /// @notice The artist linked the pair's editions contract.
+    /// @param editions The editions contract.
     event EditionsLinked(address editions);
 
     /// @notice Only the adapter that minted the token.
+    /// @param caller The caller.
     error NotMintingAdapter(address caller);
     /// @notice The token's sale already settled.
+    /// @param tokenId The token.
     error SaleAlreadySettled(uint256 tokenId);
     /// @notice An outcome other than SOLD with a buyer, or UNBID or FROZEN_OUT without one.
     error InvalidSaleOutcome();
     /// @notice The work cannot restart: its token is not unsold in this contract's custody, or
     ///         its edition sale has begun.
+    /// @param workId The work.
     error WorkNotRestartable(uint256 workId);
     /// @notice The work is finalized.
+    /// @param workId The work.
     error WorkFinalized(uint256 workId);
     /// @notice A royalty rate above 100,000, or not lower than the current one.
+    /// @param rate The rate asked for.
     error InvalidRoyaltyRate(uint32 rate);
-    /// @notice No live token or no such file, collection or index.
+    /// @notice No live token, or no such file, collection or index.
+    /// @param tokenId The token (or collection) asked for.
     error UnknownWork(uint256 tokenId);
 
     /// @notice The artist approves `itemHash` for one mint, with the royalty rate a new work of
     ///         it gets (no floor; at most 100,000), or re-approves a consumed item to restart its
     ///         unsold work.
+    /// @param itemHash `WorksHashing.itemHash` of the item.
+    /// @param royaltyRate The royalty rate of a new work, out of 100,000.
     function approveItem(bytes32 itemHash, uint32 royaltyRate) external;
     /// @notice The artist withdraws an approval not yet used.
+    /// @param itemHash The item's hash.
     function revokeItem(bytes32 itemHash) external;
     /// @notice Pulls a token whose sale closed without settling back into this contract's
     ///         custody, through its adapter's `claimDelivery` (this contract is the creator the
     ///         adapter recognises). Permissionless.
+    /// @param tokenId The token, unsettled and held by its minting adapter.
     function reclaim(uint256 tokenId) external;
     /// @notice The artist points a work at a new record file, until finalize.
+    /// @param tokenId A live token of the work.
+    /// @param recordFileId The new record file.
     function setRecord(uint256 tokenId, bytes32 recordFileId) external;
     /// @notice The artist finalizes a work: the record is fixed and the default renderer is
     ///         pinned with its code hash.
+    /// @param tokenId A live token of the work.
     function finalize(uint256 tokenId) external;
     /// @notice The artist lowers a work's royalty rate.
+    /// @param tokenId A live token of the work.
+    /// @param rate The new rate, below the current one.
     function setRoyaltyRate(uint256 tokenId, uint32 rate) external;
     /// @notice The artist sets media file `index`'s locator (kind zero clears it).
+    /// @param tokenId A live token of the work.
+    /// @param index The media file's index.
+    /// @param kind The locator kind.
+    /// @param uri The locator.
     function setLocator(uint256 tokenId, uint256 index, uint8 kind, string calldata uri) external;
     /// @notice Marks a work on-chain complete once every media file is complete in the content
     ///         store. Permissionless.
+    /// @param tokenId A live token of the work.
     function syncOnChain(uint256 tokenId) external;
     /// @notice The artist sets the default renderer (ERC-165 `IRenderer`, code hash pinned).
+    /// @param renderer The renderer.
+    /// @param codeHash Its code hash.
     function setDefaultRenderer(address renderer, bytes32 codeHash) external;
     /// @notice The artist links the pair's editions contract, once, before joining.
+    /// @param editions The editions contract.
     function linkEditions(address editions) external;
 
-    /// @notice The token's work, minting adapter and sale state (1 in sale, 2 sold, 3 unbid, 4
-    ///         frozen out, 5 returned).
+    /// @notice The token's work, minting adapter and sale state.
+    /// @param tokenId A token ever minted.
+    /// @return workId Its work.
+    /// @return adapter Its minting adapter.
+    /// @return state 1 in sale, 2 sold, 3 unbid, 4 frozen out, 5 returned (0: never minted).
     function tokenInfo(uint256 tokenId)
         external
         view
         returns (uint256 workId, address adapter, uint8 state);
-    /// @notice A work's live token, zero if burned.
+    /// @notice A work's live token.
+    /// @param workId The work.
+    /// @return The live token, zero if burned.
     function liveTokenOf(uint256 workId) external view returns (uint256);
     /// @notice The token's primary-sale outcome: NONE until its adapter settles it.
+    /// @param tokenId The token.
+    /// @return outcome The outcome.
+    /// @return currency The currency, for SOLD.
+    /// @return price The price, for SOLD (saturated at 2^96 - 1).
     function primarySale(uint256 tokenId)
         external
         view
         returns (PrimaryOutcome outcome, address currency, uint256 price);
     /// @notice Whether the token's primary sale settled (sold, unbid or frozen out).
+    /// @param tokenId The token.
+    /// @return True once settled.
     function primarySaleSettled(uint256 tokenId) external view returns (bool);
     /// @notice The fields the edition auction and the editions template read.
+    /// @param tokenId A live token.
+    /// @return itemHash The work's item hash.
+    /// @return artistId The artist.
+    /// @return collectionId Always 1 (the contract).
+    /// @return kind ORIGINAL (0) or EDITION_MASTER (1).
+    /// @return seedPolicy NONE (0) or ARTIST (1).
+    /// @return royaltyRate The current royalty rate.
     function coreOf(uint256 tokenId)
         external
         view
@@ -190,10 +247,17 @@ interface IFederatedStream is IFederatedToken {
         );
     /// @notice The renderer that builds the token's metadata: its pin once finalized, else the
     ///         default renderer; either must still have its pinned code hash.
+    /// @param tokenId A live token.
+    /// @return The renderer.
     function rendererOf(uint256 tokenId) external view returns (address);
     /// @notice The record satellite the renderer reads: this contract.
+    /// @return This contract.
     function workRecords() external view returns (address);
     /// @notice A file's locator and its index in the work's media list.
+    /// @param tokenId A live token.
+    /// @param fileId One of the work's media files.
+    /// @return locator The artist's locator (kind zero: none).
+    /// @return index The file's index.
     function preferredLocator(uint256 tokenId, bytes32 fileId)
         external
         view

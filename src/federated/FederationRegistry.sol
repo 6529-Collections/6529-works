@@ -44,8 +44,14 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
     }
 
     /// @notice A template code hash's version, form or status changed.
+    /// @param codeHash The template's runtime code hash.
+    /// @param version Its version.
+    /// @param form Its form.
+    /// @param status Its new status.
     event TemplateSet(bytes32 indexed codeHash, uint32 version, Form form, TemplateStatus status);
     /// @notice A sale adapter was admitted or removed for new federated works.
+    /// @param adapter The adapter.
+    /// @param admitted Whether it may mint new federated works.
     event AdapterSet(address indexed adapter, bool admitted);
 
     /// @notice The transition is not allowed from the template's current status.

@@ -4,7 +4,9 @@ pragma solidity ^0.8.24;
 import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { Splits } from "src/economics/Splits.sol";
+import { FederatedEditions } from "src/federated/FederatedEditions.sol";
 import { FederatedStream } from "src/federated/FederatedStream.sol";
+import { IFederatedEditions } from "src/interfaces/IFederatedEditions.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IFederatedStream } from "src/interfaces/IFederatedStream.sol";
@@ -105,6 +107,28 @@ contract FederatedSaleTest is FederationBase {
         vm.expectRevert(IFederatedToken.FederationStateInvalid.selector);
         fed.joinFederation(0, 0, 0, "");
         assertFalse(fed.isAdmittedMinter(address(auction)), "it never sells under that listing");
+    }
+
+    // ------------------------------------------------------------------ the templates
+
+    /// @dev FED-1: the compiled runtime code is the deployed code (this only compiles for a
+    ///      contract with no immutable), so every copy of a version has one code hash.
+    function test_Template_EveryCopyRunsTheCompiledRuntimeCode() public {
+        assertEq(keccak256(type(FederatedStream).runtimeCode), streamHash);
+        assertEq(keccak256(type(FederatedEditions).runtimeCode), editionsHash);
+        IFederatedStream.Config memory c = _streamConfig(collector);
+        c.name = "Another";
+        assertEq(address(new FederatedStream(c)).codehash, streamHash);
+        emit log_named_bytes32("FederatedStream code hash", streamHash);
+        emit log_named_bytes32("FederatedEditions code hash", editionsHash);
+        emit log_named_bytes32("IFederatedToken id", bytes32(type(IFederatedToken).interfaceId));
+        emit log_named_bytes32("IFederatedStream id", bytes32(type(IFederatedStream).interfaceId));
+        emit log_named_bytes32(
+            "IFederatedEditions id", bytes32(type(IFederatedEditions).interfaceId)
+        );
+        assertTrue(fed.supportsInterface(type(IFederatedStream).interfaceId));
+        assertTrue(fed.supportsInterface(type(IMintTarget).interfaceId));
+        assertTrue(fed.supportsInterface(0x2a55205a), "ERC-2981");
     }
 
     // ------------------------------------------------------------------ minting
