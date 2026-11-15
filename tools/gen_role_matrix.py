@@ -116,7 +116,7 @@ NOTES: dict[tuple[str, str], str] = {
     ("EnglishAuction", "setConfig((uint32,uint32,uint32),(uint32,uint32,uint32))"):
         "Duration, anti-snipe window and increment share; compare-and-set.",
     ("*", "setTarget(address,bool)"): "Also a genesis wiring call.",
-    ("*", "setFederationRegistry(address,address)"): "v1.1: no registry is installed in v1.",
+    ("*", "setFederationRegistry(address,address)"): "No federation registry is installed yet (federation is in v1, ADR 0007; a later ADR specifies it).",
     ("UniformEditionAuction", "setConfig((uint96,uint16,uint16,uint32,uint32,uint32,uint32),"
      "(uint96,uint16,uint16,uint32,uint32,uint32,uint32))"):
         "Margin, step ladder, close offset, soft-close window and backstop; compare-and-set, "
@@ -292,6 +292,10 @@ def validate(config: dict) -> None:
             raise ConfigError(f"manager.{sig}: unknown role {entry['role']!r}")
         if entry["delay"] != role["executionDelay"] or entry["class"] != role["executionClass"]:
             raise ConfigError(f"manager.{sig}: class or delay differs from role {entry['role']}")
+    for entry in (config.get("manager") or {}).get("open", []):
+        sig = entry["signature"]
+        if entry["selector"] != selector(sig):
+            raise ConfigError(f"manager.{sig}: selector {entry['selector']} is not {selector(sig)}")
     contracts = {c["name"] for c in config["contracts"]}
     for call in config["wiring"]:
         if call["contract"] not in contracts:
@@ -479,6 +483,9 @@ def render(config: dict) -> str:
         note = MANAGER_NOTES.get(f["signature"], f.get("note", ""))
         w(f"| `{f['signature']}` | `{f['selector']}` | `{f['role']}` | "
           f"{format_delay(f['delay'])} | {guardian_cancel(f['delay'])} | {note} |")
+    for f in (config.get("manager") or {}).get("open", []):
+        w(f"| `{f['signature']}` | `{f['selector']}` | No role (checked in the function) | "
+          f"{format_delay(0)} | {guardian_cancel(0)} | {f.get('note', '')} |")
     w("")
     w("`schedule`, `execute` and `cancel` are open to anyone and check the caller's permission")
     w("for the call they carry.")

@@ -11,6 +11,7 @@ import { PackageRegistry } from "src/curation/PackageRegistry.sol";
 import { AssetAllowlist } from "src/economics/AssetAllowlist.sol";
 import { ClaimRouter } from "src/economics/ClaimRouter.sol";
 import { EconomicsResolver } from "src/economics/EconomicsResolver.sol";
+import { GovernedVault } from "src/economics/GovernedVault.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
 import { SplitLedger } from "src/economics/SplitLedger.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
@@ -84,10 +85,12 @@ library DeployV1 {
         address deployer;
         /// CREATE2 salt namespace; one namespace deploys one system.
         bytes32 namespace;
-        /// Network share recipient of every product (EconomicsResolver defaults).
+        /// The first destination of the network fee recipient's governed vault, which the
+        /// EconomicsResolver names as every product's network share recipient.
         address feeRecipient;
-        /// The 6529 Network Museum (D140): where an unbid canonical 6529 Stream work goes. An
-        /// existing Safe or EOA; FUNDS_SETTER can change it.
+        /// The 6529 Network Museum (D140): the first destination of the museum's governed vault,
+        /// where an unbid canonical 6529 Stream work goes. An existing Safe or EOA; FUNDS_SETTER
+        /// can change the vault's destination (`setDestination`) or the resolver's museum.
         address museum;
         /// The marketplace `owner()` of 6529 Stream (and 6529 Stream Editions): collection admin
         /// on marketplaces, no protocol power. FUNDS_SETTER can change it.
@@ -122,6 +125,12 @@ library DeployV1 {
         ConsolidationAdapter consolidationAdapter;
         ArtistRegistry artistRegistry;
         SplitLedger splitFactory;
+        /// The network fee recipient the economics resolver names: a governed vault whose first
+        /// destination is `Params.feeRecipient`.
+        GovernedVault feeRecipientVault;
+        /// The museum the economics resolver names: a governed vault whose first destination is
+        /// `Params.museum`.
+        GovernedVault museumVault;
         ClaimRouter claimRouter;
         AssetAllowlist assetAllowlist;
         EconomicsResolver economicsResolver;
@@ -209,13 +218,15 @@ library DeployV1 {
     ///         Each lens is its own entry, just before its auction, so no deployment carries two
     ///         contracts' code (F8, the rc.2 review's GAS M-2).
     function order(Params memory p) internal pure returns (string[] memory list) {
-        string[21] memory all = [
+        string[23] memory all = [
             "GovernanceConfigurator",
             "ContentStore",
             "DependencyRegistry",
             "ConsolidationAdapter",
             "ArtistRegistry",
             "SplitFactory",
+            "FeeRecipientVault",
+            "MuseumVault",
             "ClaimRouter",
             "AssetAllowlist",
             "EconomicsResolver",
@@ -268,6 +279,14 @@ library DeployV1 {
         if (n == keccak256("SplitFactory")) {
             return _code(type(SplitLedger).creationCode, abi.encode(d.artistRegistry));
         }
+        if (n == keccak256("FeeRecipientVault")) {
+            return _code(
+                type(GovernedVault).creationCode, abi.encode(m, d.splitFactory, p.feeRecipient)
+            );
+        }
+        if (n == keccak256("MuseumVault")) {
+            return _code(type(GovernedVault).creationCode, abi.encode(m, d.splitFactory, p.museum));
+        }
         if (n == keccak256("ClaimRouter")) {
             return _code(type(ClaimRouter).creationCode, abi.encode(d.splitFactory));
         }
@@ -278,7 +297,12 @@ library DeployV1 {
             return _code(
                 type(EconomicsResolver).creationCode,
                 abi.encode(
-                    m, d.assetAllowlist, d.splitFactory, p.feeRecipient, p.museum, d.cc0TextFileId
+                    m,
+                    d.assetAllowlist,
+                    d.splitFactory,
+                    d.feeRecipientVault,
+                    d.museumVault,
+                    d.cc0TextFileId
                 )
             );
         }
@@ -522,6 +546,8 @@ library DeployV1 {
         if (n == keccak256("ConsolidationAdapter")) return address(d.consolidationAdapter);
         if (n == keccak256("ArtistRegistry")) return address(d.artistRegistry);
         if (n == keccak256("SplitFactory")) return address(d.splitFactory);
+        if (n == keccak256("FeeRecipientVault")) return address(d.feeRecipientVault);
+        if (n == keccak256("MuseumVault")) return address(d.museumVault);
         if (n == keccak256("ClaimRouter")) return address(d.claimRouter);
         if (n == keccak256("AssetAllowlist")) return address(d.assetAllowlist);
         if (n == keccak256("EconomicsResolver")) return address(d.economicsResolver);
@@ -558,6 +584,10 @@ library DeployV1 {
             d.artistRegistry = ArtistRegistry(a);
         } else if (n == keccak256("SplitFactory")) {
             d.splitFactory = SplitLedger(a);
+        } else if (n == keccak256("FeeRecipientVault")) {
+            d.feeRecipientVault = GovernedVault(payable(a));
+        } else if (n == keccak256("MuseumVault")) {
+            d.museumVault = GovernedVault(payable(a));
         } else if (n == keccak256("ClaimRouter")) {
             d.claimRouter = ClaimRouter(a);
         } else if (n == keccak256("AssetAllowlist")) {
@@ -597,7 +627,7 @@ library DeployV1 {
 
     /// @notice Every contract name `addressOf` knows, for records and readback.
     function names() internal pure returns (string[] memory list) {
-        string[23] memory all = [
+        string[25] memory all = [
             "GovernanceConfigurator",
             "WorksAccessManager",
             "ContentStore",
@@ -605,6 +635,8 @@ library DeployV1 {
             "ConsolidationAdapter",
             "ArtistRegistry",
             "SplitFactory",
+            "FeeRecipientVault",
+            "MuseumVault",
             "ClaimRouter",
             "AssetAllowlist",
             "EconomicsResolver",

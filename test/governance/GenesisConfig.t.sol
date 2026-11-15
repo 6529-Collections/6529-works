@@ -7,6 +7,7 @@ import { PackageRegistry } from "src/curation/PackageRegistry.sol";
 import { DependencyRegistry } from "src/content/DependencyRegistry.sol";
 import { AssetAllowlist } from "src/economics/AssetAllowlist.sol";
 import { EconomicsResolver } from "src/economics/EconomicsResolver.sol";
+import { GovernedVault } from "src/economics/GovernedVault.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { Roles } from "src/governance/Roles.sol";
@@ -157,13 +158,14 @@ contract GenesisConfigTest is Test {
                 ],
                 7
             );
-            bytes4[] memory all = new bytes4[](10);
+            bytes4[] memory all = new bytes4[](11);
             for (uint256 i; i < 7; ++i) {
                 all[i] = out[i];
             }
             all[7] = IStream.releaseContent.selector;
             all[8] = IStream.setDependency.selector;
             all[9] = IStream.rescueToMuseum.selector;
+            all[10] = IStream.setRescueDelay.selector;
             return all;
         }
         if (_eq(name, "WorkRecords")) {
@@ -223,20 +225,27 @@ contract GenesisConfigTest is Test {
             );
         }
         if (_eq(name, "ArtistRegistry")) {
-            return _s10(
+            bytes4[] memory ten = _s10(
                 [
                     IArtistRegistry.vetoChange.selector,
                     IArtistRegistry.stageOverride.selector,
                     IArtistRegistry.setConsolidationSource.selector,
                     IArtistRegistry.setPackageRegistry.selector,
                     IArtistRegistry.resolveContested.selector,
+                    IArtistRegistry.setFederationRegistry.selector,
+                    IArtistRegistry.setTimer.selector,
                     IArtistRegistry.bindPackageRegistry.selector,
                     IArtistRegistry.bindStream.selector,
-                    IArtistRegistry.bindSplitFactory.selector,
-                    IArtistRegistry.bindStatementLog.selector,
-                    IArtistRegistry.bindFederationRegistry.selector
+                    IArtistRegistry.bindSplitFactory.selector
                 ]
             );
+            bytes4[] memory all = new bytes4[](12);
+            for (uint256 i; i < 10; ++i) {
+                all[i] = ten[i];
+            }
+            all[10] = IArtistRegistry.bindStatementLog.selector;
+            all[11] = IArtistRegistry.bindFederationRegistry.selector;
+            return all;
         }
         if (_eq(name, "StatementLog")) {
             return _s(
@@ -315,7 +324,13 @@ contract GenesisConfigTest is Test {
             );
         }
         if (_eq(name, "RevenueEscrow")) {
-            return _s([RevenueEscrow.recover.selector, z, z, z, z, z, z], 1);
+            return _s(
+                [RevenueEscrow.recover.selector, RevenueEscrow.sweepExcess.selector, z, z, z, z, z],
+                2
+            );
+        }
+        if (_eq(name, "FeeRecipientVault") || _eq(name, "MuseumVault")) {
+            return _s([GovernedVault.setDestination.selector, z, z, z, z, z, z], 1);
         }
         if (_eq(name, "DependencyRegistry")) {
             return _s(
@@ -423,7 +438,7 @@ contract GenesisConfigTest is Test {
             }
             total += listed.length;
         }
-        assertEq(total, 69, "59 mapped, 9 genesis-only, 1 deferred");
+        assertEq(total, 75, "65 mapped, 9 genesis-only, 1 deferred");
     }
 
     function test_RoleTableMatchesRolesSol() public view {
@@ -449,15 +464,53 @@ contract GenesisConfigTest is Test {
     }
 
     /// Regression: GOV-2 (docs/security/internal-review-2026-10.md)
-    /// @dev The manager's own guardian function and view (GOV-2), beyond its OpenZeppelin base.
+    /// @dev The manager's own functions and views beyond its OpenZeppelin base: the guardian's
+    ///      suspension (GOV-2) and the permanence functions (GV-37 to GV-45), in the order the
+    ///      genesis file lists them, with each one's role and delay.
     function test_ManagerSectionMatchesWorksAccessManager() public view {
-        assertEq(_count(".manager.functions"), 1, "suspend");
-        assertEq(_str(".manager.functions[0].signature"), "suspend(uint64,address)");
-        assertEq(_selector(".manager.functions[0].selector"), WorksAccessManager.suspend.selector);
-        assertEq(_roleId(_str(".manager.functions[0].role")), Roles.GUARDIAN);
-        assertEq(vm.parseJsonUint(json, ".manager.functions[0].delay"), Roles.IMMEDIATE);
-        assertEq(_count(".manager.views"), 1, "isSuspended");
+        bytes4[6] memory fns = [
+            WorksAccessManager.suspend.selector,
+            WorksAccessManager.setParameter.selector,
+            WorksAccessManager.setRecoveryAddress.selector,
+            WorksAccessManager.registerSuccessor.selector,
+            WorksAccessManager.approveRecovery.selector,
+            WorksAccessManager.objectToRecovery.selector
+        ];
+        uint64[6] memory roles =
+            [Roles.GUARDIAN, Roles.ADMIN, Roles.ADMIN, Roles.ADMIN, Roles.GUARDIAN, Roles.GUARDIAN];
+        assertEq(_count(".manager.functions"), fns.length, "manager.functions");
+        for (uint256 i; i < fns.length; ++i) {
+            string memory f = _at(".manager.functions", i);
+            assertEq(
+                _selector(string.concat(f, ".selector")),
+                fns[i],
+                _str(string.concat(f, ".signature"))
+            );
+            assertEq(_roleId(_str(string.concat(f, ".role"))), roles[i]);
+            assertEq(
+                vm.parseJsonUint(json, string.concat(f, ".delay")), Roles.executionDelay(roles[i])
+            );
+        }
+        bytes4[4] memory open = [
+            WorksAccessManager.heartbeat.selector,
+            WorksAccessManager.openRecovery.selector,
+            WorksAccessManager.completeRecovery.selector,
+            WorksAccessManager.migrate.selector
+        ];
+        assertEq(_count(".manager.open"), open.length, "manager.open");
+        for (uint256 i; i < open.length; ++i) {
+            assertEq(_selector(string.concat(_at(".manager.open", i), ".selector")), open[i]);
+        }
+        assertEq(_count(".manager.views"), 12, "manager.views");
         assertEq(_selector(".manager.views[0].selector"), WorksAccessManager.isSuspended.selector);
+        for (uint256 i; i < 12; ++i) {
+            string memory v = _at(".manager.views", i);
+            assertEq(
+                _selector(string.concat(v, ".selector")),
+                bytes4(keccak256(bytes(_str(string.concat(v, ".signature"))))),
+                _str(string.concat(v, ".signature"))
+            );
+        }
     }
 
     function test_EveryEntryMatchesItsSignatureAndClassDelay() public view {

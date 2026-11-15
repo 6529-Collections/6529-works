@@ -138,6 +138,11 @@
       "label": "Cold recovery admin Safe (ADMIN only; 3-of-5, signers distinct from the hot admin's and the guardians')"
     },
     {
+      "role": "ADMIN",
+      "account": "0x000000000000000000000000000000000000b004",
+      "label": "Third admin Safe (ADMIN only; an independent recovery council, signers distinct from both other admins' and the guardians')"
+    },
+    {
       "role": "GUARDIAN",
       "account": "0x000000000000000000000000000000000000b011",
       "label": "Guardian Safe 1"
@@ -217,7 +222,7 @@
     {
       "name": "SplitFactory",
       "address": "0x000000000000000000000000000000000000a010",
-      "note": "not governed; passed to ArtistRegistry.bindSplitFactory"
+      "note": "the split ledger; not governed; passed to ArtistRegistry.bindSplitFactory"
     },
     {
       "name": "WorksAccessManager",
@@ -238,12 +243,118 @@
         "class": "immediate",
         "delay": 0,
         "note": "One-way suspension of a holder of a suspendable role (roles[].suspendable); an ADMIN grantRole or revokeRole of that role to that account (30 days) clears it"
+      },
+      {
+        "signature": "setParameter(uint8,uint32,uint32)",
+        "selector": "0x5c2b54bd",
+        "role": "ADMIN",
+        "class": "successor",
+        "delay": 2592000,
+        "note": "Slow lane: scheduled at least SLOW_DELAY (default 60 days) ahead, ADMIN's 30 days included; compare-and-set within compiled bounds (GV-41)"
+      },
+      {
+        "signature": "setRecoveryAddress(address,address)",
+        "selector": "0x81163a33",
+        "role": "ADMIN",
+        "class": "successor",
+        "delay": 2592000,
+        "note": "Slow lane: scheduled at least SLOW_DELAY (default 60 days) ahead, ADMIN's 30 days included; compare-and-set (GV-42)"
+      },
+      {
+        "signature": "registerSuccessor(address)",
+        "selector": "0xa488b91d",
+        "role": "ADMIN",
+        "class": "successor",
+        "delay": 2592000,
+        "note": "Slow lane: scheduled at least SLOW_DELAY (default 60 days) ahead, ADMIN's 30 days included; ESCALATED_DELAY (default 120 days) and a guardian majority after a guardian's cancellation (GV-37, GV-43)"
+      },
+      {
+        "signature": "approveRecovery(address)",
+        "selector": "0xcbc3b3c2",
+        "role": "GUARDIAN",
+        "class": "immediate",
+        "delay": 0,
+        "note": "Vote approving a live recovery of an unregistered candidate (GV-42)"
+      },
+      {
+        "signature": "objectToRecovery(address)",
+        "selector": "0x1886f8bc",
+        "role": "GUARDIAN",
+        "class": "immediate",
+        "delay": 0,
+        "note": "Vote objecting to a live recovery of the recovery address (GV-42)"
+      }
+    ],
+    "open": [
+      {
+        "signature": "heartbeat()",
+        "selector": "0x3defb962",
+        "note": "Any active ADMIN holder, at once: resets the inactivity clock (GV-42)"
+      },
+      {
+        "signature": "openRecovery(address)",
+        "selector": "0x24d48fe5",
+        "note": "Anyone, after RECOVERY_SILENCE without admin activity (GV-42)"
+      },
+      {
+        "signature": "completeRecovery(address)",
+        "selector": "0xf480dd7e",
+        "note": "Anyone, after RECOVERY_DELAY, if the guardian decision allows it (GV-42)"
+      },
+      {
+        "signature": "migrate(uint256,uint256)",
+        "selector": "0x3e54bacb",
+        "note": "Anyone, once a successor is registered (GV-45)"
       }
     ],
     "views": [
       {
         "signature": "isSuspended(uint64,address)",
         "selector": "0xbd2e6ac3"
+      },
+      {
+        "signature": "actionOf(address,bytes)",
+        "selector": "0x16922876"
+      },
+      {
+        "signature": "getEscalation(bytes32)",
+        "selector": "0x7068639f"
+      },
+      {
+        "signature": "getRecovery(address)",
+        "selector": "0x9769c3fe"
+      },
+      {
+        "signature": "isStruck(bytes32)",
+        "selector": "0xc7e7e16e"
+      },
+      {
+        "signature": "lastAdminActivity()",
+        "selector": "0x5811b5b1"
+      },
+      {
+        "signature": "managedTargets()",
+        "selector": "0xf4b68392"
+      },
+      {
+        "signature": "parameter(uint8)",
+        "selector": "0xedbdabac"
+      },
+      {
+        "signature": "parameterBounds(uint8)",
+        "selector": "0x5421d77f"
+      },
+      {
+        "signature": "recoveryAddress()",
+        "selector": "0x710eb26c"
+      },
+      {
+        "signature": "seatHolders(uint64)",
+        "selector": "0x59bd67dd"
+      },
+      {
+        "signature": "successor()",
+        "selector": "0x6ff968c3"
       }
     ]
   },
@@ -307,6 +418,13 @@
         {
           "signature": "rescueToMuseum(uint256)",
           "selector": "0xe9c794a4",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        },
+        {
+          "signature": "setRescueDelay(uint256)",
+          "selector": "0x5968b5f3",
           "role": "SUCCESSOR_SETTER",
           "class": "successor",
           "delay": 2592000
@@ -521,6 +639,20 @@
           "role": "SUCCESSOR_SETTER",
           "class": "successor",
           "delay": 2592000
+        },
+        {
+          "signature": "setFederationRegistry(address,address)",
+          "selector": "0x747e3199",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        },
+        {
+          "signature": "setTimer(uint8,uint48)",
+          "selector": "0xd5f2e860",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
         }
       ],
       "genesisOnly": [
@@ -545,7 +677,7 @@
         {
           "signature": "bindFederationRegistry(address)",
           "selector": "0x3d4dbd3c",
-          "note": "v1.1: bound when the federation registry ships, as a 30-day ADMIN action"
+          "note": "Bound when the federation registry ships (in v1, specified by a later ADR), as a 30-day ADMIN action; replaceable afterwards by setFederationRegistry"
         }
       ]
     },
@@ -799,6 +931,51 @@
           "role": "FUNDS_SETTER",
           "class": "funds",
           "delay": 1209600
+        },
+        {
+          "signature": "sweepExcess(address,address)",
+          "selector": "0xfc6e9367",
+          "role": "FUNDS_SETTER",
+          "class": "funds",
+          "delay": 1209600
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "FeeRecipientVault",
+      "artifact": "src/economics/GovernedVault.sol:GovernedVault",
+      "implementation": "src/economics/GovernedVault.sol:GovernedVault",
+      "address": "0x000000000000000000000000000000000000a011",
+      "status": "implemented on main",
+      "note": "The network fee recipient: a governed vault the economics resolver names; it forwards what it holds only to its destination (the deployment's NETWORK_FEE_RECIPIENT first)",
+      "functions": [
+        {
+          "signature": "setDestination(uint64,address)",
+          "selector": "0x765b2cf1",
+          "role": "FUNDS_SETTER",
+          "class": "funds",
+          "delay": 1209600
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "MuseumVault",
+      "artifact": "src/economics/GovernedVault.sol:GovernedVault",
+      "implementation": "src/economics/GovernedVault.sol:GovernedVault",
+      "address": "0x000000000000000000000000000000000000a012",
+      "status": "implemented on main",
+      "note": "The museum: a governed vault the economics resolver names; unbid and rescued works and museum payouts land here and move only to its destination (the deployment's MUSEUM first)",
+      "functions": [
+        {
+          "signature": "setDestination(uint64,address)",
+          "selector": "0x765b2cf1",
+          "role": "FUNDS_SETTER",
+          "class": "funds",
+          "delay": 1209600
         }
       ],
       "genesisOnly": [],
@@ -1046,8 +1223,8 @@
     },
     {
       "contract": "FederationRegistry",
-      "lane": "federated (v1.1)",
-      "note": "Not deployed at genesis. setStatus and setArtistDelisted map to PARAMETER_SETTER; ArtistRegistry.bindFederationRegistry (deferred above) and the adapters' setFederationRegistry run when it ships."
+      "lane": "federation (v1, a later ADR)",
+      "note": "Not deployed yet. setStatus and setArtistDelisted map to PARAMETER_SETTER; ArtistRegistry.bindFederationRegistry (deferred above) and the adapters' setFederationRegistry run when it ships; later replacements use ArtistRegistry.setFederationRegistry (30 days)."
     }
   ],
   "unusedRoles": [

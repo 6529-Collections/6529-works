@@ -47,6 +47,11 @@ library VerifyV1 {
     error HolderSuspended(uint64 role, address account);
     /// @notice The economics resolver's museum is not the recorded one.
     error MuseumMismatch(address recorded, address actual);
+    /// @notice The manager has a registered successor: it is handed over (GV-43).
+    error ManagerHandedOver(address successor);
+    /// @notice A configured target is not on the manager's managed list, so a handover's
+    ///         `migrate` would not move it (GV-44).
+    error TargetNotManaged(address target);
     /// @notice The English auction's `lens()` is not the recorded lens, or the lens has no code
     ///         or other dependencies than the recorded deployment's.
     error LensMismatch(address recorded, address actual);
@@ -83,11 +88,17 @@ library VerifyV1 {
         if (d.contentStore.sha256Of(id) != digest) revert Cc0Mismatch("SHA-256");
     }
 
-    /// @notice The economics resolver names `museum`, the recorded 6529 Network Museum (D140),
-    ///         as the account unbid canonical works go to. Genesis readback: a later governed
-    ///         change (FUNDS_SETTER, 14 days) fails it by design.
+    /// @notice The economics resolver names the museum's governed vault as the account unbid
+    ///         canonical works go to, and that vault forwards to `museum`, the recorded 6529
+    ///         Network Museum (D140); the resolver's fee recipient is the fee recipient's vault.
+    ///         Genesis readback: a later governed change (FUNDS_SETTER, 14 days) fails it by
+    ///         design.
     function checkMuseum(DeployV1.Deployment memory d, address museum) internal view {
         address actual = d.economicsResolver.museum();
+        if (actual != address(d.museumVault)) {
+            revert MuseumMismatch(address(d.museumVault), actual);
+        }
+        actual = d.museumVault.destination();
         if (actual != museum) revert MuseumMismatch(museum, actual);
     }
 
@@ -127,6 +138,17 @@ library VerifyV1 {
             if (authority != address(d.manager)) {
                 revert WrongAuthority(cfg.targets[i].target, authority);
             }
+        }
+        // The manager is not handed over, and a handover would move every configured target.
+        address next = d.manager.successor();
+        if (next != address(0)) revert ManagerHandedOver(next);
+        address[] memory managed = d.manager.managedTargets();
+        for (uint256 i; i < cfg.targets.length; ++i) {
+            bool listed;
+            for (uint256 j; j < managed.length && !listed; ++j) {
+                listed = managed[j] == cfg.targets[i].target;
+            }
+            if (!listed) revert TargetNotManaged(cfg.targets[i].target);
         }
         // No configured holder is suspended (the readback below would only see a missing
         // member).

@@ -94,6 +94,7 @@ abstract contract WorksDeployment is Test {
     // ------------------------------------------------------------------ genesis holders
     address internal hotAdmin = makeAddr("hotAdminSafe");
     address internal coldAdmin = makeAddr("coldAdminSafe");
+    address internal thirdAdmin = makeAddr("thirdAdminSafe");
     address internal guardian1 = makeAddr("guardianSafe1");
     address internal guardian2 = makeAddr("guardianSafe2");
     address internal guardian3 = makeAddr("guardianSafe3");
@@ -186,9 +187,10 @@ abstract contract WorksDeployment is Test {
     /// @dev The committed genesis JSON with each placeholder holder (`0x...b0xx`) replaced by
     ///      this test's actor for it.
     function _withHolders(string memory json) internal view returns (string memory) {
-        address[10] memory actors = [
+        address[11] memory actors = [
             hotAdmin,
             coldAdmin,
+            thirdAdmin,
             guardian1,
             guardian2,
             guardian3,
@@ -198,9 +200,10 @@ abstract contract WorksDeployment is Test {
             platform,
             curator
         ];
-        uint16[10] memory placeholders =
-            [0xb001, 0xb002, 0xb011, 0xb012, 0xb013, 0xb021, 0xb022, 0xb031, 0xb051, 0xb061];
-        for (uint256 i; i < 10; ++i) {
+        uint16[11] memory placeholders = [
+            0xb001, 0xb002, 0xb004, 0xb011, 0xb012, 0xb013, 0xb021, 0xb022, 0xb031, 0xb051, 0xb061
+        ];
+        for (uint256 i; i < 11; ++i) {
             string memory from = vm.toLowercase(vm.toString(address(uint160(placeholders[i]))));
             json = vm.replace(json, from, vm.toString(actors[i]));
         }

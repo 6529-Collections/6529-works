@@ -519,8 +519,24 @@ class CheckGenesisTest(unittest.TestCase):
         self.assertEqual(
             self.repo.problems(),
             ["manager: isSuspended(uint64,address) is added to the OpenZeppelin base but not "
-             "listed in manager.functions or manager.views"],
+             "listed in manager.functions, manager.open or manager.views"],
         )
+
+    def test_manager_open_group_lists_a_function_with_no_role(self) -> None:
+        manager = self._manager()
+        self.repo.artifact("Manager.sol", "Manager", {"cancel(address)": "aaaaaaaa",
+                                                      "suspend(uint64,address)": "64bf6e5d",
+                                                      "isSuspended(uint64,address)": "bd2e6ac3",
+                                                      "heartbeat()": "3defb962"})
+        self.assertEqual(
+            self.repo.problems(),
+            ["manager: heartbeat() is added to the OpenZeppelin base but not listed in "
+             "manager.functions, manager.open or manager.views"],
+        )
+        manager["open"] = [{"signature": "heartbeat()", "selector": "0x3defb962"}]
+        self.assertEqual(self.repo.problems(), [])
+        manager["open"][0]["selector"] = "0x11111111"
+        self.assertEqual(len(self.repo.problems()), 1)
 
     def test_manager_function_selector_role_and_base_are_checked(self) -> None:
         manager = self._manager()

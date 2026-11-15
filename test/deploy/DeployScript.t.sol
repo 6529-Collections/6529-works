@@ -11,6 +11,7 @@ import { Roles } from "src/governance/Roles.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
 import { Deploy } from "script/Deploy.s.sol";
 import { DeployGuards } from "script/DeployGuards.sol";
 import { DeployV1 } from "script/DeployV1.sol";
@@ -92,7 +93,7 @@ contract DeployScriptTest is Test {
         vm.chainId(SEPOLIA);
         _allowTestSingleton();
         bytes memory safe = address(new MockSafe()).code;
-        string[5] memory safes = ["01", "02", "11", "12", "13"];
+        string[6] memory safes = ["01", "02", "04", "11", "12", "13"];
         for (uint256 i; i < safes.length; ++i) {
             _etchSafe(_account(safes[i]), safe);
         }
@@ -199,13 +200,18 @@ contract DeployScriptTest is Test {
         assertEq(vm.parseJsonAddress(record, ".params.factory"), DeployGuards.CREATE2_FACTORY);
         assertEq(vm.parseJsonAddress(record, ".params.deployer"), address(this));
         assertEq(vm.parseJsonBytes32(record, ".cc0TextFileId"), d.cc0TextFileId);
-        // D140: the museum is a constructor value, recorded and read back.
+        // D140: the museum is a constructor value, recorded and read back: the resolver names
+        // the museum's governed vault, which forwards to the recorded museum (ADR 0007).
         assertEq(vm.parseJsonAddress(record, ".params.museum"), address(0xC003), "placeholder");
-        assertEq(d.economicsResolver.museum(), address(0xC003));
+        assertEq(d.economicsResolver.museum(), address(d.museumVault));
+        assertEq(d.museumVault.destination(), address(0xC003));
+        assertEq(
+            d.economicsResolver.networkFeeRecipient(PRODUCT_STREAM), address(d.feeRecipientVault)
+        );
         (uint256 targets, uint256 calls, uint256 holders) = verifier.verify(record);
-        assertEq(targets, 13);
+        assertEq(targets, 15);
         assertEq(calls, 18);
-        assertEq(holders, 17);
+        assertEq(holders, 18);
     }
 
     function test_VerifyRunReadsTheRecordFile() public {
@@ -282,9 +288,9 @@ contract DeployScriptTest is Test {
         verifier.setFile("config/manifest.json", MANIFEST);
         vm.warp(block.timestamp + 5 days);
         (uint256 targets, uint256 calls, uint256 holders) = verifier.verify(record);
-        assertEq(targets, 13);
+        assertEq(targets, 15);
         assertEq(calls, 18);
-        assertEq(holders, 17);
+        assertEq(holders, 18);
         // Against another pin it does not verify.
         verifier.setCc0Digest(keccak256("another text"));
         vm.expectRevert(
@@ -480,8 +486,9 @@ contract DeployScriptTest is Test {
         }
     }
 
-    /// Owner decision 2: a hot and a cold admin Safe, at least.
-    function test_OffAnvilNeedsTwoAdminSafes() public {
+    /// Owner decision 2, and the third admin seat (ADR 0007): a hot, a cold and a third admin
+    /// Safe, at least.
+    function test_OffAnvilNeedsThreeAdminSafes() public {
         _sepolia();
         string memory cold = string.concat(FILLED_PREFIX, "02");
         _genesisFile(
@@ -491,7 +498,7 @@ contract DeployScriptTest is Test {
                 string.concat('"role": "KEEPER",\n      "account": "', cold)
             )
         );
-        vm.expectRevert(abi.encodeWithSelector(DeployGuards.TooFewAdmins.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(DeployGuards.TooFewAdmins.selector, 2));
         deployer.prepare();
     }
 
@@ -1872,7 +1879,7 @@ contract DeployScriptTest is Test {
         verifier.setFile("config/epoch-1.json", bytes(_epochFile()));
         verifier.setEnv("GOVERNANCE_CONFIG", "config/epoch-1.json");
         (,, uint256 holders) = verifier.verify(record);
-        assertEq(holders, 17);
+        assertEq(holders, 18);
         (bool admin,) = d.manager.hasRole(Roles.ADMIN, newHot);
         assertTrue(admin);
     }

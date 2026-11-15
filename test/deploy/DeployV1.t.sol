@@ -163,8 +163,8 @@ contract DeployV1Test is Test {
         ) = _genesis(_params());
         // Every v1 contract with a governance map; the optional entropy module is not
         // deployed here.
-        assertEq(cfg.targets.length, 13, "governed targets");
-        assertEq(cfg.grants.length, 17, "holders");
+        assertEq(cfg.targets.length, 15, "governed targets");
+        assertEq(cfg.grants.length, 18, "holders");
         // Every wiring call in the genesis JSON: nine binds, two admitted minters (the 1/1
         // auction on Stream, the edition auction on Editions), their two sale targets, three
         // default currencies and the manifest.
@@ -277,7 +277,7 @@ contract DeployV1Test is Test {
             GovernanceConfig.Call[] memory calls
         ) = _genesis(p);
         assertTrue(address(d.entropyModule) != address(0));
-        assertEq(cfg.targets.length, 14);
+        assertEq(cfg.targets.length, 16);
         assertEq(d.stream.entropyModule(), address(d.entropyModule));
         _settle(d);
         VerifyV1.check(d, cfg, calls);

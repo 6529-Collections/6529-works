@@ -133,7 +133,7 @@ library GovernanceConfig {
     }
 
     /// @notice Whether `selector` may be wired at genesis: a one-shot bind (including the
-    ///         v1.1 federation bind), an admitted-minter grant, a sale target, a product's
+    ///         federation bind), an admitted-minter grant, a sale target, a product's
     ///         first default currency (an auction cannot start without one), or the epoch-0
     ///         governance manifest. Everything else waits its delay class after genesis.
     function isGenesisSelector(bytes4 selector) internal pure returns (bool) {

@@ -432,7 +432,7 @@ def check_manager(config: dict, ids: MethodIds, present: Present = lambda ref: T
         return problems
     methods, base_methods = ids(artifact), ids(base)
     listed: set[str] = set()
-    for group in ("functions", "views"):
+    for group in ("functions", "open", "views"):
         for e in manager.get(group, []):
             sig = e["signature"]
             listed.add(sig)
@@ -457,8 +457,8 @@ def check_manager(config: dict, ids: MethodIds, present: Present = lambda ref: T
             )
     for sig in sorted(set(methods) - set(base_methods) - listed):
         problems.append(
-            f"manager: {sig} is added to the OpenZeppelin base but not listed in manager.functions "
-            f"or manager.views"
+            f"manager: {sig} is added to the OpenZeppelin base but not listed in manager.functions, "
+            f"manager.open or manager.views"
         )
     return problems
 

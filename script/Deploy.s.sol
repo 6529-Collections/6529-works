@@ -191,7 +191,7 @@ contract Deploy is ScriptIO {
 
     /// @notice No contract's predicted CREATE2 address has code. Exact for every contract whose
     ///         constructor arguments are known before the broadcast, in particular those with
-    ///         none (ContentStore, ReleaseVerifier, ClaimRouter), whose address depends on the
+    ///         none (ContentStore), and the ClaimRouter from the split ledger, whose address depends on the
     ///         namespace alone; a contract that pins an earlier one's code hash is predicted
     ///         before that code exists, so it is only caught by the simulation.
     function checkAddressesFree(DeployV1.Params memory p) public view {
