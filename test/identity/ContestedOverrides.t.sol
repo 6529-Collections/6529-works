@@ -11,6 +11,7 @@ import {
     PullOnlyPayeeMock,
     SplitFactoryWalletsMock
 } from "../mocks/identity/IdentityWorksMocks.sol";
+import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { IdentityFixture } from "./IdentityFixture.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 
@@ -467,23 +468,27 @@ contract ContestedOverridesTest is IdentityFixture {
 
     /// The resolver read is bounded: a log that needs more than 50,000 gas or returns more than
     /// one word is refused, even when it names this registry.
-    function test_BindStatementLog_ResolverReadIsBounded() public {
+    /// @dev The resolver read forwards all gas: a resolver that needs 12 times the former
+    ///      50,000-gas stipend binds; a call too short of gas for it reverts with
+    ///      `BoundedCallShortfall` instead of binding or reading a refusal, and an oversized
+    ///      answer is refused.
+    function test_BindStatementLog_ResolverReadForwardsAllGas() public {
         IdentityFixture.setUp();
-        HostileResolverMock fair = new HostileResolverMock(address(registry), 0, 32);
-        HostileResolverMock hungry = new HostileResolverMock(address(registry), 60_000, 32);
+        HostileResolverMock hungry = new HostileResolverMock(address(registry), 600_000, 32);
         HostileResolverMock wide = new HostileResolverMock(address(registry), 0, 64);
         vm.startPrank(admin);
-        vm.expectRevert(
-            abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, address(hungry))
-        );
-        registry.bindStatementLog(address(hungry));
         vm.expectRevert(
             abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, address(wide))
         );
         registry.bindStatementLog(address(wide));
-        registry.bindStatementLog(address(fair));
+        vm.expectRevert(
+            abi.encodeWithSelector(BoundedCall.BoundedCallShortfall.selector, address(hungry))
+        );
+        registry.bindStatementLog{ gas: 300_000 }(address(hungry));
+        assertEq(registry.statementLog(), address(0), "nothing bound on a shortfall");
+        registry.bindStatementLog(address(hungry));
         vm.stopPrank();
-        assertEq(registry.statementLog(), address(fair));
+        assertEq(registry.statementLog(), address(hungry));
     }
 
     /// @dev A resolver answer shorter than one word is refused with `InvalidBinding`, never

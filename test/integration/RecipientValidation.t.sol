@@ -136,7 +136,7 @@ contract RecipientValidationTest is IntegrationBase {
             vm.recordLogs();
             _stagePayout(allowed[i]);
             assertTrue(_logged(IArtistRegistry.ChangeStaged.selector), "ChangeStaged");
-            vm.warp(block.timestamp + artists.CHANGE_DELAY());
+            vm.warp(block.timestamp + artists.timer(IArtistRegistry.Timer.CHANGE_DELAY));
             artists.executeChange(artistId);
             assertEq(artists.payoutAddress(artistId), allowed[i]);
         }
@@ -150,7 +150,7 @@ contract RecipientValidationTest is IntegrationBase {
         address predicted = _otherWallet(false);
         _stagePayout(predicted);
         _otherWallet(true);
-        vm.warp(block.timestamp + artists.CHANGE_DELAY());
+        vm.warp(block.timestamp + artists.timer(IArtistRegistry.Timer.CHANGE_DELAY));
         vm.expectEmit(address(artists));
         emit IArtistRegistry.ChangeCancelled(artistId, address(artists), false);
         artists.executeChange(artistId);
