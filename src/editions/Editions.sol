@@ -618,9 +618,8 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         (master.itemHash, master.artistId,,,, master.royaltyRate) = _coreOf(workId);
         itemHash = WorksHashing.itemHashCalldata(item);
         if (
-            !abi.decode(
-                    _read(stream, abi.encodeCall(IStream.primarySaleSettled, (workId))), (bool)
-                ) || item.kind != ItemKind.EDITION_MASTER || itemHash != master.itemHash
+            !abi.decode(_read(stream, abi.encodeCall(IStream.primarySaleSettled, (workId))), (bool))
+                || item.kind != ItemKind.EDITION_MASTER || itemHash != master.itemHash
                 || item.contentHash == 0 || proof.length > Limits.MAX_PROOF_DEPTH
                 || !MerkleProof.verifyCalldata(proof, packageRoot, WorksHashing.leaf(itemHash))
         ) revert NotEditionMaster(workId);

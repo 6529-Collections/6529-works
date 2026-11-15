@@ -79,9 +79,9 @@
       "enum": ["ROYALTY_RATE", "RELICENSE"]
     },
     "signature": {
-      "description": "A signature as hex: 65 bytes, 64 bytes (ERC-2098), or a longer ERC-1271 signature of at most 4,096 bytes.",
+      "description": "A signature as hex: 65 bytes, 64 bytes (ERC-2098), or a longer ERC-1271 signature of at most 65,536 bytes.",
       "type": "string",
-      "pattern": "^0x([0-9a-f]{2}){64,4096}$"
+      "pattern": "^0x([0-9a-f]{2}){64,65536}$"
     }
   }
 }

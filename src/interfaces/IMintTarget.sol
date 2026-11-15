@@ -36,8 +36,9 @@ interface IMintTarget {
     /// @notice The call's arguments are malformed for this token. 6529 Stream mints with `to`
     ///         the calling adapter, `id` 0, `amount` 1 and `data` `abi.encode(StreamMintRequest)`,
     ///         and burns `amount` 1; it also reverts with this if the package registry's answer
-    ///         is malformed. 6529 Stream Editions mints with empty `data`, and mints and burns a
-    ///         non-zero `amount`.
+    ///         is malformed. 6529 Stream Editions mints with `data` exactly
+    ///         `abi.encode(address currency, uint256 unitPrice)`, and mints and burns a non-zero
+    ///         `amount`.
     error InvalidMintRequest();
 
     /// @notice Mints `amount` of token `id` to `to` for a sale run by the calling adapter, and
@@ -45,7 +46,9 @@ interface IMintTarget {
     /// @dev 6529 Stream: `id` must be 0 (Stream assigns the next global token ID), `amount` 1,
     ///      `to` the adapter's own custody, and `data` `abi.encode(StreamMintRequest)`; the call
     ///      consumes the package item, and reverts for a VRF item whose seed is not delivered.
-    ///      6529 Stream Editions: `id` is the edition ID, `to` the buyer's recipient, `data` empty.
+    ///      6529 Stream Editions: `id` is the edition ID, `to` the buyer's recipient, `data`
+    ///      `abi.encode(currency, unitPrice)`: the currency and price paid per copy, which it logs
+    ///      (`IEditions.EditionPrimaryMint`).
     /// @param to The recipient of the minted tokens.
     /// @param id The token ID to mint, or 0 where the token assigns it.
     /// @param amount The number of tokens.
@@ -98,7 +101,8 @@ interface IMintTarget {
     ///         (`IEconomicsResolver.museum()`, read now) and returns the museum as `holder`, with
     ///         the seller and fee terms.
     ///         6529 Stream Editions: every copy is sold at mint, so a no-op returning nothing, for
-    ///         any adapter ever admitted.
+    ///         any adapter ever admitted. The edition's bound adapter reports its sale's end with
+    ///         `IEditions.sealSupply(id, count)` instead.
     ///         Any other token returns its seller and fee terms, and `holder` zero if the adapter
     ///         is to deliver the work: to its buyer, or unsold to the creator `primaryTerms`
     ///         reports.

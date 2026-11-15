@@ -939,8 +939,8 @@ contract UniformEditionAuction is
         delete _bids[saleId][bidId];
         emit IUniformEditionAuction.BidClaimed(saleId, bidId, b.bidder, to, unitsWon, refund);
         if (unitsWon != 0) {
-            (uint256 minted,) = IMintTarget(editions)
-                .mint(to, id, unitsWon, abi.encode(CURRENCY_ETH, unitPrice));
+            (uint256 minted,) =
+                IMintTarget(editions).mint(to, id, unitsWon, abi.encode(CURRENCY_ETH, unitPrice));
             if (minted != id) revert InvalidSaleTerms(editions, id);
         }
     }

@@ -87,7 +87,7 @@ interface IStatementLog {
     error InvalidKind();
     /// @notice The schema hash is zero.
     error InvalidSchema();
-    /// @notice The content hash is zero or uses an unrecognised algorithm.
+    /// @notice The content hash's digest or algorithm ID is zero.
     error InvalidHashRef(uint16 algorithm);
     /// @notice Both a URI and a `ContentStore` file ID were given.
     error ConflictingLocators();

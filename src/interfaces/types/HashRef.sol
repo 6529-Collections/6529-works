@@ -12,8 +12,9 @@ struct HashRef {
     bytes32 digest;
 }
 
-// `algorithm` values. They keep RC1's numbering; 4 and 5 (variable-length multihash and CID) and
-// 6 (Arweave transaction ID, a locator rather than a digest) are not accepted.
+// `algorithm` values: the statement log records any non-zero ID and never interprets it. These
+// keep RC1's numbering; 4 and 5 (variable-length multihash and CID) and 6 (Arweave transaction
+// ID) keep RC1's names, which a 32-byte digest cannot carry, so conventions do not assign them.
 
 // keccak256
 uint16 constant HASH_KECCAK256 = 1;
@@ -21,8 +22,3 @@ uint16 constant HASH_KECCAK256 = 1;
 uint16 constant HASH_SHA256 = 2;
 // BLAKE3
 uint16 constant HASH_BLAKE3 = 3;
-
-/// @notice Returns whether `algorithm` is one of the recognised 32-byte algorithms.
-function isKnownHashAlgorithm(uint16 algorithm) pure returns (bool) {
-    return algorithm == HASH_KECCAK256 || algorithm == HASH_SHA256 || algorithm == HASH_BLAKE3;
-}
