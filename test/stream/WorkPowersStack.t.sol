@@ -10,6 +10,8 @@ import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { IntegrationBase } from "../integration/IntegrationBase.sol";
 
+import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
+
 /// @notice The renounceable powers and lower-only royalty changes on the deployed stack: the
 ///         real artist registry's restraint (nobody acts as the artist while an
 ///         authority-moving override is pending), the governed path through the AccessManager,
@@ -44,9 +46,9 @@ contract WorkPowersStackTest is IntegrationBase {
         _keep(root, works);
         masterId = _sell(root, works, 0, collector, 1 ether);
         editions.createEdition(masterId, works[0].item, root, _proofOf(works, 0));
-        records.openRecord(masterId, works[0].item, works[0].media);
+        records.openRecord(masterId, toWorkItem(works[0].item), toWorkMedia(works[0].media));
         workId = _sell(root, works, 1, collector, 1 ether);
-        records.openRecord(workId, works[1].item, works[1].media);
+        records.openRecord(workId, toWorkItem(works[1].item), toWorkMedia(works[1].media));
     }
 
     function _consolidate(address a, address b) internal {
@@ -103,8 +105,9 @@ contract WorkPowersStackTest is IntegrationBase {
                 )
             )
         );
-        return
-            abi.encodeCall(records.setRoyaltyRate, (tokenId, rate, w.item, state, deadline, sigs));
+        return abi.encodeCall(
+            records.setRoyaltyRate, (tokenId, rate, toWorkItem(w.item), state, deadline, sigs)
+        );
     }
 
     /// Regression: ADD-PWR-2
@@ -167,10 +170,15 @@ contract WorkPowersStackTest is IntegrationBase {
         uint64 deadline = uint64(block.timestamp + 1 days);
         records.renounce(
             masterId,
-            WorkPowers.ALL,
+            WorkPowers.ROYALTY_RATE | WorkPowers.RELICENSE,
             state,
             deadline,
-            _sign(artist, _renounceDigest(masterId, WorkPowers.ALL, state, deadline))
+            _sign(
+                artist,
+                _renounceDigest(
+                    masterId, WorkPowers.ROYALTY_RATE | WorkPowers.RELICENSE, state, deadline
+                )
+            )
         );
         (, uint32 delay) = manager.canCall(hotAdmin, address(records), bytes4(scheduled));
         vm.warp(block.timestamp + delay);

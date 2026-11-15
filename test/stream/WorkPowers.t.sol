@@ -16,6 +16,8 @@ import { MockRenderer } from "../mocks/stream/StreamMocks.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 
+import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
+
 /// @notice Lower-only royalty changes and the lead artist's renounceable powers over a work
 ///         (`IWorkPowers`, ADR 0006; rules WS-14, WS-37 and WS-38 in Works and storage).
 contract WorkPowersTest is RecordsFixture {
@@ -23,6 +25,9 @@ contract WorkPowersTest is RecordsFixture {
 
     uint16 internal constant ROYALTY = WorkPowers.ROYALTY_RATE;
     uint16 internal constant RELICENSE = WorkPowers.RELICENSE;
+    uint16 internal constant REPIN = WorkPowers.RENDERER_REPIN;
+    /// @dev The two powers renounceable before finalize.
+    uint16 internal constant BOTH = ROYALTY | RELICENSE;
 
     // -------------------------------------------------------------------------------- helpers
 
@@ -53,7 +58,9 @@ contract WorkPowersTest is RecordsFixture {
         vm.prank(governor);
         (ok, reason) = address(records)
             .call(
-                abi.encodeCall(records.setRoyaltyRate, (tokenId, rate, item, state, deadline, sigs))
+                abi.encodeCall(
+                    records.setRoyaltyRate, (tokenId, rate, toWorkItem(item), state, deadline, sigs)
+                )
             );
     }
 
@@ -88,7 +95,11 @@ contract WorkPowersTest is RecordsFixture {
         bytes[] memory sigs = _both(_relicenseHash(tokenId, next, state, deadline));
         vm.prank(governor);
         (ok, reason) = address(records)
-            .call(abi.encodeCall(records.relicense, (tokenId, next, item, state, deadline, sigs)));
+            .call(
+                abi.encodeCall(
+                    records.relicense, (tokenId, next, toWorkItem(item), state, deadline, sigs)
+                )
+            );
     }
 
     /// @dev A work under CC BY 4.0, which (unlike CC0) can be relicensed.
@@ -97,7 +108,7 @@ contract WorkPowersTest is RecordsFixture {
         item = _recordsItem(salt, media);
         item.license = _license("cc-by-4.0");
         tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
     }
 
     /// @dev A linked edition master with an open record.
@@ -106,7 +117,7 @@ contract WorkPowersTest is RecordsFixture {
         item = _recordsItem(salt, media);
         item.kind = ItemKind.EDITION_MASTER;
         tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         auction.settle(IStream(address(stream)), tokenId);
         editionsMock.link(IStream(address(stream)), tokenId, tokenId);
     }
@@ -189,7 +200,7 @@ contract WorkPowersTest is RecordsFixture {
         _rerate(tokenId, item, 5_000);
         vm.recordLogs();
         vm.prank(governor);
-        records.setRoyaltyRate(tokenId, 5_000, item, bytes32(0), 0, new bytes[](0));
+        records.setRoyaltyRate(tokenId, 5_000, toWorkItem(item), bytes32(0), 0, new bytes[](0));
         assertEq(vm.getRecordedLogs().length, 0);
         assertEq(_version(tokenId), 1);
     }
@@ -272,8 +283,8 @@ contract WorkPowersTest is RecordsFixture {
     /// @dev Both powers at once; the mask then holds every renounceable bit.
     function test_renounce_bothAtOnce() public {
         (uint256 tokenId, PackageItem memory item) = _byWork(1);
-        _renounce(tokenId, WorkPowers.ALL);
-        assertEq(records.renouncedPowers(tokenId), WorkPowers.ALL);
+        _renounce(tokenId, BOTH);
+        assertEq(records.renouncedPowers(tokenId), BOTH);
         (bool rated, bytes memory r1) = _rateCall(tokenId, item, 1);
         assertFalse(rated);
         assertEq(r1, abi.encodeWithSelector(IWorkPowers.PowerRenounced.selector, tokenId, ROYALTY));
@@ -309,12 +320,12 @@ contract WorkPowersTest is RecordsFixture {
         assertEq(_version(tokenId), 1);
 
         bytes32 state = records.workStateHash(tokenId);
-        sig = _sign(artistKey, _renounceHash(tokenId, WorkPowers.ALL, state, deadline));
+        sig = _sign(artistKey, _renounceHash(tokenId, BOTH, state, deadline));
         bytes32 expected = _stateAtVersion(tokenId, 2);
         vm.expectEmit(address(records));
-        emit IWorkPowers.PowersRenounced(tokenId, WorkPowers.ALL, WorkPowers.ALL, expected);
-        records.renounce(tokenId, WorkPowers.ALL, state, deadline, sig);
-        assertEq(records.renouncedPowers(tokenId), WorkPowers.ALL);
+        emit IWorkPowers.PowersRenounced(tokenId, BOTH, BOTH, expected);
+        records.renounce(tokenId, BOTH, state, deadline, sig);
+        assertEq(records.renouncedPowers(tokenId), BOTH);
         assertEq(_version(tokenId), 2);
     }
 
@@ -327,42 +338,63 @@ contract WorkPowersTest is RecordsFixture {
         vm.prank(artist);
         records.finalize(open, state);
         _renounce(open, RELICENSE);
+        assertEq(records.renouncedPowers(open), BOTH);
+        _renounce(open, REPIN);
         assertEq(records.renouncedPowers(open), WorkPowers.ALL);
         assertTrue(records.record(open).finalized);
     }
 
-    /// Regression: ADD-PWR-2
-    /// @dev The errata repin cannot be renounced: with every renounceable power given up, the
-    ///      repin still works, and no bit names it.
-    function test_renounce_neverTheErrataRepin() public {
+    /// @dev `RENDERER_REPIN` (owner decision, 15 November 2026): refused before finalize, even
+    ///      signed; after finalize the repin works until it is renounced, and then every repin
+    ///      reverts for good, a no-op and a correctly signed one included.
+    function test_renounce_rendererRepinOnlyAfterFinalizeThenRepinRevertsForGood() public {
         (uint256 tokenId,) = _work(1);
         bytes32 state = records.workStateHash(tokenId);
+        uint64 deadline = uint64(block.timestamp + 31 days);
+        bytes memory early = _sign(artistKey, _renounceHash(tokenId, REPIN, state, deadline));
+        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.WorkNotFinalized.selector, tokenId));
+        records.renounce(tokenId, REPIN, state, deadline, early);
+        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.WorkNotFinalized.selector, tokenId));
+        records.renounce(tokenId, WorkPowers.ALL, state, deadline, early);
         vm.prank(artist);
         records.finalize(tokenId, state);
-        _renounce(tokenId, WorkPowers.ALL);
-        vm.prank(outsider);
-        vm.expectRevert(abi.encodeWithSelector(IWorkPowers.UnknownPower.selector, uint16(4)));
-        records.renounce(tokenId, 4, bytes32(0), 0, "");
+        _renounce(tokenId, BOTH);
 
         MockRenderer next = new MockRenderer("errata");
+        _repin(tokenId, address(next), deadline);
+        assertEq(stream.rendererOf(tokenId), address(next));
+
+        _renounce(tokenId, REPIN);
+        assertEq(records.renouncedPowers(tokenId), WorkPowers.ALL);
+        MockRenderer later = new MockRenderer("later");
         state = records.workStateHash(tokenId);
-        uint64 deadline = uint64(block.timestamp + 31 days);
-        bytes memory sig = _sign(
-            artistKey,
-            keccak256(
-                abi.encode(
-                    Typehashes.RENDERER_REPIN,
-                    tokenId,
-                    address(next),
-                    address(next).codehash,
-                    state,
-                    deadline
-                )
-            )
+        bytes memory sig = _sign(artistKey, _repinStruct(tokenId, address(later), state, deadline));
+        vm.prank(governor);
+        vm.expectRevert(abi.encodeWithSelector(IWorkPowers.PowerRenounced.selector, tokenId, REPIN));
+        records.repinRenderer(
+            tokenId, address(later), address(later).codehash, state, deadline, sig
         );
         vm.prank(governor);
-        records.repinRenderer(tokenId, address(next), address(next).codehash, state, deadline, sig);
+        vm.expectRevert(abi.encodeWithSelector(IWorkPowers.PowerRenounced.selector, tokenId, REPIN));
+        records.repinRenderer(tokenId, address(next), address(next).codehash, state, deadline, "");
         assertEq(stream.rendererOf(tokenId), address(next));
+    }
+
+    function _repinStruct(uint256 tokenId, address r, bytes32 state, uint64 deadline)
+        internal
+        view
+        returns (bytes32)
+    {
+        return keccak256(
+            abi.encode(Typehashes.RENDERER_REPIN, tokenId, r, r.codehash, state, deadline)
+        );
+    }
+
+    function _repin(uint256 tokenId, address r, uint64 deadline) internal {
+        bytes32 state = records.workStateHash(tokenId);
+        bytes memory sig = _sign(artistKey, _repinStruct(tokenId, r, state, deadline));
+        vm.prank(governor);
+        records.repinRenderer(tokenId, r, r.codehash, state, deadline, sig);
     }
 
     /// Regression: ADD-PWR-2
@@ -465,7 +497,7 @@ contract WorkPowersTest is RecordsFixture {
         bytes32 s0 = records.workStateHash(tokenId);
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes memory one = _sign(artistKey, _renounceHash(tokenId, ROYALTY, s0, deadline));
-        bytes memory both = _sign(artistKey, _renounceHash(tokenId, WorkPowers.ALL, s0, deadline));
+        bytes memory both = _sign(artistKey, _renounceHash(tokenId, BOTH, s0, deadline));
         records.renounce(tokenId, ROYALTY, s0, deadline, one);
         bytes32 s1 = records.workStateHash(tokenId);
         vm.recordLogs();
@@ -473,7 +505,7 @@ contract WorkPowersTest is RecordsFixture {
         assertEq(vm.getRecordedLogs().length, 0);
         assertEq(_version(tokenId), 1);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.StateHashMismatch.selector, s0, s1));
-        records.renounce(tokenId, WorkPowers.ALL, s0, deadline, both);
+        records.renounce(tokenId, BOTH, s0, deadline, both);
         assertEq(records.renouncedPowers(tokenId), ROYALTY);
     }
 
@@ -483,7 +515,7 @@ contract WorkPowersTest is RecordsFixture {
         (uint256 tokenId,) = _work(1);
         bytes32 state = records.workStateHash(tokenId);
         uint64 deadline = uint64(block.timestamp + 1 days);
-        uint16[4] memory masks = [uint16(4), 7, 0x8000, 0xffff];
+        uint16[4] memory masks = [uint16(8), 15, 0x8000, 0xffff];
         for (uint256 i; i < masks.length; ++i) {
             bytes memory sig = _sign(artistKey, _renounceHash(tokenId, masks[i], state, deadline));
             vm.expectRevert(abi.encodeWithSelector(IWorkPowers.UnknownPower.selector, masks[i]));
@@ -497,16 +529,16 @@ contract WorkPowersTest is RecordsFixture {
     ///      the bits are already set, so there is nothing to authorize and nothing to replay.
     function test_renounce_twiceIsAHarmlessNoOp() public {
         (uint256 tokenId,) = _work(1);
-        _renounce(tokenId, WorkPowers.ALL);
+        _renounce(tokenId, BOTH);
         bytes32 state = records.workStateHash(tokenId);
         vm.recordLogs();
         vm.prank(outsider);
         records.renounce(tokenId, ROYALTY, bytes32(0), 0, "");
-        records.renounce(tokenId, WorkPowers.ALL, bytes32(0), 0, "");
+        records.renounce(tokenId, BOTH, bytes32(0), 0, "");
         records.renounce(tokenId, 0, bytes32(0), 0, "");
         assertEq(vm.getRecordedLogs().length, 0);
         assertEq(records.workStateHash(tokenId), state);
-        assertEq(records.renouncedPowers(tokenId), WorkPowers.ALL);
+        assertEq(records.renouncedPowers(tokenId), BOTH);
     }
 
     /// Regression: ADD-PWR-2
@@ -530,7 +562,7 @@ contract WorkPowersTest is RecordsFixture {
         bytes32 s1 = records.workStateHash(tokenId);
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.StateHashMismatch.selector, s0, s1));
-        records.setRoyaltyRate(tokenId, 5_000, item, s0, deadline, sigs);
+        records.setRoyaltyRate(tokenId, 5_000, toWorkItem(item), s0, deadline, sigs);
     }
 
     /// Regression: ADD-PWR-2
@@ -553,7 +585,7 @@ contract WorkPowersTest is RecordsFixture {
     ///      bytes32,uint64,bytes)` (0x7dec8a35) xor `renouncedPowers(uint256)` (0xc0f4a8a9).
     function test_supportsInterface_advertisesIWorkPowers() public view {
         assertEq(type(IWorkPowers).interfaceId, bytes4(0xbd18229c));
-        assertEq(type(IWorkRecords).interfaceId, bytes4(0xc109676d));
+        assertEq(type(IWorkRecords).interfaceId, bytes4(0x2654eed1));
         assertTrue(records.supportsInterface(type(IWorkPowers).interfaceId));
         assertTrue(records.supportsInterface(type(IWorkRecords).interfaceId));
         assertTrue(records.supportsInterface(0x01ffc9a7));
@@ -569,12 +601,13 @@ contract WorkPowersTest is RecordsFixture {
         );
         assertEq(WorkPowers.ROYALTY_RATE, 1);
         assertEq(WorkPowers.RELICENSE, 2);
-        assertEq(WorkPowers.ALL, 3);
+        assertEq(WorkPowers.RENDERER_REPIN, 4);
+        assertEq(WorkPowers.ALL, 7);
     }
 
     /// @dev The mask shares the record's first storage word with the renderer pin, version,
     ///      media count and flags (`forge inspect WorkRecords storageLayout`: `_records` at slot
-    ///      5, `renounced` at byte offset 30). Every later write to that word (sync, finalize, the
+    ///      6, `renounced` at byte offset 30). Every later write to that word (sync, finalize, the
     ///      errata repin) keeps the mask, and the mask leaves the other fields intact.
     function test_renounce_theMaskSurvivesEveryWriteToItsWord() public {
         MediaFile[] memory media = new MediaFile[](2);
@@ -582,21 +615,21 @@ contract WorkPowersTest is RecordsFixture {
         media[1] = _mediaFile(2, FileRole.AUXILIARY, false);
         PackageItem memory item = _recordsItem(1, media);
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
-        _renounce(tokenId, WorkPowers.ALL);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
+        _renounce(tokenId, BOTH);
         assertEq(records.record(tokenId).version, 1);
 
         _upload(1);
         _upload(2);
-        records.syncOnChain(tokenId);
-        assertEq(records.renouncedPowers(tokenId), WorkPowers.ALL, "after sync");
+        records.syncOnChain(tokenId, 0, type(uint256).max);
+        assertEq(records.renouncedPowers(tokenId), BOTH, "after sync");
         assertTrue(records.record(tokenId).onChainComplete);
         assertEq(records.mediaOf(tokenId).length, 2);
 
         bytes32 state = records.workStateHash(tokenId);
         vm.prank(artist);
         records.finalize(tokenId, state);
-        assertEq(records.renouncedPowers(tokenId), WorkPowers.ALL, "after finalize");
+        assertEq(records.renouncedPowers(tokenId), BOTH, "after finalize");
         IWorkRecords.RecordInfo memory info = records.record(tokenId);
         assertEq(info.version, 2);
         assertTrue(info.finalized && info.onChainComplete);
@@ -619,7 +652,7 @@ contract WorkPowersTest is RecordsFixture {
         );
         vm.prank(governor);
         records.repinRenderer(tokenId, address(next), address(next).codehash, state, deadline, sig);
-        assertEq(records.renouncedPowers(tokenId), WorkPowers.ALL, "after repin");
+        assertEq(records.renouncedPowers(tokenId), BOTH, "after repin");
         info = records.record(tokenId);
         assertEq(info.version, 3);
         assertEq(info.renderer, address(next));
@@ -627,8 +660,8 @@ contract WorkPowersTest is RecordsFixture {
         assertEq(records.mediaOf(tokenId).length, 2);
 
         uint256 word =
-            uint256(vm.load(address(records), keccak256(abi.encode(tokenId, uint256(5)))));
-        assertEq(word >> 240, WorkPowers.ALL, "the mask is the word's top two bytes");
+            uint256(vm.load(address(records), keccak256(abi.encode(tokenId, uint256(6)))));
+        assertEq(word >> 240, BOTH, "the mask is the word's top two bytes");
         assertEq(address(uint160(word)), address(next), "the renderer pin is its low 20 bytes");
     }
 }

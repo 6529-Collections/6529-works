@@ -26,6 +26,7 @@ import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import { UniformEditionAuction } from "src/sales/UniformEditionAuction.sol";
 import { IEnglishAuctionFull } from "test/helpers/IEnglishAuctionFull.sol";
 import { Stream } from "src/stream/Stream.sol";
+import { WorkDelivery } from "src/stream/WorkDelivery.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { MockVrfCoordinator } from "../mocks/entropy/EntropyMocks.sol";
@@ -87,6 +88,7 @@ abstract contract WorksDeployment is Test {
     VrfEntropyModule internal entropy;
     Stream internal stream;
     WorkRecords internal records;
+    WorkDelivery internal delivery;
     Editions internal editions;
     IEnglishAuctionFull internal auction;
     UniformEditionAuction internal editionAuction;
@@ -188,6 +190,7 @@ abstract contract WorksDeployment is Test {
         entropy = d.entropyModule;
         stream = d.stream;
         records = d.workRecords;
+        delivery = WorkDelivery(records.delivery());
         editions = Editions(address(d.editions));
         auction = IEnglishAuctionFull(address(d.englishAuction));
         editionAuction = d.editionAuction;

@@ -15,6 +15,8 @@ from tools.content.errors import ToolError
 from . import jcs
 from .schema import validate
 
+#: The work powers R7 counts (DCL-29): those over a work's terms.
+GRADED_POWERS = ("ROYALTY_RATE", "RELICENSE")
 RUBRIC = 1
 LETTER_FLOORS = (("A", 85), ("B", 70), ("C", 50))
 _ORDER = "ABCD"
@@ -50,7 +52,10 @@ def grade_rubric_1(card: Mapping[str, Any]) -> dict:
     powers = card["powers"]
     r7 = 0
     if powers["available"]:
-        renounced, retained = len(powers["renounced"]), len(powers["retained"])
+        # DCL-29 R7 counts the powers over terms only: renouncing RENDERER_REPIN gives up repair,
+        # not a change of terms, so it neither earns nor costs points.
+        renounced = len([p for p in powers["renounced"] if p in GRADED_POWERS])
+        retained = len([p for p in powers["retained"] if p in GRADED_POWERS])
         if renounced + retained:
             r7 = 10 * renounced // (renounced + retained)
     rows.append(("R7", r7))

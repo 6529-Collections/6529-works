@@ -8,6 +8,8 @@ import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 import { UploaderGoldenData as Golden } from "../content/tooling/UploaderGoldenData.sol";
 
+import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
+
 /// @notice Flow 3 (integration brief, lane B): content through to `tokenURI` on the real
 ///         contracts. The primary file is uploaded with the uploader tooling's golden calldata;
 ///         the work then goes through `attestBase64`, `openRecord`, `finalize` and `syncOnChain`,
@@ -58,7 +60,7 @@ contract ContentToTokenURIFlowTest is IntegrationBase {
 
         // openRecord is permissionless and checks the committed media.
         vm.prank(collector);
-        records.openRecord(tokenId, w.item, w.media);
+        records.openRecord(tokenId, toWorkItem(w.item), toWorkMedia(w.media));
         uri = stream.tokenURI(tokenId);
         assertFalse(_contains(uri, "record_status"), "the record renders");
         assertTrue(_contains(uri, '"name":"Golden Work"'));
@@ -68,11 +70,11 @@ contract ContentToTokenURIFlowTest is IntegrationBase {
         // Locator mode: the artist and the platform register copies; the storage operator
         // chooses among them (a platform copy is served only by its explicit pick, WS-21).
         vm.prank(artist);
-        records.addLocator(tokenId, v.fileId, CA.ar("golden arweave"));
+        delivery.addLocator(tokenId, v.fileId, CA.ar("golden arweave"));
         vm.prank(platform);
-        records.addLocator(tokenId, v.fileId, CA.ipfsLocator("golden ipfs"));
+        delivery.addLocator(tokenId, v.fileId, CA.ipfsLocator("golden ipfs"));
         vm.prank(storageOperator);
-        records.setPreferredKind(LocatorKind.IPFS);
+        delivery.setPreferredKind(LocatorKind.IPFS);
         assertTrue(
             _contains(
                 stream.tokenURI(tokenId),
@@ -80,7 +82,7 @@ contract ContentToTokenURIFlowTest is IntegrationBase {
             )
         );
         vm.prank(storageOperator);
-        records.setFilePreference(tokenId, v.fileId, 1);
+        delivery.setFilePreference(tokenId, v.fileId, 1);
         assertTrue(
             _contains(
                 stream.tokenURI(tokenId), string.concat('"image":"', CA.ipfs("golden ipfs"), '"')
@@ -98,7 +100,7 @@ contract ContentToTokenURIFlowTest is IntegrationBase {
 
         // syncOnChain: every media file is complete, so the work is on-chain complete and the
         // attested base64 text is inlined as stored.
-        records.syncOnChain(tokenId);
+        records.syncOnChain(tokenId, 0, type(uint256).max);
         assertTrue(records.record(tokenId).onChainComplete);
         uri = stream.tokenURI(tokenId);
         assertTrue(
@@ -119,10 +121,10 @@ contract ContentToTokenURIFlowTest is IntegrationBase {
         Work[] memory works = _one(w);
         bytes32 root = _publish(works);
         (, uint256 tokenId) = _start(root, works, 0);
-        records.openRecord(tokenId, w.item, w.media);
-        records.syncOnChain(tokenId);
+        records.openRecord(tokenId, toWorkItem(w.item), toWorkMedia(w.media));
+        records.syncOnChain(tokenId, 0, type(uint256).max);
         vm.prank(artist);
-        records.addLocator(tokenId, v.fileId, CA.ar("fallback"));
+        delivery.addLocator(tokenId, v.fileId, CA.ar("fallback"));
         string memory uri = stream.tokenURI(tokenId);
         assertFalse(_contains(uri, "base64,"), "not attested: not inlined");
         assertTrue(_contains(uri, string.concat('"image":"', CA.arweave("fallback"), '"')));

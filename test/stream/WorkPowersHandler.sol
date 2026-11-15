@@ -12,6 +12,8 @@ import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
+import { toWorkItem } from "test/helpers/WorkItems.sol";
+
 /// @notice Drives renunciations, consented royalty changes (lower, equal and higher) and
 ///         consented relicenses on a few open works, keeping a ghost of each work's renounced
 ///         mask, rate and license for `WorkPowersInvariantTest`.
@@ -39,6 +41,10 @@ contract WorkPowersHandler is CommonBase, StdUtils {
     mapping(uint256 tokenId => uint16) public ghostMask;
     mapping(uint256 tokenId => uint32) public ghostRate;
     mapping(uint256 tokenId => uint256) public ghostLicense;
+    mapping(uint256 tokenId => bool) public ghostFinalized;
+    mapping(uint256 tokenId => address) public ghostRenderer;
+    address[] internal _renderers;
+    uint256 public repinned;
 
     constructor(
         Stream stream_,
@@ -59,6 +65,11 @@ contract WorkPowersHandler is CommonBase, StdUtils {
         _licenses.push(license);
     }
 
+    /// @dev Renderers the errata repin moves between (each pinned with its own code hash).
+    function addRenderer(address renderer) external {
+        _renderers.push(renderer);
+    }
+
     function addWork(uint256 tokenId, PackageItem memory item) external {
         tokenIds.push(tokenId);
         _items.push(abi.encode(item));
@@ -75,7 +86,7 @@ contract WorkPowersHandler is CommonBase, StdUtils {
     ///      random mask, unknown bits included.
     function renounce(uint256 seed, uint16 powers) external {
         (uint256 index, uint256 tokenId) = _pick(seed);
-        powers = uint16(bound(powers, 0, 7));
+        powers = uint16(bound(powers, 0, 15));
         bool byCollaborator = (seed >> 8) % 4 == 0;
         bytes32 state = records.workStateHash(tokenId);
         uint64 deadline = uint64(block.timestamp + 1 days);
@@ -86,8 +97,10 @@ contract WorkPowersHandler is CommonBase, StdUtils {
         uint16 before = ghostMask[tokenId];
         bool unknown = powers & ~WorkPowers.ALL != 0;
         bool adds = powers & ~before != 0;
-        // Allowed: known bits, and either nothing new (a no-op) or the lead artist's signature.
-        bool allowed = !unknown && (!adds || !byCollaborator);
+        // Allowed: known bits, and either nothing new (a no-op) or the lead artist's signature,
+        // with the renderer repin renounceable only once the work is finalized.
+        bool repinTooEarly = powers & WorkPowers.RENDERER_REPIN != 0 && !ghostFinalized[tokenId];
+        bool allowed = !unknown && (!adds || (!byCollaborator && !repinTooEarly));
         try records.renounce(tokenId, powers, state, deadline, sig) {
             if (!allowed) ++violations;
             ghostMask[tokenId] = before | powers;
@@ -111,7 +124,7 @@ contract WorkPowersHandler is CommonBase, StdUtils {
         bool allowed = ghostMask[tokenId] & WorkPowers.ROYALTY_RATE == 0 && rate <= current;
         PackageItem memory item = _item(index);
         vm.prank(governor);
-        try records.setRoyaltyRate(tokenId, rate, item, state, deadline, sigs) {
+        try records.setRoyaltyRate(tokenId, rate, toWorkItem(item), state, deadline, sigs) {
             if (!allowed) ++violations;
             if (rate != current) ++reRated;
             ghostRate[tokenId] = rate;
@@ -142,10 +155,49 @@ contract WorkPowersHandler is CommonBase, StdUtils {
         bool allowed = ghostMask[tokenId] & WorkPowers.RELICENSE == 0;
         PackageItem memory item = _item(index);
         vm.prank(governor);
-        try records.relicense(tokenId, next, item, state, deadline, sigs) {
+        try records.relicense(tokenId, next, toWorkItem(item), state, deadline, sigs) {
             if (!allowed) ++violations;
             if (which != ghostLicense[tokenId]) ++relicensed;
             ghostLicense[tokenId] = which;
+        } catch {
+            if (allowed) ++violations;
+        }
+    }
+
+    /// @dev The lead artist finalizes the work (once; later calls revert).
+    function finalize(uint256 seed) external {
+        (, uint256 tokenId) = _pick(seed);
+        bytes32 state = records.workStateHash(tokenId);
+        vm.prank(vm.addr(artistKey));
+        try records.finalize(tokenId, state) {
+            if (ghostFinalized[tokenId]) ++violations;
+            ghostFinalized[tokenId] = true;
+            ghostRenderer[tokenId] = stream.defaultRenderer();
+        } catch {
+            if (!ghostFinalized[tokenId]) ++violations;
+        }
+    }
+
+    /// @dev SUCCESSOR_SETTER applies the artist's errata repin to one of the renderers: allowed
+    ///      only for a finalized work whose repin power is not renounced.
+    function repin(uint256 seed, uint256 which) external {
+        (, uint256 tokenId) = _pick(seed);
+        address next = _renderers[which % _renderers.length];
+        bytes32 state = ghostFinalized[tokenId] ? records.workStateHash(tokenId) : bytes32(0);
+        uint64 deadline = uint64(block.timestamp + 31 days);
+        bytes memory sig = _sign(
+            artistKey,
+            keccak256(
+                abi.encode(Typehashes.RENDERER_REPIN, tokenId, next, next.codehash, state, deadline)
+            )
+        );
+        bool allowed =
+            ghostFinalized[tokenId] && ghostMask[tokenId] & WorkPowers.RENDERER_REPIN == 0;
+        vm.prank(governor);
+        try records.repinRenderer(tokenId, next, next.codehash, state, deadline, sig) {
+            if (!allowed) ++violations;
+            if (next != ghostRenderer[tokenId]) ++repinned;
+            ghostRenderer[tokenId] = next;
         } catch {
             if (allowed) ++violations;
         }

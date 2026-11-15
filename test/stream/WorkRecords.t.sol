@@ -21,6 +21,10 @@ import { RecordsFixture } from "./RecordsFixture.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
 
+import { toWorkItem, toWorkMedia, preferredOf } from "test/helpers/WorkItems.sol";
+
+import { IWorkLocators } from "src/interfaces/IWorkDelivery.sol";
+
 contract WorkRecordsTest is RecordsFixture {
     event MetadataUpdate(uint256 _tokenId);
     event BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId);
@@ -31,14 +35,16 @@ contract WorkRecordsTest is RecordsFixture {
 
     function test_constructor_wiring() public view {
         assertEq(records.stream(), address(stream));
-        assertEq(records.artistRegistry(), address(artists));
+        assertEq(delivery.records(), address(records));
+        assertEq(delivery.stream(), address(stream));
+        assertEq(delivery.predecessor(), address(0));
         assertEq(records.contentStore(), address(store));
         assertEq(records.cc0TextFileId(), _textFileId("cc0-1.0"));
         assertEq(stream.entropyModuleOf(1), address(entropy));
         assertTrue(records.supportsInterface(type(IWorkRecords).interfaceId));
         assertTrue(records.supportsInterface(0x01ffc9a7));
         assertFalse(records.supportsInterface(0xffffffff));
-        assertEq(uint8(records.preferredKind()), uint8(LocatorKind.NONE));
+        assertEq(uint8(delivery.preferredKind()), uint8(LocatorKind.NONE));
         (, string memory name, string memory version, uint256 chainId, address verifying,,) =
             records.eip712Domain();
         assertEq(name, "6529 Works Records");
@@ -99,11 +105,13 @@ contract WorkRecordsTest is RecordsFixture {
     function test_openRecord_permissionless() public {
         (uint256 tokenId, PackageItem memory item, MediaFile[] memory media) = _minted(1, false);
         vm.expectEmit(address(records));
-        emit IWorkRecords.RecordOpened(tokenId, item.recordFileId, item.mediaHash);
+        emit IWorkRecords.RecordOpened(
+            tokenId, toWorkItem(item), toWorkMedia(media), WorksHashing.CC0_LICENSE_KEY, 0
+        );
         vm.expectEmit(address(stream));
         emit MetadataUpdate(tokenId);
         vm.prank(outsider);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
 
         IWorkRecords.RecordInfo memory info = records.record(tokenId);
         assertEq(info.recordFileId, item.recordFileId);
@@ -127,7 +135,7 @@ contract WorkRecordsTest is RecordsFixture {
         PackageItem memory item = _recordsItem(1, media);
         item.license = _license("cc-by-4.0");
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         assertEq(abi.encode(records.mediaOf(tokenId)), abi.encode(media));
         assertEq(records.record(tokenId).licenseKey, keccak256("cc-by-4.0"));
         assertEq(records.licenseOf(tokenId).spdxId, "cc-by-4.0");
@@ -135,9 +143,9 @@ contract WorkRecordsTest is RecordsFixture {
 
     function test_openRecord_rejectsMismatches() public {
         (uint256 tokenId, PackageItem memory item, MediaFile[] memory media) = _minted(1, false);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.RecordAlreadyOpen.selector, tokenId));
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
 
         (uint256 other, PackageItem memory otherItem, MediaFile[] memory otherMedia) =
             _minted(2, false);
@@ -148,10 +156,10 @@ contract WorkRecordsTest is RecordsFixture {
         _expectBadOpen(other, otherItem, new MediaFile[](0));
 
         vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 9));
-        records.openRecord(9, otherItem, otherMedia);
+        records.openRecord(9, toWorkItem(otherItem), toWorkMedia(otherMedia));
         auction.burn(stream, other, 1);
         vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, other));
-        records.openRecord(other, otherItem, otherMedia);
+        records.openRecord(other, toWorkItem(otherItem), toWorkMedia(otherMedia));
     }
 
     function test_openRecord_rejectsBadMediaFacts() public {
@@ -175,7 +183,7 @@ contract WorkRecordsTest is RecordsFixture {
         vm.expectRevert(
             abi.encodeWithSelector(IContentStore.ContentFileUnknown.selector, media[0].fileId)
         );
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
 
         // The primary is not first, or there are two.
         media = new MediaFile[](2);
@@ -267,7 +275,7 @@ contract WorkRecordsTest is RecordsFixture {
         bytes32 unknown = keccak256("unregistered text");
         item.license = License("MIT", unknown);
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         assertEq(records.licenseOf(tokenId).textFileId, unknown);
         bytes32 state = records.workStateHash(tokenId);
         vm.prank(artist);
@@ -282,7 +290,7 @@ contract WorkRecordsTest is RecordsFixture {
         PackageItem memory item = _recordsItem(1, media);
         item.license = License("MIT", _registerTextOnly("MIT text"));
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         bytes32 state = records.workStateHash(tokenId);
         vm.prank(artist);
         vm.expectRevert(IWorkRecords.InvalidLicense.selector);
@@ -310,7 +318,7 @@ contract WorkRecordsTest is RecordsFixture {
         PackageItem memory item = _recordsItem(1, media);
         item.license = _license("CC-BY-4.0");
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         assertEq(records.licenseOf(tokenId).spdxId, "CC-BY-4.0");
         assertEq(records.record(tokenId).licenseKey, keccak256("cc-by-4.0"));
     }
@@ -327,9 +335,9 @@ contract WorkRecordsTest is RecordsFixture {
             abi.encodeWithSelector(Broken.selector)
         );
         vm.expectRevert(Broken.selector);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         vm.clearMockedCalls();
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
 
         bytes32 next = _record(77);
         bytes32 state = records.workStateHash(tokenId);
@@ -350,7 +358,7 @@ contract WorkRecordsTest is RecordsFixture {
         PackageItem memory item = _recordsItem(1, media);
         item.recordFileId = keccak256("no such record");
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         assertEq(records.record(tokenId).recordFileId, item.recordFileId);
         _expectRecordFixable(tokenId, item.recordFileId);
     }
@@ -365,7 +373,7 @@ contract WorkRecordsTest is RecordsFixture {
         item.license = License("CC0-1.0", records.cc0TextFileId());
         assertEq(WorksHashing.licenseKey("CC0-1.0"), WorksHashing.CC0_LICENSE_KEY);
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         assertEq(records.licenseOf(tokenId).spdxId, "CC0-1.0");
         assertEq(records.record(tokenId).licenseKey, WorksHashing.CC0_LICENSE_KEY);
 
@@ -373,12 +381,12 @@ contract WorkRecordsTest is RecordsFixture {
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes[] memory sigs = _both(_royaltyHash(tokenId, 5_000, state, deadline));
         vm.prank(governor);
-        records.setRoyaltyRate(tokenId, 5_000, item, state, deadline, sigs);
+        records.setRoyaltyRate(tokenId, 5_000, toWorkItem(item), state, deadline, sigs);
         assertEq(IStreamViews(address(stream)).work(tokenId).royaltyRate, 5_000);
 
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.LicenseIrrevocable.selector, tokenId));
-        records.relicense(tokenId, _license("mit"), item, bytes32(0), 0, new bytes[](0));
+        records.relicense(tokenId, _license("mit"), toWorkItem(item), bytes32(0), 0, new bytes[](0));
 
         state = records.workStateHash(tokenId);
         vm.prank(artist);
@@ -396,7 +404,7 @@ contract WorkRecordsTest is RecordsFixture {
         item.contentHash = keccak256("not the primary");
         uint256 tokenId = _mint(item);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidRecordData.selector, tokenId));
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
     }
 
     function _manifest(bytes32[] memory hashes, uint256 length, IContentStore.Encoding enc)
@@ -436,7 +444,7 @@ contract WorkRecordsTest is RecordsFixture {
         item.recordFileId =
             _manifest(hashes, store.CHUNK_SIZE() + 100, IContentStore.Encoding.Identity);
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         assertTrue(records.isOpen(tokenId));
         _fixRecord(tokenId, item.recordFileId);
     }
@@ -453,7 +461,7 @@ contract WorkRecordsTest is RecordsFixture {
         store.writeChunk(data);
         assertTrue(store.isComplete(item.recordFileId));
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         _fixRecord(tokenId, item.recordFileId);
     }
 
@@ -466,7 +474,7 @@ contract WorkRecordsTest is RecordsFixture {
         bytes32 unknown = keccak256("typo in the text file id");
         item.license = License("CC-BY-4.0", unknown);
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         bytes32 state = records.workStateHash(tokenId);
         vm.prank(artist);
         vm.expectRevert(abi.encodeWithSelector(IContentStore.ContentFileUnknown.selector, unknown));
@@ -489,16 +497,16 @@ contract WorkRecordsTest is RecordsFixture {
         item.license = License("CC0-1.0", keccak256("typo"));
         uint256 tokenId = _mint(item);
         vm.expectRevert(IWorkRecords.InvalidLicense.selector);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
 
         media = _single(2, true);
         item = _recordsItem(2, media);
         item.license = License("CC0-1.0", records.cc0TextFileId());
         tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.LicenseIrrevocable.selector, tokenId));
-        records.relicense(tokenId, _license("mit"), item, bytes32(0), 0, new bytes[](0));
+        records.relicense(tokenId, _license("mit"), toWorkItem(item), bytes32(0), 0, new bytes[](0));
         bytes32 state = records.workStateHash(tokenId);
         vm.prank(artist);
         records.finalize(tokenId, state);
@@ -558,7 +566,7 @@ contract WorkRecordsTest is RecordsFixture {
         PackageItem memory item = _recordsItem(salt + 1000, media);
         item.recordFileId = recordFileId;
         tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         _expectRecordFixable(tokenId, recordFileId);
     }
 
@@ -571,22 +579,11 @@ contract WorkRecordsTest is RecordsFixture {
         // Stored, but not `Identity` encoding.
         _expectBadRecord(2, _recordFile(_oneChunk(json), IContentStore.Encoding.Gzip, true));
         _expectBadRecord(3, _recordFile(_oneChunk(json), IContentStore.Encoding.Base64, true));
-        // Two stored chunks, and so longer than `MAX_RECORD_BYTES`.
+        // Two stored chunks: the bound is one chunk (a structural limit, not a renderer budget).
         bytes[] memory two = new bytes[](2);
         two[0] = new bytes(store.CHUNK_SIZE());
         two[1] = "}";
         _expectBadRecord(4, _recordFile(two, IContentStore.Encoding.Identity, true));
-        // One chunk, one byte over the bound (when the bound is below a full chunk).
-        if (Limits.MAX_RECORD_BYTES < store.CHUNK_SIZE()) {
-            _expectBadRecord(
-                5,
-                _recordFile(
-                    _oneChunk(new bytes(Limits.MAX_RECORD_BYTES + 1)),
-                    IContentStore.Encoding.Identity,
-                    true
-                )
-            );
-        }
     }
 
     /// @dev A full chunk is accepted, and the JSON is not parsed here: the renderer validates
@@ -611,23 +608,17 @@ contract WorkRecordsTest is RecordsFixture {
         assertEq(records.record(tokenId).recordFileId, notJson);
     }
 
-    /// @dev A PREVIEW file is at most `Limits.MAX_PREVIEW_BYTES`, an `Identity` one counting four
-    ///      times; an unregistered one reverts with the store's error, like any media file.
-    function test_openRecord_previewCap() public {
+    /// @dev WorkRecords holds no renderer budget: a PREVIEW file of any size opens (the pinned
+    ///      renderer decides what it inlines); an unregistered one reverts with the store's
+    ///      error, like any media file.
+    function test_openRecord_previewIsNotBoundedHere() public {
         MediaFile[] memory media = new MediaFile[](2);
         media[0] = _mediaFile(40, FileRole.PRIMARY, false);
-        bytes memory big = new bytes(Limits.MAX_PREVIEW_BYTES / 4 + 1);
+        bytes memory big = new bytes(Limits.MAX_PREVIEW_BYTES + 1);
         media[1] = MediaFile(_file(big, "image/png", false), sha256(big), FileRole.PREVIEW);
         PackageItem memory item = _recordsItem(40, media);
-        _expectBadOpen(_mint(item), item, media);
-
-        // At the cap it opens.
-        media[0] = _mediaFile(41, FileRole.PRIMARY, false);
-        bytes memory fits = new bytes(Limits.MAX_PREVIEW_BYTES / 4);
-        media[1] = MediaFile(_file(fits, "image/png", false), sha256(fits), FileRole.PREVIEW);
-        item = _recordsItem(41, media);
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         assertTrue(records.isOpen(tokenId));
 
         media[0] = _mediaFile(42, FileRole.PRIMARY, false);
@@ -637,20 +628,17 @@ contract WorkRecordsTest is RecordsFixture {
         vm.expectRevert(
             abi.encodeWithSelector(IContentStore.ContentFileUnknown.selector, media[1].fileId)
         );
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
     }
 
-    /// @dev The cap is exactly 16,384 bytes (16 KiB, as the README states): a preview declared
-    ///      `Base64` of that length opens, one byte more does not, and an `Identity` one counts
-    ///      four times its length.
-    function test_openRecord_previewCapIsExact() public {
+    function test_openRecord_previewsOfEveryLengthOpen() public {
         uint256[3] memory lengths = [uint256(16_384), 16_385, 4_096];
         IContentStore.Encoding[3] memory encodings = [
             IContentStore.Encoding.Base64,
             IContentStore.Encoding.Base64,
             IContentStore.Encoding.Identity
         ];
-        bool[3] memory opens = [true, false, true];
+        bool[3] memory opens = [true, true, true];
         for (uint256 i; i < 3; ++i) {
             MediaFile[] memory media = new MediaFile[](2);
             media[0] = _mediaFile(50 + i, FileRole.PRIMARY, false);
@@ -665,7 +653,7 @@ contract WorkRecordsTest is RecordsFixture {
             PackageItem memory item = _recordsItem(50 + i, media);
             uint256 tokenId = _mint(item);
             if (opens[i]) {
-                records.openRecord(tokenId, item, media);
+                records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
                 assertTrue(records.isOpen(tokenId));
             } else {
                 _expectBadOpen(tokenId, item, media);
@@ -677,7 +665,7 @@ contract WorkRecordsTest is RecordsFixture {
         internal
     {
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidRecordData.selector, tokenId));
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
     }
 
     function test_views_revertBeforeOpen() public {
@@ -692,17 +680,19 @@ contract WorkRecordsTest is RecordsFixture {
         vm.expectRevert(notOpen);
         records.licenseOf(tokenId);
         vm.expectRevert(notOpen);
-        records.syncOnChain(tokenId);
+        records.syncOnChain(tokenId, 0, type(uint256).max);
         vm.expectRevert(notOpen);
         records.pinnedRenderer(tokenId);
         vm.expectRevert(notOpen);
         records.seedOf(tokenId);
         vm.expectRevert(notOpen);
-        records.locators(tokenId, bytes32(0));
+        delivery.locators(tokenId, bytes32(0));
         vm.expectRevert(notOpen);
-        records.filePreference(tokenId, bytes32(0));
+        records.mediaIndex(tokenId, bytes32(0));
         vm.expectRevert(notOpen);
-        records.preferredLocator(tokenId, bytes32(0));
+        records.mediaStore(tokenId, 0);
+        vm.expectRevert(notOpen);
+        preferredOf(records, tokenId, bytes32(0));
         assertFalse(records.isOpen(tokenId));
         // The core falls back to its default renderer for a work with no open record.
         assertEq(stream.rendererOf(tokenId), address(renderer));
@@ -720,7 +710,7 @@ contract WorkRecordsTest is RecordsFixture {
             item.license = License("cc0-1.0", texts[i]);
             uint256 tokenId = _mint(item);
             vm.expectRevert(IWorkRecords.InvalidLicense.selector);
-            records.openRecord(tokenId, item, media);
+            records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         }
         string[2] memory ids = ["mit", "unlicense"];
         for (uint256 i; i < ids.length; ++i) {
@@ -728,7 +718,7 @@ contract WorkRecordsTest is RecordsFixture {
             PackageItem memory item = _recordsItem(20 + i, media);
             item.license = License(ids[i], cc0Text);
             uint256 tokenId = _mint(item);
-            records.openRecord(tokenId, item, media);
+            records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
             assertEq(records.licenseOf(tokenId).spdxId, ids[i]);
         }
     }
@@ -949,7 +939,7 @@ contract WorkRecordsTest is RecordsFixture {
         );
         bytes[] memory sigs = _both(structHash);
         vm.prank(governor);
-        records.relicense(tokenId, next, item, state, deadline, sigs);
+        records.relicense(tokenId, next, toWorkItem(item), state, deadline, sigs);
     }
 
     /// @dev An external hop so `vm.expectRevert` sees exactly the relicense call.
@@ -966,8 +956,8 @@ contract WorkRecordsTest is RecordsFixture {
         PackageItem memory item = _recordsItem(1, media);
         item.license = License("CC-BY-4.0", _registerTextOnly("CC-BY-4.0 legal code"));
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
-        records.syncOnChain(tokenId);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
+        records.syncOnChain(tokenId, 0, type(uint256).max);
         bytes32 state = records.workStateHash(tokenId);
         vm.prank(artist);
         vm.expectRevert(IWorkRecords.InvalidLicense.selector);
@@ -994,7 +984,7 @@ contract WorkRecordsTest is RecordsFixture {
         PackageItem memory item = _recordsItem(2, media);
         item.license = License("CC-BY-4.0", _registerTextOnly("CC-BY-4.0 legal code"));
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         License memory next = License("CC-BY-SA-4.0", _registerTextOnly("CC-BY-SA-4.0 code"));
         assertFalse(store.isComplete(next.textFileId));
         _relicense(tokenId, item, next);
@@ -1007,7 +997,7 @@ contract WorkRecordsTest is RecordsFixture {
         vm.cool(address(store));
         vm.cool(address(records));
         uint256 before = gasleft();
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         console2.log("openRecord, 1 file, cold:", before - gasleft());
         bytes32 next = _record(2);
         bytes32 state = records.workStateHash(tokenId);
@@ -1032,26 +1022,31 @@ contract WorkRecordsTest is RecordsFixture {
         media[1] = _mediaFile(2, FileRole.AUXILIARY, false);
         PackageItem memory item = _recordsItem(1, media);
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         bytes32 state = records.workStateHash(tokenId);
 
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.NotOnChainComplete.selector, tokenId));
-        records.syncOnChain(tokenId);
+        records.syncOnChain(tokenId, 0, type(uint256).max);
         _upload(1);
+        // The first file completes and the progress is kept; the second is still missing.
+        vm.expectEmit(address(records));
+        emit IWorkRecords.OnChainSyncProgress(tokenId, 1, 0, 0);
+        records.syncOnChain(tokenId, 0, type(uint256).max);
+        assertFalse(records.record(tokenId).onChainComplete);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.NotOnChainComplete.selector, tokenId));
-        records.syncOnChain(tokenId);
+        records.syncOnChain(tokenId, 0, type(uint256).max);
         _upload(2);
         vm.expectEmit(address(records));
         emit IWorkRecords.WorkOnChainComplete(tokenId);
         vm.expectEmit(address(stream));
         emit MetadataUpdate(tokenId);
         vm.prank(outsider);
-        records.syncOnChain(tokenId);
+        records.syncOnChain(tokenId, 0, type(uint256).max);
         assertTrue(records.record(tokenId).onChainComplete);
         assertEq(records.workStateHash(tokenId), state);
 
         vm.recordLogs();
-        records.syncOnChain(tokenId);
+        records.syncOnChain(tokenId, 0, type(uint256).max);
         assertEq(vm.getRecordedLogs().length, 0);
     }
 
@@ -1063,15 +1058,17 @@ contract WorkRecordsTest is RecordsFixture {
         media[1] = _mediaFile(2, FileRole.PREVIEW, false);
         PackageItem memory item = _recordsItem(1, media);
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
+        records.syncOnChain(tokenId, 0, type(uint256).max);
+        assertFalse(records.record(tokenId).onChainComplete);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.NotOnChainComplete.selector, tokenId));
-        records.syncOnChain(tokenId);
-        (Locator memory loc, uint256 index) = records.preferredLocator(tokenId, media[0].fileId);
+        records.syncOnChain(tokenId, 0, type(uint256).max);
+        (Locator memory loc, uint256 index) = preferredOf(records, tokenId, media[0].fileId);
         assertEq(uint8(loc.kind), uint8(LocatorKind.NONE));
         assertEq(index, type(uint256).max);
         _upload(2);
-        records.syncOnChain(tokenId);
-        (loc,) = records.preferredLocator(tokenId, media[1].fileId);
+        records.syncOnChain(tokenId, 0, type(uint256).max);
+        (loc,) = preferredOf(records, tokenId, media[1].fileId);
         assertEq(uint8(loc.kind), uint8(LocatorKind.ONCHAIN));
     }
 
@@ -1099,7 +1096,7 @@ contract WorkRecordsTest is RecordsFixture {
         item = _recordsItem(1, media);
         item.license = _license("cc-by-4.0");
         tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
     }
 
     function test_relicense_withEveryConsent() public {
@@ -1110,11 +1107,16 @@ contract WorkRecordsTest is RecordsFixture {
         bytes[] memory sigs = _both(_relicenseHash(tokenId, next, state, deadline));
 
         vm.expectEmit(address(records));
-        emit IWorkRecords.LicenseChanged(tokenId, _license("cc-by-4.0"), next);
+        emit IWorkRecords.LicenseChanged(
+            tokenId,
+            _license("cc-by-4.0"),
+            next,
+            _state(tokenId, 1, item.recordFileId, next, address(renderer))
+        );
         vm.expectEmit(address(stream));
         emit MetadataUpdate(tokenId);
         vm.prank(governor);
-        records.relicense(tokenId, next, item, state, deadline, sigs);
+        records.relicense(tokenId, next, toWorkItem(item), state, deadline, sigs);
         assertEq(abi.encode(records.licenseOf(tokenId)), abi.encode(next));
         assertEq(records.record(tokenId).licenseKey, WorksHashing.CC0_LICENSE_KEY);
         assertEq(records.record(tokenId).version, 1);
@@ -1122,7 +1124,7 @@ contract WorkRecordsTest is RecordsFixture {
         // CC0 is now irrevocable. (Replay of consents is tested between non-CC0 licenses.)
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.LicenseIrrevocable.selector, tokenId));
-        records.relicense(tokenId, _license("mit"), item, state, deadline, sigs);
+        records.relicense(tokenId, _license("mit"), toWorkItem(item), state, deadline, sigs);
     }
 
     function test_relicense_betweenNonCc0Licenses() public {
@@ -1132,14 +1134,14 @@ contract WorkRecordsTest is RecordsFixture {
         uint64 deadline = uint64(block.timestamp + 3 days);
         bytes[] memory sigs = _both(_relicenseHash(tokenId, next, state, deadline));
         vm.prank(governor);
-        records.relicense(tokenId, next, item, state, deadline, sigs);
+        records.relicense(tokenId, next, toWorkItem(item), state, deadline, sigs);
         assertEq(records.licenseOf(tokenId).spdxId, "cc-by-sa-4.0");
         bytes32 current = records.workStateHash(tokenId);
         vm.prank(governor);
         vm.expectRevert(
             abi.encodeWithSelector(IWorkRecords.StateHashMismatch.selector, state, current)
         );
-        records.relicense(tokenId, _license("cc-by-4.0"), item, state, deadline, sigs);
+        records.relicense(tokenId, _license("cc-by-4.0"), toWorkItem(item), state, deadline, sigs);
     }
 
     function test_relicense_cc0IsIrrevocableInAnyCase() public {
@@ -1148,11 +1150,11 @@ contract WorkRecordsTest is RecordsFixture {
         // Another spelling of the identifier: stored as given, and CC0 by its key.
         item.license = License("CC0-1.0", records.cc0TextFileId());
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         assertEq(records.licenseOf(tokenId).spdxId, "CC0-1.0");
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.LicenseIrrevocable.selector, tokenId));
-        records.relicense(tokenId, _license("mit"), item, bytes32(0), 0, new bytes[](0));
+        records.relicense(tokenId, _license("mit"), toWorkItem(item), bytes32(0), 0, new bytes[](0));
     }
 
     /// @dev A CC0 license names the deployment's CC0 text: `openRecord` refuses an approved one
@@ -1164,20 +1166,22 @@ contract WorkRecordsTest is RecordsFixture {
         item.license = License("cc0-1.0", _registerText("cc0 text with a typo"));
         uint256 tokenId = _mint(item);
         vm.expectRevert(IWorkRecords.InvalidLicense.selector);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
 
         (uint256 byWork, PackageItem memory byItem) = _byWork();
         License memory other = License("CC0-1.0", _registerText("other terms"));
         vm.prank(governor);
         vm.expectRevert(IWorkRecords.InvalidLicense.selector);
-        records.relicense(byWork, other, byItem, bytes32(0), 0, new bytes[](0));
+        records.relicense(byWork, other, toWorkItem(byItem), bytes32(0), 0, new bytes[](0));
     }
 
     function test_relicense_identicalIsNoOp() public {
         (uint256 tokenId, PackageItem memory item) = _byWork();
         vm.recordLogs();
         vm.prank(governor);
-        records.relicense(tokenId, _license("cc-by-4.0"), item, bytes32(0), 0, new bytes[](0));
+        records.relicense(
+            tokenId, _license("cc-by-4.0"), toWorkItem(item), bytes32(0), 0, new bytes[](0)
+        );
         assertEq(vm.getRecordedLogs().length, 0);
     }
 
@@ -1186,16 +1190,25 @@ contract WorkRecordsTest is RecordsFixture {
         bytes32 unknown = keccak256("unregistered text");
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IContentStore.ContentFileUnknown.selector, unknown));
-        records.relicense(tokenId, License("mit", unknown), item, bytes32(0), 0, new bytes[](0));
+        records.relicense(
+            tokenId, License("mit", unknown), toWorkItem(item), bytes32(0), 0, new bytes[](0)
+        );
         vm.startPrank(governor);
         vm.expectRevert(IWorkRecords.InvalidLicense.selector);
-        records.relicense(tokenId, _license(""), item, bytes32(0), 0, new bytes[](0));
+        records.relicense(tokenId, _license(""), toWorkItem(item), bytes32(0), 0, new bytes[](0));
         vm.expectRevert(IWorkRecords.InvalidLicense.selector);
         records.relicense(
-            tokenId, _license(string(new bytes(65))), item, bytes32(0), 0, new bytes[](0)
+            tokenId,
+            _license(string(new bytes(65))),
+            toWorkItem(item),
+            bytes32(0),
+            0,
+            new bytes[](0)
         );
         vm.expectRevert(IWorkRecords.InvalidLicense.selector);
-        records.relicense(tokenId, _license("MIT License"), item, bytes32(0), 0, new bytes[](0));
+        records.relicense(
+            tokenId, _license("MIT License"), toWorkItem(item), bytes32(0), 0, new bytes[](0)
+        );
         vm.stopPrank();
     }
 
@@ -1210,28 +1223,28 @@ contract WorkRecordsTest is RecordsFixture {
         onlyArtist[0] = _sign(artistKey, structHash);
         vm.startPrank(governor);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidConsent.selector, tokenId, 1));
-        records.relicense(tokenId, next, item, state, deadline, onlyArtist);
+        records.relicense(tokenId, next, toWorkItem(item), state, deadline, onlyArtist);
 
         bytes[] memory forged = _both(structHash);
         forged[1] = _sign(0xBAD, structHash);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidConsent.selector, tokenId, 1));
-        records.relicense(tokenId, next, item, state, deadline, forged);
+        records.relicense(tokenId, next, toWorkItem(item), state, deadline, forged);
 
         bytes[] memory otherPayload =
             _both(_relicenseHash(tokenId, _license("mit"), state, deadline));
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidConsent.selector, tokenId, 0));
-        records.relicense(tokenId, next, item, state, deadline, otherPayload);
+        records.relicense(tokenId, next, toWorkItem(item), state, deadline, otherPayload);
 
         PackageItem memory other = _item(9);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidRecordData.selector, tokenId));
-        records.relicense(tokenId, next, other, state, deadline, _both(structHash));
+        records.relicense(tokenId, next, toWorkItem(other), state, deadline, _both(structHash));
         vm.stopPrank();
 
         vm.warp(deadline + 1);
         bytes[] memory late = _both(structHash);
         vm.prank(governor);
         vm.expectRevert(SignatureReverts.expired(deadline));
-        records.relicense(tokenId, next, item, state, deadline, late);
+        records.relicense(tokenId, next, toWorkItem(item), state, deadline, late);
     }
 
     function test_relicense_needsGovernance() public {
@@ -1240,7 +1253,9 @@ contract WorkRecordsTest is RecordsFixture {
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, artist)
         );
-        records.relicense(tokenId, _license("cc0-1.0"), item, bytes32(0), 0, new bytes[](0));
+        records.relicense(
+            tokenId, _license("cc0-1.0"), toWorkItem(item), bytes32(0), 0, new bytes[](0)
+        );
     }
 
     function test_relicense_consentFollowsCurrentAuthority() public {
@@ -1254,10 +1269,10 @@ contract WorkRecordsTest is RecordsFixture {
         bytes[] memory sigs = _both(structHash);
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidConsent.selector, tokenId, 1));
-        records.relicense(tokenId, next, item, state, deadline, sigs);
+        records.relicense(tokenId, next, toWorkItem(item), state, deadline, sigs);
         sigs[1] = _sign(newKey, structHash);
         vm.prank(governor);
-        records.relicense(tokenId, next, item, state, deadline, sigs);
+        records.relicense(tokenId, next, toWorkItem(item), state, deadline, sigs);
         assertEq(records.licenseOf(tokenId).spdxId, "cc0-1.0");
     }
 
@@ -1273,7 +1288,7 @@ contract WorkRecordsTest is RecordsFixture {
         item.license = _license("cc-by-4.0");
         item.parties[1].account = rotated;
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
 
         License memory next = _license("cc0-1.0");
         bytes32 state = records.workStateHash(tokenId);
@@ -1283,7 +1298,7 @@ contract WorkRecordsTest is RecordsFixture {
         sigs[0] = _sign(artistKey, structHash);
         sigs[1] = _sign(newKey, structHash);
         vm.prank(governor);
-        records.relicense(tokenId, next, item, state, deadline, sigs);
+        records.relicense(tokenId, next, toWorkItem(item), state, deadline, sigs);
         assertEq(records.licenseOf(tokenId).spdxId, "cc0-1.0");
     }
 
@@ -1309,7 +1324,7 @@ contract WorkRecordsTest is RecordsFixture {
             vm.expectRevert(
                 abi.encodeWithSelector(IWorkRecords.InvalidRecordData.selector, tokenId)
             );
-            records.relicense(tokenId, next, item, state, deadline, sigs);
+            records.relicense(tokenId, next, toWorkItem(item), state, deadline, sigs);
         }
         vm.stopPrank();
     }
@@ -1326,7 +1341,7 @@ contract WorkRecordsTest is RecordsFixture {
         (r, vs) = vm.signCompact(collaboratorKey, digest);
         sigs[1] = abi.encodePacked(r, vs);
         vm.prank(governor);
-        records.relicense(tokenId, next, item, state, deadline, sigs);
+        records.relicense(tokenId, next, toWorkItem(item), state, deadline, sigs);
         assertEq(records.licenseOf(tokenId).spdxId, "cc0-1.0");
     }
 
@@ -1337,14 +1352,16 @@ contract WorkRecordsTest is RecordsFixture {
         PackageItem memory item = _recordsItem(1, media);
         item.license = License("cc0-1.0", records.cc0TextFileId());
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         string[2] memory nexts = ["mit", "unlicense"];
         for (uint256 i; i < nexts.length; ++i) {
             vm.prank(governor);
             vm.expectRevert(
                 abi.encodeWithSelector(IWorkRecords.LicenseIrrevocable.selector, tokenId)
             );
-            records.relicense(tokenId, _license(nexts[i]), item, bytes32(0), 0, new bytes[](0));
+            records.relicense(
+                tokenId, _license(nexts[i]), toWorkItem(item), bytes32(0), 0, new bytes[](0)
+            );
         }
     }
 
@@ -1357,7 +1374,7 @@ contract WorkRecordsTest is RecordsFixture {
             uint256(WorksHashing.licenseKey("unlicense")), uint256(WorksHashing.CC0_LICENSE_KEY)
         );
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         _relicenseTo(tokenId, item, _license("mit"));
         assertEq(records.licenseOf(tokenId).spdxId, "mit");
     }
@@ -1380,7 +1397,7 @@ contract WorkRecordsTest is RecordsFixture {
         uint64 deadline = uint64(block.timestamp + 3 days);
         bytes[] memory sigs = _both(_relicenseHash(tokenId, next, state, deadline));
         vm.prank(governor);
-        records.relicense(tokenId, next, item, state, deadline, sigs);
+        records.relicense(tokenId, next, toWorkItem(item), state, deadline, sigs);
     }
 
     /// @dev One signature per party: an extra one is refused, not ignored.
@@ -1394,7 +1411,7 @@ contract WorkRecordsTest is RecordsFixture {
         (three[0], three[1], three[2]) = (both[0], both[1], both[1]);
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidConsent.selector, tokenId, 3));
-        records.relicense(tokenId, next, item, state, deadline, three);
+        records.relicense(tokenId, next, toWorkItem(item), state, deadline, three);
     }
 
     // ------------------------------------------------------------------------ royalty rate
@@ -1413,7 +1430,7 @@ contract WorkRecordsTest is RecordsFixture {
         emit MetadataUpdate(tokenId);
         vm.recordLogs();
         vm.prank(governor);
-        records.setRoyaltyRate(tokenId, 5_000, item, state, deadline, sigs);
+        records.setRoyaltyRate(tokenId, 5_000, toWorkItem(item), state, deadline, sigs);
         (address receiver, uint256 amount) = stream.royaltyInfo(tokenId, 1 ether);
         assertEq(receiver, _royaltyWallet(_sellerOf(item.payees), feeRecipient, 25_000));
         assertEq(amount, 0.05 ether);
@@ -1445,23 +1462,23 @@ contract WorkRecordsTest is RecordsFixture {
                 IWorkPowers.RoyaltyRateNotLowered.selector, tokenId, 6_529, 100_001
             )
         );
-        records.setRoyaltyRate(tokenId, 100_001, item, state, deadline, sigs);
+        records.setRoyaltyRate(tokenId, 100_001, toWorkItem(item), state, deadline, sigs);
         sigs = _both(_royaltyHash(tokenId, 1, state, deadline));
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidConsent.selector, tokenId, 0));
-        records.setRoyaltyRate(tokenId, 2, item, state, deadline, sigs);
+        records.setRoyaltyRate(tokenId, 2, toWorkItem(item), state, deadline, sigs);
         vm.prank(outsider);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)
         );
-        records.setRoyaltyRate(tokenId, 1, item, state, deadline, sigs);
+        records.setRoyaltyRate(tokenId, 1, toWorkItem(item), state, deadline, sigs);
     }
 
     function test_setRoyaltyRate_identicalIsNoOp() public {
         (uint256 tokenId, PackageItem memory item) = _work(1);
         vm.recordLogs();
         vm.prank(governor);
-        records.setRoyaltyRate(tokenId, 6_529, item, bytes32(0), 0, new bytes[](0));
+        records.setRoyaltyRate(tokenId, 6_529, toWorkItem(item), bytes32(0), 0, new bytes[](0));
         assertEq(vm.getRecordedLogs().length, 0);
     }
 
@@ -1470,14 +1487,14 @@ contract WorkRecordsTest is RecordsFixture {
         PackageItem memory item = _recordsItem(1, media);
         item.kind = ItemKind.EDITION_MASTER;
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         auction.settle(IStream(address(stream)), tokenId);
         editionsMock.link(IStream(address(stream)), tokenId, tokenId);
         bytes32 state = records.workStateHash(tokenId);
         uint64 deadline = uint64(block.timestamp + 15 days);
         bytes[] memory sigs = _both(_royaltyHash(tokenId, 5_000, state, deadline));
         vm.prank(governor);
-        records.setRoyaltyRate(tokenId, 5_000, item, state, deadline, sigs);
+        records.setRoyaltyRate(tokenId, 5_000, toWorkItem(item), state, deadline, sigs);
         assertEq(IStreamViews(address(stream)).work(tokenId).royaltyRate, 5_000);
         assertEq(editionsMock.rateOf(tokenId), 5_000);
     }
@@ -1494,12 +1511,12 @@ contract WorkRecordsTest is RecordsFixture {
         bytes[] memory toB = _both(_royaltyHash(tokenId, 6_000, s0, deadline));
         bytes[] memory toC = _both(_royaltyHash(tokenId, 5_000, s0, deadline));
         vm.prank(governor);
-        records.setRoyaltyRate(tokenId, 6_000, item, s0, deadline, toB);
+        records.setRoyaltyRate(tokenId, 6_000, toWorkItem(item), s0, deadline, toB);
         bytes32 s1 = records.workStateHash(tokenId);
         assertTrue(s1 != s0);
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.StateHashMismatch.selector, s0, s1));
-        records.setRoyaltyRate(tokenId, 5_000, item, s0, deadline, toC);
+        records.setRoyaltyRate(tokenId, 5_000, toWorkItem(item), s0, deadline, toC);
         assertEq(IStreamViews(address(stream)).work(tokenId).royaltyRate, 6_000);
     }
 
@@ -1512,18 +1529,23 @@ contract WorkRecordsTest is RecordsFixture {
         PackageItem memory item = _recordsItem(7, media);
         item.license = _license("cc-by-4.0");
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         License memory a = _license("cc-by-4.0");
         License memory b = _license("mit");
         uint64 deadline = uint64(block.timestamp + 3 days);
         bytes32 s0 = records.workStateHash(tokenId);
         bytes[] memory toB = _both(_relicenseHash(tokenId, b, s0, deadline));
         vm.prank(governor);
-        records.relicense(tokenId, b, item, s0, deadline, toB);
+        records.relicense(tokenId, b, toWorkItem(item), s0, deadline, toB);
         bytes32 s1 = records.workStateHash(tokenId);
         vm.prank(governor);
         records.relicense(
-            tokenId, a, item, s1, deadline, _both(_relicenseHash(tokenId, a, s1, deadline))
+            tokenId,
+            a,
+            toWorkItem(item),
+            s1,
+            deadline,
+            _both(_relicenseHash(tokenId, a, s1, deadline))
         );
         bytes32 s2 = records.workStateHash(tokenId);
         assertEq(records.licenseOf(tokenId).spdxId, "cc-by-4.0");
@@ -1531,7 +1553,7 @@ contract WorkRecordsTest is RecordsFixture {
         assertTrue(s2 != s0, "the version alone separates the two A states");
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.StateHashMismatch.selector, s0, s2));
-        records.relicense(tokenId, b, item, s0, deadline, toB);
+        records.relicense(tokenId, b, toWorkItem(item), s0, deadline, toB);
         assertEq(records.licenseOf(tokenId).spdxId, "cc-by-4.0");
     }
 
@@ -1550,7 +1572,7 @@ contract WorkRecordsTest is RecordsFixture {
         item.seedPolicy = SeedPolicy.ARTIST;
         item.seed = keccak256("artist seed");
         uint256 seeded = _mint(item);
-        records.openRecord(seeded, item, media);
+        records.openRecord(seeded, toWorkItem(item), toWorkMedia(media));
         (policy, seed) = records.seedOf(seeded);
         assertEq(uint8(policy), uint8(SeedPolicy.ARTIST));
         assertEq(seed, keccak256("artist seed"));
@@ -1561,7 +1583,7 @@ contract WorkRecordsTest is RecordsFixture {
         bytes32 itemHash = WorksHashing.itemHash(item);
         entropy.deliver(item, keccak256("vrf seed"));
         uint256 vrf = _mint(item);
-        records.openRecord(vrf, item, media);
+        records.openRecord(vrf, toWorkItem(item), toWorkMedia(media));
         (policy, seed) = records.seedOf(vrf);
         assertEq(uint8(policy), uint8(SeedPolicy.VRF));
         assertEq(seed, keccak256("vrf seed"));
@@ -1594,7 +1616,13 @@ contract WorkRecordsTest is RecordsFixture {
         bytes memory sig = _sign(artistKey, _repinHash(tokenId, address(next), state, deadline));
         vm.expectEmit(address(records));
         emit IWorkRecords.RendererRepinned(
-            tokenId, address(renderer), address(next), address(next).codehash
+            tokenId,
+            address(renderer),
+            address(next),
+            address(next).codehash,
+            _state(
+                tokenId, 2, records.record(tokenId).recordFileId, _license("cc0-1.0"), address(next)
+            )
         );
         vm.expectEmit(address(stream));
         emit MetadataUpdate(tokenId);
@@ -1741,12 +1769,12 @@ contract WorkRecordsTest is RecordsFixture {
         PackageItem memory item = _recordsItem(1, media);
         item.kind = ItemKind.EDITION_MASTER;
         uint256 tokenId = _mint(item);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         assertEq(editionsMock.notified(tokenId), 0);
         auction.settle(IStream(address(stream)), tokenId);
         editionsMock.link(IStream(address(stream)), tokenId, tokenId);
         vm.prank(platform);
-        records.addLocator(tokenId, media[0].fileId, _ar("tx"));
+        delivery.addLocator(tokenId, media[0].fileId, _ar("tx"));
         assertEq(editionsMock.notified(tokenId), 1);
         bytes32 state = records.workStateHash(tokenId);
         vm.prank(artist);
@@ -1773,15 +1801,15 @@ contract WorkRecordsTest is RecordsFixture {
         (uint256 tokenId,) = _work(1);
         bytes32 file = _primary(tokenId);
         bytes32 state = records.workStateHash(tokenId);
-        vm.expectEmit(address(records));
-        emit IWorkRecords.LocatorAdded(tokenId, file, 0, _ar("tx1"));
+        vm.expectEmit(address(delivery));
+        emit IWorkLocators.LocatorAdded(tokenId, file, 0, _ar("tx1"), artist, true);
         vm.expectEmit(address(stream));
         emit MetadataUpdate(tokenId);
         vm.prank(artist);
-        records.addLocator(tokenId, file, _ar("tx1"));
+        delivery.addLocator(tokenId, file, _ar("tx1"));
         vm.prank(platform);
-        records.addLocator(tokenId, file, _ipfs("bafy1"));
-        Locator[] memory list = records.locators(tokenId, file);
+        delivery.addLocator(tokenId, file, _ipfs("bafy1"));
+        Locator[] memory list = delivery.locators(tokenId, file);
         assertEq(list.length, 2);
         assertEq(list[1].uri, CA.ipfs("bafy1"));
         assertEq(records.workStateHash(tokenId), state);
@@ -1789,14 +1817,14 @@ contract WorkRecordsTest is RecordsFixture {
         vm.prank(artist);
         records.finalize(tokenId, state);
         vm.prank(platform);
-        records.addLocator(tokenId, file, _ar("tx2"));
-        assertEq(records.locators(tokenId, file).length, 3);
+        delivery.addLocator(tokenId, file, _ar("tx2"));
+        assertEq(delivery.locators(tokenId, file).length, 3);
         // After finalize only the PLATFORM role adds locators.
         vm.prank(artist);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, artist)
         );
-        records.addLocator(tokenId, file, _ar("tx3"));
+        delivery.addLocator(tokenId, file, _ar("tx3"));
     }
 
     function test_addLocator_reverts() public {
@@ -1806,13 +1834,13 @@ contract WorkRecordsTest is RecordsFixture {
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)
         );
-        records.addLocator(tokenId, file, _ar("tx"));
+        delivery.addLocator(tokenId, file, _ar("tx"));
 
         vm.startPrank(platform);
         vm.expectRevert(
             abi.encodeWithSelector(IWorkRecords.FileNotInWork.selector, tokenId, keccak256("x"))
         );
-        records.addLocator(tokenId, keccak256("x"), _ar("tx"));
+        delivery.addLocator(tokenId, keccak256("x"), _ar("tx"));
         string memory txid = CA.arweave("tx");
         string memory cid = CA.ipfs("cid");
         _expectBadLocator(tokenId, file, Locator(LocatorKind.ONCHAIN, txid));
@@ -1834,9 +1862,9 @@ contract WorkRecordsTest is RecordsFixture {
         _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, string.concat(cid, "a")));
         _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, unicode"ipfs://é"));
         _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, _with(cid, 30, hex"ff")));
-        records.addLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, txid));
-        records.addLocator(tokenId, file, Locator(LocatorKind.IPFS, cid));
-        records.addLocator(tokenId, file, Locator(LocatorKind.IPFS, CA.ipfsRoot("cid")));
+        delivery.addLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, txid));
+        delivery.addLocator(tokenId, file, Locator(LocatorKind.IPFS, cid));
+        delivery.addLocator(tokenId, file, Locator(LocatorKind.IPFS, CA.ipfsRoot("cid")));
         vm.stopPrank();
     }
 
@@ -1854,22 +1882,22 @@ contract WorkRecordsTest is RecordsFixture {
         bytes32 file = _primary(tokenId);
         vm.startPrank(platform);
         for (uint256 i; i < 8; ++i) {
-            records.addLocator(tokenId, file, _ar(string.concat("p", vm.toString(i))));
+            delivery.addLocator(tokenId, file, _ar(string.concat("p", vm.toString(i))));
         }
         _expectBadLocator(tokenId, file, _ar("p8"));
         vm.stopPrank();
         vm.startPrank(artist);
         for (uint256 i; i < 8; ++i) {
-            records.addLocator(tokenId, file, _ipfs(string.concat("a", vm.toString(i))));
+            delivery.addLocator(tokenId, file, _ipfs(string.concat("a", vm.toString(i))));
         }
         _expectBadLocator(tokenId, file, _ipfs("a8"));
         vm.stopPrank();
-        assertEq(records.locators(tokenId, file).length, 16);
+        assertEq(delivery.locators(tokenId, file).length, 16);
         // Quotas are per file: the work's other files are unaffected.
         (uint256 other,) = _work(2);
         bytes32 otherFile = _primary(other);
         vm.prank(platform);
-        records.addLocator(other, otherFile, _ar("p0"));
+        delivery.addLocator(other, otherFile, _ar("p0"));
     }
 
     /// @dev After finalize the artist adds no locators, so the platform may fill the file's 16
@@ -1879,12 +1907,12 @@ contract WorkRecordsTest is RecordsFixture {
         bytes32 file = _primary(tokenId);
         vm.startPrank(artist);
         for (uint256 i; i < 3; ++i) {
-            records.addLocator(tokenId, file, _ipfs(string.concat("a", vm.toString(i))));
+            delivery.addLocator(tokenId, file, _ipfs(string.concat("a", vm.toString(i))));
         }
         vm.stopPrank();
         vm.startPrank(platform);
         for (uint256 i; i < 8; ++i) {
-            records.addLocator(tokenId, file, _ar(string.concat("p", vm.toString(i))));
+            delivery.addLocator(tokenId, file, _ar(string.concat("p", vm.toString(i))));
         }
         _expectBadLocator(tokenId, file, _ar("p8"));
         vm.stopPrank();
@@ -1893,9 +1921,9 @@ contract WorkRecordsTest is RecordsFixture {
         records.finalize(tokenId, state);
         vm.startPrank(platform);
         for (uint256 i = 8; i < 13; ++i) {
-            records.addLocator(tokenId, file, _ar(string.concat("p", vm.toString(i))));
+            delivery.addLocator(tokenId, file, _ar(string.concat("p", vm.toString(i))));
         }
-        assertEq(records.locators(tokenId, file).length, Limits.MAX_LOCATORS_PER_FILE);
+        assertEq(delivery.locators(tokenId, file).length, Limits.MAX_LOCATORS_PER_FILE);
         _expectBadLocator(tokenId, file, _ar("p13"));
         vm.stopPrank();
     }
@@ -1905,14 +1933,14 @@ contract WorkRecordsTest is RecordsFixture {
         (uint256 tokenId,) = _work(1);
         bytes32 file = _primary(tokenId);
         vm.prank(artist);
-        records.addLocator(tokenId, file, _ar("tx"));
+        delivery.addLocator(tokenId, file, _ar("tx"));
         vm.prank(artist);
         _expectBadLocator(tokenId, file, _ar("tx"));
         vm.prank(platform);
         _expectBadLocator(tokenId, file, _ar("tx"));
         vm.prank(platform);
-        records.addLocator(tokenId, file, _ar("tx2"));
-        assertEq(records.locators(tokenId, file).length, 2);
+        delivery.addLocator(tokenId, file, _ar("tx2"));
+        assertEq(delivery.locators(tokenId, file).length, 2);
     }
 
     /// Regression: the reviews of #22
@@ -1923,20 +1951,20 @@ contract WorkRecordsTest is RecordsFixture {
         bytes32 fileId = records.mediaOf(tokenId)[0].fileId;
         for (uint256 i; i < 8; ++i) {
             vm.prank(artist);
-            records.addLocator(tokenId, fileId, _ipfs(vm.toString(i)));
+            delivery.addLocator(tokenId, fileId, _ipfs(vm.toString(i)));
         }
         vm.prank(artist);
-        vm.expectRevert(IWorkRecords.InvalidLocator.selector);
-        records.addLocator(tokenId, fileId, _ipfs("artist-9"));
+        vm.expectRevert(IWorkLocators.InvalidLocator.selector);
+        delivery.addLocator(tokenId, fileId, _ipfs("artist-9"));
         vm.prank(platform);
-        records.addLocator(tokenId, fileId, _ipfs("p0"));
+        delivery.addLocator(tokenId, fileId, _ipfs("p0"));
         vm.prank(platform);
-        vm.expectRevert(IWorkRecords.InvalidLocator.selector);
-        records.addLocator(tokenId, fileId, _ipfs("0"));
+        vm.expectRevert(IWorkLocators.InvalidLocator.selector);
+        delivery.addLocator(tokenId, fileId, _ipfs("0"));
         // The same CID as a dag-pb root is another spelling, so another URI.
         vm.prank(platform);
-        records.addLocator(tokenId, fileId, Locator(LocatorKind.IPFS, CA.ipfsRoot("0")));
-        assertEq(records.locators(tokenId, fileId).length, 10);
+        delivery.addLocator(tokenId, fileId, Locator(LocatorKind.IPFS, CA.ipfsRoot("0")));
+        assertEq(delivery.locators(tokenId, fileId).length, 10);
     }
 
     /// @dev A NUL byte is in no character set: not inside an ID, not as its last character.
@@ -1956,40 +1984,40 @@ contract WorkRecordsTest is RecordsFixture {
             _expectBadLocator(tokenId, file, Locator(good[i].kind, string(last)));
         }
         vm.prank(artist);
-        records.addLocator(tokenId, file, good[0]);
+        delivery.addLocator(tokenId, file, good[0]);
     }
 
     function _expectBadLocator(uint256 tokenId, bytes32 file, Locator memory locator) internal {
-        vm.expectRevert(IWorkRecords.InvalidLocator.selector);
-        records.addLocator(tokenId, file, locator);
+        vm.expectRevert(IWorkLocators.InvalidLocator.selector);
+        delivery.addLocator(tokenId, file, locator);
     }
 
     function test_preferredLocator_mostSpecificWins() public {
         (uint256 tokenId,) = _work(1);
         bytes32 file = _primary(tokenId);
         vm.startPrank(artist);
-        records.addLocator(tokenId, file, _ar("a0"));
-        records.addLocator(tokenId, file, _ipfs("i1"));
-        records.addLocator(tokenId, file, _ar("a2"));
+        delivery.addLocator(tokenId, file, _ar("a0"));
+        delivery.addLocator(tokenId, file, _ipfs("i1"));
+        delivery.addLocator(tokenId, file, _ar("a2"));
         vm.stopPrank();
 
         _expectPreferred(tokenId, file, 0, CA.arweave("a0"));
         vm.startPrank(storageOperator);
-        records.setPreferredKind(LocatorKind.IPFS);
+        delivery.setPreferredKind(LocatorKind.IPFS);
         _expectPreferred(tokenId, file, 1, CA.ipfs("i1"));
-        records.setCollectionPreferredKind(collectionId, LocatorKind.ARWEAVE);
+        delivery.setCollectionPreferredKind(collectionId, LocatorKind.ARWEAVE);
         _expectPreferred(tokenId, file, 0, CA.arweave("a0"));
-        records.setFilePreference(tokenId, file, 2);
-        assertEq(records.filePreference(tokenId, file), 2);
+        delivery.setFilePreference(tokenId, file, 2);
+        assertEq(delivery.filePreference(tokenId, file), 2);
         _expectPreferred(tokenId, file, 2, CA.arweave("a2"));
-        records.setCollectionPreferredKind(collectionId, LocatorKind.ONCHAIN);
+        delivery.setCollectionPreferredKind(collectionId, LocatorKind.ONCHAIN);
         _expectPreferred(tokenId, file, 2, CA.arweave("a2"));
-        records.setFilePreference(tokenId, file, NONE);
+        delivery.setFilePreference(tokenId, file, NONE);
         // The media is stored but the work is not synced, so ONCHAIN falls through to IPFS.
         _expectPreferred(tokenId, file, 1, CA.ipfs("i1"));
         vm.stopPrank();
-        records.syncOnChain(tokenId);
-        (Locator memory chosen, uint256 index) = records.preferredLocator(tokenId, file);
+        records.syncOnChain(tokenId, 0, type(uint256).max);
+        (Locator memory chosen, uint256 index) = preferredOf(records, tokenId, file);
         assertEq(index, NONE);
         assertEq(uint8(chosen.kind), uint8(LocatorKind.ONCHAIN));
     }
@@ -1998,26 +2026,26 @@ contract WorkRecordsTest is RecordsFixture {
     ///      enough until `syncOnChain` runs, and resolution never scans the content store.
     function test_preferredLocator_onchainOnlyWhenSynced() public {
         (uint256 tokenId, PackageItem memory item, MediaFile[] memory media) = _minted(1, false);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         bytes32 file = media[0].fileId;
         _expectNoLocator(tokenId, file);
         vm.prank(storageOperator);
-        records.setPreferredKind(LocatorKind.ONCHAIN);
+        delivery.setPreferredKind(LocatorKind.ONCHAIN);
         vm.prank(artist);
-        records.addLocator(tokenId, file, _ipfs("i0"));
+        delivery.addLocator(tokenId, file, _ipfs("i0"));
         _expectPreferred(tokenId, file, 0, CA.ipfs("i0"));
         _upload(1);
         _expectPreferred(tokenId, file, 0, CA.ipfs("i0"));
-        records.syncOnChain(tokenId);
+        records.syncOnChain(tokenId, 0, type(uint256).max);
         vm.expectCall(address(store), abi.encodeWithSelector(IContentStore.isComplete.selector), 0);
-        (Locator memory chosen, uint256 index) = records.preferredLocator(tokenId, file);
+        (Locator memory chosen, uint256 index) = preferredOf(records, tokenId, file);
         assertEq(index, NONE);
         assertEq(uint8(chosen.kind), uint8(LocatorKind.ONCHAIN));
         assertEq(bytes(chosen.uri).length, 0);
     }
 
     function _expectNoLocator(uint256 tokenId, bytes32 file) internal view {
-        (Locator memory chosen, uint256 index) = records.preferredLocator(tokenId, file);
+        (Locator memory chosen, uint256 index) = preferredOf(records, tokenId, file);
         assertEq(index, NONE);
         assertEq(uint8(chosen.kind), uint8(LocatorKind.NONE));
         assertEq(bytes(chosen.uri).length, 0);
@@ -2026,15 +2054,14 @@ contract WorkRecordsTest is RecordsFixture {
     function test_preferredLocator_implicitOnchainFallback() public {
         (uint256 tokenId,) = _work(1);
         _expectNoLocator(tokenId, _primary(tokenId));
-        records.syncOnChain(tokenId);
-        (Locator memory chosen, uint256 index) =
-            records.preferredLocator(tokenId, _primary(tokenId));
+        records.syncOnChain(tokenId, 0, type(uint256).max);
+        (Locator memory chosen, uint256 index) = preferredOf(records, tokenId, _primary(tokenId));
         assertEq(index, NONE);
         assertEq(uint8(chosen.kind), uint8(LocatorKind.ONCHAIN));
         vm.expectRevert(
             abi.encodeWithSelector(IWorkRecords.FileNotInWork.selector, tokenId, keccak256("x"))
         );
-        records.preferredLocator(tokenId, keccak256("x"));
+        preferredOf(records, tokenId, keccak256("x"));
     }
 
     /// @dev Every fallback tier (collection kind, global kind, first registered) considers only
@@ -2045,31 +2072,31 @@ contract WorkRecordsTest is RecordsFixture {
         (uint256 tokenId,) = _work(1);
         bytes32 file = _primary(tokenId);
         vm.startPrank(platform);
-        records.addLocator(tokenId, file, _ar("p0"));
-        records.addLocator(tokenId, file, _ipfs("p1"));
+        delivery.addLocator(tokenId, file, _ar("p0"));
+        delivery.addLocator(tokenId, file, _ipfs("p1"));
         vm.stopPrank();
         vm.startPrank(artist);
-        records.addLocator(tokenId, file, _ar("a2"));
-        records.addLocator(tokenId, file, _ipfs("a3"));
+        delivery.addLocator(tokenId, file, _ar("a2"));
+        delivery.addLocator(tokenId, file, _ipfs("a3"));
         vm.stopPrank();
         vm.prank(platform);
-        records.addLocator(tokenId, file, _ar("p4"));
+        delivery.addLocator(tokenId, file, _ar("p4"));
 
         // First registered: the artist's first, not the platform's index 0.
         _expectPreferred(tokenId, file, 2, CA.arweave("a2"));
         vm.startPrank(storageOperator);
         // Global kind: the artist's first IPFS copy, not the platform's index 1.
-        records.setPreferredKind(LocatorKind.IPFS);
+        delivery.setPreferredKind(LocatorKind.IPFS);
         _expectPreferred(tokenId, file, 3, CA.ipfs("a3"));
         // Collection kind: the artist's first Arweave copy, not the platform's index 0.
-        records.setCollectionPreferredKind(collectionId, LocatorKind.ARWEAVE);
+        delivery.setCollectionPreferredKind(collectionId, LocatorKind.ARWEAVE);
         _expectPreferred(tokenId, file, 2, CA.arweave("a2"));
         // The operator's explicit pick of a platform locator is served.
-        records.setFilePreference(tokenId, file, 0);
+        delivery.setFilePreference(tokenId, file, 0);
         _expectPreferred(tokenId, file, 0, CA.arweave("p0"));
-        records.setFilePreference(tokenId, file, 4);
+        delivery.setFilePreference(tokenId, file, 4);
         _expectPreferred(tokenId, file, 4, CA.arweave("p4"));
-        records.setFilePreference(tokenId, file, NONE);
+        delivery.setFilePreference(tokenId, file, NONE);
         _expectPreferred(tokenId, file, 2, CA.arweave("a2"));
         vm.stopPrank();
     }
@@ -2081,13 +2108,13 @@ contract WorkRecordsTest is RecordsFixture {
         (uint256 tokenId,) = _work(1);
         bytes32 file = _primary(tokenId);
         vm.prank(platform);
-        records.addLocator(tokenId, file, _ipfs("p0"));
+        delivery.addLocator(tokenId, file, _ipfs("p0"));
         vm.prank(artist);
-        records.addLocator(tokenId, file, _ar("a1"));
+        delivery.addLocator(tokenId, file, _ar("a1"));
         vm.startPrank(storageOperator);
-        records.setPreferredKind(LocatorKind.IPFS);
+        delivery.setPreferredKind(LocatorKind.IPFS);
         _expectPreferred(tokenId, file, 1, CA.arweave("a1"));
-        records.setCollectionPreferredKind(collectionId, LocatorKind.IPFS);
+        delivery.setCollectionPreferredKind(collectionId, LocatorKind.IPFS);
         _expectPreferred(tokenId, file, 1, CA.arweave("a1"));
         vm.stopPrank();
     }
@@ -2097,26 +2124,26 @@ contract WorkRecordsTest is RecordsFixture {
     /// Regression: RFX-REC-1
     function test_preferredLocator_platformOnlyLocatorsNeedTheOperatorsPick() public {
         (uint256 tokenId, PackageItem memory item, MediaFile[] memory media) = _minted(1, true);
-        records.openRecord(tokenId, item, media);
+        records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
         bytes32 file = media[0].fileId;
         vm.startPrank(platform);
-        records.addLocator(tokenId, file, _ar("p0"));
-        records.addLocator(tokenId, file, _ipfs("p1"));
+        delivery.addLocator(tokenId, file, _ar("p0"));
+        delivery.addLocator(tokenId, file, _ipfs("p1"));
         vm.stopPrank();
         _expectNoLocator(tokenId, file);
         vm.startPrank(storageOperator);
-        records.setPreferredKind(LocatorKind.ARWEAVE);
-        records.setCollectionPreferredKind(collectionId, LocatorKind.IPFS);
+        delivery.setPreferredKind(LocatorKind.ARWEAVE);
+        delivery.setCollectionPreferredKind(collectionId, LocatorKind.IPFS);
         vm.stopPrank();
         _expectNoLocator(tokenId, file);
 
-        records.syncOnChain(tokenId);
-        (Locator memory chosen, uint256 index) = records.preferredLocator(tokenId, file);
+        records.syncOnChain(tokenId, 0, type(uint256).max);
+        (Locator memory chosen, uint256 index) = preferredOf(records, tokenId, file);
         assertEq(index, NONE);
         assertEq(uint8(chosen.kind), uint8(LocatorKind.ONCHAIN));
 
         vm.prank(storageOperator);
-        records.setFilePreference(tokenId, file, 1);
+        delivery.setFilePreference(tokenId, file, 1);
         _expectPreferred(tokenId, file, 1, CA.ipfs("p1"));
     }
 
@@ -2127,17 +2154,17 @@ contract WorkRecordsTest is RecordsFixture {
         (uint256 tokenId,) = _work(1);
         bytes32 file = _primary(tokenId);
         vm.prank(artist);
-        records.addLocator(tokenId, file, _ar("a0"));
+        delivery.addLocator(tokenId, file, _ar("a0"));
         bytes32 state = records.workStateHash(tokenId);
         vm.prank(artist);
         records.finalize(tokenId, state);
         vm.prank(platform);
-        records.addLocator(tokenId, file, _ipfs("p1"));
+        delivery.addLocator(tokenId, file, _ipfs("p1"));
         vm.prank(storageOperator);
-        records.setPreferredKind(LocatorKind.IPFS);
+        delivery.setPreferredKind(LocatorKind.IPFS);
         _expectPreferred(tokenId, file, 0, CA.arweave("a0"));
         vm.prank(storageOperator);
-        records.setFilePreference(tokenId, file, 1);
+        delivery.setFilePreference(tokenId, file, 1);
         _expectPreferred(tokenId, file, 1, CA.ipfs("p1"));
     }
 
@@ -2147,25 +2174,25 @@ contract WorkRecordsTest is RecordsFixture {
     function test_addLocator_platformLocatorStillRefreshesTheMetadata() public {
         (uint256 tokenId,) = _work(1);
         bytes32 file = _primary(tokenId);
-        vm.expectEmit(address(records));
-        emit IWorkRecords.LocatorAdded(tokenId, file, 0, _ipfs("p0"));
+        vm.expectEmit(address(delivery));
+        emit IWorkLocators.LocatorAdded(tokenId, file, 0, _ipfs("p0"), platform, false);
         vm.expectEmit(address(stream));
         emit MetadataUpdate(tokenId);
         vm.prank(platform);
-        records.addLocator(tokenId, file, _ipfs("p0"));
-        vm.expectEmit(address(records));
-        emit IWorkRecords.LocatorAdded(tokenId, file, 1, _ar("a1"));
+        delivery.addLocator(tokenId, file, _ipfs("p0"));
+        vm.expectEmit(address(delivery));
+        emit IWorkLocators.LocatorAdded(tokenId, file, 1, _ar("a1"), artist, true);
         vm.expectEmit(address(stream));
         emit MetadataUpdate(tokenId);
         vm.prank(artist);
-        records.addLocator(tokenId, file, _ar("a1"));
+        delivery.addLocator(tokenId, file, _ar("a1"));
     }
 
     function _expectPreferred(uint256 tokenId, bytes32 file, uint256 index, string memory uri)
         internal
         view
     {
-        (Locator memory chosen, uint256 got) = records.preferredLocator(tokenId, file);
+        (Locator memory chosen, uint256 got) = preferredOf(records, tokenId, file);
         assertEq(got, index);
         assertEq(chosen.uri, uri);
     }
@@ -2178,11 +2205,11 @@ contract WorkRecordsTest is RecordsFixture {
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider);
         vm.startPrank(outsider);
         vm.expectRevert(refused);
-        records.setPreferredKind(LocatorKind.IPFS);
+        delivery.setPreferredKind(LocatorKind.IPFS);
         vm.expectRevert(refused);
-        records.setCollectionPreferredKind(collectionId, LocatorKind.IPFS);
+        delivery.setCollectionPreferredKind(collectionId, LocatorKind.IPFS);
         vm.expectRevert(refused);
-        records.setFilePreference(tokenId, file, NONE);
+        delivery.setFilePreference(tokenId, file, NONE);
         vm.stopPrank();
     }
 
@@ -2191,7 +2218,7 @@ contract WorkRecordsTest is RecordsFixture {
         assertEq(IStream(address(stream)).totalMinted(), 0);
         vm.recordLogs();
         vm.prank(storageOperator);
-        records.setPreferredKind(LocatorKind.ARWEAVE);
+        delivery.setPreferredKind(LocatorKind.ARWEAVE);
         Vm.Log[] memory logs = vm.getRecordedLogs();
         for (uint256 i; i < logs.length; ++i) {
             assertTrue(logs[i].emitter != address(stream), "the core emitted a refresh");
@@ -2203,40 +2230,40 @@ contract WorkRecordsTest is RecordsFixture {
         _minted(2, true);
         bytes32 file = _primary(tokenId);
         vm.startPrank(storageOperator);
-        vm.expectEmit(address(records));
-        emit IWorkRecords.PreferredKindSet(LocatorKind.NONE, LocatorKind.ARWEAVE);
+        vm.expectEmit(address(delivery));
+        emit IWorkLocators.PreferredKindSet(LocatorKind.NONE, LocatorKind.ARWEAVE);
         vm.expectEmit(address(stream));
         emit BatchMetadataUpdate(1, 2);
-        records.setPreferredKind(LocatorKind.ARWEAVE);
-        assertEq(uint8(records.preferredKind()), uint8(LocatorKind.ARWEAVE));
+        delivery.setPreferredKind(LocatorKind.ARWEAVE);
+        assertEq(uint8(delivery.preferredKind()), uint8(LocatorKind.ARWEAVE));
 
-        vm.expectEmit(address(records));
-        emit IWorkRecords.CollectionPreferredKindSet(
+        vm.expectEmit(address(delivery));
+        emit IWorkLocators.CollectionPreferredKindSet(
             collectionId, LocatorKind.NONE, LocatorKind.IPFS
         );
         vm.expectEmit(address(stream));
         emit BatchMetadataUpdate(1, 2);
-        records.setCollectionPreferredKind(collectionId, LocatorKind.IPFS);
-        assertEq(uint8(records.collectionPreferredKind(collectionId)), uint8(LocatorKind.IPFS));
+        delivery.setCollectionPreferredKind(collectionId, LocatorKind.IPFS);
+        assertEq(uint8(delivery.collectionPreferredKind(collectionId)), uint8(LocatorKind.IPFS));
         vm.stopPrank();
 
         vm.prank(platform);
-        records.addLocator(tokenId, file, _ar("a0"));
-        vm.expectEmit(address(records));
-        emit IWorkRecords.FilePreferenceSet(tokenId, file, NONE, 0);
+        delivery.addLocator(tokenId, file, _ar("a0"));
+        vm.expectEmit(address(delivery));
+        emit IWorkLocators.FilePreferenceSet(tokenId, file, NONE, 0);
         vm.expectEmit(address(stream));
         emit MetadataUpdate(tokenId);
         vm.prank(storageOperator);
-        records.setFilePreference(tokenId, file, 0);
-        assertEq(records.filePreference(tokenId, file), 0);
+        delivery.setFilePreference(tokenId, file, 0);
+        assertEq(delivery.filePreference(tokenId, file), 0);
     }
 
     function test_preferenceSetters_notifyAllEditions() public {
         _work(1);
         vm.startPrank(storageOperator);
-        records.setPreferredKind(LocatorKind.IPFS);
+        delivery.setPreferredKind(LocatorKind.IPFS);
         assertEq(editionsMock.notifiedAll(), 1);
-        records.setCollectionPreferredKind(collectionId, LocatorKind.ARWEAVE);
+        delivery.setCollectionPreferredKind(collectionId, LocatorKind.ARWEAVE);
         assertEq(editionsMock.notifiedAll(), 2);
         vm.stopPrank();
     }
@@ -2246,19 +2273,19 @@ contract WorkRecordsTest is RecordsFixture {
         bytes32 file = _primary(tokenId);
         vm.startPrank(storageOperator);
         vm.expectRevert(abi.encodeWithSelector(IStream.UnknownCollection.selector, 7));
-        records.setCollectionPreferredKind(7, LocatorKind.IPFS);
-        vm.expectRevert(IWorkRecords.InvalidLocator.selector);
-        records.setFilePreference(tokenId, file, 0);
+        delivery.setCollectionPreferredKind(7, LocatorKind.IPFS);
+        vm.expectRevert(IWorkLocators.InvalidLocator.selector);
+        delivery.setFilePreference(tokenId, file, 0);
         vm.expectRevert(
             abi.encodeWithSelector(IWorkRecords.FileNotInWork.selector, tokenId, keccak256("x"))
         );
-        records.setFilePreference(tokenId, keccak256("x"), NONE);
+        delivery.setFilePreference(tokenId, keccak256("x"), NONE);
         vm.stopPrank();
         vm.prank(platform);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, platform)
         );
-        records.setPreferredKind(LocatorKind.IPFS);
+        delivery.setPreferredKind(LocatorKind.IPFS);
     }
 
     /// @dev Near misses the URI and file checks must refuse: an IPFS address under a kind that is
@@ -2281,11 +2308,11 @@ contract WorkRecordsTest is RecordsFixture {
         _expectBadLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, string(short)));
         bytes32 above = bytes32(type(uint256).max);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.FileNotInWork.selector, tokenId, above));
-        records.addLocator(tokenId, above, _ar("tx"));
+        delivery.addLocator(tokenId, above, _ar("tx"));
         vm.expectRevert(
             abi.encodeWithSelector(IWorkRecords.FileNotInWork.selector, tokenId, bytes32(0))
         );
-        records.addLocator(tokenId, bytes32(0), _ar("tx"));
+        delivery.addLocator(tokenId, bytes32(0), _ar("tx"));
         vm.stopPrank();
     }
 
@@ -2295,15 +2322,15 @@ contract WorkRecordsTest is RecordsFixture {
         (uint256 tokenId,) = _work(1);
         bytes32 file = _primary(tokenId);
         vm.prank(platform);
-        records.addLocator(tokenId, file, _ar("a0"));
+        delivery.addLocator(tokenId, file, _ar("a0"));
         vm.startPrank(storageOperator);
         for (uint256 index = 1; index < 4; ++index) {
-            vm.expectRevert(IWorkRecords.InvalidLocator.selector);
-            records.setFilePreference(tokenId, file, index);
+            vm.expectRevert(IWorkLocators.InvalidLocator.selector);
+            delivery.setFilePreference(tokenId, file, index);
         }
-        records.setFilePreference(tokenId, file, 0);
+        delivery.setFilePreference(tokenId, file, 0);
         vm.stopPrank();
-        assertEq(records.filePreference(tokenId, file), 0);
+        assertEq(delivery.filePreference(tokenId, file), 0);
     }
 
     /// @dev Any existing collection takes a preferred kind, not only the newest.
@@ -2312,10 +2339,10 @@ contract WorkRecordsTest is RecordsFixture {
         uint256 newer = stream.createCollection("Second", keccak256("second"));
         assertGt(newer, collectionId);
         vm.prank(storageOperator);
-        records.setCollectionPreferredKind(collectionId, LocatorKind.IPFS);
+        delivery.setCollectionPreferredKind(collectionId, LocatorKind.IPFS);
         vm.prank(storageOperator);
         vm.expectRevert(abi.encodeWithSelector(IStream.UnknownCollection.selector, newer + 1));
-        records.setCollectionPreferredKind(newer + 1, LocatorKind.IPFS);
+        delivery.setCollectionPreferredKind(newer + 1, LocatorKind.IPFS);
     }
 
     // ------------------------------------------------------------------------ state hash
@@ -2325,10 +2352,10 @@ contract WorkRecordsTest is RecordsFixture {
         bytes32 file = _primary(tokenId);
         bytes32 state = records.workStateHash(tokenId);
         vm.prank(platform);
-        records.addLocator(tokenId, file, _ar("a0"));
-        records.syncOnChain(tokenId);
+        delivery.addLocator(tokenId, file, _ar("a0"));
+        records.syncOnChain(tokenId, 0, type(uint256).max);
         vm.prank(storageOperator);
-        records.setFilePreference(tokenId, file, 0);
+        delivery.setFilePreference(tokenId, file, 0);
         assertEq(records.workStateHash(tokenId), state);
     }
 
@@ -2359,5 +2386,27 @@ contract WorkRecordsTest is RecordsFixture {
             )
         );
         assertEq(records.workStateHash(tokenId), expected);
+    }
+
+    /// @dev The state hash (WS-10) of a work at 6,529 with these fields.
+    function _state(
+        uint256 tokenId,
+        uint32 version,
+        bytes32 recordFileId,
+        License memory license,
+        address rendererAddress
+    ) internal pure returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                keccak256("6529WORKS_WORK_STATE_V1"),
+                tokenId,
+                version,
+                recordFileId,
+                WorksHashing.licenseKey(license.spdxId),
+                license.textFileId,
+                uint32(6_529),
+                rendererAddress
+            )
+        );
     }
 }

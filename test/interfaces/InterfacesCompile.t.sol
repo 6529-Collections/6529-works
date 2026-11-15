@@ -38,7 +38,7 @@ contract InterfacesCompileTest is Test {
     function test_interfaceIds() public pure {
         assertEq(type(IMintTarget).interfaceId, bytes4(0xba4ae536), "IMintTarget");
         assertEq(type(IStream).interfaceId, bytes4(0xcacd4413), "IStream");
-        assertEq(type(IWorkRecords).interfaceId, bytes4(0xc109676d), "IWorkRecords");
+        assertEq(type(IWorkRecords).interfaceId, bytes4(0x2654eed1), "IWorkRecords");
         assertEq(type(IWorkPowers).interfaceId, bytes4(0xbd18229c), "IWorkPowers");
         assertEq(type(IEditions).interfaceId, bytes4(0xfbeabb2a), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");

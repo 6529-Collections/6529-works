@@ -14,8 +14,9 @@ selection in [Rendering and tokenURI](../../docs/spec/rendering-and-tokenuri.md#
 | --- | --- |
 | `Stream.sol` | The permanent core ([`IStream`](../interfaces/IStream.sol), one flat ERC-165 id; [`IMintTarget`](../interfaces/IMintTarget.sol)): mints what its mint policy ([`IMintPolicy`](../interfaces/IMintPolicy.sol), the package registry) admits into an admitted adapter's custody, collections and serials, the terms locked at mint, `royaltyInfo`, settle, burn, rescue and museum routing, the edition link, `rendererOf` and `tokenURI`, contract URI and marketplace owner. |
 | `StreamViews.sol` | The genesis read-only extension ([`IStreamExtension`](../interfaces/IStreamExtension.sol), [`IStreamViews`](../interfaces/IStreamViews.sol)), deployed by Stream's constructor and reached only by STATICCALL from its fallback: `work`, `collection`, `totalSupply`, `contractURI`, `owner`, and the collection-name rule. |
-| `WorkRecords.sol` | The records satellite ([`IWorkRecords`](../interfaces/IWorkRecords.sol), [`IWorkPowers`](../interfaces/IWorkPowers.sol)): opening a work's record, the record file, media list, license and ARTIST seed, the state hash, finalize and renderer pins, amendments (the royalty rate only down), the lead artist's renounced powers, on-chain completeness, locators and preferred location. |
-| `SpdxId.sol` | Internal library: the license-ID rule the mint policy applies at mint and `WorkRecords` at deployment and relicense. |
+| `WorkRecords.sol` | The permanent records satellite ([`IWorkRecords`](../interfaces/IWorkRecords.sol), [`IWorkPowers`](../interfaces/IWorkPowers.sol)): opening a work's record, the record file, media list, license and seed, the state hash, finalize and renderer pins, amendments (the royalty rate only down), the lead artist's renounced powers, on-chain completeness and each file's store, and the governed pointers to the delivery contract and the store set. |
+| `WorkDelivery.sol` | The first, replaceable delivery contract ([`IWorkDelivery`, `IWorkLocators`](../interfaces/IWorkDelivery.sol)), deployed by `WorkRecords`' constructor: locators, kinds, preferences and the URI grammar. |
+| `SpdxId.sol` | Internal library: the license-ID rule Stream applies at mint and `WorkRecords` at deployment and relicense. |
 
 ## Entry points
 
@@ -25,10 +26,11 @@ selection in [Rendering and tokenURI](../../docs/spec/rendering-and-tokenuri.md#
 | PLATFORM | `createCollection` | AUC-12 |
 | Editions | `linkEdition` once per settled master | AUC-11, ED-2 |
 | The bound `WorkRecords` | `setRoyaltyRate`, `emitMetadataUpdate` | AUC-6, WS-23 |
-| Anyone | `openRecord`, `syncOnChain`; the views (`work`, `coreOf`, `artistOf`, `royaltyInfo`, `rendererOf`, `tokenURI`, `record`, `mediaOf`, `licenseOf`, `seedOf`, `preferredLocator`, ...) | WS-1 to WS-3, WS-17, AUC-7, RND-1 |
-| The lead artist's active authority | `setRecord`, `finalize`; `addLocator` before finalize; EIP-712 consents to amendments; the `RenouncePowers` signature anyone may relay to `renounce` | WS-7 to WS-9, WS-19, WS-37, WS-38 |
-| PLATFORM; STORAGE_OPERATOR | `addLocator` (after finalize only PLATFORM); the three preference setters | WS-19, WS-22 |
-| Governance | `setAdmittedMinter`, `setDependency`, `setRescueDelay`, `setDefaultRenderer`, `releaseContent`, `setContractURI`, `setOwner`; `relicense`, `setRoyaltyRate`, `repinRenderer` with every consent they need; the genesis binds | [Role matrix: Stream](../../docs/audit/roles.md#stream) and [WorkRecords](../../docs/audit/roles.md#workrecords) |
+| Anyone | `openRecord`, `syncOnChain(tokenId, storeId, maxChunks)`; the views (`work`, `coreOf`, `artistOf`, `royaltyInfo`, `rendererOf`, `tokenURI`, `record`, `mediaOf`, `licenseOf`, `seedOf`, `preferredLocator`, ...) | WS-1 to WS-3, WS-17, WS-40 to WS-43, AUC-7, RND-1 |
+| The lead artist's active authority | `setRecord`, `finalize`; `WorkDelivery.addLocator` before finalize; EIP-712 consents to amendments; the `RenouncePowers` signature anyone may relay to `renounce` | WS-7 to WS-9, WS-19, WS-37, WS-38 |
+| PLATFORM; STORAGE_OPERATOR | `WorkDelivery.addLocator` (after finalize only PLATFORM); its three preference setters | WS-19, WS-22 |
+| The current delivery contract | `WorkRecords.refreshMetadata`, `refreshAllMetadata` | WS-39 |
+| Governance | `setAdmittedMinter`, `setDependency`, `setRescueDelay`, `setDefaultRenderer`, `releaseContent`, `setContractURI`, `setOwner`; `relicense`, `setRoyaltyRate`, `repinRenderer` with every consent they need; `setDelivery`, `addStore`; the genesis binds | [Role matrix: Stream](../../docs/audit/roles.md#stream) and [WorkRecords](../../docs/audit/roles.md#workrecords) |
 
 Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
 [Works and storage](../../docs/spec/works-and-storage.md#who-calls-workrecords-and-what-it-calls).
@@ -85,29 +87,42 @@ Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
   so any new word on this path fails CI until the ADR's table moves.
 - **Nothing in `WorkRecords` is written at mint.** Keep it that way: the record opens later
   with the permissionless `openRecord`, and every per-token function reverts with
-  `RecordNotOpen` until then. Its first record word packs the pin, version, media count, flags,
-  `syncedFiles` and the 16-bit `renounced` mask, which fills its last two bytes: a new per-work
-  field needs a new slot. Media is one word per file plus one word of roles.
+  `RecordNotOpen` until then. Its first record word packs the pin, version, media count,
+  `syncedFiles`, a flags byte (opened, finalized, on-chain complete, custom license), the 24-bit
+  chunk cursor and the 16-bit `renounced` mask: it is full, so a new per-work field needs a new
+  slot. Media is one word per file plus one `files` word, a byte per file: the role in the low
+  four bits, the store in the high four.
+- **Permanent, so frozen at launch.** `WorkRecords` is bound once by Stream and Editions and can
+  never be replaced; `IWorkRecords`' ERC-165 ID (`0x2654eed1`) and `IWorkPowers`' (`0xbd18229c`)
+  freeze with it. What may change lives behind its two governed pointers: the delivery contract
+  (`setDelivery`) and the store set (`addStore`).
+- **Item enums are read as `uint8`** (`WorkItem`, `WorkMedia`: the same ABI and item hash as
+  `PackageItem` and `MediaFile`), so a kind, seed policy or role a future mint policy adds never
+  makes `openRecord` revert (WS-45). Tests convert with `test/helpers/WorkItems.sol`.
 - **`royaltyInfo` makes one view call** (the split factory's `walletFor`) and nothing else, so a
   gas shortfall reverts instead of returning a zero royalty. Do not add reads to it.
 - **Renderer pins fail closed** (DEPS-6): `rendererOf` re-checks the default renderer's and a
   finalized work's pinned code hash at every call and reverts instead of falling back.
-- **`syncOnChain`** checks whole files within a 512-chunk budget per call (about a quarter of the
-  EIP-7825 cap from cold storage), stores progress in the record's first word and emits
-  `OnChainSyncProgress` only when the budget stops it; the call that finishes emits
-  `WorkOnChainComplete`.
-- **Locator adders.** `LocatorCounts` keeps, in its one word beside the two quota counts, a
-  16-bit mask of the indices the artist added; the preferred-location fallbacks read only
-  those (WS-21), so a PLATFORM locator is served only through the storage operator's file index.
+- **`syncOnChain`** verifies at most the caller's `maxChunks` from a chunk cursor (no compiled
+  budget) through the content store's `firstMissing(fileId, from, to, source)`, which checks its
+  own chunks or re-hashes what an added store serves; it emits `OnChainSyncProgress` with the store after every call
+  that progressed, and the call that finishes emits `WorkOnChainComplete`.
+- **Forwarding.** `preferredLocator` asks the delivery contract with all the gas the EIP-150
+  rule allows (`BoundedCall.tryReadAll`) and checks the answer (`_isLocation`); a refusal or a
+  malformed answer serves the work's own (WS-40), a shortfall reverts. The store-switch probe is
+  read the same way. No renderer budget is held: a record is one chunk, and the pinned
+  renderer decides what it can show.
+- **Locator adders** (`WorkDelivery`). `LocatorCounts` keeps, beside the two quota counts, a
+  16-bit mask of the indices the artist added; the preferred-location fallbacks read only those
+  (WS-21), and `LocatorAdded` names the adder, so a successor can rebuild it.
 - **Amendments** bump the version before their external calls (Stream, Editions), and every
   consent binds the state hash, so nothing applies twice. `renounce` bumps it too, which is its
   replay protection; it shares the artist-only signature check with `repinRenderer`
   (`_checkArtistConsent`).
-- **`IWorkPowers` is a second interface on purpose.** 6529 Stream and 6529 Stream Editions
-  compile `type(IWorkRecords).interfaceId` into their bind checks, so a function added to
-  `IWorkRecords` would change their bytecode. Even a comment edit in `IWorkRecords.sol` changes
-  Stream's metadata hash, and so its runtime bytes; leave the file alone unless Stream is
-  rebuilt anyway.
+- **`IWorkPowers` is a second interface.** 6529 Stream and 6529 Stream Editions compile
+  `type(IWorkRecords).interfaceId` into their bind checks; both IDs freeze at launch.
+  `RENDERER_REPIN` (4) is renounceable only after finalize, and then `repinRenderer` reverts for
+  good for that work.
 - **Bytecode.** `WorkRecords` is the tighter of the two; current margins in the
   [audit scope](../../docs/audit/scope.md#products-and-sales).
 - **Tests:** `forge test --match-path 'test/stream/**'`: core and satellite units, preferred
@@ -115,7 +130,9 @@ Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
   stateful invariants and `StreamTxCap.t.sol`; a Halmos proof of `SpdxId` is in
   `test/symbolic/` ([Testing](../../docs/testing/README.md)). End to end: `CuratedSale.t.sol`,
   `RecordAmendments.t.sol`, `SyncOnChainResume.t.sol`, `RendererCodePin.t.sol`, the powers
-  on the deployed stack in `test/stream/WorkPowersStack.t.sol`, and
+  on the deployed stack in `test/stream/WorkPowersStack.t.sol`; delivery, stores, future item
+  values and the governance invariant in `test/stream/WorkDelivery.t.sol`, `WorkStores.t.sol`,
+  `WorkRecordsFuture.t.sol` and `WorkRecordsGovernanceInvariant.t.sol`; and
   `GasReport.t.sol` in [`test/integration/`](../../test/integration/). The mint policy's safety
   (a hostile policy and its invariant) is `test/stream/StreamPolicySafety.t.sol`; the interface
   ids are pinned in `test/interfaces/StreamInterfaceIds.t.sol`.

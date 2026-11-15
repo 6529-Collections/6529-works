@@ -450,6 +450,52 @@
       "status": "implemented (stream lane)",
       "functions": [
         {
+          "signature": "relicense(uint256,(string,bytes32),(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])",
+          "selector": "0xd60ad0db",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
+        },
+        {
+          "signature": "setRoyaltyRate(uint256,uint32,(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])",
+          "selector": "0xc13560ef",
+          "role": "FUNDS_SETTER",
+          "class": "funds",
+          "delay": 1209600
+        },
+        {
+          "signature": "repinRenderer(uint256,address,bytes32,bytes32,uint64,bytes)",
+          "selector": "0x12e96e4a",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        },
+        {
+          "signature": "setDelivery(address,address)",
+          "selector": "0x118e803d",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        },
+        {
+          "signature": "addStore(address,bytes32)",
+          "selector": "0xce8238dd",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "WorkDelivery",
+      "artifact": "src/stream/WorkDelivery.sol:WorkDelivery",
+      "implementation": "src/stream/WorkDelivery.sol:WorkDelivery",
+      "address": "0x000000000000000000000000000000000000a011",
+      "status": "created by WorkRecords' constructor (records lane); replaceable through WorkRecords.setDelivery",
+      "functions": [
+        {
           "signature": "setPreferredKind(uint8)",
           "selector": "0x40ff5d7f",
           "role": "STORAGE_OPERATOR",
@@ -476,27 +522,6 @@
           "role": "PLATFORM",
           "class": "immediate",
           "delay": 0
-        },
-        {
-          "signature": "relicense(uint256,(string,bytes32),(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])",
-          "selector": "0xd60ad0db",
-          "role": "PARAMETER_SETTER",
-          "class": "standard",
-          "delay": 172800
-        },
-        {
-          "signature": "setRoyaltyRate(uint256,uint32,(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])",
-          "selector": "0xc13560ef",
-          "role": "FUNDS_SETTER",
-          "class": "funds",
-          "delay": 1209600
-        },
-        {
-          "signature": "repinRenderer(uint256,address,bytes32,bytes32,uint64,bytes)",
-          "selector": "0x12e96e4a",
-          "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
         }
       ],
       "genesisOnly": [],
@@ -947,7 +972,7 @@
       "name": "FeeRecipientVault",
       "artifact": "src/economics/GovernedVault.sol:GovernedVault",
       "implementation": "src/economics/GovernedVault.sol:GovernedVault",
-      "address": "0x000000000000000000000000000000000000a011",
+      "address": "0x000000000000000000000000000000000000a013",
       "status": "implemented on main",
       "note": "The network fee recipient: a governed vault the economics resolver names; it forwards what it holds only to its destination (the deployment's NETWORK_FEE_RECIPIENT first)",
       "functions": [
@@ -966,7 +991,7 @@
       "name": "MuseumVault",
       "artifact": "src/economics/GovernedVault.sol:GovernedVault",
       "implementation": "src/economics/GovernedVault.sol:GovernedVault",
-      "address": "0x000000000000000000000000000000000000a012",
+      "address": "0x000000000000000000000000000000000000a014",
       "status": "implemented on main",
       "note": "The museum: a governed vault the economics resolver names; unbid and rescued works and museum payouts land here and move only to its destination (the deployment's MUSEUM first)",
       "functions": [

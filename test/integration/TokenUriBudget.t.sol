@@ -16,6 +16,8 @@ import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { StateGrowth } from "../helpers/StateGrowth.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
+import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
+
 /// @notice The `tokenURI` budget proof on the real stack (ADR 0004: at most 8M Prague gas): every
 ///         cap the protocol allows at once, measured cold through `Stream.tokenURI` (and
 ///         `Editions.uri`) with the real WorkRecords, content store, statement log and renderer.
@@ -241,8 +243,8 @@ contract TokenUriBudgetTest is IntegrationBase {
             _settleAtEnd(saleId);
             editions.createEdition(tokenId, w.item, root, _proofOf(works, 0));
         }
-        records.openRecord(tokenId, w.item, w.media);
-        records.syncOnChain(tokenId);
+        records.openRecord(tokenId, toWorkItem(w.item), toWorkMedia(w.media));
+        records.syncOnChain(tokenId, 0, type(uint256).max);
     }
 
     /// @dev 16 locators on the license text, of the longest kind (IPFS, 66 bytes) last and
@@ -253,12 +255,12 @@ contract TokenUriBudgetTest is IntegrationBase {
         for (uint256 i; i < 16; ++i) {
             string memory seed = string.concat(vm.toString(salt), "/", vm.toString(i));
             vm.prank(i < 8 ? platform : artist);
-            records.addLocator(
+            delivery.addLocator(
                 b.tokenId, b.licenseText, i == 15 ? CA.ipfsLocator(seed) : CA.ar(seed)
             );
         }
         vm.prank(storageOperator);
-        records.setPreferredKind(LocatorKind.IPFS);
+        delivery.setPreferredKind(LocatorKind.IPFS);
     }
 
     // ------------------------------------------------------------------ measuring
@@ -403,14 +405,12 @@ contract TokenUriBudgetTest is IntegrationBase {
 
     // ------------------------------------------------------------------ the preview cap
 
-    /// @dev `openRecord` refuses an inlinable PREVIEW file (`Identity` or `Base64`) over the cap,
-    ///      `Identity` counted four times, so the renderer never inlines a preview the budget
-    ///      does not cover; a work whose media passes opens. A gzip preview is never inlined, so
-    ///      it is not bounded.
-    function test_PreviewCap_OpenRecordRefusesALargerPreview() public {
+    /// @dev `openRecord` holds no renderer budget: a PREVIEW of any size opens, and the renderer
+    ///      decides what it inlines (its preview bound keeps `tokenURI` within 8M).
+    function test_PreviewCap_OpenRecordAcceptsAnyPreview() public {
         uint256 cap = Limits.MAX_PREVIEW_BYTES;
-        _expectPreview(_bytes(cap / 4 + 1, 1), IContentStore.Encoding.Identity, false);
-        _expectPreview(_bytes(cap + 4, 2), IContentStore.Encoding.Base64, false);
+        _expectPreview(_bytes(cap / 4 + 1, 1), IContentStore.Encoding.Identity, true);
+        _expectPreview(_bytes(cap + 4, 2), IContentStore.Encoding.Base64, true);
         _expectPreview(_bytes(4 * cap, 3), IContentStore.Encoding.Gzip, true);
         _expectPreview(_bytes(4 * cap, 6), IContentStore.Encoding.GzipBase64, true);
         _expectPreview(_bytes(cap / 4, 4), IContentStore.Encoding.Identity, true);
@@ -450,7 +450,7 @@ contract TokenUriBudgetTest is IntegrationBase {
                 abi.encodeWithSelector(IWorkRecords.InvalidRecordData.selector, tokenId)
             );
         }
-        records.openRecord(tokenId, w.item, media);
+        records.openRecord(tokenId, toWorkItem(w.item), toWorkMedia(media));
         assertEq(records.isOpen(tokenId), fits);
     }
 }

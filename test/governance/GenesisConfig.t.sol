@@ -29,6 +29,9 @@ import {
     WiringTargetMock
 } from "../mocks/governance/GenesisWiringMocks.sol";
 
+import { IWorkLocators } from "src/interfaces/IWorkDelivery.sol";
+import { WorkDelivery } from "src/stream/WorkDelivery.sol";
+
 /// @notice Checks the committed genesis configuration, `config/genesis.example.json`, against
 ///         the compiled selectors, {Roles} and {GovernanceConfig}; installs it with its wiring
 ///         on a fresh manager and reads it back; and sizes the wiring bound against the
@@ -171,15 +174,29 @@ contract GenesisConfigTest is Test {
         if (_eq(name, "WorkRecords")) {
             return _s(
                 [
-                    IWorkRecords.setPreferredKind.selector,
-                    IWorkRecords.setCollectionPreferredKind.selector,
-                    IWorkRecords.setFilePreference.selector,
-                    IWorkRecords.addLocator.selector,
                     IWorkRecords.relicense.selector,
                     IWorkRecords.setRoyaltyRate.selector,
-                    IWorkRecords.repinRenderer.selector
+                    IWorkRecords.repinRenderer.selector,
+                    IWorkRecords.setDelivery.selector,
+                    IWorkRecords.addStore.selector,
+                    z,
+                    z
                 ],
-                7
+                5
+            );
+        }
+        if (_eq(name, "WorkDelivery")) {
+            return _s(
+                [
+                    IWorkLocators.setPreferredKind.selector,
+                    IWorkLocators.setCollectionPreferredKind.selector,
+                    IWorkLocators.setFilePreference.selector,
+                    IWorkLocators.addLocator.selector,
+                    z,
+                    z,
+                    z
+                ],
+                4
             );
         }
         if (_eq(name, "Editions")) {
@@ -438,7 +455,7 @@ contract GenesisConfigTest is Test {
             }
             total += listed.length;
         }
-        assertEq(total, 75, "65 mapped, 9 genesis-only, 1 deferred");
+        assertEq(total, 77, "67 mapped, 9 genesis-only, 1 deferred");
     }
 
     function test_RoleTableMatchesRolesSol() public view {

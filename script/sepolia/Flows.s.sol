@@ -772,7 +772,7 @@ contract Flows is Script {
             "any",
             a.records,
             0,
-            abi.encodeCall(IWorkRecords.openRecord, (tokenId, w.item, w.media))
+            abi.encodeWithSelector(IWorkRecords.openRecord.selector, tokenId, w.item, w.media)
         );
     }
 

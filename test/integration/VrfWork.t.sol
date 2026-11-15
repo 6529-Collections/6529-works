@@ -10,6 +10,8 @@ import { SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
+import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
+
 /// @notice Flow 6 (integration brief, lane B): a VRF-seeded 1/1 on the real contracts, with the
 ///         entropy lane's VRF v2.5 coordinator mock. Anyone requests the seed for the approved,
 ///         unconsumed item; the coordinator delivers; only then can the auction start; and the
@@ -61,7 +63,7 @@ contract VrfWorkFlowTest is IntegrationBase {
         assertTrue(
             _contains(stream.tokenURI(tokenId), seedTrait), "seed shown before the record opens"
         );
-        records.openRecord(tokenId, works[0].item, works[0].media);
+        records.openRecord(tokenId, toWorkItem(works[0].item), toWorkMedia(works[0].media));
         (uint8 policy, bytes32 seed) = records.seedOf(tokenId);
         assertEq(uint8(policy), uint8(SeedPolicy.VRF));
         assertEq(seed, bytes32(word));
@@ -104,7 +106,7 @@ contract VrfWorkFlowTest is IntegrationBase {
             '"}'
         );
         assertFalse(_contains(stream.tokenURI(tokenId), seedTrait), "stored when the record opens");
-        records.openRecord(tokenId, works[1].item, works[1].media);
+        records.openRecord(tokenId, toWorkItem(works[1].item), toWorkMedia(works[1].media));
         assertTrue(_contains(stream.tokenURI(tokenId), seedTrait));
     }
 
@@ -144,7 +146,7 @@ contract VrfWorkFlowTest is IntegrationBase {
 
         Work[] memory revision = _package(revisionRoot);
         (, uint256 tokenId) = _start(revisionRoot, revision, 0);
-        records.openRecord(tokenId, revision[0].item, revision[0].media);
+        records.openRecord(tokenId, toWorkItem(revision[0].item), toWorkMedia(revision[0].media));
         (uint8 policy, bytes32 seed) = records.seedOf(tokenId);
         assertEq(uint8(policy), uint8(SeedPolicy.VRF));
         assertEq(seed, bytes32(word), "the token carries the work's one draw");

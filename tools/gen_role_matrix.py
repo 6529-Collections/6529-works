@@ -60,7 +60,7 @@ NOTES: dict[tuple[str, str], str] = {
         "that adapter; to the museum only (owner decision 20).",
     ("Stream", "releaseContent(uint256,bytes32,uint256)"):
         "After an upheld dispute; scheduled with the auction's `cancel`, to execute after it.",
-    ("WorkRecords", "addLocator(uint256,bytes32,(uint8,string))"):
+    ("WorkDelivery", "addLocator(uint256,bytes32,(uint8,string))"):
         "The work's artist may also call it directly before finalize; PLATFORM's path is a "
         "`canCall` check in the contract and needs a zero-delay grant.",
     ("WorkRecords", "relicense(uint256,(string,bytes32),(uint8,uint256,bytes32,bytes32,bytes32,"
@@ -70,7 +70,14 @@ NOTES: dict[tuple[str, str], str] = {
      "(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,"
      "(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])"): "Also needs every party's signed consent; re-rates the linked edition.",
     ("WorkRecords", "repinRenderer(uint256,address,bytes32,bytes32,uint64,bytes)"):
-        "The errata repin: also needs the lead artist's signature.",
+        "The errata repin: also needs the lead artist's signature; refused for good once the "
+        "lead artist renounced `RENDERER_REPIN`.",
+    ("WorkRecords", "setDelivery(address,address)"):
+        "Replaces the delivery contract (locators and preferences); compare-and-set; the "
+        "successor names its predecessor. No fact of any work changes.",
+    ("WorkRecords", "addStore(address,bytes32)"):
+        "Adds a store `syncOnChain` may verify media against, for good; code-hash pinned. No "
+        "existing file's store or completeness changes.",
     ("PackageRegistry", "revokePackage(bytes32,bytes32)"):
         "Also revokes a root before it is registered.",
     ("PackageRegistry", "setVerifier(address,address,bytes32)"):

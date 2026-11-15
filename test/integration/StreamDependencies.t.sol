@@ -23,6 +23,8 @@ import { PackageRegistry } from "src/curation/PackageRegistry.sol";
 import { ICurationVerifier } from "src/interfaces/ICurationVerifier.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
+import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
+
 /// @dev A replacement dependency that only reports its interface (and, as a mint policy must,
 ///      names the artist registry of the Stream asking): any other call reverts, so a read of it
 ///      on a measured path fails loudly instead of returning plausible data.
@@ -192,7 +194,7 @@ contract StreamDependenciesTest is IntegrationBase {
         for (uint256 i; i < works.length; ++i) {
             uint256 tokenId = _sell(root, works, i, collector, 1 ether);
             tokens.push(tokenId);
-            records.openRecord(tokenId, works[i].item, works[i].media);
+            records.openRecord(tokenId, toWorkItem(works[i].item), toWorkMedia(works[i].media));
             bytes32 state = records.workStateHash(tokenId);
             vm.prank(artist);
             records.finalize(tokenId, state);
@@ -215,7 +217,7 @@ contract StreamDependenciesTest is IntegrationBase {
         for (uint256 i; i < 3; ++i) {
             tokens.push(_sell(pendingRoot, pending, i, collector, 1 ether));
         }
-        records.openRecord(tokens[3], pending[0].item, pending[0].media);
+        records.openRecord(tokens[3], toWorkItem(pending[0].item), toWorkMedia(pending[0].media));
         editionIds.push(
             editions.createEdition(
                 tokens[PENDING_VRF_MASTER], pending[2].item, pendingRoot, _proofOf(pending, 2)
@@ -310,7 +312,6 @@ contract StreamDependenciesTest is IntegrationBase {
         assertEq(address(editions.packageRegistry()), stream.packageRegistry());
         assertEq(address(editions.economics()), stream.economics());
         assertEq(address(editions.artistRegistry()), stream.artistRegistry());
-        assertEq(records.artistRegistry(), stream.artistRegistry());
         // Every existing work keeps the module its seed was delivered by.
         for (uint256 i; i < tokens.length; ++i) {
             assertEq(stream.entropyModuleOf(tokens[i]), genesisEntropy);
@@ -348,7 +349,7 @@ contract StreamDependenciesTest is IntegrationBase {
         bytes32 root = _publish(one);
         (, uint256 later) = _start(root, one, 0);
         assertEq(stream.entropyModuleOf(later), address(other));
-        records.openRecord(later, w.item, w.media);
+        records.openRecord(later, toWorkItem(w.item), toWorkMedia(w.media));
         (, seed) = records.seedOf(later);
         assertEq(seed, other.seedOfContent(w.item.contentHash));
     }
@@ -375,7 +376,7 @@ contract StreamDependenciesTest is IntegrationBase {
         assertEq(stream.entropyModuleOf(secondEra), address(second));
 
         _open(PENDING_VRF, 1);
-        records.openRecord(secondEra, w.item, w.media);
+        records.openRecord(secondEra, toWorkItem(w.item), toWorkMedia(w.media));
         (, bytes32 seed) = records.seedOf(tokens[PENDING_VRF]);
         assertEq(
             seed, entropy.seedOf(IStreamViews(address(stream)).work(tokens[PENDING_VRF]).itemHash)
@@ -406,7 +407,7 @@ contract StreamDependenciesTest is IntegrationBase {
         next.deliver(w.item, keccak256("the current module's seed"));
         (, uint256 tokenId) = _start(root, one, 0);
         assertEq(stream.entropyModuleOf(tokenId), address(next));
-        records.openRecord(tokenId, w.item, w.media);
+        records.openRecord(tokenId, toWorkItem(w.item), toWorkMedia(w.media));
         (, bytes32 seed) = records.seedOf(tokenId);
         assertEq(seed, keccak256("the current module's seed"));
     }
@@ -414,7 +415,9 @@ contract StreamDependenciesTest is IntegrationBase {
     /// @dev Opens the record of `tokens[index]`, the `item`-th of the pending works.
     function _open(uint256 index, uint256 item) internal {
         Work[] memory pending = _package(pendingRoot);
-        records.openRecord(tokens[index], pending[item].item, pending[item].media);
+        records.openRecord(
+            tokens[index], toWorkItem(pending[item].item), toWorkMedia(pending[item].media)
+        );
     }
 
     /// @dev The replacement is what new works use: a new start consumes through the new
@@ -642,7 +645,7 @@ contract StreamDependenciesTest is IntegrationBase {
         assertTrue(entropy.isDeliveredContent(again.item.contentHash));
 
         (, uint256 tokenId) = _start(secondRoot, second, 0);
-        records.openRecord(tokenId, again.item, again.media);
+        records.openRecord(tokenId, toWorkItem(again.item), toWorkMedia(again.media));
         (, bytes32 seed) = records.seedOf(tokenId);
         assertEq(seed, entropy.seedOfContent(w.item.contentHash), "the content's one seed");
 

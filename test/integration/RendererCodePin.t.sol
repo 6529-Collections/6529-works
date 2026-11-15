@@ -10,6 +10,8 @@ import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 
+import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
+
 /// @notice DEPS-6 on the renderer pins: a renderer is pinned by its code hash when it is
 ///         installed (Stream's default renderer) or pinned to a work (finalize, the errata
 ///         repin), and the hash is checked again every time `rendererOf` names it, so
@@ -38,8 +40,8 @@ contract RendererCodePinTest is IntegrationBase {
         _keep(root, works);
         open = _sell(root, works, 0, collector, 1 ether);
         finalized = _sell(root, works, 1, collector, 1 ether);
-        records.openRecord(open, works[0].item, works[0].media);
-        records.openRecord(finalized, works[1].item, works[1].media);
+        records.openRecord(open, toWorkItem(works[0].item), toWorkMedia(works[0].media));
+        records.openRecord(finalized, toWorkItem(works[1].item), toWorkMedia(works[1].media));
         bytes32 state = records.workStateHash(finalized);
         vm.prank(artist);
         records.finalize(finalized, state);

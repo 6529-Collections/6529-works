@@ -460,7 +460,7 @@ class AlwaysTest(unittest.TestCase):
 
     def test_work_powers_default_to_the_workpowers_names(self) -> None:
         """DCL-8: without an explicit list the names are ROYALTY_RATE and RELICENSE, in bit order."""
-        self.assertEqual(floor.WORK_POWERS, ("ROYALTY_RATE", "RELICENSE"))
+        self.assertEqual(floor.WORK_POWERS, ("ROYALTY_RATE", "RELICENSE", "RENDERER_REPIN"))
         for powers in (None, ["ROYALTY_RATE"]):
             with self.subTest(powers=powers):
                 result = run(edit(testdata.still_floor_input(), lambda i: i["policy"].update(workPowers=powers)))

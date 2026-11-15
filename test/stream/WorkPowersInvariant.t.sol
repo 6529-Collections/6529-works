@@ -5,8 +5,11 @@ import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 import { WorkPowersHandler } from "./WorkPowersHandler.sol";
+import { MockRenderer } from "../mocks/stream/StreamMocks.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IStreamViews } from "src/interfaces/IStreamViews.sol";
+
+import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
 
 /// @notice Stateful invariants of the renounceable powers and lower-only royalty changes
 ///         (ADR 0006): a work's renounced mask never loses a bit, a renounced power's function
@@ -25,18 +28,22 @@ contract WorkPowersInvariantTest is RecordsFixture {
         handler.addLicense(_license("cc-by-4.0"));
         handler.addLicense(_license("cc-by-sa-4.0"));
         handler.addLicense(_license("mit"));
+        handler.addRenderer(address(new MockRenderer("errata A")));
+        handler.addRenderer(address(new MockRenderer("errata B")));
         for (uint256 i; i < WORKS; ++i) {
             MediaFile[] memory media = _single(i, true);
             PackageItem memory item = _recordsItem(i, media);
             item.license = _license("cc-by-4.0");
             uint256 tokenId = _mint(item);
-            records.openRecord(tokenId, item, media);
+            records.openRecord(tokenId, toWorkItem(item), toWorkMedia(media));
             handler.addWork(tokenId, item);
         }
-        bytes4[] memory selectors = new bytes4[](3);
+        bytes4[] memory selectors = new bytes4[](5);
         selectors[0] = handler.renounce.selector;
         selectors[1] = handler.changeRoyalty.selector;
         selectors[2] = handler.relicense.selector;
+        selectors[3] = handler.finalize.selector;
+        selectors[4] = handler.repin.selector;
         targetContract(address(handler));
         targetSelector(FuzzSelector({ addr: address(handler), selectors: selectors }));
     }
@@ -67,6 +74,7 @@ contract WorkPowersInvariantTest is RecordsFixture {
             assertEq(
                 abi.encode(records.licenseOf(tokenId)), abi.encode(handler.ghostLicenseOf(tokenId))
             );
+            assertEq(records.pinnedRenderer(tokenId), handler.ghostRenderer(tokenId));
         }
     }
 

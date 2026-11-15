@@ -35,6 +35,8 @@ import { IntegrationBase } from "../IntegrationBase.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
+import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
+
 /// @notice The handler of the Stream lifecycle invariant suite: one actor set driving 6529 Stream,
 ///         the package registry, the records satellite, the English auction and the artist
 ///         registry on the real stack deployed by `DeployV1` (`IntegrationBase`).
@@ -688,7 +690,9 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         PoolItem storage it = pool[t.item];
         vm.prank(lcBidders[seed % BIDDERS]);
         records.openRecord(
-            tokenId, abi.decode(it.item, (PackageItem)), abi.decode(it.media, (MediaFile[]))
+            tokenId,
+            toWorkItem(abi.decode(it.item, (PackageItem))),
+            toWorkMedia(abi.decode(it.media, (MediaFile[])))
         );
         t.opened = true;
         t.cc0 = it.cc0;
@@ -739,7 +743,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
                 ? uint256(t.platformLocators) + t.artistLocators < FILE_QUOTA
                 : t.platformLocators < SIDE_QUOTA;
         vm.prank(byArtist ? artist : platform);
-        try records.addLocator(tokenId, pool[t.item].fileId, locator) {
+        try delivery.addLocator(tokenId, pool[t.item].fileId, locator) {
             if (malformed || !room) _violation("a locator past its quota or rule was added");
             ghostLocators[tokenId].push(locator);
             if (byArtist) ++t.artistLocators;
@@ -1106,7 +1110,9 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             }
             sigs[i] = _sign(signer, digest);
         }
-        call = abi.encodeCall(records.relicense, (tokenId, next, item, state, deadline, sigs));
+        call = abi.encodeCall(
+            records.relicense, (tokenId, next, toWorkItem(item), state, deadline, sigs)
+        );
     }
 
     function _restrainedAcceptance(bytes32 root, address account, address signer) internal {
@@ -1194,7 +1200,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
                 return false;
             }
         }
-        try records.addLocator(tokenId, fileId, locator) {
+        try delivery.addLocator(tokenId, fileId, locator) {
             return true;
         } catch {
             return false;
@@ -1361,7 +1367,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
                 assertEq(r.licenseKey, WorksHashing.CC0_LICENSE_KEY, "CC0 stays CC0");
                 assertEq(l.textFileId, cc0TextFileId, "CC0 keeps the pinned text");
             }
-            Locator[] memory stored = records.locators(tokenId, pool[t.item].fileId);
+            Locator[] memory stored = delivery.locators(tokenId, pool[t.item].fileId);
             Locator[] storage expected = ghostLocators[tokenId];
             assertEq(stored.length, expected.length, "locators are append-only");
             for (uint256 i; i < stored.length; ++i) {

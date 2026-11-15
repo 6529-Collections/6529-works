@@ -209,7 +209,7 @@ contract DeployScriptTest is Test {
             d.economicsResolver.networkFeeRecipient(PRODUCT_STREAM), address(d.feeRecipientVault)
         );
         (uint256 targets, uint256 calls, uint256 holders) = verifier.verify(record);
-        assertEq(targets, 15);
+        assertEq(targets, 16);
         assertEq(calls, 18);
         assertEq(holders, 18);
     }
@@ -288,7 +288,7 @@ contract DeployScriptTest is Test {
         verifier.setFile("config/manifest.json", MANIFEST);
         vm.warp(block.timestamp + 5 days);
         (uint256 targets, uint256 calls, uint256 holders) = verifier.verify(record);
-        assertEq(targets, 15);
+        assertEq(targets, 16);
         assertEq(calls, 18);
         assertEq(holders, 18);
         // Against another pin it does not verify.

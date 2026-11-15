@@ -14,6 +14,8 @@ import { IntegrationBase } from "./IntegrationBase.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
+import { toWorkItem, toWorkMedia } from "test/helpers/WorkItems.sol";
+
 /// @notice Flow 2 (integration brief, lane B): an edition master and its linked 6529 Stream
 ///         Editions edition on the real contracts. The master settles; `createEdition` proves the
 ///         item against the approved root; the edition renders its master's metadata; the
@@ -180,7 +182,7 @@ contract MasterEditionFlowTest is IntegrationBase {
         assertTrue(_contains(uri, '"record_status":"not_open"'), "the master's record is not open");
         assertTrue(_contains(uri, '"trait_type":"Edition of"'));
         Work memory w = _package(root)[0];
-        records.openRecord(workId, w.item, w.media);
+        records.openRecord(workId, toWorkItem(w.item), toWorkMedia(w.media));
         uri = editions.uri(workId);
         assertTrue(_contains(uri, '"name":"Work'), "the master's record");
         assertTrue(_contains(uri, '"trait_type":"Edition of","value":'));
@@ -209,7 +211,9 @@ contract MasterEditionFlowTest is IntegrationBase {
 
     /// @dev Every party agrees and FUNDS_SETTER (14 days) applies a new rate to the master.
     function _rerate(uint256 workId, Work memory w, uint32 rate) internal {
-        if (!records.isOpen(workId)) records.openRecord(workId, w.item, w.media);
+        if (!records.isOpen(workId)) {
+            records.openRecord(workId, toWorkItem(w.item), toWorkMedia(w.media));
+        }
         uint64 deadline = uint64(block.timestamp + 30 days);
         bytes[] memory sigs = new bytes[](1);
         sigs[0] = _sign(artist, _rateDigest(workId, rate, deadline));
@@ -217,7 +221,9 @@ contract MasterEditionFlowTest is IntegrationBase {
         _govern(
             hotAdmin,
             address(records),
-            abi.encodeCall(records.setRoyaltyRate, (workId, rate, w.item, state, deadline, sigs))
+            abi.encodeCall(
+                records.setRoyaltyRate, (workId, rate, toWorkItem(w.item), state, deadline, sigs)
+            )
         );
     }
 

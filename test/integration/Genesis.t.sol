@@ -58,9 +58,9 @@ contract GenesisFlowTest is IntegrationBase {
     ///      opens permissionlessly (ADR 0005).
     function test_PlatformHoldsItsZeroDelayPaths() public view {
         (bool immediate, uint32 delay) =
-            manager.canCall(platform, address(records), records.addLocator.selector);
+            manager.canCall(platform, address(delivery), delivery.addLocator.selector);
         assertTrue(immediate && delay == 0, "PLATFORM adds locators");
-        (immediate,) = manager.canCall(attacker, address(records), records.addLocator.selector);
+        (immediate,) = manager.canCall(attacker, address(delivery), delivery.addLocator.selector);
         assertFalse(immediate, "nobody else");
     }
 

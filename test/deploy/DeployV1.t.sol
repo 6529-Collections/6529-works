@@ -40,6 +40,9 @@ import { DelegationManagementMock } from "../mocks/identity/DelegationManagement
 import { Dependency } from "src/libraries/Dependency.sol";
 import { IEnglishAuctionFull } from "test/helpers/IEnglishAuctionFull.sol";
 
+import { IWorkLocators } from "src/interfaces/IWorkDelivery.sol";
+import { WorkDelivery } from "src/stream/WorkDelivery.sol";
+
 /// @notice The deploy library the script broadcasts and the integration tests reuse: every
 ///         merged v1 contract, the genesis configuration from config/genesis.example.json, the
 ///         genesis wiring, and the readback.
@@ -163,7 +166,7 @@ contract DeployV1Test is Test {
         ) = _genesis(_params());
         // Every v1 contract with a governance map; the optional entropy module is not
         // deployed here.
-        assertEq(cfg.targets.length, 15, "governed targets");
+        assertEq(cfg.targets.length, 16, "governed targets");
         assertEq(cfg.grants.length, 18, "holders");
         // Every wiring call in the genesis JSON: nine binds, two admitted minters (the 1/1
         // auction on Stream, the edition auction on Editions), their two sale targets, three
@@ -277,7 +280,7 @@ contract DeployV1Test is Test {
             GovernanceConfig.Call[] memory calls
         ) = _genesis(p);
         assertTrue(address(d.entropyModule) != address(0));
-        assertEq(cfg.targets.length, 16);
+        assertEq(cfg.targets.length, 17);
         assertEq(d.stream.entropyModule(), address(d.entropyModule));
         _settle(d);
         VerifyV1.check(d, cfg, calls);
@@ -545,8 +548,8 @@ contract DeployV1Test is Test {
         vm.expectRevert(
             abi.encodeWithSelector(
                 VerifyV1.PlatformPathClosed.selector,
-                address(d.workRecords),
-                IWorkRecords.addLocator.selector
+                address(d.workDelivery),
+                IWorkLocators.addLocator.selector
             )
         );
         this.checkPlatformPathExternal(d, cfg);
