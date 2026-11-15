@@ -241,7 +241,7 @@ contract TokenUriBudgetTest is IntegrationBase {
         if (master) {
             _ethBid(saleId, makeAddr("budgetCollector"), 1 ether);
             _settleAtEnd(saleId);
-            editions.createEdition(tokenId, w.item, root, _proofOf(works, 0));
+            editions.createEdition(tokenId, w.item);
         }
         records.openRecord(tokenId, w.item, w.media);
         records.syncOnChain(tokenId, 0, type(uint256).max);

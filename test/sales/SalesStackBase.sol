@@ -67,7 +67,7 @@ abstract contract SalesStackBase is IntegrationBase {
         (saleId, workId) = _start(root, works, index);
         _ethBid(saleId, collector, 1 ether);
         _settleAtEnd(saleId);
-        editions.createEdition(workId, works[index].item, root, _proofOf(works, index));
+        editions.createEdition(workId, works[index].item);
     }
 
     /// @dev A federated ERC-721 (mock template) whose terms name `seller` and `feeRecipient`,

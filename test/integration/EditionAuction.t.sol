@@ -208,7 +208,7 @@ contract EditionAuctionIntegrationTest is EditionAuctionStack {
         );
         editionAuction.settle(saleId, new uint256[](0));
         auction.settle(oneSaleId);
-        editions.createEdition(tokenId, w.item, root, _proofOf(_one(w), 0));
+        editions.createEdition(tokenId, w.item);
         // Mid-scan (SETTLING): the 1/1 is settled, so it can be neither paused nor cancelled,
         // and no edition bid can be withdrawn.
         assertFalse(editionAuction.settle(saleId, new uint256[](0)), "the first scanning call");

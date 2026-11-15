@@ -16,11 +16,7 @@ import { IStream } from "../interfaces/IStream.sol";
 import { ISplitFactory } from "../economics/interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "../economics/interfaces/ISplitWallet.sol";
 import { Splits } from "../economics/Splits.sol";
-import {
-    PRODUCT_EDITIONS,
-    PRODUCT_STREAM,
-    ProductEconomics
-} from "../interfaces/types/EconomicsTypes.sol";
+import { PRODUCT_STREAM, ProductEconomics } from "../interfaces/types/EconomicsTypes.sol";
 import { ArtistIdentity } from "../interfaces/types/IdentityTypes.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
 import {
@@ -62,8 +58,9 @@ import { SpdxId } from "../stream/SpdxId.sol";
 ///      Uniqueness keys on the item's declared `contentHash` (the decoded SHA-256 of its primary
 ///      media), never on a file ID. It is defense in depth: the curation signer verifies every
 ///      declared SHA-256 against the decoded bytes before attesting, and the evidence hash covers
-///      that check. The one cross-product reuse, the linked pair, is enforced from the Editions
-///      side: an edition may claim only the content hash its master item consumed on Stream.
+///      that check. The one cross-product reuse, the linked pair, is decided by Editions from
+///      Stream's permanent record (an edition is created only for the item Stream recorded as
+///      consuming its content); this registry plays no part in it.
 ///      When an upheld dispute burns a work during its auction, the governed
 ///      `IStream.releaseContent` passes on the rightful artist the dispute outcome names: the
 ///      content hash is reserved for that artist, so only an item whose lead artist it is may
@@ -75,8 +72,8 @@ import { SpdxId } from "../stream/SpdxId.sol";
 ///      also listed in another approved root stays consumable there; the guardian revokes every
 ///      root that lists it. Disabling a curation signer stops only future registrations.
 ///
-///      Callers: `consume` and `releaseContent` trust only the bound Stream, and `claimContent`
-///      only the bound Editions. Each slot is bound once, independently, by the genesis
+///      Callers: `authorize` trusts only the bound Stream; the Editions binding is kept for the
+///      genesis wiring and is informational. Each slot is bound once, independently, by the genesis
 ///      configurator (which holds ADMIN with no delay until it renounces ADMIN); no bound call
 ///      goes through the AccessManager.
 contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712 {
@@ -107,7 +104,6 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
 
     mapping(bytes32 root => Package) private _packages;
     mapping(bytes32 root => mapping(address account => uint256 artistId)) private _acceptedAs;
-    mapping(bytes32 contentHash => bytes32 itemHash) private _editionItems;
     mapping(uint256 artistId => mapping(uint256 word => uint256 bits)) private _moveNonces;
     /// @dev Verifiers replaced by `setVerifier`: never installable again.
     mapping(address verifier => bool) private _retired;
@@ -304,20 +300,6 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
     }
 
     /// @inheritdoc IPackageRegistry
-    /// @dev Reverts with `ClaimNotAllowed` unless 6529 Stream consumed `contentHash` for `itemHash`
-    ///      (the linked pair), and with `ContentUsed` when an edition already claimed it.
-    function claimContent(bytes32 contentHash, bytes32 itemHash) external {
-        if (msg.sender != editions) revert UnboundCaller(msg.sender);
-        if (itemHash == 0 || IStream(stream).consumedItemOf(contentHash) != itemHash) {
-            revert ClaimNotAllowed(PRODUCT_EDITIONS, contentHash);
-        }
-        bytes32 prior = _editionItems[contentHash];
-        if (prior != 0) revert ContentUsed(PRODUCT_EDITIONS, contentHash, prior);
-        _editionItems[contentHash] = itemHash;
-        emit ContentClaimed(contentHash, itemHash);
-    }
-
-    /// @inheritdoc IPackageRegistry
     function revokeMove(uint256 artistId, uint256 nonce) external {
         if (_artists.activeAuthorityOf(artistId) != msg.sender) {
             revert NotAuthority(artistId, msg.sender);
@@ -393,11 +375,6 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
     /// @dev Answered from Stream (AUC-44).
     function releasedTo(bytes32 contentHash) external view returns (uint256 artistId) {
         return IStream(stream).releasedTo(contentHash);
-    }
-
-    /// @inheritdoc IPackageRegistry
-    function editionClaimOf(bytes32 contentHash) external view returns (bytes32) {
-        return _editionItems[contentHash];
     }
 
     /// @inheritdoc IPackageRegistry

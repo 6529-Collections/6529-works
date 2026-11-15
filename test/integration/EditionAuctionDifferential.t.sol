@@ -84,7 +84,7 @@ contract EditionAuctionDifferentialTest is EditionAuctionStack {
         if (k != 0) {
             Work[] memory works = _package(root);
             uint256 index = capIndex % CAPS.length;
-            editions.createEdition(workId, works[index].item, root, _proofOf(works, index));
+            editions.createEdition(workId, works[index].item);
         }
         _otherSettlers(sale, seed);
         _settleEditions(sale);

@@ -411,9 +411,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             uint256 i = (seed % MASTERS + k) % MASTERS;
             Piece storage p = pieces[i];
             if (!p.masterSettled || p.editionCreated) continue;
-            editions.createEdition(
-                p.tokenId, _package(root)[i].item, root, _proofOf(_package(root), i)
-            );
+            editions.createEdition(p.tokenId, _package(root)[i].item);
             p.editionCreated = true;
             ++hits["createEdition"];
             return;

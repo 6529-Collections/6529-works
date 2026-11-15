@@ -5,7 +5,6 @@ import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessMana
 import { IERC2981 } from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import { ERC1155 } from "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import { IERC1155Receiver } from "@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol";
-import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { Splits } from "../economics/Splits.sol";
@@ -13,7 +12,6 @@ import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IEditions } from "../interfaces/IEditions.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
-import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
 import { IRenderer } from "../interfaces/IRenderer.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
 import { IStream } from "../interfaces/IStream.sol";
@@ -24,7 +22,6 @@ import {
     PRODUCT_EDITIONS,
     WorkTerms
 } from "../interfaces/types/EconomicsTypes.sol";
-import { Limits } from "../interfaces/types/Limits.sol";
 import { EditionTerms, ItemKind, License, PackageItem } from "../interfaces/types/PackageTypes.sol";
 import {
     PrimaryOutcome,
@@ -40,19 +37,21 @@ import { EditionRules } from "./EditionRules.sol";
 /// @title Editions
 /// @notice 6529 Stream Editions: the one shared ERC-1155 of editions, each anchored by a 6529
 ///         Stream work of kind EDITION_MASTER (ADR 0001 section 6, as amended by ADR 0005).
-/// @dev The edition ID equals the master's Stream token ID. `createEdition` is permissionless:
-///      it accepts only the exact package item the master was minted from (its item hash is the
-///      one Stream stored), proven by a Merkle proof to be an item of a package root the
-///      registry registered. The root may have been revoked since: a revocation stops a
-///      package's unconsumed items, and Stream already consumed exactly this item, so revoking a
-///      root over another of its items never strands the edition of a master already sold
-///      from it. The master's sale must also have settled
-///      (`IStream.primarySaleSettled`, marked by the minting adapter at settle), so a disputed or
-///      burned master never gets an edition. Creation locks the edition's economics (seller,
-///      network fee, royalty), claims the master's content hash in the package registry (which
-///      accepts only the item Stream consumed for that hash, and only once), and writes both
-///      directions of the link in one transaction, verifying Stream's side afterwards. Nothing
-///      ever changes or removes a link.
+/// @dev The edition ID equals the master's Stream token ID. `createEdition` is permissionless
+///      and reads only permanent facts: it accepts only the exact package item the master was
+///      minted from (its item hash is the one Stream stored at mint, after the mint policy of
+///      the day proved the item in an approved package, so the item, its edition terms and its
+///      payees are authentic), whose content Stream records as consumed by that item
+///      (`IStream.consumedItemOf`). The replaceable mint policy is never read: replacing it, or
+///      revoking the package root, never makes a settled master's edition impossible. The
+///      master's sale must also have settled (`IStream.primarySaleSettled`, marked by the
+///      minting adapter at settle, or RESCUED), so a disputed or burned master never gets an
+///      edition. One edition per master and so per content: the edition ID is the master's
+///      token ID (`EditionExists`), Stream links it once (`LINKED`), Stream mints a content once
+///      while it is not released, and a settled master is never burned, so its content is never
+///      released. Creation locks the edition's economics (seller, network fee, royalty) and
+///      writes both directions of the link in one transaction, verifying Stream's side
+///      afterwards. Nothing ever changes or removes a link.
 ///
 ///      Copies are minted only by admitted adapters (`isAdmittedMinter`, written by a governed
 ///      setter in the 30-day class) whose sale kind (`ISaleAdapter.saleKind`) is the edition's
@@ -91,8 +90,8 @@ import { EditionRules } from "./EditionRules.sol";
 ///      location changes.
 ///
 ///      Wiring is immutable. Stream is checked at deployment (code, no EIP-7702 delegation,
-///      ERC-165 for `IStream`, pinned code hash), and the package registry, economics resolver and
-///      artist registry are taken from it. Stream and the package registry bind Editions, and
+///      ERC-165 for `IStream`, pinned code hash), and the economics resolver and artist registry
+///      are taken from it. Stream binds Editions, and
 ///      genesis binds Stream's work-records satellite here once, before any edition can be
 ///      created (an edition's license and record updates go through it).
 contract Editions is IEditions, ERC1155, AccessManaged {
@@ -112,13 +111,11 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     ///      count; the edition auction counts in 32 bits), not a policy number.
     uint256 private constant UNCAPPED = type(uint40).max;
 
-    /// @dev What `createEdition` reads of its master from `IStream.coreOf`, and the package
-    ///      registry, read from 6529 Stream once per call.
+    /// @dev What `createEdition` reads of its master from `IStream.coreOf`.
     struct Master {
         bytes32 itemHash;
         uint256 artistId;
         uint32 royaltyRate;
-        address registry;
     }
 
     /// @dev An admitted adapter: its status, the ID an edition binds it by, and the key of the
@@ -193,24 +190,13 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         Dependency.checkPinned(stream_, type(IStream).interfaceId, streamCodeHash);
         stream = stream_;
         address artists = _address(IStream.artistRegistry.selector);
-        if (
-            address(packageRegistry()) == address(0) || address(economics()) == address(0)
-                || artists == address(0)
-        ) revert ZeroAddress();
+        if (address(economics()) == address(0) || artists == address(0)) revert ZeroAddress();
         _artistRegistry = artists;
         _owner = owner_;
         emit OwnershipTransferred(address(0), owner_);
     }
 
     // ------------------------------------------------------------------- dependencies
-
-    /// @notice The package registry that approved the packages and claims edition content:
-    ///         6529 Stream's, read from it on every use, so a governed replacement there
-    ///         (`IStream.setDependency`, owner decision 16) applies here at once.
-    /// @return The package registry.
-    function packageRegistry() public view returns (IPackageRegistry) {
-        return IPackageRegistry(_address(IStream.packageRegistry.selector));
-    }
 
     /// @notice The economics resolver whose `PRODUCT_EDITIONS` terms new editions lock: 6529
     ///         Stream's, read from it on every use.
@@ -229,13 +215,11 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     // ----------------------------------------------------------------------- the link
 
     /// @inheritdoc IEditions
-    function createEdition(
-        uint256 workId,
-        PackageItem calldata item,
-        bytes32 packageRoot,
-        bytes32[] calldata proof
-    ) external returns (uint256 editionId) {
-        (bytes32 itemHash, Master memory master) = _admit(workId, item, packageRoot, proof);
+    function createEdition(uint256 workId, PackageItem calldata item)
+        external
+        returns (uint256 editionId)
+    {
+        Master memory master = _admit(workId, item);
         EditionTerms calldata terms = item.edition;
         if (!EditionRules.isValid(terms)) revert InvalidEditionTerms(workId);
 
@@ -266,11 +250,6 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         emit MetadataUpdate(workId);
 
         // Protocol calls, after every effect above: a reentrant `createEdition` hits EditionExists.
-        // The registry accepts only the item Stream consumed for this content hash, once.
-        _call(
-            master.registry,
-            abi.encodeCall(IPackageRegistry.claimContent, (item.contentHash, itemHash))
-        );
         _call(stream, abi.encodeCall(IStream.linkEdition, (workId, workId)));
         (address linked, uint256 linkedId) = abi.decode(
             _read(stream, abi.encodeCall(IStream.editionOf, (workId))), (address, uint256)
@@ -601,34 +580,29 @@ contract Editions is IEditions, ERC1155, AccessManaged {
 
     // ----------------------------------------------------------------------- internals
 
-    /// @dev The checks of `createEdition`: the work-records satellite bound; no edition yet;
-    ///      the master settled; an EDITION_MASTER item that is the master's stored one (its kind is
-    ///      bound by the item hash); and the item proven (at most `Limits.MAX_PROOF_DEPTH` nodes)
-    ///      in a package root the registry registered (an evidence hash), approved or revoked
-    ///      since. The master is read through `IStream.coreOf`, which skips the royalty-receiver
-    ///      derivation `work` performs.
-    function _admit(
-        uint256 workId,
-        PackageItem calldata item,
-        bytes32 packageRoot,
-        bytes32[] calldata proof
-    ) private view returns (bytes32 itemHash, Master memory master) {
+    /// @dev The checks of `createEdition`, all on permanent state: the work-records satellite
+    ///      bound; no edition yet; the master settled; an EDITION_MASTER item that is the master's
+    ///      stored one (its kind and content are bound by the item hash); and Stream's record that
+    ///      this item consumed the content (`IStream.consumedItemOf`). The master is read through
+    ///      `IStream.coreOf`, which skips the royalty-receiver derivation.
+    function _admit(uint256 workId, PackageItem calldata item)
+        private
+        view
+        returns (Master memory master)
+    {
         if (workRecords == address(0)) revert WorkRecordsUnbound();
         if (exists(workId)) revert EditionExists(workId);
         (master.itemHash, master.artistId,,,, master.royaltyRate) = _coreOf(workId);
-        itemHash = WorksHashing.itemHashCalldata(item);
+        bytes32 itemHash = WorksHashing.itemHashCalldata(item);
         if (
             !abi.decode(_read(stream, abi.encodeCall(IStream.primarySaleSettled, (workId))), (bool))
                 || item.kind != uint8(ItemKind.EDITION_MASTER) || itemHash != master.itemHash
-                || item.contentHash == 0 || proof.length > Limits.MAX_PROOF_DEPTH
-                || !MerkleProof.verifyCalldata(proof, packageRoot, WorksHashing.leaf(itemHash))
+                || item.contentHash == 0
+                || abi.decode(
+                        _read(stream, abi.encodeCall(IStream.consumedItemOf, (item.contentHash))),
+                        (bytes32)
+                    ) != itemHash
         ) revert NotEditionMaster(workId);
-        master.registry = address(packageRegistry());
-        (, bytes32 evidenceHash,) = abi.decode(
-            _read(master.registry, abi.encodeCall(IPackageRegistry.packageOf, (packageRoot))),
-            (uint8, bytes32, address)
-        );
-        if (evidenceHash == 0) revert NotEditionMaster(workId);
     }
 
     /// @dev 6529 Stream's `coreOf(workId)`.

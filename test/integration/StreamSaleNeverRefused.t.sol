@@ -52,7 +52,7 @@ contract StreamSaleNeverRefusedTest is EditionAuctionStack {
         auction.settle(oneSaleId);
         assertEq(stream.ownerOf(tokenId), museum, "the unsold work went to the museum");
         assertTrue(stream.primarySaleSettled(tokenId));
-        editions.createEdition(tokenId, w.item, root, _proofOf(_one(w), 0));
+        editions.createEdition(tokenId, w.item);
         _settleEditions(saleId);
         vm.prank(fan);
         (uint256 won,) = editionAuction.claimBid(saleId, bidId, fan);

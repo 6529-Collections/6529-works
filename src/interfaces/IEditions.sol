@@ -153,10 +153,9 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     /// @param next The rate after the change, out of 100,000.
     event RoyaltyRateChanged(uint256 indexed editionId, uint32 previous, uint32 next);
 
-    /// @notice The item does not match the master's committed item hash, the proof does not
-    ///         place it in `packageRoot`, the root was never registered (a revoked root is
-    ///         accepted: SIGS-4), the item is not an EDITION_MASTER item, or the master's sale
-    ///         has not settled.
+    /// @notice The item does not match the master's committed item hash, 6529 Stream does not
+    ///         record it as the item that consumed its content, the item is not an EDITION_MASTER
+    ///         item, or the master's sale has not settled.
     error NotEditionMaster(uint256 workId);
     /// @notice The master already has its edition.
     error EditionExists(uint256 editionId);
@@ -180,8 +179,7 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     error InvalidBinding(address target);
     /// @notice A compare-and-set setter's expected current value is stale.
     error ExpectedValueMismatch();
-    /// @notice 6529 Stream returned a zero package registry, economics resolver or artist
-    ///         registry at deployment.
+    /// @notice 6529 Stream returned a zero economics resolver or artist registry at deployment.
     error ZeroAddress();
     /// @notice The item's edition terms are invalid (`EditionRules.isValid`): no sale kind, or
     ///         params past `EditionRules.MAX_PARAMS_BYTES`.
@@ -207,29 +205,24 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     /// @return The 6529 Stream address.
     function stream() external view returns (address);
 
-    /// @notice Creates the edition of master `workId` from its approved package item once the
-    ///         master's sale has settled, records `(stream, workId, contentHash)` and calls
-    ///         `IStream.linkEdition`. Permissionless: the item is checked against the master's
-    ///         stored item hash, and `proof` places it in `packageRoot`, which the package
-    ///         registry must have registered (it may have been revoked since: a revocation stops
-    ///         unconsumed items, not the edition of a master already sold). Claims the content
-    ///         hash for the Editions product and locks `PRODUCT_EDITIONS` economics from the
-    ///         resolver, unless a sale bound the edition before it existed: then it keeps the
-    ///         economics locked at that binding (`bindMinter`), which that sale pays.
+    /// @notice Creates the edition of master `workId` from its package item once the master's
+    ///         sale has settled, records `(stream, workId, contentHash)` and calls
+    ///         `IStream.linkEdition`. Permissionless, and decided by permanent facts only: the
+    ///         item's hash must be the item hash 6529 Stream stored for `workId` at mint (the
+    ///         mint policy of the day proved it in an approved package then), and Stream must
+    ///         record that item as the one that consumed its content (`IStream.consumedItemOf`).
+    ///         The replaceable mint policy is not read, so replacing it, or revoking the package
+    ///         root, never strands the edition of a settled master. Reverts with
+    ///         `NotEditionMaster` otherwise. Locks `PRODUCT_EDITIONS` economics from the resolver,
+    ///         unless a sale bound the edition before it existed: then it keeps the economics
+    ///         locked at that binding (`bindMinter`), which that sale pays.
     /// @param workId The master's 6529 Stream token ID, which becomes the edition ID.
     /// @param item The master's EDITION_MASTER package item, whose hash must be the item hash
     ///        6529 Stream stored for `workId`.
-    /// @param packageRoot A package root the package registry registered (approved, or revoked
-    ///        since).
-    /// @param proof The Merkle proof of the item's leaf under `packageRoot`, at most
-    ///        `Limits.MAX_PROOF_DEPTH` nodes.
     /// @return editionId The new edition ID (equal to `workId`).
-    function createEdition(
-        uint256 workId,
-        PackageItem calldata item,
-        bytes32 packageRoot,
-        bytes32[] calldata proof
-    ) external returns (uint256 editionId);
+    function createEdition(uint256 workId, PackageItem calldata item)
+        external
+        returns (uint256 editionId);
 
     /// @notice Binds edition `editionId` to the calling adapter, so no other adapter can mint it
     ///         or sell it. An adapter calls it when a sale of the edition opens, which may be

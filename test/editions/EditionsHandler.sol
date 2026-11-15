@@ -211,7 +211,7 @@ contract EditionsHandler is Test {
         uint256 i = editionSeed % _ids.length;
         PackageItem memory item = abi.decode(_items[i], (PackageItem));
         (bytes32 root, bytes32[] memory proof) = EditionsPackages.packageOf(item, 0);
-        try editions.createEdition(_ids[i], item, root, proof) {
+        try editions.createEdition(_ids[i], item) {
             ++unexpected;
         } catch (bytes memory reason) {
             if (!_is(reason, IEditions.EditionExists.selector)) ++unexpected;

@@ -54,7 +54,7 @@ contract PieceLifecycleTest is EditionAuctionStack {
 
     function _createEdition(uint256 workId, uint256 index) internal {
         Work[] memory works = _package(root);
-        editions.createEdition(workId, works[index].item, root, _proofOf(works, index));
+        editions.createEdition(workId, works[index].item);
     }
 
     function _close(uint256 sale) internal view returns (uint256) {

@@ -70,7 +70,7 @@ contract RecoveryRestraintTest is IntegrationBase {
         root = _publish(works);
         _keep(root, works);
         masterId = _sell(root, works, 0, collector, 1 ether);
-        editions.createEdition(masterId, works[0].item, root, _proofOf(works, 0));
+        editions.createEdition(masterId, works[0].item);
     }
 
     function _consolidate(address a, address b) internal {
