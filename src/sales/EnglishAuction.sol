@@ -128,12 +128,13 @@ contract EnglishAuction is
     ///      clear, short enough that no token holds a standing bid for long.
     uint32 private constant _MIN_REFUSAL_DELAY = 1 days;
     uint32 private constant _MAX_REFUSAL_DELAY = 30 days;
-    /// @dev The least refusal gas (AUC-40): every bounded call this contract makes in one
-    ///      settlement (two ERC-20 payout frames and the delivery) may spend its whole allowance,
-    ///      reserves included, and still fit, so none of the auction's own shortfall checks can
-    ///      fail inside the attempt: a failure there is always the token's.
-    uint256 private constant _MIN_REFUSAL_GAS =
-        2 * _ERC20_PAYOUT_GAS + DELIVERY_GAS + 4 * DELIVERY_RESERVE;
+    /// @dev The least refusal gas (AUC-40). The auction's own worst case in one settlement, both
+    ///      ERC-20 payout frames spending their whole 1,000,000 (credits written instead) and the
+    ///      delivery its 300,000, with a cooperating token, measured 2,434,325 Prague gas
+    ///      (`test_TheFloorCoversTheAuctionsWorstCase`); the floor leaves about 565,000 for the
+    ///      token's own settlement and for state-gas repricing. The governed value must also cover
+    ///      the token's settlement; the floor only stops a value too low for the auction itself.
+    uint256 private constant _MIN_REFUSAL_GAS = 3_000_000;
     /// @dev The absolute ceiling of the raise-only refusal gas (ADR 0001 section 13.9): the
     ///      attempt, its EIP-150 retention and the close after it fit one transaction under the
     ///      EIP-7825 cap of 2^24 gas.
@@ -479,7 +480,12 @@ contract EnglishAuction is
     ///      whole call reverts, so a shortfall never closes a sale.
     function settleOrRefund(uint256 saleId) external {
         Sale storage s = _require(saleId, IEnglishAuction.AuctionState.ENDED);
-        uint256 allowedAt = uint256(s.endTime) + _refusalDelay(s);
+        // AUC-38: only a federated sale (its terms record carries the locked delay, never zero)
+        // may close as refused. A listed token's settlement is curated not to fail, and a 6529
+        // Stream sale whose settlement fails waits for governance to repair its dependency.
+        uint256 federatedTerms = _federatedTerms[s.termsId];
+        if (federatedTerms == 0) revert IEnglishAuctionRefusal.SaleNotRefusable(saleId);
+        uint256 allowedAt = uint256(s.endTime) + (federatedTerms >> 160);
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp < allowedAt) {
             revert IEnglishAuctionRefusal.RefusalTooEarly(saleId, allowedAt);
@@ -903,8 +909,10 @@ contract EnglishAuction is
         // A federated token's own fee recipient is never paid ({_lockTerms} checks the network's).
         if (
             tokenId >> 32 != 0 || terms.seller == address(0) || terms.seller == _escrow
+                || terms.seller == address(this)
                 || (!t.federated
                     && (terms.feeRecipient == _escrow
+                        || terms.feeRecipient == address(this)
                         || (terms.feeRecipient == address(0) && terms.feeShare != 0)))
                 || terms.creator == address(0) || terms.feeShare > Splits.DENOMINATOR
                 || terms.price != 0 || terms.params.length != 0
@@ -1173,6 +1181,13 @@ contract EnglishAuction is
     ///      by gas, which reverts.
     function _pay(address currency, address wallet, uint256 amount, uint256 saleId) private {
         if (amount == 0) return;
+        // No payout reaches zero, the escrow or this adapter: an ERC-20 payout's frame would
+        // otherwise fail into a credit no one can claim, and this adapter's fallback refuses ETH.
+        // A token naming one at settlement fails the settlement: for a federated sale, a refusal
+        // (AUC-38, AUC-41). The start refuses them for the terms it is given.
+        if (wallet == address(0) || wallet == _escrow || wallet == address(this)) {
+            revert IRevenueEscrow.InvalidWallet(wallet);
+        }
         if (currency == CURRENCY_ETH) {
             RevenuePayment.payETH(IRevenueEscrow(_escrow), wallet, amount, _PAYOUT_GAS);
             return;
@@ -1372,13 +1387,6 @@ contract EnglishAuction is
         IAssetAllowlist.Status status;
         (status, since,) = _allowlist.statusClock(currency);
         active = status == IAssetAllowlist.Status.Active;
-    }
-
-    /// @dev The sale's refusal delay (AUC-39): locked at start for a federated sale, current for
-    ///      any other.
-    function _refusalDelay(Sale storage s) private view returns (uint256) {
-        uint256 federatedTerms = _federatedTerms[s.termsId];
-        return federatedTerms != 0 ? federatedTerms >> 160 : _refusal.refusalDelay;
     }
 
     /// @dev Whether the sale is of a federated contract the registry no longer serves (ADR 0001

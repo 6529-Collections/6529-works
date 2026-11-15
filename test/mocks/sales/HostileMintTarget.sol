@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import {
@@ -15,9 +16,10 @@ import {
 ///         (read before settling), `settlePrimary`, `ownerOf`, `primaryTerms` (the artist an
 ///         unsold work goes to) and the delivery's `safeTransferFrom`. A rule fails its call
 ///         only inside a time window, inside a band of the gas the call was given, for one buyer
-///         (`settlePrimary`), and after a number of calls that went through (`settlePrimary` and
-///         `safeTransferFrom`, which can count): so a test can fail calls selectively, steer
-///         by the gas a settler sends, and change behaviour between calls.
+///         (`settlePrimary`), for one transaction origin, and after a number of calls that went
+///         through (`settlePrimary` and `safeTransferFrom`, which can count): so a test can fail
+///         calls selectively, steer by the gas or the identity of a settler, and change behaviour
+///         between calls.
 contract HostileMintTarget is ERC721, IMintTarget {
     /// @dev The calls the auction makes into a token at settlement.
     enum Call {
@@ -48,6 +50,7 @@ contract HostileMintTarget is ERC721, IMintTarget {
         uint64 maxGas;
         uint32 skip;
         address onlyBuyer;
+        address onlyOrigin;
     }
 
     mapping(Call => Rule) public rules;
@@ -80,7 +83,7 @@ contract HostileMintTarget is ERC721, IMintTarget {
 
     /// @dev Fails `call` with `fault` from now on, with no other condition.
     function fail(Call call, Fault fault) external {
-        rules[call] = Rule(fault, 0, 0, 0, 0, 0, address(0));
+        rules[call] = Rule(fault, 0, 0, 0, 0, 0, address(0), address(0));
     }
 
     function setRule(Call call, Rule calldata rule) external {
@@ -189,6 +192,7 @@ contract HostileMintTarget is ERC721, IMintTarget {
             block.timestamp < r.from || (r.until != 0 && block.timestamp >= r.until) || g < r.minGas
                 || (r.maxGas != 0 && g > r.maxGas)
                 || (r.onlyBuyer != address(0) && buyer != r.onlyBuyer) || passed[call] < r.skip
+                || (r.onlyOrigin != address(0) && tx.origin != r.onlyOrigin)
         ) return Fault.NONE;
         return r.fault;
     }
@@ -221,5 +225,29 @@ contract HostileMintTarget is ERC721, IMintTarget {
                 revert(add(result, 0x20), mload(result))
             }
         }
+    }
+}
+
+/// @dev An admitted ERC-20 that, once switched on, burns all the gas any transfer is given: both
+///      of a settlement's payout frames then spend their whole allowance (the auction's worst
+///      case, AUC-40).
+contract BurningToken is ERC20 {
+    bool public burning;
+
+    constructor() ERC20("Burning USD", "BUSD") { }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+
+    function setBurning(bool burning_) external {
+        burning = burning_;
+    }
+
+    function _update(address from, address to, uint256 value) internal override {
+        if (burning) {
+            while (true) { }
+        }
+        super._update(from, to, value);
     }
 }

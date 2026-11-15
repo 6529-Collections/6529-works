@@ -148,12 +148,15 @@ suite's `afterInvariant` drives every sale to an end after each run.
   plus currency deprecation and re-admission (MARKET-2), a token that blocks the auction
   (MONEY-1 credits) and `claimFor`.
 - [`AuctionRefusalInvariant.t.sol`](../../test/sales/auction/invariant/AuctionRefusalInvariant.t.sol)
-  (`AuctionRefusalInvariantTest`), handler `AuctionRefusalHandler` in the same file: two listed
-  and one federated
+  (`AuctionRefusalInvariantEth`, `AuctionRefusalInvariantErc20`), handler
+  `AuctionRefusalHandler` in the same file: two federated
   [`HostileMintTarget`](../../test/mocks/sales/HostileMintTarget.sol) tokens whose settlement
   calls revert, burn gas, answer malformed or hostile values, re-enter another sale, or do so
-  only for one buyer, inside a gas band, until a time or after some calls; bids, time,
-  `settle`, `settleOrRefund`, claims and the artist's delivery claims (AUC-38 to AUC-41).
+  only for one buyer, inside a gas band, until a time or after some calls, beside 6529 Stream's
+  cooperating stand-in; bids (ETH, or the ERC-20 directly or through Permit2), time, refusal
+  parameter and federated fee-recipient changes, registry delistings, currency freezes and
+  re-admissions, dispute pauses and cancels, `settle`, `settleOrRefund`, claims and the artist's
+  delivery claims (AUC-38 to AUC-41).
 
 | ID | Invariant | Test | Handler actions |
 | --- | --- | --- | --- |
@@ -168,7 +171,8 @@ suite's `afterInvariant` drives every sale to an end after each run.
 | INV-AUC-9 | An unended sale refuses `settle`; a deprecated currency blocks settlement for 60 days, then `settle` credits the standing bid back to its bidder and gives the work to the museum (owner decision 10); re-admission in the last window or after the end reopens the sale for the longer of the governed duration and the locked window, keeping the bid. | handler check: `AuctionHaltsHandler.settle`, `_freezeExit` | `settle`, `toggleCurrency` |
 | INV-AUC-10 | With hostile tokens, the auction's balance equals the actors' credits plus the live high bids, and every deposited bid is held, claimed, or paid to the seller, the network or the escrow for them. | `invariant_HeldEqualsCreditsPlusLiveBids`, `invariant_ValueIsConserved` (refusal suite) | all |
 | INV-AUC-11 | The network receives exactly the fee on every sold sale (the listed terms, or for a federated sale the registry's share at start to the recipient locked at start) and nothing on a refused, rescued or unsold one. | `invariant_TheNetworkIsPaidOnEverySoldSale` | all |
-| INV-AUC-12 | From any state the campaign reaches, once each sale's refusal delay has passed, `settleOrRefund` brings every unsettled sale to SETTLED whatever its token does, leaving no standing bid, with INV-AUC-10 and INV-AUC-11 still holding. | after-campaign: `AuctionRefusalInvariantTest.afterInvariant` | all |
+| INV-AUC-12 | From any state the campaign reaches, once each sale's refusal delay has passed and its currency is back or frozen out, `settleOrRefund` brings every unsettled federated sale to SETTLED whatever its token does, and `settle` the stand-in's, leaving no standing bid, with INV-AUC-10, INV-AUC-11 and INV-AUC-13 still holding. | after-campaign: `AuctionRefusalFixture.afterInvariant` | all |
+| INV-AUC-13 | A bidder holds a sale's work, by the token's own ledger, only if that sale is SETTLED with it as the winning bidder, so it paid, and the network's fee on it is counted in INV-AUC-11. | `invariant_TheBuyerHoldsTheWorkOnlyIfItPaid` | all |
 
 ## Edition sales
 

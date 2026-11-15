@@ -22,8 +22,8 @@ sale with a nonzero fee share while it is zero, and locks it for the sale at sta
 change reaches only sales started afterwards (AUC-41; LIM-SAL-4 in
 [known limitations](../../docs/audit/known-limitations.md#sales-and-auctions)). A federated
 token whose settlement fails no longer holds its sale: `settleOrRefund` closes it with refunds
-after the refusal delay (AUC-38). Templates keep their settlement within the auction's refusal
-gas and never depend on a contract whose reentrancy guard a third party can hold.
+after the refusal delay (AUC-38). Templates must meet
+[what a federated template must guarantee](../../docs/spec/stream-and-auctions.md#what-a-federated-template-must-guarantee).
 
 ## See also
 

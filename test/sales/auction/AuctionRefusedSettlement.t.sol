@@ -6,15 +6,22 @@ import {
     ReentrancyGuardTransient
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
+import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IEnglishAuctionRefusal } from "src/interfaces/IEnglishAuctionRefusal.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { PRODUCT_FEDERATED } from "src/interfaces/types/EconomicsTypes.sol";
-import { PrimarySettlement } from "src/interfaces/types/SaleTypes.sol";
+import {
+    Payment,
+    PaymentMethod,
+    PrimarySettlement,
+    PrimaryTerms,
+    SaleKind
+} from "src/interfaces/types/SaleTypes.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { HostileActor } from "../../mocks/sales/AuctionMocks.sol";
-import { HostileMintTarget } from "../../mocks/sales/HostileMintTarget.sol";
+import { BurningToken, HostileMintTarget } from "../../mocks/sales/HostileMintTarget.sol";
 import { MockFederationRegistry } from "../../mocks/sales/SaleMocks.sol";
 import { AuctionBase } from "./AuctionBase.sol";
 
@@ -41,10 +48,38 @@ contract EscrowReentrant {
     }
 }
 
+/// @dev A wallet or recipient with its own reentrancy guard: while it runs `act` (a third party
+///      holding its guard), it refuses ETH and tokens, as a guarded split ledger or vault might.
+contract GuardedParty {
+    bool internal _entered;
+    bool public lastOk;
+    bytes public lastResult;
+
+    function act(address target, bytes calldata data) external {
+        _entered = true;
+        (lastOk, lastResult) = target.call{ gas: 12_000_000 }(data);
+        _entered = false;
+    }
+
+    receive() external payable {
+        require(!_entered, "guarded");
+    }
+
+    function onERC721Received(address, address, uint256, bytes calldata)
+        external
+        view
+        returns (bytes4)
+    {
+        require(!_entered, "guarded");
+        return this.onERC721Received.selector;
+    }
+}
+
 /// @notice LIM-SAL-16 solved (AUC-38 to AUC-41): a sale whose token will not let it settle
 ///         reaches a terminal state through `settleOrRefund`, without taking the bidder's funds,
 ///         without giving the work away unpaid, without redirecting the network fee, and without
-///         touching any other sale; a token that settles is never affected.
+///         touching any other sale; a token that settles is never affected. Federated sales
+///         only: a listed token's sale, 6529 Stream's included, is never refused (AUC-38).
 contract AuctionRefusedSettlementTest is AuctionBase {
     /// @dev Every call into a token that may burn its gas is given this much, so a burner ends.
     uint256 internal constant KEEPER_GAS = 10_000_000;
@@ -55,7 +90,7 @@ contract AuctionRefusedSettlementTest is AuctionBase {
 
     function setUp() public override {
         super.setUp();
-        hostile = _hostile(false);
+        hostile = _hostile(true);
     }
 
     // ------------------------------------------------------------------ fixtures
@@ -133,11 +168,13 @@ contract AuctionRefusedSettlementTest is AuctionBase {
 
     // ------------------------------------------------- a token that settles: unchanged
 
-    /// @dev Settling 6529 Stream through `settleOrRefund` gives exactly what `settle` gives: the
-    ///      same events, balances and state, for a sale with a bid, with no bid, and in ERC-20.
+    /// @dev Settling a cooperating federated token through `settleOrRefund` gives exactly what
+    ///      `settle` gives: the same events, balances and state, with a bid, with no bid, in ERC-20.
     function test_ACooperatingTokenSettlesExactlyAsSettle() public {
         for (uint256 mode; mode < 3; ++mode) {
-            uint256 saleId = mode == 2 ? _startUsd() : _start();
+            HostileMintTarget coop = _hostile(true);
+            if (mode == 2) coop.setTerms(_terms(address(usd)));
+            uint256 saleId = auction.start(address(coop), "");
             if (mode == 0) _bidEth(saleId, alice, BID);
             if (mode == 2) _bidUsd(saleId, alice, 100e18);
             _end(saleId);
@@ -146,29 +183,53 @@ contract AuctionRefusedSettlementTest is AuctionBase {
             vm.recordLogs();
             auction.settle(saleId);
             Vm.Log[] memory viaSettle = vm.getRecordedLogs();
-            bytes32 stateA = _fingerprint(saleId);
+            bytes32 stateA = _fingerprint(coop, saleId);
             vm.revertToState(snapshot);
             vm.recordLogs();
             auction.settleOrRefund(saleId);
             Vm.Log[] memory viaExit = vm.getRecordedLogs();
             assertEq(keccak256(abi.encode(viaExit)), keccak256(abi.encode(viaSettle)), "events");
-            assertEq(_fingerprint(saleId), stateA, "state and balances");
+            assertEq(_fingerprint(coop, saleId), stateA, "state and balances");
         }
     }
 
-    function _fingerprint(uint256 saleId) internal view returns (bytes32) {
+    function _fingerprint(HostileMintTarget h, uint256 saleId) internal view returns (bytes32) {
         return keccak256(
             abi.encode(
                 auction.auction(saleId),
-                stream.ownerOf(_tokenIdOf(saleId)),
+                h.holderOf(_tokenIdOf(saleId)),
                 seller.balance,
-                network.balance,
+                federatedNetwork.balance,
                 usd.balanceOf(seller),
-                usd.balanceOf(network),
+                usd.balanceOf(federatedNetwork),
                 auction.claimable(alice, ETH),
                 address(auction).balance
             )
         );
+    }
+
+    /// @dev F1: a listed token's sale is never refused, 6529 Stream's (here its mock) included,
+    ///      whatever its settlement does: it settles only through `settle`.
+    function test_AListedTokensSaleIsNeverRefused() public {
+        HostileMintTarget listed = _hostile(false);
+        listed.fail(HostileMintTarget.Call.SETTLE, HostileMintTarget.Fault.REVERT);
+        uint256 listedSale = _endedSale(listed, true);
+        uint256 streamSale = _start();
+        _bidEth(streamSale, bob, BID);
+        _end(streamSale);
+        vm.warp(block.timestamp + 365 days);
+        uint256[2] memory sales_ = [listedSale, streamSale];
+        for (uint256 i; i < 2; ++i) {
+            bytes memory refused =
+                abi.encodeWithSelector(IEnglishAuctionRefusal.SaleNotRefusable.selector, sales_[i]);
+            vm.expectRevert(refused);
+            _settleOrRefund(sales_[i]);
+            vm.expectRevert(refused);
+            auction.refusableAt(sales_[i]);
+        }
+        assertEq(auction.claimable(alice, ETH), 0, "nothing credited");
+        auction.settle(streamSale);
+        assertEq(stream.ownerOf(_tokenIdOf(streamSale)), bob, "6529 Stream settles as ever");
     }
 
     // ------------------------------------------------------------ preconditions
@@ -194,7 +255,7 @@ contract AuctionRefusedSettlementTest is AuctionBase {
         uint256 unknown = uint256(keccak256("no sale"));
         vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.UnknownSale.selector, unknown));
         _settleOrRefund(unknown);
-        uint256 saleId = _start();
+        uint256 saleId = auction.start(address(hostile), "");
         vm.expectRevert(
             abi.encodeWithSelector(
                 IEnglishAuction.InvalidAuctionState.selector,
@@ -362,7 +423,7 @@ contract AuctionRefusedSettlementTest is AuctionBase {
         _settleOrRefund(saleId);
         assertTrue(hostile.primarySettled(_tokenIdOf(saleId)), "sold");
         assertEq(auction.pendingDelivery(saleId), alice, "pending for the winner");
-        assertEq(seller.balance, BID - BID * FEE / 100_000);
+        assertEq(seller.balance, BID - BID / 10, "the registry's 10% fee taken");
         hostile.clear(HostileMintTarget.Call.TRANSFER);
         hostile.fail(HostileMintTarget.Call.SALE_VIEW, HostileMintTarget.Fault.MALFORMED);
         saleId = _endedSale(hostile, true);
@@ -377,7 +438,7 @@ contract AuctionRefusedSettlementTest is AuctionBase {
     function test_ATokenRefusingOneBuyerAffectsOnlyThatSale() public {
         hostile.setRule(
             HostileMintTarget.Call.SETTLE,
-            HostileMintTarget.Rule(HostileMintTarget.Fault.REVERT, 0, 0, 0, 0, 0, alice)
+            HostileMintTarget.Rule(HostileMintTarget.Fault.REVERT, 0, 0, 0, 0, 0, alice, address(0))
         );
         uint256 refused = auction.start(address(hostile), "");
         uint256 sold = auction.start(address(hostile), "");
@@ -389,7 +450,7 @@ contract AuctionRefusedSettlementTest is AuctionBase {
         _settleOrRefund(sold);
         assertEq(auction.claimable(alice, ETH), BID, "alice credited back");
         assertEq(hostile.holderOf(_tokenIdOf(sold)), bob, "bob's sale went through");
-        assertEq(network.balance, BID * FEE / 100_000, "the network is paid on the sale only");
+        assertEq(federatedNetwork.balance, BID / 10, "the network is paid on the sale only");
     }
 
     /// @dev A token that cooperates only with a settler sending more gas than the refusal gas:
@@ -399,7 +460,7 @@ contract AuctionRefusedSettlementTest is AuctionBase {
         hostile.setRule(
             HostileMintTarget.Call.SETTLE,
             HostileMintTarget.Rule(
-                HostileMintTarget.Fault.REVERT, 0, 0, 0, 5_000_000, 0, address(0)
+                HostileMintTarget.Fault.REVERT, 0, 0, 0, 5_000_000, 0, address(0), address(0)
             )
         );
         uint256 saleId = _endedSale(hostile, true);
@@ -407,7 +468,7 @@ contract AuctionRefusedSettlementTest is AuctionBase {
         uint256 snapshot = vm.snapshotState();
         auction.settle{ gas: 8_000_000 }(saleId);
         assertEq(hostile.holderOf(_tokenIdOf(saleId)), alice, "sold through settle");
-        assertEq(network.balance, BID * FEE / 100_000, "fee paid");
+        assertEq(federatedNetwork.balance, BID / 10, "fee paid");
         vm.revertToState(snapshot);
         _settleOrRefund(saleId);
         _assertRefused(hostile, saleId, true);
@@ -421,7 +482,7 @@ contract AuctionRefusedSettlementTest is AuctionBase {
         hostile.setRule(
             HostileMintTarget.Call.SETTLE,
             HostileMintTarget.Rule(
-                HostileMintTarget.Fault.REVERT, 0, allowed + 1, 0, 0, 0, address(0)
+                HostileMintTarget.Fault.REVERT, 0, allowed + 1, 0, 0, 0, address(0), address(0)
             )
         );
         vm.warp(allowed + 1);
@@ -431,7 +492,9 @@ contract AuctionRefusedSettlementTest is AuctionBase {
         uint32 skip = uint32(hostile.passed(HostileMintTarget.Call.SETTLE) + 1);
         hostile.setRule(
             HostileMintTarget.Call.SETTLE,
-            HostileMintTarget.Rule(HostileMintTarget.Fault.BURN_GAS, 0, 0, 0, 0, skip, address(0))
+            HostileMintTarget.Rule(
+                HostileMintTarget.Fault.BURN_GAS, 0, 0, 0, 0, skip, address(0), address(0)
+            )
         );
         uint256 sold = _endedSale(hostile, true);
         _refusable(sold);
@@ -439,21 +502,19 @@ contract AuctionRefusedSettlementTest is AuctionBase {
         assertEq(hostile.holderOf(_tokenIdOf(sold)), alice, "the one more: sold");
         uint256 next = _endedSale(hostile, true);
         _refusable(next);
-        uint256 paidBefore = seller.balance + network.balance;
+        uint256 paidBefore = seller.balance + federatedNetwork.balance;
         vm.expectEmit(address(auction));
         emit IEnglishAuctionRefusal.SettlementRefused(next);
         _settleOrRefund(next);
         assertEq(auction.claimable(alice, ETH), BID, "then refused: credited back");
-        assertEq(seller.balance + network.balance, paidBefore, "nothing paid");
+        assertEq(seller.balance + federatedNetwork.balance, paidBefore, "nothing paid");
         assertEq(hostile.holderOf(_tokenIdOf(next)), address(auction), "in custody");
     }
 
     /// @dev A token re-entering from its own settlement cannot reach another sale: the auction's
     ///      guard refuses `settleOrRefund`, `settle` and `claim` there.
     function test_AReentrantTokenCannotTouchAnotherSale() public {
-        uint256 victim = _start();
-        _bidEth(victim, alice, BID);
-        _end(victim);
+        uint256 victim = _endedSale(_hostile(true), true);
         hostile.setReentry(
             address(auction), abi.encodeCall(IEnglishAuctionRefusal.settleOrRefund, (victim)), false
         );
@@ -470,7 +531,8 @@ contract AuctionRefusedSettlementTest is AuctionBase {
         assertEq(uint8(_state(victim)), uint8(IEnglishAuction.AuctionState.ENDED), "untouched");
         assertEq(hostile.holderOf(_tokenIdOf(own)), alice, "its own sale settled");
         _settleOrRefund(victim);
-        assertEq(stream.ownerOf(_tokenIdOf(victim)), alice, "the victim settles as usual");
+        assertEq(uint8(_state(victim)), uint8(IEnglishAuction.AuctionState.SETTLED));
+        assertEq(auction.auction(victim).bidder, alice, "the victim settles as usual: sold");
     }
 
     /// @dev A caller running inside the escrow (a flush to its own contract) holds the escrow's
@@ -499,7 +561,7 @@ contract AuctionRefusedSettlementTest is AuctionBase {
         // Outside the escrow the victim settles: its refusing seller is escrowed, as ever.
         _settleOrRefund(victim);
         assertEq(hostile.holderOf(_tokenIdOf(victim)), alice, "sold");
-        assertEq(escrow.owed(address(refusingSeller), ETH), BID - BID * FEE / 100_000);
+        assertEq(escrow.owed(address(refusingSeller), ETH), BID - BID / 10);
     }
 
     /// @dev A bidder colluding with the token gets back exactly its bid and nothing else from
@@ -516,7 +578,7 @@ contract AuctionRefusedSettlementTest is AuctionBase {
         auction.claim(ETH, alice);
         assertEq(alice.balance - before, BID, "exactly the bid");
         assertEq(address(auction).balance, 0, "nothing left behind or taken");
-        assertEq(seller.balance + network.balance, 0, "no one paid");
+        assertEq(seller.balance + federatedNetwork.balance, 0, "no one paid");
     }
 
     // --------------------------------------------------------- the network's fee
@@ -604,19 +666,18 @@ contract AuctionRefusedSettlementTest is AuctionBase {
         _artistClaims(fed, saleId);
     }
 
-    /// @dev A federated sale locks its refusal delay at start; a listed token's sale reads the
-    ///      current one.
+    /// @dev A federated sale locks its refusal delay at start; a later change reaches only sales
+    ///      started afterwards.
     function test_TheRefusalDelayIsLockedForAFederatedSale() public {
-        HostileMintTarget fed = _hostile(true);
-        uint256 federatedSale = auction.start(address(fed), "");
-        uint256 listedSale = auction.start(address(hostile), "");
+        uint256 before = auction.start(address(hostile), "");
         IEnglishAuction.AuctionConfig memory next = _config();
         next.refusalDelay = 20 days;
         vm.prank(setter);
         auction.setConfig(_config(), next);
-        uint256 end = auction.auction(federatedSale).endTime;
-        assertEq(auction.refusableAt(federatedSale), end + REFUSAL_DELAY, "locked");
-        assertEq(auction.refusableAt(listedSale), end + 20 days, "current");
+        uint256 afterwards = auction.start(address(hostile), "");
+        uint256 end = auction.auction(before).endTime;
+        assertEq(auction.refusableAt(before), end + REFUSAL_DELAY, "locked");
+        assertEq(auction.refusableAt(afterwards), end + 20 days, "the new delay");
     }
 
     // ------------------------------------------------------------ governed values
@@ -632,7 +693,7 @@ contract AuctionRefusedSettlementTest is AuctionBase {
             auction.setConfig(c, n);
         }
         uint32[4] memory badGas =
-            [REFUSAL_GAS - 1, 2 * REFUSAL_GAS + 1, uint32(2_499_999), uint32(15_000_001)];
+            [REFUSAL_GAS - 1, 2 * REFUSAL_GAS + 1, uint32(2_999_999), uint32(15_000_001)];
         for (uint256 i; i < 4; ++i) {
             IEnglishAuction.AuctionConfig memory n = _config();
             n.refusalGas = badGas[i];
@@ -660,21 +721,25 @@ contract AuctionRefusedSettlementTest is AuctionBase {
 
     // ------------------------------------------------------------ fuzz
 
-    /// @dev Any combination of failures, on any call, for a listed or federated token, with or
-    ///      without a bid: `settleOrRefund` always ends the sale; the bid is either paid out in
-    ///      full, with the network's fee, or credited back in full; the work is the buyer's only
-    ///      when the sale was paid.
+    /// @dev Any combination of failures, on any call of a federated token, with or without a bid,
+    ///      in ETH, in an ERC-20 paid directly or through Permit2: `settleOrRefund` always ends the
+    ///      sale; the bid is either paid out in full, with the network's fee, or credited back in
+    ///      full; the work is the buyer's only when the sale was paid.
     function testFuzz_AnyFailureCombinationEndsTheSaleWithEverythingConserved(
         uint256 seed,
-        bool federated,
+        uint8 payMode,
         bool withBid
     ) public {
-        HostileMintTarget h = federated ? _hostile(true) : hostile;
+        payMode %= 3;
+        address currency = payMode == 0 ? ETH : address(usd);
+        uint256 price = payMode == 0 ? BID : 100e18;
+        HostileMintTarget h = _hostile(true);
+        h.setTerms(_terms(currency));
         // A REPORT names a seller the payout refuses (zero) or one that accepts.
         address chosen = address(uint160((seed >> 96) & 1 == 0 ? 0 : 0xBEEF));
         h.setReported(PrimarySettlement(chosen, network, FEE, address(0)));
         uint256 saleId = auction.start(address(h), "");
-        if (withBid) _bidEth(saleId, alice, BID);
+        if (withBid) _fuzzBid(saleId, payMode, price);
         _end(saleId);
         for (uint256 c; c < 5; ++c) {
             uint256 f = (seed >> (8 * c)) % 6;
@@ -682,29 +747,201 @@ contract AuctionRefusedSettlementTest is AuctionBase {
             uint64 minGas = (seed >> (40 + c)) & 1 == 0 ? 0 : 3_000_000;
             h.setRule(
                 HostileMintTarget.Call(c),
-                HostileMintTarget.Rule(HostileMintTarget.Fault(f), 0, 0, minGas, 0, 0, address(0))
+                HostileMintTarget.Rule(
+                    HostileMintTarget.Fault(f), 0, 0, minGas, 0, 0, address(0), address(0)
+                )
             );
         }
         _refusable(saleId);
-        address fee = federated ? federatedNetwork : network;
-        uint256 out = seller.balance + fee.balance + address(0xBEEF).balance
-            + escrow.owed(seller, ETH) + escrow.owed(address(0xBEEF), ETH);
+        uint256 out = _paidOut(currency);
         _settleOrRefund(saleId);
         assertEq(uint8(_state(saleId)), uint8(IEnglishAuction.AuctionState.SETTLED), "terminal");
-        uint256 paid = seller.balance + fee.balance + address(0xBEEF).balance
-            + escrow.owed(seller, ETH) + escrow.owed(address(0xBEEF), ETH) - out;
-        uint256 credit = auction.claimable(alice, ETH);
-        assertEq(paid + credit, withBid ? BID : 0, "paid out or credited back, in full");
-        assertEq(address(auction).balance, credit, "the auction holds only the credit");
-        bool sold = paid != 0;
-        if (sold) {
-            uint256 share = federated ? 10_000 : FEE;
-            assertEq(fee.balance, BID * share / 100_000, "the network's fee on every sale");
+        uint256 paid = _paidOut(currency) - out;
+        uint256 credit = auction.claimable(alice, currency);
+        assertEq(paid + credit, withBid ? price : 0, "paid out or credited back, in full");
+        assertEq(_held(currency), credit, "the auction holds only the credit");
+        if (paid != 0) {
+            assertEq(_balance(currency, federatedNetwork), price / 10, "the network's fee");
             assertTrue(h.primarySettled(_tokenIdOf(saleId)), "reported to the token");
-        } else {
-            assertTrue(
-                h.holderOf(_tokenIdOf(saleId)) != alice || !withBid, "no work for an unpaid bid"
-            );
+        } else if (withBid) {
+            assertTrue(h.holderOf(_tokenIdOf(saleId)) != alice, "no work for an unpaid bid");
         }
+    }
+
+    function _fuzzBid(uint256 saleId, uint8 payMode, uint256 price) internal {
+        if (payMode == 0) return _bidEth(saleId, alice, price);
+        if (payMode == 1) return _bidUsd(saleId, alice, price);
+        usd.mint(alice, price);
+        vm.prank(alice);
+        usd.approve(address(permit2), type(uint256).max);
+        Payment memory p = _permit2Payment(alicePk, saleId, alice, price, 1);
+        vm.prank(relayer);
+        auction.bid(saleId, alice, p);
+    }
+
+    function _balance(address currency, address account) internal view returns (uint256) {
+        return currency == ETH ? account.balance : usd.balanceOf(account);
+    }
+
+    function _held(address currency) internal view returns (uint256) {
+        return _balance(currency, address(auction));
+    }
+
+    function _paidOut(address currency) internal view returns (uint256) {
+        return _balance(currency, seller) + _balance(currency, federatedNetwork)
+            + _balance(currency, address(0xBEEF)) + escrow.owed(seller, currency)
+            + escrow.owed(address(0xBEEF), currency) + auction.claimable(seller, currency)
+            + auction.claimable(address(0xBEEF), currency);
+    }
+
+    // ------------------------------------------------------------ review additions
+
+    /// @dev F3: the floor covers the auction's own worst case with a cooperating token: both
+    ///      ERC-20 payout frames burn their whole allowance (credited instead) and the recipient
+    ///      burns the delivery's 300,000. At the floor the settlement still completes as a sale.
+    function test_TheFloorCoversTheAuctionsWorstCase() public {
+        BurningToken coin = new BurningToken();
+        allowlist.admitAsset(address(coin), 0, 1e18);
+        HostileMintTarget h = _hostile(true);
+        h.setTerms(_terms(address(coin)));
+        HostileActor recipient = new HostileActor();
+        recipient.configure(HostileActor.Behaviour.ACCEPT, HostileActor.Behaviour.BURN_GAS);
+        uint256 saleId = auction.start(address(h), "");
+        coin.mint(alice, 100e18);
+        vm.startPrank(alice);
+        coin.approve(address(auction), 100e18);
+        auction.bid(
+            saleId, address(recipient), Payment(PaymentMethod.DIRECT, alice, 100e18, 0, 0, "")
+        );
+        vm.stopPrank();
+        _end(saleId);
+        coin.setBurning(true);
+        (bool ok,) = address(auction).call{ gas: 3_000_000 }(
+            abi.encodeCall(IEnglishAuction.settle, (saleId))
+        );
+        assertTrue(ok, "the worst case fits the floor");
+        assertTrue(h.primarySettled(_tokenIdOf(saleId)), "sold");
+        assertEq(auction.claimable(seller, address(coin)), 90e18, "the seller's part credited");
+        assertEq(auction.claimable(federatedNetwork, address(coin)), 10e18, "the network's too");
+        assertEq(auction.pendingDelivery(saleId), address(recipient), "delivery pending");
+    }
+
+    /// @dev F4: the exit runs at the refusal gas ceiling inside a 2^24 transaction.
+    function test_TheExitRunsAtTheCeiling() public {
+        IEnglishAuction.AuctionConfig memory c = _config();
+        IEnglishAuction.AuctionConfig memory n = _config();
+        n.refusalGas = 8_000_000;
+        vm.prank(setter);
+        auction.setConfig(c, n);
+        c = n;
+        n = _config();
+        n.refusalGas = 15_000_000;
+        vm.prank(setter);
+        auction.setConfig(c, n);
+        hostile.fail(HostileMintTarget.Call.SETTLE, HostileMintTarget.Fault.BURN_GAS);
+        uint256 saleId = _endedSale(hostile, true);
+        _refusable(saleId);
+        auction.settleOrRefund{ gas: 16_777_216 }(saleId);
+        _assertRefused(hostile, saleId, true);
+    }
+
+    /// @dev A token steering by the keeper's identity (`tx.origin`) still only picks between a
+    ///      full sale and a refund.
+    function test_ATokenSteeringByOriginPicksOnlyBetweenSaleAndRefund() public {
+        address keeper = makeAddr("keeper");
+        hostile.setRule(
+            HostileMintTarget.Call.SETTLE,
+            HostileMintTarget.Rule(
+                HostileMintTarget.Fault.REVERT, 0, 0, 0, 0, 0, address(0), keeper
+            )
+        );
+        uint256 saleId = _endedSale(hostile, true);
+        _refusable(saleId);
+        uint256 snapshot = vm.snapshotState();
+        vm.prank(keeper, keeper);
+        _settleOrRefund(saleId);
+        _assertRefused(hostile, saleId, true);
+        vm.revertToState(snapshot);
+        address other = makeAddr("otherKeeper");
+        vm.prank(other, other);
+        _settleOrRefund(saleId);
+        assertEq(hostile.holderOf(_tokenIdOf(saleId)), alice, "sold for another keeper");
+        assertEq(federatedNetwork.balance, BID / 10, "with the fee");
+    }
+
+    /// @dev With no bid and a token reporting no creator, the sale closes as refused and the work
+    ///      waits in custody until the token names one: no funds are at stake.
+    function test_AZeroCreatorLeavesTheWorkWaitingForItsArtist() public {
+        hostile.setLiar(address(0));
+        uint256 saleId = _endedSale(hostile, false);
+        hostile.fail(HostileMintTarget.Call.TERMS, HostileMintTarget.Fault.REPORT);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
+        auction.settle{ gas: KEEPER_GAS }(saleId);
+        _refusable(saleId);
+        _settleOrRefund(saleId);
+        vm.prank(artist);
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.NoPendingDelivery.selector, saleId));
+        auction.claimDelivery(saleId, artist);
+        hostile.clear(HostileMintTarget.Call.TERMS);
+        _artistClaims(hostile, saleId);
+    }
+
+    /// @dev A token whose `ownerOf` lies on the unbid path reports the work moved: the sale
+    ///      settles unsold to the holder it names and the work stays in custody, out of anyone's
+    ///      reach. Only the token's own work is affected; no funds are at stake.
+    function test_ALyingOwnerOfOnTheUnbidPathOnlyStrandsItsOwnWork() public {
+        uint256 saleId = _endedSale(hostile, false);
+        hostile.fail(HostileMintTarget.Call.OWNER_OF, HostileMintTarget.Fault.REPORT);
+        auction.settle{ gas: KEEPER_GAS }(saleId);
+        assertEq(uint8(_state(saleId)), uint8(IEnglishAuction.AuctionState.SETTLED));
+        assertEq(hostile.holderOf(_tokenIdOf(saleId)), address(auction), "never moved");
+        vm.prank(artist);
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.NoPendingDelivery.selector, saleId));
+        auction.claimDelivery(saleId, artist);
+        assertEq(address(auction).balance, 0, "no funds involved");
+    }
+
+    /// @dev F5: a listed token cannot start a sale paying the auction itself; a federated token
+    ///      that names the auction as seller at settlement is refused.
+    function test_TheAuctionItselfIsNeverASeller() public {
+        HostileMintTarget listed = _hostile(false);
+        listed.setTerms(
+            PrimaryTerms(
+                SaleKind.ENGLISH_AUCTION, ETH, 0, "", address(auction), network, FEE, artist
+            )
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(listed), 1)
+        );
+        auction.start(address(listed), "");
+        hostile.setReported(PrimarySettlement(address(auction), address(0), 0, address(0)));
+        hostile.fail(HostileMintTarget.Call.SETTLE, HostileMintTarget.Fault.REPORT);
+        uint256 saleId = _endedSale(hostile, true);
+        vm.expectRevert(
+            abi.encodeWithSelector(IRevenueEscrow.InvalidWallet.selector, address(auction))
+        );
+        auction.settle{ gas: KEEPER_GAS }(saleId);
+        _refusable(saleId);
+        _settleOrRefund(saleId);
+        _assertRefused(hostile, saleId, true);
+    }
+
+    /// @dev A third party holding a wallet's or a recipient's own guard while it calls
+    ///      `settleOrRefund` does not turn a cooperating sale into a refusal: the refused payout is
+    ///      escrowed and the refused delivery left pending, and the sale completes.
+    function test_AThirdPartyHoldingAWalletOrRecipientGuardCannotForceARefusal() public {
+        GuardedParty party = new GuardedParty();
+        hostile.setReported(PrimarySettlement(address(party), address(0), 0, address(0)));
+        hostile.fail(HostileMintTarget.Call.SETTLE, HostileMintTarget.Fault.REPORT);
+        uint256 saleId = auction.start(address(hostile), "");
+        _bidFor(saleId, alice, address(party), BID);
+        _end(saleId);
+        _refusable(saleId);
+        party.act(address(auction), abi.encodeCall(IEnglishAuctionRefusal.settleOrRefund, (saleId)));
+        assertTrue(party.lastOk(), "the call settled");
+        assertTrue(hostile.primarySettled(_tokenIdOf(saleId)), "sold, not refused");
+        assertEq(escrow.owed(address(party), ETH), BID - BID / 10, "the payout escrowed");
+        assertEq(federatedNetwork.balance, BID / 10, "the fee paid");
+        assertEq(auction.pendingDelivery(saleId), address(party), "the delivery pending");
     }
 }

@@ -8,6 +8,7 @@ import { IAssetAllowlist } from "../economics/interfaces/IAssetAllowlist.sol";
 import { Splits } from "../economics/Splits.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "../interfaces/IEnglishAuction.sol";
+import { IEnglishAuctionRefusal } from "../interfaces/IEnglishAuctionRefusal.sol";
 import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
@@ -208,15 +209,18 @@ contract EnglishAuctionLens {
 
     /// @notice When a refused settlement may first close the sale
     ///         (`IEnglishAuctionRefusal.refusableAt`, AUC-39): its end, as `auction` reports it,
-    ///         plus its refusal delay (locked at start for a federated sale, current otherwise).
+    ///         plus the refusal delay it locked at start.
     /// @param saleId The sale ID.
     /// @return The first second `settleOrRefund` may close the sale as refused; reverts with
-    ///         `UnknownSale` for a sale ID with no sale.
+    ///         `UnknownSale` for a sale ID with no sale, and with `SaleNotRefusable` for a sale
+    ///         that is not federated (AUC-38).
     function refusableAt(uint256 saleId) external view returns (uint256) {
         uint256 base = _saleBase(saleId);
         bytes32[] memory w = _read3(bytes32(base), bytes32(base + 1), bytes32(base + 2));
         Sale memory s = _decodeSale(uint256(w[0]), uint256(w[1]), uint256(w[2]));
         if (s.status == IEnglishAuction.AuctionState.NONE) revert ISaleAdapter.UnknownSale(saleId);
+        uint256 federated = _federatedTerms(s.termsId);
+        if (federated == 0) revert IEnglishAuctionRefusal.SaleNotRefusable(saleId);
         uint256 end = s.endTime;
         // A pause that has run its course moves the end, as `auction` reports it.
         // forge-lint: disable-next-line(block-timestamp)
@@ -225,14 +229,7 @@ contract EnglishAuctionLens {
             // forge-lint: disable-next-line(unsafe-typecast)
             end = uint32(_resumedEnd(s, t, uint256(_read1(bytes32(_SETTINGS_SLOT))), MAX_PAUSE));
         }
-        // Locked at start for a federated sale, current for any other (`_refusalDelay`).
-        uint256 federated = _federatedTerms(s.termsId);
-        // forge-lint: disable-next-line(unsafe-typecast)
-        return
-            end
-                + (federated != 0
-                        ? federated >> 160
-                        : uint32(uint256(_read1(bytes32(_REFUSAL_SLOT)))));
+        return end + (federated >> 160);
     }
 
     /// @notice The smallest bid the sale accepts now (`IEnglishAuction.minimumBid`, D12).

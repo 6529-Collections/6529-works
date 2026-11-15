@@ -478,7 +478,7 @@ a new seller wallet creates its account, at the settler's cost.
 | Locked currency deprecated 60 days | The high bid is credited back; the auction reports FROZEN_OUT and 6529 Stream moves the work to the museum; any other token's goes to its artist | The bidder claims its credit. |
 | Currency re-admitted in the last window or after the end | `AuctionResumed(saleId, endTime)`, no `SaleSettled` | Bid again; settle after the new end. |
 | Paused for a dispute | Reverts with `InvalidAuctionState(saleId, PAUSED)` | Wait for the resume, the cancel, or 7 days. |
-| The token will not let the sale settle (a federated or listed token other than 6529 Stream that reverts, burns gas or answers malformed or unpayable values) | `settle` reverts with the token's error, out of gas, or a payout's `InvalidWallet` | From `refusableAt(saleId)`, call `settleOrRefund(saleId)` (below). |
+| A federated token will not let the sale settle (it reverts, burns gas or answers malformed or unpayable values) | `settle` reverts with the token's error, out of gas, or a payout's `InvalidWallet` | From `refusableAt(saleId)`, call `settleOrRefund(saleId)` (below). A listed token's sale (6529 Stream's included) has no exit: retry `settle`. |
 
 A sale settles normally during a restraint, with a bid to its winner and without one to the
 museum (`test_AuctionWithABidRunningAtStagingSettlesNormally` and
@@ -490,8 +490,10 @@ no earlier than 14 days after it (ECO-33).
 
 ### A token that will not settle
 
-`settleOrRefund(saleId)` ends a sale whose token keeps `settle` from completing (AUC-38). From
-`refusableAt(saleId)` (the end plus the refusal delay, 7 days at launch), anyone may call it. It
+`settleOrRefund(saleId)` ends a federated sale whose token keeps `settle` from completing
+(AUC-38); for a listed token's sale, 6529 Stream's included, it reverts with
+`SaleNotRefusable`. From `refusableAt(saleId)` (the end plus the refusal delay the sale locked,
+7 days at launch), anyone may call it. It
 attempts `settle` with exactly the refusal gas (4,000,000 at launch, `config().refusalGas`): if
 the token cooperates, the sale settles exactly as `settle` settles it, with the same events. If
 not, `SettlementRefused(saleId)`: the high bid is credited back to its bidder (`claim`), nothing is
@@ -510,8 +512,8 @@ for a cooperating token whose settlement needs more gas than the refusal gas lea
    `AuctionResumed`.
 2. At `ENDED`, simulate `settle(saleId)`. A revert with `AssetNotActive`,
    `InvalidRecipient(address(0))` or `InvalidAuctionState(..., PAUSED)` means the sale is waiting:
-   retry later. Any other revert is the token's: from `refusableAt(saleId)`, call
-   `settleOrRefund(saleId)`.
+   retry later. For a federated sale any other revert is the token's: from
+   `refusableAt(saleId)`, call `settleOrRefund(saleId)`.
 3. Send with the limit from `eth_estimateGas`.
 4. In the receipt, `SaleSettled` means settled; `AuctionResumed` alone means reopened. Follow up
    `DeliveryPending` and both kinds of `Credited` ([Claiming](#claiming)).

@@ -54,7 +54,9 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
 - **English auction storage.** A steady-state start writes one `Sale` word and shares a terms
   record per distinct combination; seller and fee terms come back from the token at settlement,
   from the call that reports the outcome (`IMintTarget.settlePrimary`, owner decision 17).
-- **A token that will not settle (AUC-38).** `settleOrRefund` calls `settle` on the auction
+- **A token that will not settle (AUC-38).** For federated sales only (a nonzero
+  `_federatedTerms` word, which also holds the locked delay), `settleOrRefund` calls `settle` on
+  the auction
   itself with exactly `refusalGas` (the one governed gas bound, raise-only) and, if that fails,
   closes the sale with refunds in `_closeWithRefund`, which makes no external call. It takes no
   guard but refuses to run inside the auction's or the escrow's (`_reentrancyGuardEntered`, and a
