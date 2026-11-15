@@ -45,9 +45,9 @@ Docs).
 | `MINTER` | 6 | immediate | 30 days | none (unused in v1) | 0 | No |
 | `KEEPER` | 7 | immediate | 48 hours | none (unused in v1) | 0 | No |
 | `PLATFORM` | 8 | immediate | 48 hours | Platform key | 3 | Yes |
-| `PARAMETER_SETTER` | 9 | 48 hours | 48 hours | Hot admin Safe | 14 | No |
+| `PARAMETER_SETTER` | 9 | 48 hours | 48 hours | Hot admin Safe | 15 | No |
 | `FUNDS_SETTER` | 10 | 14 days | 14 days | Hot admin Safe | 11 | No |
-| `SUCCESSOR_SETTER` | 11 | 30 days | 30 days | Hot admin Safe | 24 | No |
+| `SUCCESSOR_SETTER` | 11 | 30 days | 30 days | Hot admin Safe | 23 | No |
 | `CURATOR` | 12 | immediate | 30 days | Curator key | 1 | Yes |
 
 Every role's admin is ADMIN, and every role except ADMIN has GUARDIAN as its guardian
@@ -61,9 +61,9 @@ Every role's admin is ADMIN, and every role except ADMIN has GUARDIAN as its gua
 | Class | Delay | Mapped selectors |
 | --- | --- | ---: |
 | Immediate | immediate | 15 |
-| Standard | 48 hours | 17 |
+| Standard | 48 hours | 18 |
 | Funds and recipients | 14 days | 11 |
-| Verifier and successor | 30 days | 24 |
+| Verifier and successor | 30 days | 23 |
 | **Total** | | **67** |
 
 ## Matrix by contract
@@ -186,7 +186,7 @@ Source: [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAu
 | `unpause()` | `0x3f4ba83a` | `UNPAUSER` | Standard | 48 hours | Yes: any guardian, during the delay | Refused until 48 hours after the pause, whenever it was scheduled. |
 | `setConfig((…),(…))` | `0x3a59bb19` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Margin, step ladder, close offset, soft-close window and backstop; compare-and-set, with bounds in code. An auction keeps the values locked at its open. |
 | `setTarget(address,bool)` | `0x80ffe77f` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Also a genesis wiring call. |
-| `setFederationRegistry(address,address)` | `0x747e3199` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | No federation registry is installed yet (federation is in v1, ADR 0007; a later ADR specifies it). |
+| `setLimits(uint256,uint256)` | `0xc4590d3f` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay |  |
 
 ### EconomicsResolver
 

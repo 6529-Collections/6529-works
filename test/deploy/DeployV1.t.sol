@@ -213,11 +213,20 @@ contract DeployV1Test is Test {
         assertEq(d.editions.workRecords(), address(d.workRecords));
         assertTrue(d.editions.isAdmittedMinter(address(d.editionAuction)));
         assertFalse(d.editions.isAdmittedMinter(address(d.englishAuction)));
-        assertTrue(d.editionAuction.isTarget(address(d.editions)));
-        assertEq(d.editionAuction.editions(), address(d.editions));
-        assertEq(d.editionAuction.stream(), address(d.stream));
-        assertEq(d.editionAuction.englishAuction(), address(d.englishAuction));
-        assertEq(d.editionAuction.escrow(), address(d.revenueEscrow));
+        assertTrue(
+            IUniformEditionAuctionLens(address(d.editionAuction)).isTarget(address(d.editions))
+        );
+        assertEq(
+            IUniformEditionAuctionLens(address(d.editionAuction)).editions(), address(d.editions)
+        );
+        assertEq(IUniformEditionAuctionLens(address(d.editionAuction)).stream(), address(d.stream));
+        assertEq(
+            IUniformEditionAuctionLens(address(d.editionAuction)).englishAuction(),
+            address(d.englishAuction)
+        );
+        assertEq(
+            IUniformEditionAuctionLens(address(d.editionAuction)).escrow(), address(d.revenueEscrow)
+        );
         // Its lens is deployed in its own CREATE2 entry before it (F8), recorded beside it, and
         // pinned by the auction with this adapter's wiring.
         assertEq(d.editionAuction.lens(), d.editionAuctionLens);
@@ -232,7 +241,7 @@ contract DeployV1Test is Test {
             IUniformEditionAuctionLens(d.editionAuctionLens).escrow(), address(d.revenueEscrow)
         );
         assertEq(
-            keccak256(abi.encode(d.editionAuction.config())),
+            keccak256(abi.encode(IUniformEditionAuctionLens(address(d.editionAuction)).config())),
             keccak256(abi.encode(DeployV1.editionAuctionDefaults())),
             "genesis parameters"
         );

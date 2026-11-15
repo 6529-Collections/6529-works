@@ -855,11 +855,11 @@
           "delay": 2592000
         },
         {
-          "signature": "setFederationRegistry(address,address)",
-          "selector": "0x747e3199",
-          "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "signature": "setLimits(uint256,uint256)",
+          "selector": "0xc4590d3f",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
         }
       ],
       "genesisOnly": [],

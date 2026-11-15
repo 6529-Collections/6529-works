@@ -305,7 +305,7 @@ contract GenesisConfigTest is Test {
                     ISaleAdapter.unpause.selector,
                     IUniformEditionAuction.setConfig.selector,
                     ISaleAdapter.setTarget.selector,
-                    ISaleAdapter.setFederationRegistry.selector,
+                    IUniformEditionAuction.setLimits.selector,
                     z,
                     z
                 ],

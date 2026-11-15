@@ -6,6 +6,7 @@ import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { EditionAuctionStack } from "./EditionAuctionStack.sol";
+import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
 
 /// @notice The edition auction end to end on the real stack (D138-D141): a master's 1/1 and its
 ///         edition sale side by side, the 1/1 settling, the edition created, the edition sale
@@ -26,7 +27,10 @@ contract EditionAuctionIntegrationTest is EditionAuctionStack {
     function test_Flow_D138WorkedExample() public {
         (bytes32 root, Work memory w, uint256 oneSaleId, uint256 tokenId, uint256 saleId) =
             _startMaster(artist, 0);
-        assertEq(saleId, editionAuction.saleIdOf(address(editions), tokenId));
+        assertEq(
+            saleId,
+            IUniformEditionAuctionLens(address(editionAuction)).saleIdOf(address(editions), tokenId)
+        );
         address[5] memory bidders = _traceTwoBids(saleId);
         _ethBid(oneSaleId, collector, 1 ether);
         IUniformEditionAuction.Clearing memory c = ea.clearing(saleId);
@@ -101,8 +105,16 @@ contract EditionAuctionIntegrationTest is EditionAuctionStack {
             minted += won;
         }
         assertEq(minted, 60);
-        assertEq(editionAuction.claimable(makeAddr("B2"), address(0)), 0.7335 ether);
-        assertEq(editionAuction.claimable(makeAddr("B4"), address(0)), 20 * 0.0511 ether);
+        assertEq(
+            IUniformEditionAuctionLens(address(editionAuction))
+                .claimable(makeAddr("B2"), address(0)),
+            0.7335 ether
+        );
+        assertEq(
+            IUniformEditionAuctionLens(address(editionAuction))
+                .claimable(makeAddr("B4"), address(0)),
+            20 * 0.0511 ether
+        );
     }
 
     /// @dev D140: the 1/1 keeps its anti-snipe and the edition close moves with it.

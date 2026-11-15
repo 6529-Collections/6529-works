@@ -5,6 +5,7 @@ import { ERC1155 } from "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import { IERC1155Receiver } from "@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
+import { Splits } from "src/economics/Splits.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
@@ -53,6 +54,19 @@ contract MockOneOfOneAuction {
         shortAnswer = value;
     }
 
+    /// @dev Whether `auctionClock` refuses to answer (a broken auction), and whether it burns
+    ///      all its gas instead.
+    bool public refuseClock;
+    bool public burnClock;
+
+    function setRefuseClock(bool value) external {
+        refuseClock = value;
+    }
+
+    function setBurnClock(bool value) external {
+        burnClock = value;
+    }
+
     function auction(uint256 saleId) external view returns (IEnglishAuction.Auction memory a) {
         a = _auctions[saleId];
         if (a.state == IEnglishAuction.AuctionState.NONE) revert ISaleAdapter.UnknownSale(saleId);
@@ -69,6 +83,12 @@ contract MockOneOfOneAuction {
         view
         returns (IEnglishAuction.AuctionState state, uint64 endTime, uint64 pausedAt)
     {
+        require(!refuseClock, "broken");
+        if (burnClock) {
+            assembly ("memory-safe") {
+                invalid()
+            }
+        }
         IEnglishAuction.Auction storage a = _auctions[saleId];
         (state, endTime, pausedAt) = (a.state, a.endTime, a.pausedAt);
         if (state == IEnglishAuction.AuctionState.NONE) revert ISaleAdapter.UnknownSale(saleId);
@@ -86,9 +106,16 @@ contract MockOneOfOneAuction {
     }
 }
 
-/// @dev 6529 Stream's reads: `coreOf` (the stored item hash and kind) and `economics`.
+/// @dev 6529 Stream's reads: `coreOf` (the stored item hash and kind), `economics` and
+///      `primarySaleSettled` (set by the test).
 contract MockMasterStream {
     address public economics;
+    mapping(uint256 id => bool) public primarySaleSettled;
+
+    function setSettled(uint256 id, bool value) external {
+        primarySaleSettled[id] = value;
+    }
+
     mapping(uint256 id => bytes32) internal _itemHashes;
     mapping(uint256 id => ItemKind) internal _kinds;
 
@@ -191,8 +218,8 @@ contract MockEditionToken is ERC1155 {
     /// @dev The fields the lens reads: the economics locked at the binding.
     function edition(uint256 id) external view returns (IEditions.Edition memory e) {
         WorkTerms memory w = _locked[id];
-        (e.seller, e.feeRecipient, e.feeShare, e.minter) =
-        (w.seller, w.feeRecipient, w.feeShare, minterOf[id]);
+        (e.seller, e.feeRecipient, e.feeShare, e.minter, e.royaltyReceiver) =
+        (w.seller, w.feeRecipient, w.feeShare, minterOf[id], w.royaltyReceiver);
         e.minted = uint64(minted[id]);
     }
 
@@ -235,17 +262,31 @@ contract MockEditionToken is ERC1155 {
     }
 }
 
-/// @dev The economics resolver's `newWorkTerms`, returning the payout terms the test sets.
+/// @dev The economics resolver's `newWorkTerms`, returning the payout terms the test sets, and
+///      its split factory (`splitFactory` is this contract): `createWallet` counts its calls and
+///      returns the royalty receiver for the royalty payees and the seller for any other list,
+///      or `walletOverride` when set. It deploys nothing; a test etches code where it needs it.
 contract MockWorkTermsResolver {
     WorkTerms internal _terms;
     bool public refuse;
+    uint256 public createWalletCalls;
+    address public walletOverride;
+    bytes32 public lastPayeesHash;
 
     function set(address seller, address feeRecipient, uint32 feeShare) external {
         _terms = WorkTerms(seller, feeRecipient, feeShare, seller, 6529);
     }
 
+    function setRoyaltyReceiver(address receiver) external {
+        _terms.royaltyReceiver = receiver;
+    }
+
     function setRefuse(bool value) external {
         refuse = value;
+    }
+
+    function setWalletOverride(address wallet) external {
+        walletOverride = wallet;
     }
 
     function newWorkTerms(bytes32, ISplitWallet.Payee[] calldata)
@@ -255,6 +296,24 @@ contract MockWorkTermsResolver {
     {
         require(!refuse, "payees");
         return _terms;
+    }
+
+    function splitFactory() external view returns (address) {
+        return address(this);
+    }
+
+    function createWallet(ISplitWallet.Payee[] calldata payees, bytes32)
+        external
+        returns (address)
+    {
+        ++createWalletCalls;
+        bytes32 h = keccak256(abi.encode(payees));
+        lastPayeesHash = h;
+        if (walletOverride != address(0)) return walletOverride;
+        bytes32 royalty = keccak256(
+            abi.encode(Splits.royaltyPayees(_terms.seller, _terms.feeRecipient, _terms.feeShare))
+        );
+        return h == royalty ? _terms.royaltyReceiver : _terms.seller;
     }
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {

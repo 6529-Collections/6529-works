@@ -12,6 +12,7 @@ import {
     PRODUCT_STREAM
 } from "src/interfaces/types/EconomicsTypes.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
+import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
 
 /// @notice Flow 7 (integration brief, lane B): genesis on the real contracts. The whole system is
 ///         deployed, configured and wired from `config/genesis.example.json`; the configurator's
@@ -40,8 +41,14 @@ contract GenesisFlowTest is IntegrationBase {
         assertFalse(stream.isAdmittedMinter(address(editionAuction)), "Stream is auction-only");
         assertTrue(auction.isTarget(address(stream)), "auction sells Stream");
         assertFalse(auction.isTarget(address(editions)), "the auction does not sell editions");
-        assertTrue(editionAuction.isTarget(address(editions)), "the edition auction sells editions");
-        assertFalse(editionAuction.isTarget(address(stream)), "and nothing else");
+        assertTrue(
+            IUniformEditionAuctionLens(address(editionAuction)).isTarget(address(editions)),
+            "the edition auction sells editions"
+        );
+        assertFalse(
+            IUniformEditionAuctionLens(address(editionAuction)).isTarget(address(stream)),
+            "and nothing else"
+        );
         // The epoch-0 governance manifest, subject (manager, 0).
         (uint64 count,) = statements.chainOf(address(manager), 0);
         assertEq(count, 1, "the epoch-0 manifest is the manager's first statement");

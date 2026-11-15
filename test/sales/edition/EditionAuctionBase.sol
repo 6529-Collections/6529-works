@@ -109,7 +109,8 @@ abstract contract EditionAuctionBase is Test {
             address(english),
             l,
             l.codehash,
-            config
+            config,
+            defaultLimits()
         );
     }
 
@@ -123,7 +124,23 @@ abstract contract EditionAuctionBase is Test {
     }
 
     function _setConfig(IUniformEditionAuction.AuctionConfig memory next) internal {
-        auction.setConfig(auction.config(), next);
+        auction.setConfig(ua.config(), next);
+    }
+
+    /// @dev The launch limits (ADR 0005 section 4, as amended 15 November 2026): a close offset
+    ///      of up to 30 days, abandonment 90 days after the end, 100,000 gas per payout.
+    function defaultLimits() internal pure returns (IUniformEditionAuction.Limits memory) {
+        return IUniformEditionAuction.Limits(30 days, 150, 100_000);
+    }
+
+    /// @dev Limits packed as `setLimits` takes them.
+    function _packedLimits(IUniformEditionAuction.Limits memory l) internal pure returns (uint256) {
+        return
+            uint256(l.maxCloseOffset) | uint256(l.voidDelayDays) << 32 | uint256(l.payoutGas) << 48;
+    }
+
+    function _setLimits(IUniformEditionAuction.Limits memory next) internal {
+        auction.setLimits(_packedLimits(ua.limits()), _packedLimits(next));
     }
 
     // ------------------------------------------------------------------ the master

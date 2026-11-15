@@ -51,7 +51,7 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         editions.bindMinter(ID, item);
         vm.expectRevert(abi.encodeWithSelector(IEditions.MinterMismatch.selector, ID, other));
         auction.open(address(editions), ID, abi.encode(item));
-        uint256 saleId = auction.saleIdOf(address(editions), ID);
+        uint256 saleId = ua.saleIdOf(address(editions), ID);
         vm.expectRevert(
             abi.encodeWithSelector(IUniformEditionAuction.UnknownAuction.selector, saleId)
         );
@@ -66,6 +66,8 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         address recordedFee = makeAddr("recordedFee");
         editions.setExists(ID, true);
         editions.setLocked(ID, recordedSeller, recordedFee, 10_000);
+        // The recorded wallets exist already (an existing edition's were deployed at its sale).
+        vm.etch(recordedSeller, hex"00");
         uint256 saleId = _open(0);
         IUniformEditionAuction.Auction memory a = ua.auction(saleId);
         assertEq(a.seller, recordedSeller);
@@ -150,8 +152,11 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
 
     function test_Lens_MasterTerms() public {
         PackageItem memory item = _item(ID, 42);
-        IUniformEditionAuctionLens.MasterTerms memory m =
-            lens.masterTerms(address(editions), ID, abi.encode(item));
+        // It deploys wallets, so the adapter calls it directly (the fallback's staticcall cannot).
+        vm.prank(address(auction));
+        IUniformEditionAuctionLens.MasterTerms memory m = IUniformEditionAuctionLens(lensAddress)
+            .masterTerms(address(editions), ID, abi.encode(item));
+        assertEq(m.closeOffset, type(uint32).max, "no offset named: the adapter's default");
         assertEq(m.maxCount, 42);
         assertEq(m.oneOfOneEnd, block.timestamp + 1 days);
         assertEq(uint8(m.oneOfOneState), uint8(IEnglishAuction.AuctionState.ACTIVE));
@@ -159,11 +164,12 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         vm.expectRevert(
             abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(stream), ID)
         );
-        lens.masterTerms(address(stream), ID, abi.encode(item));
+        vm.prank(address(auction));
+        IUniformEditionAuctionLens(lensAddress).masterTerms(address(stream), ID, abi.encode(item));
     }
 
     function test_Lens_BeforeOpening() public view {
-        uint256 saleId = auction.saleIdOf(address(editions), ID);
+        uint256 saleId = ua.saleIdOf(address(editions), ID);
         // The ladder under the current configuration.
         assertEq(ua.stepPrice(saleId, 0), 1e14);
         assertEq(ua.stepPrice(saleId, 335), 953 ether);

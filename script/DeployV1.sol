@@ -451,7 +451,8 @@ library DeployV1 {
                     d.englishAuction,
                     lens,
                     lens.codehash,
-                    p.editionAuction
+                    p.editionAuction,
+                    editionAuctionLimits()
                 )
             );
         }
@@ -476,6 +477,18 @@ library DeployV1 {
             closeOffset: 15 minutes,
             softWindow: 5 minutes,
             maxExtension: 24 hours
+        });
+    }
+
+    /// @notice The edition auction's genesis limits (ADR 0005 §4, as amended 15 November 2026):
+    ///         an edition's terms may name a close offset of up to 30 days (owner to confirm the
+    ///         maximum), a sale whose master cannot be settled may be abandoned 150 days after its
+    ///         end, and each payout forwards 100,000 gas. Each is governed (`setLimits`,
+    ///         PARAMETER_SETTER); a sale locks its close offset and abandonment delay when it
+    ///         opens.
+    function editionAuctionLimits() internal pure returns (IUniformEditionAuction.Limits memory) {
+        return IUniformEditionAuction.Limits({
+            maxCloseOffset: 30 days, voidDelayDays: 150, payoutGas: 100_000
         });
     }
 

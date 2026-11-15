@@ -52,7 +52,7 @@ contract InterfacesCompileTest is Test {
             type(IEnglishAuctionRefusal).interfaceId, bytes4(0x625761b5), "IEnglishAuctionRefusal"
         );
         assertEq(
-            type(IUniformEditionAuction).interfaceId, bytes4(0x69e7405b), "IUniformEditionAuction"
+            type(IUniformEditionAuction).interfaceId, bytes4(0x94ff7508), "IUniformEditionAuction"
         );
         // Errors only: no function, so the ID is zero and nothing reports it.
         assertEq(type(ICurationVerifier).interfaceId, bytes4(0x492733ca), "ICurationVerifier");

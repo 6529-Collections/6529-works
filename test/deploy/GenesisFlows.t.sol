@@ -38,6 +38,7 @@ import { DelegationManagementMock } from "../mocks/identity/DelegationManagement
 import { IEnglishAuctionFull } from "test/helpers/IEnglishAuctionFull.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IStreamViews } from "src/interfaces/IStreamViews.sol";
+import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
 
 /// @notice Integration finding G-1 on the deployed system: items priced in `CURRENCY_DEFAULT`
 ///         start without waiting out FUNDS_SETTER's 14-day `setDefaultCurrency`, because
@@ -246,7 +247,8 @@ contract GenesisFlowsTest is Test {
             _curatedWork(ItemKind.EDITION_MASTER, CURRENCY_ETH, _editionTerms());
         d.englishAuction.start(address(d.stream), mintData);
         uint256 workId = IStream(address(d.stream)).totalMinted();
-        uint256 saleId = d.editionAuction.saleIdOf(address(d.editions), workId);
+        uint256 saleId = IUniformEditionAuctionLens(address(d.editionAuction))
+            .saleIdOf(address(d.editions), workId);
         vm.prank(makeAddr("anyone"));
         assertEq(d.editionAuction.open(address(d.editions), workId, abi.encode(item)), saleId);
         IUniformEditionAuction.Auction memory a =

@@ -34,7 +34,7 @@ contract UniformEditionAuctionFixATest is EditionAuctionBase {
     }
 
     function _placedMinute(uint256 saleId, uint256 bidId) internal view returns (uint256) {
-        return auction.storageWord(IUniformEditionAuctionStorage.Space.BID, saleId, bidId) >> 240;
+        return lens.storageWord(IUniformEditionAuctionStorage.Space.BID, saleId, bidId) >> 240;
     }
 
     // ----------------------------------------------------------------------------- F3

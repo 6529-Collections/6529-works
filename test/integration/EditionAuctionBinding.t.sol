@@ -61,7 +61,7 @@ contract EditionAuctionBindingTest is EditionAuctionStack {
             )
         );
         second.open(address(editions), tokenId, abi.encode(w.item));
-        uint256 secondSale = second.saleIdOf(address(editions), tokenId);
+        uint256 secondSale = ea.saleIdOf(address(editions), tokenId);
         vm.expectRevert(
             abi.encodeWithSelector(IUniformEditionAuction.UnknownAuction.selector, secondSale)
         );
