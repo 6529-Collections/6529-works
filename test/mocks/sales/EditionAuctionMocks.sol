@@ -103,11 +103,11 @@ contract MockMasterStream {
     function coreOf(uint256 id)
         external
         view
-        returns (bytes32, uint256, uint256, ItemKind, SeedPolicy, uint32)
+        returns (bytes32, uint256, uint256, uint8, uint8, uint32)
     {
         bytes32 itemHash = _itemHashes[id];
         if (itemHash == 0) revert IStream.UnknownWork(id);
-        return (itemHash, 1, 1, _kinds[id], SeedPolicy.NONE, 6529);
+        return (itemHash, 1, 1, uint8(_kinds[id]), uint8(SeedPolicy.NONE), 6529);
     }
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IMintPolicy } from "src/interfaces/IMintPolicy.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
@@ -8,6 +9,7 @@ import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { CURRENCY_ETH, PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
 import {
     EditionTerms,
@@ -21,8 +23,9 @@ import { PackageRegistry } from "src/curation/PackageRegistry.sol";
 import { ICurationVerifier } from "src/interfaces/ICurationVerifier.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
-/// @dev A replacement dependency that only reports its interface: any other call reverts, so a
-///      read of it on a measured path fails loudly instead of returning plausible data.
+/// @dev A replacement dependency that only reports its interface (and, as a mint policy must,
+///      names the artist registry of the Stream asking): any other call reverts, so a read of it
+///      on a measured path fails loudly instead of returning plausible data.
 contract DependencyStandIn is IERC165 {
     bytes4 internal immutable _id;
 
@@ -32,6 +35,10 @@ contract DependencyStandIn is IERC165 {
 
     function supportsInterface(bytes4 interfaceId) external view returns (bool) {
         return interfaceId == _id || interfaceId == type(IERC165).interfaceId;
+    }
+
+    function artistRegistry() external view returns (address) {
+        return IStream(msg.sender).artistRegistry();
     }
 }
 
@@ -65,7 +72,7 @@ contract RevertingAuthorityStandIn is DependencyStandIn {
 }
 
 /// @dev A replacement that answers `authority()` with a foreign manager, but only after spending
-///      more gas than Stream forwards to the read (`RECORDS_GAS`).
+///      more gas than Stream used to forward to the read (100,000).
 contract SlowAuthorityStandIn is DependencyStandIn {
     address internal immutable _authority;
 
@@ -155,8 +162,8 @@ contract DeliveringEntropy is IERC165 {
 ///         work's seed comes from the module current at its mint, `entropyModuleOf`) and their
 ///         royalty info are byte for byte the same after every replacement.
 contract StreamDependenciesTest is IntegrationBase {
-    bytes32[4] internal KINDS =
-        [bytes32("PACKAGE_REGISTRY"), "ARTIST_REGISTRY", "ECONOMICS", "ENTROPY_MODULE"];
+    /// @dev The replaceable dependencies on the mint path; the artist registry is permanent.
+    bytes32[3] internal KINDS = [bytes32("PACKAGE_REGISTRY"), "ECONOMICS", "ENTROPY_MODULE"];
 
     address internal artist;
     address internal collector = makeAddr("dependencyCollector");
@@ -231,15 +238,13 @@ contract StreamDependenciesTest is IntegrationBase {
     }
 
     function _interfaceOf(bytes32 kind) internal pure returns (bytes4) {
-        if (kind == "PACKAGE_REGISTRY") return type(IPackageRegistry).interfaceId;
-        if (kind == "ARTIST_REGISTRY") return type(IArtistRegistry).interfaceId;
+        if (kind == "PACKAGE_REGISTRY") return type(IMintPolicy).interfaceId;
         if (kind == "ECONOMICS") return type(IEconomicsResolver).interfaceId;
         return type(IEntropyModule).interfaceId;
     }
 
     function _current(bytes32 kind) internal view returns (address) {
         if (kind == "PACKAGE_REGISTRY") return stream.packageRegistry();
-        if (kind == "ARTIST_REGISTRY") return stream.artistRegistry();
         if (kind == "ECONOMICS") return stream.economics();
         return stream.entropyModule();
     }
@@ -294,7 +299,8 @@ contract StreamDependenciesTest is IntegrationBase {
     ///      ERC-165, so no existing token's metadata or royalty reads a replaced contract.
     function test_ReplacingEachDependencyLeavesExistingTokensUnchanged() public {
         bytes32 before = _snapshot();
-        bytes32 vrfSeed = entropy.seedOf(stream.work(tokens[PENDING_VRF]).itemHash);
+        bytes32 vrfSeed =
+            entropy.seedOf(IStreamViews(address(stream)).work(tokens[PENDING_VRF]).itemHash);
         address genesisEntropy = stream.entropyModule();
         for (uint256 i; i < KINDS.length; ++i) {
             _replace(KINDS[i], address(new DependencyStandIn(_interfaceOf(KINDS[i]))));
@@ -323,7 +329,7 @@ contract StreamDependenciesTest is IntegrationBase {
     ///      records open; works minted after it take its seeds.
     function test_ReplacingTheEntropyModuleNeverChangesAnExistingWorksSeed() public {
         bytes32 before = _snapshot();
-        bytes32 itemHash = stream.work(tokens[PENDING_VRF]).itemHash;
+        bytes32 itemHash = IStreamViews(address(stream)).work(tokens[PENDING_VRF]).itemHash;
         bytes32 vrfSeed = entropy.seedOf(itemHash);
         address genesisEntropy = address(entropy);
         OtherSeedsEntropy other = new OtherSeedsEntropy();
@@ -371,7 +377,9 @@ contract StreamDependenciesTest is IntegrationBase {
         _open(PENDING_VRF, 1);
         records.openRecord(secondEra, w.item, w.media);
         (, bytes32 seed) = records.seedOf(tokens[PENDING_VRF]);
-        assertEq(seed, entropy.seedOf(stream.work(tokens[PENDING_VRF]).itemHash));
+        assertEq(
+            seed, entropy.seedOf(IStreamViews(address(stream)).work(tokens[PENDING_VRF]).itemHash)
+        );
         (, seed) = records.seedOf(secondEra);
         assertEq(seed, keccak256("the second era's seed"));
     }
@@ -414,7 +422,7 @@ contract StreamDependenciesTest is IntegrationBase {
     ///      restores it.
     function test_NewWorksUseTheReplacement() public {
         address original = stream.packageRegistry();
-        address next = address(new DependencyStandIn(type(IPackageRegistry).interfaceId));
+        address next = address(new DependencyStandIn(type(IMintPolicy).interfaceId));
         _govern(
             hotAdmin,
             address(stream),
@@ -432,7 +440,39 @@ contract StreamDependenciesTest is IntegrationBase {
             abi.encodeCall(stream.setDependency, ("PACKAGE_REGISTRY", next, original))
         );
         auction.start(address(stream), _mintData(root, one, 0));
-        assertEq(stream.ownerOf(stream.totalMinted()), address(auction));
+        assertEq(stream.ownerOf(IStream(address(stream)).totalMinted()), address(auction));
+    }
+
+    /// @dev Uniqueness lives in the mint policy (the package registry's content records), not
+    ///      in Stream. Putting a predecessor back never rolls it back: the original registry
+    ///      still holds every item it consumed, so the same item cannot start twice across a
+    ///      replacement and a return. A successor that is a different contract must read its
+    ///      predecessor's records (`consumedItemOf`) to keep this; Stream cannot enforce it.
+    function test_APolicyRoundTripNeverReconsumesAnItem() public {
+        address original = stream.packageRegistry();
+        Work memory w = _work(artist, collectionId);
+        Work[] memory one = _one(w);
+        bytes32 root = _publish(one);
+        auction.start(address(stream), _mintData(root, one, 0));
+        address next = address(new DependencyStandIn(type(IMintPolicy).interfaceId));
+        _govern(
+            hotAdmin,
+            address(stream),
+            abi.encodeCall(stream.setDependency, ("PACKAGE_REGISTRY", original, next))
+        );
+        _govern(
+            hotAdmin,
+            address(stream),
+            abi.encodeCall(stream.setDependency, ("PACKAGE_REGISTRY", next, original))
+        );
+        bytes memory again = _mintData(root, one, 0);
+        bytes32 itemHash = WorksHashing.itemHash(w.item);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPackageRegistry.ContentUsed.selector, PRODUCT_STREAM, w.item.contentHash, itemHash
+            )
+        );
+        auction.start(address(stream), again);
     }
 
     /// @dev The rc.2 review's G I-1 (fix F7): a replacement that answers `authority()` must name
@@ -458,10 +498,9 @@ contract StreamDependenciesTest is IntegrationBase {
             address(real),
             abi.encodeWithSelector(IStream.InvalidBinding.selector, address(real))
         );
-        // One word that is not an address is refused too (its decoding fails, with no data,
-        // which the manager reports as `FailedCall`).
+        // One word that is not an address is refused too.
         address dirty = address(new DirtyAuthorityStandIn(_interfaceOf("ECONOMICS")));
-        _refuse("ECONOMICS", dirty, abi.encodeWithSignature("FailedCall()"));
+        _refuse("ECONOMICS", dirty, abi.encodeWithSelector(IStream.InvalidBinding.selector, dirty));
 
         for (uint256 i; i < KINDS.length; ++i) {
             _replace(
@@ -480,12 +519,13 @@ contract StreamDependenciesTest is IntegrationBase {
         }
     }
 
-    /// @dev The read forwards at most `RECORDS_GAS` (GV-35): an `authority()` that needs more to
-    ///      answer is not read, so its replacement installs as one with no answer does. Its
-    ///      answer here would name a foreign manager.
-    function test_TheAuthorityReadIsBoundedByRecordsGas() public {
+    /// @dev The read forwards all the gas the call has (the gas rule): an `authority()` that
+    ///      needs more than the 100,000 Stream used to forward is still read, so a foreign
+    ///      manager it names is refused. Before, this replacement installed.
+    function test_ASlowAuthorityAnswerIsStillRead() public {
         address foreign = address(new AccessManager(address(this)));
-        _replace("ECONOMICS", address(new SlowAuthorityStandIn(_interfaceOf("ECONOMICS"), foreign)));
+        address slow = address(new SlowAuthorityStandIn(_interfaceOf("ECONOMICS"), foreign));
+        _refuse("ECONOMICS", slow, abi.encodeWithSelector(IStream.InvalidBinding.selector, slow));
     }
 
     /// @dev The permanence gap the review of #81 found, closed: the artist registry's only

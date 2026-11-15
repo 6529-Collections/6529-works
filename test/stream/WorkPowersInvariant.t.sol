@@ -5,6 +5,8 @@ import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 import { WorkPowersHandler } from "./WorkPowersHandler.sol";
+import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice Stateful invariants of the renounceable powers and lower-only royalty changes
 ///         (ADR 0006): a work's renounced mask never loses a bit, a renounced power's function
@@ -59,7 +61,9 @@ contract WorkPowersInvariantTest is RecordsFixture {
         assertEq(handler.violations(), 0);
         for (uint256 i; i < handler.workCount(); ++i) {
             uint256 tokenId = handler.tokenIds(i);
-            assertEq(stream.work(tokenId).royaltyRate, handler.ghostRate(tokenId));
+            assertEq(
+                IStreamViews(address(stream)).work(tokenId).royaltyRate, handler.ghostRate(tokenId)
+            );
             assertEq(
                 abi.encode(records.licenseOf(tokenId)), abi.encode(handler.ghostLicenseOf(tokenId))
             );
@@ -71,7 +75,7 @@ contract WorkPowersInvariantTest is RecordsFixture {
     ///      any step (each step is checked in the handler).
     function invariant_royaltyRateNeverRises() public view {
         for (uint256 i; i < handler.workCount(); ++i) {
-            assertLe(stream.work(handler.tokenIds(i)).royaltyRate, MINT_RATE);
+            assertLe(IStreamViews(address(stream)).work(handler.tokenIds(i)).royaltyRate, MINT_RATE);
         }
         assertEq(handler.violations(), 0);
     }

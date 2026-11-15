@@ -21,6 +21,8 @@ import { FailingConsolidationSource } from "../mocks/identity/IdentityWorksMocks
 import { IntegrationBase } from "./IntegrationBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
+import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice IDENTITY-1 (owner decision A, 14 October 2026) on the real contracts: while a recovery
 ///         override that would move the authority is pending (staged or contested, until it
@@ -148,7 +150,7 @@ contract RecoveryRestraintTest is IntegrationBase {
         assertEq(stream.primaryTerms(0, byNewKey).creator, newKey);
         uint256 saleId =
             auction.start(address(stream), _mintDataSignedBy(root, works, 1, newKey, nonce));
-        uint256 tokenId = stream.totalMinted();
+        uint256 tokenId = IStream(address(stream)).totalMinted();
         assertEq(stream.primaryTerms(tokenId, "").creator, newKey, "the recovered key's work");
         _settleAtEnd(saleId);
         assertEq(stream.ownerOf(tokenId), museum, "unbid: the museum");

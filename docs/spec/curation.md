@@ -19,11 +19,11 @@ curation operators; `PackageRegistry` and `Eip712CurationVerifier` implement it.
 
 | Contract | Source | Interface | Responsibility |
 | --- | --- | --- | --- |
-| `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | [`IPackageRegistry`](../../src/interfaces/IPackageRegistry.sol) | Approved roots, acceptances, consume-once and per-product content uniqueness, move nonces, content release, verifier swap. |
+| `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | [`IPackageRegistry`](../../src/interfaces/IPackageRegistry.sol), [`IMintPolicy`](../../src/interfaces/IMintPolicy.sol) | 6529 Stream's v1 mint policy (`authorize`, [AUC-38](stream-and-auctions.md#rules-and-invariants)): approved roots, acceptances, the Stream item rules, consume-once and per-product content uniqueness, move nonces, the VRF delivery check, the terms quote; content release, verifier swap. |
 | `Eip712CurationVerifier` | [`src/curation/Eip712CurationVerifier.sol`](../../src/curation/Eip712CurationVerifier.sol) | [`ICurationVerifier`, `ICurationSignerVerifier`](../../src/interfaces/ICurationVerifier.sol) | The v1 verifier: accepts a `PackageApproval` signature by an active curation signer at its current signer epoch; the guardian's per-signer kill switch. |
 | `WorksHashing` (library) | [`src/interfaces/types/WorksHashing.sol`](../../src/interfaces/types/WorksHashing.sol) | none | The one definition of the item hash, Merkle leaf, media hash and license key. |
 | `Typehashes` (library) | [`src/interfaces/types/Typehashes.sol`](../../src/interfaces/types/Typehashes.sol) | none | EIP-712 domain names, the domain version and every typehash. |
-| `EditionRules` (library) | [`src/editions/EditionRules.sol`](../../src/editions/EditionRules.sol) | none | Valid edition terms, applied by the registry at `consume` and by 6529 Stream Editions at `createEdition`. |
+| `EditionRules` (library) | [`src/editions/EditionRules.sol`](../../src/editions/EditionRules.sol) | none | Valid edition terms, applied by the registry when it consumes an item and by 6529 Stream Editions at `createEdition`. |
 | Package types | [`src/interfaces/types/PackageTypes.sol`](../../src/interfaces/types/PackageTypes.sol) | none | `PackageItem`, `Party`, `License`, `SaleTerms`, `EditionTerms`, `PartyAcceptance`, `MoveAuthorization`, `StreamMintRequest`. |
 
 ## Concepts
@@ -54,15 +54,15 @@ enters the item hash, so voters approve and parties sign exactly these values.
 | Field | Meaning | Checked on-chain |
 | --- | --- | --- |
 | `kind` | `ORIGINAL` (a 1/1) or `EDITION_MASTER` (a 1/1 that anchors one 6529 Stream Editions edition). | `consume`: an `ORIGINAL` has empty edition terms; a master's terms pass `EditionRules.isValid`. |
-| `collectionId` | A 6529 Stream collection (below 2^32). | Stream `mint`: the collection exists. |
+| `collectionId` | A 6529 Stream collection (below 2^32). | Stream `mint`, on the policy's record: the collection exists. |
 | `contentHash` | Decoded SHA-256 of the primary media; the per-product uniqueness key. | `consume`: nonzero and unused on Stream. `WorkRecords.openRecord`: equals the primary file's SHA-256. |
 | `mediaHash` | Hash over every media file (file ID, decoded SHA-256, role), primary first. Media is fixed by approval. | `WorkRecords.openRecord`. |
 | `recordFileId` | Content-store file ID of the approved JSON record; the artist may replace it until finalize. | Structure checked at `setRecord` and `finalize`. |
 | `parties` | 1 to `Limits.MAX_PARTIES` (16) `(account, role)` entries, lead `ARTIST` first, `COLLABORATOR` for credited contributors. | `consume` ([CUR-6](#rules-and-invariants)). |
 | `payees` | The canonical payee list of the artist portion: fixed payees by account, artist-resolved payees by artist ID. | `consume` ([CUR-8](#rules-and-invariants)). |
-| `license` | SPDX ID and the content-store file of the full text. | Stream `mint`: `SpdxId` rule. `openRecord`: CC0 names the deployment's CC0 text. |
-| `seedPolicy`, `seed` | `NONE`, `ARTIST` (with the artist's nonzero seed) or `VRF`. See [entropy.md](entropy.md). | `consume` and Stream: a seed exactly under `ARTIST`. Stream: `VRF` needs an entropy module and a delivered seed. |
-| `sale` | `SaleTerms`: how the work is first sold. | Stream `mint`: a nonzero sale kind, minted only by an admitted adapter of that kind (the English auction at genesis, which also requires empty `params`). |
+| `license` | SPDX ID and the content-store file of the full text. | `authorize`: `SpdxId` rule. `openRecord`: CC0 names the deployment's CC0 text. |
+| `seedPolicy`, `seed` | `NONE`, `ARTIST` (with the artist's nonzero seed) or `VRF`. See [entropy.md](entropy.md). | `authorize`: a seed exactly under `ARTIST`; `VRF` needs Stream's entropy module and a seed delivered there. |
+| `sale` | `SaleTerms`: how the work is first sold. | `authorize`: a nonzero sale kind; Stream `mint`: minted only by an admitted adapter of that kind (the English auction at genesis, which also requires empty `params`). |
 | `edition` | `EditionTerms` of the edition a master anchors; all zero for an `ORIGINAL`. | `consume` and Editions `createEdition`: `EditionRules.isValid`. |
 
 Canonical payee order is strictly increasing `(artistId, account)`, so fixed payees (`artistId`
@@ -218,7 +218,7 @@ stateDiagram-v2
 | Root: unregistered or approved to revoked | `GUARDIAN` | immediate | `PackageRegistry.revokePackage` |
 | Party consent recorded | Anyone, relaying the party's signature | none | `PackageRegistry.acceptPackage` |
 | Move nonce revoked | The lead artist's active authority | none | `PackageRegistry.revokeMove` |
-| Item consumed, content used | Bound 6529 Stream, inside `IStream.mint` at the auction start | none | `PackageRegistry.consume` |
+| Item consumed, content used | Bound 6529 Stream, inside `IStream.mint` at the auction start | none | `PackageRegistry.authorize` (its private `_consume`) |
 | Edition claims the content | Bound 6529 Stream Editions, inside `createEdition` | none | `PackageRegistry.claimContent` |
 | Content released, item tombstoned | `PARAMETER_SETTER` through `IStream.releaseContent` | standard, 48 hours | `PackageRegistry.releaseContent` |
 | Signer becomes active | ADMIN grants `CURATION_SIGNER` | 30-day ADMIN operation, then the 30-day grant delay (`Roles.grantDelay`) | `AccessManager.grantRole` |
@@ -317,38 +317,48 @@ sequenceDiagram
     Anyone->>Auction: start(stream, abi.encode(StreamMintRequest))
     Auction->>Auction: not paused, target allowed
     Auction->>Stream: mint(auction, 0, 1, data)
-    Note over Stream: the adapter's kind recorded at admission, after the admitted-minter check
-    Stream->>Stream: item rules (_checkItem)
-    Stream->>Registry: consume(root, item, proof, move)
+    Note over Stream: admitted adapter, minting to itself
+    Stream->>Registry: authorize(context, data) - the mint policy
+    Registry->>Registry: item rules (_checkItem)
     Registry->>Registry: caller, root, proof, content, terms, parties, payees
     Registry->>Registry: move deadline, then spend the nonce
     Registry->>Artists: activeAuthorityOf(lead artist ID)
     Registry->>Registry: verify the move signature, write the content word
-    Registry-->>Stream: (itemHash, artistId, authority), emit ItemConsumed
     opt seed policy VRF
-        Stream->>Entropy: isDeliveredContent(item.contentHash)
+        Registry->>Entropy: isDeliveredContent(item.contentHash), at Stream's module
     end
-    Stream->>Stream: quote terms (the creator is the returned authority), store the token, emit WorkMinted, mint
+    Registry->>Registry: quote terms (the creator is the move's signer)
+    Registry-->>Stream: MintRecord
+    Stream->>Stream: core checks, the adapter's kind, store the token, emit WorkMinted, mint
     Stream-->>Auction: tokenId and primary terms
     Auction->>Auction: lock terms, check custody, emit SaleStarted
 ```
 
-`consume` fails, in order, with: `UnboundCaller`; `PackageNotApproved`; `ItemNotInPackage` (also
+`authorize` fails, in order, with: `UnboundCaller`; `InvalidMintRequest` (request not
+`abi.encode(StreamMintRequest)`); the item rules (`InvalidItemSale`, `InvalidLeadArtist`,
+`InvalidSeedPolicy`, `InvalidLicenseId`); then the consume: `PackageNotApproved`; `ItemNotInPackage` (also
 for a proof over 32 nodes; the registry computes the item hash itself); `ContentUsed` (held, or
 released and this item tombstoned); `InvalidItem` or `PartyNotAccepted` (CUR-9, CUR-6, CUR-8);
 `ContentReserved` (released content, not the beneficiary); then for the move `SignatureExpired`
 (deadline), `MoveNonceUsed` (the nonce is spent here) and `InvalidSignature` (over `moveDigest`).
-A revert anywhere in the start, including `SeedNotDelivered`, undoes the consume and the nonce.
+then `SeedNotDelivered` and `InvalidWorkTerms`. A revert anywhere in the start undoes the consume
+and the nonce. The consume emits no event of its own: Stream's permanent `WorkMinted` carries the
+package root, item hash, lead artist and content hash ([AUC-43](stream-and-auctions.md#rules-and-invariants)).
 
-- **Consent reads, not calls.** The only external call in `consume` is `activeAuthorityOf` for
-  the lead (plus ERC-1271 if that authority is a contract). `consume` returns that authority,
-  which signed the move, so 6529 Stream reports it as the work's creator without asking the
-  artist registry again.
+- **Consent reads, not calls.** The only external call in the consume is `activeAuthorityOf`
+  for the lead (plus ERC-1271 if that authority is a contract); the record names that
+  authority, which signed the move, as the work's creator. The quote then reads Stream's
+  economics resolver and split factory, passed in the call (`MintContext`), so the policy holds
+  no copy of Stream's dependencies.
+- **Uniqueness belongs to the policy.** Consumed items and content claims live in this registry
+  (`consumedItemOf`), not in Stream. A replacement mint policy must keep them authoritative by
+  reading its predecessor's records; returning to this registry later finds them intact
+  ([AUC-38](stream-and-auctions.md#rules-and-invariants)).
 - **Restraint.** No move verifies, from the old key or the reserved new key, and `revokeMove`
   reverts with `NotAuthority`. After execution the new key signs.
 - **Rotated keys.** Unused moves signed by a rotated-away key stay void, unless the new authority
   is an ERC-1271 or EIP-7702 wallet that accepts them (ADR 0003, SIGS-3).
-- **Gas.** `consume`'s Prague gas, new slots and regression ceiling are in the
+- **Gas.** `authorize`'s Prague gas, new slots and regression ceiling are in the
   [ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table).
 
 ### Edition content claim

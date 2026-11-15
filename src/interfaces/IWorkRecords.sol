@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { License, PackageItem, SeedPolicy } from "./types/PackageTypes.sol";
+import { License, PackageItem } from "./types/PackageTypes.sol";
 import { Locator, LocatorKind, MediaFile } from "./types/ContentTypes.sol";
 
 /// @title IWorkRecords
@@ -256,7 +256,7 @@ interface IWorkRecords {
     /// @param tokenId A live work with an open record.
     /// @return policy The work's seed policy.
     /// @return seed The seed, or zero under NONE.
-    function seedOf(uint256 tokenId) external view returns (SeedPolicy policy, bytes32 seed);
+    function seedOf(uint256 tokenId) external view returns (uint8 policy, bytes32 seed);
 
     // ----- amendments: agreement plus a governed action (ADR 0001 sections 7, 8 and 10) -----
 

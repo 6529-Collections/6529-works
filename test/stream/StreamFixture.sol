@@ -71,6 +71,7 @@ abstract contract StreamFixture is Test {
         manager = new AccessManager(address(this));
         registry = new MockPackageRegistry();
         artists = new MockArtistRegistry();
+        registry.setArtistRegistry(address(artists));
         renderer = new MockRenderer("default");
         splitFactory = new SplitFactory(
             IArtistPayoutResolver(address(artists)), IReleaseVerifier(address(renderer))
@@ -95,6 +96,21 @@ abstract contract StreamFixture is Test {
         artists.register(artist);
         vm.prank(platform);
         collectionId = stream.createCollection("Genesis", keccak256("genesis"));
+    }
+
+    /// @dev The terms ID Stream interns a terms word at when its hashed position is free.
+    function _termsIdOf(
+        uint160 artistId,
+        uint24 royaltyRate,
+        uint24 feeShare,
+        uint24 feeRecipientId,
+        uint24 minterId
+    ) internal pure returns (uint24) {
+        return uint24(
+            uint256(
+            keccak256(abi.encode(artistId, royaltyRate, feeShare, feeRecipientId, minterId))
+        )
+        ) & 0x7fffff;
     }
 
     function _defaultTerms() internal view returns (WorkTerms memory) {

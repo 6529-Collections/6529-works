@@ -32,6 +32,8 @@ import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { ContentAddresses } from "../../helpers/ContentAddresses.sol";
 import { HostileActor } from "../../mocks/sales/AuctionMocks.sol";
 import { IntegrationBase } from "../IntegrationBase.sol";
+import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice The handler of the Stream lifecycle invariant suite: one actor set driving 6529 Stream,
 ///         the package registry, the records satellite, the English auction and the artist
@@ -987,7 +989,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
 
     /// @dev Records a new token: IDs are assigned in order, once.
     function _minted(uint256 p, uint256 saleId, uint256 paid) internal {
-        uint256 tokenId = stream.totalMinted();
+        uint256 tokenId = IStream(address(stream)).totalMinted();
         if (tokenId != ghostMinted + 1) _violation("token IDs are not sequential");
         ghostMinted = tokenId;
         pool[p].tokenId = tokenId;
@@ -1265,7 +1267,11 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         for (uint256 h; h < holders.length; ++h) {
             held += stream.balanceOf(holders[h]);
         }
-        assertEq(held, stream.totalSupply(), "every live token is held by one known holder");
+        assertEq(
+            held,
+            IStreamViews(address(stream)).totalSupply(),
+            "every live token is held by one known holder"
+        );
         for (uint256 tokenId = 1; tokenId <= ghostMinted; ++tokenId) {
             TokenGhost storage t = tok[tokenId];
             IEnglishAuction.AuctionState state = auction.auction(t.saleId).state;
@@ -1290,8 +1296,14 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
     /// @dev Token IDs run from 1 without gaps, each assigned once to one item; burned IDs are
     ///      never reused.
     function _assertIds() internal view {
-        assertEq(stream.totalMinted(), ghostMinted, "every start assigned one new ID");
-        assertEq(stream.totalSupply(), ghostMinted - ghostBurned, "supply is minted minus burned");
+        assertEq(
+            IStream(address(stream)).totalMinted(), ghostMinted, "every start assigned one new ID"
+        );
+        assertEq(
+            IStreamViews(address(stream)).totalSupply(),
+            ghostMinted - ghostBurned,
+            "supply is minted minus burned"
+        );
         for (uint256 tokenId = 1; tokenId <= ghostMinted; ++tokenId) {
             TokenGhost storage t = tok[tokenId];
             assertEq(pool[t.item].tokenId, tokenId, "one item, one token ID");

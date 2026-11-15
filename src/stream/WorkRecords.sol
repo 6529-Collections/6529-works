@@ -14,7 +14,7 @@ import { IWorkPowers, WorkPowers } from "../interfaces/IWorkPowers.sol";
 import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "../interfaces/types/ContentTypes.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
-import { ItemKind, License, PackageItem, SeedPolicy } from "../interfaces/types/PackageTypes.sol";
+import { License, PackageItem, SeedPolicy } from "../interfaces/types/PackageTypes.sol";
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
 import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
 import { Dependency } from "../libraries/Dependency.sol";
@@ -356,7 +356,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     }
 
     /// @inheritdoc IWorkRecords
-    function seedOf(uint256 tokenId) external view returns (SeedPolicy policy, bytes32 seed) {
+    function seedOf(uint256 tokenId) external view returns (uint8 policy, bytes32 seed) {
         _open(tokenId);
         (,,,, policy,) = _core(tokenId);
         seed = _seeds[tokenId];
@@ -780,8 +780,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
             bytes32 itemHash,
             uint256 artistId,
             uint256 collectionId,
-            ItemKind kind,
-            SeedPolicy policy,
+            uint8 kind,
+            uint8 policy,
             uint32 rate
         )
     {

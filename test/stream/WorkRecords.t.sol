@@ -6,6 +6,7 @@ import { Vm } from "forge-std/Vm.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { IWorkPowers } from "src/interfaces/IWorkPowers.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
@@ -373,7 +374,7 @@ contract WorkRecordsTest is RecordsFixture {
         bytes[] memory sigs = _both(_royaltyHash(tokenId, 5_000, state, deadline));
         vm.prank(governor);
         records.setRoyaltyRate(tokenId, 5_000, item, state, deadline, sigs);
-        assertEq(stream.work(tokenId).royaltyRate, 5_000);
+        assertEq(IStreamViews(address(stream)).work(tokenId).royaltyRate, 5_000);
 
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.LicenseIrrevocable.selector, tokenId));
@@ -1468,14 +1469,14 @@ contract WorkRecordsTest is RecordsFixture {
         item.kind = ItemKind.EDITION_MASTER;
         uint256 tokenId = _mint(item);
         records.openRecord(tokenId, item, media);
-        auction.settle(stream, tokenId);
-        editionsMock.link(stream, tokenId, tokenId);
+        auction.settle(IStream(address(stream)), tokenId);
+        editionsMock.link(IStream(address(stream)), tokenId, tokenId);
         bytes32 state = records.workStateHash(tokenId);
         uint64 deadline = uint64(block.timestamp + 15 days);
         bytes[] memory sigs = _both(_royaltyHash(tokenId, 5_000, state, deadline));
         vm.prank(governor);
         records.setRoyaltyRate(tokenId, 5_000, item, state, deadline, sigs);
-        assertEq(stream.work(tokenId).royaltyRate, 5_000);
+        assertEq(IStreamViews(address(stream)).work(tokenId).royaltyRate, 5_000);
         assertEq(editionsMock.rateOf(tokenId), 5_000);
     }
 
@@ -1497,7 +1498,7 @@ contract WorkRecordsTest is RecordsFixture {
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.StateHashMismatch.selector, s0, s1));
         records.setRoyaltyRate(tokenId, 5_000, item, s0, deadline, toC);
-        assertEq(stream.work(tokenId).royaltyRate, 6_000);
+        assertEq(IStreamViews(address(stream)).work(tokenId).royaltyRate, 6_000);
     }
 
     /// Regression: M4 in the reviews of #22
@@ -1538,7 +1539,7 @@ contract WorkRecordsTest is RecordsFixture {
         (uint256 none, PackageItem memory noneItem) = _work(1);
         // A work without a seed policy never asks the entropy module, even if it has a seed.
         entropy.deliver(noneItem, keccak256("not asked"));
-        (SeedPolicy policy, bytes32 seed) = records.seedOf(none);
+        (uint8 policy, bytes32 seed) = records.seedOf(none);
         assertEq(uint8(policy), uint8(SeedPolicy.NONE));
         assertEq(seed, bytes32(0));
 
@@ -1740,8 +1741,8 @@ contract WorkRecordsTest is RecordsFixture {
         uint256 tokenId = _mint(item);
         records.openRecord(tokenId, item, media);
         assertEq(editionsMock.notified(tokenId), 0);
-        auction.settle(stream, tokenId);
-        editionsMock.link(stream, tokenId, tokenId);
+        auction.settle(IStream(address(stream)), tokenId);
+        editionsMock.link(IStream(address(stream)), tokenId, tokenId);
         vm.prank(platform);
         records.addLocator(tokenId, media[0].fileId, _ar("tx"));
         assertEq(editionsMock.notified(tokenId), 1);
@@ -2185,7 +2186,7 @@ contract WorkRecordsTest is RecordsFixture {
 
     /// @dev With nothing minted there is nothing to refresh: no `BatchMetadataUpdate(1, 0)`.
     function test_preferenceSetters_refreshNothingBeforeAMint() public {
-        assertEq(stream.totalMinted(), 0);
+        assertEq(IStream(address(stream)).totalMinted(), 0);
         vm.recordLogs();
         vm.prank(storageOperator);
         records.setPreferredKind(LocatorKind.ARWEAVE);

@@ -12,6 +12,7 @@ import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import {
@@ -249,7 +250,7 @@ contract EditionsStreamMock {
     bytes public reentryItem;
     bytes public reentryError;
 
-    mapping(uint256 => IStream.WorkCore) internal _works;
+    mapping(uint256 => IStreamViews.WorkCore) internal _works;
     mapping(uint256 => address) internal _owners;
     mapping(uint256 => bool) internal _settled;
     mapping(uint256 => address) public pinnedRenderer;
@@ -283,12 +284,12 @@ contract EditionsStreamMock {
         bytes32 itemHash = WorksHashing.itemHashCalldata(item);
         EditionsRegistryMock(packageRegistry).consume(itemHash, item.contentHash);
         id = ++totalMinted;
-        IStream.WorkCore storage w = _works[id];
+        IStreamViews.WorkCore storage w = _works[id];
         w.itemHash = itemHash;
         w.artistId = uint256(uint160(item.parties[0].account));
         w.collectionId = item.collectionId;
-        w.kind = item.kind;
-        w.seedPolicy = item.seedPolicy;
+        w.kind = uint8(item.kind);
+        w.seedPolicy = uint8(item.seedPolicy);
         w.royaltyRate = 6_529; // the launch rate Stream locks at mint
         _owners[id] = to;
     }
@@ -322,7 +323,7 @@ contract EditionsStreamMock {
             || interfaceId == type(IStream).interfaceId;
     }
 
-    function work(uint256 id) external view returns (IStream.WorkCore memory) {
+    function work(uint256 id) external view returns (IStreamViews.WorkCore memory) {
         if (_owners[id] == address(0)) revert IStream.UnknownWork(id);
         return _works[id];
     }
@@ -330,10 +331,10 @@ contract EditionsStreamMock {
     function coreOf(uint256 id)
         external
         view
-        returns (bytes32, uint256, uint256, ItemKind, SeedPolicy, uint32)
+        returns (bytes32, uint256, uint256, uint8, uint8, uint32)
     {
         if (_owners[id] == address(0)) revert IStream.UnknownWork(id);
-        IStream.WorkCore storage w = _works[id];
+        IStreamViews.WorkCore storage w = _works[id];
         return (w.itemHash, w.artistId, w.collectionId, w.kind, w.seedPolicy, w.royaltyRate);
     }
 
@@ -359,7 +360,7 @@ contract EditionsStreamMock {
     function linkEdition(uint256 tokenId, uint256 editionId) external {
         if (msg.sender != editions) revert IStream.UnboundCaller(msg.sender);
         if (
-            editionId != tokenId || _works[tokenId].kind != ItemKind.EDITION_MASTER
+            editionId != tokenId || _works[tokenId].kind != uint8(ItemKind.EDITION_MASTER)
                 || _linked[tokenId] != 0
         ) {
             revert IStream.EditionLinkInvalid(tokenId);

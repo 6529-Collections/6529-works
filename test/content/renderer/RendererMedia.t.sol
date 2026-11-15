@@ -7,6 +7,7 @@ import { Renderer } from "src/content/Renderer.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
@@ -616,8 +617,8 @@ contract RendererMediaTest is RendererBase {
         bytes memory js = "go();";
         bytes32 file = _file(js, IDENTITY, "text/javascript");
         _install(file);
-        IStream.WorkCore memory core = _core();
-        core.seedPolicy = SeedPolicy.ARTIST;
+        IStreamViews.WorkCore memory core = _core();
+        core.seedPolicy = uint8(SeedPolicy.ARTIST);
         stream.setWork(ID, core);
         records.setSeed(ID, SeedPolicy.ARTIST, bytes32(uint256(0xfeed)));
 
@@ -636,7 +637,7 @@ contract RendererMediaTest is RendererBase {
         );
 
         // No seed at all is null.
-        core.seedPolicy = SeedPolicy.NONE;
+        core.seedPolicy = uint8(SeedPolicy.NONE);
         stream.setWork(ID, core);
         assertTrue(
             _contains(_page(), "window.works={v:1,tokenId:7,seed:null};</script><script>go();")

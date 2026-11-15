@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { ICurationVerifier } from "./ICurationVerifier.sol";
-import { MoveAuthorization, PackageItem, PartyAcceptance } from "./types/PackageTypes.sol";
+import { PartyAcceptance } from "./types/PackageTypes.sol";
 
 /// @title IPackageRegistry
 /// @notice Approved packages, party consent, single-use items, per-product content uniqueness and
@@ -16,7 +16,7 @@ import { MoveAuthorization, PackageItem, PartyAcceptance } from "./types/Package
 ///      2. `acceptPackage`: each party's signed acceptance is stored as
 ///         `acceptedAs[root][account] = artistId`; a first acceptance creates the identity in
 ///         the artist registry, and only first acceptances count as artist activity.
-///      3. `consume`: the bound 6529 Stream consumes one item when its sale starts, checking the
+///      3. `IMintPolicy.authorize`: the bound 6529 Stream consumes one item when its sale starts, checking the
 ///         Merkle proof, every party's `acceptedAs` entry (no registry calls), that the payee list
 ///         is canonical, sums to 100,000 and pays only parties, and the lead artist's move
 ///         authorization.
@@ -56,17 +56,6 @@ interface IPackageRegistry is IERC165 {
     /// @param account The party's account.
     event PackageAccepted(
         bytes32 indexed packageRoot, uint256 indexed artistId, address indexed account
-    );
-    /// @notice 6529 Stream consumed an item and claimed its content hash under `PRODUCT_STREAM`.
-    /// @param packageRoot The package root the item was proved against.
-    /// @param itemHash The consumed item's hash (`WorksHashing.itemHash`).
-    /// @param artistId The lead artist's ID.
-    /// @param contentHash The item's content hash.
-    event ItemConsumed(
-        bytes32 indexed packageRoot,
-        bytes32 indexed itemHash,
-        uint256 indexed artistId,
-        bytes32 contentHash
     );
     /// @notice 6529 Stream Editions claimed a master's content hash under `PRODUCT_EDITIONS`.
     /// @param contentHash The master's content hash.
@@ -125,6 +114,8 @@ interface IPackageRegistry is IERC165 {
     error AlreadyBound(bytes32 name);
     /// @notice A compare-and-set setter's expected current value is stale.
     error ExpectedValueMismatch();
+    /// @notice The mint request is not `abi.encode(StreamMintRequest)` (`IMintTarget`'s error).
+    error InvalidMintRequest();
 
     /// @notice Binds 6529 Stream, the only `consume` caller, once (ERC-165 for `IStream`, not an
     ///         EIP-7702 delegated account). ADMIN role.
@@ -162,23 +153,6 @@ interface IPackageRegistry is IERC165 {
         PartyAcceptance calldata acceptance,
         bytes calldata signature
     ) external returns (uint256 artistId);
-    /// @notice Consumes an item and claims its content hash under `PRODUCT_STREAM`. Bound 6529
-    ///         Stream only.
-    /// @param packageRoot The approved package root that lists the item.
-    /// @param item The package item to consume.
-    /// @param proof The Merkle proof of the item's leaf under `packageRoot`, at most
-    ///        `Limits.MAX_PROOF_DEPTH` hashes.
-    /// @param move The lead artist's signed move authorization.
-    /// @return itemHash The item hash.
-    /// @return artistId The lead artist's ID.
-    /// @return authority The lead artist's active authority, which signed `move`: 6529 Stream
-    ///         reports it as the work's creator, with no second read of the artist registry.
-    function consume(
-        bytes32 packageRoot,
-        PackageItem calldata item,
-        bytes32[] calldata proof,
-        MoveAuthorization calldata move
-    ) external returns (bytes32 itemHash, uint256 artistId, address authority);
     /// @notice Releases `contentHash` after an upheld-dispute burn to the artist `beneficiary`
     ///         the dispute outcome names: checks that `itemHash` consumed it, clears its
     ///         `PRODUCT_STREAM` claim, reserves it for items whose lead artist is `beneficiary`,

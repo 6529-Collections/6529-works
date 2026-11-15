@@ -271,7 +271,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
             }
         }
         m.status = admitted ? MINTER_ADMITTED : MINTER_REMOVED;
-        emit AdmittedMinterSet(adapter, m.id, admitted);
+        emit AdmittedMinterSet(adapter, m.id, admitted, _minterKinds[m.id]);
     }
 
     /// @inheritdoc IMintTarget
@@ -360,8 +360,8 @@ contract Editions is IEditions, ERC1155, AccessManaged {
             _bind(r, editionId, m, _saleKind(r));
             return _locked(r);
         }
-        (bytes32 itemHash,,, ItemKind kind,,) = IStream(stream).coreOf(editionId);
-        if (kind != ItemKind.EDITION_MASTER || WorksHashing.itemHashCalldata(item) != itemHash) {
+        (bytes32 itemHash,,, uint8 kind,,) = IStream(stream).coreOf(editionId);
+        if (kind != uint8(ItemKind.EDITION_MASTER) || WorksHashing.itemHashCalldata(item) != itemHash) {
             revert NotEditionMaster(editionId);
         }
         bool unbound = r.minterId == 0;

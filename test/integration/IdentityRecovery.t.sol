@@ -22,6 +22,8 @@ import {
 } from "src/interfaces/types/IdentityTypes.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
+import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice Flow 4 (integration brief, lane B): artist identity and recovery on the real
 ///         contracts, with the 6529 delegation contract as the identity lane's faithful mock.
@@ -140,7 +142,7 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
         vm.expectRevert(SignatureReverts.invalid(newKey));
         auction.start(address(stream), stale);
         auction.start(address(stream), _mintDataSignedBy(root, works, 1, newKey, nonce));
-        assertEq(stream.ownerOf(stream.totalMinted()), address(auction));
+        assertEq(stream.ownerOf(IStream(address(stream)).totalMinted()), address(auction));
     }
 
     function test_OldKeyAndCapturedWalletCancel() public {
@@ -452,7 +454,7 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
         _relayAcceptance(nextRoot, artist, artist, artist, invalid);
         assertEq(_relayAcceptance(nextRoot, artist, artist, keyB, ""), artistId);
         auction.start(address(stream), _longMove(works, 1, keyB, nonce));
-        assertEq(stream.ownerOf(stream.totalMinted()), address(auction));
+        assertEq(stream.ownerOf(IStream(address(stream)).totalMinted()), address(auction));
     }
 
     function _taken(address account) internal pure returns (bytes memory) {

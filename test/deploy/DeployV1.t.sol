@@ -17,6 +17,7 @@ import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import {
     CURRENCY_DEFAULT,
     CURRENCY_ETH,
@@ -195,7 +196,7 @@ contract DeployV1Test is Test {
         assertEq(d.englishAuctionLens.statementLog(), address(d.statementLog));
         assertEq(address(d.englishAuctionLens.allowlist()), address(d.assetAllowlist));
         assertEq(address(d.englishAuctionLens.economicsResolver()), address(d.economicsResolver));
-        assertEq(d.stream.owner(), makeAddr("marketOwner"));
+        assertEq(IStreamViews(address(d.stream)).owner(), makeAddr("marketOwner"));
         // The real renderer, pinned by Stream.
         assertEq(d.stream.defaultRenderer(), address(d.renderer));
         assertEq(address(d.renderer.contentStore()), address(d.contentStore));

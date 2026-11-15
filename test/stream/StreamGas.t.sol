@@ -13,9 +13,11 @@ import {
     ConstantArtists,
     ConstantAuction,
     ConstantEconomics,
-    ConstantPackageRegistry
+    ConstantMintPolicy
 } from "../mocks/stream/StreamMocks.sol";
 import { StreamFixture } from "./StreamFixture.sol";
+import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice 6529 Stream's own share of the auction start (ADR 0003 and ADR 0004 budget: 350K
 ///         Prague gas for the whole steady-state start). The registry, economics and
@@ -41,10 +43,11 @@ contract StreamGasTest is StreamFixture {
 
     function setUp() public override {
         super.setUp();
+        address constantArtists = address(new ConstantArtists());
         lean = new Stream(
             address(manager),
-            address(new ConstantPackageRegistry(uint256(uint160(artist)))),
-            address(new ConstantArtists()),
+            address(new ConstantMintPolicy(uint256(uint160(artist)), constantArtists)),
+            constantArtists,
             address(new ConstantEconomics(address(splitFactory))),
             address(entropy),
             address(renderer),
@@ -166,7 +169,7 @@ contract StreamGasTest is StreamFixture {
         vm.cool(address(stream));
         vm.cool(address(splitFactory));
         before = gasleft();
-        stream.work(1);
+        IStreamViews(address(stream)).work(1);
         uint256 core = before - gasleft();
         console2.log("royaltyInfo, cold, real SplitFactory:", royalty);
         console2.log("work(), cold, real SplitFactory:", core);

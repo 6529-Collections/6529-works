@@ -13,6 +13,7 @@ import { Renderer } from "src/content/Renderer.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
@@ -161,7 +162,7 @@ contract RendererHostileTest is RendererBase {
         address bomb = address(new ReturnBombMock(1_000_000, bytes32(uint256(1))));
         vm.expectRevert(
             abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector, bomb, IStream.work.selector
+                IRenderer.RendererReadFailed.selector, bomb, IStreamViews.work.selector
             )
         );
         renderer.tokenURI(bomb, ID);
@@ -169,7 +170,7 @@ contract RendererHostileTest is RendererBase {
         address burner = address(new GasBurnerMock());
         vm.expectRevert(
             abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector, burner, IStream.work.selector
+                IRenderer.RendererReadFailed.selector, burner, IStreamViews.work.selector
             )
         );
         renderer.tokenURI(burner, ID);
@@ -211,13 +212,15 @@ contract RendererHostileTest is RendererBase {
 
         // A collection name above 4 KiB.
         records.setLicense(ID, _license());
-        IStream.WorkCore memory core = _core();
+        IStreamViews.WorkCore memory core = _core();
         core.collectionId = 1;
         stream.setWork(ID, core);
-        stream.setCollection(1, IStream.Collection(_text(5_000), bytes32(0), 1));
+        stream.setCollection(1, IStreamViews.Collection(_text(5_000), bytes32(0), 1));
         vm.expectRevert(
             abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector, address(stream), IStream.collection.selector
+                IRenderer.RendererReadFailed.selector,
+                address(stream),
+                IStreamViews.collection.selector
             )
         );
         renderer.tokenURI(address(stream), ID);

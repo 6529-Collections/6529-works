@@ -14,6 +14,7 @@ import { Renderer } from "src/content/Renderer.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { ItemKind, License, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
@@ -134,10 +135,10 @@ abstract contract RendererBase is ContentBase {
         return License("CC0-1.0", bytes32(0));
     }
 
-    function _core() internal pure returns (IStream.WorkCore memory core) {
+    function _core() internal pure returns (IStreamViews.WorkCore memory core) {
         core.itemHash = bytes32(uint256(1));
         core.artistId = 1;
-        core.kind = ItemKind.ORIGINAL;
+        core.kind = uint8(ItemKind.ORIGINAL);
     }
 
     /// @dev The record file the work points at, in the order RFC 8785 gives the keys.

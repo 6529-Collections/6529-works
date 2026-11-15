@@ -11,6 +11,7 @@ import { IEntropyModule } from "../interfaces/IEntropyModule.sol";
 import { IRenderer } from "../interfaces/IRenderer.sol";
 import { IStatementLog } from "../interfaces/IStatementLog.sol";
 import { IStream } from "../interfaces/IStream.sol";
+import { IStreamViews } from "../interfaces/IStreamViews.sol";
 import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "../interfaces/types/ContentTypes.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
@@ -183,7 +184,7 @@ contract Renderer is IRenderer {
         address stream;
         uint256 workId;
         address records;
-        IStream.WorkCore core;
+        IStreamViews.WorkCore core;
         string collection;
         IWorkRecords.RecordInfo rec;
         MediaFile[] media;
@@ -281,7 +282,8 @@ contract Renderer is IRenderer {
             c.workId = c.id;
         }
         c.core = abi.decode(
-            _word(c.stream, IStream.work.selector, c.workId, SMALL_GAS, 288), (IStream.WorkCore)
+            _word(c.stream, IStreamViews.work.selector, c.workId, SMALL_GAS, 288),
+            (IStreamViews.WorkCore)
         );
         c.records = abi.decode(
             _read(c.stream, abi.encodeCall(IStream.workRecords, ()), SMALL_GAS, 32), (address)
@@ -291,12 +293,12 @@ contract Renderer is IRenderer {
             abi.decode(
                 _word(
                     c.stream,
-                    IStream.collection.selector,
+                    IStreamViews.collection.selector,
                     c.core.collectionId,
                     SMALL_GAS,
                     TEXT_RETURN
                 ),
-                (IStream.Collection)
+                (IStreamViews.Collection)
             )
             .name;
         }
@@ -898,13 +900,13 @@ contract Renderer is IRenderer {
     ///      was current at the work's mint (`IStream.entropyModuleOf`; an ARTIST seed is stored
     ///      when the record opens).
     function _seed(Ctx memory c) private view returns (bytes32 seed) {
-        if (c.core.seedPolicy == SeedPolicy.NONE) return 0;
+        if (c.core.seedPolicy == uint8(SeedPolicy.NONE)) return 0;
         if (c.open) {
             (, seed) = abi.decode(
                 _word(c.records, IWorkRecords.seedOf.selector, c.workId, SMALL_GAS, 64),
-                (SeedPolicy, bytes32)
+                (uint8, bytes32)
             );
-        } else if (c.core.seedPolicy == SeedPolicy.VRF) {
+        } else if (c.core.seedPolicy == uint8(SeedPolicy.VRF)) {
             address entropy = abi.decode(
                 _word(c.stream, IStream.entropyModuleOf.selector, c.workId, SMALL_GAS, 32),
                 (address)

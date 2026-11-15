@@ -1,12 +1,8 @@
 {
   "exempt": {
     "Renderer": {
-      "margin": 211,
+      "margin": 229,
       "reason": "below the floor when the gate was added (12 November 2026); renderers are pinned per work and replaceable by governance, so a later fix can ship in a new renderer"
-    },
-    "Stream": {
-      "margin": 203,
-      "reason": "below the floor when the gate was added (12 November 2026); not upgradeable, so its remaining room is kept for fixes and new read surfaces go to satellites"
     },
     "UniformEditionAuction": {
       "margin": 420,

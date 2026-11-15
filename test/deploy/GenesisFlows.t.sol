@@ -36,6 +36,8 @@ import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
 import { IEnglishAuctionFull } from "test/helpers/IEnglishAuctionFull.sol";
+import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice Integration finding G-1 on the deployed system: items priced in `CURRENCY_DEFAULT`
 ///         start without waiting out FUNDS_SETTER's 14-day `setDefaultCurrency`, because
@@ -225,7 +227,7 @@ contract GenesisFlowsTest is Test {
         uint256 genesisTime = block.timestamp;
         (bytes memory mintData,,) = _curatedWork(ItemKind.ORIGINAL, CURRENCY_DEFAULT, _noEdition());
         uint256 saleId = d.englishAuction.start(address(d.stream), mintData);
-        assertEq(d.stream.totalMinted(), 1, "the work is minted into the auction");
+        assertEq(IStream(address(d.stream)).totalMinted(), 1, "the work is minted into the auction");
         assertEq(
             IEnglishAuctionFull(address(d.englishAuction)).lockedTerms(saleId).currency,
             CURRENCY_ETH,
@@ -243,7 +245,7 @@ contract GenesisFlowsTest is Test {
         (bytes memory mintData, PackageItem memory item,) =
             _curatedWork(ItemKind.EDITION_MASTER, CURRENCY_ETH, _editionTerms());
         d.englishAuction.start(address(d.stream), mintData);
-        uint256 workId = d.stream.totalMinted();
+        uint256 workId = IStream(address(d.stream)).totalMinted();
         uint256 saleId = d.editionAuction.saleIdOf(address(d.editions), workId);
         vm.prank(makeAddr("anyone"));
         assertEq(d.editionAuction.open(address(d.editions), workId, abi.encode(item)), saleId);

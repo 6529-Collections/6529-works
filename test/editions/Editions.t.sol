@@ -645,11 +645,11 @@ contract EditionsTest is EditionsBase {
         // The event carries the binding ID: the base admitted two adapters, so this one is 3,
         // kept through its removal (owner decision 28).
         vm.expectEmit(true, true, false, true, address(editions));
-        emit IMintTarget.AdmittedMinterSet(fresh, 3, true);
+        emit IMintTarget.AdmittedMinterSet(fresh, 3, true, SaleKind.UNIFORM_AUCTION);
         editions.setAdmittedMinter(fresh, true);
         assertTrue(editions.isAdmittedMinter(fresh));
         vm.expectEmit(true, true, false, true, address(editions));
-        emit IMintTarget.AdmittedMinterSet(fresh, 3, false);
+        emit IMintTarget.AdmittedMinterSet(fresh, 3, false, SaleKind.UNIFORM_AUCTION);
         editions.setAdmittedMinter(fresh, false);
         assertFalse(editions.isAdmittedMinter(fresh));
 

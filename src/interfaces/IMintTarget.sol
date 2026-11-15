@@ -23,7 +23,11 @@ interface IMintTarget {
     /// @param id The adapter's ID, assigned at its first admission and kept for good: the ID
     ///        the token records with each work or edition the adapter mints.
     /// @param admitted Whether it may now call `mint`.
-    event AdmittedMinterSet(address indexed adapter, uint16 indexed id, bool admitted);
+    /// @param saleKind The sale kind recorded at the adapter's first admission: the kind of every
+    ///        work or edition it mints.
+    event AdmittedMinterSet(
+        address indexed adapter, uint24 indexed id, bool admitted, bytes32 saleKind
+    );
 
     /// @notice The calling adapter's sale kind is not the one the terms require.
     error SaleKindMismatch(bytes32 expected, bytes32 actual);
