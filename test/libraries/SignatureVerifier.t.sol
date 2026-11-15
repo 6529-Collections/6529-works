@@ -32,7 +32,11 @@ contract SignatureVerifierHarness {
     }
 }
 
-/// @dev Burns `burn` gas inside `isValidSignature`, then returns the magic value.
+/// @dev A delegate with no code paths at all: every call reverts at once.
+contract NoFallbackDelegate { }
+
+/// @dev Burns `burn` gas inside `isValidSignature`, then returns the magic value; given less,
+///      it runs out of gas.
 contract SlowWalletMock {
     uint256 internal immutable burn;
 
@@ -41,6 +45,11 @@ contract SlowWalletMock {
     }
 
     function isValidSignature(bytes32, bytes calldata) external view returns (bytes4) {
+        if (gasleft() < burn) {
+            assembly ("memory-safe") {
+                invalid()
+            }
+        }
         uint256 stop = gasleft() - burn;
         while (gasleft() > stop) { }
         return 0x1626ba7e;
@@ -50,7 +59,6 @@ contract SlowWalletMock {
 contract SignatureVerifierTest is Test {
     uint256 internal constant N =
         0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141;
-    uint256 internal constant CAP = SignatureVerifier.ERC1271_GAS_LIMIT;
     bytes32 internal constant MAGIC = bytes32(bytes4(0x1626ba7e));
 
     SignatureVerifierHarness internal harness;
@@ -162,9 +170,10 @@ contract SignatureVerifierTest is Test {
     function test_SignatureLengthCapAppliesBeforeAnyCall() public {
         ReturnDataMock acceptAll = new ReturnDataMock();
         acceptAll.configure(abi.encodePacked(MAGIC), false);
-        // The specification states the cap: 4,096 bytes.
-        bytes memory atCap = new bytes(4096);
-        bytes memory overCap = new bytes(4097);
+        // The specification states the cap: 65,536 bytes (64 KiB).
+        assertEq(SignatureVerifier.MAX_SIGNATURE_LENGTH, 65_536);
+        bytes memory atCap = new bytes(65_536);
+        bytes memory overCap = new bytes(65_537);
         assertTrue(harness.isValid(address(acceptAll), digest, atCap));
         assertFalse(harness.isValid(address(acceptAll), digest, overCap));
     }
@@ -190,11 +199,23 @@ contract SignatureVerifierTest is Test {
     }
 
     function test_7702_DelegateWithoutERC1271StillAcceptsOwnKey() public {
-        vm.signAndAttachDelegation(address(new GasBurnerMock()), key);
+        vm.signAndAttachDelegation(address(new NoFallbackDelegate()), key);
         (bytes memory full,) = _sign(key, digest);
         assertTrue(harness.isValid(signer, digest, full));
         (bytes memory foreign,) = _sign(0xB0B, digest);
         assertFalse(harness.isValid(signer, digest, foreign));
+    }
+
+    /// @dev The account's own key is checked by `ecrecover` before the delegate is ever called,
+    ///      so a delegate that burns all gas cannot block it; a foreign key reaches the delegate,
+    ///      and its out-of-gas is a shortfall, not a rejection.
+    function test_7702_BurningDelegateIsAShortfallOnlyForAForeignKey() public {
+        vm.signAndAttachDelegation(address(new GasBurnerMock()), key);
+        (bytes memory full,) = _sign(key, digest);
+        assertTrue(harness.isValid(signer, digest, full));
+        (bytes memory foreign,) = _sign(0xB0B, digest);
+        vm.expectRevert(abi.encodeWithSelector(BoundedCall.BoundedCallShortfall.selector, signer));
+        harness.isValid{ gas: 1_000_000 }(signer, digest, foreign);
     }
 
     // ---------------------------------------------------------------- ERC-1271
@@ -237,31 +258,37 @@ contract SignatureVerifierTest is Test {
         assertFalse(harness.isValid(address(wallet), digest, hex"01"));
     }
 
-    function test_1271_GasStarvedCallReverts() public {
-        ERC1271WalletMock wallet = new ERC1271WalletMock(signer);
-        (bytes memory full,) = _sign(key, digest);
+    /// @dev A wallet whose check runs out of gas reverts with the shortfall error: retrying with
+    ///      more gas verifies it. It is never reported as an invalid signature.
+    function test_1271_GasStarvedCallRevertsWithTheShortfallError() public {
+        SlowWalletMock slow = new SlowWalletMock(2_000_000);
         vm.expectRevert(
-            abi.encodeWithSelector(BoundedCall.BoundedCallInsufficientGas.selector, CAP)
+            abi.encodeWithSelector(BoundedCall.BoundedCallShortfall.selector, address(slow))
         );
-        harness.isValid{ gas: CAP }(address(wallet), digest, full);
+        harness.isValid{ gas: 1_000_000 }(address(slow), digest, hex"01");
+        assertTrue(harness.isValid{ gas: 3_000_000 }(address(slow), digest, hex"01"));
     }
 
-    function test_1271_WalletGetsTheFullCap() public {
-        // Needs most of the cap: succeeds, because the cap is forwarded in full.
-        SlowWalletMock slow = new SlowWalletMock(CAP - 10_000);
-        assertTrue(harness.isValid(address(slow), digest, hex"01"));
-        // Needs more than the cap: rejected, not reverted.
-        SlowWalletMock slower = new SlowWalletMock(CAP + 1_000);
-        assertFalse(harness.isValid(address(slower), digest, hex"01"));
+    /// @dev No gas cap: a wallet whose check needs far more than the former 200,000 is verified.
+    function test_1271_HeavyWalletIsVerified() public {
+        uint256[3] memory costs = [uint256(190_000), 210_000, 5_000_000];
+        for (uint256 i; i < costs.length; ++i) {
+            SlowWalletMock slow = new SlowWalletMock(costs[i]);
+            assertTrue(harness.isValid(address(slow), digest, hex"01"), vm.toString(costs[i]));
+        }
     }
 
-    function test_1271_GasBombCostsAtMostTheCap() public {
+    /// @dev A wallet that burns everything it is given is a shortfall at any gas, never a
+    ///      rejection, so no gas limit turns it into "invalid".
+    function test_1271_GasBombIsAShortfall() public {
         GasBurnerMock burner = new GasBurnerMock();
-        uint256 before = gasleft();
-        assertFalse(harness.isValid(address(burner), digest, hex"01"));
-        uint256 used = before - gasleft();
-        assertGe(used, CAP);
-        assertLe(used, CAP + 25_000);
+        uint256[3] memory limits = [uint256(100_000), 1_000_000, 10_000_000];
+        for (uint256 i; i < limits.length; ++i) {
+            vm.expectRevert(
+                abi.encodeWithSelector(BoundedCall.BoundedCallShortfall.selector, address(burner))
+            );
+            harness.isValid{ gas: limits[i] }(address(burner), digest, hex"01");
+        }
     }
 
     function test_1271_ReturnDataBomb() public {
@@ -270,8 +297,8 @@ contract SignatureVerifierTest is Test {
         uint256 before = gasleft();
         assertFalse(harness.isValid(address(bomb), digest, hex"01"));
         uint256 used = before - gasleft();
-        // The bomb's own memory is paid from the cap; nothing is copied back.
-        assertLe(used, CAP + 25_000);
+        // The bomb pays for its own memory; at most one word is copied back.
+        assertLe(used, 60_000);
         // OpenZeppelin accepts the same answer.
         assertTrue(harness.ozIsValid(address(bomb), digest, hex"01"));
     }
