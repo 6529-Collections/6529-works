@@ -1,10 +1,11 @@
 # identity
 
 The artist registry and its consolidation adapter: who an artist is (an artist ID, an
-authority key, a payout address and profile claims), how the key or payout changes (a 7-day
-STANDARD change, or a 180-day override for contested, estate and lost-key cases), who may cancel
-or contest a change (a sticky snapshot of consolidated wallets), and the payout freeze and the
-restraint that keep a stolen key from acting while recovery is pending. The rules are in
+authority key, a payout address and profile claims), how the key or payout changes (a STANDARD
+change, or an override for contested, estate and lost-key cases, with governed waits that never
+go below their genesis values), who may cancel or contest a change (a sticky snapshot of
+consolidated wallets), the payout freeze and the restraint that keep a stolen key from acting
+while recovery is pending, and the permanent directory of federated contracts. The rules are in
 [Identity and recovery](../../docs/spec/identity-and-recovery.md) (`ID-*`); the contest vote is
 also in [Disputes and statements](../../docs/spec/disputes-and-statements.md#identity-contest-decided-by-a-recorded-vote).
 
@@ -20,13 +21,14 @@ also in [Disputes and statements](../../docs/spec/disputes-and-statements.md#ide
 | Caller | Calls | Rules |
 | --- | --- | --- |
 | The bound package registry | `register` on an account's first package acceptance | ID-1, ID-2 |
+| The bound federation registry | `registerFederated` (with the account's own signature); `listFederatedContract`, `setFederatedStatus` | ID-32 to ID-34 |
+| A listed federated token | `recordFederationExit` (LEFT, terminal) | ID-34 |
 | Anyone, relaying the authority's or an established wallet's signature (never a previous authority's) | `stageChange` (STANDARD) | ID-3 to ID-6 |
 | The authority | `revokeNonce`; `heartbeat` (also an established wallet, never a previous authority) | ID-5, ID-7, ID-19 |
 | The previous authority or a captured wallet | `cancelChange`: cancels a STANDARD change, contests an override during its notice | ID-9, ID-13 |
-| Anyone | `executeChange` once due; `refreshStanding`; `expireContest` after 365 days | ID-8, ID-15, ID-20 to ID-23 |
-| Governance | `stageOverride` (with the new authority's acceptance), `resolveContested` citing a recorded vote, `vetoChange`, `setConsolidationSource`, `setPackageRegistry` (Stream's successor package registry, owner decision 16); the genesis binds | ID-10 to ID-14, ID-27, ID-29, ID-30; [role matrix](../../docs/audit/roles.md#artistregistry) |
+| Anyone | `executeChange` once due; `refreshStanding`; `expireContest` once the locked contest timeout has passed | ID-8, ID-15, ID-20 to ID-23 |
+| Governance | `stageOverride` (with the new authority's acceptance), `resolveContested` citing a recorded vote, `vetoChange`, `setConsolidationSource`, `setPackageRegistry` (Stream's successor package registry, owner decision 16), `setFederationRegistry`, `setTimer`; the genesis binds | ID-10 to ID-14, ID-27, ID-29 to ID-31, ID-35, ID-36; [role matrix](../../docs/audit/roles.md#artistregistry) |
 | The statement log; split wallets; every creator power | `isArtist`; `payoutAddress`; `activeAuthorityOf` (zero while restrained) | ID-16, ID-18, ID-28 |
-| The v1.1 federation registry | `listFederatedContract` (deferred: `bindFederationRegistry` is not wired at genesis) | [Deferred](../../docs/audit/roles.md#deferred) |
 
 Genesis wires `bindPackageRegistry`, `bindStream`, `bindSplitFactory` and `bindStatementLog`.
 The flows (lost key, stolen key and restraint, contest and vote, estate, refreshing standing,
@@ -35,9 +37,17 @@ restraint withholds are in the [stolen-key flow](../../docs/spec/identity-and-re
 
 ## Developer notes
 
-- **The registry address never changes.** Split wallets pin it immutably, so it is never
-  redeployed; the identity source is swapped inside it (`setConsolidationSource`, compare-and-set,
-  code hash pinned and re-checked at every read).
+- **The registry is permanent.** Split wallets and Stream pin it immutably, so it is never
+  redeployed; the identity source and the federation registry are swapped inside it
+  (`setConsolidationSource`, `setFederationRegistry`, compare-and-set).
+- **Timers are one packed word** (`_timerWord`, 48 bits per `IArtistRegistry.Timer`), between the
+  packed `FLOORS` and `CEILINGS` constants. A staging locks its delay into `executableAt` and the
+  contest timeout into `PendingChange.contestTimeout` (free: it shares `kind`'s slot).
+- **Federation directory.** `_listings[token]` is one slot (`uint160` artist ID and status); the
+  fixed fields live only in `FederatedContractListed`. No identity path reads it.
+- **Refreshes are best-effort except `refreshStanding`.** Any source failure skips the refresh
+  (`StandingRefreshSkipped`); a shortfall (a failed read that left at most 1/8 of the gas)
+  reverts with `BoundedCallShortfall`. Source times are clamped to 48 bits.
 - **One-read active authority.** `Artist` keeps a `restrained` flag beside the authority: every
   staging sets it, every end of a change (execution, veto, cancel, a voided or lapsed contest, a
   failed re-check at execution) clears it, and `activeAuthorityOf` reads the pending change only
@@ -58,8 +68,8 @@ restraint withholds are in the [stolen-key flow](../../docs/spec/identity-and-re
 - **The adapter fails closed.** Only a cheap revert with no data (the deployed delegation
   contract's array getters past their end) ends a walk; a read that runs out of gas, reverts
   with data or returns too much reverts with `DelegationReadFailed`, never reads as "not
-  consolidated". During an outage, staging, heartbeats and refreshes revert while registration
-  and execution skip their refresh (ID-26, LIM-ID-9).
+  consolidated". During an outage only `refreshStanding` and a consolidated wallet's signer
+  check revert (ID-26, LIM-ID-9).
 - **Delegation contract.** A constructor argument: mainnet's 6529 delegation contract, and on
   Sepolia the official deployment with identical runtime bytecode
   ([deployments](../../deployments/11155111/README.md)); on mainnet the deploy and Verify pin
@@ -68,7 +78,8 @@ restraint withholds are in the [stolen-key flow](../../docs/spec/identity-and-re
   [audit scope](../../docs/audit/scope.md#curation-identity-and-records).
 - **Tests:** `forge test --match-path 'test/identity/**'`: units, the standing snapshot and its
   worst cases (`ArtistRegistryStanding.t.sol`), contested overrides, the restrained flag, the adapter
-  against the real getter shapes, and the invariant suite. End to end:
+  against the real getter shapes, the federation directory, timers, recovery with a dead source,
+  signature agility, and the invariant suite. End to end:
   `IdentityRecovery.t.sol` and `RecoveryRestraint.t.sol` in
   [`test/integration/`](../../test/integration/). Coverage and mutation testing: [Testing](../../docs/testing/README.md).
 

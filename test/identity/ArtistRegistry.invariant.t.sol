@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
+import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import {
     ArtistIdentity,
     ChangeKind,
@@ -9,12 +10,19 @@ import {
     Standing
 } from "src/interfaces/types/IdentityTypes.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
-import { ArtistRegistryHandler, IdentityActors } from "./ArtistRegistryHandler.sol";
+import {
+    ArtistRegistryHandler,
+    FederationActors,
+    IdentityActors
+} from "./ArtistRegistryHandler.sol";
 import { IdentityFixture } from "./IdentityFixture.sol";
 import {
     DisputeOutcomeLogMock,
+    EditionsMastersMock,
+    FederationRegistryStub,
     SplitFactoryWalletsMock
 } from "../mocks/identity/IdentityWorksMocks.sol";
+import { StreamMock } from "../mocks/stream/StreamMock.sol";
 
 /// @notice Stateful invariants for the artist registry (ADR 0001 section 11). The handler stages,
 ///         overrides, cancels, vetoes, replays, executes, refreshes standing and moves time and
@@ -28,10 +36,33 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
         super.setUp();
         SplitFactoryWalletsMock factory = new SplitFactoryWalletsMock();
         DisputeOutcomeLogMock outcomes = new DisputeOutcomeLogMock(address(registry));
+        StreamMock stream = new StreamMock();
+        address editions = address(new EditionsMastersMock());
+        stream.setEditions(editions);
+        address federation = address(new FederationRegistryStub());
         vm.startPrank(admin);
         registry.bindSplitFactory(address(factory));
         registry.bindStatementLog(address(outcomes));
+        registry.bindStream(address(stream));
+        registry.bindFederationRegistry(federation);
         vm.stopPrank();
+        address delegated = makeAddr("delegated7702");
+        vm.etch(delegated, abi.encodePacked(hex"ef0100", address(stream)));
+        FederationActors memory f = FederationActors({
+            federation: federation,
+            tokens: [
+                address(new FederationRegistryStub()), // a federated token
+                address(new EditionsMastersMock()), // another
+                address(stream),
+                editions,
+                address(registry),
+                address(adapter),
+                makeAddr("codeless"),
+                delegated
+            ],
+            canonical: [false, false, true, true, true, true, false, false],
+            installable: [true, true, true, true, true, true, false, false]
+        });
         handler = new ArtistRegistryHandler(
             IdentityActors({
                 registry: registry,
@@ -45,7 +76,8 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
                 successorSetter: successorSetter,
                 keys: [artistKey, walletKey, newKey, thiefKey],
                 payouts: [artist, payout, makeAddr("estatePayout")]
-            })
+            }),
+            f
         );
         targetContract(address(handler));
     }
@@ -58,7 +90,8 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
         assertEq(identity.payout, handler.ghostPayout());
         assertEq(registry.authorityOf(artistId), handler.ghostAuthority());
         PendingChange memory p = registry.pendingChange(artistId);
-        bool lapsed = p.contestedAt != 0 && block.timestamp >= uint256(p.contestedAt) + 365 days;
+        bool lapsed =
+            p.contestedAt != 0 && block.timestamp >= uint256(p.contestedAt) + p.contestTimeout;
         bool frozen = p.kind != ChangeKind.NONE && p.next.payout != identity.payout && !lapsed;
         assertEq(registry.payoutAddress(artistId), frozen ? address(0) : handler.ghostPayout());
     }
@@ -69,7 +102,8 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
     function invariant_ActiveAuthorityIsRestrainedOnlyByAnAuthorityMovingOverride() public view {
         PendingChange memory p = registry.pendingChange(artistId);
         address current = handler.ghostAuthority();
-        bool lapsed = p.contestedAt != 0 && block.timestamp >= uint256(p.contestedAt) + 365 days;
+        bool lapsed =
+            p.contestedAt != 0 && block.timestamp >= uint256(p.contestedAt) + p.contestTimeout;
         bool restrained = p.kind > ChangeKind.STANDARD && p.next.authority != current && !lapsed;
         assertEq(registry.activeAuthorityOf(artistId), restrained ? address(0) : current);
     }
@@ -101,8 +135,9 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
     function invariant_PendingChangeIsWellFormed() public view {
         PendingChange memory p = registry.pendingChange(artistId);
         if (p.kind == ChangeKind.NONE) return;
-        uint64 delay = p.kind == ChangeKind.STANDARD ? 7 days : 180 days;
-        assertEq(p.executableAt, p.stagedAt + delay);
+        // The delay and contest timeout locked at staging, whatever governance set since.
+        assertEq(p.executableAt, p.stagedAt + handler.ghostStagedDelay());
+        assertEq(p.contestTimeout, handler.ghostStagedTimeout());
         assertEq(p.previousAuthority, registry.authorityOf(artistId));
         assertEq(p.evidenceHash == bytes32(0), p.kind == ChangeKind.STANDARD);
         assertLe(p.cancellers.length, Limits.MAX_CANCELLERS);
@@ -158,6 +193,43 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
         for (uint256 i; i < keys.length; ++i) {
             bool was = handler.ghostWasAuthority(keys[i]);
             assertEq(registry.artistIdOf(keys[i]), was ? artistId : 0);
+        }
+    }
+
+    /// @dev Every governed timer stays within its compiled floor and ceiling, the contest timeout
+    ///      exceeds the override delay by the floors' 185 days, and the registry matches the
+    ///      handler's model.
+    function invariant_TimersStayWithinTheirBounds() public view {
+        for (uint256 i; i < 5; ++i) {
+            IArtistRegistry.Timer which = IArtistRegistry.Timer(i);
+            (uint48 floor, uint48 ceiling) = registry.timerBounds(which);
+            uint48 value = registry.timer(which);
+            assertEq(value, handler.timerOf(i));
+            assertGe(value, floor);
+            assertLe(value, ceiling);
+        }
+        assertGe(
+            registry.timer(IArtistRegistry.Timer.CONTEST_TIMEOUT),
+            uint256(registry.timer(IArtistRegistry.Timer.OVERRIDE_DELAY)) + 185 days
+        );
+    }
+
+    /// @dev The federation directory matches the model: canonical contracts are never listed,
+    ///      LEFT is terminal, and each entry names this artist.
+    function invariant_FederationDirectoryMatchesTheModel() public view {
+        for (uint256 i; i < 8; ++i) {
+            address token = handler.fedToken(i);
+            (uint256 listedArtist, IArtistRegistry.FederationStatus status) =
+                registry.federatedListing(token);
+            assertEq(uint8(status), uint8(handler.ghostStatus(token)));
+            if (handler.fedIsCanonical(i)) {
+                assertEq(uint8(status), uint8(IArtistRegistry.FederationStatus.NONE));
+            }
+            if (handler.everLeft(token)) {
+                assertEq(uint8(status), uint8(IArtistRegistry.FederationStatus.LEFT));
+            }
+            bool isListed = status != IArtistRegistry.FederationStatus.NONE;
+            assertEq(listedArtist, isListed ? artistId : 0);
         }
     }
 

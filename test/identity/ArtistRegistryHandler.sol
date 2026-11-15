@@ -19,6 +19,16 @@ import {
 } from "../mocks/identity/IdentityWorksMocks.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
 
+/// @notice The federation registry the handler acts as, and the addresses it tries to list:
+///         `canonical[i]` marks the ones the artist registry must refuse as an entry or partner,
+///         `installable[i]` the ones with code that is not an EIP-7702 delegation.
+struct FederationActors {
+    address federation;
+    address[8] tokens;
+    bool[8] canonical;
+    bool[8] installable;
+}
+
 /// @notice The accounts the handler drives. `keys` are the artist key, an established
 ///         consolidated wallet, a fresh key and a thief; `payouts` are payout candidates.
 struct IdentityActors {
@@ -43,8 +53,12 @@ struct IdentityActors {
 ///         payloads and acceptances; heartbeats; nonce burns; standing refreshes, checked against
 ///         a standing model; consolidations made and revoked between any two keys; payouts that
 ///         become split wallets, so stale changes are cleared at execution; contested
-///         overrides resolved by recorded votes or lapsing after a year; and time. Ghosts of
-///         the identity, nonce and last activity change only with the calls that may change them.
+///         overrides resolved by recorded votes or lapsing; governed timer changes; and time.
+///         Ghosts of the identity, nonce and last activity change only with the calls that may
+///         change them. It also acts as the bound federation registry (listings, status writes,
+///         identity creations with good and forged consents) and as listed tokens (exits),
+///         asserting that none of these touches the artist's identity, payout, standing or
+///         pending change.
 contract ArtistRegistryHandler is Test {
     bytes32 internal constant PROFILE = keccak256("profile/punk6529");
 
@@ -74,6 +88,24 @@ contract ArtistRegistryHandler is Test {
     uint256 public lapsed;
     mapping(bytes32 pair => bool) internal consolidated;
 
+    /// @dev The governed timers, in `IArtistRegistry.Timer` order, and the delay and contest
+    ///      timeout locked by the pending change.
+    uint48[5] internal ghostTimers;
+    uint48 public ghostStagedDelay;
+    uint48 public ghostStagedTimeout;
+    uint256 public timerChanges;
+
+    address internal federation;
+    address[8] internal fedTokens;
+    bool[8] internal fedCanonical;
+    bool[8] internal fedInstallable;
+    mapping(address token => IArtistRegistry.FederationStatus) public ghostStatus;
+    mapping(address token => bool) public everLeft;
+    uint256 public listed;
+    uint256 public statusWrites;
+    uint256 public exits;
+    uint256 public fedRegistrations;
+
     struct Used {
         ArtistIdentity next;
         address signer;
@@ -96,7 +128,14 @@ contract ArtistRegistryHandler is Test {
     /// @dev Override acceptance digests the registry has consumed.
     mapping(bytes32 => bool) public usedDigest;
 
-    constructor(IdentityActors memory a) {
+    constructor(IdentityActors memory a, FederationActors memory f) {
+        federation = f.federation;
+        fedTokens = f.tokens;
+        fedCanonical = f.canonical;
+        fedInstallable = f.installable;
+        for (uint256 i; i < 5; ++i) {
+            ghostTimers[i] = a.registry.timer(IArtistRegistry.Timer(i));
+        }
         registry = a.registry;
         adapter = a.adapter;
         delegation = a.delegation;
@@ -222,7 +261,8 @@ contract ArtistRegistryHandler is Test {
         PendingChange memory p = registry.pendingChange(artistId);
         bytes32 recorded = outcomes.latestDisputeOutcome(address(registry), artistId);
         bytes32 ref = seed % 3 == 0 ? _ref(seed) : recorded;
-        bool live = p.contestedAt != 0 && block.timestamp < uint256(p.contestedAt) + 365 days;
+        bool live =
+            p.contestedAt != 0 && block.timestamp < uint256(p.contestedAt) + ghostStagedTimeout;
         bool ok;
         if (!live) {
             _expect(abi.encodeWithSelector(IArtistRegistry.NotContested.selector, artistId));
@@ -258,10 +298,10 @@ contract ArtistRegistryHandler is Test {
         ++executed;
     }
 
-    /// @dev Lets anyone lapse a contest nobody resolved within a year.
+    /// @dev Lets anyone lapse a contest nobody resolved within its locked timeout.
     function expire() external {
         PendingChange memory p = registry.pendingChange(artistId);
-        uint256 expiresAt = uint256(p.contestedAt) + 365 days;
+        uint256 expiresAt = uint256(p.contestedAt) + ghostStagedTimeout;
         if (p.contestedAt == 0) {
             _expect(abi.encodeWithSelector(IArtistRegistry.NotContested.selector, artistId));
         } else if (block.timestamp < expiresAt) {
@@ -324,9 +364,9 @@ contract ArtistRegistryHandler is Test {
             ++cleared;
             return;
         }
-        uint64 delay = p.kind == ChangeKind.STANDARD ? 7 days : 180 days;
-        assertEq(p.executableAt, p.stagedAt + delay);
-        assertGe(block.timestamp, p.stagedAt + delay);
+        // Never faster than the delay locked at staging, whatever the timers are now.
+        assertEq(p.executableAt, p.stagedAt + ghostStagedDelay);
+        assertGe(block.timestamp, p.stagedAt + ghostStagedDelay);
         ghostPayout = p.next.payout;
         ghostAuthority = p.next.authority;
         ghostWasAuthority[p.next.authority] = true;
@@ -368,7 +408,9 @@ contract ArtistRegistryHandler is Test {
             assertEq(adapter.effectiveAt(ghostAuthority, before[i].wallet), 0, "removed live");
             if (before[i].effectiveAt > block.timestamp) continue; // pending: it never had standing
             assertTrue(before[i].missingSince != 0, "removed while not missing");
-            assertGe(block.timestamp, uint256(before[i].missingSince) + 30 days, "removed early");
+            assertGe(
+                block.timestamp, uint256(before[i].missingSince) + ghostTimers[4], "removed early"
+            );
         }
         for (uint256 i; i < next.length; ++i) {
             uint64 due = adapter.effectiveAt(ghostAuthority, next[i].wallet);
@@ -421,6 +463,150 @@ contract ArtistRegistryHandler is Test {
         vm.warp(block.timestamp + bound(seconds_, 1 hours, 200 days));
     }
 
+    /// @dev Governance sets a timer, in or just outside its bounds; a pending change keeps what
+    ///      it locked.
+    function setTimer(uint256 whichSeed, uint256 valueSeed) external {
+        PendingChange memory before = registry.pendingChange(artistId);
+        IArtistRegistry.Timer which = IArtistRegistry.Timer(whichSeed % 5);
+        (uint48 floor, uint48 ceiling) = registry.timerBounds(which);
+        uint48 value = uint48(bound(valueSeed, floor - 1 days, ceiling + 1 days));
+        uint48[5] memory t = ghostTimers;
+        t[uint256(which)] = value;
+        bool ok = value >= floor && value <= ceiling && t[3] >= uint256(t[1]) + 185 days;
+        if (ok) {
+            vm.expectEmit(address(registry));
+            emit IArtistRegistry.TimerSet(which, value);
+        } else {
+            _expect(_sel(IArtistRegistry.InvalidTimers.selector));
+        }
+        vm.prank(successorSetter);
+        registry.setTimer(which, value);
+        assertEq(
+            keccak256(abi.encode(registry.pendingChange(artistId))), keccak256(abi.encode(before))
+        );
+        if (!ok) return;
+        ghostTimers = t;
+        ++timerChanges;
+    }
+
+    /// @dev The federation registry lists an address; refused when listed, canonical (as entry
+    ///      or partner) or not installable.
+    function fedList(uint256 tokenSeed, uint256 partnerSeed, uint8 form, uint32 feeShare) external {
+        bytes32 before = _identityState();
+        uint256 i = tokenSeed % 8;
+        address token = fedTokens[i];
+        uint256 j = partnerSeed % 8;
+        address partner = partnerSeed % 3 == 0 ? address(0) : fedTokens[j];
+        bool ok = ghostStatus[token] == IArtistRegistry.FederationStatus.NONE && fedInstallable[i]
+            && !fedCanonical[i] && (partner == address(0) || !fedCanonical[j]);
+        if (ok) {
+            vm.expectEmit(address(registry));
+            emit IArtistRegistry.FederatedContractListed(
+                artistId, token, token.codehash, form, partner, feeShare, payouts[2]
+            );
+        } else {
+            _expect(
+                abi.encodeWithSelector(IArtistRegistry.FederatedContractRefused.selector, token)
+            );
+        }
+        vm.prank(federation);
+        registry.listFederatedContract(artistId, token, form, partner, feeShare, payouts[2]);
+        assertEq(_identityState(), before, "a listing touched the identity");
+        if (!ok) return;
+        ghostStatus[token] = IArtistRegistry.FederationStatus.ACTIVE;
+        ++listed;
+    }
+
+    /// @dev The federation registry writes a status: only ACTIVE or DELISTED, never for an
+    ///      unlisted or LEFT token.
+    function fedStatus(uint256 tokenSeed, uint256 statusSeed) external {
+        bytes32 before = _identityState();
+        address token = fedTokens[tokenSeed % 8];
+        IArtistRegistry.FederationStatus status = IArtistRegistry.FederationStatus(statusSeed % 4);
+        IArtistRegistry.FederationStatus current = ghostStatus[token];
+        bool ok =
+            (current == IArtistRegistry.FederationStatus.ACTIVE
+                    || current == IArtistRegistry.FederationStatus.DELISTED)
+                && (status == IArtistRegistry.FederationStatus.ACTIVE
+                    || status == IArtistRegistry.FederationStatus.DELISTED);
+        if (ok) {
+            vm.expectEmit(address(registry));
+            emit IArtistRegistry.FederatedContractStatus(
+                token, artistId, status, bytes32(statusSeed)
+            );
+        } else {
+            _expect(
+                abi.encodeWithSelector(
+                    IArtistRegistry.FederatedStatusRefused.selector, token, current
+                )
+            );
+        }
+        vm.prank(federation);
+        registry.setFederatedStatus(token, status, bytes32(statusSeed));
+        assertEq(_identityState(), before, "a status write touched the identity");
+        if (!ok) return;
+        ghostStatus[token] = status;
+        ++statusWrites;
+    }
+
+    /// @dev A token records its own exit: LEFT for good; a repeat does nothing; an unlisted
+    ///      caller reverts.
+    function fedExit(uint256 tokenSeed) external {
+        bytes32 before = _identityState();
+        address token = fedTokens[tokenSeed % 8];
+        IArtistRegistry.FederationStatus current = ghostStatus[token];
+        if (current == IArtistRegistry.FederationStatus.NONE) {
+            _expect(
+                abi.encodeWithSelector(
+                    IArtistRegistry.FederatedStatusRefused.selector, token, current
+                )
+            );
+        } else if (current != IArtistRegistry.FederationStatus.LEFT) {
+            vm.expectEmit(address(registry));
+            emit IArtistRegistry.FederatedContractStatus(
+                token, artistId, IArtistRegistry.FederationStatus.LEFT, bytes32(0)
+            );
+        }
+        vm.prank(token);
+        registry.recordFederationExit();
+        assertEq(_identityState(), before, "an exit touched the identity");
+        if (current == IArtistRegistry.FederationStatus.NONE) return;
+        ghostStatus[token] = IArtistRegistry.FederationStatus.LEFT;
+        everLeft[token] = true;
+        ++exits;
+    }
+
+    /// @dev The federation registry creates an identity: only for an account that signed its
+    ///      consent; a consent signed by another key (here the thief's) is refused.
+    function fedRegister(uint256 seed, bool forged) external {
+        bytes32 before = _identityState();
+        uint256 key = 0xF00D + fedRegistrations;
+        address account = vm.addr(key);
+        uint64 deadline = uint64(block.timestamp + 1 days);
+        bytes32 digest = registry.registrationDigest(account, PROFILE, bytes32(seed), deadline);
+        bytes memory signature = _sign(forged ? keys[3] : key, digest);
+        if (forged) _expect(SignatureReverts.invalid(account));
+        vm.prank(federation);
+        registry.registerFederated(account, PROFILE, bytes32(seed), deadline, signature);
+        assertEq(_identityState(), before, "a registration touched another identity");
+        if (forged) return;
+        assertEq(registry.authorityOf(uint160(account)), account);
+        assertEq(registry.payoutAddress(uint160(account)), account);
+        ++fedRegistrations;
+    }
+
+    function timerOf(uint256 i) external view returns (uint48) {
+        return ghostTimers[i];
+    }
+
+    function fedToken(uint256 i) external view returns (address) {
+        return fedTokens[i];
+    }
+
+    function fedIsCanonical(uint256 i) external view returns (bool) {
+        return fedCanonical[i];
+    }
+
     // ----------------------------------------------------------------- model
 
     /// @dev Predicts and checks one override staging; returns whether it succeeded.
@@ -470,7 +656,11 @@ contract ArtistRegistryHandler is Test {
     function _overrideError(Accepted memory u) private view returns (bytes memory) {
         bytes memory err = _nextError(u.next);
         if (err.length != 0) return err;
-        if (u.kind != ChangeKind.CONTESTED && block.timestamp < ghostLastActivity + 365 days) {
+        bool payoutOnly = u.next.authority == ghostAuthority && u.next.payout != ghostPayout;
+        if (
+            (u.kind != ChangeKind.CONTESTED || payoutOnly)
+                && block.timestamp < uint256(ghostLastActivity) + ghostTimers[2]
+        ) {
             return abi.encodeWithSelector(
                 IArtistRegistry.NotDormant.selector, artistId, ghostLastActivity
             );
@@ -490,8 +680,28 @@ contract ArtistRegistryHandler is Test {
     function _onStaged(ChangeKind kind) private {
         PendingChange memory p = registry.pendingChange(artistId);
         assertEq(uint8(p.kind), uint8(kind));
+        ghostStagedDelay = kind == ChangeKind.STANDARD ? ghostTimers[0] : ghostTimers[1];
+        ghostStagedTimeout = ghostTimers[3];
+        assertEq(p.executableAt, p.stagedAt + ghostStagedDelay, "the delay is locked at staging");
+        assertEq(p.contestTimeout, ghostStagedTimeout, "the contest timeout is locked at staging");
         ghostCancellers = keccak256(abi.encode(p.cancellers));
         ++ghostNonce;
+    }
+
+    /// @dev Everything about the artist that a federation action must leave unchanged.
+    function _identityState() private view returns (bytes32) {
+        (ArtistIdentity memory identity, uint64 last) = registry.artist(artistId);
+        return keccak256(
+            abi.encode(
+                identity,
+                last,
+                registry.pendingChange(artistId),
+                registry.standingOf(artistId),
+                registry.changeNonce(artistId),
+                registry.payoutAddress(artistId),
+                registry.activeAuthorityOf(artistId)
+            )
+        );
     }
 
     function _find(Standing[] memory list, address w) private pure returns (uint256) {

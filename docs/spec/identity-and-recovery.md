@@ -4,7 +4,8 @@ This area gives every artist a stable artist ID, records which key acts for the 
 authority) and where the artist's money goes (the payout address), and lets an artist recover
 from a lost or stolen key without trusting a single party; every other module asks it who the
 artist is. `ArtistRegistry` holds identities, staged changes, overrides, contests and recovery
-standing; `ConsolidationAdapter` reads 6529 consolidations from the 6529 delegation contract.
+standing, and is the permanent directory of federated contracts; `ConsolidationAdapter` reads
+6529 consolidations from the 6529 delegation contract.
 This page is for auditors, integrators and whoever operates recovery.
 
 > Pre-audit. See the [project status](../../README.md#status).
@@ -13,7 +14,7 @@ This page is for auditors, integrators and whoever operates recovery.
 
 | Contract | Source | Interface | Responsibility |
 | --- | --- | --- | --- |
-| `ArtistRegistry` | [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol) | [`IArtistRegistry`](../../src/interfaces/IArtistRegistry.sol), which extends [`IArtistRoleResolver`](../../src/interfaces/IArtistRoleResolver.sol) and [`IArtistPayoutResolver`](../../src/economics/interfaces/IArtistPayoutResolver.sol) | Artist IDs, authority, payout and profile fields; STANDARD changes, overrides and contests; the sticky standing snapshot; `isArtist` for the statement log; `payoutAddress` for split wallets. Its address never changes: split wallets pin it, and the consolidation source is swapped inside it. |
+| `ArtistRegistry` | [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol) | [`IArtistRegistry`](../../src/interfaces/IArtistRegistry.sol), which extends [`IArtistRoleResolver`](../../src/interfaces/IArtistRoleResolver.sol) and [`IArtistPayoutResolver`](../../src/economics/interfaces/IArtistPayoutResolver.sol) | Artist IDs, authority, payout and profile fields; STANDARD changes, overrides and contests; the governed timers; the sticky standing snapshot; the federation directory; `isArtist` for the statement log; `payoutAddress` for split wallets. Permanent: split wallets pin it, Stream's pointer to it is set once, and the consolidation source and federation registry are swapped inside it. |
 | `ConsolidationAdapter` | [`src/identity/ConsolidationAdapter.sol`](../../src/identity/ConsolidationAdapter.sol) | `IConsolidationSource`, declared in [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) | Reads use-case-999, all-collections consolidations, with their age and expiry, from the 6529 delegation contract. Stateless and view-only; fails closed. |
 
 Shared code the registry relies on:
@@ -22,7 +23,7 @@ Shared code the registry relies on:
 | --- | --- | --- |
 | `SignatureVerifier` | [`src/libraries/SignatureVerifier.sol`](../../src/libraries/SignatureVerifier.sol) | Every identity signature: low-s ECDSA (65 bytes or ERC-2098), EIP-7702 delegated EOAs, and ERC-1271 forwarding all the gas EIP-150 allows, with an exact magic value; a check that runs short reverts with `BoundedCallShortfall` ([DSP-26](disputes-and-statements.md#rules-and-invariants)). It never tracks replay. |
 | `DelegatedEOA` | [`src/libraries/DelegatedEOA.sol`](../../src/libraries/DelegatedEOA.sol) | Refuses EIP-7702 delegated accounts as bindings and as the consolidation source. |
-| `BoundedCall` | [`src/libraries/BoundedCall.sol`](../../src/libraries/BoundedCall.sol) | The gas check before each adapter read, and the bounded `artistResolver()` read in `bindStatementLog`. |
+| `BoundedCall` | [`src/libraries/BoundedCall.sol`](../../src/libraries/BoundedCall.sol) | The gas check before each adapter read; the forward-all-gas read of the statement log's resolver (`tryReadWordAll`) and the shortfall rule the registry applies to its source and `isArtist` reads (ID-38). |
 | `ProtocolContracts` | [`src/libraries/ProtocolContracts.sol`](../../src/libraries/ProtocolContracts.sol) | Recognises, by ERC-165, protocol contracts that cannot pull a payout. |
 | `Typehashes`, identity types | [`Typehashes.sol`](../../src/interfaces/types/Typehashes.sol), [`IdentityTypes.sol`](../../src/interfaces/types/IdentityTypes.sol) | The EIP-712 domain name and the two identity typehashes; `ArtistIdentity`, `ChangeKind`, `PendingChange`, `Standing`. |
 
@@ -70,37 +71,52 @@ One change may be pending per artist (`pendingChange`; kind `NONE` when none).
 
 | Kind | Staged by | Wait before execution | Also needs | Who can stop it |
 | --- | --- | --- | --- | --- |
-| `STANDARD` | Anyone, relaying the signature of the authority or of an established consolidated wallet that was never the artist's authority (`stageChange`) | 7 days (`CHANGE_DELAY`) | The new authority's countersignature, when the authority moves | The previous authority or a captured wallet cancels; a GUARDIAN vetoes |
-| `CONTESTED` | PARAMETER_SETTER (`stageOverride`), 48 hours (standard class) | 180 days (`OVERRIDE_DELAY`) | A nonzero evidence hash; the new authority's `OverrideAcceptance`, when the authority moves | A captured wallet contests; a GUARDIAN vetoes; never the previous authority |
-| `ESTATE` | As `CONTESTED` | 180 days | As `CONTESTED`, plus 365 days without signed activity (`DORMANCY`) | As `CONTESTED` |
-| `LOST_KEY` | As `CONTESTED` | 180 days | As `ESTATE` | As `CONTESTED` |
+| `STANDARD` | Anyone, relaying the signature of the authority or of an established consolidated wallet that was never the artist's authority (`stageChange`) | `CHANGE_DELAY` (7 days at genesis) | The new authority's countersignature, when the authority moves | The previous authority or a captured wallet cancels; a GUARDIAN vetoes |
+| `CONTESTED` | PARAMETER_SETTER (`stageOverride`), 48 hours (standard class) | `OVERRIDE_DELAY` (180 days at genesis) | A nonzero evidence hash; the new authority's `OverrideAcceptance`, when the authority moves; `DORMANCY` without signed activity when it moves the payout but keeps the authority | A captured wallet contests; a GUARDIAN vetoes; never the previous authority |
+| `ESTATE` | As `CONTESTED` | `OVERRIDE_DELAY` | As `CONTESTED`, plus `DORMANCY` (365 days at genesis) without signed activity | As `CONTESTED` |
+| `LOST_KEY` | As `CONTESTED` | `OVERRIDE_DELAY` | As `ESTATE` | As `CONTESTED` |
 
 - "Override" means any of `CONTESTED`, `ESTATE` and `LOST_KEY`. The evidence hash commits to the
   public record of the circumstances; the code does not check them, so `ESTATE` and `LOST_KEY`
   differ only in their label.
 - An override replaces a pending STANDARD change, so a key holder cannot block one by keeping a
-  change staged, but never another override (ID-4). Payout changes use the registry's 7-day wait,
-  not the 14-day funds class of network recipients
+  change staged, but never another override (ID-4). Payout changes use the registry's change
+  delay, not the 14-day funds class of network recipients
   ([ADR 0001 §11](../adr/0001-v1-scope.md#11-artist-identity-and-recovery)).
+- **A payout-only override needs dormancy** (ID-37). An override that moves the payout but keeps
+  the authority is refused with `NotDormant` until the artist has been silent for `DORMANCY`,
+  whatever its kind. It is never needed against a live artist: an artist who holds the authority
+  changes the payout with a STANDARD change, and recovery from a thief who holds the authority
+  must move the authority. Without the rule, PARAMETER_SETTER alone could freeze a live artist's
+  payout at staging and redirect unreleased balances after the notice (studies D and F of the
+  permanence review). What remains: an override that moves the authority still freezes and
+  restrains at staging with no dormancy, because stolen-key recovery needs exactly that; it is
+  public (the 48-hour schedule, then the restraint every consumer sees) and stopped by a
+  guardian cancel or veto, a captured wallet's contest, and the notice.
 
 ### Signed payloads
 
-Both payloads use the EIP-712 domain `6529 Works Artist Registry` (`Typehashes.ARTIST_REGISTRY_NAME`),
+The payloads use the EIP-712 domain `6529 Works Artist Registry` (`Typehashes.ARTIST_REGISTRY_NAME`),
 version `1`, the chain ID and the registry's address:
 
 ```text
 IdentityChange(uint256 artistId,address authority,address payout,bytes32 profileId,bytes32 profileDocHash,uint256 nonce,uint64 deadline)
 
 OverrideAcceptance(uint256 artistId,uint8 kind,address authority,address payout,bytes32 profileId,bytes32 profileDocHash,bytes32 evidenceHash,uint64 deadline)
+
+ArtistRegistration(address account,bytes32 profileId,bytes32 profileDocHash,uint64 deadline)
 ```
 
 | Typehash | Value | Digest helper |
 | --- | --- | --- |
 | `Typehashes.IDENTITY_CHANGE` | `0xa474bd174aa5ecb19efe75995251c1fb8289b62bca04bc6c19e869f254e190f0` | `ArtistRegistry.changeDigest(artistId, next, nonce, deadline)` |
 | `Typehashes.OVERRIDE_ACCEPTANCE` | `0xe94c9e2e1a4e3c2652a414f70c177a61fc880d94ede3aaaf03a976666431f9a3` | `ArtistRegistry.overrideDigest(artistId, kind, next, evidenceHash, deadline)` |
+| `ArtistRegistration` (private to `ArtistRegistry`) | `0x251edc52a2bb08ba54c8c256d514ddd287d55597cda1692026fb5fcbf0f8a8d9` | `ArtistRegistry.registrationDigest(account, profileId, profileDocHash, deadline)` |
 
-`test_Golden_TypehashesAndSelectors` and `test_Golden_DigestsAreStandardEip712` pin these
-([`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol)). `kind` is 2 for
+`test_Golden_TypehashesAndSelectors` and `test_Golden_DigestsAreStandardEip712` pin the first two
+([`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol)) and
+`test_RegistrationDigest_IsStandardEip712` the third
+([`FederationDirectory.t.sol`](../../test/identity/FederationDirectory.t.sol)). `kind` is 2 for
 `CONTESTED`, 3 for `ESTATE` and 4 for `LOST_KEY`.
 
 - **`IdentityChange`** binds the artist's `changeNonce`, which every staging consumes and
@@ -113,15 +129,36 @@ OverrideAcceptance(uint256 artistId,uint8 kind,address authority,address payout,
   authority. It binds no nonce, so a key holder cannot void it, and is consumed once by digest
   (`AcceptanceUsed`, ID-12). Its deadline is checked when the scheduled `stageOverride` executes,
   after its 48 hours.
+- **`ArtistRegistration`** is the account's consent to an identity created through the
+  federation registry (`registerFederated`, ID-32). The registry verifies it itself, so no
+  federation registry can create an identity for an account that did not sign; it binds no
+  nonce, because a second use finds the account taken.
+
+### Signature schemes
+
+Every identity signature goes through `SignatureVerifier`, so an authority can be any account
+that verifies: an EOA (ECDSA), an EIP-7702 delegated EOA (its own key, then its delegate's
+ERC-1271), or any contract (ERC-1271) (ID-39). This is the path for future signature schemes,
+with no change to the registry: an account that adopts a new scheme verifies it in its own
+ERC-1271, or pre-approves the digest on chain (it records the EIP-712 digest in its storage
+after checking its owner's signature in any scheme it likes) and answers ERC-1271 from storage
+whatever signature bytes it is given. The registry passes the bytes through unchanged, so an
+empty signature works for a pre-approved digest. Moving an existing artist to such an account is
+an ordinary rotation (a STANDARD change countersigned by the new account, or an override it
+accepts); the registry never needs to learn the scheme. Tested in
+[`SignatureAgility.t.sol`](../../test/identity/SignatureAgility.t.sol) for a deployed wallet and
+an EIP-7702 delegated account.
 
 ### Signed activity and dormancy
 
-`ESTATE` and `LOST_KEY` overrides can be staged only when the artist's last signed activity is at
-least 365 days old (`NotDormant`). Only the artist's own signed calls count, never governed
+`ESTATE` and `LOST_KEY` overrides, and any override that moves the payout but keeps the
+authority, can be staged only when the artist's last signed activity is at least `DORMANCY` old
+(`NotDormant`). Only the artist's own signed calls count, never governed
 overrides, vetoes or refreshes (ID-19); the
 [estate flow](#estate-or-lost-key-without-a-wallet) lists them. Dormancy is checked at staging,
-never at execution, so activity during the 180-day notice does not stop the override (owner
-option L4, not implemented: LIM-ID-10).
+never at execution, so activity during the notice does not stop the override (owner option L4,
+not implemented: LIM-ID-10). The authority's own heartbeat never depends on the consolidation
+source, so a dead source cannot make a live artist dormant.
 
 ### Payout validation and the payout freeze
 
@@ -137,7 +174,8 @@ frozen (ID-17). A predicted split wallet has no code before deployment and passe
 store, the statement log, the AccessManager, the renderer) are not recognised.
 
 **The [payout freeze](../glossary.md#payout-freeze).** `payoutAddress` returns zero while a
-pending change of any kind would move the payout, unless its contest has lapsed (ID-16). Split
+pending change of any kind would move the payout, unless its contest has lapsed (ID-16). An
+override can move the payout of a live artist only together with the authority (ID-37). Split
 wallets then revert with `PayoutUnresolved`, so accrued balances wait for the outcome instead of
 following a disputed redirect. A change that keeps the payout does not freeze it. A thief holding
 a stolen key that is still the payout cannot pull while a recovery override moves it; the
@@ -156,14 +194,72 @@ keeps running, are under [the stolen-key flow](#stolen-key-override-and-restrain
 override that moves the authority; every staging sets it and every end of a change clears it,
 so `activeAuthorityOf` reads the pending change only while it is set.
 
+### Governed timers
+
+The waits are governed values (`setTimer(timer, value)`, SUCCESSOR_SETTER, 30 days), one storage
+word, each between a compiled floor and ceiling (`timerBounds`), and announced by `TimerSet`
+(deployment emits each floor) (ID-35):
+
+| Timer | Floor (genesis value) | Ceiling | Read |
+| --- | --- | --- | --- |
+| `CHANGE_DELAY` | 7 days | 30 days | Locked into a STANDARD change's `executableAt` at staging |
+| `OVERRIDE_DELAY` | 180 days | 365 days | Locked into an override's `executableAt` at staging |
+| `DORMANCY` | 365 days | 1,825 days | When an override is staged |
+| `CONTEST_TIMEOUT` | 365 days | 730 days | Locked into `PendingChange.contestTimeout` at staging |
+| `STANDING_GRACE` | 30 days | 90 days | When a refresh ages out a missing wallet |
+
+- **The floor is the guarantee**: no wait is ever shorter than at genesis. **The ceiling exists
+  because lengthening is dangerous too**: a longer change delay or notice lengthens a payout
+  freeze, a longer contest timeout lengthens a contested restraint and freeze, a longer grace
+  keeps a stale (perhaps planted) wallet's standing, and an unbounded dormancy would end
+  lost-key recovery.
+- **`CONTEST_TIMEOUT` exceeds `OVERRIDE_DELAY` by at least 185 days** (the floors' difference),
+  so a contested override can always be upheld after its notice; lengthen the timeout first.
+- **Locked at staging** (ID-36): a later setting never traps or releases a pending change, in
+  either direction.
+
+### Federation directory
+
+The registry is the permanent, logs-only record of every federated contract (ADR 0001 §16,
+shipped in v1). The federation registry that writes it is replaceable
+(`bindFederationRegistry` at genesis, then `setFederationRegistry(expected, next)`,
+SUCCESSOR_SETTER, 30 days, compare-and-set, never back to zero; ID-31).
+
+- **Identities for uncurated artists.** `registerFederated(account, profileId, profileDocHash,
+  deadline, signature)`, bound federation registry only, creates the same identity as a package
+  acceptance, after verifying the account's own `ArtistRegistration` signature (ID-32).
+- **One entry per token, no cap, no list** (ID-33). `listFederatedContract(artistId, token, form,
+  partner, feeShare, feeRecipient)` records `{artistId, ACTIVE}` and emits
+  `FederatedContractListed` with the code hash the registry reads itself. `form` is recorded, not
+  interpreted (0 for ERC-721, 1 for ERC-1155). Refused (`FederatedContractRefused`) for a token
+  already listed in any status, without code or EIP-7702 delegated, and when the token, partner
+  or fee recipient is the registry, 6529 Stream, its Editions or a bound contract. Stream must be
+  bound.
+- **Status** (ID-34). `setFederatedStatus(token, status, ref)`, federation registry only: ACTIVE
+  and DELISTED, never for an unlisted or LEFT token. `recordFederationExit()`, called by the
+  token itself: LEFT, terminal, a repeat does nothing. Exit therefore depends on no replaceable
+  code, and no registry, old or new, can bring a LEFT entry back.
+- **What a bound federation registry can do, however hostile:** create identities for accounts
+  that signed for them, and write directory entries (and their status) about non-canonical
+  contracts. Nothing that decides an identity, a payout, standing, a pending change, a timer or a
+  binding reads a directory entry or accepts its calls, so it has no authority over any artist,
+  canonical token, work or fund (`test_HostileFederationRegistry_HasNoAuthorityOverArtists`; the
+  invariant handler asserts every federation call leaves the artist unchanged). Residuals: it can
+  list a genuine token first, under the wrong artist or fee terms, and the entry's facts then
+  never change (a replacement registry can only delist it); and protocol contracts the registry
+  does not know by address (sale adapters, the escrow) are not refused here, only by the
+  federation registry's template check. Federated templates that read their adapter admissions
+  through `federationRegistry()` trust the current registry for new sales of their own works.
+
 ### Recovery standing
 
 Each artist has a [sticky standing snapshot](../glossary.md#sticky-standing-snapshot)
 (`standingOf`) of at most 16 consolidated wallets (`Limits.MAX_CANCELLERS`). Each entry holds the
-wallet, its `effectiveAt` (when its consolidation is or was 30 days old) and `missingSince`. An
-entry is **pending** before `effectiveAt` (no standing), **established** after it, and
-**missing** once a refresh finds it no longer consolidated; a missing entry keeps standing for
-30 days (`STANDING_GRACE`). The [refresh flow](#refreshing-standing) lists what refreshes it.
+wallet, its `effectiveAt` (when its consolidation is or was 30 days old; a source time beyond 48
+bits is clamped to the largest, never truncated, ID-38) and `missingSince`. An entry is
+**pending** before `effectiveAt` (no standing), **established** after it, and **missing** once a
+refresh finds it no longer consolidated; a missing entry keeps standing for `STANDING_GRACE`
+(30 days at genesis). The [refresh flow](#refreshing-standing) lists what refreshes it.
 
 - **A full snapshot evicts nothing.** Slots free up only as missing entries pass their grace, so
   a key holder cannot push recorded wallets out by consolidating more (ID-20). After a rotation
@@ -212,7 +308,7 @@ stateDiagram-v2
     PendingOverride --> Registered : executed, vetoed or cleared
     PendingOverride --> Contested : a captured wallet cancels before executableAt
     Contested --> Registered : resolveContested upholds or voids, or vetoed
-    Contested --> Lapsed : 365 days after the contest
+    Contested --> Lapsed : the locked contest timeout after the contest
     Lapsed --> Registered : expireContest or vetoed
 ```
 
@@ -226,11 +322,11 @@ freezes the payout or restrains the authority, but it still occupies the pending
 | Registered to Pending STANDARD | Anyone, relaying the signatures | None | `stageChange` |
 | Registered or Pending STANDARD to Pending override | PARAMETER_SETTER | 48 hours (standard) | `stageOverride` |
 | Pending STANDARD to Registered (cancelled) | The previous authority or a captured wallet | Immediate | `cancelChange` |
-| Pending to Registered (executed) | Anyone | 7 days (STANDARD) or 180 days (override) after staging | `executeChange` |
+| Pending to Registered (executed) | Anyone | The change delay (STANDARD) or override delay locked at staging | `executeChange` |
 | Pending to Registered (cleared) | The registry, when the payout is refused or the authority taken at execution | At execution | `executeChange`, or an upholding `resolveContested` |
 | Pending override to Contested | A captured wallet | Before `executableAt` | `cancelChange` |
 | Contested to Registered (upheld or voided) | SUCCESSOR_SETTER | 30 days (successor); an uphold not before `executableAt` | `resolveContested(artistId, uphold, outcomeRef)` |
-| Contested to Lapsed | Nobody: time passes | 365 days after `contestedAt` (`CONTEST_TIMEOUT`) | None |
+| Contested to Lapsed | Nobody: time passes | `contestTimeout` (locked at staging) after `contestedAt` | None |
 | Lapsed to Registered | Anyone | None | `expireContest` |
 | Any pending state to Registered (vetoed) | GUARDIAN | Immediate | `vetoChange` |
 
@@ -260,8 +356,9 @@ genesis (ID-29); the statement log's `artistResolver()` must name this registry.
 registry, the only `register` caller, is replaceable afterwards with Stream's successor
 registry (`setPackageRegistry`, SUCCESSOR_SETTER, 30 days, compare-and-set, the same install
 check; owner decision 16, ID-30).
-`bindFederationRegistry` is deferred to v1.1, and only that registry may call
-`listFederatedContract` (at most 64 per artist). Roles and delays: [roles](../audit/roles.md).
+The federation registry is bound once (`bindFederationRegistry`) and replaceable afterwards
+(`setFederationRegistry`, SUCCESSOR_SETTER, 30 days, ID-31); see the
+[federation directory](#federation-directory). Roles and delays: [roles](../audit/roles.md).
 
 ## Flows
 
@@ -442,7 +539,8 @@ sequenceDiagram
 ```
 
 - A payout-only override needs no acceptance, restrains nothing and needs no consent from the
-  artist (LIM-ID-8). A `CONTESTED` override has no dormancy requirement.
+  artist (LIM-ID-8), but needs dormancy whatever its kind (ID-37). A `CONTESTED` override that
+  moves the authority has no dormancy requirement.
 
 The calls that count as signed activity and reset the dormancy clock:
 
@@ -478,12 +576,18 @@ sequenceDiagram
 
 What refreshes the snapshot:
 
-| Refresh trigger (for the current authority) | When the source cannot read |
+| Refresh trigger (for the current authority) | When the source fails |
 | --- | --- |
-| `register` | Skips the refresh (`StandingRefreshSkipped`) |
-| `stageChange`, `stageOverride`, `heartbeat` | Reverts |
+| `register`, `registerFederated` | Skips the refresh (`StandingRefreshSkipped`) |
+| `stageChange`, `stageOverride`, `heartbeat` | Skips the refresh; a consolidated wallet's signature or heartbeat still needs the source to verify the signer |
 | `executeChange`, an upholding `resolveContested` (for the authority installed) | Skips the refresh |
 | `refreshStanding(artistId)`: anyone, and not activity | Reverts |
+
+"Fails" is any revert (with or without data), an answer out of bounds (`InvalidSource`), or a
+code-hash mismatch. Every read forwards all gas, and a failure that leaves at most 1/8 of the gas held before it
+reverts with `BoundedCall.BoundedCallShortfall` on every trigger (ID-38): a shortfall is
+never read as a failing source. Skipping removes nobody's standing, so LOST_KEY recovery, the
+artist's heartbeat and registrations never depend on the source (study G finding 7).
 
 A refresh (`ArtistRegistry._refresh`, `_update`) does this, in order:
 1. **Scans** `consolidations(authority)`: up to 32 live two-way consolidations, each with its
@@ -511,8 +615,8 @@ The adapter's reads:
 - **Fail closed.** Only a revert with no data that did not exhaust the stipend ends a walk, which
   is how the deployed getters answer an index past an array's end. Anything else reverts with
   `DelegationReadFailed`, never "not consolidated", which would mark every recorded wallet
-  missing (ID-25). Outages and code-hash mismatches follow the trigger table above (ID-26,
-  LIM-ID-9); only those two are skipped, and skipping removes nobody's standing.
+  missing (ID-25). Failures follow the trigger table above (ID-26, LIM-ID-9), and skipping
+  removes nobody's standing.
 - **Swapping the source.** `setConsolidationSource(expected, next, nextCodeHash)`
   (SUCCESSOR_SETTER, 30 days) pins the new source's code hash, re-checked at every use (DEPS-6,
   ID-27).
@@ -547,26 +651,30 @@ Test files: [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) (
 [`ConsolidationAdapter.t.sol`](../../test/identity/ConsolidationAdapter.t.sol) (CA),
 [`ArtistRegistry.invariant.t.sol`](../../test/identity/ArtistRegistry.invariant.t.sol) (INV),
 [`IdentityRecovery.t.sol`](../../test/integration/IdentityRecovery.t.sol) (IR),
-[`RecoveryRestraint.t.sol`](../../test/integration/RecoveryRestraint.t.sol) (RR) and
-[`RecipientValidation.t.sol`](../../test/integration/RecipientValidation.t.sol) (RV).
+[`RecoveryRestraint.t.sol`](../../test/integration/RecoveryRestraint.t.sol) (RR),
+[`RecipientValidation.t.sol`](../../test/integration/RecipientValidation.t.sol) (RV),
+[`FederationDirectory.t.sol`](../../test/identity/FederationDirectory.t.sol) (FD),
+[`RegistryTimers.t.sol`](../../test/identity/RegistryTimers.t.sol) (TM),
+[`RecoveryRobustness.t.sol`](../../test/identity/RecoveryRobustness.t.sol) (RB) and
+[`SignatureAgility.t.sol`](../../test/identity/SignatureAgility.t.sol) (SA).
 
 | ID | Rule | Enforced in | Tested by |
 | --- | --- | --- | --- |
-| ID-1 | An artist ID is `uint160` of its first authority, created only by the bound package registry. | `ArtistRegistry.register` | AR `testFuzz_Register_ArtistIdIsTheFirstAuthority`, `test_Register_RevertsForAnyoneButThePackageRegistry`, `test_Register_RevertsForTakenAccount` |
+| ID-1 | An artist ID is `uint160` of its first authority, created only by the bound package registry (`register`) or the bound federation registry (`registerFederated`, ID-32). | `ArtistRegistry.register` | AR `testFuzz_Register_ArtistIdIsTheFirstAuthority`, `test_Register_RevertsForAnyoneButThePackageRegistry`, `test_Register_RevertsForTakenAccount` |
 | ID-2 | Every past authority keeps resolving to its artist and never becomes an authority again, of any artist. | `ArtistRegistry._taken`, `_checkNext`, `_apply`, `register` | AR `test_StageChange_RevertsForAPreviousAuthority`, `test_Register_PastAuthoritiesStayTaken`; IR `test_RotationBackToAPreviousAuthorityIsRefused`; INV `invariant_PastAuthoritiesResolveToTheArtist` |
 | ID-3 | A staged authority change reserves exactly its new authority until the change ends, however it ends. | `ArtistRegistry._stage`, `_clear`, `_apply`, `_taken` | AR `test_Reservation_FollowsThePendingChange`, `test_Reservation_ReleasedWhenExecutionClears`; IR `test_PendingNextAuthorityIsReservedUntilTheRecoveryExecutes`; INV `invariant_OnlyThePendingNextAuthorityIsReserved` |
 | ID-4 | At most one change is pending; an override replaces a pending STANDARD change but never another override. | `ArtistRegistry.stageChange`, `stageOverride` | AR `test_StageChange_RevertsWhenPending`, `test_Override_RevertsWhenAnOverrideIsPending`, `test_Override_ReplacesAPendingStandardChange` |
 | ID-5 | A STANDARD change needs an unexpired `IdentityChange` signature by the authority or a wallet established now that was never an authority of the artist, plus the new authority's countersignature when it moves; a heartbeat needs the same signer. | `ArtistRegistry.stageChange`, `heartbeat`, `_requireSigner` | AR `test_StageChange_ByEstablishedWallet`, `test_StageChange_RevertsForFreshlyConsolidatedWallet`, `test_StageChange_AuthorityChangeNeedsTheNewKey`, `test_StageChange_RevertsForExpiredDeadline`, `test_StageChange_RevertsForARotatedAwayKeyStillConsolidated`, `test_StageChange_OtherEstablishedWalletsStillSignAfterARotation`, `test_StageChange_ARotatedAwayKeyLeavesOverridesAndCancelsAsSpecified` |
 | ID-6 | Every staging consumes the nonce; replay keys on the nonce, never on signature bytes; signatures bind the registry's domain. | `ArtistRegistry._stage`, `changeDigest` | AR `test_Replay_ConsumedNonceRejected`, `test_Replay_CompactFormOfAUsedSignatureRejected`, `test_Replay_OtherRegistryRejected` |
 | ID-7 | Only the authority burns its nonce; that voids unused STANDARD payloads but not override acceptances. | `ArtistRegistry.revokeNonce` | AR `test_RevokeNonce_VoidsAPresignedPayload`, `test_RevokeNonce_RevertsForAnyoneButTheAuthority`, `test_Override_AcceptanceSurvivesANonceBurn` |
-| ID-8 | A STANDARD change executes no earlier than 7 days after staging, an override no earlier than 180 days. | `ArtistRegistry.executeChange`, `resolveContested` | AR `testFuzz_ExecuteChange_RespectsTheDelay`, `test_Override_ContestedWaits180Days`; INV `invariant_PendingChangeIsWellFormed` |
+| ID-8 | A STANDARD change executes no earlier than the change delay locked at its staging, an override no earlier than the override delay locked at its staging. | `ArtistRegistry._stage`, `executeChange`, `resolveContested` | AR `testFuzz_ExecuteChange_RespectsTheDelay`, `test_Override_ContestedWaits180Days`; INV `invariant_PendingChangeIsWellFormed` |
 | ID-9 | A STANDARD change is cancelled by its previous authority or a captured wallet; an override only by a captured wallet's contest, never by the previous authority; standing is fixed at staging. | `ArtistRegistry.cancelChange` | AR `test_Cancel_ByTheOldKey`, `test_Cancel_ByACapturedWallet`, `test_Cancel_WalletEstablishedAfterStagingCannotCancel`, `test_Attack_OldKeyCannotCancelAnOverride` |
 | ID-10 | The guardian can delete any pending change and has no path that writes an identity. | `ArtistRegistry.vetoChange`; genesis role map | AR `test_Veto_ByGuardian`, `test_Veto_StopsAnOverride`, `test_Attack_GuardianCannotRedirect`; CO `test_Contest_GuardianVetoVoids` |
-| ID-11 | An override needs an override kind and a nonzero evidence hash; `ESTATE` and `LOST_KEY` need 365 days without activity at staging. | `ArtistRegistry.stageOverride` | AR `test_Override_RevertsForInvalidKindOrEvidence`, `test_Override_EstateRevertsBeforeOneYearOfDormancy`, `test_Override_LostKeyBlockedByRecentHeartbeat` |
+| ID-11 | An override needs an override kind and a nonzero evidence hash; `ESTATE` and `LOST_KEY` need `DORMANCY` without activity at staging. | `ArtistRegistry.stageOverride` | AR `test_Override_RevertsForInvalidKindOrEvidence`, `test_Override_EstateRevertsBeforeOneYearOfDormancy`, `test_Override_LostKeyBlockedByRecentHeartbeat` |
 | ID-12 | An override that moves the authority needs the new authority's unexpired acceptance, consumed once by digest; a payout-only override needs none. | `ArtistRegistry.stageOverride` | AR `test_Override_AuthorityChangeNeedsTheNewAuthority`, `test_Override_AcceptanceIsSingleUseByDigest`, `test_Override_PayoutOnlyNeedsNoAcceptance` |
 | ID-13 | A captured wallet's cancel during the notice contests an override once; later cancels do nothing; a contested override never executes through `executeChange`; a contest after `executableAt` reverts. | `ArtistRegistry.cancelChange`, `executeChange` | CO `test_Contest_ThiefWalletContestsAndThePayoutStaysFrozen`, `test_Contest_ALateContestIsRefusedAndExecutionProceeds`, `test_Contest_IsActivityOnlyForTheCapturedWallet` |
 | ID-14 | A contest is resolved only by citing the latest DISPUTE_OUTCOME on `(registry, artistId)`, recorded after the contest; an uphold waits for `executableAt` and re-checks. | `ArtistRegistry.resolveContested` | CO `test_Contest_VoteUpholdsAndTheArtistRecovers`, `test_Resolve_RefusesAStaleOutcomeFromAnEarlierContest`, `test_Resolve_RefusesAnOutcomeRecordedBeforeTheContest`, `test_Resolve_UpholdRechecksAtExecution`; IR `test_ContestedOverrideUpheldByARecordedVote` |
-| ID-15 | A contest lapses 365 days after it began: the freeze and the restraint lift at once, and anyone may delete it. | `ArtistRegistry._lapsed`, `expireContest` | CO `test_Contest_LapsesAfterAYear`, `testFuzz_Contest_TheUpholdWindowIsAlwaysOpen`; RR `test_PowersReturnWhenAContestLapses` |
+| ID-15 | A contest lapses its locked contest timeout after it began: the freeze and the restraint lift at once, and anyone may delete it. | `ArtistRegistry._lapsed`, `expireContest` | CO `test_Contest_LapsesAfterAYear`, `testFuzz_Contest_TheUpholdWindowIsAlwaysOpen`; RR `test_PowersReturnWhenAContestLapses` |
 | ID-16 | `payoutAddress` is zero exactly while a pending, unlapsed change would move the payout; the payout changes only through an executed change. | `ArtistRegistry.payoutAddress`, `_apply` | AR `test_PayoutFreeze_WhileAPayoutChangeIsPending`, `test_PayoutFreeze_NotForChangesThatKeepThePayout`; ARR `test_PayoutFreeze_ANoOpOverrideDoesNotFreeze`; INV `invariant_PayoutChangesOnlyThroughExecutedChanges` |
 | ID-17 | A payout that cannot pull is refused at registration and staging, and clears the change at execution. | `ArtistRegistry._payoutAllowed`, `register`, `_checkNext`, `_apply` | AR `test_PayoutValidation_RejectsProtocolContractsAndSplitWallets`, `test_PayoutValidation_RecheckedAtExecution`; RV `test_PayoutRefusesProtocolContractsThatCannotPull`, `test_PredictedWalletIsCaughtOnlyOnceDeployed` |
 | ID-18 | `activeAuthorityOf` is zero exactly while a pending, unlapsed override would move the authority; every creator power reads it. | `ArtistRegistry._active`; consumers in the restraint table | AR `test_ActiveAuthority_RestrainedUntilTheOverrideExecutes`, `test_ActiveAuthority_OnlyAnAuthorityMovingOverrideRestrains`; INV `invariant_ActiveAuthorityIsRestrainedOnlyByAnAuthorityMovingOverride`; RR (every test) |
@@ -577,18 +685,31 @@ Test files: [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) (
 | ID-23 | The cancellers are the snapshot's effective entries after the staging's own refresh, and never change afterwards. | `ArtistRegistry._stage` | ARR `test_Standing_AYoungWalletRecordedPendingIsCapturedAfterRevocation`, `test_Standing_StagingAgesOutAMissingWallet`; AR `test_Attack_ThiefRevokingConsolidationsAfterStagingCannotStripCancellers` |
 | ID-24 | A wallet is established only through a live, two-way, all-collections, use-case-999 consolidation at least 30 days old. | `ConsolidationAdapter.effectiveAt`, `_liveSince` | CA `test_IsEstablished_OnlyAfterThirtyDays`, `test_IsEstablished_FalseOnceExpired`, `test_IsEstablished_FalseForOneDirection`, `test_IsEstablished_IgnoresOtherUseCases`, `testFuzz_IsEstablished_MatchesModel` |
 | ID-25 | Adapter reads forward exactly 200,000 gas or revert, and fail closed on anything but a cheap no-data revert. | `ConsolidationAdapter._read` | CA `test_Reads_RevertWhenGasCannotBeForwarded`, `test_Reads_PastTheEndRevertsCheaplyWithNoData`, `test_Reads_FailClosedWhenAGetterRunsOutOfGas`, `test_Reads_FailClosedOnARevertWithDataOrAnOversizedReturn` |
-| ID-26 | During a source outage or code-hash mismatch, staging, heartbeats and refreshes revert, while registration and execution proceed and skip their refresh. | `ArtistRegistry._refresh`, `_skipRefresh`, `_source` | AR `test_SourceReadFailure_FailsClosed`, `test_SourceReadFailure_ExecutionSkipsTheRefresh`, `test_ConsolidationSource_CodeHashRecheckedAtUse`; RR `test_SourceMismatchDoesNotBlockRecoveryExecution` |
+| ID-26 | When the source fails or its code hash changed, `refreshStanding` (and a consolidated wallet's signer check) reverts, while registration, staging (overrides included), the authority's heartbeat and execution proceed and skip their refresh. | `ArtistRegistry._refresh`, `_update`, `_skipRefresh`, `_source` | AR `test_SourceReadFailure_FailsClosed`, `test_SourceReadFailure_ExecutionSkipsTheRefresh`, `test_SourceReadFailure_AnyFailureIsSkipped`, `test_SourceReadFailure_EveryRevertReasonIsSkipped`, `test_Stage_SkipsASourceThatReturnsTooManyWallets`, `test_ConsolidationSource_CodeHashRecheckedAtUse`; RB `test_LostKeyRecovery_SurvivesEveryKindOfDeadSource`, `test_DeadSource_AuthorityHeartbeatStillCounts`; RR `test_SourceMismatchDoesNotBlockRecoveryExecution` |
 | ID-27 | The source is swapped only by compare-and-set to a contract with the reviewed code hash, ERC-165 support and no EIP-7702 delegation. | `ArtistRegistry.setConsolidationSource`, `_checkSource` | AR `test_SetConsolidationSource`, `test_SetConsolidationSource_RevertsForStaleExpected`, `test_SetConsolidationSource_RevertsForBadSourceOrCodeHash`, `test_SetConsolidationSource_RevertsForNonSetter` |
 | ID-28 | `isArtist` is true only for the active authority of a Stream work's lead artist, or of an edition's master; false for anything else. | `ArtistRegistry.isArtist` | AR `test_IsArtist_StreamWorksAndEditions`, `test_IsArtist_FalseBeforeTheStreamIsSet`, `test_ActiveAuthority_RestrainedUntilTheOverrideExecutes` |
-| ID-29 | Each binding is set once, by ADMIN, to a valid target. | `ArtistRegistry._bind`, `Dependency.check`, `bindStatementLog` | AR `test_Bindings_AreOneShot`, `test_Bindings_RejectInvalidTargets`, `test_Bindings_RevertForNonAdmin`; CO `test_BindStatementLog_OneShotAndChecksTheResolver`, `test_BindStatementLog_ResolverReadIsBounded` |
+| ID-29 | Each binding is set once, by ADMIN, to a valid target; the statement log's resolver read forwards all gas and any failure reverts the binding. | `ArtistRegistry._bind`, `Dependency.check`, `bindStatementLog` | AR `test_Bindings_AreOneShot`, `test_Bindings_RejectInvalidTargets`, `test_Bindings_RevertForNonAdmin`; CO `test_BindStatementLog_OneShotAndChecksTheResolver`, `test_BindStatementLog_ResolverReadForwardsAllGas` |
 | ID-30 | The package registry, the only `register` caller, is replaced only by SUCCESSOR_SETTER (30 days), compare-and-set, with a contract that has code, no EIP-7702 delegation and ERC-165 `IPackageRegistry`; the successor then registers new artists and the predecessor none. | `ArtistRegistry.setPackageRegistry` | [`StreamDependencies.t.sol`](../../test/integration/StreamDependencies.t.sol) `test_AReplacementPackageRegistryRegistersNewArtists`, `test_SetPackageRegistryChecks` |
+| ID-31 | The federation registry is replaced only by SUCCESSOR_SETTER (30 days), compare-and-set, with a contract that has code, no EIP-7702 delegation and ERC-165 `IFederationRegistry`, never zero; the successor gets its calls and the predecessor none. | `ArtistRegistry.setFederationRegistry` | FD `test_SetFederationRegistry_ReplacesThePointer`, `test_SetFederationRegistry_Checks` |
+| ID-32 | The federation registry creates an identity only for an account whose own unexpired `ArtistRegistration` signature verifies, with `register`'s checks (taken, reserved, payout). | `ArtistRegistry.registerFederated`, `_create` | FD `test_RegisterFederated_CreatesTheSameIdentityAsAPackageAcceptance`, `test_RegisterFederated_NeedsTheAccountsOwnConsent`, `test_RegisterFederated_SameGuaranteesAsRegister`; INV handler `fedRegister` |
+| ID-33 | A directory entry is written once per token, by the federation registry, with the code hash read by the registry, never for a token without code, EIP-7702 delegated or already listed, and never naming the registry, Stream, its Editions or a bound contract as token, partner or fee recipient; there is no cap. | `ArtistRegistry.listFederatedContract`, `_canonical` | FD `test_List_RecordsTheEntryWithItsOwnCodeHash`, `test_List_HasNoCap`, `test_List_Refusals`, `test_List_RefusesCanonicalContracts`; INV `invariant_FederationDirectoryMatchesTheModel` |
+| ID-34 | Only the federation registry moves an entry between ACTIVE and DELISTED; only the token sets LEFT, which is terminal; no federation call changes any artist's authority, payout, standing or pending change. | `ArtistRegistry.setFederatedStatus`, `recordFederationExit` | FD `test_Status_DelistAndRelist`, `test_Status_Refusals`, `test_Exit_ByTheTokenIsTerminal`, `test_Exit_RevertsForAnUnlistedCaller`, `test_HostileFederationRegistry_HasNoAuthorityOverArtists`; INV `invariant_FederationDirectoryMatchesTheModel` and the handler's federation actions |
+| ID-35 | Each timer lies between its floor (its genesis value) and ceiling, and `CONTEST_TIMEOUT` exceeds `OVERRIDE_DELAY` by at least 185 days; only SUCCESSOR_SETTER sets them. | `ArtistRegistry.setTimer`, `timerBounds` | TM `test_Bounds_AreTheGuarantee`, `test_SetTimer_RefusesValuesOutsideTheBounds`, `test_SetTimer_KeepsTheUpholdWindow`, `testFuzz_SetTimer_NeverLeavesTheBounds`; INV `invariant_TimersStayWithinTheirBounds` |
+| ID-36 | A pending change keeps the delay and contest timeout locked at its staging, whatever is set later. | `ArtistRegistry._stage`, `_lapsed` | TM `test_Lock_LengtheningNeverTrapsAPendingChange`, `test_Lock_ShorteningNeverReleasesAPendingChange`, `test_Lock_ContestLapseUsesTheLockedTimeout`; INV `invariant_PendingChangeIsWellFormed` |
+| ID-37 | An override that moves the payout but keeps the authority needs `DORMANCY` without signed activity, whatever its kind. | `ArtistRegistry.stageOverride` | RB `test_PayoutOnlyOverride_NeedsDormancy`, `test_PayoutOnlyOverride_RecoveryPathsUnchanged`, `testFuzz_PayoutOnlyOverride_RefusedForAnyLiveArtist`; INV handler `_overrideError` |
+| ID-38 | A call into another contract forwards all gas, and a failure that leaves at most 1/8 of the gas held before it reverts with `BoundedCallShortfall` (never a skip, a refusal or `false`); source times are clamped to 48 bits, never truncated. | `ArtistRegistry._refresh`, `_skipRefresh`, `_revertOnShortfall`, `isArtist`, `bindStatementLog`, `_clamp48` | RB `test_RepricedSource_IsReadInFullAt2x4x10x`, `test_Shortfall_RevertsInsteadOfSkipping`, `test_IsArtist_ShortfallRevertsInsteadOfAnsweringFalse`, `test_SourceTimes_AreClampedNotTruncated`; CO `test_BindStatementLog_ResolverReadForwardsAllGas` |
+| ID-39 | An authority can be any account `SignatureVerifier` verifies, including a contract or EIP-7702 account that pre-approves digests and answers ERC-1271 from storage. | `SignatureVerifier`, every signed path | SA (every test) |
 
 ## Events
 
 `ArtistRegistry`'s events are listed under
 [ArtistRegistry](../integrators/events-and-indexing.md#artistregistry); `ConsolidationAdapter`
 emits none. A pending entry's later `effectiveAt` changes, and an established entry's move
-earlier, emit no event: read `standingOf`.
+earlier, emit no event: read `standingOf`. For a logs-only reader: every authority, payout,
+profile, nonce, override, contest, standing, consolidation-source, binding, timer and federation
+change is evented; the restraint and the payout freeze follow from `ChangeStaged` (which carries
+the locked `executableAt` and `contestTimeout`) and the events that end a change; a contest's
+lapse follows from `ChangeContested`'s block time plus the locked `contestTimeout`.
 
 ## Failure modes and recovery
 
@@ -597,8 +718,10 @@ Accepted risks are listed once, with their IDs, in
 
 | Failure | Effect | Recovery |
 | --- | --- | --- |
-| The consolidation source cannot read, or no longer matches its pinned hash (LIM-ID-9) | Staging, heartbeats and `refreshStanding` revert (`DelegationReadFailed` or `DependencyCodeChanged`); registration and execution go ahead and emit `StandingRefreshSkipped` | Fix or swap the source (`setConsolidationSource`, 30 days), then `refreshStanding` for each skipped artist |
-| A source answers more than 32 wallets or mismatched arrays | Every refresh reverts with `InvalidSource`, registration and execution included | Swap the source. The v1 adapter cannot answer this way. |
+| The consolidation source fails, or no longer matches its pinned hash (LIM-ID-9) | `refreshStanding` and a consolidated wallet's signature or heartbeat revert; registration, staging (recovery overrides included), the authority's heartbeat and execution go ahead and emit `StandingRefreshSkipped` | Fix or swap the source (`setConsolidationSource`, 30 days), then `refreshStanding` for each skipped artist |
+| A source answers more than 32 wallets or mismatched arrays | `refreshStanding` reverts with `InvalidSource`; every other refresh is skipped | Swap the source. The v1 adapter cannot answer this way. |
+| A source needs more gas than a transaction can carry | Every refresh reverts (`BoundedCallShortfall`): a shortfall is never read as a failing source | Swap the source (30 days). Recovery waits for the swap: an accepted cost of the gas rule |
+| A source returns malformed ABI data | The decoding reverts the call, best-effort or not | Swap the source; a reviewed source pinned by code hash cannot start doing this |
 | A split wallet is deployed at the pending payout while the change waits | Execution clears the change; the payout unfreezes | Stage a new change with a payout that can pull |
 | The key is lost and no wallet is established | No STANDARD path | An `ESTATE` or `LOST_KEY` override after 365 days without activity, or a `CONTESTED` override with evidence |
 | The key is stolen (LIM-ID-7) | The thief can cancel any STANDARD change and stage changes, freezing the payout each time | A `CONTESTED` override: the freeze and the restraint hold the thief from its staging; guardians veto the thief's STANDARD changes |
@@ -631,33 +754,34 @@ before mint (LIM-ID-11).
 | `SignatureVerifier.SignatureExpired(deadline)`, `SignatureVerifier.InvalidSignature(signer)` | `stageChange`, `stageOverride` | A passed deadline, or a signature, countersignature or acceptance that does not verify. |
 | `AcceptanceUsed(digest)` | `stageOverride` | This acceptance was consumed. |
 | `AlreadyBound(name)`, `InvalidBinding(target)` | The bindings | One-shot, or a statement log whose `artistResolver()` is not this registry. |
-| `UnboundCaller(caller)` | `register`, `listFederatedContract` | Not the bound contract. |
+| `UnboundCaller(caller)` | `register`, `registerFederated`, `listFederatedContract`, `setFederatedStatus` | Not the bound contract. |
 | `InvalidSource(source)` | Any refresh | The source answered more than 32 wallets or arrays of different lengths. |
-| `ExpectedValueMismatch()` | `setConsolidationSource` | Stale `expected`. |
+| `ExpectedValueMismatch()` | `setConsolidationSource`, `setPackageRegistry`, `setFederationRegistry` | Stale `expected`. |
+| `InvalidTimers()` | `setTimer` | Outside the floor and ceiling, or a contest timeout under the override delay plus 185 days. |
 | `OverrideContested(artistId)` | `executeChange` | The override is contested (lapsed or not). |
 | `NotContested(artistId)` | `resolveContested`, `expireContest` | No live contest (for `resolveContested`), or no contest at all. |
 | `OutcomeNotRecorded(artistId, outcomeRef)` | `resolveContested` | `outcomeRef` is zero or not the latest outcome. |
 | `OutcomePredatesContest(artistId, outcomeRef)` | `resolveContested` | The outcome was already the latest when the contest began. |
 | `ContestNotExpired(artistId, expiresAt)` | `expireContest` | The contest has not lapsed. |
 | `ContestWindowClosed(artistId, executableAt)` | `cancelChange` | The override's notice has ended. |
-| `FederatedListFull(artistId)` | `listFederatedContract` | 64 contracts already listed. |
+| `FederatedContractRefused(token)` | `listFederatedContract` | Already listed, no code or EIP-7702 delegated, or a canonical token, partner or fee recipient. |
+| `FederatedStatusRefused(token, current)` | `setFederatedStatus`, `recordFederationExit` | Unlisted or LEFT, or a status other than ACTIVE or DELISTED. |
 | `IConsolidationSource.DelegationReadFailed(delegation)` | Adapter reads, surfacing through registry calls | A read failed other than at an array's end. |
 | `Dependency.InvalidDependency(dependency)`, `Dependency.DependencyCodeChanged(dependency)` | Constructor, the bindings, `setConsolidationSource`, adapter constructor; any use of the source | The target has no code, is an EIP-7702 delegated account, lacks its ERC-165 interface or the reviewed code hash; or the source's code changed since install. |
 | `BoundedCall.BoundedCallInsufficientGas(gasLimit)` | Adapter reads | The caller cannot forward the full stipend. |
-| `BoundedCall.BoundedCallShortfall(target)` | ERC-1271 checks; the payout check's ERC-165 probes (`ProtocolContracts`); install checks (`Dependency`) | A call that forwards all gas failed while leaving at most 1/8 of the gas held before it: resend with more gas. Never read as a refusal. |
+| `BoundedCall.BoundedCallShortfall(target)` | ERC-1271 checks; the payout check's ERC-165 probes (`ProtocolContracts`); install checks (`Dependency`); the registry's source reads in every refresh, `isArtist`'s reads and `bindStatementLog` (ID-38) | A call that forwards all gas failed while leaving at most 1/8 of the gas held before it: resend with more gas. Never read as a refusal, a skip or `false`. |
 
 ## Parameters and limits
 
 | Parameter | Value | Source |
 | --- | --- | --- |
-| STANDARD change wait | 7 days | `ArtistRegistry.CHANGE_DELAY` |
-| Override notice | 180 days | `ArtistRegistry.OVERRIDE_DELAY` |
-| Dormancy for `ESTATE` and `LOST_KEY` | 365 days | `ArtistRegistry.DORMANCY` |
-| Grace for a missing wallet | 30 days | `ArtistRegistry.STANDING_GRACE` |
-| Contest lapse | 365 days after the contest | `ArtistRegistry.CONTEST_TIMEOUT` |
-| Minimum uphold window | At least 185 days | `testFuzz_Contest_TheUpholdWindowIsAlwaysOpen` |
-| Federated contracts per artist | 64 | `ArtistRegistry.MAX_FEDERATED` |
-| Statement-log resolver read at binding | 50,000 gas | `ArtistRegistry.BIND_READ_GAS` (private) |
+| STANDARD change wait | 7 days (governed, 7 to 30) | `timer(CHANGE_DELAY)` |
+| Override notice | 180 days (governed, 180 to 365) | `timer(OVERRIDE_DELAY)` |
+| Dormancy for `ESTATE`, `LOST_KEY` and payout-only overrides | 365 days (governed, 365 to 1,825) | `timer(DORMANCY)` |
+| Grace for a missing wallet | 30 days (governed, 30 to 90) | `timer(STANDING_GRACE)` |
+| Contest lapse | 365 days after the contest (governed, 365 to 730, locked at staging) | `timer(CONTEST_TIMEOUT)` |
+| Minimum uphold window | At least 185 days | `setTimer`'s coupling; `testFuzz_Contest_TheUpholdWindowIsAlwaysOpen` |
+| Federated contracts per artist | No cap: one entry per token | `listFederatedContract` |
 | Snapshot entries and captured cancellers | 16 | `Limits.MAX_CANCELLERS` in [`Limits.sol`](../../src/interfaces/types/Limits.sol) |
 | Consolidation age | 30 days | `ConsolidationAdapter.MIN_AGE` |
 | Delegate entries scanned; registrations read per direction | 32; 4 | `ConsolidationAdapter.MAX_DELEGATES_SCANNED`, `MAX_REGISTRATIONS_READ` |

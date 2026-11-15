@@ -4,14 +4,23 @@ pragma solidity ^0.8.24;
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 /// @title IFederationRegistry
-/// @notice Placeholder for v1.1: the public on-chain directory of 6529 Stream Federated
-///         contracts (ADR 0001 section 16). v1 ships no implementation; the interface fixes
-///         what the shared sale adapters and indexers will read.
-/// @dev Only the federation factory adds entries, so only genuine template deployments are
-///      listed. Shared adapters accept federated sales only while `isActive`, and settle the
-///      fee recorded in the entry. A TDH vote delists a contract or a whole artist identity;
-///      tokens, content and ownership are never touched. On registration it lists the contract
-///      under its artist in the artist registry (`IArtistRegistry.listFederatedContract`).
+/// @notice The replaceable admission layer for 6529 Stream Federated contracts (ADR 0001
+///         section 16): which contracts are genuine template deployments, which adapters serve
+///         them, and delisting by vote. The permanent, logs-only directory is the artist
+///         registry's (`IArtistRegistry.federatedListing` and its events), which this registry
+///         writes and which outlives any replacement of it.
+/// @dev The artist registry's pointer to this registry is replaceable (`setFederationRegistry`,
+///      SUCCESSOR_SETTER, 30 days). Through the artist registry it may only: create an identity
+///      for an account that signed its own consent (`IArtistRegistry.registerFederated`); list a
+///      non-canonical contract under an artist, with the code hash read by the artist registry
+///      (`listFederatedContract`); and set a listed contract ACTIVE or DELISTED
+///      (`setFederatedStatus`). It has no authority over any artist's authority, payout or
+///      standing, or over any canonical token, work or fund. A token records its own exit
+///      (`IArtistRegistry.recordFederationExit`, LEFT, terminal) without this registry. Shared
+///      adapters accept federated sales only while `isActive`, and settle the fee recorded in
+///      the entry. A TDH vote delists a contract or a whole artist identity; tokens, content and
+///      ownership are never touched. The implementation (and any change to this interface
+///      before launch) belongs to the federation package.
 interface IFederationRegistry is IERC165 {
     /// @notice What a federated deployment is.
     enum Form {

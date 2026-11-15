@@ -332,15 +332,13 @@ contract RecoveryRestraintTest is IntegrationBase {
     }
 
     /// @dev A profile-only STANDARD change by the new key reverts with `err`.
-    function _expectStagingReverts(bytes memory err) internal {
+    function _stageSame() internal {
         ArtistIdentity memory same =
             ArtistIdentity(newKey, newKey, _profileId(artist), keccak256("profile document v2"));
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes32 digest =
             artists.changeDigest(artistId, same, artists.changeNonce(artistId), deadline);
-        bytes memory byNewKey = _sign(newKey, digest);
-        vm.expectRevert(err);
-        artists.stageChange(artistId, same, newKey, deadline, byNewKey, "");
+        artists.stageChange(artistId, same, newKey, deadline, _sign(newKey, digest), "");
     }
 
     /// Regression: DEPS-6 (docs/security/internal-review-2026-10.md)
@@ -363,7 +361,10 @@ contract RecoveryRestraintTest is IntegrationBase {
         _registerFreshSkippingTheRefresh();
         vm.expectRevert(changed);
         artists.refreshStanding(artistId);
-        _expectStagingReverts(changed);
+        // Staging skips its refresh instead of reverting (ID-26).
+        vm.expectEmit(address(artists));
+        emit IArtistRegistry.StandingRefreshSkipped(artistId);
+        _stageSame();
 
         // The governed path: install a reviewed adapter (30 days); refreshes work again.
         ConsolidationAdapter fixed_ =
@@ -401,6 +402,8 @@ contract RecoveryRestraintTest is IntegrationBase {
 
     /// @dev A payout-only override restrains nothing.
     function test_PayoutOnlyOverrideDoesNotRestrain() public {
+        // A payout-only override needs the artist's dormancy (ID-37).
+        vm.warp(block.timestamp + 365 days);
         ArtistIdentity memory next = ArtistIdentity(
             artist, makeAddr("estatePayout"), _profileId(artist), _profileDoc(artist)
         );

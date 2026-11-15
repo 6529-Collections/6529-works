@@ -15,9 +15,11 @@ struct ArtistIdentity {
 
 /// @notice What kind of identity change is pending (ADR 0001 section 11).
 /// @dev NONE: nothing pending. STANDARD: staged by the authority or an established consolidated
-///      wallet; executable after 7 days. CONTESTED, ESTATE and LOST_KEY are network overrides
-///      with a 180-day public notice; ESTATE and LOST_KEY also need a year with no signed
-///      activity.
+///      wallet; executable after the change delay (at least 7 days). CONTESTED, ESTATE and
+///      LOST_KEY are network overrides with a public notice of at least 180 days; ESTATE and
+///      LOST_KEY, and any override that moves the payout but keeps the authority, also need the
+///      dormancy period (at least a year) with no signed activity. The waits are the registry's
+///      governed timers (`IArtistRegistry.Timer`).
 enum ChangeKind {
     NONE,
     STANDARD,
@@ -48,8 +50,12 @@ struct Standing {
 ///      is contested: `contestedAt` records the first such cancel (zero otherwise), and
 ///      `priorOutcome` the artist's latest DISPUTE_OUTCOME entry at that moment, so only a vote
 ///      recorded after the contest can resolve it. `contestedAt` shares `executableAt`'s slot.
+///      `contestTimeout` is the registry's contest timeout locked when the change was staged, so
+///      a later change of the governed value never shortens or lengthens this change's lapse; it
+///      shares `kind`'s slot.
 struct PendingChange {
     ChangeKind kind;
+    uint48 contestTimeout;
     ArtistIdentity next;
     address previousAuthority;
     uint64 stagedAt;
@@ -59,3 +65,4 @@ struct PendingChange {
     bytes32 evidenceHash;
     address[] cancellers;
 }
+

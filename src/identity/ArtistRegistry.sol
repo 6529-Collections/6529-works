@@ -35,12 +35,15 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 /// @dev Every identity change is staged, waits and can be stopped:
 ///      - STANDARD changes are signed by the authority or an established consolidated wallet
 ///        that was never this artist's authority, as `Typehashes.IDENTITY_CHANGE`; a new
-///        authority countersigns the same digest. They wait
-///        {CHANGE_DELAY}; the previous authority, any wallet captured at staging, or the guardian
-///        ({vetoChange}) can stop them.
+///        authority countersigns the same digest. They wait the change delay; the previous
+///        authority, any wallet captured at staging, or the guardian ({vetoChange}) can stop
+///        them.
 ///      - Overrides (CONTESTED, ESTATE, LOST_KEY) are governed, carry an evidence hash as public
-///        notice and wait {OVERRIDE_DELAY}; ESTATE and LOST_KEY need {DORMANCY} without signed
-///        activity. One that changes the authority carries the new authority's
+///        notice and wait the override delay; ESTATE and LOST_KEY, and any override that moves
+///        the payout but keeps the authority, need the dormancy period without signed activity
+///        (so a single governed role cannot freeze and redirect a live artist's payout without
+///        also restraining the authority, in public). One that changes the authority carries the
+///        new authority's
 ///        `Typehashes.OVERRIDE_ACCEPTANCE`, nonce-free (so a held key cannot void it by burning
 ///        nonces) and consumed once by digest. The previous authority can never stop an
 ///        override; a captured wallet's cancel during the notice contests it (a TDH vote then
@@ -55,13 +58,18 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      to a key it rotated away from, and that key's unused signatures stay void. The guardian
 ///      can only veto: no guardian path writes an identity.
 ///
+///      Timers. The waits are governed values ({setTimer}), each between a compiled floor (its
+///      genesis value: the guarantee) and a compiled ceiling (lengthening is bounded too, because
+///      a longer wait lengthens a payout freeze, a restraint or a stale wallet's standing). A
+///      staged change locks the delay that set its `executableAt` and its contest timeout.
+///
 ///      Standing: each artist keeps a sticky snapshot of at most `Limits.MAX_CANCELLERS`
 ///      consolidated wallets, refreshed on registration, staging, heartbeats, executions and by
 ///      anyone (`refreshStanding`; a keeper or the 6529.io UI calls it after consolidation
 ///      events). A refresh records every live two-way consolidation, a young one as pending
 ///      until its `effectiveAt` (registration plus 30 days). A recorded wallet that is no longer
 ///      consolidated (checked directly, not only against the bounded scan) is marked missing but
-///      keeps standing; only a refresh at least `STANDING_GRACE` later removes it. A pending
+///      keeps standing; only a refresh at least the standing grace later removes it. A pending
 ///      entry found no longer consolidated is removed at once: a consolidation that ended before
 ///      its 30 days never gives standing (ADR 0001 section 11). When the
 ///      snapshot is full nothing is evicted early: established wallets take free slots before
@@ -72,8 +80,10 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      days never had standing to strip).
 ///      After a rotation the previous authority's wallets stay in the snapshot as missing for the
 ///      grace, so a full snapshot admits the new authority's wallets only as they age out. A
-///      source that cannot read reverts, so every call that reads it fails closed instead of
-///      marking recorded wallets missing.
+///      source that fails is never read as "not consolidated": `refreshStanding` reverts, and
+///      every other refresh (registration, staging, heartbeat, execution) is skipped with
+///      {StandingRefreshSkipped}, so a dead, reverting or repriced source can block neither
+///      recovery nor an artist's proof of activity. A gas shortfall reverts instead.
 ///
 ///      Payout freeze. While a pending change would move the payout, {payoutAddress} returns
 ///      zero, so split wallets hold accrued balances until the outcome; the artist's own pulls
@@ -100,21 +110,29 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      Dormancy counts the artist's own activity: registration, a staged change, a heartbeat,
 ///      a cancel by the old key or a captured wallet, a nonce revocation, and an execution
 ///      (which restarts the clock for the identity it installs). Overrides and vetoes never do.
+///
+///      Federation directory (ADR 0001 section 16): one entry per federated token, written by the
+///      current federation registry except LEFT, which only the token writes. Nothing that decides
+///      an identity, a payout or standing reads it.
 contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
-    /// @notice The wait before a STANDARD change can execute.
-    uint64 public constant CHANGE_DELAY = 7 days;
-    /// @notice The public notice before an override can execute.
-    uint64 public constant OVERRIDE_DELAY = 180 days;
-    /// @notice The time without signed activity before an ESTATE or LOST_KEY override.
-    uint64 public constant DORMANCY = 365 days;
-    /// @inheritdoc IArtistRegistry
-    uint64 public constant override STANDING_GRACE = 30 days;
-    /// @inheritdoc IArtistRegistry
-    uint64 public constant override CONTEST_TIMEOUT = 365 days;
-    /// @notice The most federated contracts listed per artist.
-    uint256 public constant MAX_FEDERATED = 64;
-    /// @dev Gas forwarded to the statement log's `artistResolver()` when it is bound.
-    uint256 private constant BIND_READ_GAS = 50_000;
+    // Floors and ceilings of the governed waits. Each floor is the genesis value and the
+    // guarantee artists rely on (never shorter); each ceiling bounds lengthening, which would
+    // otherwise let governance stretch a payout freeze, a restraint or a stale wallet's standing.
+    // Packed 48 bits per {Timer}, in its order: CHANGE_DELAY 7 to 30 days, OVERRIDE_DELAY 180 to
+    // 365 days, DORMANCY 365 to 1,825 days, CONTEST_TIMEOUT 365 to 730 days, STANDING_GRACE 30
+    // to 90 days.
+    uint256 private constant FLOORS = uint256(7 days) | (uint256(180 days) << 48)
+        | (uint256(365 days) << 96) | (uint256(365 days) << 144) | (uint256(30 days) << 192);
+    uint256 private constant CEILINGS = uint256(30 days) | (uint256(365 days) << 48)
+        | (uint256(1825 days) << 96) | (uint256(730 days) << 144) | (uint256(90 days) << 192);
+    /// @dev The floors' uphold window: the contest timeout exceeds the override delay by at least
+    ///      this, so a contested override can always be upheld after its notice.
+    uint256 private constant UPHOLD_WINDOW = 365 days - 180 days;
+
+    /// @dev The account's consent to an identity created by the federation registry.
+    bytes32 private constant ARTIST_REGISTRATION = keccak256(
+        "ArtistRegistration(address account,bytes32 profileId,bytes32 profileDocHash,uint64 deadline)"
+    );
 
     /// @dev The identity fields with `restrained` beside the authority, so the active authority
     ///      is one storage read: `restrained` is whether the pending change is an override that
@@ -132,8 +150,17 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     mapping(uint256 artistId => Artist) private _artists;
     mapping(uint256 artistId => PendingChange) private _pending;
     mapping(uint256 artistId => Standing[]) private _standing;
-    mapping(uint256 artistId => address[]) private _federated;
     mapping(bytes32 digest => bool) private _acceptanceUsed;
+
+    /// @dev A federation directory entry; artist IDs fit 160 bits. One slot.
+    struct Listing {
+        uint160 artistId;
+        FederationStatus status;
+    }
+
+    mapping(address token => Listing) private _listings;
+    /// @dev The governed waits, packed as {FLOORS} is.
+    uint256 private _timerWord;
 
     /// @inheritdoc IArtistRegistry
     mapping(address account => uint256) public override artistIdOf;
@@ -165,6 +192,10 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         consolidationSource = source;
         consolidationSourceCodeHash = sourceCodeHash;
         emit ConsolidationSourceSet(address(0), address(source));
+        _timerWord = FLOORS;
+        for (uint256 i; i <= uint256(Timer.STANDING_GRACE); ++i) {
+            emit TimerSet(Timer(i), _field(FLOORS, i));
+        }
     }
 
     // ----- wiring -----
@@ -199,6 +230,17 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IArtistRegistry
+    /// @dev SUCCESSOR_SETTER role (the 30-day class). The install check is
+    ///      `bindFederationRegistry`'s; a zero successor is refused, so the pointer never returns
+    ///      to the unbound state.
+    function setFederationRegistry(address expected, address next) external restricted {
+        if (expected != federationRegistry) revert ExpectedValueMismatch();
+        Dependency.check(next, type(IFederationRegistry).interfaceId);
+        federationRegistry = next;
+        emit FederationRegistrySet(expected, next);
+    }
+
+    /// @inheritdoc IArtistRegistry
     /// @dev The factory does not implement ERC-165, so only code and no EIP-7702 are checked.
     function bindSplitFactory(address target) external restricted {
         Dependency.check(target);
@@ -207,13 +249,14 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
 
     /// @inheritdoc IArtistRegistry
     /// @dev The statement log does not implement ERC-165: code, no EIP-7702, and its
-    ///      `artistResolver()` naming this registry are checked instead, with a bounded read.
+    ///      `artistResolver()` naming this registry are checked instead. The read forwards all
+    ///      gas (`BoundedCall.tryReadWordAll`): a shortfall reverts with `BoundedCallShortfall`,
+    ///      any other failure or answer with `InvalidBinding`.
     function bindStatementLog(address target) external restricted {
         Dependency.check(target);
-        (bool ok, bytes memory resolver) = BoundedCall.tryRead(
-            target, abi.encodeWithSignature("artistResolver()"), BIND_READ_GAS, 32, 0
-        );
-        if (!ok || resolver.length != 32 || abi.decode(resolver, (address)) != address(this)) {
+        (bool ok, bytes32 resolver) =
+            BoundedCall.tryReadWordAll(target, abi.encodeWithSignature("artistResolver()"));
+        if (!ok || resolver != bytes32(uint256(uint160(address(this))))) {
             revert InvalidBinding(target);
         }
         statementLog = _bind("STATEMENT_LOG", statementLog, target);
@@ -234,14 +277,57 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         emit ConsolidationSourceSet(address(expected), address(next));
     }
 
+    /// @inheritdoc IArtistRegistry
+    function setTimer(Timer which, uint48 value) external restricted {
+        uint256 shift = 48 * uint256(which);
+        (uint48 floor, uint48 ceiling) = timerBounds(which);
+        uint256 word =
+            (_timerWord & ~(uint256(type(uint48).max) << shift)) | (uint256(value) << shift);
+        if (
+            value < floor || value > ceiling
+                || _field(word, uint256(Timer.CONTEST_TIMEOUT))
+                    < uint256(_field(word, uint256(Timer.OVERRIDE_DELAY))) + UPHOLD_WINDOW
+        ) revert InvalidTimers();
+        _timerWord = word;
+        emit TimerSet(which, value);
+    }
+
     // ----- identity lifecycle -----
 
     /// @inheritdoc IArtistRegistry
     function register(address account, bytes32 profileId, bytes32 profileDocHash)
         external
-        returns (uint256 artistId)
+        returns (uint256)
     {
         if (msg.sender != packageRegistry) revert UnboundCaller(msg.sender);
+        return _create(account, profileId, profileDocHash);
+    }
+
+    /// @inheritdoc IArtistRegistry
+    /// @dev The package registry verifies the account's own acceptance before it calls
+    ///      `register`; the federation registry is not trusted to, so the signature is checked
+    ///      here, in this registry's domain.
+    function registerFederated(
+        address account,
+        bytes32 profileId,
+        bytes32 profileDocHash,
+        uint64 deadline,
+        bytes calldata signature
+    ) external returns (uint256) {
+        if (msg.sender != federationRegistry) {
+            revert UnboundCaller(msg.sender);
+        }
+        SignatureVerifier.checkDeadline(deadline);
+        SignatureVerifier.check(
+            account, registrationDigest(account, profileId, profileDocHash, deadline), signature
+        );
+        return _create(account, profileId, profileDocHash);
+    }
+
+    function _create(address account, bytes32 profileId, bytes32 profileDocHash)
+        private
+        returns (uint256 artistId)
+    {
         if (account == address(0) || !_payoutAllowed(account)) revert InvalidIdentity();
         if (artistIdOf[account] != 0 || reservedFor[account] != 0) revert AccountTaken(account);
         artistId = uint256(uint160(account));
@@ -276,12 +362,16 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
             SignatureVerifier.check(next.authority, digest, authorityAcceptance);
         }
         _recordActivity(artistId, a);
-        _stage(artistId, a, ChangeKind.STANDARD, next, bytes32(0), CHANGE_DELAY);
+        _stage(artistId, a, ChangeKind.STANDARD, next, bytes32(0));
     }
 
     /// @inheritdoc IArtistRegistry
     /// @dev Validates the kind, evidence, identity and dormancy first; the acceptance is checked
-    ///      only when the authority changes. Replaces (vetoes) a pending STANDARD change.
+    ///      only when the authority changes. Replaces (vetoes) a pending STANDARD change. Dormancy
+    ///      is required for ESTATE and LOST_KEY and for every override that moves the payout but
+    ///      keeps the authority: such an override is never needed against a live artist (an
+    ///      artist who holds the authority changes the payout itself; a thief who holds it must
+    ///      lose it), and without the rule it would freeze a live artist's payout at once.
     function stageOverride(
         uint256 artistId,
         ChangeKind kind,
@@ -293,11 +383,13 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         Artist storage a = _artist(artistId);
         if (kind < ChangeKind.CONTESTED || evidenceHash == bytes32(0)) revert InvalidIdentity();
         _checkNext(artistId, next);
-        // Dormancy and deadlines are wall-clock bounds; validator drift is immaterial.
-        // forge-lint: disable-next-line(block-timestamp)
-        if (kind != ChangeKind.CONTESTED && block.timestamp < a.lastActivity + DORMANCY) {
-            revert NotDormant(artistId, a.lastActivity);
-        }
+        bool payoutOnly = next.authority == a.authority && next.payout != a.payout;
+        if (
+            (kind != ChangeKind.CONTESTED || payoutOnly)
+                // Dormancy and deadlines are wall-clock bounds; validator drift is immaterial.
+                // forge-lint: disable-next-line(block-timestamp)
+                && block.timestamp < uint256(a.lastActivity) + timer(Timer.DORMANCY)
+        ) revert NotDormant(artistId, a.lastActivity);
         if (next.authority != a.authority) {
             bytes32 digest = overrideDigest(artistId, kind, next, evidenceHash, deadline);
             if (_acceptanceUsed[digest]) revert AcceptanceUsed(digest);
@@ -308,7 +400,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         ChangeKind pending = _pending[artistId].kind;
         if (pending > ChangeKind.STANDARD) revert ChangePending(artistId);
         if (pending != ChangeKind.NONE) _clear(artistId, msg.sender, true);
-        _stage(artistId, a, kind, next, evidenceHash, OVERRIDE_DELAY);
+        _stage(artistId, a, kind, next, evidenceHash);
     }
 
     /// @inheritdoc IArtistRegistry
@@ -364,7 +456,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     function expireContest(uint256 artistId) external {
         PendingChange storage p = _pending[artistId];
         if (p.contestedAt == 0) revert NotContested(artistId);
-        if (!_lapsed(p)) revert ContestNotExpired(artistId, p.contestedAt + CONTEST_TIMEOUT);
+        if (!_lapsed(p)) revert ContestNotExpired(artistId, p.contestedAt + p.contestTimeout);
         emit ContestExpired(artistId);
         _clear(artistId, address(this), false);
     }
@@ -414,11 +506,13 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IArtistRegistry
+    /// @dev The refresh is best-effort: a failing source must not keep a live artist from
+    ///      proving activity, or the artist would become dormant and overridable.
     function heartbeat(uint256 artistId) external {
         Artist storage a = _artist(artistId);
         _requireSigner(artistId, a, msg.sender);
         _recordActivity(artistId, a);
-        _refresh(artistId, a.authority, false);
+        _refresh(artistId, a.authority, true);
     }
 
     /// @inheritdoc IArtistRegistry
@@ -435,15 +529,58 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         _refresh(artistId, _artist(artistId).authority, false);
     }
 
+    // ----- federation directory -----
+
     /// @inheritdoc IArtistRegistry
-    /// @dev A v1.1 placeholder for cross-world discovery (ADR 0001 section 16); append-only and
-    ///      bounded to {MAX_FEDERATED} entries.
-    function listFederatedContract(uint256 artistId, address token) external {
+    /// @dev Writes only the token's own entry: nothing that decides an identity, a payout or
+    ///      standing reads it. No list and no cap: each listing is its own slot, paid by its
+    ///      registrant; enumeration is by events.
+    function listFederatedContract(
+        uint256 artistId,
+        address token,
+        uint8 form,
+        address partner,
+        uint32 feeShare,
+        address feeRecipient
+    ) external {
         if (msg.sender != federationRegistry) revert UnboundCaller(msg.sender);
         _artist(artistId);
-        if (_federated[artistId].length >= MAX_FEDERATED) revert FederatedListFull(artistId);
-        _federated[artistId].push(token);
-        emit FederatedContractListed(artistId, token);
+        address s = stream;
+        address e = IStream(s).editions();
+        if (
+            _listings[token].status != FederationStatus.NONE || !Dependency.isInstallable(token)
+                || _canonical(token, s, e) || _canonical(partner, s, e)
+                || _canonical(feeRecipient, s, e)
+        ) revert FederatedContractRefused(token);
+        // A registered artist's ID is the uint160 of its first authority.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        _listings[token] = Listing(uint160(artistId), FederationStatus.ACTIVE);
+        emit FederatedContractListed(
+            artistId, token, token.codehash, form, partner, feeShare, feeRecipient
+        );
+    }
+
+    /// @inheritdoc IArtistRegistry
+    function setFederatedStatus(address token, FederationStatus status, bytes32 ref) external {
+        if (msg.sender != federationRegistry) revert UnboundCaller(msg.sender);
+        Listing storage l = _listings[token];
+        FederationStatus current = l.status;
+        if (
+            current == FederationStatus.NONE || current == FederationStatus.LEFT
+                || (status != FederationStatus.ACTIVE && status != FederationStatus.DELISTED)
+        ) revert FederatedStatusRefused(token, current);
+        l.status = status;
+        emit FederatedContractStatus(token, l.artistId, status, ref);
+    }
+
+    /// @inheritdoc IArtistRegistry
+    function recordFederationExit() external {
+        Listing storage l = _listings[msg.sender];
+        FederationStatus current = l.status;
+        if (current == FederationStatus.NONE) revert FederatedStatusRefused(msg.sender, current);
+        if (current == FederationStatus.LEFT) return;
+        l.status = FederationStatus.LEFT;
+        emit FederatedContractStatus(msg.sender, l.artistId, FederationStatus.LEFT, bytes32(0));
     }
 
     // ----- reads -----
@@ -455,6 +592,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     function isArtist(address token, uint256 id, address account) external view returns (bool) {
         address s = stream;
         if (s == address(0) || token == address(0) || account == address(0)) return false;
+        uint256 gasBefore = gasleft();
         if (token != s) {
             if (token != IStream(s).editions()) return false;
             try IEditions(token).masterOf(id) returns (
@@ -464,12 +602,15 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
                 if (master != s || contentHash == bytes32(0)) return false;
                 id = workId;
             } catch {
+                _revertOnShortfall(token, gasBefore);
                 return false;
             }
+            gasBefore = gasleft();
         }
         try IStream(s).artistOf(id) returns (uint256 artistId) {
             return _active(artistId) == account;
         } catch {
+            _revertOnShortfall(s, gasBefore);
             return false;
         }
     }
@@ -523,8 +664,48 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IArtistRegistry
-    function federatedContracts(uint256 artistId) external view returns (address[] memory) {
-        return _federated[artistId];
+    function federatedListing(address token)
+        external
+        view
+        returns (uint256 artistId, FederationStatus status)
+    {
+        Listing storage l = _listings[token];
+        return (l.artistId, l.status);
+    }
+
+    /// @inheritdoc IArtistRegistry
+    function timer(Timer which) public view returns (uint48) {
+        return _field(_timerWord, uint256(which));
+    }
+
+    /// @inheritdoc IArtistRegistry
+    function timerBounds(Timer which) public pure returns (uint48 floor, uint48 ceiling) {
+        return (_field(FLOORS, uint256(which)), _field(CEILINGS, uint256(which)));
+    }
+
+    /// @dev The 48-bit field `index` of a packed timer word.
+    function _field(uint256 word, uint256 index) private pure returns (uint48) {
+        // The cast keeps exactly the field's 48 bits.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return uint48(word >> (48 * index));
+    }
+
+    /// @notice The EIP-712 digest an account signs to consent to an identity created through
+    ///         the federation registry (`registerFederated`).
+    /// @param account The consenting account.
+    /// @param profileId The claimed 6529 profile ID.
+    /// @param profileDocHash The profile document hash.
+    /// @param deadline The Unix time in seconds after which the signature is expired.
+    /// @return The `ArtistRegistration` digest in this registry's EIP-712 domain.
+    function registrationDigest(
+        address account,
+        bytes32 profileId,
+        bytes32 profileDocHash,
+        uint64 deadline
+    ) public view returns (bytes32) {
+        return _hashTypedDataV4(
+            keccak256(abi.encode(ARTIST_REGISTRATION, account, profileId, profileDocHash, deadline))
+        );
     }
 
     /// @inheritdoc IArtistRegistry
@@ -641,6 +822,22 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
                 || ProtocolContracts.isProtocolContract(account));
     }
 
+    /// @dev Whether `account` is a contract this registry knows as canonical or protocol: this
+    ///      registry, 6529 Stream `s` and its Editions `e`, and every bound contract (the package
+    ///      and federation registries, the split factory, the statement log and the consolidation
+    ///      source). Zero is not.
+    function _canonical(address account, address s, address e) private view returns (bool) {
+        return account != address(0)
+            && (account == address(this)
+                || account == s
+                || account == e
+                || account == packageRegistry
+                || account == federationRegistry
+                || account == splitFactory
+                || account == statementLog
+                || account == address(consolidationSource));
+    }
+
     /// @dev The consolidation source, its install-time code-hash pin re-checked at use (DEPS-6):
     ///      a source whose code no longer matches is never trusted. The established-wallet check
     ///      fails closed with `Dependency.DependencyCodeChanged`; for refreshes see {_refresh}.
@@ -659,19 +856,19 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         return target;
     }
 
-    /// @dev Refreshes standing, captures the snapshot's effective entries (missing ones within
-    ///      their grace included; the refresh has removed the rest), consumes the nonce and
-    ///      reserves a new authority until the change ends.
+    /// @dev Refreshes standing (best-effort), captures the snapshot's effective entries (missing
+    ///      ones within their grace included; the refresh has removed the rest, unless it was
+    ///      skipped, which removes nobody), consumes the nonce, locks the delay and the contest
+    ///      timeout, and reserves a new authority until the change ends.
     function _stage(
         uint256 artistId,
         Artist storage a,
         ChangeKind kind,
         ArtistIdentity calldata next,
-        bytes32 evidenceHash,
-        uint64 delay
+        bytes32 evidenceHash
     ) private {
         address current = a.authority;
-        _refresh(artistId, current, false);
+        _refresh(artistId, current, true);
         Standing[] storage snapshot = _standing[artistId];
         address[] memory cancellers = new address[](snapshot.length);
         uint256 n;
@@ -685,10 +882,12 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         ++a.nonce;
         PendingChange storage p = _pending[artistId];
         p.kind = kind;
+        p.contestTimeout = timer(Timer.CONTEST_TIMEOUT);
         p.next = next;
         p.previousAuthority = current;
         p.stagedAt = uint64(block.timestamp);
-        p.executableAt = uint64(block.timestamp) + delay;
+        p.executableAt = uint64(block.timestamp)
+            + timer(kind == ChangeKind.STANDARD ? Timer.CHANGE_DELAY : Timer.OVERRIDE_DELAY);
         p.evidenceHash = evidenceHash;
         p.cancellers = cancellers;
         a.restrained = kind > ChangeKind.STANDARD && next.authority != current;
@@ -697,16 +896,17 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     }
 
     /// @dev Updates recorded entries (a wallet absent from the bounded scan is checked directly
-    ///      before it is marked missing), removes those missing for {STANDING_GRACE} and pending
-    ///      ones found missing (they never had standing), then records new consolidations in free
-    ///      slots, established before pending. Nothing is evicted. When `bestEffort` (registration
-    ///      and execution), a source read failing with `DelegationReadFailed` ends the refresh
-    ///      ({StandingRefreshSkipped}) instead of reverting: what it already applied came from
-    ///      successful reads, and skipping the rest removes nobody's standing. A source whose
-    ///      code no longer matches its pin (DEPS-6) is treated the same way: a best-effort refresh
-    ///      skips without reading it, and the others revert with
-    ///      `Dependency.DependencyCodeChanged`. Staging, heartbeats and `refreshStanding` fail
-    ///      closed.
+    ///      before it is marked missing), removes those missing for the standing grace and
+    ///      pending ones found missing (they never had standing), then records new consolidations
+    ///      in free slots, established before pending. Nothing is evicted. When `bestEffort`
+    ///      (every refresh but `refreshStanding`), any source failure (a revert of any kind, or
+    ///      an answer out of bounds) ends the refresh ({StandingRefreshSkipped}) instead of
+    ///      reverting: what it already applied came from successful reads, and skipping the rest
+    ///      removes nobody's standing. A source whose code no longer matches its pin (DEPS-6) is
+    ///      treated the same way: a best-effort refresh skips without reading it, and
+    ///      `refreshStanding` reverts with `Dependency.DependencyCodeChanged`. Reads forward all
+    ///      gas, and a failure that leaves at most 1/8 of the gas held before it reverts with
+    ///      `BoundedCallShortfall` (a gas shortfall is never read as a failing source).
     function _refresh(uint256 artistId, address authority, bool bestEffort) private {
         IConsolidationSource source = consolidationSource;
         if (address(source).codehash != consolidationSourceCodeHash) {
@@ -714,12 +914,13 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
             emit StandingRefreshSkipped(artistId);
             return;
         }
+        uint256 gasBefore = gasleft();
         try source.consolidations(authority) returns (
             address[] memory live, uint64[] memory times
         ) {
             _update(artistId, source, authority, live, times, bestEffort);
         } catch (bytes memory reason) {
-            _skipRefresh(artistId, reason, bestEffort);
+            _skipRefresh(artistId, reason, bestEffort, gasBefore);
         }
     }
 
@@ -733,7 +934,9 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         bool bestEffort
     ) private {
         if (live.length > 2 * Limits.MAX_CANCELLERS || times.length != live.length) {
-            revert InvalidSource(address(source));
+            if (!bestEffort) revert InvalidSource(address(source));
+            emit StandingRefreshSkipped(artistId);
+            return;
         }
         Standing[] storage s = _standing[artistId];
         for (uint256 i = s.length; i > 0; --i) {
@@ -741,10 +944,11 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
             address wallet = e.wallet;
             uint64 since = _effectiveIn(live, times, wallet);
             if (since == 0) {
+                uint256 gasBefore = gasleft();
                 try source.effectiveAt(authority, wallet) returns (uint64 at) {
                     since = at;
                 } catch (bytes memory reason) {
-                    return _skipRefresh(artistId, reason, bestEffort);
+                    return _skipRefresh(artistId, reason, bestEffort, gasBefore);
                 }
             }
             if (since != 0) {
@@ -752,8 +956,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
                 // and re-registration no refresh saw); an established one only moves earlier.
                 // forge-lint: disable-next-line(block-timestamp)
                 if (since < e.effectiveAt || e.effectiveAt > block.timestamp) {
-                    // forge-lint: disable-next-line(unsafe-typecast)
-                    e.effectiveAt = uint48(since);
+                    e.effectiveAt = _clamp48(since);
                 }
                 if (e.missingSince != 0) {
                     e.missingSince = 0;
@@ -766,9 +969,10 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
                 emit StandingMissing(artistId, wallet);
                 // A pending entry found missing never had standing: its consolidation ended
                 // before its 30 days, so it goes at once (ADR 0001 section 11). Its missingSince is
-                // zero, so the grace check below always holds for it.
+                // zero, so the grace check below always holds for it. The grace is read only
+                // here, so a refresh with nothing missing never loads the timers.
                 // forge-lint: disable-next-line(block-timestamp)
-            } else if (block.timestamp >= uint256(e.missingSince) + STANDING_GRACE) {
+            } else if (block.timestamp >= uint256(e.missingSince) + timer(Timer.STANDING_GRACE)) {
                 s[i - 1] = s[s.length - 1];
                 s.pop();
                 emit StandingRemoved(artistId, wallet);
@@ -781,26 +985,42 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
                 if ((times[i] <= block.timestamp) != (pass == 0) || _recorded(s, live[i])) {
                     continue;
                 }
-                // forge-lint: disable-next-line(unsafe-typecast)
-                _standing[artistId].push(Standing(live[i], uint48(times[i]), 0));
-                emit StandingAdded(artistId, live[i], times[i]);
+                uint48 since = _clamp48(times[i]);
+                _standing[artistId].push(Standing(live[i], since, 0));
+                emit StandingAdded(artistId, live[i], since);
             }
         }
     }
 
-    /// @dev Ends a best-effort refresh on the source's `DelegationReadFailed`; rethrows any other
-    ///      failure, and every failure of a refresh that must succeed.
-    function _skipRefresh(uint256 artistId, bytes memory reason, bool bestEffort) private {
-        if (
-            !bestEffort || reason.length != 36
-                // forge-lint: disable-next-line(unsafe-typecast)
-                || bytes4(reason) != IConsolidationSource.DelegationReadFailed.selector
-        ) {
+    /// @dev Ends a best-effort refresh on any source failure; rethrows every failure of a
+    ///      refresh that must succeed. A gas shortfall reverts in both cases.
+    function _skipRefresh(uint256 artistId, bytes memory reason, bool bestEffort, uint256 gasBefore)
+        private
+    {
+        _revertOnShortfall(address(consolidationSource), gasBefore);
+        if (!bestEffort) {
             assembly ("memory-safe") {
                 revert(add(reason, 0x20), mload(reason))
             }
         }
         emit StandingRefreshSkipped(artistId);
+    }
+
+    /// @dev The shared gas rule (`BoundedCall`) for the registry's own try/catch reads, which
+    ///      forward all gas: a failure that left at most 1/8 of the gas held before the call may
+    ///      be the caller's gas supply, so it reverts and is never read as the callee's answer.
+    function _revertOnShortfall(address target, uint256 gasBefore) private view {
+        if (gasleft() <= gasBefore / BoundedCall.SHORTFALL_DIVISOR) {
+            revert BoundedCall.BoundedCallShortfall(target);
+        }
+    }
+
+    /// @dev A source-supplied time as stored: never truncated, at most the largest uint48 (a time
+    ///      that far ahead stays pending for good).
+    function _clamp48(uint64 time) private pure returns (uint48) {
+        // The cast is reached only for times that fit 48 bits.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return time > type(uint48).max ? type(uint48).max : uint48(time);
     }
 
     function _effectiveIn(address[] memory list, uint64[] memory times, address wallet)
@@ -838,11 +1058,12 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         if (a.restrained && !_lapsed(_pending[artistId])) current = address(0);
     }
 
-    /// @dev Whether `p` is a contest nobody resolved within {CONTEST_TIMEOUT}.
+    /// @dev Whether `p` is a contest nobody resolved within the contest timeout locked at its
+    ///      staging.
     function _lapsed(PendingChange storage p) private view returns (bool) {
         uint64 contestedAt = p.contestedAt;
         // forge-lint: disable-next-line(block-timestamp)
-        return contestedAt != 0 && block.timestamp >= uint256(contestedAt) + CONTEST_TIMEOUT;
+        return contestedAt != 0 && block.timestamp >= uint256(contestedAt) + p.contestTimeout;
     }
 
     /// @dev Ends the pending change and its reservation. A change that keeps the authority
