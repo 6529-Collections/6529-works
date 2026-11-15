@@ -19,7 +19,7 @@ metadata should start with [Reading a work](../integrators/reading-a-work.md).
 | `HtmlScript` | [`src/content/HtmlScript.sol`](../../src/content/HtmlScript.sol) | library | Neutralizes `</script` and `<!--` in a script placed in the renderer's HTML page, with a cap on `<`. |
 | `JsonEscape` | [`src/libraries/JsonEscape.sol`](../../src/libraries/JsonEscape.sol) | library | Escapes strings from Stream, a locator or the store for a JSON string. |
 | `Utf8` | [`src/libraries/Utf8.sol`](../../src/libraries/Utf8.sol) | library | RFC 3629 UTF-8 validation. |
-| `BoundedCall` | [`src/libraries/BoundedCall.sol`](../../src/libraries/BoundedCall.sol) | library | A `staticcall` with a gas cap and a return-size cap; reverts if the caller cannot forward the full cap. |
+| `BoundedCall` | [`src/libraries/BoundedCall.sol`](../../src/libraries/BoundedCall.sol) | library | A `staticcall` that forwards all the gas it may with a return-size cap (`tryReadAll`); a failure that left at most 1/8 of the gas reverts with `BoundedCallShortfall` (the gas rule, ADR 0007). |
 | `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | [`IStream`](../../src/interfaces/IStream.sol) | `tokenURI` forwarding, `rendererOf`, the default renderer and its code-hash pin, ERC-4906 events for works. |
 | `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | [`IEditions`](../../src/interfaces/IEditions.sol) | `uri` forwarding to the master's renderer, `masterOf`, ERC-4906 events for editions. |
 
@@ -122,7 +122,7 @@ sequenceDiagram
     S->>S: rendererOf, the token must be live
     S->>W: pinnedRenderer(tokenId), with exactly RECORDS_GAS
     Note over W: reverts DependencyCodeChanged if the pinned code changed, RecordNotOpen before openRecord
-    opt no pin, or any other fault of WorkRecords
+    opt no pin, or the record is not open
         S->>S: defaultRenderer, its codehash must match the installed hash
     end
     S->>R: tokenURI(stream, tokenId)
@@ -132,11 +132,11 @@ sequenceDiagram
 
 - `rendererOf` never falls back from a broken pin to the default, or from a broken default to
   anything else: the call reverts (`Dependency.DependencyCodeChanged`).
-- A fault of the records satellite itself never takes metadata down: `rendererOf` gives
-  `pinnedRenderer` exactly `RECORDS_GAS` (100,000; a caller too short of gas to forward it, a
-  cold satellite account included, is refused with `BoundedCallInsufficientGas`) and reads one word back, and a revert other than
-  `DependencyCodeChanged`, running out of gas, or an answer that is not an address with code
-  serves the default renderer.
+- Selection fails closed (AUC-42, RND-28, ADR 0007): `rendererOf` reads `pinnedRenderer` with
+  all the gas the call has. Only "no pin" (zero) and `RecordNotOpen` serve the default renderer;
+  any other revert of the records satellite is passed on, a malformed answer reverts with
+  `RendererPinUnreadable`, and a shortfall reverts with `BoundedCallShortfall`. A faulty
+  satellite can make `tokenURI` revert; it can never make a work show another renderer.
 
 ### Inside the renderer
 
@@ -171,14 +171,15 @@ sequenceDiagram
 - For a Stream token, `Token` and `Stream` are the same contract. Before the record is open, a
   VRF seed is read by item hash from the module the work minted under
   (`Stream.entropyModuleOf(workId)`) instead of `seedOf`.
-- **Gas left.** Every arrow is one `BoundedCall` with its own gas and return cap. Before each
-  read the renderer requires `gasleft()` to cover the cap, EIP-150's 1/63 retention,
-  `AFTER_GAS` (50,000) and `BoundedCall.CALL_RESERVE` (1,000), or reverts with
-  `BoundedCallInsufficientGas`. The media-list read alone needs about 1.07M gas left
-  (`MEDIA_GAS` 1,000,000 plus 15,874 plus 51,000), so a caller must supply well over the gas the
-  call uses.
-- Media bytes are read one store chunk at a time (`readChunk`, at most 24,575 bytes and 300,000
-  gas each) straight into the single output buffer.
+- **Gas.** Every arrow is one `BoundedCall.tryReadAll`: it forwards all the gas EIP-150 allows,
+  with a return-size cap, and no gas figure is compiled into the renderer. A finalized work pins
+  its renderer, possibly for good once its artist renounces the repin (`RENDERER_REPIN`), so a
+  compiled cap would let a future repricing break that work's metadata for good; without one a
+  repricing makes `tokenURI` dearer, never different. A read that fails with at most 1/8 of the
+  gas left reverts with `BoundedCallShortfall` (the caller retries with more gas), and a read
+  that fails otherwise, answers nothing or answers too much reverts with `RendererReadFailed`.
+- Media bytes are read one store chunk at a time (`readChunk`, at most 24,575 bytes each)
+  straight into the single output buffer.
 - **Gas.** At most 8M Prague gas for every work the protocol allows (RND-26;
   [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table), decision 1). With every
   cap filled at once the highest figure found is 7,796,194. The budget proof is
@@ -306,10 +307,10 @@ cost-weighted size is at most the limit (`inlineThreshold()` for `tokenURI`, 1 M
 | `Base64` or `Gzip` script, `Gzip`, `GzipBase64` | never; served by locator |
 
 A preview is inlined by the same encoding rules when it is complete in the store and its
-cost-weighted size is at most `PREVIEW_LIMIT` (65,536), without the work being on-chain complete.
-`WorkRecords.openRecord` caps an `Identity` or `Base64` preview lower, at
-`Limits.MAX_PREVIEW_BYTES` (16,384 stored bytes, an `Identity` file counting four times), which
-keeps the 8M budget.
+cost-weighted size is at most `PREVIEW_LIMIT` (`Limits.MAX_PREVIEW_BYTES`, 16,384; an `Identity`
+file weighs eight times its length, so at most 2,048 `Identity` bytes or 16,384 attested `Base64`
+characters), without the work being on-chain complete. `WorkRecords` holds no preview bound (a
+preview of any size opens); a larger preview is served by locator, which keeps the 8M budget.
 
 The three media members are then:
 
@@ -416,8 +417,8 @@ changed makes `tokenURI` revert, also without an event.
 | --- | --- | --- |
 | The default renderer's code changed | Every unfinalized work and its edition reverts with `DependencyCodeChanged(renderer)`; so does `finalize` | SUCCESSOR_SETTER installs a new default (`setDefaultRenderer`, 30 days) |
 | A finalized work's pinned renderer's code changed | That work's `tokenURI` and its edition's `uri` revert with `DependencyCodeChanged(renderer)` | Errata repin (artist signature plus SUCCESSOR_SETTER, 30 days); a lost artist key is recovered first through the artist registry |
-| A dependency read fails (no code, revert, out of its gas cap, too much return data) | `RendererReadFailed(target, selector)`, or for a chunk `BoundedCallFailed` or `BoundedCallMalformedReturn` | The renderer's content store and statement log are fixed at construction: a broken one needs a new renderer (a new default, or an errata repin) |
-| The caller supplied too little gas | `BoundedCallInsufficientGas(gasLimit)` | Supply more gas (see [Inside the renderer](#inside-the-renderer)) |
+| A dependency read fails (no code, revert, empty or too much return data) | `RendererReadFailed(target, selector)` | The renderer's content store and statement log are fixed at construction: a broken one needs a new renderer (a new default, or an errata repin) |
+| A read ran short of gas (too little supplied, or a dependency that burns all it is given) | `BoundedCallShortfall(target)` | Supply more gas; a dependency that burns everything blocks the call until it is replaced (see [Inside the renderer](#inside-the-renderer)) |
 | The record is not open | Core-only, `not_open` | Anyone calls `openRecord` |
 | The record file is not registered or not completely uploaded | Core-only, `incomplete` | Anyone registers the manifest and uploads the chunk |
 | The record is refused | Core-only, `invalid` | Before finalize, the artist calls `setRecord`. After finalize only an errata repin to a renderer that accepts it changes the output |
@@ -435,7 +436,7 @@ changed makes `tokenURI` revert, also without an event.
 | Allowed thresholds | 1 to 1,048,576 | `Renderer` constructor |
 | `Identity` weight | 8 times its stored length | `Renderer._weight` |
 | `fullTokenURI` limit | 1,048,576 cost-weighted bytes | `MAX_INLINE_BYTES` (internal) |
-| Preview limit, renderer | 65,536 cost-weighted bytes | `PREVIEW_LIMIT` (internal) |
+| Preview limit, renderer | 16,384 cost-weighted bytes (`Limits.MAX_PREVIEW_BYTES`) | `PREVIEW_LIMIT` (internal) |
 | Script page size, `tokenURI` | 8,192 stored bytes | `SCRIPT_LIMIT` (internal) |
 | `<` in a wrapped script | at most 1,024 | `MAX_SCRIPT_LT` (internal) |
 | `window.works` version | 1 | `SHELL_HEAD` |
@@ -446,9 +447,8 @@ changed makes `tokenURI` revert, also without an event.
 | JSON nesting | 8 levels | `JsonScan.MAX_DEPTH` |
 | JSON number | at most 24 bytes, exponent at most 2 digits | `JsonScan` |
 | Collection name | 1 to 256 bytes of UTF-8, no control characters, `<`, `"` or `\` | `Stream.MAX_NAME_BYTES`, `createCollection` |
-| Read gas caps | 300,000 (`SMALL_GAS`, most reads); 1,000,000 (`MEDIA_GAS`, `mediaOf`); 300,000 (`CHUNK_GAS`, `readChunk`); 700,000 (`COMPLETE_GAS`, `isComplete`) | `Renderer` (private) |
-| Gas kept after each read | 50,000 (`AFTER_GAS`) plus 1,000 (`BoundedCall.CALL_RESERVE`) | `Renderer`, `BoundedCall` |
-| Return caps | 4,096 bytes (`collection`); 2,304 (`preferredLocator`, `Limits.MAX_URI_BYTES` plus 256); 3,136 (`mediaOf`, 64 plus 96 per file); 512 (`fileInfo`); 288 (`work`); 256 (`record`, `licenseOf`); 96 (`masterOf`); 64 (`seedOf`); 32 (every one-word read); 24,575 (`readChunk`, `SSTORE2.MAX_CHUNK_LENGTH`) | `Renderer` |
+| Read gas | none compiled: every read forwards all the gas it may; a shortfall reverts (`BoundedCallShortfall`) | `Renderer._read`, `BoundedCall.tryReadAll` |
+| Return caps | 4,096 bytes (`collection`); 2,304 (`preferredLocator`, `Limits.MAX_URI_BYTES` plus 256); 3,136 (`mediaOf`, 64 plus 96 per file); 512 (`fileInfo`); 288 (`work`); 256 (`record`, `licenseOf`); 96 (`masterOf`); 64 (`seedOf`); 32 (every one-word read); 24,671 (`readChunk`, `SSTORE2.MAX_CHUNK_LENGTH` plus its ABI encoding) | `Renderer` |
 
 Record size, media files and locators per file are limits of [Works and storage](works-and-storage.md#parameters-and-limits).
 

@@ -26,7 +26,7 @@ import { IntegrationBase } from "./IntegrationBase.sol";
 ///           attribute's name is 33 characters, the longest the renderer compares letter by
 ///           letter with its own names (`TRAIT`).
 ///         - **The media**: 256 KiB of attested `Base64` `text/html` as the primary (inlined),
-///           a PREVIEW image at the WorkRecords cap (`Limits.MAX_PREVIEW_BYTES`), stored as
+///           a PREVIEW image at the renderer's bound (`Limits.MAX_PREVIEW_BYTES`), stored as
 ///           `Identity` or as attested `Base64` (inlined), and 32 media files in all
 ///           (`Limits.MAX_MEDIA_FILES`).
 ///         - **The rest**: a 64-byte `LicenseRef` license whose text is a media file served by
@@ -46,8 +46,9 @@ contract TokenUriBudgetTest is IntegrationBase {
     bytes internal constant ATTR = '{"trait_type":"abcdefghijklmnopqrstuvwxyzabcdefg","value":1,'
         '"display_type":"number","max_value":9}';
     uint256 internal constant ATTR_UNITS = 9;
-    /// @dev The largest PREVIEW image of each encoding `openRecord` accepts.
-    uint256 internal constant PREVIEW_IDENTITY = Limits.MAX_PREVIEW_BYTES / 4;
+    /// @dev The largest PREVIEW image of each encoding the renderer inlines (its preview bound is
+    ///      `Limits.MAX_PREVIEW_BYTES` of weight, an `Identity` byte weighing eight).
+    uint256 internal constant PREVIEW_IDENTITY = Limits.MAX_PREVIEW_BYTES / 8;
     uint256 internal constant PREVIEW_BASE64 = Limits.MAX_PREVIEW_BYTES;
 
     // Where the attributes' white space goes, and what the leftover units are.
@@ -171,7 +172,7 @@ contract TokenUriBudgetTest is IntegrationBase {
         MediaFile[] media;
     }
 
-    /// @dev A PREVIEW image at the cap: `Identity` of `MAX_PREVIEW_BYTES / 4` bytes, or attested
+    /// @dev A PREVIEW image at the bound: `Identity` of `MAX_PREVIEW_BYTES / 8` bytes, or attested
     ///      `Base64` text of `MAX_PREVIEW_BYTES` bytes.
     function _preview(bool base64) internal returns (bytes32 id, bytes32 sha) {
         bytes memory png = _bytes(base64 ? PREVIEW_BASE64 / 4 * 3 : PREVIEW_IDENTITY, 1000 + salt);

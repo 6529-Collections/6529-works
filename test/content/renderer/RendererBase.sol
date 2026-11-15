@@ -56,7 +56,7 @@ abstract contract RendererBase is ContentBase {
     uint256 internal constant MAX_ATTRIBUTES = 32;
     uint256 internal constant MAX_SCRIPT_LT = 1_024;
     uint256 internal constant SCRIPT_LIMIT = 8_192;
-    uint256 internal constant PREVIEW_LIMIT = 65_536;
+    uint256 internal constant PREVIEW_LIMIT = 16_384; // `Limits.MAX_PREVIEW_BYTES`
     uint256 internal constant MAX_INLINE_BYTES = 1_048_576;
     string internal constant PREFIX = "data:application/json;utf8,";
 

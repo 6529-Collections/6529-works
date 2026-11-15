@@ -12,6 +12,7 @@ import { IRenderer } from "../interfaces/IRenderer.sol";
 import { IStatementLog } from "../interfaces/IStatementLog.sol";
 import { IStream } from "../interfaces/IStream.sol";
 import { IStreamViews } from "../interfaces/IStreamViews.sol";
+import { IWorkDelivery } from "../interfaces/IWorkDelivery.sol";
 import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "../interfaces/types/ContentTypes.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
@@ -31,8 +32,11 @@ import { JsonScan } from "./JsonScan.sol";
 ///      Editions, which it recognises by ERC-165 and follows to the master), that Stream's
 ///      `IWorkRecords` satellite, the shared content store and optionally the statement log. A
 ///      hostile `token` can only change what its own call returns, so there is no list of tokens;
-///      every read is a `BoundedCall` with its own gas and return-size cap and reverts if it
-///      fails (fail closed).
+///      every read forwards all the gas it may (`BoundedCall.tryReadAll`, the gas rule of ADR
+///      0007), with a return-size cap, and reverts if it fails (fail closed); a read that runs
+///      short reverts with `BoundedCallShortfall`, so a caller retries with more gas. A finalized
+///      work pins its renderer, possibly for good (its artist may renounce the repin), so no gas
+///      figure is compiled here: a repricing can make `tokenURI` cost more, never fail.
 ///
 ///      The record. A work's descriptive record is a JSON file in the content store (stored as
 ///      `Identity`, at most `MAX_RECORD_BYTES`). The renderer reads it, checks it as UTF-8 and with
@@ -91,8 +95,9 @@ contract Renderer is IRenderer {
     ///         `test/content/renderer/RendererGas.t.sol` shows it fits 8M gas).
     uint256 public constant DEFAULT_INLINE_THRESHOLD = 262_144;
     /// @notice The largest PREVIEW image, cost-weighted stored bytes, inlined next to a primary
-    ///         file that is not.
-    uint256 internal constant PREVIEW_LIMIT = 65_536;
+    ///         file that is not (`Limits.MAX_PREVIEW_BYTES`: the 8M promise counts it; WorkRecords
+    ///         holds no preview bound, so a larger preview is served by locator).
+    uint256 internal constant PREVIEW_LIMIT = Limits.MAX_PREVIEW_BYTES;
     /// @notice The largest JavaScript primary, in stored bytes, that `tokenURI` wraps in the HTML
     ///         page (it has the 8M promise); `fullTokenURI` wraps a larger one, up to its size
     ///         limit.
@@ -118,17 +123,6 @@ contract Renderer is IRenderer {
     /// @inheritdoc IRenderer
     uint256 public immutable inlineThreshold;
 
-    /// @dev Gas caps per read. A read gets exactly its cap (BoundedCall), so these bound the
-    ///      cost of a hostile or broken target; they are ceilings, not estimates. The media list
-    ///      has its own: the satellite reads the store once per file, under 200,000 gas fully
-    ///      cold at 32 files, and its cap leaves room for a repricing of cold reads, which would
-    ///      otherwise break every large work's `tokenURI` (a finalized work pins its renderer).
-    uint256 private constant SMALL_GAS = 300_000;
-    uint256 private constant MEDIA_GAS = 1_000_000;
-    uint256 private constant CHUNK_GAS = 300_000;
-    uint256 private constant COMPLETE_GAS = 700_000;
-    /// @dev Gas the renderer needs after any one read returns (checked before the read).
-    uint256 private constant AFTER_GAS = 50_000;
     /// @dev Return-size caps in bytes.
     uint256 private constant TEXT_RETURN = 4_096;
     uint256 private constant LOCATOR_RETURN = Limits.MAX_URI_BYTES + 256;
@@ -234,9 +228,7 @@ contract Renderer is IRenderer {
         Ctx memory c;
         (c.token, c.id, c.limit, c.strict) = (token, id, limit, strict);
         _load(c);
-        c.open = abi.decode(
-            _word(c.records, IWorkRecords.isOpen.selector, c.workId, SMALL_GAS, 32), (bool)
-        );
+        c.open = abi.decode(_word(c.records, IWorkRecords.isOpen.selector, c.workId, 32), (bool));
         RecordState state = RecordState.NotOpen;
         bytes memory record = "";
         if (c.open) {
@@ -264,40 +256,27 @@ contract Renderer is IRenderer {
     ///      edition: its ID is the master's Stream token ID, and the master (found through
     ///      `masterOf`) supplies the record, license and media.
     function _load(Ctx memory c) private view {
-        (bool ok, bytes memory ret) = BoundedCall.tryRead(
-            c.token,
-            abi.encodeCall(IERC165.supportsInterface, (type(IERC1155).interfaceId)),
-            SMALL_GAS,
-            32,
-            AFTER_GAS
+        (bool ok, bytes memory ret) = BoundedCall.tryReadAll(
+            c.token, abi.encodeCall(IERC165.supportsInterface, (type(IERC1155).interfaceId)), 32
         );
         if (ok && ret.length == 32 && abi.decode(ret, (uint256)) == 1) {
             c.edition = true;
             (c.stream, c.workId, c.hash) = abi.decode(
-                _word(c.token, IEditions.masterOf.selector, c.id, SMALL_GAS, 96),
-                (address, uint256, bytes32)
+                _word(c.token, IEditions.masterOf.selector, c.id, 96), (address, uint256, bytes32)
             );
         } else {
             c.stream = c.token;
             c.workId = c.id;
         }
         c.core = abi.decode(
-            _word(c.stream, IStreamViews.work.selector, c.workId, SMALL_GAS, 288),
-            (IStreamViews.WorkCore)
+            _word(c.stream, IStreamViews.work.selector, c.workId, 288), (IStreamViews.WorkCore)
         );
-        c.records = abi.decode(
-            _read(c.stream, abi.encodeCall(IStream.workRecords, ()), SMALL_GAS, 32), (address)
-        );
+        c.records =
+            abi.decode(_read(c.stream, abi.encodeCall(IStream.workRecords, ()), 32), (address));
         if (c.core.collectionId != 0) {
             c.collection =
             abi.decode(
-                _word(
-                    c.stream,
-                    IStreamViews.collection.selector,
-                    c.core.collectionId,
-                    SMALL_GAS,
-                    TEXT_RETURN
-                ),
+                _word(c.stream, IStreamViews.collection.selector, c.core.collectionId, TEXT_RETURN),
                 (IStreamViews.Collection)
             )
             .name;
@@ -307,16 +286,11 @@ contract Renderer is IRenderer {
     /// @dev Loads the record state and media of a work whose record is open.
     function _loadRecord(Ctx memory c) private view {
         c.rec = abi.decode(
-            _word(c.records, IWorkRecords.record.selector, c.workId, SMALL_GAS, 256),
-            (IWorkRecords.RecordInfo)
+            _word(c.records, IWorkRecords.record.selector, c.workId, 256), (IWorkRecords.RecordInfo)
         );
         c.media = abi.decode(
             _word(
-                c.records,
-                IWorkRecords.mediaOf.selector,
-                c.workId,
-                MEDIA_GAS,
-                64 + 96 * Limits.MAX_MEDIA_FILES
+                c.records, IWorkRecords.mediaOf.selector, c.workId, 64 + 96 * Limits.MAX_MEDIA_FILES
             ),
             (MediaFile[])
         );
@@ -335,12 +309,8 @@ contract Renderer is IRenderer {
     ///      failure is the unknown file, not a broken store.
     function _record(Ctx memory c) private view returns (RecordState, bytes memory j) {
         bytes32 id = c.rec.recordFileId;
-        (bool known, bytes memory info) = BoundedCall.tryRead(
-            address(contentStore),
-            abi.encodeWithSelector(IContentStore.fileInfo.selector, id),
-            SMALL_GAS,
-            512,
-            AFTER_GAS
+        (bool known, bytes memory info) = BoundedCall.tryReadAll(
+            address(contentStore), abi.encodeWithSelector(IContentStore.fileInfo.selector, id), 512
         );
         if (!known) return (RecordState.Incomplete, j);
         IContentStore.FileInfo memory fi = abi.decode(info, (IContentStore.FileInfo));
@@ -653,17 +623,20 @@ contract Renderer is IRenderer {
     ///      satellite answers kind NONE) and for the implicit on-chain locator, which has no URL.
     ///      A failed read reverts: no media is better than media that depends on a gas cap.
     function _locator(Ctx memory c, bytes32 id) private view returns (Media memory m) {
-        (Locator memory l,) = abi.decode(
+        (IWorkDelivery.Location memory l,) = abi.decode(
             _read(
                 c.records,
                 abi.encodeCall(IWorkRecords.preferredLocator, (c.workId, id)),
-                SMALL_GAS,
                 LOCATOR_RETURN
             ),
-            (Locator, uint256)
+            (IWorkDelivery.Location, uint256)
         );
-        if (l.kind != LocatorKind.NONE && l.kind != LocatorKind.ONCHAIN && bytes(l.uri).length != 0)
-        {
+        // Any kind but NONE and the implicit ONCHAIN, so a kind a later delivery contract adds
+        // still reaches works that pinned this renderer.
+        if (
+            l.kind != uint8(LocatorKind.NONE) && l.kind != uint8(LocatorKind.ONCHAIN)
+                && bytes(l.uri).length != 0
+        ) {
             return Media(Mode.Locator, 0, 0, _str(l.uri));
         }
     }
@@ -731,14 +704,13 @@ contract Renderer is IRenderer {
             assembly ("memory-safe") {
                 mark := mload(0x40)
             }
-            bytes memory chunk = bytes(
-                BoundedCall.readString(
+            bytes memory chunk = abi.decode(
+                _read(
                     address(contentStore),
                     abi.encodeCall(IContentStore.readChunk, (id, i)),
-                    CHUNK_GAS,
-                    SSTORE2.MAX_CHUNK_LENGTH,
-                    AFTER_GAS
-                )
+                    SSTORE2.MAX_CHUNK_LENGTH + 96
+                ),
+                (bytes)
             );
             // The store's layout rule: full chunks, then the remainder.
             uint256 n = chunk.length;
@@ -805,7 +777,6 @@ contract Renderer is IRenderer {
                 _read(
                     address(statementLog),
                     abi.encodeCall(IStatementLog.latestDisputeOutcome, (c.stream, c.workId)),
-                    SMALL_GAS,
                     32
                 ),
                 (bytes32)
@@ -830,7 +801,6 @@ contract Renderer is IRenderer {
                 c.records,
                 IWorkRecords.licenseOf.selector,
                 c.workId,
-                SMALL_GAS,
                 Limits.MAX_LICENSE_ID_BYTES + 192
             ),
             (License)
@@ -903,18 +873,14 @@ contract Renderer is IRenderer {
         if (c.core.seedPolicy == uint8(SeedPolicy.NONE)) return 0;
         if (c.open) {
             (, seed) = abi.decode(
-                _word(c.records, IWorkRecords.seedOf.selector, c.workId, SMALL_GAS, 64),
-                (uint8, bytes32)
+                _word(c.records, IWorkRecords.seedOf.selector, c.workId, 64), (uint8, bytes32)
             );
         } else if (c.core.seedPolicy == uint8(SeedPolicy.VRF)) {
             address entropy = abi.decode(
-                _word(c.stream, IStream.entropyModuleOf.selector, c.workId, SMALL_GAS, 32),
-                (address)
+                _word(c.stream, IStream.entropyModuleOf.selector, c.workId, 32), (address)
             );
             seed = abi.decode(
-                _word(
-                    entropy, IEntropyModule.seedOf.selector, uint256(c.core.itemHash), SMALL_GAS, 32
-                ),
+                _word(entropy, IEntropyModule.seedOf.selector, uint256(c.core.itemHash), 32),
                 (bytes32)
             );
         }
@@ -941,48 +907,38 @@ contract Renderer is IRenderer {
 
     // ------------------------------------------------------------------ helpers
 
-    function _read(address target, bytes memory input, uint256 gasLimit, uint256 maxReturn)
+    function _read(address target, bytes memory input, uint256 maxReturn)
         private
         view
         returns (bytes memory ret)
     {
         bool ok;
-        (ok, ret) = BoundedCall.tryRead(target, input, gasLimit, maxReturn, AFTER_GAS);
-        // `input` is always an encoded call, so it holds a selector.
+        (ok, ret) = BoundedCall.tryReadAll(target, input, maxReturn);
+        // `input` is always an encoded call, so it holds a selector. An empty answer (an account
+        // without code) is a failed read too.
         // forge-lint: disable-next-line(unsafe-typecast)
-        if (!ok) revert RendererReadFailed(target, bytes4(input));
+        if (!ok || ret.length == 0) revert RendererReadFailed(target, bytes4(input));
     }
 
     /// @dev A read whose only argument is one word: `selector(arg)`.
-    function _word(
-        address target,
-        bytes4 selector,
-        uint256 arg,
-        uint256 gasLimit,
-        uint256 maxReturn
-    ) private view returns (bytes memory) {
-        return _read(target, abi.encodeWithSelector(selector, arg), gasLimit, maxReturn);
+    function _word(address target, bytes4 selector, uint256 arg, uint256 maxReturn)
+        private
+        view
+        returns (bytes memory)
+    {
+        return _read(target, abi.encodeWithSelector(selector, arg), maxReturn);
     }
 
     function _fileInfo(bytes32 id) private view returns (IContentStore.FileInfo memory) {
         return abi.decode(
-            _word(
-                address(contentStore), IContentStore.fileInfo.selector, uint256(id), SMALL_GAS, 512
-            ),
+            _word(address(contentStore), IContentStore.fileInfo.selector, uint256(id), 512),
             (IContentStore.FileInfo)
         );
     }
 
     function _complete(bytes32 id) private view returns (bool) {
         return abi.decode(
-            _word(
-                address(contentStore),
-                IContentStore.isComplete.selector,
-                uint256(id),
-                COMPLETE_GAS,
-                32
-            ),
-            (bool)
+            _word(address(contentStore), IContentStore.isComplete.selector, uint256(id), 32), (bool)
         );
     }
 
@@ -996,13 +952,7 @@ contract Renderer is IRenderer {
 
     function _attested(bytes32 id) private view returns (bool) {
         return abi.decode(
-            _word(
-                address(contentStore),
-                IContentStore.isBase64Attested.selector,
-                uint256(id),
-                SMALL_GAS,
-                32
-            ),
+            _word(address(contentStore), IContentStore.isBase64Attested.selector, uint256(id), 32),
             (bool)
         );
     }
