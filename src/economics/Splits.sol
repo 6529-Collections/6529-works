@@ -19,8 +19,15 @@ library Splits {
     /// @notice Reverts unless `payees` is a canonical payee list: 1 to {MAX_PAYEES} entries, each
     ///         exactly fixed or exactly artist-resolved with a non-zero share, strictly ascending
     ///         by `(artistId, account)` (fixed payees first, so no duplicates), shares summing to
-    ///         {DENOMINATOR}.
-    function validate(ISplitWallet.Payee[] calldata payees) internal pure {
+    ///         {DENOMINATOR}; and refuses payees that could never be paid: an artist ID of 2^160
+    ///         or more (IDs are the `uint160` of an account, so it can never be registered) and a
+    ///         fixed account equal to the calling contract (the split ledger, the only caller,
+    ///         which refuses itself as a recipient).
+    /// @dev Only checks that read no state: a check that read another contract could change its
+    ///      answer after a wallet's address was derived and paid, and leave it undeployable. The
+    ///      revenue escrow as a fixed payee, and other accounts that cannot accept a push, are
+    ///      therefore not refused here (protocol payee lists come from the package registry).
+    function validate(ISplitWallet.Payee[] calldata payees) internal view {
         uint256 count = payees.length;
         if (count == 0 || count > MAX_PAYEES) revert ISplitWallet.PayeeCountOutOfRange(count);
         uint256 total = 0;
@@ -29,9 +36,10 @@ library Splits {
         for (uint256 i; i < count; ++i) {
             ISplitWallet.Payee calldata p = payees[i];
             (uint256 id, address account, uint32 share) = (p.artistId, p.account, p.share);
-            if ((id == 0) == (account == address(0)) || share == 0) {
-                revert ISplitWallet.InvalidPayee(i);
-            }
+            if (
+                (id == 0) == (account == address(0)) || share == 0 || id >> 160 != 0
+                    || account == address(this)
+            ) revert ISplitWallet.InvalidPayee(i);
             // Strictly ascending by `(artistId, account)`.
             if (i != 0 && !(lastId < id || (lastId == id && lastAccount < account))) {
                 revert ISplitWallet.PayeesNotCanonical(i);

@@ -104,7 +104,8 @@ interface IClaimRouter is IERC165 {
     /// @notice Releases every plain claim in order. In atomic mode any failure reverts the batch;
     ///         in continue mode a failed item emits {ClaimFailed}, releases 0 and the batch goes
     ///         on.
-    /// @param claims The plain releases, at most {MAX_CLAIMS}.
+    /// @param claims The plain releases, at most {MAX_CLAIMS} (at most 8 in continue mode, the
+    ///        router's `MAX_CONTINUE_CLAIMS`; `TooManyClaims` otherwise).
     /// @param continueOnFailure True for continue mode, false for atomic mode.
     /// @return amounts The amount each item released.
     function claim(Claim[] calldata claims, bool continueOnFailure)
@@ -112,7 +113,8 @@ interface IClaimRouter is IERC165 {
         returns (uint256[] memory amounts);
 
     /// @notice Executes every signed claim in order, with the same failure modes as {claim}.
-    /// @param claims The signed releases, at most {MAX_SIGNED_CLAIMS}.
+    /// @param claims The signed releases, at most {MAX_SIGNED_CLAIMS} (at most 8 in continue
+    ///        mode, as for {claim}).
     /// @param continueOnFailure True for continue mode, false for atomic mode.
     /// @return amounts The amount each item released.
     function claimSigned(SignedClaim[] calldata claims, bool continueOnFailure)

@@ -23,8 +23,8 @@ also in [Disputes and statements](../../docs/spec/disputes-and-statements.md#ide
 | The bound package registry | `register` on an account's first package acceptance | ID-1, ID-2 |
 | The bound federation registry | `registerFederated` (with the account's own signature); `listFederatedContract`, `setFederatedStatus` | ID-32 to ID-34 |
 | A listed federated token | `recordFederationExit` (LEFT, terminal) | ID-34 |
-| Anyone, relaying the authority's or an established wallet's signature (never a previous authority's) | `stageChange` (STANDARD) | ID-3 to ID-6 |
-| The authority | `revokeNonce`; `heartbeat` (also an established wallet, never a previous authority) | ID-5, ID-7, ID-19 |
+| Anyone, relaying the authority's signature, or, only for a dormant artist, an established wallet's (never a previous authority's; the change then waits the override delay) | `stageChange` (STANDARD) | ID-3 to ID-6, ID-40 |
+| The authority | `revokeNonce`; `heartbeat` (the authority only) | ID-5, ID-7, ID-19, ID-40 |
 | The previous authority or a captured wallet | `cancelChange`: cancels a STANDARD change, contests an override during its notice | ID-9, ID-13 |
 | Anyone | `executeChange` once due; `refreshStanding`; `expireContest` once the locked contest timeout has passed | ID-8, ID-15, ID-20 to ID-23 |
 | Governance | `stageOverride` (with the new authority's acceptance), `resolveContested` citing a recorded vote, `vetoChange`, `setConsolidationSource`, `setPackageRegistry` (Stream's successor package registry, owner decision 16), `setFederationRegistry`, `setTimer`; the genesis binds | ID-10 to ID-14, ID-27, ID-29 to ID-31, ID-35, ID-36; [role matrix](../../docs/audit/roles.md#artistregistry) |
@@ -45,9 +45,16 @@ restraint withholds are in the [stolen-key flow](../../docs/spec/identity-and-re
   contest timeout into `PendingChange.contestTimeout` (free: it shares `kind`'s slot).
 - **Federation directory.** `_listings[token]` is one slot (`uint160` artist ID and status); the
   fixed fields live only in `FederatedContractListed`. No identity path reads it.
+- **The source decides nothing for a live artist** (ID-40). The registry is permanent and the
+  consolidation source replaceable, so a wallet the source names signs a change only for a
+  dormant artist (checked before the source is read), that change waits the override delay
+  and records no activity, and only the authority heartbeats. What a hostile source can still
+  do is listed in the spec ([what the source decides](../../docs/spec/identity-and-recovery.md#what-the-consolidation-source-decides)).
 - **Refreshes are best-effort except `refreshStanding`.** Any source failure skips the refresh
-  (`StandingRefreshSkipped`); a shortfall (a failed read that left at most 1/8 of the gas)
-  reverts with `BoundedCallShortfall`. Source times are clamped to 48 bits.
+  (`StandingRefreshSkipped`); a shortfall (a failed read that left at most 1/8 of the gas, or a
+  source revert with `BoundedCallInsufficientGas` or `BoundedCallShortfall`, the
+  `IConsolidationSource` convention) reverts. Source times are clamped to 48 bits, and every
+  change of an entry's `effectiveAt` emits `StandingAdded`.
 - **One-read active authority.** `Artist` keeps a `restrained` flag beside the authority: every
   staging sets it, every end of a change (execution, veto, cancel, a voided or lapsed contest, a
   failed re-check at execution) clears it, and `activeAuthorityOf` reads the pending change only

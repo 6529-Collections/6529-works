@@ -106,8 +106,10 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
         assertTrue(consolidation.isEstablished(artist, wallet));
     }
 
+    /// @dev The key is lost: after a dormancy period without signed activity, the established
+    ///      wallet stages the rotation, which waits the override delay (review C, F2).
     function test_RecoveryByConsolidatedWalletThenSplitWalletPull() public {
-        vm.warp(block.timestamp + 31 days);
+        vm.warp(block.timestamp + artists.timer(IArtistRegistry.Timer.DORMANCY));
         _stage(wallet, newKey);
         PendingChange memory p = artists.pendingChange(artistId);
         assertEq(uint8(p.kind), uint8(ChangeKind.STANDARD));
@@ -150,7 +152,7 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
     }
 
     function test_OldKeyAndCapturedWalletCancel() public {
-        vm.warp(block.timestamp + 31 days);
+        vm.warp(block.timestamp + artists.timer(IArtistRegistry.Timer.DORMANCY));
         _stage(wallet, newKey);
         vm.prank(artist);
         artists.cancelChange(artistId);
@@ -370,7 +372,7 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
     ///      a guardian veto releases it.
     function test_StandardChangeReservesItsNewAuthorityUntilVetoed() public {
         vm.warp(block.timestamp + 31 days);
-        _stage(wallet, newKey);
+        _stage(artist, newKey);
         Work[] memory mine = _one(_work(newKey, collectionId));
         bytes32 rootMine = _rootOf(mine);
         _approve(rootMine);
@@ -489,7 +491,7 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
         IClaimRouter.SignedClaim[] memory stale = _authorization(artist, thief, 0.5 ether, 2);
 
         vm.warp(block.timestamp + 31 days);
-        _stage(wallet, newKey);
+        _stage(artist, newKey);
         vm.warp(block.timestamp + 7 days);
         artists.executeChange(artistId);
         bytes memory reason =

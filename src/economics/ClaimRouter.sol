@@ -28,7 +28,8 @@ import { SplitVault } from "./SplitVault.sol";
 ///      when a payee or token behind the vault ran out, or `BoundedCallInsufficientGas`), reverts
 ///      the batch with {ClaimInsufficientGas}, so `eth_estimateGas` raises the limit. At the
 ///      estimate, every item is paid, fails with gas to spare, or failed despite at least the
-///      ceiling and is skipped. The ceiling, about twice what a first signed release needs on
+///      ceiling and is skipped; {MAX_CONTINUE_CLAIMS} keeps that estimate within the EIP-7825
+///      cap, so it always exists. The ceiling, about twice what a first signed release needs on
 ///      Sepolia's Glamsterdam, covers honest items under that schedule with room; it bounds what a
 ///      party to an item (a fixed co-payee, a signed recipient, a token) can force by burning gas:
 ///      once its item is offered the ceiling, it is skipped like any other failure. Below it, such
@@ -68,6 +69,14 @@ contract ClaimRouter is IClaimRouter {
     /// @dev About twice a first signed release to a fresh recipient on Sepolia's Glamsterdam
     ///      (about 716,000: the release's new slots, the nonce word and the account).
     uint256 public constant SHORTFALL_REVERT_CEILING = 1_500_000;
+    /// @notice The most items a continue-mode batch ({claim} or {claimSigned}) may carry, so the
+    ///         first item can be offered {SHORTFALL_REVERT_CEILING} within the EIP-7825 cap of
+    ///         2^24 gas: item 0 of `n` is offered a `1 / (n + 1)` share, and
+    ///         `(8 + 1) * 1,500,000 = 13.5M` leaves about 3.27M of the cap for the transaction's
+    ///         intrinsic and calldata gas. With more items no includable gas limit would reach
+    ///         the ceiling, so one gas-burning party early in the batch could revert it at
+    ///         every limit. A safety bound tied to the ceiling, not a policy number.
+    uint256 public constant MAX_CONTINUE_CLAIMS = 8;
 
     uint256 private constant _MAX_REASON_BYTES = 256;
 
@@ -93,7 +102,9 @@ contract ClaimRouter is IClaimRouter {
         returns (uint256[] memory amounts)
     {
         uint256 count = claims.length;
-        if (count > MAX_CLAIMS) revert TooManyClaims(count);
+        if (count > (continueOnFailure ? MAX_CONTINUE_CLAIMS : MAX_CLAIMS)) {
+            revert TooManyClaims(count);
+        }
         amounts = new uint256[](count);
         for (uint256 i; i < count; ++i) {
             Claim calldata c = claims[i];
@@ -118,7 +129,9 @@ contract ClaimRouter is IClaimRouter {
         returns (uint256[] memory amounts)
     {
         uint256 count = claims.length;
-        if (count > MAX_SIGNED_CLAIMS) revert TooManyClaims(count);
+        if (count > (continueOnFailure ? MAX_CONTINUE_CLAIMS : MAX_SIGNED_CLAIMS)) {
+            revert TooManyClaims(count);
+        }
         amounts = new uint256[](count);
         for (uint256 i; i < count; ++i) {
             IReleaseVerifier.Authorization calldata a = claims[i].authorization;

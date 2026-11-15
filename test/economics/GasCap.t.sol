@@ -116,19 +116,30 @@ contract GasCapTest is EconomicsBase {
     }
 
     /// @dev Ported from the review's gas PoC: binary-search the least gas at which a full
-    ///      continue-mode batch succeeds, as `eth_estimateGas` would, and require every worst-case
-    ///      item to be paid there and the total to fit the cap.
+    ///      continue-mode batch (`MAX_CONTINUE_CLAIMS` worst-case items) succeeds, as
+    ///      `eth_estimateGas` would, and require every item to be paid there and the total to fit
+    ///      the cap.
     function test_ContinueClaimBatchAtItsEstimatedGasPaysEveryItem() public {
-        bytes memory input = abi.encodeCall(IClaimRouter.claim, (_worstClaims(), true));
+        IClaimRouter.Claim[] memory claims = _worstClaims();
+        uint256 n = router.MAX_CONTINUE_CLAIMS();
+        assembly ("memory-safe") {
+            mstore(claims, n)
+        }
+        bytes memory input = abi.encodeCall(IClaimRouter.claim, (claims, true));
         (uint256 estimate, uint256 paid) = _estimate(input, 1_000_000, 16_000_000);
-        assertEq(paid, plainWallets.length, "every item paid at the estimate");
+        assertEq(paid, n, "every item paid at the estimate");
         _assertFits("continue claim batch at its estimate", input, estimate);
     }
 
     function test_ContinueSignedBatchAtItsEstimatedGasPaysEveryItem() public {
-        bytes memory input = abi.encodeCall(IClaimRouter.claimSigned, (_worstSigned(), true));
+        IClaimRouter.SignedClaim[] memory claims = _worstSigned();
+        uint256 n = router.MAX_CONTINUE_CLAIMS();
+        assembly ("memory-safe") {
+            mstore(claims, n)
+        }
+        bytes memory input = abi.encodeCall(IClaimRouter.claimSigned, (claims, true));
         (uint256 estimate, uint256 paid) = _estimate(input, 1_000_000, 16_000_000);
-        assertEq(paid, signedWallets.length, "every item paid at the estimate");
+        assertEq(paid, n, "every item paid at the estimate");
         _assertFits("continue signed batch at its estimate", input, estimate);
     }
 

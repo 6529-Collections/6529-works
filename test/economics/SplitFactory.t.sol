@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
+import { GovernedVault } from "src/economics/GovernedVault.sol";
 import { SplitLedger } from "src/economics/SplitLedger.sol";
 import { SplitVault } from "src/economics/SplitVault.sol";
 import { Splits } from "src/economics/Splits.sol";
@@ -137,6 +138,36 @@ contract SplitFactoryTest is EconomicsBase {
         ISplitWallet.Payee[] memory neither = _list(ISplitWallet.Payee(0, address(0), D));
         vm.expectRevert(abi.encodeWithSelector(ISplitWallet.InvalidPayee.selector, 0));
         factory.walletFor(neither, ZERO_SALT);
+    }
+
+    /// @dev Review C F9: a payee that could never be paid is refused wherever a list is validated
+    ///      (`walletFor` and `createWallet` alike): an artist ID no account can have (2^160 or
+    ///      more) and the ledger itself as a fixed payee. The largest real artist ID, a royalty
+    ///      pair whose fee recipient is a contract (the governed fee vault) and a nested split
+    ///      wallet as fixed payee still pass. Fails without the change: both lists are accepted.
+    function test_RejectsPayeesThatCanNeverBePaid() public {
+        ISplitWallet.Payee[] memory badId =
+            _list(_fixed(alice, 50_000), _artist(uint256(type(uint160).max) + 1, 50_000));
+        vm.expectRevert(abi.encodeWithSelector(ISplitWallet.InvalidPayee.selector, 1));
+        factory.walletFor(badId, ZERO_SALT);
+        vm.expectRevert(abi.encodeWithSelector(ISplitWallet.InvalidPayee.selector, 1));
+        factory.createWallet(badId, ZERO_SALT);
+
+        ISplitWallet.Payee[] memory toLedger =
+            _list(_fixed(alice, 50_000), _fixed(address(ledger), 50_000));
+        uint256 at = toLedger[0].account == address(ledger) ? 0 : 1;
+        vm.expectRevert(abi.encodeWithSelector(ISplitWallet.InvalidPayee.selector, at));
+        factory.walletFor(toLedger, ZERO_SALT);
+        vm.expectRevert(abi.encodeWithSelector(ISplitWallet.InvalidPayee.selector, at));
+        factory.createWallet(toLedger, ZERO_SALT);
+
+        // Still accepted: the largest artist ID, a contract fee recipient, a nested wallet.
+        factory.createWallet(
+            _list(_fixed(alice, 50_000), _artist(type(uint160).max, 50_000)), ZERO_SALT
+        );
+        address nested = _wallet(_list(_fixed(alice, 50_000), _fixed(bob, 50_000)));
+        address feeVault = address(new GovernedVault(address(manager), ledger, alice));
+        factory.createWallet(Splits.royaltyPayees(nested, feeVault, 10_000), ZERO_SALT);
     }
 
     function test_RejectsUnsortedAndDuplicatePayees() public {
@@ -296,7 +327,7 @@ contract SplitFactoryTest is EconomicsBase {
             many[i] = _fixed(address(uint160(type(uint160).max - 31 + i)), i == 0 ? D - 63 : 1);
         }
         for (uint256 i = 32; i < 64; ++i) {
-            many[i] = _artist(type(uint256).max - 63 + i, 1);
+            many[i] = _artist(uint256(type(uint160).max) - 63 + i, 1);
         }
         vm.recordLogs();
         address w = factory.createWallet(many, ZERO_SALT);
@@ -305,7 +336,7 @@ contract SplitFactoryTest is EconomicsBase {
             abi.decode(logs[0].data, (bytes32, ISplitWallet.Payee[]));
         assertEq(keccak256(abi.encode(logged)), keccak256(abi.encode(many)));
         assertEq(logged[0].share, D - 63);
-        assertEq(logged[63].artistId, type(uint256).max);
+        assertEq(logged[63].artistId, type(uint160).max);
         vm.deal(w, 1 ether);
         assertEq(ledger.release(logged, ZERO_SALT, ETH, 0), Splits.entitlement(1 ether, D - 63));
     }
