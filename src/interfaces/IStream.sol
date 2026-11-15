@@ -225,6 +225,12 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     ///         that minted it, or that adapter is admitted or was removed less than 90 days ago
     ///         (`rescueToMuseum`).
     error WorkNotRescuable(uint256 tokenId);
+    /// @notice The rescue delay may only grow, by at most double, and fit 32 bits.
+    error InvalidRescueDelay(uint256 next);
+    /// @notice The rescue delay for later removals changed (`setRescueDelay`).
+    /// @param previous The delay before, in seconds.
+    /// @param next The delay after, in seconds.
+    event RescueDelaySet(uint256 previous, uint256 next);
     /// @notice The records satellite answered `pinnedRenderer` with something that is not an
     ///         address word.
     error RendererPinUnreadable(uint256 tokenId);
@@ -333,6 +339,19 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     ///         `WorkRescued`).
     /// @param tokenId The stranded work.
     function rescueToMuseum(uint256 tokenId) external;
+    /// @notice How long after its removal a sale adapter's unsettled works become rescuable, for
+    ///         removals made from now on: `RESCUE_DELAY_FLOOR` (90 days) until governance
+    ///         lengthens it. Each removal locks the delay in force when it is made.
+    /// @return The rescue delay, in seconds.
+    function rescueDelay() external view returns (uint256);
+    /// @notice The shortest rescue delay there can ever be (90 days): the guarantee a removed
+    ///         adapter always keeps.
+    /// @return The floor, in seconds.
+    function RESCUE_DELAY_FLOOR() external view returns (uint256);
+    /// @notice Lengthens the rescue delay for later removals: more than the current delay and at
+    ///         most twice it (`InvalidRescueDelay`). SUCCESSOR_SETTER role (the 30-day class).
+    /// @param next The new delay, in seconds.
+    function setRescueDelay(uint256 next) external;
     /// @notice Raw storage words of this contract, from `slot` on: the read port the view
     ///         extension (and anyone) reads Stream's state through.
     /// @param slot The first storage slot.

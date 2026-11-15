@@ -62,9 +62,11 @@ import { StreamViews } from "./StreamViews.sol";
 ///      changes nothing about an existing work (its terms, its seed's module, its renderer pin).
 ///      The records satellite and 6529 Stream Editions are bound once each. No delegatecall.
 contract Stream is ERC721, AccessManaged, IStream {
-    /// @dev How long after its removal a sale adapter's stranded works may be moved to the
-    ///      museum (`rescueToMuseum`, owner decision 20).
-    uint256 private constant RESCUE_DELAY = 90 days;
+    /// @notice The shortest rescue delay there can ever be: a removed sale adapter always has at
+    ///         least 90 days to settle its works before governance may move them to the museum
+    ///         (`rescueToMuseum`, owner decision 20). The number is the guarantee; the delay in
+    ///         force (`rescueDelay`) can only grow from it.
+    uint256 public constant RESCUE_DELAY_FLOOR = 90 days;
 
     bytes32 private constant WORK_RECORDS = "WORK_RECORDS";
     bytes32 private constant EDITIONS = "EDITIONS";
@@ -118,13 +120,15 @@ contract Stream is ERC721, AccessManaged, IStream {
 
     /// @dev `id` is assigned on first admission and kept, so a removed adapter still settles
     ///      the sales it started. Its sale kind is recorded then too: in full in `_minterKinds`
-    ///      and as `kindKey` (`_kindKey`, 184 bits of its hash) in this word, which `mint` reads
-    ///      anyway. `removedAt` is when governance removed the adapter, zero while admitted.
+    ///      and as `kindKey` (`_kindKey`, 152 bits of its hash) in this word, which `mint` reads
+    ///      anyway. `removedAt` is when governance removed the adapter, zero while admitted, and
+    ///      `rescueDelay` the rescue delay in force then, locked for that removal's works.
     struct Minter {
         bool admitted;
         uint24 id;
         uint40 removedAt;
-        uint184 kindKey;
+        uint32 rescueDelay;
+        uint152 kindKey;
     }
 
     /// @dev `exists` keeps the counter word nonzero, so each mint pays a warm rewrite.
@@ -144,6 +148,7 @@ contract Stream is ERC721, AccessManaged, IStream {
         uint24 minters;
         uint24 overflowTerms;
         uint8 replaced;
+        uint32 rescueDelay;
     }
 
     /// @notice The split factory that derives seller and royalty wallets (the first economics
@@ -357,6 +362,7 @@ contract Stream is ERC721, AccessManaged, IStream {
             }
         }
         (minter.admitted, minter.removedAt) = (admitted, admitted ? 0 : uint40(block.timestamp));
+        if (!admitted) minter.rescueDelay = uint32(rescueDelay());
         emit AdmittedMinterSet(adapter, minter.id, admitted, _minterKinds[minter.id]);
     }
 
@@ -412,12 +418,32 @@ contract Stream is ERC721, AccessManaged, IStream {
         uint256 removedAt = minter.removedAt;
         if (
             t.flags & SETTLED != 0 || minter.id != _terms[t.termsId].minterId || removedAt == 0
-                || block.timestamp < removedAt + RESCUE_DELAY
+                || block.timestamp < removedAt + minter.rescueDelay
         ) revert WorkNotRescuable(tokenId);
         t.flags |= SETTLED | SALE_SOLD | SALE_FROZEN_OUT;
         emit PrimarySaleSettled(tokenId, PrimaryOutcome.RESCUED, address(0), address(0), 0);
         (address museum,) = _toMuseum(tokenId);
         emit WorkRescued(tokenId, adapter, museum);
+    }
+
+    /// @inheritdoc IStream
+    function rescueDelay() public view returns (uint256) {
+        uint256 delay = _counts.rescueDelay;
+        return delay == 0 ? RESCUE_DELAY_FLOOR : delay;
+    }
+
+    /// @inheritdoc IStream
+    /// @dev SUCCESSOR_SETTER role (the 30-day class). Lengthen only, and at most double at a
+    ///      time (`InvalidRescueDelay`); a removal already made keeps the delay it locked.
+    function setRescueDelay(uint256 next) external restricted {
+        uint256 current = rescueDelay();
+        if (next <= current || next > 2 * current || next > type(uint32).max) {
+            revert InvalidRescueDelay(next);
+        }
+        // Checked above: `next` fits 32 bits.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        _counts.rescueDelay = uint32(next);
+        emit RescueDelaySet(current, next);
     }
 
     /// @dev Moves `tokenId` to the museum the economics resolver names now (a zero museum
@@ -762,12 +788,26 @@ contract Stream is ERC721, AccessManaged, IStream {
         IMintPolicy.MintContext memory context,
         bytes calldata data
     ) private returns (IMintPolicy.MintRecord memory r) {
-        bytes memory input = abi.encodeCall(IMintPolicy.authorize, (context, data));
+        bytes4 selector = IMintPolicy.authorize.selector;
         bytes4 malformed = InvalidMintRequest.selector;
         assembly ("memory-safe") {
-            let ok := call(gas(), policy, 0, add(input, 0x20), mload(input), 0, 0)
+            // `authorize(context, data)`, encoded in free memory: the selector, the context's four
+            // words, the offset of `data` (0xa0), its length and its bytes, zero-padded.
+            let input := mload(0x40)
+            mstore(input, selector)
+            mstore(add(input, 0x04), mload(context))
+            mstore(add(input, 0x24), mload(add(context, 0x20)))
+            mstore(add(input, 0x44), mload(add(context, 0x40)))
+            mstore(add(input, 0x64), mload(add(context, 0x60)))
+            mstore(add(input, 0x84), 0xa0)
+            mstore(add(input, 0xa4), data.length)
+            let padded := and(add(data.length, 0x1f), not(0x1f))
+            mstore(add(input, add(0xa4, padded)), 0)
+            calldatacopy(add(input, 0xc4), data.offset, data.length)
+            let ok := call(gas(), policy, 0, input, add(0xc4, padded), 0, 0)
             let size := returndatasize()
-            r := mload(0x40)
+            // The answer overwrites the input, which is no longer needed.
+            r := input
             if iszero(ok) {
                 returndatacopy(r, 0, size)
                 revert(r, size)
@@ -841,11 +881,11 @@ contract Stream is ERC721, AccessManaged, IStream {
         );
     }
 
-    /// @dev A sale kind as `Minter.kindKey` holds it: the low 184 bits of its keccak256.
-    function _kindKey(bytes32 kind) private pure returns (uint184 key) {
+    /// @dev A sale kind as `Minter.kindKey` holds it: the low 152 bits of its keccak256.
+    function _kindKey(bytes32 kind) private pure returns (uint152 key) {
         assembly ("memory-safe") {
             mstore(0, kind)
-            key := and(keccak256(0, 0x20), 0xffffffffffffffffffffffffffffffffffffffffffffff)
+            key := and(keccak256(0, 0x20), 0xffffffffffffffffffffffffffffffffffffff)
         }
     }
 

@@ -250,11 +250,11 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
             item.seedPolicy == SeedPolicy.VRF
                 && !IEntropyModule(context.entropyModule).isDeliveredContent(item.contentHash)
         ) revert SeedNotDelivered(r.itemHash);
-        PrimaryTerms memory t;
-        (t, r.royaltyRate) = _quote(item, context);
-        (r.saleKind, r.currency, r.params) = (t.saleKind, t.currency, t.params);
-        (r.seller, r.feeRecipient, r.feeShare, r.creator) =
-            (t.seller, t.feeRecipient, t.feeShare, creator);
+        (r.seller, r.feeRecipient, r.feeShare, r.royaltyRate) = _quote(item, context);
+        r.creator = creator;
+        r.saleKind = item.sale.saleKind;
+        r.currency = item.sale.currency;
+        r.params = item.sale.params;
         r.collectionId = item.collectionId;
         r.kind = uint8(item.kind);
         r.seedPolicy = uint8(item.seedPolicy);
@@ -276,7 +276,10 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
         _checkItem(req.item, context.entropyModule);
         uint256 artistId = _artists.artistIdOf(req.item.parties[0].account);
         if (artistId == 0) revert InvalidLeadArtist();
-        (terms,) = _quote(req.item, context);
+        (terms.seller, terms.feeRecipient, terms.feeShare,) = _quote(req.item, context);
+        terms.saleKind = req.item.sale.saleKind;
+        terms.currency = req.item.sale.currency;
+        terms.params = req.item.sale.params;
         terms.creator = _artists.activeAuthorityOf(artistId);
     }
 
@@ -506,32 +509,25 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
         if (!SpdxId.isValidCalldata(item.license.spdxId)) revert InvalidLicenseId();
     }
 
-    /// @dev The primary terms a work of `item` locks now and its royalty rate: the product's
-    ///      economics (one view read) and the seller wallet, the split factory's salt-zero wallet
-    ///      for the item's payees (the factory validates the list). The fee terms must yield a
-    ///      valid royalty payee list: a fee share below 100,000 with a fee recipient other than
-    ///      the seller, or no fee at all.
+    /// @dev The terms a work of `item` locks now: the seller wallet, the split factory's
+    ///      salt-zero wallet for the item's payees (the factory validates the list), and the
+    ///      product's economics (one view read). The fee terms must yield a valid royalty payee
+    ///      list: a fee share below 100,000 with a fee recipient other than the seller, or no fee
+    ///      at all. The adapter resolves `CURRENCY_DEFAULT`, checks the allowlist when it locks
+    ///      the currency, and checks the params (the English auction refuses any).
     function _quote(PackageItem calldata item, MintContext calldata context)
         private
         view
-        returns (PrimaryTerms memory terms, uint32 royaltyRate)
+        returns (address seller, address feeRecipient, uint32 feeShare, uint32 royaltyRate)
     {
         ProductEconomics memory e =
             IEconomicsResolver(context.economics).economics(PRODUCT_STREAM);
-        address seller = ISplitFactory(context.splitFactory).walletFor(item.payees, bytes32(0));
+        seller = ISplitFactory(context.splitFactory).walletFor(item.payees, bytes32(0));
         if (
             e.royaltyRate > Splits.DENOMINATOR || e.feeShare >= Splits.DENOMINATOR
                 || (e.feeShare != 0 && (e.feeRecipient == address(0) || e.feeRecipient == seller))
         ) revert InvalidWorkTerms();
-        terms.saleKind = item.sale.saleKind;
-        // The adapter resolves `CURRENCY_DEFAULT` and checks the allowlist when it locks the
-        // currency; it also checks the params (the English auction refuses any).
-        terms.currency = item.sale.currency;
-        terms.params = item.sale.params;
-        terms.seller = seller;
-        terms.feeRecipient = e.feeRecipient;
-        terms.feeShare = e.feeShare;
-        royaltyRate = e.royaltyRate;
+        return (seller, e.feeRecipient, e.feeShare, e.royaltyRate);
     }
 
     function _requireApproved(bytes32 packageRoot) private view {
