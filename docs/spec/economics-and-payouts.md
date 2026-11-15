@@ -270,6 +270,14 @@ so a no-return token is still no sale currency. Exact balance deltas therefore h
 path, return-value checks do not, and admitting only standard ERC-20s is the guard (ECO-23,
 LIM-SAL-7). A token that moves a wei less or more than asked, or whose balance in a wallet
 falls, freezes that asset in the wallet, and no path rescues it (ECO-24, LIM-ECO-6).
+Other edges, all fail closed with no movement (LIM-ECO-9): a token whose `transfer` returns more
+than one word, and an ETH recipient whose fallback returns more than one word, are refused (the
+ledger copies one word; a payee can `releaseTo` another recipient); a vault named as an ERC-1271
+signer or as an `asset` reverts with `BoundedCallShortfall` rather than `InvalidSignature`;
+`released` and `totalReleased` change before the transfer and their getters ignore the lock, so
+only `observed` and `releasable` are safe to read inside a release callback; an ERC-721 sent to
+a vault with `transferFrom` cannot leave it, and a legacy NFT with `transfer(address,uint256)`
+could be released by count as a token ID.
 
 **The escrow** keeps credits by `(wallet, asset)`. Deposits are permissionless; anyone flushes a
 credit, only to its wallet, and a failed flush keeps it (ECO-27). Governed `recover` moves a
