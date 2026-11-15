@@ -47,7 +47,7 @@ Docs).
 | `PLATFORM` | 8 | immediate | 48 hours | Platform key | 3 | Yes |
 | `PARAMETER_SETTER` | 9 | 48 hours | 48 hours | Hot admin Safe | 14 | No |
 | `FUNDS_SETTER` | 10 | 14 days | 14 days | Hot admin Safe | 8 | No |
-| `SUCCESSOR_SETTER` | 11 | 30 days | 30 days | Hot admin Safe | 19 | No |
+| `SUCCESSOR_SETTER` | 11 | 30 days | 30 days | Hot admin Safe | 21 | No |
 | `CURATOR` | 12 | immediate | 30 days | Curator key | 1 | Yes |
 
 Every role's admin is ADMIN, and every role except ADMIN has GUARDIAN as its guardian
@@ -63,8 +63,8 @@ Every role's admin is ADMIN, and every role except ADMIN has GUARDIAN as its gua
 | Immediate | immediate | 15 |
 | Standard | 48 hours | 17 |
 | Funds and recipients | 14 days | 8 |
-| Verifier and successor | 30 days | 19 |
-| **Total** | | **59** |
+| Verifier and successor | 30 days | 21 |
+| **Total** | | **61** |
 
 ## Matrix by contract
 
@@ -89,13 +89,22 @@ Source: [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol).
 
 | Function | Selector | Role | Class | Delay | Guardian cancel | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
+| `relicense(uint256,(string,bytes32),(…),bytes32,uint64,bytes[])` | `0xd60ad0db` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Also needs every party's signed consent. CC0 is irrevocable. |
+| `setRoyaltyRate(uint256,uint32,(…),bytes32,uint64,bytes[])` | `0xc13560ef` | `FUNDS_SETTER` | Funds and recipients | 14 days | Yes: any guardian, during the delay | Also needs every party's signed consent; re-rates the linked edition. |
+| `repinRenderer(uint256,address,bytes32,bytes32,uint64,bytes)` | `0x12e96e4a` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | The errata repin: also needs the lead artist's signature; refused for good once the lead artist renounced `RENDERER_REPIN`. |
+| `setDelivery(address,address)` | `0x118e803d` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Replaces the delivery contract (locators and preferences); compare-and-set; the successor names its predecessor. No fact of any work changes. |
+| `addStore(address,bytes32)` | `0xce8238dd` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Adds a store `syncOnChain` may verify media against, for good; code-hash pinned. No existing file's store or completeness changes. |
+
+### WorkDelivery
+
+Source: [`src/stream/WorkDelivery.sol`](../../src/stream/WorkDelivery.sol).
+
+| Function | Selector | Role | Class | Delay | Guardian cancel | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
 | `setPreferredKind(uint8)` | `0x40ff5d7f` | `STORAGE_OPERATOR` | Immediate | immediate | No: executes at once |  |
 | `setCollectionPreferredKind(uint256,uint8)` | `0x4ddc92d1` | `STORAGE_OPERATOR` | Immediate | immediate | No: executes at once |  |
 | `setFilePreference(uint256,bytes32,uint256)` | `0x65a48a4e` | `STORAGE_OPERATOR` | Immediate | immediate | No: executes at once |  |
 | `addLocator(uint256,bytes32,(uint8,string))` | `0xf3326c0f` | `PLATFORM` | Immediate | immediate | No: executes at once | The work's artist may also call it directly before finalize; PLATFORM's path is a `canCall` check in the contract and needs a zero-delay grant. |
-| `relicense(uint256,(string,bytes32),(…),bytes32,uint64,bytes[])` | `0xd60ad0db` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Also needs every party's signed consent. CC0 is irrevocable. |
-| `setRoyaltyRate(uint256,uint32,(…),bytes32,uint64,bytes[])` | `0xc13560ef` | `FUNDS_SETTER` | Funds and recipients | 14 days | Yes: any guardian, during the delay | Also needs every party's signed consent; re-rates the linked edition. |
-| `repinRenderer(uint256,address,bytes32,bytes32,uint64,bytes)` | `0x12e96e4a` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | The errata repin: also needs the lead artist's signature. |
 
 ### Editions
 
