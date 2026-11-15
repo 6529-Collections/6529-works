@@ -65,10 +65,9 @@ contract EnglishAuctionLens {
     uint256 private constant _LISTED_SLOT = 5;
     uint256 private constant _TERMS_SLOT = 7;
     uint256 private constant _SALES_SLOT = 8;
-    uint256 private constant _OPENING_BIDS_SLOT = 9;
-    uint256 private constant _CREDITS_SLOT = 10;
-    uint256 private constant _FEDERATED_TERMS_SLOT = 11;
-    uint256 private constant _REFUSAL_SLOT = 12;
+    uint256 private constant _CREDITS_SLOT = 9;
+    uint256 private constant _FEDERATED_TERMS_SLOT = 10;
+    uint256 private constant _REFUSAL_SLOT = 11;
 
     /// @dev The auction's sale flags.
     uint8 private constant _PAUSE_USED = 1;
@@ -286,7 +285,7 @@ contract EnglishAuctionLens {
     /// @param currency The currency.
     /// @return The opening bid, in the currency's base units.
     function openingBid(address currency) external view returns (uint256) {
-        return uint256(_read1(_mapSlot(bytes32(uint256(uint160(currency))), _OPENING_BIDS_SLOT)));
+        return allowlist.openingBid(currency);
     }
 
     /// @notice An account's claimable credit in a currency (`ISaleAdapter.claimable`).

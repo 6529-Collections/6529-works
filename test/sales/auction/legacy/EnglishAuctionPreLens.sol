@@ -81,6 +81,10 @@ contract EnglishAuctionPreLens is
     AccessManaged,
     ReentrancyGuardTransient
 {
+    /// @notice The pre-lens auction's own opening-bid event (ADR 0007 moved opening bids to the
+    ///         asset allowlist).
+    event OpeningBidSet(address indexed currency, uint256 previous, uint256 next);
+
     /// @notice The longest a dispute pause lasts; one pause per auction (ADR 0001 section 12).
     uint64 public constant MAX_PAUSE = 7 days;
     /// @notice Bounds of the governed duration.
@@ -525,7 +529,8 @@ contract EnglishAuctionPreLens is
         _setConfig(next);
     }
 
-    /// @inheritdoc IEnglishAuction
+    /// @notice The pre-lens auction kept its own opening bids (they moved to the asset allowlist
+    ///         later, ADR 0007); kept here for the differential tests.
     /// @dev Moves either way, zero included, within an absolute ceiling of {OPENING_BID_FLOORS}
     ///      increment floors, capped at `type(uint96).max` (the largest bid) so that a bid can
     ///      always meet it. The raise-only rule of ADR 0001 section 13.9 covers gas parameters,
@@ -536,7 +541,7 @@ contract EnglishAuctionPreLens is
         if (current != expected) revert ExpectedValueMismatch();
         uint256 ceiling =
             Math.min(allowlist.incrementFloor(currency) * OPENING_BID_FLOORS, type(uint96).max);
-        if (next > ceiling) revert OpeningBidAboveCeiling(next, ceiling);
+        if (next > ceiling) revert IAssetAllowlist.OpeningBidAboveCeiling(next, ceiling);
         _openingBids[currency] = next;
         emit OpeningBidSet(currency, current, next);
     }

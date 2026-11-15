@@ -172,7 +172,6 @@ Source: [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol).
 | `resume(uint256)` | `0x414000b5` | `UNPAUSER` | Standard | 48 hours | Yes: any guardian, during the delay | Refused until 48 hours after the pause, whenever it was scheduled. |
 | `cancel(uint256,bytes32)` | `0xeafb64d5` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Upheld dispute: while paused, citing the token's DISPUTE_OUTCOME recorded after the pause. |
 | `setConfig((…),(…))` | `0x1b380907` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Duration, anti-snipe window, increment share, refusal delay and raise-only refusal gas; compare-and-set. |
-| `setOpeningBid(address,uint256,uint256)` | `0x5d918358` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Per currency; compare-and-set, with a ceiling. |
 | `setTarget(address,bool)` | `0x80ffe77f` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Also a genesis wiring call. |
 | `setFederationRegistry(address,address)` | `0x747e3199` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | No federation registry is installed yet (federation is in v1, ADR 0007; a later ADR specifies it). |
 
@@ -209,6 +208,7 @@ Source: [`src/economics/AssetAllowlist.sol`](../../src/economics/AssetAllowlist.
 | `setDefaultCurrency(bytes32,uint64,address)` | `0xbc27c0e9` | `FUNDS_SETTER` | Funds and recipients | 14 days | Yes: any guardian, during the delay | Compare-and-set; also a genesis wiring call (ETH for each product). |
 | `setIncrementFloor(address,uint64,uint256)` | `0xad176f96` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay |  |
 | `deprecateAsset(address)` | `0x41003c89` | `GUARDIAN` | Immediate | immediate | No: executes at once | Halts sales in the asset; withdrawals and claims never stop. |
+| `setOpeningBid(address,uint64,uint256)` | `0x373577fc` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Per currency, the English auction's least first bid; compare-and-set, with a ceiling. |
 
 ### RevenueEscrow
 
@@ -300,7 +300,7 @@ and renounces ADMIN. `GovernanceConfig.isGenesisSelector` admits nothing else.
 | 9 | Stream | `setAdmittedMinter(address,bool)` | EnglishAuction, `true` |
 | 10 | Editions | `setAdmittedMinter(address,bool)` | UniformEditionAuction, `true` (The genesis edition sale; later sale methods are admitted the same way, in the 30-day class (owner decision 14)) |
 | 11 | EnglishAuction | `setTarget(address,bool)` | Stream, `true` |
-| 12 | EnglishAuction | `setOpeningBid(address,uint256,uint256)` | `address(0)` (ETH), 0, 50000000000000000 (ETH opening bid 0.05 ETH (owner decision 19): a 1-wei self-bid can no longer take a 1/1 past the museum) |
+| 12 | AssetAllowlist | `setOpeningBid(address,uint64,uint256)` | `address(0)` (ETH), 1, 50000000000000000 (ETH opening bid 0.05 ETH (owner decision 19), held by the asset allowlist since ADR 0007 (ETH is at revision 1 from its admission at deployment): a 1-wei self-bid can no longer take a 1/1 past the museum) |
 | 13 | UniformEditionAuction | `setTarget(address,bool)` | Editions, `true` |
 | 14 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0x8d6f9a23…`, 0, `address(0)` (ETH) (PRODUCT_STREAM: ETH, revision 0) |
 | 15 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0xdda24e9b…`, 0, `address(0)` (ETH) (PRODUCT_EDITIONS: ETH, revision 0) |

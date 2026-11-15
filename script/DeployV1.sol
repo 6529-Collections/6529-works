@@ -74,7 +74,7 @@ library DeployV1 {
     /// @notice The default renderer's inline threshold (`Renderer.DEFAULT_INLINE_THRESHOLD`).
     uint256 internal constant RENDERER_INLINE_THRESHOLD = 262_144;
     /// @notice The English auction's genesis ETH opening bid (owner decision 19), wired by the
-    ///         genesis file (`setOpeningBid`, then governed by PARAMETER_SETTER): a 1/1's first
+    ///         genesis file (`AssetAllowlist.setOpeningBid`, then PARAMETER_SETTER): a 1/1's first
     ///         bid is at least this, so a 1-wei self-bid cannot keep an unsold work from the
     ///         museum. `DeployV1.t.sol` checks the committed policy wires exactly this.
     uint256 internal constant ETH_OPENING_BID = 0.05 ether;

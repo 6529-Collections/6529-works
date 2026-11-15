@@ -32,7 +32,7 @@ contract GovernanceHandoverTest is IntegrationBase {
         vm.startPrank(executor);
         next.permit(guardian1, address(auction), ISaleAdapter.pause.selector, 0);
         next.setEmergency(guardian1, true);
-        next.permit(hotAdmin, address(auction), auction.setOpeningBid.selector, Roles.STANDARD);
+        next.permit(hotAdmin, address(allowlist), allowlist.setOpeningBid.selector, Roles.STANDARD);
         next.permit(curator, address(statements), IStatementLog.appendCurator.selector, 0);
         next.permit(platform, address(stream), stream.createCollection.selector, 0);
         next.setMember(Roles.CURATION_SIGNER, signer1, true);
@@ -142,7 +142,7 @@ contract GovernanceHandoverTest is IntegrationBase {
     function test_TheOldManagerKeepsNoPower() public {
         _handOver();
         (bool immediate, uint32 delay) =
-            manager.canCall(hotAdmin, address(auction), auction.setOpeningBid.selector);
+            manager.canCall(hotAdmin, address(allowlist), allowlist.setOpeningBid.selector);
         assertFalse(immediate);
         assertEq(delay, 0);
         (bool member,) = manager.hasRole(Roles.ADMIN, hotAdmin);
@@ -191,32 +191,34 @@ contract GovernanceHandoverTest is IntegrationBase {
         stream.createCollection("After the handover", keccak256("after"));
 
         // Delayed: scheduled on the successor, consumed by the target's own check.
+        // (The opening bid, which the English auction locks at start, is the allowlist's.)
         uint256 current = auction.openingBid(CURRENCY_ETH);
+        (,, uint64 revision) = allowlist.assetConfig(CURRENCY_ETH);
         bytes memory raise =
-            abi.encodeCall(auction.setOpeningBid, (CURRENCY_ETH, current, current + 1));
+            abi.encodeCall(allowlist.setOpeningBid, (CURRENCY_ETH, revision, current + 1));
         vm.prank(hotAdmin);
-        bytes32 id = next.schedule(address(auction), raise);
+        bytes32 id = next.schedule(address(allowlist), raise);
         vm.expectRevert(abi.encodeWithSelector(MinimalAuthority.NotReady.selector, id));
         vm.prank(hotAdmin);
-        auction.setOpeningBid(CURRENCY_ETH, current, current + 1);
+        allowlist.setOpeningBid(CURRENCY_ETH, revision, current + 1);
         vm.warp(block.timestamp + Roles.STANDARD);
         vm.expectEmit(address(next));
         emit MinimalAuthority.Consumed(id);
         vm.prank(hotAdmin);
-        auction.setOpeningBid(CURRENCY_ETH, current, current + 1);
+        allowlist.setOpeningBid(CURRENCY_ETH, revision, current + 1);
         assertEq(auction.openingBid(CURRENCY_ETH), current + 1);
 
         // Cancelled: the emergency account stops a scheduled call.
         bytes memory again =
-            abi.encodeCall(auction.setOpeningBid, (CURRENCY_ETH, current + 1, current + 2));
+            abi.encodeCall(allowlist.setOpeningBid, (CURRENCY_ETH, revision + 1, current + 2));
         vm.prank(hotAdmin);
-        bytes32 id2 = next.schedule(address(auction), again);
+        bytes32 id2 = next.schedule(address(allowlist), again);
         vm.prank(guardian1);
-        next.cancel(hotAdmin, address(auction), again);
+        next.cancel(hotAdmin, address(allowlist), again);
         vm.warp(block.timestamp + Roles.STANDARD);
         vm.expectRevert(abi.encodeWithSelector(MinimalAuthority.NotScheduled.selector, id2));
         vm.prank(hotAdmin);
-        auction.setOpeningBid(CURRENCY_ETH, current + 1, current + 2);
+        allowlist.setOpeningBid(CURRENCY_ETH, revision + 1, current + 2);
     }
 
     function test_ACuratedSaleRunsUnderTheSuccessor() public {

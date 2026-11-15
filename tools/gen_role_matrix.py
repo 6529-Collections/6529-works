@@ -118,8 +118,8 @@ NOTES: dict[tuple[str, str], str] = {
     ("EnglishAuction", "cancel(uint256,bytes32)"):
         "Upheld dispute: while paused, citing the token's DISPUTE_OUTCOME recorded after the "
         "pause.",
-    ("EnglishAuction", "setOpeningBid(address,uint256,uint256)"):
-        "Per currency; compare-and-set, with a ceiling.",
+    ("AssetAllowlist", "setOpeningBid(address,uint64,uint256)"):
+        "Per currency, the English auction's least first bid; compare-and-set, with a ceiling.",
     ("EnglishAuction", "setConfig((uint32,uint32,uint32,uint32,uint32),"
      "(uint32,uint32,uint32,uint32,uint32))"):
         "Duration, anti-snipe window, increment share, refusal delay and raise-only refusal "

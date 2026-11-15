@@ -795,13 +795,6 @@
           "delay": 172800
         },
         {
-          "signature": "setOpeningBid(address,uint256,uint256)",
-          "selector": "0x5d918358",
-          "role": "PARAMETER_SETTER",
-          "class": "standard",
-          "delay": 172800
-        },
-        {
           "signature": "setTarget(address,bool)",
           "selector": "0x80ffe77f",
           "role": "SUCCESSOR_SETTER",
@@ -938,6 +931,13 @@
           "role": "GUARDIAN",
           "class": "immediate",
           "delay": 0
+        },
+        {
+          "signature": "setOpeningBid(address,uint64,uint256)",
+          "selector": "0x373577fc",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
         }
       ],
       "genesisOnly": [],
@@ -1166,15 +1166,15 @@
       "calldata": "0x80ffe77f000000000000000000000000000000000000000000000000000000000000a0010000000000000000000000000000000000000000000000000000000000000001"
     },
     {
-      "contract": "EnglishAuction",
-      "signature": "setOpeningBid(address,uint256,uint256)",
+      "contract": "AssetAllowlist",
+      "signature": "setOpeningBid(address,uint64,uint256)",
       "args": [
         "0x0000000000000000000000000000000000000000",
-        0,
+        1,
         50000000000000000
       ],
-      "note": "ETH opening bid 0.05 ETH (owner decision 19): a 1-wei self-bid can no longer take a 1/1 past the museum",
-      "calldata": "0x5d9183580000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000b1a2bc2ec50000"
+      "note": "ETH opening bid 0.05 ETH (owner decision 19), held by the asset allowlist since ADR 0007 (ETH is at revision 1 from its admission at deployment): a 1-wei self-bid can no longer take a 1/1 past the museum",
+      "calldata": "0x373577fc0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000b1a2bc2ec50000"
     },
     {
       "contract": "UniformEditionAuction",

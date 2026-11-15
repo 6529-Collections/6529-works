@@ -170,9 +170,17 @@ abstract contract AuctionBase is Test {
         _map(address(a), IEnglishAuction.resume.selector, UNPAUSER);
         _map(address(a), IEnglishAuction.cancel.selector, PARAMETER_SETTER);
         _map(address(a), IEnglishAuction.setConfig.selector, PARAMETER_SETTER);
-        _map(address(a), IEnglishAuction.setOpeningBid.selector, PARAMETER_SETTER);
+        _map(address(allowlist), IAssetAllowlist.setOpeningBid.selector, PARAMETER_SETTER);
         _map(address(a), ISaleAdapter.setTarget.selector, SUCCESSOR_SETTER);
         _map(address(a), EnglishAuction.setFederationRegistry.selector, SUCCESSOR_SETTER);
+    }
+
+    /// @dev Sets `currency`'s opening bid on the asset allowlist, where it lives since ADR 0007,
+    ///      at the asset's current revision, as the parameter setter.
+    function _setOpeningBid(address currency, uint256 bid) internal {
+        (,, uint64 revision) = allowlist.assetConfig(currency);
+        vm.prank(setter);
+        allowlist.setOpeningBid(currency, revision, bid);
     }
 
     function _map(address target, bytes4 selector, uint64 role) internal {

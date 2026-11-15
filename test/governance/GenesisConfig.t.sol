@@ -286,16 +286,16 @@ contract GenesisConfigTest is Test {
                     IEnglishAuction.resume.selector,
                     IEnglishAuction.cancel.selector,
                     IEnglishAuction.setConfig.selector,
-                    IEnglishAuction.setOpeningBid.selector,
-                    ISaleAdapter.setTarget.selector
+                    ISaleAdapter.setTarget.selector,
+                    ISaleAdapter.setFederationRegistry.selector
                 ],
                 7
             );
-            bytes4[] memory all = new bytes4[](9);
+            bytes4[] memory all = new bytes4[](8);
             for (uint256 i; i < 7; ++i) {
                 all[i] = out[i];
             }
-            (all[7], all[8]) = (ISaleAdapter.setFederationRegistry.selector, DISPUTE_PAUSE);
+            all[7] = DISPUTE_PAUSE;
             return all;
         }
         if (_eq(name, "UniformEditionAuction")) {
@@ -333,11 +333,11 @@ contract GenesisConfigTest is Test {
                     AssetAllowlist.setDefaultCurrency.selector,
                     AssetAllowlist.setIncrementFloor.selector,
                     AssetAllowlist.deprecateAsset.selector,
-                    z,
+                    AssetAllowlist.setOpeningBid.selector,
                     z,
                     z
                 ],
-                4
+                5
             );
         }
         if (_eq(name, "RevenueEscrow")) {

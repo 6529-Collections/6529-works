@@ -198,8 +198,8 @@ library VerifyV1 {
     }
 
     /// @notice Reverts unless the wired getter reflects `call`. This is genesis readback: a
-    ///         default currency must still be at the revision its wiring produced, and the
-    ///         English auction's opening bid at its wired value, so a later governed change
+    ///         default currency must still be at the revision its wiring produced, and an
+    ///         asset's opening bid at its wired value, so a later governed change
     ///         makes it fail by design.
     function checkWired(DeployV1.Deployment memory d, GovernanceConfig.Call memory call)
         internal
@@ -221,9 +221,9 @@ library VerifyV1 {
             (bool configured, address current, uint64 revision) =
                 IAssetAllowlist(target).defaultCurrencyConfig(product);
             ok = configured && current == asset && revision == expected + 1;
-        } else if (selector == IEnglishAuction.setOpeningBid.selector) {
+        } else if (selector == IAssetAllowlist.setOpeningBid.selector) {
             address currency = address(uint160(uint256(_word(data, 0))));
-            ok = IEnglishAuction(target).openingBid(currency) == uint256(_word(data, 2));
+            ok = IAssetAllowlist(target).openingBid(currency) == uint256(_word(data, 2));
         } else {
             address arg = address(uint160(uint256(_word(data, 0))));
             if (selector == IStream.bindWorkRecords.selector) {

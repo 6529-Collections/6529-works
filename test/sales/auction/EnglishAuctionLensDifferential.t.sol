@@ -28,6 +28,9 @@ import { EnglishAuctionPreLens } from "./legacy/EnglishAuctionPreLens.sol";
 contract EnglishAuctionLensDifferentialTest is AuctionBase {
     /// @dev Where both builds are installed, one per pass (set by the first).
     address internal AT;
+    /// @dev Whether the installed build is the lens build (opening bids live in the allowlist
+    ///      since ADR 0007; the pre-lens build keeps its own).
+    bool internal lensPass;
     uint256 internal constant STEPS = 40;
 
     uint256[] internal sales;
@@ -45,6 +48,7 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
         // The same deployer nonce in both passes, so both builds land at the same address: the
         // lens is deployed in both (the pre-lens build ignores it).
         address lens_ = _lens(address(permit2));
+        lensPass = lensBuild;
         address deployed = lensBuild
             ? address(
                 new EnglishAuction(
@@ -79,7 +83,7 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
         _map(AT, IEnglishAuction.resume.selector, UNPAUSER);
         _map(AT, IEnglishAuction.cancel.selector, PARAMETER_SETTER);
         _map(AT, IEnglishAuction.setConfig.selector, PARAMETER_SETTER);
-        _map(AT, IEnglishAuction.setOpeningBid.selector, PARAMETER_SETTER);
+        _map(AT, EnglishAuctionPreLens.setOpeningBid.selector, PARAMETER_SETTER);
         _map(AT, ISaleAdapter.setTarget.selector, SUCCESSOR_SETTER);
         _map(AT, EnglishAuction.setFederationRegistry.selector, SUCCESSOR_SETTER);
         hostile = new HostileActor();
@@ -356,9 +360,16 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
             try auction.setConfig(current, next) { } catch { }
         } else if (op == 16) {
             address currency = a % 2 == 0 ? ETH : address(usd);
-            uint256 current = auction.openingBid(currency);
-            vm.prank(setter);
-            try auction.setOpeningBid(currency, current, (a >> 8) % 2 ether) { } catch { }
+            uint256 next = (a >> 8) % 2 ether;
+            if (lensPass) {
+                (,, uint64 revision) = allowlist.assetConfig(currency);
+                vm.prank(setter);
+                try allowlist.setOpeningBid(currency, revision, next) { } catch { }
+            } else {
+                uint256 current = auction.openingBid(currency);
+                vm.prank(setter);
+                try EnglishAuctionPreLens(AT).setOpeningBid(currency, current, next) { } catch { }
+            }
         } else if (op == 17) {
             if (address(other) == address(0)) {
                 other = _listedToken(a % 2 == 0 ? ETH : address(usd));

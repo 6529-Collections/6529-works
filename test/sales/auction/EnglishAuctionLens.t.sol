@@ -213,8 +213,7 @@ contract EnglishAuctionLensTest is AuctionBase {
             _config(),
             IEnglishAuction.AuctionConfig(2 hours, WINDOW, SHARE, REFUSAL_DELAY, REFUSAL_GAS)
         );
-        vm.prank(setter);
-        auction.setOpeningBid(ETH, 0, 0.1 ether);
+        _setOpeningBid(ETH, 0.1 ether);
         vm.prank(pauser);
         auction.pause();
         _end(saleId);
@@ -414,12 +413,8 @@ contract EnglishAuctionLensTest is AuctionBase {
 
     /// @dev The lens decodes the auction's layout: its slot numbers are the compiler's.
     function test_Lens_ReadsTheAuctionsLayout() public {
-        vm.prank(setter);
-        auction.setOpeningBid(ETH, 0, 0.25 ether);
-        assertEq(auction.openingBid(ETH), 0.25 ether);
-        assertEq(
-            uint256(vm.load(address(auction), keccak256(abi.encode(ETH, uint256(9))))), 0.25 ether
-        );
+        _setOpeningBid(ETH, 0.25 ether);
+        assertEq(auction.openingBid(ETH), 0.25 ether, "read from the asset allowlist");
         IEnglishAuction.AuctionConfig memory c = auction.config();
         uint256 word = uint256(vm.load(address(auction), bytes32(uint256(3))));
         // The settings word packs three 32-bit fields: each cast keeps one.
@@ -530,13 +525,13 @@ contract EnglishAuctionLensLayoutTest is AuctionBase {
     ///      status 30, flags 31. Word 1: bidder 0..19, bid 20..31. Word 2: recipient 0..19,
     ///      pausedAt 20..23, pausedTotal 24..26, outcomeFrom 27..31.
     uint256 internal constant SALES_SLOT = 8;
-    uint256 internal constant OPENING_BIDS_SLOT = 9;
-    uint256 internal constant CREDITS_SLOT = 10;
+    /// @dev Opening bids moved to the asset allowlist (ADR 0007), so the credits follow sales.
+    uint256 internal constant CREDITS_SLOT = 9;
     /// @dev `_federatedTerms`: a federated terms record's locked network fee recipient (bytes
     ///      0..19) and refusal delay (20..23).
-    uint256 internal constant FEDERATED_TERMS_SLOT = 11;
+    uint256 internal constant FEDERATED_TERMS_SLOT = 10;
     /// @dev `Refusal`, bytes: refusalDelay 0..3, refusalGas 4..7.
-    uint256 internal constant REFUSAL_SLOT = 12;
+    uint256 internal constant REFUSAL_SLOT = 11;
 
     /// @dev Distinct governed parameters, so every settings and terms field differs.
     function _distinct() internal pure returns (IEnglishAuction.AuctionConfig memory) {
@@ -573,19 +568,14 @@ contract EnglishAuctionLensLayoutTest is AuctionBase {
         _readExactly(_s(SETTINGS_SLOT), "paused");
         assertEq(abi.encode(auction.config()), abi.encode(c), "the pause is not the config");
 
+        // Opening bids live in the asset allowlist (ADR 0007): the lens reads them there.
         uint256 opening = 0.123456789 ether;
-        uint256 slot = _mapSlot(ETH, OPENING_BIDS_SLOT);
-        vm.record();
-        vm.prank(setter);
-        auction.setOpeningBid(ETH, 0, opening);
-        _wroteOnly(_s(slot), "setOpeningBid");
-        assertEq(uint256(vm.load(address(auction), bytes32(slot))), opening, "_openingBids");
-        vm.record();
+        _setOpeningBid(ETH, opening);
         assertEq(auction.openingBid(ETH), opening, "openingBid");
-        _readExactly(_s(slot), "openingBid");
+        assertEq(allowlist.openingBid(ETH), opening, "the allowlist's");
 
         MockMintTarget token = new MockMintTarget();
-        slot = _mapSlot(address(token), LISTED_SLOT);
+        uint256 slot = _mapSlot(address(token), LISTED_SLOT);
         vm.record();
         assertFalse(auction.isTarget(address(token)), "unlisted");
         _readExactly(
@@ -626,8 +616,7 @@ contract EnglishAuctionLensLayoutTest is AuctionBase {
         vm.prank(setter);
         auction.setConfig(_config(), c);
         uint256 opening = 5e18 + 3;
-        vm.prank(setter);
-        auction.setOpeningBid(address(usd), 0, opening);
+        _setOpeningBid(address(usd), opening);
         uint256 floor = 2e18 + 11;
         _setFloor(address(usd), floor);
         // The first token, so that this sale's token ID is 2.

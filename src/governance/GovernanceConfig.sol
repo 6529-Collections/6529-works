@@ -5,7 +5,6 @@ import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IAssetAllowlist } from "../economics/interfaces/IAssetAllowlist.sol";
 import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
-import { IEnglishAuction } from "../interfaces/IEnglishAuction.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
@@ -147,7 +146,7 @@ library GovernanceConfig {
             || selector == IMintTarget.setAdmittedMinter.selector
             || selector == ISaleAdapter.setTarget.selector
             || selector == IAssetAllowlist.setDefaultCurrency.selector
-            || selector == IEnglishAuction.setOpeningBid.selector
+            || selector == IAssetAllowlist.setOpeningBid.selector
             || selector == IStatementLog.appendGovernanceManifest.selector;
     }
 

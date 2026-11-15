@@ -195,7 +195,8 @@ contract EnglishAuctionGasTest is Test {
     function test_StartWithBidGas_FirstAfterAnOpeningBidChange() public {
         _startItem(0, 1, artistPk);
         _priorBid(_startItem(1, 2, otherArtistPk));
-        auction.setOpeningBid(address(0), 0, 0.01 ether);
+        (,, uint64 revision) = allowlist.assetConfig(address(0));
+        allowlist.setOpeningBid(address(0), revision, 0.01 ether);
         uint256 total = _measureStartWithBid("startWithBid after an opening-bid change, whole tx");
         assertLe(total, FIRST_AFTER_CHANGE_BOUND, "one-off cost after an opening-bid change");
     }

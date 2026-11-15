@@ -91,10 +91,6 @@ contract EnglishAuction is
     uint32 internal constant MAX_EXTENSION_WINDOW = 1 days;
     /// @notice The smallest governed relative increment (1%, out of 100,000).
     uint32 internal constant MIN_INCREMENT_SHARE = 1_000;
-    /// @dev An opening bid is at most this many increment floors of its currency (1 ETH for
-    ///      the 0.001 ETH floor), and at most `type(uint96).max`, the largest bid: the absolute
-    ///      ceiling of the governed opening bid. The lens answers `OPENING_BID_FLOORS()`.
-    uint256 private constant _OPENING_BID_FLOORS = 1_000;
     /// @dev Gas forwarded to a seller or fee wallet on an ETH payout; a refusal is escrowed.
     ///      Under the EIP-8037 draft it caps regular gas only: a wallet that writes new state draws
     ///      state gas from the settler's EIP-8037 reservoir, so whether it is paid or escrowed can
@@ -227,7 +223,6 @@ contract EnglishAuction is
     mapping(bytes32 key => uint16) private _termsIds;
     mapping(uint16 termsId => Terms) private _terms;
     mapping(uint256 saleId => Sale) private _sales;
-    mapping(address currency => uint256) private _openingBids;
     mapping(address account => mapping(address currency => uint256)) private _credits;
     /// @dev A federated terms record's network fee recipient (low 160 bits), read from the
     ///      economics resolver when the first sale under it starts, and refusal delay (the next 32
@@ -752,27 +747,6 @@ contract EnglishAuction is
         _setConfig(next);
     }
 
-    /// @notice Sets a currency's opening bid, raising or lowering it up to the implementation's
-    ///         ceiling (zero at launch; the first bid is still at least 1). PARAMETER_SETTER role,
-    ///         compare-and-set.
-    /// @param currency The currency, zero for ETH; it must be active on the asset allowlist.
-    /// @param expected The opening bid the caller expects is current; a stale value reverts.
-    /// @param next The new opening bid, in the currency's base units.
-    /// @dev Moves either way, zero included, within an absolute ceiling of {OPENING_BID_FLOORS}
-    ///      increment floors, capped at `type(uint96).max` (the largest bid) so that a bid can
-    ///      always meet it. The raise-only rule of ADR 0001 section 13.9 covers gas parameters,
-    ///      not prices. Applies to sales that start afterwards. The currency must be active in
-    ///      the allowlist.
-    function setOpeningBid(address currency, uint256 expected, uint256 next) external restricted {
-        uint256 current = _openingBids[currency];
-        if (current != expected) revert ISaleAdapter.ExpectedValueMismatch();
-        uint256 ceiling =
-            Math.min(_allowlist.incrementFloor(currency) * _OPENING_BID_FLOORS, type(uint96).max);
-        if (next > ceiling) revert IEnglishAuction.OpeningBidAboveCeiling(next, ceiling);
-        _openingBids[currency] = next;
-        emit IEnglishAuction.OpeningBidSet(currency, current, next);
-    }
-
     // ------------------------------------------------------------------------------- views
 
     /// @notice This adapter's `SaleKind` label: a token mints only for an admitted adapter whose
@@ -962,15 +936,18 @@ contract EnglishAuction is
         address currency,
         Settings memory c
     ) private view returns (Terms memory t, uint256 federatedTerms) {
+        // The currency's status and opening bid come from one allowlist word.
+        uint256 bid;
         if (currency == CURRENCY_DEFAULT) {
-            currency = _allowlist.defaultCurrency(listed ? PRODUCT_STREAM : PRODUCT_FEDERATED);
-        } else if (!_allowlist.isActive(currency)) {
-            revert IAssetAllowlist.AssetNotActive(currency);
+            (currency, bid) =
+                _allowlist.defaultCurrencyOpeningBid(listed ? PRODUCT_STREAM : PRODUCT_FEDERATED);
+        } else {
+            bid = _allowlist.activeOpeningBid(currency);
         }
         t.currency = currency;
-        // Safe: `setOpeningBid` caps every opening bid at `type(uint96).max`, the largest bid.
+        // Safe: `IAssetAllowlist.setOpeningBid` caps every opening bid at `type(uint96).max`.
         // forge-lint: disable-next-line(unsafe-typecast)
-        t.openingBid = uint96(_openingBids[currency]);
+        t.openingBid = uint96(bid);
         // Safe: `_setConfig` bounds both by 100,000.
         // forge-lint: disable-next-line(unsafe-typecast)
         t.incrementShare = uint24(c.incrementShare);

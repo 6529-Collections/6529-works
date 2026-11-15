@@ -575,7 +575,8 @@ abstract contract AuctionRefusalFixture is AuctionBase {
     function _lockedRecipient(uint256 saleId) internal view returns (address) {
         uint256 w0 = uint256(vm.load(address(auction), keccak256(abi.encode(saleId, uint256(8)))));
         uint256 termsId = uint16(w0 >> 224);
-        bytes32 slot = keccak256(abi.encode(termsId, uint256(11)));
+        // `_federatedTerms` is slot 10 since opening bids moved to the asset allowlist (ADR 0007).
+        bytes32 slot = keccak256(abi.encode(termsId, uint256(10)));
         return address(uint160(uint256(vm.load(address(auction), slot))));
     }
 }

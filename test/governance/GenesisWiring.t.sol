@@ -128,7 +128,7 @@ contract GenesisWiringTest is GovernanceFixture {
             IMintTarget.setAdmittedMinter.selector,
             ISaleAdapter.setTarget.selector,
             IAssetAllowlist.setDefaultCurrency.selector,
-            IEnglishAuction.setOpeningBid.selector,
+            IAssetAllowlist.setOpeningBid.selector,
             IStatementLog.appendGovernanceManifest.selector
         ];
         for (uint256 i; i < allowed.length; ++i) {

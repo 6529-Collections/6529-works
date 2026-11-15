@@ -397,9 +397,9 @@ contract AuctionHandler is Test {
         } else if (what == 1) {
             uint256 ceiling = allowlist.incrementFloor(currency) * auction.OPENING_BID_FLOORS();
             uint256 next = bound(seed >> 8, 0, ceiling / 10);
-            uint256 current = auction.openingBid(currency);
+            (,, uint64 revision) = allowlist.assetConfig(currency);
             vm.prank(setter);
-            auction.setOpeningBid(currency, current, next);
+            allowlist.setOpeningBid(currency, revision, next);
         } else {
             (,, uint64 revision) = allowlist.assetConfig(currency);
             vm.prank(admin);

@@ -411,8 +411,7 @@ contract EnglishAuctionTest is AuctionBase {
     }
 
     function test_Start_LocksEveryParameter() public {
-        vm.prank(setter);
-        auction.setOpeningBid(ETH, 0, 0.01 ether);
+        _setOpeningBid(ETH, 0.01 ether);
         uint256 started = block.timestamp;
         uint256 saleId = _start();
         vm.startPrank(setter);
@@ -420,8 +419,8 @@ contract EnglishAuctionTest is AuctionBase {
             _config(),
             IEnglishAuction.AuctionConfig(2 days, 1 hours, 50_000, REFUSAL_DELAY, REFUSAL_GAS)
         );
-        auction.setOpeningBid(ETH, 0.01 ether, 0.02 ether);
         vm.stopPrank();
+        _setOpeningBid(ETH, 0.02 ether);
         assertEq(auction.minimumBid(saleId), 0.01 ether, "opening bid locked");
         _bidEth(saleId, alice, 1 ether);
         _setFloor(ETH, 1 ether);
@@ -2057,16 +2056,15 @@ contract EnglishAuctionTest is AuctionBase {
     }
 
     function test_GovernedFunctionsRejectEthAndOutsiders() public {
-        bytes[7] memory calls = [
+        bytes[6] memory calls = [
             abi.encodeWithSelector(DISPUTE_PAUSE, 1, bytes32(0)),
             abi.encodeWithSelector(START_PAUSE),
             abi.encodeWithSelector(START_UNPAUSE),
             abi.encodeCall(auction.resume, (1)),
             abi.encodeCall(auction.cancel, (1, bytes32(0))),
-            abi.encodeCall(auction.setOpeningBid, (ETH, 0, 1)),
             abi.encodeCall(auction.setTarget, (alice, true))
         ];
-        vm.deal(alice, 7);
+        vm.deal(alice, 6);
         for (uint256 i; i < calls.length; ++i) {
             vm.prank(alice);
             (bool ok, bytes memory reason) = address(auction).call{ value: 1 }(calls[i]);
