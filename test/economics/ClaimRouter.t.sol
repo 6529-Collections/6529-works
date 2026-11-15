@@ -179,10 +179,9 @@ contract ClaimRouterTest is EconomicsBase {
     function test_PerItemGasFloorsAreConsistent() public view {
         assertEq(router.MIN_ITEM_GAS(), 200_000);
         assertEq(router.MIN_SIGNED_ITEM_GAS(), 450_000);
-        assertGe(
-            router.MIN_SIGNED_ITEM_GAS(),
-            router.MIN_ITEM_GAS() + SignatureVerifier.ERC1271_GAS_LIMIT
-        );
+        // The ERC-1271 check now forwards all gas (no cap); the floor still covers the 200,000
+        // it was sized for on top of a plain release.
+        assertGe(router.MIN_SIGNED_ITEM_GAS(), router.MIN_ITEM_GAS() + 200_000);
         assertLe((router.MAX_CLAIMS() + 1) * router.MIN_ITEM_GAS(), 16_777_216);
         assertLe((router.MAX_SIGNED_CLAIMS() + 1) * router.MIN_SIGNED_ITEM_GAS(), 16_777_216);
     }
@@ -655,9 +654,8 @@ contract ClaimRouterTest is EconomicsBase {
     ///      reverts the batch so estimation raises the limit; from the ceiling up it is skipped.
     function test_ERC1271ShortfallRevertsBelowTheCeiling() public {
         GasHungryWallet starved = new GasHungryWallet();
-        bytes memory failure = abi.encodeWithSelector(
-            BoundedCall.BoundedCallInsufficientGas.selector, SignatureVerifier.ERC1271_GAS_LIMIT
-        );
+        bytes memory failure =
+            abi.encodeWithSelector(BoundedCall.BoundedCallInsufficientGas.selector, 200_000);
         starved.setFailure(failure);
         bytes memory input =
             abi.encodeCall(IClaimRouter.claim, (_one(address(starved), ETH, 0), true));

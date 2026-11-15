@@ -5,6 +5,7 @@ import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol";
+import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { ICurationSignerVerifier, ICurationVerifier } from "src/interfaces/ICurationVerifier.sol";
@@ -307,9 +308,10 @@ contract Eip712CurationVerifierTest is CurationBase {
         bytes memory empty = abi.encode(address(anySignature), new bytes(0));
         assertEq(empty.length, 96);
         assertTrue(_approved(verifier, ROOT, EVIDENCE, empty));
-        bytes memory atCap = abi.encode(address(anySignature), new bytes(4096));
+        uint256 cap = SignatureVerifier.MAX_SIGNATURE_LENGTH;
+        bytes memory atCap = abi.encode(address(anySignature), new bytes(cap));
         assertTrue(_approved(verifier, ROOT, EVIDENCE, atCap));
-        bytes memory overCap = abi.encode(address(anySignature), new bytes(4097));
+        bytes memory overCap = abi.encode(address(anySignature), new bytes(cap + 1));
         assertFalse(_approved(verifier, ROOT, EVIDENCE, overCap));
     }
 

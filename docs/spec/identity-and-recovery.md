@@ -20,7 +20,7 @@ Shared code the registry relies on:
 
 | Code | Source | Used for |
 | --- | --- | --- |
-| `SignatureVerifier` | [`src/libraries/SignatureVerifier.sol`](../../src/libraries/SignatureVerifier.sol) | Every identity signature: low-s ECDSA (65 bytes or ERC-2098), EIP-7702 delegated EOAs, and ERC-1271 capped at 200,000 gas with an exact magic value. It never tracks replay. |
+| `SignatureVerifier` | [`src/libraries/SignatureVerifier.sol`](../../src/libraries/SignatureVerifier.sol) | Every identity signature: low-s ECDSA (65 bytes or ERC-2098), EIP-7702 delegated EOAs, and ERC-1271 forwarding all the gas EIP-150 allows, with an exact magic value; a check that runs short reverts with `BoundedCallShortfall` ([DSP-26](disputes-and-statements.md#rules-and-invariants)). It never tracks replay. |
 | `DelegatedEOA` | [`src/libraries/DelegatedEOA.sol`](../../src/libraries/DelegatedEOA.sol) | Refuses EIP-7702 delegated accounts as bindings and as the consolidation source. |
 | `BoundedCall` | [`src/libraries/BoundedCall.sol`](../../src/libraries/BoundedCall.sol) | The gas check before each adapter read, and the bounded `artistResolver()` read in `bindStatementLog`. |
 | `ProtocolContracts` | [`src/libraries/ProtocolContracts.sol`](../../src/libraries/ProtocolContracts.sol) | Recognises, by ERC-165, protocol contracts that cannot pull a payout. |
@@ -643,7 +643,8 @@ before mint (LIM-ID-11).
 | `FederatedListFull(artistId)` | `listFederatedContract` | 64 contracts already listed. |
 | `IConsolidationSource.DelegationReadFailed(delegation)` | Adapter reads, surfacing through registry calls | A read failed other than at an array's end. |
 | `Dependency.InvalidDependency(dependency)`, `Dependency.DependencyCodeChanged(dependency)` | Constructor, the bindings, `setConsolidationSource`, adapter constructor; any use of the source | The target has no code, is an EIP-7702 delegated account, lacks its ERC-165 interface or the reviewed code hash; or the source's code changed since install. |
-| `BoundedCall.BoundedCallInsufficientGas(gasLimit)` | Adapter reads, ERC-1271 checks | The caller cannot forward the full stipend. |
+| `BoundedCall.BoundedCallInsufficientGas(gasLimit)` | Adapter reads | The caller cannot forward the full stipend. |
+| `BoundedCall.BoundedCallShortfall(target)` | ERC-1271 checks; the payout check's ERC-165 probes (`ProtocolContracts`); install checks (`Dependency`) | A call that forwards all gas failed while leaving at most 1/8 of the gas held before it: resend with more gas. Never read as a refusal. |
 
 ## Parameters and limits
 
@@ -663,7 +664,7 @@ before mint (LIM-ID-11).
 | Gas forwarded per getter call | 200,000 | `ConsolidationAdapter.READ_GAS` |
 | Consolidation use case; all-collections address | 999; `0x8888888888888888888888888888888888888888` | `ConsolidationAdapter.USE_CASE_CONSOLIDATION`, `ALL_COLLECTIONS` |
 | 6529 delegation contract (mainnet) | `0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d` | `ConsolidationAdapter` NatSpec; constructor argument |
-| ERC-1271 gas cap; largest signature | 200,000; 4,096 bytes | `SignatureVerifier.ERC1271_GAS_LIMIT`, `MAX_SIGNATURE_LENGTH` |
+| ERC-1271 gas; largest signature | all the gas EIP-150 allows; 65,536 bytes | `SignatureVerifier.isValidERC1271`, `MAX_SIGNATURE_LENGTH` |
 | Gas kept for the CALL | 1,000 | `BoundedCall.CALL_RESERVE` |
 | EIP-712 domain | `6529 Works Artist Registry`, version `1` | `Typehashes.ARTIST_REGISTRY_NAME`, `DOMAIN_VERSION` |
 | Worst-case `stageChange`, `stageOverride`, `refreshStanding` | About 5.31M, 5.33M and 4.66M gas, under half the 16,777,216-gas EIP-7825 cap | [`ArtistRegistryStanding.t.sol`](../../test/identity/ArtistRegistryStanding.t.sol) `test_WorstCase_*` |

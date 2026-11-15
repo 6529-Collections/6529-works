@@ -13,9 +13,9 @@ import {
 } from "../mocks/records/RecordsMocks.sol";
 import { ReturnBombMock } from "../mocks/libraries/AdversarialTargets.sol";
 
-/// @notice The OWNER read: unmodified OpenZeppelin tokens with cold storage, the gas cap pinned
-///         from both sides, return-data bombs that reach the size cap, and the ERC-1155 fall
-///         through.
+/// @notice The OWNER read: unmodified OpenZeppelin tokens with cold storage, reads that forward
+///         all gas (no cap), return-data bombs that reach the size cap, and the ERC-1155 fall
+///         through. Shortfalls are stressed in `StatementLogGasRule.t.sol`.
 contract StatementLogOwnerReadTest is StatementLogFixture {
     function _notAuthorized(address who) internal {
         vm.expectRevert(
@@ -44,10 +44,7 @@ contract StatementLogOwnerReadTest is StatementLogFixture {
         token.mint(tokenOwner, 5);
         uint256 needed = _minimumReadGas(address(token), abi.encodeCall(IERC721.ownerOf, (5)));
         emit log_named_uint("gas an OpenZeppelin ERC-721 ownerOf needs, cold", needed);
-        // A real cold read is a few thousand gas; the cap leaves at least a tenfold margin. (The
-        // cap's lower side is pinned by the metered-token test, not by a standard token.)
         assertGt(needed, 2_000, "the measurement is a genuine cold read");
-        assertLt(needed * 10, stmtLog.OWNER_READ_GAS(), "standard tokens keep a wide margin");
 
         vm.cool(address(token));
         _expectAppend(Role.OWNER, tokenOwner, _statement(address(token), 5));
@@ -64,7 +61,6 @@ contract StatementLogOwnerReadTest is StatementLogFixture {
             _minimumReadGas(address(token), abi.encodeCall(IERC1155.balanceOf, (tokenOwner, 9)));
         emit log_named_uint("gas an OpenZeppelin ERC-1155 balanceOf needs, cold", needed);
         assertGt(needed, 2_000, "the measurement is a genuine cold read");
-        assertLt(needed * 10, stmtLog.OWNER_READ_GAS(), "standard tokens keep a wide margin");
 
         vm.cool(address(token));
         _expectAppend(Role.OWNER, tokenOwner, _statement(address(token), 9));
@@ -74,20 +70,17 @@ contract StatementLogOwnerReadTest is StatementLogFixture {
         _append(Role.OWNER, stranger, _statement(address(token), 9));
     }
 
-    // ------------------------------------------------------- the gas cap itself
+    // ------------------------------------------------------------- no gas cap
 
-    /// @dev A token that needs 30k gas is read; one that needs more than the cap is refused, and
-    ///      the refusal costs the caller no more than the cap. Pins the cap from below and above.
-    function test_Owner_ReadGasCapIsEnforcedFromBothSides() public {
-        MeteredOwnerMock cheap = new MeteredOwnerMock(tokenOwner, 30_000);
-        _append(Role.OWNER, tokenOwner, _statement(address(cheap), 1));
-
-        MeteredOwnerMock dear = new MeteredOwnerMock(tokenOwner, 60_000);
-        uint256 before = gasleft();
-        _notAuthorized(tokenOwner);
-        _append(Role.OWNER, tokenOwner, _statement(address(dear), 1));
-        // Two reads (ownerOf, then the ERC-1155 fall through) of at most 50k gas each.
-        assertLt(before - gasleft(), 2 * stmtLog.OWNER_READ_GAS() + 60_000);
+    /// @dev The read forwards all gas: a token whose `ownerOf` needs 60k (above the former 50k
+    ///      cap) or 2M is read and its owner authorised, as one that needs 30k is.
+    function test_Owner_ReadHasNoGasCap() public {
+        uint256[3] memory costs = [uint256(30_000), 60_000, 2_000_000];
+        for (uint256 i; i < costs.length; ++i) {
+            MeteredOwnerMock token = new MeteredOwnerMock(tokenOwner, costs[i]);
+            _expectAppend(Role.OWNER, tokenOwner, _statement(address(token), 1));
+            _append(Role.OWNER, tokenOwner, _statement(address(token), 1));
+        }
     }
 
     // ------------------------------------------------------------- return bombs
