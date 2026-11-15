@@ -51,6 +51,8 @@ abstract contract AuctionBase is Test {
     uint32 internal constant DURATION = 24 hours;
     uint32 internal constant WINDOW = 15 minutes;
     uint32 internal constant SHARE = 5_000;
+    uint32 internal constant REFUSAL_DELAY = 7 days;
+    uint32 internal constant REFUSAL_GAS = 4_000_000;
     uint32 internal constant FEE = 25_000;
     uint256 internal constant ETH_FLOOR = 0.001 ether;
     uint256 internal constant USD_FLOOR = 1e18;
@@ -125,7 +127,7 @@ abstract contract AuctionBase is Test {
     // ------------------------------------------------------------------------ deployment
 
     function _config() internal pure returns (IEnglishAuction.AuctionConfig memory) {
-        return IEnglishAuction.AuctionConfig(DURATION, WINDOW, SHARE);
+        return IEnglishAuction.AuctionConfig(DURATION, WINDOW, SHARE, REFUSAL_DELAY, REFUSAL_GAS);
     }
 
     /// @dev A lens on this test's escrow, statement log, allowlist and resolver, deployed on its

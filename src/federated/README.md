@@ -17,9 +17,13 @@ There is no code here in v1.
 ## Before installing a registry
 
 No registry is installed in v1. Before one is, set the economics resolver's
-`PRODUCT_FEDERATED` fee recipient to a nonzero wallet and keep it nonzero while the registry is
-installed: the auction checks it when a federated auction starts and reads it again at
-settlement (LIM-SAL-4 in [known limitations](../../docs/audit/known-limitations.md#sales-and-auctions)).
+`PRODUCT_FEDERATED` fee recipient to a nonzero wallet: the auction refuses to start a federated
+sale with a nonzero fee share while it is zero, and locks it for the sale at start, so a later
+change reaches only sales started afterwards (AUC-41; LIM-SAL-4 in
+[known limitations](../../docs/audit/known-limitations.md#sales-and-auctions)). A federated
+token whose settlement fails no longer holds its sale: `settleOrRefund` closes it with refunds
+after the refusal delay (AUC-38). Templates must meet
+[what a federated template must guarantee](../../docs/spec/stream-and-auctions.md#what-a-federated-template-must-guarantee).
 
 ## See also
 

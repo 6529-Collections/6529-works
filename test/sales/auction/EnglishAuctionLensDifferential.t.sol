@@ -234,6 +234,14 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
         return acc;
     }
 
+    function _recordConfig(bytes32 acc) internal view returns (bytes32) {
+        (bool ok, bytes memory ret) = AT.staticcall(abi.encodeCall(IEnglishAuction.config, ()));
+        assembly ("memory-safe") {
+            if gt(mload(ret), 96) { mstore(ret, 96) }
+        }
+        return keccak256(abi.encode(acc, ok, ret));
+    }
+
     function _observe() internal view returns (bytes32 n) {
         uint256 unknown = uint256(keccak256("no such sale"));
         for (uint256 i; i <= sales.length; ++i) {
@@ -243,7 +251,9 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
             n = _record(n, abi.encodeCall(IEnglishAuction.minimumBid, (saleId)));
             n = _record(n, abi.encodeCall(IEnglishAuction.pendingDelivery, (saleId)));
         }
-        n = _record(n, abi.encodeCall(IEnglishAuction.config, ()));
+        // The pre-lens build has no refusal parameters (AUC-39, AUC-40): its `config` answers
+        // zero for both, so only the first three words are compared.
+        n = _recordConfig(n);
         n = _record(n, abi.encodeCall(ISaleAdapter.paused, ()));
         n = _record(n, abi.encodeCall(ISaleAdapter.federationRegistry, ()));
         n = _record(n, abi.encodeCall(IEnglishAuctionFull.federationRegistryCodeHash, ()));
@@ -336,7 +346,9 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
             IEnglishAuction.AuctionConfig memory next = IEnglishAuction.AuctionConfig(
                 uint32(1 hours + a % 3 days),
                 uint32(1 minutes + (a >> 32) % 1 hours),
-                1_000 + uint32((a >> 64) % 99_000)
+                1_000 + uint32((a >> 64) % 99_000),
+                REFUSAL_DELAY,
+                REFUSAL_GAS
             );
             // forge-lint: disable-end(unsafe-typecast)
             IEnglishAuction.AuctionConfig memory current = auction.config();

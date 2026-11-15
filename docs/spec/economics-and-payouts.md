@@ -56,7 +56,8 @@ revision 1, with one fee recipient for all three products (`NETWORK_FEE_RECIPIEN
 code, balance or nonce). The genesis wiring makes ETH each product's default currency at zero
 delay ([`config/genesis.example.json`](../../config/genesis.example.json)). For a federated token
 (v1.1, only if needed) the sale adapters take the fee share from the federation registry and the
-recipient from `networkFeeRecipient(PRODUCT_FEDERATED)`.
+recipient from `networkFeeRecipient(PRODUCT_FEDERATED)`; the English auction locks both when a
+sale starts ([AUC-41](stream-and-auctions.md#rules-and-invariants)).
 
 The constructor also sets the **6529 Network Museum** (D140, owner decision 11), `museum()`: the
 account a 6529 Stream work goes to when its 1/1 sale ends unsold, unbid or frozen out. 6529 Stream

@@ -19,7 +19,7 @@ For auditors, integrators and contributors.
 | `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | [`IStream`](../../src/interfaces/IStream.sol) (flat: the whole native surface, one ERC-165 id), [`IMintTarget`](../../src/interfaces/IMintTarget.sol); ERC-721, ERC-2981, ERC-4906; [`IStreamViews`](../../src/interfaces/IStreamViews.sol) through its extension | The permanent core token, "6529 Stream" (`STREAM`): mints what its mint policy admits into an admitted adapter's custody, token IDs and serials, terms locked at mint, `royaltyInfo`, primary settlement, burn after an upheld dispute, rescue and museum routing, the edition link, marketplace owner and contract URI; forwards `tokenURI` to the work's renderer. |
 | Mint policy | [`IMintPolicy`](../../src/interfaces/IMintPolicy.sol), in v1 [`PackageRegistry`](../../src/curation/PackageRegistry.sol) | `IMintPolicy` | The one replaceable contract that decides what Stream may mint (AUC-38): consent and consume, the item rules, the VRF delivery, the terms quote; answers a record Stream checks. |
 | `StreamViews` | [`src/stream/StreamViews.sol`](../../src/stream/StreamViews.sol) | [`IStreamExtension`](../../src/interfaces/IStreamExtension.sol), [`IStreamViews`](../../src/interfaces/IStreamViews.sol) | Stream's genesis read-only extension, deployed by Stream's constructor and reached only by STATICCALL from Stream's fallback (AUC-40): `work`, `collection`, `totalSupply`, `contractURI`, `owner`, and the collection-name rule. |
-| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | [`IEnglishAuction`](../../src/interfaces/IEnglishAuction.sol), [`ISaleAdapter`](../../src/interfaces/ISaleAdapter.sol), `IERC721Receiver` | Permissionless start, bids with an anti-snipe extension, pull credits, settlement with bounded delivery and payouts, the emergency start pause, the per-auction dispute pause, the currency freeze, and the governed auction parameters. |
+| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | [`IEnglishAuction`](../../src/interfaces/IEnglishAuction.sol), [`ISaleAdapter`](../../src/interfaces/ISaleAdapter.sol), [`IEnglishAuctionRefusal`](../../src/interfaces/IEnglishAuctionRefusal.sol), `IERC721Receiver` | Permissionless start, bids with an anti-snipe extension, pull credits, settlement with bounded delivery and payouts, the exit for a token that will not settle (AUC-38), the emergency start pause, the per-auction dispute pause, the currency freeze, and the governed auction parameters. |
 | `EnglishAuctionLens` | [`src/sales/EnglishAuctionLens.sol`](../../src/sales/EnglishAuctionLens.sol) | (answers the auction's views of `IEnglishAuction` and `ISaleAdapter`) | The auction's read side, deployed on its own before the auction and pinned by its constructor (`EnglishAuction.lens()`, immutable; address, code hash and dependencies checked): every view the auction does not declare, forwarded to it by the auction's read-only `staticcall` fallback and answered byte for byte as before (AUC-34). |
 | `SpdxId` | [`src/stream/SpdxId.sol`](../../src/stream/SpdxId.sol) | none | The license-ID rule the v1 mint policy applies at mint: 1 to 64 bytes of `[A-Za-z0-9.+-]`. |
 | Sale types | [`src/interfaces/types/SaleTypes.sol`](../../src/interfaces/types/SaleTypes.sol) | none | `SaleKind`, `PaymentMethod`, `Payment`, `PrimaryTerms`, `LockedTerms`. |
@@ -88,6 +88,11 @@ adds:
   bid must reach it.
 - **Two pauses.** The emergency pause (`pause()`, PAUSER) stops new starts on the whole
   adapter. The dispute pause (`pause(saleId, disputeRef)`, GUARDIAN) stops one live auction.
+- **Refused settlement** (AUC-38 to AUC-41). A federated token (uncurated) may fail any call
+  `settle` makes into it. `settleOrRefund` attempts the whole settlement in a
+  frame of fixed, governed gas, from the sale's end plus a governed delay; if the attempt fails,
+  the sale closes with the standing bid credited back and the work left for its artist. A token
+  that settles is never affected. See [a token that will not settle](#a-token-that-will-not-settle).
 - **Freeze.** A running or ended, unsettled auction whose locked currency the guardian has
   deprecated on the asset allowlist (MARKET-2). It is not an `AuctionState`: the auction reports
   its usual state, but bids and settlement revert with `AssetNotActive`.
@@ -315,6 +320,23 @@ stateDiagram-v2
 | Re-admitted late to running | anyone | none | the first `settle` after the end reopens it (`_reopenedAfterFreeze`, see the [freeze](#currency-freeze-and-recovery)); a bid before that extends the end past `since + extensionWindow`, so a later `settle` settles normally |
 | Frozen to settled unsold | anyone | 60 days after the deprecation | `settle` |
 | Ended (delisted federated contract) to settled unsold | anyone | none | `settle` (v1.1 only; v1 installs no federation registry) |
+| Ended to settled, refused (federated sales only) | anyone | the sale's refusal delay after its end (AUC-39) | `settleOrRefund`, when its attempt at `settle` fails (AUC-38) |
+
+#### How a sale ends
+
+Every sale reaches exactly one of these terminal states, each by a permissionless call except a
+cancel. The network column is what the network fee recipient receives (AUC-41).
+
+| Terminal state | Reached by | The standing bid | The work | The network receives |
+| --- | --- | --- | --- | --- |
+| Settled, sold (`SaleSettled` with a buyer) | `settle`, or `settleOrRefund` whose attempt succeeded | Paid: the seller wallet the token names gets the price less the fee (escrowed if it refuses) | Delivered to the recipient, or a pending delivery the winner claims | The fee: price × fee share. For a federated sale both the share (the registry's) and the recipient (the resolver's) are locked at start; for 6529 Stream, its terms locked at mint |
+| Settled, unsold (`SaleSettled`, no buyer: UNBID, or FROZEN_OUT after the freeze exit or a delisting) | `settle`, or `settleOrRefund` whose attempt succeeded | None, or credited back to its bidder (frozen out, delisted) | 6529 Stream: the museum. Any other token: its artist (delivered or pending) | Nothing: no sale |
+| Settled, rescued close (`RescuedSaleClosed`, AUC-36) | `settle`, when the token already reports an outcome | Credited back | 6529 Stream: already with the museum. A federated token: in custody, a pending delivery its artist claims | Nothing: no sale |
+| Settled, refused (`SettlementRefused`, AUC-38; federated sales only) | `settleOrRefund`, from the refusal delay after the end, when its attempt failed | Credited back | In custody, a pending delivery the creator the token reports claims | Nothing: no sale |
+| Cancelled (`AuctionCancelled`) | `cancel` (PARAMETER_SETTER) during a dispute pause | Credited back | Burned | Nothing |
+
+A sale whose token reverts or burns gas on `burn` cannot be cancelled; its pause lapses after
+7 days and it ends by one of the other rows.
 
 ## Flows
 
@@ -559,6 +581,152 @@ sequenceDiagram
   after 60 days (owner decision 10) and a delisted federated contract's sale, after crediting
   the standing bid; the auction reports those FROZEN_OUT, and a sale with no bid UNBID.
 
+### A token that will not settle
+
+`settle` calls into the token it sells: the outcome view `primarySale` (AUC-36), `settlePrimary`,
+`ownerOf` (with no bid, and after each delivery attempt), `primaryTerms` (the artist an unsold
+work goes to) and the delivery, and it pays the wallets the token names. A federated token (an
+artist's own, uncurated contract built from a network template) may revert, burn the gas it is
+given, answer malformed or hostile values, re-enter, or change behaviour between calls. Any of
+these makes `settle` revert, which on its own would hold the standing bid and the work for good.
+The exit is for federated sales only (`SaleNotRefusable` otherwise). A listed token, 6529 Stream
+and any token governance lists after review, settles only through `settle`: its settlement is
+curated not to fail. 6529 Stream's can fail only if governance breaks one of its dependencies
+(an economics resolver whose `museum()` reverts fails an unbid or frozen-out sale); the sale then
+waits for governance's repair, as before, and is never refused, so the artist cannot take an
+unsold work and a master's edition sale is never stranded
+([`StreamSaleNeverRefused.t.sol`](../../test/integration/StreamSaleNeverRefused.t.sol)).
+
+```mermaid
+sequenceDiagram
+    participant Keeper as Anyone (keeper)
+    participant Auction as EnglishAuction
+    participant Escrow as RevenueEscrow
+    participant Token as The token
+    Keeper->>Auction: settleOrRefund(saleId), from refusableAt(saleId)
+    Note over Auction: ENDED, past the refusal delay, currency not frozen short of its exit
+    Auction->>Escrow: depositETH(0) - reverts ZeroAmount unless the escrow's guard is held
+    Note over Auction: neither guard held, and the caller can forward refusalGas in full
+    Auction->>Auction: settle(saleId) with exactly refusalGas
+    Auction->>Token: primarySale, settlePrimary, ownerOf, primaryTerms, delivery
+    alt the attempt succeeds
+        Note over Auction: settled exactly as settle settles it (same state, events, payouts)
+    else the attempt fails, for any reason
+        Note over Auction: every effect undone, the token's included
+        Auction->>Auction: SETTLED, bid credited back, work pending for its artist
+        Auction-->>Keeper: SettlementRefused(saleId)
+    end
+```
+
+- **Who and when.** Anyone, for a federated sale, from `refusableAt(saleId)`: the sale's end
+  (after any dispute pause) plus the refusal delay it locked at start, 7 days at launch (AUC-39). Before then `RefusalTooEarly(saleId,
+  allowedAt)`. While its currency is frozen short of the 60-day exit the call waits like `settle`
+  (`AssetNotActive`): a freeze is the auction's own wait, not the token's refusal.
+- **The attempt is `settle` itself**, called by the auction on itself with exactly `refusalGas`
+  (4,000,000 at launch, AUC-40), returning nothing it copies. If it succeeds, nothing else
+  happens: the outcome, the events and the payouts are exactly `settle`'s, so the exit cannot be
+  used to escape a sale whose token cooperates. If it fails, the frame's revert undoes everything
+  it did, the token's own record of the sale included, and the sale closes as refused.
+- **A shortfall is never a refusal** (AUC-40). The attempt's gas is fixed: a caller that cannot
+  forward it in full under EIP-150 is refused before anything happens
+  (`BoundedCall.BoundedCallInsufficientGas(refusalGas)`), and after a failed attempt the close runs
+  on the 1/63 the call retained; a caller that left too little runs out of gas and the whole call
+  reverts. The token sees the same gas whatever the caller sends, so no caller chooses the outcome
+  by its gas limit. Refusal gas is the bound the rule allows for gas-burning callees: forwarding
+  all gas would make a gas burner indistinguishable from a caller's shortfall, so the sale could
+  never close.
+- **No other context can fail the attempt.** The call is refused inside any of the auction's
+  guarded calls and inside the escrow's (`ReentrancyGuardReentrantCall`): a token re-entering from
+  its own settlement could otherwise make another sale's attempt fail on the auction's guard, and
+  a caller running inside the escrow's `flush` (paid to its own contract) could make any attempt
+  that escrows a refused payout fail on the escrow's guard. Every other call in the attempt either
+  belongs to the token or already absorbs its failure: the delivery is bounded and leaves a
+  pending delivery, a refusing wallet's ETH is escrowed with bounded gas, and an ERC-20 payout runs
+  in its own frame with a credit fallback.
+- **The close** (`_closeWithRefund`) makes no external call: SETTLED, the standing bid credited to
+  its bidder (`Credited`), the recipient cleared, and the delivery marked pending with no
+  recipient, so only the artist the token reports (`primaryTerms(tokenId).creator`, the no-bid path
+  of `claimDelivery`) can take the work out, to any address. The former bidder cannot. If the
+  token blocks that call or its transfers too, the work stays in custody: it is the token's own
+  ledger.
+
+#### Why this is sound
+
+The previous attempt at an exit (RFX-SAL-3, withdrawn) closed a sale whose `settlePrimary` failed
+in a fixed 1,000,000-gas frame from 60 days after its end, and credited an ETH payout to a wallet
+the escrow refuses. It was unsound: it covered `settlePrimary` only, so a token reverting in
+`ownerOf`, burning gas in `primarySale`, or naming an unpayable seller still held the bid, and a
+delisted or unbid sale had no exit; a payout credited to the zero address or the escrow could never
+be claimed, so the seller's part was held forever; its gas bound was a compiled constant, and
+it wrapped 6529 Stream's own settlement after 60 days, so a canonical sale that needed more could
+close as refused with its work stranded in a live adapter. The design here instead wraps the whole
+settlement, every call and every payout in it, in one atomic attempt with governed gas, and only
+ever credits a bid back to the bidder that paid it.
+
+| Case | What happens | Who bears it, and why |
+| --- | --- | --- |
+| The token reverts, burns its gas or answers malformed data in any settlement call (with or without a bid; delisted or frozen out) | `settle` reverts; from the refusal delay `settleOrRefund` closes the sale as refused | The artist who deployed the token loses the sale and the network its fee; the bidder gets its bid back in full and bears only the wait, at most the refusal delay. The artist chose the token; the bidder chose to bid on it |
+| The token names a seller no payout reaches (zero, the escrow) | The attempt fails at the payout and the sale closes as refused: no one is paid, the work stays in custody | As above. No outcome hands over the work with the seller paid and the network not |
+| The token names a seller wallet that refuses ETH or burns its gas | The sale completes: the seller's part is escrowed for that wallet (bounded call), the network's fee is paid in full, the buyer gets the work | The seller, who must flush the escrow. The network's part is a separate payout to a recipient the auction locked |
+| The token cooperates selectively: for some buyers, with some gas, before or after some time, for some calls | The sale either completes in full or closes as refused; the attempt's gas is fixed, so gas cannot steer it to anything else | The token's deployer can always refuse a sale; refusing a low price gives the seller a free option that costs the bidder at most the refusal delay. Only uncurated tokens can do this |
+| A bidder colludes with the token | The bidder gets back exactly its bid; where the work goes afterwards is the token's own choice (the creator it reports) | The token's deployer and the network forgo the sale; no one else loses. The auction never hands the work to a refunded bidder by its own decision |
+| The seller colludes with the token | As selective cooperation: a full sale or a refund | The network's fee cannot be redirected: for a federated sale its share and recipient were locked at start, never read from the token (AUC-41) |
+| A third party | Cannot turn a cooperating token's sale into a refusal: the gas is fixed, the auction's and the escrow's guards are checked, a recipient's or wallet's failure is absorbed | No one. A third party that can make the token's own dependencies fail is the token's risk (residual below) |
+| The token re-enters | Every value-moving entry point and `settleOrRefund` refuse it; the lens's views are read-only | Only the token's own sale can fail |
+| A listed token, 6529 Stream included | `settleOrRefund` refuses it (`SaleNotRefusable`); it settles only through `settle` | No change for 6529 Stream: same outcomes and events. If governance breaks one of its dependencies, an unbid or frozen-out sale waits for the repair (at least 30 days) and is never refused, so no artist takes an unsold work and no edition sale is stranded (`StreamSaleNeverRefused.t.sol`) |
+| Governance | The refusal gas only rises (at most doubling per step), never below the auction's own floor; the delay is bounded and every refusable sale keeps the one it locked; no setting reaches a listed token's sale | A raise helps a cooperating token that needs more gas; it cannot be undone (LIM-SAL-17) |
+
+**Residual risk.** (1) The auction trusts the token's ledger: a token that reports a delivery it
+did not make (an `ownerOf` that lies) keeps the price while the buyer holds nothing. This is
+inherent to buying any NFT; for a federated token the registry binds its code hash to a reviewed
+template. (2) A token whose cooperating settlement needs more than the refusal gas, less the
+auction's own share, can be closed as refused by anyone after the delay; keepers settle with
+`settle` first, and governance raises the refusal gas. (3) A template whose settlement depends on
+a contract whose reentrancy guard a third party can hold while running its own code (as the
+escrow's `flush` does) could have its sales refused by that third party; templates must not.
+(4) Under the EIP-8037 draft a transaction above 2^24 gas carries a state-gas reservoir, so a
+token whose settlement writes more state than the refusal gas pays for can settle for one keeper
+and be refused for another (CALLS-3, LIM-GAS-2); keepers send at most 2^24. (5) After a refused
+close the token's own record still says the sale never settled. (6) A token governance lists
+other than 6529 Stream has no exit: if its settlement fails, its standing bid is held until it is
+repaired, as before this change. None is listed at launch (genesis lists only 6529 Stream, and
+`setTarget` is a 30-day action whose review must prove the token's settlement cannot fail).
+
+### What a federated template must guarantee
+
+A federated token is uncurated: the auction defends a bidder's funds, the network's fee and every
+other sale against anything it does (the analysis above). What it cannot defend is the sale itself:
+a template that breaks one of these rules lets its artist, a bidder or a third party choose a
+refusal, or lets a buyer pay for a work it does not get. The federation lane builds its templates
+to them, and governance checks them before it publishes a template version.
+
+1. **Gas.** Its whole settlement (`primarySale`, `settlePrimary`, `ownerOf`, `primaryTerms` and
+   the delivery's transfer) runs within the refusal gas less the auction's own worst case
+   (2,434,325 measured; AUC-40), in regular gas, state gas included, with no EIP-8037 reservoir:
+   a keeper sends at most 2^24 gas.
+2. **Outcome view.** `primarySale(tokenId)` answers NONE until the adapter settles the sale; any
+   other answer closes the sale with refunds (AUC-36).
+3. **No third-party guards.** Its settlement never depends on a contract whose reentrancy guard a
+   third party can hold while running its own code (the escrow's `flush`, a split wallet's
+   release, a vault's withdrawal).
+4. **No buyer or recipient code.** `settlePrimary`, `ownerOf` and `primaryTerms` never call code
+   the buyer, its recipient or any other bidder controls (a hook, a companion mint to the buyer)
+   outside a call whose failure they absorb: otherwise a bidder could force a refusal.
+5. **No identity dependency for a sale.** A SOLD settlement never depends on identity state such
+   as the artist's active authority being nonzero: a pending recovery override must not fail a
+   sale. An unsold settlement may: the work then waits for the artist (AUC-24).
+6. **Locked payees.** The seller wallet and every other term `settlePrimary` returns are fixed at
+   mint; the artist cannot change them after the sale starts, and they are never zero, the escrow
+   or the auction (AUC-41: a payout to one fails the settlement, which then closes as refused,
+   giving the artist a free option until the delay ends).
+7. **An honest ledger.** `ownerOf` reports the true holder, and the delivery's `safeTransferFrom`
+   moves the token: the auction trusts both for delivery (residual 1).
+8. **One settlement, by its adapter.** Only the adapter that minted a token settles its primary
+   sale, once; transfers never settle it; `settlePrimary` returns `holder` zero, so the adapter
+   delivers (IMintTarget).
+9. **Fixed code.** No proxy and no delegatecall: the code hash the registry records is the code
+   that runs at settlement (AUC-28).
+
 ### Currency freeze and recovery
 
 ```mermaid
@@ -778,9 +946,9 @@ sequenceDiagram
 | AUC-25 | A deprecated currency freezes the auction: no bid and no settlement until re-admission, and the bidder may withdraw; after a re-admission the first settle reopens the auction only if `since + extensionWindow > endTime`; after 60 days of deprecation (longer than a guardian's removal plus a re-admission) the sale ends unsold: the standing bid is credited back and the work goes where an unbid work goes (the museum for 6529 Stream, the artist for any other token; owner decisions 9 and 10), reported FROZEN_OUT (owner decision 17). | `EnglishAuction._reopenedAfterFreeze`, `withdrawBid`, `_bid` | [`AuctionCurrencyFreeze.t.sol`](../../test/sales/auction/AuctionCurrencyFreeze.t.sol): `test_Settle_AFrozenAuctionWaitsAndReopensAfterReadmission`, `test_Settle_NothingSettlesWhileFrozen`, `test_Settle_AFrozenSaleEndsUnsoldSixtyDaysIntoTheFreeze`, `test_Settle_GovernanceReadmitsBeforeTheExitDespiteAGuardianVeto`, `test_WithdrawBid_NeedsAPauseOrAFreeze`, `test_Settle_AnAuctionStartedAfterAFreezeSettlesNormally`; [`Museum.t.sol`](../../test/integration/Museum.t.sol): `test_FreezeExitSendsTheWorkToTheMuseumAndCreditsTheBid`, `test_AnotherListedTokensFreezeExitGoesToItsArtist`, `test_FederatedFreezeExitGoesToItsArtist`; [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol): `test_Settle_AnotherListedTokensFreezeExitGoesToItsArtist` |
 | AUC-26 | A dispute pause is GUARDIAN-only, once per live auction, at most 7 days; `resume` and `cancel` wait 48 hours from the pause; `cancel` cites the token's own outcome recorded after the pause. | `EnglishAuction.pause(uint256,bytes32)`, `resume`, `cancel` | [`EnglishAuctionDisputes.t.sol`](../../test/sales/auction/EnglishAuctionDisputes.t.sol): `test_Pause_OnlyTheGuardian`, `test_Pause_OnlyALiveAuctionOnce`, `test_Pause_EndsByItselfAfterSevenDays`, `test_Cancel_NeedsTheRecordedOutcome`, `test_Cancel_PauseWindowBoundary`; [`PauseWindow.t.sol`](../../test/sales/PauseWindow.t.sol): `test_Resume_ScheduledBeforeThePauseWaitsTwoDaysAfterIt`; [`AuctionDisputeCancel.t.sol`](../../test/sales/auction/AuctionDisputeCancel.t.sol): `test_Cancel_RefusesAnOutcomeRecordedBeforeThePause` |
 | AUC-27 | A resumed or reopened auction runs at least the longer of the governed duration and its locked window. | `EnglishAuction._resumedEnd`, `_reopening` | [`EnglishAuctionDisputes.t.sol`](../../test/sales/auction/EnglishAuctionDisputes.t.sol): `test_Resume_GivesAtLeastTheDuration`, `test_Resume_LeavesAtLeastTheWindow`, `test_Resume_ReopeningIsNeverShorterThanTheLockedWindow`; [`AuctionDisputePause.t.sol`](../../test/sales/auction/AuctionDisputePause.t.sol): `test_Pause_WithAStandingBidAlsoReopensForTheDuration` |
-| AUC-28 | A federated token sells only while the registry reports it active with its recorded code; a delisted contract takes no bids and settles unsold; its fee goes to the network's federated recipient. | `EnglishAuction.isTarget`, `_delisted`, `_lockedTerms` | [`AuctionFederatedTokens.t.sol`](../../test/sales/auction/AuctionFederatedTokens.t.sol): `test_Bid_ADelistedFederatedAuctionStopsSelling`, `test_Settle_AFederatedAuctionPaysTheNetworksFederatedRecipient`; [`EnglishAuctionFederation.t.sol`](../../test/sales/auction/EnglishAuctionFederation.t.sol): `test_Federation_CodeHashesArePinned` |
+| AUC-28 | A federated token sells only while the registry reports it active with its recorded code; a delisted contract takes no bids and settles unsold; its fee goes to the network's federated recipient, locked at start (AUC-41). | `EnglishAuction.isTarget`, `_delisted`, `_lockedTerms` | [`AuctionFederatedTokens.t.sol`](../../test/sales/auction/AuctionFederatedTokens.t.sol): `test_Bid_ADelistedFederatedAuctionStopsSelling`, `test_Settle_AFederatedAuctionPaysTheNetworksFederatedRecipient`; [`EnglishAuctionFederation.t.sol`](../../test/sales/auction/EnglishAuctionFederation.t.sol): `test_Federation_CodeHashesArePinned` |
 | AUC-29 | The auction refuses every safe transfer into it except its own mint during a start. | `EnglishAuction.onERC721Received` | [`AuctionCustody.t.sol`](../../test/sales/auction/AuctionCustody.t.sol): `test_OnERC721Received_RefusesSafeTransfersIntoTheAuction`; [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol): `test_OnERC721Received_RejectsUnexpectedTransfers` |
-| AUC-30 | Governed parameters stay within bounds and are compare-and-set. | `EnglishAuction.setConfig`, `setOpeningBid` | [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol): `test_Constructor_RejectsConfigOutOfBounds`; [`EnglishAuctionDisputes.t.sol`](../../test/sales/auction/EnglishAuctionDisputes.t.sol): `test_SetConfig_CompareAndSet`, `test_SetOpeningBid_MovesBothWaysWithinTheCeiling`, `testFuzz_SetOpeningBid_AnyValueUpToTheCeiling`, `test_SetOpeningBid_CappedAtTheLargestBid` |
+| AUC-30 | Governed parameters stay within bounds and are compare-and-set; the refusal gas is raise-only, at most doubled per step (AUC-40). | `EnglishAuction.setConfig`, `setOpeningBid` | [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol): `test_Constructor_RejectsConfigOutOfBounds`; [`EnglishAuctionDisputes.t.sol`](../../test/sales/auction/EnglishAuctionDisputes.t.sol): `test_SetConfig_CompareAndSet`, `test_SetOpeningBid_MovesBothWaysWithinTheCeiling`, `testFuzz_SetOpeningBid_AnyValueUpToTheCeiling`, `test_SetOpeningBid_CappedAtTheLargestBid` |
 | AUC-31 | No reentrant call reaches a value-moving entry point. | `nonReentrant` on `start`, `startWithBid`, `bid`, `withdrawBid`, `settle`, `claimDelivery`, `claim`, `claimFor`, `pause(saleId)`, `resume`, `cancel` | [`EnglishAuctionHostile.t.sol`](../../test/sales/auction/EnglishAuctionHostile.t.sol): `test_ReentrantClaimerIsBlocked`, `test_ReentrantWinnerCannotReenterSettlement`, `test_ReentrantSellerWalletIsBlocked`, `test_CallbackTokenCannotReenter` |
 | AUC-32 | Gas: a steady-state ETH start uses at most 350,000 Prague gas and 6 new slots (7 with a bid); the suite holds every genesis start row 2,500 under the budget (`START_MARGIN`; the tightest row measures 347,404 on the permanence integration, ADR 0007). A first start under new terms is measured separately; it writes one slot more when its terms' hashed position collides (an accepted limitation, LIM-GAS-10). | measured, not enforced on-chain | [`GasReport.t.sol`](../../test/integration/GasReport.t.sol): `test_Gas_Start_SteadyState`, `test_Gas_StartWithBid_SteadyState`, `test_Gas_StartWithBid_ArtistsFirstWork_TwoParty`, `test_Gas_Table`; [`StreamTermsGrind.t.sol`](../../test/stream/StreamTermsGrind.t.sol): `test_GroundCollisionAddsOneSlotToTheFirstStart`; [`EnglishAuctionGas.t.sol`](../../test/sales/auction/EnglishAuctionGas.t.sol): `test_StartGas_SteadyState` |
 | AUC-33 | An unbid 6529 Stream work is never pending: Stream moves it to the museum with no receiver callback (owner decision 17), so neither its artist nor a museum governance names later, nor anyone else, can claim it, and a museum account that would reject a safe transfer still receives it. For any other token the artist, recorded or active, may also claim a pending delivery in the recipient's place, to any address (L-5). | `Stream.settlePrimary`, `EnglishAuction.claimDelivery`, `_unbidClaimant` | [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol): `test_ClaimDelivery_NoBidsNothingToClaim`, `test_ClaimDelivery_TheMuseumNamedAtSettlementKeepsTheWork`, `test_Settle_NoBidMuseumThatWouldRejectStillReceivesTheWork`, `test_ClaimDelivery_AnotherListedTokensArtistClaims`, `test_ClaimDelivery_FederatedNoBidsOnlyTheArtist`, `test_ClaimDelivery_ANoBidClaimFollowsTheCurrentAuthority`; [`Museum.t.sol`](../../test/integration/Museum.t.sol): `test_AMuseumThatWouldRejectStillReceivesTheWork` |
@@ -829,7 +997,12 @@ reopening after a currency freeze.
 | `cancel` too early, without a fresh outcome, or after the pause lapsed | `UnpauseTooEarly`, `OutcomeNotRecorded`, `InvalidAuctionState` | Record the outcome after the pause and schedule the cancel to land between 48 hours and 7 days after it. |
 | Second dispute pause on one auction | `PauseExhausted` | None: one pause per auction. |
 | `royaltyInfo` called with too little gas | Reverts (out of gas), never a zero royalty | Call again with more gas. |
-| Federated contract delisted mid-auction (v1.1) | Bids revert with `TargetNotAllowed` | `settle` credits the bid back and sends the work to the artist (a federated work never goes to the museum). |
+| Federated contract delisted mid-auction (v1.1) | Bids revert with `TargetNotAllowed` | `settle` credits the bid back and sends the work to the artist (a federated work never goes to the museum); if the token refuses that settlement, `settleOrRefund` after the refusal delay. |
+| A federated token's settlement fails (reverts, burns gas, malformed or unpayable answers) | `settle` reverts; nothing moves | Anyone calls `settleOrRefund(saleId)` from `refusableAt(saleId)`: the bid is credited back and the artist may claim the work (AUC-38). |
+| `settleOrRefund` on a listed token's sale (6529 Stream's included) | `SaleNotRefusable(saleId)` | Use `settle`; a 6529 Stream sale that cannot settle waits for governance to repair the failing dependency. |
+| `settleOrRefund` before the refusal delay | `RefusalTooEarly(saleId, allowedAt)` | Wait until `allowedAt`, or `settle` if the token cooperates. |
+| `settleOrRefund` with too little gas | `BoundedCall.BoundedCallInsufficientGas(refusalGas)`, or out of gas; nothing changes | Retry with a gas limit above the refusal gas plus 1/63 of it and the close (about 4.2M at launch, at most 2^24). |
+| `settleOrRefund` inside a guarded call of the auction or the escrow | `ReentrancyGuardReentrantCall` | Call it from outside them. |
 
 ## Parameters and limits
 
@@ -844,6 +1017,8 @@ reopening after a currency freeze.
 | Dispute pause allowance | 7 days, one pause per auction | `MAX_PAUSE` |
 | Earliest `unpause`, `resume`, `cancel` | 48 hours after the pause | `Roles.STANDARD`, `_requireUnpausable` |
 | Freeze exit; earliest re-admission | 60 days after the deprecation; 14 days after it | `_FREEZE_EXIT`; `Roles.FUNDS` in `AssetAllowlist.admitAsset` |
+| Refusal delay | 7 days at launch; 1 to 30 days; locked at start by each federated sale (the only refusable sales) | `AUCTION_REFUSAL_DELAY` in `Deploy.s.sol`; `_MIN_REFUSAL_DELAY`, `_MAX_REFUSAL_DELAY` |
+| Refusal gas | 4,000,000 at launch; raise-only, at most double per step, and never lowered again: raise only to a measured need, and check a fork's transaction cap first (LIM-SAL-17); floor 3,000,000 (the auction's own worst case measured at 2,434,325), ceiling 15,000,000 | `AUCTION_REFUSAL_GAS` in `Deploy.s.sol`; `_MIN_REFUSAL_GAS`, `_MAX_REFUSAL_GAS` |
 | Recipient's redirect delay | 30 days after the auction's stored end; the winning bidder redirects at any time | `_REDIRECT_DELAY` |
 | The museum (unbid 6529 Stream works) | Set at genesis (`MUSEUM` in `Deploy.s.sol`); FUNDS_SETTER, 14 days, compare-and-set on its revision | `IEconomicsResolver.museum`, `museumRevision`, `setMuseum` |
 | The token whose unbid works go to the museum | 6529 Stream, fixed at deployment | `EnglishAuction` constructor (`stream_`), from `DeployV1` |

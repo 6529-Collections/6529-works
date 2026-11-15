@@ -60,6 +60,7 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 | Keepers and relayers | Call permissionless entry points; relay signed payloads | Liveness only |
 | VRF coordinator | Deliver random words for its requests | Unbiased randomness |
 | Token issuers | Blocklist, charge fees, rebase, upgrade token behavior | Standard transfers, judged at admission |
+| A federated token (uncurated) | Revert, burn gas, answer malformed or unpayable values, re-enter, or change behaviour in any call `settle` makes into it, alone or with its artist, a bidder or a third party | Its own ledger only; never a bidder's funds or the network's fee ([AUC-38 to AUC-41][auc]). A listed token is curated not to fail and has no exit |
 | MEV searchers and block builders | Order, insert and front-run transactions | Nothing |
 | Attackers with stolen keys | Any key or Safe above, each bounded in [trust assumptions](trust-assumptions.md) | Nothing |
 | Copiers | Submit another artist's content as their own | Nothing |
@@ -81,6 +82,8 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 | `settle` | A settler starves the call so delivery or a payout fails into its fallback | [AUC-22][auc]: the call reverts unless it forwards the delivery gas and the ERC-20 payout frame in full (MONEY-1) |
 | `settle` (no bid) | The artist, or a key under recovery, blocks a no-bid settlement or takes the museum's work | [AUC-24][auc]: the auction reports UNBID and 6529 Stream itself moves the work to the museum the resolver names then, whatever the artist's state, with no receiver callback, so nothing is pending and nobody can claim it ([AUC-33][auc], owner decision 17); any other token's work goes to the active authority, and settlement waits while it is zero (IDENTITY-1) |
 | `settle` | A seller wallet or token blocks the payout and so the delivery | [AUC-23][auc]: escrow, else a credit for `claimFor`, while the work is delivered (MONEY-1) |
+| `settle` | A federated token reverts, burns gas or answers malformed or unpayable values, so `settle` never completes and the bid and the work are held | [AUC-38][auc]: from the refusal delay after the end, `settleOrRefund` attempts the whole settlement with fixed, governed gas (AUC-40) and, if it fails, credits the bid back and leaves the work for its artist; a cooperating token settles exactly as with `settle`; a listed token's sale, 6529 Stream's included, is never refusable, so a broken governance dependency cannot hand an unsold Stream work to its artist. The analysis case by case is in [Stream and auctions](../spec/stream-and-auctions.md#why-this-is-sound) |
+| `settleOrRefund` | A token, bidder or third party steers a sale into a refusal, or a refused sale into someone else's hands | The attempt's gas is fixed and must be forwarded in full; the call is refused inside the auction's and the escrow's guards; a recipient's or wallet's failure is absorbed, not a refusal; a refused close credits only the bidder that paid and hands the work only to the artist the token reports; a federated sale's fee share and recipient are locked at start ([AUC-41][auc]) |
 | Value-moving entry points | Reentrancy through a token, wallet or receiver callback | [AUC-31][auc]: a transient reentrancy guard on every value-moving entry point |
 | Currency deprecation | A deprecated currency strands bids and works, or a hasty re-admission undoes it | ETH can never be deprecated (`EthNotDeprecable`), so only ERC-20 sales can freeze, never an edition auction. [AUC-25][auc]: the auction freezes, the bidder may withdraw, and after 60 days it ends unsold (FROZEN_OUT: 6529 Stream moves the work to the museum, owner decision 17); [ECO-33][eco]: re-admission waits 14 days from the deprecation (MARKET-2) |
 | `onERC721Received` | Tokens sent to the auction outside a start are stranded | [AUC-29][auc]: every safe transfer but its own mint is refused; a plain `transferFrom` is the sender's loss ([LIM-SAL-10][lim-sal], CALLS-5) |
@@ -285,6 +288,8 @@ The accepted residual risks this model relies on most, each stated once in
 - Raise-only parameters per operation, not per window ([LIM-GV-7][lim-gv]).
 - Signed releases reviving on a return to an old payout address ([LIM-ECO-2][lim-eco]).
 - Front-run starts and tokens sent with a plain transfer ([LIM-SAL-9, LIM-SAL-10][lim-sal]).
+- A token whose settlement fails holds its sale until the refusal delay, and a token's ledger is
+  trusted for delivery ([LIM-SAL-16][lim-sal]).
 - The edition auction's game theory: soft-close griefing, the breadth-rule tilt, shill bids and
   firm bids ([LIM-EA-1 to LIM-EA-3, LIM-EA-13][lim-ea]).
 - Fixed gas allowances, state gas and the EIP-8037 reservoir under Glamsterdam

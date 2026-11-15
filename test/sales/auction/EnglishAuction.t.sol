@@ -70,8 +70,8 @@ contract EnglishAuctionTest is AuctionBase {
     function test_Constructor_AcceptsConfigAtTheBounds() public {
         address[] memory none = new address[](0);
         IEnglishAuction.AuctionConfig[2] memory edge = [
-            IEnglishAuction.AuctionConfig(2 hours, 2 hours, SHARE),
-            IEnglishAuction.AuctionConfig(DURATION, WINDOW, 100_000)
+            IEnglishAuction.AuctionConfig(2 hours, 2 hours, SHARE, REFUSAL_DELAY, REFUSAL_GAS),
+            IEnglishAuction.AuctionConfig(DURATION, WINDOW, 100_000, REFUSAL_DELAY, REFUSAL_GAS)
         ];
         for (uint256 i; i < edge.length; ++i) {
             EnglishAuction a = new EnglishAuction(
@@ -207,11 +207,11 @@ contract EnglishAuctionTest is AuctionBase {
     function test_Constructor_RejectsConfigOutOfBounds() public {
         address[] memory none = new address[](0);
         IEnglishAuction.AuctionConfig[5] memory bad = [
-            IEnglishAuction.AuctionConfig(59 minutes, WINDOW, SHARE),
-            IEnglishAuction.AuctionConfig(7 days + 1, WINDOW, SHARE),
-            IEnglishAuction.AuctionConfig(DURATION, 59, SHARE),
-            IEnglishAuction.AuctionConfig(DURATION, WINDOW, 999),
-            IEnglishAuction.AuctionConfig(2 hours, 3 hours, SHARE)
+            IEnglishAuction.AuctionConfig(59 minutes, WINDOW, SHARE, REFUSAL_DELAY, REFUSAL_GAS),
+            IEnglishAuction.AuctionConfig(7 days + 1, WINDOW, SHARE, REFUSAL_DELAY, REFUSAL_GAS),
+            IEnglishAuction.AuctionConfig(DURATION, 59, SHARE, REFUSAL_DELAY, REFUSAL_GAS),
+            IEnglishAuction.AuctionConfig(DURATION, WINDOW, 999, REFUSAL_DELAY, REFUSAL_GAS),
+            IEnglishAuction.AuctionConfig(2 hours, 3 hours, SHARE, REFUSAL_DELAY, REFUSAL_GAS)
         ];
         for (uint256 i; i < bad.length; ++i) {
             vm.expectRevert(IEnglishAuction.InvalidConfig.selector);
@@ -416,7 +416,10 @@ contract EnglishAuctionTest is AuctionBase {
         uint256 started = block.timestamp;
         uint256 saleId = _start();
         vm.startPrank(setter);
-        auction.setConfig(_config(), IEnglishAuction.AuctionConfig(2 days, 1 hours, 50_000));
+        auction.setConfig(
+            _config(),
+            IEnglishAuction.AuctionConfig(2 days, 1 hours, 50_000, REFUSAL_DELAY, REFUSAL_GAS)
+        );
         auction.setOpeningBid(ETH, 0.01 ether, 0.02 ether);
         vm.stopPrank();
         assertEq(auction.minimumBid(saleId), 0.01 ether, "opening bid locked");
@@ -501,7 +504,10 @@ contract EnglishAuctionTest is AuctionBase {
     ///      as long as the auction) settles at the end (found by mutation testing).
     function test_Settle_ACurrencyBackExactlyAWindowBeforeTheEndDoesNotReopen() public {
         vm.prank(setter);
-        auction.setConfig(_config(), IEnglishAuction.AuctionConfig(DURATION, DURATION, SHARE));
+        auction.setConfig(
+            _config(),
+            IEnglishAuction.AuctionConfig(DURATION, DURATION, SHARE, REFUSAL_DELAY, REFUSAL_GAS)
+        );
         allowlist.deprecateAsset(address(usd));
         vm.warp(block.timestamp + Roles.FUNDS);
         (,, uint64 revision) = allowlist.assetConfig(address(usd));

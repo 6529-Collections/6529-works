@@ -360,6 +360,20 @@ The start rows keep their 5,000 of margin:
 | With a VRF seed | 343,782 | 6,218 |
 | VRF seed, edition master with 64 bytes of params (the tightest) | 344,937 | 5,063 |
 
+Re-measured for the English auction's refusal exit (on its lane, before the permanence integration's other lanes; the integrated figures follow) (`settleOrRefund`, AUC-38 to AUC-41, which
+solves LIM-SAL-16 for federated sales), on the tree with the gas-rule helpers merged and the
+review's fixes applied:
+- **The start rows** fell by about 820 to 900: a start now writes its `Sale` word in one `sstore`
+  instead of five field writes to the same slot, which pays for the new code on the path (a
+  federated terms record's locked fee recipient and refusal delay, hashed into its key only for a
+  federated record, and the refusal of terms naming the auction itself as a payee). The refusal
+  parameters sit in their own slot, which no start reads.
+- **The settle rows** rose by 42 to 342, within their 400,000 ceilings: each payout now refuses a
+  wallet that is zero, the escrow or the auction in any currency. `settleOrRefund` is not a row:
+  for a cooperating federated token it is `settle` plus the escrow check and one self-call.
+- **Every other row** moved by at most 32 with the new code and deployment addresses. No row
+  writes a new slot or account, and no maximum is raised.
+
 Re-measured for [ADR 0007](0007-permanence.md) (permanence; the first integration round,
 15 November 2026). Seven lanes merged: the forward-all gas helper, Stream's permanent core with
 a replaceable mint policy, 6529 Stream Editions' sealed supply and priced mints (with an interim

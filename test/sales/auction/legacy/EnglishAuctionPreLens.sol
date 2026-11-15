@@ -1200,6 +1200,6 @@ contract EnglishAuctionPreLens is
 
     function _currentConfig() private view returns (AuctionConfig memory) {
         Settings storage st = _settings;
-        return AuctionConfig(st.duration, st.extensionWindow, st.incrementShare);
+        return AuctionConfig(st.duration, st.extensionWindow, st.incrementShare, 0, 0);
     }
 }

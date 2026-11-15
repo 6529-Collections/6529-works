@@ -388,7 +388,9 @@ contract AuctionHandler is Test {
             IEnglishAuction.AuctionConfig memory next = IEnglishAuction.AuctionConfig(
                 duration,
                 uint32(bound(seed >> 40, 1 minutes, 1 hours)),
-                uint32(bound(seed >> 72, 1_000, 100_000))
+                uint32(bound(seed >> 72, 1_000, 100_000)),
+                c.refusalDelay,
+                c.refusalGas
             );
             vm.prank(setter);
             auction.setConfig(c, next);

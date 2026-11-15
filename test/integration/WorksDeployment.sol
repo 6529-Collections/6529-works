@@ -58,6 +58,8 @@ abstract contract WorksDeployment is Test {
     uint32 internal constant AUCTION_DURATION = 24 hours;
     uint32 internal constant EXTENSION_WINDOW = 15 minutes;
     uint32 internal constant INCREMENT_SHARE = 5_000;
+    uint32 internal constant REFUSAL_DELAY = 7 days;
+    uint32 internal constant REFUSAL_GAS = 4_000_000;
 
     // ------------------------------------------------------------------ external systems
     DelegationManagementMock internal delegation;
@@ -158,8 +160,9 @@ abstract contract WorksDeployment is Test {
         p.cc0Text = CC0_TEXT;
         p.ethIncrementFloor = ETH_INCREMENT_FLOOR;
         p.permit2 = PERMIT2;
-        p.auction =
-            IEnglishAuction.AuctionConfig(AUCTION_DURATION, EXTENSION_WINDOW, INCREMENT_SHARE);
+        p.auction = IEnglishAuction.AuctionConfig(
+            AUCTION_DURATION, EXTENSION_WINDOW, INCREMENT_SHARE, REFUSAL_DELAY, REFUSAL_GAS
+        );
         p.editionAuction = DeployV1.editionAuctionDefaults();
         p.vrfCoordinator = address(coordinator);
         p.vrfCoordinatorCodeHash = address(coordinator).codehash;
