@@ -51,7 +51,10 @@ contract StreamViews is IStreamExtension {
         (w.itemHash, w.artistId, w.collectionId, w.kind, w.seedPolicy, w.royaltyRate) =
             s.coreOf(tokenId);
         uint256 word = uint256(_word(s, keccak256(abi.encode(tokenId, TOKENS_SLOT))));
+        // The token word packs the seller (low 160 bits) and the serial (the next 32).
+        // forge-lint: disable-next-line(unsafe-typecast)
         w.seller = address(uint160(word));
+        // forge-lint: disable-next-line(unsafe-typecast)
         w.serial = uint32(word >> 160);
         (w.royaltyReceiver,) = IERC2981(address(s)).royaltyInfo(tokenId, 0);
         return w;
@@ -66,9 +69,10 @@ contract StreamViews is IStreamExtension {
         bytes32[] memory head = s.extsload(base, 2);
         uint256 word = uint256(head[0]);
         if (word & 0xff == 0) revert IStreamCore.UnknownCollection(collectionId);
-        return IStream.Collection(
-            _string(s, uint256(base) + 2), head[1], uint64(uint32(word >> 8))
-        );
+        // The counter word packs `exists` (low byte) and `minted` (the next 32 bits).
+        // forge-lint: disable-next-line(unsafe-typecast)
+        uint64 minted = uint32(word >> 8);
+        return IStream.Collection(_string(s, uint256(base) + 2), head[1], minted);
     }
 
     /// @notice `IStream.collectionCount` of the calling Stream.
