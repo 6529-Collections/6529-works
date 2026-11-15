@@ -206,13 +206,13 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
     }
 
     function test_PreSeededManagerIsRejected() public {
-        // A manager with another zero-delay admin cannot be configured or verified: the
-        // configurator only ever touches the manager it deployed, and refuses targets wired
-        // to any other manager.
+        // A manager with another admin cannot be configured or verified: the configurator
+        // only ever touches the manager it deployed, and refuses targets wired to any other
+        // manager.
         vm.prank(attacker);
         WorksAccessManager seeded = new WorksAccessManager(attacker);
         vm.prank(attacker);
-        seeded.grantRole(Roles.ADMIN, address(configurator), 0);
+        seeded.grantRole(Roles.ADMIN, address(configurator), 30 days);
         GovernanceConfig.Config memory cfg = _config();
         cfg.targets[0].target =
             address(new GovernedTargetMock(address(seeded), recipient0, verifier0));
@@ -449,15 +449,23 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
     }
 
     function test_ReadbackDetectsAdminDelayReduction() public {
-        // An admin whose execution delay is being lowered is an unexpected fast admin.
+        // The manager refuses an admin delay below 30 days outright (GV-38); a raise, and a
+        // later cut back towards 30 days while it is pending, are both caught by readback.
         _configured();
-        _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, coldAdmin, 0)));
+        bytes memory cut = abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, coldAdmin, 0));
+        bytes32 id = _schedule(adminSafe, address(manager), cut);
+        vm.warp(manager.getSchedule(id));
+        vm.expectRevert(abi.encodeWithSelector(WorksAccessManager.AdminDelayBelowFloor.selector, 0));
+        vm.prank(adminSafe);
+        manager.execute(address(manager), cut);
+
+        _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, coldAdmin, 45 days)));
         vm.expectRevert(
             abi.encodeWithSelector(GovernanceConfig.HolderMismatch.selector, Roles.ADMIN, coldAdmin)
         );
         configurator.verify(_config());
-        vm.warp(block.timestamp + 30 days); // the reduction has landed: still rejected
-        vm.expectRevert(
+        _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, coldAdmin, 30 days)));
+        vm.expectRevert( // the cut back is pending
             abi.encodeWithSelector(GovernanceConfig.HolderMismatch.selector, Roles.ADMIN, coldAdmin)
         );
         configurator.verify(_config());
@@ -551,7 +559,7 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
     /// @dev Readback checks the first grant's holder too (found by mutation testing).
     function test_ReadbackDetectsTheFirstHoldersDelayReduction() public {
         _configured();
-        _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, adminSafe, 0)));
+        _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, adminSafe, 31 days)));
         vm.expectRevert(
             abi.encodeWithSelector(GovernanceConfig.HolderMismatch.selector, Roles.ADMIN, adminSafe)
         );
@@ -607,14 +615,17 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
         configurator.verify(_config());
     }
 
-    /// @dev Readback checks the manager itself as a target: a manager closed as a target is
-    ///      refused (found by mutation testing).
+    /// @dev The manager can never be closed as a target (GV-39), so its slow lane, recovery
+    ///      and successor functions stay reachable; readback still checks it.
     function test_ReadbackDetectsTheManagerClosedAsATarget() public {
         _configured();
-        _adminExecute(abi.encodeCall(IAccessManager.setTargetClosed, (address(manager), true)));
-        vm.expectRevert(
-            abi.encodeWithSelector(GovernanceConfig.TargetMismatch.selector, address(manager))
-        );
+        bytes memory close =
+            abi.encodeCall(IAccessManager.setTargetClosed, (address(manager), true));
+        bytes32 id = _schedule(adminSafe, address(manager), close);
+        vm.warp(manager.getSchedule(id));
+        vm.expectRevert(WorksAccessManager.ManagerSelfConfiguration.selector);
+        vm.prank(adminSafe);
+        manager.execute(address(manager), close);
         configurator.verify(_config());
     }
 

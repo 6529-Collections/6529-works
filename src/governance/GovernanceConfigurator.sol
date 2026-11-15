@@ -81,7 +81,9 @@ contract GovernanceConfigurator {
     /// @dev For CI readback by `eth_call`, at least `minSetback()` after {configure}. Because
     ///      this contract deployed the manager and was its only initial admin, any other admin
     ///      can only come from a configured grant or a later 30-day, guardian-vetoable grant,
-    ///      which an indexer sees as a `RoleGranted` event.
+    ///      which an indexer sees as a `RoleGranted` event. It also requires the manager not to
+    ///      be handed over and every configured target to be on its managed list, so a later
+    ///      `migrate` moves each of them.
     /// @param cfg The expected configuration: the holders and target selector mappings passed to
     ///        {configure}.
     function verify(GovernanceConfig.Config calldata cfg) external view {
@@ -89,5 +91,13 @@ contract GovernanceConfigurator {
             revert ConfiguratorStillAdmin();
         }
         GovernanceConfig.verify(worksManager, cfg);
+        if (worksManager.successor() != address(0)) revert WorksAccessManager.HandedOver();
+        address[] memory managed = worksManager.managedTargets();
+        for (uint256 i = 0; i < cfg.targets.length; ++i) {
+            address target = cfg.targets[i].target;
+            uint256 j = 0;
+            while (j < managed.length && managed[j] != target) ++j;
+            if (j == managed.length) revert GovernanceConfig.TargetMismatch(target);
+        }
     }
 }

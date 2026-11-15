@@ -517,10 +517,12 @@ contract GovernanceHandler is Test {
             (victim, caller, to, data) = (op.victim, op.caller, op.to, op.data);
         }
         if (victim == address(0) || victim == caller) return;
-        if (manager.getSchedule(_id(caller, to, data)) == 0) return;
+        bytes32 id = _id(caller, to, data);
+        if (manager.getSchedule(id) == 0) return;
         vm.prank(victim);
+        // On an escalated operation a guardian's cancel is one vote and never decides alone.
         try manager.cancel(caller, to, data) {
-            selfRescue = true;
+            if (manager.getSchedule(id) == 0) selfRescue = true;
         } catch { }
     }
 
@@ -534,10 +536,23 @@ contract GovernanceHandler is Test {
                 if (manager.getSchedule(_id(op.caller, op.to, op.data)) == 0) _dropHostile(i - 1);
                 continue;
             }
-            address canceller = guardians[(base + i) % guardians.length];
-            if (canceller == op.victim) canceller = guardians[(base + i + 1) % guardians.length];
-            vm.prank(canceller);
-            manager.cancel(op.caller, op.to, op.data);
+            bytes32 id = _id(op.caller, op.to, op.data);
+            if (_escalated(id)) {
+                // Bounded veto: the vigilant guardians vote until a majority stops it. One not
+                // yet decidable (seats still in their grant delay) is kept for the next round.
+                for (uint256 j; j < guardians.length && manager.getSchedule(id) != 0; ++j) {
+                    vm.prank(guardians[j]);
+                    try manager.cancel(op.caller, op.to, op.data) { } catch { }
+                }
+                if (manager.getSchedule(id) != 0) continue;
+            } else {
+                address canceller = guardians[(base + i) % guardians.length];
+                if (canceller == op.victim) {
+                    canceller = guardians[(base + i + 1) % guardians.length];
+                }
+                vm.prank(canceller);
+                manager.cancel(op.caller, op.to, op.data);
+            }
             ++hostileCancelled;
             _dropHostile(i - 1);
         }
@@ -550,6 +565,11 @@ contract GovernanceHandler is Test {
         vm.warp(end);
         _executeReadyBenign();
         configurator.verify(modelConfig());
+    }
+
+    function _escalated(bytes32 id) internal view returns (bool) {
+        WorksAccessManager.Escalation memory e = manager.getEscalation(id);
+        return e.nonce != 0 && e.nonce == manager.getNonce(id) && manager.getSchedule(id) != 0;
     }
 
     function _liveHostile(uint256 index) internal view returns (bool, uint256) {

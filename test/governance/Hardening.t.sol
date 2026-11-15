@@ -7,6 +7,7 @@ import { Errors } from "@openzeppelin/contracts/utils/Errors.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { BoundedParameter } from "src/governance/BoundedParameter.sol";
+import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
 import { GovernanceFixture } from "../helpers/GovernanceFixture.sol";
 import { GovernedTargetMock, PayableGovernedMock } from "../mocks/governance/GovernanceMocks.sol";
 
@@ -62,16 +63,25 @@ contract HardeningTest is GovernanceFixture {
     }
 
     function test_AdminCannotShortenItsOwnExecutionDelayWithoutWaiting() public {
+        // Below 30 days is refused outright (GV-38).
+        bytes memory zero = abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, adminSafe, 0));
+        bytes32 id = _schedule(adminSafe, address(manager), zero);
+        vm.warp(manager.getSchedule(id));
+        vm.expectRevert(abi.encodeWithSelector(WorksAccessManager.AdminDelayBelowFloor.selector, 0));
+        vm.prank(adminSafe);
+        manager.execute(address(manager), zero);
+        // Above it, a cut waits its own size (OpenZeppelin Time.Delay.withUpdate).
+        _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, adminSafe, 45 days)));
         uint256 start = block.timestamp;
-        _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, adminSafe, 0)));
+        _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, adminSafe, 30 days)));
         (, uint32 current, uint32 pending, uint48 effect) =
             manager.getAccess(Roles.ADMIN, adminSafe);
-        assertEq(current, 30 days);
-        assertEq(pending, 0);
-        assertEq(effect, start + 60 days);
-        vm.warp(start + 60 days);
+        assertEq(current, 45 days);
+        assertEq(pending, 30 days);
+        assertEq(effect, start + 45 days + 15 days);
+        vm.warp(effect);
         (, uint32 lowered) = manager.hasRole(Roles.ADMIN, adminSafe);
-        assertEq(lowered, 0);
+        assertEq(lowered, 30 days);
     }
 
     function test_FreshZeroDelayHolderWaitsScheduleAndGrantDelay() public {
