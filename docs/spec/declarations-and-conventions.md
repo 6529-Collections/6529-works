@@ -24,7 +24,7 @@ This page adds no contract logic. The conventions use these reads and paths:
 | --- | --- | --- |
 | `StatementLog` | [`StatementLog.sol`](../../src/records/StatementLog.sol) | Every convention statement: `append`, `appendSigned`, `appendPlatform`; `chainOf`, `latestDisputeOutcome`, `artistResolver` |
 | `StatementKinds` | [`StatementKinds.sol`](../../src/interfaces/types/StatementKinds.sol) | The convention kind labels (constants only; the [registry](disputes-and-statements.md#statement-kind-registry) lists them) |
-| `WorkRecords` | [`WorkRecords.sol`](../../src/stream/WorkRecords.sol) | `mediaOf` (finding the declarations file), `record`, `licenseOf`, `locators`, `preferredLocator`, `pinnedRenderer`, `seedOf`, `workStateHash`; the `RecordOpened` event |
+| `WorkRecords` | [`WorkRecords.sol`](../../src/stream/WorkRecords.sol) | `mediaOf` (finding the declarations file), `record`, `licenseOf`, `preferredLocator`, `pinnedRenderer`, `seedOf`, `workStateHash`; the `RecordOpened` event; `delivery`, whose `locators` (the first delivery contract, [`WorkDelivery.sol`](../../src/stream/WorkDelivery.sol)) count each file's copies |
 | `WorkRecords` as `IWorkPowers` | [`IWorkPowers.sol`](../../src/interfaces/IWorkPowers.sol) | `renouncedPowers` (which powers over a work are renounced, DCL-8), reported through ERC-165 |
 | `ContentStore` | [`ContentStore.sol`](../../src/content/ContentStore.sol) | `fileInfo` (MIME type, encoding, length), `read`, `isComplete`, `sha256Of` |
 | `DependencyRegistry` | [`DependencyRegistry.sol`](../../src/content/DependencyRegistry.sol) | `resolve` (a declared dependency's file and whether it is deprecated, DCL-5) |
@@ -121,7 +121,7 @@ SHA-256 against the media entry. The sections, all optional:
 | `custodians` | Who holds each physical twin, and how fresh an attestation must be | DCL-6, DCL-21, DCL-22 |
 | `citations` | Works the work cites at birth | DCL-6, DCL-18 |
 | `timeCapsule` | A reveal date, the encryption scheme, the ciphertext file (an AUXILIARY media file) and a plaintext commitment | DCL-7 |
-| `intendedRenunciations` | Work powers (`ROYALTY_RATE`, `RELICENSE`) the artist states they will renounce after the record opens | DCL-8 |
+| `intendedRenunciations` | Work powers (`ROYALTY_RATE`, `RELICENSE`, `RENDERER_REPIN`) the artist states they will renounce after the record opens | DCL-8 |
 | `livingWork` | What makes the work change by itself | DCL-9 |
 
 ### The conservation floor
@@ -245,7 +245,8 @@ ALWAYS (whether or not facts are waived):
       if not P.allowsTimeCapsule:              REFUSE "time capsule outside policy" (DCL-7)
       require doc.timeCapsule.ciphertextFileId == m.fileId for some m in S with
               m.role == AUXILIARY                                                 (DCL-7)
-  for r in doc.intendedRenunciations: require r.power in {ROYALTY_RATE, RELICENSE}  (DCL-8)
+  for r in doc.intendedRenunciations:
+      require r.power in {ROYALTY_RATE, RELICENSE, RENDERER_REPIN}  (DCL-8)
   require the (address, objectId) pairs of doc.custodians are distinct, and no address is zero
   for c in doc.citations: require c.work is well formed                           (DCL-18)
 ```
@@ -296,7 +297,8 @@ it.
 ### Intended renunciations
 
 **DCL-8.** Each entry names a work power by its name in the `WorkPowers` library of
-[`IWorkPowers.sol`](../../src/interfaces/IWorkPowers.sol) (ADR 0006), and promises to renounce it
+[`IWorkPowers.sol`](../../src/interfaces/IWorkPowers.sol) (ADR 0006, as amended by the owner on
+15 November 2026), and promises to renounce it
 within `withinDaysOfRecordOpen` days of the work's `RecordOpened` event. The powers, in bit order
 (a power's bit index is its position):
 
@@ -304,8 +306,13 @@ within `withinDaysOfRecordOpen` days of the work's `RecordOpened` event. The pow
 | --- | --- | --- | --- |
 | `ROYALTY_RATE` | 0 (1) | Any further `WorkRecords.setRoyaltyRate` | `royalty_rate` |
 | `RELICENSE` | 1 (2) | Any further `WorkRecords.relicense` | `license` |
+| `RENDERER_REPIN` | 2 (4) | Any further `WorkRecords.repinRenderer`; renounceable only once the work is finalized | `renderer` |
 
-The schema accepts only these two names. The due time is the `RecordOpened` event's block
+The schema accepts only these three names. `RENDERER_REPIN` can be renounced only after
+finalize, so a promise to renounce it is kept only if the artist finalizes in time. Renouncing it
+fixes the pinned renderer for good: if a later protocol change breaks that renderer, the work's
+metadata can never be repaired (the card's `renderer` row then reads `until: renounced`). The
+media, record and license stay on-chain and readable by any other renderer off-chain. The due time is the `RecordOpened` event's block
 timestamp plus the days. A reader computes the state at a block: `renounced` when
 `renouncedPowers(tokenId)` has the power's bit; otherwise `pending` while the block's timestamp
 is before the due time and `overdue` from the due time on (at exactly the due time the promise is
@@ -567,7 +574,7 @@ sequenceDiagram
 | --- | --- | --- |
 | `ownerOf`, `coreOf`, `primarySale`, `editionOf`, `rendererOf` | Stream | Owner; item hash, artist ID, collection and kind; the sale outcome and price; the edition link; the renderer in force |
 | The `WorkMinted` event | Stream | The content hash (`contentHash`): no view returns it, since Stream stores only the item hash; and the package root, where the floor result is published (DCL-33) |
-| `isOpen`, `record`, `mediaOf`, `licenseOf`, `workStateHash`, `locators`, `preferredLocator`, `pinnedRenderer`; the `RecordOpened` event | WorkRecords | Record status, version, finalized, on-chain complete, state hash, whether a renderer is pinned; media, roles and hashes; license; how many copies each file has and the served copy's kind; when intended renunciations fall due |
+| `isOpen`, `record`, `mediaOf`, `licenseOf`, `workStateHash`, `preferredLocator`, `pinnedRenderer`; the `RecordOpened` event; `locators` on its delivery contract | WorkRecords | Record status, version, finalized, on-chain complete, state hash, whether a renderer is pinned; media, roles and hashes; license; how many copies each file has and the served copy's kind; when intended renunciations fall due |
 | `renouncedPowers` | WorkRecords, as `IWorkPowers` (ERC-165) | Renounced and retained powers (DCL-8) |
 | `fileInfo`, `isComplete`, `read` | ContentStore | Each media file's MIME type and completeness; whether the license text is on chain; the declarations bytes |
 | `latestDisputeOutcome`, `disputeOutcomeOf`, `chainOf`, `artistResolver` | StatementLog | Dispute status and its scope (token or item); the chain's count and head; the resolver |
@@ -591,7 +598,7 @@ applies only before or only after finalize, that phase:
 | `license` | `WorkRecords.relicense` ([roles](../audit/roles.md#workrecords)); never for CC0 (WS-12) | permanent |
 | `royalty_rate` | `WorkRecords.setRoyaltyRate` ([roles](../audit/roles.md#workrecords)) | permanent |
 | `renderer` | Before finalize `Stream.setDefaultRenderer` ([roles](../audit/roles.md#stream)); after, `WorkRecords.repinRenderer` ([roles](../audit/roles.md#workrecords)) | permanent |
-| `served_copy` | `WorkRecords.addLocator` (the artist before finalize), `setFilePreference`, `setCollectionPreferredKind`, `setPreferredKind` ([roles](../audit/roles.md#workrecords)) | permanent |
+| `served_copy` | The delivery contract (`WorkDelivery.addLocator`, the artist before finalize; `setFilePreference`, `setCollectionPreferredKind`, `setPreferredKind`), and `WorkRecords.setDelivery`, which replaces it ([roles](../audit/roles.md#workrecords)) | permanent |
 | `dispute_statement` | `StatementLog.appendPlatform` ([roles](../audit/roles.md#statementlog)) | permanent |
 | `artist_authority` | `ArtistRegistry.stageChange` (the artist), `stageOverride` ([roles](../audit/roles.md#artistregistry); [change kinds](identity-and-recovery.md#change-kinds)) | permanent |
 | `artist_resolver` | `StatementLog.setArtistResolver` ([roles](../audit/roles.md#statementlog)) | permanent |
@@ -607,7 +614,7 @@ The generator then applies these rules to the rows, as the reference tool does:
 5. `until` is `finalize` for `record`, `settlement` for `burn_and_release`, and `permanent` for
    every other row.
 6. A row a renounced power covers (DCL-8: `ROYALTY_RATE` covers `royalty_rate`, `RELICENSE`
-   covers `license`) gets `until: renounced` and `renouncedBy` with the power's name. Without
+   covers `license`, `RENDERER_REPIN` covers `renderer`) gets `until: renounced` and `renouncedBy` with the power's name. Without
    `IWorkPowers` every row stays as it is.
 
 **DCL-28. States the card distinguishes.** Record not open, open or finalized; on-chain complete
@@ -647,7 +654,7 @@ SHA-256 of the card's canonical JSON. Rubric 1:
 | R4 | 10 | `declarations.status` is `valid` |
 | R5 | 15, or 8 | Every applicable `conservationFloor` fact (one that is not `not_applicable`) is `met`, which also holds when no fact is applicable; 8 if each is `met` or `waived` and at least one is waived |
 | R6 | 10, or 5 | The first PRIMARY file in `storage.files` has at least 2 `locators`; 5 if it has 1; 0 when there is none (record not open) |
-| R7 | 0 to 10 | With `powers.available`: `floor(10 × renounced / (renounced + retained))`; 0 without the view or with no powers |
+| R7 | 0 to 10 | With `powers.available`: `floor(10 × renounced / (renounced + retained))`, counting only `ROYALTY_RATE` and `RELICENSE` (renouncing `RENDERER_REPIN` gives up repair, not a change of terms, so it neither earns nor costs points); 0 without the view or with no powers |
 | R8 | 5 | No intended renunciation is `overdue` |
 
 The letter is A from 85 points, B from 70, C from 50, D below, then capped: at C when
@@ -686,7 +693,7 @@ apply it; "Supported on chain by" names the contract rule it builds on.
 | DCL-5 | The signer checks the floor before attesting: stored copies by their bytes against the committed chunks, and each file's declared SHA-256 tied to its chunks once (WS-30); generative by script MIME type, non-empty record dependencies or seed policy; dependencies resolved by their bytes32 labels and compared in order; custodians distinct by (address, object); citations well formed. | Curation signer | The evidence hash the package registry stores ([curation](curation.md#concepts)); DSP-4 |
 | DCL-6 | Birth custodians and citations are the artist's approved claims. | Readers | WS-6 |
 | DCL-7 | A time capsule is unenforced, its ciphertext is an AUXILIARY media file, and it is outside the v1 curation policy until the owner approves it. | Curation signer; readers | WS-6 |
-| DCL-8 | An intended renunciation names `ROYALTY_RATE` or `RELICENSE`, is due at `RecordOpened` plus its days (due from that time on), and its state comes from `IWorkPowers.renouncedPowers`. | Readers | WS-37, WS-38 |
+| DCL-8 | An intended renunciation names `ROYALTY_RATE`, `RELICENSE` or `RENDERER_REPIN`, is due at `RecordOpened` plus its days (due from that time on), and its state comes from `IWorkPowers.renouncedPowers`. | Readers | WS-37, WS-38 |
 | DCL-9 | A living work's change emits no refresh event; readers re-render or date their cache. | Readers | none |
 | DCL-10 | A proposal counts only as ARTIST about a 6529 Stream token. | Readers | ID-28, DSP-7 |
 | DCL-11 | An acceptance counts only as OWNER about the same token, citing an earlier valid proposal. | Readers | DSP-6 |
@@ -743,7 +750,7 @@ event: a reader that shows a display change, a catalogue entry or custody refres
 | Other convention documents | At most 65,536 bytes | DCL-1 |
 | Storage receipts per file | At least 2, of distinct network or provider, each of form `stored` or `decoded`; the declared SHA-256 tied to the chunks by a stored copy or the content-store bytes | DCL-4, DCL-5 |
 | Script MIME types (a generative work) | `text/html`, `text/javascript`, `application/javascript`, `text/ecmascript`, `application/ecmascript`, `image/svg+xml` | DCL-4, DCL-5 |
-| Work powers | `ROYALTY_RATE` (bit 0, value 1), `RELICENSE` (bit 1, value 2) | DCL-8; [`IWorkPowers.sol`](../../src/interfaces/IWorkPowers.sol) |
+| Work powers | `ROYALTY_RATE` (bit 0, value 1), `RELICENSE` (bit 1, value 2), `RENDERER_REPIN` (bit 2, value 4) | DCL-8; [`IWorkPowers.sol`](../../src/interfaces/IWorkPowers.sol) |
 | Default custody age | 365 days for an unnamed custodian | DCL-21 |
 | Custody future skew | 1 hour after `recordedAt` | DCL-21 |
 | Control proof validity | At most 10 minutes; 60 seconds of clock skew | DCL-24 |

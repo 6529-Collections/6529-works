@@ -82,10 +82,10 @@ ALWAYS_RISKS = (
     "LIM-GV-1", "LIM-GV-2", "LIM-GV-9", "LIM-GV-10", "LIM-GV-11", "LIM-ID-11", "LIM-ID-13",
     "LIM-CNT-2", "LIM-CNT-3", "LIM-CNT-12", "LIM-CNT-13", "LIM-SAL-8",
 )  # fmt: skip
-#: The `WorkPowers` names in bit order (bit 0 = 1, bit 1 = 2), and the `changeable` row each
-#: covers (DCL-8, DCL-27).
+#: The `WorkPowers` names in bit order (bit 0 = 1, bit 1 = 2, bit 2 = 4), and the `changeable`
+#: row each covers (DCL-8, DCL-27).
 POWERS = floor.WORK_POWERS
-COVERS = {"ROYALTY_RATE": ["royalty_rate"], "RELICENSE": ["license"]}
+COVERS = {"ROYALTY_RATE": ["royalty_rate"], "RELICENSE": ["license"], "RENDERER_REPIN": ["renderer"]}
 UNTIL = {"record": "finalize", "burn_and_release": "settlement"}
 GENERATOR = {"name": "6529-works tools.conventions", "version": "1"}
 

@@ -239,8 +239,11 @@ class PowersTest(unittest.TestCase):
     def test_default_names_and_covers(self) -> None:
         """DCL-8: ROYALTY_RATE is bit 0 and covers royalty_rate; RELICENSE is bit 1 and covers
         license."""
-        self.assertEqual(card_module.POWERS, ("ROYALTY_RATE", "RELICENSE"))
-        self.assertEqual(card_module.COVERS, {"ROYALTY_RATE": ["royalty_rate"], "RELICENSE": ["license"]})
+        self.assertEqual(card_module.POWERS, ("ROYALTY_RATE", "RELICENSE", "RENDERER_REPIN"))
+        self.assertEqual(
+            card_module.COVERS,
+            {"ROYALTY_RATE": ["royalty_rate"], "RELICENSE": ["license"], "RENDERER_REPIN": ["renderer"]},
+        )
 
     def test_relicense_covers_the_license_row(self) -> None:
         """DCL-27 rule 6: with RELICENSE renounced (mask 0x2) the license row of a non-CC0 work
@@ -249,7 +252,8 @@ class PowersTest(unittest.TestCase):
             reads(i)["WorkRecords"]["licenseOf"]["spdxId"] = "MIT"
             i["floor"] = None
         c = build(lambda i: (mit(i), self.with_view("0x2")(i)))
-        self.assertEqual(c["powers"], {"available": True, "renounced": ["RELICENSE"], "retained": ["ROYALTY_RATE"]})
+        self.assertEqual(c["powers"], {"available": True, "renounced": ["RELICENSE"],
+                                       "retained": ["ROYALTY_RATE", "RENDERER_REPIN"]})
         rows = {r["what"]: r for r in c["changeable"]}
         self.assertEqual((rows["license"]["until"], rows["license"]["renouncedBy"]), ("renounced", "RELICENSE"))
         self.assertEqual(rows["royalty_rate"]["until"], "permanent")
@@ -274,7 +278,7 @@ class PowersTest(unittest.TestCase):
         marked renounced with the power's name."""
         c = build(self.with_view("0x1"))
         self.assertEqual(c["powers"], {"available": True, "renounced": ["ROYALTY_RATE"],
-                                       "retained": ["RELICENSE"]})
+                                       "retained": ["RELICENSE", "RENDERER_REPIN"]})
         row = next(r for r in c["changeable"] if r["what"] == "royalty_rate")
         self.assertEqual((row["until"], row["renouncedBy"]), ("renounced", "ROYALTY_RATE"))
         self.assertEqual(c["declarations"]["intendedRenunciations"][0]["state"], "renounced")
@@ -293,7 +297,18 @@ class PowersTest(unittest.TestCase):
 
     def test_mask_beyond_the_names_is_refused(self) -> None:
         with self.assertRaises(ToolError):
-            build(self.with_view("0x4"))
+            build(self.with_view("0x8"))
+
+    def test_renderer_repin_covers_the_renderer_row(self) -> None:
+        """DCL-8: RENDERER_REPIN (bit 2) covers the renderer row of a finalized work; R7 counts
+        only the powers over terms, so renouncing it alone scores nothing (DCL-29)."""
+        c = build(self.with_view("0x4"))
+        self.assertEqual(c["powers"], {"available": True, "renounced": ["RENDERER_REPIN"],
+                                       "retained": ["ROYALTY_RATE", "RELICENSE"]})
+        rows = {r["what"]: r for r in c["changeable"]}
+        if "renderer" in rows and "renouncedBy" in rows["renderer"]:
+            self.assertEqual(rows["renderer"]["renouncedBy"], "RENDERER_REPIN")
+        self.assertNotIn("R7", [r["row"] for r in grade.grade(c)["reasons"]])
 
 
 class DeclarationsTest(unittest.TestCase):
