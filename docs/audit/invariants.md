@@ -147,6 +147,13 @@ suite's `afterInvariant` drives every sale to an end after each run.
   [`AuctionHaltsHandler`](../../test/sales/auction/invariant/AuctionHaltsHandler.sol): the same,
   plus currency deprecation and re-admission (MARKET-2), a token that blocks the auction
   (MONEY-1 credits) and `claimFor`.
+- [`AuctionRefusalInvariant.t.sol`](../../test/sales/auction/invariant/AuctionRefusalInvariant.t.sol)
+  (`AuctionRefusalInvariantTest`), handler `AuctionRefusalHandler` in the same file: two listed
+  and one federated
+  [`HostileMintTarget`](../../test/mocks/sales/HostileMintTarget.sol) tokens whose settlement
+  calls revert, burn gas, answer malformed or hostile values, re-enter another sale, or do so
+  only for one buyer, inside a gas band, until a time or after some calls; bids, time,
+  `settle`, `settleOrRefund`, claims and the artist's delivery claims (AUC-38 to AUC-41).
 
 | ID | Invariant | Test | Handler actions |
 | --- | --- | --- | --- |
@@ -159,6 +166,9 @@ suite's `afterInvariant` drives every sale to an end after each run.
 | INV-AUC-7 | Once the token stops blocking and the currency is re-admitted, every sale ends settled or cancelled, leaving no funds and no token. | after-campaign: `AuctionHaltsInvariantBase.afterInvariant` | `drain` |
 | INV-AUC-8 | A bid extends the end to at least `now + the locked window`; settlement delivers the token (or leaves it pending) to the high bid's recipient, or the museum if none (D140); a second dispute pause reverts (`PauseExhausted`); a withdrawal leaves the sale paused; `resume` or `unpause` within 48 hours (`Roles.STANDARD`) of the pause reverts (`UnpauseTooEarly`, review finding GOV-5). | handler check: `bid`, `settle`, `pause`, `pauseAndWithdraw`, `resume`, `toggleStartPause` | as named |
 | INV-AUC-9 | An unended sale refuses `settle`; a deprecated currency blocks settlement for 60 days, then `settle` credits the standing bid back to its bidder and gives the work to the museum (owner decision 10); re-admission in the last window or after the end reopens the sale for the longer of the governed duration and the locked window, keeping the bid. | handler check: `AuctionHaltsHandler.settle`, `_freezeExit` | `settle`, `toggleCurrency` |
+| INV-AUC-10 | With hostile tokens, the auction's balance equals the actors' credits plus the live high bids, and every deposited bid is held, claimed, or paid to the seller, the network or the escrow for them. | `invariant_HeldEqualsCreditsPlusLiveBids`, `invariant_ValueIsConserved` (refusal suite) | all |
+| INV-AUC-11 | The network receives exactly the fee on every sold sale (the listed terms, or for a federated sale the registry's share at start to the recipient locked at start) and nothing on a refused, rescued or unsold one. | `invariant_TheNetworkIsPaidOnEverySoldSale` | all |
+| INV-AUC-12 | From any state the campaign reaches, once each sale's refusal delay has passed, `settleOrRefund` brings every unsettled sale to SETTLED whatever its token does, leaving no standing bid, with INV-AUC-10 and INV-AUC-11 still holding. | after-campaign: `AuctionRefusalInvariantTest.afterInvariant` | all |
 
 ## Edition sales
 

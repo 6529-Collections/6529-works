@@ -395,6 +395,8 @@ A resumed auction emits `AuctionResumed(saleId, endTime)`; an upheld dispute's c
 
 ```solidity
 function settle(uint256 saleId) external;
+function settleOrRefund(uint256 saleId) external; // IEnglishAuctionRefusal
+function refusableAt(uint256 saleId) external view returns (uint256);
 function claimDelivery(uint256 saleId, address to) external;
 function claimFor(address account, address currency) external returns (uint256 amount);
 function pendingDelivery(uint256 saleId) external view returns (address);
@@ -413,6 +415,7 @@ stateDiagram-v2
     Active --> Ended : the clock runs out
     Ended --> Active : settle after a late currency re-admission
     Ended --> Settled : settle
+    Ended --> Settled : settleOrRefund, sold or refused
     Settled --> [*]
     Cancelled --> [*]
 ```
@@ -475,6 +478,7 @@ a new seller wallet creates its account, at the settler's cost.
 | Locked currency deprecated 60 days | The high bid is credited back; the auction reports FROZEN_OUT and 6529 Stream moves the work to the museum; any other token's goes to its artist | The bidder claims its credit. |
 | Currency re-admitted in the last window or after the end | `AuctionResumed(saleId, endTime)`, no `SaleSettled` | Bid again; settle after the new end. |
 | Paused for a dispute | Reverts with `InvalidAuctionState(saleId, PAUSED)` | Wait for the resume, the cancel, or 7 days. |
+| The token will not let the sale settle (a federated or listed token other than 6529 Stream that reverts, burns gas or answers malformed or unpayable values) | `settle` reverts with the token's error, out of gas, or a payout's `InvalidWallet` | From `refusableAt(saleId)`, call `settleOrRefund(saleId)` (below). |
 
 A sale settles normally during a restraint, with a bid to its winner and without one to the
 museum (`test_AuctionWithABidRunningAtStagingSettlesNormally` and
@@ -484,13 +488,30 @@ museum (`test_AuctionWithABidRunningAtStagingSettlesNormally` and
 which returns `(status, since, inactiveTotal)`, on the auction's `allowlist()`; re-admission comes
 no earlier than 14 days after it (ECO-33).
 
+### A token that will not settle
+
+`settleOrRefund(saleId)` ends a sale whose token keeps `settle` from completing (AUC-38). From
+`refusableAt(saleId)` (the end plus the refusal delay, 7 days at launch), anyone may call it. It
+attempts `settle` with exactly the refusal gas (4,000,000 at launch, `config().refusalGas`): if
+the token cooperates, the sale settles exactly as `settle` settles it, with the same events. If
+not, `SettlementRefused(saleId)`: the high bid is credited back to its bidder (`claim`), nothing is
+paid, and the work stays in the auction for the artist the token reports to take with
+`claimDelivery(saleId, to)`. Send a gas limit above the refusal gas plus 1/63 of it and the close,
+about 4.2M at launch and never more than 2^24; with less it reverts
+(`BoundedCallInsufficientGas`) and nothing changes. It refuses to run inside a call of the
+auction's or the escrow's that holds their reentrancy guard (`ReentrancyGuardReentrantCall`), and
+while the currency is frozen short of its 60-day exit (`AssetNotActive`). Try `settle` first:
+for a cooperating token whose settlement needs more gas than the refusal gas leaves it, only
+`settle` with a larger limit completes the sale.
+
 ### Keeper checklist
 
 1. Track ends from `SaleStarted.endTime`, every `BidPlaced.endTime`, `AuctionPaused` and
    `AuctionResumed`.
 2. At `ENDED`, simulate `settle(saleId)`. A revert with `AssetNotActive`,
    `InvalidRecipient(address(0))` or `InvalidAuctionState(..., PAUSED)` means the sale is waiting:
-   retry later.
+   retry later. Any other revert is the token's: from `refusableAt(saleId)`, call
+   `settleOrRefund(saleId)`.
 3. Send with the limit from `eth_estimateGas`.
 4. In the receipt, `SaleSettled` means settled; `AuctionResumed` alone means reopened. Follow up
    `DeliveryPending` and both kinds of `Credited` ([Claiming](#claiming)).

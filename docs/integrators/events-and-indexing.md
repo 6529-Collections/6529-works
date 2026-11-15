@@ -188,7 +188,8 @@ for role 4 (`CURATION_SIGNER`). The signer's epoch also changes with a new grant
 ### EnglishAuction
 
 [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol), interfaces
-[`IEnglishAuction`](../../src/interfaces/IEnglishAuction.sol) and
+[`IEnglishAuction`](../../src/interfaces/IEnglishAuction.sol),
+[`IEnglishAuctionRefusal`](../../src/interfaces/IEnglishAuctionRefusal.sol) and
 [`ISaleAdapter`](../../src/interfaces/ISaleAdapter.sol). Sale IDs are derived:
 `saleIdOf(token, tokenId) = uint256(keccak256(abi.encode(token, tokenId)))`.
 
@@ -196,17 +197,18 @@ for role 4 (`CURATION_SIGNER`). The signer's epoch also changes with a new grant
 | --- | --- | --- | --- |
 | `SaleStarted(uint256 indexed saleId, address indexed token, uint256 indexed tokenId, bytes32 saleKind, address currency, uint256 price, uint64 startTime, uint64 endTime)` | `0x36e87edc…` | `start`, `startWithBid` (permissionless) | An auction opened on a work just minted into custody. `saleKind` is `ENGLISH_AUCTION`; `currency` is the locked currency (`CURRENCY_DEFAULT` resolved); `price` is the locked opening bid; `endTime` is `startTime` plus the governed duration. |
 | `BidPlaced(uint256 indexed saleId, address indexed bidder, address recipient, uint256 amount, uint64 endTime)` | `0x6dcc6bb7…` | `bid`, `startWithBid` | The new high bid. `bidder` is the payer (`payment.payer`; under Permit2 not always the sender); `recipient` receives the token if the bid wins; `endTime` includes any anti-snipe extension. Preceded by `Credited` to the outbid bidder. |
-| `Credited(address indexed account, address indexed currency, uint256 indexed saleId, uint256 amount)` | `0xdd0ef63b…` | `bid` (the outbid bidder), `withdrawBid`, `cancel`, and `settle` (a refund at a freeze exit or for a delisted federated contract, or an ERC-20 payout that failed in its own frame, MONEY-1, [AUC-23][auc]) | `amount` is now claimable by `account` in `currency`; for a failed payout `account` is the seller wallet or the fee recipient. Credits pool per account and currency, across sales. |
+| `Credited(address indexed account, address indexed currency, uint256 indexed saleId, uint256 amount)` | `0xdd0ef63b…` | `bid` (the outbid bidder), `withdrawBid`, `cancel`, `settle` (a refund at a freeze exit or for a delisted federated contract, or an ERC-20 payout that failed in its own frame, MONEY-1, [AUC-23][auc]), and `settleOrRefund` (the standing bid of a refused sale, [AUC-38][auc]) | `amount` is now claimable by `account` in `currency`; for a failed payout `account` is the seller wallet or the fee recipient. Credits pool per account and currency, across sales. |
 | `Claimed(address indexed account, address indexed currency, address indexed to, uint256 amount)` | `0x913c9923…` | `claim` (by the account, to `to`) and `claimFor` (ERC-20 only, to the account itself) | All of the account's credit in that currency was paid out. |
 | `BidWithdrawn(uint256 indexed saleId, address indexed bidder, uint256 amount)` | `0x8f861952…` | `withdrawBid`, while the auction is paused or its currency is deprecated | Preceded by `Credited`. The auction has no bidder; `amount` stays as the reserve ([DSP-15][dsp]). |
 | `AuctionPaused(uint256 indexed saleId, bytes32 disputeRef)` | `0xc5ebe769…` | `pause(saleId, disputeRef)` (GUARDIAN, immediate) | A dispute pause, once per auction, at most 7 days ([AUC-26][auc]). |
 | `AuctionResumed(uint256 indexed saleId, uint64 endTime)` | `0xd6998361…` | `resume` (UNPAUSER); the first state-changing call that touches an auction whose pause ran out; `settle` after a late re-admission of the locked currency (MARKET-2), which reopens instead of settling | The auction runs again until `endTime` ([AUC-27][auc]). An expired pause is [written down lazily](#event-ordering-within-a-transaction). |
 | `AuctionCancelled(uint256 indexed saleId, bytes32 outcomeRef)` | `0x49d67654…` | `cancel` (PARAMETER_SETTER, 48 hours) | An upheld dispute. Preceded by `Credited` (the high bid) and 6529 Stream's `Transfer` to zero. `outcomeRef` is the token's own DISPUTE_OUTCOME entry hash ([DSP-18][dsp]). |
 | `DeliveryPending(uint256 indexed saleId, address indexed recipient)` | `0x96b5b68e…` | `settle`, when the token's transfer to the recipient failed | The token stays in custody until `claimDelivery`. |
-| `DeliveryClaimed(uint256 indexed saleId, address indexed recipient, address to)` | `0x97b1d318…` | `claimDelivery` (the recipient, the winning bidder, or with no bids the artist) | `recipient` is the recorded recipient; `to` is where the token went. Preceded by 6529 Stream's `Transfer`. |
-| `RescuedSaleClosed(uint256 indexed saleId)` | `0xbab3719d…` | `settle`, when 6529 Stream already records the work settled because governance rescued it to the museum (owner decision 20) | The sale ended with refunds only: the standing bid, if any, was credited back (`Credited` just before), nothing was reported to the token, paid, minted or delivered, and the auction is SETTLED. No `SaleSettled` is emitted. |
+| `DeliveryClaimed(uint256 indexed saleId, address indexed recipient, address to)` | `0x97b1d318…` | `claimDelivery` (the recipient, the winning bidder, or with no bids, after a refused settlement, or after a federated token's early outcome, the artist) | `recipient` is the recorded recipient, zero after a refused settlement; `to` is where the token went. Preceded by the token's `Transfer`. |
+| `RescuedSaleClosed(uint256 indexed saleId)` | `0xbab3719d…` | `settle`, when 6529 Stream already records the work settled because governance rescued it to the museum (owner decision 20), or another token reports an outcome early ([AUC-36][auc]) | The sale ended with refunds only: the standing bid, if any, was credited back (`Credited` just before), nothing was reported to the token, paid, minted or delivered, and the auction is SETTLED. No `SaleSettled` is emitted. A federated token's work is then a pending delivery its artist claims. |
+| `SettlementRefused(uint256 indexed saleId)` | `0x682bf7ce…` | `settleOrRefund` (permissionless, from the sale's refusal delay after its end), when its attempt at `settle` failed ([AUC-38][auc]) | The token would not let the sale settle. Every effect of the attempt was undone, so no `PrimarySaleSettled`, payout or `SaleSettled` appears; the standing bid, if any, was credited back (`Credited` just before); the work is in custody as a pending delivery the artist claims; the auction is SETTLED. A successful attempt emits exactly `settle`'s events instead. |
 | `SaleSettled(uint256 indexed saleId, address indexed token, uint256 indexed tokenId, address buyer, address recipient, uint256 quantity, address currency, uint256 price, address seller, uint256 sellerProceeds, address feeRecipient, uint256 fee)` | `0x16010625…` | `settle` (permissionless after the end) | The last event of a settlement. `quantity` is 1. With no standing bid (including a freeze exit or a delisted federated contract) `buyer` and `price` are zero and `recipient` is the museum 6529 Stream moved the work to, or for any other token the artist's active authority. `price = sellerProceeds + fee`. |
-| `ConfigSet(AuctionConfig previous, AuctionConfig next)` | `0xb2088623…` | The constructor and `setConfig` (PARAMETER_SETTER, 48 hours) | `AuctionConfig` is `(uint32 duration, uint32 extensionWindow, uint32 incrementShare)`. What a start locks is [AUC-15][auc]. |
+| `ConfigSet(AuctionConfig previous, AuctionConfig next)` | `0x2991b213…` | The constructor (from all zeros) and `setConfig` (PARAMETER_SETTER, 48 hours) | `AuctionConfig` is `(uint32 duration, uint32 extensionWindow, uint32 incrementShare, uint32 refusalDelay, uint32 refusalGas)`. What a start locks is [AUC-15][auc] and [AUC-39][auc]. |
 | `OpeningBidSet(address indexed currency, uint256 previous, uint256 next)` | `0xdb7c74c4…` | `setOpeningBid` (PARAMETER_SETTER, 48 hours) | Applies to auctions that start afterwards. |
 | `TargetSet(address indexed token, bool listed)` | `0xd79dab7c…` | The constructor's targets and `setTarget` (SUCCESSOR_SETTER, 30 days; at genesis through the wiring) | A token contract listed or unlisted for new auctions. |
 | `FederationRegistrySet(address previous, address next)` | `0xb6b3a87c…` | `setFederationRegistry` (SUCCESSOR_SETTER) | No federation registry exists in v1. |
@@ -498,6 +500,10 @@ Per `saleId`:
   governance rescued it to the museum (`PrimarySaleSettled` with RESCUED and `WorkRescued`
   earlier, owner decisions 20 and 28): any refund `Credited`, then `RescuedSaleClosed`, and
   neither `PrimarySaleSettled` nor `SaleSettled`.
+- **Refused.** `settleOrRefund` whose attempt failed: any refund `Credited`, then
+  `SettlementRefused`, and no `PrimarySaleSettled` or `SaleSettled`; `pendingDelivery(saleId)` is
+  zero although the artist may claim the work ([AUC-38][auc]). Whose attempt succeeded: exactly
+  the settled sequence above.
 - **Cancelled.** `Credited` (the high bid), `Transfer` to zero, `AuctionCancelled`.
 - **Credits.** Per account and currency on one adapter, `claimable` is the sum of `Credited`
   minus the sum of `Claimed`.
@@ -755,7 +761,7 @@ structs expanded to tuples: 132 signatures.
 | `CollectionCreated(uint256,string,bytes32)` | `0x8966ba956c90c682e7629fa1eff72812e2a5d54259d1e684285c761439588057` | Stream |
 | `CollectionPreferredKindSet(uint256,uint8,uint8)` | `0x57ab57edc511e68ceac9b1e49b80959a2aa7279eb6fa0a548dabba84f3f42d33` | WorkRecords |
 | `ConfigSet((uint256,bytes32,uint32,uint16,bool),(uint256,bytes32,uint32,uint16,bool))` | `0xc5843e7141f604b3110f98ce25e5557fe89b0f64cff0657e5cefc993f00511a9` | VrfEntropyModule |
-| `ConfigSet((uint32,uint32,uint32),(uint32,uint32,uint32))` | `0xb208862316333bb2d7b1d4c78c1fe2307cb8fcc7de4ef87712dcbe581689fe52` | EnglishAuction |
+| `ConfigSet((uint32,uint32,uint32,uint32,uint32),(uint32,uint32,uint32,uint32,uint32))` | `0x2991b2137e7503dc3b28dec74fd2c18cab2784d5070d22027a95c9f9873a156a` | EnglishAuction |
 | `ConfigSet((uint96,uint16,uint16,uint32,uint32,uint32,uint32),(uint96,uint16,uint16,uint32,uint32,uint32,uint32))` | `0x15d7d731063b5081995cf6646e843f77da2b2d04be98b1f26dd3587b253b8db7` | UniformEditionAuction |
 | `ConsolidationSourceSet(address,address)` | `0x5b375cc73af25458e0e96a18adb844a77f4f149bbacebcad4489a1c1926a83fa` | ArtistRegistry |
 | `ContentClaimed(bytes32,bytes32)` | `0x7ee6542c3bb14fbd1d5f2469b3fe9a3bc0f12f90717d2df3d785ca1c5e34ca51` | PackageRegistry |
@@ -833,6 +839,7 @@ structs expanded to tuples: 132 signatures.
 | `SeedDelivered(bytes32,uint256,bytes32)` | `0x2a1a98d789f6210c2fb6c327204a52242c65b0c98a164f3fc8bc1c6b0479eb0d` | VrfEntropyModule |
 | `SeedLinked(bytes32,bytes32)` | `0xf4e9ac388df032c7aa58c87fffa65eea30eafa553518699548720ef2f6f64f42` | VrfEntropyModule |
 | `SeedRequested(bytes32,uint256)` | `0x13ccebb8a291fc5c387c182a5403c0aa3e322623fa2b250e1820cf8be4c55b2e` | VrfEntropyModule |
+| `SettlementRefused(uint256)` | `0x682bf7cea42c85fae76f5d2f0ff51745ffe27dd355f679d2c694a455504bc859` | EnglishAuction |
 | `SettlementScanned(uint256,uint256)` | `0x5ba31e1bbb69e573c0a45536d92c79905d779f65b3b09f73ac88014db70b9429` | UniformEditionAuction |
 | `SignerDisabled(address)` | `0xcd7d415743afbe3da9a397922c4a1d3f20efecad669641a0665b8fbd1f62d740` | Eip712CurationVerifier |
 | `SignerEnabled(address)` | `0x71b97cfbc2b8e475857f737bec1103b6beebaca04b52e11c9f7ecb527e64a6ca` | Eip712CurationVerifier |
