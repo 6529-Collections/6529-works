@@ -208,13 +208,13 @@ contract RecoveryRestraintTest is IntegrationBase {
         assertGt(seller.balance, 0);
         vm.prank(artist);
         vm.expectRevert(abi.encodeWithSelector(ISplitWallet.PayoutUnresolved.selector, artistId));
-        ISplitWallet(seller).release(CURRENCY_ETH, 0);
+        splitFactory.release(works[1].item.payees, bytes32(0), CURRENCY_ETH, 0);
 
         vm.warp(p.executableAt);
         artists.executeChange(artistId);
         uint256 before = newKey.balance;
         vm.prank(newKey);
-        ISplitWallet(seller).release(CURRENCY_ETH, 0);
+        splitFactory.release(works[1].item.payees, bytes32(0), CURRENCY_ETH, 0);
         assertGt(newKey.balance, before, "the recovered payout collects");
         assertEq(artist.balance, 0);
     }

@@ -24,8 +24,8 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///      satisfied because the payees and shares are identical (recorded in ADR 0003). Any other
 ///      account's credit, such as the network fee recipient's, moves only to the replacement that
 ///      account named itself with {consentToRecovery}, and each consent covers one recovery.
-///      Funds force-sent or transferred here without a deposit are never owed to anyone and stay
-///      put.
+///      Funds force-sent or transferred here without a deposit are owed to nobody; only
+///      {sweepExcess} moves them, and it can reach nothing beyond `balance - totalOwed`.
 contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransient {
     /// @inheritdoc IRevenueEscrow
     ISplitFactory public immutable factory;
@@ -107,6 +107,32 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
         uint256 balance = owed[replacement][asset] + amount;
         owed[replacement][asset] = balance;
         emit Recovered(wallet, replacement, asset, amount, balance);
+    }
+
+    /// @inheritdoc IRevenueEscrow
+    function sweepExcess(address asset, address recipient)
+        external
+        restricted
+        nonReentrant
+        returns (uint256 amount)
+    {
+        if (recipient == address(0) || recipient == address(this)) {
+            revert InvalidWallet(recipient);
+        }
+        uint256 balance = asset == address(0)
+            ? address(this).balance
+            : TokenTransfer.balanceOf(asset, address(this));
+        uint256 owedTotal = totalOwed[asset];
+        if (balance <= owedTotal) revert NothingToSweep(asset);
+        amount = balance - owedTotal;
+        emit ExcessSwept(asset, recipient, amount);
+        if (asset == address(0)) {
+            if (!TokenTransfer.sendETH(recipient, amount, gasleft())) {
+                revert ETHTransferFailed(recipient, amount);
+            }
+        } else {
+            TokenTransfer.transferExactAllowingNoReturn(asset, recipient, amount);
+        }
     }
 
     /// @inheritdoc IERC165

@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
-import { SplitWallet } from "src/economics/SplitWallet.sol";
 import { Splits } from "src/economics/Splits.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
@@ -84,7 +83,7 @@ contract SplitMathTest is EconomicsBase {
         uint256 seed
     ) public {
         uint32[] memory shares = _shares(seed, 3);
-        SplitWallet w = _wallet(
+        address w = _wallet(
             _list(_fixed(alice, shares[0]), _fixed(bob, shares[1]), _fixed(artistPayout, shares[2]))
         );
         uint256 received;
@@ -92,16 +91,17 @@ contract SplitMathTest is EconomicsBase {
             vm.deal(address(w), address(w).balance + deposits[round]);
             received += deposits[round];
             for (uint256 p; p < 3; ++p) {
-                if ((releaseMask >> (round * 2 + p % 2)) & 1 == 1 && w.releasable(ETH, p) > 0) {
-                    w.release(ETH, p);
+                if ((releaseMask >> (round * 2 + p % 2)) & 1 == 1 && _releasable(w, ETH, p) > 0) {
+                    _release(w, ETH, p);
                 }
             }
         }
         uint256 released;
+        ISplitWallet.Payee[] memory payees = _payeesOf(w);
         for (uint256 p; p < 3; ++p) {
-            if (w.releasable(ETH, p) > 0) w.release(ETH, p);
-            assertEq(w.released(ETH, p), Splits.entitlement(received, w.payee(p).share));
-            released += w.released(ETH, p);
+            if (_releasable(w, ETH, p) > 0) _release(w, ETH, p);
+            assertEq(ledger.released(w, ETH, p), Splits.entitlement(received, payees[p].share));
+            released += ledger.released(w, ETH, p);
         }
         assertEq(released + address(w).balance, received);
         assertLe(address(w).balance, 2);
@@ -118,7 +118,7 @@ contract SplitMathTest is EconomicsBase {
         }
         _sorted(payees);
         address wallet = factory.createWallet(payees, bytes32(0));
-        assertEq(SplitWallet(payable(wallet)).payeeCount(), n);
+        assertEq(factory.configOf(wallet), keccak256(abi.encode(payees)));
         if (n > 1) {
             (payees[0], payees[n - 1]) = (payees[n - 1], payees[0]);
             vm.expectRevert(abi.encodeWithSelector(ISplitWallet.PayeesNotCanonical.selector, 1));

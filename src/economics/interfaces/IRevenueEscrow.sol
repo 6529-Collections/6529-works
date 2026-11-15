@@ -49,6 +49,13 @@ interface IRevenueEscrow is IERC165 {
         uint256 owed
     );
 
+    /// @notice `amount` of `asset` that the escrow held beyond every credit (`totalOwed`) was
+    ///         sent to `recipient`.
+    /// @param asset The asset swept (ETH is `address(0)`).
+    /// @param recipient The account governance named.
+    /// @param amount The amount swept: the whole excess.
+    event ExcessSwept(address indexed asset, address indexed recipient, uint256 amount);
+
     /// @notice `account` named `replacement` as where governance may move its credits; zero
     ///         withdraws the consent.
     /// @param account The account that called {consentToRecovery}.
@@ -65,6 +72,8 @@ interface IRevenueEscrow is IERC165 {
     error NothingOwed(address wallet, address asset);
     /// @notice Sending `amount` wei to `wallet` failed; the credit is kept.
     error ETHTransferFailed(address wallet, uint256 amount);
+    /// @notice The escrow holds no more of `asset` than it owes.
+    error NothingToSweep(address asset);
     /// @notice `wallet` and `replacement` are not two distinct factory wallets with identical
     ///         payee configurations.
     error NotEquivalentWallet(address wallet, address replacement);
@@ -138,4 +147,16 @@ interface IRevenueEscrow is IERC165 {
     /// @param replacement The account to credit instead.
     /// @param asset The asset of the credit (ETH is `address(0)`).
     function recover(address wallet, address replacement, address asset) external;
+
+    /// @notice Sends everything the escrow holds of `asset` beyond `totalOwed(asset)` to
+    ///         `recipient`: ETH force-sent here and tokens transferred without a deposit, which
+    ///         are owed to nobody. Never touches a credit: afterwards the balance equals
+    ///         `totalOwed(asset)` exactly.
+    /// @dev Governed: `Roles.FUNDS_SETTER` (`Roles.FUNDS`, 14 days), so the recipient is public for
+    ///      the whole delay and a guardian may cancel. An ERC-20 move counts a `transfer` that
+    ///      returns `true` or nothing, and requires both balances to move by exactly the excess.
+    /// @param asset The asset to sweep (ETH is `address(0)`).
+    /// @param recipient The account to pay; not zero or the escrow.
+    /// @return amount The amount swept.
+    function sweepExcess(address asset, address recipient) external returns (uint256 amount);
 }

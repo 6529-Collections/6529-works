@@ -93,7 +93,7 @@ contract IntegrationGasReport is IntegrationBase {
     uint256 internal constant REFRESH_FIRST_CEILING = 131_000;
     uint256 internal constant RERATE_CEILING = 192_000;
     uint256 internal constant REFRESH_FURTHER_CEILING = 161_000;
-    uint256 internal constant CREATE_WALLET_CEILING = 1_262_000;
+    uint256 internal constant CREATE_WALLET_CEILING = 100_000;
     uint256 internal constant RELEASE_FIRST_CEILING = 96_000;
     uint256 internal constant SIGNED_FIRST_CEILING = 145_000;
     uint256 internal constant SIGNED_LATER_CEILING = 92_000;
@@ -217,7 +217,7 @@ contract IntegrationGasReport is IntegrationBase {
         if (account == address(artists)) return "ArtistRegistry";
         if (account == address(escrow)) return "RevenueEscrow";
         if (account == address(economics)) return "EconomicsResolver";
-        if (account == address(splitFactory)) return "SplitFactory";
+        if (account == address(splitFactory)) return "SplitLedger";
         if (account == address(statements)) return "StatementLog";
         if (account == address(entropy)) return "VrfEntropyModule";
         if (account == PERMIT2) return "Permit2";
@@ -1031,12 +1031,14 @@ contract IntegrationGasReport is IntegrationBase {
             block.timestamp + 1 days
         );
         IClaimRouter.SignedClaim[] memory claims = new IClaimRouter.SignedClaim[](1);
-        claims[0] = IClaimRouter.SignedClaim(a, _sign(artistA, releaseVerifier.releaseDigest(a)));
+        claims[0] = IClaimRouter.SignedClaim(
+            a, _sign(artistA, releaseVerifier.releaseDigest(a)), _soloPayees(), bytes32(0)
+        );
         return abi.encodeCall(IClaimRouter.claimSigned, (claims, false));
     }
 
     /// @dev A new payee configuration's seller wallet, deployed once (permissionless, off the
-    ///      sale path): the payee list, its configuration hash and the code.
+    ///      sale path): the ledger's one word for its configuration hash and the 66-byte vault.
     function _rowCreateWallet() internal returns (Row memory r) {
         bytes memory data = abi.encodeCall(splitFactory.createWallet, (_soloPayees(), bytes32(0)));
         r = _row(
@@ -1047,18 +1049,18 @@ contract IntegrationGasReport is IntegrationBase {
             0
         );
         _gasAtMost(r, CREATE_WALLET_CEILING, "regression ceiling");
-        _growthIs(r, 4, 1);
+        _growthIs(r, 1, 1);
     }
 
-    /// @dev The artist pulls its first ETH from the seller wallet: the payee's and the wallet's
-    ///      release totals (ETH keeps no receipts high-water mark).
+    /// @dev The artist pulls its first ETH from the seller wallet through the split ledger: the
+    ///      payee's and the wallet's release totals (ETH keeps no receipts high-water mark).
     function _rowReleaseFirst() internal returns (Row memory r) {
-        address wallet = _fundedWallet();
+        _fundedWallet();
         r = _row(
             "release, the artist's first ETH release",
             artistA,
-            wallet,
-            abi.encodeCall(ISplitWallet.release, (CURRENCY_ETH, 0)),
+            address(splitFactory),
+            abi.encodeCall(ISplitWallet.release, (_soloPayees(), bytes32(0), CURRENCY_ETH, 0)),
             0
         );
         _gasAtMost(r, RELEASE_FIRST_CEILING, "regression ceiling");

@@ -5,7 +5,6 @@ import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { EconomicsResolver } from "src/economics/EconomicsResolver.sol";
-import { SplitWallet } from "src/economics/SplitWallet.sol";
 import { Splits } from "src/economics/Splits.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
@@ -160,13 +159,9 @@ contract EconomicsResolverTest is EconomicsBase {
     /// @dev CALLS-1 (resolver side): a recipient that could never be paid is refused, because
     ///      works lock their fee recipient at mint.
     function test_FeeRecipientMustBePayable() public {
-        address[6] memory refused = [
-            address(escrow),
-            address(router),
-            address(econ),
-            address(allowlist),
-            address(factory),
-            address(verifier)
+        // The split ledger is also the release verifier: one address covers both.
+        address[5] memory refused = [
+            address(escrow), address(router), address(econ), address(allowlist), address(ledger)
         ];
         for (uint256 i; i < refused.length; ++i) {
             vm.expectRevert(
@@ -416,14 +411,14 @@ contract EconomicsResolverTest is EconomicsBase {
     ///      contract the fee-recipient rule refuses (CALLS-1), are refused, without bumping the
     ///      revision. An existing account is accepted.
     function test_SetMuseum_RefusesZeroAndTheFeeRecipientRule() public {
-        address[7] memory refused = [
+        // The split ledger is also the release verifier: one address covers both.
+        address[6] memory refused = [
             address(0),
             address(escrow),
             address(router),
             address(econ),
             address(allowlist),
-            address(factory),
-            address(verifier)
+            address(ledger)
         ];
         for (uint256 i; i < refused.length; ++i) {
             vm.expectRevert(
@@ -510,20 +505,20 @@ contract EconomicsResolverTest is EconomicsBase {
         assertEq(t.seller.code.length, 0, "nothing deployed at start");
 
         ISplitWallet.Payee[] memory royalty = Splits.royaltyPayees(t.seller, network, t.feeShare);
-        assertEq(factory.createWallet(royalty, bytes32(0)), t.royaltyReceiver);
-        assertEq(factory.createWallet(payees, bytes32(0)), t.seller);
+        assertEq(_wallet(royalty, bytes32(0)), t.royaltyReceiver);
+        assertEq(_wallet(payees, bytes32(0)), t.seller);
 
         // A 1 ether royalty: 25% to the network, 75% to the seller wallet, split onward.
         vm.deal(t.royaltyReceiver, 1 ether);
-        SplitWallet r = SplitWallet(payable(t.royaltyReceiver));
-        r.release(ETH, _indexOf(r, network));
-        r.release(ETH, _indexOf(r, t.seller));
+        address r = t.royaltyReceiver;
+        _release(r, ETH, _indexOf(r, network));
+        _release(r, ETH, _indexOf(r, t.seller));
         assertEq(network.balance, 0.25 ether);
-        SplitWallet s = SplitWallet(payable(t.seller));
-        s.release(ETH, _indexOf(s, bob));
+        address s = t.seller;
+        _release(s, ETH, _indexOf(s, bob));
         uint256 iArtist = _artistIndex(s, ARTIST);
         vm.prank(artistPayout);
-        s.release(ETH, iArtist);
+        _release(s, ETH, iArtist);
         assertEq(bob.balance, 0.15 ether);
         assertEq(artistPayout.balance, 0.6 ether);
 
@@ -554,7 +549,7 @@ contract EconomicsResolverTest is EconomicsBase {
             (list[0], list[1]) = uint160(seller) < uint160(recipients[i]) ? (s, f) : (f, s);
             assertEq(t.seller, seller);
             assertEq(t.royaltyReceiver, factory.walletFor(list, bytes32(0)), "non-zero fee");
-            assertEq(factory.createWallet(list, bytes32(0)), t.royaltyReceiver);
+            assertEq(_wallet(list, bytes32(0)), t.royaltyReceiver);
         }
         (uint64 rev,,) = econ.revisions(PRODUCT_STREAM);
         econ.setFeeTerms(PRODUCT_STREAM, rev, network, 0);
@@ -583,9 +578,7 @@ contract EconomicsResolverTest is EconomicsBase {
     ///      leaves a deployed royalty wallet's split untouched.
     function test_ChangesApplyToNewWorksOnly() public {
         WorkTerms memory before = econ.newWorkTerms(PRODUCT_STREAM, _artistPayees());
-        factory.createWallet(
-            Splits.royaltyPayees(before.seller, network, before.feeShare), bytes32(0)
-        );
+        _wallet(Splits.royaltyPayees(before.seller, network, before.feeShare), bytes32(0));
         econ.setFeeTerms(PRODUCT_STREAM, 1, network, 30_000);
         econ.setRoyaltyRate(PRODUCT_STREAM, 1, 5_000);
         WorkTerms memory later = econ.newWorkTerms(PRODUCT_STREAM, _artistPayees());
@@ -595,8 +588,8 @@ contract EconomicsResolverTest is EconomicsBase {
         assertEq(before.royaltyRate, 6_529);
 
         vm.deal(before.royaltyReceiver, 1 ether);
-        SplitWallet r = SplitWallet(payable(before.royaltyReceiver));
-        assertEq(r.release(ETH, _indexOf(r, network)), 0.25 ether);
+        address r = before.royaltyReceiver;
+        assertEq(_release(r, ETH, _indexOf(r, network)), 0.25 ether);
     }
 
     // ------------------------------------------------------------------ share maths
@@ -613,15 +606,15 @@ contract EconomicsResolverTest is EconomicsBase {
         ISplitWallet.Payee[] memory royalty = Splits.royaltyPayees(t.seller, recipient, feeShare);
         assertEq(royalty[0].share + royalty[1].share, D);
         assertLt(uint160(royalty[0].account), uint160(royalty[1].account));
-        assertEq(factory.createWallet(royalty, bytes32(0)), t.royaltyReceiver);
+        assertEq(_wallet(royalty, bytes32(0)), t.royaltyReceiver);
 
         vm.deal(t.royaltyReceiver, amount);
-        SplitWallet r = SplitWallet(payable(t.royaltyReceiver));
+        address r = t.royaltyReceiver;
         uint256 toFee = uint256(amount) * feeShare / D;
         uint256 toSeller = uint256(amount) * (D - feeShare) / D;
         uint256 balanceBefore = recipient.balance;
-        if (toFee > 0) r.release(ETH, _indexOf(r, recipient));
-        if (toSeller > 0) r.release(ETH, _indexOf(r, t.seller));
+        if (toFee > 0) _release(r, ETH, _indexOf(r, recipient));
+        if (toSeller > 0) _release(r, ETH, _indexOf(r, t.seller));
         assertEq(recipient.balance - balanceBefore, toFee);
         assertEq(t.seller.balance, toSeller);
         assertLe(amount - toFee - toSeller, 1, "dust below the payee count");

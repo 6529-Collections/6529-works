@@ -135,10 +135,10 @@ contract EscrowRecoveryTest is IntegrationBase {
         uint256 feeIndex = rp[0].account == networkFee ? 0 : 1;
 
         vm.expectRevert();
-        ISplitWallet(receiver).release(address(usdc), feeIndex);
+        splitFactory.release(rp, bytes32(0), address(usdc), feeIndex);
         vm.prank(networkFee);
-        assertEq(ISplitWallet(receiver).releaseTo(address(usdc), feeIndex, newFeeSafe), 25e6);
+        assertEq(splitFactory.releaseTo(rp, bytes32(0), address(usdc), feeIndex, newFeeSafe), 25e6);
         assertEq(usdc.balanceOf(newFeeSafe), 25e6);
-        assertEq(ISplitWallet(receiver).releasable(address(usdc), feeIndex), 0);
+        assertEq(splitFactory.releasable(rp, bytes32(0), address(usdc), feeIndex), 0);
     }
 }

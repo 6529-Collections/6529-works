@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { SplitWallet } from "src/economics/SplitWallet.sol";
 import { Splits } from "src/economics/Splits.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
@@ -28,7 +27,7 @@ import { EconomicsBase } from "./EconomicsBase.sol";
 contract HostileTokenMatrixTest is EconomicsBase {
     uint256 internal constant AMOUNT = 1000;
     address internal depositor = makeAddr("depositor");
-    SplitWallet internal wallet;
+    address internal wallet;
 
     struct Snapshot {
         uint256 payer;
@@ -59,7 +58,7 @@ contract HostileTokenMatrixTest is EconomicsBase {
         s.owed = escrow.owed(address(wallet), t);
         s.totalOwed = escrow.totalOwed(t);
         s.allowance = IERC20(t).allowance(address(payer), address(escrow));
-        s.released = wallet.totalReleased(t);
+        s.released = ledger.totalReleased(wallet, t);
     }
 
     function _assertNoResidue(address t, Snapshot memory before) internal view {
@@ -107,9 +106,9 @@ contract HostileTokenMatrixTest is EconomicsBase {
         t.mint(address(wallet), AMOUNT);
         Snapshot memory before = _snap(address(t));
         vm.expectRevert(_mismatch(address(t)));
-        wallet.release(address(t), 0);
+        _release(wallet, address(t), 0);
         _assertNoResidue(address(t), before);
-        assertEq(wallet.recordedObserved(address(t)), 0);
+        assertEq(ledger.recordedObserved(wallet, address(t)), 0);
     }
 
     function test_FeeOnTransfer_FlushRevertsAndKeepsCredit() public {
@@ -134,7 +133,7 @@ contract HostileTokenMatrixTest is EconomicsBase {
         t.mint(address(wallet), AMOUNT);
         Snapshot memory before = _snap(address(t));
         vm.expectRevert(_mismatch(address(t)));
-        wallet.release(address(t), 0);
+        _release(wallet, address(t), 0);
         vm.expectRevert(_mismatch(address(t)));
         payer.payERC20(address(wallet), address(t), AMOUNT);
         vm.prank(depositor);
@@ -152,7 +151,7 @@ contract HostileTokenMatrixTest is EconomicsBase {
         t.mint(address(wallet), AMOUNT);
         Snapshot memory before = _snap(address(t));
         vm.expectRevert(_failed(address(t), IERC20.transfer.selector));
-        wallet.release(address(t), 0);
+        _release(wallet, address(t), 0);
         vm.expectRevert(_failed(address(t), IERC20.transfer.selector));
         payer.payERC20(address(wallet), address(t), AMOUNT);
         vm.prank(depositor);
@@ -176,13 +175,13 @@ contract HostileTokenMatrixTest is EconomicsBase {
             t.mint(address(wallet), AMOUNT);
             t.setMode(mode);
             vm.expectRevert(_failed(address(t), IERC20.transfer.selector));
-            wallet.release(address(t), 0);
+            _release(wallet, address(t), 0);
         }
         OddReturnToken r = new OddReturnToken();
         r.mint(address(wallet), AMOUNT);
         r.setMode(3);
         vm.expectRevert(abi.encodeWithSelector(TokenTransfer.TokenReadFailed.selector, address(r)));
-        wallet.release(address(r), 0);
+        _release(wallet, address(r), 0);
 
         OddReturnToken a = new OddReturnToken();
         _fund(a);
@@ -199,7 +198,7 @@ contract HostileTokenMatrixTest is EconomicsBase {
         uint256 huge = (1 << 200) + 12_345;
         t.mint(address(wallet), huge);
         uint256 iAlice = _indexOf(wallet, alice);
-        uint256 paid = wallet.release(address(t), iAlice);
+        uint256 paid = _release(wallet, address(t), iAlice);
         assertEq(paid, Splits.entitlement(huge, 60_000));
         assertEq(t.balanceOf(alice), paid);
         assertEq(t.balanceOf(address(wallet)), huge - paid);
@@ -211,7 +210,7 @@ contract HostileTokenMatrixTest is EconomicsBase {
     function test_RevertOnZero_NeverSeesAZeroMove() public {
         RevertOnZeroToken t = new RevertOnZeroToken();
         // A 1-in-100,000 payee: 99 units round its entitlement to zero.
-        SplitWallet w = _wallet(_list(_fixed(alice, 1), _fixed(bob, D - 1)));
+        address w = _wallet(_list(_fixed(alice, 1), _fixed(bob, D - 1)));
         uint256 iAlice = _indexOf(w, alice);
         t.mint(address(payer), 1000);
         assertFalse(payer.payERC20(address(w), address(t), 0));
@@ -219,8 +218,8 @@ contract HostileTokenMatrixTest is EconomicsBase {
         vm.expectRevert(
             abi.encodeWithSelector(ISplitWallet.NothingToRelease.selector, address(t), iAlice)
         );
-        w.release(address(t), iAlice);
-        assertEq(w.release(address(t), _indexOf(w, bob)), 98);
+        _release(w, address(t), iAlice);
+        assertEq(_release(w, address(t), _indexOf(w, bob)), 98);
     }
 
     // ---------------------------------------------------------------- no return value
@@ -250,26 +249,26 @@ contract HostileTokenMatrixTest is EconomicsBase {
     ///      each payee, fixed or artist-resolved, by `release` or `releaseTo`, gets its full share.
     function test_NoReturn_ReleasePaysEachPayeeInFull() public {
         NoReturnToken t = new NoReturnToken();
-        SplitWallet w = _trio();
+        address w = _trio();
         t.mint(address(w), AMOUNT);
         uint256 iAlice = _indexOf(w, alice);
         uint256 iBob = _indexOf(w, bob);
         uint256 iArtist = _artistIndex(w, ARTIST);
 
-        vm.expectEmit(address(w));
-        emit ISplitWallet.Released(address(t), iAlice, alice, alice, 500, AMOUNT);
-        assertEq(w.release(address(t), iAlice), 500);
+        vm.expectEmit(address(ledger));
+        emit ISplitWallet.Released(w, address(t), alice, iAlice, alice, 500, AMOUNT);
+        assertEq(_release(w, address(t), iAlice), 500);
         vm.prank(bob);
-        assertEq(w.releaseTo(address(t), iBob, bob), 300);
+        assertEq(_releaseTo(w, address(t), iBob, bob), 300);
         vm.prank(artistPayout);
-        assertEq(w.release(address(t), iArtist), 200);
+        assertEq(_release(w, address(t), iArtist), 200);
 
         assertEq(t.balanceOf(alice), 500);
         assertEq(t.balanceOf(bob), 300);
         assertEq(t.balanceOf(artistPayout), 200);
         assertEq(t.balanceOf(address(w)), 0);
-        assertEq(w.totalReleased(address(t)), AMOUNT);
-        assertEq(w.recordedObserved(address(t)), AMOUNT);
+        assertEq(ledger.totalReleased(w, address(t)), AMOUNT);
+        assertEq(ledger.recordedObserved(w, address(t)), AMOUNT);
     }
 
     /// Regression: RFX-ECO-1
@@ -278,8 +277,8 @@ contract HostileTokenMatrixTest is EconomicsBase {
         NoReturnToken t = new NoReturnToken();
         t.mint(address(wallet), AMOUNT);
         IClaimRouter.Claim[] memory claims = new IClaimRouter.Claim[](2);
-        claims[0] = IClaimRouter.Claim(address(wallet), address(t), _indexOf(wallet, alice));
-        claims[1] = IClaimRouter.Claim(address(wallet), address(t), _indexOf(wallet, bob));
+        claims[0] = IClaimRouter.Claim(_payeesOf(wallet), 0, address(t), _indexOf(wallet, alice));
+        claims[1] = IClaimRouter.Claim(_payeesOf(wallet), 0, address(t), _indexOf(wallet, bob));
         uint256[] memory amounts = router.claim(claims, false);
         assertEq(amounts[0], 600);
         assertEq(amounts[1], 400);
@@ -296,9 +295,9 @@ contract HostileTokenMatrixTest is EconomicsBase {
         t.mint(address(wallet), AMOUNT);
         Snapshot memory before = _snap(address(t));
         vm.expectRevert(_mismatch(address(t)));
-        wallet.release(address(t), 0);
+        _release(wallet, address(t), 0);
         _assertNoResidue(address(t), before);
-        assertEq(wallet.recordedObserved(address(t)), 0);
+        assertEq(ledger.recordedObserved(wallet, address(t)), 0);
     }
 
     /// @dev Accepting an empty return does not accept a fee or a rounding loss: a no-return token
@@ -308,7 +307,7 @@ contract HostileTokenMatrixTest is EconomicsBase {
         f.mint(address(wallet), AMOUNT);
         Snapshot memory before = _snap(address(f));
         vm.expectRevert(_mismatch(address(f)));
-        wallet.release(address(f), 0);
+        _release(wallet, address(f), 0);
         _assertNoResidue(address(f), before);
 
         SilentRebasingToken r = new SilentRebasingToken();
@@ -317,20 +316,20 @@ contract HostileTokenMatrixTest is EconomicsBase {
         r.mint(address(wallet), 3003);
         before = _snap(address(r));
         vm.expectRevert(_mismatch(address(r)));
-        wallet.release(address(r), 0);
+        _release(wallet, address(r), 0);
         _assertNoResidue(address(r), before);
     }
 
-    /// @dev The sender's balance is read again just before the transfer: a token whose reading
-    ///      fell below the amount since the wallet computed what is due fails with a balance
-    ///      mismatch, before any call.
+    /// @dev The ledger checks the wallet's balance after the move against the balance it
+    ///      computed what is due from: a token whose reading of the wallet falls as soon as the
+    ///      release records its effects fails with a balance mismatch, and nothing moves.
     function test_NoReturn_BalanceBelowTheAmountBeforeTheCallReverts() public {
-        ReleaseShadowToken t = new ReleaseShadowToken();
+        ReleaseShadowToken t = new ReleaseShadowToken(address(ledger));
         t.mint(address(wallet), AMOUNT);
         uint256 iAlice = _indexOf(wallet, alice);
         Snapshot memory before = _snap(address(t));
         vm.expectRevert(_mismatch(address(t)));
-        wallet.release(address(t), iAlice);
+        _release(wallet, address(t), iAlice);
         _assertNoResidue(address(t), before);
         assertEq(t.transfers(), 0);
     }
@@ -340,8 +339,8 @@ contract HostileTokenMatrixTest is EconomicsBase {
     function test_ReleaseOfAnAccountWithoutCodeReverts() public {
         address notAToken = makeAddr("notAToken");
         vm.expectRevert(abi.encodeWithSelector(TokenTransfer.TokenReadFailed.selector, notAToken));
-        wallet.release(notAToken, 0);
-        assertEq(wallet.totalReleased(notAToken), 0);
+        _release(wallet, notAToken, 0);
+        assertEq(ledger.totalReleased(wallet, notAToken), 0);
     }
 
     function test_NoReturn_FlushRevertsAndKeepsCredit() public {
@@ -395,7 +394,7 @@ contract HostileTokenMatrixTest is EconomicsBase {
         t.mint(address(wallet), AMOUNT);
         Snapshot memory before = _snap(address(t));
         vm.expectRevert(_failed(address(t), IERC20.transfer.selector));
-        wallet.release(address(t), 0);
+        _release(wallet, address(t), 0);
         _assertNoResidue(address(t), before);
     }
 
@@ -461,14 +460,14 @@ contract HostileTokenMatrixTest is EconomicsBase {
         vm.expectRevert(_mismatch(address(t)));
         escrow.depositERC20(address(wallet), address(t), 10);
         vm.expectRevert(_mismatch(address(t)));
-        wallet.release(address(t), 0);
+        _release(wallet, address(t), 0);
         _assertNoResidue(address(t), before);
     }
 
     function test_Rebasing_NegativeRebaseFreezesReleasesWithoutLoss() public {
         RebasingToken t = new RebasingToken();
         t.mint(address(wallet), AMOUNT);
-        wallet.release(address(t), _indexOf(wallet, alice));
+        _release(wallet, address(t), _indexOf(wallet, alice));
         t.setIndex(0.9e18);
         uint256 iBob = _indexOf(wallet, bob);
         Snapshot memory before = _snap(address(t));
@@ -478,7 +477,7 @@ contract HostileTokenMatrixTest is EconomicsBase {
                 ISplitWallet.ObservedDecreased.selector, address(t), AMOUNT, 600 + 360
             )
         );
-        wallet.release(address(t), iBob);
+        _release(wallet, address(t), iBob);
         _assertNoResidue(address(t), before);
     }
 
@@ -486,8 +485,8 @@ contract HostileTokenMatrixTest is EconomicsBase {
         RebasingToken t = new RebasingToken();
         t.mint(address(wallet), AMOUNT);
         t.setIndex(2e18);
-        assertEq(wallet.release(address(t), _indexOf(wallet, alice)), 1200);
-        assertEq(wallet.release(address(t), _indexOf(wallet, bob)), 800);
+        assertEq(_release(wallet, address(t), _indexOf(wallet, alice)), 1200);
+        assertEq(_release(wallet, address(t), _indexOf(wallet, bob)), 800);
     }
 
     function test_Rebasing_EscrowShortfallRevertsFlushAndKeepsCredit() public {
@@ -542,10 +541,10 @@ contract HostileTokenMatrixTest is EconomicsBase {
         uint256 iAlice = _indexOf(wallet, alice);
         Snapshot memory before = _snap(address(t));
         vm.expectRevert(_failed(address(t), IERC20.transfer.selector));
-        wallet.release(address(t), iAlice);
+        _release(wallet, address(t), iAlice);
         _assertNoResidue(address(t), before);
         vm.prank(alice);
-        wallet.releaseTo(address(t), iAlice, bob);
+        _releaseTo(wallet, address(t), iAlice, bob);
         assertEq(t.balanceOf(bob), 600);
     }
 
@@ -671,16 +670,22 @@ contract SilentRebasingToken is RebasingToken {
     }
 }
 
-/// @dev Reports an account's balance less what that account, if a split wallet, has recorded as
-///      released of this token, so the reading drops as soon as a release records its effects;
-///      `transfer` returns nothing and counts its calls.
+/// @dev Reports an account's balance less what the split ledger has recorded as released of this
+///      token from that account (as a wallet), so the reading drops as soon as a release records
+///      its effects; `transfer` returns nothing and counts its calls.
 contract ReleaseShadowToken is MockERC20("Shadow", "SHD") {
     uint256 public transfers;
+    address public immutable ledger;
+
+    constructor(address ledger_) {
+        ledger = ledger_;
+    }
 
     function balanceOf(address account) public view override returns (uint256) {
         uint256 held = _balances[account];
-        (bool ok, bytes memory ret) =
-            account.staticcall(abi.encodeCall(ISplitWallet.totalReleased, (address(this))));
+        (bool ok, bytes memory ret) = ledger.staticcall(
+            abi.encodeCall(ISplitWallet.totalReleased, (account, address(this)))
+        );
         if (!ok || ret.length != 32) return held;
         uint256 shadow = abi.decode(ret, (uint256));
         return held > shadow ? held - shadow : 0;
