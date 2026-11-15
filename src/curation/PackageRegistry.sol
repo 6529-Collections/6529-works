@@ -46,8 +46,9 @@ import { SpdxId } from "../stream/SpdxId.sol";
 /// @title PackageRegistry
 /// @notice Approved package roots, party consent, single-use items, per-product content
 ///         uniqueness and the lead artist's revocable "move to Stream" (ADR 0001 section 3).
-/// @dev Gas (the auction start's budget: 350K Prague gas, ADR 0004). `consume` writes one fresh
-///      slot, 6529 Stream's `contentHash => itemHash`, which is both the consume-once record and
+/// @dev Gas (the auction start's budget: 350K Prague gas, ADR 0004). A mint consumes an item
+///      without an event of its own: Stream's permanent `WorkMinted` carries the package root,
+///      item hash, lead artist and content hash. The consume writes one fresh slot, 6529 Stream's `contentHash => itemHash`, which is both the consume-once record and
 ///      the uniqueness record. It reads consent from `acceptedAs[root][account]`, and its only
 ///      external call is the lead's active authority. Move nonces live in a per-artist bitmap of
 ///      255 nonces per word whose top bit is a sentinel: the acceptance that creates an identity
@@ -315,7 +316,6 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
         }
         authority = _useMove(packageRoot, itemHash, artistId, move);
         _streamItems[contentHash] = itemHash;
-        emit ItemConsumed(packageRoot, itemHash, artistId, contentHash);
     }
 
     /// @inheritdoc IPackageRegistry

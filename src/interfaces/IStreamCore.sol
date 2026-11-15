@@ -79,15 +79,14 @@ interface IStreamCore is IERC4906, IERC2981, IMintTarget {
     /// @notice New terms were stored under `termsId` (once per distinct terms; works under the
     ///         same terms share the ID). Emitted before the `WorkMinted` or `RoyaltyRateChanged`
     ///         that first uses them.
-    /// @param termsId The terms ID.
-    /// @param artistId The lead artist's ID.
+    /// @param termsId The terms ID (its lead artist is the `WorkMinted.artistId` of the works
+    ///        that use it).
     /// @param royaltyRate The royalty rate, out of 100,000.
     /// @param feeShare The network fee share of a primary sale, out of 100,000.
     /// @param feeRecipientId The network fee recipient's index (`FeeRecipientRegistered`).
     /// @param minterId The minting adapter's ID (`AdmittedMinterSet`).
     event TermsInterned(
         uint24 indexed termsId,
-        uint256 indexed artistId,
         uint32 royaltyRate,
         uint32 feeShare,
         uint24 feeRecipientId,

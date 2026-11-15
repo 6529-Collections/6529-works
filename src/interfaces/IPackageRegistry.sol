@@ -57,17 +57,6 @@ interface IPackageRegistry is IERC165 {
     event PackageAccepted(
         bytes32 indexed packageRoot, uint256 indexed artistId, address indexed account
     );
-    /// @notice 6529 Stream consumed an item and claimed its content hash under `PRODUCT_STREAM`.
-    /// @param packageRoot The package root the item was proved against.
-    /// @param itemHash The consumed item's hash (`WorksHashing.itemHash`).
-    /// @param artistId The lead artist's ID.
-    /// @param contentHash The item's content hash.
-    event ItemConsumed(
-        bytes32 indexed packageRoot,
-        bytes32 indexed itemHash,
-        uint256 indexed artistId,
-        bytes32 contentHash
-    );
     /// @notice 6529 Stream Editions claimed a master's content hash under `PRODUCT_EDITIONS`.
     /// @param contentHash The master's content hash.
     /// @param itemHash The master item, which consumed `contentHash` on 6529 Stream.

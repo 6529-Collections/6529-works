@@ -992,7 +992,7 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
     }
 
     function _interned(uint24 id, Terms memory t) private {
-        emit TermsInterned(id, t.artistId, t.royaltyRate, t.feeShare, t.feeRecipientId, t.minterId);
+        emit TermsInterned(id, t.royaltyRate, t.feeShare, t.feeRecipientId, t.minterId);
     }
 
     function _key(Terms memory t) private pure returns (bytes32) {

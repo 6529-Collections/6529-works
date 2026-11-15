@@ -599,8 +599,6 @@ contract PackageRegistryTest is CurationBase {
     function test_consume() public {
         (bytes32 root, PackageItem memory item, MoveAuthorization memory move) = _ready(SHA_A);
         bytes32 itemHash = _hash(item);
-        vm.expectEmit(address(registry));
-        emit IPackageRegistry.ItemConsumed(root, itemHash, _id(lead), SHA_A);
         vm.prank(stream);
         IMintPolicy.MintRecord memory rec =
             _policyCall(registry, root, item, new bytes32[](0), move);
@@ -1252,8 +1250,6 @@ contract PackageRegistryTest is CurationBase {
         assertEq(registry.releasedTo(SHA_A), uint160(lead));
         assertTrue(registry.isReleased(_hash(copy)));
 
-        vm.expectEmit(address(registry));
-        emit IPackageRegistry.ItemConsumed(realRoot, _hash(real), _id(lead), SHA_A);
         _consume(realRoot, real, new bytes32[](0), _move(leadKey, realRoot, _hash(real), 0));
         assertEq(registry.consumedItemOf(SHA_A), _hash(real));
         // The rightful master's edition can then claim the hash.
