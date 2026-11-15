@@ -18,6 +18,7 @@ import { FileRole, Locator, LocatorKind, MediaFile } from "../interfaces/types/C
 import { Limits } from "../interfaces/types/Limits.sol";
 import { License, SeedPolicy } from "../interfaces/types/PackageTypes.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
+import { StreamLayout } from "../stream/StreamLayout.sol";
 import { JsonEscape } from "../libraries/JsonEscape.sol";
 import { SSTORE2 } from "../libraries/SSTORE2.sol";
 import { Utf8 } from "../libraries/Utf8.sol";
@@ -125,10 +126,6 @@ contract Renderer is IRenderer {
 
     /// @dev Return-size caps in bytes.
     uint256 private constant TEXT_RETURN = 4_096;
-    /// @dev 6529 Stream's storage slots of `_collections` and `_tokens` (`forge inspect Stream
-    ///      storage-layout`; Stream is never redeployed, so its layout is fixed for good).
-    uint256 private constant STREAM_COLLECTIONS_SLOT = 17;
-    uint256 private constant STREAM_TOKENS_SLOT = 18;
     uint256 private constant LOCATOR_RETURN = Limits.MAX_URI_BYTES + 256;
 
     string private constant PREFIX = "data:application/json;utf8,";
@@ -282,14 +279,14 @@ contract Renderer is IRenderer {
     ///      breaks the metadata of an existing work: `coreOf` (item hash, lead artist,
     ///      collection, seed policy), then with `extsload` the serial (the token word: seller in
     ///      the low 160 bits, serial in the next 32) and the collection's name (the string two
-    ///      slots into its entry). Every native read of Stream is here.
+    ///      slots into its entry), at the slots `StreamLayout` publishes. Every native read of
+    ///      Stream is here.
     function _native(Ctx memory c) private view {
         IStreamViews.WorkCore memory w = c.core;
         // `coreOf`: item hash, lead artist, collection, kind, seed policy, royalty rate.
         bytes memory core = _word(c.stream, IStream.coreOf.selector, c.workId, 192);
         if (core.length != 192) revert RendererReadFailed(c.stream, IStream.coreOf.selector);
-        bytes memory word =
-            _slots(c, uint256(keccak256(abi.encode(c.workId, STREAM_TOKENS_SLOT))), 1);
+        bytes memory word = _slots(c, uint256(StreamLayout.tokenSlot(c.workId)), 1);
         uint256 head;
         assembly ("memory-safe") {
             mstore(w, mload(add(core, 0x20)))
@@ -303,7 +300,7 @@ contract Renderer is IRenderer {
         if (w.collectionId == 0) return;
         // Solidity's storage string: a short one in place, its length doubled in the low byte;
         // a long one as `2 * length + 1`, its bytes from `keccak256(slot)`.
-        uint256 slot = uint256(keccak256(abi.encode(w.collectionId, STREAM_COLLECTIONS_SLOT))) + 2;
+        uint256 slot = uint256(StreamLayout.collectionSlot(w.collectionId)) + 2;
         bytes memory name = _slots(c, slot, 1);
         assembly ("memory-safe") {
             head := mload(add(name, 0x20))

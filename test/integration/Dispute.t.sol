@@ -335,9 +335,7 @@ contract DisputeFlowTest is IntegrationBase {
         vm.warp(block.timestamp + 48 hours);
         vm.prank(hotAdmin);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IPackageRegistry.ClaimNotAllowed.selector, PRODUCT_STREAM, contentHash
-            )
+            abi.encodeWithSelector(IStream.ClaimNotAllowed.selector, PRODUCT_STREAM, contentHash)
         );
         manager.execute(address(stream), again);
         assertEq(registry.releasedTo(contentHash), rightfulId, "the first release stands");
@@ -487,7 +485,7 @@ contract DisputeFlowTest is IntegrationBase {
         (bytes32 own,) = statements.disputeOutcomeOf(address(stream), tokenId);
         assertEq(own, bytes32(0), "no outcome about the token itself");
         assertTrue(_shows(stream.tokenURI(tokenId), preMint), "(a) on the work");
-        editions.createEdition(tokenId, w.item, masterRoot, _proofOf(_one(w), 0));
+        editions.createEdition(tokenId, w.item);
         assertTrue(_shows(editions.uri(tokenId), preMint), "(b) on its edition");
 
         // An outcome about the token is the work's current status from then on.

@@ -47,20 +47,17 @@ library EditionsPackages {
     }
 }
 
-/// @dev The package registry's content claims: Stream's consume records `contentHash -> itemHash`
-///      under PRODUCT_STREAM; Editions may claim a hash under PRODUCT_EDITIONS only for the item
-///      Stream consumed, once (`IPackageRegistry.claimContent`).
+/// @dev The content record: Stream's consume records `contentHash -> itemHash` under
+///      PRODUCT_STREAM, which the Stream mock answers as `consumedItemOf` (Editions reads only
+///      that, never the registry).
 contract EditionsRegistryMock {
     mapping(bytes32 => IPackageRegistry.PackageStatus) internal _status;
     /// @dev Roots registered (approved at some point): only they carry an evidence hash.
     mapping(bytes32 => bool) internal _registered;
     mapping(bytes32 => bytes32) public consumedItemOf;
-    mapping(bytes32 => bytes32) public editionClaimOf;
     address public stream;
     address public editions;
     bool public skipStreamUniqueness;
-
-    event ContentClaimed(bytes32 indexed contentHash, bytes32 indexed itemHash);
 
     function bindCallers(address stream_, address editions_) external {
         stream = stream_;
@@ -94,10 +91,6 @@ contract EditionsRegistryMock {
         consumedItemOf[contentHash] = itemHash;
     }
 
-    function preclaim(bytes32 contentHash, bytes32 itemHash) external {
-        editionClaimOf[contentHash] = itemHash;
-    }
-
     /// @dev What Stream's mint does through `consume`, reduced to the uniqueness word.
     function consume(bytes32 itemHash, bytes32 contentHash) external {
         if (msg.sender != stream) revert IPackageRegistry.UnboundCaller(msg.sender);
@@ -106,19 +99,6 @@ contract EditionsRegistryMock {
             revert IPackageRegistry.ContentUsed(PRODUCT_STREAM, contentHash, claimedBy);
         }
         consumedItemOf[contentHash] = itemHash;
-    }
-
-    function claimContent(bytes32 contentHash, bytes32 itemHash) external {
-        if (msg.sender != editions) revert IPackageRegistry.UnboundCaller(msg.sender);
-        if (consumedItemOf[contentHash] != itemHash) {
-            revert IPackageRegistry.ClaimNotAllowed(PRODUCT_EDITIONS, contentHash);
-        }
-        bytes32 claimedBy = editionClaimOf[contentHash];
-        if (claimedBy != 0) {
-            revert IPackageRegistry.ContentUsed(PRODUCT_EDITIONS, contentHash, claimedBy);
-        }
-        editionClaimOf[contentHash] = itemHash;
-        emit ContentClaimed(contentHash, itemHash);
     }
 }
 
@@ -342,6 +322,11 @@ contract EditionsStreamMock {
         return _settled[id] && _owners[id] != address(0);
     }
 
+    /// @dev Stream holds content uniqueness; here the registry mock's consume record stands in.
+    function consumedItemOf(bytes32 contentHash) external view returns (bytes32) {
+        return EditionsRegistryMock(packageRegistry).consumedItemOf(contentHash);
+    }
+
     function ownerOf(uint256 id) external view returns (address holder) {
         holder = _owners[id];
         if (holder == address(0)) revert IStream.UnknownWork(id);
@@ -368,8 +353,7 @@ contract EditionsStreamMock {
         if (linkMode == LinkMode.IGNORE) return;
         if (linkMode == LinkMode.REENTER) {
             PackageItem memory item = abi.decode(reentryItem, (PackageItem));
-            (bytes32 root, bytes32[] memory proof) = EditionsPackages.packageOf(item, 0);
-            try Editions(editions).createEdition(tokenId, item, root, proof) {
+            try Editions(editions).createEdition(tokenId, item) {
                 reentryError = "";
             } catch (bytes memory reason) {
                 reentryError = reason;
@@ -537,8 +521,7 @@ contract ReentrantReceiver1155 is ERC1155Holder {
                     );
             } else {
                 PackageItem memory item = abi.decode(_item, (PackageItem));
-                (bytes32 root, bytes32[] memory proof) = EditionsPackages.packageOf(item, 0);
-                try Editions(address(editions)).createEdition(id, item, root, proof) {
+                try Editions(address(editions)).createEdition(id, item) {
                     ok = true;
                 } catch (bytes memory r) {
                     reason = r;

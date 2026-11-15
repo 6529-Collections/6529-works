@@ -22,6 +22,7 @@ import { IUniformEditionAuctionStorage } from "../interfaces/IUniformEditionAuct
 import { CURRENCY_ETH } from "../interfaces/types/EconomicsTypes.sol";
 import { SaleKind } from "../interfaces/types/SaleTypes.sol";
 import { StepLadder } from "../interfaces/types/StepLadder.sol";
+import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 import { UniformClearing } from "./UniformClearing.sol";
 
@@ -93,12 +94,17 @@ contract UniformEditionAuction is
     ///      keep it sane: at least a day, at most about ten years. The abandonment delay is at
     ///      least 120 days: governance's 30-day replacement of a dependency of the master's
     ///      settlement (or of its 1/1 adapter) plus 6529 Stream's 90-day rescue floor, so a sale
-    ///      whose master waits on a repair or a rescue is never abandoned before either can land.
+    ///      whose master waits on a repair or a rescue is never abandoned before either can land;
+    ///      when governance lengthens Stream's rescue delay, `abandon` (and the lens) wait the
+    ///      difference too.
     ///      The payout gas fits a split wallet's or a Safe's receive at its floor, and keeps a
     ///      settle call's two payouts far inside the 16,777,216 transaction cap at its ceiling.
     uint256 private constant _MIN_MAX_CLOSE_OFFSET = 1 days;
     uint256 private constant _MAX_MAX_CLOSE_OFFSET = 3650 days;
     uint256 private constant _MIN_VOID_DELAY_DAYS = 120;
+    /// @dev 6529 Stream's permanent `RESCUE_DELAY_FLOOR` (90 days), which the 120-day minimum
+    ///      assumes; `abandon` adds what Stream's current `rescueDelay` adds to it.
+    uint256 private constant _RESCUE_FLOOR = 90 days;
     uint256 private constant _MAX_VOID_DELAY_DAYS = 730;
     uint256 private constant _MIN_PAYOUT_GAS = 30_000;
     uint256 private constant _MAX_PAYOUT_GAS = 3_000_000;
@@ -429,21 +435,25 @@ contract UniformEditionAuction is
     /// @dev Pays with `RevenuePayment.payETH`, `Limits.payoutGas` per wallet: a refusal is
     ///      escrowed for that wallet and never blocks settlement.
     function settle(uint256 saleId, uint256[] calldata order) external nonReentrant returns (bool) {
-        SaleWord storage a = _sales[saleId];
-        IUniformEditionAuction.AuctionStatus status = a.status;
-        if (status == IUniformEditionAuction.AuctionStatus.OPEN) {
-            if (_begin(saleId, a)) return true;
-        } else {
+        SaleWord storage stored = _sales[saleId];
+        IUniformEditionAuction.AuctionStatus status = stored.status;
+        if (status != IUniformEditionAuction.AuctionStatus.OPEN) {
             // Another settler finished first: nothing left to do.
             if (status == IUniformEditionAuction.AuctionStatus.SETTLED) return true;
             _requireStatus(saleId, status, IUniformEditionAuction.AuctionStatus.SETTLING);
             // Cleared already: sweep the clearing step's departures.
-            if (_scans[saleId] == 0) return _sweep(saleId, a, order, _SWEEP_CHUNK);
+            if (_scans[saleId] == 0) return _sweep(saleId, stored, order, _SWEEP_CHUNK);
         }
-        (bool cleared, uint256 count, uint256 price) = _scanChunk(saleId, a);
+        // The sale word and its terms, read once for the whole call (I-1).
+        SaleWord memory a = _saleWord(stored);
+        IUniformEditionAuction.AuctionConfig memory t = _config(a.termsId);
+        if (status == IUniformEditionAuction.AuctionStatus.OPEN && _begin(saleId, stored, a, t)) {
+            return true;
+        }
+        (bool cleared, uint256 count, uint256 price) = _scanChunk(saleId, stored, a, t);
         if (!cleared) return false;
-        bool settled = a.status == IUniformEditionAuction.AuctionStatus.SETTLED
-            || _sweep(saleId, a, order, _SWEEP_FIRST);
+        bool settled = stored.status == IUniformEditionAuction.AuctionStatus.SETTLED
+            || _sweep(saleId, stored, order, _SWEEP_FIRST);
         // The payout comes last, after every write of this call.
         _pay(saleId, _payouts[saleId], count, price);
         return settled;
@@ -508,7 +518,10 @@ contract UniformEditionAuction is
     /// @notice Voids an OPEN sale whose master cannot be settled, refunding every bid and sealing
     ///         the edition at zero (`IUniformEditionAuction.abandon`).
     /// @dev The lens decides (`checkAbandon`, which reverts with `NotAbandonable`): it reads the
-    ///      1/1 and 6529 Stream, forwarding all gas and reverting on a shortfall. The seal makes
+    ///      1/1 and 6529 Stream, forwarding all gas and reverting on a shortfall. This adapter
+    ///      then enforces the state rule and the time floor itself (`NotAbandonable` before the
+    ///      stored end plus the delay plus Stream's rescue lengthening), so a lens that answers
+    ///      early cannot void a sale or seal its edition early. The seal makes
     ///      the supply question final: the edition is bound to this adapter, which never mints a
     ///      void sale's copies, so no copy of it can ever exist (Editions accepts a seal at zero
     ///      before or after `createEdition`, since nothing was minted).
@@ -524,8 +537,31 @@ contract UniformEditionAuction is
             status != IUniformEditionAuction.AuctionStatus.OPEN
                 && (status != IUniformEditionAuction.AuctionStatus.SETTLING || _scans[saleId] == 0)
         ) revert IUniformEditionAuction.InvalidAuctionState(saleId, status);
+        // L-3 and L-4: the time floor from this adapter's own words, whatever the lens answers.
+        // The stored close (`closeAt`; the 1/1's end only moves later, so the stored one is
+        // never late, and a soft end is at most `maxExtension`, 7 days, past it) plus the locked
+        // abandonment delay (at least 120 days), plus however much 6529 Stream's rescue delay
+        // now exceeds its permanent 90-day floor, which that minimum assumed: a sale is never
+        // voided while it takes bids, and never voided, nor its edition sealed at zero, before a
+        // master waiting on a rescue under the current delay could be rescued.
+        PayoutWord storage p = _payouts[saleId];
+        uint256 end;
+        // Safe: two 32-bit times and a 16-bit count of days cannot overflow.
+        unchecked {
+            end = uint256(a.oneOfOneEnd) + _terms[a.termsId].closeOffset + uint256(p.voidDelayDays)
+                * 1 days;
+        }
+        // Stream's rescue delay with all the gas: a shortfall reverts (`BoundedCallShortfall`),
+        // and a refusal, which Stream's permanent view never gives, reverts with no data.
+        (bool ok, bytes32 delay) =
+            BoundedCall.tryReadWordAll(_stream, abi.encodeCall(IStream.rescueDelay, ()));
+        if (!ok) revert();
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp + _RESCUE_FLOOR < end + uint256(delay)) {
+            revert IUniformEditionAuction.NotAbandonable(saleId);
+        }
         _void(saleId, a);
-        _seal(_payouts[saleId].id, 0);
+        _seal(p.id, 0);
     }
 
     // ------------------------------------------------------------------------- governance
@@ -702,10 +738,14 @@ contract UniformEditionAuction is
 
     /// @dev The first settle call's checks: voids the sale if the 1/1 was cancelled (returns
     ///      true), or requires the close passed and the 1/1 settled and moves the sale to
-    ///      SETTLING, its book frozen for the scan.
-    function _begin(uint256 saleId, SaleWord storage stored) private returns (bool voided) {
-        SaleWord memory a = stored;
-        IUniformEditionAuction.AuctionConfig memory t = _terms[a.termsId];
+    ///      SETTLING, its book frozen for the scan. `a` and `t` are `stored` and its terms as
+    ///      `settle` read them; `a.oneOfOneEnd` is refreshed here.
+    function _begin(
+        uint256 saleId,
+        SaleWord storage stored,
+        SaleWord memory a,
+        IUniformEditionAuction.AuctionConfig memory t
+    ) private returns (bool voided) {
         (uint256 endTime,, IEnglishAuction.AuctionState one) = _end(saleId, a, t, true);
         if (one == IEnglishAuction.AuctionState.CANCELLED) {
             _void(saleId, stored);
@@ -721,13 +761,14 @@ contract UniformEditionAuction is
 
     /// @dev Scans the next words of SETTLING sale `stored`'s book ({_scan}); returns false and
     ///      records where it stopped when words remain, otherwise clears ({_finish}) and returns
-    ///      true with the count and price `settle` pays last.
-    function _scanChunk(uint256 saleId, SaleWord storage stored)
-        private
-        returns (bool cleared, uint256 count, uint256 price)
-    {
-        SaleWord memory a = stored;
-        IUniformEditionAuction.AuctionConfig memory t = _terms[a.termsId];
+    ///      true with the count and price `settle` pays last. `a` and `t` are `stored` and its
+    ///      terms as `settle` read them (the book fields the scan uses are frozen).
+    function _scanChunk(
+        uint256 saleId,
+        SaleWord storage stored,
+        SaleWord memory a,
+        IUniformEditionAuction.AuctionConfig memory t
+    ) private returns (bool cleared, uint256 count, uint256 price) {
         // Safe: reads of 32- and 64-bit fields of packed words, and writes of values that fit them.
         // forge-lint: disable-start(unsafe-typecast)
         uint256 left = _scans[saleId];
@@ -1277,6 +1318,55 @@ contract UniformEditionAuction is
     function _open(uint256 saleId) private view returns (SaleWord memory a) {
         a = _sales[saleId];
         _requireStatus(saleId, a.status, IUniformEditionAuction.AuctionStatus.OPEN);
+    }
+
+    /// @dev A sale word read with one SLOAD and decoded, for the settlement path (I-1 of review
+    ///      A: there the compiler's member-by-member copy reads the slot once per field; the
+    ///      bid and claim paths keep the compiler's copy, which is cheaper for them). The packing is `SaleWord`'s, from the
+    ///      least significant bit, as `IUniformEditionAuctionStorage.Space` documents and the lens
+    ///      decodes.
+    function _saleWord(SaleWord storage stored) private view returns (SaleWord memory a) {
+        uint256 w;
+        assembly ("memory-safe") {
+            w := sload(stored.slot)
+        }
+        // Safe: each cast takes its field's own bits of the packed word.
+        // forge-lint: disable-start(unsafe-typecast)
+        a.status = IUniformEditionAuction.AuctionStatus(uint8(w));
+        a.termsId = uint24(w >> 8);
+        a.maxCount = uint32(w >> 32);
+        a.oneOfOneEnd = uint32(w >> 64);
+        a.softEnd = uint32(w >> 96);
+        a.openedAt = uint32(w >> 128);
+        a.lowStep = uint16(w >> 160);
+        a.highStep = uint16(w >> 176);
+        a.liveUnits = uint32(w >> 192);
+        a.bidCount = uint32(w >> 224);
+        // forge-lint: disable-end(unsafe-typecast)
+    }
+
+    /// @dev Terms record `termsId` read with one SLOAD and decoded (I-1), `AuctionConfig`'s
+    ///      packing from the least significant bit.
+    function _config(uint256 termsId)
+        private
+        view
+        returns (IUniformEditionAuction.AuctionConfig memory t)
+    {
+        IUniformEditionAuction.AuctionConfig storage stored = _terms[termsId];
+        uint256 w;
+        assembly ("memory-safe") {
+            w := sload(stored.slot)
+        }
+        // Safe: each cast takes its field's own bits of the packed word.
+        // forge-lint: disable-start(unsafe-typecast)
+        t.basePrice = uint96(w);
+        t.stepsPerDecade = uint16(w >> 96);
+        t.stepCount = uint16(w >> 112);
+        t.marginShare = uint32(w >> 128);
+        t.closeOffset = uint32(w >> 160);
+        t.softWindow = uint32(w >> 192);
+        t.maxExtension = uint32(w >> 224);
+        // forge-lint: disable-end(unsafe-typecast)
     }
 
     /// @dev `IEditions.bindMinter(id, item)` with the item `open` received, bubbling a revert;

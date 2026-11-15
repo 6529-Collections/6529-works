@@ -38,10 +38,10 @@ import { SaleKind } from "../../src/interfaces/types/SaleTypes.sol";
 contract InterfacesCompileTest is Test {
     function test_interfaceIds() public pure {
         assertEq(type(IMintTarget).interfaceId, bytes4(0xba4ae536), "IMintTarget");
-        assertEq(type(IStream).interfaceId, bytes4(0xcacd4413), "IStream");
+        assertEq(type(IStream).interfaceId, bytes4(0x829e6c7d), "IStream");
         assertEq(type(IWorkRecords).interfaceId, bytes4(0x2654eed1), "IWorkRecords");
         assertEq(type(IWorkPowers).interfaceId, bytes4(0xbd18229c), "IWorkPowers");
-        assertEq(type(IEditions).interfaceId, bytes4(0xfbeabb2a), "IEditions");
+        assertEq(type(IEditions).interfaceId, bytes4(0xee6d6c6f), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");
         // `setConfig` takes the refusal delay and gas (AUC-39, AUC-40).
         assertEq(type(IEnglishAuction).interfaceId, bytes4(0xb9e9cdd3), "IEnglishAuction");
@@ -59,7 +59,7 @@ contract InterfacesCompileTest is Test {
         assertEq(
             type(ICurationSignerVerifier).interfaceId, bytes4(0x9f12d97a), "ICurationSignerVerifier"
         );
-        assertEq(type(IPackageRegistry).interfaceId, bytes4(0xe5668b29), "IPackageRegistry");
+        assertEq(type(IPackageRegistry).interfaceId, bytes4(0x91325cdf), "IPackageRegistry");
         assertEq(type(IContentStore).interfaceId, bytes4(0xca09e241), "IContentStore");
         assertEq(type(IDependencyRegistry).interfaceId, bytes4(0xe5338d57), "IDependencyRegistry");
         assertEq(type(IRenderer).interfaceId, bytes4(0xa772216d), "IRenderer");

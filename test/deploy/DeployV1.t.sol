@@ -199,7 +199,7 @@ contract DeployV1Test is Test {
         assertEq(d.englishAuctionLens.statementLog(), address(d.statementLog));
         assertEq(address(d.englishAuctionLens.allowlist()), address(d.assetAllowlist));
         assertEq(address(d.englishAuctionLens.economicsResolver()), address(d.economicsResolver));
-        assertEq(IStreamViews(address(d.stream)).owner(), makeAddr("marketOwner"));
+        assertEq(d.stream.owner(), makeAddr("marketOwner"));
         // The real renderer, pinned by Stream.
         assertEq(d.stream.defaultRenderer(), address(d.renderer));
         assertEq(address(d.renderer.contentStore()), address(d.contentStore));

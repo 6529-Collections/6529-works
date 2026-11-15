@@ -2,11 +2,14 @@
 pragma solidity ^0.8.24;
 
 /// @title IStreamViews
-/// @notice The informational views of 6529 Stream that its read-only extension serves through
-///         Stream's fallback, by STATICCALL: the extension can write nothing and never shadows a
-///         native selector. Stream answers this interface's ERC-165 id beside `IStream`'s. No
-///         contract may use these views for authorization; every view other contracts authorize
-///         by is native and in `IStream`. Callers use `IStreamViews(stream).work(id)`.
+/// @notice The three informational views of 6529 Stream that its read-only extension serves
+///         through Stream's fallback, by STATICCALL: the extension can write nothing and never
+///         shadows a native selector, and the fallback forwards these three selectors only.
+///         Stream answers this interface's ERC-165 id beside `IStream`'s. The extension is
+///         replaceable, so no contract may use these views for authorization, and nothing
+///         permanent or pinned (a finalized work's renderer included) may read them: every fact
+///         of an existing work is native in `IStream` (`coreOf`, and `extsload` at the slots
+///         `StreamLayout` fixes). Callers use `IStreamViews(stream).work(id)`.
 interface IStreamViews {
     /// @notice A collection: a named grouping of works, possibly by several artists.
     /// @param name The display name.
@@ -46,10 +49,4 @@ interface IStreamViews {
     /// @param tokenId A live token ID.
     /// @return The work's stored fields and its royalty receiver.
     function work(uint256 tokenId) external view returns (WorkCore memory);
-    /// @notice ERC-7572 contract-level metadata URI.
-    /// @return The URI, empty until set.
-    function contractURI() external view returns (string memory);
-    /// @notice The marketplace owner (held by 6529); it has no on-chain powers.
-    /// @return The marketplace owner.
-    function owner() external view returns (address);
 }

@@ -237,9 +237,6 @@ contract PackageRegistryTest is CurationBase {
 
     function test_unboundRegistryRefusesEveryone() public {
         PackageRegistry fresh = _newRegistry();
-        vm.prank(editions);
-        vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.UnboundCaller.selector, editions));
-        fresh.claimContent(bytes32(0), bytes32(0));
         PackageItem memory item;
         MoveAuthorization memory move;
         vm.prank(stream);
@@ -605,7 +602,6 @@ contract PackageRegistryTest is CurationBase {
         assertEq(artistId, _id(lead));
         assertEq(authority, lead, "the active authority that signed the move");
         assertEq(registry.consumedItemOf(SHA_A), itemHash);
-        assertEq(registry.editionClaimOf(SHA_A), bytes32(0));
         assertTrue(registry.isMoveNonceUsed(_id(lead), 0));
         assertFalse(registry.isMoveNonceUsed(_id(lead), 1));
     }
@@ -1170,72 +1166,6 @@ contract PackageRegistryTest is CurationBase {
         PackageItem memory item = _masterItem(SHA_A);
         item.payees[1].artistId = _id(collab);
         _expectValid(item, _keys(leadKey, collabKey));
-    }
-
-    // --------------------------------------------------------------------- claimContent
-
-    function test_claimContent_linkedPairException() public {
-        PackageItem memory item = _masterItem(SHA_A);
-        _expectValid(item, _keys(leadKey, collabKey));
-        // The edition carries exactly its master's hash and names the master item.
-        vm.expectEmit(address(registry));
-        emit IPackageRegistry.ContentClaimed(SHA_A, _hash(item));
-        _claim(SHA_A, _hash(item));
-        assertEq(registry.editionClaimOf(SHA_A), _hash(item));
-        // A second edition of the same media collides.
-        vm.prank(editions);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IPackageRegistry.ContentUsed.selector, PRODUCT_EDITIONS, SHA_A, _hash(item)
-            )
-        );
-        registry.claimContent(SHA_A, _hash(item));
-    }
-
-    function test_claimContent_mustNameTheMasterItem() public {
-        PackageItem memory item = _masterItem(SHA_A);
-        _expectValid(item, _keys(leadKey, collabKey));
-        bytes32[3] memory wrong = [keccak256("another item"), bytes32(0), _hash(_item(lead, SHA_A))];
-        for (uint256 i; i < wrong.length; ++i) {
-            vm.prank(editions);
-            vm.expectRevert(
-                abi.encodeWithSelector(
-                    IPackageRegistry.ClaimNotAllowed.selector, PRODUCT_EDITIONS, SHA_A
-                )
-            );
-            registry.claimContent(SHA_A, wrong[i]);
-        }
-    }
-
-    function test_claimContent_editionNeedsStreamMaster() public {
-        vm.prank(editions);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IPackageRegistry.ClaimNotAllowed.selector, PRODUCT_EDITIONS, SHA_B
-            )
-        );
-        registry.claimContent(SHA_B, keccak256("an item"));
-        // Not even a zero item hash against an unused content hash.
-        vm.prank(editions);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IPackageRegistry.ClaimNotAllowed.selector, PRODUCT_EDITIONS, SHA_B
-            )
-        );
-        registry.claimContent(SHA_B, bytes32(0));
-    }
-
-    function test_claimContent_onlyBoundEditions() public {
-        PackageItem memory item = _masterItem(SHA_A);
-        _expectValid(item, _keys(leadKey, collabKey));
-        address[4] memory callers = [admin, guardian, lead, stream];
-        for (uint256 i; i < callers.length; ++i) {
-            vm.prank(callers[i]);
-            vm.expectRevert(
-                abi.encodeWithSelector(IPackageRegistry.UnboundCaller.selector, callers[i])
-            );
-            registry.claimContent(SHA_A, _hash(item));
-        }
     }
 
     // ------------------------------------------------------------------- releaseContent

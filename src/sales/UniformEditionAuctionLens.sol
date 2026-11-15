@@ -127,7 +127,7 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         // No payment from this sale may reach an undeployed wallet (rule 4: no fund movement
         // depends on the future price of deploying code): deploy the seller's split wallet now,
         // before anything is owed to it, and the royalty receiver's, before any copy can trade.
-        // A wallet that already has code is left alone.
+        // A wallet the ledger already deployed is confirmed, not deployed again.
         address factory = IEconomicsResolver(IStream(_stream).economics()).splitFactory();
         _deployWallet(factory, item.payees, w.seller, token, id);
         if (w.royaltyReceiver != w.seller) {
@@ -220,9 +220,11 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         // forge-lint: disable-end(unsafe-typecast)
     }
 
-    /// @dev Deploys the split wallet of `payees` (salt zero) through `factory` unless `wallet`
-    ///      already has code, requiring the deployed address to be `wallet` (`InvalidSaleTerms`):
-    ///      the terms name a wallet the payees and the factory do not derive otherwise.
+    /// @dev Deploys (or confirms) the split wallet of `payees` (salt zero) through `factory`,
+    ///      requiring the address to be `wallet` (`InvalidSaleTerms`): the terms name a wallet the
+    ///      payees and the factory do not derive otherwise. A deployed wallet is recognised by the
+    ///      ledger's `configOf` (`createWallet` is idempotent for it), never by code at the
+    ///      address, so code planted at a predicted address is never accepted (review C, F16).
     function _deployWallet(
         address factory,
         ISplitWallet.Payee[] memory payees,
@@ -230,7 +232,6 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         address token,
         uint256 id
     ) private {
-        if (wallet.code.length != 0) return;
         if (ISplitFactory(factory).createWallet(payees, bytes32(0)) != wallet) {
             revert ISaleAdapter.InvalidSaleTerms(token, id);
         }
@@ -241,7 +242,9 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
     ///      its sale's end is then the one the adapter last read. A shortfall in any read reverts
     ///      with `BoundedCallShortfall`. A SETTLING sale qualifies only while its scan is in
     ///      progress (nothing paid): its clearing call can only have failed for want of the
-    ///      edition.
+    ///      edition. The time is the sale's end plus its locked delay plus what 6529 Stream's
+    ///      rescue delay adds to its 90-day floor (read live), so a lengthened rescue delay
+    ///      lengthens every unsettled sale's wait (L-4).
     function abandonable(uint256 saleId) public view returns (bool ok, uint256 abandonAt) {
         IStorage.SaleWord memory a = _opened(saleId);
         if (
@@ -273,7 +276,13 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         }
         IUniformEditionAuction.EndTimes memory e;
         _clocks(e, a, _config(a.termsId), oneEnd);
-        abandonAt = uint256(e.endTime) + uint256(p.voidDelayDays) * 1 days;
+        // Plus however much 6529 Stream's rescue delay now exceeds its permanent 90-day floor,
+        // which the delay's 120-day minimum assumed (the adapter enforces the same floor).
+        (bool read, bytes32 delay) =
+            BoundedCall.tryReadWordAll(_stream, abi.encodeCall(IStream.rescueDelay, ()));
+        if (!read) revert();
+        abandonAt =
+            uint256(e.endTime) + uint256(p.voidDelayDays) * 1 days + uint256(delay) - 90 days;
         // forge-lint: disable-next-line(block-timestamp)
         ok = block.timestamp >= abandonAt;
     }

@@ -802,16 +802,12 @@ contract Flows is Script {
         Addrs memory a = _addrs();
         require(_isMaster(index), "not an edition master item");
         Work[] memory works = _works(a);
-        bytes32[] memory leaves = _leaves(works);
         _tx(
             string.concat("createEdition-", workId.toString()),
             "any",
             a.editions,
             0,
-            abi.encodeCall(
-                IEditions.createEdition,
-                (workId, works[index].item, _root(leaves), _proof(leaves, index))
-            )
+            abi.encodeCall(IEditions.createEdition, (workId, works[index].item))
         );
     }
 

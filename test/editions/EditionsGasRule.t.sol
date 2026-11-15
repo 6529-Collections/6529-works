@@ -97,8 +97,7 @@ contract EditionsGasRuleTest is EditionsBase, GasRuleAssertions {
     function test_GasRule_CreateEditionThroughTheEconomicsResolver() public {
         PackageItem memory item = _item(5);
         uint256 id = _master(item);
-        (bytes32 root, bytes32[] memory proof) = EditionsPackages.packageOf(item, 0);
-        bytes memory data = abi.encodeCall(editions.createEdition, (id, item, root, proof));
+        bytes memory data = abi.encodeCall(editions.createEdition, (id, item));
         Outcome memory o =
             _assertSameAtEveryMultiple(economicsBurner, outsider, address(editions), data);
         assertTrue(o.ok, "createEdition succeeds");

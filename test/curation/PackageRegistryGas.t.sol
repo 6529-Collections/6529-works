@@ -23,23 +23,18 @@ import { ERC1271WalletMock } from "test/mocks/libraries/AdversarialTargets.sol";
 import { CurationBase } from "./CurationBase.sol";
 
 /// @dev Gas on the auction-start path (`IMintPolicy.authorize`: the item rules, the consume with
-///      its move-signature check, and the terms quote against stub economics) and
-///      on edition creation (`claimContent`), measured cold around the external call as 6529
-///      Stream and 6529 Stream Editions make it; and worst cases against the EIP-7825 transaction
-///      cap. Neither path reads the content store: uniqueness keys on the item's declared hash.
+///      its move-signature check, and the terms quote against stub economics), measured cold
+///      around the external call as 6529 Stream makes it; and worst cases against the EIP-7825
+///      transaction cap. Edition creation no longer calls the registry (M-1). Neither path reads the content store: uniqueness keys on the item's declared hash.
 contract PackageRegistryGasTest is CurationBase {
     /// @dev Regression gates, measured with every account and slot cold, which overstates a
     ///      real start where some of them are already warm. `authorize` runs the item rules, the
     ///      consume and the terms quote (stub economics and factory); since AUC-44 it writes no
     ///      content record (Stream does). Measured: 43,787 (first work), 60,907 (a nonce past
-    ///      the artist's first bitmap word), 48,111 (two parties), 29,647 (edition claim) and
-    ///      77,758 for a two-party master plus its edition claim; each gate is about 3% above.
+    ///      the artist's first bitmap word) and 48,111 (two parties); each gate is about 3% above.
     uint256 internal constant CONSUME_BUDGET = 46_000;
     uint256 internal constant CONSUME_NEW_WORD_BUDGET = 63_000;
     uint256 internal constant CONSUME_TWO_PARTIES_BUDGET = 50_000;
-    uint256 internal constant CLAIM_BUDGET = 31_000;
-    /// @dev `authorize` on the auction start plus `claimContent` on the edition's creation.
-    uint256 internal constant PAIR_BUDGET = 81_000;
     uint256 internal constant TX_GAS_CAP = 16_777_216;
 
     /// @dev A one-party ORIGINAL in a 16-item package (proof depth 4): an artist's first start.
@@ -72,26 +67,6 @@ contract PackageRegistryGasTest is CurationBase {
         uint256 used = _measure(stream, _authorizeCall(root, item, new bytes32[](0), move));
         emit log_named_uint("consume, 2 parties, depth 0", used);
         assertLe(used, CONSUME_TWO_PARTIES_BUDGET);
-    }
-
-    /// @dev The linked pair end to end: the master's `consume`, then its edition's
-    ///      `claimContent`, each measured cold.
-    function test_gas_consumeAndClaimContent() public {
-        PackageItem memory item = _masterItem(keccak256("master"));
-        bytes32 root = WorksHashing.leaf(_hash(item));
-        _register(root);
-        _accept(root, leadKey);
-        _accept(root, collabKey);
-        MoveAuthorization memory move = _move(leadKey, root, _hash(item), 0);
-        uint256 consumed = _measure(stream, _authorizeCall(root, item, new bytes32[](0), move));
-        StreamContentMock(stream).setConsumed(item.contentHash, _hash(item)); // Stream's record
-        uint256 claimed = _measure(
-            editions, abi.encodeCall(PackageRegistry.claimContent, (item.contentHash, _hash(item)))
-        );
-        emit log_named_uint("claimContent (edition of a master)", claimed);
-        emit log_named_uint("consume + claimContent", consumed + claimed);
-        assertLe(claimed, CLAIM_BUDGET);
-        assertLe(consumed + claimed, PAIR_BUDGET);
     }
 
     /// @dev Worst case: 16 parties, 16 artist-resolved payees, a 32-deep proof and a lead whose
@@ -243,15 +218,6 @@ contract StreamLikeHarness is IERC165 {
     /// @notice What Stream would answer: the item that minted each content.
     mapping(bytes32 contentHash => bytes32 itemHash) public consumedItemOf;
 
-    function claim(IPackageRegistry r, bytes32 contentHash, bytes32 itemHash)
-        external
-        returns (uint256 used)
-    {
-        used = gasleft();
-        r.claimContent(contentHash, itemHash);
-        used -= gasleft();
-    }
-
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return interfaceId == type(IERC165).interfaceId || interfaceId == type(IStream).interfaceId
             || interfaceId == type(IEditions).interfaceId;
@@ -301,20 +267,5 @@ contract PackageRegistryStreamShapeGasTest is CurationBase {
         emit log_named_uint("Stream-side decode of the mint request", decodeGas);
         emit log_named_uint("consume from Stream, 1 party, depth 6", consumeGas);
         assertLe(consumeGas, 48_000); // measured 46,549
-    }
-
-    /// @dev A two-party master and its edition claim, each from the bound caller.
-    function test_gas_streamShape_masterAndClaim() public {
-        PackageItem memory item = _masterItem(keccak256("master"));
-        bytes32 root = WorksHashing.leaf(_hash(item));
-        _register(root);
-        _accept(root, leadKey);
-        _accept(root, collabKey);
-        (, uint256 consumeGas) = _start(item, root, new bytes32[](0));
-        vm.cool(address(registry));
-        uint256 claimGas = harness.claim(registry, item.contentHash, _hash(item));
-        emit log_named_uint("consume from Stream, 2 parties", consumeGas);
-        emit log_named_uint("claimContent from Editions", claimGas);
-        assertLe(consumeGas + claimGas, 82_000); // measured 79,399
     }
 }
