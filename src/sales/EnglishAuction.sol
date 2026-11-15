@@ -466,11 +466,17 @@ contract EnglishAuction is
     /// @dev Refused inside any of this contract's guarded calls, and inside the escrow's, so
     ///      neither a token from within its own settlement nor a caller running inside the escrow
     ///      can make another sale's attempt fail on a guard. It takes no guard itself: {settle}
-    ///      takes it for the attempt, and the close after a failure makes no external call. The attempt gets exactly `refusalGas` (AUC-40), and a caller
-    ///      that cannot forward it in full is refused before anything happens, so a shortfall is
-    ///      never taken for a refusal. A failed attempt leaves at least 1/63 of it for the close;
-    ///      a caller that left too little runs out of gas and the whole call reverts, so a
-    ///      shortfall never closes a sale.
+    ///      takes it for the attempt, and the close after a failure makes no external call.
+    ///      The escrow probe forwards all gas and accepts only the escrow's `ZeroAmount` refusal;
+    ///      anything else, a shortfall included, reverts (`BoundedCall.tryCallAll`'s rule, written
+    ///      out: the library call costs about 300 bytes this contract does not have). The attempt
+    ///      is the one bounded call (AUC-40): it gets exactly `refusalGas`, and a caller that
+    ///      cannot forward it in full is refused before anything happens (the comparison is
+    ///      `BoundedCall.hasSufficientGas`'s), so a shortfall is never taken for a refusal. It
+    ///      cannot forward all gas instead: a token that burns everything it is given would then
+    ///      always read as a shortfall, and its sale could never end. A failed attempt leaves at
+    ///      least 1/63 of it for the close; a caller that left too little runs out of gas and the
+    ///      whole call reverts, so a shortfall never closes a sale.
     function settleOrRefund(uint256 saleId) external {
         Sale storage s = _require(saleId, IEnglishAuction.AuctionState.ENDED);
         uint256 allowedAt = uint256(s.endTime) + _refusalDelay(s);

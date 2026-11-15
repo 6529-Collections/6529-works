@@ -356,7 +356,7 @@ The start rows keep their 5,000 of margin:
 
 Re-measured for the English auction's refusal exit (`settleOrRefund`, AUC-38 to AUC-41, which
 solves LIM-SAL-16), on the merged tree:
-- **The start rows** fell by 921 to 991: a start now writes its `Sale` word in one `sstore`
+- **The start rows** fell by 921 to 1,001 (measured with the gas-rule merge): a start now writes its `Sale` word in one `sstore`
   instead of five field writes to the same slot, which pays for the new code on the path (a
   federated terms record's locked fee recipient and refusal delay, hashed into its key only for a
   federated record, and nothing for a listed one). The refusal parameters sit in their own slot,
@@ -371,28 +371,28 @@ The start rows keep their 5,000 of margin:
 | Start row | Gas | Under 350K |
 | --- | --- | --- |
 | The binding row | 337,312 | 12,688 |
-| With a VRF seed | 342,861 | 7,139 |
-| VRF seed, edition master with 64 bytes of params (the tightest) | 344,008 | 5,992 |
+| With a VRF seed | 342,841 | 7,159 |
+| VRF seed, edition master with 64 bytes of params (the tightest) | 343,988 | 6,012 |
 
 | Operation | Prague gas | Prague ceiling | New slots | New accounts | Sepolia gas |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | `start`, steady state | 266,875 | 350,000 | **5** | 0 | 735,859 |
 | `startWithBid`, steady state | 308,929 | 350,000 | **6** | 0 | 871,980 |
-| `start`, two-party work | 275,187 | 350,000 | **5** | 0 | — |
-| `startWithBid`, two-party work | 317,228 | 350,000 | **6** | 0 | — |
-| `start`, VRF work | 272,414 | 350,000 | **5** | 0 | 852,868 (r2) |
-| `start`, edition master | 266,930 | 350,000 | **5** | 0 | 736,477 |
-| `start`, edition master with 64 bytes of params (the bound) | 268,015 | 350,000 | **5** | 0 | — |
-| `start`, an artist's first work | 286,967 | 350,000 | **6** | 0 | — |
-| `startWithBid`, an artist's first work | 329,021 | 350,000 | **7** | 0 | — |
+| `start`, two-party work | 275,167 | 350,000 | **5** | 0 | — |
+| `startWithBid`, two-party work | 317,208 | 350,000 | **6** | 0 | — |
+| `start`, VRF work | 272,402 | 350,000 | **5** | 0 | 852,868 (r2) |
+| `start`, edition master | 266,910 | 350,000 | **5** | 0 | 736,477 |
+| `start`, edition master with 64 bytes of params (the bound) | 268,035 | 350,000 | **5** | 0 | — |
+| `start`, an artist's first work | 286,987 | 350,000 | **6** | 0 | — |
+| `startWithBid`, an artist's first work | 329,041 | 350,000 | **7** | 0 | — |
 | `startWithBid`, an artist's first work, two-party | 337,312 | 350,000 | **7** | 0 | — |
-| `startWithBid`, an artist's first work, two-party, VRF | 342,861 | 350,000 | **7** | 0 | — |
-| `startWithBid`, an artist's first work, two-party, VRF, edition master with 64 bytes of params (the bound) | 344,008 | 350,000 | **7** | 0 | — |
-| `startWithBid`, an artist's first work, two-party, all four dependencies replaced | 343,716 | 346,000 (regression; LIM-GAS-11) | 7 | 0 | — |
+| `startWithBid`, an artist's first work, two-party, VRF | 342,841 | 350,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party, VRF, edition master with 64 bytes of params (the bound) | 343,988 | 350,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party, all four dependencies replaced | 343,696 | 346,000 (regression; LIM-GAS-11) | 7 | 0 | — |
 | `startWithBid`, an artist's first work, two-party, VRF, all four dependencies replaced | 351,353 | 354,000 (regression; LIM-GAS-11) | 7 | 0 | — |
-| `startWithBid`, ERC-20 by relayed Permit2 | 354,015 | 365,000 (regression) | 6 | 0 | — |
+| `startWithBid`, ERC-20 by relayed Permit2 | 354,003 | 365,000 (regression) | 6 | 0 | — |
 | `start`, first work in a new collection | 266,878 | 400,000 | 5 | 0 | 846,977 (r2) |
-| `start`, first work ever (one-time) | 436,089 | 449,000 (regression) | 13 | 0 | 1,601,871 |
+| `start`, first work ever (one-time) | 436,065 | 449,000 (regression) | 13 | 0 | 1,601,871 |
 | `startWithBid`, first bid under new sale terms (one-time) | 379,097 | 390,000 (regression) | 9 | 0 | 1,213,250 |
 | `bid` that outbids | 73,530 | 75,000 (regression) | 1 | 0 | 169,060 |
 | `settle`, first payout to a seller wallet | 183,419 | 400,000 | 2 | 1 | 449,934 (sim.) |
@@ -402,16 +402,16 @@ The start rows keep their 5,000 of margin:
 | `minimumBid` (view, cold, answered by the auction's lens) | 38,168 | 39,000 (regression) | 0 | 0 | — |
 | `auctionClock` (view, cold, answered by the auction itself) | 24,260 | 25,000 (regression) | 0 | 0 | — |
 | `consume`, as Stream calls it | 93,130 | 97,000 (regression) | 1 | 0 | part of `start` |
-| `createEdition` | 246,514 | 275,000 (regression) | 6 | 0 | 887,954 (sim.) |
+| `createEdition` | 246,504 | 275,000 (regression) | 6 | 0 | 887,954 (sim.) |
 | `createEdition`, an edition its sale bound at open | 144,344 | 148,000 (regression) | 2 | 0 | — |
 | re-rate a work (governed `execute`) | 190,182 | 192,000 (regression) | 1 | 0 | — |
 | `refreshStanding`, a first wallet | 129,730 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
 | `refreshStanding`, a further wallet | 159,127 | 161,000 (regression) | 1 | 0 | 247,970 (r2) |
-| `royaltyInfo` (view; `RoyaltyInfoGas.t.sol` caps its gas) | 41,654 | 50,000 of execution | 0 | 0 | 36,426 |
+| `royaltyInfo` (view; `RoyaltyInfoGas.t.sol` caps its gas) | 41,644 | 50,000 of execution | 0 | 0 | 36,426 |
 | `tokenURI` (view, the size matrix) | at most 2,736,559 | 8,000,000 | 0 | 0 | unchanged |
 | `createWallet`, a seller wallet (one artist payee) | 1,185,635 | 1,262,000 (regression) | 4 | 1 | — |
 | `release`, the artist's first ETH release | 93,402 | 96,000 (regression) | 2 | 0 | — |
-| `claimSigned`, the artist's first signed release | 141,484 | 145,000 (regression) | 3 | 0 | — |
+| `claimSigned`, the artist's first signed release | 141,464 | 145,000 (regression) | 3 | 0 | — |
 | `claimSigned`, a later signed release (next nonce) | 90,164 | 92,000 (regression) | 0 | 0 | — |
 | Edition auction `open`, steady state (binds the edition) | 272,237 | 275,000 (regression) | 6 | 0 | — |
 | Edition auction `open`, the adapter's first (one-time) | 317,962 | 322,000 (regression) | 8 | 0 | — |
