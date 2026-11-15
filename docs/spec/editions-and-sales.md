@@ -83,7 +83,7 @@ The [glossary](../glossary.md) defines [master](../glossary.md#master),
 
 | Field | Meaning |
 | --- | --- |
-| `maxCount` | The creator's optional cap on the copies ever minted, by every adapter together; 0 for none (the count then stops at 2^48 - 1, as `minted` is a `uint48`). |
+| `maxCount` | The creator's optional cap on the copies ever minted, by every adapter together; 0 for none (the count then stops at 2^40 - 1, as `minted` is a `uint40`, until the sale's seal sets the final count, ED-25). |
 | `currency` | The sale method's currency, opaque to Editions and the package registry. The edition auction takes `CURRENCY_ETH` (`address(0)`). |
 | `saleKind` | A nonzero sale-kind label ([`SaleKind`](../../src/interfaces/types/SaleTypes.sol)). Only an admitted adapter reporting this kind may mint. rc.2's edition auction is `UNIFORM_AUCTION`; `FIXED_PRICE` and `DUTCH` are reserved labels of the removed rc.1 adapters. |
 | `params` | The sale method's parameters, at most 64 bytes (two words), opaque to Editions and the package registry. The edition auction takes none. |
@@ -284,25 +284,33 @@ and no departures.
   `claim(CURRENCY_ETH, to)` pays out. A VOID sale's claims refund in full and mint nothing. Each
   bid is claimed once: the claim deletes it.
 - **Supply** reaches exactly `count` once every bid is claimed (EA-9). Only the adapter bound at
-  open mints the edition (`MinterMismatch` for any other), even after governance removes it, so
-  its winners always claim (LIM-EA-10); `Editions` enforces the cap for every minter.
+  open mints the edition (`MinterMismatch` for any other). When its sale settles it seals the
+  edition at the count sold (`Editions.sealSupply`, ED-25): no copy past it can ever be minted,
+  and after governance removes the adapter it mints only an edition it sealed, so its winners
+  always claim and it keeps no other mint power (LIM-EA-10 closed). `Editions` enforces the cap
+  and the seal for every minter.
 
 ### Reading an edition
 
 - `edition(id)` returns the content hash, the terms as approved, `minted`, the bound adapter
-  (`minter`, zero while unbound) and the locked economics (`UnknownEdition` otherwise).
+  (`minter`, zero while unbound), the locked economics, `maxSupply` (the creator's cap, or
+  2^40 - 1 without one, until the seal; the count sold after it) and `supplySealed`
+  (`UnknownEdition` otherwise).
 - `royaltyInfo(id, salePrice)` returns the receiver locked at creation and
   `floor(salePrice × royaltyRate / 100,000)` from Editions' own storage, with no external call
   (`UnknownEdition` otherwise). The rate starts at the master's and follows its consented
   re-rates through the work-records satellite (ED-7,
   [works and storage](works-and-storage.md#relicense-royalty-rate-and-errata-repin)); an
-  unknown edition or unchanged rate is a no-op, a rate above 100,000 reverts
-  (`InvalidRoyaltyRate`), and new `PRODUCT_EDITIONS` defaults never touch an existing edition.
+  unknown edition or unchanged rate is a no-op, a rate above the edition's current one reverts
+  (`InvalidRoyaltyRate`: lower-only, ADR 0006, held in Editions as well as in the satellite),
+  and new `PRODUCT_EDITIONS` defaults never touch an existing edition.
 - `licenseOf(id)` returns the master's current license (`UnknownEdition`; `RecordNotOpen`
   until anyone opens the master's record with `openRecord`).
 - `uri(id)` is `IRenderer(IStream.rendererOf(id)).tokenURI(address(editions), id)`: the
   master's renderer builds the edition's metadata from the master's record and content, and
-  fails closed with it ([Rendering and tokenURI](rendering-and-tokenuri.md)).
+  fails closed with it ([Rendering and tokenURI](rendering-and-tokenuri.md)). Both reads
+  forward all gas (ED-28): running short reverts with `BoundedCallShortfall`, never falling
+  back to another renderer.
 - `name()` is "6529 Stream Editions" and `symbol()` is `STREAMEDITIONS` (ADR 0005, D139).
   `owner()` is the marketplace owner, set by `setOwner(expected, next)` (compare-and-set,
   `ExpectedValueMismatch`), with no protocol power. `supportsInterface` reports ERC-1155,
@@ -322,8 +330,12 @@ stateDiagram-v2
     state "At the cap" as AtCap
     [*] --> NoEdition : master minted by an auction start
     NoEdition --> Created : createEdition after the master sale settles
+    NoEdition --> Sealed : the bound sale sold nothing (seal at 0)
     Created --> Minting : first copy minted, adapter bound
+    Minting --> Sealed : the bound adapter seals at the count sold
+    Created --> Sealed : the bound adapter seals
     Minting --> AtCap : minted reaches maxCount
+    Sealed --> AtCap : winners claim up to the sealed count
     AtCap --> [*]
     note right of Created
         The link to the master never changes.
@@ -339,7 +351,8 @@ stateDiagram-v2
 | No edition to Created | anyone, once `IStream.primarySaleSettled(workId)` is true | none | `Editions.createEdition` |
 | Unbound to Bound (before or after Created) | an admitted adapter whose `saleKind()` matches, when its sale opens | none | `Editions.bindMinter` (`EditionMinterBound`; before creation, also locks the economics) |
 | Created to Minting | the bound adapter, or an admitted adapter whose `saleKind()` matches if none is bound | none | `Editions.mint` (first copy; binds an unbound edition, `EditionMinterBound`) |
-| Minting to At the cap | the bound adapter | none | `Editions.mint` when `minted` reaches a nonzero `maxCount` |
+| Minting to At the cap | the bound adapter | none | `Editions.mint` when `minted` reaches a nonzero `maxCount` or the sealed count |
+| Bound to Sealed (before or after Created) | the bound adapter, admitted or removed, once, when its sale settles | none | `Editions.sealSupply(id, count)` (`EditionSupplySealed`) |
 
 - `bindMinter(editionId, item)` requires an admitted caller (`NotAdmittedMinter`) whose
   `saleKind()` equals the edition's (`SaleKindMismatch`): the stored kind once the edition
@@ -351,20 +364,33 @@ stateDiagram-v2
   transaction in which the sale locks its own; `createEdition` keeps them and the binding. An
   adapter calls it when its sale opens; the edition auction does so in `open`.
 - `mint(to, id, amount, data)` requires, in order: a caller ever admitted
-  (`NotAdmittedMinter`); a nonzero `amount` and empty `data` (`InvalidMintRequest`); an
-  existing edition (`UnknownEdition`); a caller whose `saleKind()` equals the edition's
-  (`SaleKindMismatch`); the edition's bound adapter, even if since removed, or, if none is
-  bound, an admitted caller, which becomes it (`NotAdmittedMinter`; `MinterMismatch(editionId,
-  minter)` names the bound one); and `amount` within the cap
-  minus `minted` (`EditionUnavailable`). The supply update precedes the ERC-1155 acceptance
-  call, so a reentering receiver sees the new `minted`. Minting reads nothing from Stream: a
-  master with an edition has settled, and Stream never burns a settled token
-  (`SaleAlreadySettled`).
+  (`NotAdmittedMinter`); a nonzero `amount` and `data` of exactly
+  `abi.encode(address currency, uint256 unitPrice)` (`InvalidMintRequest`; a currency word that
+  is not an address reverts in decoding); an existing edition (`UnknownEdition`); a caller whose
+  `saleKind()` equals the edition's (`SaleKindMismatch`); the edition's bound adapter or, if none
+  is bound, an admitted caller, which becomes it (`NotAdmittedMinter`;
+  `MinterMismatch(editionId, minter)` names the bound one); a bound adapter since removed only
+  once it sealed the edition (`NotAdmittedMinter`); the terms' currency unless they name
+  `CURRENCY_DEFAULT` (`CurrencyMismatch(expected, actual)`); and `amount` within the maximum
+  minus `minted` (`EditionUnavailable`). It emits `EditionPrimaryMint(id, to, amount, currency,
+  unitPrice)` (ED-26), then the mint's `TransferSingle`. The supply update and the log precede
+  the ERC-1155 acceptance call, so a reentering receiver sees the new `minted`. Minting reads
+  nothing from Stream: a master with an edition has settled, and Stream never burns a settled
+  token (`SaleAlreadySettled`).
+- `sealSupply(id, count)` (ED-25) is the bound adapter's report that its sale settled with
+  `count` copies sold. Only the bound adapter, admitted or removed (`NotAdmittedMinter` for a
+  caller never admitted, `MinterMismatch` otherwise, an unbound edition included), once
+  (`EditionSealed`), with `minted <= count <= maximum` (`InvalidSealCount`; before creation the
+  maximum is zero, so only a sale that sold nothing seals then, and `createEdition` keeps the
+  zero). It sets the maximum to `count` for good and emits `EditionSupplySealed(id, count)`.
+  Winners claim afterwards, in any order and any number of transactions. Editions holds no
+  duration: how long a sale stays open is the adapter's, chosen per sale.
 - The binding is permanent. A second admitted adapter of the same kind can never open a sale of
-  a bound edition nor add copies to a sale another one ran. A removed bound adapter keeps
-  minting its edition within the cap, so its winners claim (LIM-EA-10 in
-  [ADR 0005](../adr/0005-stream-editions-auction.md#known-limitations)); it binds nothing new,
-  and keeps its binding ID if admitted again.
+  a bound edition nor add copies to a sale another one ran. A removed bound adapter still seals
+  and then mints its edition up to the sealed count, so its winners claim; before its seal it
+  mints nothing, so removal ends the mint power of an adapter that never reports (LIM-EA-10 in
+  [ADR 0005](../adr/0005-stream-editions-auction.md#known-limitations), closed). It binds
+  nothing new, and keeps its binding ID if admitted again; re-admission reopens no seal.
 - `setAdmittedMinter(adapter, admitted)` admits an adapter with code, no EIP-7702 delegation
   and ERC-165 `ISaleAdapter` (`InvalidDependency`); removal is unchecked, and only a change emits
   `AdmittedMinterSet`. The first admission gives the adapter its 16-bit binding ID, kept through
@@ -372,7 +398,10 @@ stateDiagram-v2
 - `burn(id, amount)` burns from the caller's own balance, for any adapter ever admitted; burned
   copies still count toward the cap. `settlePrimary(...)` is a no-op returning nothing for any
   adapter ever admitted (every copy is sold at mint) and refused for anyone else
-  (`NotAdmittedMinter`).
+  (`NotAdmittedMinter`); a sale's end is reported by `sealSupply`, which carries the count.
+- `createEdition` emits `EditionTermsLocked(id, seller, royaltyReceiver, royaltyRate,
+  feeRecipient, feeShare)` right after `EditionCreated` (ED-27): the economics locked at the
+  binding or at creation, and the initial rate.
 
 ### An edition auction
 
@@ -489,20 +518,22 @@ sequenceDiagram
     participant Ed as Editions
     participant Buyer as Recipient
     Note over Adapter,Ed: when its sale opened, the adapter called bindMinter(id, item)
-    Adapter->>Ed: mint(recipient, id, amount, empty)
+    Adapter->>Ed: mint(recipient, id, amount, abi.encode(currency, unitPrice))
     Ed->>Adapter: saleKind() must equal the edition's
     alt the edition has no bound adapter (and the caller is admitted)
         Note over Ed: bind the caller, emit EditionMinterBound
     else bound to another adapter
         Note over Ed: reverts with MinterMismatch
     end
-    Note over Ed: minted plus amount within the cap
-    Ed->>Buyer: TransferSingle, then the ERC-1155 acceptance hook
+    Note over Ed: removed adapter: only once sealed; currency is the terms' own
+    Note over Ed: minted plus amount within the cap or the sealed count
+    Ed->>Buyer: EditionPrimaryMint, TransferSingle, then the ERC-1155 acceptance hook
     Ed-->>Adapter: id and PrimaryTerms with the sale kind only
 ```
 
-The adapter decides who buys, at what price, and when it mints: Editions checks only the
-adapter, its kind, the binding and the cap.
+The adapter decides who buys, at what price, and when it mints: Editions checks the adapter,
+its kind, the binding, the currency against the terms, the cap and the seal, and logs the price
+the adapter reports.
 
 ### Add a sale method
 
@@ -671,10 +702,14 @@ Bids at 1.00, 0.196, 0.100, 0.0511 and 0.0100 ETH (steps 192, 158, 144, 130 and 
 | ED-2 | A master has at most one edition, its ID is the master's token ID, both sides are written in one transaction, and the link never changes. | `Editions.createEdition`; `Stream.linkEdition` | [Editions.t.sol](../../test/editions/Editions.t.sol): `test_CreateEdition_LinksBothWaysAndLocksTerms`, `test_CreateEdition_RefusesSecondCreate`, `test_CreateEdition_LinkIsPermanent`, `test_CreateEdition_FailsClosedWhenStreamDoesNotLink`, `test_CreateEdition_ReentryThroughStreamHitsEditionExists`; [Editions.invariant.t.sol](../../test/editions/Editions.invariant.t.sol): `invariant_LinkAndRoyaltyFixed` |
 | ED-3 | An edition's content hash is unique among editions and claimable only by the item Stream consumed for it. | `PackageRegistry.claimContent` | [Editions.t.sol](../../test/editions/Editions.t.sol): `test_CreateEdition_ContentHashUniqueAmongEditions`, `test_CreateEdition_RefusesHashClaimedInEditions`, `test_CreateEdition_RefusesHashConsumedByAnotherItem` |
 | ED-4 | Edition terms satisfy one rule at `consume` and at `createEdition`: a nonzero sale kind and at most 64 bytes of params; the cap, currency and params are otherwise the sale method's. | `EditionRules.isValid`; `PackageRegistry._checkTerms`; `Editions.createEdition` | [EditionRules.t.sol](../../test/editions/EditionRules.t.sol): `test_AnyNonzeroKind`, `test_AnyCurrency`, `test_ParamsAreBounded`, `testFuzz_AnyCap`, `testFuzz_MatchesTheRule`; [Editions.t.sol](../../test/editions/Editions.t.sol): `test_CreateEdition_RefusesMalformedTerms`; [PackageRegistry.t.sol](../../test/curation/PackageRegistry.t.sol): `test_invalidItem_masterEditionTermsSharedRule` |
-| ED-5 | Only an adapter whose sale kind equals the edition's mints, with a nonzero amount and empty data; the kind is the one the adapter reported at its first admission, kept through removal and re-admission, never its live `saleKind()`, and an adapter that reports no kind is not admitted. An edition is bound to one adapter, the one whose sale opened it (`bindMinter`, which needs an admitted caller and, before creation, the master's stored item) or else the first admitted adapter to mint it; no other adapter opens or mints it, and the bound adapter mints it even after its removal. | `Editions.bindMinter`, `Editions.mint`, `Editions.setAdmittedMinter`, `Editions._bind`; `UniformEditionAuction.open` | [Editions.t.sol](../../test/editions/Editions.t.sol): `test_Mint_OnlyAdmittedMinter`, `test_Mint_RequiresTheEditionsSaleKind`, `test_F4_TheKindRecordedAtAdmissionGoverns`, `test_F4_AdmissionRefusesAnAdapterWithNoKind`, `test_Mint_RejectsUnknownEditionZeroAmountAndData`, `test_SetAdmittedMinter_GovernedAndChecked`, `test_Mint_ANewSaleMethodAdmittedLaterMints`, `test_Mint_BindsTheEditionToItsFirstMinter`, `test_Mint_RemovedBoundAdapterFinishesItsEditionWithinTheCap`, `test_BindMinter_BeforeTheEditionExists`, `test_BindMinter_ChecksTheMasterAndTheStoredKind`, `test_BindMinter_LocksTheEconomicsTheSalePays`; [EditionAuctionBinding.t.sol](../../test/integration/EditionAuctionBinding.t.sol): `test_Binding_ASecondAdapterOfTheKindCannotOpenABoundEdition`, `test_Binding_ARemovedAdaptersWinnersStillClaim`, `test_Binding_AnAttackerBindsOnlyTheMatchingKind`, `test_Binding_TheEditionReportsTheSplitItsSalePaid`; [Editions.invariant.t.sol](../../test/editions/Editions.invariant.t.sol): `invariant_BoundToTheFirstMinter`; [MasterEdition.t.sol](../../test/integration/MasterEdition.t.sol): `test_ANewSaleMethodIsAdmittedByGovernanceAndMints` |
-| ED-6 | Copies minted never exceed the creator's cap, or 2^48 - 1 without one; burns never free the cap. | `Editions.mint`, `Editions.burn` | [Editions.t.sol](../../test/editions/Editions.t.sol): `test_Mint_StopsAtTheCreatorCap`, `testFuzz_Mint_NeverExceedsTheCap`, `test_Mint_UncappedStopsAtUint48`, `test_Mint_MaximumCap`; [Editions.invariant.t.sol](../../test/editions/Editions.invariant.t.sol): `invariant_SupplyAccounting`, `invariant_MintsFollowEditionTerms` |
-| ED-7 | The royalty receiver is fixed at creation; the rate starts at the master's current rate and changes only through the work-records satellite, with the master's. | `Editions.createEdition`, `Editions.setRoyaltyRate`; `WorkRecords._applyRate` | [Editions.t.sol](../../test/editions/Editions.t.sol): `test_CreateEdition_InheritsMasterRoyaltyRate`, `test_SetRoyaltyRate_OnlyThroughWorkRecords`, `test_RoyaltyInfo_UnaffectedByNewDefaults`; [MasterEdition.t.sol](../../test/integration/MasterEdition.t.sol): `test_EditionRoyaltyFollowsAMasterRerate`, `test_EditionTakesTheMastersCurrentRate` |
+| ED-5 | Only an adapter whose sale kind equals the edition's mints, with a nonzero amount and the price record as `data` (ED-26); the kind is the one the adapter reported at its first admission, kept through removal and re-admission, never its live `saleKind()`, and an adapter that reports no kind is not admitted. An edition is bound to one adapter, the one whose sale opened it (`bindMinter`, which needs an admitted caller and, before creation, the master's stored item) or else the first admitted adapter to mint it; no other adapter opens or mints it, and the bound adapter mints it after its removal only once it sealed it (ED-25). | `Editions.bindMinter`, `Editions.mint`, `Editions.setAdmittedMinter`, `Editions._bind`; `UniformEditionAuction.open` | [Editions.t.sol](../../test/editions/Editions.t.sol): `test_Mint_OnlyAdmittedMinter`, `test_Mint_RequiresTheEditionsSaleKind`, `test_F4_TheKindRecordedAtAdmissionGoverns`, `test_F4_AdmissionRefusesAnAdapterWithNoKind`, `test_Mint_RejectsUnknownEditionZeroAmountAndData`, `test_SetAdmittedMinter_GovernedAndChecked`, `test_Mint_ANewSaleMethodAdmittedLaterMints`, `test_Mint_BindsTheEditionToItsFirstMinter`, `test_Mint_RemovedBoundAdapterFinishesItsEditionWithinTheSeal`, `test_BindMinter_BeforeTheEditionExists`, `test_BindMinter_ChecksTheMasterAndTheStoredKind`, `test_BindMinter_LocksTheEconomicsTheSalePays`; [EditionAuctionBinding.t.sol](../../test/integration/EditionAuctionBinding.t.sol): `test_Binding_ASecondAdapterOfTheKindCannotOpenABoundEdition`, `test_Binding_ARemovedAdaptersWinnersStillClaim`, `test_Binding_AnAttackerBindsOnlyTheMatchingKind`, `test_Binding_TheEditionReportsTheSplitItsSalePaid`; [Editions.invariant.t.sol](../../test/editions/Editions.invariant.t.sol): `invariant_BoundToTheFirstMinter`; [MasterEdition.t.sol](../../test/integration/MasterEdition.t.sol): `test_ANewSaleMethodIsAdmittedByGovernanceAndMints` |
+| ED-6 | Copies minted never exceed the maximum: the creator's cap, or 2^40 - 1 without one, and the sealed count once sealed; burns never free it. Reaching 2^40 - 1 reverts only that mint, and the edition still seals. | `Editions.mint`, `Editions.burn` | [Editions.t.sol](../../test/editions/Editions.t.sol): `test_Mint_StopsAtTheCreatorCap`, `testFuzz_Mint_NeverExceedsTheCap`, `test_Mint_UncappedStopsAtUint40AndStillSeals`, `test_Mint_MaximumCap`; [Editions.invariant.t.sol](../../test/editions/Editions.invariant.t.sol): `invariant_SupplyAccounting`, `invariant_MintsFollowEditionTerms` |
+| ED-7 | The royalty receiver is fixed at creation; the rate starts at the master's current rate and changes only through the work-records satellite, with the master's, and only downward (ADR 0006: Editions refuses a higher rate itself). | `Editions.createEdition`, `Editions.setRoyaltyRate`; `WorkRecords._applyRate` | [Editions.t.sol](../../test/editions/Editions.t.sol): `test_CreateEdition_InheritsMasterRoyaltyRate`, `test_SetRoyaltyRate_OnlyThroughWorkRecords`, `test_RoyaltyInfo_UnaffectedByNewDefaults`; [MasterEdition.t.sol](../../test/integration/MasterEdition.t.sol): `test_EditionRoyaltyFollowsAMasterRerate`, `test_EditionTakesTheMastersCurrentRate` |
 | ED-8 | Only an adapter ever admitted burns, and only from its own balance; `settlePrimary` is a no-op for such adapters and refused for anyone else. | `Editions.burn`, `Editions.settlePrimary` | [Editions.t.sol](../../test/editions/Editions.t.sol): `test_Burn_OnlyMinterOnlyOwnBalance`, `test_Burn_RemovedAdapterCanStillBurn`, `test_SettlePrimary_NoOpForAdapters` |
+| ED-25 | The bound adapter, admitted or removed, seals an edition once at the count its sale sold, between the copies minted and the current maximum (zero before creation, which creation keeps); afterwards the supply never exceeds that count and nothing reopens it. Before the seal only the bound adapter mints, and a removed adapter mints only an edition it sealed. Editions holds no duration or time rule. | `Editions.sealSupply`, `Editions.mint`, `Editions.createEdition` | [EditionsSeal.t.sol](../../test/editions/EditionsSeal.t.sol): `test_Seal_LowersTheMaximumOnceAndWinnersClaimWithinIt`, `test_Seal_OnlyTheBoundAdapter`, `test_Seal_NeverBelowMintedNorAboveTheMaximum`, `testFuzz_Seal_SupplyNeverExceedsTheSealedCount`, `test_Seal_ZeroBeforeTheEditionExists`, `test_Seal_RemovalStrandsNoWinnerAndLeavesNoExtraPower`, `test_Seal_ARefusingRecipientBlocksNoOne`; [Editions.invariant.t.sol](../../test/editions/Editions.invariant.t.sol): `invariant_SealedSupplyNeverExceedsTheSealedCount`, `invariant_MintsFollowEditionTerms` |
+| ED-26 | Every primary mint carries `abi.encode(currency, unitPrice)` from the bound adapter and emits `EditionPrimaryMint(editionId, to, amount, currency, unitPrice)` before its `TransferSingle`; the currency is the terms' own unless they name `CURRENCY_DEFAULT`. The price is the adapter's report. | `Editions.mint` | [EditionsSeal.t.sol](../../test/editions/EditionsSeal.t.sol): `test_Mint_LogsCurrencyAndUnitPriceBeforeTheTransfer`, `test_Mint_CurrencyMustBeTheTermsOwn`; [Editions.t.sol](../../test/editions/Editions.t.sol): `test_Mint_RejectsUnknownEditionZeroAmountAndData` |
+| ED-27 | `createEdition` emits `EditionTermsLocked` with the locked seller, royalty receiver, initial rate, fee recipient and fee share; with `EditionCreated`, `EditionMinterBound`, `EditionSupplySealed`, `EditionPrimaryMint`, `RoyaltyRateChanged`, `AdmittedMinterSet` and the ERC-1155 transfers, Editions' logs alone rebuild every edition's terms, binding, supply, holders and price history. | `Editions.createEdition` | [Editions.t.sol](../../test/editions/Editions.t.sol): `test_CreateEdition_LinksBothWaysAndLocksTerms` |
+| ED-28 | Every call out of Editions (Stream, the package registry, the economics resolver, the artist registry, the work-records satellite, the renderer, an adapter's `saleKind`, a recipient's ERC-1155 hook) forwards all the gas EIP-150 allows; a call that runs short reverts with `BoundedCallShortfall`, any other failure with the callee's reason (or `BoundedCallFailed`, or `ERC1155InvalidReceiver` for a hook), so no shortfall yields an answer or a fallback. | `Editions._read`, `Editions._call`, `Editions._updateWithAcceptanceCheck` | [EditionsGasRule.t.sol](../../test/editions/EditionsGasRule.t.sol): `test_GasRule_UriThroughTheRenderer`, `test_GasRule_UriNeverFallsBack`, `test_GasRule_LicenseThroughWorkRecords`, `test_GasRule_CreatorThroughTheArtistRegistry`, `test_GasRule_CreateEditionThroughTheEconomicsResolver`, `test_GasRule_BindMinterThroughTheEconomicsResolver`, `test_GasRule_MintThroughTheRecipientsHook`; [Editions.t.sol](../../test/editions/Editions.t.sol): `test_Receiver_GasBurnerCannotMint` |
 | EA-1 | Anyone opens an edition's sale, once (voided sales included), from its 1/1's start until the edition close, with the master's stored item, of this sale kind, in ETH and without params, binding the edition to the adapter (`Editions.bindMinter`), so no second adapter of the kind can open it; not while the adapter is paused, for a token it does not serve, or for a missing or cancelled 1/1. | `UniformEditionAuction.open`; `UniformEditionAuctionLens.masterTerms`; `Editions.bindMinter` | [UniformEditionAuction.t.sol](../../test/sales/edition/UniformEditionAuction.t.sol): `test_Open_LocksTermsAndEmits`, `test_Open_ChecksTokenAndId`, `test_Open_NeedsALiveOneOfOne`, `test_Open_ChecksTheItem`, `test_Open_Timing`, `test_Open_AfterTheOneOfOneSettled_BeforeTheClose`; [EditionAuction.t.sol](../../test/integration/EditionAuction.t.sol): `test_Flow_OpenChecksTheMasterOnTheRealStack`; [UniformEditionAuctionLens.t.sol](../../test/sales/edition/UniformEditionAuctionLens.t.sol): `test_Open_BindsTheEditionWithTheItemItReceived`; [EditionAuctionBinding.t.sol](../../test/integration/EditionAuctionBinding.t.sol): `test_Binding_ASecondAdapterOfTheKindCannotOpenABoundEdition`, `test_Binding_AnAttackerBindsOnlyTheMatchingKind` |
 | EA-2 | A sale locks at open the creator's cap, the current configuration and the `PRODUCT_EDITIONS` payout terms: exactly the ones 6529 Stream Editions locks for the edition and returns from `bindMinter` (or, if the edition exists, already recorded), so the edition reports the split its sale paid, whichever economics resolver is current; `setConfig` changes only later sales. | `open`, `setConfig`; `Editions.bindMinter` | [UniformEditionAuction.t.sol](../../test/sales/edition/UniformEditionAuction.t.sol): `test_Open_LocksTermsAndEmits`, `test_Open_ChecksThePayout`, `test_Open_InternsTheFeeRecipient`, `test_SetConfig_CompareAndSetAndLocksPerSale`; [UniformEditionAuctionLens.t.sol](../../test/sales/edition/UniformEditionAuctionLens.t.sol): `test_Open_PaysTheEconomicsEditionsReturns`; [Editions.t.sol](../../test/editions/Editions.t.sol): `test_F1_BindMinterReturnsTheLockedEconomics`; [EditionAuctionFixA.t.sol](../../test/integration/EditionAuctionFixA.t.sol): `test_F1_TheEditionAuctionFollowsAnEconomicsReplacement`, `test_F1_AnAuctionDeployedBeforeTheSwitchPaysTheReplacement`; [EditionAuctionBinding.t.sol](../../test/integration/EditionAuctionBinding.t.sol): `test_Binding_TheEditionReportsTheSplitItsSalePaid` |
 | EA-3 | Step `i` costs `basePrice × M[(i mod N) × 192 / N] × 10^(i div N) / 100`, exact and strictly increasing for every allowed ladder, from one mantissa table every client shares. | `StepLadder.price`, `isValid` | [StepLadder.t.sol](../../test/interfaces/StepLadder.t.sol): `test_MantissasMatchTheGoldenVector`, `test_DefaultLadderMatchesTheGoldenVector`, `test_OtherLaddersMatchTheGoldenVector`, `test_EveryLadderRisesAndNests`, `testFuzz_DecadesAndSteps`; [UniformEditionAuction.t.sol](../../test/sales/edition/UniformEditionAuction.t.sol): `test_StepPrices_MatchStepLadder` |
@@ -698,7 +733,8 @@ Bids at 1.00, 0.196, 0.100, 0.0511 and 0.0100 ETH (steps 192, 158, 144, 130 and 
 Event signatures and topic0 values are on the events page, under
 [Editions](../integrators/events-and-indexing.md#editions) and
 [UniformEditionAuction](../integrators/events-and-indexing.md#uniformeditionauction). No event marks an edition at its
-cap: compare `edition(id).minted` with `terms.maxCount`.
+cap: compare `edition(id).minted` with `edition(id).maxSupply`. The permanent consensus events
+of Editions are ED-27's list; the adapter's events are conveniences.
 
 ## Failure modes and recovery
 
@@ -706,7 +742,9 @@ cap: compare `edition(id).minted` with `terms.maxCount`.
 | --- | --- | --- |
 | No admitted adapter serves the edition's sale kind | `createEdition` succeeds, but no copy can be minted (LIM-EA-8). | Governance admits an adapter of that kind (30 days); the curation signer checks for one before attesting. |
 | A second admitted adapter of the same kind tries to open or mint a bound edition | `bindMinter` (in its `open`) or `mint` reverts with `MinterMismatch`. | None needed: each edition sells through the adapter that opened its sale. |
-| The bound adapter is removed | It still mints its bound editions, within the cap, so winners claim; it opens and binds nothing new (`NotAdmittedMinter`), and no other adapter can mint its editions. | None needed; re-admitting it (30 days) keeps its binding (LIM-EA-10 in ADR 0005). |
+| The bound adapter is removed | It still seals its bound editions and then mints up to each sealed count, so winners claim; before its seal it mints nothing, and it opens and binds nothing new (`NotAdmittedMinter`); no other adapter can mint its editions. | None needed; re-admitting it (30 days) keeps its binding and reopens no seal. |
+| The bound adapter never reports its sale's end | The edition stays unsealed: the adapter mints within the creator's cap while admitted. | Governance removes the adapter (30 days); it then mints nothing until it seals. No time rule seals it: Editions holds no duration. |
+| A dependency or a recipient hook runs out of gas | The call reverts with `BoundedCallShortfall(target)` (ED-28), never with an answer or another renderer's metadata. | Send more gas. |
 | An edition reaches its creator's cap | `mint` reverts with `EditionUnavailable`. | None: the cap is the creator's. |
 | The recipient's ERC-1155 hook reverts, returns the wrong value, or the recipient cannot hold the token | The mint reverts. | The adapter's rule; for example, mint to another recipient. |
 | A master's sale has not settled, was cancelled, or the master was burned | `createEdition` reverts with `NotEditionMaster` (or Stream's `UnknownWork`). | Wait for settlement; a burned master never gets an edition. |
@@ -732,7 +770,8 @@ cap: compare `edition(id).minted` with `terms.maxCount`.
 | --- | --- | --- |
 | Merkle proof nodes (package item) | 32 | `Limits.MAX_PROOF_DEPTH` in [`Limits.sol`](../../src/interfaces/types/Limits.sol) |
 | Edition params | at most 64 bytes | `EditionRules.MAX_PARAMS_BYTES` in [`EditionRules.sol`](../../src/editions/EditionRules.sol) |
-| Copies of an edition without a cap | 2^48 - 1 (`type(uint48).max`) | `Editions.UNCAPPED` |
+| Copies of an edition without a cap, until its seal | 2^40 - 1 (`type(uint40).max`), a safety bound | `Editions.UNCAPPED` |
+| Mint `data` | exactly 64 bytes: `abi.encode(address currency, uint256 unitPrice)` | `Editions.mint` |
 | Adapter admissions per token | at most 65,535 (16-bit binding IDs) | `Editions.setAdmittedMinter` |
 | Fee share, royalty and breadth margin denominator | 100,000 | `Splits.DENOMINATOR` in [`Splits.sol`](../../src/economics/Splits.sol) |
 | `CURRENCY_ETH`, `CURRENCY_DEFAULT` | `address(0)`, `address(type(uint160).max)` | [`EconomicsTypes.sol`](../../src/interfaces/types/EconomicsTypes.sol) |

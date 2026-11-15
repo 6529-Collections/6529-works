@@ -40,7 +40,7 @@ contract InterfacesCompileTest is Test {
         assertEq(type(IStream).interfaceId, bytes4(0x37709465), "IStream");
         assertEq(type(IWorkRecords).interfaceId, bytes4(0xc109676d), "IWorkRecords");
         assertEq(type(IWorkPowers).interfaceId, bytes4(0xbd18229c), "IWorkPowers");
-        assertEq(type(IEditions).interfaceId, bytes4(0xe183b26f), "IEditions");
+        assertEq(type(IEditions).interfaceId, bytes4(0xfbeabb2a), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");
         assertEq(type(IEnglishAuction).interfaceId, bytes4(0x75122f3e), "IEnglishAuction");
         // An integration view, never reported through ERC-165.

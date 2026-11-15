@@ -27,17 +27,25 @@ import { EditionTerms, License, PackageItem } from "./types/PackageTypes.sol";
 ///      its sale opens (`bindMinter`, before the edition exists if need be), or else the first
 ///      to mint it binds it. So a second admitted adapter of the same kind can never open a sale
 ///      of an edition another one sells, and the winners of a sale are never locked out by
-///      another sale's claim. A bound adapter keeps minting its edition after governance
-///      removes it, within the creator's cap: its sale has paid the seller, and its winners
-///      claim (ADR 0005, amended 31 October 2026). A master with an edition can never be burned
-///      (6529 Stream burns only before the primary sale settles), so minting reads nothing from
-///      6529 Stream. There are no numbered editions.
+///      another sale's claim. The bound adapter seals the edition's supply when its sale
+///      settles (`sealSupply`): the maximum drops to the count sold, once, and no contract can
+///      mint past it again; winners claim their copies within it afterwards. Before the seal,
+///      only the bound adapter mints, within the creator's cap; after governance removes it, it
+///      mints only an edition it has sealed, so it keeps exactly the power its winners are owed
+///      (ADR 0005, amended 31 October 2026; owner decision of 15 November 2026). This contract
+///      holds no duration: the open period of a sale is the sale's business. Every primary
+///      mint is logged with its currency and unit price (`EditionPrimaryMint`), and the
+///      economics at creation (`EditionTermsLocked`), so supply, holders, price history and
+///      terms are rebuilt from this contract's logs alone. A master with an edition can never
+///      be burned (6529 Stream burns only before the primary sale settles), so minting reads
+///      nothing from 6529 Stream. There are no numbered editions.
 interface IEditions is IERC1155, IERC2981, IMintTarget {
     /// @notice An edition's state; economics are locked at creation, or earlier, by a binding
     ///         (`bindMinter`) that precedes it.
     /// @param contentHash The master's content hash; unique in the Editions product.
-    /// @param terms The edition terms from the approved package item.
-    /// @param minted Copies minted so far.
+    /// @param terms The edition terms from the approved package item (`maxCount` is the
+    ///        creator's cap as approved, kept after a seal).
+    /// @param minted Copies minted so far (burns do not lower it).
     /// @param minter The adapter the edition is bound to (`bindMinter`, or else its first
     ///        mint); zero while unbound.
     /// @param seller The artist-portion split wallet (a predicted address).
@@ -45,6 +53,9 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     /// @param feeShare The network share of primary sales and royalties, out of 100,000.
     /// @param royaltyReceiver The royalty split wallet (a predicted address).
     /// @param royaltyRate The ERC-2981 royalty rate, out of 100,000.
+    /// @param maxSupply The most copies that can ever exist: the creator's cap, or 2^40 - 1
+    ///        without one, until the seal; the count sold after it.
+    /// @param supplySealed Whether the bound adapter sealed the supply (`sealSupply`).
     struct Edition {
         bytes32 contentHash;
         EditionTerms terms;
@@ -55,6 +66,8 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
         uint32 feeShare;
         address royaltyReceiver;
         uint32 royaltyRate;
+        uint64 maxSupply;
+        bool supplySealed;
     }
 
     /// @notice An edition was created and linked to its master.
@@ -64,6 +77,45 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     event EditionCreated(
         uint256 indexed editionId, bytes32 indexed contentHash, EditionTerms terms
     );
+    /// @notice The economics edition `editionId` was created with, locked when its sale was bound
+    ///         (`bindMinter`) or else at creation, and never changed except the royalty rate,
+    ///         which only falls with its master's (`RoyaltyRateChanged`). Emitted once, by
+    ///         `createEdition`, right after `EditionCreated`.
+    /// @param editionId The edition.
+    /// @param seller The artist-portion split wallet, which primary sales pay.
+    /// @param royaltyReceiver The royalty split wallet (ERC-2981 receiver).
+    /// @param royaltyRate The initial ERC-2981 rate, out of 100,000: the master's rate then.
+    /// @param feeRecipient The network fee recipient (zero for none).
+    /// @param feeShare The network share of primary sales and royalties, out of 100,000.
+    event EditionTermsLocked(
+        uint256 indexed editionId,
+        address seller,
+        address royaltyReceiver,
+        uint32 royaltyRate,
+        address feeRecipient,
+        uint32 feeShare
+    );
+    /// @notice A primary sale minted `amount` copies of `editionId` to `to` at `unitPrice` each
+    ///         in `currency`, as the bound adapter reported them; emitted right before the
+    ///         mint's `TransferSingle`, whose operator is that adapter.
+    /// @param editionId The edition.
+    /// @param to The recipient.
+    /// @param amount The copies minted.
+    /// @param currency `CURRENCY_ETH` (zero) or the ERC-20 paid: the terms' currency unless they
+    ///        name `CURRENCY_DEFAULT`, which the adapter resolved.
+    /// @param unitPrice The price paid per copy, in the currency's smallest unit.
+    event EditionPrimaryMint(
+        uint256 indexed editionId,
+        address indexed to,
+        uint256 amount,
+        address currency,
+        uint256 unitPrice
+    );
+    /// @notice The bound adapter sealed edition `editionId`'s supply at `supply`, the count its
+    ///         sale sold: no copy past it can ever be minted, and nothing reopens it.
+    /// @param editionId The edition.
+    /// @param supply The final maximum: at least the copies already minted, at most the cap.
+    event EditionSupplySealed(uint256 indexed editionId, uint256 supply);
     /// @notice ERC-4906: an edition's metadata changed (its master's record, license, renderer
     ///         or preferred location).
     /// @param _tokenId The edition whose metadata changed.
@@ -110,8 +162,16 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     error EditionExists(uint256 editionId);
     /// @notice No edition has this ID.
     error UnknownEdition(uint256 editionId);
-    /// @notice The mint would take the edition past its creator's cap (`EditionTerms.maxCount`).
+    /// @notice The mint would take the edition past its maximum: the creator's cap
+    ///         (`EditionTerms.maxCount`), or the count sealed.
     error EditionUnavailable(uint256 editionId);
+    /// @notice The edition's supply is already sealed.
+    error EditionSealed(uint256 editionId);
+    /// @notice A seal below the copies already minted or above the current maximum (before
+    ///         creation the maximum is zero: only a sale that sold nothing seals then).
+    error InvalidSealCount(uint256 editionId, uint256 count);
+    /// @notice The mint's currency is not the one the edition's terms name.
+    error CurrencyMismatch(address expected, address actual);
     /// @notice The caller is not the bound contract this function serves.
     error UnboundCaller(address caller);
     /// @notice `name` is already bound.
@@ -128,7 +188,7 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     error InvalidEditionTerms(uint256 workId);
     /// @notice 6529 Stream did not record the link back to this edition.
     error LinkFailed(uint256 workId);
-    /// @notice A royalty rate above 100,000.
+    /// @notice A royalty rate above the edition's current rate (rates only fall, ADR 0006).
     error InvalidRoyaltyRate(uint32 rate);
     /// @notice The work-records satellite is not bound yet, so no edition can be created.
     error WorkRecordsUnbound();
@@ -200,6 +260,21 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
         external
         returns (WorkTerms memory terms);
 
+    /// @notice Seals edition `editionId`'s supply at `count`, the copies its sale sold, when that
+    ///         sale settles: the maximum drops to `count`, once, and no contract can ever mint
+    ///         past it. Only the edition's bound adapter, admitted or since removed (a removed
+    ///         adapter must still settle). Winners claim afterwards: `count` covers copies minted
+    ///         already and copies still owed. A sale that sold nothing seals at zero, even before
+    ///         the edition exists (creation then keeps the zero). Reverts with
+    ///         `NotAdmittedMinter` for a caller never admitted, `MinterMismatch` for any other
+    ///         adapter or an unbound edition, `EditionSealed` on a second call, and
+    ///         `InvalidSealCount` below the copies minted or above the current maximum. Emits
+    ///         `EditionSupplySealed`. This contract holds no duration: when a sale ends is the
+    ///         adapter's business.
+    /// @param editionId The edition ID.
+    /// @param count The copies sold, which becomes the edition's final maximum.
+    function sealSupply(uint256 editionId, uint256 count) external;
+
     /// @notice Binds 6529 Stream's work-records satellite, once (ERC-165 for `IWorkRecords`, not
     ///         an EIP-7702 delegated account). ADMIN role.
     /// @param target The work-records satellite 6529 Stream bound (`IStreamCore.workRecords()`).
@@ -217,8 +292,8 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     ///         work-records satellite only.
     /// @param editionId The edition ID (its master's token ID); an ID without an edition is a
     ///        no-op.
-    /// @param rate The new ERC-2981 rate, out of 100,000; a higher value reverts with
-    ///        `InvalidRoyaltyRate`.
+    /// @param rate The new ERC-2981 rate, out of 100,000; a rate above the edition's current
+    ///        one reverts with `InvalidRoyaltyRate` (lower-only, ADR 0006).
     function setRoyaltyRate(uint256 editionId, uint32 rate) external;
     /// @notice Emits a batch ERC-4906 update for every edition, after a global or collection
     ///         preferred-location change or a new default renderer. Bound work-records satellite

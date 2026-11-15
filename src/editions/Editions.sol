@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { IERC2981 } from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import { ERC1155 } from "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
+import { IERC1155Receiver } from "@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol";
 import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -18,7 +19,12 @@ import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
 import { IStream } from "../interfaces/IStream.sol";
 import { IStreamCore } from "../interfaces/IStreamCore.sol";
 import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
-import { CURRENCY_ETH, PRODUCT_EDITIONS, WorkTerms } from "../interfaces/types/EconomicsTypes.sol";
+import {
+    CURRENCY_DEFAULT,
+    CURRENCY_ETH,
+    PRODUCT_EDITIONS,
+    WorkTerms
+} from "../interfaces/types/EconomicsTypes.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
 import { EditionTerms, ItemKind, License, PackageItem } from "../interfaces/types/PackageTypes.sol";
 import {
@@ -28,6 +34,7 @@ import {
     SaleKind
 } from "../interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
+import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 import { EditionRules } from "./EditionRules.sol";
 
@@ -60,14 +67,23 @@ import { EditionRules } from "./EditionRules.sol";
 ///      the one whose sale opened it (`bindMinter`, which may precede the edition: the edition
 ///      auction opens with the master's 1/1, and the item proves the edition's kind), or else
 ///      the first admitted adapter that mints it. No other adapter, admitted then or later, can
-///      open a sale of it or add copies to a count its sale settled. A bound adapter mints its
-///      edition even after governance removes it, within the cap: its sale has already paid the
-///      seller, so its winners must still claim. A master with an edition is never burned (Stream
+///      open a sale of it or add copies to a count its sale settled. When its sale settles, the
+///      bound adapter seals the supply at the count sold (`sealSupply`, once): winners then claim
+///      within it, and nothing can mint past it. A removed adapter still seals, and mints only
+///      an edition it sealed, so removal never strands a winner and never leaves the adapter
+///      more than its winners are owed. This contract holds no duration and no time rule: the
+///      open period is the sale's business (permanent contracts hold invariants, not policy
+///      numbers). Each mint carries the currency and unit price the adapter reports
+///      (`mint`'s `data`), logged by `EditionPrimaryMint`; the currency must be the terms' own
+///      unless they name `CURRENCY_DEFAULT`. A master with an edition is never burned (Stream
 ///      refuses to burn a settled token), so minting reads nothing from Stream. The adapter owns
 ///      the currency and the params: `primaryTerms` returns them as approved, and `mint` returns
-///      only the sale kind. Royalties are read from this contract's storage with no external
-///      call. The receiver is the edition's split (from
-///      `PRODUCT_EDITIONS` economics) and never changes; the rate starts at the master's current
+///      only the sale kind. Every call out of this contract forwards all the gas EIP-150 allows
+///      (`BoundedCall`'s forward-all family): a call that runs short reverts with
+///      `BoundedCallShortfall`, and any other failure reverts with the callee's reason, so no
+///      shortfall ever yields an answer. Royalties are read from this contract's storage with
+///      no external call. The receiver is the edition's split (from `PRODUCT_EDITIONS`
+///      economics) and never changes; the rate starts at the master's current
 ///      rate, so a consented re-rate of the master before the edition exists carries over, and
 ///      the bound work-records satellite re-rates the edition with its master afterwards (every
 ///      party's consent plus a governed action). The license and `uri` come from the master.
@@ -92,8 +108,10 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     uint8 private constant MINTER_NONE = 0;
     uint8 private constant MINTER_ADMITTED = 1;
     uint8 private constant MINTER_REMOVED = 2;
-    /// @dev The mint bound of an edition without a creator cap: `minted` is a `uint48`.
-    uint256 private constant UNCAPPED = type(uint48).max;
+    /// @dev The maximum of an edition without a creator cap, until its seal: `minted` and
+    ///      `limit` are `uint40`s. A safety bound (about 1.1 trillion copies, far past any sale's
+    ///      count; the edition auction counts in 32 bits), not a policy number.
+    uint256 private constant UNCAPPED = type(uint40).max;
 
     /// @dev What `createEdition` reads of its master from `IStreamCore.coreOf`.
     struct Master {
@@ -119,21 +137,27 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     ///      are written only when they differ from the auction's (`saleKind` zero stands for
     ///      `SaleKind.UNIFORM_AUCTION`, the currency zero is ETH, and the params are empty), so
     ///      another sale method costs its own words and the auction none. A mint writes only the
-    ///      seller's word: the creator's cap, the count minted and the bound adapter's ID share
-    ///      it, so the first mint writes no new slot. `bindMinter` may write that word before the
-    ///      edition exists (only `minterId`); `createEdition` writes the other fields one by one
-    ///      and keeps it. `minted` is a `uint48`: a capped edition
-    ///      stops at its `uint32` cap, and an uncapped one at 2^48 - 1, far past any sale's count.
+    ///      seller's word: the current maximum (`limit`), the count minted and the bound adapter's
+    ///      ID share it, so the first mint writes no new slot and a mint reads one word for its
+    ///      checks. `limit` is the creator's cap, or `UNCAPPED`, from creation until the seal, and
+    ///      the count sold after it; zero before creation, so a seal before creation can only be
+    ///      zero. The creator's cap as approved (`maxCount`, for the view) and the seal flag share
+    ///      the artist's word, which a mint reads only for a removed adapter. `bindMinter` may
+    ///      write the seller's word before the edition exists (only `minterId`); `createEdition`
+    ///      writes the other fields one by one and keeps it, and keeps a seal. `minted <= limit`
+    ///      always holds, so nothing saturates: a mint past `limit` reverts, alone.
     struct Record {
         bytes32 contentHash;
         address seller;
-        uint32 maxCount;
-        uint48 minted;
+        uint40 limit;
+        uint40 minted;
         uint16 minterId;
         address royaltyReceiver;
         uint32 royaltyRate;
         uint160 artistId;
         uint32 feeShare;
+        uint32 maxCount;
+        bool supplySealed;
         address feeRecipient;
         bytes32 saleKind;
         address currency;
@@ -142,6 +166,8 @@ contract Editions is IEditions, ERC1155, AccessManaged {
 
     /// @inheritdoc IEditions
     address public immutable stream;
+    /// @dev 6529 Stream's artist registry, which Stream sets once at genesis and never replaces.
+    address private immutable _artistRegistry;
 
     /// @inheritdoc IEditions
     address public workRecords;
@@ -164,12 +190,13 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         AccessManaged(authority_)
     {
         Dependency.checkPinned(stream_, type(IStream).interfaceId, streamCodeHash);
-        IStream s = IStream(stream_);
-        if (
-            s.packageRegistry() == address(0) || s.economics() == address(0)
-                || s.artistRegistry() == address(0)
-        ) revert ZeroAddress();
         stream = stream_;
+        address artists = _address(IStreamCore.artistRegistry.selector);
+        if (
+            address(packageRegistry()) == address(0) || address(economics()) == address(0)
+                || artists == address(0)
+        ) revert ZeroAddress();
+        _artistRegistry = artists;
         _owner = owner_;
         emit OwnershipTransferred(address(0), owner_);
     }
@@ -181,21 +208,21 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     ///         (`IStreamCore.setDependency`, owner decision 16) applies here at once.
     /// @return The package registry.
     function packageRegistry() public view returns (IPackageRegistry) {
-        return IPackageRegistry(IStream(stream).packageRegistry());
+        return IPackageRegistry(_address(IStreamCore.packageRegistry.selector));
     }
 
     /// @notice The economics resolver whose `PRODUCT_EDITIONS` terms new editions lock: 6529
     ///         Stream's, read from it on every use.
     /// @return The economics resolver.
     function economics() public view returns (IEconomicsResolver) {
-        return IEconomicsResolver(IStream(stream).economics());
+        return IEconomicsResolver(_address(IStreamCore.economics.selector));
     }
 
-    /// @notice The artist registry that resolves each edition's creator: 6529 Stream's, read
-    ///         from it on every use.
+    /// @notice The artist registry that resolves each edition's creator: 6529 Stream's, which
+    ///         Stream sets once at genesis and never replaces, so it is read once, at deployment.
     /// @return The artist registry.
     function artistRegistry() public view returns (IArtistRegistry) {
-        return IArtistRegistry(IStream(stream).artistRegistry());
+        return IArtistRegistry(_artistRegistry);
     }
 
     // ----------------------------------------------------------------------- the link
@@ -214,11 +241,13 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         Record storage r = _records[workId];
         // An edition a sale bound before it existed keeps the economics locked at the binding,
         // which that sale pays (`bindMinter`); the seller, a split wallet, is never zero.
-        if (r.seller == address(0)) {
-            _lockTerms(r, economics().newWorkTerms(PRODUCT_EDITIONS, item.payees));
-        }
+        if (r.seller == address(0)) _lockTerms(r, _newWorkTerms(item));
         r.contentHash = item.contentHash;
         r.maxCount = terms.maxCount;
+        // A sale that sold nothing may have sealed the edition at zero before it existed.
+        // Safe: a uint32 cap or UNCAPPED, both below 2^40.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        if (!r.supplySealed) r.limit = uint40(terms.maxCount == 0 ? UNCAPPED : terms.maxCount);
         // The master's current rate, not the product default: a consented re-rate of the master
         // before the edition exists carries over; later ones arrive through `setRoyaltyRate`.
         r.royaltyRate = master.royaltyRate;
@@ -230,13 +259,21 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         if (terms.currency != CURRENCY_ETH) r.currency = terms.currency;
         if (terms.params.length != 0) r.params = terms.params;
         emit EditionCreated(workId, item.contentHash, terms);
+        emit EditionTermsLocked(
+            workId, r.seller, r.royaltyReceiver, master.royaltyRate, r.feeRecipient, r.feeShare
+        );
         emit MetadataUpdate(workId);
 
         // Protocol calls, after every effect above: a reentrant `createEdition` hits EditionExists.
         // The registry accepts only the item Stream consumed for this content hash, once.
-        packageRegistry().claimContent(item.contentHash, itemHash);
-        IStream(stream).linkEdition(workId, workId);
-        (address linked, uint256 linkedId) = IStream(stream).editionOf(workId);
+        _call(
+            address(packageRegistry()),
+            abi.encodeCall(IPackageRegistry.claimContent, (item.contentHash, itemHash))
+        );
+        _call(stream, abi.encodeCall(IStreamCore.linkEdition, (workId, workId)));
+        (address linked, uint256 linkedId) = abi.decode(
+            _read(stream, abi.encodeCall(IStreamCore.editionOf, (workId))), (address, uint256)
+        );
         if (linked != address(this) || linkedId != workId) revert LinkFailed(workId);
         return workId;
     }
@@ -246,7 +283,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     function bindWorkRecords(address target) external restricted {
         if (workRecords != address(0)) revert AlreadyBound(WORK_RECORDS);
         Dependency.check(target, type(IWorkRecords).interfaceId);
-        if (target != IStream(stream).workRecords()) revert InvalidBinding(target);
+        if (target != _address(IStreamCore.workRecords.selector)) revert InvalidBinding(target);
         workRecords = target;
         emit Bound(WORK_RECORDS, target);
     }
@@ -263,7 +300,9 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         if (admitted) {
             Dependency.check(adapter, type(ISaleAdapter).interfaceId);
             if (status == MINTER_NONE) {
-                bytes32 kind = ISaleAdapter(adapter).saleKind();
+                bytes32 kind = abi.decode(
+                    _read(adapter, abi.encodeCall(ISaleAdapter.saleKind, ())), (bytes32)
+                );
                 if (kind == 0) revert Dependency.InvalidDependency(adapter);
                 uint16 id = ++_minterCount;
                 (m.id, m.kindKey) = (id, _kindKey(kind));
@@ -295,14 +334,17 @@ contract Editions is IEditions, ERC1155, AccessManaged {
 
     /// @inheritdoc IEditions
     /// @dev The receiver never changes. A master without an edition, or an unchanged rate, is a
-    ///      no-op without events, so the satellite can call this for every re-rated master.
+    ///      no-op without events, so the satellite can call this for every re-rated master. A
+    ///      higher rate is refused here too (ADR 0006: the edition starts at its master's rate
+    ///      and both only fall), so the rate never rises whatever the satellite sends.
     function setRoyaltyRate(uint256 editionId, uint32 rate) external {
         if (msg.sender != workRecords) revert UnboundCaller(msg.sender);
-        if (rate > Splits.DENOMINATOR) revert InvalidRoyaltyRate(rate);
         if (!exists(editionId)) return;
         Record storage r = _records[editionId];
-        if (r.royaltyRate == rate) return;
-        emit RoyaltyRateChanged(editionId, r.royaltyRate, rate);
+        uint32 previous = r.royaltyRate;
+        if (rate > previous) revert InvalidRoyaltyRate(rate);
+        if (rate == previous) return;
+        emit RoyaltyRateChanged(editionId, previous, rate);
         emit MetadataUpdate(editionId);
         r.royaltyRate = rate;
     }
@@ -319,6 +361,8 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         e.feeShare = r.feeShare;
         e.royaltyReceiver = r.royaltyReceiver;
         e.royaltyRate = r.royaltyRate;
+        e.maxSupply = r.limit;
+        e.supplySealed = r.supplySealed;
     }
 
     /// @inheritdoc IEditions
@@ -361,47 +405,81 @@ contract Editions is IEditions, ERC1155, AccessManaged {
             _bind(r, editionId, m, _saleKind(r));
             return _locked(r);
         }
-        (bytes32 itemHash,,, uint8 kind,,) = IStream(stream).coreOf(editionId);
-        if (kind != uint8(ItemKind.EDITION_MASTER) || WorksHashing.itemHashCalldata(item) != itemHash) {
+        (bytes32 itemHash,,, uint8 kind,,) = _coreOf(editionId);
+        if (
+            kind != uint8(ItemKind.EDITION_MASTER)
+                || WorksHashing.itemHashCalldata(item) != itemHash
+        ) {
             revert NotEditionMaster(editionId);
         }
         bool unbound = r.minterId == 0;
         _bind(r, editionId, m, item.edition.saleKind);
         if (!unbound) return _locked(r);
-        terms = economics().newWorkTerms(PRODUCT_EDITIONS, item.payees);
+        terms = _newWorkTerms(item);
         _lockTerms(r, terms);
         // The edition's rate is the master's, written by `createEdition`.
         terms.royaltyRate = 0;
     }
 
     /// @inheritdoc IMintTarget
-    /// @dev `data` must be empty. The caller must report the edition's sale kind and be the
-    ///      edition's bound adapter; an unbound edition is bound to its first minter, which must
-    ///      be admitted (`EditionMinterBound`). A bound adapter mints even after its removal, so
-    ///      the winners of a sale it settled always claim; the cap still bounds it. Any other
-    ///      caller ever admitted is refused with `MinterMismatch`, and one never admitted with
-    ///      `NotAdmittedMinter`. The count is the sale's to decide; this contract enforces
-    ///      only the creator's cap. `terms` carries only the sale kind: an adapter locks the full
-    ///      terms when its sale opens and never reads them from a mint, so a mint skips the
-    ///      artist-registry call (QUALITY-2). Effects precede the ERC-1155 acceptance call, so a
-    ///      reentering receiver sees the updated supply.
+    /// @dev `data` must be exactly `abi.encode(address currency, uint256 unitPrice)`: what the
+    ///      buyer paid per copy, which `EditionPrimaryMint` logs (a giveaway reports zero). The
+    ///      currency must be the edition's terms' own (`CurrencyMismatch`) unless they name
+    ///      `CURRENCY_DEFAULT`, which the adapter resolved when its sale opened; the price is the
+    ///      adapter's report, which this contract cannot check. The caller must report the
+    ///      edition's sale kind and be the edition's bound adapter; an unbound edition is bound to
+    ///      its first minter, which must be admitted (`EditionMinterBound`). Any other caller ever
+    ///      admitted is refused with `MinterMismatch`, and one never admitted with
+    ///      `NotAdmittedMinter`. A bound adapter that governance removed mints only once it has
+    ///      sealed the edition (`sealSupply`), so the winners of its sale always claim and it
+    ///      can mint nothing else (`NotAdmittedMinter` before the seal). The count is the sale's
+    ///      to decide; this contract enforces the maximum: the creator's cap, then the count
+    ///      sealed (`EditionUnavailable`). `terms` carries only the sale kind: an adapter locks
+    ///      the full terms when its sale opens and never reads them from a mint, so a mint skips
+    ///      the artist-registry call (QUALITY-2). Effects and the log precede the ERC-1155
+    ///      acceptance call, so a reentering receiver sees the updated supply; a receiver that
+    ///      refuses or burns its gas fails only its own mint.
     function mint(address to, uint256 id, uint256 amount, bytes calldata data)
         external
         returns (uint256 tokenId, PrimaryTerms memory terms)
     {
         Minter memory m = _minters[msg.sender];
         if (m.status == MINTER_NONE) revert NotAdmittedMinter(msg.sender);
-        if (amount == 0 || data.length != 0) revert InvalidMintRequest();
+        if (amount == 0 || data.length != 64) revert InvalidMintRequest();
+        (address currency, uint256 unitPrice) = abi.decode(data, (address, uint256));
         Record storage r = _edition(id);
         bytes32 kind = _bind(r, id, m, _saleKind(r));
-        uint256 cap = r.maxCount == 0 ? UNCAPPED : r.maxCount;
-        if (amount > cap - r.minted) revert EditionUnavailable(id);
-        // casting to 'uint48' is safe because amount <= cap - minted <= type(uint48).max - minted
+        if (m.status == MINTER_REMOVED && !r.supplySealed) revert NotAdmittedMinter(msg.sender);
+        address fixedCurrency = r.currency;
+        if (fixedCurrency != CURRENCY_DEFAULT && currency != fixedCurrency) {
+            revert CurrencyMismatch(fixedCurrency, currency);
+        }
+        if (amount > r.limit - r.minted) revert EditionUnavailable(id);
+        // Safe: amount <= limit - minted, and limit < 2^40.
         // forge-lint: disable-next-line(unsafe-typecast)
-        r.minted += uint48(amount);
+        r.minted += uint40(amount);
         terms.saleKind = kind;
+        emit EditionPrimaryMint(id, to, amount, currency, unitPrice);
         _mint(to, id, amount, "");
         return (id, terms);
+    }
+
+    /// @inheritdoc IEditions
+    /// @dev Writes the seller's word (`limit`) and the artist's word (`supplySealed`); no new
+    ///      slot once the edition exists. Reads no clock and calls nothing.
+    function sealSupply(uint256 editionId, uint256 count) external {
+        Minter memory m = _minters[msg.sender];
+        if (m.status == MINTER_NONE) revert NotAdmittedMinter(msg.sender);
+        Record storage r = _records[editionId];
+        uint16 bound = r.minterId;
+        if (bound != m.id) revert MinterMismatch(editionId, _minterAddresses[bound]);
+        if (r.supplySealed) revert EditionSealed(editionId);
+        if (count < r.minted || count > r.limit) revert InvalidSealCount(editionId, count);
+        // Safe: count <= limit < 2^40.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        r.limit = uint40(count);
+        r.supplySealed = true;
+        emit EditionSupplySealed(editionId, count);
     }
 
     /// @inheritdoc IMintTarget
@@ -425,10 +503,11 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     }
 
     /// @inheritdoc IMintTarget
-    /// @dev Every edition copy is sold at mint, so there is nothing to settle: a no-op returning
-    ///      nothing that any adapter ever admitted (the minting adapter included, even after
-    ///      removal) may call, so a generic adapter never fails here; anyone else is refused with
-    ///      `NotAdmittedMinter`.
+    /// @dev Every edition copy is sold at mint, so there is nothing to settle per token: a no-op
+    ///      returning nothing that any adapter ever admitted (the minting adapter included, even
+    ///      after removal) may call, so a generic adapter never fails here; anyone else is
+    ///      refused with `NotAdmittedMinter`. A sale's end is reported by `sealSupply`, which
+    ///      carries the count sold.
     function settlePrimary(uint256, PrimaryOutcome, address, address, uint256)
         external
         view
@@ -455,17 +534,26 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     /// @inheritdoc IEditions
     function licenseOf(uint256 editionId) external view returns (License memory) {
         _edition(editionId);
-        return IWorkRecords(workRecords).licenseOf(editionId);
+        return abi.decode(
+            _read(workRecords, abi.encodeCall(IWorkRecords.licenseOf, (editionId))), (License)
+        );
     }
 
     /// @notice The edition's metadata, built by its master's renderer from the master's record
     ///         and content-store bytes. Reverts with `UnknownEdition`.
+    /// @dev Both calls forward all gas. The renderer is 6529 Stream's answer
+    ///      (`IStreamCore.rendererOf`), which fails closed: a shortfall there or here reverts
+    ///      (`BoundedCallShortfall`), never falling back to another renderer.
     /// @param id The edition ID.
     /// @return The renderer's compact metadata URI (`IRenderer.tokenURI`) for this contract and
     ///        `id`.
     function uri(uint256 id) public view override returns (string memory) {
         _edition(id);
-        return IRenderer(IStream(stream).rendererOf(id)).tokenURI(address(this), id);
+        address renderer =
+            abi.decode(_read(stream, abi.encodeCall(IStreamCore.rendererOf, (id))), (address));
+        return abi.decode(
+            _read(renderer, abi.encodeCall(IRenderer.tokenURI, (address(this), id))), (string)
+        );
     }
 
     /// @inheritdoc IERC165
@@ -526,16 +614,105 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     ) private view returns (bytes32 itemHash, Master memory master) {
         if (workRecords == address(0)) revert WorkRecordsUnbound();
         if (exists(workId)) revert EditionExists(workId);
-        (master.itemHash, master.artistId,,,, master.royaltyRate) = IStream(stream).coreOf(workId);
+        (master.itemHash, master.artistId,,,, master.royaltyRate) = _coreOf(workId);
         itemHash = WorksHashing.itemHashCalldata(item);
         if (
-            !IStream(stream).primarySaleSettled(workId) || item.kind != ItemKind.EDITION_MASTER
-                || itemHash != master.itemHash || item.contentHash == 0
-                || proof.length > Limits.MAX_PROOF_DEPTH
+            !abi.decode(
+                    _read(stream, abi.encodeCall(IStreamCore.primarySaleSettled, (workId))), (bool)
+                ) || item.kind != ItemKind.EDITION_MASTER || itemHash != master.itemHash
+                || item.contentHash == 0 || proof.length > Limits.MAX_PROOF_DEPTH
                 || !MerkleProof.verifyCalldata(proof, packageRoot, WorksHashing.leaf(itemHash))
         ) revert NotEditionMaster(workId);
-        (, bytes32 evidenceHash,) = packageRegistry().packageOf(packageRoot);
+        (, bytes32 evidenceHash,) = abi.decode(
+            _read(
+                address(packageRegistry()),
+                abi.encodeCall(IPackageRegistry.packageOf, (packageRoot))
+            ),
+            (uint8, bytes32, address)
+        );
         if (evidenceHash == 0) revert NotEditionMaster(workId);
+    }
+
+    /// @dev 6529 Stream's `coreOf(workId)`.
+    function _coreOf(uint256 workId)
+        private
+        view
+        returns (bytes32, uint256, uint256, uint8, uint8, uint32)
+    {
+        return abi.decode(
+            _read(stream, abi.encodeCall(IStreamCore.coreOf, (workId))),
+            (bytes32, uint256, uint256, uint8, uint8, uint32)
+        );
+    }
+
+    /// @dev The economics resolver's `PRODUCT_EDITIONS` terms for the item's payees.
+    function _newWorkTerms(PackageItem calldata item) private view returns (WorkTerms memory) {
+        return abi.decode(
+            _read(
+                address(economics()),
+                abi.encodeCall(IEconomicsResolver.newWorkTerms, (PRODUCT_EDITIONS, item.payees))
+            ),
+            (WorkTerms)
+        );
+    }
+
+    /// @dev An address getter of 6529 Stream.
+    function _address(bytes4 selector) private view returns (address) {
+        return abi.decode(_read(stream, abi.encodeWithSelector(selector)), (address));
+    }
+
+    /// @dev A STATICCALL forwarding all the gas EIP-150 allows (`BoundedCall.tryReadAll`): a
+    ///      shortfall reverts with `BoundedCallShortfall`, a refusal with the callee's reason.
+    function _read(address target, bytes memory input) private view returns (bytes memory answer) {
+        bool ok;
+        (ok, answer) = BoundedCall.tryReadAll(target, input, type(uint256).max);
+        if (!ok) _refused(target, answer);
+    }
+
+    /// @dev A CALL forwarding all the gas EIP-150 allows (`BoundedCall.tryCallAll`), as `_read`.
+    function _call(address target, bytes memory input) private {
+        (bool ok, bytes memory answer) = BoundedCall.tryCallAll(target, 0, input, type(uint256).max);
+        if (!ok) _refused(target, answer);
+    }
+
+    /// @dev Reverts with a refused call's reason, or `BoundedCallFailed` when it gave none.
+    function _refused(address target, bytes memory reason) private pure {
+        if (reason.length == 0) revert BoundedCall.BoundedCallFailed(target);
+        assembly ("memory-safe") {
+            revert(add(reason, 0x20), mload(reason))
+        }
+    }
+
+    /// @dev OpenZeppelin's acceptance check, with the receiver hook called through
+    ///      `BoundedCall.tryCallAll`: all gas forwarded, a shortfall reverts with
+    ///      `BoundedCallShortfall` (never read as a refusal), a refusal with its reason when it
+    ///      fits a word or else `ERC1155InvalidReceiver`, and acceptance means exactly the
+    ///      selector's 32-byte word. Only the transfer's own transaction fails: a recipient that
+    ///      refuses or burns its gas blocks its own mint or transfer, never another winner's
+    ///      claim or a seal.
+    function _updateWithAcceptanceCheck(
+        address from,
+        address to,
+        uint256[] memory ids,
+        uint256[] memory values,
+        bytes memory data,
+        bool batch
+    ) internal override {
+        _update(from, to, ids, values);
+        if (to.code.length == 0) return;
+        bytes4 selector = batch
+            ? IERC1155Receiver.onERC1155BatchReceived.selector
+            : IERC1155Receiver.onERC1155Received.selector;
+        bytes memory input = batch
+            ? abi.encodeWithSelector(selector, msg.sender, from, ids, values, data)
+            : abi.encodeWithSelector(selector, msg.sender, from, ids[0], values[0], data);
+        (bool ok, bytes memory answer) = BoundedCall.tryCallAll(to, 0, input, 32);
+        if (!ok && answer.length != 0) _refused(to, answer);
+        // Safe: the cast reads one word, and the length check before it requires exactly one.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        if (!ok || answer.length != 32 || bytes32(answer) != bytes32(selector)) {
+            revert ERC1155InvalidReceiver(to);
+        }
     }
 
     /// @dev Writes the economics an edition locks: its seller, network fee and royalty receiver
@@ -599,7 +776,12 @@ contract Editions is IEditions, ERC1155, AccessManaged {
             seller: r.seller,
             feeRecipient: r.feeRecipient,
             feeShare: r.feeShare,
-            creator: artistRegistry().activeAuthorityOf(r.artistId)
+            creator: abi.decode(
+                _read(
+                    _artistRegistry, abi.encodeCall(IArtistRegistry.activeAuthorityOf, (r.artistId))
+                ),
+                (address)
+            )
         });
     }
 
