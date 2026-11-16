@@ -11,7 +11,7 @@ import { IStreamViews } from "./IStreamViews.sol";
 ///         `collection` and `totalSupply`, reading Stream through `IStream.extsload` and its
 ///         native views with the caller (`msg.sender`, the Stream that forwarded) as the token,
 ///         and judges collection names for `createCollection`. Replaceable by governance
-///         (`IStream.setDependency("EXTENSION")`, the 30-day class). No contract may rely on an
+///         (`IStream.setDependency("EXTENSION")`, the 7-day class). No contract may rely on an
 ///         answer it serves for authorization, and nothing permanent or pinned may read it.
 /// @dev Flat: the views are declared again here, so this interface's ERC-165 id covers them and
 ///      the collection-name rule together, and `setDependency`'s one check of it makes Stream's

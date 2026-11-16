@@ -144,7 +144,7 @@ library GovernanceConfig {
 
     /// @notice The ERC-165 interface a target must declare to receive genesis call `selector`,
     ///         so a selector admitted for one contract never reaches another contract's function
-    ///         of the same selector (the artist registry's `setFederationRegistry`, a 30-day
+    ///         of the same selector (the artist registry's `setFederationRegistry`, a 7-day
     ///         replacement, shares the sale adapters' selector). `ANY_TARGET` for a one-shot bind
     ///         (each runs once wherever it is declared) and for selectors only one v1 contract
     ///         declares (the asset allowlist's and the statement log's, which implement no

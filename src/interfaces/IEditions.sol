@@ -19,7 +19,7 @@ import { EditionTerms, License, PackageItem } from "./types/PackageTypes.sol";
 ///      carries its master's license: `uri(id)` is served by the master's renderer
 ///      (`IStream.rendererOf(id)`). Copies are minted only by an admitted sale adapter whose
 ///      `saleKind()` equals the edition's terms, within the creator's cap
-///      (`EditionTerms.maxCount`): any adapter governance admits (`setAdmittedMinter`, 30-day
+///      (`EditionTerms.maxCount`): any adapter governance admits (`setAdmittedMinter`, 7-day
 ///      class), so a sale method is added by deploying and admitting an adapter, never by
 ///      redeploying this contract (ADR 0005, owner decision 14); in rc.2, the uniform-price
 ///      edition auction, whose clearing decides how many copies exist. An edition is bound to

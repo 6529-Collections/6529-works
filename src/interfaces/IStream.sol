@@ -17,7 +17,7 @@ import { PrimaryOutcome, PrimarySettlement, PrimaryTerms } from "./types/SaleTyp
 ///      artist signed "move to Stream", by an admitted sale adapter whose sale kind, recorded at
 ///      its first admission, is the item's sale kind. The 1/1 sale method is pluggable (ADR 0005, owner decisions 14 and 15):
 ///      the English auction (`SaleKind.ENGLISH_AUCTION`) is admitted at genesis, and a later
-///      method is an adapter governance admits (`setAdmittedMinter`, the 30-day class), with no
+///      method is an adapter governance admits (`setAdmittedMinter`, the 7-day class), with no
 ///      new Stream. A VRF item's seed must already be delivered (`IEntropyModule.requestSeed`
 ///      runs before the start).
 ///
@@ -333,7 +333,7 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     ///         `"PACKAGE_REGISTRY"` (the mint policy, which must use Stream's artist registry),
     ///         `"ECONOMICS"`, `"ENTROPY_MODULE"` or `"EXTENSION"` (the read-only view extension
     ///         Stream's fallback STATICCALLs). The artist registry is permanent. SUCCESSOR_SETTER role
-    ///         (the 30-day class), compare-and-set. The replacement must have code, no EIP-7702
+    ///         (the 7-day class), compare-and-set. The replacement must have code, no EIP-7702
     ///         delegation and ERC-165 support for its interface; it is never zero. If it answers
     ///         `authority()` with one word, that must be Stream's own AccessManager
     ///         (`InvalidBinding` otherwise). Stream's own
@@ -423,7 +423,7 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @notice After an upheld-dispute burn, releases the burned work's content to the rightful
     ///         artist `beneficiary` the dispute outcome names: the content then mints again only
     ///         for that artist's items, never by the burned item (tombstoned). Stream holds the
-    ///         record; the mint policy plays no part. PARAMETER_SETTER role (48 hours); reverts
+    ///         record; the mint policy plays no part. PARAMETER_SETTER role (24 hours); reverts
     ///         with `NotBurned` for a live or unminted token, `ClaimNotAllowed` for another
     ///         content or a second release of the same burn, `IArtistRegistry.UnknownArtist` for
     ///         an unregistered beneficiary. A content released, minted again and burned again

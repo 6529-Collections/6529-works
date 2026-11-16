@@ -10,7 +10,7 @@ pragma solidity ^0.8.24;
 ///      adapter claims a fresh label, `keccak256("<NAME>")`, and reports it from
 ///      `ISaleAdapter.saleKind()`; packages approved afterwards name it in their terms; and
 ///      governance admits the adapter on each token it may mint (`IMintTarget.setAdmittedMinter`,
-///      30-day class). A token mints only for an admitted adapter whose kind equals the terms'
+///      7-day class). A token mints only for an admitted adapter whose kind equals the terms'
 ///      kind, so no label is reserved to one adapter forever and no token hard-wires one minter.
 ///      Labels are never reused for a different method. FIXED_PRICE and DUTCH name rc.1's
 ///      adapters, which ADR 0005 removes; FIXED_PRICE stays reserved for a restored fixed-price

@@ -46,7 +46,7 @@ import { IVRFV2PlusWrapper } from "./IVRFV2PlusWrapper.sol";
 ///      `NotRequestable(itemHash)`. This keeps {requestSeed} open to anyone (the
 ///      artist, a relayer, a bot) with no privileged step, while the total possible spend is one
 ///      draw per approved VRF content, plus the repeats the backoff below allows for each one
-///      whose draw never arrived. A guardian's `revokePackage` stops further requests at once.
+///      whose draw never arrived. The network's `revokePackage` stops further requests at once.
 ///      The gate is checked on every call, repeats included. Its one exception requests nothing:
 ///      the item that consumed a content whose seed is delivered may still link to that seed.
 ///
@@ -78,11 +78,11 @@ import { IVRFV2PlusWrapper } from "./IVRFV2PlusWrapper.sol";
 ///
 ///      Trust. The coordinator can only deliver the seed of a content it was asked for, and the
 ///      first delivery is final: a delivered seed never changes. Governance chooses the
-///      coordinator ({setCoordinator}, 30-day class, compare-and-set, code hash pinned and
+///      coordinator ({setCoordinator}, 7-day class, compare-and-set, code hash pinned and
 ///      checked again at every request and delivery, so code that replaced the reviewed code at
-///      the pinned address is refused) and the request parameters ({setConfig}, 48-hour class,
+///      the pinned address is refused) and the request parameters ({setConfig}, 24-hour class,
 ///      compare-and-set, with a raise-only callback gas limit; {lowerCallbackGasLimit} lowers it
-///      in the 30-day class). Request IDs are scoped to their coordinator, so a coordinator swap
+///      in the 7-day class). Request IDs are scoped to their coordinator, so a coordinator swap
 ///      orphans in-flight requests of the old one; each content may be requested again at once
 ///      from the new one, its repeat count restarting.
 ///
@@ -361,7 +361,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         emit SeedDelivered(contentHash, requestId, word);
     }
 
-    /// @notice Sets the request parameters. Governed (map to the 48-hour `PARAMETER_SETTER`
+    /// @notice Sets the request parameters. Governed (map to the 24-hour `PARAMETER_SETTER`
     ///         class), non-payable, compare-and-set: `expected` must equal the current value.
     /// @dev The callback gas limit may only be raised (`BoundedParameter.raise`: at most doubled
     ///      per step, never above `MAX_CALLBACK_GAS`) or left as it is, so a hostile or mistaken
@@ -387,14 +387,14 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     }
 
     /// @notice Lowers the callback gas limit, never below `MIN_CALLBACK_GAS`. Governed (map to
-    ///         the 30-day `SUCCESSOR_SETTER` class), non-payable, compare-and-set: `expected` must
+    ///         the 7-day `SUCCESSOR_SETTER` class), non-payable, compare-and-set: `expected` must
     ///         equal the current limit.
     /// @dev The coordinator refuses a request whose limit exceeds its own maximum, and Chainlink
-    ///      may lower that maximum. {setConfig} only raises the limit, so that a 48-hour setter
+    ///      may lower that maximum. {setConfig} only raises the limit, so that a 24-hour setter
     ///      cannot starve the callback; this slower path lets the module follow the coordinator
     ///      down (6529 Stream pins the module, so a limit stuck above the maximum would end VRF
-    ///      works for the deployment), while the floor and the guardians' 30-day veto still
-    ///      protect the callback.
+    ///      works for the deployment), while the floor and the 7-day delay, public while it
+    ///      runs, still protect the callback.
     /// @param expected The current callback gas limit.
     /// @param next The new, lower limit.
     function lowerCallbackGasLimit(uint32 expected, uint32 next) external restricted {

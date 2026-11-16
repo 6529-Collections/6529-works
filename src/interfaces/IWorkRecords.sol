@@ -408,8 +408,8 @@ interface IWorkRecords {
     /// @notice The current delivery contract (locators, kinds and preferences).
     /// @return The delivery contract.
     function delivery() external view returns (address);
-    /// @notice Replaces the delivery contract, compare-and-set. SUCCESSOR_SETTER role (the slow
-    ///         class; any guardian may cancel). `next` must declare `IWorkDelivery` by ERC-165,
+    /// @notice Replaces the delivery contract, compare-and-set. SUCCESSOR_SETTER role (the network
+    ///         at 7 days). `next` must declare `IWorkDelivery` by ERC-165,
     ///         serve this contract (`records()`) and name the current contract as its
     ///         `predecessor()`, whose locators it is obliged to keep serving (`IWorkDelivery`).
     ///         Refreshes every token's metadata.

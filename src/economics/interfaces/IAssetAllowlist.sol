@@ -68,7 +68,7 @@ interface IAssetAllowlist {
     ///         G-2 in the rc.2 review).
     error EthNotDeprecable();
     /// @notice A deprecated `asset` may be re-admitted only from `allowedAt`, one
-    ///         `Roles.FUNDS` delay after its deprecation.
+    ///         `Roles.DELAY_3D` (3 days) after its deprecation.
     error ReadmissionTooEarly(address asset, uint256 allowedAt);
     /// @notice An increment floor must be non-zero.
     error InvalidIncrementFloor();
@@ -159,7 +159,7 @@ interface IAssetAllowlist {
 
     /// @notice Admits `asset`, or re-admits a deprecated one, with increment floor `floor`, if the
     ///         asset is at `expectedRevision` (0 for a never-admitted asset). Re-admission is the
-    ///         only way back from deprecation, and is refused until one `Roles.FUNDS` delay after it
+    ///         only way back from deprecation, and is refused until `Roles.DELAY_3D` (3 days) after it
     ///         (`ReadmissionTooEarly`), even when scheduled before the deprecation.
     /// @param asset The asset to admit: ETH (`address(0)`) or a token contract that passes the
     ///        {AssetNotAdmissible} checks; must not be active already.

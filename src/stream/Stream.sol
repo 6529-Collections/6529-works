@@ -63,7 +63,7 @@ import { StreamViews } from "./StreamViews.sol";
 ///
 ///      Trust: the artist registry and the split factory are fixed at deployment. The mint
 ///      policy, the economics resolver, the entropy module and the view extension are
-///      replaceable one by one by governance (`setDependency`, the 30-day class); a replacement
+///      replaceable one by one by governance (`setDependency`, the 7-day class); a replacement
 ///      changes nothing about an existing work (its terms, its seed's module, its renderer pin).
 ///      The records satellite and 6529 Stream Editions are bound once each. No delegatecall.
 contract Stream is ERC721, AccessManaged, IStream {
@@ -346,7 +346,7 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IStream
-    /// @dev PARAMETER_SETTER role, 48 hours: the upheld-dispute class of the auction's `cancel`.
+    /// @dev PARAMETER_SETTER role, the network at 24 hours, after the auction's `cancel`.
     ///      Only a burned token's own content (`ClaimNotAllowed` otherwise, also once released),
     ///      and only for a registered artist (`IArtistRegistry.UnknownArtist`: the artist
     ///      registry's `authorityOf` reverts so for zero or an unknown ID). The content is then
@@ -396,7 +396,7 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IMintTarget
-    /// @dev SUCCESSOR_SETTER role (the 30-day class). Admission checks code, ERC-165 for
+    /// @dev SUCCESSOR_SETTER role (the 7-day class). Admission checks code, ERC-165 for
     ///      `ISaleAdapter`, no EIP-7702 delegation and a nonzero sale kind, which the first
     ///      admission records with the adapter's index. Removal stops new mints only: the adapter
     ///      keeps its index, so it can still settle and cancel the sales it started. Only real
@@ -425,7 +425,7 @@ contract Stream is ERC721, AccessManaged, IStream {
     ///      to the museum the economics resolver names now, with no receiver callback. That read
     ///      is the one dependence of a settlement on replaceable code (L-5, governance trust): a
     ///      resolver that reverts or names zero blocks unsold settlements and rescues, never a
-    ///      SOLD one, until governance repairs it (the 30-day class); the work waits in the
+    ///      SOLD one, until governance repairs it (the 7-day class); the work waits in the
     ///      adapter's custody, and no money waits on it (an unbid sale holds no bid, and a
     ///      frozen-out bidder may withdraw). A native fallback would add a custody state for a
     ///      fault the same governance must repair anyway, so there is none.
@@ -676,7 +676,7 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IStream
-    /// @dev Bounded by the number of entropy replacements, each a 30-day governance action.
+    /// @dev Bounded by the number of entropy replacements, each a 7-day governance action.
     function entropyModuleOf(uint256 tokenId) external view returns (address) {
         uint256 eras = _entropyEras.length;
         for (uint256 i; i < eras; ++i) {
@@ -687,7 +687,7 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IStream
-    /// @dev SUCCESSOR_SETTER role (the 30-day class). The entropy module may be installed on a
+    /// @dev SUCCESSOR_SETTER role (the 7-day class). The entropy module may be installed on a
     ///      Stream deployed without one, but never removed; replacing it records the module it
     ///      replaces with the last token ID minted so far (`entropyModuleOf`). A replacement
     ///      policy must resolve parties through Stream's own artist registry, and a replacement

@@ -55,7 +55,7 @@ import { EditionRules } from "./EditionRules.sol";
 ///      afterwards. Nothing ever changes or removes a link.
 ///
 ///      Copies are minted only by admitted adapters (`isAdmittedMinter`, written by a governed
-///      setter in the 30-day class) whose sale kind (`ISaleAdapter.saleKind`) is the edition's
+///      setter in the 7-day class) whose sale kind (`ISaleAdapter.saleKind`) is the edition's
 ///      own, from its approved terms. Minting is generic (ADR 0005, owner decision 14): rc.2
 ///      sells editions by the uniform-price edition auction (`SaleKind.UNIFORM_AUCTION`), and a
 ///      later sale method (a fixed-price adapter, say) is a new adapter governance admits,

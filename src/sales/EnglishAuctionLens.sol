@@ -261,7 +261,7 @@ contract EnglishAuctionLens {
 
     /// @notice The recipient the sale's delivery is pending for
     ///         (`IEnglishAuction.pendingDelivery`): it may claim the token to itself (to any
-    ///         address from 30 days after the end), and the winning bidder to any address.
+    ///         address from 14 days after the end), and the winning bidder to any address.
     ///         A pending delivery with neither a stored recipient nor a bidder (a federated sale
     ///         closed as refused, whose standing bid was credited back) is the no-bid path: the
     ///         token's current creator may claim it, as `claimDelivery` checks, so that creator

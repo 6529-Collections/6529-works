@@ -144,7 +144,7 @@ interface IEntropyModule is IERC165 {
     /// @return The coordinator's address, the only account that may deliver seeds.
     function coordinator() external view returns (address);
     /// @notice Sets the VRF coordinator (Chainlink migrations): code hash `nextCodeHash`, not an
-    ///         EIP-7702 delegated account. SUCCESSOR_SETTER role (30-day class), compare-and-set.
+    ///         EIP-7702 delegated account. SUCCESSOR_SETTER role (7-day class), compare-and-set.
     /// @param expected The current coordinator; any other value reverts with
     ///        `ExpectedValueMismatch`.
     /// @param next The new coordinator, which must differ from the current one.
