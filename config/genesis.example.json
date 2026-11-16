@@ -1,13 +1,12 @@
 {
-  "network": "0x000000000000000000000000000000000000b001",
   "schema": "6529-works/governance-genesis/1",
-  "description": "Example genesis configuration for the 6529 Works WorksAccessManager. Every address is a placeholder.",
+  "description": "Example genesis configuration for the 6529 Works WorksAccessManager. One network address holds every network role at its fixed class delay (until the TDH bridge exists, one 6529 Safe); operational keys are the only holders; no brake is installed at launch. Every address is a placeholder.",
   "sources": [
-    "docs/adr/0002-access-manager-hardening.md (decision 7: selector classes)",
-    "docs/adr/0003-build-time-decisions.md (build-time role and class decisions)",
-    "docs/architecture.md (governance map)",
-    "src/interfaces/ and the implementations on main (selectors); src/governance/Roles.sol (role IDs and delays)"
+    "docs/spec/governance.md (the single authority, the classes and the brake)",
+    "src/governance/Roles.sol (role IDs and delays)",
+    "src/interfaces/ and the implementations (selectors)"
   ],
+  "network": "0x000000000000000000000000000000000000b001",
   "roles": [
     {
       "name": "ADMIN",
@@ -110,17 +109,17 @@
     {
       "role": "PAUSER",
       "account": "0x000000000000000000000000000000000000b011",
-      "label": "Guardian Safe 1"
+      "label": "Pauser key 1"
     },
     {
       "role": "PAUSER",
       "account": "0x000000000000000000000000000000000000b012",
-      "label": "Guardian Safe 2"
+      "label": "Pauser key 2"
     },
     {
       "role": "PAUSER",
       "account": "0x000000000000000000000000000000000000b013",
-      "label": "Guardian Safe 3"
+      "label": "Pauser key 3"
     },
     {
       "role": "CURATION_SIGNER",
@@ -164,140 +163,57 @@
     "name": "WorksAccessManager",
     "artifact": "src/governance/WorksAccessManager.sol:WorksAccessManager",
     "base": "lib/openzeppelin-contracts/contracts/access/manager/AccessManager.sol:AccessManager",
-    "note": "Never a configured target. Its functions beyond the OpenZeppelin base check the caller's role themselves; tools/check_genesis.py requires every one to be listed here.",
+    "note": "Never a configured target. Its functions beyond the OpenZeppelin base check the caller themselves; tools/check_genesis.py requires every one to be listed here.",
     "functions": [
       {
-        "signature": "suspend(uint64,address)",
-        "selector": "0x64bf6e5d",
-        "role": "GUARDIAN",
-        "class": "immediate",
-        "delay": 0,
-        "note": "One-way suspension of a holder of a suspendable role (roles[].suspendable); an ADMIN grantRole or revokeRole of that role to that account (30 days) clears it"
-      },
-      {
-        "signature": "setParameter(uint8,uint32,uint32)",
-        "selector": "0x5c2b54bd",
+        "signature": "transferNetwork(address)",
+        "selector": "0x33c95bb5",
         "role": "ADMIN",
-        "class": "successor",
-        "delay": 2592000,
-        "note": "Slow lane: scheduled at least SLOW_DELAY (default 60 days) ahead, ADMIN's 30 days included; compare-and-set within compiled bounds (GV-41)"
+        "class": "7d",
+        "delay": 604800,
+        "note": "Proposes the next network address (zero withdraws); nothing changes until it accepts"
       },
       {
-        "signature": "setRecoveryAddress(address,address)",
-        "selector": "0x81163a33",
+        "signature": "setBrake(address)",
+        "selector": "0x8917bd43",
         "role": "ADMIN",
-        "class": "successor",
-        "delay": 2592000,
-        "note": "Slow lane: scheduled at least SLOW_DELAY (default 60 days) ahead, ADMIN's 30 days included; compare-and-set (GV-42)"
-      },
-      {
-        "signature": "registerSuccessor(address)",
-        "selector": "0xa488b91d",
-        "role": "ADMIN",
-        "class": "successor",
-        "delay": 2592000,
-        "note": "Slow lane: scheduled at least SLOW_DELAY (default 60 days) ahead, ADMIN's 30 days included; ESCALATED_DELAY (default 120 days) and a guardian majority after a guardian's cancellation (GV-37, GV-43). Only proposes (zero withdraws); nothing is handed over until the successor accepts"
-      },
-      {
-        "signature": "approveRecovery(address)",
-        "selector": "0xcbc3b3c2",
-        "role": "GUARDIAN",
-        "class": "immediate",
-        "delay": 0,
-        "note": "Vote approving a live recovery of an unregistered candidate (GV-42)"
-      },
-      {
-        "signature": "objectToRecovery(address)",
-        "selector": "0x1886f8bc",
-        "role": "GUARDIAN",
-        "class": "immediate",
-        "delay": 0,
-        "note": "Vote objecting to a live recovery of the recovery address (GV-42)"
+        "class": "7d",
+        "delay": 604800,
+        "note": "Sets or removes (zero) the brake; none is installed at launch"
       }
     ],
     "open": [
       {
-        "signature": "heartbeat()",
-        "selector": "0x3defb962",
-        "note": "Any active ADMIN holder, at once: resets the inactivity clock (GV-42)"
+        "signature": "acceptNetwork()",
+        "selector": "0xa503fb3e",
+        "note": "Only the pending network: completes a handover; the old address then holds nothing"
       },
       {
-        "signature": "openRecovery(address)",
-        "selector": "0x24d48fe5",
-        "note": "Anyone, after RECOVERY_SILENCE without admin activity (GV-42)"
-      },
-      {
-        "signature": "completeRecovery(address)",
-        "selector": "0xf480dd7e",
-        "note": "Anyone, after RECOVERY_DELAY, if the guardian decision allows it (GV-42)"
-      },
-      {
-        "signature": "acceptSuccession()",
-        "selector": "0x922fbae1",
-        "note": "Only the pending successor itself, once it has re-pointed successionProbe() to the manager: completes the handover (GV-43)"
-      },
-      {
-        "signature": "migrate(uint256,uint256)",
-        "selector": "0x3e54bacb",
-        "note": "Anyone, once a successor has accepted (GV-45)"
+        "signature": "brakeOnce(bytes32)",
+        "selector": "0xb11f4f47",
+        "note": "Only the brake: delays one scheduled operation by 7 days, once"
       }
     ],
     "views": [
       {
-        "signature": "isSuspended(uint64,address)",
-        "selector": "0xbd2e6ac3"
+        "signature": "network()",
+        "selector": "0x6739afca",
+        "note": "The address that holds every network role"
       },
       {
-        "signature": "actionOf(address,bytes)",
-        "selector": "0x16922876"
+        "signature": "pendingNetwork()",
+        "selector": "0xedcad97f",
+        "note": "The proposed next network, until it accepts"
       },
       {
-        "signature": "getEscalation(bytes32)",
-        "selector": "0x7068639f"
+        "signature": "brake()",
+        "selector": "0x5642e2dc",
+        "note": "The brake, zero when there is none"
       },
       {
-        "signature": "getRecovery(address)",
-        "selector": "0x9769c3fe"
-      },
-      {
-        "signature": "isStruck(bytes32)",
-        "selector": "0xc7e7e16e"
-      },
-      {
-        "signature": "lastAdminActivity()",
-        "selector": "0x5811b5b1"
-      },
-      {
-        "signature": "managedTargets()",
-        "selector": "0xf4b68392"
-      },
-      {
-        "signature": "parameter(uint8)",
-        "selector": "0xedbdabac"
-      },
-      {
-        "signature": "parameterBounds(uint8)",
-        "selector": "0x5421d77f"
-      },
-      {
-        "signature": "pendingSuccessor()",
-        "selector": "0xed60ed63"
-      },
-      {
-        "signature": "recoveryAddress()",
-        "selector": "0x710eb26c"
-      },
-      {
-        "signature": "seatHolders(uint64)",
-        "selector": "0x59bd67dd"
-      },
-      {
-        "signature": "successionProbe()",
-        "selector": "0x34da8a1c"
-      },
-      {
-        "signature": "successor()",
-        "selector": "0x6ff968c3"
+        "signature": "notBefore(bytes32)",
+        "selector": "0x7afbb993",
+        "note": "When a braked operation may run, zero when it was not braked"
       }
     ]
   },
@@ -307,7 +223,7 @@
       "artifact": "src/stream/Stream.sol:Stream",
       "implementation": "src/stream/Stream.sol:Stream",
       "address": "0x000000000000000000000000000000000000a001",
-      "status": "implemented (stream lane)",
+      "status": "implemented",
       "functions": [
         {
           "signature": "createCollection(string,bytes32)",
@@ -390,7 +306,7 @@
       "artifact": "src/stream/WorkRecords.sol:WorkRecords",
       "implementation": "src/stream/WorkRecords.sol:WorkRecords",
       "address": "0x000000000000000000000000000000000000a002",
-      "status": "implemented (stream lane)",
+      "status": "implemented",
       "functions": [
         {
           "signature": "relicense(uint256,(string,bytes32),(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])",
@@ -457,7 +373,7 @@
       "artifact": "src/stream/WorkDelivery.sol:WorkDelivery",
       "implementation": "src/stream/WorkDelivery.sol:WorkDelivery",
       "address": "0x000000000000000000000000000000000000a011",
-      "status": "created by WorkRecords' constructor (records lane); replaceable through WorkRecords.setDelivery",
+      "status": "created by WorkRecords' constructor; replaceable through WorkRecords.setDelivery",
       "functions": [
         {
           "signature": "setPreferredKind(uint8)",
@@ -503,7 +419,7 @@
       "artifact": "src/editions/Editions.sol:Editions",
       "implementation": "src/editions/Editions.sol:Editions",
       "address": "0x000000000000000000000000000000000000a003",
-      "status": "implemented (editions lane); pending until it merges",
+      "status": "implemented",
       "functions": [
         {
           "signature": "setContractURI(string)",
@@ -547,7 +463,7 @@
       "artifact": "src/curation/PackageRegistry.sol:PackageRegistry",
       "implementation": "src/curation/PackageRegistry.sol:PackageRegistry",
       "address": "0x000000000000000000000000000000000000a004",
-      "status": "implemented on main",
+      "status": "implemented",
       "functions": [
         {
           "signature": "revokePackage(bytes32,bytes32)",
@@ -588,7 +504,7 @@
       "artifact": "src/curation/Eip712CurationVerifier.sol:Eip712CurationVerifier",
       "implementation": "src/curation/Eip712CurationVerifier.sol:Eip712CurationVerifier",
       "address": "0x000000000000000000000000000000000000a005",
-      "status": "implemented on main",
+      "status": "implemented",
       "functions": [
         {
           "signature": "disableSigner(address)",
@@ -613,7 +529,7 @@
       "artifact": "src/identity/ArtistRegistry.sol:ArtistRegistry",
       "implementation": "src/identity/ArtistRegistry.sol:ArtistRegistry",
       "address": "0x000000000000000000000000000000000000a006",
-      "status": "implemented on main",
+      "status": "implemented",
       "functions": [
         {
           "signature": "setConsolidationSource(address,address,bytes32)",
@@ -722,7 +638,7 @@
       "artifact": "src/records/StatementLog.sol:StatementLog",
       "implementation": "src/records/StatementLog.sol:StatementLog",
       "address": "0x000000000000000000000000000000000000a007",
-      "status": "implemented on main",
+      "status": "implemented",
       "functions": [
         {
           "signature": "appendCurator((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))",
@@ -761,7 +677,7 @@
       "artifact": "src/sales/EnglishAuction.sol:EnglishAuction",
       "implementation": "src/sales/EnglishAuction.sol:EnglishAuction",
       "address": "0x000000000000000000000000000000000000a008",
-      "status": "implemented on main",
+      "status": "implemented",
       "functions": [
         {
           "signature": "pause()",
@@ -828,7 +744,7 @@
       "artifact": "src/sales/UniformEditionAuction.sol:UniformEditionAuction",
       "implementation": "src/sales/UniformEditionAuction.sol:UniformEditionAuction",
       "address": "0x000000000000000000000000000000000000a009",
-      "status": "implemented on the edition-auction branch; lands with it",
+      "status": "implemented",
       "functions": [
         {
           "signature": "pause()",
@@ -874,7 +790,7 @@
       "artifact": "src/economics/EconomicsResolver.sol:EconomicsResolver",
       "implementation": "src/economics/EconomicsResolver.sol:EconomicsResolver",
       "address": "0x000000000000000000000000000000000000a00b",
-      "status": "implemented on main",
+      "status": "implemented",
       "functions": [
         {
           "signature": "setFeeTerms(bytes32,uint64,address,uint32)",
@@ -913,7 +829,7 @@
       "artifact": "src/economics/AssetAllowlist.sol:AssetAllowlist",
       "implementation": "src/economics/AssetAllowlist.sol:AssetAllowlist",
       "address": "0x000000000000000000000000000000000000a00c",
-      "status": "implemented on main",
+      "status": "implemented",
       "functions": [
         {
           "signature": "admitAsset(address,uint64,uint256)",
@@ -959,7 +875,7 @@
       "artifact": "src/economics/RevenueEscrow.sol:RevenueEscrow",
       "implementation": "src/economics/RevenueEscrow.sol:RevenueEscrow",
       "address": "0x000000000000000000000000000000000000a00d",
-      "status": "implemented on main",
+      "status": "implemented",
       "functions": [
         {
           "signature": "recover(address,address,address)",
@@ -984,7 +900,7 @@
       "artifact": "src/economics/GovernedVault.sol:GovernedVault",
       "implementation": "src/economics/GovernedVault.sol:GovernedVault",
       "address": "0x000000000000000000000000000000000000a013",
-      "status": "implemented on main",
+      "status": "implemented",
       "note": "The network fee recipient: a governed vault the economics resolver names; it forwards what it holds only to its destination (the deployment's NETWORK_FEE_RECIPIENT first)",
       "functions": [
         {
@@ -1003,7 +919,7 @@
       "artifact": "src/economics/GovernedVault.sol:GovernedVault",
       "implementation": "src/economics/GovernedVault.sol:GovernedVault",
       "address": "0x000000000000000000000000000000000000a014",
-      "status": "implemented on main",
+      "status": "implemented",
       "note": "The museum: a governed vault the economics resolver names; unbid and rescued works and museum payouts land here and move only to its destination (the deployment's MUSEUM first)",
       "functions": [
         {
@@ -1012,7 +928,7 @@
           "role": "SUCCESSOR_SETTER",
           "class": "7d",
           "delay": 604800,
-          "note": "30-day class, not the fee vault's 14: the museum vault holds existing works (every museum-held 1/1), so its destination is an authority over existing tokens (ADR 0007)"
+          "note": "7-day class, not the fee vault's 3 days: the museum vault holds existing works (every museum-held 1/1), so its destination is an authority over existing tokens (ADR 0007)"
         }
       ],
       "genesisOnly": [],
@@ -1023,7 +939,7 @@
       "artifact": "src/content/DependencyRegistry.sol:DependencyRegistry",
       "implementation": "src/content/DependencyRegistry.sol:DependencyRegistry",
       "address": "0x000000000000000000000000000000000000a00e",
-      "status": "implemented on main",
+      "status": "implemented",
       "functions": [
         {
           "signature": "register(bytes32,bytes32,bytes32)",
@@ -1048,7 +964,7 @@
       "artifact": "src/entropy/VrfEntropyModule.sol:VrfEntropyModule",
       "implementation": "src/entropy/VrfEntropyModule.sol:VrfEntropyModule",
       "address": "0x000000000000000000000000000000000000a00f",
-      "status": "implemented on main (optional module)",
+      "status": "implemented (optional module)",
       "functions": [
         {
           "signature": "setConfig((uint256,bytes32,uint32,uint16,bool),(uint256,bytes32,uint32,uint16,bool))",
@@ -1087,7 +1003,7 @@
       "artifact": "src/federated/FederationRegistry.sol:FederationRegistry",
       "implementation": "src/federated/FederationRegistry.sol:FederationRegistry",
       "address": "0x000000000000000000000000000000000000a015",
-      "status": "implemented on the federation branch (ADR 0008)",
+      "status": "implemented",
       "functions": [
         {
           "signature": "approveTemplate(bytes32,address,uint32,uint8)",
@@ -1147,7 +1063,7 @@
       "artifact": "src/federated/FederatedEditionAuction.sol:FederatedEditionAuction",
       "implementation": "src/federated/FederatedEditionAuction.sol:FederatedEditionAuction",
       "address": "0x000000000000000000000000000000000000a016",
-      "status": "implemented on the federation branch (ADR 0008); setTarget is a pure refusal (the federation registry decides), so it has no row",
+      "status": "implemented; setTarget is a pure refusal (the federation registry decides), so it has no row",
       "functions": [
         {
           "signature": "pause()",
@@ -1272,7 +1188,7 @@
         true
       ],
       "calldata": "0xa82ed63a000000000000000000000000000000000000000000000000000000000000a0090000000000000000000000000000000000000000000000000000000000000001",
-      "note": "The genesis edition sale; later sale methods are admitted the same way, in the 30-day class (owner decision 14)"
+      "note": "The genesis edition sale; later sale methods are admitted the same way, in the 7-day class (owner decision 14)"
     },
     {
       "contract": "EnglishAuction",
@@ -1342,7 +1258,7 @@
       "args": [
         "FederationRegistry"
       ],
-      "note": "The genesis one-shot bind (ADR 0008); later replacements use setFederationRegistry (30 days)",
+      "note": "The genesis one-shot bind (ADR 0008); later replacements use setFederationRegistry (7 days)",
       "calldata": "0x3d4dbd3c000000000000000000000000000000000000000000000000000000000000a015"
     },
     {
@@ -1419,21 +1335,14 @@
     "wiring": "One-shot binds between protocol contracts, admitted-minter grants (setAdmittedMinter), sale targets (setTarget), each product's first default currency (setDefaultCurrency: EnglishAuction.start reads PRODUCT_STREAM's) and the epoch-0 governance manifest (appendGovernanceManifest).",
     "grants": "Curation signers are active once granted CURATION_SIGNER in holders; the verifier has no signer list to wire."
   },
-  "pendingLanes": [
-    {
-      "contract": "Editions",
-      "lane": "editions",
-      "note": "Mapped from the lane's Editions implementation; tools/check_genesis.py reports it pending until it merges, then checks it in full."
-    }
-  ],
   "unusedRoles": [
     {
       "role": "MINTER",
-      "note": "Sale adapters mint through each token's admitted-minter mapping (setAdmittedMinter, 30-day class), not the MINTER role."
+      "note": "Sale adapters mint through each token's admitted-minter mapping (setAdmittedMinter, 7-day class), not the MINTER role."
     },
     {
       "role": "KEEPER",
-      "note": "No v1 selector maps to KEEPER; grant it when a keeper function exists."
+      "note": "No selector maps to KEEPER: the network's keeper is a funded hot wallet with no role (R22); it starts sales through SaleStarter."
     }
   ]
 }

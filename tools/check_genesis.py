@@ -21,12 +21,12 @@ Checks `config/genesis.example.json`:
   7. the manager's own functions beyond its OpenZeppelin base (`manager`): each listed one is a
      method of the compiled manager with the listed selector, a mapped one names a role whose
      delay and class match, and every added method is listed (`check_manager`);
-  8. every role's `suspendable` flag is a boolean, and only zero-delay roles other than GUARDIAN,
-     PAUSER and CURATION_SIGNER are suspendable;
-  9. the holders name at most as many distinct ADMIN and GUARDIAN accounts as the manager's
-     default seat caps (`ADMIN_SEATS`, `GUARDIAN_SEATS`, read from the `_params` defaults in the
-     manager's source), which `configure` enforces; the configurator's own seat takes none
-     (`check_seats`).
+  8. every role's `network` flag is a boolean that is true exactly for the network's roles
+     (ADMIN, NETWORK, PARAMETER_SETTER, FUNDS_SETTER, SUCCESSOR_SETTER), and no role has a
+     grant delay (`check_roles`);
+  9. the configuration names one nonzero `network` address (the single authority), an optional
+     `brake` address, and holders of operational roles only: nobody can be granted a network
+     role (`check_authority`).
 
 A configured contract whose artifact source is not in the repository yet (a lane that has
 not merged) is reported as pending and skips checks 1 and 2; it fails nothing.
@@ -47,7 +47,10 @@ from pathlib import Path
 from typing import Callable
 
 CONFIG = "config/genesis.example.json"
-CLASS_DELAY = {"immediate": 0, "standard": 172_800, "funds": 1_209_600, "successor": 2_592_000}
+CLASS_DELAY = {"immediate": 0, "24h": 86_400, "3d": 259_200, "7d": 604_800}
+# The roles `network()` holds (`Roles.isNetworkRole`); nobody else can be granted them.
+NETWORK_ROLES = frozenset({"ADMIN", "NETWORK", "PARAMETER_SETTER", "FUNDS_SETTER", "SUCCESSOR_SETTER"})
+ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
 # Functions `GovernanceConfig.isGenesisSelector` admits (one-shot binds, admitted minters,
 # sale targets, first default currencies, the English auction's ETH opening bid, the
 # federation's first registry, adapters and template versions, the epoch-0 manifest). The
@@ -66,15 +69,8 @@ GENESIS_FUNCTIONS = frozenset({
 TEMPLATE_HASHES = frozenset({"FederatedStream", "FederatedEditions"})
 TEMPLATE_DEPLOYERS = frozenset({"FederatedStreamDeployer", "FederatedEditionsDeployer"})
 
-# Zero-delay roles a guardian may never suspend (check 8): the veto, the pause, and the curation
-# signer, whose kill switch is the verifier's `disableSigner` (it also ends the signer's epoch).
-NEVER_SUSPENDABLE = frozenset({"GUARDIAN", "PAUSER", "CURATION_SIGNER"})
-
-# Seated roles and their index in the manager's `_params` defaults (check 9).
-SEATED = {"ADMIN": 4, "GUARDIAN": 5}
-
 # What a deployment's copy of the configuration may change (check 6).
-DEPLOYMENT_KEYS = frozenset({"holders", "description"})
+DEPLOYMENT_KEYS = frozenset({"holders", "description", "network", "brake"})
 ADDRESS_KEYS = frozenset({"address", "calldata"})
 
 DECLARATION = re.compile(
@@ -443,17 +439,9 @@ def check(
 
 
 def check_manager(config: dict, ids: MethodIds, present: Present = lambda ref: True) -> list[str]:
-    """Checks 7 and 8: the manager's own functions and the roles' `suspendable` flags."""
+    """Check 7: the manager's own functions beyond its OpenZeppelin base."""
     problems: list[str] = []
     roles = {r["name"]: r for r in config.get("roles", [])}
-    for name, role in roles.items():
-        if "suspendable" not in role:
-            continue
-        flag = role["suspendable"]
-        if not isinstance(flag, bool):
-            problems.append(f"roles: {name} suspendable is not a boolean")
-        elif flag and (role["executionDelay"] != 0 or name in NEVER_SUSPENDABLE):
-            problems.append(f"roles: {name} is suspendable but not a zero-delay operational role")
     manager = config.get("manager")
     if manager is None:
         return problems
@@ -493,35 +481,33 @@ def check_manager(config: dict, ids: MethodIds, present: Present = lambda ref: T
     return problems
 
 
-def seat_caps(root: Path, config: dict) -> dict[str, int] | None:
-    """The manager's default seat caps, from the `_params = [...]` initialiser in its source,
-    or None when the manager or its source is absent (check 9)."""
-    manager = config.get("manager")
-    if not manager:
-        return None
-    path = root / manager["artifact"].split(":")[0]
-    if not path.is_file():
-        return None
-    text = strip_comments(path.read_text(encoding="utf-8"))
-    match = re.search(r"_params\s*=\s*\[([^\]]*)\]", text)
-    if match is None:
-        raise ValueError(f"{path}: no `_params = [...]` defaults to read the seat caps from")
-    values = [v.strip() for v in match.group(1).split(",")]
-    return {role: int(values[index]) for role, index in SEATED.items()}
-
-
-def check_seats(config: dict, caps: dict[str, int] | None) -> list[str]:
-    """Check 9: no seated role has more distinct genesis holders than its default cap."""
-    if caps is None:
-        return []
+def check_roles(config: dict) -> list[str]:
+    """Check 8: each role's `network` flag and its grant delay."""
     problems = []
-    for role, cap in caps.items():
-        accounts = {h["account"].lower() for h in config.get("holders", []) if h["role"] == role}
-        if len(accounts) > cap:
-            problems.append(
-                f"holders: {len(accounts)} {role} holders exceed the manager's default seat cap "
-                f"of {cap}; configure would revert with SeatCapReached"
-            )
+    for role in config.get("roles", []):
+        name = role.get("name")
+        flag = role.get("network")
+        if not isinstance(flag, bool):
+            problems.append(f"roles: {name} network is not a boolean")
+        elif flag != (name in NETWORK_ROLES):
+            problems.append(f"roles: {name} network flag is {str(flag).lower()}")
+        if role.get("grantDelay", 0) != 0:
+            problems.append(f"roles: {name} has a grant delay; operational keys take effect at once")
+    return problems
+
+
+def check_authority(config: dict) -> list[str]:
+    """Check 9: one nonzero network address, an optional brake, operational holders only."""
+    problems = []
+    network = config.get("network")
+    if not isinstance(network, str) or not ADDRESS.match(network) or int(network, 16) == 0:
+        problems.append("network: not a nonzero address (the single authority)")
+    brake = config.get("brake")
+    if brake is not None and (not isinstance(brake, str) or not ADDRESS.match(brake)):
+        problems.append("brake: not an address")
+    for h in config.get("holders", []):
+        if h.get("role") in NETWORK_ROLES:
+            problems.append(f"holders: {h.get('account')} holds {h['role']}, a network role")
     return problems
 
 
@@ -596,7 +582,7 @@ def main(argv: list[str] | None = None) -> int:
     present = source_present(root)
     try:
         problems = check(config, ids, scan_sources(root / "src"), present)
-        problems += check_seats(config, seat_caps(root, config))
+        problems += check_roles(config) + check_authority(config)
         if policy is not None:
             problems += policy_differences(config, policy)
         waiting = pending(config, present)

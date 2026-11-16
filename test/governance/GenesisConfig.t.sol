@@ -22,6 +22,7 @@ import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.so
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IWorkPowers } from "src/interfaces/IWorkPowers.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
 import {
@@ -53,9 +54,6 @@ contract GenesisConfigTest is Test {
 
     function setUp() public {
         json = vm.readFile(PATH);
-        // The genesis file moves to one network address in the deploy step of this pass; until
-        // it names one, these checks of the file cannot run.
-        vm.skip(!vm.keyExistsJson(json, ".network"));
         configurator = new GovernanceConfigurator(address(this));
         manager = configurator.worksManager();
     }
@@ -134,283 +132,146 @@ contract GenesisConfigTest is Test {
 
     // ------------------------------------------------------------------ compiled selectors
 
-    function _s10(bytes4[10] memory xs) internal pure returns (bytes4[] memory out) {
-        out = new bytes4[](10);
-        for (uint256 i; i < 10; ++i) {
-            out[i] = xs[i];
-        }
-    }
-
-    function _s(bytes4[7] memory xs, uint256 n) internal pure returns (bytes4[] memory out) {
-        require(n <= xs.length, "_s: n exceeds the listed selectors");
-        out = new bytes4[](n);
-        for (uint256 i; i < n; ++i) {
-            out[i] = xs[i];
-        }
-    }
-
     /// @dev The compiled selectors each contract's entries must equal, as a set. A renamed or
     ///      re-typed function breaks compilation here before it can drift from the JSON.
-    function _compiled(string memory name) internal pure returns (bytes4[] memory) {
-        bytes4 z;
+    function _compiled(string memory name) internal pure returns (bytes4[] memory out) {
         if (_eq(name, "Stream")) {
-            bytes4[] memory out = _s(
-                [
-                    IStream.createCollection.selector,
-                    IStream.setContractURI.selector,
-                    IStream.setOwner.selector,
-                    IStream.setDefaultRenderer.selector,
-                    IMintTarget.setAdmittedMinter.selector,
-                    IStream.bindWorkRecords.selector,
-                    IStream.bindEditions.selector
-                ],
-                7
-            );
-            bytes4[] memory all = new bytes4[](11);
-            for (uint256 i; i < 7; ++i) {
-                all[i] = out[i];
-            }
-            all[7] = IStream.releaseContent.selector;
-            all[8] = IStream.setDependency.selector;
-            all[9] = IStream.rescueToMuseum.selector;
-            all[10] = bytes4(keccak256("setRescueDelay(uint256)"));
-            return all;
+            out = new bytes4[](11);
+            out[0] = IStream.createCollection.selector;
+            out[1] = IStream.setContractURI.selector;
+            out[2] = IStream.setOwner.selector;
+            out[3] = IStream.setDefaultRenderer.selector;
+            out[4] = IMintTarget.setAdmittedMinter.selector;
+            out[5] = IStream.releaseContent.selector;
+            out[6] = IStream.setDependency.selector;
+            out[7] = IStream.rescueToMuseum.selector;
+            out[8] = IStream.lowerFeeShare.selector;
+            out[9] = IStream.bindWorkRecords.selector;
+            out[10] = IStream.bindEditions.selector;
+        } else if (_eq(name, "WorkRecords")) {
+            out = new bytes4[](8);
+            out[0] = IWorkRecords.relicense.selector;
+            out[1] = IWorkRecords.setRoyaltyRate.selector;
+            out[2] = IWorkRecords.setDelivery.selector;
+            out[3] = IWorkRecords.addStore.selector;
+            out[4] = IWorkRecords.repinRenderer.selector;
+            out[5] = IWorkRecords.retireStore.selector;
+            out[6] = IWorkPowers.renounce.selector;
+            out[7] = IWorkRecords.syncOnChain.selector;
+        } else if (_eq(name, "WorkDelivery")) {
+            out = new bytes4[](5);
+            out[0] = IWorkLocators.setPreferredKind.selector;
+            out[1] = IWorkLocators.setCollectionPreferredKind.selector;
+            out[2] = IWorkLocators.setFilePreference.selector;
+            out[3] = IWorkLocators.addLocator.selector;
+            out[4] = IWorkLocators.markLocatorDead.selector;
+        } else if (_eq(name, "Editions")) {
+            out = new bytes4[](5);
+            out[0] = IEditions.setContractURI.selector;
+            out[1] = IEditions.setOwner.selector;
+            out[2] = IMintTarget.setAdmittedMinter.selector;
+            out[3] = IEditions.lowerFeeShare.selector;
+            out[4] = IEditions.bindWorkRecords.selector;
+        } else if (_eq(name, "PackageRegistry")) {
+            out = new bytes4[](5);
+            out[0] = PackageRegistry.revokePackage.selector;
+            out[1] = PackageRegistry.setVerifier.selector;
+            out[2] = PackageRegistry.killSignerApprovals.selector;
+            out[3] = PackageRegistry.bindStream.selector;
+            out[4] = PackageRegistry.bindEditions.selector;
+        } else if (_eq(name, "CurationVerifier")) {
+            out = new bytes4[](2);
+            out[0] = Eip712CurationVerifier.disableSigner.selector;
+            out[1] = Eip712CurationVerifier.enableSigner.selector;
+        } else if (_eq(name, "ArtistRegistry")) {
+            out = new bytes4[](16);
+            out[0] = IArtistRegistry.setConsolidationSource.selector;
+            out[1] = IArtistRegistry.setPackageRegistry.selector;
+            out[2] = IArtistRegistry.resolveContested.selector;
+            out[3] = IArtistRegistry.setFederationRegistry.selector;
+            out[4] = IArtistRegistry.freeze.selector;
+            out[5] = IArtistRegistry.unfreeze.selector;
+            out[6] = IArtistRegistry.cancelReplacement.selector;
+            out[7] = IArtistRegistry.cancelOwnChange.selector;
+            out[8] = IArtistRegistry.stageReplacement.selector;
+            out[9] = IArtistRegistry.setFederationDelisted.selector;
+            out[10] = IArtistRegistry.lowerFederatedFeeShare.selector;
+            out[11] = IArtistRegistry.bindPackageRegistry.selector;
+            out[12] = IArtistRegistry.bindStream.selector;
+            out[13] = IArtistRegistry.bindSplitFactory.selector;
+            out[14] = IArtistRegistry.bindStatementLog.selector;
+            out[15] = IArtistRegistry.bindFederationRegistry.selector;
+        } else if (_eq(name, "StatementLog")) {
+            out = new bytes4[](4);
+            out[0] = StatementLog.appendCurator.selector;
+            out[1] = StatementLog.appendPlatform.selector;
+            out[2] = StatementLog.appendGovernanceManifest.selector;
+            out[3] = StatementLog.setArtistResolver.selector;
+        } else if (_eq(name, "EnglishAuction")) {
+            out = new bytes4[](8);
+            out[0] = ISaleAdapter.pause.selector;
+            out[1] = ISaleAdapter.unpause.selector;
+            out[2] = DISPUTE_PAUSE;
+            out[3] = IEnglishAuction.resume.selector;
+            out[4] = IEnglishAuction.cancel.selector;
+            out[5] = IEnglishAuction.setConfig.selector;
+            out[6] = ISaleAdapter.setTarget.selector;
+            out[7] = ISaleAdapter.setFederationRegistry.selector;
+        } else if (_eq(name, "UniformEditionAuction")) {
+            out = new bytes4[](5);
+            out[0] = ISaleAdapter.pause.selector;
+            out[1] = ISaleAdapter.unpause.selector;
+            out[2] = IUniformEditionAuction.setConfig.selector;
+            out[3] = ISaleAdapter.setTarget.selector;
+            out[4] = IUniformEditionAuction.setLimits.selector;
+        } else if (_eq(name, "EconomicsResolver")) {
+            out = new bytes4[](4);
+            out[0] = EconomicsResolver.setFeeTerms.selector;
+            out[1] = EconomicsResolver.setRoyaltyRate.selector;
+            out[2] = EconomicsResolver.setDefaultLicense.selector;
+            out[3] = EconomicsResolver.setMuseum.selector;
+        } else if (_eq(name, "AssetAllowlist")) {
+            out = new bytes4[](5);
+            out[0] = AssetAllowlist.admitAsset.selector;
+            out[1] = AssetAllowlist.setDefaultCurrency.selector;
+            out[2] = AssetAllowlist.setIncrementFloor.selector;
+            out[3] = AssetAllowlist.deprecateAsset.selector;
+            out[4] = AssetAllowlist.setOpeningBid.selector;
+        } else if (_eq(name, "RevenueEscrow")) {
+            out = new bytes4[](2);
+            out[0] = RevenueEscrow.recover.selector;
+            out[1] = RevenueEscrow.sweepExcess.selector;
+        } else if (_eq(name, "DependencyRegistry")) {
+            out = new bytes4[](2);
+            out[0] = DependencyRegistry.register.selector;
+            out[1] = DependencyRegistry.deprecate.selector;
+        } else if (_eq(name, "EntropyModule")) {
+            out = new bytes4[](4);
+            out[0] = VrfEntropyModule.setConfig.selector;
+            out[1] = VrfEntropyModule.setCoordinator.selector;
+            out[2] = VrfEntropyModule.lowerCallbackGasLimit.selector;
+            out[3] = VrfEntropyModule.setWrapper.selector;
+        } else if (_eq(name, "FederationRegistry")) {
+            out = new bytes4[](7);
+            out[0] = FederationRegistry.approveTemplate.selector;
+            out[1] = FederationRegistry.revokeTemplate.selector;
+            out[2] = FederationRegistry.setAdapter.selector;
+            out[3] = FederationRegistry.suspendTemplate.selector;
+            out[4] = FederationRegistry.resumeTemplate.selector;
+            out[5] = FederationRegistry.setStatus.selector;
+            out[6] = FederationRegistry.reinstateTemplate.selector;
+        } else if (_eq(name, "FederatedEditionAuction")) {
+            out = new bytes4[](4);
+            out[0] = ISaleAdapter.pause.selector;
+            out[1] = ISaleAdapter.unpause.selector;
+            out[2] = IUniformEditionAuction.setConfig.selector;
+            out[3] = IUniformEditionAuction.setLimits.selector;
+        } else if (_eq(name, "FeeRecipientVault") || _eq(name, "MuseumVault")) {
+            out = new bytes4[](1);
+            out[0] = GovernedVault.setDestination.selector;
+        } else {
+            revert(string.concat("no compiled selectors for ", name));
         }
-        if (_eq(name, "WorkRecords")) {
-            return _s(
-                [
-                    IWorkRecords.relicense.selector,
-                    IWorkRecords.setRoyaltyRate.selector,
-                    IWorkRecords.repinRenderer.selector,
-                    IWorkRecords.setDelivery.selector,
-                    IWorkRecords.addStore.selector,
-                    z,
-                    z
-                ],
-                5
-            );
-        }
-        if (_eq(name, "WorkDelivery")) {
-            return _s(
-                [
-                    IWorkLocators.setPreferredKind.selector,
-                    IWorkLocators.setCollectionPreferredKind.selector,
-                    IWorkLocators.setFilePreference.selector,
-                    IWorkLocators.addLocator.selector,
-                    z,
-                    z,
-                    z
-                ],
-                4
-            );
-        }
-        if (_eq(name, "Editions")) {
-            return _s(
-                [
-                    IEditions.setContractURI.selector,
-                    IEditions.setOwner.selector,
-                    IMintTarget.setAdmittedMinter.selector,
-                    IEditions.bindWorkRecords.selector,
-                    z,
-                    z,
-                    z
-                ],
-                4
-            );
-        }
-        if (_eq(name, "PackageRegistry")) {
-            return _s(
-                [
-                    PackageRegistry.revokePackage.selector,
-                    PackageRegistry.setVerifier.selector,
-                    PackageRegistry.bindStream.selector,
-                    PackageRegistry.bindEditions.selector,
-                    z,
-                    z,
-                    z
-                ],
-                4
-            );
-        }
-        if (_eq(name, "CurationVerifier")) {
-            return _s(
-                [
-                    Eip712CurationVerifier.disableSigner.selector,
-                    Eip712CurationVerifier.enableSigner.selector,
-                    z,
-                    z,
-                    z,
-                    z,
-                    z
-                ],
-                2
-            );
-        }
-        if (_eq(name, "ArtistRegistry")) {
-            bytes4[] memory ten = _s10(
-                [
-                    IArtistRegistry.cancelReplacement.selector,
-                    IArtistRegistry.stageReplacement.selector,
-                    IArtistRegistry.setConsolidationSource.selector,
-                    IArtistRegistry.setPackageRegistry.selector,
-                    IArtistRegistry.resolveContested.selector,
-                    IArtistRegistry.setFederationRegistry.selector,
-                    IArtistRegistry.freeze.selector,
-                    IArtistRegistry.bindPackageRegistry.selector,
-                    IArtistRegistry.bindStream.selector,
-                    IArtistRegistry.bindSplitFactory.selector
-                ]
-            );
-            bytes4[] memory all = new bytes4[](12);
-            for (uint256 i; i < 10; ++i) {
-                all[i] = ten[i];
-            }
-            all[10] = IArtistRegistry.bindStatementLog.selector;
-            all[11] = IArtistRegistry.bindFederationRegistry.selector;
-            return all;
-        }
-        if (_eq(name, "StatementLog")) {
-            return _s(
-                [
-                    StatementLog.appendCurator.selector,
-                    StatementLog.appendPlatform.selector,
-                    StatementLog.appendGovernanceManifest.selector,
-                    StatementLog.setArtistResolver.selector,
-                    z,
-                    z,
-                    z
-                ],
-                4
-            );
-        }
-        if (_eq(name, "EnglishAuction")) {
-            bytes4[] memory out = _s(
-                [
-                    ISaleAdapter.pause.selector,
-                    ISaleAdapter.unpause.selector,
-                    IEnglishAuction.resume.selector,
-                    IEnglishAuction.cancel.selector,
-                    IEnglishAuction.setConfig.selector,
-                    ISaleAdapter.setTarget.selector,
-                    ISaleAdapter.setFederationRegistry.selector
-                ],
-                7
-            );
-            bytes4[] memory all = new bytes4[](8);
-            for (uint256 i; i < 7; ++i) {
-                all[i] = out[i];
-            }
-            all[7] = DISPUTE_PAUSE;
-            return all;
-        }
-        if (_eq(name, "UniformEditionAuction")) {
-            return _s(
-                [
-                    ISaleAdapter.pause.selector,
-                    ISaleAdapter.unpause.selector,
-                    IUniformEditionAuction.setConfig.selector,
-                    ISaleAdapter.setTarget.selector,
-                    IUniformEditionAuction.setLimits.selector,
-                    z,
-                    z
-                ],
-                5
-            );
-        }
-        if (_eq(name, "EconomicsResolver")) {
-            return _s(
-                [
-                    EconomicsResolver.setFeeTerms.selector,
-                    EconomicsResolver.setRoyaltyRate.selector,
-                    EconomicsResolver.setDefaultLicense.selector,
-                    EconomicsResolver.setMuseum.selector,
-                    z,
-                    z,
-                    z
-                ],
-                4
-            );
-        }
-        if (_eq(name, "AssetAllowlist")) {
-            return _s(
-                [
-                    AssetAllowlist.admitAsset.selector,
-                    AssetAllowlist.setDefaultCurrency.selector,
-                    AssetAllowlist.setIncrementFloor.selector,
-                    AssetAllowlist.deprecateAsset.selector,
-                    AssetAllowlist.setOpeningBid.selector,
-                    z,
-                    z
-                ],
-                5
-            );
-        }
-        if (_eq(name, "RevenueEscrow")) {
-            return _s(
-                [RevenueEscrow.recover.selector, RevenueEscrow.sweepExcess.selector, z, z, z, z, z],
-                2
-            );
-        }
-        if (_eq(name, "FeeRecipientVault") || _eq(name, "MuseumVault")) {
-            return _s([GovernedVault.setDestination.selector, z, z, z, z, z, z], 1);
-        }
-        if (_eq(name, "DependencyRegistry")) {
-            return _s(
-                [
-                    DependencyRegistry.register.selector,
-                    DependencyRegistry.deprecate.selector,
-                    z,
-                    z,
-                    z,
-                    z,
-                    z
-                ],
-                2
-            );
-        }
-        if (_eq(name, "EntropyModule")) {
-            return _s(
-                [
-                    VrfEntropyModule.setConfig.selector,
-                    VrfEntropyModule.setCoordinator.selector,
-                    VrfEntropyModule.lowerCallbackGasLimit.selector,
-                    z,
-                    z,
-                    z,
-                    z
-                ],
-                3
-            );
-        }
-        if (_eq(name, "FederationRegistry")) {
-            return _s(
-                [
-                    FederationRegistry.approveTemplate.selector,
-                    FederationRegistry.revokeTemplate.selector,
-                    FederationRegistry.setAdapter.selector,
-                    FederationRegistry.suspendTemplate.selector,
-                    FederationRegistry.resumeTemplate.selector,
-                    FederationRegistry.setStatus.selector,
-                    z
-                ],
-                6
-            );
-        }
-        if (_eq(name, "FederatedEditionAuction")) {
-            return _s(
-                [
-                    ISaleAdapter.pause.selector,
-                    ISaleAdapter.unpause.selector,
-                    IUniformEditionAuction.setConfig.selector,
-                    IUniformEditionAuction.setLimits.selector,
-                    z,
-                    z,
-                    z
-                ],
-                4
-            );
-        }
-        revert(string.concat("no compiled selectors for ", name));
     }
 
     function _contains(bytes4[] memory xs, bytes4 x) internal pure returns (bool) {
@@ -490,7 +351,7 @@ contract GenesisConfigTest is Test {
             }
             total += listed.length;
         }
-        assertEq(total, 87, "77 mapped, 10 genesis-only, 0 deferred");
+        assertEq(total, 99, "89 mapped, 10 genesis-only, 0 deferred");
     }
 
     function test_RoleTableMatchesRolesSol() public view {
