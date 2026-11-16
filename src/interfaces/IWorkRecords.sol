@@ -210,7 +210,12 @@ interface IWorkRecords {
     ///         `MAX_CHUNKS` chunks, read chunk by chunk): the renderer decides what it inlines.
     ///         Stores the record file ID, the media, the seed and a non-CC0 license as approved
     ///         (a CC0 license must name the deployment's CC0 text, `InvalidLicense`), and emits
-    ///         `RecordOpened` with every fact it fixed.
+    ///         `RecordOpened` with every fact it fixed. It does not check a stored license's
+    ///         identifier or text (registered, SHA-256 digest, at most 16 chunks, complete):
+    ///         `finalize` checks all of that, and renouncing RELICENSE all but completeness.
+    ///         A text accepted here can therefore be refused there until `relicense` replaces
+    ///         it, or, for a text that is only unregistered or incomplete, until its chunks are
+    ///         written.
     /// @dev The curation signer's tooling MUST simulate `openRecord` before attesting an item: a
     ///      mis-committed item mints and can never open.
     /// @param tokenId A live 6529 Stream token whose record is not open yet.
@@ -227,9 +232,11 @@ interface IWorkRecords {
     /// @notice The artist finalizes the work: the record becomes immutable and Stream's current
     ///         default renderer is pinned with its code hash (ADR 0001 section 10). The record
     ///         file must meet the structural bounds (one chunk; see the contract notes), the
-    ///         license text must be complete on-chain in at most 16 chunks, and a stored license's
-    ///         ID must pass the mint rule (`SpdxId`), which `openRecord` does not apply
-    ///         (`InvalidLicense`); renouncing RELICENSE checks the same ID.
+    ///         license text (the deployment's CC0 text for a work with no stored license) must
+    ///         be registered, with a SHA-256 digest, in at most 16 chunks and complete on-chain,
+    ///         and a stored license's ID must pass the mint rule (`SpdxId`); `openRecord` checks
+    ///         none of this for a stored license (`InvalidLicense`). Renouncing RELICENSE
+    ///         checks the same ID and text except completeness.
     /// @param tokenId A work with an open record, not finalized.
     /// @param expectedStateHash The work's current state hash (`StateHashMismatch` otherwise).
     function finalize(uint256 tokenId, bytes32 expectedStateHash) external;
@@ -318,7 +325,7 @@ interface IWorkRecords {
     ///         its active authority. Leaving CC0 reverts (`LicenseIrrevocable`); a CC0 license
     ///         names the deployment's CC0 text; the new text must be registered with a SHA-256
     ///         digest in at most 16 chunks, before finalize too (`InvalidLicense`), and complete
-    ///         for a finalized work. Reverts with `PowerRenounced` once relicensing is renounced.
+    ///         for a finalized work (a no-op, the current key and text, is not checked). Reverts with `PowerRenounced` once relicensing is renounced.
     /// @param tokenId A live work with an open record.
     /// @param next The new license.
     /// @param item The work's approved package item, whose parties consent.
