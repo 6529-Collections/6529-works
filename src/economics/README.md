@@ -4,8 +4,7 @@ Money routing for 6529 Works: the per-product economics new works lock at mint, 
 allowlist, the permanent split ledger and its 66-byte CREATE2 wallets that artists and fixed
 payees pull from, the escrow that catches refused payments, signed releases, batch claims, and
 the governed vault for the network's own accounts. The rules are in
-[Economics and payouts](../../docs/spec/economics-and-payouts.md) (`ECO-*`), including the wallet
-address derivation, the payee-list rules and both escrow-recovery flows.
+[Economics and payouts](../../docs/spec/economics-and-payouts.md) (`ECO-*`).
 
 ## Files
 
@@ -39,67 +38,33 @@ Payment, release and recovery sequences are under
 
 ## Developer notes
 
-- **Sale adapters never compute wallets.** The token supplies the seller and fee terms through
-  `primaryTerms`; an adapter pays them with `RevenuePayment.payETH` or `payERC20`, which falls
-  back to the escrow. A wallet need not be deployed: funds sent to its predicted address are
-  split once anyone calls `createWallet`, which is why deployment stays off the 1/1 start path.
-  Deploy each seller and royalty wallet at its first sale (its cost is in
-  [ADR 0004's table](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)): a
-  deployed wallet never depends on deploying anything again (LIM-ECO-7). The edition auction's `open` does this for its seller and royalty wallets
-  (EA-20).
-- **Releases name the wallet by its configuration.** `release(payees, salt, asset, index)`: the
-  ledger stores only `configOf` (for `isWallet` and the escrow) and derives the address from the
-  list and salt, which callers read from `WalletCreated` or the work's terms.
-- **Escrow recovery needs a deployed wallet on both sides.** `recover` compares
-  `SplitLedger.configOf` of the blocked wallet and its replacement, so anyone first deploys the
-  blocked wallet if it is not yet, and deploys the replacement (the same payees with another
-  salt) with the permissionless `createWallet`; governance only executes `recover` (14 days).
-  Recovery reaches escrow credits only, never a wallet's own balance.
-- **Constant wallet init code, no compiler in the address.** The vault is raw bytecode with no
-  payee data, so predicting an address hashes a few words and every address is a function of the
-  documented bytes, not of a compiler version or metadata. Never add constructor arguments.
-- **No rescue in wallets.** Every unit in a wallet is some payee's (cumulative entitlements,
-  dust below the payee count); a mute fixed payee blocks only its own share. The escrow's
-  `sweepExcess` is the one sweep, and it reaches only `balance - totalOwed` of the token address
-  it names (a two-address token or a rebasing one is outside that bound, LIM-ECO-8).
-- **Payee checks read no state.** `Splits.validate` refuses an artist ID of 2^160 or more and the
-  ledger as a fixed payee; any check that read another contract could flip after a wallet's
-  address was paid and leave it undeployable, so none is added there.
-- **Governed vaults move NFTs by safe transfer** (a destination that cannot hold them refuses),
-  and the escrow refuses a vault's recovery consent once its destination has changed (ECO-41).
-- **Withdrawals never read the allowlist**, so a deprecated or never-admitted asset stays
-  withdrawable (ECO-25); keep the allowlist out of the wallet and escrow.
-- **Only a wallet release (and the escrow sweep and a governed vault's forward) accepts a
-  no-return token.** The ledger counts an empty `transfer` return because the exact balance
-  deltas prove the move (ECO-23). Keep every path that takes a sale currency in
-  (payments, escrow deposits, adapter pulls) on the strict `transferExact` / `pullExact`.
-- **Transaction cap.** [`GasCap.t.sol`](../../test/economics/GasCap.t.sol) measures the cold
-  worst cases (a 64-payee wallet deployment and full atomic and continue-mode batches) against
-  75% of the EIP-7825 cap (ECO-31), the figures in its output and ADR 0004's table. Rerun it
-  after changing a batch bound, a per-item minimum or the continue-mode signature bound; keeper
-  guidance is LIM-GAS-6.
-- **The vault copies a callee's whole return.** `SplitVault` has no return bound of its own;
-  the ledger copies one word of the vault's answer, so an oversized return fails only that
-  recipient's or that token's release, as a revert would (`SplitVault` NatSpec,
-  `test_AnOversizedReturnFailsOnlyItsOwnRelease`). Its bytes are pinned by
-  `test_Golden_InitCodeHashAndRuntime`.
-- **Bytecode:** wide margins; figures in the
-  [audit scope](../../docs/audit/scope.md#economics). Per-operation gas is in
+- **Sale adapters never compute wallets.** They pay the token's `primaryTerms` through
+  `RevenuePayment` (escrow fallback); a wallet is paid before it is deployed (EA-20, LIM-ECO-7).
+- **Wallets are named by configuration.** The ledger stores only `configOf` and derives each
+  address from payees and salt; `recover` compares `configOf`, so both wallets must be deployed.
+- **Constant wallet init code.** Every address is a function of the documented vault bytes, not
+  of a compiler. Never add constructor arguments.
+- **Payee checks read no state.** A `Splits.validate` check that read another contract could
+  flip after a wallet's address was paid and leave it undeployable.
+- **Keep the allowlist out of the wallet and escrow** (ECO-25).
+- **Token strictness.** Only a wallet release, the escrow sweep and a governed vault's forward
+  accept a no-return token (ECO-23); every path that takes a sale currency in stays on
+  `transferExact` / `pullExact`.
+- **The vault copies a callee's whole return;** the ledger copies one word (`SplitVault`
+  NatSpec). Its bytes are pinned by `test_Golden_InitCodeHashAndRuntime`.
+- **Transaction cap.** Rerun [`GasCap.t.sol`](../../test/economics/GasCap.t.sol) after changing a
+  batch bound, a per-item minimum or the continue-mode signature bound (ECO-31, LIM-GAS-6).
+- **Bytecode:** [audit scope](../../docs/audit/scope.md#economics); gas:
   [ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table).
-- **Tests:** `forge test --match-path 'test/economics/**'` (unit, hostile tokens, split maths,
-  gas caps, invariants); Halmos proofs of `Splits` in `test/symbolic/`
-  ([Testing](../../docs/testing/README.md)); end to end,
+- **Tests:** `forge test --match-path 'test/economics/**'`; Halmos proofs of `Splits` in
+  `test/symbolic/` ([Testing](../../docs/testing/README.md)); end to end,
   [`EscrowRecovery.t.sol`](../../test/integration/EscrowRecovery.t.sol).
-
-## Not in v1
-
-The settlement recorder of ADR 0001 §7 (single-use settlement keys); each adapter's own state
-prevents a second settlement (LIM-ECO-5).
 
 ## See also
 
 [ADR 0001 §7](../../docs/adr/0001-v1-scope.md#7-economics) (with §5 currencies and §11 the
 artist-resolved payout), [ADR 0003, economics](../../docs/adr/0003-build-time-decisions.md#economics-amends-adr-0001-7);
 [known limitations](../../docs/audit/known-limitations.md#economics-and-payouts) LIM-ECO-1 to
-LIM-ECO-7 and LIM-GAS-6; [invariants](../../docs/audit/invariants.md);
+LIM-ECO-8 (LIM-ECO-5: no settlement recorder in v1) and LIM-GAS-6;
+[invariants](../../docs/audit/invariants.md);
 [buying, bidding and settling](../../docs/integrators/buying-bidding-settling.md).
