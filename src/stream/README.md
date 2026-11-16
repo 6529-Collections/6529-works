@@ -114,9 +114,11 @@ Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
   re-hashes what an added store serves. Two walks: the content store's, anyone's, cursor in word
   0; an added store's, the artist's only, cursor in `_storeCursors` (one slot per work, written
   only on that walk). An added store is checked one chunk per call, so a refusal is a missing
-  chunk. Each file that completes emits `MediaFileComplete` with its store, every call that
-  progressed `OnChainSyncProgress`, and the call that finishes `WorkOnChainComplete` (WS-42,
-  WS-43).
+  chunk. The content walk passes over a file already complete in an added store whose bytes
+  it lacks, and goes round again once the work is on-chain complete (upgrades; after that,
+  `syncedFiles` is only the upgrade cursor and every file is complete). Each file that completes
+  emits `MediaFileComplete` with its store, every call that progressed `OnChainSyncProgress`, and
+  the call that finishes `WorkOnChainComplete` (WS-42, WS-43).
 - **Forwarding.** `preferredLocator` asks the delivery contract with all the gas the EIP-150
   rule allows (`BoundedCall.tryReadAll`) and checks the answer (`_isLocation`); a refusal or a
   malformed answer serves the work's own (WS-40; a URI with a byte outside printable ASCII, `"` or `\` is malformed), a

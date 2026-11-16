@@ -7,6 +7,7 @@ import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
+import { Vm } from "forge-std/Vm.sol";
 import { Burner, GasRuleAssertions } from "test/helpers/GasRule.sol";
 
 import { RecordsFixture } from "./RecordsFixture.sol";
@@ -364,6 +365,115 @@ contract WorkStoresTest is RecordsFixture, GasRuleAssertions {
         _syncAs(artist, tokenId, id, 10);
         (s1,) = records.mediaStore(tokenId, 1);
         assertEq(s1, 0);
+    }
+
+    /// @dev Review E, N-3: file 0 held only in an added store and file 1 only in the content store
+    ///      complete in either order of calls. The content store's walk passes over file 0, which
+    ///      the artist's walk completed in the added store and whose bytes the content store
+    ///      lacks, so it records file 1, and the work is on-chain complete. Fails without the
+    ///      change: the content walk stops at file 0 for good (`NotOnChainComplete`).
+    function test_N3_MixedPlacementCompletesInEitherOrder() public {
+        uint256 id = _addStore(address(source));
+        for (uint256 order; order < 2; ++order) {
+            (bytes32 a, bytes[] memory ca) = _bigFile(40 + 2 * order, 2);
+            (bytes32 b, bytes[] memory cb) = _bigFile(41 + 2 * order, 2);
+            source.put(ca[0]);
+            source.put(ca[1]);
+            store.writeChunk(cb[0]);
+            store.writeChunk(cb[1]);
+            bytes32[] memory files = new bytes32[](2);
+            (files[0], files[1]) = (a, b);
+            uint256 tokenId = _workOf(40 + order, files);
+            if (order == 1) {
+                // The content walk first: file 0 is complete nowhere yet, so it waits there.
+                vm.expectRevert(
+                    abi.encodeWithSelector(IWorkRecords.NotOnChainComplete.selector, tokenId)
+                );
+                _syncAs(outsider, tokenId, 0, 10);
+            }
+            vm.expectEmit(address(records));
+            emit IWorkRecords.MediaFileComplete(tokenId, 0, id);
+            _syncAs(artist, tokenId, id, 10);
+            assertFalse(records.record(tokenId).onChainComplete, "file 1 is not in the store");
+            vm.expectEmit(address(records));
+            emit IWorkRecords.MediaFileComplete(tokenId, 1, 0);
+            vm.expectEmit(address(records));
+            emit IWorkRecords.OnChainSyncProgress(tokenId, 2, 0, 0);
+            vm.expectEmit(address(records));
+            emit IWorkRecords.WorkOnChainComplete(tokenId);
+            _syncAs(outsider, tokenId, 0, 10);
+            assertTrue(records.record(tokenId).onChainComplete);
+            (uint256 s0, bool c0) = records.mediaStore(tokenId, 0);
+            (uint256 s1, bool c1) = records.mediaStore(tokenId, 1);
+            assertEq(s0, id, "file 0 stays complete in the added store");
+            assertTrue(c0);
+            assertEq(s1, 0, "file 1 in the content store");
+            assertTrue(c1);
+        }
+    }
+
+    /// @dev Review E, N-3: a file the content store's walk passed over (complete in an added store,
+    ///      its bytes partly in the content store) is upgraded once its bytes are all there: the
+    ///      walk goes round again after the work is on-chain complete, verifies only files still
+    ///      complete only in an added store, never undoes a completion, and refreshes the
+    ///      metadata on the upgrade. With nothing left to upgrade every walk is a no-op. Fails
+    ///      without the change: the walk never passes file 0, so the work never completes.
+    function test_N3_APassedFileIsUpgradedLater() public {
+        uint256 id = _addStore(address(source));
+        (bytes32 a, bytes[] memory ca) = _bigFile(50, 2);
+        (bytes32 b, bytes[] memory cb) = _bigFile(51, 1);
+        source.put(ca[0]);
+        source.put(ca[1]);
+        store.writeChunk(ca[0]); // half of file 0 in the content store
+        store.writeChunk(cb[0]);
+        bytes32[] memory files = new bytes32[](2);
+        (files[0], files[1]) = (a, b);
+        uint256 tokenId = _workOf(50, files);
+        _syncAs(artist, tokenId, id, 10);
+        _syncAs(outsider, tokenId, 0, 10);
+        assertTrue(records.record(tokenId).onChainComplete);
+        // Its bytes still missing, file 0 cannot be upgraded: the walk goes round, passes over
+        // it again, and refreshes nothing.
+        vm.expectEmit(address(records));
+        emit IWorkRecords.OnChainSyncProgress(tokenId, 2, 0, 0);
+        vm.recordLogs();
+        _syncAs(outsider, tokenId, 0, 10);
+        assertEq(_metadataUpdates(), 0, "no refresh without an upgrade");
+        (uint256 s0,) = records.mediaStore(tokenId, 0);
+        assertEq(s0, id, "still in the added store");
+        store.writeChunk(ca[1]);
+        // In pieces: one chunk, then the rest, which upgrades the file and refreshes.
+        vm.expectEmit(address(records));
+        emit IWorkRecords.OnChainSyncProgress(tokenId, 0, 1, 0);
+        _syncAs(outsider, tokenId, 0, 1);
+        vm.expectEmit(address(records));
+        emit IWorkRecords.MediaFileComplete(tokenId, 0, 0);
+        vm.recordLogs();
+        _syncAs(outsider, tokenId, 0, 10);
+        assertEq(_metadataUpdates(), 1, "the upgrade refreshes");
+        bool c0;
+        (s0, c0) = records.mediaStore(tokenId, 0);
+        assertEq(s0, 0, "upgraded");
+        assertTrue(c0);
+        (uint256 s1, bool c1) = records.mediaStore(tokenId, 1);
+        assertEq(s1, 0);
+        assertTrue(c1);
+        assertTrue(records.record(tokenId).onChainComplete);
+        vm.recordLogs();
+        _syncAs(outsider, tokenId, 0, 10);
+        _syncAs(artist, tokenId, id, 10);
+        assertEq(vm.getRecordedLogs().length, 0, "nothing left: no-ops");
+    }
+
+    /// @dev The ERC-4906 `MetadataUpdate` events Stream emitted since `vm.recordLogs`.
+    function _metadataUpdates() internal returns (uint256 n) {
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            if (
+                logs[i].emitter == address(stream)
+                    && logs[i].topics[0] == keccak256("MetadataUpdate(uint256)")
+            ) ++n;
+        }
     }
 
     /// @dev A store whose code changed since it was added cannot be used; the content store's

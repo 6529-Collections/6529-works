@@ -80,13 +80,20 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     ///      relicensing a finalized work): a safety bound against unbounded work, so the
     ///      presence check is at most 16 chunk reads (about 393 KB of text) in one transaction.
     uint256 private constant MAX_LICENSE_TEXT_CHUNKS = 16;
+    /// @dev The high nibble of every byte of a `RecordData.files` word: the added store each file
+    ///      is complete in.
+    uint256 private constant ADDED_STORES =
+        0xf0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0;
 
     /// @dev Word 0: the pin, version, media count, how many leading media files are complete in
     ///      the content store, flags, the content store's chunk cursor in the next file, and the
     ///      renounced powers (`WorkPowers` bits, only ever added). `files` holds a byte per media
     ///      file, file `i` at bits `8i`: its role in the low four bits, and in the high four the
-    ///      added store it is complete in (zero: the content store when `i < syncedFiles`, else
-    ///      not complete).
+    ///      added store it is complete in, or zero: the content store once the work is on-chain
+    ///      complete or when `i < syncedFiles`, else not complete. Before on-chain completion
+    ///      `syncedFiles` is the content walk's cursor (every file before it is complete: in the
+    ///      content store, or in the added store its nibble names, which the walk passed over);
+    ///      after it, every file is complete, and the cursor only serves upgrades.
     struct RecordData {
         address renderer;
         uint32 version;
@@ -101,13 +108,15 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     }
 
     /// @dev A `syncOnChain` cursor in memory: the file and chunk reached, the `files` word, the
-    ///      media count and the chunks left in the call's budget.
+    ///      media count, the chunks left in the call's budget, and whether the work was on-chain
+    ///      complete when the call began.
     struct Sync {
         uint256 next;
         uint256 chunk;
         uint256 files;
         uint256 count;
         uint256 budget;
+        bool done;
     }
 
     /// @dev A store beside the content store, pinned by code hash.
@@ -274,17 +283,28 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     ///      permissionless, whose cursor (`syncedFiles`, `chunk`) lives in the record's first
     ///      word; and the artist's walk over one added store at a time (`_storeCursors`), which
     ///      only the artist can move or restart. The content store's walk never calls an added
-    ///      store, so nothing an added store does can keep a file whose chunks are all in the
-    ///      content store from completing there.
+    ///      store, and passes over a file already complete in an added store whose bytes the
+    ///      content store lacks, so nothing an added store does, and no order of files across
+    ///      stores, can keep a file whose chunks are all in the content store from completing
+    ///      there (review E, N-3). Once the work is on-chain complete, the content walk goes
+    ///      round again over the files still complete only in an added store (upgrades).
     function syncOnChain(uint256 tokenId, uint256 storeId, uint256 maxChunks) external {
         RecordData storage r = _open(tokenId);
         uint256 synced = r.syncedFiles;
         uint256 count = r.mediaCount;
         uint8 flags = r.flags;
-        if (maxChunks == 0 || synced == count || (storeId != 0 && flags & ON_CHAIN != 0)) return;
+        uint256 files = r.files;
+        if (maxChunks == 0 || (storeId != 0 && flags & ON_CHAIN != 0)) return;
+        // Every file reached: on-chain complete, so the walk restarts for the files still
+        // complete only in an added store, or has nothing left.
+        if (synced == count) {
+            if (files & ADDED_STORES == 0) return;
+            synced = 0;
+        }
         (address source, bool intact) = _storeOf(storeId);
         if (!intact) revert UnknownStore(storeId);
-        Sync memory c = Sync(synced, r.chunk, r.files, count, maxChunks);
+        // The chunk cursor is zero whenever every file was reached.
+        Sync memory c = Sync(synced, r.chunk, files, count, maxChunks, flags & ON_CHAIN != 0);
         if (storeId != 0) {
             _onlyArtist(tokenId);
             // Resumes only on the same store and ahead of the content store's walk.
@@ -310,18 +330,18 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         }
         r.files = c.files;
         emit OnChainSyncProgress(tokenId, c.next, c.chunk, storeId);
-        // On-chain complete once every file is complete in some store. The content store's walk
-        // may go on afterwards (an upgrade); its last file refreshes the metadata again.
-        uint256 i = synced;
-        while (i < count && (c.files >> (8 * i + 4)) & 0xf != 0) {
-            ++i;
-        }
-        if (i != count) return;
-        if (flags & ON_CHAIN == 0) {
+        // On-chain complete once every file is complete in some store; afterwards each call that
+        // upgrades a file to the content store refreshes the metadata again.
+        if (c.done) {
+            if (c.files == files) return;
+        } else {
+            uint256 i = synced;
+            while (i < count && (c.files >> (8 * i + 4)) & 0xf != 0) {
+                ++i;
+            }
+            if (i != count) return;
             r.flags = flags | ON_CHAIN;
             emit WorkOnChainComplete(tokenId);
-        } else if (synced != count) {
-            return;
         }
         _refresh(tokenId);
     }
@@ -378,7 +398,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         RecordData storage r = _open(tokenId);
         if (index >= r.mediaCount) revert FileNotInWork(tokenId, bytes32(index));
         storeId = (r.files >> (8 * index + 4)) & 0xf;
-        complete = index < r.syncedFiles || storeId != 0;
+        complete = r.flags & ON_CHAIN != 0 || index < r.syncedFiles || storeId != 0;
     }
 
     /// @inheritdoc IWorkRecords
@@ -888,13 +908,18 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     }
 
     /// @dev Moves the sync cursor `c` of work `tokenId` over at most `c.budget` chunks verified
-    ///      against store `storeId`, recording each file that completes. The content store's walk
-    ///      verifies every file there, one complete in an added store included (an upgrade); an
-    ///      added store's walk skips files already complete.
+    ///      against store `storeId`, recording each file that completes. An added store's walk
+    ///      skips files already complete (those before the content walk's cursor, and those
+    ///      complete in an added store). The content store's walk verifies every file not yet
+    ///      complete there, one complete in an added store included (an upgrade), and passes
+    ///      over such a file when the content store lacks a chunk of it, so it never waits on a
+    ///      file another store already completed; once the work is on-chain complete it skips the
+    ///      files complete in the content store.
     function _advance(uint256 tokenId, uint256 storeId, address source, Sync memory c) private {
         while (c.next < c.count && c.budget != 0) {
             uint256 shift = 8 * c.next + 4;
-            if (storeId != 0 && (c.files >> shift) & 0xf != 0) {
+            uint256 added = (c.files >> shift) & 0xf;
+            if (storeId != 0 ? added != 0 : c.done && added == 0) {
                 ++c.next;
                 c.chunk = 0;
                 continue;
@@ -903,7 +928,13 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
                 _verify(source, _media[tokenId][c.next], c.chunk, c.budget);
             c.budget -= reached - c.chunk;
             c.chunk = reached;
-            if (reached < chunks) return;
+            if (reached < chunks) {
+                // Out of budget, or a chunk missing from a file complete nowhere: stop here.
+                if (c.budget == 0 || storeId != 0 || added == 0) return;
+                ++c.next;
+                c.chunk = 0;
+                continue;
+            }
             c.files = (c.files & ~(uint256(0xf) << shift)) | (storeId << shift);
             emit MediaFileComplete(tokenId, c.next, storeId);
             ++c.next;
