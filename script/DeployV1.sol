@@ -817,6 +817,8 @@ library DeployV1 {
         returns (GovernanceConfig.Config memory cfg)
     {
         checkRoles(json);
+        cfg.network = vm.parseJsonAddress(json, ".network");
+        if (vm.keyExistsJson(json, ".brake")) cfg.brake = vm.parseJsonAddress(json, ".brake");
         cfg.grants = _grants(json);
         uint256 contracts = _count(json, ".contracts");
         uint256 deployed;
@@ -838,7 +840,7 @@ library DeployV1 {
     ///         `Roles.sol`; this keeps the published table honest.
     function checkRoles(string memory json) internal view {
         uint256 n = _count(json, ".roles");
-        if (n != Roles.COUNT) revert RoleTableMismatch("count");
+        if (n != Roles.COUNT - 1) revert RoleTableMismatch("count"); // ID 3 is unused
         for (uint256 i; i < n; ++i) {
             string memory r = _at(".roles", i);
             string memory name = vm.parseJsonString(json, string.concat(r, ".name"));
@@ -1056,6 +1058,7 @@ library DeployV1 {
     function _roleId(string memory name) private pure returns (uint64) {
         if (keccak256(bytes(name)) == keccak256("ADMIN")) return Roles.ADMIN;
         for (uint64 role = 1; role < Roles.COUNT; ++role) {
+            if (!Roles.isKnown(role)) continue;
             if (keccak256(bytes(name)) == keccak256(bytes(Roles.label(role)))) return role;
         }
         revert UnknownRoleName(name);

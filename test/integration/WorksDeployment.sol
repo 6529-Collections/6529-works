@@ -136,7 +136,11 @@ abstract contract WorksDeployment is Test {
         _adopt(d);
         genesisJson = _withHolders(vm.readFile(GENESIS_PATH));
         manifest = DeployV1.Manifest(MANIFEST_HASH, "ar://integration-epoch-0-manifest");
-        if (!deferGenesis) DeployV1.install(d, _genesisConfig(), manifest, _genesisWiring());
+        if (!deferGenesis) {
+            DeployV1.install(d, _genesisConfig(), manifest, _genesisWiring());
+            vm.prank(hotAdmin);
+            manager.acceptNetwork();
+        }
     }
 
     /// @dev The external systems: the identity lane's delegation reduction, the entropy lane's

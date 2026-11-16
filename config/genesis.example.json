@@ -1,4 +1,5 @@
 {
+  "network": "0x000000000000000000000000000000000000b001",
   "schema": "6529-works/governance-genesis/1",
   "description": "Example genesis configuration for the 6529 Works WorksAccessManager. Every address is a placeholder.",
   "sources": [
@@ -11,153 +12,102 @@
     {
       "name": "ADMIN",
       "id": 0,
-      "executionClass": "successor",
-      "executionDelay": 2592000,
-      "grantClass": "successor",
-      "grantDelay": 2592000,
-      "suspendable": false
+      "executionClass": "7d",
+      "executionDelay": 604800,
+      "grantDelay": 0,
+      "network": true
     },
     {
-      "name": "GUARDIAN",
+      "name": "NETWORK",
       "id": 1,
       "executionClass": "immediate",
       "executionDelay": 0,
-      "grantClass": "successor",
-      "grantDelay": 2592000,
-      "suspendable": false
+      "grantDelay": 0,
+      "network": true
     },
     {
       "name": "PAUSER",
       "id": 2,
       "executionClass": "immediate",
       "executionDelay": 0,
-      "grantClass": "standard",
-      "grantDelay": 172800,
-      "suspendable": false
-    },
-    {
-      "name": "UNPAUSER",
-      "id": 3,
-      "executionClass": "standard",
-      "executionDelay": 172800,
-      "grantClass": "standard",
-      "grantDelay": 172800,
-      "suspendable": false
+      "grantDelay": 0,
+      "network": false
     },
     {
       "name": "CURATION_SIGNER",
       "id": 4,
       "executionClass": "immediate",
       "executionDelay": 0,
-      "grantClass": "successor",
-      "grantDelay": 2592000,
-      "suspendable": false
+      "grantDelay": 0,
+      "network": false
     },
     {
       "name": "STORAGE_OPERATOR",
       "id": 5,
       "executionClass": "immediate",
       "executionDelay": 0,
-      "grantClass": "standard",
-      "grantDelay": 172800,
-      "suspendable": true
+      "grantDelay": 0,
+      "network": false
     },
     {
       "name": "MINTER",
       "id": 6,
       "executionClass": "immediate",
       "executionDelay": 0,
-      "grantClass": "successor",
-      "grantDelay": 2592000,
-      "suspendable": false
+      "grantDelay": 0,
+      "network": false
     },
     {
       "name": "KEEPER",
       "id": 7,
       "executionClass": "immediate",
       "executionDelay": 0,
-      "grantClass": "standard",
-      "grantDelay": 172800,
-      "suspendable": false
+      "grantDelay": 0,
+      "network": false
     },
     {
       "name": "PLATFORM",
       "id": 8,
       "executionClass": "immediate",
       "executionDelay": 0,
-      "grantClass": "standard",
-      "grantDelay": 172800,
-      "suspendable": true
+      "grantDelay": 0,
+      "network": false
     },
     {
       "name": "PARAMETER_SETTER",
       "id": 9,
-      "executionClass": "standard",
-      "executionDelay": 172800,
-      "grantClass": "standard",
-      "grantDelay": 172800,
-      "suspendable": false
+      "executionClass": "24h",
+      "executionDelay": 86400,
+      "grantDelay": 0,
+      "network": true
     },
     {
       "name": "FUNDS_SETTER",
       "id": 10,
-      "executionClass": "funds",
-      "executionDelay": 1209600,
-      "grantClass": "funds",
-      "grantDelay": 1209600,
-      "suspendable": false
+      "executionClass": "3d",
+      "executionDelay": 259200,
+      "grantDelay": 0,
+      "network": true
     },
     {
       "name": "SUCCESSOR_SETTER",
       "id": 11,
-      "executionClass": "successor",
-      "executionDelay": 2592000,
-      "grantClass": "successor",
-      "grantDelay": 2592000,
-      "suspendable": false
+      "executionClass": "7d",
+      "executionDelay": 604800,
+      "grantDelay": 0,
+      "network": true
     },
     {
       "name": "CURATOR",
       "id": 12,
       "executionClass": "immediate",
       "executionDelay": 0,
-      "grantClass": "successor",
-      "grantDelay": 2592000,
-      "suspendable": true
+      "grantDelay": 0,
+      "network": false
     }
   ],
   "holders": [
     {
-      "role": "ADMIN",
-      "account": "0x000000000000000000000000000000000000b001",
-      "label": "Hot admin Safe"
-    },
-    {
-      "role": "ADMIN",
-      "account": "0x000000000000000000000000000000000000b002",
-      "label": "Cold recovery admin Safe (ADMIN only; 3-of-5, signers distinct from the hot admin's and the guardians')"
-    },
-    {
-      "role": "ADMIN",
-      "account": "0x000000000000000000000000000000000000b004",
-      "label": "Third admin Safe (ADMIN only; an independent recovery council, signers distinct from both other admins' and the guardians')"
-    },
-    {
-      "role": "GUARDIAN",
-      "account": "0x000000000000000000000000000000000000b011",
-      "label": "Guardian Safe 1"
-    },
-    {
-      "role": "GUARDIAN",
-      "account": "0x000000000000000000000000000000000000b012",
-      "label": "Guardian Safe 2"
-    },
-    {
-      "role": "GUARDIAN",
-      "account": "0x000000000000000000000000000000000000b013",
-      "label": "Guardian Safe 3"
-    },
-    {
       "role": "PAUSER",
       "account": "0x000000000000000000000000000000000000b011",
       "label": "Guardian Safe 1"
@@ -171,26 +121,6 @@
       "role": "PAUSER",
       "account": "0x000000000000000000000000000000000000b013",
       "label": "Guardian Safe 3"
-    },
-    {
-      "role": "UNPAUSER",
-      "account": "0x000000000000000000000000000000000000b001",
-      "label": "Hot admin Safe"
-    },
-    {
-      "role": "PARAMETER_SETTER",
-      "account": "0x000000000000000000000000000000000000b001",
-      "label": "Hot admin Safe"
-    },
-    {
-      "role": "FUNDS_SETTER",
-      "account": "0x000000000000000000000000000000000000b001",
-      "label": "Hot admin Safe"
-    },
-    {
-      "role": "SUCCESSOR_SETTER",
-      "account": "0x000000000000000000000000000000000000b001",
-      "label": "Hot admin Safe"
     },
     {
       "role": "CURATION_SIGNER",
@@ -390,57 +320,57 @@
           "signature": "setContractURI(string)",
           "selector": "0x938e3d7b",
           "role": "PARAMETER_SETTER",
-          "class": "standard",
-          "delay": 172800
+          "class": "24h",
+          "delay": 86400
         },
         {
           "signature": "setOwner(address,address)",
           "selector": "0x299a7bcc",
           "role": "FUNDS_SETTER",
-          "class": "funds",
-          "delay": 1209600
+          "class": "3d",
+          "delay": 259200
         },
         {
           "signature": "setDefaultRenderer(address,address,bytes32)",
           "selector": "0x95021460",
           "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "class": "7d",
+          "delay": 604800
         },
         {
           "signature": "setAdmittedMinter(address,bool)",
           "selector": "0xa82ed63a",
           "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "class": "7d",
+          "delay": 604800
         },
         {
           "signature": "releaseContent(uint256,bytes32,uint256)",
           "selector": "0x56c6d728",
           "role": "PARAMETER_SETTER",
-          "class": "standard",
-          "delay": 172800
+          "class": "24h",
+          "delay": 86400
         },
         {
           "signature": "setDependency(bytes32,address,address)",
           "selector": "0x480b197d",
           "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "class": "7d",
+          "delay": 604800
         },
         {
           "signature": "rescueToMuseum(uint256)",
           "selector": "0xe9c794a4",
-          "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
         },
         {
-          "signature": "setRescueDelay(uint256)",
-          "selector": "0x5968b5f3",
-          "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "signature": "lowerFeeShare(uint256,uint32)",
+          "selector": "0xb8012723",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
         }
       ],
       "genesisOnly": [
@@ -465,37 +395,58 @@
         {
           "signature": "relicense(uint256,(string,bytes32),(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])",
           "selector": "0xd60ad0db",
-          "role": "PARAMETER_SETTER",
-          "class": "standard",
-          "delay": 172800
+          "role": "FUNDS_SETTER",
+          "class": "3d",
+          "delay": 259200
         },
         {
           "signature": "setRoyaltyRate(uint256,uint32,(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])",
           "selector": "0xc13560ef",
           "role": "FUNDS_SETTER",
-          "class": "funds",
-          "delay": 1209600
-        },
-        {
-          "signature": "repinRenderer(uint256,address,bytes32,bytes32,uint64,bytes)",
-          "selector": "0x12e96e4a",
-          "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "class": "3d",
+          "delay": 259200
         },
         {
           "signature": "setDelivery(address,address)",
           "selector": "0x118e803d",
           "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "class": "7d",
+          "delay": 604800
         },
         {
           "signature": "addStore(address,bytes32)",
           "selector": "0xce8238dd",
           "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "class": "7d",
+          "delay": 604800
+        },
+        {
+          "signature": "repinRenderer(uint256,address,bytes32,bytes32)",
+          "selector": "0x6ca04c66",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800
+        },
+        {
+          "signature": "retireStore(uint256)",
+          "selector": "0x2dc3d993",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "renounce(uint256,uint16,bytes32,uint64,bytes)",
+          "selector": "0x7dec8a35",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "syncOnChain(uint256,uint256,uint256)",
+          "selector": "0xe96a1fdf",
+          "role": "STORAGE_OPERATOR",
+          "class": "immediate",
+          "delay": 0
         }
       ],
       "genesisOnly": [],
@@ -535,6 +486,13 @@
           "role": "PLATFORM",
           "class": "immediate",
           "delay": 0
+        },
+        {
+          "signature": "markLocatorDead(uint256,bytes32,uint256)",
+          "selector": "0x9a3a206a",
+          "role": "STORAGE_OPERATOR",
+          "class": "immediate",
+          "delay": 0
         }
       ],
       "genesisOnly": [],
@@ -551,22 +509,29 @@
           "signature": "setContractURI(string)",
           "selector": "0x938e3d7b",
           "role": "PARAMETER_SETTER",
-          "class": "standard",
-          "delay": 172800
+          "class": "24h",
+          "delay": 86400
         },
         {
           "signature": "setOwner(address,address)",
           "selector": "0x299a7bcc",
           "role": "FUNDS_SETTER",
-          "class": "funds",
-          "delay": 1209600
+          "class": "3d",
+          "delay": 259200
         },
         {
           "signature": "setAdmittedMinter(address,bool)",
           "selector": "0xa82ed63a",
           "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "class": "7d",
+          "delay": 604800
+        },
+        {
+          "signature": "lowerFeeShare(uint256,uint32)",
+          "selector": "0xb8012723",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
         }
       ],
       "genesisOnly": [
@@ -587,7 +552,7 @@
         {
           "signature": "revokePackage(bytes32,bytes32)",
           "selector": "0x6ce7e2f6",
-          "role": "GUARDIAN",
+          "role": "NETWORK",
           "class": "immediate",
           "delay": 0
         },
@@ -595,8 +560,15 @@
           "signature": "setVerifier(address,address,bytes32)",
           "selector": "0xef65fbd2",
           "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "class": "7d",
+          "delay": 604800
+        },
+        {
+          "signature": "killSignerApprovals(address)",
+          "selector": "0x532178aa",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
         }
       ],
       "genesisOnly": [
@@ -621,7 +593,7 @@
         {
           "signature": "disableSigner(address)",
           "selector": "0x27086336",
-          "role": "GUARDIAN",
+          "role": "NETWORK",
           "class": "immediate",
           "delay": 0
         },
@@ -629,8 +601,8 @@
           "signature": "enableSigner(address)",
           "selector": "0x6dcd6b34",
           "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "class": "7d",
+          "delay": 604800
         }
       ],
       "genesisOnly": [],
@@ -644,53 +616,81 @@
       "status": "implemented on main",
       "functions": [
         {
-          "signature": "vetoChange(uint256)",
-          "selector": "0xc86a97ee",
-          "role": "GUARDIAN",
-          "class": "immediate",
-          "delay": 0
-        },
-        {
-          "signature": "stageOverride(uint256,uint8,(address,address,bytes32,bytes32),bytes32,uint64,bytes)",
-          "selector": "0xf27323a6",
-          "role": "PARAMETER_SETTER",
-          "class": "standard",
-          "delay": 172800
-        },
-        {
           "signature": "setConsolidationSource(address,address,bytes32)",
           "selector": "0x741cbdad",
           "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "class": "7d",
+          "delay": 604800
         },
         {
           "signature": "setPackageRegistry(address,address)",
           "selector": "0x00752cf1",
           "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "class": "7d",
+          "delay": 604800
         },
         {
           "signature": "resolveContested(uint256,bool,bytes32)",
           "selector": "0xd16d1602",
-          "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
         },
         {
           "signature": "setFederationRegistry(address,address)",
           "selector": "0x747e3199",
           "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "class": "7d",
+          "delay": 604800
         },
         {
-          "signature": "setTimer(uint8,uint48)",
-          "selector": "0xd5f2e860",
-          "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "signature": "freeze(uint256)",
+          "selector": "0xd7a78db8",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "unfreeze(uint256)",
+          "selector": "0x6623fc46",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "cancelReplacement(uint256)",
+          "selector": "0x0c3f8b2a",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "cancelOwnChange(uint256)",
+          "selector": "0x6196ae79",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "stageReplacement(uint256,(address,address,bytes32,bytes32),bytes32,uint64,bytes)",
+          "selector": "0x2eff6829",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "setFederationDelisted(uint256,bool,bytes32)",
+          "selector": "0x2a973e93",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "lowerFederatedFeeShare(address,uint32)",
+          "selector": "0xa8bf8adc",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
         }
       ],
       "genesisOnly": [
@@ -742,15 +742,15 @@
           "signature": "appendGovernanceManifest((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))",
           "selector": "0x5cab7fab",
           "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "class": "7d",
+          "delay": 604800
         },
         {
           "signature": "setArtistResolver(address,address,bytes32)",
           "selector": "0x4585913a",
           "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "class": "7d",
+          "delay": 604800
         }
       ],
       "genesisOnly": [],
@@ -773,51 +773,51 @@
         {
           "signature": "unpause()",
           "selector": "0x3f4ba83a",
-          "role": "UNPAUSER",
-          "class": "standard",
-          "delay": 172800
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0
         },
         {
           "signature": "pause(uint256,bytes32)",
           "selector": "0xa9f8f393",
-          "role": "GUARDIAN",
+          "role": "PAUSER",
           "class": "immediate",
           "delay": 0
         },
         {
           "signature": "resume(uint256)",
           "selector": "0x414000b5",
-          "role": "UNPAUSER",
-          "class": "standard",
-          "delay": 172800
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0
         },
         {
           "signature": "cancel(uint256,bytes32)",
           "selector": "0xeafb64d5",
-          "role": "PARAMETER_SETTER",
-          "class": "standard",
-          "delay": 172800
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0
         },
         {
           "signature": "setConfig((uint32,uint32,uint32,uint32,uint32),(uint32,uint32,uint32,uint32,uint32))",
           "selector": "0x1b380907",
           "role": "PARAMETER_SETTER",
-          "class": "standard",
-          "delay": 172800
+          "class": "24h",
+          "delay": 86400
         },
         {
           "signature": "setTarget(address,bool)",
           "selector": "0x80ffe77f",
           "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "class": "7d",
+          "delay": 604800
         },
         {
           "signature": "setFederationRegistry(address,address)",
           "selector": "0x747e3199",
           "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "class": "7d",
+          "delay": 604800
         }
       ],
       "genesisOnly": [],
@@ -840,30 +840,30 @@
         {
           "signature": "unpause()",
           "selector": "0x3f4ba83a",
-          "role": "UNPAUSER",
-          "class": "standard",
-          "delay": 172800
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0
         },
         {
           "signature": "setConfig((uint96,uint16,uint16,uint32,uint32,uint32,uint32),(uint96,uint16,uint16,uint32,uint32,uint32,uint32))",
           "selector": "0x3a59bb19",
           "role": "PARAMETER_SETTER",
-          "class": "standard",
-          "delay": 172800
+          "class": "24h",
+          "delay": 86400
         },
         {
           "signature": "setTarget(address,bool)",
           "selector": "0x80ffe77f",
           "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "class": "7d",
+          "delay": 604800
         },
         {
           "signature": "setLimits(uint256,uint256)",
           "selector": "0xc4590d3f",
           "role": "PARAMETER_SETTER",
-          "class": "standard",
-          "delay": 172800
+          "class": "24h",
+          "delay": 86400
         }
       ],
       "genesisOnly": [],
@@ -880,29 +880,29 @@
           "signature": "setFeeTerms(bytes32,uint64,address,uint32)",
           "selector": "0x9a8fce26",
           "role": "FUNDS_SETTER",
-          "class": "funds",
-          "delay": 1209600
+          "class": "3d",
+          "delay": 259200
         },
         {
           "signature": "setRoyaltyRate(bytes32,uint64,uint32)",
           "selector": "0x6e58f7af",
           "role": "PARAMETER_SETTER",
-          "class": "standard",
-          "delay": 172800
+          "class": "24h",
+          "delay": 86400
         },
         {
           "signature": "setDefaultLicense(bytes32,uint64,(string,bytes32))",
           "selector": "0x387226d6",
           "role": "PARAMETER_SETTER",
-          "class": "standard",
-          "delay": 172800
+          "class": "24h",
+          "delay": 86400
         },
         {
           "signature": "setMuseum(uint64,address)",
           "selector": "0x10d71d79",
           "role": "FUNDS_SETTER",
-          "class": "funds",
-          "delay": 1209600
+          "class": "3d",
+          "delay": 259200
         }
       ],
       "genesisOnly": [],
@@ -919,27 +919,27 @@
           "signature": "admitAsset(address,uint64,uint256)",
           "selector": "0x3979fc8e",
           "role": "FUNDS_SETTER",
-          "class": "funds",
-          "delay": 1209600
+          "class": "3d",
+          "delay": 259200
         },
         {
           "signature": "setDefaultCurrency(bytes32,uint64,address)",
           "selector": "0xbc27c0e9",
           "role": "FUNDS_SETTER",
-          "class": "funds",
-          "delay": 1209600
+          "class": "3d",
+          "delay": 259200
         },
         {
           "signature": "setIncrementFloor(address,uint64,uint256)",
           "selector": "0xad176f96",
           "role": "PARAMETER_SETTER",
-          "class": "standard",
-          "delay": 172800
+          "class": "24h",
+          "delay": 86400
         },
         {
           "signature": "deprecateAsset(address)",
           "selector": "0x41003c89",
-          "role": "GUARDIAN",
+          "role": "NETWORK",
           "class": "immediate",
           "delay": 0
         },
@@ -947,8 +947,8 @@
           "signature": "setOpeningBid(address,uint64,uint256)",
           "selector": "0x373577fc",
           "role": "PARAMETER_SETTER",
-          "class": "standard",
-          "delay": 172800
+          "class": "24h",
+          "delay": 86400
         }
       ],
       "genesisOnly": [],
@@ -965,15 +965,15 @@
           "signature": "recover(address,address,address)",
           "selector": "0x159c61f8",
           "role": "FUNDS_SETTER",
-          "class": "funds",
-          "delay": 1209600
+          "class": "3d",
+          "delay": 259200
         },
         {
           "signature": "sweepExcess(address,address)",
           "selector": "0xfc6e9367",
           "role": "FUNDS_SETTER",
-          "class": "funds",
-          "delay": 1209600
+          "class": "3d",
+          "delay": 259200
         }
       ],
       "genesisOnly": [],
@@ -991,8 +991,8 @@
           "signature": "setDestination(uint64,address)",
           "selector": "0x765b2cf1",
           "role": "FUNDS_SETTER",
-          "class": "funds",
-          "delay": 1209600
+          "class": "3d",
+          "delay": 259200
         }
       ],
       "genesisOnly": [],
@@ -1010,8 +1010,8 @@
           "signature": "setDestination(uint64,address)",
           "selector": "0x765b2cf1",
           "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000,
+          "class": "7d",
+          "delay": 604800,
           "note": "30-day class, not the fee vault's 14: the museum vault holds existing works (every museum-held 1/1), so its destination is an authority over existing tokens (ADR 0007)"
         }
       ],
@@ -1029,13 +1029,13 @@
           "signature": "register(bytes32,bytes32,bytes32)",
           "selector": "0x4da274fd",
           "role": "PARAMETER_SETTER",
-          "class": "standard",
-          "delay": 172800
+          "class": "24h",
+          "delay": 86400
         },
         {
           "signature": "deprecate(bytes32,bytes32)",
           "selector": "0x38bc7435",
-          "role": "GUARDIAN",
+          "role": "NETWORK",
           "class": "immediate",
           "delay": 0
         }
@@ -1054,22 +1054,29 @@
           "signature": "setConfig((uint256,bytes32,uint32,uint16,bool),(uint256,bytes32,uint32,uint16,bool))",
           "selector": "0x058832db",
           "role": "PARAMETER_SETTER",
-          "class": "standard",
-          "delay": 172800
+          "class": "24h",
+          "delay": 86400
         },
         {
           "signature": "setCoordinator(address,address,bytes32)",
           "selector": "0xf1fb02ec",
           "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "class": "7d",
+          "delay": 604800
         },
         {
           "signature": "lowerCallbackGasLimit(uint32,uint32)",
           "selector": "0x37f9925e",
           "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "class": "7d",
+          "delay": 604800
+        },
+        {
+          "signature": "setWrapper(address,address,bytes32)",
+          "selector": "0x40cacfc9",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800
         }
       ],
       "genesisOnly": [],
@@ -1085,44 +1092,51 @@
         {
           "signature": "approveTemplate(bytes32,address,uint32,uint8)",
           "selector": "0x62c03b8e",
-          "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
         },
         {
           "signature": "revokeTemplate(bytes32)",
           "selector": "0x3d4e7cc8",
-          "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
         },
         {
           "signature": "setAdapter(address,bool)",
           "selector": "0x332f6465",
           "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "class": "7d",
+          "delay": 604800
         },
         {
           "signature": "suspendTemplate(bytes32)",
           "selector": "0xbb294eed",
-          "role": "GUARDIAN",
-          "class": "immediate",
-          "delay": 0
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
         },
         {
           "signature": "resumeTemplate(bytes32)",
           "selector": "0x8a16038f",
           "role": "PARAMETER_SETTER",
-          "class": "standard",
-          "delay": 172800
+          "class": "24h",
+          "delay": 86400
         },
         {
           "signature": "setStatus(address[],uint8,bytes32)",
           "selector": "0x565f9c3d",
           "role": "PARAMETER_SETTER",
-          "class": "standard",
-          "delay": 172800
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "reinstateTemplate(bytes32)",
+          "selector": "0x8a9e9fbe",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
         }
       ],
       "genesisOnly": [],
@@ -1145,23 +1159,23 @@
         {
           "signature": "unpause()",
           "selector": "0x3f4ba83a",
-          "role": "UNPAUSER",
-          "class": "standard",
-          "delay": 172800
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0
         },
         {
           "signature": "setConfig((uint96,uint16,uint16,uint32,uint32,uint32,uint32),(uint96,uint16,uint16,uint32,uint32,uint32,uint32))",
           "selector": "0x3a59bb19",
           "role": "PARAMETER_SETTER",
-          "class": "standard",
-          "delay": 172800
+          "class": "24h",
+          "delay": 86400
         },
         {
           "signature": "setLimits(uint256,uint256)",
           "selector": "0xc4590d3f",
           "role": "PARAMETER_SETTER",
-          "class": "standard",
-          "delay": 172800
+          "class": "24h",
+          "delay": 86400
         }
       ],
       "genesisOnly": [],
