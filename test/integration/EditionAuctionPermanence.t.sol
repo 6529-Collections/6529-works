@@ -187,7 +187,9 @@ contract EditionAuctionPermanenceTest is EditionAuctionStack {
     ///      cannot settle then keeps its edition sale open for the 90 extra days too, in the lens
     ///      and in the adapter, so a rescue under the longer delay can still land first.
     function test_L4_ALongerRescueDelayLengthensTheAbandonment() public {
-        _govern(hotAdmin, address(stream), abi.encodeCall(stream.setRescueDelay, (180 days)));
+        _govern(
+            hotAdmin, address(stream), abi.encodeWithSignature("setRescueDelay(uint256)", 180 days)
+        );
         (,, uint256 oneSaleId, uint256 tokenId, uint256 saleId) =
             _startMaster(_actor("slowRescueArtist"), 0);
         _editionBid(saleId, fan, 40, 1);
@@ -233,7 +235,9 @@ contract EditionAuctionPermanenceTest is EditionAuctionStack {
         auction.settle(oneSaleId);
         uint256 end = ea.endTimes(saleId).endTime;
         IUniformEditionAuctionLens l = IUniformEditionAuctionLens(address(editionAuction));
-        _govern(hotAdmin, address(stream), abi.encodeCall(stream.setRescueDelay, (180 days)));
+        _govern(
+            hotAdmin, address(stream), abi.encodeWithSignature("setRescueDelay(uint256)", 180 days)
+        );
         _govern(
             hotAdmin,
             address(stream),
@@ -242,8 +246,12 @@ contract EditionAuctionPermanenceTest is EditionAuctionStack {
         // Governance removed it after the end: Stream rescues from the removal, so the floor
         // moves with it (the automated review of 16 November 2026).
         uint256 late = block.timestamp - end;
-        _govern(hotAdmin, address(stream), abi.encodeCall(stream.setRescueDelay, (360 days)));
-        _govern(hotAdmin, address(stream), abi.encodeCall(stream.setRescueDelay, (720 days)));
+        _govern(
+            hotAdmin, address(stream), abi.encodeWithSignature("setRescueDelay(uint256)", 360 days)
+        );
+        _govern(
+            hotAdmin, address(stream), abi.encodeWithSignature("setRescueDelay(uint256)", 720 days)
+        );
         (, uint256 at) = l.abandonable(saleId);
         assertEq(at, end + 150 days + 90 days + late, "the 180 days locked at the removal");
         _govern(
@@ -253,8 +261,12 @@ contract EditionAuctionPermanenceTest is EditionAuctionStack {
         );
         (, at) = l.abandonable(saleId);
         assertEq(at, end + 150 days + 630 days, "admitted again: the 720 days in force");
-        _govern(hotAdmin, address(stream), abi.encodeCall(stream.setRescueDelay, (1440 days)));
-        _govern(hotAdmin, address(stream), abi.encodeCall(stream.setRescueDelay, (2880 days)));
+        _govern(
+            hotAdmin, address(stream), abi.encodeWithSignature("setRescueDelay(uint256)", 1440 days)
+        );
+        _govern(
+            hotAdmin, address(stream), abi.encodeWithSignature("setRescueDelay(uint256)", 2880 days)
+        );
         (, at) = l.abandonable(saleId);
         assertEq(at, end + 150 days + 730 days, "capped");
         vm.warp(at - 1);

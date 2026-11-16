@@ -237,7 +237,9 @@ contract FederatedPermanenceTest is FederationBase {
     ///      no rescue: lengthening Stream's rescue delay leaves a federated sale's abandonment at
     ///      its end plus its locked delay, in the lens and in the adapter.
     function test_Abandon_AFederatedSaleWaitsOnlyItsLockedDelay() public {
-        _govern(hotAdmin, address(stream), abi.encodeCall(stream.setRescueDelay, (180 days)));
+        _govern(
+            hotAdmin, address(stream), abi.encodeWithSignature("setRescueDelay(uint256)", 180 days)
+        );
         Work memory w = _fedMaster(fedArtist, 0);
         (uint256 oneSaleId, uint256 tokenId) = _startFed(pairStream, fedArtist, w, RATE);
         uint256 saleId = fea.open(address(pairEditions), tokenId, abi.encode(w.item));

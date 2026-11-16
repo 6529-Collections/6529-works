@@ -397,7 +397,7 @@ contract GovernanceHandoverTest is IntegrationBase {
         _immediate(platform, address(stream), abi.encodeCall(stream.createCollection, ("H", "h")));
         _delayedAndCancelled(
             address(stream),
-            abi.encodeCall(stream.setRescueDelay, (rescue + 1)),
+            abi.encodeWithSignature("setRescueDelay(uint256)", rescue + 1),
             abi.encodeCall(stream.setContractURI, ("ar://cancelled"))
         );
         assertEq(stream.rescueDelay(), rescue + 1);
