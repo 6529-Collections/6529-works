@@ -88,7 +88,9 @@ abstract contract SalesStackBase is IntegrationBase {
         _govern(
             hotAdmin,
             address(auction),
-            abi.encodeCall(auction.setFederationRegistry, (address(0), address(reg)))
+            abi.encodeCall(
+                auction.setFederationRegistry, (auction.federationRegistry(), address(reg))
+            )
         );
         reg.register(
             address(fed),

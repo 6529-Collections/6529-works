@@ -20,6 +20,11 @@ import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.so
 import { Roles } from "src/governance/Roles.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
 import { Editions } from "src/editions/Editions.sol";
+import { FederatedEditionAuction } from "src/federated/FederatedEditionAuction.sol";
+import { FederatedEditionAuctionLens } from "src/federated/FederatedEditionAuctionLens.sol";
+import { FederatedEditions } from "src/federated/FederatedEditions.sol";
+import { FederatedStream } from "src/federated/FederatedStream.sol";
+import { FederationRegistry } from "src/federated/FederationRegistry.sol";
 import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
 import { ConsolidationAdapter } from "src/identity/ConsolidationAdapter.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
@@ -157,6 +162,13 @@ library DeployV1 {
         /// CREATE); replaceable through `WorkRecords.setDelivery`.
         WorkDelivery workDelivery;
         Editions editions;
+        /// The federation registry (ADR 0008): template code hashes, admitted adapters,
+        /// delisting. Bound in the artist registry at genesis (`bindFederationRegistry`).
+        FederationRegistry federationRegistry;
+        /// The federated edition auction's lens, deployed on its own just before it (F8).
+        address federatedEditionAuctionLens;
+        /// The uniform-price edition auction's second deployment, for federated pairs.
+        FederatedEditionAuction federatedEditionAuction;
     }
 
     /// @notice The epoch-0 governance manifest: the SHA-256 of the signed manifest JSON and
@@ -167,6 +179,8 @@ library DeployV1 {
     }
 
     error UnknownContract(string name);
+    /// @notice A wiring argument names no federated template (`templateCodeHash`).
+    error UnknownTemplate(string name);
     error UnknownRoleName(string name);
     error UnsupportedWiringSignature(string signature);
     error EmptyText();
@@ -223,7 +237,7 @@ library DeployV1 {
     ///         Each lens is its own entry, just before its auction, so no deployment carries two
     ///         contracts' code (F8, the rc.2 review's GAS M-2).
     function order(Params memory p) internal pure returns (string[] memory list) {
-        string[23] memory all = [
+        string[26] memory all = [
             "GovernanceConfigurator",
             "ContentStore",
             "DependencyRegistry",
@@ -246,7 +260,10 @@ library DeployV1 {
             "EnglishAuctionLens",
             "EnglishAuction",
             "UniformEditionAuctionLens",
-            "UniformEditionAuction"
+            "UniformEditionAuction",
+            "FederationRegistry",
+            "FederatedEditionAuctionLens",
+            "FederatedEditionAuction"
         ];
         bool vrf = p.vrfCoordinator != address(0);
         list = new string[](all.length + (vrf ? 1 : 0));
@@ -457,7 +474,63 @@ library DeployV1 {
                 )
             );
         }
+        return _initcodeFederation(p, d, n, name);
+    }
+
+    function _initcodeFederation(
+        Params memory p,
+        Deployment memory d,
+        bytes32 n,
+        string memory name
+    ) private view returns (bytes memory) {
+        address m = address(d.manager);
+        if (n == keccak256("FederationRegistry")) {
+            // Its split ledger is the economics resolver's split factory, read at construction.
+            return _code(
+                type(FederationRegistry).creationCode,
+                abi.encode(m, d.artistRegistry, d.economicsResolver)
+            );
+        }
+        if (n == keccak256("FederatedEditionAuctionLens")) {
+            // Stateless; reads the federation registry through the artist registry's pointer.
+            return _code(
+                type(FederatedEditionAuctionLens).creationCode,
+                abi.encode(d.englishAuction, d.revenueEscrow, d.artistRegistry, d.economicsResolver)
+            );
+        }
+        if (n == keccak256("FederatedEditionAuction")) {
+            // The edition auction's code a second time, with 6529 Stream Editions' genesis
+            // parameters and limits; it pins the lens deployed just before it.
+            address lens = d.federatedEditionAuctionLens;
+            return _code(
+                type(FederatedEditionAuction).creationCode,
+                abi.encode(
+                    m,
+                    d.revenueEscrow,
+                    d.englishAuction,
+                    lens,
+                    lens.codehash,
+                    p.editionAuction,
+                    editionAuctionLimits()
+                )
+            );
+        }
         revert UnknownContract(name);
+    }
+
+    /// @notice The runtime code hash of a v1 federated template, which the genesis wiring
+    ///         approves in the federation registry: `keccak256(type(T).runtimeCode)`, the code
+    ///         hash of every copy (the templates have no immutables), computed from this build
+    ///         rather than held as a literal, so it follows any change to a template's source or
+    ///         compiler settings.
+    /// @param name "FederatedStream" or "FederatedEditions".
+    function templateCodeHash(string memory name) internal pure returns (bytes32) {
+        bytes32 n = keccak256(bytes(name));
+        if (n == keccak256("FederatedStream")) return keccak256(type(FederatedStream).runtimeCode);
+        if (n == keccak256("FederatedEditions")) {
+            return keccak256(type(FederatedEditions).runtimeCode);
+        }
+        revert UnknownTemplate(name);
     }
 
     /// @notice The edition auction's genesis parameters (ADR 0005 §4; D138, D140, D141, owner
@@ -583,6 +656,9 @@ library DeployV1 {
         if (n == keccak256("WorkRecords")) return address(d.workRecords);
         if (n == keccak256("WorkDelivery")) return address(d.workDelivery);
         if (n == keccak256("Editions")) return address(d.editions);
+        if (n == keccak256("FederationRegistry")) return address(d.federationRegistry);
+        if (n == keccak256("FederatedEditionAuctionLens")) return d.federatedEditionAuctionLens;
+        if (n == keccak256("FederatedEditionAuction")) return address(d.federatedEditionAuction);
         revert UnknownContract(name);
     }
 
@@ -642,6 +718,12 @@ library DeployV1 {
             d.workDelivery = WorkDelivery(a);
         } else if (n == keccak256("Editions")) {
             d.editions = Editions(a);
+        } else if (n == keccak256("FederationRegistry")) {
+            d.federationRegistry = FederationRegistry(a);
+        } else if (n == keccak256("FederatedEditionAuctionLens")) {
+            d.federatedEditionAuctionLens = a;
+        } else if (n == keccak256("FederatedEditionAuction")) {
+            d.federatedEditionAuction = FederatedEditionAuction(a);
         } else {
             revert UnknownContract(name);
         }
@@ -649,7 +731,7 @@ library DeployV1 {
 
     /// @notice Every contract name `addressOf` knows, for records and readback.
     function names() internal pure returns (string[] memory list) {
-        string[26] memory all = [
+        string[29] memory all = [
             "GovernanceConfigurator",
             "WorksAccessManager",
             "ContentStore",
@@ -675,7 +757,10 @@ library DeployV1 {
             "EnglishAuctionLens",
             "UniformEditionAuction",
             "UniformEditionAuctionLens",
-            "Editions"
+            "Editions",
+            "FederationRegistry",
+            "FederatedEditionAuctionLens",
+            "FederatedEditionAuction"
         ];
         list = new string[](all.length);
         for (uint256 i; i < all.length; ++i) {
@@ -867,8 +952,9 @@ library DeployV1 {
     }
 
     /// @dev Encodes a wiring call's arguments: an address by contract name or as a 0x literal,
-    ///      a bool, a bytes32 literal or an unsigned integer. False if a named contract is not
-    ///      deployed.
+    ///      a bool, a bytes32 as a 0x literal or as a federated template's name (its runtime
+    ///      code hash, `templateCodeHash`), or an unsigned integer. False if a named contract is
+    ///      not deployed.
     function _encodeArgs(
         Deployment memory d,
         string memory json,
@@ -887,7 +973,10 @@ library DeployV1 {
                 if (!literal && a == address(0)) return (false, out);
                 out = bytes.concat(out, abi.encode(a));
             } else if (t == keccak256("bytes32")) {
-                out = bytes.concat(out, vm.parseJsonBytes32(json, arg));
+                string memory value = vm.parseJsonString(json, arg);
+                bytes memory b = bytes(value);
+                bool literal = b.length == 66 && b[0] == "0" && b[1] == "x";
+                out = bytes.concat(out, literal ? vm.parseBytes32(value) : templateCodeHash(value));
             } else if (_isUint(types[j])) {
                 out = bytes.concat(out, abi.encode(vm.parseJsonUint(json, arg)));
             } else if (t == keccak256("bool")) {

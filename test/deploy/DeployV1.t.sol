@@ -33,6 +33,8 @@ import { DeployGuards } from "script/DeployGuards.sol";
 import { EconomicsResolver } from "src/economics/EconomicsResolver.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { Editions } from "src/editions/Editions.sol";
+import { FederatedStream } from "src/federated/FederatedStream.sol";
+import { FederationRegistry } from "src/federated/FederationRegistry.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { VerifyV1 } from "script/VerifyV1.sol";
 import { MockVrfCoordinator } from "../mocks/entropy/EntropyMocks.sol";
@@ -166,12 +168,14 @@ contract DeployV1Test is Test {
         ) = _genesis(_params());
         // Every v1 contract with a governance map; the optional entropy module is not
         // deployed here.
-        assertEq(cfg.targets.length, 16, "governed targets");
+        assertEq(cfg.targets.length, 18, "governed targets");
         assertEq(cfg.grants.length, 18, "holders");
-        // Every wiring call in the genesis JSON: nine binds, two admitted minters (the 1/1
-        // auction on Stream, the edition auction on Editions), their two sale targets, three
-        // default currencies and the manifest.
-        assertEq(calls.length, 18, "wiring calls");
+        // Every wiring call in the genesis JSON: ten binds (the federation registry's among
+        // them), two admitted minters (the 1/1 auction on Stream, the edition auction on
+        // Editions), their two sale targets, the ETH opening bid, three default currencies, the
+        // federation's first configuration (the English auction's registry, two admitted
+        // adapters, two template versions) and the manifest.
+        assertEq(calls.length, 24, "wiring calls");
         _settle(d);
         VerifyV1.check(d, cfg, calls);
 
@@ -257,6 +261,49 @@ contract DeployV1Test is Test {
         }
     }
 
+    /// @dev FED-63: genesis binds the federation registry in the artist registry (the one-shot
+    ///      bind), points the English auction at it with its code hash pinned, admits both shared
+    ///      adapters, and approves the two v1 template code hashes the build computes, so a
+    ///      template copy deployed now runs exactly the approved code.
+    function test_GenesisWiresTheFederation() public {
+        (
+            DeployV1.Deployment memory d,
+            GovernanceConfig.Config memory cfg,
+            GovernanceConfig.Call[] memory calls
+        ) = _genesis(_params());
+        _settle(d);
+        VerifyV1.check(d, cfg, calls);
+        VerifyV1.checkFederation(d);
+        assertEq(d.artistRegistry.federationRegistry(), address(d.federationRegistry));
+        assertEq(
+            IEnglishAuctionFull(address(d.englishAuction)).federationRegistry(),
+            address(d.federationRegistry)
+        );
+        assertTrue(d.federationRegistry.isAdmittedAdapter(address(d.englishAuction)));
+        assertTrue(d.federationRegistry.isAdmittedAdapter(address(d.federatedEditionAuction)));
+        assertEq(d.federatedEditionAuction.lens(), d.federatedEditionAuctionLens);
+        bytes32 streamHash = DeployV1.templateCodeHash("FederatedStream");
+        assertEq(streamHash, keccak256(type(FederatedStream).runtimeCode));
+        assertEq(uint8(d.federationRegistry.templateOf(streamHash).status), 1, "approved");
+        assertEq(
+            uint8(
+                d.federationRegistry.templateOf(DeployV1.templateCodeHash("FederatedEditions")).form
+            ),
+            1,
+            "the ERC-1155"
+        );
+        // A later approval waits its 30-day class: nothing but genesis wires one.
+        assertFalse(GovernanceConfig.isGenesisSelector(FederationRegistry.revokeTemplate.selector));
+        vm.expectRevert(
+            abi.encodeWithSelector(DeployV1.UnknownTemplate.selector, "FederatedNothing")
+        );
+        this.templateHash("FederatedNothing");
+    }
+
+    function templateHash(string memory name) external pure returns (bytes32) {
+        return DeployV1.templateCodeHash(name);
+    }
+
     function test_GenesisStoresTheCc0TextCompleteOnChain() public {
         DeployV1.Params memory p = _params();
         (DeployV1.Deployment memory d,,) = _genesis(p);
@@ -289,7 +336,7 @@ contract DeployV1Test is Test {
             GovernanceConfig.Call[] memory calls
         ) = _genesis(p);
         assertTrue(address(d.entropyModule) != address(0));
-        assertEq(cfg.targets.length, 17);
+        assertEq(cfg.targets.length, 19);
         assertEq(d.stream.entropyModule(), address(d.entropyModule));
         _settle(d);
         VerifyV1.check(d, cfg, calls);

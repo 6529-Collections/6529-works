@@ -239,10 +239,10 @@ contract DeploySimulationSepoliaForkTest is Test {
 
         vm.warp(block.timestamp + 5 days);
         (uint256 targets, uint256 calls, uint256 holders) = verifier.verify(record);
-        // The anvil run's 16 targets and 18 wiring calls (DeployScript.t.sol), plus the entropy
+        // The anvil run's 18 targets and 24 wiring calls (DeployScript.t.sol), plus the entropy
         // module, which is governed but has no genesis wiring call.
-        assertEq(targets, 17, "every governed contract, the entropy module included");
-        assertEq(calls, 18, "every wiring call");
+        assertEq(targets, 19, "every governed contract, the entropy module included");
+        assertEq(calls, 24, "every wiring call");
         assertEq(holders, 18, "every genesis holder");
         assertEq(
             vm.parseJsonAddress(record, ".params.networkFeeRecipient"),

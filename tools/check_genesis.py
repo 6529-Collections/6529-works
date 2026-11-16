@@ -49,13 +49,19 @@ from typing import Callable
 CONFIG = "config/genesis.example.json"
 CLASS_DELAY = {"immediate": 0, "standard": 172_800, "funds": 1_209_600, "successor": 2_592_000}
 # Functions `GovernanceConfig.isGenesisSelector` admits (one-shot binds, admitted minters,
-# sale targets, first default currencies, the English auction's ETH opening bid, the epoch-0
-# manifest). The Solidity tests pin the selectors themselves.
+# sale targets, first default currencies, the English auction's ETH opening bid, the
+# federation's first registry, adapters and template versions, the epoch-0 manifest). The
+# Solidity tests pin the selectors themselves.
 GENESIS_FUNCTIONS = frozenset({
     "bindWorkRecords", "bindEditions", "bindStream", "bindPackageRegistry", "bindSplitFactory",
     "bindStatementLog", "bindFederationRegistry", "setAdmittedMinter", "setTarget",
-    "setDefaultCurrency", "setOpeningBid", "appendGovernanceManifest",
+    "setDefaultCurrency", "setOpeningBid", "setFederationRegistry", "setAdapter",
+    "approveTemplate", "appendGovernanceManifest",
 })
+
+# Wiring arguments that name a federated template: `DeployV1.templateCodeHash` computes the
+# code hash from the build, so the JSON holds the name, never a literal (ADR 0008).
+TEMPLATES = frozenset({"FederatedStream", "FederatedEditions"})
 
 # Zero-delay roles a guardian may never suspend (check 8): the veto, the pause, and the curation
 # signer, whose kill switch is the verifier's `disableSigner` (it also ends the signer's epoch).
@@ -406,7 +412,7 @@ def check(
         )
         for arg in w.get("args", []):
             if isinstance(arg, str) and not arg.startswith("0x") and arg not in by_name \
-                    and arg not in peers:
+                    and arg not in peers and arg not in TEMPLATES:
                 problems.append(f"{where}: argument {arg} names no contract or peer")
         wired.add((name, sig))
     for name, c in by_name.items():

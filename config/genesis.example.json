@@ -709,15 +709,13 @@
         {
           "signature": "bindStatementLog(address)",
           "selector": "0xa46c8086"
-        }
-      ],
-      "deferred": [
+        },
         {
           "signature": "bindFederationRegistry(address)",
-          "selector": "0x3d4dbd3c",
-          "note": "Bound when the federation registry ships (in v1, specified by a later ADR), as a 30-day ADMIN action; replaceable afterwards by setFederationRegistry"
+          "selector": "0x3d4dbd3c"
         }
-      ]
+      ],
+      "deferred": []
     },
     {
       "name": "StatementLog",
@@ -1076,6 +1074,98 @@
       ],
       "genesisOnly": [],
       "deferred": []
+    },
+    {
+      "name": "FederationRegistry",
+      "artifact": "src/federated/FederationRegistry.sol:FederationRegistry",
+      "implementation": "src/federated/FederationRegistry.sol:FederationRegistry",
+      "address": "0x000000000000000000000000000000000000a015",
+      "status": "implemented on the federation branch (ADR 0008)",
+      "functions": [
+        {
+          "signature": "approveTemplate(bytes32,uint32,uint8)",
+          "selector": "0xcd9ac654",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        },
+        {
+          "signature": "revokeTemplate(bytes32)",
+          "selector": "0x3d4e7cc8",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        },
+        {
+          "signature": "setAdapter(address,bool)",
+          "selector": "0x332f6465",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        },
+        {
+          "signature": "suspendTemplate(bytes32)",
+          "selector": "0xbb294eed",
+          "role": "GUARDIAN",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "resumeTemplate(bytes32)",
+          "selector": "0x8a16038f",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
+        },
+        {
+          "signature": "setStatus(address[],uint8,bytes32)",
+          "selector": "0x565f9c3d",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "FederatedEditionAuction",
+      "artifact": "src/federated/FederatedEditionAuction.sol:FederatedEditionAuction",
+      "implementation": "src/federated/FederatedEditionAuction.sol:FederatedEditionAuction",
+      "address": "0x000000000000000000000000000000000000a016",
+      "status": "implemented on the federation branch (ADR 0008); setTarget is a pure refusal (the federation registry decides), so it has no row",
+      "functions": [
+        {
+          "signature": "pause()",
+          "selector": "0x8456cb59",
+          "role": "PAUSER",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "unpause()",
+          "selector": "0x3f4ba83a",
+          "role": "UNPAUSER",
+          "class": "standard",
+          "delay": 172800
+        },
+        {
+          "signature": "setConfig((uint96,uint16,uint16,uint32,uint32,uint32,uint32),(uint96,uint16,uint16,uint32,uint32,uint32,uint32))",
+          "selector": "0x3a59bb19",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
+        },
+        {
+          "signature": "setLimits(uint256,uint256)",
+          "selector": "0xc4590d3f",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
     }
   ],
   "wiring": [
@@ -1233,6 +1323,65 @@
       "calldata": "0xbc27c0e912f6fbd5cb8f4522cd7d37f0fdc7097a4960a4f90e7a869820d34c7bdb75edff00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
     },
     {
+      "contract": "ArtistRegistry",
+      "signature": "bindFederationRegistry(address)",
+      "args": [
+        "FederationRegistry"
+      ],
+      "note": "The genesis one-shot bind (ADR 0008); later replacements use setFederationRegistry (30 days)",
+      "calldata": "0x3d4dbd3c000000000000000000000000000000000000000000000000000000000000a015"
+    },
+    {
+      "contract": "EnglishAuction",
+      "signature": "setFederationRegistry(address,address)",
+      "args": [
+        "0x0000000000000000000000000000000000000000",
+        "FederationRegistry"
+      ],
+      "note": "The English auction serves the contracts the registry lists, its code hash pinned at this call",
+      "calldata": "0x747e31990000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a015"
+    },
+    {
+      "contract": "FederationRegistry",
+      "signature": "setAdapter(address,bool)",
+      "args": [
+        "EnglishAuction",
+        true
+      ],
+      "calldata": "0x332f6465000000000000000000000000000000000000000000000000000000000000a0080000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "contract": "FederationRegistry",
+      "signature": "setAdapter(address,bool)",
+      "args": [
+        "FederatedEditionAuction",
+        true
+      ],
+      "calldata": "0x332f6465000000000000000000000000000000000000000000000000000000000000a0160000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "contract": "FederationRegistry",
+      "signature": "approveTemplate(bytes32,uint32,uint8)",
+      "args": [
+        "FederatedStream",
+        1,
+        0
+      ],
+      "note": "Federated Stream v1 (ERC721). The code hash is computed by DeployV1.templateCodeHash from this build (keccak256 of the template's runtime code), never held here; the calldata's first word is a placeholder",
+      "calldata": "0xcd9ac654000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "contract": "FederationRegistry",
+      "signature": "approveTemplate(bytes32,uint32,uint8)",
+      "args": [
+        "FederatedEditions",
+        1,
+        1
+      ],
+      "note": "Federated Stream Editions v1 (ERC1155), as above",
+      "calldata": "0xcd9ac654000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
       "contract": "StatementLog",
       "signature": "appendGovernanceManifest((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))",
       "args": [],
@@ -1259,11 +1408,6 @@
       "contract": "Editions",
       "lane": "editions",
       "note": "Mapped from the lane's Editions implementation; tools/check_genesis.py reports it pending until it merges, then checks it in full."
-    },
-    {
-      "contract": "FederationRegistry",
-      "lane": "federation (v1, a later ADR)",
-      "note": "Not deployed yet. setStatus and setArtistDelisted map to PARAMETER_SETTER; ArtistRegistry.bindFederationRegistry (deferred above) and the adapters' setFederationRegistry run when it ships; later replacements use ArtistRegistry.setFederationRegistry (30 days)."
     }
   ],
   "unusedRoles": [

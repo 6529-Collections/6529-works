@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IAssetAllowlist } from "../economics/interfaces/IAssetAllowlist.sol";
+import { FederationRegistry } from "../federated/FederationRegistry.sol";
 import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
@@ -26,7 +27,8 @@ import { Roles } from "./Roles.sol";
 ///
 ///      Genesis wiring: `install` also executes the genesis calls ({isGenesisSelector}: one-shot
 ///      binds, admitted minters, sale targets, default currencies, the English auction's ETH
-///      opening bid (owner decision 19), the epoch-0 manifest) as the zero-delay
+///      opening bid (owner decision 19), the federation's first registry, adapters and template
+///      versions (ADR 0008), the epoch-0 manifest) as the zero-delay
 ///      installer, after the roles and target admin delays are set and before any selector is
 ///      mapped. Every wired selector therefore still resolves to `ADMIN`; without this phase
 ///      those calls would wait the admins' 30-day delay.
@@ -133,7 +135,9 @@ library GovernanceConfig {
 
     /// @notice Whether `selector` may be wired at genesis: a one-shot bind (including the
     ///         federation bind), an admitted-minter grant, a sale target, a product's
-    ///         first default currency (an auction cannot start without one), or the epoch-0
+    ///         first default currency (an auction cannot start without one), the federation's
+    ///         first configuration (the English auction's federation registry, the registry's
+    ///         admitted adapters and its v1 template code hashes: ADR 0008), or the epoch-0
     ///         governance manifest. Everything else waits its delay class after genesis.
     function isGenesisSelector(bytes4 selector) internal pure returns (bool) {
         return selector == IStream.bindWorkRecords.selector
@@ -147,6 +151,9 @@ library GovernanceConfig {
             || selector == ISaleAdapter.setTarget.selector
             || selector == IAssetAllowlist.setDefaultCurrency.selector
             || selector == IAssetAllowlist.setOpeningBid.selector
+            || selector == ISaleAdapter.setFederationRegistry.selector
+            || selector == FederationRegistry.setAdapter.selector
+            || selector == FederationRegistry.approveTemplate.selector
             || selector == IStatementLog.appendGovernanceManifest.selector;
     }
 

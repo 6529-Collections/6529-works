@@ -37,17 +37,17 @@ Docs).
 | Role | ID | Execution delay | Grant delay | Holders at genesis | Mapped selectors | Guardian may suspend |
 | --- | ---: | --- | --- | --- | ---: | --- |
 | `ADMIN` | 0 | 30 days | 30 days | Hot admin Safe, Cold recovery admin Safe, Third admin Safe | 0 | No |
-| `GUARDIAN` | 1 | immediate | 30 days | Guardian Safe 1, Guardian Safe 2, Guardian Safe 3 | 6 | No |
-| `PAUSER` | 2 | immediate | 48 hours | Guardian Safe 1, Guardian Safe 2, Guardian Safe 3 | 2 | No |
-| `UNPAUSER` | 3 | 48 hours | 48 hours | Hot admin Safe | 3 | No |
+| `GUARDIAN` | 1 | immediate | 30 days | Guardian Safe 1, Guardian Safe 2, Guardian Safe 3 | 7 | No |
+| `PAUSER` | 2 | immediate | 48 hours | Guardian Safe 1, Guardian Safe 2, Guardian Safe 3 | 3 | No |
+| `UNPAUSER` | 3 | 48 hours | 48 hours | Hot admin Safe | 4 | No |
 | `CURATION_SIGNER` | 4 | immediate | 30 days | Curation signer key 1, Curation signer key 2 | 0 | No |
 | `STORAGE_OPERATOR` | 5 | immediate | 48 hours | Storage operator key | 3 | Yes |
 | `MINTER` | 6 | immediate | 30 days | none (unused in v1) | 0 | No |
 | `KEEPER` | 7 | immediate | 48 hours | none (unused in v1) | 0 | No |
 | `PLATFORM` | 8 | immediate | 48 hours | Platform key | 3 | Yes |
-| `PARAMETER_SETTER` | 9 | 48 hours | 48 hours | Hot admin Safe | 15 | No |
+| `PARAMETER_SETTER` | 9 | 48 hours | 48 hours | Hot admin Safe | 19 | No |
 | `FUNDS_SETTER` | 10 | 14 days | 14 days | Hot admin Safe | 10 | No |
-| `SUCCESSOR_SETTER` | 11 | 30 days | 30 days | Hot admin Safe | 24 | No |
+| `SUCCESSOR_SETTER` | 11 | 30 days | 30 days | Hot admin Safe | 27 | No |
 | `CURATOR` | 12 | immediate | 30 days | Curator key | 1 | Yes |
 
 Every role's admin is ADMIN, and every role except ADMIN has GUARDIAN as its guardian
@@ -60,11 +60,11 @@ Every role's admin is ADMIN, and every role except ADMIN has GUARDIAN as its gua
 
 | Class | Delay | Mapped selectors |
 | --- | --- | ---: |
-| Immediate | immediate | 15 |
-| Standard | 48 hours | 18 |
+| Immediate | immediate | 17 |
+| Standard | 48 hours | 23 |
 | Funds and recipients | 14 days | 10 |
-| Verifier and successor | 30 days | 24 |
-| **Total** | | **67** |
+| Verifier and successor | 30 days | 27 |
+| **Total** | | **77** |
 
 ## Matrix by contract
 
@@ -254,6 +254,30 @@ Source: [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.
 | `setCoordinator(address,address,bytes32)` | `0xf1fb02ec` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay |  |
 | `lowerCallbackGasLimit(uint32,uint32)` | `0x37f9925e` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Never below the floor. |
 
+### FederationRegistry
+
+Source: [`src/federated/FederationRegistry.sol`](../../src/federated/FederationRegistry.sol).
+
+| Function | Selector | Role | Class | Delay | Guardian cancel | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| `approveTemplate(bytes32,uint32,uint8)` | `0xcd9ac654` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay |  |
+| `revokeTemplate(bytes32)` | `0x3d4e7cc8` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay |  |
+| `setAdapter(address,bool)` | `0x332f6465` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay |  |
+| `suspendTemplate(bytes32)` | `0xbb294eed` | `GUARDIAN` | Immediate | immediate | No: executes at once |  |
+| `resumeTemplate(bytes32)` | `0x8a16038f` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay |  |
+| `setStatus(address[],uint8,bytes32)` | `0x565f9c3d` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay |  |
+
+### FederatedEditionAuction
+
+Source: [`src/federated/FederatedEditionAuction.sol`](../../src/federated/FederatedEditionAuction.sol).
+
+| Function | Selector | Role | Class | Delay | Guardian cancel | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| `pause()` | `0x8456cb59` | `PAUSER` | Immediate | immediate | No: executes at once | Stops `openSale` and `purchase`; closing a sale and claims still work. |
+| `unpause()` | `0x3f4ba83a` | `UNPAUSER` | Standard | 48 hours | Yes: any guardian, during the delay | Refused until 48 hours after the pause, whenever it was scheduled. |
+| `setConfig((…),(…))` | `0x3a59bb19` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay |  |
+| `setLimits(uint256,uint256)` | `0xc4590d3f` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay |  |
+
 ## Genesis-only bindings
 
 One-shot bindings between protocol contracts. The configurator executes them at genesis as
@@ -272,14 +296,7 @@ can cancel.
 | ArtistRegistry | `bindStream(address)` | `0x7d4b8f67` |
 | ArtistRegistry | `bindSplitFactory(address)` | `0x5b004c86` |
 | ArtistRegistry | `bindStatementLog(address)` | `0xa46c8086` |
-
-## Deferred
-
-Restricted functions neither mapped nor wired in v1. Until mapped, they resolve to ADMIN.
-
-| Contract | Function | Selector | Note |
-| --- | --- | --- | --- |
-| ArtistRegistry | `bindFederationRegistry(address)` | `0x3d4dbd3c` | Bound when the federation registry ships (in v1, specified by a later ADR), as a 30-day ADMIN action; replaceable afterwards by setFederationRegistry |
+| ArtistRegistry | `bindFederationRegistry(address)` | `0x3d4dbd3c` |
 
 ## Genesis wiring
 
@@ -305,7 +322,13 @@ and renounces ADMIN. `GovernanceConfig.isGenesisSelector` admits nothing else.
 | 14 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0x8d6f9a23…`, 0, `address(0)` (ETH) (PRODUCT_STREAM: ETH, revision 0) |
 | 15 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0xdda24e9b…`, 0, `address(0)` (ETH) (PRODUCT_EDITIONS: ETH, revision 0) |
 | 16 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0x12f6fbd5…`, 0, `address(0)` (ETH) (PRODUCT_FEDERATED: ETH, revision 0) |
-| 17 | StatementLog | `appendGovernanceManifest((…))` | the epoch-0 `GOVERNANCE_MANIFEST` statement about the manager |
+| 17 | ArtistRegistry | `bindFederationRegistry(address)` | FederationRegistry (The genesis one-shot bind (ADR 0008); later replacements use setFederationRegistry (30 days)) |
+| 18 | EnglishAuction | `setFederationRegistry(address,address)` | `address(0)` (ETH), FederationRegistry (The English auction serves the contracts the registry lists, its code hash pinned at this call) |
+| 19 | FederationRegistry | `setAdapter(address,bool)` | EnglishAuction, `true` |
+| 20 | FederationRegistry | `setAdapter(address,bool)` | FederatedEditionAuction, `true` |
+| 21 | FederationRegistry | `approveTemplate(bytes32,uint32,uint8)` | FederatedStream, 1, 0 (Federated Stream v1 (ERC721). The code hash is computed by DeployV1.templateCodeHash from this build (keccak256 of the template's runtime code), never held here; the calldata's first word is a placeholder) |
+| 22 | FederationRegistry | `approveTemplate(bytes32,uint32,uint8)` | FederatedEditions, 1, 1 (Federated Stream Editions v1 (ERC1155), as above) |
+| 23 | StatementLog | `appendGovernanceManifest((…))` | the epoch-0 `GOVERNANCE_MANIFEST` statement about the manager |
 
 ## The AccessManager's own functions
 
@@ -356,3 +379,4 @@ for the call they carry.
 | `0x1b380907` | `setConfig((uint32,uint32,uint32,uint32,uint32),(uint32,uint32,uint32,uint32,uint32))` |
 | `0x3a59bb19` | `setConfig((uint96,uint16,uint16,uint32,uint32,uint32,uint32),(uint96,uint16,uint16,uint32,uint32,uint32,uint32))` |
 | `0x058832db` | `setConfig((uint256,bytes32,uint32,uint16,bool),(uint256,bytes32,uint32,uint16,bool))` |
+| `0x3a59bb19` | `setConfig((uint96,uint16,uint16,uint32,uint32,uint32,uint32),(uint96,uint16,uint16,uint32,uint32,uint32,uint32))` |

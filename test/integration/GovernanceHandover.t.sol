@@ -23,6 +23,8 @@ import { HASH_SHA256, HashRef } from "src/interfaces/types/HashRef.sol";
 import { ArtistIdentity, ChangeKind } from "src/interfaces/types/IdentityTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { WorkDelivery } from "src/stream/WorkDelivery.sol";
+import { FederationRegistry } from "src/federated/FederationRegistry.sol";
+import { DeployV1 } from "script/DeployV1.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 import {
     CanCallOnlyAuthorityMock,
@@ -63,7 +65,7 @@ contract GovernanceHandoverTest is IntegrationBase {
 
     /// @dev Every contract the genesis deployment creates.
     function _deployed() internal view returns (address[] memory all) {
-        address[27] memory list = [
+        address[30] memory list = [
             address(configurator),
             address(manager),
             address(store),
@@ -90,10 +92,13 @@ contract GovernanceHandoverTest is IntegrationBase {
             address(stream),
             address(records),
             address(delivery),
-            address(editions)
+            address(editions),
+            address(deployment.federationRegistry),
+            deployment.federatedEditionAuctionLens,
+            address(deployment.federatedEditionAuction)
         ];
-        all = new address[](27);
-        for (uint256 i; i < 27; ++i) {
+        all = new address[](30);
+        for (uint256 i; i < 30; ++i) {
             all[i] = list[i];
         }
     }
@@ -148,7 +153,7 @@ contract GovernanceHandoverTest is IntegrationBase {
     function test_EveryGovernedContractMovesInOneTransaction() public {
         address[] memory governed = _governedBy(address(manager));
         address[] memory managed = manager.managedTargets();
-        assertEq(governed.length, 17, "the genesis stack's governed contracts");
+        assertEq(governed.length, 19, "the genesis stack's governed contracts");
         assertEq(managed.length, governed.length, "each one is on the managed list");
         for (uint256 i; i < governed.length; ++i) {
             bool listed;
@@ -539,6 +544,33 @@ contract GovernanceHandoverTest is IntegrationBase {
             abi.encodeCall(ISaleAdapter.setTarget, (address(editions), true))
         );
         ++operated;
+
+        // Federated edition auction (ADR 0008): the same.
+        address fea = address(deployment.federatedEditionAuction);
+        _immediate(guardian1, fea, abi.encodeCall(ISaleAdapter.pause, ()));
+        _delayedAndCancelled(
+            fea,
+            abi.encodeCall(ISaleAdapter.unpause, ()),
+            abi.encodeWithSignature("setLimits(uint256,uint256)", uint256(0), uint256(0))
+        );
+        ++operated;
+
+        // Federation registry: a guardian's suspension at once; the resumption, delayed; a
+        // revocation, cancelled.
+        FederationRegistry fed = deployment.federationRegistry;
+        bytes32 template = DeployV1.templateCodeHash("FederatedStream");
+        _immediate(guardian1, address(fed), abi.encodeCall(fed.suspendTemplate, (template)));
+        _delayedAndCancelled(
+            address(fed),
+            abi.encodeCall(fed.resumeTemplate, (template)),
+            abi.encodeCall(fed.revokeTemplate, (template))
+        );
+        assertEq(
+            uint8(fed.templateOf(template).status),
+            uint8(FederationRegistry.TemplateStatus.APPROVED),
+            "resumed, not revoked"
+        );
+        ++operated;
     }
 
     function _operateMoney() internal returns (uint256 operated) {
@@ -708,14 +740,14 @@ contract GovernanceHandoverTest is IntegrationBase {
     function test_TheSuccessorMovesEveryContractOnAgain() public {
         _handOver();
         address[] memory governed = _governedBy(address(next));
-        assertEq(governed.length, 17);
+        assertEq(governed.length, 19);
         address third = address(new AccessManager(makeAddr("third")));
         for (uint256 i; i < governed.length; ++i) {
             vm.prank(executor);
             next.execute(governed[i], abi.encodeCall(IAccessManaged.setAuthority, (third)));
         }
         assertEq(_governedBy(address(next)).length, 0, "nothing left behind");
-        assertEq(_governedBy(third).length, 17, "all under the third authority");
+        assertEq(_governedBy(third).length, 19, "all under the third authority");
     }
 
     // ------------------------------------------------------------------ a successor that cannot act
@@ -733,12 +765,12 @@ contract GovernanceHandoverTest is IntegrationBase {
             abi.encodeWithSelector(WorksAccessManager.NotPendingSuccessor.selector, address(this))
         );
         manager.acceptSuccession();
-        assertEq(_governedBy(address(manager)).length, 17, "nothing moved");
+        assertEq(_governedBy(address(manager)).length, 19, "nothing moved");
         // The manager still governs: a guardian pause, and the admins replace the proposal.
         vm.prank(guardian2);
         auction.pause();
         _handOver();
-        assertEq(_governedBy(address(next)).length, 17);
+        assertEq(_governedBy(address(next)).length, 19);
     }
 }
 

@@ -10,6 +10,7 @@ import { EconomicsResolver } from "src/economics/EconomicsResolver.sol";
 import { GovernedVault } from "src/economics/GovernedVault.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
+import { FederationRegistry } from "src/federated/FederationRegistry.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
@@ -100,7 +101,8 @@ contract GenesisConfigTest is Test {
     function _addressOf(string memory name) internal view returns (address) {
         string[2] memory lists = [".contracts", ".peers"];
         for (uint256 l; l < 2; ++l) {
-            for (uint256 i; i < _count(lists[l]); ++i) {
+            uint256 n = _count(lists[l]);
+            for (uint256 i; i < n; ++i) {
                 string memory c = _at(lists[l], i);
                 if (_eq(_str(string.concat(c, ".name")), name)) {
                     return vm.parseJsonAddress(json, string.concat(c, ".address"));
@@ -377,6 +379,34 @@ contract GenesisConfigTest is Test {
                 3
             );
         }
+        if (_eq(name, "FederationRegistry")) {
+            return _s(
+                [
+                    FederationRegistry.approveTemplate.selector,
+                    FederationRegistry.revokeTemplate.selector,
+                    FederationRegistry.setAdapter.selector,
+                    FederationRegistry.suspendTemplate.selector,
+                    FederationRegistry.resumeTemplate.selector,
+                    FederationRegistry.setStatus.selector,
+                    z
+                ],
+                6
+            );
+        }
+        if (_eq(name, "FederatedEditionAuction")) {
+            return _s(
+                [
+                    ISaleAdapter.pause.selector,
+                    ISaleAdapter.unpause.selector,
+                    IUniformEditionAuction.setConfig.selector,
+                    IUniformEditionAuction.setLimits.selector,
+                    z,
+                    z,
+                    z
+                ],
+                4
+            );
+        }
         revert(string.concat("no compiled selectors for ", name));
     }
 
@@ -455,7 +485,7 @@ contract GenesisConfigTest is Test {
             }
             total += listed.length;
         }
-        assertEq(total, 77, "67 mapped, 9 genesis-only, 1 deferred");
+        assertEq(total, 87, "77 mapped, 10 genesis-only, 0 deferred");
     }
 
     function test_RoleTableMatchesRolesSol() public view {
@@ -562,8 +592,12 @@ contract GenesisConfigTest is Test {
             bytes4 sel = bytes4(wiring[i].data);
             assertEq(sel, bytes4(keccak256(bytes(sig))), sig);
             assertTrue(GovernanceConfig.isGenesisSelector(sel), sig);
-            // When the call names its peer, the first argument is that placeholder address.
-            if (_count(string.concat(w, ".args")) != 0) {
+            // When the call names its peer, the first argument is that placeholder address
+            // (a template name in `approveTemplate` is a code hash `DeployV1` computes).
+            if (
+                _count(string.concat(w, ".args")) != 0
+                    && sel != FederationRegistry.approveTemplate.selector
+            ) {
                 bytes memory first = bytes(_str(string.concat(w, ".args[0]")));
                 if (first.length >= 2 && first[0] == "0" && first[1] == "x") continue; // literal
                 bytes memory data = wiring[i].data;

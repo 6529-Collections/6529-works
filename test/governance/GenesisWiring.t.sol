@@ -8,6 +8,7 @@ import { Multicall } from "@openzeppelin/contracts/utils/Multicall.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
+import { FederationRegistry } from "src/federated/FederationRegistry.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
@@ -117,7 +118,7 @@ contract GenesisWiringTest is GovernanceFixture {
     }
 
     function test_GenesisSelectorsAreExactlyTheAllowList() public pure {
-        bytes4[12] memory allowed = [
+        bytes4[15] memory allowed = [
             IStream.bindWorkRecords.selector,
             IStream.bindEditions.selector,
             IPackageRegistry.bindStream.selector,
@@ -129,6 +130,9 @@ contract GenesisWiringTest is GovernanceFixture {
             ISaleAdapter.setTarget.selector,
             IAssetAllowlist.setDefaultCurrency.selector,
             IAssetAllowlist.setOpeningBid.selector,
+            ISaleAdapter.setFederationRegistry.selector,
+            FederationRegistry.setAdapter.selector,
+            FederationRegistry.approveTemplate.selector,
             IStatementLog.appendGovernanceManifest.selector
         ];
         for (uint256 i; i < allowed.length; ++i) {
@@ -139,6 +143,9 @@ contract GenesisWiringTest is GovernanceFixture {
         assertEq(IArtistRegistry.bindStream.selector, IPackageRegistry.bindStream.selector);
         assertFalse(GovernanceConfig.isGenesisSelector(IPackageRegistry.setVerifier.selector));
         assertFalse(GovernanceConfig.isGenesisSelector(IStream.setDefaultRenderer.selector));
+        // The federation registry's later changes wait their class.
+        assertFalse(GovernanceConfig.isGenesisSelector(FederationRegistry.revokeTemplate.selector));
+        assertFalse(GovernanceConfig.isGenesisSelector(FederationRegistry.setStatus.selector));
         assertFalse(GovernanceConfig.isGenesisSelector(bytes4(0)));
     }
 

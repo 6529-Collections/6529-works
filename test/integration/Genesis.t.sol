@@ -31,7 +31,16 @@ contract GenesisFlowTest is IntegrationBase {
         assertEq(artists.packageRegistry(), address(registry), "ArtistRegistry -> registry");
         assertEq(artists.stream(), address(stream), "ArtistRegistry -> Stream");
         assertEq(artists.splitFactory(), address(splitFactory), "ArtistRegistry -> factory");
-        assertEq(artists.federationRegistry(), address(0), "federation is deferred (v1.1)");
+        assertEq(
+            artists.federationRegistry(),
+            address(deployment.federationRegistry),
+            "ArtistRegistry -> federation registry (ADR 0008)"
+        );
+        assertEq(
+            auction.federationRegistry(),
+            address(deployment.federationRegistry),
+            "EnglishAuction -> federation registry"
+        );
         // Admitted minters and sale targets.
         assertTrue(stream.isAdmittedMinter(address(auction)), "auction mints on Stream");
         assertTrue(
