@@ -45,9 +45,9 @@ attacker's view is the [threat model](threat-model.md); accepted risks are in
   holders, never code ([LIM-GV-8][lim-gv] covers the one `delegatecall`).
 - **Nothing that moves funds, recipients, verifiers or renderers is immediate.** The immediate
   powers are the guardians' tightening actions and the operational keys' bounded duties.
-- **What a work locks, governance cannot reach.** Seller wallet, fee recipient, fee share and
-  royalty rate are locked at the start ([AUC-6][auc]); the rate and license change only with
-  every party's signature ([WS-13, WS-14][ws]).
+- **What a work locks at the start.** Seller wallet, fee recipient, fee share and royalty rate
+  are locked at the start ([AUC-6][auc]); the rate and license change only with every party's
+  signature ([WS-13, WS-14][ws]).
 - **Money is pulled or escrowed.** Split wallets have no owner; a failed push goes to the escrow.
 - **The dividing line** ([ADR 0007](../adr/0007-permanence.md)). Anything with authority over
   existing tokens, existing works' facts or funds already owed is permanent, minimal, and takes no
@@ -164,7 +164,7 @@ one guardian has to cancel.
 | PARAMETER_SETTER (48 hours) | With a guardian's dispute pause and a PLATFORM outcome, `EnglishAuction.cancel` burns a live, unsettled 1/1. `stageOverride` starts an identity takeover (then the override timer, floor 180 days, and `vetoChange`). `relicense` needs every party's consent. Otherwise new-sale parameters only; edition payout gas has a 30,000 floor | 48 hours, plus the timers |
 | FUNDS_SETTER (14 days) | Redirect the fee vault: every held and future network fee. `setMuseum`: where works that settle unbid, or are rescued, go from then on (an owner judgement to keep at 14 days: it routes future arrivals, while the museum vault, which holds the works already there, is 30 days). `sweepExcess` (unowed balance only); `recover` (equivalent wallet or consent only); `setOwner` | 14 days for every action of every holder |
 | SUCCESSOR_SETTER (30 days) | Redirect the museum vault: every museum-held work and payout. `setDependency`: economics (the museum for unsettled works), extension (only `work`, `collection` and `totalSupply`, answered by STATICCALL; nothing permanent or pinned reads it, [AUC-49][auc], and `owner()`/`contractURI()` are native), policy and entropy (new mints only); `setDelivery` (served URLs of every work not on chain, [LIM-GV-23][lim-gv]); `addStore` (a store's code hash does not pin its behaviour; the records review covers works synced into one); remove an adapter, then `rescueToMuseum` after the locked delay of at least 90 days; `repinRenderer` (needs the artist's signature); `setArtistResolver`; `setRescueDelay` (lengthen only) | 30 days |
-| ADMIN (30 days) | Grant any role, but every grant still carries the role's class delay, so each action of a new holder waits 30 days, plus the grant delay, plus the class delay (58 days for a funds action). Move any target to another authority (`updateAuthority`, 30 days, any one guardian stops it, every time; nothing checks the new authority). Propose a successor (slow lane, 60 days; 120 after a strike, then only a guardian majority stops it); it takes over only if it accepts, so a successor that cannot act never does, but a hostile working one does. A hostile authority is then bounded only by the permanent contracts' invariants: it cannot move a collector's token, raise a royalty, change minted facts, mint content again, sweep owed escrow, replace the artist registry, or shorten the rescue delay or identity timers; it can take the vaults' contents, museum works and unsettled works (through the museum or a rescue), burn disputed live 1/1s, and after the identity timers act as any artist | 30 days for each grant or move; 60 days for a successor |
+| ADMIN (30 days) | Grant any role, but every grant still carries the role's class delay, so each action of a new holder waits 30 days, plus the grant delay, plus the class delay (58 days for a funds action). Move any target to another authority (`updateAuthority`, 30 days, any one guardian stops it, every time; nothing checks the new authority). Propose a successor (slow lane, 60 days; 120 after a strike, then only a guardian majority stops it); it takes over only if it accepts, so a successor that cannot act never does. Any authority acts within the permanent contracts: no authority can move a collector's token, change a minted work's facts, mint a content again or reduce what the escrow owes. The authority directs the vaults' destinations, the museum and the rescue of unsettled works, cancels disputed live 1/1s, and replaces an artist's identity after the identity timers | 30 days for each grant or move; 60 days for a successor |
 
 ### Accounts with no role
 
@@ -274,9 +274,9 @@ nothing after EIP-6780 and could freeze every artist share ([ECO-12][eco]).
 
 - **ARTIST statements** are exactly as strong as the statement log's artist resolver and the
   30-day `setArtistResolver`; every entry records its resolver
-  ([DSP-7, DSP-8][dsp]). A resolver must
-  never make `isArtist` true faster than the 30-day class; the artist registry withholds it only
-  while an authority-moving override is pending
+  ([DSP-7, DSP-8][dsp]). Today's resolver, the artist registry, makes `isArtist` true no
+  faster than its own identity delays, and withholds it only while an authority-moving override
+  is pending
   ([ADR 0003, owner decision 6](../adr/0003-build-time-decisions.md#owner-decisions-11-october-2026)).
 - **Payouts.** The split ledger names the artist registry immutably and refuses to release an
   artist-resolved share while it answers zero for a pending payout move

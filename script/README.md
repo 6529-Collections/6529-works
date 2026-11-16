@@ -838,14 +838,15 @@ Deploy the target with `authority` set to the manager, then:
 
 ### The 1/1 start keeper
 
-A keeper (any funded EOA, no role) that starts 1/1 auctions adds two calls to each start batch.
-Neither is required by any contract; both keep facts and money where logs and readers expect them.
+The network currently runs a keeper (any funded EOA, no role) that starts 1/1 auctions and adds
+two calls to each start batch. Neither is required by any contract; both keep facts and money
+where logs and readers expect them.
 
 1. **Open the record right after `start`:** `WorkRecords.openRecord(tokenId, item, media)`, in
    the same batch. A logs-only reader learns a work's parties, payees and shares, initial
    license, seed and media list from `RecordOpened`, not from `WorkMinted` (LIM-CNT-19). Anyone
    may open a record at any time and nothing forces it; the curation signer's `openRecord`
-   simulation before attesting already guarantees it can open. About 176K gas, outside the start
+   simulation before attesting (its current practice) shows it can open. About 176K gas, outside the start
    budget.
 2. **Deploy the 1/1's payout vaults in the start batch.** The English auction never deploys
    wallets, so a 1/1's seller vault (and, with a fee share, its royalty vault) may still be
@@ -858,8 +859,9 @@ Neither is required by any contract; both keep facts and money where logs and re
 
 ### The edition auction keeper
 
-Every step of an edition sale is permissionless; a keeper (any funded EOA, no role) batches
-them so that nothing waits ([ADR 0005](../docs/adr/0005-stream-editions-auction.md)):
+Every step of an edition sale is permissionless. The network currently runs a keeper (any
+funded EOA, no role) that batches them so that nothing waits, and anyone else may make the same
+calls ([ADR 0005](../docs/adr/0005-stream-editions-auction.md)):
 
 1. **Open the edition auction right after every edition-master start** (owner decision 7):
    `UniformEditionAuction.open(editions, tokenId, abi.encode(item))`, the master's
@@ -907,9 +909,9 @@ Before any switch:
   auction or the edition auction. A master started on the old English auction whose edition
   sale is not open yet can never be opened afterwards: the old edition auction is no longer
   admitted, and the new one reads only the new English auction (`NoOneOfOneAuction`).
-- **No edition sale with winners may be OPEN or SETTLING across a package-registry switch**, and
-  every edition such a sale needs must exist: settle those sales and create their editions
-  first. An open sale settles only after its close, so new 1/1 starts must stop (pausing
+- **Settle edition sales with winners, and create their editions, before a package-registry
+  switch.** A sale still OPEN or SETTLING across the switch, or one whose edition does not exist
+  yet, depends on the successor. An open sale settles only after its close, so new 1/1 starts must stop (pausing
   `EnglishAuction`, as in [Emergencies](#emergencies)) early enough for every running sale to
   close and settle before the switch executes. A successor that cannot create an earlier master's edition leaves such a sale on
   `EditionNotCreated`, its bidders unable to withdraw or claim until governance reverses the
@@ -917,9 +919,9 @@ Before any switch:
 
 | Replaced | Who else holds it | The replacement set | Without a Stream redeploy? |
 | --- | --- | --- | --- |
-| Entropy module | Nobody: the renderer and `WorkRecords` ask Stream | A new `VrfEntropyModule` pinned to Stream's current package registry, added as a consumer of a funded subscription ([step 7](#7-chainlink-vrf-the-entropy-module)); then `setDependency("ENTROPY_MODULE")`. A successor entropy module MUST honour every seed its predecessor delivered for content not yet minted: answer `isDeliveredContent`, `seedOfContent` and `seedOf` with the predecessor's seed and refuse a new draw for it. Today's `VrfEntropyModule` reads no predecessor, so until such a module exists schedule a replacement only when no unminted VRF content has a seed delivered or requested on the old module, or publish that each such content is redrawn. List those contents before scheduling: every content hash in the old module's `SeedLinked` events whose `PackageRegistry.consumedItemOf` reads zero (a content a dispute released reads zero again, so it stays on the list). A delivered content is drawn again by the new module; a pending one is drawn there too, while the old module may still deliver its request. Rebuild the list immediately before executing, since anyone can request a seed and the old coordinator can deliver one during the 30-day delay, and cancel the switch, or publish the redraw, for each content not already disclosed ([LIM-ENT-7](../docs/audit/known-limitations.md#entropy)). Keep the old module deployed: the works minted under it read their seeds from it. | Yes |
+| Entropy module | Nobody: the renderer and `WorkRecords` ask Stream | A new `VrfEntropyModule` pinned to Stream's current package registry, added as a consumer of a funded subscription ([step 7](#7-chainlink-vrf-the-entropy-module)); then `setDependency("ENTROPY_MODULE")`. A successor entropy module keeps the seeds its predecessor delivered for content not yet minted only if it answers `isDeliveredContent`, `seedOfContent` and `seedOf` with the predecessor's seed and refuses a new draw for it. Today's `VrfEntropyModule` reads no predecessor, so the network's current practice is to schedule a replacement only when no unminted VRF content has a seed delivered or requested on the old module, or to publish that each such content is redrawn. List those contents before scheduling: every content hash in the old module's `SeedLinked` events whose `PackageRegistry.consumedItemOf` reads zero (a content a dispute released reads zero again, so it stays on the list). A delivered content is drawn again by the new module; a pending one is drawn there too, while the old module may still deliver its request. Rebuild the list immediately before executing, since anyone can request a seed and the old coordinator can deliver one during the 30-day delay, and cancel the switch, or publish the redraw, for each content not already disclosed ([LIM-ENT-7](../docs/audit/known-limitations.md#entropy)). Keep the old module deployed: the works minted under it read their seeds from it. | Yes |
 | Economics resolver | `EnglishAuction` (immutable: the federated fee recipient and the asset allowlist; since owner decision 17 Stream, not the auction, reads the museum) and `UniformEditionAuction` (it holds no resolver: a sale pays exactly the terms `Editions.bindMinter` locks and returns, one source of truth since ADR 0005 §12; but it reads the 1/1's clock from its immutable English auction, so it is replaced with it) | A new resolver whose `splitFactory()` is Stream's (Stream derives sellers with its own immutable factory and Editions with the resolver's; `setDependency` does not check it), a new `EnglishAuction` and a new edition auction on it; then `setDependency("ECONOMICS")`, `Stream.setAdmittedMinter` (the new auction in, the old out: one adapter per kind, ADR 0005) and the same on Editions. Sales running on the old adapters finish there: their fees follow the terms locked at mint or at open, while an unsold 1/1 goes to the NEW resolver's museum, since Stream reads `museum()` from its current resolver when it settles (owner decision 17). | Yes |
-| Package registry | `VrfEntropyModule` (pinned registry), `ArtistRegistry` (its only `register` caller: `setPackageRegistry`, SUCCESSOR_SETTER, 30 days) | A successor registry pinned to the current artist registry, bound to the existing Stream and Editions (`bindStream`, `bindEditions`: one-shot per instance, so a new instance binds), plus a new entropy module pinned to it, which carries the same obligation as in the row above (honour the predecessor's delivered seeds for unminted content, or schedule only when there are none, or publish the redraw); then, in one batch, `setDependency("PACKAGE_REGISTRY")`, `ArtistRegistry.setPackageRegistry(old, successor)`, so new artists register through the successor (`test_AReplacementPackageRegistryRegistersNewArtists`), and `setDependency("ENTROPY_MODULE")`. The successor MUST read its predecessor's state: approved packages, consumed content (or content minted before would mint again), and releases (or `releaseContent` refuses every work burned before); it must also keep `consume`'s ABI, which Stream calls (LIM-GV-17). Today's `PackageRegistry` reads none of it: the successor is new code. | Yes, with new code |
+| Package registry | `VrfEntropyModule` (pinned registry), `ArtistRegistry` (its only `register` caller: `setPackageRegistry`, SUCCESSOR_SETTER, 30 days) | A successor registry pinned to the current artist registry, bound to the existing Stream and Editions (`bindStream`, `bindEditions`: one-shot per instance, so a new instance binds), plus a new entropy module pinned to it, with the same seed question as in the row above; then, in one batch, `setDependency("PACKAGE_REGISTRY")`, `ArtistRegistry.setPackageRegistry(old, successor)`, so new artists register through the successor (`test_AReplacementPackageRegistryRegistersNewArtists`), and `setDependency("ENTROPY_MODULE")`. For earlier packages and releases to stay usable, the successor reads its predecessor's state: approved packages and releases (without them `releaseContent` refuses every work burned before); Stream calls it through `consume`'s ABI (LIM-GV-17). Today's `PackageRegistry` reads none of it: such a successor is new code. | Yes, with new code |
 | Artist registry | 6529 Stream (an immutable with no setter: `setDependency("ARTIST_REGISTRY")` reverts, AUC-39), 6529 Stream Editions (cached at deployment), `SplitLedger` (the payout resolver, an immutable without a code-hash pin), `PackageRegistry` (pinned), `StatementLog` (`setArtistResolver`, 30 days) | None: the artist registry is permanent ([ADR 0007](../docs/adr/0007-permanence.md)). | **No.** It is never replaced; its replaceable parts are its federation-registry pointer (`setFederationRegistry`) and its timers (`setTimer`), both SUCCESSOR_SETTER, 30 days. |
 
 One limit follows ([LIM-GV-16](../docs/audit/known-limitations.md#trust-and-governance)): the
@@ -930,9 +932,9 @@ same batch (`ArtistRegistry.setPackageRegistry`).
 ### Replacing the federation registry
 
 The federation registry is replaceable ([ADR 0008](../docs/adr/0008-federation.md) §8);
-nothing migrates, because entries are composed from the permanent directory. The successor MUST
-serve the predecessor's set before the switch, or every running federated sale freezes out
-(refunds) the moment the artist registry's pointer moves
+nothing migrates, because entries are composed from the permanent directory. A successor that
+does not yet serve the predecessor's set when the artist registry's pointer moves freezes out
+every running federated sale (refunds)
 (`test_Replacement_SwappedBeforeItsApprovalsFreezesRunningSales`):
 
 1. Deploy the successor (the artist registry, the economics resolver and the canonical content

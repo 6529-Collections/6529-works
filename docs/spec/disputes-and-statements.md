@@ -128,12 +128,13 @@ role check on both paths, including for statements it signed earlier, since the 
 relay time.
 
 **ARTIST authority** is no stronger than the resolver's code, `setArtistResolver`
-(`SUCCESSOR_SETTER`, 30 days, so the guardians can cancel a hostile swap), and the
+(`SUCCESSOR_SETTER`, 30 days), and the
 AccessManager behind it ([trust assumptions](../audit/trust-assumptions.md#resolvers-and-renderer-pins);
 LIM-GV-10); no governance role has a direct path to an ARTIST or OWNER entry (DSP-6). The
 install is checked (DSP-8). Each ARTIST entry records its resolver, so a reader can discard
-the entries of a resolver it does not trust. A resolver must be immutable or never make an
-answer true faster than the 30-day class; the restraint is the one allowed exception.
+the entries of a resolver it does not trust. Today's resolver is the artist registry, which
+makes an answer true no faster than its own identity delays; the restraint is the one case where
+it withholds an answer.
 
 ### Dispute outcome
 
