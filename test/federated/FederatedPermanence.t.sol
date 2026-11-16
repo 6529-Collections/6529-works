@@ -6,6 +6,7 @@ import { FederatedEditionAuction } from "src/federated/FederatedEditionAuction.s
 import { FederatedEditionAuctionLens } from "src/federated/FederatedEditionAuctionLens.sol";
 import { FederatedEditions } from "src/federated/FederatedEditions.sol";
 import { FederatedStream } from "src/federated/FederatedStream.sol";
+import { IFederatedEditions } from "src/interfaces/IFederatedEditions.sol";
 import { IFederatedStream } from "src/interfaces/IFederatedStream.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
@@ -255,5 +256,58 @@ contract FederatedPermanenceTest is FederationBase {
         vm.warp(end + 150 days);
         fea.abandon(saleId);
         assertEq(uint8(fl.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.VOID));
+    }
+
+    /// @dev Pass 3: a federated edition sale voided while its best-effort seal was refused
+    ///      leaves the edition bound to this adapter's void sale for good: the adapter never
+    ///      reopens it, another adapter cannot bind it, and once both halves leave the artist's
+    ///      own minter cannot mint it either.
+    function test_Abandon_ARefusedSealLeavesTheEditionDeadForGood() public {
+        Work memory w = _fedMaster(fedArtist, 0);
+        (uint256 oneSaleId, uint256 tokenId) = _startFed(pairStream, fedArtist, w, RATE);
+        uint256 saleId = fea.open(address(pairEditions), tokenId, abi.encode(w.item));
+        vm.mockCallRevert(
+            address(pairStream), abi.encodeWithSelector(IMintTarget.settlePrimary.selector), "x"
+        );
+        vm.mockCallRevert(
+            address(pairEditions),
+            abi.encodeWithSelector(IFederatedEditions.sealSupply.selector),
+            "x"
+        );
+        vm.warp(auction.auction(oneSaleId).endTime);
+        (, uint256 abandonAt) = fl.abandonable(saleId);
+        vm.warp(abandonAt);
+        fea.abandon(saleId);
+        assertEq(uint8(fl.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.VOID));
+        vm.clearMockedCalls();
+        // The master settles later and the edition is created, unsealed, still bound to `fea`.
+        auction.settle(oneSaleId);
+        pairEditions.createEdition(tokenId, w.item);
+        assertFalse(pairEditions.edition(tokenId).supplySealed, "the seal never landed");
+        assertEq(pairEditions.edition(tokenId).minter, address(fea));
+        vm.expectRevert(
+            abi.encodeWithSelector(IUniformEditionAuction.AuctionExists.selector, saleId)
+        );
+        fea.open(address(pairEditions), tokenId, abi.encode(w.item));
+        vm.prank(address(auction));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IFederatedEditions.MinterMismatch.selector, tokenId, address(fea)
+            )
+        );
+        pairEditions.bindMinter(tokenId, w.item);
+        address own = makeAddr("ownMinter");
+        vm.startPrank(fedArtist);
+        pairEditions.leaveFederation();
+        pairStream.leaveFederation();
+        pairEditions.setAdmittedMinter(own, true);
+        vm.stopPrank();
+        vm.prank(own);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IFederatedEditions.MinterMismatch.selector, tokenId, address(fea)
+            )
+        );
+        pairEditions.mint(own, tokenId, 1, abi.encode(address(0), uint256(0)));
     }
 }

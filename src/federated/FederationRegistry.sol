@@ -76,6 +76,16 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
 
     /// @notice The transition is not allowed from the template's current status.
     error TemplateStatusInvalid(bytes32 codeHash, TemplateStatus current);
+    /// @notice A batch longer than `MAX_BATCH`.
+    error BatchTooLarge(uint256 length);
+
+    /// @notice The most contracts one `setStatus` or `propagateRevocation` call takes: a safety
+    ///         bound against unbounded work, not a policy number. The worst element (a cold
+    ///         listed contract written to DELISTED) measures under 20,000 gas
+    ///         (`FederationBatch.t.sol`), so 256 of them stay under 5.2M, a third of EIP-7825's
+    ///         2^24 transaction cap, and a governed batch scheduled at the bound always executes;
+    ///         a longer list is split into calls of the caller's size.
+    uint256 public constant MAX_BATCH = 256;
 
     /// @notice The canonical artist registry, the permanent directory this registry writes.
     IArtistRegistry public immutable artistRegistry;
@@ -185,6 +195,7 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
         external
         restricted
     {
+        if (tokens.length > MAX_BATCH) revert BatchTooLarge(tokens.length);
         IArtistRegistry.FederationStatus next = IArtistRegistry.FederationStatus(uint8(status));
         for (uint256 i; i < tokens.length; ++i) {
             (, IArtistRegistry.FederationStatus current) =
@@ -204,6 +215,7 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
     ///         template.
     /// @param tokens The federated contracts.
     function propagateRevocation(address[] calldata tokens) external {
+        if (tokens.length > MAX_BATCH) revert BatchTooLarge(tokens.length);
         for (uint256 i; i < tokens.length; ++i) {
             address token = tokens[i];
             bytes32 codeHash = token.codehash;

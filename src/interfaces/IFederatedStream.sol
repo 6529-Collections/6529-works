@@ -138,6 +138,10 @@ interface IFederatedStream is IFederatedToken {
     /// @param contentStore The content store.
     event ContentStoreSet(address contentStore);
 
+    /// @notice A license text that is not a registered SHA-256 file of at most 16 chunks (at
+    ///         mint), or not complete in the content store (at finalize).
+    /// @param textFileId The license text's file ID.
+    error InvalidLicenseText(bytes32 textFileId);
     /// @notice Only the adapter that minted the token.
     /// @param caller The caller.
     error NotMintingAdapter(address caller);

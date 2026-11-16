@@ -143,8 +143,12 @@ contract FederatedEditionAuctionLens is UniformEditionAuctionLensBase {
         return IFederatedEditions(token).previewTerms(payees);
     }
 
+    /// @dev The ledger `token` names, which must be the canonical split ledger (the economics
+    ///      resolver's split factory, which the registry checked at joining); anything else fails
+    ///      closed.
     function _factory(address token) internal view override returns (address ledger) {
         (, ledger,,,,) = IFederatedToken(token).federationTerms();
+        if (ledger != _economics.splitFactory()) revert ISaleAdapter.InvalidSaleTerms(token, 0);
     }
 
     /// @dev A refusal reads as absent (so an abandonment is never blocked by the token); a

@@ -10,6 +10,8 @@ import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { IFederatedEditions } from "src/interfaces/IFederatedEditions.sol";
 import { IFederatedStream } from "src/interfaces/IFederatedStream.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
+import { IFederatedToken } from "src/interfaces/IFederatedToken.sol";
+import { PRODUCT_FEDERATED } from "src/interfaces/types/EconomicsTypes.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
@@ -310,5 +312,46 @@ contract FederatedPairTest is FederationBase {
         pairEditions.leaveFederation();
         assertFalse(fl.isTarget(address(pairEditions)), "an exit serves nothing again");
         assertTrue(fea.settle(saleId, new uint256[](0)), "voided");
+    }
+
+    /// @dev Pass 3: the edition sale's fee recipient is locked at open; a governance change of
+    ///      the federated recipient before settlement does not redirect it.
+    function test_Pair_TheEditionFeeRecipientIsLockedAtOpen() public {
+        (Work memory w, uint256 oneSaleId, uint256 tokenId, uint256 saleId) = _openPair(0);
+        _editionBidFed(saleId, makeAddr("a"), 100, 3);
+        address next = makeAddr("nextFeeRecipient");
+        (uint64 revision,,) = economics.revisions(PRODUCT_FEDERATED);
+        _govern(
+            hotAdmin,
+            address(economics),
+            abi.encodeCall(economics.setFeeTerms, (PRODUCT_FEDERATED, revision, next, FED_SHARE))
+        );
+        assertEq(economics.networkFeeRecipient(PRODUCT_FEDERATED), next);
+        assertEq(fl.auction(saleId).feeRecipient, networkFee, "locked at open");
+        auction.settle(oneSaleId);
+        pairEditions.createEdition(tokenId, w.item);
+        uint256 before = networkFee.balance;
+        assertTrue(fea.settle(saleId, new uint256[](0)));
+        IUniformEditionAuction.Settlement memory st = fl.settlement(saleId);
+        assertEq(networkFee.balance - before, st.count * st.price * FED_SHARE / 100_000);
+        assertEq(next.balance, 0);
+    }
+
+    /// @dev Pass 3: the lens deploys a sale's wallets only through the canonical split ledger;
+    ///      a token naming any other ledger opens nothing.
+    function test_Pair_ATokenNamingAnotherLedgerOpensNoSale() public {
+        Work memory w = _fedMaster(fedArtist, 0);
+        (, uint256 tokenId) = _startFed(pairStream, fedArtist, w, RATE);
+        (address ar,, uint256 id, uint32 share, address recipient, address partner) =
+            pairEditions.federationTerms();
+        vm.mockCall(
+            address(pairEditions),
+            abi.encodeWithSelector(IFederatedToken.federationTerms.selector),
+            abi.encode(ar, makeAddr("otherLedger"), id, share, recipient, partner)
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(pairEditions), 0)
+        );
+        fea.open(address(pairEditions), tokenId, abi.encode(w.item));
     }
 }

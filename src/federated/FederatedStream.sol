@@ -59,6 +59,10 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
     uint256 private constant APPROVED = 1;
     /// @dev The one collection: this contract, named by the token name.
     uint256 private constant COLLECTION = 1;
+    /// @dev The most chunks of a work's license text (WorkRecords' `MAX_LICENSE_TEXT_CHUNKS`): a
+    ///      safety bound against unbounded work, so finalize's presence check is at most 16 chunk
+    ///      reads.
+    uint256 private constant MAX_LICENSE_TEXT_CHUNKS = 16;
     /// @dev The bytes a locator URI may hold, as a bit set (WorkRecords' `URI_BYTES`): printable
     ///      ASCII `0x21` to `0x7e` but `"` and `\`.
     uint256 private constant URI_BYTES = 0x7fffffffeffffffffffffffa00000000;
@@ -315,8 +319,11 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
     }
 
     /// @inheritdoc IFederatedStream
+    /// @dev The license text must be complete in the content store (anyone may write its
+    ///      chunks), as 6529 Stream's records require at finalize.
     function finalize(uint256 tokenId) external {
         (uint256 workId, Work storage w) = _editable(tokenId);
+        _requireLicenseText(w.license.textFileId, true);
         (address renderer, bytes32 codeHash) = (_defaultRenderer, _defaultRendererCodeHash);
         Dependency.checkUnchanged(renderer, codeHash);
         (w.renderer, w.rendererCodeHash) = (renderer, codeHash);
@@ -633,6 +640,9 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
             files |= uint256(f.role) << (8 * i);
         }
         w.files = files;
+        // The license is fixed from the first mint (no relicensing), so its text meets the rule
+        // a frozen license meets in 6529 Stream's records now.
+        _requireLicenseText(item.license.textFileId, false);
         (w.itemHash, w.recordFileId, w.license) = (itemHash, item.recordFileId, item.license);
         if (item.seedPolicy == SEED_ARTIST) w.seed = item.seed;
         bool fee = _openTerms(w, item, royaltyRate);
@@ -731,6 +741,31 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
                 ok := and(ok, shr(byte(0, calldataload(p)), URI_BYTES))
             }
         }
+    }
+
+    /// @dev A license text must be a registered content-store file with a SHA-256 digest in at
+    ///      most `MAX_LICENSE_TEXT_CHUNKS` chunks (WorkRecords' rule), and complete on-chain when
+    ///      `stored`. The chunk count and digest kind are fixed by the file ID, so a text that
+    ///      passes at mint can only lack chunks, which anyone may write: finalize is never stuck.
+    ///      The answer's words are read in place (`chunkCount` and `digestKind`, as WorkRecords
+    ///      reads them); the call forwards all gas and any failure reverts with its data.
+    function _requireLicenseText(bytes32 textFileId, bool stored) private view {
+        address store = _contentStore;
+        (bool ok, bytes memory info) =
+            store.staticcall(abi.encodeCall(IContentStore.fileInfo, (textFileId)));
+        uint256 chunks;
+        uint256 kind;
+        assembly ("memory-safe") {
+            if or(iszero(ok), lt(mload(info), 0x100)) {
+                revert(add(info, 0x20), mload(info))
+            }
+            chunks := mload(add(info, 0x80))
+            kind := mload(add(info, 0xe0))
+        }
+        if (
+            kind != 0 || chunks > MAX_LICENSE_TEXT_CHUNKS
+                || (stored && !IContentStore(store).isComplete(textFileId))
+        ) revert InvalidLicenseText(textFileId);
     }
 
     /// @dev Installs the default renderer: ERC-165 `IRenderer` and the pinned code hash.

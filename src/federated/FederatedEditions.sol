@@ -124,7 +124,10 @@ contract FederatedEditions is ERC1155, FederatedMembership, IFederatedEditions {
     /// @dev The bound adapter mints copies to the buyer with `data` exactly
     ///      `abi.encode(CURRENCY_ETH, unitPrice)`, within the edition's maximum; a bound adapter
     ///      no longer admitted mints only once it sealed the edition, so its winners always
-    ///      claim. Effects and the log precede the ERC-1155 acceptance call.
+    ///      claim. Effects and the log precede the ERC-1155 acceptance call, so a mint
+    ///      re-entered from that call (only the bound adapter can mint) sees the raised count
+    ///      and the maximum still holds: the template needs no guard of its own. The order of an
+    ///      adapter's own claims is the adapter's (the edition auction's are `nonReentrant`).
     function mint(address to, uint256 id, uint256 amount, bytes calldata data)
         external
         returns (uint256, PrimaryTerms memory terms)
