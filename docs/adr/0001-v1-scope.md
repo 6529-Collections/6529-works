@@ -583,7 +583,8 @@ writing other storage); entries composed on read; unbid federated works stay wit
 template.)
 
 Federation lets an artist run their own contract, built from the network's
-audited templates, as a registered member of the 6529 network.
+audited templates, as a registered member of the 6529 network. (Wording amended 16 November
+2026: see [Amendments](#amendments).)
 
 **Purpose: open, automated discovery (owner direction, 11 October 2026).** The
 registry is a public, on-chain directory of every federated contract and work.
@@ -604,7 +605,8 @@ shared sale adapters, the template-ready token code, and a registry interface.
 
 **Components**
 - **Templates.** Each template is the 6529 Stream or 6529 Editions token code
-  with curation switched off. Each template version is reviewed and audited,
+  with curation switched off. Each template version is reviewed and audited
+  (wording amended 16 November 2026: see [Amendments](#amendments)),
   and identified by its code hash. New template versions are published by
   governance. Deployed contracts never change.
 - **Factory.** Deploys a template as a full, non-proxy contract. It deploys
@@ -795,7 +797,8 @@ AccessManager governs all of them. The VRF module is optional.
   - Rejected: cheap copies would mix with 1/1s in one contract.
   - Editions go to the linked 1155 instead.
 - **Keep RC1's bespoke governance.**
-  - Rejected in favour of a standard, audited AccessManager.
+  - Rejected in favour of a standard, audited AccessManager. (Wording amended 16 November
+    2026: see [Amendments](#amendments).)
 - **Mandatory on-chain storage up to 1 MB.**
   - Rejected for gas-cost exposure.
   - Off-chain by default, with a collector-funded upgrade path.
