@@ -17,6 +17,16 @@ import { PrimaryTerms } from "./types/SaleTypes.sol";
 ///      width), interns the terms and mints into the adapter's custody. Governance replaces the
 ///      policy (`IStream.setDependency("PACKAGE_REGISTRY", ...)`, the 30-day class); a successor
 ///      must keep its predecessor's consumed items and content claims authoritative.
+///
+///      What the core enforces, and what it leaves to the policy: Stream holds content
+///      uniqueness, keyed by the content hash (a content hash mints once; a released one only
+///      for the artist the release named, and never by the item it tombstoned), not
+///      item-identifier uniqueness. The tombstone is read only when released content is claimed
+///      again, so a mint costs no extra storage read for it. A successor policy must therefore
+///      answer only item hashes that commit to their content hash (as the genesis registry's
+///      `WorksHashing.itemHash` does, the content hash being one of the item's fields): a policy
+///      that did not could mint a tombstoned item hash again with other content, which the core
+///      would accept (`StreamPolicySafety.t.sol`, `test_MP1_TheCoreHoldsContentNotItemIdentifiers`).
 interface IMintPolicy is IERC165 {
     /// @notice What Stream tells the policy about a mint: the calling adapter and Stream's own
     ///         current dependencies, so the policy holds no copy of them.
@@ -33,7 +43,8 @@ interface IMintPolicy is IERC165 {
     }
 
     /// @notice What the policy admits: the work's facts and the terms it locks.
-    /// @param itemHash The hash of the consumed item (nonzero).
+    /// @param itemHash The hash of the consumed item (nonzero), committing to `contentHash` (the
+    ///        policy's obligation; see the contract notes).
     /// @param artistId The lead artist's ID (nonzero, at most 160 bits).
     /// @param collectionId The collection the work joins.
     /// @param kind The item kind (0 ORIGINAL, 1 EDITION_MASTER; Stream stores up to 3).

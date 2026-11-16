@@ -70,6 +70,11 @@ library Typehashes {
         "OverrideAcceptance(uint256 artistId,uint8 kind,address authority,address payout,"
         "bytes32 profileId,bytes32 profileDocHash,bytes32 evidenceHash,uint64 deadline)"
     );
+    /// @notice An account consents to an identity the federation registry creates for it
+    ///         (artist registry domain, `registerFederated`).
+    bytes32 internal constant ARTIST_REGISTRATION = keccak256(
+        "ArtistRegistration(address account,bytes32 profileId,bytes32 profileDocHash,uint64 deadline)"
+    );
 
     // ----- Permit2 witnesses (relayable payment intents, signed in Permit2's own domain) -----
 

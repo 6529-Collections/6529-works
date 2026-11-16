@@ -156,7 +156,11 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
 
     /// @dev False when `account` is a governed vault whose destination is no longer
     ///      `replacement`: its consent named a destination governance has since replaced. Reads
-    ///      forward all gas; a shortfall reverts (`BoundedCall`).
+    ///      forward all gas; a shortfall reverts (`BoundedCall`). Any account that declares
+    ///      `IGovernedVault` by ERC-165 is held to it, vault or not: one whose `destination()`
+    ///      refuses or names another address cannot be recovered to its consented replacement.
+    ///      Only that account's own consent is affected, by its own code (the consent is the
+    ///      account's call), so no one else's credit is.
     function _stillNamed(address account, address replacement) private view returns (bool) {
         if (!BoundedCall.supportsInterface(account, type(IGovernedVault).interfaceId)) return true;
         (bool ok, bytes32 word) =

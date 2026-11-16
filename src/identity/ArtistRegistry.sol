@@ -135,11 +135,6 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     ///      this, so a contested override can always be upheld after its notice.
     uint256 private constant UPHOLD_WINDOW = 365 days - 180 days;
 
-    /// @dev The account's consent to an identity created by the federation registry.
-    bytes32 private constant ARTIST_REGISTRATION = keccak256(
-        "ArtistRegistration(address account,bytes32 profileId,bytes32 profileDocHash,uint64 deadline)"
-    );
-
     /// @dev The identity fields with `restrained` beside the authority, so the active authority
     ///      is one storage read: `restrained` is whether the pending change is an override that
     ///      moves the authority (`kind > STANDARD`, `next.authority != authority`), lapsed or not.
@@ -200,7 +195,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         emit ConsolidationSourceSet(address(0), address(source), sourceCodeHash);
         _timerWord = FLOORS;
         for (uint256 i; i <= uint256(Timer.STANDING_GRACE); ++i) {
-            emit TimerSet(Timer(i), _field(FLOORS, i));
+            emit TimerSet(Timer(i), 0, _field(FLOORS, i));
         }
     }
 
@@ -294,8 +289,8 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
                 || _field(word, uint256(Timer.CONTEST_TIMEOUT))
                     < uint256(_field(word, uint256(Timer.OVERRIDE_DELAY))) + UPHOLD_WINDOW
         ) revert InvalidTimers();
+        emit TimerSet(which, _field(_timerWord, uint256(which)), value);
         _timerWord = word;
-        emit TimerSet(which, value);
     }
 
     // ----- identity lifecycle -----
@@ -600,7 +595,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
                 || (status != FederationStatus.ACTIVE && status != FederationStatus.DELISTED)
         ) revert FederatedStatusRefused(token, current);
         l.status = status;
-        emit FederatedContractStatus(token, l.artistId, status, ref);
+        emit FederatedContractStatus(token, l.artistId, current, status, ref);
     }
 
     /// @inheritdoc IArtistRegistry
@@ -610,7 +605,9 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         if (current == FederationStatus.NONE) revert FederatedStatusRefused(msg.sender, current);
         if (current == FederationStatus.LEFT) return;
         l.status = FederationStatus.LEFT;
-        emit FederatedContractStatus(msg.sender, l.artistId, FederationStatus.LEFT, bytes32(0));
+        emit FederatedContractStatus(
+            msg.sender, l.artistId, current, FederationStatus.LEFT, bytes32(0)
+        );
     }
 
     // ----- reads -----
@@ -734,7 +731,11 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         uint64 deadline
     ) public view returns (bytes32) {
         return _hashTypedDataV4(
-            keccak256(abi.encode(ARTIST_REGISTRATION, account, profileId, profileDocHash, deadline))
+            keccak256(
+                abi.encode(
+                    Typehashes.ARTIST_REGISTRATION, account, profileId, profileDocHash, deadline
+                )
+            )
         );
     }
 

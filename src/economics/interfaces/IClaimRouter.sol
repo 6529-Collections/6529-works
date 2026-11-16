@@ -44,7 +44,11 @@ interface IClaimRouter is IERC165 {
 
     /// @notice In continue mode, item `index` failed. `size` is the size of the data the ledger
     ///         returned, and `reason` is at most its first 256 bytes, or a router error.
-    /// @param wallet The item's wallet: the address its payee list and salt name.
+    /// @param wallet The item's wallet: for a plain item, the address its payee list and salt
+    ///        name; for a signed item, the wallet the authorization declares, which is not
+    ///        checked here (the ledger refuses an authorization whose wallet differs from the
+    ///        list and salt with `WrongWallet`, so a failed signed item's `wallet` may be any
+    ///        address the authorization named). Index by it only for plain items.
     /// @param asset The item's asset (ETH is `address(0)`).
     /// @param payee The item's payee index in the wallet.
     /// @param index The item's position in the batch.
@@ -62,6 +66,9 @@ interface IClaimRouter is IERC165 {
 
     /// @notice The batch has `count` items, more than its maximum.
     error TooManyClaims(uint256 count);
+    /// @notice A continue-mode signed batch carries `total` signature bytes, more than the
+    ///         router's `MAX_CONTINUE_SIGNATURE_BYTES`.
+    error SignaturesTooLong(uint256 total);
     /// @notice In continue mode, item `index` would get only `available` gas, less than its
     ///         minimum, or, offered `available` below {SHORTFALL_REVERT_CEILING}, it ran short of
     ///         gas; the whole batch reverts so gas estimation raises the limit.
@@ -114,7 +121,8 @@ interface IClaimRouter is IERC165 {
 
     /// @notice Executes every signed claim in order, with the same failure modes as {claim}.
     /// @param claims The signed releases, at most {MAX_SIGNED_CLAIMS} (at most 8 in continue
-    ///        mode, as for {claim}).
+    ///        mode, as for {claim}, with at most 131,072 signature bytes in all, the router's
+    ///        `MAX_CONTINUE_SIGNATURE_BYTES`; `SignaturesTooLong` otherwise).
     /// @param continueOnFailure True for continue mode, false for atomic mode.
     /// @return amounts The amount each item released.
     function claimSigned(SignedClaim[] calldata claims, bool continueOnFailure)

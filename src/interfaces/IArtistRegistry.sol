@@ -274,10 +274,16 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     ///         registry, or LEFT by the token itself.
     /// @param token The federated token contract.
     /// @param artistId The artist it is listed under.
+    /// @param previous The status before (ACTIVE or DELISTED; a status set again is reported
+    ///        with itself as `previous`).
     /// @param status The new status.
     /// @param ref The federation registry's reference for the decision (a vote), zero for LEFT.
     event FederatedContractStatus(
-        address indexed token, uint256 indexed artistId, FederationStatus status, bytes32 ref
+        address indexed token,
+        uint256 indexed artistId,
+        FederationStatus previous,
+        FederationStatus status,
+        bytes32 ref
     );
     /// @notice Governance replaced the federation registry (`setFederationRegistry`).
     /// @param previous The federation registry before (zero if none was bound).
@@ -285,8 +291,9 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     event FederationRegistrySet(address previous, address next);
     /// @notice A governed wait was set: each at deployment (its floor), then by `setTimer`.
     /// @param timer The wait.
+    /// @param previous Its value before, in seconds (zero at deployment).
     /// @param value Its value in seconds, for changes staged and refreshes made from now on.
-    event TimerSet(Timer indexed timer, uint48 value);
+    event TimerSet(Timer indexed timer, uint48 previous, uint48 value);
     /// @notice A consolidated wallet was recorded, found consolidated again, or its
     ///         `effectiveAt` changed (a pending entry following its live clock, an established
     ///         one moving earlier); it has standing from `effectiveAt`. The latest event for a

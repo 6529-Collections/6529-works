@@ -50,8 +50,14 @@ Integrators start at [Reading a work](../../docs/integrators/reading-a-work.md) 
   pointer per part.
 - **Links are the same chunks (WS-50).** A link is keyed by the keccak256 of what it concatenates,
   re-checked on every read; parts are whole chunks only; a link from fewer parts may replace a
-  longer one, never the bytes. `chunkPointer` is zero for a linked chunk: read it with
-  `chunkData` or `readChunk`.
+  longer one, never the bytes, and a whole write replaces any link, so a chunk's part count only
+  falls. `chunkPointer` is zero for a linked chunk: read it with `chunkData` or `readChunk`.
+  `maxParts(fileId)` is the largest part count of a complete file's chunks: the renderer reads
+  no file with a chunk of more than 4 (RND-26, LIM-CNT-22), and uploaders write whole chunks
+  while the chain allows it.
+- **Source answers are bounded (WS-52).** `firstMissing` reads another `IChunkStore` with all
+  the gas it may and copies at most one chunk's ABI encoding; a refusal or a larger answer is a
+  chunk not served, a shortfall reverts.
 - **Open ids (WS-54).** Encodings and digest kinds are `uint8` ids the store records; it
   interprets only encodings 2 and 3 (attestation) and digest kind 0 (`sha256Of`). The enum
   `IContentStore.Encoding` names the four defined ids.

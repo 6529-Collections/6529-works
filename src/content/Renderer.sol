@@ -69,7 +69,8 @@ import { JsonScan } from "./JsonScan.sol";
 ///      carry.
 ///
 ///      Media. The primary file is inlined when the work is on-chain complete, the file is
-///      complete in the store, its cost-weighted size is at most the threshold, and its stored
+///      complete in the store with no chunk read from more than `MAX_PARTS_PER_CHUNK` stored
+///      parts, its cost-weighted size is at most the threshold, and its stored
 ///      encoding can be served as the media itself: `Base64` (the stored text is concatenated
 ///      as it is, once the store has attested it as strict base64 with `isBase64Attested`, so
 ///      it cannot break out of the JSON string) and `Identity` (encoded here, and counted eight
@@ -116,6 +117,13 @@ contract Renderer is IRenderer {
     uint256 internal constant MAX_SCRIPT_LT = 1_024;
     /// @notice The most `%` and `#` a record may hold (each costs about 200 gas to escape).
     uint256 internal constant MAX_ESCAPES = 512;
+    /// @notice The most stored parts any one chunk of a file may be read from: a linked chunk
+    ///         costs one storage read and one code copy per part (about 7,000 gas), so a file
+    ///         with a chunk over it is not inlined (a record with one is not shown) until that
+    ///         chunk is written whole or linked from fewer parts, which anyone may do. A bound on
+    ///         the work of a read, chosen with the others so that every cap at once stays within
+    ///         the 8M budget (`TokenUriBudget.t.sol`), not a gas figure.
+    uint256 internal constant MAX_PARTS_PER_CHUNK = 4;
 
     /// @notice The content store the media and records are read from (immutable).
     IContentStore public immutable contentStore;
@@ -352,7 +360,8 @@ contract Renderer is IRenderer {
     }
 
     /// @dev The record JSON, percent-escaped, and whether it is ready: not if its file is not
-    ///      complete yet, and never if it is not `Identity`, is over `MAX_RECORD_BYTES`, is not
+    ///      complete yet (or has a chunk linked from more than `MAX_PARTS_PER_CHUNK`
+    ///      parts), and never if it is not `Identity`, is over `MAX_RECORD_BYTES`, is not
     ///      UTF-8, or holds too many `%` and `#` to escape within the gas budget. A record file
     ///      the store does not answer for (an approved one whose manifest was never registered) is
     ///      not complete either: the store answered for the primary file in this same call, so the
@@ -994,10 +1003,17 @@ contract Renderer is IRenderer {
         );
     }
 
+    /// @dev Whether a file is complete in the store with no chunk read from more than
+    ///      `MAX_PARTS_PER_CHUNK` stored parts (`IContentStore.maxParts`, zero when incomplete).
     function _complete(bytes32 id) private view returns (bool) {
-        return abi.decode(
-            _word(address(contentStore), IContentStore.isComplete.selector, uint256(id), 32), (bool)
+        uint256 parts = abi.decode(
+            _word(address(contentStore), IContentStore.maxParts.selector, uint256(id), 32),
+            (uint256)
         );
+        // From 1 to the bound: zero (incomplete) wraps to the largest word.
+        unchecked {
+            return parts - 1 < MAX_PARTS_PER_CHUNK;
+        }
     }
 
     /// @dev A string made safe for a JSON string inside a non-base64 data URI. The strings here

@@ -304,7 +304,9 @@ interface IEnglishAuction is ISaleAdapter {
     /// @param currency The currency, zero for ETH.
     /// @return The opening bid in the currency's base units; zero when never set.
     function openingBid(address currency) external view returns (uint256);
-    /// @notice The recipient whose delivery is pending, or zero.
+    /// @notice The recipient whose delivery is pending, or zero: the stored recipient, else the
+    ///         winning bidder, else (no bid stands, as after a refused federated close) the
+    ///         token's current creator, who may claim it.
     /// @param saleId The auction's sale ID.
     /// @return The pending recipient, or zero when no delivery is pending.
     function pendingDelivery(uint256 saleId) external view returns (address);
