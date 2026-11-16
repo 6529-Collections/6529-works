@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { IAccounts } from "../interfaces/IAccounts.sol";
 import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IFederatedDeployer } from "../interfaces/IFederatedDeployer.sol";
@@ -10,6 +11,7 @@ import { IFederatedStream } from "../interfaces/IFederatedStream.sol";
 import { IFederatedToken } from "../interfaces/IFederatedToken.sol";
 import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
+import { IStream } from "../interfaces/IStream.sol";
 import { PRODUCT_FEDERATED, ProductEconomics } from "../interfaces/types/EconomicsTypes.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 
@@ -17,23 +19,23 @@ import { Dependency } from "../libraries/Dependency.sol";
 /// @notice The replaceable, governed admission layer of 6529 Stream Federated (ADR 0008;
 ///         FED-41 to FED-52 in `docs/spec/federation.md`): the table of reviewed template code
 ///         hashes, the sale adapters admitted for new federated works, permissionless joining,
-///         and delisting by vote.
+///         and delisting by the network.
 /// @dev Holds no entry: an entry is composed on read from the permanent artist registry's
 ///      directory, the token's locked storage and the template table (`IFederationRegistry`),
 ///      so a replacement registry inherits every listing at once. It has no authority over any
 ///      deployed federated token, work or fund: it decides only which code may join, which
-///      adapters may mint new works, and a listing's ACTIVE or DELISTED status. A template
+///      adapters may mint new works and open new sales, and a listing's ACTIVE or DELISTED
+///      status. A template
 ///      version is a runtime code hash bound to its deployer (`FederatedDeployer`), the
 ///      ownerless contract that deploys that version's creation code: a contract joins only if
 ///      that deployer recorded it, so its starting storage is the constructor's and nothing
 ///      else. Once replaced in the artist registry,
 ///      every read answers as the current registry does, so an adapter that still points here
-///      never disagrees with the templates. Roles (genesis configuration): template approval,
-///      revocation and adapter admission SUCCESSOR_SETTER (30 days); suspension GUARDIAN
-///      (immediate, tightening only); resumption and delisting PARAMETER_SETTER (48 hours,
-///      guardian-vetoable).
+///      never disagrees with the templates. Every governed function is the network's; the
+///      genesis role map sets each one's delay (template approval, suspension, resumption,
+///      revocation and reinstatement, and delisting: 24 hours).
 contract FederationRegistry is IFederationRegistry, AccessManaged {
-    /// @notice A template code hash's status. REVOKED is terminal.
+    /// @notice A template code hash's status. The network can reinstate a REVOKED one.
     enum TemplateStatus {
         NONE,
         APPROVED,
@@ -123,8 +125,7 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
     // ------------------------------------------------------------------ governance
 
     /// @notice Approves a template version: its runtime code hash, bound to the ownerless
-    ///         deployer that alone creates its copies. SUCCESSOR_SETTER (30 days). Once only per
-    ///         code hash. Review: the deployer's code hash is the reviewed `FederatedDeployer`
+    ///         deployer that alone creates its copies. The network. Once only per code hash. Review: the deployer's code hash is the reviewed `FederatedDeployer`
     ///         build and its creation code is the template's (`VerifyV1.checkTemplate`).
     /// @param codeHash The runtime code hash of the reviewed template build.
     /// @param deployer Its `FederatedDeployer` (code, not EIP-7702 delegated).
@@ -144,21 +145,22 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
         _emitTemplate(codeHash, t);
     }
 
-    /// @notice Suspends an approved template version: no contract of it joins or mints a new work;
-    ///         running sales finish. GUARDIAN (immediate).
+    /// @notice Suspends an approved template version: no contract of it joins, mints a new work
+    ///         or opens a new sale (each asks `canMint`); running sales finish. The network.
     /// @param codeHash The template code hash.
     function suspendTemplate(bytes32 codeHash) external restricted {
         _move(codeHash, TemplateStatus.APPROVED, TemplateStatus.SUSPENDED);
     }
 
-    /// @notice Lifts a suspension. PARAMETER_SETTER (48 hours).
+    /// @notice Lifts a suspension. The network.
     /// @param codeHash The template code hash.
     function resumeTemplate(bytes32 codeHash) external restricted {
         _move(codeHash, TemplateStatus.SUSPENDED, TemplateStatus.APPROVED);
     }
 
-    /// @notice Revokes a template version for good: its contracts are no longer served, and
-    ///         their running sales end unsold with refunds. SUCCESSOR_SETTER (30 days).
+    /// @notice Revokes a template version: its contracts are no longer served, and their running
+    ///         sales end unsold with refunds. The network, which can reverse it
+    ///         (`reinstateTemplate`).
     /// @param codeHash The template code hash.
     function revokeTemplate(bytes32 codeHash) external restricted {
         Template storage t = _templates[codeHash];
@@ -170,8 +172,15 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
         _emitTemplate(codeHash, t);
     }
 
+    /// @inheritdoc IFederationRegistry
+    /// @dev REVOKED to APPROVED. Listings `propagateRevocation` wrote DELISTED stay so until the
+    ///      network relists them (`setStatus`).
+    function reinstateTemplate(bytes32 codeHash) external restricted {
+        _move(codeHash, TemplateStatus.REVOKED, TemplateStatus.APPROVED);
+    }
+
     /// @notice Admits or removes a sale adapter for new federated works (ERC-165 `ISaleAdapter`,
-    ///         not EIP-7702 delegated). SUCCESSOR_SETTER (30 days). Removal stops new works only:
+    ///         not EIP-7702 delegated). The network. Removal stops new works only:
     ///         an adapter settles and burns the tokens it minted whatever this says.
     /// @param adapter The sale adapter.
     /// @param admitted Whether it may mint new federated works.
@@ -181,16 +190,13 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
         emit AdapterSet(adapter, admitted);
     }
 
-    /// @notice Sets listed contracts ACTIVE or DELISTED after a vote, in batches of the caller's
-    ///         size. PARAMETER_SETTER (48 hours). A contract that left while the vote waited is
-    ///         still delisted (LEFT_DELISTED in the directory), so a scheduled delisting always
-    ///         lands; a contract the request cannot change (unlisted, or left and asked to be
-    ///         ACTIVE) is skipped, never reverting the batch. A delisting never touches tokens,
-    ///         ownership, records or funds; it stops new sales, and running sales end unsold with
-    ///         refunds.
+    /// @notice Sets listed contracts ACTIVE or DELISTED, in batches of the caller's size. The
+    ///         network. An unlisted contract is skipped, never reverting the batch. A delisting
+    ///         never touches tokens, ownership, records or funds; it stops new works and sales,
+    ///         and running sales end unsold with refunds.
     /// @param tokens The federated contracts.
     /// @param status ACTIVE or DELISTED.
-    /// @param voteRef A reference to the vote, recorded in the artist registry's event.
+    /// @param voteRef A reference to the decision, recorded in the artist registry's event.
     function setStatus(address[] calldata tokens, Status status, bytes32 voteRef)
         external
         restricted
@@ -200,10 +206,9 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
         for (uint256 i; i < tokens.length; ++i) {
             (, IArtistRegistry.FederationStatus current) =
                 artistRegistry.federatedListing(tokens[i]);
-            if (
-                current == IArtistRegistry.FederationStatus.ACTIVE
-                    || current == IArtistRegistry.FederationStatus.DELISTED
-            ) artistRegistry.setFederatedStatus(tokens[i], next, voteRef);
+            if (current != IArtistRegistry.FederationStatus.NONE) {
+                artistRegistry.setFederatedStatus(tokens[i], next, voteRef);
+            }
         }
     }
 
@@ -264,11 +269,9 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
     // ------------------------------------------------------------------ reads
 
     /// @inheritdoc IFederationRegistry
-    /// @dev A contract that left answers no entry: the English auction (`_lockTerms`) and the
-    ///      federated edition auction's lens (`feeTerms`) refuse a new sale whose entry's code
-    ///      hash is not the token's, so a left contract that admits a shared adapter as its own
-    ///      minter still starts no sale there, at the network's fee or any other, while
-    ///      `isActive` lets the sales it started before the exit finish.
+    /// @dev The share is the smaller of the token's deployed share and the artist registry's
+    ///      record (`IAccounts.federatedFeeShare`, which the network can only lower), as the
+    ///      token itself computes it, so the adapters charge the share in force.
     function entry(address token) external view returns (Entry memory e) {
         IFederationRegistry current = _current();
         if (_forwards(current)) return current.entry(token);
@@ -282,6 +285,8 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
                 || t.status == TemplateStatus.NONE
         ) return e;
         (,,, uint32 feeShare,, address partner) = IFederatedToken(token).federationTerms();
+        uint32 recorded = IAccounts(address(artistRegistry)).federatedFeeShare(token);
+        if (recorded < feeShare) feeShare = recorded;
         e = Entry(
             t.form,
             partner,
@@ -294,15 +299,12 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
     }
 
     /// @inheritdoc IFederationRegistry
-    /// @dev LEFT is an exit from ACTIVE; a contract that left while delisted is LEFT_DELISTED in
-    ///      the directory and is not served.
     function isActive(address token) external view returns (bool) {
         IFederationRegistry current = _current();
         if (_forwards(current)) return current.isActive(token);
-        (, IArtistRegistry.FederationStatus status) = artistRegistry.federatedListing(token);
         TemplateStatus t = _templates[token.codehash].status;
-        return status == IArtistRegistry.FederationStatus.ACTIVE
-            && (t == TemplateStatus.APPROVED || t == TemplateStatus.SUSPENDED);
+        return
+            _listedActive(token) && (t == TemplateStatus.APPROVED || t == TemplateStatus.SUSPENDED);
     }
 
     /// @inheritdoc IFederationRegistry
@@ -317,6 +319,13 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
         if (t.form != Form.ERC1155) return true;
         (,,,,, address partner) = IFederatedToken(token).federationTerms();
         return _listedActive(partner);
+    }
+
+    /// @inheritdoc IFederationRegistry
+    /// @dev 6529 Stream's governed entropy module (`IStream.entropyModule`): the same module
+    ///      serves curated and federated works.
+    function entropyModule() external view returns (address) {
+        return IStream(artistRegistry.stream()).entropyModule();
     }
 
     /// @notice A template code hash's version, form and status.

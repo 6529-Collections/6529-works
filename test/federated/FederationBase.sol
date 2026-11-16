@@ -124,6 +124,17 @@ abstract contract FederationBase is IntegrationBase {
         }
     }
 
+    /// @dev The network sets one listed contract ACTIVE or DELISTED.
+    function _setListing(address token, IFederationRegistry.Status status) internal {
+        address[] memory tokens = new address[](1);
+        tokens[0] = token;
+        _govern(
+            hotAdmin,
+            address(fedRegistry),
+            abi.encodeCall(fedRegistry.setStatus, (tokens, status, "decision"))
+        );
+    }
+
     // ------------------------------------------------------------------ templates
 
     function _streamConfig(address artist)
@@ -277,9 +288,19 @@ abstract contract FederationBase is IntegrationBase {
         w.item.edition = EditionTerms(maxCount, address(0), SaleKind.UNIFORM_AUCTION, "");
     }
 
-    /// @dev The mint request an adapter forwards: `abi.encode(FederatedMint(item, media))`.
+    /// @dev The mint request an adapter forwards, for an item naming only the artist:
+    ///      `abi.encode(FederatedMint(item, media, no consents))`.
     function _mintData(Work memory w) internal pure returns (bytes memory) {
-        return abi.encode(IFederatedStream.FederatedMint(w.item, w.media));
+        return _mintData(w, new bytes[](0));
+    }
+
+    /// @dev The mint request with one consent per party after the first.
+    function _mintData(Work memory w, bytes[] memory consents)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encode(IFederatedStream.FederatedMint(w.item, w.media, consents));
     }
 
     function _itemHash(Work memory w) internal pure returns (bytes32) {

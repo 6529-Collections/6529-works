@@ -246,40 +246,6 @@ contract FederationProvenanceTest is FederationBase {
         assertEq(uint8(status), uint8(expected));
     }
 
-    // ------------------------------------------------------------------ exits (F2)
-
-    /// @dev Delisted, then left: LEFT_DELISTED, served by nothing, so the running sale ends
-    ///      unsold with the bid refunded and the work back in the template's custody.
-    function test_Exit_AfterADelistingRevivesNoSale() public {
-        _joinedFed();
-        (uint256 saleId, uint256 tokenId) = _startFed(_fedWork(fedArtist));
-        _ethBid(saleId, collector, 1 ether);
-        _delist(address(fed));
-        assertFalse(auction.isTarget(address(fed)));
-        vm.prank(fedArtist);
-        fed.leaveFederation();
-        (, IArtistRegistry.FederationStatus status) = artists.federatedListing(address(fed));
-        assertEq(uint8(status), uint8(IArtistRegistry.FederationStatus.DELISTED));
-        assertFalse(fedRegistry.isActive(address(fed)), "not served");
-        assertFalse(auction.isTarget(address(fed)), "no bid or settlement as sold");
-        assertEq(uint8(fedRegistry.entry(address(fed)).status), 0, "no entry");
-        _settleAtEnd(saleId);
-        assertEq(auction.claimable(collector, CURRENCY_ETH), 1 ether, "refunded");
-        assertEq(fed.ownerOf(tokenId), address(fed), "unsold, with the template");
-    }
-
-    /// @dev Left while ACTIVE, the running sale still finishes as sold (FED-8).
-    function test_Exit_FromActiveLetsTheRunningSaleFinish() public {
-        _joinedFed();
-        (uint256 saleId, uint256 tokenId) = _startFed(_fedWork(fedArtist));
-        _ethBid(saleId, collector, 1 ether);
-        vm.prank(fedArtist);
-        fed.leaveFederation();
-        assertTrue(fedRegistry.isActive(address(fed)));
-        _settleAtEnd(saleId);
-        assertEq(fed.ownerOf(tokenId), collector);
-    }
-
     // ------------------------------------------------------------------ one pointer (F7)
 
     /// @dev Only the artist registry's pointer is replaced: the English auction still names the
@@ -315,45 +281,16 @@ contract FederationProvenanceTest is FederationBase {
         assertEq(fed.ownerOf(tokenId), address(fed));
     }
 
-    // ------------------------------------------------------------------ exit timing (G1)
+    // ------------------------------------------------------------------ batches (G1)
 
-    /// @dev A delisting scheduled before the artist leaves still lands at execution (LEFT
-    ///      becomes LEFT_DELISTED): the running sale ends unsold with the bid refunded.
-    function test_Delisting_ScheduledBeforeAnExitStillLands() public {
-        _joinedFed();
-        (uint256 saleId, uint256 tokenId) = _startFed(_fedWork(fedArtist));
-        _ethBid(saleId, collector, 1 ether);
-        address[] memory tokens = new address[](1);
-        tokens[0] = address(fed);
-        bytes memory call = abi.encodeCall(
-            fedRegistry.setStatus, (tokens, IFederationRegistry.Status.DELISTED, "vote")
-        );
-        (, uint32 delay) = manager.canCall(hotAdmin, address(fedRegistry), bytes4(call));
-        vm.prank(hotAdmin);
-        manager.schedule(address(fedRegistry), call, 0);
-        vm.prank(fedArtist);
-        fed.leaveFederation();
-        assertTrue(auction.isTarget(address(fed)), "served while the vote waits");
-        vm.warp(block.timestamp + delay);
-        vm.prank(hotAdmin);
-        manager.execute(address(fedRegistry), call);
-        _assertStatus(address(fed), IArtistRegistry.FederationStatus.DELISTED);
-        assertFalse(auction.isTarget(address(fed)));
-        _settleAtEnd(saleId);
-        assertEq(auction.claimable(collector, CURRENCY_ETH), 1 ether, "refunded");
-        assertEq(fed.ownerOf(tokenId), address(fed));
-    }
-
-    /// @dev One member that left, or one never listed, does not revert a batch: the left one
-    ///      is delisted too, the unlisted one skipped; a relisting skips exits.
+    /// @dev One member never listed does not revert a batch: it is skipped, and the listed ones
+    ///      are delisted and relisted.
     function test_Delisting_ABatchSkipsWhatItCannotChange() public {
         _joinedFed();
         address second = _actor("secondArtist");
         FederatedStream other = _deployStream(second);
         _join(address(other), second);
         FederatedStream unlisted = _deployStream(second);
-        vm.prank(second);
-        other.leaveFederation();
         address[] memory tokens = new address[](3);
         (tokens[0], tokens[1], tokens[2]) = (address(fed), address(other), address(unlisted));
         _govern(
@@ -372,8 +309,8 @@ contract FederationProvenanceTest is FederationBase {
             abi.encodeCall(fedRegistry.setStatus, (tokens, IFederationRegistry.Status.ACTIVE, "r"))
         );
         _assertStatus(address(fed), IArtistRegistry.FederationStatus.ACTIVE);
-        _assertStatus(address(other), IArtistRegistry.FederationStatus.DELISTED);
-        assertFalse(fedRegistry.isActive(address(other)), "an exit is never relisted");
+        _assertStatus(address(other), IArtistRegistry.FederationStatus.ACTIVE);
+        _assertStatus(address(unlisted), IArtistRegistry.FederationStatus.NONE);
     }
 
     /// @dev A replacement registry swapped in before it approves the template versions serves

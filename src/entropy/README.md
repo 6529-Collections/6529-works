@@ -3,28 +3,33 @@
 The optional VRF module of 6529 Stream: one Chainlink VRF v2.5 random word per work, keyed by
 the work's content hash and delivered before its auction can start. Most seeded works use an
 artist-chosen seed in the package and never touch this module; an item opts in with seed policy
-`VRF`. The rules are in [Entropy](../../docs/spec/entropy.md) (`ENT-*`), including the request
-gate, the retry rule and the coordinator change.
+`VRF`. A federated contract's VRF work takes a seed the requester pays for, keyed by the
+contract and the content (`requestFederatedSeed`, ENT-20 to ENT-22). The rules are in
+[Entropy](../../docs/spec/entropy.md) (`ENT-*`), including the request gate, the retry rule and
+the coordinator change.
 
 ## Files
 
 | File | What it is |
 | --- | --- |
-| `VrfEntropyModule.sol` | Implements [`IEntropyModule`](../interfaces/IEntropyModule.sol): the gated `requestSeed`, the coordinator's `rawFulfillRandomWords`, the reads by item hash (`isDelivered`, `seedOf`, `requestOf`), and the governed `setConfig`, `lowerCallbackGasLimit` and `setCoordinator`. |
+| `VrfEntropyModule.sol` | Implements [`IEntropyModule`](../interfaces/IEntropyModule.sol): the gated `requestSeed`, the paid `requestFederatedSeed`, the coordinator's and the wrapper's `rawFulfillRandomWords`, the reads by item hash (`isDelivered`, `seedOf`, `requestOf`) and `federatedSeedOf`, and the governed `setConfig`, `lowerCallbackGasLimit`, `setCoordinator` and `setWrapper`. |
 | `IVRFCoordinatorV2Plus.sol` | The one coordinator function the module calls (`requestRandomWords`), declared locally: the repository has no Chainlink dependency. |
+| `IVRFV2PlusWrapper.sol` | The two VRF v2.5 wrapper functions (direct funding) the module calls for a federated seed: the native quote and the paid request. |
 
 ## Entry points
 
 | Caller | Calls | Rules |
 | --- | --- | --- |
 | Anyone (the artist, a relayer, a bot) | `requestSeed(item, packageRoot, proof)` for a `VRF` item of an approved, unconsumed package; links the item to its content's draw, and asks the coordinator only if the content has no pending or delivered draw; after consumption, only the link-only call of the consuming item to its content's delivered seed | ENT-1, ENT-2, ENT-5, ENT-14, ENT-15, ENT-17, ENT-19 |
-| The current coordinator | `rawFulfillRandomWords(requestId, words)`; the first delivery fixes the seed, later ones are silent no-ops | ENT-4, ENT-6 to ENT-8, ENT-13 |
+| A wallet of a listed federated contract's artist | `requestFederatedSeed{value}(token, item)`, paying at least the wrapper's quote, all forwarded to it | ENT-20, ENT-21 |
+| The current coordinator, or the wrapper for its requests | `rawFulfillRandomWords(requestId, words)`; the first delivery fixes the seed, later ones are silent no-ops | ENT-4, ENT-6 to ENT-8, ENT-13 |
+| A federated template's first mint of a VRF item | `federatedSeedOf(token, contentHash)` | FED-72 |
 | `Stream.mint`, inside the auction's `start` | `isDeliveredContent(item.contentHash)`, one word, after the item is consumed; a `VRF` item whose content has no delivered seed reverts the start with `SeedNotDelivered` | ENT-12 |
 | `WorkRecords.openRecord`; the renderer before a record opens | `seedOfContent(item.contentHash)`; `seedOf(itemHash)` | ENT-3, ENT-18 |
-| Governance | `setConfig`, `lowerCallbackGasLimit`, `setCoordinator` | ENT-9 to ENT-11; [role matrix](../../docs/audit/roles.md#entropymodule) |
+| Governance | `setConfig`, `lowerCallbackGasLimit`, `setCoordinator`, `setWrapper` | ENT-9 to ENT-11; [role matrix](../../docs/audit/roles.md#entropymodule) |
 
-Only 6529 Stream holds the module's address (immutably, or zero for a deployment without VRF);
-the auction never calls it. Flows are under [Flows](../../docs/spec/entropy.md#flows), events
+6529 Stream holds the module's address, and the federation registry answers it from there
+(`entropyModule()`); the auction never calls it. Flows are under [Flows](../../docs/spec/entropy.md#flows), events
 under [VrfEntropyModule events](../../docs/integrators/events-and-indexing.md#vrfentropymodule).
 
 ## Developer notes

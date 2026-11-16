@@ -22,7 +22,7 @@ import { FederationBase } from "./FederationBase.sol";
 ///         Glamsterdam figures are estimates from ADR 0004's unit prices (the ADR shows the
 ///         arithmetic); Foundry cannot measure them.
 contract FederationGasTest is FederationBase {
-    uint256 internal constant DEPLOY_721_CEILING = 5_500_000;
+    uint256 internal constant DEPLOY_721_CEILING = 5_600_000;
     uint256 internal constant DEPLOY_1155_CEILING = 3_870_000;
     uint256 internal constant JOIN_CEILING = 345_000;
     uint256 internal constant APPROVE_CEILING = 61_000;
