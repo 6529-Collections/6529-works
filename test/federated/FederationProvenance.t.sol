@@ -15,7 +15,9 @@ import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { SSTORE2 } from "src/libraries/SSTORE2.sol";
+import { Verify } from "script/Verify.s.sol";
 import { VerifyV1 } from "script/VerifyV1.sol";
+import { VerifyHarness } from "../deploy/ScriptHarness.sol";
 import { FederationBase } from "./FederationBase.sol";
 import { HostileLister } from "./FederatedSale.t.sol";
 
@@ -419,6 +421,48 @@ contract FederationProvenanceTest is FederationBase {
             abi.encodeWithSelector(VerifyV1.FederationMismatch.selector, "isAdmittedAdapter")
         );
         this.parity(fedRegistry, next, hashes, adapters);
+    }
+
+    /// @dev The runnable entry point (`Verify.successorParity()`, the runbook's command): it
+    ///      reads the predecessor from the recorded artist registry and the lists and successor
+    ///      from the environment. Parity holds: it passes; a template suspended in the
+    ///      predecessor but approved in the successor: it fails with the specific error.
+    function test_Replacement_VerifyScriptEntryPointComparesTheSuccessor() public {
+        FederationRegistry next = new FederationRegistry(
+            address(manager), address(artists), address(economics), address(store)
+        );
+        _mapRegistryRoles(address(next));
+        _approveTemplates(next);
+        _govern(hotAdmin, address(next), abi.encodeCall(next.setAdapter, (address(auction), true)));
+        VerifyHarness verifier = new VerifyHarness();
+        verifier.setFile(
+            "deployments/test/record.json",
+            bytes(
+                string.concat(
+                    '{"contracts":{"ArtistRegistry":{"address":"',
+                    vm.toString(address(artists)),
+                    '"}}}'
+                )
+            )
+        );
+        verifier.setEnv("DEPLOYMENT", "deployments/test/record.json");
+        verifier.setEnv("SUCCESSOR_FEDERATION_REGISTRY", vm.toString(address(next)));
+        verifier.setEnv(
+            "FEDERATION_CODE_HASHES",
+            string.concat(vm.toString(streamHash), ",", vm.toString(editionsHash))
+        );
+        verifier.setEnv("FEDERATION_ADAPTERS", vm.toString(address(auction)));
+        verifier.successorParity();
+
+        // Suspended in the predecessor during the delay, still approved in the successor.
+        vm.prank(guardian1);
+        fedRegistry.suspendTemplate(streamHash);
+        vm.expectRevert(abi.encodeWithSelector(VerifyV1.FederationMismatch.selector, "templateOf"));
+        verifier.successorParity();
+
+        verifier.setEnv("FEDERATION_ADAPTERS", "");
+        vm.expectRevert(abi.encodeWithSelector(Verify.EmptyList.selector, "FEDERATION_ADAPTERS"));
+        verifier.successorParity();
     }
 
     function parity(

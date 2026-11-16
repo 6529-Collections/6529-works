@@ -944,10 +944,18 @@ serve the predecessor's set before the switch, or every running federated sale f
 3. Before scheduling the switch, check the successor answers as the predecessor: for each
    approved code hash, `templateOf` matches (`VerifyV1.checkTemplate` against the successor
    reproduces genesis's template check), and `isAdmittedAdapter` matches for each adapter.
-4. Immediately before executing the switch, repeat the comparison:
-   `VerifyV1.checkSuccessorParity(predecessor, successor, codeHashes, adapters)` with every
-   code hash the predecessor has approved, suspended or revoked and every adapter either has
-   admitted. The switch's setters check only the expected pointer and ERC-165, and a
+4. Immediately before executing the switch, repeat the comparison with the verify script's
+   `successorParity()` entry point (`VerifyV1.checkSuccessorParity`): the predecessor is the
+   registry the recorded artist registry names now, and the lists are every code hash the
+   predecessor has approved, suspended or revoked and every adapter either has admitted
+   (comma-separated, no spaces; an empty list is refused):
+
+   ```bash
+   DEPLOYMENT=deployments/<chainId>/<timestamp>.json    SUCCESSOR_FEDERATION_REGISTRY=<successor>    FEDERATION_CODE_HASHES=<hash>,<hash> FEDERATION_ADAPTERS=<adapter>,<adapter>      forge script script/Verify.s.sol --sig "successorParity()" --rpc-url "$RPC_URL"
+   ```
+
+   It prints the counts compared and fails with `FederationMismatch("templateOf")` or
+   `("isAdmittedAdapter")` on the first difference. The switch's setters check only the expected pointer and ERC-165, and a
    revocation, suspension or adapter change on the predecessor during the 30-day delay would
    otherwise go unnoticed; once the switch lands, the successor answers every read. Do not
    execute the switch while the check fails: mirror the change on the successor first.
