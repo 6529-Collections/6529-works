@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
-import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {
     ReentrancyGuardTransient
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
@@ -11,11 +10,9 @@ import { RevenuePayment } from "../economics/RevenuePayment.sol";
 import { Splits } from "../economics/Splits.sol";
 import { TokenTransfer } from "../economics/TokenTransfer.sol";
 import { Roles } from "../governance/Roles.sol";
-import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IEditions } from "../interfaces/IEditions.sol";
 import { IEnglishAuction } from "../interfaces/IEnglishAuction.sol";
 import { IEnglishAuctionClock } from "../interfaces/IEnglishAuctionClock.sol";
-import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
 import { IStream } from "../interfaces/IStream.sol";
@@ -26,14 +23,15 @@ import { CURRENCY_ETH } from "../interfaces/types/EconomicsTypes.sol";
 import { SaleKind } from "../interfaces/types/SaleTypes.sol";
 import { StepLadder } from "../interfaces/types/StepLadder.sol";
 import { Dependency } from "../libraries/Dependency.sol";
+import { StreamLayout } from "../stream/StreamLayout.sol";
 import { UniformClearing } from "./UniformClearing.sol";
-import { UniformEditionAuctionLens } from "./UniformEditionAuctionLens.sol";
 
 /// @title UniformEditionAuction
 /// @notice The uniform-price edition auction (ADR 0005; D138-D141), the one sale of 6529 Stream
 ///         Editions. See {IUniformEditionAuction} for the rules; this contract adds the storage
-///         layout and the bounds. Every view of a sale lives on its lens
-///         ({UniformEditionAuctionLens}), deployed on its own and pinned by the constructor.
+///         layout and the bounds. Every view, of a sale or of the adapter's own settings, lives
+///         on its lens ({UniformEditionAuctionLens}), deployed on its own and pinned by the
+///         constructor.
 /// @dev Storage (`IUniformEditionAuctionStorage.Space` documents every word). Per sale: a state word
 ///      written at open and updated by every bid, raise and withdrawal (`SaleWord`), a payout word
 ///      written at open (`PayoutWord`) and a result word written at settlement (`ResultWord`).
@@ -44,13 +42,15 @@ import { UniformEditionAuctionLens } from "./UniformEditionAuctionLens.sol";
 ///      log (a head word with the count, the departed units and three entries, then four entries
 ///      per word), and a bid's position is its step's live plus departed units when it enters, so
 ///      no per-step counter is written. The governed parameters are interned: `setConfig` writes
-///      one record per change and a sale stores its 16-bit ID; fee recipients likewise.
+///      one record per change, a sale whose edition terms name their own close offset writes one
+///      record of the current parameters with that offset, and a sale stores its record's 24-bit
+///      ID; fee recipients likewise. The governed limits (`Limits`) share the settings word.
 ///
 ///      The 1/1's end only ever moves later, so the sale caches it and reads it live
 ///      (`IEnglishAuctionClock.auctionClock`, the state, end and pause start the English
 ///      auction answers itself, not through its lens) only when a bid or raise lands within
 ///      `softWindow` of the cached close, or later. Settlement and withdrawals always read it
-///      live. A cancelled 1/1
+///      live, and so does the lens's abandonment check. A cancelled 1/1
 ///      is therefore seen by the next settlement (anyone may void the sale at once) or by a bid
 ///      near the close; a bid placed far from the close after the cancel is refunded in full with
 ///      every other.
@@ -58,34 +58,59 @@ import { UniformEditionAuctionLens } from "./UniformEditionAuctionLens.sol";
 ///      `open` hands its token-specific data to the lens (`masterTerms`), which checks the
 ///      package item against 6529 Stream and the 1/1, and returns what to lock, so no
 ///      package-item codec is compiled here (EIP-170); it pays the economics 6529 Stream
-///      Editions returns from `bindMinter` (F1). The lens is deployed in its own transaction,
+///      Editions returns from `bindMinter` (F1). The lens also resolves the sale's close offset
+///      and deploys the seller's and royalty receiver's split wallets before any money is owed
+///      to them, which is why `open` calls it rather than reading it. The lens is deployed in its own transaction,
 ///      so this contract's deployment fits a block (F8), and pinned here: code hash and wiring.
-///      For the same reason every view of `IUniformEditionAuction` is answered by the lens: the
-///      adapter forwards the call's own calldata to it ({answeredByLens}) and returns its answer
-///      unchanged, so callers use one address and one interface.
+///      For the same reason every view of `IUniformEditionAuction` and `ISaleAdapter` is
+///      answered by the lens: the adapter forwards the call's own calldata to it (its fallback)
+///      and returns its answer unchanged, so callers use one address and one interface.
+///
+///      Gas rule. Every call out reverts the transaction when it fails: high-level calls and
+///      the binding's call forward all gas EIP-150 allows and bubble any failure, so a call
+///      that runs out of gas is never read as an answer. The one fixed figure is the payout
+///      gas (`Limits.payoutGas`, governed): it bounds what a payee can cost the settler, so a
+///      payee that refuses or needs more is paid through the revenue escrow and never blocks
+///      settlement; `RevenuePayment.payETH` requires the full figure to be available first.
 ///
 ///      v1 serves one token, 6529 Stream Editions (`editions`), whose master contract is
 ///      `stream`: `setTarget` lists nothing else. Every entry point that moves value is
 ///      non-reentrant; claims delete the bid before they mint (an ERC-1155 acceptance call) or
 ///      send ETH.
 contract UniformEditionAuction is
-    ISaleAdapter,
     IUniformEditionAuctionStorage,
     AccessManaged,
     ReentrancyGuardTransient
 {
-    /// @notice Gas forwarded with a settlement payout; a wallet that refuses, or needs more, is
-    ///         paid in the revenue escrow instead. Under the EIP-8037 draft it caps regular gas
-    ///         only (CALLS-3, LIM-GAS-2).
-    uint256 public constant PAYOUT_GAS = 100_000;
-
-    /// @dev `setConfig` bounds besides the ladder's (`StepLadder`; ADR 0005 section 4).
+    /// @dev `setConfig` bounds besides the ladder's (`StepLadder`; ADR 0005 section 4). The
+    ///      default close offset is bounded by `Limits.maxCloseOffset`.
     uint256 private constant _MAX_MARGIN_SHARE = 50_000;
-    uint256 private constant _MAX_CLOSE_OFFSET = 1 days;
     uint256 private constant _MIN_SOFT_WINDOW = 1 minutes;
     uint256 private constant _MAX_SOFT_WINDOW = 1 hours;
     uint256 private constant _MIN_MAX_EXTENSION = 1 hours;
     uint256 private constant _MAX_MAX_EXTENSION = 7 days;
+    /// @dev `setLimits` bounds (ADR 0005 section 4, as amended 15 November 2026). The close
+    ///      offset's maximum is the only cap on an edition's open period, and these bounds only
+    ///      keep it sane: at least a day, at most about ten years. The abandonment delay is at
+    ///      least 120 days: governance's 30-day replacement of a dependency of the master's
+    ///      settlement (or of its 1/1 adapter) plus 6529 Stream's 90-day rescue floor, so a sale
+    ///      whose master waits on a repair or a rescue is never abandoned before either can land;
+    ///      when governance lengthens Stream's rescue delay, `abandon` (and the lens) wait the
+    ///      difference too, up to the governed rescue cap (90 to 730 days): the cap is the
+    ///      bound on how long a governance lever can hold bidders' ETH.
+    ///      The payout gas fits a split wallet's or a Safe's receive at its floor, and keeps a
+    ///      settle call's two payouts far inside the 16,777,216 transaction cap at its ceiling.
+    uint256 private constant _MIN_MAX_CLOSE_OFFSET = 1 days;
+    uint256 private constant _MAX_MAX_CLOSE_OFFSET = 3650 days;
+    uint256 private constant _MIN_VOID_DELAY_DAYS = 120;
+    /// @dev 6529 Stream's permanent `RESCUE_DELAY_FLOOR` (90 days), which the 120-day minimum
+    ///      assumes; `abandon` adds what Stream's current `rescueDelay` adds to it.
+    uint256 private constant _RESCUE_FLOOR = 90 days;
+    uint256 private constant _MAX_VOID_DELAY_DAYS = 730;
+    uint256 private constant _MIN_RESCUE_CAP_DAYS = 90;
+    uint256 private constant _MAX_RESCUE_CAP_DAYS = 730;
+    uint256 private constant _MIN_PAYOUT_GAS = 30_000;
+    uint256 private constant _MAX_PAYOUT_GAS = 3_000_000;
     /// @dev The end while the 1/1 is paused for a dispute: undetermined.
     uint64 private constant _NO_END = type(uint64).max;
     /// @dev The ladder's E192 mantissas, `round(100·10^(j/192))` for j = 0..191, two bytes
@@ -118,31 +143,33 @@ contract UniformEditionAuction is
     uint256 private constant _SWEEP_CHUNK = 96;
 
     /// @dev The current parameters' ID, the interning counters, the open pause (when it began,
-    ///      zero while not paused) and whether `editions` is listed: read once per open.
+    ///      zero while not paused), whether `_editions` is listed, and the governed limits
+    ///      (`IUniformEditionAuction.Limits`): read once per open (`Space.SETTINGS` documents
+    ///      the packing).
     struct Settings {
-        uint16 termsId;
-        uint16 termsCount;
+        uint24 termsId;
+        uint24 termsCount;
         uint16 feeRecipientCount;
         uint40 pausedAt;
         bool listed;
+        uint32 maxCloseOffset;
+        uint16 voidDelayDays;
+        uint32 payoutGas;
+        uint16 rescueCapDays;
     }
 
-    /// @notice The revenue escrow that receives refused payouts (immutable).
-    address public immutable escrow;
-    /// @notice The English auction whose 1/1 sales anchor the edition sales (immutable).
-    address public immutable englishAuction;
+    /// @dev The revenue escrow that receives refused payouts.
+    address private immutable _escrow;
+    /// @dev The English auction whose 1/1 sales anchor the edition sales.
+    address private immutable _englishAuction;
     /// @inheritdoc IUniformEditionAuctionStorage
     address public immutable lens;
-    /// @notice 6529 Stream Editions, the one token this adapter sells.
-    address public immutable editions;
-    /// @notice 6529 Stream, the master contract of `editions`, whose 1/1s the English auction
-    ///         sells.
-    address public immutable stream;
+    /// @dev 6529 Stream Editions, the one token this adapter sells.
+    address private immutable _editions;
+    /// @dev 6529 Stream, the master contract of `_editions`, whose 1/1s the English auction
+    ///      sells.
+    address private immutable _stream;
 
-    /// @inheritdoc ISaleAdapter
-    address public federationRegistry;
-    /// @notice The code hash pinned when the federation registry was installed.
-    bytes32 public federationRegistryCodeHash;
     Settings private _settings;
     mapping(uint256 termsId => IUniformEditionAuction.AuctionConfig) private _terms;
     mapping(address recipient => uint16) private _feeRecipientIds;
@@ -172,6 +199,7 @@ contract UniformEditionAuction is
     ///        `lensCodeHash` and this adapter's Editions, Stream, English auction and escrow.
     /// @param lensCodeHash The lens's reviewed code hash.
     /// @param config_ The initial governed parameters.
+    /// @param limits_ The initial governed limits.
     constructor(
         address authority_,
         address escrow_,
@@ -179,7 +207,8 @@ contract UniformEditionAuction is
         address englishAuction_,
         address lens_,
         bytes32 lensCodeHash,
-        IUniformEditionAuction.AuctionConfig memory config_
+        IUniformEditionAuction.AuctionConfig memory config_,
+        IUniformEditionAuction.Limits memory limits_
     ) AccessManaged(authority_) {
         Dependency.check(escrow_);
         Dependency.check(editions_, type(IEditions).interfaceId);
@@ -192,11 +221,15 @@ contract UniformEditionAuction is
             l.editions() != editions_ || l.stream() != stream_
                 || l.englishAuction() != englishAuction_ || l.escrow() != escrow_
         ) revert Dependency.InvalidDependency(lens_);
-        escrow = escrow_;
-        englishAuction = englishAuction_;
-        editions = editions_;
-        stream = stream_;
+        _escrow = escrow_;
+        _englishAuction = englishAuction_;
+        _editions = editions_;
+        _stream = stream_;
         lens = lens_;
+        _setLimits(
+            uint256(limits_.maxCloseOffset) | uint256(limits_.voidDelayDays) << 32
+                | uint256(limits_.payoutGas) << 48 | uint256(limits_.rescueCapDays) << 80
+        );
         _setConfig(config_);
     }
 
@@ -205,8 +238,10 @@ contract UniformEditionAuction is
     /// @notice Opens the sale of edition `id` on `token` (`IUniformEditionAuction.open`).
     /// @dev Binds the edition to this adapter first (`IEditions.bindMinter`, which may precede
     ///      the edition), so an edition another adapter sells refuses the open, and only this
-    ///      adapter can ever mint the copies this sale clears.
-    /// @param token The edition contract: `editions`.
+    ///      adapter can ever mint the copies this sale clears. The lens's `masterTerms` checks
+    ///      the item, resolves the close offset and deploys the split wallets; a close offset
+    ///      other than the current default interns one terms record for this sale.
+    /// @param token The edition contract: `_editions`.
     /// @param id The edition ID, the master's 6529 Stream token ID.
     /// @param data `abi.encode(PackageItem)` of the master's EDITION_MASTER item.
     /// @return saleId `saleIdOf(token, id)`.
@@ -216,10 +251,9 @@ contract UniformEditionAuction is
         returns (uint256 saleId)
     {
         Settings memory st = _settings;
-        if (st.pausedAt != 0) revert SalePaused();
-        if (token != editions || !st.listed) revert TargetNotAllowed(token);
-        if (id >> 32 != 0) revert InvalidSaleTerms(token, id);
-        saleId = saleIdOf(token, id);
+        if (st.pausedAt != 0) revert ISaleAdapter.SalePaused();
+        if (token != _editions || !st.listed) revert ISaleAdapter.TargetNotAllowed(token);
+        saleId = _saleIdOf(token, id);
         SaleWord storage a = _sales[saleId];
         if (a.status != IUniformEditionAuction.AuctionStatus.NONE) {
             revert IUniformEditionAuction.AuctionExists(saleId);
@@ -227,27 +261,38 @@ contract UniformEditionAuction is
         IUniformEditionAuctionLens.MasterTerms memory m =
             IUniformEditionAuctionLens(lens).masterTerms(token, id, data);
         IUniformEditionAuction.AuctionConfig memory t = _terms[st.termsId];
+        uint24 termsId = st.termsId;
+        if (m.closeOffset != type(uint32).max && m.closeOffset != t.closeOffset) {
+            // The edition's own close offset (`DEFAULT_CLOSE_OFFSET` names none), which the lens
+            // checked against the maximum: this sale locks a record of the current parameters
+            // with it.
+            t.closeOffset = m.closeOffset;
+            termsId = _intern(t);
+        }
         uint256 closeAt = uint256(m.oneOfOneEnd) + t.closeOffset;
         // forge-lint: disable-next-line(block-timestamp)
         if (m.oneOfOneState != IEnglishAuction.AuctionState.PAUSED && block.timestamp >= closeAt) {
-            // Safe: a 32-bit end plus at most a day.
+            // Safe: a 32-bit end plus a 32-bit offset.
             // forge-lint: disable-next-line(unsafe-typecast)
             revert IUniformEditionAuction.BiddingClosed(saleId, uint64(closeAt));
         }
         // F1: the sale pays exactly the economics 6529 Stream Editions locks for the edition and
-        // returns, their one source (the lens checked a preview of them above).
+        // returns, their one source (the lens checked a preview of them above, and deployed the
+        // wallets it names).
         (address seller, address feeRecipient, uint256 feeShare) = _bindEdition(id, data);
-        // Safe: the 1/1 stores its end in 32 bits, and ids are below 2^32 (checked above); a fee
-        // share is at most 100,000 (checked by the lens).
+        uint16 feeRecipientId = feeShare == 0 ? 0 : _feeRecipientId(token, id, feeRecipient);
+        // Safe: the lens's `masterTerms` refuses an ID, a 1/1 end or a time of 2^32 or more
+        // (`InvalidSaleTerms`), so a sale never opens past 2106 rather than wrapping; a fee share
+        // is at most 100,000 (checked by the lens); `closeAt` is below 2^33.
         // forge-lint: disable-start(unsafe-typecast)
         a.status = IUniformEditionAuction.AuctionStatus.OPEN;
-        a.termsId = st.termsId;
+        a.termsId = termsId;
         a.maxCount = m.maxCount;
         a.oneOfOneEnd = uint32(m.oneOfOneEnd);
         a.openedAt = uint32(block.timestamp);
-        uint16 feeRecipientId = feeShare == 0 ? 0 : _feeRecipientId(token, id, feeRecipient);
-        _payouts[saleId] = PayoutWord(seller, uint32(feeShare), feeRecipientId, uint32(id));
-        emit SaleStarted(
+        _payouts[saleId] =
+            PayoutWord(seller, uint32(feeShare), feeRecipientId, uint32(id), st.voidDelayDays);
+        emit ISaleAdapter.SaleStarted(
             saleId,
             token,
             id,
@@ -258,7 +303,7 @@ contract UniformEditionAuction is
             uint64(closeAt)
         );
         emit IUniformEditionAuction.AuctionOpened(
-            saleId, token, id, stream, m.maxCount, t, uint64(closeAt)
+            saleId, token, id, _stream, m.maxCount, t, uint64(closeAt)
         );
         // forge-lint: disable-end(unsafe-typecast)
     }
@@ -355,7 +400,7 @@ contract UniformEditionAuction is
     /// @param bidId The bid's ID.
     /// @param to The address that receives the escrow.
     function withdrawBid(uint256 saleId, uint256 bidId, address to) external nonReentrant {
-        if (to == address(0)) revert InvalidRecipient(to);
+        if (to == address(0)) revert ISaleAdapter.InvalidRecipient(to);
         SaleWord storage a = _sales[saleId];
         _requireStatus(saleId, a.status, IUniformEditionAuction.AuctionStatus.OPEN);
         BidWord memory b = _bidOf(saleId, bidId);
@@ -374,7 +419,7 @@ contract UniformEditionAuction is
         delete _bids[saleId][bidId];
         uint256 amount = uint256(b.quantity) * _price(_terms[a.termsId], b.step);
         emit IUniformEditionAuction.BidWithdrawn(saleId, bidId, msg.sender, to, amount);
-        if (!TokenTransfer.sendETH(to, amount, gasleft())) revert ClaimFailed(to);
+        if (!TokenTransfer.sendETH(to, amount, gasleft())) revert ISaleAdapter.ClaimFailed(to);
     }
 
     // ------------------------------------------------------------------------- settlement
@@ -391,24 +436,28 @@ contract UniformEditionAuction is
     /// @param saleId The sale ID.
     /// @param order The next departure indexes of the caller's own sweep, in position order.
     /// @return Whether the sale is now SETTLED or VOID.
-    /// @dev Pays with `RevenuePayment.payETH`, {PAYOUT_GAS} per wallet: a refusal is escrowed for
-    ///      that wallet and never blocks settlement.
+    /// @dev Pays with `RevenuePayment.payETH`, `Limits.payoutGas` per wallet: a refusal is
+    ///      escrowed for that wallet and never blocks settlement.
     function settle(uint256 saleId, uint256[] calldata order) external nonReentrant returns (bool) {
-        SaleWord storage a = _sales[saleId];
-        IUniformEditionAuction.AuctionStatus status = a.status;
-        if (status == IUniformEditionAuction.AuctionStatus.OPEN) {
-            if (_begin(saleId, a)) return true;
-        } else {
+        SaleWord storage stored = _sales[saleId];
+        IUniformEditionAuction.AuctionStatus status = stored.status;
+        if (status != IUniformEditionAuction.AuctionStatus.OPEN) {
             // Another settler finished first: nothing left to do.
             if (status == IUniformEditionAuction.AuctionStatus.SETTLED) return true;
             _requireStatus(saleId, status, IUniformEditionAuction.AuctionStatus.SETTLING);
             // Cleared already: sweep the clearing step's departures.
-            if (_scans[saleId] == 0) return _sweep(saleId, a, order, _SWEEP_CHUNK);
+            if (_scans[saleId] == 0) return _sweep(saleId, stored, order, _SWEEP_CHUNK);
         }
-        (bool cleared, uint256 count, uint256 price) = _scanChunk(saleId, a);
+        // The sale word and its terms, read once for the whole call (I-1).
+        SaleWord memory a = _saleWord(stored);
+        IUniformEditionAuction.AuctionConfig memory t = _config(a.termsId);
+        if (status == IUniformEditionAuction.AuctionStatus.OPEN && _begin(saleId, stored, a, t)) {
+            return true;
+        }
+        (bool cleared, uint256 count, uint256 price) = _scanChunk(saleId, stored, a, t);
         if (!cleared) return false;
-        bool settled = a.status == IUniformEditionAuction.AuctionStatus.SETTLED
-            || _sweep(saleId, a, order, _SWEEP_FIRST);
+        bool settled = stored.status == IUniformEditionAuction.AuctionStatus.SETTLED
+            || _sweep(saleId, stored, order, _SWEEP_FIRST);
         // The payout comes last, after every write of this call.
         _pay(saleId, _payouts[saleId], count, price);
         return settled;
@@ -426,11 +475,15 @@ contract UniformEditionAuction is
         nonReentrant
         returns (uint256 unitsWon, uint256 refund)
     {
-        if (to == address(0) || to == address(this)) revert InvalidRecipient(to);
+        if (to == address(0) || to == address(this)) {
+            revert ISaleAdapter.InvalidRecipient(to);
+        }
         BidWord memory b = _bidOf(saleId, bidId);
         if (b.bidder != msg.sender) revert IUniformEditionAuction.NotBidder(msg.sender);
         (unitsWon, refund) = _claim(saleId, bidId, b, to);
-        if (refund != 0 && !TokenTransfer.sendETH(to, refund, gasleft())) revert ClaimFailed(to);
+        if (refund != 0 && !TokenTransfer.sendETH(to, refund, gasleft())) {
+            revert ISaleAdapter.ClaimFailed(to);
+        }
     }
 
     /// @notice Claims a bid for its bidder: copies to the bidder, refund credited
@@ -448,19 +501,67 @@ contract UniformEditionAuction is
         (unitsWon, refund) = _claim(saleId, bidId, b, b.bidder);
         if (refund != 0) {
             _credits[b.bidder] += refund;
-            emit Credited(b.bidder, CURRENCY_ETH, saleId, refund);
+            emit ISaleAdapter.Credited(b.bidder, CURRENCY_ETH, saleId, refund);
         }
     }
 
-    /// @inheritdoc ISaleAdapter
+    /// @notice Pays the caller's claimable credits in `currency` to `to` (`ISaleAdapter.claim`).
     /// @dev Only ETH is ever credited; any other currency has nothing to claim.
+    /// @param currency The currency; only `CURRENCY_ETH` has credits.
+    /// @param to The recipient.
+    /// @return amount The amount paid.
     function claim(address currency, address to) external nonReentrant returns (uint256 amount) {
-        if (to == address(0)) revert InvalidRecipient(to);
+        if (to == address(0)) revert ISaleAdapter.InvalidRecipient(to);
         amount = currency == CURRENCY_ETH ? _credits[msg.sender] : 0;
-        if (amount == 0) revert NothingToClaim(msg.sender, currency);
+        if (amount == 0) revert ISaleAdapter.NothingToClaim(msg.sender, currency);
         _credits[msg.sender] = 0;
-        emit Claimed(msg.sender, currency, to, amount);
-        if (!TokenTransfer.sendETH(to, amount, gasleft())) revert ClaimFailed(to);
+        emit ISaleAdapter.Claimed(msg.sender, currency, to, amount);
+        if (!TokenTransfer.sendETH(to, amount, gasleft())) revert ISaleAdapter.ClaimFailed(to);
+    }
+
+    /// @notice Voids an OPEN sale whose master cannot be settled, refunding every bid and sealing
+    ///         the edition at zero (`IUniformEditionAuction.abandon`).
+    /// @dev The lens decides (`checkAbandon`, which reverts with `NotAbandonable`): it reads the
+    ///      1/1 and 6529 Stream, forwarding all gas and reverting on a shortfall. This adapter
+    ///      then enforces the state rule and the time floor itself (`NotAbandonable` before the
+    ///      stored end plus the delay plus Stream's capped rescue lengthening), so a lens that
+    ///      answers early cannot void a sale or seal its edition early. The seal makes
+    ///      the supply question final: the edition is bound to this adapter, which never mints a
+    ///      void sale's copies, so no copy of it can ever exist (Editions accepts a seal at zero
+    ///      before or after `createEdition`, since nothing was minted).
+    /// @param saleId The sale ID.
+    function abandon(uint256 saleId) external nonReentrant {
+        IUniformEditionAuctionLens(lens).checkAbandon(saleId);
+        // Only a sale that has paid nothing: OPEN, or SETTLING with its scan still in progress
+        // (the clearing call, which pays, never completed). The lens refuses every other state
+        // too; this guard keeps a paid sale from ever being voided whatever the lens answers.
+        SaleWord storage a = _sales[saleId];
+        IUniformEditionAuction.AuctionStatus status = a.status;
+        if (
+            status != IUniformEditionAuction.AuctionStatus.OPEN
+                && (status != IUniformEditionAuction.AuctionStatus.SETTLING || _scans[saleId] == 0)
+        ) revert IUniformEditionAuction.InvalidAuctionState(saleId, status);
+        // L-3 and L-4: the time floor from this adapter's own words, whatever the lens answers.
+        // The stored close (`closeAt`; the 1/1's end only moves later, so the stored one is
+        // never late, and a soft end is at most `maxExtension`, 7 days, past it) plus the locked
+        // abandonment delay (at least 120 days), plus however much 6529 Stream's rescue delay
+        // for the master's works exceeds its permanent 90-day floor, which that minimum assumed
+        // (at most the rescue cap): a sale is never voided while it takes bids, and never voided,
+        // nor its edition sealed at zero, before a master waiting on a rescue could be rescued,
+        // unless that rescue waits longer than the cap; and its bidders always have an exit.
+        PayoutWord storage p = _payouts[saleId];
+        uint256 end;
+        // Safe: two 32-bit times and a 16-bit count of days cannot overflow.
+        unchecked {
+            end = uint256(a.oneOfOneEnd) + _terms[a.termsId].closeOffset + uint256(p.voidDelayDays)
+                * 1 days;
+        }
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp < end + _rescueAddition(_settings.rescueCapDays)) {
+            revert IUniformEditionAuction.NotAbandonable(saleId);
+        }
+        _void(saleId, a);
+        _seal(p.id, 0);
     }
 
     // ------------------------------------------------------------------------- governance
@@ -473,65 +574,65 @@ contract UniformEditionAuction is
         IUniformEditionAuction.AuctionConfig calldata expected,
         IUniformEditionAuction.AuctionConfig calldata next
     ) external restricted {
-        IUniformEditionAuction.AuctionConfig memory c = _terms[_settings.termsId];
-        if (
-            expected.basePrice != c.basePrice || expected.stepsPerDecade != c.stepsPerDecade
-                || expected.stepCount != c.stepCount || expected.marginShare != c.marginShare
-                || expected.closeOffset != c.closeOffset || expected.softWindow != c.softWindow
-                || expected.maxExtension != c.maxExtension
-        ) revert ExpectedValueMismatch();
+        if (keccak256(abi.encode(expected)) != keccak256(abi.encode(_terms[_settings.termsId]))) {
+            revert ISaleAdapter.ExpectedValueMismatch();
+        }
         _setConfig(next);
     }
 
-    /// @inheritdoc ISaleAdapter
+    /// @notice Sets the governed limits; PARAMETER_SETTER, compare-and-set
+    ///         (`IUniformEditionAuction.setLimits`).
+    /// @param expected The packed limits the caller expects are current.
+    /// @param next The new packed limits.
+    function setLimits(uint256 expected, uint256 next) external restricted {
+        if (expected != _limits()) revert ISaleAdapter.ExpectedValueMismatch();
+        _setLimits(next);
+    }
+
+    /// @notice Stops new opens (`ISaleAdapter.pause`); PAUSER.
     /// @dev Stops new opens only: running sales bid, settle and claim as usual.
     function pause() external restricted {
-        if (_settings.pausedAt != 0) revert SalePaused();
+        if (_settings.pausedAt != 0) revert ISaleAdapter.SalePaused();
         // Safe: a timestamp, far below 2^40.
         // forge-lint: disable-next-line(unsafe-typecast)
         _settings.pausedAt = uint40(block.timestamp);
-        emit Paused(msg.sender);
+        emit ISaleAdapter.Paused(msg.sender);
     }
 
-    /// @inheritdoc ISaleAdapter
+    /// @notice Lifts the pause (`ISaleAdapter.unpause`); UNPAUSER.
     /// @dev Reverts with `UnpauseTooEarly` before `pausedAt + Roles.STANDARD` (GOV-5).
     function unpause() external restricted {
         uint256 pausedAt = _settings.pausedAt;
-        if (pausedAt == 0) revert NotPaused();
+        if (pausedAt == 0) revert ISaleAdapter.NotPaused();
         uint256 allowedAt = pausedAt + Roles.STANDARD;
         // forge-lint: disable-next-line(block-timestamp)
-        if (block.timestamp < allowedAt) revert UnpauseTooEarly(allowedAt);
+        if (block.timestamp < allowedAt) revert ISaleAdapter.UnpauseTooEarly(allowedAt);
         _settings.pausedAt = 0;
-        emit Unpaused(msg.sender);
+        emit ISaleAdapter.Unpaused(msg.sender);
     }
 
-    /// @inheritdoc ISaleAdapter
-    /// @dev Only `editions` can be listed in v1. Unlisting stops new opens; running sales finish.
+    /// @notice Lists or unlists `token` (`ISaleAdapter.setTarget`); SUCCESSOR_SETTER.
+    /// @dev Only `_editions` can be listed in v1. Unlisting stops new opens; running sales finish.
+    ///      This adapter serves no federated token, so it keeps no federation registry: the
+    ///      lens answers `federationRegistry` with zero and refuses `setFederationRegistry`.
+    /// @param token The token: 6529 Stream Editions.
+    /// @param listed Whether it is served.
     function setTarget(address token, bool listed) external restricted {
-        if (token != editions) revert TargetNotAllowed(token);
+        if (token != _editions) revert ISaleAdapter.TargetNotAllowed(token);
         _settings.listed = listed;
-        emit TargetSet(token, listed);
-    }
-
-    /// @inheritdoc ISaleAdapter
-    /// @dev Recorded and checked like every dependency (ADR 0005, decision 14); no federated token
-    ///      is sold in v1, so it serves no sale yet.
-    function setFederationRegistry(address expected, address next) external restricted {
-        if (federationRegistry != expected) revert ExpectedValueMismatch();
-        if (next != address(0)) Dependency.check(next, type(IFederationRegistry).interfaceId);
-        federationRegistry = next;
-        federationRegistryCodeHash = next == address(0) ? bytes32(0) : next.codehash;
-        emit FederationRegistrySet(expected, next);
+        emit ISaleAdapter.TargetSet(token, listed);
     }
 
     // ------------------------------------------------------------------------------ views
 
-    /// @notice Answers every view of `IUniformEditionAuction` this contract does not declare
-    ///         (`auction`, `endTimes`, `clearing`, `settlement`, `bidOf`, `bidOutcome`, `quote`,
-    ///         `lowestWinningStep`, `stepPrice`, `ladder`, `stepTotals`, `departures`,
-    ///         `settlementOrder`): it sends this call's calldata unchanged to the lens, which
-    ///         declares each with the same signature, and returns or reverts with its answer.
-    ///         Any other call reverts there. ETH is refused.
+    /// @notice Answers every view of `IUniformEditionAuction` and `ISaleAdapter` this contract
+    ///         does not declare (`auction`, `endTimes`, `clearing`, `settlement`, `bidOf`,
+    ///         `bidOutcome`, `quote`, `lowestWinningStep`, `stepPrice`, `ladder`, `stepTotals`,
+    ///         `departures`, `settlementOrder`, `abandonable`, `config`, `limits`, `saleIdOf`,
+    ///         `englishAuction`, `escrow`, `saleKind`, `paused`, `isTarget`, `claimable`,
+    ///         `federationRegistry`, `supportsInterface`): it sends this call's calldata
+    ///         unchanged to the lens, which declares each with the same signature, and returns or
+    ///         reverts with its answer. Any other call reverts there. ETH is refused.
     /// @dev A read-only `staticcall` to the fixed, stateless lens this contract pinned; no
     ///      delegatecall. The lens reads its caller, this contract. The views live there because this contract's write path alone nearly
     ///      fills EIP-170.
@@ -550,94 +651,12 @@ contract UniformEditionAuction is
         }
     }
 
-    /// @notice The derived sale ID, `uint256(keccak256(abi.encode(token, id)))`
-    ///         (`IUniformEditionAuction.saleIdOf`).
-    /// @param token The edition contract.
-    /// @param id The edition ID.
-    /// @return The sale ID, whether or not that sale exists.
-    function saleIdOf(address token, uint256 id) public pure returns (uint256) {
-        return uint256(keccak256(abi.encode(token, id)));
-    }
-
-    /// @notice The governed parameters new sales lock (`IUniformEditionAuction.config`).
-    /// @return The current parameters.
-    function config() external view returns (IUniformEditionAuction.AuctionConfig memory) {
-        return _terms[_settings.termsId];
-    }
-
     /// @inheritdoc IUniformEditionAuctionStorage
-    function storageWord(Space space, uint256 saleId, uint256 key)
-        external
-        view
-        returns (uint256 word)
-    {
-        if (space == Space.LIVE) return _live[saleId][key];
-        if (space == Space.DEPARTURE) return _departures[saleId][key];
-        if (space == Space.FEE_RECIPIENT) return uint160(_feeRecipients[key]);
-        if (space == Space.SCAN) return _scans[saleId];
-        // Safe: a SWEEP key is a settler's address.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        if (space == Space.SWEEP) return _sweeps[saleId][address(uint160(key))];
-        // Invariant: each block below only reads the slot Solidity computed for a storage pointer
-        // (`.slot`), and the last loads that slot: no memory is touched.
-        bytes32 slot;
-        if (space == Space.SALE) {
-            SaleWord storage s = _sales[saleId];
-            assembly ("memory-safe") {
-                slot := s.slot
-            }
-        } else if (space == Space.PAYOUT) {
-            PayoutWord storage s = _payouts[saleId];
-            assembly ("memory-safe") {
-                slot := s.slot
-            }
-        } else if (space == Space.RESULT) {
-            ResultWord storage s = _results[saleId];
-            assembly ("memory-safe") {
-                slot := s.slot
-            }
-        } else if (space == Space.BID) {
-            BidWord storage s = _bids[saleId][key];
-            assembly ("memory-safe") {
-                slot := s.slot
-            }
-        } else {
-            IUniformEditionAuction.AuctionConfig storage s = _terms[key];
-            assembly ("memory-safe") {
-                slot := s.slot
-            }
-        }
+    function storageAt(uint256 slot) external view returns (uint256 word) {
+        // Invariant: loads one slot and touches no memory.
         assembly ("memory-safe") {
             word := sload(slot)
         }
-    }
-
-    /// @inheritdoc ISaleAdapter
-    function claimable(address account, address currency) external view returns (uint256) {
-        return currency == CURRENCY_ETH ? _credits[account] : 0;
-    }
-
-    /// @inheritdoc ISaleAdapter
-    function saleKind() external pure returns (bytes32) {
-        return SaleKind.UNIFORM_AUCTION;
-    }
-
-    /// @inheritdoc ISaleAdapter
-    function paused() external view returns (bool) {
-        return _settings.pausedAt != 0;
-    }
-
-    /// @inheritdoc ISaleAdapter
-    /// @dev True only for `editions` while listed: the one token this adapter sells in v1.
-    function isTarget(address token) external view returns (bool) {
-        return token == editions && _settings.listed;
-    }
-
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return interfaceId == type(IUniformEditionAuction).interfaceId
-            || interfaceId == type(ISaleAdapter).interfaceId
-            || interfaceId == type(IERC165).interfaceId;
     }
 
     // --------------------------------------------------------------------------- internal
@@ -650,7 +669,7 @@ contract UniformEditionAuction is
         index = _feeRecipientIds[recipient];
         if (index == 0) {
             uint16 count = _settings.feeRecipientCount;
-            if (count == type(uint16).max) revert InvalidSaleTerms(token, id);
+            if (count == type(uint16).max) revert ISaleAdapter.InvalidSaleTerms(token, id);
             index = count + 1;
             _settings.feeRecipientCount = index;
             _feeRecipientIds[recipient] = index;
@@ -671,7 +690,7 @@ contract UniformEditionAuction is
         if (one == IEnglishAuction.AuctionState.PAUSED) return _NO_END;
         // forge-lint: disable-next-line(block-timestamp)
         if (one == IEnglishAuction.AuctionState.CANCELLED || block.timestamp >= endTime) {
-            // Safe: a 32-bit time plus at most 8 days.
+            // Safe: a 32-bit time plus two 32-bit durations.
             // forge-lint: disable-next-line(unsafe-typecast)
             revert IUniformEditionAuction.BiddingClosed(saleId, uint64(endTime));
         }
@@ -679,15 +698,17 @@ contract UniformEditionAuction is
         if (extended > endTime) {
             uint256 backstop = closeAt + t.maxExtension;
             endTime = extended < backstop ? extended : backstop;
-            // forge-lint: disable-next-line(unsafe-typecast)
-            a.softEnd = uint32(endTime);
+            // Checked: a soft end past 2106 reverts the bid instead of wrapping.
+            a.softEnd = _u32(endTime);
         }
+        // Safe: below 2^34, as above.
         // forge-lint: disable-next-line(unsafe-typecast)
         return uint64(endTime);
     }
 
     /// @dev The end of OPEN sale `a`: `max(closeAt, softEnd)`, the soft end held within
-    ///      `maxExtension` of `closeAt = oneOfOneEnd + closeOffset`. Reads the 1/1 when `fresh`,
+    ///      `maxExtension` of `closeAt = oneOfOneEnd + closeOffset` (the sale's own offset, in its
+    ///      locked terms). Reads the 1/1 when `fresh`,
     ///      or when the cached close is within `softWindow` of now or past (the 1/1's end only
     ///      moves later, so nothing earlier can change), recording a later end in `a`. Returns
     ///      the 1/1's state when read, ACTIVE when not; while it is PAUSED the end is meaningless.
@@ -704,9 +725,8 @@ contract UniformEditionAuction is
             uint64 oneEnd;
             (one, oneEnd,) = _oneOfOneClock(saleId);
             if (oneEnd > a.oneOfOneEnd) {
-                // Safe: the 1/1 stores its end in 32 bits.
-                // forge-lint: disable-next-line(unsafe-typecast)
-                a.oneOfOneEnd = uint32(oneEnd);
+                // The 1/1 stores its end in 32 bits; checked all the same.
+                a.oneOfOneEnd = _u32(oneEnd);
                 closeAt = uint256(oneEnd) + t.closeOffset;
             }
         }
@@ -718,14 +738,17 @@ contract UniformEditionAuction is
 
     /// @dev The first settle call's checks: voids the sale if the 1/1 was cancelled (returns
     ///      true), or requires the close passed and the 1/1 settled and moves the sale to
-    ///      SETTLING, its book frozen for the scan.
-    function _begin(uint256 saleId, SaleWord storage stored) private returns (bool voided) {
-        SaleWord memory a = stored;
-        IUniformEditionAuction.AuctionConfig memory t = _terms[a.termsId];
+    ///      SETTLING, its book frozen for the scan. `a` and `t` are `stored` and its terms as
+    ///      `settle` read them; `a.oneOfOneEnd` is refreshed here.
+    function _begin(
+        uint256 saleId,
+        SaleWord storage stored,
+        SaleWord memory a,
+        IUniformEditionAuction.AuctionConfig memory t
+    ) private returns (bool voided) {
         (uint256 endTime,, IEnglishAuction.AuctionState one) = _end(saleId, a, t, true);
         if (one == IEnglishAuction.AuctionState.CANCELLED) {
-            stored.status = IUniformEditionAuction.AuctionStatus.VOID;
-            emit IUniformEditionAuction.AuctionVoided(saleId);
+            _void(saleId, stored);
             return true;
         }
         // forge-lint: disable-next-line(block-timestamp)
@@ -738,13 +761,14 @@ contract UniformEditionAuction is
 
     /// @dev Scans the next words of SETTLING sale `stored`'s book ({_scan}); returns false and
     ///      records where it stopped when words remain, otherwise clears ({_finish}) and returns
-    ///      true with the count and price `settle` pays last.
-    function _scanChunk(uint256 saleId, SaleWord storage stored)
-        private
-        returns (bool cleared, uint256 count, uint256 price)
-    {
-        SaleWord memory a = stored;
-        IUniformEditionAuction.AuctionConfig memory t = _terms[a.termsId];
+    ///      true with the count and price `settle` pays last. `a` and `t` are `stored` and its
+    ///      terms as `settle` read them (the book fields the scan uses are frozen).
+    function _scanChunk(
+        uint256 saleId,
+        SaleWord storage stored,
+        SaleWord memory a,
+        IUniformEditionAuction.AuctionConfig memory t
+    ) private returns (bool cleared, uint256 count, uint256 price) {
         // Safe: reads of 32- and 64-bit fields of packed words, and writes of values that fit them.
         // forge-lint: disable-start(unsafe-typecast)
         uint256 left = _scans[saleId];
@@ -785,8 +809,8 @@ contract UniformEditionAuction is
         bool rationed = count < demand;
         // forge-lint: disable-end(unsafe-typecast)
         PayoutWord memory p = _payouts[saleId];
-        if (count != 0 && !IEditions(editions).exists(p.id)) {
-            revert IUniformEditionAuction.EditionNotCreated(editions, p.id);
+        if (count != 0 && !IEditions(_editions).exists(p.id)) {
+            revert IUniformEditionAuction.EditionNotCreated(_editions, p.id);
         }
         // Safe: counts below 2^32 and steps below 512.
         // forge-lint: disable-start(unsafe-typecast)
@@ -794,6 +818,9 @@ contract UniformEditionAuction is
             uint32(count), uint16(step), rationed, uint32(cutUnits), uint32(cutUnits), 0, 0, p.id
         );
         // forge-lint: disable-end(unsafe-typecast)
+        // The count is final here (rationing picks winners, not the count): seal the edition at
+        // it, so no copy past what the winners are owed can ever be minted (ED-12).
+        _seal(p.id, count);
         price = count == 0 ? 0 : _price(t, step);
         emit IUniformEditionAuction.AuctionCleared(
             saleId, count, step, price, count * price, rationed, cutUnits
@@ -884,13 +911,14 @@ contract UniformEditionAuction is
         address feeRecipient = _feeRecipients[p.feeRecipientId];
         uint256 revenue = count * price;
         uint256 fee = revenue * p.feeShare / Splits.DENOMINATOR;
-        if (fee != 0) RevenuePayment.payETH(IRevenueEscrow(escrow), feeRecipient, fee, PAYOUT_GAS);
+        uint256 gasLimit = _settings.payoutGas;
+        if (fee != 0) RevenuePayment.payETH(IRevenueEscrow(_escrow), feeRecipient, fee, gasLimit);
         if (revenue != fee) {
-            RevenuePayment.payETH(IRevenueEscrow(escrow), p.seller, revenue - fee, PAYOUT_GAS);
+            RevenuePayment.payETH(IRevenueEscrow(_escrow), p.seller, revenue - fee, gasLimit);
         }
-        emit SaleSettled(
+        emit ISaleAdapter.SaleSettled(
             saleId,
-            editions,
+            _editions,
             p.id,
             address(0),
             address(0),
@@ -921,6 +949,7 @@ contract UniformEditionAuction is
         IUniformEditionAuction.AuctionConfig memory t = _terms[a.termsId];
         refund = uint256(b.quantity) * _price(t, b.step);
         uint256 id = 0;
+        uint256 unitPrice;
         if (status == IUniformEditionAuction.AuctionStatus.SETTLED) {
             ResultWord memory r = _results[saleId];
             id = r.id;
@@ -928,14 +957,16 @@ contract UniformEditionAuction is
                 unitsWon = b.step > r.step || !r.rationed
                     ? b.quantity
                     : UniformClearing.wonAtCut(r.cutoff, b.position, b.quantity);
-                refund -= unitsWon * _price(t, r.step);
+                unitPrice = _price(t, r.step);
+                refund -= unitsWon * unitPrice;
             }
         }
         delete _bids[saleId][bidId];
         emit IUniformEditionAuction.BidClaimed(saleId, bidId, b.bidder, to, unitsWon, refund);
         if (unitsWon != 0) {
-            (uint256 minted,) = IMintTarget(editions).mint(to, id, unitsWon, "");
-            if (minted != id) revert InvalidSaleTerms(editions, id);
+            (uint256 minted,) =
+                IMintTarget(_editions).mint(to, id, unitsWon, abi.encode(CURRENCY_ETH, unitPrice));
+            if (minted != id) revert ISaleAdapter.InvalidSaleTerms(_editions, id);
         }
     }
 
@@ -1158,23 +1189,100 @@ contract UniformEditionAuction is
 
     /// @dev Validates, interns and makes current a configuration (ADR 0005 section 4).
     function _setConfig(IUniformEditionAuction.AuctionConfig memory next) private {
+        Settings storage st = _settings;
         if (
             !StepLadder.isStepsPerDecade(next.stepsPerDecade)
                 || !StepLadder.isBasePrice(next.basePrice)
                 || next.stepCount < StepLadder.MIN_STEP_COUNT
                 || next.stepCount > StepLadder.MAX_STEP_COUNT
                 || _price(next, next.stepCount - 1) < StepLadder.MIN_TOP_PRICE
-                || next.marginShare > _MAX_MARGIN_SHARE || next.closeOffset > _MAX_CLOSE_OFFSET
+                || next.marginShare > _MAX_MARGIN_SHARE || next.closeOffset > st.maxCloseOffset
                 || next.softWindow < _MIN_SOFT_WINDOW || next.softWindow > _MAX_SOFT_WINDOW
                 || next.maxExtension < _MIN_MAX_EXTENSION || next.maxExtension > _MAX_MAX_EXTENSION
         ) revert IUniformEditionAuction.InvalidConfig();
-        Settings storage st = _settings;
-        uint16 id = st.termsCount;
-        if (id == type(uint16).max) revert IUniformEditionAuction.InvalidConfig();
-        ++id;
         emit IUniformEditionAuction.ConfigSet(_terms[st.termsId], next);
-        _terms[id] = next;
-        (st.termsId, st.termsCount) = (id, id);
+        st.termsId = _intern(next);
+    }
+
+    /// @dev Stores `t` as a new terms record and returns its ID: a configuration, or a sale's
+    ///      parameters with its own close offset.
+    function _intern(IUniformEditionAuction.AuctionConfig memory t) private returns (uint24 id) {
+        Settings storage st = _settings;
+        id = st.termsCount;
+        if (id == type(uint24).max) revert IUniformEditionAuction.InvalidConfig();
+        st.termsCount = ++id;
+        _terms[id] = t;
+    }
+
+    /// @dev What 6529 Stream's rescue delay for the master's works adds to the 90-day floor the
+    ///      abandonment delay's minimum assumes, at most `capDays` days: the delay Stream locked
+    ///      for the English auction's works when governance removed it (read natively through
+    ///      `IStream.extsload` at `StreamLayout.minterSlot`; a later lengthening never reaches
+    ///      them), else the delay in force. Both reads forward all gas and revert on any failure
+    ///      (Stream's permanent views never refuse).
+    function _rescueAddition(uint256 capDays) private view returns (uint256 added) {
+        uint256 word =
+            uint256(IStream(_stream).extsload(StreamLayout.minterSlot(_englishAuction), 1)[0]);
+        // Safe: the removal time and the locked delay, field by field (`StreamLayout`).
+        // forge-lint: disable-next-line(unsafe-typecast)
+        added = uint40(word >> 32) != 0 ? uint32(word >> 72) : IStream(_stream).rescueDelay();
+        // Stream's delay never goes below its floor; checked arithmetic refuses anything else.
+        added -= _RESCUE_FLOOR;
+        if (added > capDays * 1 days) added = capDays * 1 days;
+    }
+
+    /// @dev The governed limits, packed as `setLimits` takes them: `maxCloseOffset |
+    ///      voidDelayDays << 32 | payoutGas << 48 | rescueCapDays << 80`.
+    function _limits() private view returns (uint256) {
+        Settings memory st = _settings;
+        return uint256(st.maxCloseOffset) | uint256(st.voidDelayDays) << 32 | uint256(st.payoutGas)
+            << 48 | uint256(st.rescueCapDays) << 80;
+    }
+
+    /// @dev Validates and stores packed limits (`setLimits`): nothing past bit 96, every bound,
+    ///      and a maximum close offset of at least the current default.
+    function _setLimits(uint256 next) private {
+        Settings storage st = _settings;
+        // Safe: each field is masked to its width.
+        // forge-lint: disable-start(unsafe-typecast)
+        uint32 maxCloseOffset = uint32(next);
+        uint16 voidDelayDays = uint16(next >> 32);
+        uint32 payoutGas = uint32(next >> 48);
+        uint16 rescueCapDays = uint16(next >> 80);
+        // forge-lint: disable-end(unsafe-typecast)
+        if (
+            next >> 96 != 0 || maxCloseOffset < _MIN_MAX_CLOSE_OFFSET
+                || maxCloseOffset > _MAX_MAX_CLOSE_OFFSET
+                || maxCloseOffset < _terms[st.termsId].closeOffset
+                || voidDelayDays < _MIN_VOID_DELAY_DAYS || voidDelayDays > _MAX_VOID_DELAY_DAYS
+                || payoutGas < _MIN_PAYOUT_GAS || payoutGas > _MAX_PAYOUT_GAS
+                || rescueCapDays < _MIN_RESCUE_CAP_DAYS || rescueCapDays > _MAX_RESCUE_CAP_DAYS
+        ) revert IUniformEditionAuction.InvalidConfig();
+        emit IUniformEditionAuction.LimitsSet(_limits(), next);
+        (st.maxCloseOffset, st.voidDelayDays, st.payoutGas, st.rescueCapDays) =
+        (maxCloseOffset, voidDelayDays, payoutGas, rescueCapDays);
+    }
+
+    /// @dev `x` as a clock: reverts with `ClockOverflow` from 2^32 (7 February 2106) instead of
+    ///      wrapping. Every stored time is 32 bits; the lens refuses an open whose times do not
+    ///      fit, so only a later bid's soft end or a 1/1 end read later can reach the bound.
+    function _u32(uint256 x) private pure returns (uint32) {
+        if (x > type(uint32).max) revert IUniformEditionAuction.ClockOverflow(x);
+        // Safe: checked above.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return uint32(x);
+    }
+
+    /// @dev Marks a sale VOID: every bid is refunded in full at its claim.
+    function _void(uint256 saleId, SaleWord storage stored) private {
+        stored.status = IUniformEditionAuction.AuctionStatus.VOID;
+        emit IUniformEditionAuction.AuctionVoided(saleId);
+    }
+
+    /// @dev Seals edition `id` at `count` copies (`IEditions.sealSupply`): the count a settlement
+    ///      sold, or zero for an abandoned sale.
+    function _seal(uint256 id, uint256 count) private {
+        IEditions(_editions).sealSupply(id, count);
     }
 
     /// @dev Step `step`'s price under `t`: `basePrice × M[(step mod N)·192/N] × 10^(step div N) /
@@ -1214,14 +1322,69 @@ contract UniformEditionAuction is
         view
         returns (IEnglishAuction.AuctionState state, uint64 endTime, uint64 pausedAt)
     {
-        (state, endTime, pausedAt) = IEnglishAuctionClock(englishAuction)
-            .auctionClock(saleIdOf(stream, _payouts[saleId].id));
+        (state, endTime, pausedAt) = IEnglishAuctionClock(_englishAuction)
+            .auctionClock(_saleIdOf(_stream, _payouts[saleId].id));
+    }
+
+    /// @dev The derived sale ID, `uint256(keccak256(abi.encode(token, id)))`
+    ///      (`IUniformEditionAuction.saleIdOf`, which the lens answers).
+    function _saleIdOf(address token, uint256 id) private pure returns (uint256) {
+        return uint256(keccak256(abi.encode(token, id)));
     }
 
     /// @dev Sale `saleId`'s state word, required OPEN.
     function _open(uint256 saleId) private view returns (SaleWord memory a) {
         a = _sales[saleId];
         _requireStatus(saleId, a.status, IUniformEditionAuction.AuctionStatus.OPEN);
+    }
+
+    /// @dev A sale word read with one SLOAD and decoded, for the settlement path (I-1 of review
+    ///      A: there the compiler's member-by-member copy reads the slot once per field; the
+    ///      bid and claim paths keep the compiler's copy, which is cheaper for them). The packing is `SaleWord`'s, from the
+    ///      least significant bit, as `IUniformEditionAuctionStorage.Space` documents and the lens
+    ///      decodes.
+    function _saleWord(SaleWord storage stored) private view returns (SaleWord memory a) {
+        uint256 w;
+        assembly ("memory-safe") {
+            w := sload(stored.slot)
+        }
+        // Safe: each cast takes its field's own bits of the packed word.
+        // forge-lint: disable-start(unsafe-typecast)
+        a.status = IUniformEditionAuction.AuctionStatus(uint8(w));
+        a.termsId = uint24(w >> 8);
+        a.maxCount = uint32(w >> 32);
+        a.oneOfOneEnd = uint32(w >> 64);
+        a.softEnd = uint32(w >> 96);
+        a.openedAt = uint32(w >> 128);
+        a.lowStep = uint16(w >> 160);
+        a.highStep = uint16(w >> 176);
+        a.liveUnits = uint32(w >> 192);
+        a.bidCount = uint32(w >> 224);
+        // forge-lint: disable-end(unsafe-typecast)
+    }
+
+    /// @dev Terms record `termsId` read with one SLOAD and decoded (I-1), `AuctionConfig`'s
+    ///      packing from the least significant bit.
+    function _config(uint256 termsId)
+        private
+        view
+        returns (IUniformEditionAuction.AuctionConfig memory t)
+    {
+        IUniformEditionAuction.AuctionConfig storage stored = _terms[termsId];
+        uint256 w;
+        assembly ("memory-safe") {
+            w := sload(stored.slot)
+        }
+        // Safe: each cast takes its field's own bits of the packed word.
+        // forge-lint: disable-start(unsafe-typecast)
+        t.basePrice = uint96(w);
+        t.stepsPerDecade = uint16(w >> 96);
+        t.stepCount = uint16(w >> 112);
+        t.marginShare = uint32(w >> 128);
+        t.closeOffset = uint32(w >> 160);
+        t.softWindow = uint32(w >> 192);
+        t.maxExtension = uint32(w >> 224);
+        // forge-lint: disable-end(unsafe-typecast)
     }
 
     /// @dev `IEditions.bindMinter(id, item)` with the item `open` received, bubbling a revert;
@@ -1235,7 +1398,7 @@ contract UniformEditionAuction is
         private
         returns (address seller, address feeRecipient, uint256 feeShare)
     {
-        address target = editions;
+        address target = _editions;
         bytes4 selector = IEditions.bindMinter.selector;
         // Invariants: `data` is at least one word long (the lens decoded an item from it before
         // this runs), so `n` does not wrap. The call is built in memory from the free memory

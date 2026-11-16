@@ -5,7 +5,6 @@ import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IAssetAllowlist } from "../economics/interfaces/IAssetAllowlist.sol";
 import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
-import { IEnglishAuction } from "../interfaces/IEnglishAuction.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
@@ -69,7 +68,7 @@ library GovernanceConfig {
     uint32 internal constant TARGET_ADMIN_DELAY = Roles.SUCCESSOR;
     /// @notice Maximum genesis wiring calls. The whole configuration is one transaction under
     ///         the EIP-7825 cap of 2^24 gas: the example genesis configuration plus this many
-    ///         ERC-165-checking calls on cold accounts measures 6,792,419 Prague gas, 40.5% of the
+    ///         ERC-165-checking calls on cold accounts measures 8,436,744 Prague gas, 50.3% of the
     ///         cap, including worst-case calldata (`GenesisConfig.t.sol` gates it at 60%).
     uint256 internal constant MAX_WIRING_CALLS = 64;
 
@@ -133,7 +132,7 @@ library GovernanceConfig {
     }
 
     /// @notice Whether `selector` may be wired at genesis: a one-shot bind (including the
-    ///         v1.1 federation bind), an admitted-minter grant, a sale target, a product's
+    ///         federation bind), an admitted-minter grant, a sale target, a product's
     ///         first default currency (an auction cannot start without one), or the epoch-0
     ///         governance manifest. Everything else waits its delay class after genesis.
     function isGenesisSelector(bytes4 selector) internal pure returns (bool) {
@@ -147,7 +146,7 @@ library GovernanceConfig {
             || selector == IMintTarget.setAdmittedMinter.selector
             || selector == ISaleAdapter.setTarget.selector
             || selector == IAssetAllowlist.setDefaultCurrency.selector
-            || selector == IEnglishAuction.setOpeningBid.selector
+            || selector == IAssetAllowlist.setOpeningBid.selector
             || selector == IStatementLog.appendGovernanceManifest.selector;
     }
 

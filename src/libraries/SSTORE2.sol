@@ -3,12 +3,16 @@ pragma solidity ^0.8.24;
 
 /// @title SSTORE2
 /// @notice Content-addressed byte storage in contract code: `write` deploys `0x00 || data` as
-///         runtime code by CREATE2 with `salt = keccak256(data)`, so a pointer depends only on
-///         the writing contract and the bytes, and writing the same bytes again is a no-op.
+///         runtime code by CREATE2 with `salt = keccak256(data)` and returns the address the
+///         chain actually deployed it at. Callers keep that pointer: nothing here, and no read,
+///         recomputes an address, so a future change to how CREATE2 derives addresses cannot
+///         stop writes or misdirect reads.
 /// @dev The leading STOP byte means a pointer can never execute. One chunk holds at most
 ///      24,575 bytes so that STOP plus data fits EIP-170. Reads check the STOP prefix, and
 ///      {readVerified} also checks the bytes against an expected keccak256 hash, which callers
-///      should use whenever a pointer did not come from their own {write}.
+///      should use whenever a pointer did not come from their own {write}. A caller must not
+///      write bytes it already stored (a CREATE2 collision fails and consumes the gas given to
+///      it): `ContentStore` deduplicates by its own hash-to-pointer mapping first.
 library SSTORE2 {
     /// @notice The largest chunk: EIP-170's 24,576-byte code limit minus the STOP byte.
     uint256 internal constant MAX_CHUNK_LENGTH = 24_575;
@@ -20,7 +24,7 @@ library SSTORE2 {
 
     /// @notice `write` was given `length` bytes, more than `MAX_CHUNK_LENGTH`.
     error SSTORE2ChunkTooLarge(uint256 length);
-    /// @notice The CREATE2 deployment of a chunk did not produce the predicted pointer.
+    /// @notice The CREATE2 deployment of a chunk failed or left code of the wrong size.
     error SSTORE2WriteFailed();
     /// @notice `pointer` has no code, or its code does not start with the STOP byte.
     error SSTORE2InvalidPointer(address pointer);
@@ -30,23 +34,22 @@ library SSTORE2 {
     /// @notice The data behind `pointer` does not hash (keccak256) to the expected hash.
     error SSTORE2HashMismatch(address pointer);
 
-    /// @notice Stores `data` and returns its pointer, deploying it only if absent.
+    /// @notice Deploys `data` and returns the pointer the chain created. Reverts unless the
+    ///         creation produced code of exactly `data.length + 1` bytes.
     function write(bytes memory data) internal returns (address pointer) {
         if (data.length > MAX_CHUNK_LENGTH) revert SSTORE2ChunkTooLarge(data.length);
         bytes memory code = abi.encodePacked(PREAMBLE, data);
         bytes32 salt = keccak256(data);
-        pointer = _predict(address(this), salt, keccak256(code));
-        // A CREATE2 collision would burn all forwarded gas, so check first. Only this
-        // contract can deploy at the pointer, and only these exact bytes.
-        if (pointer.code.length != 0) return pointer;
-        address deployed;
         assembly ("memory-safe") {
-            deployed := create2(0, add(code, 0x20), mload(code), salt)
+            pointer := create2(0, add(code, 0x20), mload(code), salt)
         }
-        if (deployed != pointer) revert SSTORE2WriteFailed();
+        if (pointer == address(0) || pointer.code.length != data.length + 1) {
+            revert SSTORE2WriteFailed();
+        }
     }
 
-    /// @notice The pointer at which `deployer` stores `data` with {write}.
+    /// @notice The pointer at which `deployer` stores `data` with {write} under today's CREATE2
+    ///         rule. For off-chain tooling and tests only: no write or read depends on it.
     function pointerOf(address deployer, bytes memory data) internal pure returns (address) {
         return _predict(deployer, keccak256(data), keccak256(abi.encodePacked(PREAMBLE, data)));
     }
@@ -82,6 +85,22 @@ library SSTORE2 {
         uint256 total = size(pointer);
         if (start > end || end > total) revert SSTORE2OutOfBounds(start, end, total);
         return _copy(pointer, start, end - start);
+    }
+
+    /// @notice Copies all data bytes behind `pointer` into `dest` from byte `offset` and returns
+    ///         how many. Reverts with `SSTORE2OutOfBounds` if they do not fit `dest`.
+    function copyInto(address pointer, bytes memory dest, uint256 offset)
+        internal
+        view
+        returns (uint256 n)
+    {
+        n = size(pointer);
+        if (offset > dest.length || n > dest.length - offset) {
+            revert SSTORE2OutOfBounds(offset, offset + n, dest.length);
+        }
+        assembly ("memory-safe") {
+            extcodecopy(pointer, add(add(dest, 0x20), offset), 1, n)
+        }
     }
 
     /// @notice All data bytes behind `pointer`, which must hash to `expectedHash`.

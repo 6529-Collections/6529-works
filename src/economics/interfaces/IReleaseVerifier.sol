@@ -2,19 +2,20 @@
 pragma solidity ^0.8.24;
 
 /// @title IReleaseVerifier
-/// @notice The one pinned verifier for signed split-wallet releases (ADR 0001 section 7, "signed
-///         release authorization"). Every wallet calls it, so the EIP-712, ERC-1271 and EIP-7702
-///         logic is deployed once instead of in every wallet.
+/// @notice Signed split-wallet releases (ADR 0001 section 7, "signed release authorization"). The
+///         split ledger implements it for every wallet, so the EIP-712, ERC-1271 and EIP-7702
+///         logic and the nonces live once, in the contract that also executes the release.
 interface IReleaseVerifier {
     /// @notice A payee's signed instruction to release `amount` of `asset` from `wallet` to
     ///         `recipient`.
-    /// @dev Signed as the EIP-712 type `ReleaseAuthorization` in the verifier's domain, which binds
-    ///      the chain; the struct binds the wallet. `account` is the signer and must be the payee's
-    ///      payout address when the authorization is used, so a key the payout moved away from
-    ///      cannot release. Moving away does not revoke its signatures, though: if the payout
-    ///      returns to that key (A, then B, then A again) its unexpired authorizations work again.
-    ///      Revoke outstanding nonces explicitly with {revokeNonce}, or sign short deadlines.
-    ///      `amount` is released exactly; `type(uint256).max` releases the whole releasable amount.
+    /// @dev Signed as the EIP-712 type `ReleaseAuthorization` in the ledger's domain, which binds
+    ///      the chain and the ledger; the struct binds the wallet. `account` is the signer and
+    ///      must be the payee's payout address when the authorization is used, so a key the
+    ///      payout moved away from cannot release. Moving away does not revoke its signatures,
+    ///      though: if the payout returns to that key (A, then B, then A again) its unexpired
+    ///      authorizations work again. Revoke outstanding nonces explicitly with {revokeNonce},
+    ///      or sign short deadlines. `amount` is released exactly; `type(uint256).max` releases
+    ///      the whole releasable amount.
     struct Authorization {
         address wallet;
         address asset;
@@ -32,20 +33,8 @@ interface IReleaseVerifier {
     /// @param revoked True for {revokeNonce}, false for a signed release.
     event NonceUsed(address indexed account, uint256 indexed nonce, bool revoked);
 
-    /// @notice Only `wallet` may consume its own authorizations; `caller` is not it.
-    error WrongWallet(address wallet, address caller);
     /// @notice `account` already used or revoked `nonce`.
     error NonceAlreadyUsed(address account, uint256 nonce);
-
-    /// @notice Checks the deadline (`SignatureVerifier.SignatureExpired`) and signature
-    ///         (`SignatureVerifier.InvalidSignature`) of `authorization` and consumes its nonce.
-    ///         Only the wallet the authorization names may call; the wallet checks that
-    ///         `account` is the payee's current payout address.
-    /// @param authorization The signed release; its `wallet` must be the caller.
-    /// @param signature The signature of `authorization.account` over
-    ///        `releaseDigest(authorization)`: 65 or 64 (ERC-2098) bytes for an EOA, or up to
-    ///        4,096 bytes for an ERC-1271 account.
-    function consume(Authorization calldata authorization, bytes calldata signature) external;
 
     /// @notice Revokes the caller's unused `nonce` for every wallet.
     /// @dev Nonces are any `uint256`, used in any order. 256 consecutive nonces (`n` with the same
@@ -62,10 +51,11 @@ interface IReleaseVerifier {
 
     /// @notice The EIP-712 digest a payee signs for `authorization`.
     /// @param authorization The release to sign.
-    /// @return The typed-data hash of `authorization` in this verifier's domain.
+    /// @return The typed-data hash of `authorization` in the ledger's domain.
     function releaseDigest(Authorization calldata authorization) external view returns (bytes32);
 
     /// @notice The EIP-712 domain separator on the current chain.
-    /// @return The separator for the domain "6529 Works Release Verifier", version "1".
+    /// @return The separator for the domain "6529 Works Release Verifier", version "1", with the
+    ///        ledger as the verifying contract.
     function domainSeparator() external view returns (bytes32);
 }

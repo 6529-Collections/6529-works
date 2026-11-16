@@ -5,15 +5,16 @@ import { IUniformEditionAuction } from "./IUniformEditionAuction.sol";
 
 /// @title IUniformEditionAuctionStorage
 /// @notice The edition auction adapter's raw storage words and its lens: what
-///         `UniformEditionAuction` adds to `IUniformEditionAuction`. Every view of a sale is
-///         computed by the lens (`IUniformEditionAuctionLens`) from these words, and the
-///         adapter answers its own views by asking the lens, because its write path alone
-///         nearly fills EIP-170.
+///         `UniformEditionAuction` adds to `IUniformEditionAuction`. Every view of the adapter,
+///         its sales and its settings is computed by the lens (`IUniformEditionAuctionLens`)
+///         from these words, and the adapter answers its own views by asking the lens, because
+///         its write path alone nearly fills EIP-170.
 interface IUniformEditionAuctionStorage {
     /// @notice A sale's state word, as stored (`Space.SALE`): written at open and by every bid,
     ///         raise and withdrawal.
     /// @param status The stored status: never CLOSED, which is derived.
-    /// @param termsId The locked parameters' interned ID (`Space.TERMS`).
+    /// @param termsId The locked parameters' interned ID (`Space.TERMS`): the configuration
+    ///        current at open, or a record of it with the edition's own close offset.
     /// @param maxCount The creator's cap; zero for none.
     /// @param oneOfOneEnd The 1/1's end as last read (it only moves later).
     /// @param softEnd The soft-close end; zero before any bid in the window.
@@ -24,7 +25,7 @@ interface IUniformEditionAuctionStorage {
     /// @param bidCount Bids placed so far.
     struct SaleWord {
         IUniformEditionAuction.AuctionStatus status;
-        uint16 termsId;
+        uint24 termsId;
         uint32 maxCount;
         uint32 oneOfOneEnd;
         uint32 softEnd;
@@ -58,11 +59,13 @@ interface IUniformEditionAuctionStorage {
     /// @param feeShare The network fee share, out of 100,000.
     /// @param feeRecipientId The interned fee recipient (`Space.FEE_RECIPIENT`); zero for none.
     /// @param id The edition ID.
+    /// @param voidDelayDays The abandonment delay locked at open (`Limits.voidDelayDays`).
     struct PayoutWord {
         address seller;
         uint32 feeShare;
         uint16 feeRecipientId;
         uint32 id;
+        uint16 voidDelayDays;
     }
 
     /// @notice A sale's result, written at settlement (`Space.RESULT`). Each settler's sweep
@@ -121,7 +124,12 @@ interface IUniformEditionAuctionStorage {
     ///      ID (`IUniformEditionAuction.AuctionConfig`). FEE_RECIPIENT: `key` an interned index; the address.
     ///      SWEEP: `key` a settler's address; its own departure sweep in progress, `swept |
     ///      nextPosition << 32 | cutoff << 64`, zero when it has none (never swept, or
-    ///      finished).
+    ///      finished). CREDIT: `key` an account; its claimable ETH. SETTINGS: `saleId` and
+    ///      `key` ignored; `termsId` (the current configuration's ID, bits 0-23), `termsCount`
+    ///      (24-47), the fee recipients interned (48-63), `pausedAt` (64-103, zero while not
+    ///      paused), `listed` (104-111), then `IUniformEditionAuction.Limits`:
+    ///      `maxCloseOffset` (112-143), `voidDelayDays` (144-159), `payoutGas` (160-191) and
+    ///      `rescueCapDays` (192-207).
     enum Space {
         SALE,
         PAYOUT,
@@ -132,7 +140,9 @@ interface IUniformEditionAuctionStorage {
         TERMS,
         FEE_RECIPIENT,
         SCAN,
-        SWEEP
+        SWEEP,
+        CREDIT,
+        SETTINGS
     }
 
     /// @notice A settle call scanned part of a sale's book and stopped at its gas bound; the
@@ -148,10 +158,11 @@ interface IUniformEditionAuctionStorage {
     ///         it, and the master check `open` consults.
     /// @return The lens's address (immutable).
     function lens() external view returns (address);
-    /// @notice One raw storage word, from which the lens computes every view.
-    /// @param space The word's family (see `Space` for the layouts).
-    /// @param saleId The sale ID, for the per-sale families; ignored for TERMS and FEE_RECIPIENT.
-    /// @param key The key within the family (see `Space`).
+    /// @notice One raw storage slot of the adapter: the lens computes where each word of
+    ///         `Space` lives (as Solidity places mapping values) and reads it here, and answers
+    ///         `storageWord(space, saleId, key)` at the adapter's address
+    ///         (`IUniformEditionAuctionLens.storageWord`).
+    /// @param slot The storage slot.
     /// @return The stored word; zero when unset.
-    function storageWord(Space space, uint256 saleId, uint256 key) external view returns (uint256);
+    function storageAt(uint256 slot) external view returns (uint256);
 }

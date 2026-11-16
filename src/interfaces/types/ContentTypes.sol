@@ -29,7 +29,9 @@ enum LocatorKind {
 struct MediaFile {
     bytes32 fileId;
     bytes32 sha256Hash;
-    FileRole role;
+    /// An open `uint8` (today's values named by `FileRole`); readers treat a role they do not
+    /// know as auxiliary.
+    uint8 role;
 }
 
 /// @notice A registered copy of a file: `ar://<txid>` for ARWEAVE, `ipfs://<CIDv1>` under the fixed

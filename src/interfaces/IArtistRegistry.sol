@@ -16,10 +16,22 @@ import { ArtistIdentity, ChangeKind, PendingChange, Standing } from "./types/Ide
 ///      payout. A 6529-chain source replaces it through a 30-day governed swap. A source must
 ///      fail closed: when it cannot read its data, it reverts with {DelegationReadFailed}
 ///      instead of answering "not consolidated", which would strip recorded standing.
+///
+///      Gas convention: a source that was given too little gas by its caller must say so,
+///      by running out of gas itself or by reverting with `BoundedCall.BoundedCallInsufficientGas`
+///      or `BoundedCall.BoundedCallShortfall`. The artist registry rethrows those two errors on
+///      every refresh, best-effort or not, so a submitter's gas limit can never turn a refresh
+///      into a skip. Any other revert is the source failing, which a best-effort refresh skips.
+///
+///      Trust: the source decides which wallets gain standing (cancellers of later changes,
+///      contestants of overrides) and which wallets may sign a STANDARD change for a dormant
+///      artist. It decides nothing for a live artist: only the authority signs a live artist's
+///      changes and heartbeats.
 interface IConsolidationSource is IERC165 {
     /// @notice A read of the underlying data failed for a reason other than its end (out of
-    ///         gas, a revert with data, or oversized return data). The artist registry skips a
-    ///         registration's or an execution's standing refresh on it, and reverts elsewhere.
+    ///         gas within its own stipend, a revert with data, or oversized return data). A
+    ///         best-effort refresh of the artist registry skips on it; `refreshStanding` and a
+    ///         consolidated wallet's signer check revert.
     error DelegationReadFailed(address delegation);
 
     /// @notice `account`'s established consolidated wallets, at most `Limits.MAX_CANCELLERS`.
@@ -71,21 +83,30 @@ interface IConsolidationSource is IERC165 {
 ///      authority for the artist (`reservedFor`) until the change executes or ends, so neither
 ///      `register` (a package acceptance) nor another artist's change can take it meanwhile
 ///      (`AccountTaken`):
-///      - STANDARD changes are staged by the authority or an established consolidated wallet,
-///        wait 7 days, and may be cancelled by the previous authority or any consolidated wallet
-///        captured at staging, or vetoed by the guardian (which blocks but never redirects);
+///      - STANDARD changes are signed by the authority and wait the change delay (7 days at
+///        genesis); or, only for a dormant artist (no signed activity for the dormancy period),
+///        by an established consolidated wallet, and then wait the override delay (180 days at
+///        genesis) and record no activity. Either may be cancelled by the previous authority or
+///        any consolidated wallet captured at staging, or vetoed by the guardian (which blocks
+///        but never redirects). The consolidation source is replaceable, so it never decides
+///        anything for a live artist;
 ///      - overrides (CONTESTED, ESTATE, LOST_KEY) are staged by a governed network action with
-///        a 180-day public notice; ESTATE and LOST_KEY need a year without signed activity; only
-///        captured wallets (never the previous authority) may cancel, and the guardian may veto.
+///        a public notice (180 days at genesis); ESTATE and LOST_KEY, and any override that moves
+///        the payout but keeps the authority, need the dormancy period (a year at genesis)
+///        without signed activity; only captured wallets (never the previous authority) may
+///        cancel, and the guardian may veto.
 ///        A captured wallet's cancel during the notice does not kill an override: it becomes
 ///        contested and waits for a TDH vote, applied by the governed `resolveContested` citing
 ///        the vote's DISPUTE_OUTCOME statement (subject `(this registry, artistId)`), recorded
 ///        after the contest. Upholding executes it (not before its notice ends); voiding deletes
 ///        it; the guardian may still veto it; and a contest nobody resolves within
-///        `CONTEST_TIMEOUT` lapses (`expireContest`). Until then the payout stays frozen if the
+///        its locked contest timeout lapses (`expireContest`). Until then the payout stays frozen if the
 ///        override would move it: the artist's own captured wallet cannot end a rogue override
 ///        alone, only a veto, a governed void or the lapse can.
 ///      One change may be pending per artist. `executeChange` is permissionless once due.
+///      The waits are governed timers (`setTimer`), each between a compiled floor (the genesis
+///      value) and a compiled ceiling (`timerBounds`); a staged change locks its delay and its
+///      contest timeout, so a later setting never traps or releases it.
 ///
 ///      Standing: each artist keeps a sticky snapshot of at most `Limits.MAX_CANCELLERS`
 ///      consolidated wallets, refreshed on registration, staging, heartbeats, executions and by
@@ -93,7 +114,7 @@ interface IConsolidationSource is IERC165 {
 ///      events). A refresh records every live two-way consolidation, a young one as pending
 ///      until its `effectiveAt` (registration plus 30 days). A recorded wallet that is no longer
 ///      consolidated (checked directly, not only against the bounded scan) is marked missing but
-///      keeps standing; only a refresh at least `STANDING_GRACE` later removes it. A pending
+///      keeps standing; only a refresh at least the standing grace later removes it. A pending
 ///      entry found no longer consolidated is removed at once: a consolidation that ended before
 ///      its 30 days never gives standing (ADR 0001 section 11). When the
 ///      snapshot is full nothing is evicted early: established wallets take free slots before
@@ -102,26 +123,66 @@ interface IConsolidationSource is IERC165 {
 ///      holder who revokes or reorders the artist's consolidations cannot strip their standing:
 ///      one refresh any time after consolidating suffices (a consolidation revoked before its 30
 ///      days never had standing to strip).
-///      Dormancy counts the artist's own activity only: registration (the first package
-///      acceptance), a staged change, a heartbeat, a cancellation by the old key or a captured
-///      wallet, a nonce revocation, and a change's execution. Governed overrides and guardian
-///      vetoes never count.
+///      Dormancy counts only acts of the artist's own authority: registration (the first package
+///      acceptance), a change the authority signed, the authority's heartbeat, its cancellation
+///      or contest, a nonce revocation, and the execution of a change that installs a new
+///      authority (the new authority's acceptance). A captured wallet's cancel or contest stops
+///      a change but never counts, nor do governed overrides, guardian vetoes, changes signed by
+///      a consolidated wallet, or an execution that keeps the authority.
 ///
 ///      `isArtist(token, id, account)` is true when `account` is the active authority
 ///      (`activeAuthorityOf`) of the lead artist of 6529 Stream work `id`, or of the master of
 ///      6529 Stream Editions edition `id`; it is false for the pre-mint subject
 ///      `(address(0), uint256(itemHash))`. It meets the resolver trust requirement for granting:
 ///      no governed action makes it true for a new account faster than the 30-day class
-///      (changes take 7 days, overrides 180 days, and the consolidation source swaps on the
-///      30-day class). A staged override that would move the authority (48 hours) withholds the
+///      (changes take at least 7 days, overrides at least 180 days, and the consolidation source
+///      swaps on the 30-day class). A staged override that would move the authority (48 hours) withholds the
 ///      answer until it ends, by the owner decision on IDENTITY-1; it never redirects it, and the
 ///      guardian's veto restores it. It also answers split wallets' payout question
 ///      (`IArtistPayoutResolver`). The package registry, 6529 Stream, the federation registry,
 ///      the split factory and the statement log are each bound once (`Bound`): never EIP-7702
 ///      delegated accounts, and ERC-165 checked except the split factory and the statement log,
-///      which implement no ERC-165. Only the package registry may call `register`, and only the
-///      federation registry `listFederatedContract`.
+///      which implement no ERC-165. The package registry and the federation registry are
+///      replaceable afterwards (SUCCESSOR_SETTER, 30 days). Only the package registry may call
+///      `register`, and only the federation registry `registerFederated` (which verifies the
+///      account's own signature) and the federation directory writes.
+///
+///      Federation directory (ADR 0001 section 16). The registry is the permanent, logs-only
+///      record of every federated contract: one entry per token (`federatedListing`), written by
+///      the current federation registry (`listFederatedContract`, `setFederatedStatus`: ACTIVE
+///      and DELISTED) except exit, which only the token itself writes (`recordFederationExit`:
+///      LEFT, terminal). An entry's artist, code hash (computed here), form, partner and fee
+///      terms are fixed when it is listed. Entries never name this registry, 6529 Stream, its
+///      Editions, or a bound contract. No identity, payout, standing or change
+///      reads a directory entry, so the federation registry has no authority over any artist,
+///      work, token or fund: it can create identities only for accounts that signed for them,
+///      and write directory entries about other contracts.
 interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
+    /// @notice A federated contract's directory status. LEFT is terminal.
+    enum FederationStatus {
+        NONE,
+        ACTIVE,
+        DELISTED,
+        LEFT
+    }
+
+    /// @notice The governed waits, in seconds. Each lies between a compiled floor, its genesis
+    ///         value (the guarantee: never shorter), and a compiled ceiling (`timerBounds`).
+    ///         CHANGE_DELAY: before a STANDARD change executes (7 to 30 days). OVERRIDE_DELAY:
+    ///         an override's public notice (180 to 365 days). DORMANCY: the silence an override
+    ///         needs when it requires dormancy (365 to 1,825 days). CONTEST_TIMEOUT: before an
+    ///         unresolved contest lapses (365 to 730 days, and at least OVERRIDE_DELAY plus 185
+    ///         days). STANDING_GRACE: how long a missing wallet keeps standing (30 to 90 days).
+    ///         A staged change locks its delay and contest timeout; DORMANCY is read when an
+    ///         override is staged and STANDING_GRACE when a refresh ages out a missing wallet.
+    enum Timer {
+        CHANGE_DELAY,
+        OVERRIDE_DELAY,
+        DORMANCY,
+        CONTEST_TIMEOUT,
+        STANDING_GRACE
+    }
+
     /// @notice An artist identity was created.
     /// @param artistId The new artist ID, `uint256(uint160(identity.authority))`.
     /// @param identity The new identity: the accepting account as authority and payout, with the
@@ -146,6 +207,12 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @param previous The identity before the change.
     /// @param next The identity after the change.
     event ChangeExecuted(uint256 indexed artistId, ArtistIdentity previous, ArtistIdentity next);
+    /// @notice An override's new-authority acceptance was consumed (`stageOverride`): its digest
+    ///         can never be staged again (`AcceptanceUsed`). With it the consumed set is rebuilt
+    ///         from this registry's logs alone (review C, F15; review E, N-5).
+    /// @param artistId The artist the override stages for.
+    /// @param digest The `Typehashes.OVERRIDE_ACCEPTANCE` digest consumed (`overrideDigest`).
+    event OverrideAcceptanceConsumed(uint256 indexed artistId, bytes32 digest);
     /// @notice Signed activity was recorded for dormancy purposes.
     /// @param artistId The artist whose activity was recorded.
     /// @param timestamp The block timestamp now stored as the artist's last activity.
@@ -153,7 +220,8 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @notice The consolidation source changed.
     /// @param previous The source before the change (zero at deployment).
     /// @param next The source after the change.
-    event ConsolidationSourceSet(address previous, address next);
+    /// @param codeHash The reviewed code hash pinned for `next` (`consolidationSourceCodeHash`).
+    event ConsolidationSourceSet(address previous, address next, bytes32 codeHash);
     /// @notice Governance replaced the package registry, the only `register` caller
     ///         (`setPackageRegistry`), with Stream's (owner decision 16).
     /// @param previous The package registry before.
@@ -182,17 +250,52 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @param artistId The artist whose change nonce was burned.
     /// @param nonce The revoked nonce; `changeNonce` is now one higher.
     event NonceRevoked(uint256 indexed artistId, uint256 nonce);
-    /// @notice A federated contract was listed under an artist (ADR 0001 section 16).
+    /// @notice A federated contract was listed under an artist, ACTIVE (ADR 0001 section 16).
+    ///         Its fields never change; `FederatedContractStatus` carries later statuses.
     /// @param artistId The artist the contract was listed under.
     /// @param token The federated token contract.
-    event FederatedContractListed(uint256 indexed artistId, address indexed token);
-    /// @notice A consolidated wallet was recorded (or found consolidated again); it has standing
-    ///         from `effectiveAt`.
+    /// @param codeHash `token`'s runtime code hash, read by this registry at listing.
+    /// @param form The token's form as reported by the federation registry, recorded and not
+    ///        interpreted here (0 for ERC-721, 1 for ERC-1155 under `IFederationRegistry.Form`).
+    /// @param partner The other half of a linked pair, or zero.
+    /// @param feeShare The network's share of primary sales and royalties, out of 100,000, as
+    ///        locked in the token.
+    /// @param feeRecipient The network fee recipient locked in the token.
+    event FederatedContractListed(
+        uint256 indexed artistId,
+        address indexed token,
+        bytes32 codeHash,
+        uint8 form,
+        address partner,
+        uint32 feeShare,
+        address feeRecipient
+    );
+    /// @notice A federated contract's status changed: ACTIVE or DELISTED by the federation
+    ///         registry, or LEFT by the token itself.
+    /// @param token The federated token contract.
+    /// @param artistId The artist it is listed under.
+    /// @param status The new status.
+    /// @param ref The federation registry's reference for the decision (a vote), zero for LEFT.
+    event FederatedContractStatus(
+        address indexed token, uint256 indexed artistId, FederationStatus status, bytes32 ref
+    );
+    /// @notice Governance replaced the federation registry (`setFederationRegistry`).
+    /// @param previous The federation registry before (zero if none was bound).
+    /// @param next The federation registry after.
+    event FederationRegistrySet(address previous, address next);
+    /// @notice A governed wait was set: each at deployment (its floor), then by `setTimer`.
+    /// @param timer The wait.
+    /// @param value Its value in seconds, for changes staged and refreshes made from now on.
+    event TimerSet(Timer indexed timer, uint48 value);
+    /// @notice A consolidated wallet was recorded, found consolidated again, or its
+    ///         `effectiveAt` changed (a pending entry following its live clock, an established
+    ///         one moving earlier); it has standing from `effectiveAt`. The latest event for a
+    ///         wallet gives its entry, until `StandingMissing` or `StandingRemoved`.
     /// @param artistId The artist whose standing snapshot changed.
     /// @param wallet The consolidated wallet.
     /// @param effectiveAt The Unix time in seconds from which the wallet has standing.
     event StandingAdded(uint256 indexed artistId, address indexed wallet, uint64 effectiveAt);
-    /// @notice A wallet is no longer established; it keeps standing for `STANDING_GRACE`.
+    /// @notice A wallet is no longer established; it keeps standing for the standing grace.
     /// @param artistId The artist whose standing snapshot changed.
     /// @param wallet The recorded wallet a refresh found no longer consolidated.
     event StandingMissing(uint256 indexed artistId, address indexed wallet);
@@ -201,9 +304,9 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @param artistId The artist whose standing snapshot changed.
     /// @param wallet The wallet removed.
     event StandingRemoved(uint256 indexed artistId, address indexed wallet);
-    /// @notice A registration's or an execution's standing refresh was skipped because the
-    ///         consolidation source could not read (`IConsolidationSource.DelegationReadFailed`)
-    ///         or no longer matches its pinned code hash.
+    /// @notice A best-effort standing refresh (every refresh except `refreshStanding`) was
+    ///         skipped because the consolidation source failed (reverted, used up the gas it was
+    ///         given, or answered out of bounds) or no longer matches its pinned code hash.
     ///         Skipping removes nobody's standing; `refreshStanding` catches up later.
     /// @param artistId The artist whose standing was not refreshed.
     event StandingRefreshSkipped(uint256 indexed artistId);
@@ -220,7 +323,7 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     error NoPendingChange(uint256 artistId);
     /// @notice The change is not executable before `executableAt`.
     error ChangeNotDue(uint256 artistId, uint64 executableAt);
-    /// @notice The artist has signed activity within the last year.
+    /// @notice The artist has signed activity within the dormancy period.
     error NotDormant(uint256 artistId, uint64 lastActivity);
     /// @notice The next identity has a zero authority or payout, or an override has an invalid
     ///         kind or a zero evidence hash.
@@ -251,8 +354,16 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     error OutcomePredatesContest(uint256 artistId, bytes32 outcomeRef);
     /// @notice The override's notice ended at `executableAt`; it can no longer be contested.
     error ContestWindowClosed(uint256 artistId, uint64 executableAt);
-    /// @notice The artist already lists the maximum number of federated contracts.
-    error FederatedListFull(uint256 artistId);
+    /// @notice The contract cannot be listed: it is already listed (in any status), has no
+    ///         code or is an EIP-7702 delegated account, or it, its partner or its fee recipient
+    ///         is this registry, 6529 Stream, its Editions, or a bound contract.
+    error FederatedContractRefused(address token);
+    /// @notice The status write is refused: the token is unlisted or LEFT, or the requested
+    ///         status is not ACTIVE or DELISTED.
+    error FederatedStatusRefused(address token, FederationStatus current);
+    /// @notice A wait is outside its floor and ceiling, or the contest timeout would not exceed
+    ///         the override delay by the floors' 185 days.
+    error InvalidTimers();
 
     /// @notice Binds the package registry (the only `register` caller), once, at genesis.
     ///         ADMIN role. A later replacement goes through `setPackageRegistry`.
@@ -272,11 +383,19 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @param target 6529 Stream: a contract supporting `IStream` (ERC-165), not an EIP-7702
     ///        delegated account.
     function bindStream(address target) external;
-    /// @notice Binds the v1.1 federation registry (the only `listFederatedContract` caller),
-    ///         once. ADMIN role.
+    /// @notice Binds the federation registry (the only caller of `registerFederated` and of the
+    ///         directory writes), once. ADMIN role. A later replacement goes through
+    ///         `setFederationRegistry`.
     /// @param target The federation registry: a contract supporting `IFederationRegistry`
     ///        (ERC-165), not an EIP-7702 delegated account.
     function bindFederationRegistry(address target) external;
+    /// @notice Replaces the federation registry. SUCCESSOR_SETTER role (the 30-day class),
+    ///         compare-and-set. Existing directory entries and identities are unaffected.
+    /// @param expected The current federation registry, zero if none (`ExpectedValueMismatch`
+    ///        otherwise).
+    /// @param next The successor: a contract supporting `IFederationRegistry` (ERC-165), not an
+    ///        EIP-7702 delegated account.
+    function setFederationRegistry(address expected, address next) external;
     /// @notice Binds the economics split factory, once: code, not an EIP-7702 delegated account
     ///         (the factory implements no ERC-165). ADMIN role.
     /// @param target The split factory, whose wallets this registry refuses as payouts.
@@ -294,9 +413,31 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     function register(address authority, bytes32 profileId, bytes32 profileDocHash)
         external
         returns (uint256 artistId);
-    /// @notice Stages a STANDARD change signed by `signer` (the current authority or an
-    ///         established consolidated wallet that was never an authority of this artist) as
-    ///         `Typehashes.IDENTITY_CHANGE`.
+    /// @notice Creates an identity exactly as `register` does, for an uncurated (federated)
+    ///         artist. Bound federation registry only. The account consents itself: this registry
+    ///         verifies `signature` by `account` over `ArtistRegistration(account, profileId,
+    ///         profileDocHash, deadline)` in its own EIP-712 domain (`registrationDigest`), so no
+    ///         caller can create an identity for an account that did not sign for it. A signature
+    ///         is usable once: the account is then taken.
+    /// @param account The consenting account, which becomes the authority and the payout.
+    /// @param profileId The artist's claimed 6529 profile ID, as signed.
+    /// @param profileDocHash The hash of the profile document, as signed.
+    /// @param deadline The Unix time in seconds after which the signature is expired.
+    /// @param signature `account`'s signature (ECDSA, EIP-7702 or ERC-1271).
+    /// @return artistId `uint256(uint160(account))`.
+    function registerFederated(
+        address account,
+        bytes32 profileId,
+        bytes32 profileDocHash,
+        uint64 deadline,
+        bytes calldata signature
+    ) external returns (uint256 artistId);
+    /// @notice Stages a STANDARD change signed by `signer` as `Typehashes.IDENTITY_CHANGE`.
+    ///         `signer` is the current authority (the change records activity and waits the
+    ///         change delay), or, only while the artist is dormant (`NotDormant` otherwise, checked
+    ///         before the consolidation source is read), an established consolidated wallet that
+    ///         was never an authority of this artist (the change records no activity and waits
+    ///         the override delay; `NotAuthorized` if the source does not name it).
     ///         `authorityAcceptance` is the new authority's signature over the same payload when
     ///         the authority changes, empty otherwise. Captures the cancellers.
     /// @param artistId The artist to change.
@@ -314,14 +455,18 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
         bytes calldata signature,
         bytes calldata authorityAcceptance
     ) external;
-    /// @notice Stages a network override (CONTESTED, ESTATE or LOST_KEY) with a 180-day notice.
-    ///         PARAMETER_SETTER role. `evidenceHash` commits to the public record. When the
+    /// @notice Stages a network override (CONTESTED, ESTATE or LOST_KEY) with the override
+    ///         notice. PARAMETER_SETTER role. `evidenceHash` commits to the public record. An
+    ///         override that moves the payout but keeps the authority needs the dormancy period
+    ///         whatever its kind, so no override freezes a live artist's payout without also
+    ///         moving (and restraining) the authority. When the
     ///         authority changes, `authorityAcceptance` is the new authority's
     ///         `Typehashes.OVERRIDE_ACCEPTANCE` signature with `deadline`; it binds no change
     ///         nonce and is consumed once by digest, so a replay reverts with `AcceptanceUsed`.
     /// @param artistId The artist to override.
-    /// @param kind CONTESTED, ESTATE or LOST_KEY; ESTATE and LOST_KEY revert with `NotDormant`
-    ///        unless the artist has had no signed activity for a year.
+    /// @param kind CONTESTED, ESTATE or LOST_KEY; ESTATE and LOST_KEY, and any kind that moves
+    ///        the payout but keeps the authority, revert with `NotDormant` unless the artist has
+    ///        had no signed activity for the dormancy period.
     /// @param next The identity after the override: authority, payout and profile fields.
     /// @param evidenceHash The nonzero hash of the override's public record.
     /// @param deadline The Unix time in seconds after which `authorityAcceptance` is expired;
@@ -339,7 +484,7 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @notice Cancels a pending STANDARD change (a captured consolidated wallet or the previous
     ///         authority), or contests a pending override (a captured wallet, before its notice
     ///         ends; it then waits for a vote). A cancel of an already contested override does
-    ///         nothing.
+    ///         nothing. Records activity only when the caller is the previous authority.
     /// @param artistId The artist whose pending change is cancelled or contested.
     function cancelChange(uint256 artistId) external;
     /// @notice Applies a TDH vote on a contested override: upholding executes it (once its notice
@@ -354,8 +499,8 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @param uphold True to uphold (execute) the override, false to void (delete) it.
     /// @param outcomeRef The entry hash of the DISPUTE_OUTCOME statement recording the vote.
     function resolveContested(uint256 artistId, bool uphold, bytes32 outcomeRef) external;
-    /// @notice Deletes a contested override that nobody resolved within `CONTEST_TIMEOUT` of
-    ///         its contest. Permissionless; `payoutAddress` already ignores a lapsed contest.
+    /// @notice Deletes a contested override that nobody resolved within its locked contest
+    ///         timeout of its contest. Permissionless; `payoutAddress` already ignores a lapsed contest.
     /// @param artistId The artist whose contested override lapsed.
     function expireContest(uint256 artistId) external;
     /// @notice Binds the statement log `resolveContested` reads, once; its artist resolver must
@@ -374,19 +519,50 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     ///         is skipped (`StandingRefreshSkipped`).
     /// @param artistId The artist whose due change is applied.
     function executeChange(uint256 artistId) external;
-    /// @notice Records signed activity. Callable by the authority or an established consolidated
-    ///         wallet that was never an authority of this artist. Never on the auction-start path.
+    /// @notice Records signed activity. The current authority only (`NotAuthorized`). Never on
+    ///         the auction-start path.
     /// @param artistId The artist whose activity is recorded; its standing is refreshed too.
     function heartbeat(uint256 artistId) external;
     /// @notice The authority burns its current change nonce, so a change it pre-signed can never
     ///         be staged (preventive revocation).
     /// @param artistId The artist whose change nonce is burned.
     function revokeNonce(uint256 artistId) external;
-    /// @notice Lists `token` as one of the artist's federated contracts. Bound federation
-    ///         registry only; reverts with `FederatedListFull` past the bound.
+    /// @notice Lists `token` under the artist, ACTIVE, with fields fixed from now on. Bound
+    ///         federation registry only. Refused (`FederatedContractRefused`) for a listed token,
+    ///         a token without code or EIP-7702 delegated, and when the token, partner or fee
+    ///         recipient is a contract this registry knows as canonical. The code hash is read
+    ///         here, never taken from the caller.
     /// @param artistId The registered artist to list the contract under.
     /// @param token The federated token contract.
-    function listFederatedContract(uint256 artistId, address token) external;
+    /// @param form The token's form, recorded and not interpreted (see `FederatedContractListed`).
+    /// @param partner The other half of a linked pair, or zero.
+    /// @param feeShare The network's share, out of 100,000, as locked in the token.
+    /// @param feeRecipient The network fee recipient locked in the token.
+    function listFederatedContract(
+        uint256 artistId,
+        address token,
+        uint8 form,
+        address partner,
+        uint32 feeShare,
+        address feeRecipient
+    ) external;
+    /// @notice Sets a listed token's status to ACTIVE or DELISTED. Bound federation registry
+    ///         only; never for an unlisted or LEFT token (`FederatedStatusRefused`).
+    /// @param token The federated token contract.
+    /// @param status ACTIVE or DELISTED.
+    /// @param ref The federation registry's reference for the decision.
+    function setFederatedStatus(address token, FederationStatus status, bytes32 ref) external;
+    /// @notice Records that the calling token left the federation: its status becomes LEFT,
+    ///         for good. Only the token itself can write it, so exit never depends on replaceable
+    ///         code; a repeat does nothing, and an unlisted caller reverts.
+    function recordFederationExit() external;
+    /// @notice Sets one governed wait. SUCCESSOR_SETTER role (the 30-day class). It must lie
+    ///         within `timerBounds`, and afterwards CONTEST_TIMEOUT must exceed OVERRIDE_DELAY by
+    ///         at least 185 days (`InvalidTimers`; lengthen CONTEST_TIMEOUT before OVERRIDE_DELAY).
+    ///         Pending changes keep the delay and contest timeout locked at their staging.
+    /// @param timer The wait to set.
+    /// @param value Its new value in seconds.
+    function setTimer(Timer timer, uint48 value) external;
     /// @notice Records the authority's live consolidations in the artist's standing snapshot
     ///         and ages out missing ones. Permissionless and not signed activity; a keeper or the
     ///         6529.io UI calls it after consolidation events.
@@ -447,15 +623,20 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @return The source the registry reads consolidations from.
     function consolidationSource() external view returns (IConsolidationSource);
     /// @notice The code hash pinned when the consolidation source was installed, re-checked at
-    ///         every use. On a mismatch, staging, heartbeats and `refreshStanding` revert with
-    ///         `Dependency.DependencyCodeChanged`; registration and execution skip their standing
-    ///         refresh (`StandingRefreshSkipped`), trusting nothing from the changed source.
+    ///         every use. On a mismatch, `refreshStanding` and a consolidated wallet's signer
+    ///         check revert with `Dependency.DependencyCodeChanged`; every other refresh skips
+    ///         (`StandingRefreshSkipped`), trusting nothing from the changed source.
     /// @return The pinned code hash.
     function consolidationSourceCodeHash() external view returns (bytes32);
-    /// @notice An artist's listed federated contracts.
-    /// @param artistId The artist ID.
-    /// @return The listed contracts, in listing order.
-    function federatedContracts(uint256 artistId) external view returns (address[] memory);
+    /// @notice A token's federation directory entry: its artist and status (NONE if never
+    ///         listed). The fixed fields are in its `FederatedContractListed` event.
+    /// @param token The token.
+    /// @return artistId The artist it is listed under, or zero.
+    /// @return status Its status.
+    function federatedListing(address token)
+        external
+        view
+        returns (uint256 artistId, FederationStatus status);
     /// @notice The package registry, the only `register` caller: bound at genesis, replaceable
     ///         by governance (`setPackageRegistry`).
     /// @return The package registry, or zero before it is bound.
@@ -463,7 +644,7 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @notice The bound 6529 Stream.
     /// @return The 6529 Stream contract, or zero before it is bound.
     function stream() external view returns (address);
-    /// @notice The bound federation registry, or zero before v1.1.
+    /// @notice The current federation registry, or zero before it is bound.
     /// @return The federation registry, or zero.
     function federationRegistry() external view returns (address);
     /// @notice The bound split factory.
@@ -473,12 +654,15 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @param artistId The artist ID.
     /// @return The snapshot's entries, at most `Limits.MAX_CANCELLERS`, in no fixed order.
     function standingOf(uint256 artistId) external view returns (Standing[] memory);
-    /// @notice How long a missing wallet keeps standing (30 days).
-    /// @return The grace period in seconds.
-    function STANDING_GRACE() external view returns (uint64);
-    /// @notice How long a contested override waits for a vote before it lapses (365 days).
-    /// @return The timeout in seconds.
-    function CONTEST_TIMEOUT() external view returns (uint64);
+    /// @notice A governed wait's current value.
+    /// @param timer The wait.
+    /// @return Its value in seconds.
+    function timer(Timer timer) external view returns (uint48);
+    /// @notice A wait's compiled floor (its genesis value) and ceiling.
+    /// @param timer The wait.
+    /// @return floor The shortest it can ever be, in seconds.
+    /// @return ceiling The longest governance can make it, in seconds.
+    function timerBounds(Timer timer) external pure returns (uint48 floor, uint48 ceiling);
     /// @notice The bound statement log, or zero before it is bound.
     /// @return The statement log, or zero.
     function statementLog() external view returns (address);

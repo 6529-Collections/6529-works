@@ -3,12 +3,14 @@ pragma solidity ^0.8.24;
 
 import { IEnglishAuction } from "./IEnglishAuction.sol";
 import { IUniformEditionAuction } from "./IUniformEditionAuction.sol";
+import { IUniformEditionAuctionStorage } from "./IUniformEditionAuctionStorage.sol";
 
 /// @title IUniformEditionAuctionLens
 /// @notice The read side of the uniform-price edition auction: every view of a sale, computed
 ///         from the adapter's storage words (`IUniformEditionAuctionStorage.storageWord`) with the
-///         clearing code its settlement runs (`UniformClearing`), and the master check the
-///         adapter's `open` consults. Stateless and bound to no adapter: deployed in its own
+///         clearing code its settlement runs (`UniformClearing`), the adapter's own views (its
+///         settings, credits, sale kind and ERC-165), and the master and abandonment checks the
+///         adapter's `open` and `abandon` consult. Stateless and bound to no adapter: deployed in its own
 ///         transaction and pinned by the adapter's constructor (`IUniformEditionAuctionStorage.lens`),
 ///         it reads every sale from its caller, the adapter, which forwards its own views here,
 ///         so each view below has the signature `IUniformEditionAuction` gives it. Errors are
@@ -17,9 +19,11 @@ import { IUniformEditionAuction } from "./IUniformEditionAuction.sol";
 ///      `IEnglishAuctionClock.auctionClock`, the others through `IEnglishAuction.auction`. The
 ///      adapter's fallback forwards every selector it does not declare, so the lens's own
 ///      `masterTerms`, `sweepOf` and `settlementOrderFor` are answered at the adapter's address
-///      too. Every one is read-only (a `staticcall`), and the adapter's ERC-165 does not
-///      advertise them. Call the views at the adapter: called directly, the lens reads its
-///      caller's words.
+///      too. Every forwarded call is read-only (a `staticcall`), and the adapter's ERC-165 does
+///      not advertise the lens's own views. `masterTerms` is the one call that writes: it
+///      deploys the sale's split wallets, so the adapter calls it directly, and through the
+///      fallback it answers only when they exist. Call the views at the adapter: called
+///      directly, the lens reads its caller's words.
 interface IUniformEditionAuctionLens {
     /// @notice What `open` locks for a master from the lens, from its token-specific data. The
     ///         payout terms are not here: `open` pays exactly the economics 6529 Stream Editions
@@ -27,11 +31,20 @@ interface IUniformEditionAuctionLens {
     /// @param maxCount The creator's cap from the edition terms, zero for none.
     /// @param oneOfOneEnd The 1/1's end now.
     /// @param oneOfOneState The 1/1's state now: never NONE or CANCELLED.
+    /// @param closeOffset The edition terms' own close offset, at most `Limits.maxCloseOffset`,
+    ///        or `DEFAULT_CLOSE_OFFSET` when they name none (the adapter's current default).
     struct MasterTerms {
         uint32 maxCount;
         uint64 oneOfOneEnd;
         IEnglishAuction.AuctionState oneOfOneState;
+        uint32 closeOffset;
     }
+
+    /// @notice What `masterTerms` returns as `closeOffset` for edition terms that name none:
+    ///         the adapter then locks its current default. No edition can name it (the maximum's
+    ///         bound is far below 2^32 - 1).
+    /// @return `type(uint32).max`.
+    function DEFAULT_CLOSE_OFFSET() external view returns (uint32);
 
     /// @notice The 6529 Stream Editions this lens was deployed for (immutable).
     /// @return The address its adapter must also have.
@@ -48,19 +61,95 @@ interface IUniformEditionAuctionLens {
     /// @notice The master check of `open`. For 6529 Stream Editions, `data` must be
     ///         `abi.encode(PackageItem)` of an EDITION_MASTER item whose `WorksHashing.itemHash`
     ///         is the one 6529 Stream stored for `id`, with edition terms naming
-    ///         `SaleKind.UNIFORM_AUCTION`, `CURRENCY_ETH` and empty params; the
-    ///         `PRODUCT_EDITIONS` payout terms 6529 Stream Editions will lock (an existing
-    ///         edition's, or the current resolver's) must be payable; and its 1/1 auction must
-    ///         exist and not be cancelled. Reverts with the adapter's `InvalidSaleTerms` or
-    ///         `NoOneOfOneAuction` otherwise.
+    ///         `SaleKind.UNIFORM_AUCTION` and `CURRENCY_ETH`, and params empty or exactly
+    ///         `abi.encode(uint256 closeOffset)` with an offset of at most the caller's
+    ///         `Limits.maxCloseOffset`; the `PRODUCT_EDITIONS` payout terms 6529 Stream Editions
+    ///         will lock (an existing edition's, or the current resolver's) must be payable; and
+    ///         its 1/1 auction must exist and not be cancelled. Reverts with the adapter's
+    ///         `InvalidSaleTerms` or `NoOneOfOneAuction` otherwise (a 1/1 auction that runs out
+    ///         of gas answering reverts with `BoundedCallShortfall`). Then deploys the seller's
+    ///         and, when it differs, the royalty receiver's split wallet, each only if it has no
+    ///         code, through the resolver's split factory, and requires each deployed address to
+    ///         be the one the terms name (`InvalidSaleTerms`).
     /// @param token The edition contract.
     /// @param id The edition ID.
     /// @param data The token-specific terms `open` was given.
     /// @return The terms `open` locks and the 1/1's state.
     function masterTerms(address token, uint256 id, bytes calldata data)
         external
-        view
         returns (MasterTerms memory);
+
+    /// @notice Whether the caller's sale can be abandoned now, and from when
+    ///         (`IUniformEditionAuction.abandonable`): OPEN, its 1/1 neither in progress nor
+    ///         settled with its master settled in 6529 Stream (a 1/1 auction that refuses to
+    ///         answer counts as stuck, with the end last read), and its end plus its locked
+    ///         abandonment delay plus its capped rescue lengthening passed. Reverts with
+    ///         `UnknownAuction`.
+    /// @param saleId The sale ID.
+    /// @return ok Whether it can be abandoned now.
+    /// @return abandonAt The earliest time, or zero when it cannot be from what is known now.
+    function abandonable(uint256 saleId) external view returns (bool ok, uint256 abandonAt);
+
+    /// @notice The check `abandon` makes: reverts with `NotAbandonable(saleId)` unless
+    ///         `abandonable(saleId)` is true for the caller (`UnknownAuction` for a sale never
+    ///         opened).
+    /// @param saleId The sale ID.
+    function checkAbandon(uint256 saleId) external view;
+
+    /// @notice One of the caller's storage words, from which every other view is computed: the
+    ///         lens finds its slot from the adapter's layout and reads it with
+    ///         `IUniformEditionAuctionStorage.storageAt`. `IUniformEditionAuctionStorage.Space`
+    ///         documents each family's key and packing.
+    /// @param space The word's family.
+    /// @param saleId The sale ID, for the per-sale families; ignored for TERMS, FEE_RECIPIENT,
+    ///        CREDIT and SETTINGS.
+    /// @param key The key within the family.
+    /// @return The stored word; zero when unset.
+    function storageWord(IUniformEditionAuctionStorage.Space space, uint256 saleId, uint256 key)
+        external
+        view
+        returns (uint256);
+
+    /// @notice The caller's current configuration (`IUniformEditionAuction.config`).
+    /// @return The parameters new sales lock.
+    function config() external view returns (IUniformEditionAuction.AuctionConfig memory);
+    /// @notice The caller's governed limits (`IUniformEditionAuction.limits`).
+    /// @return The current limits.
+    function limits() external view returns (IUniformEditionAuction.Limits memory);
+    /// @notice The caller's claimable credits (`ISaleAdapter.claimable`): ETH only.
+    /// @param account The account.
+    /// @param currency The currency; anything but `CURRENCY_ETH` has none.
+    /// @return The amount claimable.
+    function claimable(address account, address currency) external view returns (uint256);
+    /// @notice Whether the caller's new opens are paused (`ISaleAdapter.paused`).
+    /// @return True while paused.
+    function paused() external view returns (bool);
+    /// @notice Whether the caller serves `token` (`ISaleAdapter.isTarget`): only 6529 Stream
+    ///         Editions, while listed.
+    /// @param token The token contract.
+    /// @return True if served.
+    function isTarget(address token) external view returns (bool);
+    /// @notice The edition auction's sale kind (`ISaleAdapter.saleKind`).
+    /// @return `SaleKind.UNIFORM_AUCTION`.
+    function saleKind() external pure returns (bytes32);
+    /// @notice The adapter's ERC-165: `IUniformEditionAuction`, `ISaleAdapter` and `IERC165`.
+    /// @param interfaceId The interface ID.
+    /// @return True for those three.
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool);
+    /// @notice The derived sale ID (`IUniformEditionAuction.saleIdOf`).
+    /// @param token The edition contract.
+    /// @param id The edition ID.
+    /// @return `uint256(keccak256(abi.encode(token, id)))`.
+    function saleIdOf(address token, uint256 id) external pure returns (uint256);
+    /// @notice No federation registry: this adapter sells only 6529 Stream Editions
+    ///         (`ISaleAdapter.federationRegistry`).
+    /// @return Zero.
+    function federationRegistry() external pure returns (address);
+    /// @notice Refused: this adapter serves no federated token (`ISaleAdapter.setFederationRegistry`).
+    ///         Reverts with `ISaleAdapter.TargetNotAllowed(next)`.
+    /// @param expected Ignored.
+    /// @param next The registry asked for.
+    function setFederationRegistry(address expected, address next) external pure;
 
     /// @notice A sale. Reverts with `UnknownAuction`.
     /// @param saleId The sale ID.

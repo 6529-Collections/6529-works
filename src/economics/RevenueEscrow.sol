@@ -6,7 +6,9 @@ import {
     ReentrancyGuardTransient
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Dependency } from "../libraries/Dependency.sol";
+import { IGovernedVault } from "./interfaces/IGovernedVault.sol";
 import { IRevenueEscrow } from "./interfaces/IRevenueEscrow.sol";
 import { ISplitFactory } from "./interfaces/ISplitFactory.sol";
 import { TokenTransfer } from "./TokenTransfer.sol";
@@ -24,8 +26,10 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///      satisfied because the payees and shares are identical (recorded in ADR 0003). Any other
 ///      account's credit, such as the network fee recipient's, moves only to the replacement that
 ///      account named itself with {consentToRecovery}, and each consent covers one recovery.
-///      Funds force-sent or transferred here without a deposit are never owed to anyone and stay
-///      put.
+///      Funds force-sent or transferred here without a deposit are owed to nobody; only
+///      {sweepExcess} moves them, and it can reach nothing beyond `balance - totalOwed` of the
+///      asset it names. That bound is per token address: for a token with two addresses over one
+///      balance, or one that rebases, see {IRevenueEscrow.sweepExcess}.
 contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransient {
     /// @inheritdoc IRevenueEscrow
     ISplitFactory public immutable factory;
@@ -95,9 +99,10 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
                 revert NotEquivalentWallet(wallet, replacement);
             }
         } else {
-            if (replacement == address(0) || recoveryConsent[wallet] != replacement) {
-                revert RecoveryNotConsented(wallet, replacement);
-            }
+            if (
+                replacement == address(0) || recoveryConsent[wallet] != replacement
+                    || !_stillNamed(wallet, replacement)
+            ) revert RecoveryNotConsented(wallet, replacement);
             // Single use: one consent covers one recovery of one asset.
             delete recoveryConsent[wallet];
         }
@@ -107,6 +112,32 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
         uint256 balance = owed[replacement][asset] + amount;
         owed[replacement][asset] = balance;
         emit Recovered(wallet, replacement, asset, amount, balance);
+    }
+
+    /// @inheritdoc IRevenueEscrow
+    function sweepExcess(address asset, address recipient)
+        external
+        restricted
+        nonReentrant
+        returns (uint256 amount)
+    {
+        if (recipient == address(0) || recipient == address(this)) {
+            revert InvalidWallet(recipient);
+        }
+        uint256 balance = asset == address(0)
+            ? address(this).balance
+            : TokenTransfer.balanceOf(asset, address(this));
+        uint256 owedTotal = totalOwed[asset];
+        if (balance <= owedTotal) revert NothingToSweep(asset);
+        amount = balance - owedTotal;
+        emit ExcessSwept(asset, recipient, amount);
+        if (asset == address(0)) {
+            if (!TokenTransfer.sendETH(recipient, amount, gasleft())) {
+                revert ETHTransferFailed(recipient, amount);
+            }
+        } else {
+            TokenTransfer.transferExactAllowingNoReturn(asset, recipient, amount);
+        }
     }
 
     /// @inheritdoc IERC165
@@ -121,6 +152,16 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
         owed[wallet][asset] = balance;
         totalOwed[asset] += amount;
         emit Credited(wallet, asset, msg.sender, amount, balance);
+    }
+
+    /// @dev False when `account` is a governed vault whose destination is no longer
+    ///      `replacement`: its consent named a destination governance has since replaced. Reads
+    ///      forward all gas; a shortfall reverts (`BoundedCall`).
+    function _stillNamed(address account, address replacement) private view returns (bool) {
+        if (!BoundedCall.supportsInterface(account, type(IGovernedVault).interfaceId)) return true;
+        (bool ok, bytes32 word) =
+            BoundedCall.tryReadWordAll(account, abi.encodeCall(IGovernedVault.destination, ()));
+        return ok && word == bytes32(uint256(uint160(replacement)));
     }
 
     function _checkCredit(address wallet, uint256 amount) private view {

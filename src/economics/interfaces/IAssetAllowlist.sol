@@ -46,6 +46,13 @@ interface IAssetAllowlist {
     event DefaultCurrencyChanged(
         bytes32 indexed product, address previous, address current, uint64 revision
     );
+    /// @notice The opening bid of `asset` (the least first bid of an English auction that
+    ///         starts in it) changed from `previous` to `current`; its revision is now `revision`.
+    /// @param asset The asset whose opening bid changed.
+    /// @param previous The opening bid before the change, in the asset's base units.
+    /// @param current The opening bid after the change, in the asset's base units.
+    /// @param revision The asset's revision after the change.
+    event OpeningBidSet(address indexed asset, uint256 previous, uint256 current, uint64 revision);
 
     /// @notice `asset` has no code, is an EIP-7702 delegated account, or reports a balance above
     ///         its total supply. Unreadable balances or supply revert with the token-read error.
@@ -69,6 +76,9 @@ interface IAssetAllowlist {
     error InvalidProduct();
     /// @notice `product` has no default currency.
     error CurrencyNotConfigured(bytes32 product);
+    /// @notice The opening bid is above its ceiling: `OPENING_BID_FLOORS` increment floors,
+    ///         capped at `type(uint96).max`.
+    error OpeningBidAboveCeiling(uint256 bid, uint256 ceiling);
 
     /// @notice The status of `asset`.
     /// @param asset The asset to look up (ETH is `address(0)`).
@@ -116,6 +126,27 @@ interface IAssetAllowlist {
     /// @return The product's default currency (ETH is `address(0)`).
     function defaultCurrency(bytes32 product) external view returns (address);
 
+    /// @notice An asset's opening bid (zero when never set), whatever its status.
+    /// @param asset The asset.
+    /// @return The opening bid, in the asset's base units.
+    function openingBid(address asset) external view returns (uint256);
+
+    /// @notice The opening bid of an active asset, read with its status in one word: what an
+    ///         English auction locks at start. Reverts with `AssetNotActive` otherwise.
+    /// @param asset The asset.
+    /// @return The opening bid, in the asset's base units.
+    function activeOpeningBid(address asset) external view returns (uint256);
+
+    /// @notice A product's default currency (as `defaultCurrency`) and that currency's opening
+    ///         bid, in one call.
+    /// @param product The product identifier.
+    /// @return asset The default currency, active.
+    /// @return bid Its opening bid, in its base units.
+    function defaultCurrencyOpeningBid(bytes32 product)
+        external
+        view
+        returns (address asset, uint256 bid);
+
     /// @notice The stored default currency of `product` and its revision, without reverting.
     /// @param product The product identifier.
     /// @return configured Whether a default currency was ever set for the product.
@@ -157,4 +188,13 @@ interface IAssetAllowlist {
     /// @param expectedRevision The revision the product must be at.
     /// @param asset The new default currency; must be active.
     function setDefaultCurrency(bytes32 product, uint64 expectedRevision, address asset) external;
+
+    /// @notice Sets an active asset's opening bid, raising or lowering it (zero included) up to
+    ///         `OPENING_BID_FLOORS` increment floors, capped at `type(uint96).max` so a bid can
+    ///         always meet it, if the asset is at `expectedRevision`. Applies to English auctions
+    ///         that start afterwards. PARAMETER_SETTER role (48 hours).
+    /// @param asset The asset; must be active.
+    /// @param expectedRevision The revision the asset must be at.
+    /// @param bid The new opening bid, in the asset's base units.
+    function setOpeningBid(address asset, uint64 expectedRevision, uint256 bid) external;
 }

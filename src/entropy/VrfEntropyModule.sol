@@ -447,7 +447,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         bytes32[] calldata proof
     ) private view returns (bool) {
         if (
-            item.seedPolicy != SeedPolicy.VRF || item.contentHash == 0
+            item.seedPolicy != uint8(SeedPolicy.VRF) || item.contentHash == 0
                 || proof.length > MAX_PROOF_LENGTH
         ) return false;
         (IPackageRegistry.PackageStatus status,,) = packageRegistry.packageOf(packageRoot);
@@ -463,7 +463,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         view
         returns (bool)
     {
-        return item.seedPolicy == SeedPolicy.VRF
+        return item.seedPolicy == uint8(SeedPolicy.VRF)
             && packageRegistry.consumedItemOf(item.contentHash) == itemHash;
     }
 

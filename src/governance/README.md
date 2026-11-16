@@ -3,8 +3,10 @@
 One OpenZeppelin 5.7.0 `AccessManager`, subclassed as `WorksAccessManager`, governs every 6529
 Works contract: each restricted selector maps to one role, each role is one delay class, any
 guardian can cancel any scheduled operation and suspend a compromised operational key, and a
-one-shot configurator installs the whole genesis configuration in one transaction. There are no
-bespoke executor, policy or registry contracts. The rules, role table and flows are in
+one-shot configurator installs the whole genesis configuration in one transaction. The manager
+also bounds the guardian veto on a guardian's removal and on a handover, recovers from lost
+admins, caps the admin and guardian seats, and hands every governed contract to a successor that
+has proven it can act, in one `migrate`. There are no bespoke executor, policy or registry contracts. The rules, role table and flows are in
 [Governance](../../docs/spec/governance.md) (`GV-*`); every selector with its role, delay and
 cancel rule is in the generated [role and permission matrix](../../docs/audit/roles.md).
 
@@ -13,9 +15,10 @@ cancel rule is in the generated [role and permission matrix](../../docs/audit/ro
 | File | What it is |
 | --- | --- |
 | `Roles.sol` | Internal library: role IDs 0 to 12, the four delay classes, each role's execution delay, grant delay and label, `isSuspendable`. Every contract imports it; nothing hard-codes a role ID. `MINTER` (6) and `KEEPER` (7) are defined but unused in v1: genesis grants them to nobody and no selector maps to them. |
-| `WorksAccessManager.sol` | Stock `AccessManager` with four overrides: `_canCancel` (the three cancellation rules), `hasRole` (a suspended holder is not a member), and `_grantRole` and `_revokeRole` (each lifts a suspension; OpenZeppelin's `renounceRole` runs through `_revokeRole`). Adds `suspend` and `isSuspended`. |
+| `WorksAccessManager.sol` | Stock `AccessManager` plus: the three cancellation rules and the escalated lane (`_canCancel`, `schedule`, `cancel`); suspension (`suspend`, `isSuspended`, `hasRole`); seat lists, caps and the class-delay floor (`_grantRole`, `_revokeRole`; OpenZeppelin's `renounceRole` runs through `_revokeRole`); the managed list (the target setters); governed parameters, recovery and succession (`setParameter`, `setRecoveryAddress`, `registerSuccessor`, `acceptSuccession`, `migrate`, `heartbeat`, `openRecovery`, `approveRecovery`, `objectToRecovery`, `completeRecovery`). |
+| `SuccessionProbe.sol` | A stock `AccessManaged` contract `registerSuccessor` creates for the proposed successor, which must re-point it to the manager before `acceptSuccession` (proof it can make the `setAuthority` call every permanent contract needs). |
 | `GovernanceConfig.sol` | Internal library: `validate`, `validateWiring`, `isGenesisSelector`, `install`, `verify` (readback) and `hasRecord`. |
-| `GovernanceConfigurator.sol` | Deploys its own `WorksAccessManager`, runs `configure(cfg, manifestHash, wiring)` once for its `deployer`, renounces `ADMIN`, and exposes `verify(cfg)` for readback. |
+| `GovernanceConfigurator.sol` | Deploys its own `WorksAccessManager`, runs `configure(cfg, manifestHash, wiring)` once for its `deployer`, renounces `ADMIN`, and exposes `verify(cfg)` for readback (which also checks the managed list). |
 | `BoundedParameter.sol` | Internal library for raise-only parameters: at most double per step, never above a ceiling fixed in the target's code. Its one v1 user is the entropy module's callback gas limit. |
 
 ## Entry points
@@ -24,7 +27,12 @@ cancel rule is in the generated [role and permission matrix](../../docs/audit/ro
 | --- | --- | --- |
 | Holders of a delayed role | `schedule`, then `execute` (or the target itself) after the delay and within the one-week expiry | GV-4, GV-5, GV-7 |
 | Any active guardian | `cancel` of any scheduled operation, except as Rules 2 and 3 restrict; `suspend(roleId, account)` for a `PLATFORM`, `CURATOR` or `STORAGE_OPERATOR` record | GV-1 to GV-3, GV-25 to GV-28 |
-| `ADMIN` (30 days) | `grantRole`, `revokeRole`, remaps, target closure and authority moves; a grant or revocation of a suspended record lifts it | GV-4, GV-28 |
+| `ADMIN` (30 days) | `grantRole`, `revokeRole`, remaps, target closure and authority moves; a grant or revocation of a suspended record lifts it | GV-4, GV-28, GV-38 to GV-40 |
+| `ADMIN` (slow lane, 60 days by default) | `setParameter`, `setRecoveryAddress`, `registerSuccessor` (only proposes; zero withdraws; escalated after a guardian's cancellation) | GV-37, GV-41, GV-43 |
+| The pending successor itself | `acceptSuccession`, once it has re-pointed `successionProbe()` to the manager | GV-43 |
+| Any active guardian | on an escalated operation, `cancel` is one vote; `approveRecovery`, `objectToRecovery` | GV-37, GV-42 |
+| Any active admin | `heartbeat` | GV-42 |
+| Anyone | `openRecovery` and `completeRecovery` when their conditions hold; `migrate(from, to)` once the successor has accepted | GV-42, GV-45 |
 | A role holder | `renounceRole` for itself, at once; it also lifts its own suspension | GV-28 |
 | The deployer, once | `GovernanceConfigurator.configure`, then `verify` by `eth_call` five days later | GV-8 to GV-13 |
 | Every governed contract | `restricted` asks `canCall`; some read `PLATFORM`, `CURATOR` or `CURATION_SIGNER` directly | [Roles that targets read directly](../../docs/spec/governance.md#roles-that-targets-read-directly) |
@@ -59,6 +67,18 @@ tests check.
 
 ## Developer notes
 
+- **Bytecode.** `WorksAccessManager` is about 20.9 KB of runtime (about 3.6 KB under EIP-170);
+  the configurator's initcode, which embeds it, about 35 KB of 48 KB. Check both with
+  `forge build --sizes` before adding to the manager.
+- **Escalated operations live in OpenZeppelin's schedule.** `schedule` adds the longer delay and
+  records an `Escalation` (nonce, guardian serial, seats, votes); `_canCancel` refuses everyone but
+  the scheduler until the votes decide. A record is live only while its nonce is the operation's
+  current nonce and the operation is scheduled.
+- **Seats** are kept in `EnumerableSet`s for `ADMIN` and `GUARDIAN` only; each new guardian seat
+  gets a serial, which orders it against the snapshots of escalations and recoveries.
+- **Handed over** means `successor != 0`; `canCall` and `hasRole` then answer nothing, which shuts
+  every other path. `migrate` keeps no state: progress is each target's own `authority()`.
+
 - **`WorksAccessManager` changes OpenZeppelin behavior in four places only.** Rules 2 and 3
   depend on the operation's arguments and scheduler, which no per-selector setting can express;
   keep them in `_canCancel`. Upgrading OpenZeppelin means rechecking that `renounceRole` still
@@ -82,8 +102,10 @@ tests check.
   three guardians, two curation signers, a curator and one key per operational role.
   [`GovernanceMocks.sol`](../../test/mocks/governance/GovernanceMocks.sol) holds a sample target.
 - **Tests:** `forge test --match-path 'test/governance/**'` (cancellation rules against a stock
-  manager, hardening, suspension, genesis, wiring, the invariant campaign);
-  `GovernanceRecovery.t.sol` and `Genesis.t.sol` in [`test/integration/`](../../test/integration/).
+  manager, hardening, suspension, genesis, wiring, the bounded veto, seats and parameters,
+  recovery, succession, contract seats, and the invariant campaigns);
+  `GovernanceRecovery.t.sol`, `Genesis.t.sol` and `GovernanceHandover.t.sol` (the whole stack
+  handed to a non-OpenZeppelin successor) in [`test/integration/`](../../test/integration/).
   Coverage and mutation testing: [Testing](../../docs/testing/README.md).
 
 ## Operating it
@@ -91,7 +113,8 @@ tests check.
 Guardian liveness, emergencies, rotations, onboarding a target and publishing a configuration
 epoch are in the runbook's [operating procedures](../../script/README.md#operating-procedures)
 and [admin recovery](../../script/README.md#admin-recovery). Residual risks (colluding or
-dishonest guardians, liveness, suspension length) are LIM-GV-4 to LIM-GV-15 in
+dishonest guardians, liveness, suspension length, recovery and succession) are LIM-GV-4 to
+LIM-GV-15 and the later LIM-GV rows in
 [known limitations](../../docs/audit/known-limitations.md#trust-and-governance).
 
 ## See also
