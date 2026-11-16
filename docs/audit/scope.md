@@ -17,7 +17,7 @@ an audit.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 14,382 non-blank, non-comment lines in 100 files under `src/` (budget: 15,000; ADR 0001, amended 1 November 2026, and ADR 0007) |
+| Source lines | 14,457 non-blank, non-comment lines in 100 files under `src/` (budget: 15,000; ADR 0001, amended 1 November 2026, and ADR 0007) |
 | Deployed contracts | 26 per deployment without the optional VRF entropy module and 27 with it: the 23 (or 24) that `DeployV1.order` lists, both auctions' lenses among them (each deployed in its own transaction and pinned by its auction) and the two governed vaults (`FeeRecipientVault`, `MuseumVault`, after the split ledger), plus the AccessManager the governance configurator creates, `StreamViews`, the read-only extension `Stream`'s constructor creates, and `WorkDelivery`, the first delivery contract `WorkRecords`' constructor creates (replaceable by `setDelivery`); and one 66-byte `SplitVault` per payee configuration, deployed on demand by the split ledger |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
@@ -33,15 +33,15 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 793 | 22,697 | 28,882 | **1,879** |
+| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 793 | 22,863 | 29,055 | **1,713** |
 | `StreamViews` (created by `Stream`'s constructor) | [`src/stream/StreamViews.sol`](../../src/stream/StreamViews.sol) | 79 | 4,110 | 4,138 | 20,466 |
 | `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 730 | 23,163 | 35,108 | 1,413 |
 | `WorkDelivery` (created by `WorkRecords`' constructor; replaceable) | [`src/stream/WorkDelivery.sol`](../../src/stream/WorkDelivery.sol) | 183 | 8,673 | 9,084 | 15,903 |
-| `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 473 | 19,012 | 20,826 | 5,564 |
+| `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 484 | 19,025 | 20,854 | 5,551 |
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 898 | 24,062 | 27,384 | 514 |
-| `EnglishAuctionLens` | [`src/sales/EnglishAuctionLens.sol`](../../src/sales/EnglishAuctionLens.sol) | 311 | 6,844 | 7,137 | 17,732 |
-| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 912 | 23,884 | 28,828 | 692 |
-| `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 876 | 23,129 | 23,551 | 1,447 |
+| `EnglishAuctionLens` | [`src/sales/EnglishAuctionLens.sol`](../../src/sales/EnglishAuctionLens.sol) | 314 | 7,022 | 7,315 | 17,554 |
+| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 917 | 23,945 | 28,889 | 631 |
+| `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 882 | 23,253 | 23,675 | 1,323 |
 
 ### Curation, identity and records
 
@@ -49,7 +49,7 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 | --- | --- | ---: | ---: | ---: | ---: |
 | `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | 402 | 15,725 | 17,113 | 8,851 |
 | `Eip712CurationVerifier` | [`src/curation/Eip712CurationVerifier.sol`](../../src/curation/Eip712CurationVerifier.sol) | 103 | 5,383 | 6,074 | 19,193 |
-| `ArtistRegistry` | [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol) | 721 | 22,969 | 24,508 | 1,607 |
+| `ArtistRegistry` | [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol) | 724 | 23,015 | 24,563 | 1,561 |
 | `ConsolidationAdapter` | [`src/identity/ConsolidationAdapter.sol`](../../src/identity/ConsolidationAdapter.sol) | 133 | 3,059 | 3,371 | 21,517 |
 | `StatementLog` | [`src/records/StatementLog.sol`](../../src/records/StatementLog.sol) | 309 | 11,125 | 12,386 | 13,451 |
 | `VrfEntropyModule` (optional) | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol) | 252 | 8,791 | 10,701 | 15,785 |
@@ -63,16 +63,16 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 | `SplitLedger` (deployed under the name `SplitFactory`; also the release verifier) | [`src/economics/SplitLedger.sol`](../../src/economics/SplitLedger.sol) | 264 | 8,851 | 9,776 | 15,725 |
 | `SplitVault` (the 66-byte wallet, one per payee configuration; raw bytecode constants, not a compiled contract) | [`src/economics/SplitVault.sol`](../../src/economics/SplitVault.sol) | 8 | 85 | 135 | 24,491 |
 | `RevenueEscrow` | [`src/economics/RevenueEscrow.sol`](../../src/economics/RevenueEscrow.sol) | 122 | 6,430 | 6,875 | 18,146 |
-| `ClaimRouter` | [`src/economics/ClaimRouter.sol`](../../src/economics/ClaimRouter.sol) | 132 | 3,760 | 4,079 | 20,816 |
+| `ClaimRouter` | [`src/economics/ClaimRouter.sol`](../../src/economics/ClaimRouter.sol) | 140 | 3,912 | 4,231 | 20,664 |
 | `GovernedVault` (deployed twice: `FeeRecipientVault`, `MuseumVault`) | [`src/economics/GovernedVault.sol`](../../src/economics/GovernedVault.sol) | 108 | 5,277 | 6,039 | 19,299 |
 
 ### Content and rendering
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `ContentStore` | [`src/content/ContentStore.sol`](../../src/content/ContentStore.sol) | 412 | 11,141 | 11,169 | 13,435 |
+| `ContentStore` | [`src/content/ContentStore.sol`](../../src/content/ContentStore.sol) | 436 | 11,436 | 11,464 | 13,140 |
 | `DependencyRegistry` | [`src/content/DependencyRegistry.sol`](../../src/content/DependencyRegistry.sol) | 66 | 2,988 | 3,433 | 21,588 |
-| `Renderer` | [`src/content/Renderer.sol`](../../src/content/Renderer.sol) | 756 | 24,029 | 24,344 | **547** |
+| `Renderer` | [`src/content/Renderer.sol`](../../src/content/Renderer.sol) | 761 | 24,064 | 24,379 | **512** |
 
 ### Governance
 
@@ -117,7 +117,7 @@ The "Used by" column is a reading aid; the import graph is authoritative.
 
 ### Interfaces and shared types
 
-2,304 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
+2,314 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
 [`src/economics/interfaces/`](../../src/economics/interfaces/), plus the 14-line Chainlink
 coordinator interface [`src/entropy/IVRFCoordinatorV2Plus.sol`](../../src/entropy/IVRFCoordinatorV2Plus.sol).
 `WorksHashing` is counted here and listed with the libraries above. They carry the external
