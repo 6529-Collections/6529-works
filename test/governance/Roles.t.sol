@@ -10,10 +10,6 @@ contract RolesHarness {
         return Roles.executionDelay(role);
     }
 
-    function grantDelay(uint64 role) external pure returns (uint32) {
-        return Roles.grantDelay(role);
-    }
-
     function label(uint64 role) external pure returns (string memory) {
         return Roles.label(role);
     }
@@ -23,93 +19,57 @@ contract RolesHarness {
     }
 }
 
-/// @notice The role and delay-class table every lane imports (ADR 0001 §13).
+/// @notice The role and delay table every lane imports.
 contract RolesTest is Test {
     RolesHarness internal harness = new RolesHarness();
 
-    function test_DelayClasses() public pure {
-        assertEq(Roles.IMMEDIATE, 0);
-        assertEq(Roles.STANDARD, 48 hours);
-        assertEq(Roles.FUNDS, 14 days);
-        assertEq(Roles.SUCCESSOR, 30 days);
+    function test_FixedDelays() public pure {
+        assertEq(Roles.DELAY_24H, 24 hours);
+        assertEq(Roles.DELAY_3D, 3 days);
+        assertEq(Roles.DELAY_7D, 7 days);
+        assertEq(Roles.BRAKE_DELAY, 7 days);
     }
 
     function test_ReservedIdsMatchOpenZeppelin() public {
-        AccessManager manager = new AccessManager(address(this));
-        assertEq(Roles.ADMIN, manager.ADMIN_ROLE());
-        assertEq(Roles.PUBLIC, manager.PUBLIC_ROLE());
-        assertLt(Roles.COUNT, Roles.PUBLIC);
+        AccessManager m = new AccessManager(address(this));
+        assertEq(Roles.ADMIN, m.ADMIN_ROLE());
+        assertEq(Roles.PUBLIC, m.PUBLIC_ROLE());
     }
 
-    function test_ExecutionDelayTable() public pure {
-        assertEq(Roles.executionDelay(Roles.ADMIN), 30 days);
-        assertEq(Roles.executionDelay(Roles.GUARDIAN), 0);
-        assertEq(Roles.executionDelay(Roles.PAUSER), 0);
-        assertEq(Roles.executionDelay(Roles.UNPAUSER), 48 hours);
-        assertEq(Roles.executionDelay(Roles.CURATION_SIGNER), 0);
-        assertEq(Roles.executionDelay(Roles.STORAGE_OPERATOR), 0);
-        assertEq(Roles.executionDelay(Roles.MINTER), 0);
-        assertEq(Roles.executionDelay(Roles.KEEPER), 0);
-        assertEq(Roles.executionDelay(Roles.PLATFORM), 0);
-        assertEq(Roles.executionDelay(Roles.PARAMETER_SETTER), 48 hours);
-        assertEq(Roles.executionDelay(Roles.FUNDS_SETTER), 14 days);
-        assertEq(Roles.executionDelay(Roles.SUCCESSOR_SETTER), 30 days);
-        assertEq(Roles.executionDelay(Roles.CURATOR), 0);
-    }
-
-    function test_GrantDelayTable() public pure {
-        assertEq(Roles.grantDelay(Roles.ADMIN), 30 days);
-        assertEq(Roles.grantDelay(Roles.GUARDIAN), 30 days);
-        assertEq(Roles.grantDelay(Roles.PAUSER), 48 hours);
-        assertEq(Roles.grantDelay(Roles.UNPAUSER), 48 hours);
-        assertEq(Roles.grantDelay(Roles.CURATION_SIGNER), 30 days);
-        assertEq(Roles.grantDelay(Roles.STORAGE_OPERATOR), 48 hours);
-        assertEq(Roles.grantDelay(Roles.MINTER), 30 days);
-        assertEq(Roles.grantDelay(Roles.KEEPER), 48 hours);
-        assertEq(Roles.grantDelay(Roles.PLATFORM), 48 hours);
-        assertEq(Roles.grantDelay(Roles.PARAMETER_SETTER), 48 hours);
-        assertEq(Roles.grantDelay(Roles.FUNDS_SETTER), 14 days);
-        assertEq(Roles.grantDelay(Roles.SUCCESSOR_SETTER), 30 days);
-        assertEq(Roles.grantDelay(Roles.CURATOR), 30 days);
-    }
-
-    /// ADR 0001 §13.1: each class role's grant delay is at least its class delay, and
-    /// meta-governance (ADMIN) is at least as slow as the slowest class.
-    function test_GrantDelayNeverShorterThanExecutionDelay() public pure {
+    function test_NetworkRolesAndTheirClasses() public pure {
+        assertEq(Roles.executionDelay(Roles.ADMIN), 7 days);
+        assertEq(Roles.executionDelay(Roles.NETWORK), 0);
+        assertEq(Roles.executionDelay(Roles.PARAMETER_SETTER), 24 hours);
+        assertEq(Roles.executionDelay(Roles.FUNDS_SETTER), 3 days);
+        assertEq(Roles.executionDelay(Roles.SUCCESSOR_SETTER), 7 days);
+        uint256 network;
         for (uint64 role; role < Roles.COUNT; ++role) {
-            assertGe(Roles.grantDelay(role), Roles.executionDelay(role));
-            assertLe(Roles.executionDelay(role), Roles.executionDelay(Roles.ADMIN));
+            if (Roles.isNetworkRole(role)) ++network;
         }
-        assertEq(Roles.executionDelay(Roles.ADMIN), Roles.SUCCESSOR);
+        assertEq(network, 5);
     }
 
-    function test_DelayedRolesAreTheAdminSafeClasses() public pure {
-        uint256 delayed;
-        for (uint64 role; role < Roles.COUNT; ++role) {
-            if (Roles.executionDelay(role) != Roles.IMMEDIATE) ++delayed;
+    function test_OperationalRolesHaveNoDelay() public pure {
+        uint64[7] memory operational = [
+            Roles.PAUSER,
+            Roles.CURATION_SIGNER,
+            Roles.STORAGE_OPERATOR,
+            Roles.MINTER,
+            Roles.KEEPER,
+            Roles.PLATFORM,
+            Roles.CURATOR
+        ];
+        for (uint256 i; i < operational.length; ++i) {
+            assertFalse(Roles.isNetworkRole(operational[i]));
+            assertEq(Roles.executionDelay(operational[i]), 0);
         }
-        assertEq(delayed, 5, "ADMIN, UNPAUSER and the three setters");
-        assertEq(Roles.executionDelay(Roles.GUARDIAN), Roles.IMMEDIATE);
-        assertEq(Roles.executionDelay(Roles.PAUSER), Roles.IMMEDIATE);
-    }
-
-    function test_CodeLevelGrantsTakeThirtyDays() public pure {
-        // Owner decisions: a new sale adapter, curation signer or curator is successor-level,
-        // though each then acts immediately.
-        uint64[3] memory roles = [Roles.MINTER, Roles.CURATION_SIGNER, Roles.CURATOR];
-        for (uint256 i; i < roles.length; ++i) {
-            assertEq(Roles.grantDelay(roles[i]), Roles.SUCCESSOR);
-            assertEq(Roles.executionDelay(roles[i]), Roles.IMMEDIATE);
-        }
-        assertEq(Roles.COUNT, 13);
-        assertEq(Roles.CURATOR, 12);
-        assertEq(Roles.executionDelay(Roles.PLATFORM), Roles.IMMEDIATE);
     }
 
     function test_LabelsAreDistinct() public pure {
         for (uint64 a = 1; a < Roles.COUNT; ++a) {
-            assertGt(bytes(Roles.label(a)).length, 0);
+            if (!Roles.isKnown(a)) continue;
             for (uint64 b = a + 1; b < Roles.COUNT; ++b) {
+                if (!Roles.isKnown(b)) continue;
                 assertNotEq(keccak256(bytes(Roles.label(a))), keccak256(bytes(Roles.label(b))));
             }
         }
@@ -120,16 +80,23 @@ contract RolesTest is Test {
         harness.label(Roles.ADMIN);
     }
 
+    /// @dev ID 3 was the separate unpause role; it is no longer defined.
+    function test_TheFormerUnpauseIdIsUnknown() public {
+        assertFalse(Roles.isKnown(3));
+        vm.expectRevert(abi.encodeWithSelector(Roles.UnknownRole.selector, uint64(3)));
+        harness.requireKnown(3);
+        vm.expectRevert(abi.encodeWithSelector(Roles.UnknownRole.selector, uint64(3)));
+        harness.executionDelay(3);
+        vm.expectRevert(abi.encodeWithSelector(Roles.UnknownRole.selector, uint64(3)));
+        harness.label(3);
+    }
+
     function testFuzz_UnknownRoleReverts(uint64 role) public {
-        role = uint64(bound(role, Roles.COUNT, type(uint64).max));
-        bytes memory err = abi.encodeWithSelector(Roles.UnknownRole.selector, role);
-        vm.expectRevert(err);
-        harness.executionDelay(role);
-        vm.expectRevert(err);
-        harness.grantDelay(role);
-        vm.expectRevert(err);
-        harness.label(role);
-        vm.expectRevert(err);
+        vm.assume(role >= Roles.COUNT);
+        vm.expectRevert(abi.encodeWithSelector(Roles.UnknownRole.selector, role));
         harness.requireKnown(role);
+        vm.expectRevert(abi.encodeWithSelector(Roles.UnknownRole.selector, role));
+        harness.executionDelay(role);
+        assertFalse(Roles.isNetworkRole(role));
     }
 }

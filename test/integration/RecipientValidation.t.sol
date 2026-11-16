@@ -191,7 +191,7 @@ contract RecipientValidationTest is IntegrationBase {
             bytes memory call =
                 abi.encodeCall(economics.setFeeTerms, (product, revision, refused[i], 25_000));
             _schedule(hotAdmin, address(economics), call);
-            vm.warp(block.timestamp + Roles.FUNDS);
+            vm.warp(block.timestamp + Roles.DELAY_3D);
             vm.prank(hotAdmin);
             vm.expectRevert(
                 abi.encodeWithSelector(IEconomicsResolver.InvalidFeeRecipient.selector, refused[i])
@@ -210,7 +210,7 @@ contract RecipientValidationTest is IntegrationBase {
             economics.setFeeTerms, (PRODUCT_STREAM, revision, address(escrow), 25_000)
         );
         _schedule(hotAdmin, address(economics), call);
-        vm.warp(block.timestamp + Roles.FUNDS);
+        vm.warp(block.timestamp + Roles.DELAY_3D);
         vm.prank(hotAdmin);
         vm.expectRevert(
             abi.encodeWithSelector(IEconomicsResolver.InvalidFeeRecipient.selector, address(escrow))

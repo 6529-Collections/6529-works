@@ -363,7 +363,7 @@ contract EnglishAuctionLensTest is AuctionBase {
         assertEq(uint8(_assertClockIsAuctions(saleId)), uint8(IEnglishAuction.AuctionState.PAUSED));
         (,, uint64 pausedAt) = auction.auctionClock(saleId);
         assertEq(pausedAt, block.timestamp, "the pause start");
-        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.warp(block.timestamp + Roles.DELAY_24H);
         _assertClockIsAuctions(saleId);
         vm.prank(unpauser);
         auction.resume(saleId);
@@ -715,7 +715,7 @@ contract EnglishAuctionLensLayoutTest is AuctionBase {
         assertEq(uint8(a.state), uint8(IEnglishAuction.AuctionState.PAUSED), "paused");
         assertEq(a.pausedAt, pausedAt, "pausedAt");
         assertEq(a.recipient, carol, "the recipient kept");
-        uint256 length = Roles.STANDARD + 17;
+        uint256 length = Roles.DELAY_24H + 17;
         vm.warp(pausedAt + length);
         vm.record();
         vm.prank(unpauser);

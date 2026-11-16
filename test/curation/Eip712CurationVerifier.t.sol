@@ -411,7 +411,7 @@ contract Eip712CurationVerifierTest is CurationBase {
         vm.prank(admin);
         manager.grantRole(Roles.SUCCESSOR_SETTER, successor, 30 days);
         vm.prank(admin);
-        manager.setRoleGuardian(Roles.SUCCESSOR_SETTER, Roles.GUARDIAN);
+        manager.setRoleGuardian(Roles.SUCCESSOR_SETTER, Roles.NETWORK);
         vm.prank(guardian);
         verifier.disableSigner(signer1);
 

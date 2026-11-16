@@ -609,7 +609,7 @@ abstract contract UniformEditionAuctionBase is
     function unpause() external restricted {
         uint256 pausedAt = _settings.pausedAt;
         if (pausedAt == 0) revert ISaleAdapter.NotPaused();
-        uint256 allowedAt = pausedAt + Roles.STANDARD;
+        uint256 allowedAt = pausedAt + Roles.DELAY_24H;
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp < allowedAt) revert ISaleAdapter.UnpauseTooEarly(allowedAt);
         _settings.pausedAt = 0;

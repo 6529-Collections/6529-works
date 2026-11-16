@@ -325,8 +325,8 @@ contract EconomicsResolverTest is EconomicsBase {
         manager.setTargetFunctionRole(address(econ), funds, Roles.FUNDS_SETTER);
         manager.setTargetFunctionRole(address(econ), standard, Roles.PARAMETER_SETTER);
         address gov = makeAddr("gov");
-        manager.grantRole(Roles.FUNDS_SETTER, gov, Roles.FUNDS);
-        manager.grantRole(Roles.PARAMETER_SETTER, gov, Roles.STANDARD);
+        manager.grantRole(Roles.FUNDS_SETTER, gov, Roles.DELAY_3D);
+        manager.grantRole(Roles.PARAMETER_SETTER, gov, Roles.DELAY_24H);
 
         bytes memory royalty =
             abi.encodeCall(IEconomicsResolver.setRoyaltyRate, (PRODUCT_STREAM, 1, 5_000));
@@ -341,9 +341,9 @@ contract EconomicsResolverTest is EconomicsBase {
         manager.schedule(address(econ), feeA, 0);
         manager.schedule(address(econ), feeB, 0);
         manager.schedule(address(econ), staleA, 0);
-        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.warp(block.timestamp + Roles.DELAY_24H);
         manager.execute(address(econ), royalty);
-        vm.warp(block.timestamp + Roles.FUNDS);
+        vm.warp(block.timestamp + Roles.DELAY_3D);
         manager.execute(address(econ), feeA);
         manager.execute(address(econ), feeB);
         // Back at 25,000, the same value staleA saw, but at revision 3.
@@ -439,11 +439,11 @@ contract EconomicsResolverTest is EconomicsBase {
         funds[0] = IEconomicsResolver.setMuseum.selector;
         manager.setTargetFunctionRole(address(econ), funds, Roles.FUNDS_SETTER);
         address gov = makeAddr("gov");
-        manager.grantRole(Roles.FUNDS_SETTER, gov, Roles.FUNDS);
+        manager.grantRole(Roles.FUNDS_SETTER, gov, Roles.DELAY_3D);
         (bool immediate, uint32 delay) =
             manager.canCall(gov, address(econ), IEconomicsResolver.setMuseum.selector);
         assertFalse(immediate);
-        assertEq(delay, 14 days);
+        assertEq(delay, Roles.DELAY_3D);
 
         address next = makeAddr("nextMuseum");
         bytes memory change = abi.encodeCall(IEconomicsResolver.setMuseum, (1, next));
@@ -451,7 +451,7 @@ contract EconomicsResolverTest is EconomicsBase {
         vm.startPrank(gov);
         manager.schedule(address(econ), change, 0);
         manager.schedule(address(econ), rival, 0);
-        vm.warp(block.timestamp + Roles.FUNDS - 1);
+        vm.warp(block.timestamp + Roles.DELAY_3D - 1);
         bytes32 id = manager.hashOperation(gov, address(econ), change);
         vm.expectRevert(abi.encodeWithSelector(IAccessManager.AccessManagerNotReady.selector, id));
         manager.execute(address(econ), change);

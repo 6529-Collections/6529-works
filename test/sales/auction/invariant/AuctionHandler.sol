@@ -243,7 +243,7 @@ contract AuctionHandler is Test {
         uint256 saleId = _sale(saleSeed);
         IEnglishAuction.Auction memory a = auction.auction(saleId);
         if (a.state != IEnglishAuction.AuctionState.PAUSED) return;
-        uint256 allowedAt = uint256(a.pausedAt) + Roles.STANDARD;
+        uint256 allowedAt = uint256(a.pausedAt) + Roles.DELAY_24H;
         vm.prank(unpauser);
         if (block.timestamp < allowedAt) {
             vm.expectRevert(
@@ -267,7 +267,7 @@ contract AuctionHandler is Test {
         IEnglishAuction.Auction memory a = auction.auction(saleId);
         if (a.state != IEnglishAuction.AuctionState.PAUSED) return;
         // L4: as `resume`, `cancel` waits 48 hours from the pause.
-        uint256 allowedAt = uint256(a.pausedAt) + Roles.STANDARD;
+        uint256 allowedAt = uint256(a.pausedAt) + Roles.DELAY_24H;
         if (block.timestamp < allowedAt) {
             vm.prank(setter);
             vm.expectRevert(
@@ -360,7 +360,7 @@ contract AuctionHandler is Test {
     /// @dev The emergency pause stops only new starts; live auctions must carry on.
     function toggleStartPause() external {
         if (auction.paused()) {
-            uint256 allowedAt = startPausedAt + Roles.STANDARD;
+            uint256 allowedAt = startPausedAt + Roles.DELAY_24H;
             vm.prank(unpauser);
             if (block.timestamp < allowedAt) {
                 vm.expectRevert(

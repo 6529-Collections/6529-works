@@ -569,7 +569,7 @@ contract Verify is ScriptIO {
             (uint32 delay, uint48 effect) = abi.decode(grants[i].data, (uint32, uint48));
             // Only "is the change still pending" matters here; seconds of skew are irrelevant.
             // forge-lint: disable-next-line(block-timestamp)
-            if (effect > block.timestamp && delay != Roles.grantDelay(role)) {
+            if (effect > block.timestamp && delay != 0) {
                 revert PendingGrantDelayChange(role, delay, effect);
             }
         }
@@ -579,7 +579,7 @@ contract Verify is ScriptIO {
             address target = address(uint160(uint256(targets[i].topics[1])));
             (uint32 delay, uint48 effect) = abi.decode(targets[i].data, (uint32, uint48));
             // forge-lint: disable-next-line(block-timestamp)
-            if (effect > block.timestamp && delay != GovernanceConfig.TARGET_ADMIN_DELAY) {
+            if (effect > block.timestamp && delay != 0) {
                 revert PendingTargetAdminDelayChange(target, delay, effect);
             }
         }
@@ -695,7 +695,7 @@ contract Verify is ScriptIO {
     /// @dev GUARDIAN for every role genesis configures but ADMIN (`GovernanceConfig.install`),
     ///      ADMIN, the manager's default, for any other role.
     function _expectedGuardian(uint64 role) internal pure returns (uint64) {
-        return role != Roles.ADMIN && role < Roles.COUNT ? Roles.GUARDIAN : Roles.ADMIN;
+        return role != Roles.ADMIN && role < Roles.COUNT ? Roles.NETWORK : Roles.ADMIN;
     }
 
     function _checkCodeHashes(string memory record) internal view {

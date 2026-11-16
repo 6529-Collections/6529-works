@@ -1803,7 +1803,7 @@ contract DeployScriptTest is Test {
         _etchSafe(newHot, address(new MockSharedSignerSafe()).code);
         uint64[5] memory roles = [
             Roles.ADMIN,
-            Roles.UNPAUSER,
+            uint64(3), // the former unpause role ID (removed from Roles)
             Roles.PARAMETER_SETTER,
             Roles.FUNDS_SETTER,
             Roles.SUCCESSOR_SETTER
@@ -1944,7 +1944,7 @@ contract DeployScriptTest is Test {
         vm.prank(hot);
         d.manager.execute(address(d.manager), grant);
         verifier.addLogs(vm.getRecordedLogs());
-        vm.warp(block.timestamp + Roles.grantDelay(Roles.CURATOR));
+        vm.warp(block.timestamp + 30 days);
         string memory epoch =
             _tamper(_filled(), vm.toLowercase(vm.toString(oldCurator)), vm.toString(newCurator));
         verifier.setFile("config/epoch-1.json", bytes(epoch));
@@ -1968,7 +1968,7 @@ contract DeployScriptTest is Test {
         (string memory record, DeployV1.Deployment memory d) = _anvilRecord();
         address hot = address(0xB001);
         bytes memory data =
-            abi.encodeCall(IAccessManager.revokeRole, (Roles.GUARDIAN, address(0xB011)));
+            abi.encodeCall(IAccessManager.revokeRole, (Roles.NETWORK, address(0xB011)));
         vm.recordLogs();
         vm.prank(hot);
         (bytes32 id,) = d.manager.schedule(address(d.manager), data, 0);

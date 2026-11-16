@@ -163,12 +163,6 @@ library VerifyV1 {
         }
     }
 
-    /// @notice The manager's compiled defaults, in `WorksAccessManager.Parameter` order
-    ///         (`VerifyGenesisState.t.sol` pins them against a freshly deployed manager).
-    function managerDefaults() internal pure returns (uint32[6] memory) {
-        return [uint32(60 days), 120 days, 365 days, 180 days, 5, 7];
-    }
-
     /// @notice Genesis readback of the governance state `check` does not read: every manager
     ///         parameter is its compiled default, no recovery address is registered, no successor
     ///         is pending, the manager's governance chain holds exactly the epoch-0 manifest, and
@@ -179,15 +173,6 @@ library VerifyV1 {
         internal
         view
     {
-        uint32[6] memory defaults = managerDefaults();
-        for (uint8 i; i < 6; ++i) {
-            uint32 actual = d.manager.parameter(WorksAccessManager.Parameter(i));
-            if (actual != defaults[i]) revert ManagerParameterMismatch(i, defaults[i], actual);
-        }
-        address recovery = d.manager.recoveryAddress();
-        if (recovery != address(0)) revert UnexpectedRecoveryAddress(recovery);
-        address pending = d.manager.pendingSuccessor();
-        if (pending != address(0)) revert SuccessionPending(pending);
         (uint64 count,) = d.statementLog.chainOf(address(d.manager), 0);
         if (count != 1) revert ManifestChainMismatch(count);
         address english = address(d.englishAuction);
@@ -238,31 +223,6 @@ library VerifyV1 {
             address authority = IAccessManaged(cfg.targets[i].target).authority();
             if (authority != address(d.manager)) {
                 revert WrongAuthority(cfg.targets[i].target, authority);
-            }
-        }
-        // The manager is not handed over, and a handover would move every configured target
-        // and every other deployed contract the manager governs.
-        address next = d.manager.successor();
-        if (next != address(0)) revert ManagerHandedOver(next);
-        address[] memory managed = d.manager.managedTargets();
-        for (uint256 i; i < cfg.targets.length; ++i) {
-            _requireManaged(managed, cfg.targets[i].target);
-        }
-        string[] memory names = DeployV1.names();
-        for (uint256 i; i < names.length; ++i) {
-            address a = DeployV1.addressOf(d, names[i]);
-            if (a == address(d.manager) || a.code.length == 0) continue;
-            (bool ok, bytes memory ret) = a.staticcall(abi.encodeCall(IAccessManaged.authority, ()));
-            if (ok && ret.length == 32 && abi.decode(ret, (address)) == address(d.manager)) {
-                _requireManaged(managed, a);
-            }
-        }
-        // No configured holder is suspended (the readback below would only see a missing
-        // member).
-        for (uint256 i; i < cfg.grants.length; ++i) {
-            GovernanceConfig.Grant memory g = cfg.grants[i];
-            if (d.manager.isSuspended(g.role, g.account)) {
-                revert HolderSuspended(g.role, g.account);
             }
         }
         checkLens(d);

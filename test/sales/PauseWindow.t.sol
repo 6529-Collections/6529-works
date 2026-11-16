@@ -12,7 +12,7 @@ import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice The guardians' window after a pause, on the real stack: the 48-hour UNPAUSER class
 ///         counts from the pause. An adapter's `unpause` or the auction's `resume(saleId)`
-///         executes no earlier than `pausedAt + Roles.STANDARD`, even when it was scheduled (and
+///         executes no earlier than `pausedAt + Roles.DELAY_24H`, even when it was scheduled (and
 ///         matured) before the pause, so the guardians always have the standard window to
 ///         cancel it.
 contract PauseWindowTest is IntegrationBase {
@@ -36,7 +36,7 @@ contract PauseWindowTest is IntegrationBase {
         vm.warp(block.timestamp + 2 hours);
         vm.prank(guardian1);
         auction.pause(saleId, keccak256("dispute"));
-        uint256 allowedAt = block.timestamp + Roles.STANDARD;
+        uint256 allowedAt = block.timestamp + Roles.DELAY_24H;
 
         // The matured operation cannot end the pause in the same block, nor a second early.
         vm.prank(hotAdmin);
@@ -72,10 +72,10 @@ contract PauseWindowTest is IntegrationBase {
         uint256 pausedAt = block.timestamp;
         bytes memory resume = abi.encodeCall(auction.resume, (saleId));
         _schedule(hotAdmin, address(auction), resume);
-        vm.warp(pausedAt + Roles.STANDARD);
+        vm.warp(pausedAt + Roles.DELAY_24H);
         vm.expectEmit(address(auction));
         emit IEnglishAuction.AuctionResumed(
-            saleId, uint64(auction.auction(saleId).endTime + Roles.STANDARD)
+            saleId, uint64(auction.auction(saleId).endTime + Roles.DELAY_24H)
         );
         vm.prank(hotAdmin);
         manager.execute(address(auction), resume);
@@ -94,7 +94,7 @@ contract PauseWindowTest is IntegrationBase {
             emit ISaleAdapter.Paused(guardian1);
             vm.prank(guardian1);
             adapter.pause();
-            uint256 allowedAt = block.timestamp + Roles.STANDARD;
+            uint256 allowedAt = block.timestamp + Roles.DELAY_24H;
             vm.prank(hotAdmin);
             vm.expectRevert(
                 abi.encodeWithSelector(ISaleAdapter.UnpauseTooEarly.selector, allowedAt)
@@ -114,7 +114,7 @@ contract PauseWindowTest is IntegrationBase {
     function test_Unpause_WithoutAPauseStillReverts() public {
         bytes memory unpause = abi.encodeCall(ISaleAdapter.unpause, ());
         _schedule(hotAdmin, address(auction), unpause);
-        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.warp(block.timestamp + Roles.DELAY_24H);
         vm.prank(hotAdmin);
         vm.expectRevert(ISaleAdapter.NotPaused.selector);
         manager.execute(address(auction), unpause);
@@ -150,7 +150,7 @@ contract PauseWindowSalesStackTest is SalesStackBase {
         vm.prank(hotAdmin);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISaleAdapter.UnpauseTooEarly.selector, block.timestamp + Roles.STANDARD
+                ISaleAdapter.UnpauseTooEarly.selector, block.timestamp + Roles.DELAY_24H
             )
         );
         manager.execute(address(auction), cancel);
@@ -176,12 +176,12 @@ contract PauseWindowSalesStackTest is SalesStackBase {
         bytes memory unpause = abi.encodeCall(ISaleAdapter.unpause, ());
         _govern(hotAdmin, address(auction), unpause);
         _schedule(hotAdmin, address(auction), unpause);
-        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.warp(block.timestamp + Roles.DELAY_24H);
         _govern(guardian1, address(auction), abi.encodeCall(ISaleAdapter.pause, ()));
         vm.prank(hotAdmin);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISaleAdapter.UnpauseTooEarly.selector, block.timestamp + Roles.STANDARD
+                ISaleAdapter.UnpauseTooEarly.selector, block.timestamp + Roles.DELAY_24H
             )
         );
         manager.execute(address(auction), unpause);

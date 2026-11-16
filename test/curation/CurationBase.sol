@@ -223,14 +223,14 @@ abstract contract CurationBase is CurationHelpers {
         editions = address(new MockBoundCaller(type(IEditions).interfaceId));
 
         vm.startPrank(admin);
-        _map(address(registry), PackageRegistry.revokePackage.selector, Roles.GUARDIAN);
-        _map(address(registry), PackageRegistry.killSignerApprovals.selector, Roles.GUARDIAN);
+        _map(address(registry), PackageRegistry.revokePackage.selector, Roles.NETWORK);
+        _map(address(registry), PackageRegistry.killSignerApprovals.selector, Roles.NETWORK);
         _map(address(registry), PackageRegistry.setVerifier.selector, Roles.SUCCESSOR_SETTER);
-        _map(address(verifier), Eip712CurationVerifier.disableSigner.selector, Roles.GUARDIAN);
+        _map(address(verifier), Eip712CurationVerifier.disableSigner.selector, Roles.NETWORK);
         _map(
             address(verifier), Eip712CurationVerifier.enableSigner.selector, Roles.SUCCESSOR_SETTER
         );
-        manager.grantRole(Roles.GUARDIAN, guardian, 0);
+        manager.grantRole(Roles.NETWORK, guardian, 0);
         manager.grantRole(Roles.SUCCESSOR_SETTER, successor, 0);
         manager.grantRole(Roles.CURATION_SIGNER, signer1, 0);
         manager.grantRole(Roles.CURATION_SIGNER, signer2, 0);

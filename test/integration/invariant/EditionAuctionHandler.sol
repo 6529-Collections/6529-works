@@ -233,7 +233,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         if (!found) return;
         Piece storage p = pieces[i];
         IEnglishAuction.Auction memory a = auction.auction(p.saleId);
-        if (block.timestamp + Roles.STANDARD > a.pausedAt + auction.MAX_PAUSE()) return;
+        if (block.timestamp + Roles.DELAY_24H > a.pausedAt + auction.MAX_PAUSE()) return;
         if (mode % 3 == 0) {
             bytes32 outcome = _platformStatement(
                 address(stream), p.tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://ea-outcome"

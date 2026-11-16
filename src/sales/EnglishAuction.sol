@@ -1451,7 +1451,7 @@ contract EnglishAuction is
 
     /// @dev GOV-5: a pause that began at `pausedAt` ends no earlier than `Roles.STANDARD` later.
     function _requireUnpausable(uint256 pausedAt) private view {
-        uint256 allowedAt = pausedAt + Roles.STANDARD;
+        uint256 allowedAt = pausedAt + Roles.DELAY_24H;
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp < allowedAt) revert ISaleAdapter.UnpauseTooEarly(allowedAt);
     }

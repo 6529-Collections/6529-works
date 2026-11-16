@@ -847,8 +847,7 @@ library DeployV1 {
                 vm.parseJsonUint(json, string.concat(r, ".id")) != id
                     || vm.parseJsonUint(json, string.concat(r, ".executionDelay"))
                         != Roles.executionDelay(id)
-                    || vm.parseJsonUint(json, string.concat(r, ".grantDelay"))
-                        != Roles.grantDelay(id)
+                    || vm.parseJsonUint(json, string.concat(r, ".grantDelay")) != 0
             ) revert RoleTableMismatch(name);
         }
     }

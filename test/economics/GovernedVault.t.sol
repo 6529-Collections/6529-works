@@ -198,7 +198,7 @@ contract GovernedVaultTest is EconomicsBase {
         vault.setDestination(1, next);
 
         uint64 funds = Roles.FUNDS_SETTER;
-        uint32 delay = Roles.FUNDS;
+        uint32 delay = Roles.DELAY_3D;
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = IGovernedVault.setDestination.selector;
         manager.setTargetFunctionRole(address(vault), selectors, funds);

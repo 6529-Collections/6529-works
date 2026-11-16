@@ -88,7 +88,7 @@ contract EscrowRecoveryTest is IntegrationBase {
         assertEq(escrow.recoveryConsent(networkFee), newFeeSafe);
 
         _schedule(hotAdmin, address(escrow), _recoverCall());
-        vm.warp(block.timestamp + Roles.FUNDS);
+        vm.warp(block.timestamp + Roles.DELAY_3D);
         vm.expectEmit(address(escrow));
         emit IRevenueEscrow.Recovered(networkFee, newFeeSafe, address(usdc), 250e6, 250e6);
         vm.prank(hotAdmin);
@@ -109,7 +109,7 @@ contract EscrowRecoveryTest is IntegrationBase {
     function test_GovernanceCannotMoveTheCreditWithoutConsent() public {
         _soldWhileBlocked();
         _schedule(hotAdmin, address(escrow), _recoverCall());
-        vm.warp(block.timestamp + Roles.FUNDS);
+        vm.warp(block.timestamp + Roles.DELAY_3D);
         vm.prank(hotAdmin);
         vm.expectRevert(
             abi.encodeWithSelector(

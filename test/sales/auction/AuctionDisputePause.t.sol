@@ -90,7 +90,7 @@ contract AuctionDisputePauseTest is IntegrationBase {
         // UNPAUSER resumes after its 48 hours.
         bytes memory resume = abi.encodeCall(auction.resume, (saleId));
         _schedule(hotAdmin, address(auction), resume);
-        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.warp(block.timestamp + Roles.DELAY_24H);
         vm.expectEmit(address(auction));
         emit IEnglishAuction.AuctionResumed(saleId, uint64(block.timestamp + AUCTION_DURATION));
         vm.prank(hotAdmin);
