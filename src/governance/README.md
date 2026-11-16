@@ -79,11 +79,29 @@ tests check.
 - **Handed over** means `successor != 0`; `canCall` and `hasRole` then answer nothing, which shuts
   every other path. `migrate` keeps no state: progress is each target's own `authority()`.
 
-- **`WorksAccessManager` changes OpenZeppelin behavior in four places only.** Rules 2 and 3
-  depend on the operation's arguments and scheduler, which no per-selector setting can express;
-  keep them in `_canCancel`. Upgrading OpenZeppelin means rechecking that `renounceRole` still
-  reaches `_revokeRole`, that `multicall` and nested `execute` still cannot carry a revocation
-  (GV-3), and the readback getters `verify` relies on.
+- **Where `WorksAccessManager` changes OpenZeppelin, and what each change relies on.** Rules 2
+  and 3 depend on the operation's arguments and scheduler, which no per-selector setting can
+  express; keep them in `_canCancel`. Upgrading OpenZeppelin means rechecking each override
+  against the upstream behavior it depends on:
+  - `canCall`, `hasRole`: answer nothing once handed over; `hasRole` hides a suspended holder.
+  - `schedule`: adds the slow and escalated delays by raising `when` before `super.schedule`,
+    so it relies on upstream accepting a later `when` and on its own setback and minimum-delay
+    handling; records the escalation from the nonce `super.schedule` returns.
+  - `cancel`, `_canCancel`: the vote counts on `hashOperation`, `getNonce` and `getSchedule`
+    (an escalation is live only for the current nonce of a scheduled operation) and on
+    `super.cancel` calling `_canCancel` before it clears the schedule.
+  - `consumeScheduledOp`, `_consumeScheduledOp`: record admin activity around upstream
+    consumption; `execute` must keep reaching `_consumeScheduledOp`.
+  - `_grantRole`, `_revokeRole`: seat caps, class delays, serials and suspension lifts rely on
+    `_grantRole`'s `newMember` return and on `renounceRole` reaching `_revokeRole`.
+  - `_setTargetFunctionRole`, `_setTargetAdminDelay`, `_setTargetClosed`: the managed-target
+    list and the refusal to remap or close the manager rely on the public setters routing
+    through these hooks.
+  - `migrate` calls each target's stock `AccessManaged.setAuthority` directly, and
+    `acceptSuccession` reads the probe's `authority()` after the successor's own
+    `setAuthority`: both rely on that function accepting only the current authority as caller.
+  - `multicall` and nested `execute` still cannot carry a revocation (GV-3), and the readback
+    getters `verify` relies on keep their shapes.
 - **The `Multicall` exemption.** OpenZeppelin `Multicall`'s self-`delegatecall` is the one
   sanctioned exception to the no-delegatecall rule; `tools/check_budgets.py` scans only
   `src/`, so it does not see it (LIM-GV-8).

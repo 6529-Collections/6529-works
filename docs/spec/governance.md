@@ -184,9 +184,13 @@ restrictions:
 
 1. **Rule 1: any active `GUARDIAN` holder can cancel any scheduled operation,** on any target,
    the manager included.
-2. **Rule 2: nobody but its scheduler can cancel an operation that revokes one of the
-   canceller's own roles.** It covers every role and every canceller, `ADMIN` included. A
-   scheduler may still withdraw its own proposal, even one that removes itself.
+2. **Rule 2: outside the escalated lane, nobody but its scheduler can cancel an operation that
+   revokes one of the canceller's own roles.** It covers every role and every canceller,
+   `ADMIN` included. A scheduler may still withdraw its own proposal, even one that removes
+   itself. In the [escalated lane](#bounded-veto-and-the-escalated-lane) a cancellation is a
+   guardian-majority decision instead, in which the guardian a removal names votes with its
+   seat like any other seated guardian and never decides alone (a majority of the seats and
+   at least two votes); Rule 2 does not apply there.
 3. **Rule 3: a `revokeRole` on the manager that another account scheduled can be cancelled
    only by an active guardian.** No admin can cancel it, Rule 2 still bars the account it
    names, and its scheduler may cancel its own.
@@ -339,8 +343,21 @@ everything except two protected actions, and bounds it there:
   operation is scheduled: a guardian seated later cannot vote, and the vote of one removed later
   still counts.
 - **The named guardian votes.** In its own removal a guardian votes with its seat, so an honest
-  majority always stops a compromised admin. Rule 2 still bars it from cancelling alone, and no
-  single guardian ever decides alone.
+  majority always stops a compromised admin. This is where Rule 2 gives way: the lane's
+  decision is the majority's, the named guardian's vote counts like any other, and no single
+  guardian ever decides alone. Excluding that vote (the 16 November 2026 automated review's
+  variant) shifts both thresholds by one vote and is better in neither direction at every seat
+  count: with s seats and the named guardian's vote counted, a compromised admin with d
+  dishonest guardians is stopped when s - d > s/2, and c colluders shield one of them when
+  c > s/2. Without it (seats still counted) the honest side needs s - d - 1 > s/2 and the
+  colluders c - 1 > s/2; with the named seat also left out of the count, s - d - 1 > (s - 1)/2
+  and c - 1 > (s - 1)/2. At 3 seats the variants let a compromised admin with one dishonest
+  guardian remove the honest ones (the honest votes are one, not a majority), in exchange for
+  stopping a colluding pair; at 4 seats the first variant is worse against the admin (two
+  honest votes of four are no majority) and the second is the same as counting the vote; at 5
+  and 7 seats either variant protects against one fewer dishonest guardian in exchange for
+  needing one more colluder. Since no variant is better in one direction without being worse
+  in the other, the named guardian keeps its vote.
 
 | Guardian seats | Majority | Two colluding guardians | A compromised admin with one dishonest guardian |
 | --- | --- | --- | --- |
