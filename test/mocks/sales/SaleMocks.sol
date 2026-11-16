@@ -314,6 +314,12 @@ contract MockFederationRegistry is IFederationRegistry {
         return _entries[token].status == Status.ACTIVE;
     }
 
+    function reinstateTemplate(bytes32) external { }
+
+    function entropyModule() external pure returns (address) {
+        return address(0);
+    }
+
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return interfaceId == type(IFederationRegistry).interfaceId || interfaceId == 0x01ffc9a7;
     }

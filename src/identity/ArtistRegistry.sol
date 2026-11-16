@@ -6,6 +6,7 @@ import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IArtistPayoutResolver } from "../economics/interfaces/IArtistPayoutResolver.sol";
 import { ISplitFactory } from "../economics/interfaces/ISplitFactory.sol";
+import { IAccounts } from "../interfaces/IAccounts.sol";
 import { IArtistRegistry, IConsolidationSource } from "../interfaces/IArtistRegistry.sol";
 import { IArtistRoleResolver } from "../interfaces/IArtistRoleResolver.sol";
 import { IEditions } from "../interfaces/IEditions.sol";
@@ -120,7 +121,7 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      Federation directory (ADR 0001 section 16): one entry per federated token, written by the
 ///      current federation registry except LEFT, which only the token writes. Nothing that decides
 ///      an identity, a payout or standing reads it.
-contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
+contract ArtistRegistry is IArtistRegistry, IAccounts, AccessManaged, EIP712 {
     // Floors and ceilings of the governed waits. Each floor is the genesis value and the
     // guarantee artists rely on (never shorter); each ceiling bounds lengthening, which would
     // otherwise let governance stretch a payout freeze, a restraint or a stale wallet's standing.
@@ -157,6 +158,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     struct Listing {
         uint160 artistId;
         FederationStatus status;
+        uint32 feeShare;
     }
 
     mapping(address token => Listing) private _listings;
@@ -580,7 +582,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         ) revert FederatedContractRefused(token);
         // A registered artist's ID is the uint160 of its first authority.
         // forge-lint: disable-next-line(unsafe-typecast)
-        _listings[token] = Listing(uint160(artistId), FederationStatus.ACTIVE);
+        _listings[token] = Listing(uint160(artistId), FederationStatus.ACTIVE, listing.feeShare);
         emit FederatedContractListed(
             artistId,
             token,
@@ -715,6 +717,60 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     {
         Listing storage l = _listings[token];
         return (l.artistId, l.status);
+    }
+
+    // ----- LANE-6 LOCAL STAND-IN for lane 1's IAccounts (replaced at integration) -----
+
+    /// @inheritdoc IAccounts
+    /// @dev Stand-in: the root only (tests add wallets by mocking this call).
+    function isWallet(uint256 accountId, address wallet) external view returns (bool) {
+        address root = _artists[accountId].authority == address(0)
+            ? address(uint160(accountId))
+            : _active(accountId);
+        return wallet != address(0) && wallet == root;
+    }
+
+    /// @inheritdoc IAccounts
+    function requireSigned(uint256 accountId, bytes32 digest, bytes calldata proof)
+        public
+        view
+        returns (address wallet)
+    {
+        wallet = address(bytes20(proof[:20]));
+        if (!this.isWallet(accountId, wallet)) revert SignatureVerifier.InvalidSignature(wallet);
+        SignatureVerifier.check(wallet, digest, proof[20:]);
+    }
+
+    /// @inheritdoc IAccounts
+    function requireConsent(uint256 accountId, bytes32 what, bytes calldata proof)
+        external
+        view
+        returns (address)
+    {
+        return requireSigned(accountId, consentDigest(msg.sender, what), proof);
+    }
+
+    /// @inheritdoc IAccounts
+    function consentDigest(address subject, bytes32 what) public view returns (bytes32) {
+        return _hashTypedDataV4(
+            keccak256(abi.encode(keccak256("Consent(address subject,bytes32 what)"), subject, what))
+        );
+    }
+
+    /// @inheritdoc IAccounts
+    function frozenUntil(uint256) external pure returns (uint48) {
+        return 0;
+    }
+
+    /// @inheritdoc IAccounts
+    /// @dev Stand-in: never (tests mock `federatedListing` for an account delisting).
+    function isFederationDelisted(uint256) external pure returns (bool) {
+        return false;
+    }
+
+    /// @inheritdoc IAccounts
+    function federatedFeeShare(address token) external view returns (uint32) {
+        return _listings[token].feeShare;
     }
 
     /// @inheritdoc IArtistRegistry

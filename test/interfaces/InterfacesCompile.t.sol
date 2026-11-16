@@ -73,8 +73,8 @@ contract InterfacesCompileTest is Test {
         );
         assertEq(type(IArtistRegistry).interfaceId, bytes4(0x8efc5e8c), "IArtistRegistry");
         assertEq(type(IConsolidationSource).interfaceId, bytes4(0x88836e34), "IConsolidationSource");
-        assertEq(type(IEntropyModule).interfaceId, bytes4(0x14c06eb4), "IEntropyModule");
-        assertEq(type(IFederationRegistry).interfaceId, bytes4(0xc32f19cd), "IFederationRegistry");
+        assertEq(type(IEntropyModule).interfaceId, bytes4(0xa8a2a007), "IEntropyModule");
+        assertEq(type(IFederationRegistry).interfaceId, bytes4(0x279a77ec), "IFederationRegistry");
     }
 
     /// @dev The mint surface stays small: four adapter calls plus the admitted-minter mapping.
