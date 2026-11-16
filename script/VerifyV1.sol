@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { AuthorityUtils } from "@openzeppelin/contracts/access/manager/AuthorityUtils.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
+import { FederationRegistry } from "src/federated/FederationRegistry.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
@@ -19,9 +20,13 @@ import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import {
     PRODUCT_EDITIONS,
     PRODUCT_FEDERATED,
-    PRODUCT_STREAM
+    PRODUCT_STREAM,
+    ProductEconomics
 } from "src/interfaces/types/EconomicsTypes.sol";
+import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
+import { FederatedDeployer } from "src/federated/FederatedDeployer.sol";
+import { SSTORE2 } from "src/libraries/SSTORE2.sol";
 import { EnglishAuctionLens } from "src/sales/EnglishAuctionLens.sol";
 import { DeployV1 } from "./DeployV1.sol";
 
@@ -73,6 +78,13 @@ library VerifyV1 {
     /// @notice The English auction's `lens()` is not the recorded lens, or the lens has no code
     ///         or other dependencies than the recorded deployment's.
     error LensMismatch(address recorded, address actual);
+    /// @notice The federation's genesis state is not the recorded deployment's: `what` names
+    ///         the check (ADR 0008).
+    error FederationMismatch(string what);
+
+    /// @notice The network share every federated contract must lock to join at genesis
+    ///         (`EconomicsResolver`'s `PRODUCT_FEDERATED` share, 10%).
+    uint32 internal constant FEDERATED_SHARE = 10_000;
 
     /// @notice Every contract in `recorded` is at the address `predicted` computes
     ///         (`DeployV1.predict` from the recorded constructor parameters), and nothing is
@@ -268,6 +280,140 @@ library VerifyV1 {
         }
         checkPlatformPath(d, cfg);
         checkEditionAuctionLens(d);
+        checkFederation(d);
+    }
+
+    /// @notice The federation's genesis state (ADR 0008): the artist registry is bound to the
+    ///         recorded federation registry (the one-shot genesis bind) and the English auction
+    ///         names it with its code hash pinned; the registry admits exactly the English
+    ///         auction and the federated edition auction (both read back), and approves the two
+    ///         v1 template code hashes this build computes (`DeployV1.templateCodeHash`), version
+    ///         1, as the ERC-721 and the ERC-1155; the federated edition auction pins the recorded
+    ///         lens, whose English auction and escrow are the deployment's; and the economics
+    ///         resolver's federated product pays 10% to the fee recipient's vault, the terms a
+    ///         template must lock to join. Genesis readback: a later governed change (a
+    ///         revocation, a new adapter, a new fee) fails it by design. Skipped where no
+    ///         federation registry was deployed.
+    function checkFederation(DeployV1.Deployment memory d) internal view {
+        FederationRegistry registry = d.federationRegistry;
+        if (address(registry) == address(0)) return;
+        if (d.artistRegistry.federationRegistry() != address(registry)) {
+            revert FederationMismatch("ArtistRegistry.federationRegistry");
+        }
+        address english = address(d.englishAuction);
+        if (_getter(english, "federationRegistry()") != address(registry)) {
+            revert FederationMismatch("EnglishAuction.federationRegistry");
+        }
+        (bool ok, bytes memory ret) =
+            english.staticcall(abi.encodeWithSignature("federationRegistryCodeHash()"));
+        if (!ok || ret.length != 32 || abi.decode(ret, (bytes32)) != address(registry).codehash) {
+            revert FederationMismatch("EnglishAuction.federationRegistryCodeHash");
+        }
+        if (
+            !registry.isAdmittedAdapter(english)
+                || !registry.isAdmittedAdapter(address(d.federatedEditionAuction))
+        ) revert FederationMismatch("admitted adapters");
+        if (registry.contentStore() != address(d.contentStore)) {
+            revert FederationMismatch("FederationRegistry.contentStore");
+        }
+        checkTemplate(
+            registry,
+            "FederatedStream",
+            DeployV1.templateCodeHash("FederatedStream"),
+            address(d.federatedStreamDeployer),
+            DeployV1.templateCodeHash("FederatedStream.creationCode"),
+            IFederationRegistry.Form.ERC721
+        );
+        checkTemplate(
+            registry,
+            "FederatedEditions",
+            DeployV1.templateCodeHash("FederatedEditions"),
+            address(d.federatedEditionsDeployer),
+            DeployV1.templateCodeHash("FederatedEditions.creationCode"),
+            IFederationRegistry.Form.ERC1155
+        );
+        address lens = d.federatedEditionAuction.lens();
+        IUniformEditionAuctionLens l = IUniformEditionAuctionLens(lens);
+        if (
+            lens != d.federatedEditionAuctionLens || lens.code.length == 0
+                || l.englishAuction() != english || l.escrow() != address(d.revenueEscrow)
+        ) revert FederationMismatch("FederatedEditionAuction.lens");
+        ProductEconomics memory e = d.economicsResolver.economics(PRODUCT_FEDERATED);
+        if (e.feeRecipient != address(d.feeRecipientVault) || e.feeShare != FEDERATED_SHARE) {
+            revert FederationMismatch("PRODUCT_FEDERATED economics");
+        }
+    }
+
+    /// @notice A template version is approved as built: version 1 of `form`, runtime code hash
+    ///         `codeHash` bound to the recorded `deployer`, whose runtime code is this build's
+    ///         `FederatedDeployer` (no owner, role, fee or upgrade: it can only deploy its one
+    ///         creation code and record each copy) and whose creation code, read back from its
+    ///         data contracts and rehashed, is `creationHash`. A build whose sources or metadata
+    ///         differ from the genesis build computes other hashes and fails
+    ///         (`FederationMismatch(name)`).
+    /// @param registry The federation registry.
+    /// @param name The template's name, for the error.
+    /// @param codeHash The build's runtime code hash.
+    /// @param deployer The recorded deployer of the template.
+    /// @param creationHash The build's creation code hash.
+    /// @param form Its form.
+    function checkTemplate(
+        FederationRegistry registry,
+        string memory name,
+        bytes32 codeHash,
+        address deployer,
+        bytes32 creationHash,
+        IFederationRegistry.Form form
+    ) internal view {
+        FederationRegistry.Template memory t = registry.templateOf(codeHash);
+        bool ok = t.status == FederationRegistry.TemplateStatus.APPROVED && t.version == 1
+            && t.form == form && t.deployer == deployer
+            && deployer.codehash == keccak256(type(FederatedDeployer).runtimeCode);
+        if (ok) {
+            address[] memory pointers = FederatedDeployer(deployer).codeOf();
+            bytes memory code;
+            for (uint256 i; i < pointers.length; ++i) {
+                code = bytes.concat(code, SSTORE2.read(pointers[i]));
+            }
+            ok = keccak256(code) == creationHash
+                && FederatedDeployer(deployer).creationHash() == creationHash;
+        }
+        if (!ok) revert FederationMismatch(name);
+    }
+
+    /// @notice Run immediately before executing a federation-registry switch (the script
+    ///         README's replacement procedure, step 4): `successor` answers as `predecessor` for
+    ///         every template code hash in `codeHashes` (`templateOf`: version, form, status and
+    ///         deployer) and every adapter in `adapters` (`isAdmittedAdapter`). The switch's
+    ///         setters check only the expected pointer and ERC-165, so a revocation, suspension
+    ///         or adapter change on the predecessor during the 30-day delay is caught only here
+    ///         (`FederationMismatch("templateOf")` or `("isAdmittedAdapter")`). Read before the
+    ///         switch: `templateOf` and `isAdmittedAdapter` are each registry's own tables.
+    /// @param predecessor The federation registry the artist registry names now.
+    /// @param successor The registry the switch installs.
+    /// @param codeHashes Every template code hash the predecessor has approved, suspended or
+    ///        revoked.
+    /// @param adapters Every adapter either registry has admitted.
+    function checkSuccessorParity(
+        FederationRegistry predecessor,
+        FederationRegistry successor,
+        bytes32[] memory codeHashes,
+        address[] memory adapters
+    ) internal view {
+        for (uint256 i; i < codeHashes.length; ++i) {
+            if (
+                keccak256(abi.encode(predecessor.templateOf(codeHashes[i])))
+                    != keccak256(abi.encode(successor.templateOf(codeHashes[i])))
+            ) revert FederationMismatch("templateOf");
+        }
+        for (uint256 i; i < adapters.length; ++i) {
+            if (
+                predecessor.isAdmittedAdapter(adapters[i])
+                    != successor.isAdmittedAdapter(adapters[i])
+            ) {
+                revert FederationMismatch("isAdmittedAdapter");
+            }
+        }
     }
 
     /// @notice The edition auction's lens is the one its constructor pinned and the record
@@ -337,6 +483,18 @@ library VerifyV1 {
                 ok = IMintTarget(target).isAdmittedMinter(arg) == (_word(data, 1) != 0);
             } else if (selector == ISaleAdapter.setTarget.selector) {
                 ok = ISaleAdapter(target).isTarget(arg) == (_word(data, 1) != 0);
+            } else if (selector == ISaleAdapter.setFederationRegistry.selector) {
+                address next = address(uint160(uint256(_word(data, 1))));
+                ok = _getter(target, "federationRegistry()") == next;
+            } else if (selector == FederationRegistry.setAdapter.selector) {
+                ok = FederationRegistry(target).isAdmittedAdapter(arg) == (_word(data, 1) != 0);
+            } else if (selector == FederationRegistry.approveTemplate.selector) {
+                FederationRegistry.Template memory t =
+                    FederationRegistry(target).templateOf(_word(data, 0));
+                ok = t.status == FederationRegistry.TemplateStatus.APPROVED
+                    && t.deployer == address(uint160(uint256(_word(data, 1))))
+                    && t.version == uint256(_word(data, 2))
+                    && uint256(t.form) == uint256(_word(data, 3));
             } else {
                 revert UnknownWiringSelector(selector);
             }

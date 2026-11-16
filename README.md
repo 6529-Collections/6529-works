@@ -4,9 +4,11 @@
 
 6529 Works is the 6529 network's art protocol. It holds two products: **6529 Stream**, one
 shared ERC-721 for curated 1/1 artworks, and **6529 Stream Editions**, one shared ERC-1155
-whose editions are each anchored by a Stream master. Works are approved by TDH-weighted votes on
-6529's Main Stage, the only way in, and attested by a curation signer; every party named in a work signs before it
-can be sold. Anyone may start a work's 24-hour English auction, and anyone may settle it.
+whose editions are each anchored by a Stream master. Curated Stream works are approved by
+TDH-weighted votes on 6529's Main Stage, the only way into the shared contracts, and attested by
+a curation signer; every party named in a curated work signs before it can be sold. A separate
+lane, 6529 Stream Federated, lists artists' own contracts built from the network's templates
+without that vote, signer or party consent ([ADR 0008](docs/adr/0008-federation.md)). Anyone may start a work's 24-hour English auction, and anyone may settle it.
 Money moves by pull: proceeds and royalties collect in immutable split wallets that payees
 release from, with an escrow for payments that fail. Content is addressed by hash and stored on
 Arweave and IPFS, and anyone can put a work's files on-chain. One OpenZeppelin `AccessManager`
@@ -84,11 +86,11 @@ products pay 75% to the artist's side and 25% to the network, and royalties are 
 | [`PackageRegistry`](src/curation/README.md) | Stream's replaceable mint policy: package roots, party consent, the move signature, consume-once items, content uniqueness | 402 |
 | [`Eip712CurationVerifier`](src/curation/README.md) | Accepts curation signers' EIP-712 approvals | 103 |
 | [`EnglishAuction`](src/sales/README.md), [`EnglishAuctionLens`](src/sales/README.md) | Stream's primary sale: anti-snipe clock, pull refunds, pending claims, dispute pause; its views answered by a lens | 898 + 342 |
-| [`UniformEditionAuction`](src/sales/README.md), [`UniformEditionAuctionLens`](src/sales/README.md) | The edition auction: firm ETH bids on a step ladder beside the 1/1, one clearing price, FIFO at a capped step, claims | 919 + 882 |
+| [`UniformEditionAuction`](src/sales/README.md), [`UniformEditionAuctionLens`](src/sales/README.md) | The edition auction: firm ETH bids on a step ladder beside the 1/1, one clearing price, FIFO at a capped step, claims | 982 + 932 |
 | [`EconomicsResolver`](src/economics/README.md), [`AssetAllowlist`](src/economics/README.md) | Terms for new works, fee recipients, currencies and increment floors | 212 + 154 |
 | [`SplitLedger`](src/economics/README.md), [`SplitVault`](src/economics/README.md) | One permanent ledger for every split wallet (66-byte vaults at predicted addresses), its accounting and signed releases | 264 + 8 |
 | [`RevenueEscrow`](src/economics/README.md), [`ClaimRouter`](src/economics/README.md), [`GovernedVault`](src/economics/README.md) | Failed-payment escrow, batch claims, the fee recipient's and museum's governed vaults | 122 + 148 + 108 |
-| [`ArtistRegistry`](src/identity/README.md), [`ConsolidationAdapter`](src/identity/README.md) | Permanent artist identity and payouts, governed recovery timers, the federation directory; consolidations through the adapter | 724 + 133 |
+| [`ArtistRegistry`](src/identity/README.md), [`ConsolidationAdapter`](src/identity/README.md) | Permanent artist identity and payouts, governed recovery timers, the federation directory; consolidations through the adapter | 746 + 133 |
 | [`ContentStore`](src/content/README.md), [`DependencyRegistry`](src/content/README.md) | Content-addressed on-chain chunks and shared libraries | 436 + 66 |
 | [`Renderer`](src/content/README.md) | `tokenURI` and `fullTokenURI` for works and editions | 761 |
 | [`StatementLog`](src/records/README.md) | Append-only signed statements: dispute outcomes, curation evidence, manifests | 309 |
@@ -100,7 +102,7 @@ file, its bytecode size and how the figures are measured; `tools/check_docs_fact
 both pages in step with the code. Shared code lives in internal
 [libraries](src/libraries/README.md) and the [interfaces](src/interfaces/README.md); nothing is
 linked, proxied or `delegatecall`ed. 6529 Stream Federated (artist-owned contracts from the
-network's templates) is in v1, specified by a later ADR ([ADR 0007](docs/adr/0007-permanence.md); [federated](src/federated/README.md)).
+network's templates) is in v1, specified by [ADR 0008](docs/adr/0008-federation.md) ([ADR 0007](docs/adr/0007-permanence.md) for the permanent directory; [federated](src/federated/README.md)).
 
 ## Status
 

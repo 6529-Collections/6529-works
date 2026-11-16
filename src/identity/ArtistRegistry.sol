@@ -559,55 +559,72 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     /// @inheritdoc IArtistRegistry
     /// @dev Writes only the token's own entry: nothing that decides an identity, a payout or
     ///      standing reads it. No list and no cap: each listing is its own slot, paid by its
-    ///      registrant; enumeration is by events.
-    function listFederatedContract(
-        uint256 artistId,
-        address token,
-        uint8 form,
-        address partner,
-        uint32 feeShare,
-        address feeRecipient
-    ) external {
+    ///      registrant; enumeration is by events. The consent is verified against the active
+    ///      authority (zero, so never valid, while a recovery override restrains it); a listing
+    ///      happens once per token, so the signature needs no nonce.
+    function listFederatedContract(FederatedListing calldata listing, bytes calldata consent)
+        external
+    {
         if (msg.sender != federationRegistry) revert UnboundCaller(msg.sender);
+        uint256 artistId = listing.artistId;
+        address token = listing.token;
         _artist(artistId);
+        SignatureVerifier.checkDeadline(listing.deadline);
+        SignatureVerifier.check(_active(artistId), _listingDigest(listing), consent);
         address s = stream;
         address e = IStream(s).editions();
         if (
             _listings[token].status != FederationStatus.NONE || !Dependency.isInstallable(token)
-                || _canonical(token, s, e) || _canonical(partner, s, e)
-                || _canonical(feeRecipient, s, e)
+                || _canonical(token, s, e) || _canonical(listing.partner, s, e)
+                || _canonical(listing.feeRecipient, s, e)
         ) revert FederatedContractRefused(token);
         // A registered artist's ID is the uint160 of its first authority.
         // forge-lint: disable-next-line(unsafe-typecast)
         _listings[token] = Listing(uint160(artistId), FederationStatus.ACTIVE);
         emit FederatedContractListed(
-            artistId, token, token.codehash, form, partner, feeShare, feeRecipient
+            artistId,
+            token,
+            token.codehash,
+            listing.form,
+            listing.partner,
+            listing.feeShare,
+            listing.feeRecipient
         );
     }
 
     /// @inheritdoc IArtistRegistry
+    /// @dev LEFT_DELISTED is terminal: the contract left, so a relisting has nothing to restore
+    ///      that its exit had not already ended for new sales.
     function setFederatedStatus(address token, FederationStatus status, bytes32 ref) external {
         if (msg.sender != federationRegistry) revert UnboundCaller(msg.sender);
         Listing storage l = _listings[token];
         FederationStatus current = l.status;
-        if (
-            current == FederationStatus.NONE || current == FederationStatus.LEFT
+        FederationStatus next = status;
+        if (current == FederationStatus.LEFT && status == FederationStatus.DELISTED) {
+            next = FederationStatus.LEFT_DELISTED;
+        } else if (
+            (current != FederationStatus.ACTIVE && current != FederationStatus.DELISTED)
                 || (status != FederationStatus.ACTIVE && status != FederationStatus.DELISTED)
-        ) revert FederatedStatusRefused(token, current);
-        l.status = status;
-        emit FederatedContractStatus(token, l.artistId, current, status, ref);
+        ) {
+            revert FederatedStatusRefused(token, current);
+        }
+        l.status = next;
+        emit FederatedContractStatus(token, l.artistId, current, next, ref);
     }
 
     /// @inheritdoc IArtistRegistry
+    /// @dev An exit never makes a contract more served than it was: from DELISTED it is
+    ///      LEFT_DELISTED, which no federation registry may serve.
     function recordFederationExit() external {
         Listing storage l = _listings[msg.sender];
         FederationStatus current = l.status;
         if (current == FederationStatus.NONE) revert FederatedStatusRefused(msg.sender, current);
-        if (current == FederationStatus.LEFT) return;
-        l.status = FederationStatus.LEFT;
-        emit FederatedContractStatus(
-            msg.sender, l.artistId, current, FederationStatus.LEFT, bytes32(0)
-        );
+        if (current >= FederationStatus.LEFT) return;
+        FederationStatus next = current == FederationStatus.DELISTED
+            ? FederationStatus.LEFT_DELISTED
+            : FederationStatus.LEFT;
+        l.status = next;
+        emit FederatedContractStatus(msg.sender, l.artistId, current, next, bytes32(0));
     }
 
     // ----- reads -----
@@ -737,6 +754,23 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
                 )
             )
         );
+    }
+
+    /// @dev The EIP-712 digest an artist's active authority signs to consent to a token's
+    ///      listing under the artist, with these facts: `Typehashes.FEDERATED_LISTING` over the
+    ///      struct's seven words, in this registry's domain (`eip712Domain`).
+    ///      The struct is static, so its seven calldata words are hashed as they are: words that
+    ///      are not canonically encoded only fail the signature check.
+    function _listingDigest(FederatedListing calldata listing) private view returns (bytes32) {
+        bytes32 typehash = Typehashes.FEDERATED_LISTING;
+        bytes32 structHash;
+        assembly ("memory-safe") {
+            let ptr := mload(0x40)
+            mstore(ptr, typehash)
+            calldatacopy(add(ptr, 0x20), listing, 0xe0)
+            structHash := keccak256(ptr, 0x100)
+        }
+        return _hashTypedDataV4(structHash);
     }
 
     /// @inheritdoc IArtistRegistry

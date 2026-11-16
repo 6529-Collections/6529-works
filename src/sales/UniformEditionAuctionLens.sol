@@ -25,8 +25,9 @@ import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { StreamLayout } from "../stream/StreamLayout.sol";
 import { UniformClearing } from "./UniformClearing.sol";
 
-/// @title UniformEditionAuctionLens
-/// @notice The read side of {UniformEditionAuction}: every view of a sale and of the adapter's
+/// @title UniformEditionAuctionLensBase
+/// @notice The read side of {UniformEditionAuctionBase}, shared by the lens of each deployment
+///         ({UniformEditionAuctionLens}, {FederatedEditionAuctionLens}): every view of a sale and of the adapter's
 ///         settings, computed from the adapter's storage words with the clearing code its
 ///         settlement runs, and the master and abandonment checks its `open` and `abandon`
 ///         consult. See {IUniformEditionAuctionLens}.
@@ -47,10 +48,8 @@ import { UniformClearing } from "./UniformClearing.sol";
 ///      clock, and 6529 Stream's settlement record in the abandonment check) use
 ///      `BoundedCall`'s forward-all reads, which revert with `BoundedCallShortfall` when a
 ///      failure left at most 1/8 of the gas: a shortfall is never read as a refusal.
-contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
-    address private immutable _editions;
-    address private immutable _stream;
-    address private immutable _englishAuction;
+abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
+    address internal immutable _englishAuction;
     address private immutable _escrow;
 
     /// @dev Departure log entries in a step's head word; four in each word after it.
@@ -72,25 +71,11 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
     /// @inheritdoc IUniformEditionAuctionLens
     uint32 public constant DEFAULT_CLOSE_OFFSET = type(uint32).max;
 
-    /// @param editions_ The adapter's 6529 Stream Editions.
-    /// @param stream_ Its 6529 Stream.
     /// @param englishAuction_ The adapter's English auction.
     /// @param escrow_ The adapter's revenue escrow.
-    constructor(address editions_, address stream_, address englishAuction_, address escrow_) {
-        _editions = editions_;
-        _stream = stream_;
+    constructor(address englishAuction_, address escrow_) {
         _englishAuction = englishAuction_;
         _escrow = escrow_;
-    }
-
-    /// @inheritdoc IUniformEditionAuctionLens
-    function editions() external view returns (address) {
-        return _editions;
-    }
-
-    /// @inheritdoc IUniformEditionAuctionLens
-    function stream() external view returns (address) {
-        return _stream;
     }
 
     /// @inheritdoc IUniformEditionAuctionLens
@@ -112,15 +97,18 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         external
         returns (MasterTerms memory m)
     {
-        if (id > type(uint32).max) revert ISaleAdapter.InvalidSaleTerms(token, id);
-        (m.oneOfOneEnd, m.oneOfOneState) = _oneOfOne(token, id);
+        if (id > type(uint32).max || !_sells(token)) {
+            revert ISaleAdapter.InvalidSaleTerms(token, id);
+        }
+        address master = _masterFor(token);
+        (m.oneOfOneEnd, m.oneOfOneState) = _oneOfOne(token, master, id);
         PackageItem memory item = abi.decode(data, (PackageItem));
         EditionTerms memory e = item.edition;
-        (bytes32 itemHash,,, uint8 kind,,) = IStream(_stream).coreOf(id);
+        (bytes32 itemHash,,, uint8 kind,,) = IStream(master).coreOf(id);
         if (
-            token != _editions || kind != uint8(ItemKind.EDITION_MASTER)
-                || WorksHashing.itemHash(item) != itemHash || e.saleKind != SaleKind.UNIFORM_AUCTION
-                || e.currency != CURRENCY_ETH || (e.params.length != 0 && e.params.length != 32)
+            kind != uint8(ItemKind.EDITION_MASTER) || WorksHashing.itemHash(item) != itemHash
+                || e.saleKind != SaleKind.UNIFORM_AUCTION || e.currency != CURRENCY_ETH
+                || (e.params.length != 0 && e.params.length != 32)
         ) revert ISaleAdapter.InvalidSaleTerms(token, id);
         m.closeOffset = _closeOffset(token, id, e.params);
         m.maxCount = e.maxCount;
@@ -128,9 +116,8 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         // No payment from this sale may reach an undeployed wallet (rule 4: no fund movement
         // depends on the future price of deploying code): deploy the seller's split wallet now,
         // before anything is owed to it, and the royalty receiver's, before any copy can trade.
-        // A wallet the ledger already deployed is confirmed, not deployed again. The resolver's
-        // factory is 6529 Stream's own: Stream refuses a replacement that names another.
-        address factory = IEconomicsResolver(IStream(_stream).economics()).splitFactory();
+        // A wallet the ledger already deployed is confirmed, not deployed again.
+        address factory = _factory(token);
         _deployWallet(factory, item.payees, w.seller, token, id);
         if (w.royaltyReceiver != w.seller) {
             _deployWallet(
@@ -147,22 +134,22 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
     ///      NONE or CANCELLED (`NoOneOfOneAuction`), and the 32-bit bounds of an open: a 1/1 end
     ///      or a time of 2^32 or more is refused (`InvalidSaleTerms`), as is an ID (checked
     ///      first by `masterTerms`).
-    function _oneOfOne(address token, uint256 id)
+    function _oneOfOne(address token, address master, uint256 id)
         private
         view
         returns (uint64, IEnglishAuction.AuctionState)
     {
         (bool answered, bytes memory clock) = BoundedCall.tryReadAll(
             _englishAuction,
-            abi.encodeCall(IEnglishAuctionClock.auctionClock, (_saleIdOf(_stream, id))),
+            abi.encodeCall(IEnglishAuctionClock.auctionClock, (_saleIdOf(master, id))),
             96
         );
         if (!answered || clock.length != 96) {
-            revert IUniformEditionAuction.NoOneOfOneAuction(_stream, id);
+            revert IUniformEditionAuction.NoOneOfOneAuction(master, id);
         }
         (uint256 state, uint256 endTime,) = abi.decode(clock, (uint256, uint256, uint256));
         if (state == uint256(IEnglishAuction.AuctionState.CANCELLED) || state > 5) {
-            revert IUniformEditionAuction.NoOneOfOneAuction(_stream, id);
+            revert IUniformEditionAuction.NoOneOfOneAuction(master, id);
         }
         // forge-lint: disable-next-line(block-timestamp)
         if (endTime > type(uint32).max || block.timestamp > type(uint32).max) {
@@ -183,8 +170,8 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         view
         returns (WorkTerms memory w)
     {
-        if (IEditions(_editions).exists(id)) {
-            IEditions.Edition memory locked = IEditions(_editions).edition(id);
+        if (IEditions(token).exists(id)) {
+            IEditions.Edition memory locked = IEditions(token).edition(id);
             w = WorkTerms(
                 locked.seller,
                 locked.feeRecipient,
@@ -193,8 +180,7 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
                 locked.royaltyRate
             );
         } else {
-            w = IEconomicsResolver(IStream(_stream).economics())
-                .newWorkTerms(PRODUCT_EDITIONS, payees);
+            w = _newTerms(token, payees);
         }
         if (
             w.seller == address(0) || w.seller == _escrow || w.feeShare > Splits.DENOMINATOR
@@ -259,9 +245,11 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         ) return (false, 0);
         IStorage.PayoutWord memory p = _payout(saleId);
         uint256 oneEnd = a.oneOfOneEnd;
+        address token = _tokenOfSale(saleId);
+        address master = _masterFor(token);
         (bool answered, bytes memory clock) = BoundedCall.tryReadAll(
             _englishAuction,
-            abi.encodeCall(IEnglishAuctionClock.auctionClock, (_saleIdOf(_stream, p.id))),
+            abi.encodeCall(IEnglishAuctionClock.auctionClock, (_saleIdOf(master, p.id))),
             96
         );
         if (answered && clock.length == 96) {
@@ -274,46 +262,17 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
             // Settled with its master, and the edition created: the sale settles as usual
             // (`settle`). Without the edition, a sale with winners can never clear.
             if (
-                state == uint256(IEnglishAuction.AuctionState.SETTLED) && _masterSettled(p.id)
-                    && IEditions(_editions).exists(p.id)
+                state == uint256(IEnglishAuction.AuctionState.SETTLED)
+                    && _masterSettled(master, p.id) && _editionExists(token, p.id)
             ) return (false, 0);
             if (end > oneEnd && end <= type(uint32).max) oneEnd = end;
         }
         IUniformEditionAuction.EndTimes memory e;
         _clocks(e, a, _config(a.termsId), oneEnd);
-        // Plus however much 6529 Stream's rescue delay for the master's works exceeds its
-        // permanent 90-day floor, which the delay's 120-day minimum assumed, at most the cap
-        // (the adapter enforces the same floor). Both reads forward all gas and revert on any
-        // failure, a shortfall with `BoundedCallShortfall`.
-        (bool read, bytes memory data) = BoundedCall.tryReadAll(
-            _stream,
-            abi.encodeCall(IStream.extsload, (StreamLayout.minterSlot(_englishAuction), 1)),
-            0x60
-        );
-        if (!read || data.length != 0x60) {
-            revert IUniformEditionAuction.StreamReadFailed(IStream.extsload.selector);
-        }
-        uint256 added;
-        assembly ("memory-safe") {
-            added := mload(add(data, 0x60))
-        }
-        // The removal time and the locked delay, field by field (`StreamLayout`): Stream rescues
-        // the master from the removal plus the locked delay, so a removal after the end adds
-        // its lateness (review N-2's horizon, from the removal, not the end).
-        uint256 removedAt = (added >> 32) & type(uint40).max;
-        if (removedAt != 0) {
-            added = (added >> 72) & type(uint32).max;
-        } else {
-            bytes32 delay;
-            (read, delay) =
-                BoundedCall.tryReadWordAll(_stream, abi.encodeCall(IStream.rescueDelay, ()));
-            if (!read) {
-                revert IUniformEditionAuction.StreamReadFailed(IStream.rescueDelay.selector);
-            }
-            added = uint256(delay);
-        }
-        added -= 90 days;
-        if (removedAt > e.endTime) added += removedAt - e.endTime;
+        // Plus how much later than the end and 6529 Stream's permanent 90-day floor, which the
+        // delay's 120-day minimum assumed, the master may be rescued (`_rescueLengthening`, the
+        // deployment's), at most the governed cap: the adapter enforces the same floor.
+        uint256 added = _rescueLengthening(e.endTime);
         uint256 cap = ((_word(IStorage.Space.SETTINGS, 0, 0) >> 192) & type(uint16).max) * 1 days;
         if (added > cap) added = cap;
         abandonAt = uint256(e.endTime) + uint256(p.voidDelayDays) * 1 days + added;
@@ -329,9 +288,9 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
 
     /// @dev Whether 6529 Stream records master `id`'s primary sale as settled; a refusal reads as
     ///      not settled, a shortfall reverts.
-    function _masterSettled(uint256 id) private view returns (bool) {
+    function _masterSettled(address master, uint256 id) private view returns (bool) {
         (bool answered, bytes32 word) =
-            BoundedCall.tryReadWordAll(_stream, abi.encodeCall(IStream.primarySaleSettled, (id)));
+            BoundedCall.tryReadWordAll(master, abi.encodeCall(IStream.primarySaleSettled, (id)));
         return answered && word != 0;
     }
 
@@ -375,11 +334,6 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
     }
 
     /// @inheritdoc IUniformEditionAuctionLens
-    function isTarget(address token) external view returns (bool) {
-        return token == _editions && uint8(storageWord(IStorage.Space.SETTINGS, 0, 0) >> 104) != 0;
-    }
-
-    /// @inheritdoc IUniformEditionAuctionLens
     function saleKind() external pure returns (bytes32) {
         return SaleKind.UNIFORM_AUCTION;
     }
@@ -396,16 +350,6 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         return _saleIdOf(token, id);
     }
 
-    /// @inheritdoc IUniformEditionAuctionLens
-    function federationRegistry() external pure returns (address) {
-        return address(0);
-    }
-
-    /// @inheritdoc IUniformEditionAuctionLens
-    function setFederationRegistry(address, address next) external pure {
-        revert ISaleAdapter.TargetNotAllowed(next);
-    }
-
     // ----------------------------------------------------------------------------- a sale
 
     /// @inheritdoc IUniformEditionAuctionLens
@@ -416,10 +360,10 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
     {
         IStorage.SaleWord memory a = _opened(saleId);
         IStorage.PayoutWord memory p = _payout(saleId);
-        v.token = _editions;
+        v.token = _tokenOfSale(saleId);
         v.id = p.id;
-        v.master = _stream;
-        v.oneOfOneSaleId = _saleIdOf(_stream, p.id);
+        v.master = _masterFor(v.token);
+        v.oneOfOneSaleId = _saleIdOf(v.master, p.id);
         v.status = _status(a, endTimes(saleId));
         v.maxCount = a.maxCount;
         v.terms = _config(a.termsId);
@@ -440,8 +384,8 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         returns (IUniformEditionAuction.EndTimes memory e)
     {
         IStorage.SaleWord memory a = _opened(saleId);
-        IEnglishAuction.Auction memory o =
-            IEnglishAuction(_englishAuction).auction(_saleIdOf(_stream, _payout(saleId).id));
+        IEnglishAuction.Auction memory o = IEnglishAuction(_englishAuction)
+            .auction(_saleIdOf(_masterOfSale(saleId), _payout(saleId).id));
         _clocks(e, a, _config(a.termsId), o.endTime);
         e.oneOfOneState = o.state;
         bool open = a.status == IUniformEditionAuction.AuctionStatus.OPEN;
@@ -541,8 +485,8 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
             revert IUniformEditionAuction.UnknownBid(saleId, bidId);
         }
         if (a.status != IUniformEditionAuction.AuctionStatus.OPEN) return false;
-        IEnglishAuction.Auction memory o =
-            IEnglishAuction(_englishAuction).auction(_saleIdOf(_stream, _payout(saleId).id));
+        IEnglishAuction.Auction memory o = IEnglishAuction(_englishAuction)
+            .auction(_saleIdOf(_masterOfSale(saleId), _payout(saleId).id));
         if (o.state != IEnglishAuction.AuctionState.PAUSED) return false;
         // The adapter's rule: the bid's minute (bits 240-255) ended before the pause began.
         uint256 placed = w >> 240;
@@ -1169,5 +1113,151 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
 
     function _saleIdOf(address token, uint256 id) private pure returns (uint256) {
         return uint256(keccak256(abi.encode(token, id)));
+    }
+
+    // ------------------------------------------------------------------ the deployment
+
+    /// @dev The contract whose 1/1 anchors sale `saleId`.
+    function _masterOfSale(uint256 saleId) private view returns (address) {
+        return _masterFor(_tokenOfSale(saleId));
+    }
+
+    /// @dev The edition contract sale `saleId` sells (the calling adapter's record).
+    function _tokenOfSale(uint256 saleId) internal view virtual returns (address);
+
+    /// @dev The contract whose 1/1s anchor `token`'s editions.
+    function _masterFor(address token) internal view virtual returns (address);
+
+    /// @dev Whether `masterTerms` may open a sale of `token`.
+    function _sells(address token) internal view virtual returns (bool);
+
+    /// @dev The terms a new edition of `payees` on `token` would lock now.
+    function _newTerms(address token, ISplitWallet.Payee[] memory payees)
+        internal
+        view
+        virtual
+        returns (WorkTerms memory);
+
+    /// @dev The split factory that deploys `token`'s wallets.
+    function _factory(address token) internal view virtual returns (address);
+
+    /// @dev Whether `token`'s edition `id` exists, for the abandonment check.
+    function _editionExists(address token, uint256 id) internal view virtual returns (bool);
+
+    /// @dev How much later than `end` plus 6529 Stream's 90-day floor a master of this
+    ///      deployment may be rescued, uncapped: for 6529 Stream Editions, what Stream's delay for
+    ///      the English auction's works adds, from its removal; zero where the master has no
+    ///      rescue (a federated 1/1), so no canonical Stream slot is ever read for a federated
+    ///      sale.
+    function _rescueLengthening(uint256 end) internal view virtual returns (uint256);
+}
+
+/// @title UniformEditionAuctionLens
+/// @notice The lens of {UniformEditionAuction}, 6529 Stream Editions' deployment: its one edition
+///         contract and 6529 Stream, the economics 6529 Stream's resolver gives new editions.
+contract UniformEditionAuctionLens is UniformEditionAuctionLensBase {
+    address private immutable _editions;
+    address private immutable _stream;
+
+    /// @param editions_ The adapter's 6529 Stream Editions.
+    /// @param stream_ Its 6529 Stream.
+    /// @param englishAuction_ The adapter's English auction.
+    /// @param escrow_ The adapter's revenue escrow.
+    constructor(address editions_, address stream_, address englishAuction_, address escrow_)
+        UniformEditionAuctionLensBase(englishAuction_, escrow_)
+    {
+        _editions = editions_;
+        _stream = stream_;
+    }
+
+    /// @inheritdoc IUniformEditionAuctionLens
+    function editions() external view returns (address) {
+        return _editions;
+    }
+
+    /// @inheritdoc IUniformEditionAuctionLens
+    function stream() external view returns (address) {
+        return _stream;
+    }
+
+    /// @inheritdoc IUniformEditionAuctionLens
+    function isTarget(address token) external view returns (bool) {
+        return token == _editions && uint8(storageWord(IStorage.Space.SETTINGS, 0, 0) >> 104) != 0;
+    }
+
+    /// @inheritdoc IUniformEditionAuctionLens
+    function federationRegistry() external pure returns (address) {
+        return address(0);
+    }
+
+    /// @inheritdoc IUniformEditionAuctionLens
+    function setFederationRegistry(address, address next) external pure {
+        revert ISaleAdapter.TargetNotAllowed(next);
+    }
+
+    function _tokenOfSale(uint256) internal view override returns (address) {
+        return _editions;
+    }
+
+    function _masterFor(address) internal view override returns (address) {
+        return _stream;
+    }
+
+    function _sells(address token) internal view override returns (bool) {
+        return token == _editions;
+    }
+
+    function _newTerms(address, ISplitWallet.Payee[] memory payees)
+        internal
+        view
+        override
+        returns (WorkTerms memory)
+    {
+        return IEconomicsResolver(IStream(_stream).economics())
+            .newWorkTerms(PRODUCT_EDITIONS, payees);
+    }
+
+    /// @dev The resolver's factory is 6529 Stream's own: Stream refuses a replacement resolver
+    ///      that names another.
+    function _factory(address) internal view override returns (address) {
+        return IEconomicsResolver(IStream(_stream).economics()).splitFactory();
+    }
+
+    function _editionExists(address token, uint256 id) internal view override returns (bool) {
+        return IEditions(token).exists(id);
+    }
+
+    /// @dev Stream rescues a work at its adapter's removal time plus the delay it locked then
+    ///      (read natively through `IStream.extsload` at `StreamLayout.minterSlot`), else the
+    ///      delay in force, as if removed at `end`; less the 90-day floor, plus a removal's
+    ///      lateness after `end` (review N-2's horizon, from the removal, not the end). Both reads
+    ///      forward all gas and revert on any failure, a shortfall with `BoundedCallShortfall`.
+    function _rescueLengthening(uint256 end) internal view override returns (uint256 added) {
+        (bool read, bytes memory data) = BoundedCall.tryReadAll(
+            _stream,
+            abi.encodeCall(IStream.extsload, (StreamLayout.minterSlot(_englishAuction), 1)),
+            0x60
+        );
+        if (!read || data.length != 0x60) {
+            revert IUniformEditionAuction.StreamReadFailed(IStream.extsload.selector);
+        }
+        assembly ("memory-safe") {
+            added := mload(add(data, 0x60))
+        }
+        // The removal time and the locked delay, field by field (`StreamLayout`).
+        uint256 removedAt = (added >> 32) & type(uint40).max;
+        if (removedAt != 0) {
+            added = (added >> 72) & type(uint32).max;
+        } else {
+            bytes32 delay;
+            (read, delay) =
+                BoundedCall.tryReadWordAll(_stream, abi.encodeCall(IStream.rescueDelay, ()));
+            if (!read) {
+                revert IUniformEditionAuction.StreamReadFailed(IStream.rescueDelay.selector);
+            }
+            added = uint256(delay);
+        }
+        added -= 90 days;
+        if (removedAt > end) added += removedAt - end;
     }
 }

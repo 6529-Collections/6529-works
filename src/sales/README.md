@@ -17,7 +17,7 @@ dispute pause) and [Editions and sales](../../docs/spec/editions-and-sales.md) (
 | --- | --- |
 | `EnglishAuction.sol` | [`IEnglishAuction`](../interfaces/IEnglishAuction.sol): permissionless start into its own custody, anti-snipe bids, pull credits, settlement with pending delivery and escrow fallback, the outcome reported to the token (`settlePrimary`), the exit for a token that will not settle ([`IEnglishAuctionRefusal`](../interfaces/IEnglishAuctionRefusal.sol)), the dispute pause, the currency freeze, the emergency pause. |
 | `EnglishAuctionLens.sol` | The English auction's read side, deployed before it and pinned by its constructor: every view the auction does not declare, decoded from its caller's storage words (`storageWords`). |
-| `UniformEditionAuction.sol` | [`IUniformEditionAuction`](../interfaces/IUniformEditionAuction.sol)'s writes and [`IUniformEditionAuctionStorage`](../interfaces/IUniformEditionAuctionStorage.sol): the bid book (step totals, bids, FIFO departure logs), the coupling with the 1/1's end, the edition's own close offset, settlement in calls of bounded gas, claims through `IMintTarget.mint`, the abandonment exit, governance (configuration and limits). |
+| `UniformEditionAuction.sol` | The shared base `UniformEditionAuctionBase` (the federated deployment is in [`src/federated`](../federated/README.md)) and 6529 Stream Editions' deployment: [`IUniformEditionAuction`](../interfaces/IUniformEditionAuction.sol)'s writes and [`IUniformEditionAuctionStorage`](../interfaces/IUniformEditionAuctionStorage.sol): the bid book (step totals, bids, FIFO departure logs), the coupling with the 1/1's end, the edition's own close offset, settlement in calls of bounded gas, claims through `IMintTarget.mint`, the abandonment exit, governance (configuration and limits). |
 | `UniformEditionAuctionLens.sol` | [`IUniformEditionAuctionLens`](../interfaces/IUniformEditionAuctionLens.sol): every view (the adapter's own settings included), computed from the adapter's storage words, which it locates from the adapter's layout; the package-item check `open` consults, which also resolves the close offset and deploys the sale's split wallets; and the abandonment check. Stateless and bound to no adapter (it reads its caller): deployed in its own transaction, then pinned by the adapter's constructor (code hash and wiring) and forwards its views to it. |
 | `UniformClearing.sol` | Internal library, pure: the D138 clearing on [`StepLadder`](../interfaces/types/StepLadder.sol)'s prices, the FIFO split of the cut step and the what-if quote, shared by the lens, the adapter's sweep and the Halmos proofs. |
 
@@ -105,7 +105,7 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
 - **ERC-20 transfers.** The English auction's Permit2 pull checks only balance deltas, not the
   return word, so admitting only standard ERC-20s is the guard (ECO-23, LIM-SAL-7). It reads the
   federated fee recipient at start and locks it for the sale (AUC-48,
-  [federated](../federated/README.md#before-installing-a-registry)).
+  [federated](../federated/README.md#genesis)).
 - **Gas.** Per-operation Prague gas and slots are in
   [ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table);
   `UniformClearingGas.t.sol` measures a full 336-step clearing.

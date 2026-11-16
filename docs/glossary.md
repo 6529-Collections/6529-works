@@ -41,10 +41,11 @@ See: [editions and sales](spec/editions-and-sales.md).
 
 ### 6529 Stream Federated
 
-Artist-deployed contracts (a Federated Stream 721 and its linked Federated Stream Editions)
-sold through the shared [sale adapters](#sale-adapter) and listed in the artist registry's
-federation directory. In v1 by owner decision of 15 November 2026 ([ADR 0007](adr/0007-permanence.md)),
-specified by a later ADR; it earns no TDH. No federation registry is installed yet.
+Artist-run token contracts, full copies of the network's templates (Federated Stream, the
+ERC-721; Federated Stream Editions, the pair's ERC-1155), listed in the artist registry's
+directory without curation, selling through the shared [sale adapters](#sale-adapter) at a
+locked 10% network share, earning no TDH ([Federation](spec/federation.md),
+[ADR 0008](adr/0008-federation.md)).
 
 See: [federated README](../src/federated/README.md).
 

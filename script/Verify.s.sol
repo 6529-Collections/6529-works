@@ -7,6 +7,8 @@ import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
 import { Roles } from "src/governance/Roles.sol";
+import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
+import { FederationRegistry } from "src/federated/FederationRegistry.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { Role, Statement } from "src/interfaces/IStatementLog.sol";
@@ -129,6 +131,8 @@ contract Verify is ScriptIO {
     error UnexpectedRoleGuardian(uint64 role, uint64 guardian);
     /// @notice Since genesis, `target` was closed on the manager; the configuration closes none.
     error UnexpectedTargetClosed(address target);
+    /// @notice `successorParity` was run without a required list.
+    error EmptyList(string name);
 
     string internal constant EXAMPLE_GENESIS = "config/genesis.example.json";
 
@@ -140,6 +144,58 @@ contract Verify is ScriptIO {
         console2.log("verified: targets", targets);
         console2.log("verified: wiring calls", calls);
         console2.log("verified: holders", holders);
+    }
+
+    /// @notice The federation-registry replacement's last check, run immediately before the
+    ///         switch executes (script README, "Replacing the federation registry", step 4):
+    ///
+    ///         DEPLOYMENT=deployments/<chainId>/<timestamp>.json     ///         SUCCESSOR_FEDERATION_REGISTRY=<successor>     ///         FEDERATION_CODE_HASHES=<hash>,<hash>,... FEDERATION_ADAPTERS=<adapter>,...     ///           forge script script/Verify.s.sol --sig "successorParity()" --rpc-url <rpc>
+    ///
+    ///         The predecessor is the registry the recorded artist registry names now. Every
+    ///         code hash the predecessor has approved, suspended or revoked, and every adapter
+    ///         either registry has admitted, must be listed (comma-separated, no spaces); an empty
+    ///         list is refused, so a missing variable cannot pass silently. It fails with
+    ///         `VerifyV1.FederationMismatch("templateOf")` or `("isAdmittedAdapter")` on the
+    ///         first difference.
+    function successorParity() external {
+        checkChain();
+        string memory path = _env("DEPLOYMENT");
+        if (bytes(path).length == 0) revert MissingParameter("DEPLOYMENT");
+        string memory successor = _env("SUCCESSOR_FEDERATION_REGISTRY");
+        if (bytes(successor).length == 0) revert MissingParameter("SUCCESSOR_FEDERATION_REGISTRY");
+        string memory record = _read(path);
+        IArtistRegistry artists =
+            IArtistRegistry(vm.parseJsonAddress(record, ".contracts.ArtistRegistry.address"));
+        (bytes32[] memory codeHashes, address[] memory adapters) = _parityLists();
+        VerifyV1.checkSuccessorParity(
+            FederationRegistry(artists.federationRegistry()),
+            FederationRegistry(vm.parseAddress(successor)),
+            codeHashes,
+            adapters
+        );
+        console2.log("parity: template code hashes", codeHashes.length);
+        console2.log("parity: adapters", adapters.length);
+    }
+
+    function _parityLists()
+        private
+        view
+        returns (bytes32[] memory codeHashes, address[] memory adapters)
+    {
+        string memory hashes = _env("FEDERATION_CODE_HASHES");
+        string memory list = _env("FEDERATION_ADAPTERS");
+        if (bytes(hashes).length == 0) revert EmptyList("FEDERATION_CODE_HASHES");
+        if (bytes(list).length == 0) revert EmptyList("FEDERATION_ADAPTERS");
+        string[] memory hashParts = vm.split(hashes, ",");
+        string[] memory adapterParts = vm.split(list, ",");
+        codeHashes = new bytes32[](hashParts.length);
+        adapters = new address[](adapterParts.length);
+        for (uint256 i; i < hashParts.length; ++i) {
+            codeHashes[i] = vm.parseBytes32(hashParts[i]);
+        }
+        for (uint256 i; i < adapterParts.length; ++i) {
+            adapters[i] = vm.parseAddress(adapterParts[i]);
+        }
     }
 
     /// @notice Every check above against `record`; returns the counts verified. With

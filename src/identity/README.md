@@ -21,8 +21,8 @@ also in [Disputes and statements](../../docs/spec/disputes-and-statements.md#ide
 | Caller | Calls | Rules |
 | --- | --- | --- |
 | The bound package registry | `register` on an account's first package acceptance | ID-1, ID-2 |
-| The bound federation registry | `registerFederated` (with the account's own signature); `listFederatedContract`, `setFederatedStatus` | ID-32 to ID-34 |
-| A listed federated token | `recordFederationExit` (LEFT, terminal) | ID-34 |
+| The bound federation registry | `registerFederated` (with the account's own signature); `listFederatedContract` (with the artist's own `FederatedListing` consent, verified here), `setFederatedStatus` | ID-32 to ID-34, ID-41 |
+| A listed federated token | `recordFederationExit` (LEFT, or LEFT_DELISTED from DELISTED; terminal) | ID-34 |
 | Anyone, relaying the authority's signature, or, only for a dormant artist, an established wallet's (never a previous authority's; the change then waits the override delay) | `stageChange` (STANDARD) | ID-3 to ID-6, ID-40 |
 | The authority | `revokeNonce`; `heartbeat` (the authority only) | ID-5, ID-7, ID-19, ID-40 |
 | The previous authority or a captured wallet | `cancelChange`: cancels a STANDARD change, contests an override during its notice | ID-9, ID-13 |

@@ -2,6 +2,50 @@
 
 ## Unreleased
 
+- Federation review fixes (reviews F and G; [ADR 0008](docs/adr/0008-federation.md) §1, §2, §8,
+  §10, §12; FED-64 to FED-70, ID-41): a template version is its runtime code hash bound to an
+  ownerless `FederatedDeployer` (new; `IFederatedDeployer` `0xf53f1196`), which holds the
+  version's creation code in data contracts written at construction, deploys copies for anyone
+  and records each (`Deployed`, `CreationCodeStored`); a contract joins only if its version's
+  deployer recorded it (`approveTemplate(bytes32 codeHash, address deployer, uint32 version,
+  uint8 form)`, `TemplateSet` and `Registered` name the deployer;
+  `IFederatedToken.joinFederation(IFederationRegistry.Join)`; `IFederationRegistry` `0xc32f19cd`,
+  `IFederatedToken` `0xc6c898cc`, `IFederatedStream` `0x5b4e5ccb`); the artist registry lists a
+  contract only with its artist's `FederatedListing` signature over the entry's facts
+  (`listFederatedContract(FederatedListing, bytes consent)`; `IArtistRegistry` `0x8efc5e8c`); an
+  exit from DELISTED, or a delisting after an exit, is `LEFT_DELISTED`, served by nothing; a batch
+  status write skips what it cannot change; a pair joins editions first and each half's minting
+  and restarts follow the other's listing; a 1/1 template names the canonical content store
+  (`contentStore()`, `ContentStoreSet`); a replaced registry answers as the current one; each
+  genesis setter reaches only targets declaring its interface (`GovernanceConfig.genesisInterface`).
+  The `FederationRegistry` constructor takes the content store. The source-line budget is 16,500.
+  Pass 3: a federated license text must be a registered SHA-256 file of at most 16 chunks at the
+  first mint and complete to finalize (`IFederatedStream.InvalidLicenseText`); the federated
+  edition lens refuses a non-canonical split ledger; `setStatus` and `propagateRevocation` take
+  at most `MAX_BATCH` (256) contracts (`BatchTooLarge`). A work's file roles take four bits
+  each below the count; `setDefaultRenderer(expected, renderer, codeHash)` is compare-and-set
+  and `DefaultRendererSet(previous, next, codeHash)` is 6529 Stream's event (`IFederatedStream`
+  is now `0x5b4e5ccb`); the federated edition auction refuses bids and raises on a delisted
+  contract (`BiddingClosed`) and voids a sale delisted mid-scan; `VerifyV1.checkSuccessorParity`
+  backs the registry replacement's last check; `check_genesis.py` types symbolic wiring names.
+- Federation ([ADR 0008](docs/adr/0008-federation.md); [Federation](docs/spec/federation.md),
+  FED-1 to FED-63): Federated Stream and Federated Stream Editions templates (full copies, no
+  immutables, joined by the token itself and listed in the artist registry's directory; works
+  approved on chain by the artist, naming no party but the artist; unsold works held by the
+  template and restartable; 90/10 royalty vaults deployed at mint; read by the shared renderer
+  through `coreOf` and `extsload` at `StreamLayout`'s slots; locators printable ASCII);
+  `FederationRegistry` (template code hashes, admitted adapters, entries composed on read, no
+  entry for a contract that left, delisting by vote, suspension and revocation); the uniform
+  edition auction and its lens split into shared bases with a second deployment,
+  `FederatedEditionAuction`, for federated pairs (its abandonment waits the locked delay alone:
+  a federated 1/1 has no rescue); `IFederationRegistry` reshaped to what adapters and templates
+  call (`register`, `entry`, `isActive`, `canMint`; interface ID `0x2063bc84`); new
+  `IFederatedToken` `0xe5ed11e8`, `IFederatedStream` `0xc7aac428`, `IFederatedEditions`
+  `0x5c20a834`. Genesis deploys the registry, the federated edition auction and its lens,
+  binds the registry in the artist registry, points the English auction at it, admits both
+  shared adapters and approves the two v1 template code hashes computed by
+  `DeployV1.templateCodeHash` (`GovernanceConfig.isGenesisSelector` admits these three
+  selectors); `VerifyV1.checkFederation` reads them back. The source-line budget is 16,000.
 - Permanence ([ADR 0007](docs/adr/0007-permanence.md); owner instruction of 14 and 15 November
   2026), two integration rounds and the fixes of four independent reviews. Pre-launch interface
   reshaping:

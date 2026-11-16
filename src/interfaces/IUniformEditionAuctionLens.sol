@@ -145,12 +145,14 @@ interface IUniformEditionAuctionLens {
     /// @param id The edition ID.
     /// @return `uint256(keccak256(abi.encode(token, id)))`.
     function saleIdOf(address token, uint256 id) external pure returns (uint256);
-    /// @notice No federation registry: this adapter sells only 6529 Stream Editions
-    ///         (`ISaleAdapter.federationRegistry`).
-    /// @return Zero.
-    function federationRegistry() external pure returns (address);
-    /// @notice Refused: this adapter serves no federated token (`ISaleAdapter.setFederationRegistry`).
-    ///         Reverts with `ISaleAdapter.TargetNotAllowed(next)`.
+    /// @notice The federation registry (`ISaleAdapter.federationRegistry`): zero for 6529 Stream
+    ///         Editions' deployment, which serves no federated token; the pinned registry for the
+    ///         federated deployment (ADR 0008).
+    /// @return The registry, or zero.
+    function federationRegistry() external view returns (address);
+    /// @notice Refused by the lens (`ISaleAdapter.TargetNotAllowed(next)`): 6529 Stream Editions'
+    ///         deployment serves no federated token, and the federated deployment declares its own
+    ///         `setFederationRegistry`, which never reaches its lens.
     /// @param expected Ignored.
     /// @param next The registry asked for.
     function setFederationRegistry(address expected, address next) external pure;

@@ -73,7 +73,7 @@ not reject it.
 | Content-store digest kind (open `uint8` id) | 0 SHA-256 (`sha256Of`); any other value is recorded and is part of the file ID ([WS-54][ws]) | [`IContentStore.sol`](../../src/interfaces/IContentStore.sol) |
 | `Role` (statement log) | 0 `NONE`, 1 `ARTIST`, 2 `OWNER`, 3 `CURATOR`, 4 `PLATFORM` | [`IStatementLog.sol`](../../src/interfaces/IStatementLog.sol) |
 | `ChangeKind` | 0 `NONE`, 1 `STANDARD`, 2 `CONTESTED`, 3 `ESTATE`, 4 `LOST_KEY` | [`IdentityTypes.sol`](../../src/interfaces/types/IdentityTypes.sol) |
-| `IArtistRegistry.FederationStatus` | 0 `NONE`, 1 `ACTIVE`, 2 `DELISTED`, 3 `LEFT` | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) |
+| `IArtistRegistry.FederationStatus` | 0 `NONE`, 1 `ACTIVE`, 2 `DELISTED`, 3 `LEFT`, 4 `LEFT_DELISTED` | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) |
 | `IArtistRegistry.Timer` | 0 `CHANGE_DELAY`, 1 `OVERRIDE_DELAY`, 2 `DORMANCY`, 3 `CONTEST_TIMEOUT`, 4 `STANDING_GRACE` | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) |
 | `WorksAccessManager.Parameter` | 0 `SLOW_DELAY`, 1 `ESCALATED_DELAY`, 2 `RECOVERY_SILENCE`, 3 `RECOVERY_DELAY`, 4 `ADMIN_SEATS`, 5 `GUARDIAN_SEATS` | [`WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol) |
 | `IAssetAllowlist.Status` | 0 `None`, 1 `Active`, 2 `Deprecated` | [`IAssetAllowlist.sol`](../../src/economics/interfaces/IAssetAllowlist.sol) |
@@ -271,7 +271,7 @@ of its own.
 | `SaleSettled(uint256 indexed saleId, address indexed token, uint256 indexed tokenId, address buyer, address recipient, uint256 quantity, address currency, uint256 price, address seller, uint256 sellerProceeds, address feeRecipient, uint256 fee)` | `0x16010625…` | `settle` (permissionless after the end) | The last event of a settlement. `quantity` is 1. With no standing bid (including a freeze exit or a delisted federated contract) `buyer` and `price` are zero and `recipient` is the museum 6529 Stream moved the work to, or for any other token the artist's active authority. `price = sellerProceeds + fee`. |
 | `ConfigSet(AuctionConfig previous, AuctionConfig next)` | `0x2991b213…` | The constructor (from all zeros) and `setConfig` (PARAMETER_SETTER, 48 hours) | `AuctionConfig` is `(uint32 duration, uint32 extensionWindow, uint32 incrementShare, uint32 refusalDelay, uint32 refusalGas)`. What a start locks is [AUC-15][auc] and [AUC-46][auc]. |
 | `TargetSet(address indexed token, bool listed)` | `0xd79dab7c…` | The constructor's targets and `setTarget` (SUCCESSOR_SETTER, 30 days; at genesis through the wiring) | A token contract listed or unlisted for new auctions. |
-| `FederationRegistrySet(address previous, address next)` | `0xb6b3a87c…` | `setFederationRegistry` (SUCCESSOR_SETTER) | No federation registry exists in v1. |
+| `FederationRegistrySet(address previous, address next)` | `0xb6b3a87c…` | `setFederationRegistry` (SUCCESSOR_SETTER; at genesis through the wiring, [ADR 0008](../adr/0008-federation.md)) | The registry whose listed contracts the auction serves; its code hash is pinned at this call. |
 | `Paused(address account)` | `0x62e78cea…` | `pause()` (PAUSER, immediate) | Adapter-wide pause; on the auction it stops only new starts ([AUC-13][auc]). `account` is the immediate caller: the role holder, or the AccessManager through `execute`. |
 | `Unpaused(address account)` | `0x5db9ee0a…` | `unpause()` (UNPAUSER, no earlier than 48 hours after the pause) | |
 
@@ -342,8 +342,8 @@ version of this page lists them.
 | `StandingMissing(uint256 indexed artistId, address indexed wallet)` | `0x38ff12c3…` | A standing refresh | An established wallet is no longer consolidated; it keeps standing for the standing grace (`STANDING_GRACE`, 30 days at genesis, governed; [ID-21][id]). |
 | `StandingRemoved(uint256 indexed artistId, address indexed wallet)` | `0xe79c9b80…` | A standing refresh | The wallet lost standing ([ID-21][id], [ID-22][id]). |
 | `StandingRefreshSkipped(uint256 indexed artistId)` | `0x103bc6dd…` | Every standing refresh except `refreshStanding` (registration, `registerFederated`, staging, overrides, `heartbeat`, execution), when the consolidation source failed (a revert, an oversize answer, or a code-hash mismatch) | Nobody lost standing; a later `refreshStanding` catches up. A source that ran short of gas, or reported `BoundedCallInsufficientGas` or `BoundedCallShortfall`, reverts the call instead ([ID-38][id]). |
-| `FederatedContractListed(uint256 indexed artistId, address indexed token, bytes32 codeHash, uint8 form, address partner, uint32 feeShare, address feeRecipient)` | `0x6b2a1b3a…` | `listFederatedContract`, callable only by the federation registry | A federated token joined the permanent directory, ACTIVE, once per token ([ID-33][id]). `codeHash` is the token's code hash, read by the artist registry itself; `form` is recorded, not interpreted (0 ERC-721, 1 ERC-1155 under `IFederationRegistry.Form`); `partner` is the other half of a linked pair, or zero; `feeShare` and `feeRecipient` are the network's terms locked in the token. Federated contracts earn no TDH. No federation registry is installed on this tree. |
-| `FederatedContractStatus(address indexed token, uint256 indexed artistId, FederationStatus previous, FederationStatus status, bytes32 ref)` | `0x34ddebd7…` | `setFederatedStatus` (the federation registry: ACTIVE and DELISTED only) and `recordFederationExit` (the token itself: LEFT, terminal) | The entry's status changed from `previous` (the same status when set again); `ref` is the registry's reference for a decision, zero for LEFT ([ID-34][id]). Never touches tokens, ownership or owed funds. |
+| `FederatedContractListed(uint256 indexed artistId, address indexed token, bytes32 codeHash, uint8 form, address partner, uint32 feeShare, address feeRecipient)` | `0x6b2a1b3a…` | `listFederatedContract`, callable only by the federation registry, with the artist's own `FederatedListing` consent to these facts verified by the artist registry ([ID-41][id]) | A federated token joined the permanent directory, ACTIVE, once per token ([ID-33][id]). `codeHash` is the token's code hash, read by the artist registry itself; `form` is recorded, not interpreted (0 ERC-721, 1 ERC-1155 under `IFederationRegistry.Form`); `partner` is the other half of a linked pair, or zero; `feeShare` and `feeRecipient` are the network's terms locked in the token. Federated contracts earn no TDH. A listing is the token's own only when its `FederationJoined` and the registry's `Registered` follow in the same transaction with the same facts, and `Registered`'s deployer recorded the token (its `Deployed` event) ([Federation](../spec/federation.md#what-a-logs-only-reader-should-show)). |
+| `FederatedContractStatus(address indexed token, uint256 indexed artistId, FederationStatus previous, FederationStatus status, bytes32 ref)` | `0x34ddebd7…` | `setFederatedStatus` (the federation registry: ACTIVE and DELISTED only; a delisting of a LEFT entry lands as LEFT_DELISTED) and `recordFederationExit` (the token itself: LEFT from ACTIVE, LEFT_DELISTED from DELISTED) | The entry's status changed from `previous` (the same status when set again); `ref` is the registry's reference for a decision, zero for an exit ([ID-34][id]). LEFT_DELISTED is served by nothing. Never touches tokens, ownership or owed funds. |
 | `FederationRegistrySet(address previous, address next)` | `0xb6b3a87c…` | `setFederationRegistry` (SUCCESSOR_SETTER, 30 days, compare-and-set) | The federation registry was replaced; the genesis bind emits `Bound("FEDERATION_REGISTRY")` instead. Not the sale adapters' event of the same signature. |
 | `TimerSet(Timer indexed timer, uint48 previous, uint48 value)` | `0xf67b0661…` | The constructor (all five, at their floors, `previous` zero) and `setTimer` (SUCCESSOR_SETTER, 30 days) | A governed wait in seconds (and its value before), for changes staged and refreshes made from then on; each stays between its floor (its genesis value) and its ceiling (`timerBounds`) ([ID-35][id]). |
 | `ConsolidationSourceSet(address previous, address next, bytes32 codeHash)` | `0x8d645963…` | The constructor and `setConsolidationSource` (SUCCESSOR_SETTER, 30 days) | `codeHash` is the pinned `consolidationSourceCodeHash`. |
@@ -515,13 +515,43 @@ Every governed contract declares `AuthorityUpdated`, and the EIP-712 signers dec
 | `AuthorityUpdated(address authority)` | `0x2f658b44…` | Every governed contract's constructor, and `setAuthority`, which only the current AccessManager can call (`updateAuthority`) | The contract is now governed by `authority`. A change after deployment moves the whole contract to another manager: alert on it. |
 | `EIP712DomainChanged()` | `0x0a6387c9…` | Never emitted | Declared by EIP-5267 in OpenZeppelin `EIP712`. Each domain is fixed at deployment; read it with `eip712Domain()`. |
 
-### Not deployed yet: federation registry
+### Federation
 
-[`IFederationRegistry`](../../src/interfaces/IFederationRegistry.sol) declares `Registered`,
-`StatusSet` and `ArtistDelistingSet`. Federation is in v1 ([ADR 0007](../adr/0007-permanence.md);
-a later ADR specifies it), but this tree has no implementation, so nothing emits them; their
-signatures are in the appendix. The artist registry's directory events (`FederatedContractListed`,
-`FederatedContractStatus`) are the permanent, logs-only record of federated contracts.
+[ADR 0008](../adr/0008-federation.md), [Federation](../spec/federation.md). The artist
+registry's directory events (`FederatedContractListed`, `FederatedContractStatus`) are the
+permanent, logs-only record of federated contracts; a listing is the token's own only when its
+`FederationJoined` follows in the same transaction with the same artist, fee share, fee
+recipient and partner, and the registry's `Registered` names the version's deployer, whose
+`Deployed` event shows it created the token from the approved creation code with the logged
+constructor arguments (ADR 0008 §12). Federated contracts earn no TDH. The federated edition auction emits the
+edition auction's events (above), and `FederatedEditions` shares 6529 Stream Editions'
+`EditionCreated`, `EditionPrimaryMint`, `EditionSupplySealed` and `EditionMinterBound`.
+
+| Event | topic0 | Emitted by | Meaning and indexing notes |
+| --- | --- | --- | --- |
+| `Registered(address indexed token, uint256 indexed artistId, bytes32 codeHash, address deployer)` | `0x91376e24…` | `FederationRegistry.register`, called by the token in its `joinFederation` | The registry listed `token` in the directory under `artistId` ([FED-43][fed]); `deployer` recorded it ([FED-64][fed]). |
+| `TemplateSet(bytes32 indexed codeHash, address deployer, bytes32 creationHash, uint32 version, Form form, TemplateStatus status)` | `0x2f731f1f…` | `approveTemplate`, `revokeTemplate` (SUCCESSOR_SETTER), `suspendTemplate` (GUARDIAN), `resumeTemplate` (PARAMETER_SETTER) | A template version's status: 1 APPROVED, 2 SUSPENDED, 3 REVOKED (terminal) ([FED-44 to FED-46][fed]); `deployer` alone creates its copies, from the creation code `creationHash` names. |
+| `CreationCodeStored(bytes32 indexed creationHash, address[] pointers)` | `0x87b99061…` | `FederatedDeployer`'s constructor | The deployer holds this creation code in these data contracts, for good ([FED-64][fed]). |
+| `Deployed(address indexed token, address indexed caller, bytes32 salt, bytes config)` | `0xe51cd659…` | `FederatedDeployer.deploy` (anyone) | The deployer created and recorded `token` from its creation code with `config` as constructor arguments; `caller` is part of the salt ([FED-64][fed]). |
+| `AdapterSet(address indexed adapter, bool admitted)` | `0x85ff5d10…` | `setAdapter` (SUCCESSOR_SETTER; at genesis through the wiring) | Whether `adapter` may mint new federated works ([FED-49][fed]). |
+| `FederationTermsLocked(uint256 indexed artistId, address artistRegistry, address splitLedger, uint32 feeShare, address feeRecipient, address partner)` | `0x115d346f…` | Each template's constructor | The terms fixed for good; attributes nothing until the contract is listed and confirms it. |
+| `FederationJoined(uint256 indexed artistId, address registry, uint32 feeShare, address feeRecipient, address partner)` | `0x7945de9e…` | `joinFederation` (the artist) | The token confirms the listing made in the same transaction ([FED-6][fed]). |
+| `FederationLeft()` | `0x95cf0f75…` | `leaveFederation` (the artist; one-way) | Running sales finish (unless it left while delisted, [FED-66][fed]); no network adapter starts a new sale ([FED-59][fed]). |
+| `MinterSet(address indexed adapter, bool admitted)` | `0x583b0aa0…` | `setAdmittedMinter`, after the exit only | A minter the artist admitted or removed. |
+| `ItemApproval(bytes32 indexed itemHash, uint32 royaltyRate, bool approved)` | `0x8a9e8d88…` | `approveItem`, `revokeItem` (the artist) | One mint (or restart) of the item may proceed, at this rate. |
+| `WorkOpened(uint256 indexed workId, bytes32 indexed itemHash, address seller, uint32 royaltyRate, bool feeBearing, PackageItem item, MediaFile[] media)` | `0x23792551…` | The first mint of an item | The whole item and media list. Its parties can only be the artist ([FED-60][fed]). |
+| `TokenMinted(uint256 indexed tokenId, uint256 indexed workId, address indexed adapter, uint32 feeShare)` | `0x9670ffe5…` | Every mint, a restart's included | The token's work, minting adapter and the network share its sale carries. |
+| `PrimarySaleSettled(uint256 indexed tokenId, PrimaryOutcome outcome, address buyer, address currency, uint256 price)` | `0xbb0a6d98…` | `settlePrimary` (the minting adapter, once) | UNBID and FROZEN_OUT leave the token in the template's custody ([FED-17][fed]). |
+| `WorkReturned(uint256 indexed tokenId)` | `0xb20b83c1…` | `reclaim`, after a refused settlement | The token is back in the template's custody ([FED-19][fed]). |
+| `RecordChanged(uint256 indexed workId, bytes32 recordFileId)` | `0x09937b0f…` | `setRecord` (the artist, before finalize) | |
+| `Finalized(uint256 indexed workId, address renderer, bytes32 codeHash)` | `0xa12f7154…` | `finalize` (the artist) | The record is fixed and the renderer pinned. |
+| `RoyaltyRateChanged(uint256 indexed workId, uint32 previous, uint32 next)` | `0x2114cdf5…` | `setRoyaltyRate` (the artist; lower only) | |
+| `LocatorSet(uint256 indexed workId, uint256 index, uint8 kind, string uri)` | `0xfdbab0fd…` | `setLocator` (the artist) | The URI is printable ASCII without `"` or `\` ([FED-27][fed]). |
+| `OnChainComplete(uint256 indexed workId)` | `0x7037a4ae…` | `syncOnChain` (anyone) | Every media file is complete in the content store. |
+| `DefaultRendererSet(address previous, address next, bytes32 codeHash)` | `0xe2fab5e9…` | The constructor (`previous` zero), `setDefaultRenderer` (the artist, compare-and-set) | The same event as 6529 Stream's. |
+| `ContentStoreSet(address contentStore)` | `0x58071c7e…` | The 1/1 template's constructor | The content store that checks every work's media; a listed copy names the canonical one ([FED-68][fed]). |
+| `EditionsLinked(address editions)` | `0x37934395…` | `linkEditions` (the artist, once, before joining) | |
+| `EditionTermsLocked(uint256 indexed editionId, address seller, address royaltyReceiver, address feeRecipient, uint32 feeShare)` | `0x3fffee5f…` | `FederatedEditions`, when an edition's terms lock (first bind or create) | |
 
 ## Reconstructing state from events
 
@@ -910,7 +940,7 @@ structs expanded to tuples: 164 signatures.
 | `Credited(address,address,uint256,uint256)` | `0xdd0ef63b44a932361273bab95d6e9bfcea5c7850c43844f540314e89899b970c` | EnglishAuction, UniformEditionAuction |
 | `DefaultCurrencyChanged(bytes32,address,address,uint64)` | `0x067a63345dbae6001939bc0d94813caee97a817779e5a2f7b1f80f88a1d12b98` | AssetAllowlist |
 | `DefaultLicenseSet(bytes32,(string,bytes32),(string,bytes32),uint64)` | `0x45967214951395edfaed913e180d66f46dc20f884611341e05657335090698b1` | EconomicsResolver |
-| `DefaultRendererSet(address,address,bytes32)` | `0xe2fab5e93f4326fb3c630fb4727e23f53f515c7850a15793f49130e5c0bcd320` | Stream |
+| `DefaultRendererSet(address,address,bytes32)` | `0xe2fab5e93f4326fb3c630fb4727e23f53f515c7850a15793f49130e5c0bcd320` | Stream, FederatedStream |
 | `DeliveryClaimed(uint256,address,address)` | `0x97b1d318557d1873c3d7a8a9ef7fb4b4c83f2bb976bb53525208ed7712543748` | EnglishAuction |
 | `DeliveryPending(uint256,address)` | `0x96b5b68e86af123b788e4434fa8a32249a60a4f022f6bb2451d03055a8dfcb26` | EnglishAuction |
 | `DeliverySet(address,address)` | `0x113e2022127f41af1670206bb33d2c69486d7f4f382e9284c2c974fea2fbd666` | WorkRecords |
@@ -1025,13 +1055,31 @@ structs expanded to tuples: 164 signatures.
 | `WorkOnChainComplete(uint256)` | `0x15405c6beca1812d5599c3c71668ef2f894705b2271421a61bceb70c6fcb1428` | WorkRecords |
 | `WorkRescued(uint256,address,address)` | `0x77ac3c6455fa9305b1c12dc5c6cefeb7417b9d5ed5009a19a6bb464e41428ea8` | Stream |
 
-Not deployed yet ([`IFederationRegistry`](../../src/interfaces/IFederationRegistry.sol)):
+Federation ([ADR 0008](../adr/0008-federation.md)):
 
-| Event (canonical signature) | topic0 |
-| --- | --- |
-| `Registered(address,uint256,(uint8,address,uint256,uint32,bytes32,uint32,uint8))` | `0x55ed4d7c96d2cae552b1cfab4ff200f71ee66340ffb4e2318bb59d2790b37572` |
-| `StatusSet(address,uint8,bytes32)` | `0x5a1ea338c4a4f74a95392a68887f36af5e2d73cc404fdee6386c1b6b1664212c` |
-| `ArtistDelistingSet(uint256,bool,bytes32)` | `0x48779d164f9ff2d69d3daf65d8ace8f462015ad431da253126d02c531692b929` |
+| Event (canonical signature) | topic0 | Emitted by |
+| --- | --- | --- |
+| `Registered(address,uint256,bytes32,address)` | `0x91376e24c6bd16c4acb8824f0538b695c24069230a2f42fea3673ca3572cb3c1` | FederationRegistry |
+| `TemplateSet(bytes32,address,bytes32,uint32,uint8,uint8)` | `0x2f731f1fff5cfa97053322b7b102e06f0a9f1fc997163feb440bf5f0ed4304a7` | FederationRegistry |
+| `CreationCodeStored(bytes32,address[])` | `0x87b99061ecbd89753d1b3526110e824d217ba03d46d34772dbc2fcb290f43fba` | FederatedDeployer |
+| `Deployed(address,address,bytes32,bytes)` | `0xe51cd6598376a15fc5313375fb7622c135e466c5a071e795afc7e99214282fb5` | FederatedDeployer |
+| `AdapterSet(address,bool)` | `0x85ff5d10aa202e69f691155a2050fed648b2d67f85e35d1279510cc434023736` | FederationRegistry |
+| `FederationTermsLocked(uint256,address,address,uint32,address,address)` | `0x115d346f3ae2f700541f0a7cf487777af98bd5f35fec1493e3e1612b3e1a3297` | FederatedStream, FederatedEditions |
+| `FederationJoined(uint256,address,uint32,address,address)` | `0x7945de9e6b3bfc41d7a00797b8d683df9b599f9e4e4c14c7a7bac3ffd62195f6` | FederatedStream, FederatedEditions |
+| `FederationLeft()` | `0x95cf0f7504a7f4828bc9957cd271616521839b5687da14156fac522860f23291` | FederatedStream, FederatedEditions |
+| `MinterSet(address,bool)` | `0x583b0aa0e528532caf4b907c11d7a8158a122fe2a6fb80cd9b09776ebea8d92d` | FederatedStream, FederatedEditions |
+| `ItemApproval(bytes32,uint32,bool)` | `0x8a9e8d888fc6b62449d2d99cef644aaaee9485924b10c7a194cca70ab0e06c12` | FederatedStream |
+| `WorkOpened(uint256,bytes32,address,uint32,bool,(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),(bytes32,bytes32,uint8)[])` | `0x237925515420aed188c32a0c73c72bd54c3d0035c981fad79bb40094c91dcb1d` | FederatedStream |
+| `TokenMinted(uint256,uint256,address,uint32)` | `0x9670ffe57d472b1945a1053204ac5fc6943b3ba432d666695cd39a501a2d57e1` | FederatedStream |
+| `PrimarySaleSettled(uint256,uint8,address,address,uint256)` | `0xbb0a6d98d06d32ed01207833227c13c8ef140cc29411188e5f0e63d544ecd471` | FederatedStream |
+| `WorkReturned(uint256)` | `0xb20b83c14b6dc7cb281a0c3eb7688e74d0fc8b9a67ad0c8306f39664d89ff14d` | FederatedStream |
+| `RecordChanged(uint256,bytes32)` | `0x09937b0fc9bd4de800190060c43374acd349d5168ecb91b5a27bad92a0d7dd83` | FederatedStream |
+| `Finalized(uint256,address,bytes32)` | `0xa12f71545ab74bea1bf2f3110b66eeed4554d8a25a7578e822653351a67b9d32` | FederatedStream |
+| `LocatorSet(uint256,uint256,uint8,string)` | `0xfdbab0fd1476201ece313bb879bf335ed4f6541b9732e39bbb7aa6fccb83a72a` | FederatedStream |
+| `OnChainComplete(uint256)` | `0x7037a4aeb33e1d3522b38b07a7e93607e33a6220198f1d324dd2563f5c6f0bf2` | FederatedStream |
+| `ContentStoreSet(address)` | `0x58071c7e6eae6f3e4a9567e1cbfe3dcf2bad5390fbb21977381d23a4c6cf5a87` | FederatedStream |
+| `EditionsLinked(address)` | `0x37934395c201e084f1b8f0c740fb15fe287937e0d37694d2c2c30b26fa4334a9` | FederatedStream |
+| `EditionTermsLocked(uint256,address,address,address,uint32)` | `0x3fffee5fab320ece21d2c9c1e04d7aa93c11def52468c07b1d0abcf407fa9cf1` | FederatedEditions |
 
 </details>
 
@@ -1060,6 +1108,7 @@ Not deployed yet ([`IFederationRegistry`](../../src/interfaces/IFederationRegist
 [rnd]: ../spec/rendering-and-tokenuri.md#rules-and-invariants
 [eco]: ../spec/economics-and-payouts.md#rules-and-invariants
 [id]: ../spec/identity-and-recovery.md#rules-and-invariants
+[fed]: ../spec/federation.md#rules-and-invariants
 [dsp]: ../spec/disputes-and-statements.md#rules-and-invariants
 [gv]: ../spec/governance.md#rules-and-invariants
 [ent]: ../spec/entropy.md#rules-and-invariants

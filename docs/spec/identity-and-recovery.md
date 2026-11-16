@@ -106,18 +106,24 @@ IdentityChange(uint256 artistId,address authority,address payout,bytes32 profile
 OverrideAcceptance(uint256 artistId,uint8 kind,address authority,address payout,bytes32 profileId,bytes32 profileDocHash,bytes32 evidenceHash,uint64 deadline)
 
 ArtistRegistration(address account,bytes32 profileId,bytes32 profileDocHash,uint64 deadline)
+
+FederatedListing(uint256 artistId,address token,uint8 form,address partner,uint32 feeShare,address feeRecipient,uint64 deadline)
 ```
 
 | Typehash | Value | Digest helper |
 | --- | --- | --- |
 | `Typehashes.IDENTITY_CHANGE` | `0xa474bd174aa5ecb19efe75995251c1fb8289b62bca04bc6c19e869f254e190f0` | `ArtistRegistry.changeDigest(artistId, next, nonce, deadline)` |
 | `Typehashes.OVERRIDE_ACCEPTANCE` | `0xe94c9e2e1a4e3c2652a414f70c177a61fc880d94ede3aaaf03a976666431f9a3` | `ArtistRegistry.overrideDigest(artistId, kind, next, evidenceHash, deadline)` |
-| `ArtistRegistration` (private to `ArtistRegistry`) | `0x251edc52a2bb08ba54c8c256d514ddd287d55597cda1692026fb5fcbf0f8a8d9` | `ArtistRegistry.registrationDigest(account, profileId, profileDocHash, deadline)` |
+| `Typehashes.ARTIST_REGISTRATION` | `0x251edc52a2bb08ba54c8c256d514ddd287d55597cda1692026fb5fcbf0f8a8d9` | `ArtistRegistry.registrationDigest(account, profileId, profileDocHash, deadline)` |
+| `Typehashes.FEDERATED_LISTING` | `0x4a9cf66981feefe0dcd25aa0b9657554118bc34d7928f2709a3e651e9c5da1ce` | none: computed from `eip712Domain()` and the struct (ADR 0008 §2) |
 
 `test_Golden_TypehashesAndSelectors` and `test_Golden_DigestsAreStandardEip712` pin the first two
 ([`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol)) and
 `test_RegistrationDigest_IsStandardEip712` the third
-([`FederationDirectory.t.sol`](../../test/identity/FederationDirectory.t.sol)). `kind` is 2 for
+([`FederationDirectory.t.sol`](../../test/identity/FederationDirectory.t.sol)); the golden
+typehash test in [`Typehashes.t.sol`](../../test/interfaces/Typehashes.t.sol) pins the last two,
+and every `FederationDirectory.t.sol` listing signs an EIP-712 digest computed without a helper
+(`_ok`), which the registry must accept. `kind` is 2 for
 `CONTESTED`, 3 for `ESTATE` and 4 for `LOST_KEY`.
 
 - **`IdentityChange`** binds the artist's `changeNonce`, which every staging consumes and
@@ -271,19 +277,26 @@ SUCCESSOR_SETTER, 30 days, compare-and-set, never back to zero; ID-31).
   deadline, signature)`, bound federation registry only, creates the same identity as a package
   acceptance, after verifying the account's own `ArtistRegistration` signature (ID-32).
 - **One entry per token, no cap, no list** (ID-33). `listFederatedContract(artistId, token, form,
-  partner, feeShare, feeRecipient)` records `{artistId, ACTIVE}` and emits
-  `FederatedContractListed` with the code hash the registry reads itself. `form` is recorded, not
+  partner, feeShare, feeRecipient, deadline)` as a struct, with `consent`, records
+  `{artistId, ACTIVE}` and emits `FederatedContractListed` with the code hash the registry reads
+  itself. `consent` must be the artist's active authority's EIP-712 `FederatedListing` signature
+  over all seven fields in this registry's domain, unexpired, verified here by
+  `SignatureVerifier` (ID-41): no federation registry can list a contract under an artist who did
+  not sign for that exact contract and those facts. `form` is recorded, not
   interpreted (0 for ERC-721, 1 for ERC-1155). Refused (`FederatedContractRefused`) for a token
   already listed in any status, without code or EIP-7702 delegated, and when the token, partner
   or fee recipient is the registry, 6529 Stream, its Editions or a bound contract. Stream must be
   bound.
 - **Status** (ID-34). `setFederatedStatus(token, status, ref)`, federation registry only: ACTIVE
-  and DELISTED, never for an unlisted or LEFT token. `recordFederationExit()`, called by the
-  token itself: LEFT, terminal, a repeat does nothing. Exit therefore depends on no replaceable
-  code, and no registry, old or new, can bring a LEFT entry back.
+  and DELISTED; a delisting of a LEFT entry lands as LEFT_DELISTED (so a delisting decided
+  before an exit still takes effect); nothing else for an unlisted token or one that left.
+  `recordFederationExit()`, called by the token itself: LEFT from ACTIVE, LEFT_DELISTED from
+  DELISTED; LEFT_DELISTED is terminal and a repeat exit does nothing. Exit therefore depends on no replaceable code, no registry, old or new, can bring an
+  exited entry back, and an exit is never more served than the status it left (LEFT_DELISTED is
+  served by no registry).
 - **What a bound federation registry can do, however hostile:** create identities for accounts
   that signed for them, and write directory entries (and their status) about non-canonical
-  contracts. Nothing that decides an identity, a payout, standing, a pending change, a timer or a
+  contracts whose artists signed for them. Nothing that decides an identity, a payout, standing, a pending change, a timer or a
   binding reads a directory entry or accepts its calls, so it has no authority over any artist,
   canonical token, work or fund (`test_HostileFederationRegistry_HasNoAuthorityOverArtists`; the
   invariant handler asserts every federation call leaves the artist unchanged). Residuals: it can
@@ -752,13 +765,14 @@ Test files: [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) (
 | ID-31 | The federation registry is replaced only by SUCCESSOR_SETTER (30 days), compare-and-set, with a contract that has code, no EIP-7702 delegation and ERC-165 `IFederationRegistry`, never zero; the successor gets its calls and the predecessor none. | `ArtistRegistry.setFederationRegistry` | FD `test_SetFederationRegistry_ReplacesThePointer`, `test_SetFederationRegistry_Checks` |
 | ID-32 | The federation registry creates an identity only for an account whose own unexpired `ArtistRegistration` signature verifies, with `register`'s checks (taken, reserved, payout). | `ArtistRegistry.registerFederated`, `_create` | FD `test_RegisterFederated_CreatesTheSameIdentityAsAPackageAcceptance`, `test_RegisterFederated_NeedsTheAccountsOwnConsent`, `test_RegisterFederated_SameGuaranteesAsRegister`; INV handler `fedRegister` |
 | ID-33 | A directory entry is written once per token, by the federation registry, with the code hash read by the registry, never for a token without code, EIP-7702 delegated or already listed, and never naming the registry, Stream, its Editions or a bound contract as token, partner or fee recipient; there is no cap. | `ArtistRegistry.listFederatedContract`, `_canonical` | FD `test_List_RecordsTheEntryWithItsOwnCodeHash`, `test_List_HasNoCap`, `test_List_Refusals`, `test_List_RefusesCanonicalContracts`; INV `invariant_FederationDirectoryMatchesTheModel` |
-| ID-34 | Only the federation registry moves an entry between ACTIVE and DELISTED; only the token sets LEFT, which is terminal; no federation call changes any artist's authority, payout, standing or pending change. | `ArtistRegistry.setFederatedStatus`, `recordFederationExit` | FD `test_Status_DelistAndRelist`, `test_Status_Refusals`, `test_Exit_ByTheTokenIsTerminal`, `test_Exit_RevertsForAnUnlistedCaller`, `test_HostileFederationRegistry_HasNoAuthorityOverArtists`; INV `invariant_FederationDirectoryMatchesTheModel` and the handler's federation actions |
+| ID-34 | Only the federation registry moves an entry between ACTIVE and DELISTED; only the token sets LEFT (from ACTIVE) or LEFT_DELISTED (from DELISTED); a delisting of a LEFT entry records LEFT_DELISTED, which is terminal; no federation call changes any artist's authority, payout, standing or pending change. | `ArtistRegistry.setFederatedStatus`, `recordFederationExit` | FD `test_Status_DelistAndRelist`, `test_Status_Refusals`, `test_Exit_ByTheTokenIsTerminal`, `test_Exit_RevertsForAnUnlistedCaller`, `test_HostileFederationRegistry_HasNoAuthorityOverArtists`; INV `invariant_FederationDirectoryMatchesTheModel` and the handler's federation actions |
 | ID-35 | Each timer lies between its floor (its genesis value) and ceiling, and `CONTEST_TIMEOUT` exceeds `OVERRIDE_DELAY` by at least 185 days; only SUCCESSOR_SETTER sets them. | `ArtistRegistry.setTimer`, `timerBounds` | TM `test_Bounds_AreTheGuarantee`, `test_SetTimer_RefusesValuesOutsideTheBounds`, `test_SetTimer_KeepsTheUpholdWindow`, `testFuzz_SetTimer_NeverLeavesTheBounds`; INV `invariant_TimersStayWithinTheirBounds` |
 | ID-36 | A pending change keeps the delay and contest timeout locked at its staging, whatever is set later. | `ArtistRegistry._stage`, `_lapsed` | TM `test_Lock_LengtheningNeverTrapsAPendingChange`, `test_Lock_ShorteningNeverReleasesAPendingChange`, `test_Lock_ContestLapseUsesTheLockedTimeout`; INV `invariant_PendingChangeIsWellFormed` |
 | ID-37 | An override that moves the payout but keeps the authority needs `DORMANCY` without signed activity, whatever its kind. | `ArtistRegistry.stageOverride` | RB `test_PayoutOnlyOverride_NeedsDormancy`, `test_PayoutOnlyOverride_RecoveryPathsUnchanged`, `testFuzz_PayoutOnlyOverride_RefusedForAnyLiveArtist`; INV handler `_overrideError` |
 | ID-38 | A call into another contract forwards all gas, and a failure that leaves at most 1/8 of the gas held before it, or a source revert reporting `BoundedCallInsufficientGas` or `BoundedCallShortfall`, reverts (never a skip, a refusal or `false`), at every gas limit on every refresh trigger; source times are clamped to 48 bits, never truncated. | `ArtistRegistry._refresh`, `_skipRefresh`, `_revertOnShortfall`, `isArtist`, `bindStatementLog`, `_clamp48` | GR `test_GasRule_*` (a gas sweep of `register`, `registerFederated`, `stageChange`, `stageOverride`, `heartbeat`, `executeChange` and an upholding `resolveContested`; the source convention); RB `test_RepricedSource_IsReadInFullAt2x4x10x`, `test_Shortfall_RevertsInsteadOfSkipping`, `test_IsArtist_ShortfallRevertsInsteadOfAnsweringFalse`, `test_SourceTimes_AreClampedNotTruncated`; CO `test_BindStatementLog_ResolverReadForwardsAllGas` |
 | ID-39 | An authority can be any account `SignatureVerifier` verifies, including a contract or EIP-7702 account that pre-approves digests and answers ERC-1271 from storage. | `SignatureVerifier`, every signed path | SA (every test) |
 | ID-40 | The replaceable consolidation source never acts for a live artist: a consolidated wallet signs a STANDARD change only after `DORMANCY` without signed activity (checked before the source is read), the change waits `OVERRIDE_DELAY` and records no activity, and only the authority heartbeats (review C finding F2). A wallet the source names never moves the artist's last activity: its cancels and contests stop changes but record nothing, and a change it signed that keeps the authority restarts no clock when it executes, so it cannot keep a dormant artist live (review E, N-1). | `ArtistRegistry.stageChange`, `cancelChange`, `_apply`, `heartbeat`, `_requireDormant` | CT (every test, including `test_N1_ANamedWalletsCancelRecordsNoActivity`, `test_N1_ANamedWalletsContestRecordsNoActivity`, `test_N1_AWalletChangeKeepingTheAuthorityRestartsNoClock`); AR `test_StageChange_ByEstablishedWallet`, `test_Heartbeat_ByTheAuthorityOnly`; INV `invariant_ASourceNeverActsForALiveArtist` (the handler swaps in a source that names every wallet; no call by a non-authority wallet moves the last activity) |
+| ID-41 | A directory entry needs the artist's active authority's unexpired `FederatedListing` signature for that token and its facts, verified by this registry (none is valid while a recovery override restrains the authority), so a hostile federation registry cannot create an entry for a non-consenting artist. | `ArtistRegistry.listFederatedContract`, `_listingDigest` | FED `test_Directory_NoRegistryListsUnderAnArtistWhoDidNotSign`; FD `test_List_TheConsentCoversTheFacts`, `test_List_*`; INV handler `fedList` |
 
 ## Events
 
@@ -829,7 +843,7 @@ before mint (LIM-ID-11).
 | `ContestNotExpired(artistId, expiresAt)` | `expireContest` | The contest has not lapsed. |
 | `ContestWindowClosed(artistId, executableAt)` | `cancelChange` | The override's notice has ended. |
 | `FederatedContractRefused(token)` | `listFederatedContract` | Already listed, no code or EIP-7702 delegated, or a canonical token, partner or fee recipient. |
-| `FederatedStatusRefused(token, current)` | `setFederatedStatus`, `recordFederationExit` | Unlisted or LEFT, or a status other than ACTIVE or DELISTED. |
+| `FederatedStatusRefused(token, current)` | `setFederatedStatus`, `recordFederationExit` | Unlisted or exited (LEFT, LEFT_DELISTED), or a status other than ACTIVE or DELISTED. |
 | `IConsolidationSource.DelegationReadFailed(delegation)` | Adapter reads, surfacing through registry calls | A read failed other than at an array's end. |
 | `Dependency.InvalidDependency(dependency)`, `Dependency.DependencyCodeChanged(dependency)` | Constructor, the bindings, `setConsolidationSource`, adapter constructor; any use of the source | The target has no code, is an EIP-7702 delegated account, lacks its ERC-165 interface or the reviewed code hash; or the source's code changed since install. |
 | `BoundedCall.BoundedCallInsufficientGas(gasLimit)` | Adapter reads | The caller cannot forward the full stipend. |

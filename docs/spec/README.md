@@ -25,6 +25,7 @@ ADR, a module README and the code differ, the pages follow the code, and the
 | [Declarations and conventions](declarations-and-conventions.md) | `DCL` | Conventions with no contract logic: the declarations document and conservation floor, content-change, catalogue, citation and custody statements, the control proof, the promise card and grade, primary price reads |
 | [Entropy](entropy.md) | `ENT` | Optional Chainlink VRF seeds, one per content |
 | [Governance](governance.md) | `GV` | The AccessManager, roles and delay classes, the guardians' cancel rules, genesis and operating procedures |
+| [Federation](federation.md) | `FED` | Federated Stream and Federated Stream Editions: templates, joining, minting into adapter custody, unsold custody and restart, the 90/10 terms, the federation registry, delisting and exit, the federated edition auction |
 
 Terms are defined in the [glossary](../glossary.md). Every governed selector, with its role,
 delay class and whether a guardian can cancel it, is in the generated
@@ -194,11 +195,11 @@ the current behavior in full.
 | [Governance](governance.md) | GV-14 | ADR 0001 §13: one admin Safe, one guardian Safe | Off anvil, two admin and three guardian Safes; the code floor is two guardians | ADR 0002, decision 5; ADR 0003, owner decisions 2 and 3, addendum |
 | [Governance](governance.md) | – | ADR 0001 §13: an event emits the manifest hash | `GovernanceConfigured` and an epoch-0 statement at genesis, then `GOVERNANCE_MANIFEST` statements | ADR 0002, decision 6 |
 | [Governance](governance.md) | – | ADR 0001 §13: freezes are one-way, in the 30-day class | No freeze function exists | None recorded |
-| [Governance](governance.md) | GV-12 | ADR 0003: genesis performs every binding and minter admission | Also sale targets, default currencies and the epoch-0 manifest; federation binding waits for v1.1 | ADR 0003, integration |
+| [Governance](governance.md) | GV-12 | ADR 0003: genesis performs every binding and minter admission | Also sale targets, default currencies and the epoch-0 manifest, and the federation registry's one-shot bind (`bindFederationRegistry`) with its adapters and template approvals ([ADR 0008](../adr/0008-federation.md)) | ADR 0003, integration |
 | [Governance](governance.md) | GV-15 | ADR 0002 decision 3: the readback rejects any unexpected admin | `verify` misses admins granted later; `Verify.s.sol`'s `RoleGranted` scan catches them | None recorded |
 | [Governance](governance.md) | GV-23, AUC-13, DSP-16, EA-15 | ADR 0002 decision 7, ADR 0003: unpause, resume and cancel wait 48 hours from scheduling | None lands before 48 hours after the pause | Review finding GOV-5 (PR #57) |
 | [Build, test and budgets](../audit/build-and-test.md) | – | ADR 0001: EIP-170 holds in every Foundry profile | Measured for the one defined profile, `default` | None recorded |
-| [Build, test and budgets](../audit/build-and-test.md) | – | ADR 0001: 8–12K non-comment lines | Only the maximum is enforced: 13,000 lines since the 1 November 2026 amendment (owner decision 24), 15,000 since ADR 0007 (owner decision of 15 November 2026) | ADR 0001 amendment, ADR 0007 |
+| [Build, test and budgets](../audit/build-and-test.md) | – | ADR 0001: 8–12K non-comment lines | Only the maximum is enforced: 13,000 lines since the 1 November 2026 amendment (owner decision 24), 15,000 since ADR 0007 (owner decision of 15 November 2026), 16,000 since ADR 0008 (16 November 2026), 16,500 for its review's fixes | ADR 0001 amendment, ADR 0007, ADR 0008 |
 | [Build, test and budgets](../audit/build-and-test.md) | – | ADR 0001: build and test in under 15 minutes | Per-job timeouts: 15 minutes for Contracts and Static analysis, 5 for Docs | None recorded |
 | [Build, test and budgets](../audit/build-and-test.md) | – | ADR 0001: reproducible from a committed standard-JSON input | None committed; `Verify.s.sol` does not rebuild bytecode | Known gap LIM-REL-1 |
 | [Invariants](../audit/invariants.md) | INV-CUR-1, INV-CUR-3, INV-CUR-4, INV-CUR-6 | ADR 0001 test plan: single-use packages and items as an invariant | Items and content hashes are tested directly; a package's single use only through the model's exactness | None recorded |

@@ -5,6 +5,7 @@ import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { ArtistIdentity, ChangeKind } from "src/interfaces/types/IdentityTypes.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
+import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import {
     DisputeOutcomeLogMock,
     EditionsMastersMock,
@@ -28,6 +29,11 @@ contract FederationDirectoryTest is IdentityFixture {
     address internal token;
     address internal partner;
     address internal feeVault = makeAddr("networkFeeVault");
+    uint64 internal constant DEADLINE = type(uint64).max;
+    bytes32 internal constant LISTING = keccak256(
+        "FederatedListing(uint256 artistId,address token,uint8 form,address partner,"
+        "uint32 feeShare,address feeRecipient,uint64 deadline)"
+    );
 
     function setUp() public override {
         super.setUp();
@@ -56,9 +62,15 @@ contract FederationDirectoryTest is IdentityFixture {
         // The predecessor lost its calls; the successor has them.
         vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.UnboundCaller.selector, federation));
         vm.prank(federation);
-        registry.listFederatedContract(artistId, token, 0, address(0), 10_000, feeVault);
+        registry.listFederatedContract(
+            _l(artistId, token, 0, address(0), 10_000, feeVault),
+            _ok(_l(artistId, token, 0, address(0), 10_000, feeVault))
+        );
         vm.prank(next);
-        registry.listFederatedContract(artistId, token, 0, address(0), 10_000, feeVault);
+        registry.listFederatedContract(
+            _l(artistId, token, 0, address(0), 10_000, feeVault),
+            _ok(_l(artistId, token, 0, address(0), 10_000, feeVault))
+        );
     }
 
     function test_SetFederationRegistry_Checks() public {
@@ -194,7 +206,10 @@ contract FederationDirectoryTest is IdentityFixture {
             artistId, token, token.codehash, 0, partner, 10_000, feeVault
         );
         vm.prank(federation);
-        registry.listFederatedContract(artistId, token, 0, partner, 10_000, feeVault);
+        registry.listFederatedContract(
+            _l(artistId, token, 0, partner, 10_000, feeVault),
+            _ok(_l(artistId, token, 0, partner, 10_000, feeVault))
+        );
         (uint256 listedArtist, IArtistRegistry.FederationStatus status) =
             registry.federatedListing(token);
         assertEq(listedArtist, artistId);
@@ -202,12 +217,55 @@ contract FederationDirectoryTest is IdentityFixture {
         assertTrue(token.codehash != bytes32(0) && token.codehash != keccak256(""));
     }
 
+    /// @dev Review G (I3): the consent covers the entry's facts; a consent to the token with
+    ///      other facts lists nothing.
+    function test_List_TheConsentCoversTheFacts() public {
+        bytes memory consent = _ok(_l(artistId, token, 0, address(0), 0, address(0)));
+        vm.expectRevert(abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, artist));
+        vm.prank(federation);
+        registry.listFederatedContract(_l(artistId, token, 0, partner, 10_000, feeVault), consent);
+    }
+
+    /// @dev The consent binds each of the seven signed facts on its own: a listing that differs
+    ///      from the signed one in any single field lists nothing, and the signed one lists.
+    function test_List_TheConsentBindsEachFieldAlone() public {
+        IArtistRegistry.FederatedListing memory signed =
+            _l(artistId, token, 0, partner, 10_000, feeVault);
+        bytes memory consent = _ok(signed);
+        address other = makeAddr("otherArtist");
+        uint256 otherId = _register(other);
+        for (uint256 field; field < 7; ++field) {
+            IArtistRegistry.FederatedListing memory l =
+                _l(artistId, token, 0, partner, 10_000, feeVault);
+            address signer = artist;
+            if (field == 0) (l.artistId, signer) = (otherId, other);
+            else if (field == 1) l.token = address(new FederationRegistryStub());
+            else if (field == 2) l.form = 1;
+            else if (field == 3) l.partner = address(new EditionsMastersMock());
+            else if (field == 4) l.feeShare = 10_001;
+            else if (field == 5) l.feeRecipient = makeAddr("otherFeeVault");
+            else l.deadline = DEADLINE - 1;
+            vm.expectRevert(
+                abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, signer)
+            );
+            vm.prank(federation);
+            registry.listFederatedContract(l, consent);
+        }
+        vm.prank(federation);
+        registry.listFederatedContract(signed, consent);
+        (uint256 listedArtist,) = registry.federatedListing(token);
+        assertEq(listedArtist, artistId);
+    }
+
     /// Regression: the 64-entry append-only list (study H): an artist lists any number.
     function test_List_HasNoCap() public {
         vm.startPrank(federation);
         for (uint256 i; i < 100; ++i) {
             address t = address(new FederationRegistryStub());
-            registry.listFederatedContract(artistId, t, uint8(i % 2), address(0), 10_000, feeVault);
+            registry.listFederatedContract(
+                _l(artistId, t, uint8(i % 2), address(0), 10_000, feeVault),
+                _ok(_l(artistId, t, uint8(i % 2), address(0), 10_000, feeVault))
+            );
         }
         vm.stopPrank();
     }
@@ -215,27 +273,48 @@ contract FederationDirectoryTest is IdentityFixture {
     function test_List_Refusals() public {
         vm.startPrank(federation);
         vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.UnknownArtist.selector, 5));
-        registry.listFederatedContract(5, token, 0, address(0), 10_000, feeVault);
+        registry.listFederatedContract(
+            _l(5, token, 0, address(0), 10_000, feeVault),
+            _ok(_l(5, token, 0, address(0), 10_000, feeVault))
+        );
         // No code, or an EIP-7702 delegated account: its code hash would mean nothing.
         address delegated = makeAddr("delegated7702");
         vm.etch(delegated, abi.encodePacked(hex"ef0100", token));
         _expectRefused(stranger);
-        registry.listFederatedContract(artistId, stranger, 0, address(0), 10_000, feeVault);
+        registry.listFederatedContract(
+            _l(artistId, stranger, 0, address(0), 10_000, feeVault),
+            _ok(_l(artistId, stranger, 0, address(0), 10_000, feeVault))
+        );
         _expectRefused(delegated);
-        registry.listFederatedContract(artistId, delegated, 0, address(0), 10_000, feeVault);
+        registry.listFederatedContract(
+            _l(artistId, delegated, 0, address(0), 10_000, feeVault),
+            _ok(_l(artistId, delegated, 0, address(0), 10_000, feeVault))
+        );
         // Listed once, in any status, never again.
-        registry.listFederatedContract(artistId, token, 0, address(0), 10_000, feeVault);
+        registry.listFederatedContract(
+            _l(artistId, token, 0, address(0), 10_000, feeVault),
+            _ok(_l(artistId, token, 0, address(0), 10_000, feeVault))
+        );
         _expectRefused(token);
-        registry.listFederatedContract(artistId, token, 1, address(0), 5_000, feeVault);
+        registry.listFederatedContract(
+            _l(artistId, token, 1, address(0), 5_000, feeVault),
+            _ok(_l(artistId, token, 1, address(0), 5_000, feeVault))
+        );
         registry.setFederatedStatus(token, IArtistRegistry.FederationStatus.DELISTED, "vote");
         _expectRefused(token);
-        registry.listFederatedContract(artistId, token, 0, address(0), 10_000, feeVault);
+        registry.listFederatedContract(
+            _l(artistId, token, 0, address(0), 10_000, feeVault),
+            _ok(_l(artistId, token, 0, address(0), 10_000, feeVault))
+        );
         vm.stopPrank();
         vm.prank(token);
         registry.recordFederationExit();
         _expectRefused(token);
         vm.prank(federation);
-        registry.listFederatedContract(artistId, token, 0, address(0), 10_000, feeVault);
+        registry.listFederatedContract(
+            _l(artistId, token, 0, address(0), 10_000, feeVault),
+            _ok(_l(artistId, token, 0, address(0), 10_000, feeVault))
+        );
     }
 
     /// @dev Entries, partners and fee recipients never name this registry, 6529 Stream, its
@@ -260,11 +339,20 @@ contract FederationDirectoryTest is IdentityFixture {
         vm.startPrank(federation);
         for (uint256 i; i < canonical.length; ++i) {
             _expectRefused(canonical[i]);
-            registry.listFederatedContract(artistId, canonical[i], 0, address(0), 10_000, feeVault);
+            registry.listFederatedContract(
+                _l(artistId, canonical[i], 0, address(0), 10_000, feeVault),
+                _ok(_l(artistId, canonical[i], 0, address(0), 10_000, feeVault))
+            );
             _expectRefused(token);
-            registry.listFederatedContract(artistId, token, 0, canonical[i], 10_000, feeVault);
+            registry.listFederatedContract(
+                _l(artistId, token, 0, canonical[i], 10_000, feeVault),
+                _ok(_l(artistId, token, 0, canonical[i], 10_000, feeVault))
+            );
             _expectRefused(token);
-            registry.listFederatedContract(artistId, token, 0, address(0), 10_000, canonical[i]);
+            registry.listFederatedContract(
+                _l(artistId, token, 0, address(0), 10_000, canonical[i]),
+                _ok(_l(artistId, token, 0, address(0), 10_000, canonical[i]))
+            );
             (, IArtistRegistry.FederationStatus status) = registry.federatedListing(canonical[i]);
             assertEq(uint8(status), uint8(IArtistRegistry.FederationStatus.NONE));
         }
@@ -326,12 +414,13 @@ contract FederationDirectoryTest is IdentityFixture {
         vm.prank(successorSetter);
         registry.setFederationRegistry(federation, next);
 
+        // Left while delisted: LEFT_DELISTED, never more served than DELISTED.
         vm.expectEmit(address(registry));
         emit IArtistRegistry.FederatedContractStatus(
             token,
             artistId,
             IArtistRegistry.FederationStatus.DELISTED,
-            IArtistRegistry.FederationStatus.LEFT,
+            IArtistRegistry.FederationStatus.LEFT_DELISTED,
             bytes32(0)
         );
         vm.prank(token);
@@ -343,13 +432,60 @@ contract FederationDirectoryTest is IdentityFixture {
         assertEq(vm.getRecordedLogs().length, 0);
 
         vm.startPrank(next);
-        _expectStatusRefused(token, IArtistRegistry.FederationStatus.LEFT);
+        _expectStatusRefused(token, IArtistRegistry.FederationStatus.LEFT_DELISTED);
         registry.setFederatedStatus(token, IArtistRegistry.FederationStatus.ACTIVE, "");
         _expectRefused(token);
-        registry.listFederatedContract(artistId, token, 0, address(0), 10_000, feeVault);
+        registry.listFederatedContract(
+            _l(artistId, token, 0, address(0), 10_000, feeVault),
+            _ok(_l(artistId, token, 0, address(0), 10_000, feeVault))
+        );
         vm.stopPrank();
         (, IArtistRegistry.FederationStatus status) = registry.federatedListing(token);
-        assertEq(uint8(status), uint8(IArtistRegistry.FederationStatus.LEFT));
+        assertEq(uint8(status), uint8(IArtistRegistry.FederationStatus.LEFT_DELISTED));
+    }
+
+    /// @dev An exit from ACTIVE is LEFT, terminal too.
+    function test_Exit_FromActiveIsLeft() public {
+        _list();
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.FederatedContractStatus(
+            token,
+            artistId,
+            IArtistRegistry.FederationStatus.ACTIVE,
+            IArtistRegistry.FederationStatus.LEFT,
+            bytes32(0)
+        );
+        vm.prank(token);
+        registry.recordFederationExit();
+        // A relisting never reverses an exit.
+        vm.prank(federation);
+        _expectStatusRefused(token, IArtistRegistry.FederationStatus.LEFT);
+        registry.setFederatedStatus(token, IArtistRegistry.FederationStatus.ACTIVE, "");
+    }
+
+    /// @dev Review G (G1): a delisting decided before an exit still lands on the exited entry,
+    ///      as LEFT_DELISTED (previous LEFT), which nothing reverses.
+    function test_Status_ADelistingOfALeftEntryLandsAsLeftDelisted() public {
+        _list();
+        vm.prank(token);
+        registry.recordFederationExit();
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.FederatedContractStatus(
+            token,
+            artistId,
+            IArtistRegistry.FederationStatus.LEFT,
+            IArtistRegistry.FederationStatus.LEFT_DELISTED,
+            "vote"
+        );
+        vm.startPrank(federation);
+        registry.setFederatedStatus(token, IArtistRegistry.FederationStatus.DELISTED, "vote");
+        (, IArtistRegistry.FederationStatus status) = registry.federatedListing(token);
+        assertEq(uint8(status), uint8(IArtistRegistry.FederationStatus.LEFT_DELISTED));
+        _expectStatusRefused(token, IArtistRegistry.FederationStatus.LEFT_DELISTED);
+        registry.setFederatedStatus(token, IArtistRegistry.FederationStatus.ACTIVE, "");
+        _expectStatusRefused(token, IArtistRegistry.FederationStatus.LEFT_DELISTED);
+        registry.setFederatedStatus(token, IArtistRegistry.FederationStatus.DELISTED, "");
+        vm.stopPrank();
     }
 
     function test_Exit_RevertsForAnUnlistedCaller() public {
@@ -392,7 +528,10 @@ contract FederationDirectoryTest is IdentityFixture {
         vm.expectRevert(_notAuthorized(federation));
         registry.revokeNonce(artistId);
         // What it may do: write directory entries about other contracts.
-        registry.listFederatedContract(artistId, token, 0, address(0), 10_000, feeVault);
+        registry.listFederatedContract(
+            _l(artistId, token, 0, address(0), 10_000, feeVault),
+            _ok(_l(artistId, token, 0, address(0), 10_000, feeVault))
+        );
         registry.setFederatedStatus(token, IArtistRegistry.FederationStatus.DELISTED, "");
         vm.stopPrank();
         assertEq(_artistState(), before, "the artist is untouched");
@@ -403,9 +542,43 @@ contract FederationDirectoryTest is IdentityFixture {
 
     // ----------------------------------------------------------------- helpers
 
+    /// @dev The artist's consent to `t` listed under `id`, by the artist's key, computed here
+    ///      (no call, so a pending prank stays on the listing call).
+    /// @dev A listing's facts with this test's deadline.
+    function _l(
+        uint256 id,
+        address t,
+        uint8 form,
+        address partner_,
+        uint32 share,
+        address recipient
+    ) internal pure returns (IArtistRegistry.FederatedListing memory) {
+        return IArtistRegistry.FederatedListing(id, t, form, partner_, share, recipient, DEADLINE);
+    }
+
+    function _ok(IArtistRegistry.FederatedListing memory l) internal view returns (bytes memory) {
+        bytes32 domain = keccak256(
+            abi.encode(
+                keccak256(
+                    "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+                ),
+                keccak256("6529 Works Artist Registry"),
+                keccak256("1"),
+                block.chainid,
+                address(registry)
+            )
+        );
+        bytes32 digest =
+            keccak256(abi.encodePacked(hex"1901", domain, keccak256(abi.encode(LISTING, l))));
+        return _sign(artistKey, digest);
+    }
+
     function _list() internal {
         vm.prank(federation);
-        registry.listFederatedContract(artistId, token, 0, partner, 10_000, feeVault);
+        registry.listFederatedContract(
+            _l(artistId, token, 0, partner, 10_000, feeVault),
+            _ok(_l(artistId, token, 0, partner, 10_000, feeVault))
+        );
     }
 
     function _consent(uint256 key, address account, uint64 deadline)

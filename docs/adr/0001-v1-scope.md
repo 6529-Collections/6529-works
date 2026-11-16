@@ -576,8 +576,15 @@ before that chain.
 specified by a later ADR; the artist registry's permanent federation directory and replaceable
 federation-registry pointer are built. See [ADR 0007](0007-permanence.md) and [Amendments](#amendments).)
 
+(Amendment note, 15 November 2026: specified by [ADR 0008](0008-federation.md): no factory (a
+contract joins itself when its code hash is an approved template version and that version's
+deployer recorded it: the hash alone would admit initcode that installs the same runtime after
+writing other storage); entries composed on read; unbid federated works stay with the
+template.)
+
 Federation lets an artist run their own contract, built from the network's
-audited templates, as a registered member of the 6529 network.
+audited templates, as a registered member of the 6529 network. (Wording amended 16 November
+2026: see [Amendments](#amendments).)
 
 **Purpose: open, automated discovery (owner direction, 11 October 2026).** The
 registry is a public, on-chain directory of every federated contract and work.
@@ -598,7 +605,8 @@ shared sale adapters, the template-ready token code, and a registry interface.
 
 **Components**
 - **Templates.** Each template is the 6529 Stream or 6529 Editions token code
-  with curation switched off. Each template version is reviewed and audited,
+  with curation switched off. Each template version is reviewed and audited
+  (wording amended 16 November 2026: see [Amendments](#amendments)),
   and identified by its code hash. New template versions are published by
   governance. Deployed contracts never change.
 - **Factory.** Deploys a template as a full, non-proxy contract. It deploys
@@ -758,7 +766,9 @@ AccessManager governs all of them. The VRF module is optional.
 
 **Engineering budgets, enforced as CI gates:**
 - **Size:** 8–12K non-comment lines of production Solidity. (Amended 1 November 2026: the
-  gate is 13,000 lines; amended 15 November 2026: 15,000 lines; see [Amendments](#amendments).)
+  gate is 13,000 lines; amended 15 November 2026: 15,000 lines; 16 November 2026: 16,000 lines,
+  then 16,500 for the federation review's fixes, [ADR 0008](0008-federation.md); see
+  [Amendments](#amendments).)
 - **Structure:** at most 5 linked libraries; no delegatecall; no proxies.
 - **Contract size:** EIP-170 enforced in every Foundry profile.
 - **CI time:** full build and test in under 15 minutes.
@@ -787,7 +797,8 @@ AccessManager governs all of them. The VRF module is optional.
   - Rejected: cheap copies would mix with 1/1s in one contract.
   - Editions go to the linked 1155 instead.
 - **Keep RC1's bespoke governance.**
-  - Rejected in favour of a standard, audited AccessManager.
+  - Rejected in favour of a standard, audited AccessManager. (Wording amended 16 November
+    2026: see [Amendments](#amendments).)
 - **Mandatory on-chain storage up to 1 MB.**
   - Rejected for gas-cost exposure.
   - Off-chain by default, with a collector-funded upgrade path.
@@ -938,6 +949,14 @@ AccessManager governs all of them. The VRF module is optional.
     signed releases; the fee recipient and the museum are governed vaults.
   - **§13.** The AccessManager gains a bounded veto, dead-admin recovery, a pre-registered
     successor with `migrate`, seat caps and a third admin seat (ADR 0002's amendment note).
+
+- **16 November 2026: the templates are governance-approved, and the project is pre-audit.**
+  Where this ADR says federation's templates, or a template version, are "audited" (§16's
+  opening sentence and its Components list), or that the AccessManager is "audited" (the
+  rejected alternatives), read "governance-approved" for the templates, and "the standard
+  OpenZeppelin AccessManager" for the manager. A template version is approved by governance
+  by its code hash ([ADR 0008](0008-federation.md)); no audit of any contract has been done
+  ([docs/spec/federation.md](../spec/federation.md)).
 
 ## Open items
 

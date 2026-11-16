@@ -307,7 +307,7 @@ only in v1 (clones later, as a new template version), forms 721 and the linked p
 federated works stay in template custody and can be re-auctioned, no royalty floor, no VRF for
 federated works in v1, registration by code hash with no trusted factory, one-way exit, fees
 locked per contract. Only the permanent part has landed (the artist registry's directory,
-above); the rest is **in v1, specified by a later ADR**.
+above); the rest is **in v1, specified by [ADR 0008](0008-federation.md)**.
 
 **P7, policy numbers** (study I). No number in a permanent contract had a setter. Decided:
 - moved out with the packages: signature size and ERC-1271 gas (forward all gas, 64 KiB), the
@@ -550,6 +550,6 @@ ADRs stay as written; each amended record gets a dated amendment note pointing h
   - unanimous-party consent for amendments (unchanged until the owner chooses);
   - consolidated-wallet recovery for a dormant artist: built as dormancy plus the 180-day
     override delay; the alternative is dormancy plus 7 days (owner to confirm).
-- A federation ADR, then the federation lane.
+- The federation: specified by [ADR 0008](0008-federation.md) and built on its own branch.
 - Two independent reviews (contracts; governance), then a Sepolia redeploy and a Glamsterdam
   measurement of every row.

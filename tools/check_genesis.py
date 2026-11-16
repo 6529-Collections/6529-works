@@ -49,13 +49,22 @@ from typing import Callable
 CONFIG = "config/genesis.example.json"
 CLASS_DELAY = {"immediate": 0, "standard": 172_800, "funds": 1_209_600, "successor": 2_592_000}
 # Functions `GovernanceConfig.isGenesisSelector` admits (one-shot binds, admitted minters,
-# sale targets, first default currencies, the English auction's ETH opening bid, the epoch-0
-# manifest). The Solidity tests pin the selectors themselves.
+# sale targets, first default currencies, the English auction's ETH opening bid, the
+# federation's first registry, adapters and template versions, the epoch-0 manifest). The
+# Solidity tests pin the selectors themselves.
 GENESIS_FUNCTIONS = frozenset({
     "bindWorkRecords", "bindEditions", "bindStream", "bindPackageRegistry", "bindSplitFactory",
     "bindStatementLog", "bindFederationRegistry", "setAdmittedMinter", "setTarget",
-    "setDefaultCurrency", "setOpeningBid", "appendGovernanceManifest",
+    "setDefaultCurrency", "setOpeningBid", "setFederationRegistry", "setAdapter",
+    "approveTemplate", "appendGovernanceManifest",
 })
+
+# Wiring arguments that name a federated template: `DeployV1.templateCodeHash` computes the
+# runtime code hash from the build, so the JSON holds the name, never a literal (a `bytes32`
+# argument); and each template's deployer, which `DeployV1` deploys (not a governed target, so
+# not in `contracts`), an `address` argument (ADR 0008).
+TEMPLATE_HASHES = frozenset({"FederatedStream", "FederatedEditions"})
+TEMPLATE_DEPLOYERS = frozenset({"FederatedStreamDeployer", "FederatedEditionsDeployer"})
 
 # Zero-delay roles a guardian may never suspend (check 8): the veto, the pause, and the curation
 # signer, whose kill switch is the verifier's `disableSigner` (it also ends the signer's epoch).
@@ -404,10 +413,24 @@ def check(
         problems += _check_calldata(
             where, sig, w.get("calldata"), w.get("args", []), addresses
         )
-        for arg in w.get("args", []):
-            if isinstance(arg, str) and not arg.startswith("0x") and arg not in by_name \
-                    and arg not in peers:
+        params = _static_params(sig)
+        for j, arg in enumerate(w.get("args", [])):
+            if not isinstance(arg, str) or arg.startswith("0x"):
+                continue
+            if arg in TEMPLATE_HASHES:
+                expected = "bytes32"
+            elif arg in by_name or arg in peers or arg in TEMPLATE_DEPLOYERS:
+                expected = "address"
+            else:
                 problems.append(f"{where}: argument {arg} names no contract or peer")
+                continue
+            # A name stands for a value of one type: a template's runtime code hash, or an
+            # address. Each must sit in a parameter of that type.
+            if params is not None and (j >= len(params) or params[j] != expected):
+                kind = params[j] if j < len(params) else "missing"
+                problems.append(
+                    f"{where}: argument {j} names {arg}, a {expected}, for a {kind} parameter"
+                )
         wired.add((name, sig))
     for name, c in by_name.items():
         for e in c.get("genesisOnly", []):

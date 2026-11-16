@@ -60,6 +60,10 @@ contract TypehashesTest is Test {
             Typehashes.ARTIST_REGISTRATION,
             0x251edc52a2bb08ba54c8c256d514ddd287d55597cda1692026fb5fcbf0f8a8d9
         );
+        assertEq(
+            Typehashes.FEDERATED_LISTING,
+            0x4a9cf66981feefe0dcd25aa0b9657554118bc34d7928f2709a3e651e9c5da1ce
+        );
     }
 
     function test_witnessTypehashes() public pure {

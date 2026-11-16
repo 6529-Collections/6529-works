@@ -15,7 +15,10 @@ import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { StepLadder } from "src/interfaces/types/StepLadder.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
-import { UniformEditionAuction } from "src/sales/UniformEditionAuction.sol";
+import {
+    UniformEditionAuction,
+    UniformEditionAuctionBase
+} from "src/sales/UniformEditionAuction.sol";
 import { UniformEditionAuctionLens } from "src/sales/UniformEditionAuctionLens.sol";
 import { MockFederationRegistry } from "../../mocks/sales/SaleMocks.sol";
 import { EthRefusingHolder, MockOneOfOneAuction } from "../../mocks/sales/EditionAuctionMocks.sol";
@@ -169,27 +172,33 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
     ///      compiler cannot check that its write functions match: this does, selector by
     ///      selector.
     function test_Selectors_MatchTheFrozenInterface() public view {
-        assertEq(UniformEditionAuction.open.selector, IUniformEditionAuction.open.selector);
-        assertEq(UniformEditionAuction.bid.selector, IUniformEditionAuction.bid.selector);
-        assertEq(UniformEditionAuction.raise.selector, IUniformEditionAuction.raise.selector);
+        assertEq(UniformEditionAuctionBase.open.selector, IUniformEditionAuction.open.selector);
+        assertEq(UniformEditionAuctionBase.bid.selector, IUniformEditionAuction.bid.selector);
+        assertEq(UniformEditionAuctionBase.raise.selector, IUniformEditionAuction.raise.selector);
         assertEq(
-            UniformEditionAuction.withdrawBid.selector, IUniformEditionAuction.withdrawBid.selector
+            UniformEditionAuctionBase.withdrawBid.selector,
+            IUniformEditionAuction.withdrawBid.selector
         );
-        assertEq(UniformEditionAuction.settle.selector, IUniformEditionAuction.settle.selector);
-        assertEq(UniformEditionAuction.claimBid.selector, IUniformEditionAuction.claimBid.selector);
+        assertEq(UniformEditionAuctionBase.settle.selector, IUniformEditionAuction.settle.selector);
         assertEq(
-            UniformEditionAuction.claimBidFor.selector, IUniformEditionAuction.claimBidFor.selector
-        );
-        assertEq(
-            UniformEditionAuction.setConfig.selector, IUniformEditionAuction.setConfig.selector
+            UniformEditionAuctionBase.claimBid.selector, IUniformEditionAuction.claimBid.selector
         );
         assertEq(
-            UniformEditionAuction.setLimits.selector, IUniformEditionAuction.setLimits.selector
+            UniformEditionAuctionBase.claimBidFor.selector,
+            IUniformEditionAuction.claimBidFor.selector
         );
-        assertEq(UniformEditionAuction.abandon.selector, IUniformEditionAuction.abandon.selector);
-        assertEq(UniformEditionAuction.claim.selector, ISaleAdapter.claim.selector);
-        assertEq(UniformEditionAuction.pause.selector, ISaleAdapter.pause.selector);
-        assertEq(UniformEditionAuction.unpause.selector, ISaleAdapter.unpause.selector);
+        assertEq(
+            UniformEditionAuctionBase.setConfig.selector, IUniformEditionAuction.setConfig.selector
+        );
+        assertEq(
+            UniformEditionAuctionBase.setLimits.selector, IUniformEditionAuction.setLimits.selector
+        );
+        assertEq(
+            UniformEditionAuctionBase.abandon.selector, IUniformEditionAuction.abandon.selector
+        );
+        assertEq(UniformEditionAuctionBase.claim.selector, ISaleAdapter.claim.selector);
+        assertEq(UniformEditionAuctionBase.pause.selector, ISaleAdapter.pause.selector);
+        assertEq(UniformEditionAuctionBase.unpause.selector, ISaleAdapter.unpause.selector);
         assertEq(UniformEditionAuction.setTarget.selector, ISaleAdapter.setTarget.selector);
     }
 

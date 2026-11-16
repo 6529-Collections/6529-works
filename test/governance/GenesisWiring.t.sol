@@ -5,12 +5,15 @@ import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessMana
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { Multicall } from "@openzeppelin/contracts/utils/Multicall.sol";
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
+import { FederationRegistry } from "src/federated/FederationRegistry.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
@@ -117,7 +120,7 @@ contract GenesisWiringTest is GovernanceFixture {
     }
 
     function test_GenesisSelectorsAreExactlyTheAllowList() public pure {
-        bytes4[12] memory allowed = [
+        bytes4[15] memory allowed = [
             IStream.bindWorkRecords.selector,
             IStream.bindEditions.selector,
             IPackageRegistry.bindStream.selector,
@@ -129,6 +132,9 @@ contract GenesisWiringTest is GovernanceFixture {
             ISaleAdapter.setTarget.selector,
             IAssetAllowlist.setDefaultCurrency.selector,
             IAssetAllowlist.setOpeningBid.selector,
+            ISaleAdapter.setFederationRegistry.selector,
+            FederationRegistry.setAdapter.selector,
+            FederationRegistry.approveTemplate.selector,
             IStatementLog.appendGovernanceManifest.selector
         ];
         for (uint256 i; i < allowed.length; ++i) {
@@ -139,15 +145,41 @@ contract GenesisWiringTest is GovernanceFixture {
         assertEq(IArtistRegistry.bindStream.selector, IPackageRegistry.bindStream.selector);
         assertFalse(GovernanceConfig.isGenesisSelector(IPackageRegistry.setVerifier.selector));
         assertFalse(GovernanceConfig.isGenesisSelector(IStream.setDefaultRenderer.selector));
+        // The federation registry's later changes wait their class.
+        assertFalse(GovernanceConfig.isGenesisSelector(FederationRegistry.revokeTemplate.selector));
+        assertFalse(GovernanceConfig.isGenesisSelector(FederationRegistry.setStatus.selector));
         assertFalse(GovernanceConfig.isGenesisSelector(bytes4(0)));
     }
 
     function testFuzz_OnlyGenesisSelectorsPassValidation(bytes4 selector) public {
+        _expectValidation(selector);
+    }
+
+    /// @dev The federation registry's genesis selectors reach only a target declaring
+    ///      `IFederationRegistry`: the wiring mock declares only `IMintTarget` and `ISaleAdapter`,
+    ///      so both are refused there (explicit, so coverage does not rest on the fuzzer).
+    function test_FederationRegistrySelectorsNeedTheirInterface() public {
+        assertFalse(
+            IERC165(address(wired)).supportsInterface(type(IFederationRegistry).interfaceId)
+        );
+        _expectValidation(FederationRegistry.approveTemplate.selector);
+        _expectValidation(FederationRegistry.setAdapter.selector);
+        _expectValidation(IMintTarget.setAdmittedMinter.selector);
+    }
+
+    /// @dev Validates one wiring call of `selector` on the wiring mock, expecting what
+    ///      `genesisInterface` and the mock's declared interfaces allow: a genesis selector the
+    ///      target may receive (any target, or one declaring its interface) passes; any other is
+    ///      refused.
+    function _expectValidation(bytes4 selector) internal {
         WiringValidationHarness harness = new WiringValidationHarness();
         GovernanceConfig.Config memory cfg = _wiredConfig();
         GovernanceConfig.Call[] memory wiring =
             _one(_call(address(wired), abi.encodePacked(selector, bytes32(0))));
-        if (!GovernanceConfig.isGenesisSelector(selector)) {
+        bytes4 iface = GovernanceConfig.genesisInterface(selector);
+        bool allowed = iface != 0
+            && (iface == bytes4(0xffffffff) || IERC165(address(wired)).supportsInterface(iface));
+        if (!allowed) {
             vm.expectRevert(
                 abi.encodeWithSelector(
                     GovernanceConfig.WiringSelectorNotAllowed.selector, address(wired), selector
@@ -338,6 +370,40 @@ contract GenesisWiringTest is GovernanceFixture {
             )
         );
         assertEq(target.verifier(), verifier0);
+    }
+
+    /// Review F (F5): a genesis selector reaches only the contracts that declare the interface
+    /// it is admitted for. The artist registry's `setFederationRegistry`, a 30-day replacement,
+    /// shares the sale adapters' selector; a target that does not declare `ISaleAdapter` is
+    /// refused, and so are the other scoped selectors.
+    function test_GenesisSelectorsReachOnlyTheirTargets() public {
+        assertEq(
+            IArtistRegistry.setFederationRegistry.selector,
+            ISaleAdapter.setFederationRegistry.selector
+        );
+        assertEq(
+            GovernanceConfig.genesisInterface(ISaleAdapter.setFederationRegistry.selector),
+            type(ISaleAdapter).interfaceId
+        );
+        bytes4[5] memory scoped = [
+            ISaleAdapter.setFederationRegistry.selector,
+            ISaleAdapter.setTarget.selector,
+            IMintTarget.setAdmittedMinter.selector,
+            FederationRegistry.setAdapter.selector,
+            FederationRegistry.approveTemplate.selector
+        ];
+        for (uint256 i; i < scoped.length; ++i) {
+            _expectWiringRevert(
+                _one(_call(address(target), abi.encodePacked(scoped[i], bytes32(0), bytes32(0)))),
+                abi.encodeWithSelector(
+                    GovernanceConfig.WiringSelectorNotAllowed.selector, address(target), scoped[i]
+                )
+            );
+        }
+        // A target declaring the interface still receives it.
+        GovernanceConfig.Config memory cfg = _wiredConfig();
+        configurator.configure(cfg, MANIFEST, _genesisCalls());
+        assertTrue(wired.isTarget(address(peerB)));
     }
 
     /// Regression for the PR #25 review: the old deny-list missed the manager's `multicall`.
