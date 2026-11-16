@@ -162,11 +162,8 @@ contract CurationHandler is CurationHelpers {
             && streamItemOf[t.sha] == 0 && !released[itemHashes[t.i]] && key == currentKey[t.a]
             && !expired && !spent[t.a][t.nonce]
             && (releasedTo[t.sha] == 0 || releasedTo[t.sha] == uint160(accounts[t.a]));
-        MoveAuthorization memory move = MoveAuthorization(
-            t.nonce,
-            t.deadline,
-            _sig(key, registry.moveDigest(t.root, itemHashes[t.i], t.nonce, t.deadline))
-        );
+        MoveAuthorization memory move =
+            _signedMove(key, t.root, itemHashes[t.i], t.nonce, t.deadline);
         PackageItem memory item = abi.decode(encodedItems[t.i], (PackageItem));
         try this.mintAs(
             t.caller,
@@ -188,6 +185,18 @@ contract CurationHandler is CurationHelpers {
         } catch {
             if (t.expected) unexpectedFailure = true;
         }
+    }
+
+    /// @dev The move authorization `key` signs, as a proof the artist registry checks.
+    function _signedMove(
+        uint256 key,
+        bytes32 root,
+        bytes32 itemHash,
+        uint256 nonce,
+        uint64 deadline
+    ) internal view returns (MoveAuthorization memory) {
+        bytes32 digest = registry.moveDigest(root, itemHash, nonce, deadline);
+        return MoveAuthorization(nonce, deadline, _pf(key, _sig(key, digest)));
     }
 
     /// @dev Stream mints through its stand-in, which applies Stream's content rule (AUC-44);
@@ -286,7 +295,7 @@ contract CurationHandler is CurationHelpers {
         address account = vm.addr(key);
         PartyAcceptance memory acc =
             PartyAcceptance(account, keccak256(abi.encode(account)), 0, type(uint64).max);
-        bytes memory sig = _sig(key, registry.acceptanceDigest(root, acc));
+        bytes memory sig = _pf(key, _sig(key, registry.acceptanceDigest(root, acc)));
         bool expected = statusOf[root] == APPROVED;
         try registry.acceptPackage(root, acc, sig) {
             if (!expected) unexpectedSuccess = true;
@@ -325,7 +334,7 @@ contract CurationHandler is CurationHelpers {
     function _acceptAs(bytes32 root, address account, uint256 key) internal {
         PartyAcceptance memory acc =
             PartyAcceptance(account, keccak256(abi.encode(account)), 0, type(uint64).max);
-        registry.acceptPackage(root, acc, _sig(key, registry.acceptanceDigest(root, acc)));
+        registry.acceptPackage(root, acc, _pf(key, _sig(key, registry.acceptanceDigest(root, acc))));
     }
 
     /// @dev Root of items `[from, to)`, writing each member's proof into `proofs`.

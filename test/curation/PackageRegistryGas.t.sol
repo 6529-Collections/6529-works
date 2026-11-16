@@ -30,11 +30,13 @@ contract PackageRegistryGasTest is CurationBase {
     /// @dev Regression gates, measured with every account and slot cold, which overstates a
     ///      real start where some of them are already warm. `authorize` runs the item rules, the
     ///      consume and the terms quote (stub economics and factory); since AUC-44 it writes no
-    ///      content record (Stream does). Measured: 43,787 (first work), 60,907 (a nonce past
-    ///      the artist's first bitmap word) and 48,111 (two parties); each gate is about 3% above.
-    uint256 internal constant CONSUME_BUDGET = 46_000;
-    uint256 internal constant CONSUME_NEW_WORD_BUDGET = 63_000;
-    uint256 internal constant CONSUME_TWO_PARTIES_BUDGET = 50_000;
+    ///      content record (Stream does). Measured: 47,134 (first work), 64,254 (a nonce past
+    ///      the artist's first bitmap word) and 51,666 (two parties); each gate is about 3% above.
+    ///      The mock artist registry's freeze flag is its own cold word, so these run above a
+    ///      real start's share (the integration gas report measures that).
+    uint256 internal constant CONSUME_BUDGET = 48_600;
+    uint256 internal constant CONSUME_NEW_WORD_BUDGET = 66_200;
+    uint256 internal constant CONSUME_TWO_PARTIES_BUDGET = 53_300;
     uint256 internal constant TX_GAS_CAP = 16_777_216;
 
     /// @dev A one-party ORIGINAL in a 16-item package (proof depth 4): an artist's first start.
@@ -103,11 +105,15 @@ contract PackageRegistryGasTest is CurationBase {
         bytes32 root = node;
         _register(root);
         PartyAcceptance memory acc = _acceptance(address(safe));
-        registry.acceptPackage(root, acc, _sig(leadKey, registry.acceptanceDigest(root, acc)));
+        registry.acceptPackage(
+            root, acc, _as(address(safe), _sig(leadKey, registry.acceptanceDigest(root, acc)))
+        );
         for (uint256 i = 1; i < 16; ++i) {
             _accept(root, 0x100 + i);
         }
         MoveAuthorization memory move = _move(leadKey, root, _hash(item), 0);
+        move.signature =
+            _as(address(safe), _sig(leadKey, registry.moveDigest(root, _hash(item), 0, deadline)));
         bytes memory data = _authorizeCall(root, item, proof, move);
         uint256 used = _measure(stream, data);
         uint256 total = _txGas(data, used);
@@ -266,6 +272,6 @@ contract PackageRegistryStreamShapeGasTest is CurationBase {
         (uint256 decodeGas, uint256 consumeGas) = _start(item, root, _proof(leaves, 5));
         emit log_named_uint("Stream-side decode of the mint request", decodeGas);
         emit log_named_uint("consume from Stream, 1 party, depth 6", consumeGas);
-        assertLe(consumeGas, 48_000); // measured 46,549
+        assertLe(consumeGas, 51_400); // measured 49,847
     }
 }

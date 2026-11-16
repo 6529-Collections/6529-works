@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { IAccounts } from "src/interfaces/IAccounts.sol";
+import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 
 /// @notice A settable `IAccounts` for tests of contracts that read accounts. Wallets, the freeze,
@@ -10,8 +11,8 @@ import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 ///         verifies the signature (ECDSA or ERC-1271) with the shared `SignatureVerifier`. An
 ///         account with no wallets set is its own single wallet, as for an unregistered account.
 contract AccountsMock is IAccounts, EIP712 {
-    /// @notice The EIP-712 type of a consent.
-    bytes32 public constant CONSENT_TYPEHASH = keccak256("Consent(address subject,bytes32 what)");
+    /// @notice The EIP-712 type of a consent (`Typehashes.ACCOUNT_CONSENT`).
+    bytes32 public constant CONSENT_TYPEHASH = Typehashes.ACCOUNT_CONSENT;
 
     /// @notice Whether the account wallet list was set: when false the account is its own wallet.
     mapping(uint256 accountId => bool) public registered;
@@ -20,7 +21,8 @@ contract AccountsMock is IAccounts, EIP712 {
     mapping(uint256 accountId => bool) private _delisted;
     mapping(address token => uint32) private _feeShare;
 
-    constructor() EIP712("6529 Accounts", "1") { }
+    /// @dev The artist registry's EIP-712 domain name and version (at this mock's address).
+    constructor() EIP712(Typehashes.ARTIST_REGISTRY_NAME, Typehashes.DOMAIN_VERSION) { }
 
     /// @notice Sets whether `wallet` is a wallet of `accountId` (and marks the account registered).
     function setWallet(uint256 accountId, address wallet, bool isIt) external {

@@ -48,87 +48,37 @@ contract EditionsMastersMock {
     }
 }
 
-/// @notice A governed consolidation source that misbehaves by returning too many wallets.
-contract OversizedConsolidationSource is InterfaceStub {
-    constructor() InterfaceStub(type(IConsolidationSource).interfaceId) { }
-
-    function establishedWallets(address) external pure returns (address[] memory wallets) {
-        wallets = new address[](17);
+/// @notice A consolidation source with settable pairs (one direction set means consolidated),
+///         that can instead revert or answer a malformed word for every read.
+contract ConsolidationSourceMock is InterfaceStub {
+    enum Mode {
+        ANSWER,
+        REVERT,
+        MALFORMED
     }
 
-    function consolidations(address)
-        external
-        pure
-        returns (address[] memory wallets, uint64[] memory times)
-    {
-        wallets = new address[](33);
-        times = new uint64[](33);
-    }
-
-    function isEstablished(address, address) external pure returns (bool) {
-        return false;
-    }
-
-    function effectiveAt(address, address) external pure returns (uint64) {
-        return 0;
-    }
-}
-
-/// @notice A governed consolidation source whose reads fail on demand: its scan
-///         (`consolidations`, `establishedWallets`), its direct checks (`effectiveAt`,
-///         `isEstablished`), or both, with `DelegationReadFailed` (an outage), with another
-///         error, or with revert data set by the test. When nothing fails it reports no
-///         consolidation.
-contract FailingConsolidationSource is InterfaceStub {
-    error Broken();
-
-    bool public failScan;
-    bool public failDirect;
-    bool public otherError;
-    bytes internal _reason;
+    Mode public mode;
+    mapping(address root => mapping(address wallet => bool)) internal _pairs;
 
     constructor() InterfaceStub(type(IConsolidationSource).interfaceId) { }
 
-    function set(bool scan, bool direct, bool other) external {
-        (failScan, failDirect, otherError) = (scan, direct, other);
+    function set(address root, address wallet, bool consolidated) external {
+        _pairs[root][wallet] = consolidated;
     }
 
-    /// @dev A failing read reverts with exactly `reason` while it is not empty.
-    function setReason(bytes calldata reason) external {
-        _reason = reason;
+    function setMode(Mode mode_) external {
+        mode = mode_;
     }
 
-    function establishedWallets(address) external view returns (address[] memory wallets) {
-        if (failScan) _fail();
-    }
-
-    function consolidations(address)
-        external
-        view
-        returns (address[] memory wallets, uint64[] memory times)
-    {
-        if (failScan) _fail();
-    }
-
-    function isEstablished(address, address) external view returns (bool) {
-        if (failDirect) _fail();
-        return false;
-    }
-
-    function effectiveAt(address, address) external view returns (uint64) {
-        if (failDirect) _fail();
-        return 0;
-    }
-
-    function _fail() private view {
-        bytes memory reason = _reason;
-        if (reason.length != 0) {
-            assembly ("memory-safe") {
-                revert(add(reason, 0x20), mload(reason))
+    function isConsolidated(address root, address wallet) external view returns (bool) {
+        if (mode == Mode.REVERT) revert("source down");
+        if (mode == Mode.MALFORMED) {
+            assembly {
+                mstore(0, 2)
+                return(0, 32)
             }
         }
-        if (otherError) revert Broken();
-        revert IConsolidationSource.DelegationReadFailed(address(this));
+        return _pairs[root][wallet];
     }
 }
 

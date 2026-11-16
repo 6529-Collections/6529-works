@@ -57,25 +57,27 @@ library Typehashes {
     bytes32 internal constant RENOUNCE_POWERS = keccak256(
         "RenouncePowers(uint256 tokenId,uint16 powers,bytes32 stateHash,uint64 deadline)"
     );
-    /// @notice An artist identity change, and the new authority's acceptance of it (artist
+    /// @notice An account's own identity change, signed by any wallet of the account (artist
     ///         registry domain).
     bytes32 internal constant IDENTITY_CHANGE = keccak256(
-        "IdentityChange(uint256 artistId,address authority,address payout,bytes32 profileId,"
+        "IdentityChange(uint256 artistId,address root,address payout,bytes32 profileId,"
         "bytes32 profileDocHash,uint256 nonce,uint64 deadline)"
     );
-    /// @notice The new authority accepts a network override (artist registry domain). It binds
-    ///         no change nonce, so a key holder cannot void it by burning nonces; the registry
-    ///         consumes it once by digest.
-    bytes32 internal constant OVERRIDE_ACCEPTANCE = keccak256(
-        "OverrideAcceptance(uint256 artistId,uint8 kind,address authority,address payout,"
-        "bytes32 profileId,bytes32 profileDocHash,bytes32 evidenceHash,uint64 deadline)"
+    /// @notice The new root accepts a network replacement (artist registry domain). It binds no
+    ///         change nonce; the registry consumes it once by digest.
+    bytes32 internal constant REPLACEMENT_ACCEPTANCE = keccak256(
+        "ReplacementAcceptance(uint256 artistId,address root,address payout,bytes32 profileId,"
+        "bytes32 profileDocHash,bytes32 evidenceHash,uint64 deadline)"
     );
+    /// @notice An account consents to `what`, for the contract `subject` only (artist registry
+    ///         domain, `IAccounts.consentDigest`).
+    bytes32 internal constant ACCOUNT_CONSENT = keccak256("Consent(address subject,bytes32 what)");
     /// @notice An account consents to an identity the federation registry creates for it
     ///         (artist registry domain, `registerFederated`).
     bytes32 internal constant ARTIST_REGISTRATION = keccak256(
         "ArtistRegistration(address account,bytes32 profileId,bytes32 profileDocHash,uint64 deadline)"
     );
-    /// @notice The artist's active authority consents to one federation directory entry
+    /// @notice A wallet of the artist's account consents to one federation directory entry
     ///         (artist registry domain, `listFederatedContract`).
     bytes32 internal constant FEDERATED_LISTING = keccak256(
         "FederatedListing(uint256 artistId,address token,uint8 form,address partner,"

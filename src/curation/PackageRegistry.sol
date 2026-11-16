@@ -10,6 +10,7 @@ import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IEditions } from "../interfaces/IEditions.sol";
 import { IEntropyModule } from "../interfaces/IEntropyModule.sol";
 import { ICurationVerifier } from "../interfaces/ICurationVerifier.sol";
+import { IItemApprovals } from "../interfaces/IItemApprovals.sol";
 import { IMintPolicy } from "../interfaces/IMintPolicy.sol";
 import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
 import { IStream } from "../interfaces/IStream.sol";
@@ -45,7 +46,9 @@ import { SpdxId } from "../stream/SpdxId.sol";
 ///      without an event of its own: Stream's permanent `WorkMinted` carries the package root,
 ///      item hash, lead artist and content hash. The consume writes one fresh slot, 6529 Stream's `contentHash => itemHash`, which is both the consume-once record and
 ///      the uniqueness record. It reads consent from `acceptedAs[root][account]`, and its only
-///      external call is the lead's active authority. Move nonces live in a per-artist bitmap of
+///      external call is the artist registry's check of the move signature (`requireSigned`:
+///      any wallet of the lead's account may sign, and that wallet is the work's creator). Move
+///      nonces live in a per-artist bitmap of
 ///      255 nonces per word whose top bit is a sentinel: the acceptance that creates an identity
 ///      writes the sentinel into word 0, so an artist's first 255 starts update a nonzero slot
 ///      instead of creating one. Tools should therefore use each artist's nonces sequentially from
@@ -69,14 +72,20 @@ import { SpdxId } from "../stream/SpdxId.sol";
 ///      consume pays nothing for it.
 ///
 ///      Approvals are per root, not per item: revoking a root stops only that root, so an item
-///      also listed in another approved root stays consumable there; the guardian revokes every
-///      root that lists it. Disabling a curation signer stops only future registrations.
+///      also listed in another approved root stays consumable there; the network revokes every
+///      root that lists it. Disabling a curation signer in the verifier stops future
+///      registrations; {killSignerApprovals} also stops every package that signer approved and
+///      that was registered before the kill. Items already minted are untouched. Gas: a package
+///      records the kill epoch (the count of kills so far) at registration, and the epoch is
+///      kept beside `stream`, a word every start reads already. While no kill happened since a
+///      package was registered, its starts read nothing more; after one, they read the signer's
+///      last kill (one more cold word, about 2,100 gas).
 ///
 ///      Callers: `authorize` trusts only the bound Stream; the Editions binding is kept for the
 ///      genesis wiring and is informational. Each slot is bound once, independently, by the genesis
 ///      configurator (which holds ADMIN with no delay until it renounces ADMIN); no bound call
 ///      goes through the AccessManager.
-contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712 {
+contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, AccessManaged, EIP712 {
     /// @dev Move nonces per bitmap word; bit 255 of every written word is the sentinel.
     uint256 private constant NONCES_PER_WORD = 255;
     uint256 private constant SENTINEL = 1 << 255;
@@ -84,9 +93,12 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
     bytes32 private constant STREAM = "STREAM";
     bytes32 private constant EDITIONS = "EDITIONS";
 
+    /// @dev `epoch` is the kill epoch at registration: the package stops authorizing once its
+    ///      signer is killed at a later epoch. Status, signer and epoch share one slot.
     struct Package {
         PackageStatus status;
         address signer;
+        uint64 epoch;
         bytes32 evidenceHash;
     }
 
@@ -96,6 +108,8 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
     ICurationVerifier public verifier;
     /// @inheritdoc IPackageRegistry
     address public stream;
+    /// @dev The number of kills so far ({killSignerApprovals}), in `stream`'s slot.
+    uint64 private _killEpoch;
     /// @inheritdoc IPackageRegistry
     address public editions;
     /// @dev The verifier's pinned code hash, checked again at every registration, not only at
@@ -107,6 +121,8 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
     mapping(uint256 artistId => mapping(uint256 word => uint256 bits)) private _moveNonces;
     /// @dev Verifiers replaced by `setVerifier`: never installable again.
     mapping(address verifier => bool) private _retired;
+    /// @dev The kill epoch of each curation signer's latest kill, zero if never killed.
+    mapping(address signer => uint64) private _killedAt;
 
     /// @param authority_ The AccessManager that governs this registry.
     /// @param verifier_ The initial curation verifier.
@@ -161,14 +177,13 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
         Dependency.checkUnchanged(address(v), _verifierCodeHash);
         (bool approved, address signer) = v.isApproved(packageRoot, evidenceHash, attestation);
         if (!approved || evidenceHash == 0) revert NotApproved(packageRoot);
-        p.status = PackageStatus.APPROVED;
-        p.signer = signer;
+        (p.status, p.signer, p.epoch) = (PackageStatus.APPROVED, signer, _killEpoch);
         p.evidenceHash = evidenceHash;
         emit PackageRegistered(packageRoot, evidenceHash, address(v), signer);
     }
 
     /// @inheritdoc IPackageRegistry
-    /// @dev Governed: map to GUARDIAN with no delay (a tightening action). Final. A root not yet
+    /// @dev A network action. Final. A root not yet
     ///      registered may be revoked in advance, and then can never be registered, so a leaked
     ///      attestation can be stopped before anyone submits it. Revocation is per root (see the
     ///      contract notes).
@@ -180,25 +195,26 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
     }
 
     /// @inheritdoc IPackageRegistry
-    /// @dev The root must be approved. The signer is the account itself when it has no artist ID
-    ///      yet (the acceptance then creates the identity, artist ID `uint160(account)`, which the
-    ///      artist registry counts as its first activity), otherwise the active authority of its
-    ///      artist ID, and the profile fields must match the record. A repeat is a no-op. Later
-    ///      acceptances are not reported as activity. Because the first acceptance relayed sets
-    ///      the identity's profile, an artist's pre-signed acceptances carrying different profile
+    /// @dev The root must be approved. The artist registry checks the proof
+    ///      (`IAccounts.requireSigned` for the account `account` names): the account itself when
+    ///      it has no artist ID yet (the acceptance then creates the identity, artist ID
+    ///      `uint160(account)`), otherwise any wallet of its account; the profile fields must
+    ///      match the record. A repeat is a no-op. Because the first acceptance relayed sets the
+    ///      identity's profile, an artist's pre-signed acceptances carrying different profile
     ///      fields succeed only in the order the relayer submits them; the others revert with
     ///      `ProfileMismatch` until the artist re-signs or changes the profile.
     function acceptPackage(
         bytes32 packageRoot,
         PartyAcceptance calldata acceptance,
-        bytes calldata signature
+        bytes calldata proof
     ) external returns (uint256 artistId) {
         _requireApproved(packageRoot);
         SignatureVerifier.checkDeadline(acceptance.deadline);
         address account = acceptance.account;
         artistId = _artists.artistIdOf(account);
-        address signer = artistId == 0 ? account : _artists.activeAuthorityOf(artistId);
-        SignatureVerifier.check(signer, acceptanceDigest(packageRoot, acceptance), signature);
+        _artists.requireSigned(
+            uint256(uint160(account)), acceptanceDigest(packageRoot, acceptance), proof
+        );
         mapping(address => uint256) storage accepted = _acceptedAs[packageRoot];
         if (accepted[account] != 0) return accepted[account];
         if (artistId != 0) {
@@ -225,8 +241,8 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
     /// @dev The v1 policy: `request` is `abi.encode(StreamMintRequest)`. Checks the Stream item
     ///      rules (`_checkItem`), consumes the item (`_consume`), checks a VRF item's delivered
     ///      seed at Stream's current entropy module, and quotes the terms from Stream's economics
-    ///      resolver and split factory (`_quote`). The lead artist's active authority, which
-    ///      signed the move, is the work's creator.
+    ///      resolver and split factory (`_quote`). The wallet of the lead's account that signed
+    ///      the move is the work's creator.
     function authorize(MintContext calldata context, bytes calldata request)
         external
         returns (MintRecord memory r)
@@ -277,7 +293,7 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
     /// @dev Checks, in order: the caller is the bound Stream; the root is approved; the proof
     ///      places the item; its content hash is unused on Stream; the seed and edition terms;
     ///      every party accepted the root and is a distinct artist; the payee list is canonical
-    ///      and covered by the parties; the lead's active authority signed the move, unexpired,
+    ///      and covered by the parties; a wallet of the lead's account signed the move, unexpired,
     ///      on an unused nonce. A second consume of the same item, or of an item burned and
     ///      released, reverts with `ContentUsed` naming the item itself. A released content hash
     ///      is consumed only by an item whose lead artist is the release's beneficiary
@@ -301,15 +317,13 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
 
     /// @inheritdoc IPackageRegistry
     function revokeMove(uint256 artistId, uint256 nonce) external {
-        if (_artists.activeAuthorityOf(artistId) != msg.sender) {
-            revert NotAuthority(artistId, msg.sender);
-        }
+        if (!_artists.isWallet(artistId, msg.sender)) revert NotAuthority(artistId, msg.sender);
         _spendMoveNonce(artistId, nonce);
         emit MoveRevoked(artistId, nonce);
     }
 
     /// @inheritdoc IPackageRegistry
-    /// @dev Governed: map to SUCCESSOR_SETTER (30 days). The replaced verifier is retired: it,
+    /// @dev A network action (7-day class). The replaced verifier is retired: it,
     ///      the current verifier and every verifier retired before revert with
     ///      `Dependency.InvalidDependency`, so a swap back never restores a retired verifier's
     ///      approvals or signer states. One slot per swap. The pinned code hash is checked again
@@ -326,10 +340,28 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
         _setVerifier(next, nextCodeHash);
     }
 
+    /// @inheritdoc IPackageRegistry
+    function killSignerApprovals(address signer) external restricted {
+        uint64 epoch = ++_killEpoch;
+        _killedAt[signer] = epoch;
+        emit SignerApprovalsKilled(signer, epoch);
+    }
+
+    /// @inheritdoc IItemApprovals
+    function isApprovedItem(bytes32 packageRoot, bytes32 itemHash, bytes32[] calldata proof)
+        external
+        view
+        returns (bool)
+    {
+        return _isLive(packageRoot) && proof.length <= Limits.MAX_PROOF_DEPTH
+            && MerkleProof.verifyCalldata(proof, packageRoot, WorksHashing.leaf(itemHash));
+    }
+
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return interfaceId == type(IERC165).interfaceId
             || interfaceId == type(IPackageRegistry).interfaceId
+            || interfaceId == type(IItemApprovals).interfaceId
             || interfaceId == type(IMintPolicy).interfaceId;
     }
 
@@ -350,7 +382,16 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
         returns (PackageStatus status, bytes32 evidenceHash, address signer)
     {
         Package storage p = _packages[packageRoot];
-        return (p.status, p.evidenceHash, p.signer);
+        status = p.status;
+        if (status == PackageStatus.APPROVED && !_isLive(packageRoot)) {
+            status = PackageStatus.REVOKED;
+        }
+        return (status, p.evidenceHash, p.signer);
+    }
+
+    /// @inheritdoc IPackageRegistry
+    function signerKilledAt(address signer) external view returns (uint64) {
+        return _killedAt[signer];
     }
 
     /// @inheritdoc IPackageRegistry
@@ -471,9 +512,15 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
     }
 
     function _requireApproved(bytes32 packageRoot) private view {
-        if (_packages[packageRoot].status != PackageStatus.APPROVED) {
-            revert PackageNotApproved(packageRoot);
-        }
+        if (!_isLive(packageRoot)) revert PackageNotApproved(packageRoot);
+    }
+
+    /// @dev Approved, and its signer's approvals not killed since it was registered.
+    function _isLive(bytes32 packageRoot) private view returns (bool) {
+        Package storage p = _packages[packageRoot];
+        if (p.status != PackageStatus.APPROVED) return false;
+        uint64 epoch = p.epoch;
+        return epoch == _killEpoch || _killedAt[p.signer] <= epoch;
     }
 
     /// @dev Content, seed and edition fields: a nonzero content hash; an artist seed exactly
@@ -552,20 +599,28 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712
         return false;
     }
 
-    /// @dev Checks the deadline, spends the nonce and checks the signature of the lead artist's
-    ///      active authority (`IArtistRegistry.activeAuthorityOf`).
-    /// @dev Returns the active authority that signed the move.
+    /// @dev Checks the deadline, spends the nonce and checks that a wallet of the lead's account
+    ///      signed; returns that wallet. The proof is `abi.encodePacked(wallet, signature)`. When
+    ///      it names the account's root and the root may act now (`activeAuthorityOf`: nonzero
+    ///      unless frozen or being replaced), the signature is checked here, at the cost of the
+    ///      single-authority check this replaced; any other wallet is checked by the artist
+    ///      registry (`IAccounts.requireSigned`), which reads the consolidation source.
     function _useMove(
         bytes32 packageRoot,
         bytes32 itemHash,
         uint256 artistId,
         MoveAuthorization calldata move
-    ) private returns (address authority) {
+    ) private returns (address wallet) {
         SignatureVerifier.checkDeadline(move.deadline);
         _spendMoveNonce(artistId, move.nonce);
         bytes32 digest = moveDigest(packageRoot, itemHash, move.nonce, move.deadline);
-        authority = _artists.activeAuthorityOf(artistId);
-        SignatureVerifier.check(authority, digest, move.signature);
+        bytes calldata proof = move.signature;
+        address root = _artists.activeAuthorityOf(artistId);
+        if (root != address(0) && proof.length >= 20 && address(bytes20(proof[:20])) == root) {
+            SignatureVerifier.check(root, digest, proof[20:]);
+            return root;
+        }
+        wallet = _artists.requireSigned(artistId, digest, proof);
     }
 
     function _spendMoveNonce(uint256 artistId, uint256 nonce) private {

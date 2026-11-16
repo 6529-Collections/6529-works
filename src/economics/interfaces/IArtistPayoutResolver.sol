@@ -14,7 +14,7 @@ pragma solidity ^0.8.24;
 interface IArtistPayoutResolver {
     /// @notice Returns the address that currently receives `artistId`'s payouts, or zero.
     /// @param artistId The artist's ID in the artist registry.
-    /// @return The current payout address; zero for an unknown artist, and while a pending
-    ///        change would move the payout.
+    /// @return The current payout address; zero for an unknown artist, while the account is
+    ///        frozen, and while a pending change would move the payout.
     function payoutAddress(uint256 artistId) external view returns (address);
 }

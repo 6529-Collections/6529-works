@@ -3,24 +3,15 @@ pragma solidity ^0.8.24;
 
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IConsolidationSource } from "../interfaces/IArtistRegistry.sol";
-import { Limits } from "../interfaces/types/Limits.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 
 /// @title IDelegationManagement
-/// @notice The two public storage getters of the 6529 delegation contract
+/// @notice The public storage getter of the 6529 delegation contract
 ///         (`0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d`) that the consolidation adapter reads.
-/// @dev Both are Solidity-generated getters of `mapping(bytes32 => T[])` and revert when `index` is
-///      past the end of the array, at once and with no revert data (the deployed contract is
-///      compiled with solc 0.8.18); the contract exposes no array lengths.
+/// @dev A Solidity-generated getter of `mapping(bytes32 => T[])`; it reverts with no data when
+///      `index` is past the end of the array (the deployed contract is compiled with solc 0.8.18).
 interface IDelegationManagement {
-    /// @notice The `index`-th delegate registered under
-    ///         `keccak256(abi.encodePacked(delegator, collection, useCase))`.
-    /// @param key The hash of the delegator, the collection and the use case.
-    /// @param index The zero-based position in the delegator's delegate list.
-    /// @return The delegate at that position.
-    function delegatorHashes(bytes32 key, uint256 index) external view returns (address);
-
     /// @notice The `index`-th registration under
     ///         `keccak256(abi.encodePacked(delegator, collection, delegate, useCase))`.
     /// @param key The hash of the delegator, the collection, the delegate and the use case.
@@ -47,45 +38,24 @@ interface IDelegationManagement {
 }
 
 /// @title ConsolidationAdapter
-/// @notice Reads 6529 consolidations (use case 999, all collections) for the artist registry
-///         (ADR 0001 section 11 "Recovery uses 6529 consolidation").
-/// @dev The vendored `checkConsolidationStatus` ignores consolidation age and expiry, so this
-///      adapter walks the registrations and their dates directly. `wallet` is established for
-///      `account` when both have registered a consolidation of the other for all collections, and
-///      in each direction some registration is at least {MIN_AGE} old and not expired
-///      (`expiryDate > now`, the delegation contract's own rule). A revocation deletes every
-///      registration of the pair, so a registration that is still stored has been live since its
-///      registration date. Specific-collection consolidations do not count.
+/// @notice Answers the artist registry's one question from the 6529 delegation contract: is a
+///         wallet consolidated with an account's root (use case 999, all collections)?
+/// @dev A wallet is consolidated with `root` while each has a live registration of the other
+///      (expiry later than now, registered no later than now), for all collections. There is no
+///      minimum age. Specific-collection consolidations do not count. At most
+///      {MAX_REGISTRATIONS_READ} registrations are read per direction.
 ///
-///      Every read forwards exactly {READ_GAS} and reverts when the caller cannot forward it
-///      (`BoundedCall.BoundedCallInsufficientGas`), so a caller choosing its gas limit cannot
-///      truncate a walk. Reads fail closed: only a revert with no data that did not fully exhaust
-///      the stipend is the end of an array. A read that exhausts the stipend (out of gas), reverts
-///      with data or returns too much reverts with `IConsolidationSource.DelegationReadFailed`, so
-///      a repriced or broken source halts the registry's identity calls (registration and execution
-///      skip their refresh instead) rather than reading as "not consolidated". The getters cost at
-///      most about 16K gas cold (a `GlobalData` read is seven cold slots); the 200K stipend leaves
-///      room for a large repricing, and only the gas used is paid. Walks are bounded:
-///      {MAX_DELEGATES_SCANNED} delegates per account and {MAX_REGISTRATIONS_READ} registrations
-///      per direction.
-///
-///      This is a live view, and the account's keys control it: its own key, and any use-case-998
-///      sub-delegate of it (`registerDelegationAddressUsingSubDelegation`), can add, revoke or
-///      reorder its delegate list (revocation is swap-and-pop). The registry's sticky standing
-///      snapshot, not this list, protects an artist's wallets from a key thief.
+///      Reads forward all gas (`BoundedCall.tryReadAll`): a shortfall reverts with
+///      `BoundedCallShortfall`, which the registry also sees as a shortfall; any other failed
+///      read (the end of a registration list, a revert, a malformed answer) counts as "no
+///      registration". Replaceable: the network swaps it for a 6529-chain source later.
 contract ConsolidationAdapter is IConsolidationSource {
     /// @notice The delegation contract's "all collections" collection address.
     address public constant ALL_COLLECTIONS = 0x8888888888888888888888888888888888888888;
     /// @notice The delegation contract's consolidation use case.
     uint256 public constant USE_CASE_CONSOLIDATION = 999;
-    /// @notice How long a consolidation must have been registered to count.
-    uint256 public constant MIN_AGE = 30 days;
-    /// @notice Entries of an account's delegate list examined per scan.
-    uint256 public constant MAX_DELEGATES_SCANNED = 2 * Limits.MAX_CANCELLERS;
-    /// @notice Registrations read per direction of a pair.
+    /// @notice Registrations read per direction of a pair: a safety bound on the work done.
     uint256 public constant MAX_REGISTRATIONS_READ = 4;
-    /// @notice Gas forwarded to each getter call.
-    uint256 public constant READ_GAS = 200_000;
 
     /// @notice The 6529 delegation contract.
     IDelegationManagement public immutable delegation;
@@ -97,20 +67,8 @@ contract ConsolidationAdapter is IConsolidationSource {
     }
 
     /// @inheritdoc IConsolidationSource
-    /// @dev At most `Limits.MAX_CANCELLERS` distinct wallets, in delegate-list order.
-    function establishedWallets(address account) external view returns (address[] memory wallets) {
-        (wallets,) = _scan(account, true);
-    }
-
-    /// @inheritdoc IConsolidationSource
-    /// @dev Every distinct consolidated wallet among the {MAX_DELEGATES_SCANNED} entries scanned,
-    ///      in delegate-list order.
-    function consolidations(address account)
-        external
-        view
-        returns (address[] memory wallets, uint64[] memory effective)
-    {
-        return _scan(account, false);
+    function isConsolidated(address root, address wallet) external view returns (bool) {
+        return root != wallet && _live(root, wallet) && _live(wallet, root);
     }
 
     /// @inheritdoc IERC165
@@ -119,114 +77,23 @@ contract ConsolidationAdapter is IConsolidationSource {
             || interfaceId == type(IConsolidationSource).interfaceId;
     }
 
-    /// @inheritdoc IConsolidationSource
-    function isEstablished(address account, address wallet) public view returns (bool) {
-        uint64 due = effectiveAt(account, wallet);
-        // forge-lint: disable-next-line(block-timestamp)
-        return due != 0 && due <= block.timestamp;
-    }
-
-    /// @inheritdoc IConsolidationSource
-    /// @dev A pair is consolidated while each side holds a live registration of the other; it has
-    ///      been continuously since the later side's earliest live registration (a revocation
-    ///      deletes every registration of a pair), and is established {MIN_AGE} after that.
-    function effectiveAt(address account, address wallet) public view returns (uint64) {
-        if (account == wallet) return 0;
-        uint256 forward = _liveSince(account, wallet);
-        if (forward == 0) return 0;
-        uint256 reverse = _liveSince(wallet, account);
-        if (reverse == 0) return 0;
-        // A registration date is a block timestamp, far below 2**64.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        return uint64((forward > reverse ? forward : reverse) + MIN_AGE);
-    }
-
-    /// @dev Walks `account`'s delegate list for live two-way consolidations (only established
-    ///      ones when `establishedOnly`).
-    function _scan(address account, bool establishedOnly)
-        private
-        view
-        returns (address[] memory wallets, uint64[] memory effective)
-    {
-        uint256 limit = establishedOnly ? Limits.MAX_CANCELLERS : MAX_DELEGATES_SCANNED;
-        wallets = new address[](limit);
-        effective = new uint64[](limit);
-        uint256 found;
-        bytes32 key = keccak256(abi.encodePacked(account, ALL_COLLECTIONS, USE_CASE_CONSOLIDATION));
-        for (uint256 i; i < MAX_DELEGATES_SCANNED && found < limit; ++i) {
-            (bool ok, bytes memory data) =
-                _read(abi.encodeCall(IDelegationManagement.delegatorHashes, (key, i)), 32);
-            if (!ok) break;
-            address wallet = abi.decode(data, (address));
-            if (_contains(wallets, found, wallet)) continue;
-            uint64 due = effectiveAt(account, wallet);
-            // forge-lint: disable-next-line(block-timestamp)
-            if (due == 0 || (establishedOnly && due > block.timestamp)) continue;
-            wallets[found] = wallet;
-            effective[found++] = due;
-        }
-        assembly ("memory-safe") {
-            mstore(wallets, found)
-            mstore(effective, found)
-        }
-    }
-
-    /// @dev The registration date of `from`'s earliest live registration of `to`, or zero.
-    function _liveSince(address from, address to) private view returns (uint256) {
+    /// @dev Whether `from` holds a live all-collections consolidation registration of `to`.
+    function _live(address from, address to) private view returns (bool) {
         bytes32 key = keccak256(abi.encodePacked(from, ALL_COLLECTIONS, to, USE_CASE_CONSOLIDATION));
         for (uint256 i; i < MAX_REGISTRATIONS_READ; ++i) {
-            (bool ok, bytes memory data) =
-                _read(abi.encodeCall(IDelegationManagement.globalDelegationHashes, (key, i)), 192);
-            if (!ok) return 0;
+            (bool ok, bytes memory data) = BoundedCall.tryReadAll(
+                address(delegation),
+                abi.encodeCall(IDelegationManagement.globalDelegationHashes, (key, i)),
+                192
+            );
+            if (!ok || data.length != 192) return false;
             (,, uint256 registered, uint256 expiry,,) =
                 abi.decode(data, (address, address, uint256, uint256, bool, uint256));
             // Expiry dates are wall-clock bounds; validator drift is immaterial.
             // forge-lint: disable-next-line(block-timestamp)
             if (expiry > block.timestamp && registered != 0 && registered <= block.timestamp) {
-                return registered;
+                return true;
             }
-        }
-        return 0;
-    }
-
-    /// @dev One getter call forwarding exactly {READ_GAS}. Returns false only for an index past
-    ///      the end of the array: a revert with no data that did not fully exhaust the stipend.
-    ///      Reverts with `DelegationReadFailed` on any other failure. The gas check and the
-    ///      warm-up mirror `BoundedCall.tryRead`.
-    function _read(bytes memory input, uint256 maxReturn)
-        private
-        view
-        returns (bool found, bytes memory result)
-    {
-        address target = address(delegation);
-        // Reading the code size warms the account, so the CALL below costs about 100 gas.
-        if (target.code.length == 0) revert DelegationReadFailed(target);
-        if (!BoundedCall.hasSufficientGas(gasleft(), READ_GAS, BoundedCall.CALL_RESERVE)) {
-            revert BoundedCall.BoundedCallInsufficientGas(READ_GAS);
-        }
-        uint256 start = gasleft();
-        uint256 size;
-        assembly ("memory-safe") {
-            found := staticcall(READ_GAS, target, add(input, 0x20), mload(input), 0, 0)
-            size := returndatasize()
-        }
-        // A call that spent the whole stipend ran out of gas (or hit an invalid opcode).
-        bool failed = found ? size > maxReturn : (size != 0 || start - gasleft() >= READ_GAS);
-        if (failed) revert DelegationReadFailed(target);
-        if (!found) return (false, result);
-        result = new bytes(size);
-        assembly ("memory-safe") {
-            returndatacopy(add(result, 0x20), 0, size)
-        }
-    }
-
-    function _contains(address[] memory list, uint256 length, address value)
-        private
-        pure
-        returns (bool)
-    {
-        for (uint256 i; i < length; ++i) {
-            if (list[i] == value) return true;
         }
         return false;
     }

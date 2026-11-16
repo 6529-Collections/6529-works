@@ -322,7 +322,7 @@ contract PackageRegistryTest is CurationBase {
         vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.PackageNotApproved.selector, root));
         _policyCall(registry, root, item, new bytes32[](0), move);
         PartyAcceptance memory a = _acceptance(collab);
-        bytes memory sig = _sig(collabKey, registry.acceptanceDigest(root, a));
+        bytes memory sig = _pf(collabKey, _sig(collabKey, registry.acceptanceDigest(root, a)));
         vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.PackageNotApproved.selector, root));
         registry.acceptPackage(root, a, sig);
     }
@@ -357,7 +357,7 @@ contract PackageRegistryTest is CurationBase {
         vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.PackageExists.selector, root));
         registry.registerPackage(root, EVIDENCE, att);
         PartyAcceptance memory a = _acceptance(lead);
-        bytes memory sig = _sig(leadKey, registry.acceptanceDigest(root, a));
+        bytes memory sig = _pf(leadKey, _sig(leadKey, registry.acceptanceDigest(root, a)));
         vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.PackageNotApproved.selector, root));
         registry.acceptPackage(root, a, sig);
     }
@@ -418,14 +418,13 @@ contract PackageRegistryTest is CurationBase {
         assertEq(artists.registrations(), 1);
     }
 
-    /// @dev Only a first acceptance (which creates the identity) counts as activity.
-    function test_acceptPackage_laterAcceptancesAreNotActivity() public {
+    /// @dev Only a first acceptance creates the identity; a later one reuses it.
+    function test_acceptPackage_laterAcceptancesReuseTheIdentity() public {
         bytes32 root1 = keccak256("root1");
         bytes32 root2 = keccak256("root2");
         _register(root1);
         _register(root2);
         _accept(root1, leadKey);
-        uint64 first = artists.lastActivity(_id(lead));
         vm.warp(block.timestamp + 100 days);
         deadline = uint64(block.timestamp + 1 days);
         // An existing artist's acceptance is announced like the first one.
@@ -434,14 +433,13 @@ contract PackageRegistryTest is CurationBase {
         _accept(root2, leadKey);
         assertEq(registry.acceptedAs(root2, lead), _id(lead));
         assertEq(artists.registrations(), 1);
-        assertEq(artists.lastActivity(_id(lead)), first);
     }
 
     function test_acceptPackage_replayIsNoop() public {
         bytes32 root = keccak256("root");
         _register(root);
         PartyAcceptance memory a = _acceptance(lead);
-        bytes memory sig = _sig(leadKey, registry.acceptanceDigest(root, a));
+        bytes memory sig = _pf(leadKey, _sig(leadKey, registry.acceptanceDigest(root, a)));
         registry.acceptPackage(root, a, sig);
         vm.recordLogs();
         assertEq(registry.acceptPackage(root, a, sig), _id(lead));
@@ -458,9 +456,9 @@ contract PackageRegistryTest is CurationBase {
         // The old address still names the identity, but only the new authority can sign.
         PartyAcceptance memory a = _acceptance(lead);
         bytes32 digest = registry.acceptanceDigest(root, a);
-        vm.expectRevert(SignatureReverts.invalid(vm.addr(newKey)));
-        registry.acceptPackage(root, a, _sig(leadKey, digest));
-        assertEq(registry.acceptPackage(root, a, _sig(newKey, digest)), _id(lead));
+        vm.expectRevert(SignatureReverts.invalid(lead));
+        registry.acceptPackage(root, a, _pf(leadKey, _sig(leadKey, digest)));
+        assertEq(registry.acceptPackage(root, a, _pf(newKey, _sig(newKey, digest))), _id(lead));
     }
 
     function test_acceptPackage_erc1271Authority() public {
@@ -468,7 +466,7 @@ contract PackageRegistryTest is CurationBase {
         _register(root);
         ERC1271WalletMock safe = new ERC1271WalletMock(lead);
         PartyAcceptance memory a = _acceptance(address(safe));
-        bytes memory sig = _sig(leadKey, registry.acceptanceDigest(root, a));
+        bytes memory sig = _as(address(safe), _sig(leadKey, registry.acceptanceDigest(root, a)));
         assertEq(registry.acceptPackage(root, a, sig), _id(address(safe)));
     }
 
@@ -478,7 +476,7 @@ contract PackageRegistryTest is CurationBase {
         _accept(keccak256("unrelated"), leadKey, true);
         artists.setProfile(_id(lead), keccak256("new profile"), keccak256("new doc"));
         PartyAcceptance memory a = _acceptance(lead);
-        bytes memory sig = _sig(leadKey, registry.acceptanceDigest(root, a));
+        bytes memory sig = _pf(leadKey, _sig(leadKey, registry.acceptanceDigest(root, a)));
         vm.expectRevert(
             abi.encodeWithSelector(IPackageRegistry.ProfileMismatch.selector, _id(lead))
         );
@@ -496,8 +494,8 @@ contract PackageRegistryTest is CurationBase {
             PartyAcceptance(lead, keccak256("p"), keccak256("doc v1"), deadline);
         PartyAcceptance memory a2 =
             PartyAcceptance(lead, keccak256("p"), keccak256("doc v2"), deadline);
-        bytes memory s1 = _sig(leadKey, registry.acceptanceDigest(r1, a1));
-        bytes memory s2 = _sig(leadKey, registry.acceptanceDigest(r2, a2));
+        bytes memory s1 = _pf(leadKey, _sig(leadKey, registry.acceptanceDigest(r1, a1)));
+        bytes memory s2 = _pf(leadKey, _sig(leadKey, registry.acceptanceDigest(r2, a2)));
         registry.acceptPackage(r1, a1, s1);
         (ArtistIdentity memory identity,) = artists.artist(_id(lead));
         assertEq(identity.profileDocHash, keccak256("doc v1"));
@@ -512,8 +510,8 @@ contract PackageRegistryTest is CurationBase {
         _register(root);
         PartyAcceptance memory a = _acceptance(lead);
         bytes32 digest = registry.acceptanceDigest(root, a);
-        bytes memory wrongKey = _sig(collabKey, digest);
-        bytes memory malleable = _highS(leadKey, digest);
+        bytes memory wrongKey = _as(lead, _sig(collabKey, digest));
+        bytes memory malleable = _pf(leadKey, _highS(leadKey, digest));
         vm.expectRevert(SignatureReverts.invalid(lead));
         registry.acceptPackage(root, a, wrongKey);
         vm.expectRevert(SignatureReverts.invalid(lead));
@@ -522,10 +520,10 @@ contract PackageRegistryTest is CurationBase {
         bytes32 other = keccak256("other root");
         _register(other);
         vm.expectRevert(SignatureReverts.invalid(lead));
-        registry.acceptPackage(other, a, _sig(leadKey, digest));
+        registry.acceptPackage(other, a, _pf(leadKey, _sig(leadKey, digest)));
         // The zero account never signs.
         a.account = address(0);
-        bytes memory zeroSig = _sig(leadKey, registry.acceptanceDigest(root, a));
+        bytes memory zeroSig = _as(address(0), _sig(leadKey, registry.acceptanceDigest(root, a)));
         vm.expectRevert(SignatureReverts.invalid(address(0)));
         registry.acceptPackage(root, a, zeroSig);
     }
@@ -535,7 +533,7 @@ contract PackageRegistryTest is CurationBase {
         bytes32 root = keccak256("root");
         _register(root);
         PartyAcceptance memory a = _acceptance(lead);
-        bytes memory sig = _sig(leadKey, registry.acceptanceDigest(root, a));
+        bytes memory sig = _pf(leadKey, _sig(leadKey, registry.acceptanceDigest(root, a)));
         vm.warp(a.deadline);
         assertEq(registry.acceptPackage(root, a, sig), _id(lead));
     }
@@ -555,7 +553,7 @@ contract PackageRegistryTest is CurationBase {
             else if (v == 1) a.profileId = bytes32(uint256(4));
             else if (v == 2) a.profileDocHash = bytes32(uint256(6));
             else a.profileDocHash = bytes32(uint256(4));
-            bytes memory sig = _sig(leadKey, registry.acceptanceDigest(root, a));
+            bytes memory sig = _pf(leadKey, _sig(leadKey, registry.acceptanceDigest(root, a)));
             vm.expectRevert(
                 abi.encodeWithSelector(IPackageRegistry.ProfileMismatch.selector, _id(lead))
             );
@@ -567,7 +565,7 @@ contract PackageRegistryTest is CurationBase {
         bytes32 root = keccak256("root");
         _register(root);
         PartyAcceptance memory a = _acceptance(lead);
-        bytes memory sig = _sig(leadKey, registry.acceptanceDigest(root, a));
+        bytes memory sig = _pf(leadKey, _sig(leadKey, registry.acceptanceDigest(root, a)));
         vm.warp(uint256(a.deadline) + 1);
         vm.expectRevert(SignatureReverts.expired(a.deadline));
         registry.acceptPackage(root, a, sig);
@@ -576,7 +574,7 @@ contract PackageRegistryTest is CurationBase {
     function test_acceptPackage_revertsUnknownPackage() public {
         bytes32 root = keccak256("root");
         PartyAcceptance memory a = _acceptance(lead);
-        bytes memory sig = _sig(leadKey, registry.acceptanceDigest(root, a));
+        bytes memory sig = _pf(leadKey, _sig(leadKey, registry.acceptanceDigest(root, a)));
         vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.PackageNotApproved.selector, root));
         registry.acceptPackage(root, a, sig);
     }
@@ -585,7 +583,7 @@ contract PackageRegistryTest is CurationBase {
         bytes32 root = keccak256("root");
         _register(root);
         PartyAcceptance memory a = _acceptance(lead);
-        bytes memory sig = _sig(leadKey, registry.acceptanceDigest(root, a));
+        bytes memory sig = _pf(leadKey, _sig(leadKey, registry.acceptanceDigest(root, a)));
         vm.chainId(block.chainid + 1);
         vm.expectRevert(SignatureReverts.invalid(lead));
         registry.acceptPackage(root, a, sig);
@@ -798,13 +796,14 @@ contract PackageRegistryTest is CurationBase {
         (bytes32 root, PackageItem memory item,) = _ready(SHA_A);
         MoveAuthorization memory move = _move(collabKey, root, _hash(item), 0);
         vm.prank(stream);
-        vm.expectRevert(SignatureReverts.invalid(lead));
+        vm.expectRevert(SignatureReverts.invalid(collab));
         _policyCall(registry, root, item, new bytes32[](0), move);
     }
 
     function test_move_revertsMalleableHighS() public {
         (bytes32 root, PackageItem memory item, MoveAuthorization memory move) = _ready(SHA_A);
-        move.signature = _highS(leadKey, registry.moveDigest(root, _hash(item), 0, deadline));
+        move.signature =
+            _pf(leadKey, _highS(leadKey, registry.moveDigest(root, _hash(item), 0, deadline)));
         vm.prank(stream);
         vm.expectRevert(SignatureReverts.invalid(lead));
         _policyCall(registry, root, item, new bytes32[](0), move);
@@ -821,7 +820,8 @@ contract PackageRegistryTest is CurationBase {
     function test_move_revertsOtherRegistryDeployment() public {
         (bytes32 root, PackageItem memory item,) = _ready(SHA_A);
         PackageRegistry other = _newRegistry();
-        bytes memory foreign = _sig(leadKey, other.moveDigest(root, _hash(item), 0, deadline));
+        bytes memory foreign =
+            _pf(leadKey, _sig(leadKey, other.moveDigest(root, _hash(item), 0, deadline)));
         vm.prank(stream);
         vm.expectRevert(SignatureReverts.invalid(lead));
         _policyCall(registry, root, item, new bytes32[](0), MoveAuthorization(0, deadline, foreign));
@@ -845,7 +845,7 @@ contract PackageRegistryTest is CurationBase {
         uint256 newKey = 0xA9;
         artists.recover(_id(lead), vm.addr(newKey));
         vm.prank(stream);
-        vm.expectRevert(SignatureReverts.invalid(vm.addr(newKey)));
+        vm.expectRevert(SignatureReverts.invalid(lead));
         _policyCall(registry, root, item, new bytes32[](0), oldMove);
         _consume(root, item, new bytes32[](0), _move(newKey, root, _hash(item), 0));
     }
@@ -856,8 +856,16 @@ contract PackageRegistryTest is CurationBase {
         bytes32 root = WorksHashing.leaf(_hash(item));
         _register(root);
         PartyAcceptance memory a = _acceptance(address(safe));
-        registry.acceptPackage(root, a, _sig(leadKey, registry.acceptanceDigest(root, a)));
-        _consume(root, item, new bytes32[](0), _move(leadKey, root, _hash(item), 0));
+        registry.acceptPackage(
+            root, a, _as(address(safe), _sig(leadKey, registry.acceptanceDigest(root, a)))
+        );
+        bytes32 moveDigest = registry.moveDigest(root, _hash(item), 0, deadline);
+        _consume(
+            root,
+            item,
+            new bytes32[](0),
+            MoveAuthorization(0, deadline, _as(address(safe), _sig(leadKey, moveDigest)))
+        );
         assertEq(registry.consumedItemOf(item.contentHash), _hash(item));
     }
 
@@ -873,8 +881,14 @@ contract PackageRegistryTest is CurationBase {
         // One nonce authorizes two items (the artist signed both with nonce 5).
         bytes32 d0 = registry.moveDigest(root, _hash(items[0]), 5, deadline);
         bytes32 d1 = registry.moveDigest(root, _hash(items[1]), 5, deadline);
-        _consume(root, items[0], proofs[0], MoveAuthorization(5, deadline, _compact(leadKey, d0)));
-        MoveAuthorization memory second = MoveAuthorization(5, deadline, _sig(leadKey, d1));
+        _consume(
+            root,
+            items[0],
+            proofs[0],
+            MoveAuthorization(5, deadline, _pf(leadKey, _compact(leadKey, d0)))
+        );
+        MoveAuthorization memory second =
+            MoveAuthorization(5, deadline, _pf(leadKey, _sig(leadKey, d1)));
         vm.prank(stream);
         vm.expectRevert(
             abi.encodeWithSelector(IPackageRegistry.MoveNonceUsed.selector, _id(lead), 5)
@@ -893,7 +907,8 @@ contract PackageRegistryTest is CurationBase {
         assertTrue(registry.isMoveNonceUsed(_id(lead), 0));
         // Neither form of the signature works any more.
         bytes32 digest = registry.moveDigest(root, _hash(item), 0, deadline);
-        MoveAuthorization memory compact = MoveAuthorization(0, deadline, _compact(leadKey, digest));
+        MoveAuthorization memory compact =
+            MoveAuthorization(0, deadline, _pf(leadKey, _compact(leadKey, digest)));
         vm.prank(stream);
         vm.expectRevert(
             abi.encodeWithSelector(IPackageRegistry.MoveNonceUsed.selector, _id(lead), 0)
@@ -1416,7 +1431,7 @@ contract PackageRegistryTest is CurationBase {
         (ArtistIdentity memory identity,) = artists.artist(artists.artistIdOf(account));
         PartyAcceptance memory a =
             PartyAcceptance(account, identity.profileId, identity.profileDocHash, deadline);
-        registry.acceptPackage(root, a, _sig(key, registry.acceptanceDigest(root, a)));
+        registry.acceptPackage(root, a, _pf(key, _sig(key, registry.acceptanceDigest(root, a))));
     }
 
     function _prepare(PackageItem memory item, uint256[] memory keys)
