@@ -4,9 +4,11 @@
 
 6529 Works is the 6529 network's art protocol. It holds two products: **6529 Stream**, one
 shared ERC-721 for curated 1/1 artworks, and **6529 Stream Editions**, one shared ERC-1155
-whose editions are each anchored by a Stream master. Works are approved by TDH-weighted votes on
-6529's Main Stage, the only way in, and attested by a curation signer; every party named in a work signs before it
-can be sold. Anyone may start a work's 24-hour English auction, and anyone may settle it.
+whose editions are each anchored by a Stream master. Curated Stream works are approved by
+TDH-weighted votes on 6529's Main Stage, the only way into the shared contracts, and attested by
+a curation signer; every party named in a curated work signs before it can be sold. A separate
+lane, 6529 Stream Federated, lists artists' own contracts built from the network's templates
+without that vote, signer or party consent ([ADR 0008](docs/adr/0008-federation.md)). Anyone may start a work's 24-hour English auction, and anyone may settle it.
 Money moves by pull: proceeds and royalties collect in immutable split wallets that payees
 release from, with an escrow for payments that fail. Content is addressed by hash and stored on
 Arweave and IPFS, and anyone can put a work's files on-chain. One OpenZeppelin `AccessManager`
@@ -100,7 +102,7 @@ file, its bytecode size and how the figures are measured; `tools/check_docs_fact
 both pages in step with the code. Shared code lives in internal
 [libraries](src/libraries/README.md) and the [interfaces](src/interfaces/README.md); nothing is
 linked, proxied or `delegatecall`ed. 6529 Stream Federated (artist-owned contracts from the
-network's templates) is in v1, specified by a later ADR ([ADR 0007](docs/adr/0007-permanence.md); [federated](src/federated/README.md)).
+network's templates) is in v1, specified by [ADR 0008](docs/adr/0008-federation.md) ([ADR 0007](docs/adr/0007-permanence.md) for the permanent directory; [federated](src/federated/README.md)).
 
 ## Status
 

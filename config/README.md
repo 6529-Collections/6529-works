@@ -81,10 +81,10 @@ The deploy script follows one rule:
 - **Grants:** curation signers become active when they are granted `CURATION_SIGNER` in
   `holders`. The verifier keeps no signer list to wire.
 
-`ArtistRegistry.bindFederationRegistry` is listed under `deferred` and is not wired.
-Federation is in v1, specified by a later ADR ([ADR 0007](../docs/adr/0007-permanence.md)):
-binding the federation registry when it ships is a 30-day `ADMIN` action, and replacing it
-afterwards is `setFederationRegistry` (SUCCESSOR_SETTER, 30 days).
+`ArtistRegistry.bindFederationRegistry` is `genesisOnly`: genesis wires the one-shot bind to
+the deployment's `FederationRegistry` ([ADR 0008](../docs/adr/0008-federation.md)). Replacing
+the registry afterwards is `setFederationRegistry` (SUCCESSOR_SETTER, 30 days), following the
+[replacement procedure](../script/README.md#replacing-the-federation-registry).
 
 ## Checks
 

@@ -135,8 +135,10 @@ with refunds; neither delisting nor exit ever touches tokens, ownership, records
 An entry (form, partner, artist, version, code hash, fee share, status) is composed on read from
 the permanent directory (artist and status), the token's locked storage (fee terms and partner,
 read only for an approved code hash) and the registry's template table. A replacement registry
-therefore inherits every listing with nothing to migrate and nothing to trust from its
-predecessor. The registry's own state is the template table and the admitted adapters. A
+therefore inherits every listing with no listing to migrate and nothing to trust from its
+predecessor. Its own state, the template table and the admitted adapters, is not inherited: a
+successor must approve every template version (each bound to its deployer) and admit the
+adapters before the switch, or it serves nothing (§8). A
 contract that left has no entry (§8).
 `IFederationRegistry` is reduced to what other contracts call (`register`, `entry`, `isActive`,
 `canMint`); since every future registry must answer it, it is small on purpose.

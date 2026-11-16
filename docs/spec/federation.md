@@ -1,7 +1,7 @@
 # Federation
 
-6529 Stream Federated: an artist's own token contracts, full copies of the network's audited
-templates, listed in the network's permanent directory without curation, sold through the
+6529 Stream Federated: an artist's own token contracts, full copies of the network's
+governance-approved templates, listed in the network's permanent directory without curation, sold through the
 network's shared sale adapters, paying the network a locked 10% of primary sales and royalties,
 and earning no TDH ([ADR 0008](../adr/0008-federation.md)).
 

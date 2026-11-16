@@ -58,7 +58,8 @@ artist registry's (`IArtistRegistry.federatedListing` and its events).
 - **No immutables in the templates.** Every value is in storage, so every deployment of a
   version has one runtime code hash; the registry recognises a genuine copy by that hash and by
   its version's deployer having recorded it (FED-64), with no factory that holds power. Do not add an immutable or a constructor-dependent constant to a template, and do
-  not read `msg.sender` in a constructor (the proxy deploys every copy).
+  not read `msg.sender` in a constructor (the version's `FederatedDeployer` CREATE2s every
+  copy, so `msg.sender` there is always the deployer).
 - **Settlement makes no external call** and reads no identity state (the nine template
   guarantees, [stream-and-auctions](../../docs/spec/stream-and-auctions.md#what-a-federated-template-must-guarantee));
   keep it so. Every other call out is a plain call that forwards all gas and reverts on any
