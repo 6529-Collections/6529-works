@@ -62,9 +62,9 @@ class HelpersTest(unittest.TestCase):
             "openSale(address,uint256,(…)[],(uint256,uint64,bytes))",
         )
 
-    def test_guardian_cancel_depends_on_the_delay(self) -> None:
-        self.assertTrue(gm.guardian_cancel(0).startswith("No"))
-        self.assertTrue(gm.guardian_cancel(172_800).startswith("Yes"))
+    def test_cancel_rule_depends_on_the_delay(self) -> None:
+        self.assertTrue(gm.cancel_rule(0).startswith("No"))
+        self.assertTrue(gm.cancel_rule(86_400).startswith("The network or the scheduler"))
 
 
 class ValidateTest(unittest.TestCase):
@@ -133,28 +133,28 @@ class RenderTest(unittest.TestCase):
             for entry in contract.get("functions", []):
                 self.assertEqual(section.count(f"`{entry['selector']}`"), 1, entry["signature"])
 
-    def test_optional_suspendable_flag_adds_a_column(self) -> None:
-        config = committed_config()
-        has_flag = any("suspendable" in r for r in config["roles"])
-        self.assertEqual("Guardian may suspend" in gm.render(config), has_flag)
-        config = copy.deepcopy(config)
-        for role in config["roles"]:
-            role["suspendable"] = role["name"] == "PLATFORM"
-        text = gm.render(config)
-        row = next(line for line in text.splitlines() if line.startswith("| `PLATFORM` |"))
-        self.assertTrue(row.endswith(" Yes |"))
-        row = next(line for line in text.splitlines() if line.startswith("| `ADMIN` |"))
-        self.assertTrue(row.endswith(" No |"))
+    def test_network_roles_are_held_by_the_network_only(self) -> None:
+        text = gm.render(committed_config())
+        row = next(line for line in text.splitlines() if line.startswith("| `PARAMETER_SETTER` |"))
+        self.assertIn("`network()` only | the network |", row)
+        row = next(line for line in text.splitlines() if line.startswith("| `PAUSER` |"))
+        self.assertIn("operational keys | Pauser key 1, Pauser key 2, Pauser key 3 |", row)
+
+    def test_a_grant_delay_fails(self) -> None:
+        config = copy.deepcopy(committed_config())
+        config["roles"][2]["grantDelay"] = 86_400
+        with self.assertRaisesRegex(gm.ConfigError, "grant delays are not used"):
+            gm.validate(config)
 
     def test_manager_functions_from_the_configuration(self) -> None:
         config = copy.deepcopy(committed_config())
-        entry = {"signature": "suspend(uint64,address)", "selector": "0x64bf6e5d",
-                 "role": "GUARDIAN", "class": "immediate", "delay": 0, "note": "A note."}
+        entry = {"signature": "transferNetwork(address)", "selector": "0x33c95bb5",
+                 "role": "ADMIN", "class": "7d", "delay": 604_800, "note": "A note."}
         config["manager"] = {"functions": [entry]}
         text = gm.render(config)
-        self.assertIn("| `suspend(uint64,address)` | `0x64bf6e5d` | `GUARDIAN` |", text)
+        self.assertIn("| `transferNetwork(address)` | `0x33c95bb5` | `ADMIN` | 7 days |", text)
         entry["selector"] = "0x00000000"
-        with self.assertRaisesRegex(gm.ConfigError, "manager.suspend"):
+        with self.assertRaisesRegex(gm.ConfigError, "manager.transferNetwork"):
             gm.render(config)
 
     def test_immediate_functions_cannot_be_cancelled(self) -> None:
@@ -162,7 +162,7 @@ class RenderTest(unittest.TestCase):
         row = next(line for line in text.splitlines() if "`deprecateAsset(address)`" in line)
         self.assertIn("No: executes at once", row)
         row = next(line for line in text.splitlines() if "`recover(address,address,address)`" in line)
-        self.assertIn("Yes: any guardian", row)
+        self.assertIn("The network or the scheduler, during the delay", row)
 
 
 class MainTest(unittest.TestCase):

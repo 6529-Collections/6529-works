@@ -3,8 +3,8 @@
 
 The matrix lists every restricted function of every governed contract in
 `config/genesis.example.json`: its selector, the AccessManager role it maps to, the role's delay
-class and delay, and whether a guardian can cancel it while it waits. It also lists the roles
-and their holders, the genesis-only bindings, the deferred functions, the genesis wiring calls
+class and delay, and who can cancel it while it waits. It also lists the single network
+authority, the brake, the roles and their holders, the genesis-only bindings, the deferred functions, the genesis wiring calls
 and the AccessManager's own administrative functions.
 
 Before rendering it checks what it can check from the configuration alone: every selector is
@@ -34,12 +34,12 @@ CONFIG = "config/genesis.example.json"
 OUTPUT = "docs/audit/roles.md"
 
 # Delay classes, as in src/governance/Roles.sol and tools/check_genesis.py.
-CLASS_DELAY = {"immediate": 0, "standard": 172_800, "funds": 1_209_600, "successor": 2_592_000}
+CLASS_DELAY = {"immediate": 0, "24h": 86_400, "3d": 259_200, "7d": 604_800}
 CLASS_NAME = {
-    "immediate": "Immediate",
-    "standard": "Standard",
-    "funds": "Funds and recipients",
-    "successor": "Verifier and successor",
+    "immediate": "No delay",
+    "24h": "24 hours",
+    "3d": "3 days",
+    "7d": "7 days",
 }
 
 # Notes the matrix adds to configured functions, keyed by (contract, signature); a contract of
@@ -56,8 +56,8 @@ NOTES: dict[tuple[str, str], str] = {
         "Replaces the package registry, artist registry, economics resolver or entropy module "
         "(owner decision 16); compare-and-set. Existing tokens are unaffected.",
     ("Stream", "rescueToMuseum(uint256)"):
-        "Only a never-settled work its minting adapter holds, 90 days after governance removed "
-        "that adapter; to the museum only (owner decision 20).",
+        "Only a never-settled work its minting adapter holds, 14 days (fixed) after the network "
+        "removed that adapter; to the museum only (owner decision 20).",
     ("Stream", "releaseContent(uint256,bytes32,uint256)"):
         "After an upheld dispute; scheduled with the auction's `cancel`, to execute after it.",
     ("WorkDelivery", "addLocator(uint256,bytes32,(uint8,string))"):
@@ -69,9 +69,20 @@ NOTES: dict[tuple[str, str], str] = {
     ("WorkRecords", "setRoyaltyRate(uint256,uint32,(uint8,uint256,bytes32,bytes32,bytes32,"
      "(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,"
      "(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])"): "Also needs every party's signed consent; re-rates the linked edition.",
-    ("WorkRecords", "repinRenderer(uint256,address,bytes32,bytes32,uint64,bytes)"):
-        "The errata repin: also needs the lead artist's signature; refused for good once the "
-        "lead artist renounced `RENDERER_REPIN`.",
+    ("WorkRecords", "repinRenderer(uint256,address,bytes32,bytes32)"):
+        "The errata repin, the network alone (C8); refused for good once the lead artist "
+        "renounced `RENDERER_REPIN`.",
+    ("WorkRecords", "retireStore(uint256)"):
+        "Marks an added store dead (C21): nothing new is counted against it; counted works keep "
+        "their state.",
+    ("WorkRecords", "renounce(uint256,uint16,bytes32,uint64,bytes)"):
+        "Not `restricted`: anyone relays the artist's signature, and a newly renounced royalty "
+        "or licence power also needs this role (C7); renouncing the repin alone does not.",
+    ("WorkRecords", "syncOnChain(uint256,uint256,uint256)"):
+        "Not `restricted`: the work's artist walks an added store directly; this role's path "
+        "is a `canCall` check in the contract and needs a zero-delay grant.",
+    ("WorkDelivery", "markLocatorDead(uint256,bytes32,uint256)"):
+        "A dead locator is passed over by every delivery tier (C21, C33).",
     ("WorkRecords", "setDelivery(address,address)"):
         "Replaces the delivery contract (locators and preferences); compare-and-set; the "
         "successor names its predecessor. No fact of any work changes.",
@@ -85,10 +96,25 @@ NOTES: dict[tuple[str, str], str] = {
     ("CurationVerifier", "disableSigner(address)"):
         "Ends the signer's epoch; only `enableSigner` undoes it, under a new epoch.",
     ("CurationVerifier", "enableSigner(address)"): "Starts a new signer epoch.",
-    ("ArtistRegistry", "vetoChange(uint256)"): "Deletes a pending change; never redirects one.",
-    ("ArtistRegistry", "stageOverride(uint256,uint8,(address,address,bytes32,bytes32),bytes32,"
-     "uint64,bytes)"): "Starts a 180-day notice. An override that moves the authority "
-     "restrains the artist until it ends.",
+    ("ArtistRegistry", "freeze(uint256)"):
+        "Freezes the account for a fixed 14 days: no wallet acts, payouts read zero (C17).",
+    ("ArtistRegistry", "cancelReplacement(uint256)"):
+        "Withdraws the network's own pending replacement (C14).",
+    ("ArtistRegistry", "cancelOwnChange(uint256)"):
+        "Cancels an account's own pending change; the account may stage a new one.",
+    ("ArtistRegistry", "stageReplacement(uint256,(address,address,bytes32,bytes32),bytes32,"
+     "uint64,bytes)"): "Needs the new root's acceptance; 14 days' notice; any wallet of the "
+     "account contests during it.",
+    ("ArtistRegistry", "setFederationDelisted(uint256,bool,bytes32)"):
+        "Delists an artist account from the federation and blocks its new contracts (C5).",
+    ("ArtistRegistry", "lowerFederatedFeeShare(address,uint32)"):
+        "Lower only; the token uses the smaller of its own share and this record (R8).",
+    ("Stream", "lowerFeeShare(uint256,uint32)"):
+        "Lower only (R9); the fee recipient never changes. Does not cascade to the edition.",
+    ("Editions", "lowerFeeShare(uint256,uint32)"):
+        "Lower only (R9); a sale already open keeps the terms it locked.",
+    ("PackageRegistry", "killSignerApprovals(address)"):
+        "Every unminted approval the signer gave stops counting (C32).",
     ("ArtistRegistry", "setPackageRegistry(address,address)"):
         "Replaces the only `register` caller with Stream's successor package registry (owner "
         "decision 16); compare-and-set.",
@@ -113,26 +139,27 @@ NOTES: dict[tuple[str, str], str] = {
     ("FederatedEditionAuction", "pause()"):
         "The shared edition-auction code: stops new `open` calls only; bids, raises, settlement "
         "and claims of open sales continue (a delisting, not the pause, closes a running sale).",
-    ("*", "unpause()"): "Refused until 48 hours after the pause, whenever it was scheduled.",
+    ("*", "unpause()"): "No wait of its own: the network lifts the pause at once.",
     ("EnglishAuction", "pause(uint256,bytes32)"):
-        "Dispute pause: one per auction, lasting at most 7 days (`MAX_PAUSE`).",
-    ("EnglishAuction", "resume(uint256)"):
-        "Refused until 48 hours after the pause, whenever it was scheduled.",
+        "Dispute pause: one per auction, ending by itself after a fixed 3 days (C30).",
+    ("EnglishAuction", "resume(uint256)"): "No wait: at any moment of the pause (C30).",
     ("EnglishAuction", "cancel(uint256,bytes32)"):
-        "Upheld dispute: while paused, citing the token's DISPUTE_OUTCOME recorded after the "
-        "pause.",
+        "Upheld dispute, at any moment of the pause, citing the token's DISPUTE_OUTCOME "
+        "recorded after it (C30).",
     ("AssetAllowlist", "setOpeningBid(address,uint64,uint256)"):
-        "Per currency, the English auction's least first bid; compare-and-set, with a ceiling.",
-    ("EnglishAuction", "setConfig((uint32,uint32,uint32,uint32,uint32),"
-     "(uint32,uint32,uint32,uint32,uint32))"):
-        "Duration, anti-snipe window, increment share, refusal delay and raise-only refusal "
-        "gas; compare-and-set.",
+        "Per currency, the English auction's least first bid; compare-and-set; no price cap, "
+        "only the 96-bit bid bound (R19).",
+    ("EnglishAuction", "setConfig((uint32,uint32,uint32,uint32),(uint32,uint32,uint32,uint32))"):
+        "Duration, anti-snipe window, increment share and raise-only refusal gas; "
+        "compare-and-set. The refusal exit is a fixed 2 days.",
     ("*", "setTarget(address,bool)"): "Also a genesis wiring call.",
-    ("*", "setFederationRegistry(address,address)"): "No federation registry is installed yet (federation is in v1, ADR 0007; a later ADR specifies it).",
-    ("UniformEditionAuction", "setConfig((uint96,uint16,uint16,uint32,uint32,uint32,uint32),"
-     "(uint96,uint16,uint16,uint32,uint32,uint32,uint32))"):
-        "Margin, step ladder, close offset, soft-close window and backstop; compare-and-set, "
-        "with bounds in code. An auction keeps the values locked at its open.",
+    ("*", "setFederationRegistry(address,address)"):
+        "Replaces the federation registry (ADR 0008); compare-and-set, code hash pinned.",
+    ("UniformEditionAuction", "setConfig((uint96,uint16,uint16,uint32,uint32,uint32),"
+     "(uint96,uint16,uint16,uint32,uint32,uint32))"):
+        "Base price, step ladder, margin, soft-close window and backstop; compare-and-set, "
+        "with bounds in code. Every sale closes a fixed 15 minutes after its 1/1 (R20); an "
+        "auction keeps the values locked at its open.",
     ("EconomicsResolver", "setFeeTerms(bytes32,uint64,address,uint32)"):
         "New works only; compare-and-set on the product's revision; refuses a fee recipient "
         "that could never be paid.",
@@ -145,7 +172,7 @@ NOTES: dict[tuple[str, str], str] = {
         "compare-and-set on the museum's revision; refuses zero and a contract that could never "
         "hold a work.",
     ("AssetAllowlist", "admitAsset(address,uint64,uint256)"):
-        "Compare-and-set; a re-admission waits 14 days from the deprecation.",
+        "Compare-and-set; a re-admission waits 3 days from the deprecation.",
     ("AssetAllowlist", "setDefaultCurrency(bytes32,uint64,address)"):
         "Compare-and-set; also a genesis wiring call (ETH for each product).",
     ("AssetAllowlist", "deprecateAsset(address)"):
@@ -154,35 +181,38 @@ NOTES: dict[tuple[str, str], str] = {
         "Where every held and future network fee goes; compare-and-set on the vault's revision.",
     ("MuseumVault", "setDestination(uint64,address)"):
         "Where every museum-held work and payout goes: authority over existing tokens, so the "
-        "30-day class, not the fee vault's 14 days; compare-and-set on the vault's revision.",
+        "7-day class, not the fee vault's 3 days; compare-and-set on the vault's revision.",
     ("RevenueEscrow", "recover(address,address,address)"): "Only to an identical-configuration "
-     "replacement wallet, or to the replacement the account itself named.",
+     "replacement wallet, or to the replacement the account itself named; the network's own "
+     "parked credits need no consent (C19).",
     ("DependencyRegistry", "register(bytes32,bytes32,bytes32)"):
         "The file must be complete on-chain; a registered version never changes.",
     ("DependencyRegistry", "deprecate(bytes32,bytes32)"): "A one-way flag; the version stays readable.",
     ("EntropyModule", "setConfig((uint256,bytes32,uint32,uint16,bool),(uint256,bytes32,uint32,"
      "uint16,bool))"): "Compare-and-set; the callback gas limit only rises (at most 2x a step).",
     ("EntropyModule", "lowerCallbackGasLimit(uint32,uint32)"): "Never below the floor.",
+    ("EntropyModule", "setWrapper(address,address,bytes32)"):
+        "The VRF wrapper federated requests pay directly (zero is off, as at launch); "
+        "compare-and-set, code hash pinned.",
+    ("FederationRegistry", "reinstateTemplate(bytes32)"):
+        "Moves a revoked template version back to approved (C26).",
 }
 
 # Notes that replace the configuration's own note for the manager's added functions (the
 # `manager` section of the configuration), where the matrix states the rule more precisely.
 MANAGER_NOTES: dict[str, str] = {
-    "suspend(uint64,address)": "Suspends a holder of a suspendable role at once. Lifted by an ADMIN "
-    "`grantRole` or `revokeRole` of that role to that account (30 days), or by the holder's own "
-    "`renounceRole`; no guardian can lift it.",
+    "transferNetwork(address)": "Proposes the next network address (zero withdraws); it takes "
+    "effect when that address calls `acceptNetwork`, and the old address then holds nothing.",
 }
 
 # The AccessManager's own restricted functions (OpenZeppelin 5.7.0, `_getAdminRestrictions`),
 # and the target function every managed contract inherits from AccessManaged. "admin" is the
 # ADMIN role's execution delay; "target" adds the target's admin delay (the larger applies).
 MANAGER_FUNCTIONS: tuple[tuple[str, str, str, str], ...] = (
-    ("grantRole(uint64,address,uint32)", "The role's admin (ADMIN for every role)", "admin",
-     "The grant then waits the role's grant delay. Refused below the role's class delay "
-     "(`DelayBelowClass`), whoever the role's admin is."),
-    ("revokeRole(uint64,address)", "The role's admin (ADMIN for every role)", "admin",
-     "Only a guardian or its scheduler can cancel it, and the account it revokes only if it "
-     "scheduled it."),
+    ("grantRole(uint64,address,uint32)", "NETWORK, for an operational role", "none",
+     "No grant delay. A network role can be granted to nobody (`NetworkRoleNotGrantable`)."),
+    ("revokeRole(uint64,address)", "NETWORK, for an operational role", "none",
+     "Takes effect at once."),
     ("renounceRole(uint64,address)", "The holder itself", "none",
      "Immediate; the second argument must be the caller."),
     ("labelRole(uint64,string)", "ADMIN", "admin", ""),
@@ -195,10 +225,8 @@ MANAGER_FUNCTIONS: tuple[tuple[str, str, str, str], ...] = (
     ("setTargetFunctionRole(address,bytes4[],uint64)", "ADMIN", "target", ""),
     ("setTargetClosed(address,bool)", "ADMIN", "target", ""),
     ("updateAuthority(address,address)", "ADMIN", "target",
-     "Moves one target to another authority: no slow lane and no bounded veto, so any one "
-     "guardian can stop it, every time; it checks nothing about the new authority."),
-    ("setAuthority(address)", "ADMIN, scheduled on the target itself", "target",
-     "Stock OpenZeppelin lets only ADMIN cancel this; the guardians can too."),
+     "Moves one target to another authority; it checks nothing about the new authority."),
+    ("setAuthority(address)", "ADMIN, scheduled on the target itself", "target", ""),
 )
 
 _KECCAK = None
@@ -262,10 +290,10 @@ def short_signature(signature: str, limit: int = 24) -> str:
     return f"{name}({','.join(shown)})"
 
 
-def guardian_cancel(delay: int) -> str:
+def cancel_rule(delay: int) -> str:
     if delay == 0:
         return "No: executes at once"
-    return "Yes: any guardian, during the delay"
+    return "The network or the scheduler, during the delay; the brake may delay it once"
 
 
 def holder_label(label: str) -> str:
@@ -280,10 +308,11 @@ def validate(config: dict) -> None:
     """Fail on anything the matrix would render wrongly."""
     roles = {r["name"]: r for r in config["roles"]}
     for role in config["roles"]:
-        for kind in ("execution", "grant"):
-            cls, delay = role[f"{kind}Class"], role[f"{kind}Delay"]
-            if CLASS_DELAY.get(cls) != delay:
-                raise ConfigError(f"role {role['name']}: {kind} class {cls!r} is not {delay} seconds")
+        cls, delay = role["executionClass"], role["executionDelay"]
+        if CLASS_DELAY.get(cls) != delay:
+            raise ConfigError(f"role {role['name']}: execution class {cls!r} is not {delay} seconds")
+        if role.get("grantDelay", 0) != 0:
+            raise ConfigError(f"role {role['name']}: grant delays are not used")
     seen: set[tuple[str, str]] = set()
     for contract in config["contracts"]:
         name = contract["name"]
@@ -359,53 +388,57 @@ def render(config: dict) -> str:
     w("# Role and permission matrix")
     w("")
     w("Every restricted function of every governed 6529 Works contract: the AccessManager role it")
-    w("maps to, the role's delay class and delay, and whether a guardian can cancel it while it")
-    w("waits. Generated from [`config/genesis.example.json`](../../config/genesis.example.json), the")
+    w("maps to, the role's delay class and delay, and who can cancel it while it waits. Generated")
+    w("from [`config/genesis.example.json`](../../config/genesis.example.json), the")
     w("committed genesis policy, by [`tools/gen_role_matrix.py`](../../tools/gen_role_matrix.py).")
     w("")
     w("> Pre-audit. See the [project status](../../README.md#status).")
     w("")
     w("Every address in the configuration is a placeholder; a deployment may change only its")
-    w("holders. `tools/check_genesis.py` checks the configuration against the compiled selectors and")
+    w("holders, its network and brake addresses. `tools/check_genesis.py` checks the configuration against the compiled selectors and")
     w("every `restricted` function in `src/` (CI job Contracts), and")
     w("`python tools/gen_role_matrix.py --check` checks this page against the configuration (CI job")
     w("Docs).")
     w("")
+    w("## The network and the brake")
+    w("")
+    w("One address, `network()`, holds every network role: ADMIN (7 days), NETWORK (no delay),")
+    w("PARAMETER_SETTER (24 hours), FUNDS_SETTER (3 days) and SUCCESSOR_SETTER (7 days). Nobody")
+    w("else can be granted them. Until the TDH bridge exists it is one 6529 Safe; it hands over")
+    w("with `transferNetwork` (7 days) and the next address's `acceptNetwork`. A brake, if the")
+    w("network sets one (none at launch), may delay any scheduled operation once by 7 days.")
+    w("")
     w("## How to read the matrix")
     w("")
-    w("- **Role.** The selector's role in the `WorksAccessManager`. A holder whose role has a delay")
-    w("  schedules the call, waits the delay, then executes it.")
-    w("- **Guardian cancel.** In [`WorksAccessManager`](../../src/governance/WorksAccessManager.sol)")
-    w("  any GUARDIAN holder may cancel any scheduled operation before it executes (Rule 1), except")
-    w("  an operation that revokes one of the guardian's own roles and that someone else scheduled")
-    w("  (Rule 2). A role revocation on the manager that another account scheduled can be cancelled")
-    w("  only by a guardian (Rule 3); a scheduler may always cancel its own operation. An immediate")
-    w("  function executes at once, so there is nothing to cancel.")
-    w("- **Expiry.** A scheduled operation must execute within one week of becoming executable")
-    w("  (`expiration()`), or it must be scheduled again with the full delay.")
+    w("- **Role.** The selector's role in the `WorksAccessManager`. The network schedules a call")
+    w("  whose role has a delay, waits the delay, then executes it.")
+    w("- **Cancel.** A scheduled operation can be cancelled by the network or by whoever")
+    w("  scheduled it before it executes; the brake can delay it once. A function with no delay")
+    w("  executes at once, so there is nothing to cancel.")
+    w("- **Expiry.** A scheduled operation must execute within 14 days of becoming executable")
+    w("  (`expiration()`: one week plus the brake's 7 days), or it must be scheduled again.")
     w(f"- **Unmapped selectors** fall back to ADMIN and its delay ({format_delay(admin_delay)}).")
     w("- Long tuple parameters are shown as `(…)`; [Full signatures](#full-signatures) lists them.")
     w("- The rules behind the classes are in the [governance spec](../spec/governance.md).")
     w("")
     w("## Roles")
     w("")
-    suspendable = any("suspendable" in r for r in roles)
-    extra_head = " Guardian may suspend |" if suspendable else ""
-    extra_rule = " --- |" if suspendable else ""
-    w("| Role | ID | Execution delay | Grant delay | Holders at genesis | Mapped selectors |"
-      + extra_head)
-    w("| --- | ---: | --- | --- | --- | ---: |" + extra_rule)
+    w("| Role | ID | Execution delay | Held by | Holders at genesis | Mapped selectors |")
+    w("| --- | ---: | --- | --- | --- | ---: |")
     for r in roles:
         count = sum(1 for _, f in mapped if f["role"] == r["name"])
         who = ", ".join(holders.get(r["name"], [])) or "none"
         if r["name"] in unused:
             who += " (unused in v1)"
-        extra = (" Yes |" if r.get("suspendable") else " No |") if suspendable else ""
+        held = "`network()` only" if r.get("network") else "operational keys"
+        if r.get("network"):
+            who = "the network"
         w(f"| `{r['name']}` | {r['id']} | {format_delay(r['executionDelay'])} | "
-          f"{format_delay(r['grantDelay'])} | {who} | {count} |" + extra)
+          f"{held} | {who} | {count} |")
     w("")
-    w("Every role's admin is ADMIN, and every role except ADMIN has GUARDIAN as its guardian")
-    w("([`Roles.sol`](../../src/governance/Roles.sol)). Guardians hold only GUARDIAN and PAUSER.")
+    w("Every operational role's admin is NETWORK, so the network grants and revokes those keys at")
+    w("once; the network roles answer for `network()` only ([`Roles.sol`](../../src/governance/Roles.sol),")
+    w("[`WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol)).")
     if unused:
         w("")
         for name, note in unused.items():
@@ -432,22 +465,21 @@ def render(config: dict) -> str:
         if not functions:
             w("No mapped functions.")
             continue
-        w("| Function | Selector | Role | Class | Delay | Guardian cancel | Notes |")
+        w("| Function | Selector | Role | Class | Delay | Cancel | Notes |")
         w("| --- | --- | --- | --- | --- | --- | --- |")
         for f in functions:
             short = short_signature(f["signature"])
             if short != f["signature"]:
                 full_signatures.append((f["selector"], f["signature"]))
             w(f"| `{short}` | `{f['selector']}` | `{f['role']}` | {CLASS_NAME[f['class']]} | "
-              f"{format_delay(f['delay'])} | {guardian_cancel(f['delay'])} | "
+              f"{format_delay(f['delay'])} | {cancel_rule(f['delay'])} | "
               f"{note_for(contract['name'], f['signature'])} |")
     w("")
     w("## Genesis-only bindings")
     w("")
     w("One-shot bindings between protocol contracts. The configurator executes them at genesis as")
     w("zero-delay ADMIN, before it maps any selector; each target refuses a second call. They stay")
-    w(f"unmapped, so any later call resolves to ADMIN ({format_delay(admin_delay)}), which a guardian")
-    w("can cancel.")
+    w(f"unmapped, so any later call resolves to ADMIN ({format_delay(admin_delay)}).")
     w("")
     w("| Contract | Function | Selector |")
     w("| --- | --- | --- |")
@@ -469,7 +501,8 @@ def render(config: dict) -> str:
     w("## Genesis wiring")
     w("")
     w("The calls `GovernanceConfigurator.configure` executes, in order, before it maps selectors")
-    w("and renounces ADMIN. `GovernanceConfig.isGenesisSelector` admits nothing else.")
+    w("and renounces its installer record; it then proposes the network, which accepts.")
+    w("`GovernanceConfig.isGenesisSelector` admits nothing else.")
     w("")
     w("| # | Contract | Call | Arguments |")
     w("| ---: | --- | --- | --- |")
@@ -485,27 +518,24 @@ def render(config: dict) -> str:
     w("")
     w("Administration of the manager itself (OpenZeppelin 5.7.0). The delay is ADMIN's execution")
     w(f"delay ({format_delay(admin_delay)}); for functions that name a target, the target's admin")
-    w("delay applies if it is longer. Every target's admin delay is the successor class")
-    w("(`GovernanceConfig.TARGET_ADMIN_DELAY`).")
+    w("delay applies if it is longer; genesis sets no target admin delay.")
     w("")
-    w("| Function | Selector | Caller | Delay | Guardian cancel | Notes |")
+    w("| Function | Selector | Caller | Delay | Cancel | Notes |")
     w("| --- | --- | --- | --- | --- | --- |")
     for sig, caller, kind, note in MANAGER_FUNCTIONS:
         delay = 0 if kind == "none" else admin_delay
         shown = format_delay(delay)
         if kind == "target":
             shown += " (or the target's admin delay)"
-        cancel = guardian_cancel(delay)
-        if sig.startswith("revokeRole"):
-            cancel = "Yes, except by the account being revoked"
+        cancel = cancel_rule(delay)
         w(f"| `{sig}` | `{selector(sig)}` | {caller} | {shown} | {cancel} | {note} |")
     for f in (config.get("manager") or {}).get("functions", []):
         note = MANAGER_NOTES.get(f["signature"], f.get("note", ""))
         w(f"| `{f['signature']}` | `{f['selector']}` | `{f['role']}` | "
-          f"{format_delay(f['delay'])} | {guardian_cancel(f['delay'])} | {note} |")
+          f"{format_delay(f['delay'])} | {cancel_rule(f['delay'])} | {note} |")
     for f in (config.get("manager") or {}).get("open", []):
         w(f"| `{f['signature']}` | `{f['selector']}` | No role (checked in the function) | "
-          f"{format_delay(0)} | {guardian_cancel(0)} | {f.get('note', '')} |")
+          f"{format_delay(0)} | {cancel_rule(0)} | {f.get('note', '')} |")
     w("")
     w("`schedule`, `execute` and `cancel` are open to anyone and check the caller's permission")
     w("for the call they carry.")
