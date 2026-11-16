@@ -828,6 +828,9 @@ contract ArtistRegistryTest is IdentityFixture {
         bytes32 digest =
             registry.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, deadline);
         bytes memory acceptance = _sign(newKey, digest);
+        // Review E, N-5: the consumed digest is in the registry's own logs.
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.OverrideAcceptanceConsumed(artistId, digest);
         vm.prank(governor);
         registry.stageOverride(artistId, ChangeKind.CONTESTED, next, evidence, deadline, acceptance);
         vm.prank(guardian);

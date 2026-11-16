@@ -129,8 +129,9 @@ ArtistRegistration(address account,bytes32 profileId,bytes32 profileDocHash,uint
   the authority moves (ID-5, ID-40). The deadline is inclusive.
 - **`OverrideAcceptance`** is signed by the new authority, only when the override moves the
   authority. It binds no nonce, so a key holder cannot void it, and is consumed once by digest
-  (`AcceptanceUsed`, ID-12). Its deadline is checked when the scheduled `stageOverride` executes,
-  after its 48 hours.
+  (`AcceptanceUsed`, ID-12; `OverrideAcceptanceConsumed` logs each consumed digest, so the set
+  is rebuilt from the registry's own logs). Its deadline is checked when the scheduled
+  `stageOverride` executes, after its 48 hours.
 - **`ArtistRegistration`** is the account's consent to an identity created through the
   federation registry (`registerFederated`, ID-32). The registry verifies it itself, so no
   federation registry can create an identity for an account that did not sign; it binds no
@@ -729,7 +730,7 @@ Test files: [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) (
 | ID-9 | A STANDARD change is cancelled by its previous authority or a captured wallet; an override only by a captured wallet's contest, never by the previous authority; standing is fixed at staging. | `ArtistRegistry.cancelChange` | AR `test_Cancel_ByTheOldKey`, `test_Cancel_ByACapturedWallet`, `test_Cancel_WalletEstablishedAfterStagingCannotCancel`, `test_Attack_OldKeyCannotCancelAnOverride` |
 | ID-10 | The guardian can delete any pending change and has no path that writes an identity. | `ArtistRegistry.vetoChange`; genesis role map | AR `test_Veto_ByGuardian`, `test_Veto_StopsAnOverride`, `test_Attack_GuardianCannotRedirect`; CO `test_Contest_GuardianVetoVoids` |
 | ID-11 | An override needs an override kind and a nonzero evidence hash; `ESTATE` and `LOST_KEY` need `DORMANCY` without activity at staging. | `ArtistRegistry.stageOverride` | AR `test_Override_RevertsForInvalidKindOrEvidence`, `test_Override_EstateRevertsBeforeOneYearOfDormancy`, `test_Override_LostKeyBlockedByRecentHeartbeat` |
-| ID-12 | An override that moves the authority needs the new authority's unexpired acceptance, consumed once by digest; a payout-only override needs none. | `ArtistRegistry.stageOverride` | AR `test_Override_AuthorityChangeNeedsTheNewAuthority`, `test_Override_AcceptanceIsSingleUseByDigest`, `test_Override_PayoutOnlyNeedsNoAcceptance` |
+| ID-12 | An override that moves the authority needs the new authority's unexpired acceptance, consumed once by digest (`OverrideAcceptanceConsumed` logs it); a payout-only override needs none. | `ArtistRegistry.stageOverride` | AR `test_Override_AuthorityChangeNeedsTheNewAuthority`, `test_Override_AcceptanceIsSingleUseByDigest`, `test_Override_PayoutOnlyNeedsNoAcceptance` |
 | ID-13 | A captured wallet's cancel during the notice contests an override once; later cancels do nothing; a contested override never executes through `executeChange`; a contest after `executableAt` reverts. | `ArtistRegistry.cancelChange`, `executeChange` | CO `test_Contest_ThiefWalletContestsAndThePayoutStaysFrozen`, `test_Contest_ALateContestIsRefusedAndExecutionProceeds`, `test_Contest_IsNoActivity` |
 | ID-14 | A contest is resolved only by citing the latest DISPUTE_OUTCOME on `(registry, artistId)`, recorded after the contest; an uphold waits for `executableAt` and re-checks. | `ArtistRegistry.resolveContested` | CO `test_Contest_VoteUpholdsAndTheArtistRecovers`, `test_Resolve_RefusesAStaleOutcomeFromAnEarlierContest`, `test_Resolve_RefusesAnOutcomeRecordedBeforeTheContest`, `test_Resolve_UpholdRechecksAtExecution`; IR `test_ContestedOverrideUpheldByARecordedVote` |
 | ID-15 | A contest lapses its locked contest timeout after it began: the freeze and the restraint lift at once, and anyone may delete it. | `ArtistRegistry._lapsed`, `expireContest` | CO `test_Contest_LapsesAfterAYear`, `testFuzz_Contest_TheUpholdWindowIsAlwaysOpen`; RR `test_PowersReturnWhenAContestLapses` |

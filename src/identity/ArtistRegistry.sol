@@ -418,6 +418,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
             SignatureVerifier.checkDeadline(deadline);
             SignatureVerifier.check(next.authority, digest, authorityAcceptance);
             _acceptanceUsed[digest] = true;
+            emit OverrideAcceptanceConsumed(artistId, digest);
         }
         ChangeKind pending = _pending[artistId].kind;
         if (pending > ChangeKind.STANDARD) revert ChangePending(artistId);

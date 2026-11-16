@@ -207,6 +207,12 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @param previous The identity before the change.
     /// @param next The identity after the change.
     event ChangeExecuted(uint256 indexed artistId, ArtistIdentity previous, ArtistIdentity next);
+    /// @notice An override's new-authority acceptance was consumed (`stageOverride`): its digest
+    ///         can never be staged again (`AcceptanceUsed`). With it the consumed set is rebuilt
+    ///         from this registry's logs alone (review C, F15; review E, N-5).
+    /// @param artistId The artist the override stages for.
+    /// @param digest The `Typehashes.OVERRIDE_ACCEPTANCE` digest consumed (`overrideDigest`).
+    event OverrideAcceptanceConsumed(uint256 indexed artistId, bytes32 digest);
     /// @notice Signed activity was recorded for dormancy purposes.
     /// @param artistId The artist whose activity was recorded.
     /// @param timestamp The block timestamp now stored as the artist's last activity.
