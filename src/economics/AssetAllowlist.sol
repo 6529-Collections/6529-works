@@ -70,7 +70,7 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
         // re-admission scheduled ahead could undo a deprecation in its own block. The delay is
         // counted from the deprecation instead.
         if (config.status == Status.Deprecated) {
-            uint256 allowedAt = uint256(config.since) + Roles.FUNDS;
+            uint256 allowedAt = uint256(config.since) + Roles.DELAY_3D;
             // forge-lint: disable-next-line(block-timestamp)
             if (block.timestamp < allowedAt) revert ReadmissionTooEarly(asset, allowedAt);
         }

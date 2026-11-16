@@ -155,7 +155,7 @@ contract MuseumTest is IntegrationBase {
         (bool immediate, uint32 delay) =
             manager.canCall(hotAdmin, address(economics), IEconomicsResolver.setMuseum.selector);
         assertFalse(immediate);
-        assertEq(delay, Roles.FUNDS);
+        assertEq(delay, Roles.DELAY_3D);
         // The resolver names the museum's governed vault, which forwards to the recorded Safe.
         this.checkMuseum(museumSafe);
         vm.expectRevert(
@@ -170,7 +170,7 @@ contract MuseumTest is IntegrationBase {
         address next = makeAddr("nextMuseumSafe");
         bytes memory call = abi.encodeCall(economics.setMuseum, (1, next));
         bytes32 id = _schedule(hotAdmin, address(economics), call);
-        vm.warp(block.timestamp + Roles.FUNDS - 1);
+        vm.warp(block.timestamp + Roles.DELAY_3D - 1);
         vm.prank(hotAdmin);
         vm.expectRevert(abi.encodeWithSelector(IAccessManager.AccessManagerNotReady.selector, id));
         manager.execute(address(economics), call);
@@ -212,7 +212,7 @@ contract MuseumTest is IntegrationBase {
         for (uint256 i; i < refused.length; ++i) {
             bytes memory call = abi.encodeCall(economics.setMuseum, (1, refused[i]));
             _schedule(hotAdmin, address(economics), call);
-            vm.warp(block.timestamp + Roles.FUNDS);
+            vm.warp(block.timestamp + Roles.DELAY_3D);
             vm.prank(hotAdmin);
             vm.expectRevert(
                 abi.encodeWithSelector(IEconomicsResolver.InvalidMuseum.selector, refused[i])

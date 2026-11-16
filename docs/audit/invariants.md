@@ -320,33 +320,13 @@ and 1.
 
 [`GovernanceInvariant.t.sol`](../../test/governance/GovernanceInvariant.t.sol), handler
 `GovernanceHandler` in the same file. Real `GovernanceConfigurator` and `WorksAccessManager`;
-mock `GovernedTargetMock`, plus a rogue stock `AccessManager` for hostile operations. Admins
-schedule hostile operations next to benign guardian and admin rotations, a vigilant guardian
-cancels each hostile one before time moves, and every warp runs `configurator.verify`.
-Guardians suspend the fixed PLATFORM, CURATOR and STORAGE_OPERATOR keys (and try a
-non-suspendable role), admins schedule 30-day grants that lift them, and admins try to cancel
-revocations another account scheduled (Rule 3).
+mock `GovernedTargetMock`. Random actors, the network among them, hand the network over, accept,
+try to grant themselves network roles, grant and revoke an operational key, brake and run
+operations, and renounce roles; refused calls are caught.
 
 | ID | Invariant | Test | Handler actions |
 | --- | --- | --- | --- |
-| INV-GV-1 | Hostile operations never change the target (authority, recipient, verifier, fee, admin calls) or grant the attacker a role; nothing executes early or through a wrapper; no account cancels its own role's revocation, and no admin another account's (Rule 3); benign rotations and lifts always execute; rotators' GUARDIAN, PAUSER and ADMIN membership equals the model; the hot admin keeps ADMIN; at least two guardians stay active. | `invariant_GovernanceStaysContained` | all except `guardianSuspends` |
-| INV-GV-2 | After every warp the on-chain configuration reads back as the model's: the unsuspended fixed holders plus the active rotators. | handler check: `warp` (`configurator.verify(modelConfig())`) | as named |
-| INV-GV-3 | No non-suspendable role is ever suspended; each fixed key's suspension equals the model (set by `suspend`, cleared by an executed 30-day lift); a suspended key fails `hasRole`, an unsuspended one passes; the CURATOR key's `canCall` on the target is immediate, with zero delay, exactly when unsuspended. | `invariant_SuspensionsStayContained` | `guardianSuspends`, `scheduleLift`, `executeBenign`, `warp` |
-| INV-GV-4 | A guardian's suspension of an unsuspended fixed key succeeds; its attempt on a non-suspendable role (ADMIN on the hot admin, another role on a guardian) never does. | handler check: `guardianSuspends` (`fail_on_revert`; `nonSuspendableSuspended` checked by INV-GV-3) | as named |
-
-### The manager's permanence functions
-
-[`PermanenceInvariant.t.sol`](../../test/governance/PermanenceInvariant.t.sol): four campaigns on a
-real `WorksAccessManager` (the escalation campaign with five guardian seats, two admins and an
-outsider)
-([GV-37 to GV-45](../spec/governance.md#rules-and-invariants)).
-
-| ID | Invariant | Test | Handler actions |
-| --- | --- | --- | --- |
-| INV-GV-5 | Once a guardian struck a protected action, only its scheduler or a majority of the guardian seats counted at scheduling, at least two, stops the re-proposal. | `invariant_OnlyAGuardianMajorityStopsTheEscalatedLane` | `cancelAs`, `leave`, `warp` |
-| INV-GV-6 | A dead-admin recovery never completes while an admin acts. | `invariant_RecoveryNeverCompletesWhileAnAdminActs` | `open`, `approve`, `complete`, `heartbeat`, `warp` |
-| INV-GV-7 | `migrate` is all-or-nothing per piece: every target of a completed piece answers to the successor, and none of a failed piece moved. | `invariant_MigrateIsAllOrNothingPerPiece` | `migrate` |
-| INV-GV-8 | The ADMIN and GUARDIAN seat caps hold. | `invariant_SeatCapsHold` | `grant`, `revoke`, `setCap` |
+| INV-GV-1 | Exactly one address holds the network roles (`ADMIN`, `NETWORK`, `PARAMETER_SETTER`, `FUNDS_SETTER`, `SUCCESSOR_SETTER`); it is `network()`, it carries each class's delay, and the configurator holds none ([GV-14](../spec/governance.md#rules-and-invariants)). | `invariant_ExactlyOneAddressHoldsTheNetworkRoles` | `transfer`, `accept`, `grantNetworkRole`, `grantOperational`, `brakeAndRun`, `renounce` |
 
 ## Properties tested by fuzz and unit tests
 
@@ -380,13 +360,9 @@ Properties with no campaign of their own, or tested more directly outside one: b
 | PROP-CUR-3 | Only active signers' attestations count, and arbitrary signature bytes are never approved. | [`Eip712CurationVerifier.t.sol`](../../test/curation/Eip712CurationVerifier.t.sol) `testFuzz_isApproved_onlyActiveSignersCount`, `testFuzz_isApproved_neverRevertsOnGarbage` |
 | PROP-ED-1 | An edition never mints beyond its creator's cap, and `createEdition` refuses a tampered item. | [`Editions.t.sol`](../../test/editions/Editions.t.sol) `testFuzz_Mint_NeverExceedsTheCap`, `testFuzz_CreateEdition_RefusesTamperedItem` |
 | PROP-ENT-1 | The first of many deliveries wins, only the coordinator delivers, an unissued request ID never delivers, and non-VRF items and items outside an approved package are always refused. | [`VrfEntropyFuzz.t.sol`](../../test/entropy/VrfEntropyFuzz.t.sol) `testFuzz_TheFirstDeliveryOfManyRequestsWins`, `testFuzz_OnlyTheCoordinatorMayFulfill`, `testFuzz_UnissuedRequestIdsNeverDeliver`, `testFuzz_NonVrfItemsAreAlwaysRefused`, `testFuzz_OnlyItemsOfAnApprovedPackageCanBeRequested` |
-| PROP-GV-1 | Nobody cancels the operation that revokes their own role. | [`GuardianCancel.t.sol`](../../test/governance/GuardianCancel.t.sol) `testFuzz_NobodyCancelsTheirOwnRevocation` |
+| PROP-GV-8 | Only the network holds a network role, for any account and network role. | [`NetworkAndBrake.t.sol`](../../test/governance/NetworkAndBrake.t.sol) `testFuzz_OnlyTheNetworkHoldsTheNetworkRoles` |
 | PROP-GV-2 | A raise-only parameter moves by at most 2× per step and never above its ceiling, for any sequence of raises. | [`BoundedParameter.t.sol`](../../test/governance/BoundedParameter.t.sol) `testFuzz_RaiseMatchesSpecification`, `testFuzz_RaiseSequenceStaysBounded` |
 | PROP-GV-3 | Only genesis selectors pass wiring validation. | [`GenesisWiring.t.sol`](../../test/governance/GenesisWiring.t.sol) `testFuzz_OnlyGenesisSelectorsPassValidation` |
-| PROP-GV-4 | For any role, victim and canceller (guardians, cold admin, keeper, key holder), another account's revocation is cancelled exactly when the canceller is a guardian and not the victim (Rules 2 and 3). | [`GuardianCancel.t.sol`](../../test/governance/GuardianCancel.t.sol) `testFuzz_OnlyGuardiansCancelAnotherAccountsRevocation` |
-| PROP-GV-5 | `suspend` refuses with `RoleNotSuspendable` every role ID from 0 to 13 (`Roles.COUNT`, one past the last role) except PLATFORM, CURATOR and STORAGE_OPERATOR (`test_SuspendableRolesAreTheZeroDelayOperationalKeys` also checks `PUBLIC`). | [`Suspension.t.sol`](../../test/governance/Suspension.t.sol) `testFuzz_OnlyOperationalRolesCanBeSuspended` |
-| PROP-GV-6 | A suspension takes effect in the same block on `hasRole`, `canCall` and the target, keeping the record and other roles; only guardians suspend; a suspended pending holder never activates; only an ADMIN grant (guardian-vetoable), a revocation or the holder's renounce lifts it; readback rejects a suspended holder. | `Suspension.t.sol` `test_AGuardianSuspendsAKeyInTheSameBlock`, `test_OnlyGuardiansSuspend`, `test_APendingGrantCanBeSuspended`, `test_OnlyAnAdminGrantLiftsItAndAGuardianCanVetoThat`, `test_ARevocationClearsItAndTheKeyCanRenounce`, `test_ReadbackRejectsASuspendedHolder` |
-| PROP-GV-7 | On the genesis deployment, a suspended PLATFORM key fails every PLATFORM path (manual checks included) while the creator's stays open, a dishonest guardian's suspension lasts 60 days (in force at day 59, lifted at 60), the cold admin removes a hot admin and a guardian acting together in two 30-day rounds, and demotions by grant stay cancellable by the demoted account. | [`GovernanceRecovery.t.sol`](../../test/integration/GovernanceRecovery.t.sol) `test_AGuardianSuspendsThePlatformKeyAtOnce`, `test_ADishonestGuardiansSuspensionLastsAboutSixtyDays`, `test_ColdAdminRemovesAHotAdminAndAGuardianActingTogether`, `test_DemotionsByGrantStayCancellable` |
 | PROP-ID-1 | A change never executes before its delay, a contested override's uphold window is always open, and the adapter's "established" answer matches a model. | [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) `testFuzz_ExecuteChange_RespectsTheDelay`; [`ContestedOverrides.t.sol`](../../test/identity/ContestedOverrides.t.sol) `testFuzz_Contest_TheUpholdWindowIsAlwaysOpen`; [`ConsolidationAdapter.t.sol`](../../test/identity/ConsolidationAdapter.t.sol) `testFuzz_IsEstablished_MatchesModel` |
 | PROP-DSP-1 | Any append sequence matches the model, relays round-trip and never replay, and the nonce bitmap tracks exactly the spent nonces. | [`StatementLog.t.sol`](../../test/records/StatementLog.t.sol) `testFuzz_SequenceMatchesModel`, `testFuzz_RelayRoundTripAndReplay`, `testFuzz_NonceBitmapTracksExactlyTheSpentNonces` |
 | PROP-HASH-1 | The item hash binds the collection and the shares and does not depend on the chain. | [`WorksHashing.t.sol`](../../test/interfaces/WorksHashing.t.sol) `testFuzz_itemHash_bindsCollection`, `testFuzz_itemHash_bindsShares`, `testFuzz_itemHash_independentOfChain` |
@@ -439,9 +415,8 @@ and Halmos proofs are in [Testing](../testing/README.md).
   `Eip712CurationVerifier` signer.
 - **`ConsolidationAdapter`** runs only over a mock delegation contract; its model is a fuzz
   test (PROP-ID-1).
-- **Suspension** is campaigned on a mock target, with `canCall` for CURATOR only and lifts by
-  grant only; the manual PLATFORM and CURATOR paths, lifts by revocation or renounce, and the
-  dishonest-guardian timeline are unit and integration tests (PROP-GV-6, PROP-GV-7).
+- **The brake** is campaigned only on a mock target; its once-per-operation rule and the
+  cancel-and-reschedule case are unit tests (`NetworkAndBrake.t.sol`).
 - **Deployment and readback guards** (`DeployGuards`, `Verify.s.sol`): unit tests only, in
   [`DeployScript.t.sol`](../../test/deploy/DeployScript.t.sol).
 - **The fully wired system.** Every campaign mocks its neighbors; properties that span

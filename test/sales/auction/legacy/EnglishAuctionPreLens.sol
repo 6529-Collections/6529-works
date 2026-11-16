@@ -407,7 +407,7 @@ contract EnglishAuctionPreLens is
     }
 
     /// @inheritdoc IEnglishAuction
-    /// @dev Reverts with `UnpauseTooEarly` before `pausedAt + Roles.STANDARD` (GOV-5).
+    /// @dev Reverts with `UnpauseTooEarly` before `pausedAt + Roles.DELAY_24H` (GOV-5).
     function resume(uint256 saleId) external restricted nonReentrant {
         Sale storage s = _require(saleId, AuctionState.PAUSED);
         uint256 pausedAt = s.pausedAt;
@@ -486,7 +486,7 @@ contract EnglishAuctionPreLens is
     }
 
     /// @inheritdoc ISaleAdapter
-    /// @dev Reverts with `UnpauseTooEarly` before `pausedAt + Roles.STANDARD` (GOV-5).
+    /// @dev Reverts with `UnpauseTooEarly` before `pausedAt + Roles.DELAY_24H` (GOV-5).
     function unpause() external restricted {
         uint256 pausedAt = _settings.pausedAt;
         if (pausedAt == 0) revert NotPaused();
@@ -1171,9 +1171,9 @@ contract EnglishAuctionPreLens is
         return Math.max(_settings.duration, _terms[s.termsId].extensionWindow);
     }
 
-    /// @dev GOV-5: a pause that began at `pausedAt` ends no earlier than `Roles.STANDARD` later.
+    /// @dev GOV-5: a pause that began at `pausedAt` ends no earlier than `Roles.DELAY_24H` later.
     function _requireUnpausable(uint256 pausedAt) private view {
-        uint256 allowedAt = pausedAt + Roles.STANDARD;
+        uint256 allowedAt = pausedAt + Roles.DELAY_24H;
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp < allowedAt) revert UnpauseTooEarly(allowedAt);
     }

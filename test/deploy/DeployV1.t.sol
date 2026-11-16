@@ -657,26 +657,6 @@ contract DeployV1Test is Test {
         this.checkPlatformPathExternal(d, cfg);
     }
 
-    /// Regression: GOV-2 (docs/security/internal-review-2026-10.md)
-    /// @dev GOV-2: a holder a guardian suspended fails readback by name, not as a missing
-    ///      member.
-    function test_ReadbackRejectsASuspendedHolder() public {
-        (
-            DeployV1.Deployment memory d,
-            GovernanceConfig.Config memory cfg,
-            GovernanceConfig.Call[] memory calls
-        ) = _genesis(_params());
-        _settle(d);
-        this.checkExternal(d, cfg, calls);
-        address platform = address(0xB051);
-        vm.prank(GUARDIAN);
-        d.manager.suspend(Roles.PLATFORM, platform);
-        vm.expectRevert(
-            abi.encodeWithSelector(VerifyV1.HolderSuspended.selector, Roles.PLATFORM, platform)
-        );
-        this.checkExternal(d, cfg, calls);
-    }
-
     function test_ReadbackCatchesARoleGrantedToTheConfigurator() public {
         (
             DeployV1.Deployment memory d,

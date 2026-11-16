@@ -60,11 +60,12 @@ contract VrfEntropyManagedTest is GovernanceFixture, EntropyItems {
             module.lowerCallbackGasLimit.selector, Roles.SUCCESSOR_SETTER
         );
         GovernanceConfig.Config memory cfg;
+        cfg.network = adminSafe;
         cfg.grants = _grants();
         cfg.targets = new GovernanceConfig.Target[](1);
         cfg.targets[0] = GovernanceConfig.Target(address(module), functions);
         configurator.configure(cfg, MANIFEST, _noWiring());
-        _settle();
+        _accept();
     }
 
     function _setConfigData(uint16 confirmations) internal view returns (bytes memory) {
@@ -76,7 +77,7 @@ contract VrfEntropyManagedTest is GovernanceFixture, EntropyItems {
     function test_SetConfigIsInTheStandardClass() public {
         bytes memory data = _setConfigData(5);
         bytes32 id = _schedule(adminSafe, address(module), data);
-        assertEq(manager.getSchedule(id), block.timestamp + 48 hours);
+        assertEq(manager.getSchedule(id), block.timestamp + 24 hours);
 
         vm.warp(manager.getSchedule(id) - 1);
         vm.prank(adminSafe);
@@ -95,7 +96,7 @@ contract VrfEntropyManagedTest is GovernanceFixture, EntropyItems {
             module.setCoordinator, (address(coordinator), address(next), address(next).codehash)
         );
         bytes32 id = _schedule(adminSafe, address(module), data);
-        assertEq(manager.getSchedule(id), block.timestamp + 30 days);
+        assertEq(manager.getSchedule(id), block.timestamp + 7 days);
 
         vm.warp(manager.getSchedule(id));
         vm.prank(adminSafe);
@@ -103,25 +104,20 @@ contract VrfEntropyManagedTest is GovernanceFixture, EntropyItems {
         assertEq(module.coordinator(), address(next));
     }
 
-    function test_AGuardianCancelsAPendingCoordinatorSwap() public {
+    function test_TheNetworkCancelsAPendingCoordinatorSwap() public {
         MockVrfCoordinator next = new MockVrfCoordinator();
         bytes memory data = abi.encodeCall(
             module.setCoordinator, (address(coordinator), address(next), address(next).codehash)
         );
         bytes32 id = _schedule(adminSafe, address(module), data);
 
-        vm.prank(guardianA);
+        vm.prank(adminSafe);
         manager.cancel(adminSafe, address(module), data);
 
         vm.warp(manager.getSchedule(id));
         vm.prank(adminSafe);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessManager.AccessManagerUnauthorizedCall.selector,
-                adminSafe,
-                address(module),
-                module.setCoordinator.selector
-            )
+            abi.encodeWithSelector(IAccessManager.AccessManagerNotScheduled.selector, id)
         );
         manager.execute(address(module), data);
         assertEq(module.coordinator(), address(coordinator));
@@ -171,7 +167,7 @@ contract VrfEntropyManagedTest is GovernanceFixture, EntropyItems {
 
         bytes memory data = _lowerData(400_000, 300_000);
         id = _schedule(adminSafe, address(module), data);
-        assertEq(manager.getSchedule(id), block.timestamp + 30 days, "the successor class");
+        assertEq(manager.getSchedule(id), block.timestamp + 7 days, "the successor class");
         vm.warp(manager.getSchedule(id));
         vm.expectEmit(false, false, false, true, address(module));
         emit VrfEntropyModule.ConfigSet(raised, lower);

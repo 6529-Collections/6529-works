@@ -57,7 +57,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         vm.prank(guardian);
         _expectState(saleId, IEnglishAuction.AuctionState.PAUSED);
         auction.pause(saleId, bytes32(0));
-        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.warp(block.timestamp + Roles.DELAY_24H);
         vm.prank(unpauser);
         auction.resume(saleId);
         vm.prank(guardian);
@@ -94,7 +94,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
 
         uint256 other = _start();
         _pause(other);
-        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.warp(block.timestamp + Roles.DELAY_24H);
         vm.prank(unpauser);
         auction.resume(other);
         vm.prank(guardian);
@@ -108,7 +108,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
     function test_Pause_ClearingTheRecipientKeepsThePauseUsed() public {
         uint256 saleId = _start();
         _pause(saleId);
-        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.warp(block.timestamp + Roles.DELAY_24H);
         vm.prank(unpauser);
         auction.resume(saleId);
         _bidFor(saleId, alice, carol, 1 ether);
@@ -183,7 +183,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         vm.prank(alice);
         auction.withdrawBid(saleId);
         _setFloor(ETH, 0.5 ether);
-        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.warp(block.timestamp + Roles.DELAY_24H);
         vm.prank(unpauser);
         auction.resume(saleId);
         assertEq(auction.minimumBid(saleId), 1 ether, "no bid: the withdrawn bid's reserve");
@@ -242,7 +242,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         );
         auction.resume(saleId);
         // GOV-5: not before 48 hours after the pause, whoever scheduled it when.
-        uint256 allowedAt = block.timestamp + Roles.STANDARD;
+        uint256 allowedAt = block.timestamp + Roles.DELAY_24H;
         vm.warp(allowedAt - 1);
         vm.prank(unpauser);
         vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.UnpauseTooEarly.selector, allowedAt));
@@ -326,7 +326,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         uint256 otherEnd = auction.auction(other).endTime;
         vm.warp(otherEnd - 5 minutes);
         _pause(other);
-        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.warp(block.timestamp + Roles.DELAY_24H);
         vm.expectEmit(address(auction));
         emit IEnglishAuction.AuctionResumed(other, uint64(block.timestamp + DURATION));
         vm.prank(unpauser);
@@ -372,7 +372,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         _bidEth(saleId, bob, 2 ether);
         _pause(saleId);
         bytes32 outcome = _recordOutcome(1);
-        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.warp(block.timestamp + Roles.DELAY_24H);
         vm.expectEmit(address(auction));
         emit ISaleAdapter.Credited(bob, ETH, saleId, 2 ether);
         vm.expectEmit(address(auction));
@@ -402,7 +402,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         vm.prank(bob);
         auction.withdrawBid(saleId);
         bytes32 outcome = _recordOutcome(1);
-        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.warp(block.timestamp + Roles.DELAY_24H);
         vm.recordLogs();
         vm.prank(setter);
         auction.cancel(saleId, outcome);
@@ -438,7 +438,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         uint256 saleId = _start();
         _pause(saleId);
         bytes32 outcome = _recordOutcome(1);
-        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.warp(block.timestamp + Roles.DELAY_24H);
         vm.prank(setter);
         auction.cancel(saleId, outcome);
         assertEq(stream.burned(), 1);
@@ -451,11 +451,11 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         vm.prank(setter);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISaleAdapter.UnpauseTooEarly.selector, block.timestamp + Roles.STANDARD
+                ISaleAdapter.UnpauseTooEarly.selector, block.timestamp + Roles.DELAY_24H
             )
         );
         auction.cancel(saleId, bytes32(0));
-        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.warp(block.timestamp + Roles.DELAY_24H);
         vm.startPrank(setter);
         vm.expectRevert(
             abi.encodeWithSelector(IEnglishAuction.OutcomeNotRecorded.selector, saleId, bytes32(0))
@@ -560,7 +560,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         _pause(saleId);
         bytes32 outcome = _recordOutcome(1);
         stream.setAdmittedMinter(address(auction), false);
-        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.warp(block.timestamp + Roles.DELAY_24H);
         vm.prank(setter);
         auction.cancel(saleId, outcome);
         assertFalse(stream.exists(1), "burned");

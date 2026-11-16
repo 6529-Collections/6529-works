@@ -306,7 +306,7 @@ contract AuctionHaltsHandler is Test {
         uint256 saleId = _sale(saleSeed);
         IEnglishAuction.Auction memory a = auction.auction(saleId);
         if (a.state != IEnglishAuction.AuctionState.PAUSED) return;
-        uint256 allowedAt = uint256(a.pausedAt) + Roles.STANDARD;
+        uint256 allowedAt = uint256(a.pausedAt) + Roles.DELAY_24H;
         vm.prank(unpauser);
         if (block.timestamp < allowedAt) {
             vm.expectRevert(
@@ -329,7 +329,7 @@ contract AuctionHaltsHandler is Test {
         uint256 saleId = _sale(saleSeed);
         IEnglishAuction.Auction memory a = auction.auction(saleId);
         if (a.state != IEnglishAuction.AuctionState.PAUSED) return;
-        uint256 allowedAt = uint256(a.pausedAt) + Roles.STANDARD;
+        uint256 allowedAt = uint256(a.pausedAt) + Roles.DELAY_24H;
         if (block.timestamp < allowedAt) {
             vm.prank(setter);
             vm.expectRevert(
@@ -449,7 +449,7 @@ contract AuctionHaltsHandler is Test {
 
     function toggleStartPause() external {
         if (auction.paused()) {
-            uint256 allowedAt = startPausedAt + Roles.STANDARD;
+            uint256 allowedAt = startPausedAt + Roles.DELAY_24H;
             vm.prank(unpauser);
             if (block.timestamp < allowedAt) {
                 vm.expectRevert(
@@ -484,7 +484,7 @@ contract AuctionHaltsHandler is Test {
             (,, uint64 revision) = allowlist.assetConfig(currency);
             (, uint256 since,) = allowlist.statusClock(currency);
             uint256 floor = currency == address(0) ? 1e15 : 1e15 + seed % 1e15;
-            uint256 allowedAt = since + Roles.FUNDS;
+            uint256 allowedAt = since + Roles.DELAY_3D;
             vm.prank(admin);
             if (block.timestamp < allowedAt) {
                 vm.expectRevert(
@@ -563,7 +563,7 @@ contract AuctionHaltsHandler is Test {
         }
         if (!_active()) {
             (, uint256 since,) = allowlist.statusClock(currency);
-            if (block.timestamp < since + Roles.FUNDS) vm.warp(since + Roles.FUNDS);
+            if (block.timestamp < since + Roles.DELAY_3D) vm.warp(since + Roles.DELAY_3D);
             toggleCurrency(0);
         }
         for (uint256 round; round < 4; ++round) {

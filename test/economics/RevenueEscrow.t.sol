@@ -541,7 +541,7 @@ contract RevenueEscrowTest is EconomicsBase {
         escrow.recover(address(wallet), replacement, ETH);
 
         uint64 funds = Roles.FUNDS_SETTER;
-        uint32 delay = Roles.FUNDS;
+        uint32 delay = Roles.DELAY_3D;
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = IRevenueEscrow.recover.selector;
         manager.setTargetFunctionRole(address(escrow), selectors, funds);
@@ -731,7 +731,7 @@ contract RevenueEscrowTest is EconomicsBase {
         escrow.sweepExcess(ETH, treasury);
 
         uint64 funds = Roles.FUNDS_SETTER;
-        uint32 delay = Roles.FUNDS;
+        uint32 delay = Roles.DELAY_3D;
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = IRevenueEscrow.sweepExcess.selector;
         manager.setTargetFunctionRole(address(escrow), selectors, funds);

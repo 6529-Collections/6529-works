@@ -155,7 +155,7 @@ contract AssetAllowlistTest is EconomicsBase {
         allowlist.deprecateAsset(address(usdc));
 
         // Re-admission waits 14 days from the deprecation, whenever it was scheduled.
-        uint256 allowedAt = block.timestamp + Roles.FUNDS;
+        uint256 allowedAt = block.timestamp + Roles.DELAY_3D;
         vm.warp(allowedAt - 1);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -195,7 +195,7 @@ contract AssetAllowlistTest is EconomicsBase {
         assertEq(since, 1_000_000);
         assertEq(inactive, 0, "a first admission closes no deprecation");
 
-        uint256 first = Roles.FUNDS + 5;
+        uint256 first = Roles.DELAY_3D + 5;
         allowlist.deprecateAsset(address(usdc));
         vm.warp(block.timestamp + first);
         (status, since, inactive) = allowlist.statusClock(address(usdc));
@@ -208,7 +208,7 @@ contract AssetAllowlistTest is EconomicsBase {
         assertEq(since, block.timestamp);
         assertEq(inactive, first);
 
-        uint256 second = Roles.FUNDS + 7;
+        uint256 second = Roles.DELAY_3D + 7;
         vm.warp(block.timestamp + 11);
         allowlist.deprecateAsset(address(usdc));
         vm.warp(block.timestamp + second);
@@ -225,7 +225,7 @@ contract AssetAllowlistTest is EconomicsBase {
         assertEq(_revision(address(usdc)), 2);
         allowlist.deprecateAsset(address(usdc));
         assertEq(_revision(address(usdc)), 3);
-        vm.warp(block.timestamp + Roles.FUNDS);
+        vm.warp(block.timestamp + Roles.DELAY_3D);
         allowlist.admitAsset(address(usdc), 3, 2e6);
         assertEq(_revision(address(usdc)), 4);
         // Same status and floor as after revision 2, but a different revision: stale writes fail.
@@ -301,11 +301,11 @@ contract AssetAllowlistTest is EconomicsBase {
         bytes4[] memory deprecate = new bytes4[](1);
         deprecate[0] = IAssetAllowlist.deprecateAsset.selector;
         manager.setTargetFunctionRole(address(allowlist), admit, Roles.FUNDS_SETTER);
-        manager.setTargetFunctionRole(address(allowlist), deprecate, Roles.GUARDIAN);
+        manager.setTargetFunctionRole(address(allowlist), deprecate, Roles.NETWORK);
         address gov = makeAddr("gov");
         address guard = makeAddr("guardian");
-        manager.grantRole(Roles.FUNDS_SETTER, gov, Roles.FUNDS);
-        manager.grantRole(Roles.GUARDIAN, guard, Roles.IMMEDIATE);
+        manager.grantRole(Roles.FUNDS_SETTER, gov, Roles.DELAY_3D);
+        manager.grantRole(Roles.NETWORK, guard, 0);
 
         bytes memory first =
             abi.encodeCall(IAssetAllowlist.admitAsset, (address(usdc), queuedAt, 1e6));
@@ -314,7 +314,7 @@ contract AssetAllowlistTest is EconomicsBase {
         vm.startPrank(gov);
         manager.schedule(address(allowlist), first, 0);
         manager.schedule(address(allowlist), second, 0);
-        vm.warp(block.timestamp + Roles.FUNDS);
+        vm.warp(block.timestamp + Roles.DELAY_3D);
         manager.execute(address(allowlist), first);
         vm.stopPrank();
         assertTrue(allowlist.isActive(address(usdc)));
@@ -441,7 +441,7 @@ contract AssetAllowlistTest is EconomicsBase {
         selectors[0] = IAssetAllowlist.admitAsset.selector;
         selectors[1] = IAssetAllowlist.setDefaultCurrency.selector;
         manager.setTargetFunctionRole(address(allowlist), selectors, Roles.FUNDS_SETTER);
-        manager.grantRole(Roles.FUNDS_SETTER, alice, Roles.FUNDS);
+        manager.grantRole(Roles.FUNDS_SETTER, alice, Roles.DELAY_3D);
 
         bytes memory admit = abi.encodeCall(IAssetAllowlist.admitAsset, (address(usdc), 0, 1e6));
         bytes32 operation = manager.hashOperation(alice, address(allowlist), admit);
@@ -452,7 +452,7 @@ contract AssetAllowlistTest is EconomicsBase {
         );
         allowlist.admitAsset(address(usdc), 0, 1e6);
         manager.schedule(address(allowlist), admit, 0);
-        vm.warp(block.timestamp + Roles.FUNDS - 1);
+        vm.warp(block.timestamp + Roles.DELAY_3D - 1);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManager.AccessManagerNotReady.selector, operation)
         );

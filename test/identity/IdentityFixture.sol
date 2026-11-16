@@ -17,7 +17,7 @@ import { PackageRegistryStub } from "../mocks/identity/IdentityWorksMocks.sol";
 ///         (genesis wiring), plus one registered artist whose wallet has been consolidated (both
 ///         directions, all collections) for 60 days.
 abstract contract IdentityFixture is Test {
-    uint64 internal constant GUARDIAN = Roles.GUARDIAN;
+    uint64 internal constant GUARDIAN = Roles.NETWORK;
     uint64 internal constant PARAMETER_SETTER = Roles.PARAMETER_SETTER;
     uint64 internal constant SUCCESSOR_SETTER = Roles.SUCCESSOR_SETTER;
 

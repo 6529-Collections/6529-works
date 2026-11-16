@@ -37,8 +37,8 @@ import { PRODUCT_FEDERATED } from "src/interfaces/types/EconomicsTypes.sol";
 ///      statement log, with mocks for the token and Permit2. Unit tests use
 ///      zero-delay roles; the dispute tests that need the 48-hour class set it explicitly.
 abstract contract AuctionBase is Test {
-    uint64 internal constant GUARDIAN = Roles.GUARDIAN;
-    uint64 internal constant UNPAUSER = Roles.UNPAUSER;
+    uint64 internal constant GUARDIAN = Roles.NETWORK;
+    uint64 internal constant UNPAUSER = 3; // the former unpause role ID (removed from Roles)
     uint64 internal constant PLATFORM = Roles.PLATFORM;
     uint64 internal constant PARAMETER_SETTER = Roles.PARAMETER_SETTER;
     uint64 internal constant SUCCESSOR_SETTER = Roles.SUCCESSOR_SETTER;

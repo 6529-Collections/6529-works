@@ -418,7 +418,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         IEnglishAuction.Auction memory a = auction.auction(t.saleId);
         // A governed decision lands 48 hours after scheduling; past the 7-day allowance the
         // pause lapses by itself instead.
-        if (block.timestamp + Roles.STANDARD > a.pausedAt + auction.MAX_PAUSE()) return;
+        if (block.timestamp + Roles.DELAY_24H > a.pausedAt + auction.MAX_PAUSE()) return;
         if (_isCopy(t.item)) {
             bytes32 outcome = _platformStatement(
                 address(stream), tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://lifecycle-outcome"

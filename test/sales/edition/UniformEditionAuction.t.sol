@@ -453,7 +453,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         vm.expectRevert(ISaleAdapter.SalePaused.selector);
         auction.open(address(editions), 8, abi.encode(item));
         // GOV-5: not before 48 hours after the pause.
-        uint256 allowedAt = block.timestamp + Roles.STANDARD;
+        uint256 allowedAt = block.timestamp + Roles.DELAY_24H;
         vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.UnpauseTooEarly.selector, allowedAt));
         auction.unpause();
         vm.warp(allowedAt);
@@ -465,7 +465,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         auction.unpause();
         // Any time after the delay, not only its first second.
         auction.pause();
-        vm.warp(block.timestamp + Roles.STANDARD + 1 days);
+        vm.warp(block.timestamp + Roles.DELAY_24H + 1 days);
         auction.unpause();
         assertFalse(ua.paused());
     }

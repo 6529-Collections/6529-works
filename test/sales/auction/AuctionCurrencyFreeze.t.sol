@@ -283,14 +283,14 @@ contract AuctionCurrencyFreezeTest is SalesStackBase {
         bytes memory admit =
             abi.encodeCall(allowlist.admitAsset, (address(usd), revision + 1, USD_FLOOR));
         _schedule(hotAdmin, address(allowlist), admit);
-        vm.warp(block.timestamp + Roles.FUNDS);
+        vm.warp(block.timestamp + Roles.DELAY_3D);
         _deprecateUsd();
         vm.prank(hotAdmin);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IAssetAllowlist.ReadmissionTooEarly.selector,
                 address(usd),
-                block.timestamp + Roles.FUNDS
+                block.timestamp + Roles.DELAY_3D
             )
         );
         manager.execute(address(allowlist), admit);
@@ -320,8 +320,7 @@ contract AuctionCurrencyFreezeTest is SalesStackBase {
         vm.prank(guardian1);
         manager.cancel(hotAdmin, address(allowlist), admit);
 
-        bytes memory removal =
-            abi.encodeCall(IAccessManager.revokeRole, (Roles.GUARDIAN, guardian1));
+        bytes memory removal = abi.encodeCall(IAccessManager.revokeRole, (Roles.NETWORK, guardian1));
         _schedule(hotAdmin, address(manager), removal);
         vm.prank(guardian1);
         vm.expectRevert(
@@ -338,7 +337,7 @@ contract AuctionCurrencyFreezeTest is SalesStackBase {
         vm.warp(block.timestamp + delay);
         vm.prank(hotAdmin);
         manager.execute(address(manager), removal);
-        (bool stillGuardian,) = manager.hasRole(Roles.GUARDIAN, guardian1);
+        (bool stillGuardian,) = manager.hasRole(Roles.NETWORK, guardian1);
         assertFalse(stillGuardian, "the vetoing guardian is removed");
 
         // The sale has long ended, but nobody may end it unsold yet.
@@ -378,8 +377,7 @@ contract AuctionCurrencyFreezeTest is SalesStackBase {
         vm.prank(guardian1);
         manager.cancel(hotAdmin, address(allowlist), admit);
 
-        bytes memory removal =
-            abi.encodeCall(IAccessManager.revokeRole, (Roles.GUARDIAN, guardian1));
+        bytes memory removal = abi.encodeCall(IAccessManager.revokeRole, (Roles.NETWORK, guardian1));
         _schedule(hotAdmin, address(manager), removal);
         vm.prank(guardian2);
         manager.cancel(hotAdmin, address(manager), removal);

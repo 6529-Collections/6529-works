@@ -484,7 +484,7 @@ contract EnglishAuctionTest is AuctionBase {
         );
         auction.settle(saleId);
         (,, uint64 revision) = allowlist.assetConfig(address(usd));
-        vm.warp(block.timestamp + Roles.FUNDS);
+        vm.warp(block.timestamp + Roles.DELAY_3D);
         allowlist.admitAsset(address(usd), revision, USD_FLOOR);
         vm.expectEmit(address(auction));
         emit IEnglishAuction.AuctionResumed(saleId, uint64(block.timestamp + DURATION));
@@ -508,7 +508,7 @@ contract EnglishAuctionTest is AuctionBase {
             IEnglishAuction.AuctionConfig(DURATION, DURATION, SHARE, REFUSAL_DELAY, REFUSAL_GAS)
         );
         allowlist.deprecateAsset(address(usd));
-        vm.warp(block.timestamp + Roles.FUNDS);
+        vm.warp(block.timestamp + Roles.DELAY_3D);
         (,, uint64 revision) = allowlist.assetConfig(address(usd));
         allowlist.admitAsset(address(usd), revision, USD_FLOOR);
         uint256 saleId = _startUsd();
@@ -2014,7 +2014,7 @@ contract EnglishAuctionTest is AuctionBase {
         vm.prank(unpauser);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISaleAdapter.UnpauseTooEarly.selector, block.timestamp + Roles.STANDARD
+                ISaleAdapter.UnpauseTooEarly.selector, block.timestamp + Roles.DELAY_24H
             )
         );
         auction.unpause();
@@ -2022,7 +2022,7 @@ contract EnglishAuctionTest is AuctionBase {
         auction.settle(live);
         assertEq(stream.ownerOf(_tokenIdOf(live)), bob);
         assertEq(seller.balance, 1.5 ether);
-        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.warp(block.timestamp + Roles.DELAY_24H);
         vm.prank(unpauser);
         auction.resume(quiet);
 

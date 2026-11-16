@@ -74,7 +74,7 @@ abstract contract FederationBase is IntegrationBase {
         guardian[0] = FederationRegistry.suspendTemplate.selector;
         _mapRole(reg, successor, Roles.SUCCESSOR_SETTER);
         _mapRole(reg, parameter, Roles.PARAMETER_SETTER);
-        _mapRole(reg, guardian, Roles.GUARDIAN);
+        _mapRole(reg, guardian, Roles.NETWORK);
     }
 
     function _mapRole(address reg, bytes4[] memory selectors, uint64 role) internal {

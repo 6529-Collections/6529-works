@@ -92,7 +92,7 @@ contract GenesisFlowTest is IntegrationBase {
         bytes memory admitMinter =
             abi.encodeCall(stream.setAdmittedMinter, (address(editionAuction), true));
         bytes memory dropGuardian =
-            abi.encodeCall(IAccessManager.revokeRole, (Roles.GUARDIAN, guardian1));
+            abi.encodeCall(IAccessManager.revokeRole, (Roles.NETWORK, guardian1));
 
         _schedule(hotAdmin, address(manager), takeStream);
         _schedule(hotAdmin, address(manager), mapCollections);
@@ -134,7 +134,7 @@ contract GenesisFlowTest is IntegrationBase {
         }
         assertEq(stream.authority(), address(manager), "Stream stays governed");
         assertFalse(stream.isAdmittedMinter(address(editionAuction)));
-        (bool guardian,) = manager.hasRole(Roles.GUARDIAN, guardian1);
+        (bool guardian,) = manager.hasRole(Roles.NETWORK, guardian1);
         assertTrue(guardian, "guardian 1 stays");
     }
 
