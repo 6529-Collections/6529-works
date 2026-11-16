@@ -77,6 +77,14 @@ contract ClaimRouter is IClaimRouter {
     ///         the ceiling, so one gas-burning party early in the batch could revert it at
     ///         every limit. A safety bound tied to the ceiling, not a policy number.
     uint256 public constant MAX_CONTINUE_CLAIMS = 8;
+    /// @notice The most signature bytes a continue-mode {claimSigned} batch may carry in all
+    ///         (128 KiB). A signature may be up to 65,536 bytes (`SignatureVerifier`), and its
+    ///         calldata is paid before item 0 runs (16 gas a byte): eight of them would leave
+    ///         item 0 less than {SHORTFALL_REVERT_CEILING} at the EIP-7825 cap. At this bound the
+    ///         signatures cost at most about 2.1M, so with eight worst-case payee lists item 0
+    ///         is still offered the ceiling within the cap (`GasCap.t.sol`). A safety bound tied
+    ///         to the ceiling, not a policy number.
+    uint256 public constant MAX_CONTINUE_SIGNATURE_BYTES = 131_072;
 
     uint256 private constant _MAX_REASON_BYTES = 256;
 
@@ -131,6 +139,13 @@ contract ClaimRouter is IClaimRouter {
         uint256 count = claims.length;
         if (count > (continueOnFailure ? MAX_CONTINUE_CLAIMS : MAX_SIGNED_CLAIMS)) {
             revert TooManyClaims(count);
+        }
+        if (continueOnFailure) {
+            uint256 total = 0;
+            for (uint256 i; i < count; ++i) {
+                total += claims[i].signature.length;
+            }
+            if (total > MAX_CONTINUE_SIGNATURE_BYTES) revert SignaturesTooLong(total);
         }
         amounts = new uint256[](count);
         for (uint256 i; i < count; ++i) {

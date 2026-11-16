@@ -53,6 +53,15 @@ contract Mock1155 is ERC1155("") {
     }
 }
 
+/// @dev Answers a plain ETH payment with a megabyte of return data.
+contract MegabyteReturner {
+    fallback() external payable {
+        assembly ("memory-safe") {
+            return(0, 0x100000)
+        }
+    }
+}
+
 /// @notice The split wallet's code, `SplitVault`: its exact bytes, what it accepts, what it
 ///         refuses, and who can move its funds.
 contract SplitVaultTest is EconomicsBase {
@@ -69,6 +78,45 @@ contract SplitVaultTest is EconomicsBase {
         assertEq(wallet.code, expected);
         assertEq(SplitVault.INIT_CODE.length, 68);
         assertEq(ledger.walletInitCodeHash(), keccak256(SplitVault.INIT_CODE));
+    }
+
+    /// @dev Golden values: every split wallet's address depends on these bytes, so a change to
+    ///      `SplitVault` must change this test, the ledger's `walletInitCodeHash` and every
+    ///      document that pins them (economics spec, ABIs and interface IDs).
+    function test_Golden_InitCodeHashAndRuntime() public {
+        assertEq(
+            keccak256(SplitVault.INIT_CODE),
+            0xb9eef1357f6b37574caf5dac663c3a2daa34e486366257eacc5c9cdba5eb5518
+        );
+        assertEq(
+            SplitVault.RUNTIME_TAIL,
+            hex"3314601f5736603657005b5f5f604036038060405f375f6020355f355af1603a575b5f5ffd5b3d5f5f3e3d5ff3"
+        );
+        assertEq(
+            keccak256(wallet.code),
+            keccak256(abi.encodePacked(hex"73", address(ledger), SplitVault.RUNTIME_TAIL))
+        );
+        VaultDeployer deployer = new VaultDeployer();
+        (address other,) = deployer.deploy(bytes32(uint256(7)));
+        assertEq(other.code, abi.encodePacked(hex"73", address(deployer), SplitVault.RUNTIME_TAIL));
+    }
+
+    /// @dev The vault copies a callee's whole return data: a recipient that answers a payment
+    ///      with a megabyte fails only its own payee's release (`ETHTransferFailed`), records
+    ///      nothing, and leaves every other payee's release as it was.
+    function test_AnOversizedReturnFailsOnlyItsOwnRelease() public {
+        address big = address(new MegabyteReturner());
+        address w = _wallet(_list(_fixed(big, 60_000), _fixed(bob, 40_000)));
+        vm.deal(w, 1 ether);
+        uint256 iBig = _indexOf(w, big);
+        vm.expectRevert(
+            abi.encodeWithSelector(ISplitWallet.ETHTransferFailed.selector, big, 0.6 ether)
+        );
+        _release(w, ETH, iBig);
+        assertEq(w.balance, 1 ether);
+        assertEq(ledger.released(w, ETH, iBig), 0);
+        assertEq(_release(w, ETH, _indexOf(w, bob)), 0.4 ether);
+        assertEq(bob.balance, 0.4 ether);
     }
 
     function test_AcceptsPlainETHFromAnyoneWithinTheStipend() public {

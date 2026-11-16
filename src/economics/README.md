@@ -43,9 +43,9 @@ Payment, release and recovery sequences are under
   `primaryTerms`; an adapter pays them with `RevenuePayment.payETH` or `payERC20`, which falls
   back to the escrow. A wallet need not be deployed: funds sent to its predicted address are
   split once anyone calls `createWallet`, which is why deployment stays off the 1/1 start path.
-  It costs about 96K Prague gas (about 0.43M Glamsterdam), so deploy each seller and royalty
-  wallet at its first sale: a deployed wallet never depends on deploying anything again
-  (LIM-ECO-7). The edition auction's `open` does this for its seller and royalty wallets
+  Deploy each seller and royalty wallet at its first sale (its cost is in
+  [ADR 0004's table](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)): a
+  deployed wallet never depends on deploying anything again (LIM-ECO-7). The edition auction's `open` does this for its seller and royalty wallets
   (EA-20).
 - **Releases name the wallet by its configuration.** `release(payees, salt, asset, index)`: the
   ledger stores only `configOf` (for `isWallet` and the escrow) and derives the address from the
@@ -75,9 +75,14 @@ Payment, release and recovery sequences are under
   (payments, escrow deposits, adapter pulls) on the strict `transferExact` / `pullExact`.
 - **Transaction cap.** [`GasCap.t.sol`](../../test/economics/GasCap.t.sol) measures the cold
   worst cases (a 64-payee wallet deployment and full atomic and continue-mode batches) against
-  75% of the EIP-7825 cap (ECO-31); with every item carrying a 64-payee list the largest, a
-  full atomic plain batch, is about 12.4M Prague gas. Rerun it after changing a batch bound or a per-item minimum; keeper guidance
-  is LIM-GAS-6.
+  75% of the EIP-7825 cap (ECO-31), the figures in its output and ADR 0004's table. Rerun it
+  after changing a batch bound, a per-item minimum or the continue-mode signature bound; keeper
+  guidance is LIM-GAS-6.
+- **The vault copies a callee's whole return.** `SplitVault` has no return bound of its own;
+  the ledger copies one word of the vault's answer, so an oversized return fails only that
+  recipient's or that token's release, as a revert would (`SplitVault` NatSpec,
+  `test_AnOversizedReturnFailsOnlyItsOwnRelease`). Its bytes are pinned by
+  `test_Golden_InitCodeHashAndRuntime`.
 - **Bytecode:** wide margins; figures in the
   [audit scope](../../docs/audit/scope.md#economics). Per-operation gas is in
   [ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table).

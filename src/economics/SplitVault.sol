@@ -37,6 +37,18 @@ pragma solidity ^0.8.24;
 ///      ETH as `(recipient, amount, "")` and an ERC-20 as `(token, 0, transfer(recipient,
 ///      amount))`, and checks the outcome itself.
 ///
+///      Return data is copied whole (`RETURNDATACOPY(0, 0, RETURNDATASIZE)`), with no bound in
+///      the vault; the ledger copies at most one word of what the vault returns and reads a
+///      longer answer as a failure. So a callee that answers with a large return only makes its
+///      own instruction fail or cost more: an ETH recipient (the payee's own account, or the
+///      recipient the payee signed for) that answers with data fails that payee's release
+///      (`ETHTransferFailed`), and an ERC-20 that does fails that token's releases from the
+///      wallet (`TokenCallFailed`), as reverting would; a copy that exhausts the vault's gas
+///      reverts the release with `BoundedCall.BoundedCallShortfall`. Nothing is recorded for a
+///      failed release, and no other payee, asset or wallet is affected. Kept, rather than
+///      bounded in the vault, because the vault's bytes are its address derivation, and a bound
+///      would give no payee anything a callee cannot already take by reverting.
+///
 ///      Anyone else's call with no calldata succeeds at a cost of 36 gas, so a vault accepts ETH
 ///      even within the 2,300-gas stipend of Solidity's `transfer`. Anyone else's call with
 ///      calldata reverts, as a contract without a fallback would, so a vault is not an ERC-721 or
