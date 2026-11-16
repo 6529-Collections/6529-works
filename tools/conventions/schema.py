@@ -350,5 +350,5 @@ def default_validator() -> Validator:
 
 
 def validate(instance: Any, name: str) -> list[str]:
-    """Errors of `instance` against the committed convention schema `name` (e.g. `promise-card`)."""
+    """Errors of `instance` against the committed convention schema `name` (e.g. `fact-sheet`)."""
     return default_validator().errors(instance, schema_id(name))

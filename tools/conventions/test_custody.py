@@ -56,7 +56,7 @@ class ExampleTest(unittest.TestCase):
         """DCL-21, DCL-22: the example attestation by the named custodian, read a day later."""
         result = evaluate_custody(declarations(), [att()], AS_OF + DAY)
         self.assertEqual(result["discarded"], [])
-        self.assertEqual(custody.card_custody(result), [{"objectId": OBJECT, "custodian": testdata.ANVIL_0,
+        self.assertEqual(custody.sheet_custody(result), [{"objectId": OBJECT, "custodian": testdata.ANVIL_0,
                                                          "recognized": True, "status": "HELD",
                                                          "asOf": AS_OF, "stale": False}])  # fmt: skip
 
@@ -121,14 +121,14 @@ class StalenessTest(unittest.TestCase):
 
     def test_named_custodian_without_attestation(self) -> None:
         """DCL-21: a named custodian with nothing counting shows status NONE, no date, stale; the
-        card entry validates against promise-card.v1."""
+        fact-sheet entry validates against fact-sheet.v1."""
         entries = evaluate_custody(declarations(), [], AS_OF)["entries"]
-        card_entries = custody.card_custody({"entries": entries})
-        self.assertEqual(card_entries, [{"objectId": OBJECT, "custodian": testdata.ANVIL_0, "recognized": True,
+        sheet_entries = custody.sheet_custody({"entries": entries})
+        self.assertEqual(sheet_entries, [{"objectId": OBJECT, "custodian": testdata.ANVIL_0, "recognized": True,
                                          "status": "NONE", "stale": True}])  # fmt: skip
-        card = testdata.example("promise-card.json")
-        card["custody"] = card_entries
-        self.assertEqual(schema.validate(card, "promise-card"), [])
+        sheet = testdata.example("fact-sheet.json")
+        sheet["custody"] = sheet_entries
+        self.assertEqual(schema.validate(sheet, "fact-sheet"), [])
 
 
 class DiscardTest(unittest.TestCase):

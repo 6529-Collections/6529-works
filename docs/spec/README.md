@@ -22,7 +22,7 @@ ADR, a module README and the code differ, the pages follow the code, and the
 | [Economics and payouts](economics-and-payouts.md) | `ECO` | Products and terms, split wallets, currencies, the escrow, signed releases and batch claims |
 | [Identity and recovery](identity-and-recovery.md) | `ID` | The artist registry, consolidations and standing, changes, overrides, contests and restraint |
 | [Disputes and statements](disputes-and-statements.md) | `DSP` | The dispute pause, upheld and rejected outcomes, content release, and the statement log |
-| [Declarations and conventions](declarations-and-conventions.md) | `DCL` | Conventions with no contract logic: the declarations document and conservation floor, content-change, catalogue, citation and custody statements, the control proof, the promise card and grade, primary price reads |
+| [Declarations and conventions](declarations-and-conventions.md) | `DCL` | Conventions with no contract logic: the declarations document and conservation floor, content-change, catalogue, citation and custody statements, the control proof, the fact sheet, primary price reads |
 | [Entropy](entropy.md) | `ENT` | Optional Chainlink VRF seeds, one per content |
 | [Governance](governance.md) | `GV` | The AccessManager, roles and delay classes, the guardians' cancel rules, genesis and operating procedures |
 | [Federation](federation.md) | `FED` | Federated Stream and Federated Stream Editions: templates, joining, minting into adapter custody, unsold custody and restart, the 90/10 terms, the federation registry, delisting and exit, the federated edition auction |

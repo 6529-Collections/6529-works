@@ -446,9 +446,9 @@ See: [editions and sales](spec/editions-and-sales.md#the-cut-step).
 
 ### declarations document
 
-A work's statement of promises the contracts do not record (its conservation floor, custodians,
-citations, intended renunciations), carried as one AUXILIARY media file, so the approved media
-hash fixes it.
+A work's statements that the contracts do not record (its conservation floor, custodians,
+citations, a time capsule, a living-work note), carried as one AUXILIARY media file, so the
+approved media hash fixes it.
 
 See: [declarations and conventions](spec/declarations-and-conventions.md#the-declarations-document).
 
@@ -719,6 +719,13 @@ The delay an AccessManager role holder waits between scheduling a governed call 
 See: [role and permission matrix](audit/roles.md).
 
 ## F
+
+### fact sheet
+
+A client-generated statement of the facts about one work at one block: what is recorded, and who
+can change what after what delay. Never written on chain; it carries no warnings or ratings.
+
+See: [declarations and conventions](spec/declarations-and-conventions.md#fact-sheet).
 
 ### file ID
 
@@ -1151,14 +1158,6 @@ An artist identity's claimed 6529 profile ID and document hash, signed but not v
 on-chain.
 
 See: [identity and recovery](spec/identity-and-recovery.md).
-
-### promise card
-
-A client-generated summary of one work at one block: what is fixed, who can still change what
-and after what delay, and the residual risks. Never written on chain; a grade may be computed
-from it.
-
-See: [declarations and conventions](spec/declarations-and-conventions.md#the-card).
 
 ## R
 

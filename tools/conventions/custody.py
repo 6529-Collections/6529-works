@@ -154,7 +154,7 @@ def evaluate_custody(
     return {"entries": entries, "discarded": discarded}
 
 
-def card_custody(evaluation: Mapping[str, Any]) -> list[dict]:
-    """The promise card's `custody` array (promise-card.v1 fields only; no `asOf` for NONE)."""
+def sheet_custody(evaluation: Mapping[str, Any]) -> list[dict]:
+    """The fact sheet's `custody` array (fact-sheet.v1 fields only; no `asOf` for NONE)."""
     keys = ("objectId", "custodian", "recognized", "status", "asOf", "stale")
     return [{k: e[k] for k in keys if k in e} for e in evaluation["entries"]]

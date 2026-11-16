@@ -89,9 +89,8 @@ A schema value is `keccak256` of the schema's `$id` (DCL-1). Documents that are 
 have schemas too: the declarations document
 ([`declarations.v1`](schemas/declarations.v1.schema.json), an AUXILIARY media file), the artist
 catalogue ([`catalogue.v1`](schemas/catalogue.v1.schema.json)), the control proof
-([`control-proof.v1`](schemas/control-proof.v1.schema.json)), the promise card
-([`promise-card.v1`](schemas/promise-card.v1.schema.json)) and its grade
-([`promise-grade.v1`](schemas/promise-grade.v1.schema.json)), and the published floor result
+([`control-proof.v1`](schemas/control-proof.v1.schema.json)), a work's fact sheet
+([`fact-sheet.v1`](schemas/fact-sheet.v1.schema.json)), and the published floor result
 ([`floor-result.v1`](schemas/floor-result.v1.schema.json), a member of the curation evidence).
 
 ### The Statement struct

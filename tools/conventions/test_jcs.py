@@ -1,6 +1,5 @@
-"""RFC 8785 canonical JSON (DCL-1: convention documents are canonical; DCL-30: the grade names the
-SHA-256 of the card's canonical JSON). Number vectors are RFC 8785 Appendix B; the sorting vector
-is RFC 8785 section 3.2.3."""
+"""RFC 8785 canonical JSON (DCL-1: convention documents are canonical). Number vectors are RFC
+8785 Appendix B; the sorting vector is RFC 8785 section 3.2.3."""
 
 from __future__ import annotations
 

@@ -2,8 +2,8 @@
 
 Reference implementations of the off-chain conventions in
 [Declarations and conventions](../../docs/spec/declarations-and-conventions.md): the
-structural validator for the convention JSON Schemas, the conservation-floor check, the promise
-card and its grade, the control-proof verifier and the custody-attestation reader check. A front
+structural validator for the convention JSON Schemas, the conservation-floor check, a work's
+fact sheet, the control-proof verifier and the custody-attestation reader check. A front
 end, a venue or the curation signer's tooling can copy them, or test its own implementation
 against them.
 
@@ -16,8 +16,7 @@ authority, and where a tool and the page disagree the page wins.
 ```bash
 python -m tools.conventions validate declarations doc.json --canonical
 python -m tools.conventions floor floor-input.json      # before the curation signer attests
-python -m tools.conventions card card-input.json > card.json
-python -m tools.conventions grade card.json
+python -m tools.conventions fact-sheet sheet-input.json > sheet.json
 python -m tools.conventions control-proof digest proof.json
 python -m tools.conventions control-proof verify proof.json --context context.json
 python -m tools.conventions custody digest attestation.json
@@ -32,10 +31,9 @@ command prints JSON.
 | Module | Does | Rules |
 | --- | --- | --- |
 | [`schema.py`](schema.py) | Validates a document against the committed schema in [`docs/spec/schemas/`](../../docs/spec/schemas/), interpreting the schema itself; raises, when the schemas load, on any keyword it does not implement anywhere in a schema; checks `format: uint256` values (0 to 2<sup>256</sup> − 1) | DCL-1, DCL-2 step 4 |
-| [`jcs.py`](jcs.py) | RFC 8785 canonical JSON and a strict I-JSON parser | DCL-1, DCL-30 |
+| [`jcs.py`](jcs.py) | RFC 8785 canonical JSON and a strict I-JSON parser | DCL-1 |
 | [`floor.py`](floor.py) | `check_floor(package, policy, contents, observed)`: the signer's `CHECK_FLOOR`; `floor_result` turns a passing result into the published floor-result.v1 object; `dependency_label` is the bytes32 `DependencyRegistry` takes | DCL-3 to DCL-5, DCL-7, DCL-33 |
-| [`card.py`](card.py) | `build_card(inputs)`: a promise card from the reads at one block | DCL-3, DCL-8, DCL-26 to DCL-29, DCL-33 |
-| [`grade.py`](grade.py) | `grade(card)`: rubric 1, total over valid cards | DCL-30, DCL-31 |
+| [`fact_sheet.py`](fact_sheet.py) | `build_fact_sheet(inputs)`: a work's fact sheet from the reads at one block | DCL-3, DCL-8, DCL-26 to DCL-28, DCL-33 |
 | [`eip712.py`](eip712.py) | The two typed-data digests and `verify_signature`, as `SignatureVerifier` | DCL-19, DCL-20, DCL-23, DCL-24 step 3 |
 | [`control_proof.py`](control_proof.py) | `issue_challenge` and `verify_response` | DCL-23 to DCL-25 |
 | [`custody.py`](custody.py) | `evaluate_custody(declarations, attestations, now, work=...)` | DCL-20 to DCL-22 |
@@ -46,7 +44,7 @@ The exact input shapes are in each module's docstring.
 
 ### `validate SCHEMA FILE [--canonical]`
 
-`SCHEMA` is the short name (`declarations`, `promise-card`, `control-proof`, ...). Prints every
+`SCHEMA` is the short name (`declarations`, `fact-sheet`, `control-proof`, ...). Prints every
 violation as a JSON pointer and a message. `--canonical` also requires the bytes to be RFC 8785
 canonical, as DCL-1 requires of every convention document.
 
@@ -54,10 +52,7 @@ canonical, as DCL-1 requires of every convention document.
 
 `CHECK_FLOOR` of DCL-5. `INPUT` holds `package` (the item, the ordered media list and
 `ContentStore.fileInfo` per file, including the license text file), `policy` (the wave's
-`requiresDeclarations`, `waivable`, `allowsTimeCapsule` and, optionally, `workPowers`; without
-it the names are `ROYALTY_RATE`, `RELICENSE` and `RENDERER_REPIN`, the `WorkPowers` names of
-DCL-8),
-`contents` (content-store bytes as `ContentStore.read` returns them, `{"file": path}` or
+`requiresDeclarations`, `waivable` and `allowsTimeCapsule`), `contents` (content-store bytes as `ContentStore.read` returns them, `{"file": path}` or
 `{"hex": "0x…"}`: the declarations file's, and optionally a media file's) and `observed`: what the
 signer's own tooling saw at each storage receipt (`{"file": path}` of the fetched bytes, which
 the tool checks as the receipt's `form` says: a `stored` copy is `fileInfo.length` bytes whose
@@ -76,37 +71,32 @@ The result lists every failure with the fact it belongs to, and each fact's stat
 the signer does not attest then. For a passing result, `floor.floor_result(result, itemHash)` is
 the floor-result.v1 object DCL-33 puts into the curation evidence.
 
-### `card INPUT [--notes]`
+### `fact-sheet INPUT [--notes]`
 
-Builds a promise card that validates against `promise-card.v1`, or fails. `INPUT` holds `reads`,
+Builds a work's fact sheet that validates against `fact-sheet.v1`, or fails. The sheet states
+what is recorded about the work and who can change what; it carries no warnings or ratings. `INPUT` holds `reads`,
 one answer per function the spec cites, made at one block, and the documents a reader holds: a
 declarations copy fetched from a locator, the published floor result (a floor-result.v1 object;
-the card uses it only when it names the work's item hash and declarations file, DCL-33),
+the sheet uses it only when it names the work's item hash and declarations file, DCL-33),
 custody attestations (counted only when they are about this work, DCL-20), the winning display
 change, and the `roles` rows, required, that the caller composes from the
 [role matrix](../../docs/audit/roles.md), to which the tool applies DCL-27's row rules. A read
-the chain returns as a bool must be a JSON boolean. The full shape is in [`card.py`](card.py).
+the chain returns as a bool must be a JSON boolean. The full shape is in [`fact_sheet.py`](fact_sheet.py).
 
 The tool does not make the reads itself. The chain tooling in this repository reaches a node
 over JSON-RPC with `urllib` ([`tools/content/rpc.py`](../content/rpc.py)) rather than by
-shelling out to `cast call`, and the card needs reads from several contracts at one block, so
+shelling out to `cast call`, and the sheet needs reads from several contracts at one block, so
 fetching is left to the caller, who must pin every `eth_call` to the same block hash.
 
 `IWorkPowers` is optional, for a deployment whose `WorkRecords` does not report it: absent, the
-card says `"available": false` and every intended renunciation is `unknown`. Present, it is
+sheet says `"available": false`. Present, it is
 `renouncedMask`, the `renouncedPowers(tokenId)` read. The names default to `ROYALTY_RATE`
 (bit 0), `RELICENSE` (bit 1) and `RENDERER_REPIN` (bit 2), and the covered rows to
 `royalty_rate`, `license` and `renderer` (DCL-8,
-DCL-27); `powers` and `covers` may be given explicitly, but the card schema accepts only the
+DCL-27); `powers` and `covers` may be given explicitly, but the sheet schema accepts only the
 `WorkPowers` names.
 
 `--notes` also prints why the declarations and custody states were chosen.
-
-### `grade CARD`
-
-Rubric 1 of DCL-30. The example card in `docs/spec/schemas/examples/` grades 90, A, byte for byte
-the example grade. A new rubric is a new function and a new version number, never an edit
-(DCL-31).
 
 ### `control-proof digest FILE` and `control-proof verify FILE --context CONTEXT`
 

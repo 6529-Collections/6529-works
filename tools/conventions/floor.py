@@ -19,8 +19,7 @@ Inputs (plain dicts; hex values `0x`-prefixed):
   (`{chainId, contract, tokenId}`, when the token is known: a citation of it is refused).
   `files` must also hold the license text file, whose `sha256Hash` is `sha256Of`.
 - `policy`: the wave's policy `P`: `requiresDeclarations` (bool), `waivable` (fact names),
-  `allowsTimeCapsule` (bool), and optionally `workPowers`, the power names an intended
-  renunciation may use; absent or null means `WORK_POWERS`, the `WorkPowers` names (DCL-8).
+  `allowsTimeCapsule` (bool).
 - `contents`: `{fileId: bytes}`, stored bytes as `ContentStore.read` returns them: the
   declarations file's, and optionally a media file's, which is then checked as a `stored` copy
   (its chunks reproduce the file ID and it decodes to the declared SHA-256, WS-30).
@@ -64,7 +63,6 @@ MAX_DECLARATIONS_BYTES = 24_575
 FACTS = ("storage", "format", "license", "generative", "display")
 SCRIPT_MIMES = frozenset({"text/html", "text/javascript", "application/javascript", "text/ecmascript",
                           "application/ecmascript", "image/svg+xml"})  # fmt: skip
-WORK_POWERS = ("ROYALTY_RATE", "RELICENSE", "RENDERER_REPIN")  # WorkPowers bits 0, 1, 2 (DCL-8)
 _ENCODINGS = {"Identity": Encoding.IDENTITY, "Gzip": Encoding.GZIP, "Base64": Encoding.BASE64,
               "GzipBase64": Encoding.GZIP_BASE64}  # fmt: skip
 _AR = re.compile(r"ar://[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]\Z")
@@ -353,11 +351,6 @@ def _always(doc, policy, S, package) -> list[str]:
         auxiliary = {_norm(m["fileId"]) for m in S if m["role"] == "AUXILIARY"}
         if doc["timeCapsule"]["ciphertextFileId"] not in auxiliary:
             refusals.append("the time capsule's ciphertext file is not an AUXILIARY media file (DCL-7)")
-    powers = policy.get("workPowers")
-    powers = WORK_POWERS if powers is None else powers
-    for r in doc.get("intendedRenunciations", []):
-        if r["power"] not in powers:
-            refusals.append(f"{r['power']}: not a WorkPowers power (DCL-8)")
     custodians = doc.get("custodians", [])
     pairs = [(c["address"], c["objectId"]) for c in custodians]
     if len(set(pairs)) != len(pairs):

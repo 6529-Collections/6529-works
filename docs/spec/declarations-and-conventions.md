@@ -4,7 +4,7 @@ This page specifies conventions that tooling, front ends, venues and indexers bu
 the deployed contracts, with no new contract logic: a declarations document each work can carry,
 a conservation floor the curation signer checks, statement kinds for proposed content changes,
 catalogue entries, citations and custody attestations, an off-chain control proof, and a
-promise card with a grade. It is written for artist and curator tooling, marketplaces, venues
+fact sheet for each work. It is written for artist and curator tooling, marketplaces, venues
 and indexers.
 
 > Pre-audit. See the [project status](../../README.md#status).
@@ -25,7 +25,7 @@ This page adds no contract logic. The conventions use these reads and paths:
 | `StatementLog` | [`StatementLog.sol`](../../src/records/StatementLog.sol) | Every convention statement: `append`, `appendSigned`, `appendPlatform`; `chainOf`, `latestDisputeOutcome`, `artistResolver` |
 | `StatementKinds` | [`StatementKinds.sol`](../../src/interfaces/types/StatementKinds.sol) | The convention kind labels (constants only; the [registry](disputes-and-statements.md#statement-kind-registry) lists them) |
 | `WorkRecords` | [`WorkRecords.sol`](../../src/stream/WorkRecords.sol) | `mediaOf` (finding the declarations file), `record`, `licenseOf`, `preferredLocator`, `pinnedRenderer`, `seedOf`, `workStateHash`; the `RecordOpened` event; `delivery`, whose `locators` (the first delivery contract, [`WorkDelivery.sol`](../../src/stream/WorkDelivery.sol)) count each file's copies |
-| `WorkRecords` as `IWorkPowers` | [`IWorkPowers.sol`](../../src/interfaces/IWorkPowers.sol) | `renouncedPowers` (which powers over a work are renounced, DCL-8), reported through ERC-165 |
+| `WorkRecords` as `IWorkPowers` | [`IWorkPowers.sol`](../../src/interfaces/IWorkPowers.sol) | `renouncedPowers` (which powers over a work have been renounced, DCL-8), reported through ERC-165 |
 | `ContentStore` | [`ContentStore.sol`](../../src/content/ContentStore.sol) | `fileInfo` (MIME type, encoding, length), `read`, `isComplete`, `sha256Of` |
 | `DependencyRegistry` | [`DependencyRegistry.sol`](../../src/content/DependencyRegistry.sol) | `resolve` (a declared dependency's file and whether it is deprecated, DCL-5) |
 | `Stream` | [`Stream.sol`](../../src/stream/Stream.sol) | `ownerOf`, `coreOf`, `primarySale`, `editionOf`, `rendererOf`, `defaultRenderer`; the `WorkMinted` event (the content hash and the package root) |
@@ -121,7 +121,6 @@ SHA-256 against the media entry. The sections, all optional:
 | `custodians` | Who holds each physical twin, and how fresh an attestation must be | DCL-6, DCL-21, DCL-22 |
 | `citations` | Works the work cites at birth | DCL-6, DCL-18 |
 | `timeCapsule` | A reveal date, the encryption scheme, the ciphertext file (an AUXILIARY media file) and a plaintext commitment | DCL-7 |
-| `intendedRenunciations` | Work powers (`ROYALTY_RATE`, `RELICENSE`, `RENDERER_REPIN`) the artist states they will renounce after the record opens | DCL-8 |
 | `livingWork` | What makes the work change by itself | DCL-9 |
 
 ### The conservation floor
@@ -154,12 +153,12 @@ once: by a `stored` receipt checked by its bytes, or by decoding and hashing the
 bytes (`ContentStore.read`).
 
 **DCL-5. The check before attestation.** ADR 0001 makes approval rules wave policy, not contract
-code ([ADR 0001 §3](../adr/0001-v1-scope.md#3-curation-and-approved-packages)), so the floor is
-enforced by the curation signer's tooling before it attests, beside its other
-[trust obligations](curation.md#trust-obligations-of-the-curation-signer). Whether a wave requires
-a declarations document, and which waivers it accepts, is that wave's policy; the evidence hash
-already commits to the rule parameters, and the result of this check goes into the evidence too,
-so the CURATOR's `CURATION_EVIDENCE` statement publishes it (DCL-33). With `P` the wave's policy,
+code ([ADR 0001 §3](../adr/0001-v1-scope.md#3-curation-and-approved-packages)). The curation
+signer's current practice is to run this check in its tooling before it attests
+([curation](curation.md)). Whether a wave runs it, requires a declarations document, and which
+waivers it accepts, is that wave's policy; the evidence hash already commits to the rule
+parameters, and when the check is run its result goes into the evidence too, so the CURATOR's
+`CURATION_EVIDENCE` statement publishes it (DCL-33). With `P` the wave's policy,
 `item` and `media` the package item and its media list (`media[0]` is the PRIMARY file):
 
 ```text
@@ -245,8 +244,6 @@ ALWAYS (whether or not facts are waived):
       if not P.allowsTimeCapsule:              REFUSE "time capsule outside policy" (DCL-7)
       require doc.timeCapsule.ciphertextFileId == m.fileId for some m in S with
               m.role == AUXILIARY                                                 (DCL-7)
-  for r in doc.intendedRenunciations:
-      require r.power in {ROYALTY_RATE, RELICENSE, RENDERER_REPIN}  (DCL-8)
   require the (address, objectId) pairs of doc.custodians are distinct, and no address is zero
   for c in doc.citations: require c.work is well formed                           (DCL-18)
 ```
@@ -255,21 +252,21 @@ The floor proves that copies existed and matched at approval, not that they stil
 copies and fixity checks are `STORAGE_COPY` and `FIXITY_CHECK` statements, and locators the
 artist or the platform registers.
 
-**DCL-33. The published floor result.** The signer publishes the result of each item it checked
-in its `CURATION_EVIDENCE` document, as a member `conservationFloor` holding one
+**DCL-33. The published floor result.** When the signer runs the check, it publishes the result
+of each item it checked in its `CURATION_EVIDENCE` document, as a member `conservationFloor` holding one
 [`floor-result.v1`](schemas/floor-result.v1.schema.json) object per item
 ([example](schemas/examples/floor-result.json)): the item hash, the declarations file ID (`null`
 when the item lists none) and each fact's state. Only a passing check is published, so every
 state is `met`, `waived`, `unmet` or `not_applicable`; with no declarations file, no fact is
 `met` or `waived`. The evidence document has no schema of its own; only this member does. A
-promise-card reader finds the result in the CURATOR's latest valid `CURATION_EVIDENCE` statement
+fact-sheet reader finds the result in the CURATOR's latest valid `CURATION_EVIDENCE` statement
 about the root the work was minted from (`WorkMinted.packageRoot`, subject
 `(address(0), uint256(root))`) and uses it only when it is schema-valid, names the work's item
-hash, and names the declarations file the card found (`null` when the card's declarations are
+hash, and names the declarations file the sheet found (`null` when the sheet's declarations are
 `absent`). In every other case (no published result, a result that fails those checks, or
 declarations `invalid`, `ambiguous` or `unreadable`) every fact is `unmet`, which is also what a
 work approved by a wave that does not check the floor shows. A reader MAY recompute the result
-with `CHECK_FLOOR` from the reads at its own block and show where the two differ; the card
+with `CHECK_FLOOR` from the reads at its own block and show where the two differ; the sheet
 carries the published result.
 
 ### Custodians and citations at birth
@@ -294,33 +291,22 @@ curation policy until the owner approves it**: the schema requires `policyStatus
 the signer's tooling refuses a package that carries one (DCL-5) unless the wave's policy allows
 it.
 
-### Intended renunciations
+### Work powers
 
-**DCL-8.** Each entry names a work power by its name in the `WorkPowers` library of
+**DCL-8.** A work power is named by its name in the `WorkPowers` library of
 [`IWorkPowers.sol`](../../src/interfaces/IWorkPowers.sol) (ADR 0006, as amended by the owner on
-15 November 2026), and promises to renounce it
-within `withinDaysOfRecordOpen` days of the work's `RecordOpened` event. The powers, in bit order
-(a power's bit index is its position):
+15 November 2026). `IWorkPowers.renouncedPowers(tokenId)` reports which powers over a work have
+been renounced. The powers, in bit order (a power's bit index is its position):
 
-| Power | Bit (value) | What it stops | Card row it covers (DCL-27) |
+| Power | Bit (value) | What renouncing it stops | Fact-sheet row it covers (DCL-27) |
 | --- | --- | --- | --- |
 | `ROYALTY_RATE` | 0 (1) | Any further `WorkRecords.setRoyaltyRate` | `royalty_rate` |
 | `RELICENSE` | 1 (2) | Any further `WorkRecords.relicense` | `license` |
 | `RENDERER_REPIN` | 2 (4) | Any further `WorkRecords.repinRenderer`; renounceable only once the work is finalized | `renderer` |
 
-The schema accepts only these three names. `RENDERER_REPIN` can be renounced only after
-finalize, so a promise to renounce it is kept only if the artist finalizes in time. Renouncing it
-fixes the pinned renderer for good: if a later protocol change breaks that renderer, the work's
-metadata can never be repaired (the card's `renderer` row then reads `until: renounced`). The
-media, record and license stay on-chain and readable by any other renderer off-chain. The due time is the `RecordOpened` event's block
-timestamp plus the days. A reader computes the state at a block: `renounced` when
-`renouncedPowers(tokenId)` has the power's bit; otherwise `pending` while the block's timestamp
-is before the due time and `overdue` from the due time on (at exactly the due time the promise is
-due: `timestamp >= dueAt`); `unknown` where the deployment's `WorkRecords` does not report
-`IWorkPowers` through ERC-165 (a deployment from before ADR 0006). A promise is not a
-renunciation: until `renouncedPowers` reports it, the power is retained. Before the record opens
-there is no `RecordOpened` event, so nothing is due yet, and the declarations cannot be read
-(`mediaOf` reverts), so the card shows no intended renunciation (DCL-28).
+A reader shows a power as renounced when `renouncedPowers(tokenId)` has its bit, and as retained
+otherwise; where the deployment's `WorkRecords` does not report `IWorkPowers` through ERC-165, it
+shows the powers as not available.
 
 ### Living work
 
@@ -364,7 +350,7 @@ media members of the metadata.
 
 **DCL-13. Transfer after acceptance.** An acceptance survives a transfer: it was the owner's
 decision at that block, and the log keeps it. A reader shows who accepted it and whether that is
-the current owner (`acceptedByCurrentOwner` on the card). The new owner may restore the approved
+the current owner (`acceptedByCurrentOwner` on the fact sheet). The new owner may restore the approved
 content or accept another proposal; until then the display stays as accepted.
 
 **DCL-14. Burns and disputes.** A burned token has no display. A dispute outcome about the work
@@ -564,33 +550,35 @@ sequenceDiagram
     V->>V: accept or refuse (the nonce is already used)
 ```
 
-## Promise card and grade
+## Fact sheet
 
-### The card
+A fact sheet states what is recorded about one work and who can change what. It is generated
+off chain, from reads at one block, and carries no warnings, ratings or scores.
 
-**DCL-26. Inputs.** A card is generated for one work at one block `B`, every read made at `B`.
+**DCL-26. Inputs.** A fact sheet is generated for one work at one block `B`, every read made at
+`B`.
 
 | Read | Contract | Gives |
 | --- | --- | --- |
 | `ownerOf`, `coreOf`, `primarySale`, `editionOf`, `rendererOf` | Stream | Owner; item hash, artist ID, collection and kind; the sale outcome and price; the edition link; the renderer in force |
 | The `WorkMinted` event | Stream | The content hash (`contentHash`): no view returns it, since Stream stores only the item hash; and the package root, where the floor result is published (DCL-33) |
-| `isOpen`, `record`, `mediaOf`, `licenseOf`, `workStateHash`, `preferredLocator`, `pinnedRenderer`; the `RecordOpened` event; `locators` on its delivery contract | WorkRecords | Record status, version, finalized, on-chain complete, state hash, whether a renderer is pinned; media, roles and hashes; license; how many copies each file has and the served copy's kind; when intended renunciations fall due |
+| `isOpen`, `record`, `mediaOf`, `licenseOf`, `workStateHash`, `preferredLocator`, `pinnedRenderer`; `locators` on its delivery contract | WorkRecords | Record status, version, finalized, on-chain complete, state hash, whether a renderer is pinned; media, roles and hashes; license; how many copies each file has and the served copy's kind |
 | `renouncedPowers` | WorkRecords, as `IWorkPowers` (ERC-165) | Renounced and retained powers (DCL-8) |
 | `fileInfo`, `isComplete`, `read` | ContentStore | Each media file's MIME type and completeness; whether the license text is on chain; the declarations bytes |
 | `latestDisputeOutcome`, `disputeOutcomeOf`, `chainOf`, `artistResolver` | StatementLog | Dispute status and its scope (token or item); the chain's count and head; the resolver |
-| `activeAuthorityOf`, `pendingChange` | ArtistRegistry | The active authority and whether the artist is restrained; a pending identity change |
+| `activeAuthorityOf`, `pendingChange` | ArtistRegistry | The artist's active wallet and whether the account is restrained; a pending identity change |
 | `saleIdOf`, `clearing` | UniformEditionAuction | The edition's copies and price per copy, for a master with an edition |
-| Documents | The declarations document; the published floor result (DCL-33); custody attestations; the winning display change (DCL-12) | Declarations, floor, custody, display change, intended renunciations |
+| Documents | The declarations document; the published floor result (DCL-33); custody attestations; the winning display change (DCL-12) | Declarations, floor, custody, display change |
 
-The [`promise-card.v1`](schemas/promise-card.v1.schema.json) schema is its machine-readable form
-([example](schemas/examples/promise-card.json)).
+The [`fact-sheet.v1`](schemas/fact-sheet.v1.schema.json) schema is its machine-readable form
+([example](schemas/examples/fact-sheet.json)).
 
-**DCL-27. Who can still change what.** The card lists each thing that can still change, who can
-change it and after what delay. The caller (the front end or card generator) composes one row
-per path in the table below from the generated [role matrix](../audit/roles.md) for the
-deployment (and its later `RoleGranted` and `TargetFunctionRoleUpdated` events), never from this
-page: `what`, the roles (`who`), the delay, whether a guardian can cancel, and, for a path that
-applies only before or only after finalize, that phase:
+**DCL-27. Who can change what.** The sheet lists each thing that can change, who can change it
+and after what delay. The caller (the front end or sheet generator) composes one row per path in
+the table below from the generated [role matrix](../audit/roles.md) for the deployment (and its
+later `RoleGranted` and `TargetFunctionRoleUpdated` events), never from this page: `what`, the
+roles (`who`), the delay and, for a path that applies only before or only after finalize, that
+phase:
 
 | What | Paths | Until |
 | --- | --- | --- |
@@ -617,59 +605,17 @@ The generator then applies these rules to the rows, as the reference tool does:
    covers `license`, `RENDERER_REPIN` covers `renderer`) gets `until: renounced` and `renouncedBy` with the power's name. Without
    `IWorkPowers` every row stays as it is.
 
-**DCL-28. States the card distinguishes.** Record not open, open or finalized; on-chain complete
+**DCL-28. States the sheet distinguishes.** Record not open, open or finalized; on-chain complete
 or not; disputed (an outcome about the token, or only about its item) or not; the primary sale
-NONE, SOLD, UNBID, FROZEN_OUT or RESCUED (rescued by governance to the museum); each power
+NONE, SOLD, UNBID, FROZEN_OUT or RESCUED (moved by the network to the museum); each power
 renounced or retained, or `available: false` without `IWorkPowers`; declarations absent, valid,
 invalid, ambiguous or unreadable; each floor fact met, waived, unmet or not applicable (DCL-33);
 display changed or not, and by the current owner or not; each custody attestation recognized or
 not, fresh or stale, and each named custodian with no attestation (`NONE`, no date). A burned
-token has no card. A dispute outcome's document is read to say what it decided: the log records
+token has no fact sheet. A dispute outcome's document is read to say what it decided: the log records
 only that an outcome exists. While the record is not open, `mediaOf` and `licenseOf` revert: the
-card shows the license of the approved package item (the one `openRecord` will store), no media
-files, declarations `unreadable`, every floor fact `unmet`, and no intended renunciation, since
-none is due before `RecordOpened` (DCL-8).
-
-**DCL-29. Residual risks.** The card always prints LIM-GV-1, LIM-GV-2, LIM-GV-9, LIM-GV-10,
-LIM-GV-11, LIM-ID-11, LIM-ID-13, LIM-CNT-2, LIM-CNT-3, LIM-CNT-12, LIM-CNT-13 and LIM-SAL-8;
-LIM-CNT-1 while the work is not on-chain complete; LIM-CNT-21 while it is on-chain complete with
-a media file not complete in the content store (complete only in an added store: the default
-renderer inlines none of it, and shows no media at all where the preferred kind is ONCHAIN);
-LIM-CNT-10 once it is finalized; and
-LIM-EA-14 when the work is an EDITION_MASTER with a linked edition (`editionOf` names an editions
-contract) and a dispute outcome is recorded about the token or its item (`dispute.entryHash` is
-set). Each links to [known limitations](../audit/known-limitations.md), which owns the text.
-
-### The grade
-
-**DCL-30.** The grade is a pure function of one card: the same card always gives the same grade.
-It is computed by clients, never written on chain, and always shown with its rubric version and
-a link to this rubric. It grades how much of a work's permanence is locked and verifiable, not
-the work. Its output follows [`promise-grade.v1`](schemas/promise-grade.v1.schema.json)
-([example](schemas/examples/promise-grade.json), the grade of the example card), with `card` the
-SHA-256 of the card's canonical JSON. Rubric 1:
-
-| Row | Points | Condition on the card |
-| --- | ---: | --- |
-| R1 | 20, or 5 | `record.status` is `finalized`; 5 if `open` |
-| R2 | 25 | `storage.onChainComplete` |
-| R3 | 5 | `license.textOnChain` |
-| R4 | 10 | `declarations.status` is `valid` |
-| R5 | 15, or 8 | Every applicable `conservationFloor` fact (one that is not `not_applicable`) is `met`, which also holds when no fact is applicable; 8 if each is `met` or `waived` and at least one is waived |
-| R6 | 10, or 5 | The first PRIMARY file in `storage.files` has at least 2 `locators`; 5 if it has 1; 0 when there is none (record not open) |
-| R7 | 0 to 10 | With `powers.available`: `floor(10 × renounced / (renounced + retained))`, counting only `ROYALTY_RATE` and `RELICENSE` (renouncing `RENDERER_REPIN` gives up repair, not a change of terms, so it neither earns nor costs points); 0 without the view or with no powers |
-| R8 | 5 | No intended renunciation is `overdue` |
-
-The letter is A from 85 points, B from 70, C from 50, D below, then capped: at C when
-`dispute.entryHash` is set (CAP1); at D when the record is not open (CAP2); at C when an intended
-renunciation is overdue (CAP3); at C when the declarations are invalid, ambiguous or unreadable
-(CAP4). `reasons` lists, in rubric order, each row that scored points, then each cap that lowers
-the letter: one whose ceiling is below the letter the points alone give. A cap's reason carries 0
-points; a cap whose ceiling is at or above that letter changes nothing and is not listed.
-
-**DCL-31.** A rubric never changes once published; a new rubric is a new version number, a new
-`rubric` value and a new table on this page. A client shows the version it used and never
-compares grades of different versions.
+sheet shows the license of the approved package item (the one `openRecord` will store), no media
+files, declarations `unreadable` and every floor fact `unmet`.
 
 ## Primary price history
 
@@ -684,8 +630,8 @@ An edition's ID is its master's token ID. Secondary sales are not recorded by th
 
 ## Rules and invariants
 
-Every rule here is applied off chain; none is a contract invariant. "Applied by" names who must
-apply it; "Supported on chain by" names the contract rule it builds on.
+Every rule here is applied off chain; none is a contract invariant. "Applied by" names who
+applies it; "Supported on chain by" names the contract rule it builds on.
 
 | ID | Rule | Applied by | Supported on chain by |
 | --- | --- | --- | --- |
@@ -693,10 +639,10 @@ apply it; "Supported on chain by" names the contract rule it builds on.
 | DCL-2 | A convention statement counts only after chain proof, official subject, the kind's role, a trusted resolver, hash, schema and subject checks, and supersession within kind and role. | Readers | DSP-1, DSP-7, DSP-10 |
 | DCL-3 | The declarations document is the one AUXILIARY file of its MIME type, `Identity`, one chunk, matching the content hash, and complete in the content store when the signer attests; fixed from approval. | Signer's tooling; readers | WS-2, WS-6, WS-25 |
 | DCL-4 | The floor's facts, each waivable with a reason; each storage receipt declares the form of the bytes it holds; a stored copy reproduces the committed chunks. | Artists' tooling | none |
-| DCL-5 | The signer checks the floor before attesting: stored copies by their bytes against the committed chunks, and each file's declared SHA-256 tied to its chunks once (WS-30); generative by script MIME type, non-empty record dependencies or seed policy; dependencies resolved by their bytes32 labels and compared in order; custodians distinct by (address, object); citations well formed. | Curation signer | The evidence hash the package registry stores ([curation](curation.md#concepts)); DSP-4 |
+| DCL-5 | Current practice: the signer checks the floor before attesting: stored copies by their bytes against the committed chunks, and each file's declared SHA-256 tied to its chunks once (WS-30); generative by script MIME type, non-empty record dependencies or seed policy; dependencies resolved by their bytes32 labels and compared in order; custodians distinct by (address, object); citations well formed. | Curation signer | The evidence hash the package registry stores ([curation](curation.md#concepts)); DSP-4 |
 | DCL-6 | Birth custodians and citations are the artist's approved claims. | Readers | WS-6 |
 | DCL-7 | A time capsule is unenforced, its ciphertext is an AUXILIARY media file, and it is outside the v1 curation policy until the owner approves it. | Curation signer; readers | WS-6 |
-| DCL-8 | An intended renunciation names `ROYALTY_RATE`, `RELICENSE` or `RENDERER_REPIN`, is due at `RecordOpened` plus its days (due from that time on), and its state comes from `IWorkPowers.renouncedPowers`. | Readers | WS-37, WS-38 |
+| DCL-8 | The work powers are `ROYALTY_RATE`, `RELICENSE` and `RENDERER_REPIN`, in bit order; which are renounced comes from `IWorkPowers.renouncedPowers`. | Readers | WS-37, WS-38 |
 | DCL-9 | A living work's change emits no refresh event; readers re-render or date their cache. | Readers | none |
 | DCL-10 | A proposal counts only as ARTIST about a 6529 Stream token. | Readers | ID-28, DSP-7 |
 | DCL-11 | An acceptance counts only as OWNER about the same token, citing an earlier valid proposal. | Readers | DSP-6 |
@@ -714,14 +660,11 @@ apply it; "Supported on chain by" names the contract rule it builds on.
 | DCL-23 | Control proofs are the typed data above, in the domain of the token's chain. | Venues; wallets | none |
 | DCL-24 | The verifier first claims the issued challenge atomically, spending the nonce; the response must equal it; the verifier builds the digest with its own chain ID and checks the time window, the signature and ownership at a recent block. | Venues | none |
 | DCL-25 | A consolidated signer proves a cold holder only through the registry's consolidation source; a live, younger pair (non-zero `effectiveAt` after `B`) only at lower trust. | Venues | ID-24, ID-27 |
-| DCL-26 | A card reads everything at one block; the content hash comes from `WorkMinted`. | Card generators | none |
-| DCL-27 | Roles and delays on a card come from the role matrix and the deployment's events; the generator applies the six row rules. | Card generators | GV-10, GV-17 |
-| DCL-28 | The card distinguishes the states listed, including a record not yet open. | Card generators | none |
-| DCL-29 | The card prints the residual risks listed. | Card generators | none |
-| DCL-30 | The grade is a pure function of the card under rubric 1, never on chain; caps are listed only when they lower the letter. | Clients | none |
-| DCL-31 | Rubrics are versioned and immutable. | Clients | none |
+| DCL-26 | A fact sheet reads everything at one block; the content hash comes from `WorkMinted`. | Sheet generators | none |
+| DCL-27 | Roles and delays on a fact sheet come from the role matrix and the deployment's events; the generator applies the six row rules. | Sheet generators | GV-10, GV-17 |
+| DCL-28 | The fact sheet distinguishes the states listed, including a record not yet open. | Sheet generators | none |
 | DCL-32 | Primary prices come from the reads and events listed. | Readers | AUC-8, EA-11 |
-| DCL-33 | The signer publishes each item's floor result as `floor-result.v1` in the curation evidence; a card uses it only when it matches the work and its declarations, and otherwise shows every fact `unmet`. | Curation signer; card generators | DSP-4 |
+| DCL-33 | When it runs the check, the signer publishes each item's floor result as `floor-result.v1` in the curation evidence; a fact sheet uses it only when it matches the work and its declarations, and otherwise shows every fact `unmet`. | Curation signer; sheet generators | DSP-4 |
 
 ## Events
 
@@ -741,7 +684,7 @@ event: a reader that shows a display change, a catalogue entry or custody refres
 | An artist's key is lost or restrained | No ARTIST statements | [Identity and recovery](identity-and-recovery.md); earlier entries keep their resolver. |
 | A wrong convention statement | It stays in the log | A superseding entry of the same kind and role; readers apply DCL-2. |
 | A custodian's key is lost | No new attestations; the last goes stale | A RELEASED attestation signed earlier, or a statement explaining the change; readers show the custodian as unrecognized. |
-| No floor result is published for the item, or it does not match the work | Every floor fact `unmet` on the card (DCL-33) | The CURATOR publishes a corrected `CURATION_EVIDENCE` statement that supersedes the earlier one. |
+| No floor result is published for the item, or it does not match the work | Every floor fact `unmet` on the fact sheet (DCL-33) | The CURATOR can publish a corrected `CURATION_EVIDENCE` statement that supersedes the earlier one. |
 | A renunciation is signed in error | Permanent: the power stays renounced (LIM-CNT-14) | None. |
 
 ## Parameters and limits
@@ -762,7 +705,10 @@ event: a reader that shows a display change, a catalogue entry or custody refres
 
 ## Differences from the ADRs
 
-No accepted ADR is departed from. The work powers this page refers to are
+[ADR 0006](../adr/0006-work-powers-and-conventions.md) named a "grade and control proof". On
+16 November 2026 the owner removed the grade, and the promise card became a neutral fact sheet
+with no residual-risk list; declarations no longer carry intended renunciations. No other
+accepted ADR is departed from. The work powers this page refers to are
 [ADR 0006](../adr/0006-work-powers-and-conventions.md)'s; see also the
 [register](README.md#differences-from-the-adrs).
 
@@ -795,8 +741,7 @@ No accepted ADR is departed from. The work powers this page refers to are
 [`tools/conventions/`](../../tools/conventions/README.md) implements these rules in Python,
 standard library only, for front ends, venues and the curation signer to copy or test against:
 schema validation and RFC 8785 canonical form (DCL-1), the floor check before attestation and
-its published result (DCL-3 to DCL-5, DCL-7, DCL-33), the promise card from reads at one block
-(DCL-26 to DCL-29, DCL-33), rubric 1
-(DCL-30), the control-proof verifier (DCL-23 to DCL-25) and the custody-attestation reader check
+its published result (DCL-3 to DCL-5, DCL-7, DCL-33), the fact sheet from reads at one block
+(DCL-26 to DCL-28, DCL-33), the control-proof verifier (DCL-23 to DCL-25) and the custody-attestation reader check
 (DCL-19 to DCL-22). The tools make no chain reads; the caller supplies them. This page is the
 authority where the two differ.
