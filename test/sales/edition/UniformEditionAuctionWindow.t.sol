@@ -242,28 +242,31 @@ contract UniformEditionAuctionWindowTest is EditionAuctionBase {
 
     function test_SetLimits_CompareAndSetBoundsAndEvent() public {
         IUniformEditionAuction.Limits memory next =
-            IUniformEditionAuction.Limits(60 days, 200, 250_000, 365);
+            IUniformEditionAuction.Limits(60 days, 200, 200_000, 365);
         vm.expectEmit(address(auction));
         emit IUniformEditionAuction.LimitsSet(_packedLimits(defaultLimits()), _packedLimits(next));
         _setLimits(next);
         IUniformEditionAuction.Limits memory got = ua.limits();
         assertEq(got.maxCloseOffset, 60 days);
         assertEq(got.voidDelayDays, 200);
-        assertEq(got.payoutGas, 250_000);
+        assertEq(got.payoutGas, 200_000);
         assertEq(got.rescueCapDays, 365);
         // A stale expectation.
         vm.expectRevert(ISaleAdapter.ExpectedValueMismatch.selector);
         auction.setLimits(_packedLimits(defaultLimits()), _packedLimits(next));
         // Each bound, one past it.
-        IUniformEditionAuction.Limits[8] memory bad = [
-            IUniformEditionAuction.Limits(1 days - 1, 150, 100_000, 730),
-            IUniformEditionAuction.Limits(3650 days + 1, 150, 100_000, 730),
-            IUniformEditionAuction.Limits(30 days, 119, 100_000, 730),
-            IUniformEditionAuction.Limits(30 days, 731, 100_000, 730),
+        IUniformEditionAuction.Limits[10] memory bad = [
+            IUniformEditionAuction.Limits(1 days - 1, 150, 200_000, 730),
+            IUniformEditionAuction.Limits(3650 days + 1, 150, 200_000, 730),
+            IUniformEditionAuction.Limits(30 days, 119, 200_000, 730),
+            IUniformEditionAuction.Limits(30 days, 731, 200_000, 730),
             IUniformEditionAuction.Limits(30 days, 150, 29_999, 730),
             IUniformEditionAuction.Limits(30 days, 150, 3_000_001, 730),
-            IUniformEditionAuction.Limits(30 days, 150, 100_000, 89),
-            IUniformEditionAuction.Limits(30 days, 150, 100_000, 731)
+            IUniformEditionAuction.Limits(30 days, 150, 200_000, 89),
+            IUniformEditionAuction.Limits(30 days, 150, 200_000, 731),
+            // The payout gas only rises, at most doubling per change.
+            IUniformEditionAuction.Limits(30 days, 150, 199_999, 730),
+            IUniformEditionAuction.Limits(30 days, 150, 400_001, 730)
         ];
         for (uint256 i; i < bad.length; ++i) {
             vm.expectRevert(IUniformEditionAuction.InvalidConfig.selector);
@@ -272,8 +275,10 @@ contract UniformEditionAuctionWindowTest is EditionAuctionBase {
         // Bits past the packing.
         vm.expectRevert(IUniformEditionAuction.InvalidConfig.selector);
         auction.setLimits(_packedLimits(next), _packedLimits(next) | 1 << 96);
-        // The edges.
-        _setLimits(IUniformEditionAuction.Limits(1 days, 120, 30_000, 90));
+        // The edges; the payout gas doubles to its ceiling and stays there.
+        _setLimits(IUniformEditionAuction.Limits(1 days, 120, 400_000, 90));
+        _setLimits(IUniformEditionAuction.Limits(3650 days, 730, 800_000, 730));
+        _setLimits(IUniformEditionAuction.Limits(3650 days, 730, 1_600_000, 730));
         _setLimits(IUniformEditionAuction.Limits(3650 days, 730, 3_000_000, 730));
         // Restricted.
         vm.prank(alice);
