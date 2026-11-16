@@ -130,15 +130,29 @@ contract FederationGasTest is FederationBase {
         total = 21_000 + calldataGas + frame;
     }
 
+    /// @dev The cold-account surcharge for the template's renderer (EIP-2929: 2,600 cold against
+    ///      100 warm, as `_measureGrowth` adds for any account the test warmed). The constructor
+    ///      reads the renderer's code hash; `_streamConfig` reads it first, so the measured run
+    ///      reaches it warm, while the artist's real transaction reaches it cold (the config is
+    ///      built off-chain). Foundry cannot cool an account, so the cost is added: 2,500 when the
+    ///      probe, run from a snapshot so it warms nothing, finds the renderer warm.
+    function _rendererSurcharge() internal returns (uint256) {
+        uint256 snapshot = vm.snapshotState();
+        bool warm = _isWarm(address(renderer));
+        vm.revertToStateAndDelete(snapshot);
+        return warm ? COLD_ACCOUNT_SURCHARGE : 0;
+    }
+
     /// @dev Each deployment row is measured in its own test, before any state-diff recording:
     ///      once a test has recorded, Foundry prices every later access warm, so a second row
     ///      would come out low.
     function test_Gas_DeployFederatedStream() public {
-        (, uint256 total, uint256 slots, uint256 runtime) = _deploy(
-            abi.encodePacked(
-                type(FederatedStream).creationCode, abi.encode(_streamConfig(fedArtist))
-            )
+        bytes memory initcode = abi.encodePacked(
+            type(FederatedStream).creationCode, abi.encode(_streamConfig(fedArtist))
         );
+        uint256 surcharge = _rendererSurcharge();
+        (, uint256 total, uint256 slots, uint256 runtime) = _deploy(initcode);
+        total += surcharge;
         emit log_named_uint("FederatedStream deploy (tx, Prague)", total);
         emit log_named_uint("FederatedStream runtime bytes", runtime);
         emit log_named_uint("FederatedStream constructor slots", slots);
@@ -170,12 +184,15 @@ contract FederationGasTest is FederationBase {
     function test_Gas_DeployStreamThroughItsDeployer() public {
         bytes memory config = abi.encode(_streamConfig(fedArtist));
         FederatedDeployer d = deployment.federatedStreamDeployer;
+        uint256 surcharge = _rendererSurcharge();
         (uint256 total,) = _measure(
             fedArtist, address(d), abi.encodeCall(d.deploy, (bytes32(uint256(0x6529)), config)), 0
         );
+        total += surcharge;
         emit log_named_uint("FederatedStream deploy, through its deployer (tx, Prague)", total);
         assertLe(total, DEPLOY_721_CEILING);
         (, uint256 direct,,) = _deploy(abi.encodePacked(type(FederatedStream).creationCode, config));
+        direct += surcharge;
         assertLt(total, direct, "the deployer path costs less than sending the code");
     }
 

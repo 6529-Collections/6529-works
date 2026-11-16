@@ -576,7 +576,7 @@ or budget moved.
 | Federated edition `open` | 373,965 | 380,000 (regression) | 7 | 0 | ~1.00M [E] |
 | Federated `createEdition` | 86,736 | 90,000 (regression) | 1 | 0 | ~0.18M [E] |
 | Federated edition `settle` | 151,447 | 162,000 (regression) | 1 | 0 | ~0.24M [E] |
-| Deploy `FederatedStream` (whole transaction; 5,097,751 through its deployer, which records it; each deployment row measured in its own test) | 5,416,145 | 5,500,000 (regression) | 11 | 1 | ~37.9M [E] through its deployer ([ADR 0008](0008-federation.md) §1) |
+| Deploy `FederatedStream` (whole transaction; 5,100,251 through its deployer, which records it; each deployment row measured in its own test) | 5,418,645 | 5,500,000 (regression) | 11 | 1 | ~37.9M [E] through its deployer ([ADR 0008](0008-federation.md) §1) |
 | Deploy `FederatedEditions` (whole transaction; 3,592,141 through its deployer) | 3,805,265 | 3,870,000 (regression) | 8 | 1 | ~26.6M [E] through its deployer |
 
 r2's Sepolia column, as accepted (receipts on `400f96d`, before the review fixes

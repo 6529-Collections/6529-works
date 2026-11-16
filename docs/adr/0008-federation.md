@@ -86,11 +86,13 @@ with refunds; neither delisting nor exit ever touches tokens, ownership, records
   deterministic deployment proxy is no longer a federation dependency (the genesis deploy still
   uses Foundry's CREATE2 factory, as before), and with it the permissionless `publishCode`, its
   first-writer-wins record and the griefing review G found there (G2) are gone.
-- **The artist's cost.** Deploying through the deployer costs **5,097,751** Prague gas for
-  `FederatedStream` against **5,416,145** for a plain CREATE of the same initcode (-318,394: no
+- **The artist's cost.** Deploying through the deployer costs **5,100,251** Prague gas for
+  `FederatedStream` against **5,418,645** for a plain CREATE of the same initcode (-318,394: no
   25 KB of calldata, plus the code read and one record slot, 22,100), and **3,592,141** for
   `FederatedEditions` against 3,805,265 (-213,124); each row is measured in its own test, before
-  any state-diff recording (pass 3: the deployer rows were measured after one and read low).
+  any state-diff recording (pass 3: the deployer rows were measured after one and read low), and
+  each adds the 2,500 by which the renderer, which the test's own config read had warmed, would be
+  cheaper than in the artist's transaction, where its code hash is first read cold.
   The bytes deployed are the same; under Glamsterdam the record slot costs about 111,000 and the
   estimate (§9) is about **37.9M** and **26.6M**. Joining costs **303,115** (284,685 as first
   built; the consent signature, the deployer's record read and the pair and content-store
@@ -374,14 +376,14 @@ pass 3 (16 November 2026).
   24,062 (514). Every contract keeps 512, with no exemption.
 - **The artist pays the templates' deployment once**, through each template's deployer (§1).
   Measured (Prague, whole transaction, each row in its own test): `FederatedStream`
-  **5,097,751** through its deployer (5,416,145 as a plain CREATE of the same initcode: the
+  **5,100,251** through its deployer (5,418,645 as a plain CREATE of the same initcode: the
   deployer saves the 25 KB of calldata, reads the code from its data contracts and writes one
   record slot); `FederatedEditions` **3,592,141** (3,805,265 plain); a pair about **8.7M**. Glamsterdam estimate from ADR 0004's
   unit prices (code 1,542 per byte, a new slot about 111,000, an empty CREATE about 210,000),
   replacing the Prague components (code at 200 per byte, a slot at 22,100, the 53,000 of the
   transaction and CREATE bases):
-  - 721: 5,097,751 + 23,527 x 1,342 (31,573,234) + 12 x 88,900 (11 constructor slots and the
-    record: 1,066,800) + 157,000 = **37,894,785** (about 37.9M);
+  - 721: 5,100,251 + 23,527 x 1,342 (31,573,234) + 12 x 88,900 (11 constructor slots and the
+    record: 1,066,800) + 157,000 = **37,897,285** (about 37.9M);
   - 1155: 3,592,141 + 16,429 x 1,342 (22,047,718) + 9 x 88,900 (800,100) + 157,000 =
     **26,596,959** (about 26.6M);
   - a pair: about **64.5M**. Calldata repricing under Glamsterdam is not modelled [U]; it would
