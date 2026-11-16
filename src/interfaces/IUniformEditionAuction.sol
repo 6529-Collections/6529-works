@@ -454,6 +454,10 @@ interface IUniformEditionAuction is ISaleAdapter {
     ///         progress or has settled with its master and edition, or its abandonment delay has
     ///         not passed.
     error NotAbandonable(uint256 saleId);
+    /// @notice A read of 6529 Stream that the abandonment check needs (`selector`: `extsload` of
+    ///         the English auction's minter word, or `rescueDelay`) failed or answered malformed,
+    ///         so whether the sale can be abandoned is not known; nothing is decided.
+    error StreamReadFailed(bytes4 selector);
     /// @notice A time that does not fit the 32-bit clocks the sale stores: a soft end or a 1/1
     ///         end at or past 2^32 seconds (7 February 2106). The adapter must be replaced before
     ///         then; until then no stored time wraps.

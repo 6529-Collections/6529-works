@@ -50,12 +50,15 @@ contract Burner {
 
     function _burnAndForward() private {
         uint256 amount = burnerBase * burnerMultiple;
-        if (gasleft() < amount) {
+        // One reading of the gas left, so a burner short of its amount always ends in an
+        // out-of-gas (never an underflow panic a few gas later, which would read as a refusal).
+        uint256 held = gasleft();
+        if (held < amount) {
             assembly ("memory-safe") {
                 invalid()
             }
         }
-        uint256 stop = gasleft() - amount;
+        uint256 stop = held - amount;
         while (gasleft() > stop) { }
         address inner = burnerInner;
         bool mutating = burnerMutating;

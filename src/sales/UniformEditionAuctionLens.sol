@@ -128,7 +128,8 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         // No payment from this sale may reach an undeployed wallet (rule 4: no fund movement
         // depends on the future price of deploying code): deploy the seller's split wallet now,
         // before anything is owed to it, and the royalty receiver's, before any copy can trade.
-        // A wallet the ledger already deployed is confirmed, not deployed again.
+        // A wallet the ledger already deployed is confirmed, not deployed again. The resolver's
+        // factory is 6529 Stream's own: Stream refuses a replacement that names another.
         address factory = IEconomicsResolver(IStream(_stream).economics()).splitFactory();
         _deployWallet(factory, item.payees, w.seller, token, id);
         if (w.royaltyReceiver != w.seller) {
@@ -243,11 +244,12 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
     ///      its sale's end is then the one the adapter last read. A shortfall in any read reverts
     ///      with `BoundedCallShortfall`. A SETTLING sale qualifies only while its scan is in
     ///      progress (nothing paid): its clearing call can only have failed for want of the
-    ///      edition. The time is the sale's end plus its locked delay plus what 6529 Stream's
-    ///      rescue delay for the master's works adds to its 90-day floor (L-4): the delay Stream
-    ///      locked for the English auction's works when governance removed it, else the delay
-    ///      in force, at most the governed rescue cap, so no lengthening holds bids for longer
-    ///      than the cap (review E, N-2).
+    ///      edition. The time is the sale's end plus its locked delay plus how much later than
+    ///      the end plus 6529 Stream's 90-day floor the master can be rescued (L-4): once
+    ///      governance removed the English auction, the delay Stream locked then plus however
+    ///      long after the end the removal came; before, the delay in force. At most the
+    ///      governed rescue cap, which takes precedence, so nothing holds bids for longer than
+    ///      the cap (review E, N-2). A failed read of Stream reverts with `StreamReadFailed`.
     function abandonable(uint256 saleId) public view returns (bool ok, uint256 abandonAt) {
         IStorage.SaleWord memory a = _opened(saleId);
         if (
@@ -288,22 +290,30 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
             abi.encodeCall(IStream.extsload, (StreamLayout.minterSlot(_englishAuction), 1)),
             0x60
         );
-        if (!read || data.length != 0x60) revert();
+        if (!read || data.length != 0x60) {
+            revert IUniformEditionAuction.StreamReadFailed(IStream.extsload.selector);
+        }
         uint256 added;
         assembly ("memory-safe") {
             added := mload(add(data, 0x60))
         }
-        // The removal time and the locked delay, field by field (`StreamLayout`).
-        if ((added >> 32) & type(uint40).max != 0) {
+        // The removal time and the locked delay, field by field (`StreamLayout`): Stream rescues
+        // the master from the removal plus the locked delay, so a removal after the end adds
+        // its lateness (review N-2's horizon, from the removal, not the end).
+        uint256 removedAt = (added >> 32) & type(uint40).max;
+        if (removedAt != 0) {
             added = (added >> 72) & type(uint32).max;
         } else {
             bytes32 delay;
             (read, delay) =
                 BoundedCall.tryReadWordAll(_stream, abi.encodeCall(IStream.rescueDelay, ()));
-            if (!read) revert();
+            if (!read) {
+                revert IUniformEditionAuction.StreamReadFailed(IStream.rescueDelay.selector);
+            }
             added = uint256(delay);
         }
         added -= 90 days;
+        if (removedAt > e.endTime) added += removedAt - e.endTime;
         uint256 cap = ((_word(IStorage.Space.SETTINGS, 0, 0) >> 192) & type(uint16).max) * 1 days;
         if (added > cap) added = cap;
         abandonAt = uint256(e.endTime) + uint256(p.voidDelayDays) * 1 days + added;
