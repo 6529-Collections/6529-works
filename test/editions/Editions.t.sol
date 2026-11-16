@@ -1295,7 +1295,8 @@ contract EditionsTest is EditionsBase {
     ///      again for the new share (the seller at zero) and the edition reports the new share.
     ///      Fails without the change: no path lowered an existing edition's share.
     function test_LowerFeeShare_MovesTheReceiver() public {
-        SplitLedger factory = new SplitLedger(IArtistPayoutResolver(address(artists)));
+        SplitLedger factory =
+            new SplitLedger(IArtistPayoutResolver(address(artists)), address(manager));
         stream.setSplitFactory(address(factory));
         vm.prank(admin);
         manager.setTargetFunctionRole(
@@ -1327,7 +1328,9 @@ contract EditionsTest is EditionsBase {
     /// @dev R9: lower only (`InvalidFeeShare` for an equal or higher share), the role only, and
     ///      only for an edition whose economics are locked (`UnknownEdition` otherwise).
     function test_LowerFeeShare_NeverRaises() public {
-        stream.setSplitFactory(address(new SplitLedger(IArtistPayoutResolver(address(artists)))));
+        stream.setSplitFactory(
+            address(new SplitLedger(IArtistPayoutResolver(address(artists)), address(manager)))
+        );
         vm.prank(admin);
         manager.setTargetFunctionRole(
             address(editions), _one(IEditions.lowerFeeShare.selector), PARAMETER_SETTER

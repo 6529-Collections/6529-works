@@ -47,11 +47,6 @@ library Typehashes {
     bytes32 internal constant ROYALTY_RATE_CHANGE = keccak256(
         "RoyaltyRateChange(uint256 tokenId,uint32 rate,bytes32 stateHash,uint64 deadline)"
     );
-    /// @notice The lead artist agrees to an errata renderer pin (work records domain).
-    bytes32 internal constant RENDERER_REPIN = keccak256(
-        "RendererRepin(uint256 tokenId,address renderer,bytes32 rendererCodeHash,"
-        "bytes32 stateHash,uint64 deadline)"
-    );
     /// @notice The lead artist renounces powers over a work for good (work records domain;
     ///         `powers` is a mask of `WorkPowers` bits).
     bytes32 internal constant RENOUNCE_POWERS = keccak256(

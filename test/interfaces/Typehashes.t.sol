@@ -41,10 +41,6 @@ contract TypehashesTest is Test {
             0x4f00b7a5a626b7fd46a6eb233ba5926281727b94836ffa9091fa1cc73d7fa038
         );
         assertEq(
-            Typehashes.RENDERER_REPIN,
-            0xe02c73b10a1645fcc06fd6d114765861f5bcd1cd03d788c53c6bdf196c748bd4
-        );
-        assertEq(
             Typehashes.RENOUNCE_POWERS,
             0xff8cc1b150cf1b390fd870b4a587d3c2632e80f32efbefe166b9f7b0131d3aff
         );
