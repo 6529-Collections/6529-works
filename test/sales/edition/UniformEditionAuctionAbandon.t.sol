@@ -285,6 +285,68 @@ contract UniformEditionAuctionAbandonTest is EditionAuctionBase {
         _abandonAndRefund();
     }
 
+    /// @dev Review E, N-2: a rescue delay lengthened far past the abandonment delay (about 136
+    ///      years, Stream's 32-bit bound) adds at most the governed rescue cap (730 days at
+    ///      launch), in the lens and in the adapter, so the bidders always have an exit. Fails
+    ///      without the cap: the abandonment is a century away.
+    function test_N2_AFarLongerRescueDelayAddsAtMostTheCap() public {
+        _setOneOfOne(IEnglishAuction.AuctionState.ENDED);
+        uint256 deadline = _deadline();
+        stream.setRescueDelay(type(uint32).max);
+        (, uint256 at) = ua.abandonable(saleId);
+        assertEq(at, deadline + 730 days, "capped");
+        address l = IUniformEditionAuctionStorage(address(auction)).lens();
+        vm.mockCall(l, abi.encodeWithSelector(IUniformEditionAuctionLens.checkAbandon.selector), "");
+        vm.warp(deadline + 730 days - 1);
+        _expectNotAbandonable();
+        vm.clearMockedCalls();
+        vm.warp(deadline + 730 days);
+        _abandonAndRefund();
+    }
+
+    /// @dev Review E, N-2: the cap is a governed limit (90 to 730 days, `setLimits`), applied at
+    ///      abandonment. Fails without the change: the full 310-day lengthening is waited.
+    function test_N2_TheRescueCapIsGoverned() public {
+        _setOneOfOne(IEnglishAuction.AuctionState.ENDED);
+        uint256 deadline = _deadline();
+        stream.setRescueDelay(400 days);
+        (, uint256 at) = ua.abandonable(saleId);
+        assertEq(at, deadline + 310 days, "under the cap: the whole lengthening");
+        _setLimits(IUniformEditionAuction.Limits(30 days, 150, 100_000, 90));
+        (, at) = ua.abandonable(saleId);
+        assertEq(at, deadline + 90 days, "the lowered cap");
+        vm.warp(deadline + 90 days - 1);
+        _expectNotAbandonable();
+        vm.warp(deadline + 90 days);
+        _abandonAndRefund();
+    }
+
+    /// @dev Review E, N-2: once governance removed the English auction, its works keep the
+    ///      rescue delay Stream locked at that removal, so a later lengthening does not lengthen
+    ///      their sales' abandonment; while it is admitted, the delay in force applies. Fails
+    ///      without the change: the live 400-day delay is waited.
+    function test_N2_ARemovedAdapterUsesTheDelayStreamLocked() public {
+        _setOneOfOne(IEnglishAuction.AuctionState.ENDED);
+        uint256 deadline = _deadline();
+        stream.setRemoval(address(english), uint40(block.timestamp), 200 days);
+        stream.setRescueDelay(400 days);
+        (, uint256 at) = ua.abandonable(saleId);
+        assertEq(at, deadline + 110 days, "the locked 200 days");
+        stream.setRemoval(address(english), 0, 200 days); // admitted again: the delay in force
+        (, at) = ua.abandonable(saleId);
+        assertEq(at, deadline + 310 days, "the live 400 days");
+        stream.setRemoval(address(english), uint40(block.timestamp), 90 days);
+        (, at) = ua.abandonable(saleId);
+        assertEq(at, deadline, "the floor: nothing added");
+        address l = IUniformEditionAuctionStorage(address(auction)).lens();
+        vm.mockCall(l, abi.encodeWithSelector(IUniformEditionAuctionLens.checkAbandon.selector), "");
+        vm.warp(deadline - 1);
+        _expectNotAbandonable();
+        vm.clearMockedCalls();
+        vm.warp(deadline);
+        _abandonAndRefund();
+    }
+
     function test_Abandon_UnknownSale() public {
         vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.UnknownAuction.selector, 99));
         auction.abandon(99);

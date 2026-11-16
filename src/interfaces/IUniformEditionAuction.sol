@@ -105,9 +105,9 @@ interface IUniformEditionAuction is ISaleAdapter {
 
     /// @notice The governed limits (ADR 0005 section 4, as amended 15 November 2026), set by
     ///         `setLimits`. Read at open (the close offset's maximum and the abandonment delay,
-    ///         which the sale locks) and at payout (the payout gas). `setLimits` and `LimitsSet`
-    ///         carry them packed in one word: `maxCloseOffset | voidDelayDays << 32 |
-    ///         payoutGas << 48`, nothing past bit 80.
+    ///         which the sale locks), at payout (the payout gas) and at abandonment (the rescue
+    ///         cap). `setLimits` and `LimitsSet` carry them packed in one word: `maxCloseOffset |
+    ///         voidDelayDays << 32 | payoutGas << 48 | rescueCapDays << 80`, nothing past bit 96.
     /// @param maxCloseOffset The longest close offset an edition's terms may name, in seconds
     ///        (30 days at launch; bounds 1 day to 3,650 days). The only cap on an edition's open
     ///        period: a parameter of this adapter, not a rule of the token.
@@ -117,10 +117,15 @@ interface IUniformEditionAuction is ISaleAdapter {
     /// @param payoutGas Gas forwarded with each settlement payout; a wallet that refuses, or
     ///        needs more, is paid in the revenue escrow instead (100,000 at launch; bounds 30,000
     ///        to 3,000,000).
+    /// @param rescueCapDays The most whole days 6529 Stream's rescue lengthening adds to an
+    ///        abandonment (730 at launch; bounds 90 to 730), read when a sale is abandoned. So a
+    ///        sale's bidders can always leave by its end plus at most 730 + 730 days, however
+    ///        long governance makes Stream's rescue delay.
     struct Limits {
         uint32 maxCloseOffset;
         uint16 voidDelayDays;
         uint32 payoutGas;
+        uint16 rescueCapDays;
     }
 
     /// @notice One sale, as stored and derived now.
@@ -587,13 +592,13 @@ interface IUniformEditionAuction is ISaleAdapter {
     ///         Bounds, fixed in code: a maximum close offset of 1 day to 3,650 days, and at least
     ///         the current default close offset; an abandonment delay of 120 to 730 days (at
     ///         least governance's 30-day replacement of a dependency of the master's settlement
-    ///         plus 6529 Stream's 90-day rescue floor); a payout gas of 30,000 to 3,000,000.
-    ///         Open sales keep the close
-    ///         offset and the abandonment delay they locked; the payout gas applies to every
-    ///         later payout.
+    ///         plus 6529 Stream's 90-day rescue floor); a payout gas of 30,000 to 3,000,000; a
+    ///         rescue cap of 90 to 730 days. Open sales keep the close offset and the abandonment
+    ///         delay they locked; the payout gas applies to every later payout and the rescue cap
+    ///         to every later abandonment.
     /// @param expected The limits the caller expects are current, packed as `Limits` documents;
     ///        a stale value reverts with `ExpectedValueMismatch`.
-    /// @param next The new limits, packed, within the bounds above and with nothing past bit 80
+    /// @param next The new limits, packed, within the bounds above and with nothing past bit 96
     ///        (`InvalidConfig`).
     function setLimits(uint256 expected, uint256 next) external;
 
@@ -601,7 +606,10 @@ interface IUniformEditionAuction is ISaleAdapter {
     ///         refunded in full: nothing is minted or paid, and the edition is sealed at zero
     ///         (`IEditions.sealSupply(id, 0)`), so no copy of it can ever exist. Permissionless,
     ///         once `abandonable(saleId)` is true: the sale is OPEN (or SETTLING with its scan
-    ///         still in progress), its end plus its locked abandonment delay has passed, and its
+    ///         still in progress), its end plus its locked abandonment delay plus its rescue
+    ///         lengthening (what 6529 Stream's rescue delay exceeds its 90-day floor by: the delay
+    ///         Stream locked for the English auction's works if governance removed it, else the
+    ///         delay in force; at most `Limits.rescueCapDays` days) has passed, and its
     ///         1/1 is neither in progress (ACTIVE or PAUSED) nor settled with its master settled
     ///         in 6529 Stream and the edition created; a 1/1 auction that does not answer counts
     ///         as stuck, and the end is then the one last read. Emits `AuctionVoided`. Reverts
@@ -615,8 +623,8 @@ interface IUniformEditionAuction is ISaleAdapter {
     /// @param saleId The sale ID.
     /// @return ok Whether the sale can be abandoned now.
     /// @return abandonAt The earliest time it can be, from what is known now: its end plus its
-    ///         abandonment delay; zero while its 1/1 is in progress, settled with its master, or
-    ///         the sale is not OPEN.
+    ///         abandonment delay plus its capped rescue lengthening; zero while its 1/1 is in
+    ///         progress, settled with its master, or the sale is not OPEN.
     function abandonable(uint256 saleId) external view returns (bool ok, uint256 abandonAt);
 
     /// @notice The governed parameters new sales lock.

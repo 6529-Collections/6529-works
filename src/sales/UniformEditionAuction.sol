@@ -22,8 +22,8 @@ import { IUniformEditionAuctionStorage } from "../interfaces/IUniformEditionAuct
 import { CURRENCY_ETH } from "../interfaces/types/EconomicsTypes.sol";
 import { SaleKind } from "../interfaces/types/SaleTypes.sol";
 import { StepLadder } from "../interfaces/types/StepLadder.sol";
-import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Dependency } from "../libraries/Dependency.sol";
+import { StreamLayout } from "../stream/StreamLayout.sol";
 import { UniformClearing } from "./UniformClearing.sol";
 
 /// @title UniformEditionAuction
@@ -96,7 +96,8 @@ contract UniformEditionAuction is
     ///      settlement (or of its 1/1 adapter) plus 6529 Stream's 90-day rescue floor, so a sale
     ///      whose master waits on a repair or a rescue is never abandoned before either can land;
     ///      when governance lengthens Stream's rescue delay, `abandon` (and the lens) wait the
-    ///      difference too.
+    ///      difference too, up to the governed rescue cap (90 to 730 days): the cap is the
+    ///      bound on how long a governance lever can hold bidders' ETH.
     ///      The payout gas fits a split wallet's or a Safe's receive at its floor, and keeps a
     ///      settle call's two payouts far inside the 16,777,216 transaction cap at its ceiling.
     uint256 private constant _MIN_MAX_CLOSE_OFFSET = 1 days;
@@ -106,6 +107,8 @@ contract UniformEditionAuction is
     ///      assumes; `abandon` adds what Stream's current `rescueDelay` adds to it.
     uint256 private constant _RESCUE_FLOOR = 90 days;
     uint256 private constant _MAX_VOID_DELAY_DAYS = 730;
+    uint256 private constant _MIN_RESCUE_CAP_DAYS = 90;
+    uint256 private constant _MAX_RESCUE_CAP_DAYS = 730;
     uint256 private constant _MIN_PAYOUT_GAS = 30_000;
     uint256 private constant _MAX_PAYOUT_GAS = 3_000_000;
     /// @dev The end while the 1/1 is paused for a dispute: undetermined.
@@ -152,6 +155,7 @@ contract UniformEditionAuction is
         uint32 maxCloseOffset;
         uint16 voidDelayDays;
         uint32 payoutGas;
+        uint16 rescueCapDays;
     }
 
     /// @dev The revenue escrow that receives refused payouts.
@@ -224,7 +228,7 @@ contract UniformEditionAuction is
         lens = lens_;
         _setLimits(
             uint256(limits_.maxCloseOffset) | uint256(limits_.voidDelayDays) << 32
-                | uint256(limits_.payoutGas) << 48
+                | uint256(limits_.payoutGas) << 48 | uint256(limits_.rescueCapDays) << 80
         );
         _setConfig(config_);
     }
@@ -520,8 +524,8 @@ contract UniformEditionAuction is
     /// @dev The lens decides (`checkAbandon`, which reverts with `NotAbandonable`): it reads the
     ///      1/1 and 6529 Stream, forwarding all gas and reverting on a shortfall. This adapter
     ///      then enforces the state rule and the time floor itself (`NotAbandonable` before the
-    ///      stored end plus the delay plus Stream's rescue lengthening), so a lens that answers
-    ///      early cannot void a sale or seal its edition early. The seal makes
+    ///      stored end plus the delay plus Stream's capped rescue lengthening), so a lens that
+    ///      answers early cannot void a sale or seal its edition early. The seal makes
     ///      the supply question final: the edition is bound to this adapter, which never mints a
     ///      void sale's copies, so no copy of it can ever exist (Editions accepts a seal at zero
     ///      before or after `createEdition`, since nothing was minted).
@@ -541,9 +545,10 @@ contract UniformEditionAuction is
         // The stored close (`closeAt`; the 1/1's end only moves later, so the stored one is
         // never late, and a soft end is at most `maxExtension`, 7 days, past it) plus the locked
         // abandonment delay (at least 120 days), plus however much 6529 Stream's rescue delay
-        // now exceeds its permanent 90-day floor, which that minimum assumed: a sale is never
-        // voided while it takes bids, and never voided, nor its edition sealed at zero, before a
-        // master waiting on a rescue under the current delay could be rescued.
+        // for the master's works exceeds its permanent 90-day floor, which that minimum assumed
+        // (at most the rescue cap): a sale is never voided while it takes bids, and never voided,
+        // nor its edition sealed at zero, before a master waiting on a rescue could be rescued,
+        // unless that rescue waits longer than the cap; and its bidders always have an exit.
         PayoutWord storage p = _payouts[saleId];
         uint256 end;
         // Safe: two 32-bit times and a 16-bit count of days cannot overflow.
@@ -551,13 +556,8 @@ contract UniformEditionAuction is
             end = uint256(a.oneOfOneEnd) + _terms[a.termsId].closeOffset + uint256(p.voidDelayDays)
                 * 1 days;
         }
-        // Stream's rescue delay with all the gas: a shortfall reverts (`BoundedCallShortfall`),
-        // and a refusal, which Stream's permanent view never gives, reverts with no data.
-        (bool ok, bytes32 delay) =
-            BoundedCall.tryReadWordAll(_stream, abi.encodeCall(IStream.rescueDelay, ()));
-        if (!ok) revert();
         // forge-lint: disable-next-line(block-timestamp)
-        if (block.timestamp + _RESCUE_FLOOR < end + uint256(delay)) {
+        if (block.timestamp < end + _rescueAddition(_settings.rescueCapDays)) {
             revert IUniformEditionAuction.NotAbandonable(saleId);
         }
         _void(saleId, a);
@@ -1214,16 +1214,31 @@ contract UniformEditionAuction is
         _terms[id] = t;
     }
 
-    /// @dev The governed limits, packed as `setLimits` takes them: `maxCloseOffset |
-    ///      voidDelayDays << 32 | payoutGas << 48`.
-    function _limits() private view returns (uint256) {
-        Settings memory st = _settings;
-        return
-            uint256(st.maxCloseOffset) | uint256(st.voidDelayDays) << 32 | uint256(st.payoutGas)
-                << 48;
+    /// @dev What 6529 Stream's rescue delay for the master's works adds to the 90-day floor the
+    ///      abandonment delay's minimum assumes, at most `capDays` days: the delay Stream locked
+    ///      for the English auction's works when governance removed it (read natively through
+    ///      `IStream.extsload` at `StreamLayout.minterSlot`; a later lengthening never reaches
+    ///      them), else the delay in force. Both reads forward all gas and revert on any failure.
+    function _rescueAddition(uint256 capDays) private view returns (uint256 added) {
+        uint256 word =
+            uint256(IStream(_stream).extsload(StreamLayout.minterSlot(_englishAuction), 1)[0]);
+        // Safe: the removal time and the locked delay, field by field (`StreamLayout`).
+        // forge-lint: disable-next-line(unsafe-typecast)
+        added = uint40(word >> 32) != 0 ? uint32(word >> 72) : IStream(_stream).rescueDelay();
+        // Stream's delay never goes below its floor; checked arithmetic refuses anything else.
+        added -= _RESCUE_FLOOR;
+        if (added > capDays * 1 days) added = capDays * 1 days;
     }
 
-    /// @dev Validates and stores packed limits (`setLimits`): nothing past bit 80, every bound,
+    /// @dev The governed limits, packed as `setLimits` takes them: `maxCloseOffset |
+    ///      voidDelayDays << 32 | payoutGas << 48 | rescueCapDays << 80`.
+    function _limits() private view returns (uint256) {
+        Settings memory st = _settings;
+        return uint256(st.maxCloseOffset) | uint256(st.voidDelayDays) << 32 | uint256(st.payoutGas)
+            << 48 | uint256(st.rescueCapDays) << 80;
+    }
+
+    /// @dev Validates and stores packed limits (`setLimits`): nothing past bit 96, every bound,
     ///      and a maximum close offset of at least the current default.
     function _setLimits(uint256 next) private {
         Settings storage st = _settings;
@@ -1232,17 +1247,19 @@ contract UniformEditionAuction is
         uint32 maxCloseOffset = uint32(next);
         uint16 voidDelayDays = uint16(next >> 32);
         uint32 payoutGas = uint32(next >> 48);
+        uint16 rescueCapDays = uint16(next >> 80);
         // forge-lint: disable-end(unsafe-typecast)
         if (
-            next >> 80 != 0 || maxCloseOffset < _MIN_MAX_CLOSE_OFFSET
+            next >> 96 != 0 || maxCloseOffset < _MIN_MAX_CLOSE_OFFSET
                 || maxCloseOffset > _MAX_MAX_CLOSE_OFFSET
                 || maxCloseOffset < _terms[st.termsId].closeOffset
                 || voidDelayDays < _MIN_VOID_DELAY_DAYS || voidDelayDays > _MAX_VOID_DELAY_DAYS
                 || payoutGas < _MIN_PAYOUT_GAS || payoutGas > _MAX_PAYOUT_GAS
+                || rescueCapDays < _MIN_RESCUE_CAP_DAYS || rescueCapDays > _MAX_RESCUE_CAP_DAYS
         ) revert IUniformEditionAuction.InvalidConfig();
         emit IUniformEditionAuction.LimitsSet(_limits(), next);
-        (st.maxCloseOffset, st.voidDelayDays, st.payoutGas) =
-        (maxCloseOffset, voidDelayDays, payoutGas);
+        (st.maxCloseOffset, st.voidDelayDays, st.payoutGas, st.rescueCapDays) =
+        (maxCloseOffset, voidDelayDays, payoutGas, rescueCapDays);
     }
 
     /// @dev `x` as a clock: reverts with `ClockOverflow` from 2^32 (7 February 2106) instead of

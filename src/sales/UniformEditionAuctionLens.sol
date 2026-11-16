@@ -22,6 +22,7 @@ import { SaleKind } from "../interfaces/types/SaleTypes.sol";
 import { StepLadder } from "../interfaces/types/StepLadder.sol";
 import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
+import { StreamLayout } from "../stream/StreamLayout.sol";
 import { UniformClearing } from "./UniformClearing.sol";
 
 /// @title UniformEditionAuctionLens
@@ -243,8 +244,10 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
     ///      with `BoundedCallShortfall`. A SETTLING sale qualifies only while its scan is in
     ///      progress (nothing paid): its clearing call can only have failed for want of the
     ///      edition. The time is the sale's end plus its locked delay plus what 6529 Stream's
-    ///      rescue delay adds to its 90-day floor (read live), so a lengthened rescue delay
-    ///      lengthens every unsettled sale's wait (L-4).
+    ///      rescue delay for the master's works adds to its 90-day floor (L-4): the delay Stream
+    ///      locked for the English auction's works when governance removed it, else the delay
+    ///      in force, at most the governed rescue cap, so no lengthening holds bids for longer
+    ///      than the cap (review E, N-2).
     function abandonable(uint256 saleId) public view returns (bool ok, uint256 abandonAt) {
         IStorage.SaleWord memory a = _opened(saleId);
         if (
@@ -276,13 +279,21 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         }
         IUniformEditionAuction.EndTimes memory e;
         _clocks(e, a, _config(a.termsId), oneEnd);
-        // Plus however much 6529 Stream's rescue delay now exceeds its permanent 90-day floor,
-        // which the delay's 120-day minimum assumed (the adapter enforces the same floor).
-        (bool read, bytes32 delay) =
-            BoundedCall.tryReadWordAll(_stream, abi.encodeCall(IStream.rescueDelay, ()));
-        if (!read) revert();
-        abandonAt =
-            uint256(e.endTime) + uint256(p.voidDelayDays) * 1 days + uint256(delay) - 90 days;
+        // Plus however much 6529 Stream's rescue delay for the master's works exceeds its
+        // permanent 90-day floor, which the delay's 120-day minimum assumed, at most the cap
+        // (the adapter enforces the same floor). Both reads forward all gas and revert on any
+        // failure.
+        uint256 word =
+            uint256(IStream(_stream).extsload(StreamLayout.minterSlot(_englishAuction), 1)[0]);
+        // Safe: the removal time, the locked delay and the cap, field by field.
+        // forge-lint: disable-start(unsafe-typecast)
+        uint256 added =
+            uint40(word >> 32) != 0 ? uint32(word >> 72) : IStream(_stream).rescueDelay();
+        added -= 90 days;
+        uint256 cap = uint256(uint16(_word(IStorage.Space.SETTINGS, 0, 0) >> 192)) * 1 days;
+        // forge-lint: disable-end(unsafe-typecast)
+        if (added > cap) added = cap;
+        abandonAt = uint256(e.endTime) + uint256(p.voidDelayDays) * 1 days + added;
         // forge-lint: disable-next-line(block-timestamp)
         ok = block.timestamp >= abandonAt;
     }
@@ -324,8 +335,8 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         uint256 w = storageWord(IStorage.Space.SETTINGS, 0, 0);
         // Safe: the settings word's packing, field by field.
         // forge-lint: disable-start(unsafe-typecast)
-        (l.maxCloseOffset, l.voidDelayDays, l.payoutGas) =
-        (uint32(w >> 112), uint16(w >> 144), uint32(w >> 160));
+        (l.maxCloseOffset, l.voidDelayDays, l.payoutGas, l.rescueCapDays) =
+        (uint32(w >> 112), uint16(w >> 144), uint32(w >> 160), uint16(w >> 192));
         // forge-lint: disable-end(unsafe-typecast)
     }
 

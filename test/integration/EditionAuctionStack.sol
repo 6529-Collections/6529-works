@@ -56,7 +56,7 @@ abstract contract EditionAuctionStack is IntegrationBase {
 
     /// @dev The launch limits (`DeployV1.editionAuctionLimits`).
     function _editionLimits() internal pure returns (IUniformEditionAuction.Limits memory) {
-        return IUniformEditionAuction.Limits(30 days, 150, 100_000);
+        return IUniformEditionAuction.Limits(30 days, 150, 100_000, 730);
     }
 
     /// @dev An EDITION_MASTER work by `lead` whose edition is sold by the uniform auction, in ETH,

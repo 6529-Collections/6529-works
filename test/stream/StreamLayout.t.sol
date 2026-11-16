@@ -98,4 +98,23 @@ contract StreamLayoutTest is StreamFixture {
         assertEq(_string(StreamLayout.CONTRACT_URI_SLOT), stream.contractURI());
         assertEq(stream.contractURI(), uri);
     }
+
+    /// @dev Review E, N-2: the edition auction reads a sale adapter's removal time and the rescue
+    ///      delay locked at that removal from its admission word. Pinned against native answers:
+    ///      admission, then a removal at a known time locking the delay in force.
+    function test_MinterWordIsAtItsPermanentSlot() public {
+        uint256 word = _word(StreamLayout.minterSlot(address(auction)));
+        assertTrue(stream.isAdmittedMinter(address(auction)));
+        assertEq(uint8(word), 1, "admitted, bits 0-7");
+        assertEq(uint24(word >> 8), 1, "the first index, bits 8-31");
+        assertEq(uint40(word >> 32), 0, "no removal while admitted");
+        vm.warp(block.timestamp + 5 days);
+        vm.prank(governor);
+        stream.setAdmittedMinter(address(auction), false);
+        word = _word(StreamLayout.minterSlot(address(auction)));
+        assertEq(uint8(word), 0, "removed");
+        assertEq(uint40(word >> 32), block.timestamp, "removedAt, bits 32-71");
+        assertEq(uint32(word >> 72), stream.rescueDelay(), "the locked delay, bits 72-103");
+        assertEq(_word(StreamLayout.minterSlot(address(0xBEEF))), 0, "an unknown adapter is empty");
+    }
 }

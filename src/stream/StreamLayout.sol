@@ -18,10 +18,15 @@ pragma solidity ^0.8.24;
 ///        bytes from `keccak256(abi.encode(collectionSlot(id) + 2))`). A name never changes.
 ///      - `COUNTS_SLOT`: minted (0-63), burned (64-127), collections (128-159).
 ///      - `OWNER_SLOT`: the marketplace owner; `CONTRACT_URI_SLOT`: the contract URI string.
+///      - sale adapter, `minterSlot(adapter)`: admitted (0-7), index (8-31), `removedAt` (32-71,
+///        when governance removed it, zero while admitted), the rescue delay locked at that
+///        removal for its works (72-103, seconds; stale while `removedAt` is zero), kind key
+///        (104-255).
 library StreamLayout {
     uint256 internal constant COUNTS_SLOT = 11;
     uint256 internal constant OWNER_SLOT = 12;
     uint256 internal constant CONTRACT_URI_SLOT = 13;
+    uint256 internal constant MINTERS_SLOT = 16;
     uint256 internal constant COLLECTIONS_SLOT = 17;
     uint256 internal constant TOKENS_SLOT = 18;
 
@@ -30,6 +35,13 @@ library StreamLayout {
     /// @return The slot.
     function tokenSlot(uint256 tokenId) internal pure returns (bytes32) {
         return keccak256(abi.encode(tokenId, TOKENS_SLOT));
+    }
+
+    /// @notice The admission word of sale adapter `adapter`.
+    /// @param adapter A sale adapter.
+    /// @return The slot.
+    function minterSlot(address adapter) internal pure returns (bytes32) {
+        return keccak256(abi.encode(adapter, MINTERS_SLOT));
     }
 
     /// @notice The counter word of collection `collectionId`; its metadata hash and name follow.

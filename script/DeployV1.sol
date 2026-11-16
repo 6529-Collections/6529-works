@@ -489,7 +489,7 @@ library DeployV1 {
     ///         opens.
     function editionAuctionLimits() internal pure returns (IUniformEditionAuction.Limits memory) {
         return IUniformEditionAuction.Limits({
-            maxCloseOffset: 30 days, voidDelayDays: 150, payoutGas: 100_000
+            maxCloseOffset: 30 days, voidDelayDays: 150, payoutGas: 100_000, rescueCapDays: 730
         });
     }
 

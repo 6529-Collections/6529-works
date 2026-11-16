@@ -83,7 +83,8 @@ interface IUniformEditionAuctionLens {
     ///         (`IUniformEditionAuction.abandonable`): OPEN, its 1/1 neither in progress nor
     ///         settled with its master settled in 6529 Stream (a 1/1 auction that refuses to
     ///         answer counts as stuck, with the end last read), and its end plus its locked
-    ///         abandonment delay passed. Reverts with `UnknownAuction`.
+    ///         abandonment delay plus its capped rescue lengthening passed. Reverts with
+    ///         `UnknownAuction`.
     /// @param saleId The sale ID.
     /// @return ok Whether it can be abandoned now.
     /// @return abandonAt The earliest time, or zero when it cannot be from what is known now.
