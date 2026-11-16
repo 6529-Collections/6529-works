@@ -22,7 +22,12 @@
   Pass 3: a federated license text must be a registered SHA-256 file of at most 16 chunks at the
   first mint and complete to finalize (`IFederatedStream.InvalidLicenseText`); the federated
   edition lens refuses a non-canonical split ledger; `setStatus` and `propagateRevocation` take
-  at most `MAX_BATCH` (256) contracts (`BatchTooLarge`).
+  at most `MAX_BATCH` (256) contracts (`BatchTooLarge`). A work's file roles take four bits
+  each below the count; `setDefaultRenderer(expected, renderer, codeHash)` is compare-and-set
+  and `DefaultRendererSet(previous, next, codeHash)` is 6529 Stream's event (`IFederatedStream`
+  is now `0x5b4e5ccb`); the federated edition auction refuses bids and raises on a delisted
+  contract (`BiddingClosed`) and voids a sale delisted mid-scan; `VerifyV1.checkSuccessorParity`
+  backs the registry replacement's last check; `check_genesis.py` types symbolic wiring names.
 - Federation ([ADR 0008](docs/adr/0008-federation.md); [Federation](docs/spec/federation.md),
   FED-1 to FED-63): Federated Stream and Federated Stream Editions templates (full copies, no
   immutables, joined by the token itself and listed in the artist registry's directory; works
