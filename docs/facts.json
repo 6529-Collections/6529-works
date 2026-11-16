@@ -94,7 +94,7 @@
         "default": "1000000000000000",
         "governedBy": "FUNDS_SETTER"
       },
-      "maxDisputePauseSeconds": 604800
+      "maxDisputePauseSeconds": 259200
     },
     "editionAuction": {
       "source": [
@@ -114,7 +114,18 @@
           "100000000000000",
           "1000000000000000",
           "10000000000000000",
-          "100000000000000000"
+          "100000000000000000",
+          "1000000000000000000",
+          "10000000000000000000",
+          "100000000000000000000",
+          "1000000000000000000000",
+          "10000000000000000000000",
+          "100000000000000000000000",
+          "1000000000000000000000000",
+          "10000000000000000000000000",
+          "100000000000000000000000000",
+          "1000000000000000000000000000",
+          "10000000000000000000000000000"
         ]
       },
       "stepsPerDecade": {
@@ -139,19 +150,10 @@
         "denominator": 100000
       },
       "closeOffsetSeconds": {
-        "default": 900,
-        "min": 0,
-        "max": 2592000
+        "fixed": 900
       },
-      "maxCloseOffsetSeconds": {
-        "default": 2592000,
-        "min": 86400,
-        "max": 315360000
-      },
-      "abandonmentDelayDays": {
-        "default": 150,
-        "min": 120,
-        "max": 730
+      "abandonmentDelaySeconds": {
+        "fixed": 1814400
       },
       "softCloseWindowSeconds": {
         "default": 300,
@@ -167,11 +169,6 @@
         "default": 100000,
         "min": 30000,
         "max": 3000000
-      },
-      "rescueCapDays": {
-        "default": 730,
-        "min": 90,
-        "max": 730
       },
       "settlementPerCall": {
         "bookWordsScanned": 24,
@@ -211,9 +208,10 @@
         "src/governance/Roles.sol"
       ],
       "immediate": 0,
-      "standard": 172800,
-      "funds": 1209600,
-      "successor": 2592000
+      "parameters": 86400,
+      "funds": 259200,
+      "successor": 604800,
+      "brake": 604800
     }
   },
   "gas": {

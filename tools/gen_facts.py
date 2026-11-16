@@ -60,7 +60,6 @@ EDITION_ROWS = {
     "stepsPerDecade": "Steps per decade",
     "basePrice": "Base price",
     "stepCount": "Steps",
-    "closeOffset": "Close offset after the 1/1",
     "softWindow": "Soft-close window",
     "maxExtension": "Extension backstop",
 }
@@ -406,10 +405,11 @@ def parameters(root: Path) -> dict:
         },
         "governanceDelaysSeconds": {
             "source": ["src/governance/Roles.sol"],
-            "immediate": c.integer("src/governance/Roles.sol", "IMMEDIATE"),
-            "standard": c.integer("src/governance/Roles.sol", "STANDARD"),
-            "funds": c.integer("src/governance/Roles.sol", "FUNDS"),
-            "successor": c.integer("src/governance/Roles.sol", "SUCCESSOR"),
+            "immediate": 0,
+            "parameters": c.integer("src/governance/Roles.sol", "DELAY_24H"),
+            "funds": c.integer("src/governance/Roles.sol", "DELAY_3D"),
+            "successor": c.integer("src/governance/Roles.sol", "DELAY_7D"),
+            "brake": c.integer("src/governance/Roles.sol", "BRAKE_DELAY"),
         },
     }
 
@@ -438,7 +438,9 @@ def edition_auction(root: Path, c: Constants, denominator: int) -> dict:
     allowed = sorted(int(v) for v in re.findall(r"stepsPerDecade\s*==\s*(\d+)", m.group(1)))
     if launch["stepsPerDecade"] not in allowed:
         raise FactError(f"{ADR_0005} §4: steps per decade not allowed by {STEP_LADDER}")
-    low, high = c.integer(STEP_LADDER, "MIN_BASE_PRICE"), c.integer(STEP_LADDER, "MAX_BASE_PRICE")
+    # The upper end is the base price's safety bound (the largest power of ten in the 96-bit
+    # field), not a price cap (R19).
+    low, high = c.integer(STEP_LADDER, "MIN_BASE_PRICE"), c.integer(STEP_LADDER, "BASE_PRICE_BOUND")
     m = re.search(r"function isBasePrice\b[^{]*\{(.*?)\n    \}", ladder, re.S)
     if not m:
         raise FactError(f"{STEP_LADDER}: no isBasePrice")
@@ -469,21 +471,10 @@ def edition_auction(root: Path, c: Constants, denominator: int) -> dict:
             "max": c.integer(EDITION_AUCTION, "_MAX_MARGIN_SHARE"),
             "denominator": denominator,
         },
-        "closeOffsetSeconds": {
-            "default": launch["closeOffset"],
-            "min": 0,
-            "max": limits["maxCloseOffset"],
-        },
-        "maxCloseOffsetSeconds": {
-            "default": limits["maxCloseOffset"],
-            "min": c.integer(EDITION_AUCTION, "_MIN_MAX_CLOSE_OFFSET"),
-            "max": c.integer(EDITION_AUCTION, "_MAX_MAX_CLOSE_OFFSET"),
-        },
-        "abandonmentDelayDays": {
-            "default": limits["voidDelayDays"],
-            "min": c.integer(EDITION_AUCTION, "_MIN_VOID_DELAY_DAYS"),
-            "max": c.integer(EDITION_AUCTION, "_MAX_VOID_DELAY_DAYS"),
-        },
+        # Fixed in the adapter (R20, R16): every sale closes this long after its 1/1, and may be
+        # abandoned this long after its close.
+        "closeOffsetSeconds": {"fixed": c.integer(EDITION_AUCTION, "CLOSE_OFFSET")},
+        "abandonmentDelaySeconds": {"fixed": c.integer(EDITION_AUCTION, "ABANDON_DELAY")},
         "softCloseWindowSeconds": {
             "default": launch["softWindow"],
             "min": c.integer(EDITION_AUCTION, "_MIN_SOFT_WINDOW"),
@@ -498,11 +489,6 @@ def edition_auction(root: Path, c: Constants, denominator: int) -> dict:
             "default": limits["payoutGas"],
             "min": c.integer(EDITION_AUCTION, "_MIN_PAYOUT_GAS"),
             "max": c.integer(EDITION_AUCTION, "_MAX_PAYOUT_GAS"),
-        },
-        "rescueCapDays": {
-            "default": limits["rescueCapDays"],
-            "min": c.integer(EDITION_AUCTION, "_MIN_RESCUE_CAP_DAYS"),
-            "max": c.integer(EDITION_AUCTION, "_MAX_RESCUE_CAP_DAYS"),
         },
         "settlementPerCall": {
             "bookWordsScanned": c.integer(EDITION_AUCTION, "_SCAN_WORDS"),
@@ -531,7 +517,7 @@ def _deploy_edition_limits(root: Path) -> dict:
     if not m:
         raise FactError(f"{DEPLOY_LIBRARY}: no editionAuctionLimits")
     fields = dict(re.findall(r"(\w+)\s*:\s*([^,]+?)\s*(?:,|$)", m.group(1).strip()))
-    if set(fields) != {"maxCloseOffset", "voidDelayDays", "payoutGas", "rescueCapDays"}:
+    if set(fields) != {"payoutGas"}:
         raise FactError(f"{DEPLOY_LIBRARY}: editionAuctionLimits sets {sorted(fields)}")
     return {key: literal(value) for key, value in fields.items()}
 
