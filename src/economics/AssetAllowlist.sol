@@ -15,9 +15,9 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///         they start, so later changes only affect later sales.
 /// @dev Governed through AccessManager, with the delay classes of ADR 0002 and the role IDs of
 ///      `Roles` (src/governance/Roles.sol): {admitAsset} and {setDefaultCurrency} map to
-///      `Roles.FUNDS_SETTER` (`Roles.FUNDS`, 14 days), {setIncrementFloor} and {setOpeningBid}
-///      to `Roles.PARAMETER_SETTER` (`Roles.STANDARD`, 48 hours), and {deprecateAsset}, which only
-///      tightens, to `Roles.GUARDIAN` (`Roles.IMMEDIATE`). Direction rules and compare-and-set
+///      `Roles.FUNDS_SETTER` (the network, 3 days), {setIncrementFloor} and {setOpeningBid}
+///      to `Roles.PARAMETER_SETTER` (the network, 24 hours), and {deprecateAsset}, which only
+///      tightens, to the network with no delay. Direction rules and compare-and-set
 ///      live here because AccessManager only sees selectors. Every setter compares a revision
 ///      counter that every change bumps, so a queued operation never applies to a later state
 ///      that merely looks the same. Nothing in the withdrawal paths reads this contract, so
@@ -25,9 +25,6 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 contract AssetAllowlist is IAssetAllowlist, AccessManaged {
     /// @notice ETH, which is always identified by the zero address.
     address public constant ETH = address(0);
-    /// @notice An opening bid is at most this many increment floors (a sanity ceiling against a
-    ///         mistyped price, not a policy: governance chooses the bid below it).
-    uint256 public constant OPENING_BID_FLOORS = 1_000;
 
     /// @dev `since` is when the status last changed; `inactiveTotal` sums the seconds of earlier,
     ///      closed deprecations; `openingBid` is the English auction's least first bid in the
@@ -66,7 +63,7 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
     function admitAsset(address asset, uint64 expectedRevision, uint256 floor) external restricted {
         AssetConfig storage config = _assets[asset];
         _checkRevision(expectedRevision, config.revision);
-        // As GOV-5 for unpauses: AccessManager counts the 14-day delay from scheduling, so a
+        // As GOV-5 for unpauses: AccessManager counts the funds delay from scheduling, so a
         // re-admission scheduled ahead could undo a deprecation in its own block. The delay is
         // counted from the deprecation instead.
         if (config.status == Status.Deprecated) {
@@ -131,11 +128,10 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
     {
         AssetConfig storage config = _activeConfig(asset);
         _checkRevision(expectedRevision, config.revision);
-        uint256 ceiling = config.incrementFloor * OPENING_BID_FLOORS;
-        if (ceiling > type(uint96).max) ceiling = type(uint96).max;
-        if (bid > ceiling) revert OpeningBidAboveCeiling(bid, ceiling);
+        // A storage bound only (the bid shares the status word), not a price cap (R19).
+        if (bid > type(uint96).max) revert OpeningBidAboveCeiling(bid, type(uint96).max);
         uint256 previous = config.openingBid;
-        // Safe: `bid` is at most `type(uint96).max` (the ceiling above).
+        // Safe: `bid` is at most `type(uint96).max` (checked above).
         // forge-lint: disable-next-line(unsafe-typecast)
         config.openingBid = uint96(bid);
         emit OpeningBidSet(asset, previous, bid, ++config.revision);

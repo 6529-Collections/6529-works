@@ -24,7 +24,7 @@ contract SplitFactoryTest is EconomicsBase {
 
     function test_ConstructorRejectsDependenciesWithoutCode() public {
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, alice));
-        new SplitLedger(IArtistPayoutResolver(alice));
+        new SplitLedger(IArtistPayoutResolver(alice), address(feeVault));
     }
 
     /// @dev Regression for review L-1 (ported from `test_PoC_FactoryAcceptsDelegatedEOAResolver`,
@@ -33,7 +33,7 @@ contract SplitFactoryTest is EconomicsBase {
         address eoa = makeAddr("delegated-eoa");
         vm.etch(eoa, abi.encodePacked(hex"ef0100", address(resolver)));
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
-        new SplitLedger(IArtistPayoutResolver(eoa));
+        new SplitLedger(IArtistPayoutResolver(eoa), address(feeVault));
     }
 
     /// @dev No code-hash pin: after EIP-6780 the resolver's code cannot change, and a pin would
@@ -106,7 +106,7 @@ contract SplitFactoryTest is EconomicsBase {
             factory.walletFor(_list(_fixed(alice, 60_000), _artist(ARTIST, 40_000)), ZERO_SALT);
         address d = factory.walletFor(base, bytes32(uint256(7)));
         assertTrue(a != b && a != c && b != c && a != d);
-        SplitLedger otherLedger = new SplitLedger(new MockArtistResolver());
+        SplitLedger otherLedger = new SplitLedger(new MockArtistResolver(), address(feeVault));
         assertTrue(otherLedger.walletFor(base, ZERO_SALT) != a);
     }
 
@@ -166,8 +166,8 @@ contract SplitFactoryTest is EconomicsBase {
             _list(_fixed(alice, 50_000), _artist(type(uint160).max, 50_000)), ZERO_SALT
         );
         address nested = _wallet(_list(_fixed(alice, 50_000), _fixed(bob, 50_000)));
-        address feeVault = address(new GovernedVault(address(manager), ledger, alice));
-        factory.createWallet(Splits.royaltyPayees(nested, feeVault, 10_000), ZERO_SALT);
+        address otherVault = address(new GovernedVault(address(manager), alice));
+        factory.createWallet(Splits.royaltyPayees(nested, otherVault, 10_000), ZERO_SALT);
     }
 
     function test_RejectsUnsortedAndDuplicatePayees() public {
@@ -256,7 +256,7 @@ contract SplitFactoryTest is EconomicsBase {
         );
         assertEq(factory.walletFor(payees, salt), expected);
         assertEq(factory.createWallet(payees, salt), expected);
-        SplitLedger other = new SplitLedger(resolver);
+        SplitLedger other = new SplitLedger(resolver, address(feeVault));
         assertEq(other.walletInitCodeHash(), factory.walletInitCodeHash());
         assertTrue(other.walletFor(payees, salt) != expected, "the ledger is in the address");
     }

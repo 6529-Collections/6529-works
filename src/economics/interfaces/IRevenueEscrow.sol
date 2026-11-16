@@ -6,10 +6,12 @@ import { ISplitFactory } from "./ISplitFactory.sol";
 
 /// @title IRevenueEscrow
 /// @notice Holds payments a payer could not deliver to a wallet (ADR 0001 sections 5 and 7), keyed
-///         by `(wallet, asset)`. Anyone may flush a credit to its wallet. Governance may move a
+///         by `(wallet, asset)`. Anyone may flush a credit to its wallet. The network may move a
 ///         split wallet's credit only to an equivalent replacement wallet (same factory,
-///         identical payees), and any other account's credit (the network fee recipient's, for
-///         example) only to the replacement that account itself named (its consent).
+///         identical payees), its own credits (the fee and museum vaults') anywhere, and any
+///         other account's credit only to the replacement that account itself named (its
+///         consent). A credit nobody claims for 180 days after it was last added to moves to the
+///         network fee vault ({expire}).
 /// @dev Declares itself through ERC-165, so the artist registry and the economics resolver can
 ///      refuse the escrow as a payout or fee recipient (`ProtocolContracts`).
 interface IRevenueEscrow is IERC165 {
@@ -56,6 +58,21 @@ interface IRevenueEscrow is IERC165 {
     /// @param amount The amount swept: the whole excess.
     event ExcessSwept(address indexed asset, address indexed recipient, uint256 amount);
 
+    /// @notice `amount` of `asset` owed to `wallet`, unclaimed for 180 days since it was last
+    ///         added to, moved to the network fee vault `network`, which is now owed `owed`.
+    /// @param wallet The account whose credit moved.
+    /// @param asset The asset of the credit (ETH is `address(0)`).
+    /// @param network The network fee vault credited.
+    /// @param amount The amount moved: the wallet's whole credit in the asset.
+    /// @param owed The network's whole credit in the asset after the move.
+    event Expired(
+        address indexed wallet,
+        address indexed asset,
+        address indexed network,
+        uint256 amount,
+        uint256 owed
+    );
+
     /// @notice `account` named `replacement` as where governance may move its credits; zero
     ///         withdraws the consent.
     /// @param account The account that called {consentToRecovery}.
@@ -80,6 +97,9 @@ interface IRevenueEscrow is IERC165 {
     /// @notice `account` is not a factory wallet and has not named `replacement` with
     ///         {consentToRecovery}.
     error RecoveryNotConsented(address account, address replacement);
+    /// @notice `wallet`'s credit in `asset` was added to less than 180 days ago; it may move to
+    ///         the network from `dueAt`.
+    error CreditNotExpired(address wallet, address asset, uint256 dueAt);
 
     /// @notice The split factory whose wallet configurations {recover} compares.
     /// @return The split factory, fixed at deployment.
@@ -101,6 +121,23 @@ interface IRevenueEscrow is IERC165 {
     /// @param account The account to look up.
     /// @return The replacement it named, or zero.
     function recoveryConsent(address account) external view returns (address);
+
+    /// @notice When `wallet`'s credit in `asset` was last added to (a deposit or a recovery to
+    ///         it); zero if never.
+    /// @param wallet The credited account.
+    /// @param asset The asset to look up (ETH is `address(0)`).
+    /// @return The time, in seconds.
+    function creditedAt(address wallet, address asset) external view returns (uint48);
+
+    /// @notice Moves everything owed to `wallet` in `asset` to the network fee vault
+    ///         (`factory().network()`) as a credit, once 180 days have passed since it was last
+    ///         added to. Anyone may call; anyone may then {flush} it to the vault.
+    /// @dev Reverts with {CreditNotExpired} before then, {NothingOwed} when nothing is owed and
+    ///      {InvalidWallet} for the network itself.
+    /// @param wallet The credited account.
+    /// @param asset The asset (ETH is `address(0)`).
+    /// @return amount The amount moved.
+    function expire(address wallet, address asset) external returns (uint256 amount);
 
     /// @notice Credits `msg.value` to `wallet`.
     /// @param wallet The account to credit; not zero or the escrow. `msg.value` must be non-zero.
@@ -124,25 +161,26 @@ interface IRevenueEscrow is IERC165 {
     ///         {recover}. Single use: the next {recover} of the caller's credit, in whichever
     ///         asset, consumes it, so the caller consents again for each further asset or later
     ///         credit. The caller can change it, or withdraw it with zero, until then.
-    /// @dev For accounts that can act, such as the network fee recipient's Safe when a token
-    ///      blocks it: the consent ADR 0001 section 7 requires for terminal recovery. Split
-    ///      wallets cannot call it; their credits follow the identical-payees rule instead.
+    /// @dev For accounts that can act: the consent ADR 0001 section 7 requires for terminal
+    ///      recovery. Split wallets cannot call it; their credits follow the identical-payees
+    ///      rule instead, and the network's own accounts need no consent.
     ///      Reverts with {InvalidWallet} for the escrow itself or the caller.
     /// @param replacement The account to receive the caller's credit, or zero to withdraw.
     function consentToRecovery(address replacement) external;
 
     /// @notice Moves everything owed to `wallet` in `asset` to `replacement`. For a wallet of the
     ///         factory, `replacement` must be a distinct wallet of the same factory with an
-    ///         identical payee configuration (another salt). For any other account, it must be the
-    ///         replacement that account named with {consentToRecovery}, and the move consumes
-    ///         that consent; when the account is a governed vault (ERC-165 `IGovernedVault`), the
-    ///         replacement must also still be its current destination, so a consent made stale
-    ///         by a destination change is refused.
-    /// @dev Governed: `Roles.FUNDS_SETTER` (`Roles.FUNDS`, 14 days). It rescues credits for an
+    ///         identical payee configuration (another salt). For the network's own account (one
+    ///         whose `authority()` is this escrow's, such as the fee and museum vaults),
+    ///         `replacement` is any account but zero, the escrow and the account itself (C19). For
+    ///         any other account, it must be the replacement that account named with
+    ///         {consentToRecovery}, and the move consumes that consent.
+    /// @dev Governed: `Roles.FUNDS_SETTER` (the network, 3 days). It rescues credits for an
     ///      account a token has blocked; the blocked account's own balance stays where it is.
     ///      ADR 0001 section 7 requires the affected accounts' consent: a factory wallet's is
-    ///      trivially satisfied because the payees are identical (recorded in ADR 0003), and
-    ///      any other account gives it explicitly. Factory wallets must be deployed: a predicted
+    ///      trivially satisfied because the payees are identical (recorded in ADR 0003), the
+    ///      network's own accounts are the network's to move, and any other account gives it
+    ///      explicitly. Factory wallets must be deployed: a predicted
     ///      address has no configuration and can never consent. A credit the replacement already
     ///      holds is added to, never overwritten.
     /// @param wallet The account whose credit to move.
@@ -154,15 +192,14 @@ interface IRevenueEscrow is IERC165 {
     ///         `recipient`: ETH force-sent here and tokens transferred without a deposit, which
     ///         are owed to nobody. Afterwards the escrow's balance of `asset` equals
     ///         `totalOwed(asset)` exactly, so no credit recorded under `asset` loses its backing.
-    /// @dev Governed: `Roles.FUNDS_SETTER` (`Roles.FUNDS`, 14 days), so the recipient is public for
-    ///      the whole delay and a guardian may cancel. An ERC-20 move counts a `transfer` that
+    /// @dev Governed: `Roles.FUNDS_SETTER` (the network, 3 days), so the recipient is public for
+    ///      the whole delay. An ERC-20 move counts a `transfer` that
     ///      returns `true` or nothing, and requires both balances to move by exactly the excess.
     ///      Limits, which no on-chain check can close: the bound is per token address, so for a
     ///      token with two addresses over one balance (a legacy proxy pair), a sweep of the
     ///      address nothing was credited under takes the credits made under the other; a
     ///      positive rebase makes creditors' growth sweepable, and a negative rebase leaves the
-    ///      last flush of that token short. Governance must not sweep such tokens; the delay
-    ///      and the guardian veto are the control.
+    ///      last flush of that token short. The network does not sweep such tokens.
     /// @param asset The asset to sweep (ETH is `address(0)`).
     /// @param recipient The account to pay; not zero or the escrow.
     /// @return amount The amount swept.
