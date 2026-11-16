@@ -48,7 +48,7 @@ contract PieceLifecycleTest is EditionAuctionStack {
     {
         (saleId, workId) = _start(root, _package(root), index);
         vm.prank(keeper);
-        editionSale = ea.open(address(editions), workId, abi.encode(_package(root)[index].item));
+        editionSale = ea.open(address(editions), workId, _openData(root, _package(root), index));
         assertEq(editionSale, ea.saleIdOf(address(editions), workId));
     }
 
@@ -62,7 +62,9 @@ contract PieceLifecycleTest is EditionAuctionStack {
     }
 
     function _offset(uint256 sale) internal view returns (uint256) {
-        return ea.auction(sale).terms.closeOffset;
+        // R20: every edition sale closes 15 minutes after its 1/1 (fixed).
+        sale;
+        return 15 minutes;
     }
 
     // ------------------------------------------------------------------ the flows

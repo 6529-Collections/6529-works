@@ -232,11 +232,10 @@ contract FederatedSaleTest is FederationBase {
         uint256 before = networkFee.balance;
         _ethBid(saleId, collector, price);
         _settleAtEnd(saleId);
-        assertEq(networkFee.balance - before, uint256(price) * FED_SHARE / 100_000);
-        assertEq(
-            splitFactory.walletFor(w.item.payees, 0).balance,
-            price - uint256(price) * FED_SHARE / 100_000
-        );
+        // R18: the seller's part rounds down; the network takes the rest.
+        uint256 sellerPart = uint256(price) * (100_000 - FED_SHARE) / 100_000;
+        assertEq(networkFee.balance - before, price - sellerPart);
+        assertEq(splitFactory.walletFor(w.item.payees, 0).balance, sellerPart);
     }
 
     // ------------------------------------------------------------------ unsold and restart

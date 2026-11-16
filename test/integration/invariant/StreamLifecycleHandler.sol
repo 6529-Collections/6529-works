@@ -604,8 +604,8 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             address stranger = lcBidders[seed % BIDDERS];
             if (stranger == winner) stranger = lcBidders[(seed % BIDDERS + 1) % BIDDERS];
             bytes memory toStranger = abi.encodeCall(auction.claimDelivery, (saleId, stranger));
-            if (winner != address(lcHostile) && block.timestamp >= uint256(a.endTime) + 30 days) {
-                // The recipient's own redirect, open from 30 days after the end.
+            if (winner != address(lcHostile) && block.timestamp >= uint256(a.endTime) + 14 days) {
+                // The recipient's own redirect, open from 14 days after the end.
                 vm.prank(stranger);
                 lcHostile.execute(address(auction), 0, toStranger);
                 t.owner = stranger;

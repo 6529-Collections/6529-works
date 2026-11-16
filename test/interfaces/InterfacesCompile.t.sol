@@ -46,7 +46,7 @@ contract InterfacesCompileTest is Test {
         assertEq(type(IEditions).interfaceId, bytes4(0xee6d6c6f), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");
         // `setConfig` takes the refusal delay and gas (AUC-39, AUC-40).
-        assertEq(type(IEnglishAuction).interfaceId, bytes4(0xb9e9cdd3), "IEnglishAuction");
+        assertEq(type(IEnglishAuction).interfaceId, bytes4(0xeb1a95c7), "IEnglishAuction");
         // An integration view, never reported through ERC-165.
         assertEq(type(IEnglishAuctionClock).interfaceId, bytes4(0x968c7b07), "IEnglishAuctionClock");
         // The refusal exit (AUC-38), never reported through ERC-165.
@@ -54,7 +54,7 @@ contract InterfacesCompileTest is Test {
             type(IEnglishAuctionRefusal).interfaceId, bytes4(0x625761b5), "IEnglishAuctionRefusal"
         );
         assertEq(
-            type(IUniformEditionAuction).interfaceId, bytes4(0x94ff7508), "IUniformEditionAuction"
+            type(IUniformEditionAuction).interfaceId, bytes4(0xcced0690), "IUniformEditionAuction"
         );
         // Errors only: no function, so the ID is zero and nothing reports it.
         assertEq(type(ICurationVerifier).interfaceId, bytes4(0x492733ca), "ICurationVerifier");

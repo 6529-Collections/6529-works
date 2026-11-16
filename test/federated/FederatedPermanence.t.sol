@@ -8,6 +8,7 @@ import { FederatedEditions } from "src/federated/FederatedEditions.sol";
 import { FederatedStream } from "src/federated/FederatedStream.sol";
 import { IFederatedEditions } from "src/interfaces/IFederatedEditions.sol";
 import { IFederatedStream } from "src/interfaces/IFederatedStream.sol";
+import { IEnglishAuctionRefusal } from "src/interfaces/IEnglishAuctionRefusal.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
@@ -215,7 +216,9 @@ contract FederatedPermanenceTest is FederationBase {
         pairEditions.setAdmittedMinter(address(fea), true);
         vm.stopPrank();
         vm.expectRevert(
-            abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(pairEditions), 0)
+            abi.encodeWithSelector(
+                ISaleAdapter.InvalidSaleTerms.selector, address(pairEditions), second
+            )
         );
         fea.open(address(pairEditions), second, abi.encode(v.item));
 
@@ -227,17 +230,18 @@ contract FederatedPermanenceTest is FederationBase {
         assertTrue(fea.settle(saleId, new uint256[](0)));
         IUniformEditionAuction.Settlement memory st = fl.settlement(saleId);
         assertEq(st.count, 2);
-        assertEq(networkFee.balance - feeBefore, st.count * st.price * FED_SHARE / 100_000);
+        uint256 revenue = st.count * st.price;
+        assertEq(
+            networkFee.balance - feeBefore, revenue - revenue * (100_000 - FED_SHARE) / 100_000
+        );
     }
 
     // ------------------------------------------------------------------ abandonment
 
-    /// @dev The edition auction's abandonment floor adds what 6529 Stream's rescue delay adds to
-    ///      its 90-day floor, because a canonical master may wait on a rescue. A federated 1/1 has
-    ///      no rescue: lengthening Stream's rescue delay leaves a federated sale's abandonment at
-    ///      its end plus its locked delay, in the lens and in the adapter.
-    function test_Abandon_AFederatedSaleWaitsOnlyItsLockedDelay() public {
-        _govern(hotAdmin, address(stream), abi.encodeCall(stream.setRescueDelay, (180 days)));
+    /// @dev R16: a federated sale whose master's sale never completes (its settlement fails,
+    ///      so its 1/1 closes refused after the fixed 2-day exit) is abandoned 21 days after its
+    ///      close, in the lens and in the adapter; while the 1/1 is unsettled it is refused.
+    function test_Abandon_AFederatedSaleAfterARefusedMaster() public {
         Work memory w = _fedMaster(fedArtist, 0);
         (uint256 oneSaleId, uint256 tokenId) = _startFed(pairStream, fedArtist, w, RATE);
         uint256 saleId = fea.open(address(pairEditions), tokenId, abi.encode(w.item));
@@ -247,26 +251,31 @@ contract FederatedPermanenceTest is FederationBase {
             abi.encodeWithSelector(IMintTarget.settlePrimary.selector),
             abi.encodeWithSelector(InjectedSettlementFailure.selector)
         );
-        vm.warp(auction.auction(oneSaleId).endTime);
+        uint256 oneEnd = auction.auction(oneSaleId).endTime;
+        vm.warp(oneEnd);
         vm.expectRevert(InjectedSettlementFailure.selector);
         auction.settle(oneSaleId);
         uint256 end = fl.endTimes(saleId).endTime;
-        (, uint256 abandonAt) = fl.abandonable(saleId);
-        assertEq(abandonAt, end + 150 days, "the locked delay alone");
-        vm.warp(end + 150 days - 1);
+        vm.warp(end + 21 days);
+        (bool ok, uint256 abandonAt) = fl.abandonable(saleId);
+        assertFalse(ok, "the 1/1 is unsettled");
+        assertEq(abandonAt, 0);
+        IEnglishAuctionRefusal(address(auction)).settleOrRefund(oneSaleId);
+        (, abandonAt) = fl.abandonable(saleId);
+        assertEq(abandonAt, end + 21 days);
+        vm.warp(end + 21 days - 1);
         vm.expectRevert(
             abi.encodeWithSelector(IUniformEditionAuction.NotAbandonable.selector, saleId)
         );
-        fea.abandon(saleId);
-        vm.warp(end + 150 days);
-        fea.abandon(saleId);
+        fea.abandon(saleId, abi.encode(w.item));
+        vm.warp(end + 21 days);
+        fea.abandon(saleId, abi.encode(w.item));
         assertEq(uint8(fl.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.VOID));
     }
 
     /// @dev Pass 3: a federated edition sale voided while its best-effort seal was refused
     ///      leaves the edition bound to this adapter's void sale for good: the adapter never
-    ///      reopens it, another adapter cannot bind it, and once both halves leave the artist's
-    ///      own minter cannot mint it either.
+    ///      reopens it and another adapter cannot bind it.
     function test_Abandon_ARefusedSealLeavesTheEditionDeadForGood() public {
         Work memory w = _fedMaster(fedArtist, 0);
         (uint256 oneSaleId, uint256 tokenId) = _startFed(pairStream, fedArtist, w, RATE);
@@ -279,17 +288,17 @@ contract FederatedPermanenceTest is FederationBase {
             abi.encodeWithSelector(IFederatedEditions.sealSupply.selector),
             "x"
         );
-        vm.warp(auction.auction(oneSaleId).endTime);
+        vm.warp(auction.auction(oneSaleId).endTime + 2 days);
+        IEnglishAuctionRefusal(address(auction)).settleOrRefund(oneSaleId);
         (, uint256 abandonAt) = fl.abandonable(saleId);
         vm.warp(abandonAt);
-        fea.abandon(saleId);
+        fea.abandon(saleId, abi.encode(w.item));
         assertEq(uint8(fl.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.VOID));
         vm.clearMockedCalls();
-        // The master settles later and the edition is created, unsealed, still bound to `fea`.
-        auction.settle(oneSaleId);
-        pairEditions.createEdition(tokenId, w.item);
-        assertFalse(pairEditions.edition(tokenId).supplySealed, "the seal never landed");
-        assertEq(pairEditions.edition(tokenId).minter, address(fea));
+        // The 1/1 closed refused (its work pending for the artist), so the edition is never
+        // created; it stays bound to `fea`'s void sale.
+        assertFalse(pairEditions.exists(tokenId), "never created");
+        oneSaleId;
         vm.expectRevert(
             abi.encodeWithSelector(IUniformEditionAuction.AuctionExists.selector, saleId)
         );
@@ -301,18 +310,5 @@ contract FederatedPermanenceTest is FederationBase {
             )
         );
         pairEditions.bindMinter(tokenId, w.item);
-        address own = makeAddr("ownMinter");
-        vm.startPrank(fedArtist);
-        pairEditions.leaveFederation();
-        pairStream.leaveFederation();
-        pairEditions.setAdmittedMinter(own, true);
-        vm.stopPrank();
-        vm.prank(own);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IFederatedEditions.MinterMismatch.selector, tokenId, address(fea)
-            )
-        );
-        pairEditions.mint(own, tokenId, 1, abi.encode(address(0), uint256(0)));
     }
 }

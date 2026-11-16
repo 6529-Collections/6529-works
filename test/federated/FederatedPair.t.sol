@@ -316,7 +316,7 @@ contract FederatedPairTest is FederationBase {
 
     /// @dev Pass 3: the edition sale's fee recipient is locked at open; a governance change of
     ///      the federated recipient before settlement does not redirect it.
-    function test_Pair_TheEditionFeeRecipientIsLockedAtOpen() public {
+    function test_Pair_TheEditionFeeRecipientIsTheOneCurrentAtSettlement() public {
         (Work memory w, uint256 oneSaleId, uint256 tokenId, uint256 saleId) = _openPair(0);
         _editionBidFed(saleId, makeAddr("a"), 100, 3);
         address next = makeAddr("nextFeeRecipient");
@@ -327,14 +327,15 @@ contract FederatedPairTest is FederationBase {
             abi.encodeCall(economics.setFeeTerms, (PRODUCT_FEDERATED, revision, next, FED_SHARE))
         );
         assertEq(economics.networkFeeRecipient(PRODUCT_FEDERATED), next);
-        assertEq(fl.auction(saleId).feeRecipient, networkFee, "locked at open");
+        assertEq(fl.auction(saleId).feeRecipient, next, "R18: read at settlement");
         auction.settle(oneSaleId);
         pairEditions.createEdition(tokenId, w.item);
         uint256 before = networkFee.balance;
         assertTrue(fea.settle(saleId, new uint256[](0)));
         IUniformEditionAuction.Settlement memory st = fl.settlement(saleId);
-        assertEq(networkFee.balance - before, st.count * st.price * FED_SHARE / 100_000);
-        assertEq(next.balance, 0);
+        uint256 revenue = st.count * st.price;
+        assertEq(next.balance, revenue - revenue * (100_000 - FED_SHARE) / 100_000);
+        assertEq(networkFee.balance, before);
     }
 
     /// @dev Pass 3: the lens deploys a sale's wallets only through the canonical split ledger;

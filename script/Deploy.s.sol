@@ -241,7 +241,6 @@ contract Deploy is ScriptIO {
             SafeCast.toUint32(_envUint("AUCTION_DURATION", 24 hours)),
             SafeCast.toUint32(_envUint("AUCTION_EXTENSION_WINDOW", 15 minutes)),
             SafeCast.toUint32(_envUint("AUCTION_INCREMENT_SHARE", 5_000)),
-            SafeCast.toUint32(_envUint("AUCTION_REFUSAL_DELAY", 7 days)),
             SafeCast.toUint32(_envUint("AUCTION_REFUSAL_GAS", 4_000_000))
         );
         p.editionAuction = _editionAuction();
@@ -260,7 +259,6 @@ contract Deploy is ScriptIO {
         c.stepsPerDecade = SafeCast.toUint16(_envUint("EDITION_STEPS_PER_DECADE", c.stepsPerDecade));
         c.stepCount = SafeCast.toUint16(_envUint("EDITION_STEP_COUNT", c.stepCount));
         c.marginShare = SafeCast.toUint32(_envUint("EDITION_MARGIN_SHARE", c.marginShare));
-        c.closeOffset = SafeCast.toUint32(_envUint("EDITION_CLOSE_OFFSET", c.closeOffset));
         c.softWindow = SafeCast.toUint32(_envUint("EDITION_SOFT_WINDOW", c.softWindow));
         c.maxExtension = SafeCast.toUint32(_envUint("EDITION_MAX_EXTENSION", c.maxExtension));
     }
@@ -419,13 +417,11 @@ contract Deploy is ScriptIO {
         vm.serializeUint(o, "auctionDuration", p.auction.duration);
         vm.serializeUint(o, "auctionExtensionWindow", p.auction.extensionWindow);
         vm.serializeUint(o, "auctionIncrementShare", p.auction.incrementShare);
-        vm.serializeUint(o, "auctionRefusalDelay", p.auction.refusalDelay);
         vm.serializeUint(o, "auctionRefusalGas", p.auction.refusalGas);
         vm.serializeUint(o, "editionBasePrice", p.editionAuction.basePrice);
         vm.serializeUint(o, "editionStepsPerDecade", p.editionAuction.stepsPerDecade);
         vm.serializeUint(o, "editionStepCount", p.editionAuction.stepCount);
         vm.serializeUint(o, "editionMarginShare", p.editionAuction.marginShare);
-        vm.serializeUint(o, "editionCloseOffset", p.editionAuction.closeOffset);
         vm.serializeUint(o, "editionSoftWindow", p.editionAuction.softWindow);
         vm.serializeUint(o, "editionMaxExtension", p.editionAuction.maxExtension);
         vm.serializeAddress(o, "vrfCoordinator", p.vrfCoordinator);
