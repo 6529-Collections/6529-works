@@ -27,12 +27,15 @@ contract FederationGasTest is FederationBase {
     uint256 internal constant JOIN_CEILING = 345_000;
     uint256 internal constant APPROVE_CEILING = 61_000;
     uint256 internal constant FIRST_START_CEILING = 700_000;
+    /// @dev Regression ceilings at integration, measured against the real artist registry
+    ///      (`isWallet`, `federatedFeeShare`) and the merged sales adapters, about 2% above the
+    ///      measurement: steady start 416,559, restart 243,495, edition open 337,384.
     uint256 internal constant STEADY_START_CEILING = 425_000;
     uint256 internal constant BID_CEILING = 196_000;
     uint256 internal constant SETTLE_SOLD_CEILING = 187_000;
     uint256 internal constant SETTLE_UNBID_CEILING = 162_000;
-    uint256 internal constant RESTART_CEILING = 253_000;
-    uint256 internal constant EDITION_OPEN_CEILING = 380_000;
+    uint256 internal constant RESTART_CEILING = 249_000;
+    uint256 internal constant EDITION_OPEN_CEILING = 345_000;
     uint256 internal constant CREATE_EDITION_CEILING = 90_000;
     uint256 internal constant EDITION_SETTLE_CEILING = 162_000;
 

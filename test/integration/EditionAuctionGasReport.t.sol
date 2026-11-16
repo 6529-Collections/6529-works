@@ -33,8 +33,11 @@ contract EditionAuctionGasReport is EditionAuctionStack {
     ///      gas. To 296,000 and 342,000 (measured 289,387 and 335,124, were 282,248 and 327,985)
     ///      by review C, F16: `open` confirms an existing wallet through the ledger's idempotent
     ///      `createWallet` (about 3,600 each: the payee validation, the hash and one cold word),
-    ///      never by code at the address.
-    uint256 internal constant OPEN_CEILING = 296_000;
+    ///      never by code at the address. To 301,000 (measured 298,471) at integration: `open`
+    ///      asks the real package registry whether the item is still approved (C23,
+    ///      `isApprovedItem`: the package, its signer's kill epoch and the Merkle proof), which
+    ///      the sales lane measured against a stub.
+    uint256 internal constant OPEN_CEILING = 301_000;
     uint256 internal constant OPEN_FIRST_CEILING = 342_000;
     /// @dev Moved from 144,000 by owner decision 16: 6529 Stream Editions reads the package
     ///      registry from Stream (two reads) instead of an immutable; from 148,000 (measured
