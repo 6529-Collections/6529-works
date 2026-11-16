@@ -5,13 +5,13 @@ import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessMana
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
+import { IFederatedDeployer } from "../interfaces/IFederatedDeployer.sol";
 import { IFederatedStream } from "../interfaces/IFederatedStream.sol";
 import { IFederatedToken } from "../interfaces/IFederatedToken.sol";
 import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
 import { PRODUCT_FEDERATED, ProductEconomics } from "../interfaces/types/EconomicsTypes.sol";
 import { Dependency } from "../libraries/Dependency.sol";
-import { SSTORE2 } from "../libraries/SSTORE2.sol";
 
 /// @title FederationRegistry
 /// @notice The replaceable, governed admission layer of 6529 Stream Federated (ADR 0008;
@@ -23,10 +23,10 @@ import { SSTORE2 } from "../libraries/SSTORE2.sol";
 ///      so a replacement registry inherits every listing at once. It has no authority over any
 ///      deployed federated token, work or fund: it decides only which code may join, which
 ///      adapters may mint new works, and a listing's ACTIVE or DELISTED status. A template
-///      version is a runtime code hash bound to the creation code that deploys it: a contract
-///      joins only if it was created by the deterministic deployment proxy (`DEPLOYER`) from
-///      exactly that creation code and the constructor arguments it presents, so its starting
-///      storage is the constructor's and nothing else. Once replaced in the artist registry,
+///      version is a runtime code hash bound to its deployer (`FederatedDeployer`), the
+///      ownerless contract that deploys that version's creation code: a contract joins only if
+///      that deployer recorded it, so its starting storage is the constructor's and nothing
+///      else. Once replaced in the artist registry,
 ///      every read answers as the current registry does, so an adapter that still points here
 ///      never disagrees with the templates. Roles (genesis configuration): template approval,
 ///      revocation and adapter admission SUCCESSOR_SETTER (30 days); suspension GUARDIAN
@@ -45,23 +45,25 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
     /// @param version Its version number.
     /// @param form Its form (ERC721 or ERC1155).
     /// @param status Its status.
-    /// @param creationHash The keccak256 of the creation code (constructor arguments excluded)
-    ///        every copy must be deployed from.
+    /// @param deployer The ownerless deployer that alone creates copies of it
+    ///        (`IFederatedDeployer`).
     struct Template {
         uint32 version;
         Form form;
         TemplateStatus status;
-        bytes32 creationHash;
+        address deployer;
     }
 
     /// @notice A template code hash's version, form or status changed.
     /// @param codeHash The template's runtime code hash.
-    /// @param creationHash Its creation code's keccak256.
+    /// @param deployer Its deployer (`CreationCodeStored` there names the creation code).
+    /// @param creationHash The keccak256 of the creation code the deployer deploys.
     /// @param version Its version.
     /// @param form Its form.
     /// @param status Its new status.
     event TemplateSet(
         bytes32 indexed codeHash,
+        address deployer,
         bytes32 creationHash,
         uint32 version,
         Form form,
@@ -71,19 +73,9 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
     /// @param adapter The adapter.
     /// @param admitted Whether it may mint new federated works.
     event AdapterSet(address indexed adapter, bool admitted);
-    /// @notice Creation code was published: the data contracts (`SSTORE2`) that hold it, in
-    ///         order, whose bytes hash to `creationHash`.
-    /// @param creationHash The creation code's keccak256.
-    /// @param pointers The data contracts.
-    event CodePublished(bytes32 indexed creationHash, address[] pointers);
 
     /// @notice The transition is not allowed from the template's current status.
     error TemplateStatusInvalid(bytes32 codeHash, TemplateStatus current);
-
-    /// @notice The deterministic deployment proxy (ownerless, keyless, permissionless: it
-    ///         CREATE2-deploys `calldata[32:]` with salt `calldata[:32]`), from which every
-    ///         federated copy is deployed.
-    address public constant DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
     /// @notice The canonical artist registry, the permanent directory this registry writes.
     IArtistRegistry public immutable artistRegistry;
@@ -97,7 +89,6 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
 
     mapping(bytes32 codeHash => Template) private _templates;
     mapping(address adapter => bool) private _adapters;
-    mapping(bytes32 creationHash => address[]) private _code;
 
     /// @param authority_ The AccessManager.
     /// @param artistRegistry_ The artist registry (ERC-165 `IArtistRegistry`).
@@ -121,38 +112,26 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
 
     // ------------------------------------------------------------------ governance
 
-    /// @notice Approves a template version: its runtime code hash, bound to the creation code
-    ///         every copy must be deployed from. SUCCESSOR_SETTER (30 days). Once only per code
-    ///         hash. Copies join once the creation code is published (`publishCode`).
+    /// @notice Approves a template version: its runtime code hash, bound to the ownerless
+    ///         deployer that alone creates its copies. SUCCESSOR_SETTER (30 days). Once only per
+    ///         code hash. Review: the deployer's code hash is the reviewed `FederatedDeployer`
+    ///         build and its creation code is the template's (`VerifyV1.checkTemplate`).
     /// @param codeHash The runtime code hash of the reviewed template build.
-    /// @param creationHash The keccak256 of that build's creation code.
+    /// @param deployer Its `FederatedDeployer` (code, not EIP-7702 delegated).
     /// @param version Its version number.
     /// @param form ERC721 or ERC1155.
-    function approveTemplate(bytes32 codeHash, bytes32 creationHash, uint32 version, Form form)
+    function approveTemplate(bytes32 codeHash, address deployer, uint32 version, Form form)
         external
         restricted
     {
         Template storage t = _templates[codeHash];
-        if (
-            t.status != TemplateStatus.NONE || form == Form.PAIR || codeHash == 0
-                || creationHash == 0
-        ) revert TemplateStatusInvalid(codeHash, t.status);
-        (t.version, t.form, t.status, t.creationHash) =
-        (version, form, TemplateStatus.APPROVED, creationHash);
-        emit TemplateSet(codeHash, creationHash, version, form, TemplateStatus.APPROVED);
-    }
-
-    /// @notice Records the data contracts (`SSTORE2` pointers) that hold a creation code, in
-    ///         order, under the keccak256 of their bytes. Permissionless: the bytes are read and
-    ///         hashed here, so a record is always true; the first one for a hash stays.
-    /// @param pointers The data contracts.
-    /// @return creationHash The keccak256 of the bytes they hold.
-    function publishCode(address[] calldata pointers) external returns (bytes32 creationHash) {
-        creationHash = keccak256(_concat(pointers, msg.data[:0]));
-        if (_code[creationHash].length == 0 && pointers.length != 0) {
-            _code[creationHash] = pointers;
-            emit CodePublished(creationHash, pointers);
+        if (t.status != TemplateStatus.NONE || form == Form.PAIR || codeHash == 0) {
+            revert TemplateStatusInvalid(codeHash, t.status);
         }
+        Dependency.check(deployer);
+        (t.version, t.form, t.status, t.deployer) =
+        (version, form, TemplateStatus.APPROVED, deployer);
+        _emitTemplate(codeHash, t);
     }
 
     /// @notice Suspends an approved template version: no contract of it joins or mints a new work;
@@ -178,7 +157,7 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
             revert TemplateStatusInvalid(codeHash, current);
         }
         t.status = TemplateStatus.REVOKED;
-        emit TemplateSet(codeHash, t.creationHash, t.version, t.form, TemplateStatus.REVOKED);
+        _emitTemplate(codeHash, t);
     }
 
     /// @notice Admits or removes a sale adapter for new federated works (ERC-165 `ISaleAdapter`,
@@ -193,9 +172,12 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
     }
 
     /// @notice Sets listed contracts ACTIVE or DELISTED after a vote, in batches of the caller's
-    ///         size (the artist registry refuses an unlisted or LEFT contract and any other
-    ///         status). PARAMETER_SETTER (48 hours). A delisting never touches tokens, ownership,
-    ///         records or funds; it stops new sales, and running sales end unsold with refunds.
+    ///         size. PARAMETER_SETTER (48 hours). A contract that left while the vote waited is
+    ///         still delisted (LEFT_DELISTED in the directory), so a scheduled delisting always
+    ///         lands; a contract the request cannot change (unlisted, or left and asked to be
+    ///         ACTIVE) is skipped, never reverting the batch. A delisting never touches tokens,
+    ///         ownership, records or funds; it stops new sales, and running sales end unsold with
+    ///         refunds.
     /// @param tokens The federated contracts.
     /// @param status ACTIVE or DELISTED.
     /// @param voteRef A reference to the vote, recorded in the artist registry's event.
@@ -203,10 +185,16 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
         external
         restricted
     {
+        IArtistRegistry.FederationStatus next = IArtistRegistry.FederationStatus(uint8(status));
         for (uint256 i; i < tokens.length; ++i) {
-            artistRegistry.setFederatedStatus(
-                tokens[i], IArtistRegistry.FederationStatus(uint8(status)), voteRef
-            );
+            (, IArtistRegistry.FederationStatus current) =
+                artistRegistry.federatedListing(tokens[i]);
+            if (
+                current == IArtistRegistry.FederationStatus.ACTIVE
+                    || current == IArtistRegistry.FederationStatus.DELISTED
+                    || (current == IArtistRegistry.FederationStatus.LEFT
+                        && status == Status.DELISTED)
+            ) artistRegistry.setFederatedStatus(tokens[i], next, voteRef);
         }
     }
 
@@ -236,9 +224,8 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
     /// @inheritdoc IFederationRegistry
     /// @dev The caller is the token: a genuine template whose code checked the artist's authority
     ///      before calling. Its terms are read from its own storage, and the code hash the artist
-    ///      registry records is read there too. Its provenance is recomputed: the CREATE2 address
-    ///      of `DEPLOYER`, `j.salt` and the approved creation code followed by `j.config` must be
-    ///      the caller. A 1/1 template must name the canonical content store; one with a partner
+    ///      registry records is read there too. Its provenance: the version's approved deployer
+    ///      recorded it. A 1/1 template must name the canonical content store; one with a partner
     ///      joins after it, so a listed 1/1 contract's editions are always a listed contract.
     function register(Join calldata j) external {
         address token = msg.sender;
@@ -251,7 +238,7 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
                 || (t.form == Form.ERC1155
                         ? x.partner == address(0)
                         : IFederatedStream(token).contentStore() != contentStore)
-                || !_deployedFrom(token, t.creationHash, j.salt, j.config)
+                || !IFederatedDeployer(t.deployer).deployed(token)
         ) revert NotListable(token);
         if (x.partner != address(0)) _checkPartner(token, t.form, x);
         address account = address(uint160(x.artistId));
@@ -261,7 +248,7 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
             );
         }
         _list(token, t.form, x, j);
-        emit Registered(token, x.artistId, token.codehash, j.salt, j.config);
+        emit Registered(token, x.artistId, token.codehash, t.deployer);
     }
 
     // ------------------------------------------------------------------ reads
@@ -330,13 +317,6 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
         return _templates[codeHash];
     }
 
-    /// @notice The data contracts holding a published creation code, in order.
-    /// @param creationHash The creation code's keccak256.
-    /// @return The pointers, empty if unpublished.
-    function codeOf(bytes32 creationHash) external view returns (address[] memory) {
-        return _code[creationHash];
-    }
-
     /// @notice Whether a sale adapter may mint new federated works.
     /// @param adapter The adapter.
     /// @return True while admitted.
@@ -375,13 +355,9 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
     /// @dev Lists `token` with its terms and the artist's consent.
     function _list(address token, Form form, Terms memory x, Join calldata j) private {
         artistRegistry.listFederatedContract(
-            x.artistId,
-            token,
-            uint8(form),
-            x.partner,
-            x.feeShare,
-            x.feeRecipient,
-            j.deadline,
+            IArtistRegistry.FederatedListing(
+                x.artistId, token, uint8(form), x.partner, x.feeShare, x.feeRecipient, j.deadline
+            ),
             j.consent
         );
     }
@@ -402,41 +378,6 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
                     && (listedAs != x.artistId
                         || status != IArtistRegistry.FederationStatus.ACTIVE))
         ) revert NotListable(token);
-    }
-
-    /// @dev Whether `token` is the CREATE2 deployment of `DEPLOYER` with `salt` of the creation
-    ///      code published for `creationHash` followed by `config`.
-    function _deployedFrom(address token, bytes32 creationHash, bytes32 salt, bytes calldata config)
-        private
-        view
-        returns (bool)
-    {
-        address[] memory pointers = _code[creationHash];
-        if (pointers.length == 0) return false;
-        bytes32 init = keccak256(_concat(pointers, config));
-        return address(
-            uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), DEPLOYER, salt, init))))
-        ) == token;
-    }
-
-    /// @dev The bytes behind `pointers`, in order, followed by `tail`.
-    function _concat(address[] memory pointers, bytes calldata tail)
-        private
-        view
-        returns (bytes memory out)
-    {
-        uint256 total;
-        for (uint256 i; i < pointers.length; ++i) {
-            total += SSTORE2.size(pointers[i]);
-        }
-        out = new bytes(total + tail.length);
-        uint256 done;
-        for (uint256 i; i < pointers.length; ++i) {
-            done += SSTORE2.copyInto(pointers[i], out, done);
-        }
-        assembly ("memory-safe") {
-            calldatacopy(add(add(out, 0x20), total), tail.offset, tail.length)
-        }
     }
 
     /// @dev Whether the directory lists `token` ACTIVE.
@@ -462,6 +403,18 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
         Template storage t = _templates[codeHash];
         if (t.status != from) revert TemplateStatusInvalid(codeHash, t.status);
         t.status = to;
-        emit TemplateSet(codeHash, t.creationHash, t.version, t.form, to);
+        _emitTemplate(codeHash, t);
+    }
+
+    function _emitTemplate(bytes32 codeHash, Template storage t) private {
+        address deployer = t.deployer;
+        emit TemplateSet(
+            codeHash,
+            deployer,
+            IFederatedDeployer(deployer).creationHash(),
+            t.version,
+            t.form,
+            t.status
+        );
     }
 }

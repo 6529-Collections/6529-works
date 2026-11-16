@@ -1083,8 +1083,8 @@
       "status": "implemented on the federation branch (ADR 0008)",
       "functions": [
         {
-          "signature": "approveTemplate(bytes32,bytes32,uint32,uint8)",
-          "selector": "0xc97d99e7",
+          "signature": "approveTemplate(bytes32,address,uint32,uint8)",
+          "selector": "0x62c03b8e",
           "role": "SUCCESSOR_SETTER",
           "class": "successor",
           "delay": 2592000
@@ -1361,27 +1361,27 @@
     },
     {
       "contract": "FederationRegistry",
-      "signature": "approveTemplate(bytes32,bytes32,uint32,uint8)",
+      "signature": "approveTemplate(bytes32,address,uint32,uint8)",
       "args": [
         "FederatedStream",
-        "FederatedStream.creationCode",
+        "FederatedStreamDeployer",
         1,
         0
       ],
-      "note": "Federated Stream v1 (ERC721). Both hashes are computed by DeployV1.templateCodeHash from this build (keccak256 of the template's runtime code and of its creation code, which the deploy publishes in data contracts), never held here; the calldata's first two words are placeholders",
-      "calldata": "0xc97d99e70000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000"
+      "note": "Federated Stream v1 (ERC721). The code hash is computed by DeployV1.templateCodeHash from this build (keccak256 of the template's runtime code), never held here; the deployer is the template's FederatedDeployer, deployed by DeployV1 from the build's creation code; the calldata's first two words are placeholders",
+      "calldata": "0x62c03b8e0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000"
     },
     {
       "contract": "FederationRegistry",
-      "signature": "approveTemplate(bytes32,bytes32,uint32,uint8)",
+      "signature": "approveTemplate(bytes32,address,uint32,uint8)",
       "args": [
         "FederatedEditions",
-        "FederatedEditions.creationCode",
+        "FederatedEditionsDeployer",
         1,
         1
       ],
       "note": "Federated Stream Editions v1 (ERC1155), as above",
-      "calldata": "0xc97d99e70000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000001"
+      "calldata": "0x62c03b8e0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000001"
     },
     {
       "contract": "StatementLog",

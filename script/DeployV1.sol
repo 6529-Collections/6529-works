@@ -20,6 +20,7 @@ import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.so
 import { Roles } from "src/governance/Roles.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
 import { Editions } from "src/editions/Editions.sol";
+import { FederatedDeployer } from "src/federated/FederatedDeployer.sol";
 import { FederatedEditionAuction } from "src/federated/FederatedEditionAuction.sol";
 import { FederatedEditionAuctionLens } from "src/federated/FederatedEditionAuctionLens.sol";
 import { FederatedEditions } from "src/federated/FederatedEditions.sol";
@@ -30,7 +31,6 @@ import { ConsolidationAdapter } from "src/identity/ConsolidationAdapter.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IStatementLog, Statement } from "src/interfaces/IStatementLog.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
-import { SSTORE2 } from "src/libraries/SSTORE2.sol";
 import { HashRef, HASH_SHA256 } from "src/interfaces/types/HashRef.sol";
 import { License } from "src/interfaces/types/PackageTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
@@ -57,9 +57,6 @@ import { WorkRecords } from "src/stream/WorkRecords.sol";
 ///      it; `dropped` lists what is left out, and `Deploy.s.sol` refuses anything there off
 ///      anvil except an explicitly declined entropy module.
 library DeployV1 {
-    /// @dev The CREATE2 deployer a broadcasting script deploys through (Foundry's default).
-    address private constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
-
     Vm private constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
     /// @notice Anvil's chain ID: the only chain where stand-ins and placeholders are allowed.
@@ -173,6 +170,10 @@ library DeployV1 {
         address federatedEditionAuctionLens;
         /// The uniform-price edition auction's second deployment, for federated pairs.
         FederatedEditionAuction federatedEditionAuction;
+        /// The ownerless deployers of the two v1 federated templates (ADR 0008 §1): each holds
+        /// its template's creation code and records every copy it deploys.
+        FederatedDeployer federatedStreamDeployer;
+        FederatedDeployer federatedEditionsDeployer;
     }
 
     /// @notice The epoch-0 governance manifest: the SHA-256 of the signed manifest JSON and
@@ -209,39 +210,8 @@ library DeployV1 {
                 d.manager = d.configurator.worksManager();
             } else if (_eq(name, "ContentStore")) {
                 d.cc0TextFileId = uploadText(d.contentStore, p.cc0Text, "text/plain");
-            } else if (_eq(name, "FederationRegistry")) {
-                publishTemplateCode(d.federationRegistry, type(FederatedStream).creationCode);
-                publishTemplateCode(d.federationRegistry, type(FederatedEditions).creationCode);
             }
         }
-    }
-
-    /// @notice Stores a federated template's creation code in data contracts (`SSTORE2`, at
-    ///         most `MAX_CHUNK_LENGTH` bytes each; a chunk already stored by the CREATE2 deployer
-    ///         or this context is reused) and records them in `registry` (`publishCode`, which
-    ///         rehashes them), so copies deployed from that code can join.
-    /// @param registry The federation registry.
-    /// @param code The template's creation code.
-    /// @return creationHash `keccak256(code)`, as the registry recorded it.
-    function publishTemplateCode(FederationRegistry registry, bytes memory code)
-        internal
-        returns (bytes32 creationHash)
-    {
-        uint256 size = SSTORE2.MAX_CHUNK_LENGTH;
-        address[] memory pointers = new address[]((code.length + size - 1) / size);
-        for (uint256 i; i < pointers.length; ++i) {
-            uint256 start = i * size;
-            uint256 end = start + size < code.length ? start + size : code.length;
-            bytes memory chunk = new bytes(end - start);
-            for (uint256 j; j < chunk.length; ++j) {
-                chunk[j] = code[start + j];
-            }
-            address stored = SSTORE2.pointerOf(CREATE2_DEPLOYER, chunk);
-            if (stored.code.length == 0) stored = SSTORE2.pointerOf(address(this), chunk);
-            pointers[i] = stored.code.length == 0 ? SSTORE2.write(chunk) : stored;
-        }
-        creationHash = registry.publishCode(pointers);
-        if (creationHash != keccak256(code)) revert Create2Failed("template code");
     }
 
     /// @notice The addresses `deploy(p)` creates through CREATE2 deployer `factory`, recomputed
@@ -272,7 +242,7 @@ library DeployV1 {
     ///         Each lens is its own entry, just before its auction, so no deployment carries two
     ///         contracts' code (F8, the rc.2 review's GAS M-2).
     function order(Params memory p) internal pure returns (string[] memory list) {
-        string[26] memory all = [
+        string[28] memory all = [
             "GovernanceConfigurator",
             "ContentStore",
             "DependencyRegistry",
@@ -297,6 +267,8 @@ library DeployV1 {
             "UniformEditionAuctionLens",
             "UniformEditionAuction",
             "FederationRegistry",
+            "FederatedStreamDeployer",
+            "FederatedEditionsDeployer",
             "FederatedEditionAuctionLens",
             "FederatedEditionAuction"
         ];
@@ -526,6 +498,19 @@ library DeployV1 {
                 abi.encode(m, d.artistRegistry, d.economicsResolver, d.contentStore)
             );
         }
+        if (n == keccak256("FederatedStreamDeployer")) {
+            // Writes the template's creation code to data contracts it owns; no constructor
+            // argument but the code, so its address follows the build.
+            return _code(
+                type(FederatedDeployer).creationCode, abi.encode(type(FederatedStream).creationCode)
+            );
+        }
+        if (n == keccak256("FederatedEditionsDeployer")) {
+            return _code(
+                type(FederatedDeployer).creationCode,
+                abi.encode(type(FederatedEditions).creationCode)
+            );
+        }
         if (n == keccak256("FederatedEditionAuctionLens")) {
             // Stateless; reads the federation registry through the artist registry's pointer.
             return _code(
@@ -703,6 +688,10 @@ library DeployV1 {
         if (n == keccak256("FederationRegistry")) return address(d.federationRegistry);
         if (n == keccak256("FederatedEditionAuctionLens")) return d.federatedEditionAuctionLens;
         if (n == keccak256("FederatedEditionAuction")) return address(d.federatedEditionAuction);
+        if (n == keccak256("FederatedStreamDeployer")) return address(d.federatedStreamDeployer);
+        if (n == keccak256("FederatedEditionsDeployer")) {
+            return address(d.federatedEditionsDeployer);
+        }
         revert UnknownContract(name);
     }
 
@@ -768,6 +757,10 @@ library DeployV1 {
             d.federatedEditionAuctionLens = a;
         } else if (n == keccak256("FederatedEditionAuction")) {
             d.federatedEditionAuction = FederatedEditionAuction(a);
+        } else if (n == keccak256("FederatedStreamDeployer")) {
+            d.federatedStreamDeployer = FederatedDeployer(a);
+        } else if (n == keccak256("FederatedEditionsDeployer")) {
+            d.federatedEditionsDeployer = FederatedDeployer(a);
         } else {
             revert UnknownContract(name);
         }
@@ -775,7 +768,7 @@ library DeployV1 {
 
     /// @notice Every contract name `addressOf` knows, for records and readback.
     function names() internal pure returns (string[] memory list) {
-        string[29] memory all = [
+        string[31] memory all = [
             "GovernanceConfigurator",
             "WorksAccessManager",
             "ContentStore",
@@ -804,7 +797,9 @@ library DeployV1 {
             "Editions",
             "FederationRegistry",
             "FederatedEditionAuctionLens",
-            "FederatedEditionAuction"
+            "FederatedEditionAuction",
+            "FederatedStreamDeployer",
+            "FederatedEditionsDeployer"
         ];
         list = new string[](all.length);
         for (uint256 i; i < all.length; ++i) {

@@ -25,6 +25,7 @@ import {
 } from "src/interfaces/types/EconomicsTypes.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
+import { FederatedDeployer } from "src/federated/FederatedDeployer.sol";
 import { SSTORE2 } from "src/libraries/SSTORE2.sol";
 import { EnglishAuctionLens } from "src/sales/EnglishAuctionLens.sol";
 import { DeployV1 } from "./DeployV1.sol";
@@ -319,6 +320,7 @@ library VerifyV1 {
             registry,
             "FederatedStream",
             DeployV1.templateCodeHash("FederatedStream"),
+            address(d.federatedStreamDeployer),
             DeployV1.templateCodeHash("FederatedStream.creationCode"),
             IFederationRegistry.Form.ERC721
         );
@@ -326,6 +328,7 @@ library VerifyV1 {
             registry,
             "FederatedEditions",
             DeployV1.templateCodeHash("FederatedEditions"),
+            address(d.federatedEditionsDeployer),
             DeployV1.templateCodeHash("FederatedEditions.creationCode"),
             IFederationRegistry.Form.ERC1155
         );
@@ -342,32 +345,40 @@ library VerifyV1 {
     }
 
     /// @notice A template version is approved as built: version 1 of `form`, runtime code hash
-    ///         `codeHash` bound to `creationHash`, and that creation code published in data
-    ///         contracts whose bytes hash to it. A build whose sources or metadata differ from the
-    ///         genesis build computes other hashes and fails (`FederationMismatch(name)`).
+    ///         `codeHash` bound to the recorded `deployer`, whose runtime code is this build's
+    ///         `FederatedDeployer` (no owner, role, fee or upgrade: it can only deploy its one
+    ///         creation code and record each copy) and whose creation code, read back from its
+    ///         data contracts and rehashed, is `creationHash`. A build whose sources or metadata
+    ///         differ from the genesis build computes other hashes and fails
+    ///         (`FederationMismatch(name)`).
     /// @param registry The federation registry.
     /// @param name The template's name, for the error.
     /// @param codeHash The build's runtime code hash.
+    /// @param deployer The recorded deployer of the template.
     /// @param creationHash The build's creation code hash.
     /// @param form Its form.
     function checkTemplate(
         FederationRegistry registry,
         string memory name,
         bytes32 codeHash,
+        address deployer,
         bytes32 creationHash,
         IFederationRegistry.Form form
     ) internal view {
         FederationRegistry.Template memory t = registry.templateOf(codeHash);
-        address[] memory pointers = registry.codeOf(creationHash);
-        bytes memory code;
-        for (uint256 i; i < pointers.length; ++i) {
-            code = bytes.concat(code, SSTORE2.read(pointers[i]));
+        bool ok = t.status == FederationRegistry.TemplateStatus.APPROVED && t.version == 1
+            && t.form == form && t.deployer == deployer
+            && deployer.codehash == keccak256(type(FederatedDeployer).runtimeCode);
+        if (ok) {
+            address[] memory pointers = FederatedDeployer(deployer).codeOf();
+            bytes memory code;
+            for (uint256 i; i < pointers.length; ++i) {
+                code = bytes.concat(code, SSTORE2.read(pointers[i]));
+            }
+            ok = keccak256(code) == creationHash
+                && FederatedDeployer(deployer).creationHash() == creationHash;
         }
-        if (
-            t.status != FederationRegistry.TemplateStatus.APPROVED || t.version != 1
-                || t.form != form || t.creationHash != creationHash || pointers.length == 0
-                || keccak256(code) != creationHash
-        ) revert FederationMismatch(name);
+        if (!ok) revert FederationMismatch(name);
     }
 
     /// @notice The edition auction's lens is the one its constructor pinned and the record
@@ -446,7 +457,8 @@ library VerifyV1 {
                 FederationRegistry.Template memory t =
                     FederationRegistry(target).templateOf(_word(data, 0));
                 ok = t.status == FederationRegistry.TemplateStatus.APPROVED
-                    && t.creationHash == _word(data, 1) && t.version == uint256(_word(data, 2))
+                    && t.deployer == address(uint160(uint256(_word(data, 1))))
+                    && t.version == uint256(_word(data, 2))
                     && uint256(t.form) == uint256(_word(data, 3));
             } else {
                 revert UnknownWiringSelector(selector);

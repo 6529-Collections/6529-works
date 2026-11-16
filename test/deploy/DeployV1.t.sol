@@ -33,6 +33,7 @@ import { DeployGuards } from "script/DeployGuards.sol";
 import { EconomicsResolver } from "src/economics/EconomicsResolver.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { Editions } from "src/editions/Editions.sol";
+import { FederatedDeployer } from "src/federated/FederatedDeployer.sol";
 import { FederatedStream } from "src/federated/FederatedStream.sol";
 import { FederationRegistry } from "src/federated/FederationRegistry.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
@@ -305,32 +306,47 @@ contract DeployV1Test is Test {
         return DeployV1.templateCodeHash(name);
     }
 
-    /// @dev Review F (F8): the approved template is the genesis build's creation code, stored
-    ///      in data contracts at genesis. A rebuild whose bytes differ (here only the CBOR
-    ///      metadata hash, as any edit to an imported source makes it) computes another creation
-    ///      hash, and `checkTemplate` refuses it; the genesis build passes.
+    /// @dev Review F (F8) and G (G3): the approved template is bound to the deployer genesis
+    ///      deployed from the build's creation code. Verify checks the deployer's runtime code is
+    ///      the reviewed `FederatedDeployer` (no privileged path) and rehashes its stored creation
+    ///      code: a rebuild whose bytes differ (here only the CBOR metadata hash, as any edit to
+    ///      an imported source makes it), another deployer, or an unreviewed contract all fail.
     function test_CheckTemplate_RefusesARebuiltArtifact() public {
         (DeployV1.Deployment memory d,,) = _genesis(_params());
         bytes memory code = type(FederatedStream).creationCode;
         bytes32 runtime = DeployV1.templateCodeHash("FederatedStream");
-        this.checkTemplate(d.federationRegistry, runtime, keccak256(code));
-        address[] memory pointers = d.federationRegistry.codeOf(keccak256(code));
-        assertEq(pointers.length, 2, "two data contracts: over one EIP-170 chunk");
+        address deployer = address(d.federatedStreamDeployer);
+        this.checkTemplate(d.federationRegistry, runtime, deployer, keccak256(code));
+        assertEq(d.federatedStreamDeployer.codeOf().length, 2, "two data contracts");
         // The last byte of the metadata hash, before "solc", its version and the CBOR length.
         bytes memory rebuilt = bytes.concat(code);
         rebuilt[rebuilt.length - 12] = bytes1(uint8(rebuilt[rebuilt.length - 12]) ^ 1);
-        vm.expectRevert(
-            abi.encodeWithSelector(VerifyV1.FederationMismatch.selector, "FederatedStream")
+        bytes memory mismatch =
+            abi.encodeWithSelector(VerifyV1.FederationMismatch.selector, "FederatedStream");
+        vm.expectRevert(mismatch);
+        this.checkTemplate(d.federationRegistry, runtime, deployer, keccak256(rebuilt));
+        address another = address(new FederatedDeployer(code));
+        vm.expectRevert(mismatch);
+        this.checkTemplate(d.federationRegistry, runtime, another, keccak256(code));
+        vm.expectRevert(mismatch);
+        this.checkTemplate(
+            d.federationRegistry, runtime, address(d.federationRegistry), keccak256(code)
         );
-        this.checkTemplate(d.federationRegistry, runtime, keccak256(rebuilt));
     }
 
-    function checkTemplate(FederationRegistry registry, bytes32 codeHash, bytes32 creationHash)
-        external
-        view
-    {
+    function checkTemplate(
+        FederationRegistry registry,
+        bytes32 codeHash,
+        address deployer,
+        bytes32 creationHash
+    ) external view {
         VerifyV1.checkTemplate(
-            registry, "FederatedStream", codeHash, creationHash, IFederationRegistry.Form.ERC721
+            registry,
+            "FederatedStream",
+            codeHash,
+            deployer,
+            creationHash,
+            IFederationRegistry.Form.ERC721
         );
     }
 

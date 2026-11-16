@@ -655,13 +655,16 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
     }
 
     /// @dev Burns a work's unsold token held in this contract's custody so its next one can be
-    ///      minted; an edition master only while no edition sale has bound its token.
+    ///      minted; an edition master only while no edition sale has bound its token and, as at
+    ///      its first mint, while its editions are listed ACTIVE or after this contract left.
     function _restart(uint256 workId) private {
         Work storage w = _works[workId];
         uint256 old = w.token;
         if (
             old == 0 || _ownerOf(old) != address(this) || _tokens[old].state < UNBID
-                || (w.kind == EDITION_MASTER && IFederatedEditions(_partner).isBound(old))
+                || (w.kind == EDITION_MASTER
+                    && (IFederatedEditions(_partner).isBound(old)
+                        || !(_left() || _listedActive(_partner))))
         ) revert WorkNotRestartable(workId);
         _burn(old);
     }

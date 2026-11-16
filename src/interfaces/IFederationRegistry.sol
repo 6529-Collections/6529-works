@@ -64,9 +64,6 @@ interface IFederationRegistry is IERC165 {
     }
 
     /// @notice What a template passes to join (`IFederatedToken.joinFederation`, `register`).
-    /// @param salt The CREATE2 salt the contract was deployed with through the deterministic
-    ///        deployment proxy.
-    /// @param config Its constructor arguments, exactly as ABI-encoded after the creation code.
     /// @param profileId The artist's claimed 6529 profile ID (used only to create an identity).
     /// @param profileDocHash The profile document's hash (likewise).
     /// @param deadline The expiry of both signatures below.
@@ -75,8 +72,6 @@ interface IFederationRegistry is IERC165 {
     /// @param consent The artist's active authority's `FederatedListing` signature for this
     ///        contract, which the artist registry verifies (`listFederatedContract`).
     struct Join {
-        bytes32 salt;
-        bytes config;
         bytes32 profileId;
         bytes32 profileDocHash;
         uint64 deadline;
@@ -84,20 +79,14 @@ interface IFederationRegistry is IERC165 {
         bytes consent;
     }
 
-    /// @notice A template contract joined: the artist registry listed it. With the creation code
-    ///         of its template version (`codeHash`'s approval names the creation code's hash), a
-    ///         logs-only reader recomputes the contract's address from `salt` and `config`.
+    /// @notice A template contract joined: the artist registry listed it. Its deployer's
+    ///         `Deployed` event names its constructor arguments.
     /// @param token The federated contract.
     /// @param artistId The artist it is listed under.
     /// @param codeHash Its runtime code hash, an approved template version.
-    /// @param salt Its CREATE2 salt through the deterministic deployment proxy.
-    /// @param config Its ABI-encoded constructor arguments.
+    /// @param deployer The version's deployer, which recorded the contract.
     event Registered(
-        address indexed token,
-        uint256 indexed artistId,
-        bytes32 codeHash,
-        bytes32 salt,
-        bytes config
+        address indexed token, uint256 indexed artistId, bytes32 codeHash, address deployer
     );
 
     /// @notice Unknown or unusable template code, or a contract this registry cannot list.
@@ -108,14 +97,14 @@ interface IFederationRegistry is IERC165 {
     ///         .listFederatedContract`, which verifies the artist's consent), first creating the
     ///         artist's identity from the artist's own signature if it has none
     ///         (`IArtistRegistry.registerFederated`). The caller must run an approved,
-    ///         unsuspended template version and be the deterministic deployment proxy's CREATE2
-    ///         deployment, with `j.salt`, of that version's published creation code followed by
-    ///         `j.config`; it must name the canonical artist registry, split ledger and (a 1/1
+    ///         unsuspended template version and be a copy that version's approved deployer
+    ///         recorded (`IFederatedDeployer.deployed`); it must name the canonical artist
+    ///         registry, split ledger and (a 1/1
     ///         template) content store, and lock the network's current federated fee share and
     ///         recipient (`NotListable`). A partner must run an approved template of the other
     ///         form and name the caller back, with the same artist and terms; a 1/1 template's
     ///         partner must already be listed ACTIVE under the same artist.
-    /// @param j The provenance, identity and consent (`Join`).
+    /// @param j The identity fields and the artist's signatures (`Join`).
     function register(Join calldata j) external;
 
     /// @notice A contract's entry; all zero (`status` NONE) for a contract that is not listed,

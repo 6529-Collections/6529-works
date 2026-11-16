@@ -10,8 +10,7 @@ import { IMintTarget } from "./IMintTarget.sol";
 ///         the artist's marketplace metadata (ADR 0008; spec `docs/spec/federation.md`).
 /// @dev A template carries no immutable, so every deployment of one version has one runtime code
 ///      hash; the federation registry recognises a genuine copy by that hash and by its
-///      deployment, through the deterministic deployment proxy, from the version's approved
-///      creation code and the constructor arguments it presents at joining. Every
+///      version's approved deployer (`IFederatedDeployer`) having recorded it. Every
 ///      power is the artist's, checked against the artist registry's active authority of the
 ///      locked artist ID (so lost-key recovery works); the network holds none over a deployed
 ///      contract. Before the artist has an identity, the account whose address is the artist ID
@@ -111,8 +110,7 @@ interface IFederatedToken is IMintTarget {
     ///         this transaction (`FederationStateInvalid`): a listing made by anyone else first
     ///         can never be confirmed, so the token never sells under it. An editions contract
     ///         joins before its partner.
-    /// @param j The contract's CREATE2 salt and constructor arguments, the identity fields and
-    ///        the artist's signatures (`IFederationRegistry.Join`).
+    /// @param j The identity fields and the artist's signatures (`IFederationRegistry.Join`).
     function joinFederation(IFederationRegistry.Join calldata j) external;
     /// @notice Leaves the federation, for good. The artist only. Records `LEFT` in the artist
     ///         registry if the contract was listed (the token itself writes it, so the exit

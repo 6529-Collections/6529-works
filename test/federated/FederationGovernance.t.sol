@@ -34,18 +34,27 @@ contract FederationGovernanceTest is FederationBase {
         );
         vm.prank(collector);
         fedRegistry.approveTemplate(
-            keccak256("x"), keccak256("y"), 2, IFederationRegistry.Form.ERC721
+            keccak256("x"),
+            address(deployment.federatedStreamDeployer),
+            2,
+            IFederationRegistry.Form.ERC721
         );
         (, uint32 delay) =
             manager.canCall(hotAdmin, address(fedRegistry), fedRegistry.approveTemplate.selector);
         assertEq(delay, 30 days);
         bytes memory again = abi.encodeCall(
             fedRegistry.approveTemplate,
-            (streamHash, keccak256("y"), 2, IFederationRegistry.Form.ERC721)
+            (
+                streamHash,
+                address(deployment.federatedStreamDeployer),
+                2,
+                IFederationRegistry.Form.ERC721
+            )
         );
         assertFalse(_governTry(hotAdmin, address(fedRegistry), again), "once per code hash");
         FederationRegistry.Template memory t = fedRegistry.templateOf(streamHash);
         assertEq(t.version, 1);
+        assertEq(t.deployer, address(deployment.federatedStreamDeployer));
         assertEq(uint8(t.status), uint8(FederationRegistry.TemplateStatus.APPROVED));
     }
 
@@ -59,6 +68,7 @@ contract FederationGovernanceTest is FederationBase {
         vm.expectEmit(address(fedRegistry));
         emit FederationRegistry.TemplateSet(
             streamHash,
+            address(deployment.federatedStreamDeployer),
             keccak256(type(FederatedStream).creationCode),
             1,
             IFederationRegistry.Form.ERC721,
@@ -246,18 +256,16 @@ contract FederationGovernanceTest is FederationBase {
         assertEq(networkFee.balance - feeBefore, 0.1 ether, "the running sale paid the 10%");
         (address receiver,) = fed.royaltyInfo(tokenId, 1 ether);
         assertTrue(receiver != fed.work(tokenId).seller, "still the 90/10 vault");
-        // Delisting can never undo an exit.
+        // A relisting can never undo an exit: the batch skips the token.
         address[] memory tokens = new address[](1);
         tokens[0] = address(fed);
-        assertFalse(
-            _governTry(
-                hotAdmin,
-                address(fedRegistry),
-                abi.encodeCall(
-                    fedRegistry.setStatus, (tokens, IFederationRegistry.Status.ACTIVE, "")
-                )
-            )
+        _govern(
+            hotAdmin,
+            address(fedRegistry),
+            abi.encodeCall(fedRegistry.setStatus, (tokens, IFederationRegistry.Status.ACTIVE, ""))
         );
+        (, IArtistRegistry.FederationStatus status) = artists.federatedListing(address(fed));
+        assertEq(uint8(status), uint8(IArtistRegistry.FederationStatus.LEFT));
     }
 
     function test_Exit_TheArtistAdmitsItsOwnMintersAndNewWorksPayNoFee() public {

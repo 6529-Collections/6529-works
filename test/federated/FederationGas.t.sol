@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { Vm } from "forge-std/Vm.sol";
 import { FederatedEditionAuction } from "src/federated/FederatedEditionAuction.sol";
 import { FederatedEditionAuctionLens } from "src/federated/FederatedEditionAuctionLens.sol";
+import { FederatedDeployer } from "src/federated/FederatedDeployer.sol";
 import { FederatedEditions } from "src/federated/FederatedEditions.sol";
 import { FederatedStream } from "src/federated/FederatedStream.sol";
 import { IFederatedEditions } from "src/interfaces/IFederatedEditions.sol";
@@ -60,11 +61,8 @@ contract FederationGasTest is FederationBase {
             address(fedRegistry),
             abi.encodeCall(fedRegistry.setAdapter, (address(fea), true))
         );
-        // A join reads the published creation code: probe its data contracts.
-        address[] memory code = fedRegistry.codeOf(keccak256(type(FederatedStream).creationCode));
-        for (uint256 i; i < code.length; ++i) {
-            _extra.push(code[i]);
-        }
+        // A join asks the template's deployer whether it recorded the copy.
+        _extra.push(address(deployment.federatedStreamDeployer));
     }
 
     address[] internal _extra;
@@ -89,7 +87,7 @@ contract FederationGasTest is FederationBase {
 
     function _cooled() internal view override returns (address[] memory all) {
         address[] memory base = super._cooled();
-        all = new address[](base.length + 6);
+        all = new address[](base.length + 7);
         for (uint256 i; i < base.length; ++i) {
             all[i] = base[i];
         }
@@ -97,6 +95,7 @@ contract FederationGasTest is FederationBase {
         (address(fed), address(fedRegistry), address(fea));
         (all[base.length + 3], all[base.length + 4], all[base.length + 5]) =
         (address(feaLens), address(ps), address(pe));
+        all[base.length + 6] = address(deployment.federatedStreamDeployer);
     }
 
     // ------------------------------------------------------------------ deployment
@@ -167,23 +166,37 @@ contract FederationGasTest is FederationBase {
         assertLe(total1155, DEPLOY_1155_CEILING);
     }
 
-    /// @dev F1: an artist deploys through the deterministic deployment proxy (the transaction
-    ///      carries the salt and the same initcode), so the bytes deployed are the same as a
-    ///      plain CREATE; the proxy adds its call, the initcode copy and CREATE2's hashing.
-    function test_Gas_DeployThroughTheDeploymentProxy() public {
-        bytes memory initcode = abi.encodePacked(
-            type(FederatedStream).creationCode, abi.encode(_streamConfig(fedArtist))
-        );
-        (, uint256 direct,,) = _deploy(initcode);
-        bytes memory data = bytes.concat(bytes32(uint256(0x6529)), initcode);
+    /// @dev Review G (G3): an artist deploys through the template's deployer, which reads the
+    ///      creation code from its data contracts (no 25 KB of calldata), CREATE2s it and records
+    ///      the copy (one new slot) with an event. Measured against a plain CREATE of the same
+    ///      initcode, whose transaction carries the creation code as calldata.
+    function test_Gas_DeployThroughTheDeployer() public {
+        bytes memory config = abi.encode(_streamConfig(fedArtist));
+        (, uint256 direct,,) = _deploy(abi.encodePacked(type(FederatedStream).creationCode, config));
+        FederatedDeployer d = deployment.federatedStreamDeployer;
+        bytes memory data = abi.encodeCall(d.deploy, (bytes32(uint256(0x6529)), config));
         uint256 before = gasleft();
-        (bool ok,) = CREATE2_FACTORY.call(data);
+        (bool ok,) = address(d).call(data);
         uint256 frame = before - gasleft();
         assertTrue(ok);
         uint256 total = _txGas(data, frame);
         emit log_named_uint("FederatedStream deploy, plain CREATE (tx, Prague)", direct);
-        emit log_named_uint("FederatedStream deploy, through the proxy (tx, Prague)", total);
-        assertLe(total, direct + direct / 100, "the proxy adds under 1%");
+        emit log_named_uint("FederatedStream deploy, through its deployer (tx, Prague)", total);
+        assertLt(total, direct, "the deployer path costs less than sending the code");
+        assertLe(total, DEPLOY_721_CEILING);
+        bytes memory edConfig = abi.encode(_editionsConfig(fedArtist, address(fed)));
+        (, uint256 edDirect,,) =
+            _deploy(abi.encodePacked(type(FederatedEditions).creationCode, edConfig));
+        FederatedDeployer ed = deployment.federatedEditionsDeployer;
+        data = abi.encodeCall(ed.deploy, (bytes32(uint256(0x6529)), edConfig));
+        before = gasleft();
+        (ok,) = address(ed).call(data);
+        frame = before - gasleft();
+        assertTrue(ok);
+        total = _txGas(data, frame);
+        emit log_named_uint("FederatedEditions deploy, plain CREATE (tx, Prague)", edDirect);
+        emit log_named_uint("FederatedEditions deploy, through its deployer (tx, Prague)", total);
+        assertLt(total, edDirect);
     }
 
     // ------------------------------------------------------------------ the 1/1 path

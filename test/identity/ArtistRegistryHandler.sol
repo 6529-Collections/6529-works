@@ -17,6 +17,7 @@ import {
     DisputeOutcomeLogMock,
     SplitFactoryWalletsMock
 } from "../mocks/identity/IdentityWorksMocks.sol";
+import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
 
@@ -560,18 +561,17 @@ contract ArtistRegistryHandler is Test {
         if (hostileInstalled && (token == address(adapter) || partner == address(adapter))) return;
         bool ok = ghostStatus[token] == IArtistRegistry.FederationStatus.NONE && fedInstallable[i]
             && !fedCanonical[i] && (partner == address(0) || !fedCanonical[j]);
-        // The consent of the active authority (none while a recovery override restrains it).
-        address active = registry.activeAuthorityOf(artistId);
-        uint64 deadline = uint64(block.timestamp);
-        bytes memory consent =
-            _sign(_keyOf(active), registry.listingDigest(artistId, token, deadline));
-        if (active == address(0)) {
+        IArtistRegistry.FederatedListing memory l = IArtistRegistry.FederatedListing(
+            artistId, token, form, partner, feeShare, payouts[2], uint64(block.timestamp)
+        );
+        (bytes memory consent, bool restrained) = _consent(l);
+        if (restrained) {
             ok = false;
-            _expect(abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, active));
+            _expect(abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, address(0)));
         } else if (ok) {
             vm.expectEmit(address(registry));
             emit IArtistRegistry.FederatedContractListed(
-                artistId, token, token.codehash, form, partner, feeShare, payouts[2]
+                l.artistId, l.token, l.token.codehash, l.form, l.partner, l.feeShare, l.feeRecipient
             );
         } else {
             _expect(
@@ -579,9 +579,7 @@ contract ArtistRegistryHandler is Test {
             );
         }
         vm.prank(federation);
-        registry.listFederatedContract(
-            artistId, token, form, partner, feeShare, payouts[2], deadline, consent
-        );
+        registry.listFederatedContract(l, consent);
         assertEq(_identityState(), before, "a listing touched the identity");
         if (!ok) return;
         ghostStatus[token] = IArtistRegistry.FederationStatus.ACTIVE;
@@ -595,15 +593,20 @@ contract ArtistRegistryHandler is Test {
         address token = fedTokens[tokenSeed % 8];
         IArtistRegistry.FederationStatus status = IArtistRegistry.FederationStatus(statusSeed % 4);
         IArtistRegistry.FederationStatus current = ghostStatus[token];
-        bool ok =
-            (current == IArtistRegistry.FederationStatus.ACTIVE
-                    || current == IArtistRegistry.FederationStatus.DELISTED)
-                && (status == IArtistRegistry.FederationStatus.ACTIVE
-                    || status == IArtistRegistry.FederationStatus.DELISTED);
+        // A delisting of a token that left lands as LEFT_DELISTED; nothing else leaves an exit.
+        bool fromLeft = current == IArtistRegistry.FederationStatus.LEFT
+            && status == IArtistRegistry.FederationStatus.DELISTED;
+        bool ok = fromLeft
+            || (current == IArtistRegistry.FederationStatus.ACTIVE
+                || current == IArtistRegistry.FederationStatus.DELISTED)
+            && (status == IArtistRegistry.FederationStatus.ACTIVE
+                || status == IArtistRegistry.FederationStatus.DELISTED);
+        IArtistRegistry.FederationStatus next =
+            fromLeft ? IArtistRegistry.FederationStatus.LEFT_DELISTED : status;
         if (ok) {
             vm.expectEmit(address(registry));
             emit IArtistRegistry.FederatedContractStatus(
-                token, artistId, current, status, bytes32(statusSeed)
+                token, artistId, current, next, bytes32(statusSeed)
             );
         } else {
             _expect(
@@ -616,7 +619,7 @@ contract ArtistRegistryHandler is Test {
         registry.setFederatedStatus(token, status, bytes32(statusSeed));
         assertEq(_identityState(), before, "a status write touched the identity");
         if (!ok) return;
-        ghostStatus[token] = status;
+        ghostStatus[token] = next;
         ++statusWrites;
     }
 
@@ -831,6 +834,34 @@ contract ArtistRegistryHandler is Test {
     function _caller(uint256 seed) private view returns (address) {
         uint256 i = seed % 5;
         return i == 4 ? guardian : vm.addr(keys[i]);
+    }
+
+    /// @dev The active authority's consent to `l` (none is valid while a recovery override
+    ///      restrains it: the active authority is then zero).
+    function _consent(IArtistRegistry.FederatedListing memory l)
+        private
+        view
+        returns (bytes memory consent, bool restrained)
+    {
+        address active = registry.activeAuthorityOf(l.artistId);
+        bytes32 domain = keccak256(
+            abi.encode(
+                keccak256(
+                    "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+                ),
+                keccak256(bytes(Typehashes.ARTIST_REGISTRY_NAME)),
+                keccak256(bytes(Typehashes.DOMAIN_VERSION)),
+                block.chainid,
+                address(registry)
+            )
+        );
+        bytes32 digest = keccak256(
+            abi.encodePacked(
+                hex"1901", domain, keccak256(abi.encode(Typehashes.FEDERATED_LISTING, l))
+            )
+        );
+        consent = _sign(_keyOf(active), digest);
+        restrained = active == address(0);
     }
 
     /// @dev The handler key of `account`, or the first key when it holds none.

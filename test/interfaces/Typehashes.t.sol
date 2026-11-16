@@ -62,7 +62,7 @@ contract TypehashesTest is Test {
         );
         assertEq(
             Typehashes.FEDERATED_LISTING,
-            0xf9cab868b3854d5fed4ded502ac6de9ba93e83e47f06b037a21153b15c83e004
+            0x4a9cf66981feefe0dcd25aa0b9657554118bc34d7928f2709a3e651e9c5da1ce
         );
     }
 

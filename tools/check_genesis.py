@@ -60,11 +60,12 @@ GENESIS_FUNCTIONS = frozenset({
 })
 
 # Wiring arguments that name a federated template: `DeployV1.templateCodeHash` computes the
-# runtime code hash (the name) or the creation code hash (the name with ".creationCode") from
-# the build, so the JSON holds the name, never a literal (ADR 0008).
+# runtime code hash from the build, so the JSON holds the name, never a literal; and each
+# template's deployer, which `DeployV1` deploys (not a governed target, so not in `contracts`)
+# (ADR 0008).
 TEMPLATES = frozenset({
     "FederatedStream", "FederatedEditions",
-    "FederatedStream.creationCode", "FederatedEditions.creationCode",
+    "FederatedStreamDeployer", "FederatedEditionsDeployer",
 })
 
 # Zero-delay roles a guardian may never suspend (check 8): the veto, the pause, and the curation

@@ -97,8 +97,14 @@ contract FederatedSaleTest is FederationBase {
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes memory sig =
             _sign(other, artists.registrationDigest(other, bytes32(0), bytes32(0), deadline));
-        bytes memory consent =
-            _sign(other, artists.listingDigest(uint160(other), address(fed), deadline));
+        bytes memory consent = _sign(
+            other,
+            _listingDigest(
+                IArtistRegistry.FederatedListing(
+                    uint160(other), address(fed), 0, address(0), 0, address(0), deadline
+                )
+            )
+        );
         HostileLister(hostile).listAs(address(fed), other, deadline, sig, consent);
         _govern(
             hotAdmin,
@@ -300,13 +306,23 @@ contract HostileLister {
         bytes calldata consent
     ) external {
         uint256 artistId = _ar.registerFederated(account, 0, 0, deadline, sig);
-        _ar.listFederatedContract(artistId, token, 0, address(0), 0, address(0), deadline, consent);
+        _ar.listFederatedContract(
+            IArtistRegistry.FederatedListing(
+                artistId, token, 0, address(0), 0, address(0), deadline
+            ),
+            consent
+        );
     }
 
     function listUnder(uint256 artistId, address token, uint64 deadline, bytes calldata consent)
         external
     {
-        _ar.listFederatedContract(artistId, token, 0, address(0), 0, address(0), deadline, consent);
+        _ar.listFederatedContract(
+            IArtistRegistry.FederatedListing(
+                artistId, token, 0, address(0), 0, address(0), deadline
+            ),
+            consent
+        );
     }
 
     function supportsInterface(bytes4 id) external pure returns (bool) {

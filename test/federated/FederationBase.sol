@@ -2,30 +2,33 @@
 pragma solidity ^0.8.24;
 
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { FederatedDeployer } from "src/federated/FederatedDeployer.sol";
 import { FederatedEditions } from "src/federated/FederatedEditions.sol";
 import { FederatedStream } from "src/federated/FederatedStream.sol";
 import { FederationRegistry } from "src/federated/FederationRegistry.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { IFederatedEditions } from "src/interfaces/IFederatedEditions.sol";
 import { IFederatedStream } from "src/interfaces/IFederatedStream.sol";
+import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
+import { IFederatedToken } from "src/interfaces/IFederatedToken.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { PRODUCT_FEDERATED, ProductEconomics } from "src/interfaces/types/EconomicsTypes.sol";
 import { EditionTerms, ItemKind, PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
-import { SSTORE2 } from "src/libraries/SSTORE2.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { IntegrationBase } from "../integration/IntegrationBase.sol";
 
 /// @notice The real genesis stack, whose genesis wiring sets up the federation as ADR 0008
 ///         describes: the artist registry is bound to the federation registry and the English
-///         auction points at it, the two v1 template versions (code and creation code hashes
-///         computed by `DeployV1.templateCodeHash`, the creation code published) are approved,
-///         and the English auction and the federated edition auction are admitted for new
-///         federated works. Helpers deploy an artist's templates through the deterministic
-///         deployment proxy, join (with the artist's consent signature), approve items and start
-///         sales.
+///         auction points at it, the two v1 template versions (code hashes computed by
+///         `DeployV1.templateCodeHash`, each bound to its `FederatedDeployer`) are approved, and
+///         the English auction and the federated edition auction are admitted for new federated
+///         works. Helpers deploy an artist's templates through their deployers, join (with the
+///         artist's consent signature over the entry's facts), approve items and start sales.
 abstract contract FederationBase is IntegrationBase {
     uint32 internal constant FED_SHARE = 10_000;
     uint32 internal constant RATE = 7_500;
@@ -35,19 +38,17 @@ abstract contract FederationBase is IntegrationBase {
     FederatedStream internal fed;
     bytes32 internal streamHash;
     bytes32 internal editionsHash;
-    /// @dev Each copy's CREATE2 salt and constructor arguments, which it presents to join.
-    mapping(address token => bytes32) internal provenanceSalt;
-    mapping(address token => bytes) internal provenanceConfig;
+    /// @dev The deployer of each creation code (by its keccak256): the genesis deployers and
+    ///      those tests create for custom templates.
+    mapping(bytes32 creationHash => FederatedDeployer) internal deployerOf;
     uint256 private _copies;
 
     function setUp() public virtual override {
         super.setUp();
-        if (CREATE2_FACTORY.code.length == 0) {
-            vm.etch(
-                CREATE2_FACTORY,
-                hex"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3"
-            );
-        }
+        deployerOf[keccak256(type(FederatedStream).creationCode)] =
+        deployment.federatedStreamDeployer;
+        deployerOf[keccak256(type(FederatedEditions).creationCode)] =
+        deployment.federatedEditionsDeployer;
         fedArtist = _actor("federatedArtist");
         fedRegistry = deployment.federationRegistry;
         fed = _deployStream(fedArtist);
@@ -97,8 +98,8 @@ abstract contract FederationBase is IntegrationBase {
         );
     }
 
-    /// @dev Publishes `creationCode` in data contracts (reusing those already written) and has
-    ///      governance approve `codeHash` with it as `version` of `form`.
+    /// @dev Has governance approve `codeHash` as `version` of `form`, bound to the deployer of
+    ///      `creationCode` (created for it if none exists yet).
     function _approveTemplate(
         FederationRegistry reg,
         bytes memory creationCode,
@@ -106,31 +107,20 @@ abstract contract FederationBase is IntegrationBase {
         uint32 version,
         IFederationRegistry.Form form
     ) internal {
-        bytes32 creationHash = keccak256(creationCode);
-        if (reg.codeOf(creationHash).length == 0) {
-            address[] memory pointers = fedRegistry.codeOf(creationHash);
-            if (pointers.length == 0) pointers = _store(creationCode);
-            reg.publishCode(pointers);
-        }
+        address deployer = address(_deployerFor(creationCode));
         _govern(
             hotAdmin,
             address(reg),
-            abi.encodeCall(reg.approveTemplate, (codeHash, creationHash, version, form))
+            abi.encodeCall(reg.approveTemplate, (codeHash, deployer, version, form))
         );
     }
 
-    /// @dev Writes `code` in `SSTORE2` chunks from this test.
-    function _store(bytes memory code) internal returns (address[] memory pointers) {
-        uint256 size = SSTORE2.MAX_CHUNK_LENGTH;
-        pointers = new address[]((code.length + size - 1) / size);
-        for (uint256 i; i < pointers.length; ++i) {
-            uint256 start = i * size;
-            uint256 end = start + size < code.length ? start + size : code.length;
-            bytes memory chunk = new bytes(end - start);
-            for (uint256 j; j < chunk.length; ++j) {
-                chunk[j] = code[start + j];
-            }
-            pointers[i] = SSTORE2.write(chunk);
+    /// @dev The deployer of `creationCode`, created on first use.
+    function _deployerFor(bytes memory creationCode) internal returns (FederatedDeployer d) {
+        d = deployerOf[keccak256(creationCode)];
+        if (address(d) == address(0)) {
+            d = new FederatedDeployer(creationCode);
+            deployerOf[keccak256(creationCode)] = d;
         }
     }
 
@@ -192,18 +182,12 @@ abstract contract FederationBase is IntegrationBase {
         );
     }
 
-    /// @dev Deploys `creationCode` with `config` through the deterministic deployment proxy, as
-    ///      an artist does, and records the salt and arguments the copy presents to join.
+    /// @dev Deploys `creationCode` with `config` through its deployer, as an artist does.
     function _copy(bytes memory creationCode, bytes memory config)
         internal
         returns (address token)
     {
-        bytes32 salt = bytes32(++_copies);
-        (bool ok, bytes memory ret) = CREATE2_FACTORY.call(bytes.concat(salt, creationCode, config));
-        require(ok && ret.length == 20, "deployment failed");
-        token = address(bytes20(ret));
-        provenanceSalt[token] = salt;
-        provenanceConfig[token] = config;
+        token = _deployerFor(creationCode).deploy(bytes32(++_copies), config);
     }
 
     /// @dev `token` joins, creating `artist`'s identity from its own signature if needed.
@@ -219,15 +203,13 @@ abstract contract FederationBase is IntegrationBase {
         IFederatedStream(token).joinFederation(j);
     }
 
-    /// @dev What `artist` passes to join `token`: its recorded provenance, a registration
-    ///      signature if the artist has no identity yet, and the listing consent.
+    /// @dev What `artist` passes to join `token`: a registration signature if the artist has no
+    ///      identity yet, and the listing consent over the entry's facts.
     function _joinRequest(address token, address artist)
         internal
         view
         returns (IFederationRegistry.Join memory j)
     {
-        j.salt = provenanceSalt[token];
-        j.config = provenanceConfig[token];
         j.profileId = _profileId(artist);
         j.profileDocHash = _profileDoc(artist);
         j.deadline = uint64(block.timestamp + 1 days);
@@ -237,7 +219,32 @@ abstract contract FederationBase is IntegrationBase {
                 artists.registrationDigest(artist, j.profileId, j.profileDocHash, j.deadline)
             );
         }
-        j.consent = _sign(artist, artists.listingDigest(uint160(artist), token, j.deadline));
+        j.consent = _sign(artist, _listingDigest(_listing(token, j.deadline)));
+    }
+
+    /// @dev The EIP-712 digest of a listing consent, computed as a wallet does from the artist
+    ///      registry's domain (EIP-5267) and the golden typehash.
+    function _listingDigest(IArtistRegistry.FederatedListing memory l)
+        internal
+        view
+        returns (bytes32)
+    {
+        return
+            _typedDigest(address(artists), keccak256(abi.encode(Typehashes.FEDERATED_LISTING, l)));
+    }
+
+    /// @dev The facts `token`'s listing will carry, as its artist consents to them.
+    function _listing(address token, uint64 deadline)
+        internal
+        view
+        returns (IArtistRegistry.FederatedListing memory l)
+    {
+        (,, uint256 artistId, uint32 share, address recipient, address partner) =
+            IFederatedToken(token).federationTerms();
+        bool editions = IERC165(token).supportsInterface(type(IFederatedEditions).interfaceId);
+        l = IArtistRegistry.FederatedListing(
+            artistId, token, editions ? 1 : 0, partner, share, recipient, deadline
+        );
     }
 
     /// @dev An empty join request.

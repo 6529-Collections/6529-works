@@ -265,6 +265,34 @@ contract FederatedPairTest is FederationBase {
         assertTrue(pairEditions.isAdmittedMinter(own), "both halves out");
     }
 
+    /// @dev Review G (G4): a restart re-offers an edition master only while its editions are
+    ///      listed ACTIVE (or after the 1/1 contract left), as a first mint does.
+    function test_Pair_AMasterRestartsOnlyWhileItsEditionsAreListed() public {
+        Work memory w = _fedMaster(fedArtist, 0);
+        (uint256 oneSaleId,) = _startFed(pairStream, fedArtist, w, RATE);
+        _settleAtEnd(oneSaleId);
+        vm.startPrank(fedArtist);
+        pairEditions.leaveFederation();
+        pairStream.approveItem(_itemHash(w), RATE);
+        vm.stopPrank();
+        vm.expectRevert(abi.encodeWithSelector(IFederatedStream.WorkNotRestartable.selector, 1));
+        auction.start(address(pairStream), _mintData(w));
+    }
+
+    /// @dev Editions joined beside a 1/1 half that never joins, or that left, mint nothing
+    ///      through the network.
+    function test_Pair_EditionsWithoutAListed1of1MintNothing() public {
+        FederatedStream s = _deployStream(fedArtist);
+        FederatedEditions ed = _deployEditions(fedArtist, address(s));
+        vm.prank(fedArtist);
+        s.linkEditions(address(ed));
+        _join(address(ed), fedArtist);
+        assertFalse(ed.isAdmittedMinter(address(fea)), "1/1 never joined");
+        vm.prank(fedArtist);
+        pairStream.leaveFederation();
+        assertFalse(pairEditions.isAdmittedMinter(address(fea)), "1/1 left");
+    }
+
     /// @dev F2 for editions: delisted, then left, the running edition sale stays void.
     function test_Pair_EditionsLeavingWhileDelistedReviveNoEditionSale() public {
         (,,, uint256 saleId) = _openPair(0);

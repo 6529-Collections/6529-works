@@ -160,15 +160,34 @@ interface IConsolidationSource is IERC165 {
 ///      work, token or fund: it can create identities only for accounts that signed for them,
 ///      and list only contracts their artists signed for.
 interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
-    /// @notice A federated contract's directory status. LEFT and LEFT_DELISTED are terminal:
-    ///         LEFT is an exit from ACTIVE (sales started before it may finish), LEFT_DELISTED an
-    ///         exit from DELISTED (nothing of it is served again).
+    /// @notice A federated contract's directory status. LEFT is an exit from ACTIVE (sales
+    ///         started before it may finish); LEFT_DELISTED an exit from DELISTED, or a delisting
+    ///         of a contract that left (nothing of it is served again), and is terminal.
     enum FederationStatus {
         NONE,
         ACTIVE,
         DELISTED,
         LEFT,
         LEFT_DELISTED
+    }
+
+    /// @notice A directory entry's facts, as the artist consents to them (EIP-712
+    ///         `FederatedListing`, `listFederatedContract`).
+    /// @param artistId The registered artist to list the contract under.
+    /// @param token The federated token contract.
+    /// @param form The token's form, recorded and not interpreted (see `FederatedContractListed`).
+    /// @param partner The other half of a linked pair, or zero.
+    /// @param feeShare The network's share, out of 100,000, as locked in the token.
+    /// @param feeRecipient The network fee recipient locked in the token.
+    /// @param deadline The consent's expiry, inclusive.
+    struct FederatedListing {
+        uint256 artistId;
+        address token;
+        uint8 form;
+        address partner;
+        uint32 feeShare;
+        address feeRecipient;
+        uint64 deadline;
     }
 
     /// @notice The governed waits, in seconds. Each lies between a compiled floor, its genesis
@@ -543,31 +562,21 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     ///         federation registry only. Refused (`FederatedContractRefused`) for a listed token,
     ///         a token without code or EIP-7702 delegated, and when the token, partner or fee
     ///         recipient is a contract this registry knows as canonical. The code hash is read
-    ///         here, never taken from the caller. The artist's consent is checked here, so no
-    ///         federation registry can list a contract under an artist who did not sign for it:
-    ///         `consent` must be the artist's active authority's EIP-712 `FederatedListing(uint256
-    ///         artistId,address token,uint64 deadline)` signature in this registry's domain (ECDSA,
-    ///         or ERC-1271 for a contract authority; `InvalidSignature`, `SignatureExpired`).
-    /// @param artistId The registered artist to list the contract under.
-    /// @param token The federated token contract.
-    /// @param form The token's form, recorded and not interpreted (see `FederatedContractListed`).
-    /// @param partner The other half of a linked pair, or zero.
-    /// @param feeShare The network's share, out of 100,000, as locked in the token.
-    /// @param feeRecipient The network fee recipient locked in the token.
-    /// @param deadline The consent's expiry, inclusive.
+    ///         here, never taken from the caller. The artist's consent to these exact facts is
+    ///         checked here, so no federation registry can list a contract under an artist who
+    ///         did not sign for it, nor with facts the artist did not sign: `consent` must be the
+    ///         artist's active authority's EIP-712 `FederatedListing(uint256 artistId,address
+    ///         token,uint8 form,address partner,uint32 feeShare,address feeRecipient,uint64
+    ///         deadline)` signature in this registry's domain (ECDSA, or ERC-1271 for a contract
+    ///         authority; `InvalidSignature`, `SignatureExpired`).
+    /// @param listing The entry's facts (`FederatedListing`).
     /// @param consent The artist's active authority's `FederatedListing` signature.
-    function listFederatedContract(
-        uint256 artistId,
-        address token,
-        uint8 form,
-        address partner,
-        uint32 feeShare,
-        address feeRecipient,
-        uint64 deadline,
-        bytes calldata consent
-    ) external;
+    function listFederatedContract(FederatedListing calldata listing, bytes calldata consent)
+        external;
     /// @notice Sets a listed token's status to ACTIVE or DELISTED. Bound federation registry
-    ///         only; never for an unlisted token or one that left (`FederatedStatusRefused`).
+    ///         only. A delisting of a token that left (LEFT) records LEFT_DELISTED, so a delisting
+    ///         decided before an exit still lands; anything else for an unlisted token or one
+    ///         that left is refused (`FederatedStatusRefused`): an exit is never reversed.
     /// @param token The federated token contract.
     /// @param status ACTIVE or DELISTED.
     /// @param ref The federation registry's reference for the decision.
