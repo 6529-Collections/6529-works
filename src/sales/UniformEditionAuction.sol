@@ -172,11 +172,11 @@ abstract contract UniformEditionAuctionBase is
     mapping(uint256 termsId => IUniformEditionAuction.AuctionConfig) private _terms;
     mapping(address recipient => uint16) private _feeRecipientIds;
     mapping(uint256 index => address) private _feeRecipients;
-    mapping(uint256 saleId => SaleWord) private _sales;
+    mapping(uint256 saleId => SaleWord) internal _sales;
     mapping(uint256 saleId => PayoutWord) internal _payouts;
     mapping(uint256 saleId => ResultWord) private _results;
     /// @dev A scan in progress, packed as `ScanWord` is (from the least significant bit).
-    mapping(uint256 saleId => uint256) private _scans;
+    mapping(uint256 saleId => uint256) internal _scans;
     mapping(uint256 saleId => mapping(uint256 bidId => BidWord)) private _bids;
     mapping(uint256 saleId => mapping(uint256 word => uint256)) private _live;
     mapping(uint256 saleId => mapping(uint256 key => uint256)) private _departures;
@@ -307,8 +307,9 @@ abstract contract UniformEditionAuctionBase is
     /// @param quantity Units, from 1.
     /// @return bidId The new bid's ID.
     function bid(uint256 saleId, uint256 step, uint256 quantity)
-        external
+        public
         payable
+        virtual
         nonReentrant
         returns (uint256 bidId)
     {
@@ -353,7 +354,12 @@ abstract contract UniformEditionAuctionBase is
     /// @param saleId The sale ID.
     /// @param bidId The bid's ID.
     /// @param newStep A step above the bid's and below `stepCount`.
-    function raise(uint256 saleId, uint256 bidId, uint256 newStep) external payable nonReentrant {
+    function raise(uint256 saleId, uint256 bidId, uint256 newStep)
+        public
+        payable
+        virtual
+        nonReentrant
+    {
         SaleWord memory a = _open(saleId);
         BidWord memory b = _bidOf(saleId, bidId);
         if (b.bidder != msg.sender) revert IUniformEditionAuction.NotBidder(msg.sender);
@@ -428,7 +434,12 @@ abstract contract UniformEditionAuctionBase is
     /// @return Whether the sale is now SETTLED or VOID.
     /// @dev Pays with `RevenuePayment.payETH`, `Limits.payoutGas` per wallet: a refusal is
     ///      escrowed for that wallet and never blocks settlement.
-    function settle(uint256 saleId, uint256[] calldata order) external nonReentrant returns (bool) {
+    function settle(uint256 saleId, uint256[] calldata order)
+        public
+        virtual
+        nonReentrant
+        returns (bool)
+    {
         SaleWord storage stored = _sales[saleId];
         IUniformEditionAuction.AuctionStatus status = stored.status;
         if (status != IUniformEditionAuction.AuctionStatus.OPEN) {
@@ -1254,7 +1265,7 @@ abstract contract UniformEditionAuctionBase is
     }
 
     /// @dev Marks a sale VOID: every bid is refunded in full at its claim.
-    function _void(uint256 saleId, SaleWord storage stored) private {
+    function _void(uint256 saleId, SaleWord storage stored) internal {
         stored.status = IUniformEditionAuction.AuctionStatus.VOID;
         emit IUniformEditionAuction.AuctionVoided(saleId);
     }

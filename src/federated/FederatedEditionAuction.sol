@@ -20,9 +20,12 @@ import { FederatedEditionAuctionLens } from "./FederatedEditionAuctionLens.sol";
 ///      registry admits); its master is that contract's partner; the network fee is the registry
 ///      entry's share, paid to the economics resolver's federated recipient, both locked at
 ///      open, never what the token reports; a sale of a contract the registry stops serving
-///      (delisted, its template revoked) reads its 1/1 as cancelled, so bidding closes and the
-///      sale voids with full refunds; and an abandoned sale's seal at zero is best effort (a
-///      refusal leaves the edition unsealed: this adapter never mints a void sale's copies).
+///      (delisted, its template revoked) reads its 1/1 as cancelled, so the sale voids with full
+///      refunds, and every bid and raise checks it is still served (6529 Stream Editions' read
+///      only near the close would leave a delisted sale taking bids until then), as does every
+///      settle call while the scan has paid nothing; and an abandoned sale's seal at zero is
+///      best effort (a refusal leaves the edition unsealed: this adapter never mints a void
+///      sale's copies).
 contract FederatedEditionAuction is UniformEditionAuctionBase {
     /// @dev Storage slot 14 (the lens reads it): each sale's edition contract.
     mapping(uint256 saleId => address) private _tokens;
@@ -47,6 +50,44 @@ contract FederatedEditionAuction is UniformEditionAuctionBase {
             authority_, escrow_, englishAuction_, lens_, lensCodeHash, config_, limits_
         )
     { }
+
+    /// @inheritdoc UniformEditionAuctionBase
+    /// @dev Refuses a sale whose contract the registry no longer serves (`BiddingClosed` with
+    ///      end zero, the end the lens's clock gives it), whatever the time.
+    function bid(uint256 saleId, uint256 step, uint256 quantity)
+        public
+        payable
+        override
+        returns (uint256)
+    {
+        _requireServed(saleId);
+        return super.bid(saleId, step, quantity);
+    }
+
+    /// @inheritdoc UniformEditionAuctionBase
+    /// @dev Refuses a sale whose contract the registry no longer serves, as `bid`.
+    function raise(uint256 saleId, uint256 bidId, uint256 newStep) public payable override {
+        _requireServed(saleId);
+        super.raise(saleId, bidId, newStep);
+    }
+
+    /// @inheritdoc UniformEditionAuctionBase
+    /// @dev A sale whose scan is still in progress has paid nothing (the clearing call pays), so
+    ///      a later call re-checks the registry first: a contract delisted since the first call
+    ///      voids the sale with full refunds, as the first call would have. Once the clearing
+    ///      call has paid, the clearing stands.
+    function settle(uint256 saleId, uint256[] calldata order) public override returns (bool) {
+        SaleWord storage stored = _sales[saleId];
+        if (
+            stored.status == IUniformEditionAuction.AuctionStatus.SETTLING && _scans[saleId] != 0
+                && !FederatedEditionAuctionLens(lens).isTarget(_tokens[saleId])
+        ) {
+            if (_reentrancyGuardEntered()) revert ReentrancyGuardReentrantCall();
+            _void(saleId, stored);
+            return true;
+        }
+        return super.settle(saleId, order);
+    }
 
     /// @notice Lists nothing: the federation registry decides (`TargetNotAllowed`).
     /// @param token Any token.
@@ -105,6 +146,15 @@ contract FederatedEditionAuction is UniformEditionAuctionBase {
     ///      the locked delay alone; no 6529 Stream slot is read for a federated sale.
     function _rescueLengthening(uint256) internal pure override returns (uint256) {
         return 0;
+    }
+
+    /// @dev Reverts with `BiddingClosed` for a recorded sale whose contract the registry no
+    ///      longer serves; an unknown sale is left to the shared state check.
+    function _requireServed(uint256 saleId) private view {
+        address token = _tokens[saleId];
+        if (token != address(0) && !FederatedEditionAuctionLens(lens).isTarget(token)) {
+            revert IUniformEditionAuction.BiddingClosed(saleId, 0);
+        }
     }
 
     /// @dev The lens's `clock`: the 1/1's, or cancelled once the registry stops serving the

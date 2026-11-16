@@ -354,4 +354,82 @@ contract FederatedPairTest is FederationBase {
         );
         fea.open(address(pairEditions), tokenId, abi.encode(w.item));
     }
+
+    function _delistPair() internal {
+        address[] memory tokens = new address[](2);
+        (tokens[0], tokens[1]) = (address(pairStream), address(pairEditions));
+        _govern(
+            hotAdmin,
+            address(fedRegistry),
+            abi.encodeCall(
+                fedRegistry.setStatus, (tokens, IFederationRegistry.Status.DELISTED, "vote")
+            )
+        );
+    }
+
+    /// @dev A delisted pair's edition sale takes no bid and no raise, however far from the close:
+    ///      the federated adapter checks the registry on every bid, not only near the close.
+    function test_Pair_ADelistedSaleTakesNoBidOrRaiseLongBeforeTheClose() public {
+        // The vote is scheduled first, so it lands while the sale is young.
+        address[] memory tokens = new address[](2);
+        (tokens[0], tokens[1]) = (address(pairStream), address(pairEditions));
+        bytes memory delist = abi.encodeCall(
+            fedRegistry.setStatus, (tokens, IFederationRegistry.Status.DELISTED, "vote")
+        );
+        (, uint32 delay) = manager.canCall(hotAdmin, address(fedRegistry), bytes4(delist));
+        vm.prank(hotAdmin);
+        manager.schedule(address(fedRegistry), delist, 0);
+        vm.warp(block.timestamp + delay);
+        (,,, uint256 saleId) = _openPair(0);
+        address a = makeAddr("a");
+        _editionBidFed(saleId, a, 100, 3);
+        uint256 closeAt = fl.endTimes(saleId).closeAt;
+        vm.prank(hotAdmin);
+        manager.execute(address(fedRegistry), delist);
+        assertFalse(fl.isTarget(address(pairEditions)));
+        assertLt(
+            block.timestamp + DeployV1.editionAuctionDefaults().softWindow,
+            closeAt,
+            "well before the soft window"
+        );
+        uint256 amount = fl.stepPrice(saleId, 100);
+        uint256 diff = 3 * (fl.stepPrice(saleId, 101) - amount);
+        vm.deal(a, amount + diff);
+        vm.prank(a);
+        vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.BiddingClosed.selector, saleId, 0));
+        fea.bid{ value: amount }(saleId, 100, 1);
+        vm.prank(a);
+        vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.BiddingClosed.selector, saleId, 0));
+        fea.raise{ value: diff }(saleId, 1, 101);
+    }
+
+    /// @dev A delisting between the settle calls of a wide book, while the scan has paid
+    ///      nothing, voids the sale with full refunds: no seal, no payout.
+    function test_Pair_ADelistingMidScanVoidsBeforeAnyPayout() public {
+        (Work memory w, uint256 oneSaleId, uint256 tokenId, uint256 saleId) = _openPair(0);
+        address low = makeAddr("low");
+        address high = makeAddr("high");
+        _editionBidFed(saleId, low, 0, 40);
+        _editionBidFed(saleId, high, 300, 1);
+        uint256 paidLow = 40 * fl.stepPrice(saleId, 0);
+        uint256 paidHigh = fl.stepPrice(saleId, 300);
+        _settleAtEnd(oneSaleId);
+        pairEditions.createEdition(tokenId, w.item);
+        vm.warp(fl.endTimes(saleId).endTime);
+        assertFalse(fea.settle(saleId, new uint256[](0)), "the scan continues");
+        assertEq(uint8(fl.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.SETTLING));
+        _delistPair();
+        uint256 held = address(fea).balance;
+        assertTrue(fea.settle(saleId, new uint256[](0)), "voided");
+        assertEq(uint8(fl.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.VOID));
+        assertEq(address(fea).balance, held, "nothing paid");
+        assertFalse(pairEditions.edition(tokenId).supplySealed, "nothing sealed");
+        vm.prank(low);
+        (uint256 wonLow, uint256 refundLow) = fea.claimBid(saleId, 1, low);
+        vm.prank(high);
+        (uint256 wonHigh, uint256 refundHigh) = fea.claimBid(saleId, 2, high);
+        assertEq(wonLow + wonHigh, 0);
+        assertEq(refundLow, paidLow);
+        assertEq(refundHigh, paidHigh);
+    }
 }
