@@ -139,6 +139,23 @@ contract NetworkAndBrakeTest is GovernanceFixture {
         assertFalse(still);
     }
 
+    /// @dev Every grant that makes an account a member counts once; a second grant to a member
+    ///      does not, and a grant after a revocation does, even within the same second (the
+    ///      curation verifier's signer epoch relies on it).
+    function test_GrantCountMovesOnEveryNewMembership() public {
+        address key = makeAddr("countedKey");
+        assertEq(manager.grantCount(Roles.CURATOR, key), 0);
+        vm.startPrank(adminSafe);
+        manager.grantRole(Roles.CURATOR, key, 0);
+        assertEq(manager.grantCount(Roles.CURATOR, key), 1);
+        manager.grantRole(Roles.CURATOR, key, 0);
+        assertEq(manager.grantCount(Roles.CURATOR, key), 1, "already a member");
+        manager.revokeRole(Roles.CURATOR, key);
+        manager.grantRole(Roles.CURATOR, key, 0);
+        vm.stopPrank();
+        assertEq(manager.grantCount(Roles.CURATOR, key), 2, "a new membership");
+    }
+
     /// @dev An unmapped selector falls back to `ADMIN`, the 7-day class.
     function test_UnmappedSelectorFallsBackToTheSevenDayClass() public view {
         (bool immediate, uint32 delay) =

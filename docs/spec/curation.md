@@ -113,11 +113,14 @@ Each signing contract uses the domain `(name, "1", chainid, itself)`
 
 ### Signer epoch
 
-`signerEpoch(signer)` is `since << 128 | salt << 64 | changes`
+`signerEpoch(signer)` is `grants << 176 | since << 128 | salt << 64 | changes`
 (`Eip712CurationVerifier.signerEpoch`):
 
 - `since` is when the signer's current `CURATION_SIGNER` grant takes or took effect, read from
-  the AccessManager. A revocation deletes it and a new grant sets a later one.
+  the AccessManager. A revocation deletes it and a new grant sets it again.
+- `grants` is the manager's count of grants that made the signer a member
+  (`WorksAccessManager.grantCount`), so a revocation and a new grant change the epoch even when
+  both land in the same second as the earlier grant (grants take effect at once).
 - `changes` counts `disableSigner` and `enableSigner` calls.
 - `salt` is the low 64 bits of `keccak256(abi.encode(block.prevrandao, signer, changes))`,
   drawn at the latest disable or enable. It only has to be unknown before that block.

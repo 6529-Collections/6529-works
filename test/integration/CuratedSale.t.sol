@@ -488,9 +488,9 @@ contract CuratedSaleFlowTest is IntegrationBase {
         bytes32 evidence = _evidence(packageRoot);
         bytes memory oldGrant = _attestation(signer1, packageRoot, evidence);
         uint64 role = Roles.CURATION_SIGNER;
-        // The network administers operational keys with no delay (integrator ruling 14), some
-        // time after the genesis grant.
-        vm.warp(block.timestamp + 1 days);
+        // The network administers operational keys with no delay (integrator ruling 14): the
+        // revocation and the new grant land in the same second as the genesis grant, so the
+        // grant's `since` alone is unchanged; the manager's grant count still moves the epoch.
         vm.startPrank(hotAdmin);
         manager.revokeRole(role, signer1);
         manager.grantRole(role, signer1, 0);

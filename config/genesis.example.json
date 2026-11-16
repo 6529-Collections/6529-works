@@ -214,6 +214,11 @@
         "signature": "notBefore(bytes32)",
         "selector": "0x7afbb993",
         "note": "When a braked operation may run, zero when it was not braked"
+      },
+      {
+        "signature": "grantCount(uint64,address)",
+        "selector": "0x5effa99b",
+        "note": "How many grants made an account a member of a role; the curation verifier's signer epoch reads it"
       }
     ]
   },

@@ -392,7 +392,7 @@ contract GenesisConfigTest is Test {
             assertEq(_selector(string.concat(_at(".manager.open", i), ".selector")), open[i]);
         }
         uint256 views = _count(".manager.views");
-        assertEq(views, 4, "manager.views");
+        assertEq(views, 5, "manager.views");
         for (uint256 i; i < views; ++i) {
             string memory v = _at(".manager.views", i);
             assertEq(

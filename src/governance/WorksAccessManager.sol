@@ -33,6 +33,8 @@ contract WorksAccessManager is AccessManager {
     address public brake;
     /// @dev Set by {brakeOnce}; cleared when the operation runs.
     mapping(bytes32 operationId => uint48) private _notBefore;
+    /// @dev How many times each account became a member of each role.
+    mapping(uint64 roleId => mapping(address account => uint32)) private _grants;
 
     /// @notice The network named `next` as its successor; it takes over on {acceptNetwork}.
     /// @param network The current network.
@@ -123,6 +125,16 @@ contract WorksAccessManager is AccessManager {
         return _notBefore[operationId];
     }
 
+    /// @notice How many times `account` became a member of `roleId`: every grant to a
+    ///         non-member counts, so a revocation followed by a new grant always changes it,
+    ///         even within one second (the grant's `since` alone may not).
+    /// @param roleId The role.
+    /// @param account The account.
+    /// @return The number of grants that made `account` a member.
+    function grantCount(uint64 roleId, address account) external view returns (uint32) {
+        return _grants[roleId][account];
+    }
+
     // ------------------------------------------------------------------ overrides
 
     /// @inheritdoc AccessManager
@@ -171,7 +183,9 @@ contract WorksAccessManager is AccessManager {
         if (Roles.isNetworkRole(roleId) && address(this).code.length != 0) {
             revert NetworkRoleNotGrantable(roleId);
         }
-        return super._grantRole(roleId, account, grantDelay, executionDelay);
+        bool newMember = super._grantRole(roleId, account, grantDelay, executionDelay);
+        if (newMember) ++_grants[roleId][account];
+        return newMember;
     }
 
     /// @inheritdoc AccessManager

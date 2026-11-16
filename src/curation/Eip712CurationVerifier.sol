@@ -8,7 +8,13 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 import { Roles } from "../governance/Roles.sol";
 import { ICurationSignerVerifier, ICurationVerifier } from "../interfaces/ICurationVerifier.sol";
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
+import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
+
+/// @dev The grant counter the 6529 Works manager keeps (`WorksAccessManager.grantCount`).
+interface IGrantCount {
+    function grantCount(uint64 roleId, address account) external view returns (uint32);
+}
 
 /// @title Eip712CurationVerifier
 /// @notice The v1 curation verifier: a `Typehashes.PACKAGE_APPROVAL` attestation by an active
@@ -113,14 +119,21 @@ contract Eip712CurationVerifier is ICurationSignerVerifier, AccessManaged, EIP71
     }
 
     /// @inheritdoc ICurationSignerVerifier
-    /// @dev `since << 128 | salt << 64 | changes`: `since` is when the signer's CURATION_SIGNER
-    ///      grant takes or took effect (zero without a grant); a revocation deletes it and a new
-    ///      grant sets a later one. `changes` counts `disableSigner` and `enableSigner` calls, and
-    ///      `salt` is drawn at the latest of them.
+    /// @dev `grants << 176 | since << 128 | salt << 64 | changes`: `since` is when the signer's
+    ///      CURATION_SIGNER grant takes or took effect (zero without a grant), and `grants` the
+    ///      manager's count of grants that made it a member (`grantCount`), so a revocation and a
+    ///      new grant change the epoch even within one second. A manager without the counter
+    ///      answers zero (a shortfall reverts, `BoundedCall`). `changes` counts `disableSigner`
+    ///      and `enableSigner` calls, and `salt` is drawn at the latest of them.
     function signerEpoch(address signer) public view returns (uint256) {
-        (uint48 since,,,) = IAccessManager(authority()).getAccess(Roles.CURATION_SIGNER, signer);
+        address manager = authority();
+        (uint48 since,,,) = IAccessManager(manager).getAccess(Roles.CURATION_SIGNER, signer);
+        (bool ok, bytes32 word) = BoundedCall.tryReadWordAll(
+            manager, abi.encodeCall(IGrantCount.grantCount, (Roles.CURATION_SIGNER, signer))
+        );
+        uint256 grants = ok ? uint256(uint32(uint256(word))) : 0;
         SignerState storage s = _signers[signer];
-        return uint256(since) << 128 | uint256(s.salt) << 64 | s.changes;
+        return grants << 176 | uint256(since) << 128 | uint256(s.salt) << 64 | s.changes;
     }
 
     /// @notice The EIP-712 digest a curation signer signs to approve a package root, at its
