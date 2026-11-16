@@ -282,16 +282,29 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         // Plus however much 6529 Stream's rescue delay for the master's works exceeds its
         // permanent 90-day floor, which the delay's 120-day minimum assumed, at most the cap
         // (the adapter enforces the same floor). Both reads forward all gas and revert on any
-        // failure.
-        uint256 word =
-            uint256(IStream(_stream).extsload(StreamLayout.minterSlot(_englishAuction), 1)[0]);
-        // Safe: the removal time, the locked delay and the cap, field by field.
-        // forge-lint: disable-start(unsafe-typecast)
-        uint256 added =
-            uint40(word >> 32) != 0 ? uint32(word >> 72) : IStream(_stream).rescueDelay();
+        // failure, a shortfall with `BoundedCallShortfall`.
+        (bool read, bytes memory data) = BoundedCall.tryReadAll(
+            _stream,
+            abi.encodeCall(IStream.extsload, (StreamLayout.minterSlot(_englishAuction), 1)),
+            0x60
+        );
+        if (!read || data.length != 0x60) revert();
+        uint256 added;
+        assembly ("memory-safe") {
+            added := mload(add(data, 0x60))
+        }
+        // The removal time and the locked delay, field by field (`StreamLayout`).
+        if ((added >> 32) & type(uint40).max != 0) {
+            added = (added >> 72) & type(uint32).max;
+        } else {
+            bytes32 delay;
+            (read, delay) =
+                BoundedCall.tryReadWordAll(_stream, abi.encodeCall(IStream.rescueDelay, ()));
+            if (!read) revert();
+            added = uint256(delay);
+        }
         added -= 90 days;
-        uint256 cap = uint256(uint16(_word(IStorage.Space.SETTINGS, 0, 0) >> 192)) * 1 days;
-        // forge-lint: disable-end(unsafe-typecast)
+        uint256 cap = ((_word(IStorage.Space.SETTINGS, 0, 0) >> 192) & type(uint16).max) * 1 days;
         if (added > cap) added = cap;
         abandonAt = uint256(e.endTime) + uint256(p.voidDelayDays) * 1 days + added;
         // forge-lint: disable-next-line(block-timestamp)

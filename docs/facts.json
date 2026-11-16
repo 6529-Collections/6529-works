@@ -168,6 +168,11 @@
         "min": 30000,
         "max": 3000000
       },
+      "rescueCapDays": {
+        "default": 730,
+        "min": 90,
+        "max": 730
+      },
       "settlementPerCall": {
         "bookWordsScanned": 24,
         "departuresSweptByTheClearingCall": 16,

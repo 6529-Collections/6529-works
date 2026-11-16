@@ -1218,7 +1218,8 @@ contract UniformEditionAuction is
     ///      abandonment delay's minimum assumes, at most `capDays` days: the delay Stream locked
     ///      for the English auction's works when governance removed it (read natively through
     ///      `IStream.extsload` at `StreamLayout.minterSlot`; a later lengthening never reaches
-    ///      them), else the delay in force. Both reads forward all gas and revert on any failure.
+    ///      them), else the delay in force. Both reads forward all gas and revert on any failure
+    ///      (Stream's permanent views never refuse).
     function _rescueAddition(uint256 capDays) private view returns (uint256 added) {
         uint256 word =
             uint256(IStream(_stream).extsload(StreamLayout.minterSlot(_englishAuction), 1)[0]);
