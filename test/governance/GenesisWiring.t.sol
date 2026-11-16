@@ -347,6 +347,40 @@ contract GenesisWiringTest is GovernanceFixture {
         assertEq(target.verifier(), verifier0);
     }
 
+    /// Review F (F5): a genesis selector reaches only the contracts that declare the interface
+    /// it is admitted for. The artist registry's `setFederationRegistry`, a 30-day replacement,
+    /// shares the sale adapters' selector; a target that does not declare `ISaleAdapter` is
+    /// refused, and so are the other scoped selectors.
+    function test_GenesisSelectorsReachOnlyTheirTargets() public {
+        assertEq(
+            IArtistRegistry.setFederationRegistry.selector,
+            ISaleAdapter.setFederationRegistry.selector
+        );
+        assertEq(
+            GovernanceConfig.genesisInterface(ISaleAdapter.setFederationRegistry.selector),
+            type(ISaleAdapter).interfaceId
+        );
+        bytes4[5] memory scoped = [
+            ISaleAdapter.setFederationRegistry.selector,
+            ISaleAdapter.setTarget.selector,
+            IMintTarget.setAdmittedMinter.selector,
+            FederationRegistry.setAdapter.selector,
+            FederationRegistry.approveTemplate.selector
+        ];
+        for (uint256 i; i < scoped.length; ++i) {
+            _expectWiringRevert(
+                _one(_call(address(target), abi.encodePacked(scoped[i], bytes32(0), bytes32(0)))),
+                abi.encodeWithSelector(
+                    GovernanceConfig.WiringSelectorNotAllowed.selector, address(target), scoped[i]
+                )
+            );
+        }
+        // A target declaring the interface still receives it.
+        GovernanceConfig.Config memory cfg = _wiredConfig();
+        configurator.configure(cfg, MANIFEST, _genesisCalls());
+        assertTrue(wired.isTarget(address(peerB)));
+    }
+
     /// Regression for the PR #25 review: the old deny-list missed the manager's `multicall`.
     /// Even if the manager were admitted as a target, the allow-list rejects it.
     function test_AllowListRejectsManagerCallsEvenIfTheManagerWereATarget() public {

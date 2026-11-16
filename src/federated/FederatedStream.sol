@@ -134,6 +134,7 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
     {
         Dependency.check(c.contentStore);
         _contentStore = c.contentStore;
+        emit ContentStoreSet(c.contentStore);
         _collections[COLLECTION].name = c.name;
         _setRenderer(c.renderer, c.rendererCodeHash);
     }
@@ -494,6 +495,11 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
     }
 
     /// @inheritdoc IFederatedStream
+    function contentStore() external view returns (address) {
+        return _contentStore;
+    }
+
+    /// @inheritdoc IFederatedStream
     function workRecords() external view returns (address) {
         return address(this);
     }
@@ -594,7 +600,9 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
     ///      one but this contract's artist: every party's account and every artist-resolved
     ///      payee must be the artist (its ID's account and its ID), since no other party consents
     ///      on chain; fixed payees are accounts the artist pays. The license ID follows the mint
-    ///      rule (`SpdxId`), so the renderer can always show it.
+    ///      rule (`SpdxId`), so the renderer can always show it. An EDITION_MASTER needs the
+    ///      linked editions contract listed ACTIVE while this contract has not left, so a master
+    ///      sold at the network's fee always has editions that carry it.
     function _open(
         PackageItem memory item,
         MediaFile[] memory media,
@@ -607,7 +615,8 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
                 || media[0].sha256Hash != item.contentHash
                 || WorksHashing.mediaHash(media) != item.mediaHash || item.kind > EDITION_MASTER
                 || item.seedPolicy > SEED_ARTIST
-                || (item.kind == EDITION_MASTER && _partner == address(0))
+                || (item.kind == EDITION_MASTER
+                    && (_partner == address(0) || !(_left() || _listedActive(_partner))))
                 || !SpdxId.isValid(item.license.spdxId) || !_namesOnlyTheArtist(item)
         ) revert InvalidMintRequest();
         workId = ++_workCount;

@@ -25,6 +25,7 @@ import {
 } from "src/interfaces/types/EconomicsTypes.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
+import { SSTORE2 } from "src/libraries/SSTORE2.sol";
 import { EnglishAuctionLens } from "src/sales/EnglishAuctionLens.sol";
 import { DeployV1 } from "./DeployV1.sol";
 
@@ -311,8 +312,23 @@ library VerifyV1 {
             !registry.isAdmittedAdapter(english)
                 || !registry.isAdmittedAdapter(address(d.federatedEditionAuction))
         ) revert FederationMismatch("admitted adapters");
-        _requireTemplate(registry, "FederatedStream", IFederationRegistry.Form.ERC721);
-        _requireTemplate(registry, "FederatedEditions", IFederationRegistry.Form.ERC1155);
+        if (registry.contentStore() != address(d.contentStore)) {
+            revert FederationMismatch("FederationRegistry.contentStore");
+        }
+        checkTemplate(
+            registry,
+            "FederatedStream",
+            DeployV1.templateCodeHash("FederatedStream"),
+            DeployV1.templateCodeHash("FederatedStream.creationCode"),
+            IFederationRegistry.Form.ERC721
+        );
+        checkTemplate(
+            registry,
+            "FederatedEditions",
+            DeployV1.templateCodeHash("FederatedEditions"),
+            DeployV1.templateCodeHash("FederatedEditions.creationCode"),
+            IFederationRegistry.Form.ERC1155
+        );
         address lens = d.federatedEditionAuction.lens();
         IUniformEditionAuctionLens l = IUniformEditionAuctionLens(lens);
         if (
@@ -325,15 +341,32 @@ library VerifyV1 {
         }
     }
 
-    function _requireTemplate(
+    /// @notice A template version is approved as built: version 1 of `form`, runtime code hash
+    ///         `codeHash` bound to `creationHash`, and that creation code published in data
+    ///         contracts whose bytes hash to it. A build whose sources or metadata differ from the
+    ///         genesis build computes other hashes and fails (`FederationMismatch(name)`).
+    /// @param registry The federation registry.
+    /// @param name The template's name, for the error.
+    /// @param codeHash The build's runtime code hash.
+    /// @param creationHash The build's creation code hash.
+    /// @param form Its form.
+    function checkTemplate(
         FederationRegistry registry,
         string memory name,
+        bytes32 codeHash,
+        bytes32 creationHash,
         IFederationRegistry.Form form
-    ) private view {
-        FederationRegistry.Template memory t = registry.templateOf(DeployV1.templateCodeHash(name));
+    ) internal view {
+        FederationRegistry.Template memory t = registry.templateOf(codeHash);
+        address[] memory pointers = registry.codeOf(creationHash);
+        bytes memory code;
+        for (uint256 i; i < pointers.length; ++i) {
+            code = bytes.concat(code, SSTORE2.read(pointers[i]));
+        }
         if (
             t.status != FederationRegistry.TemplateStatus.APPROVED || t.version != 1
-                || t.form != form
+                || t.form != form || t.creationHash != creationHash || pointers.length == 0
+                || keccak256(code) != creationHash
         ) revert FederationMismatch(name);
     }
 
@@ -413,8 +446,8 @@ library VerifyV1 {
                 FederationRegistry.Template memory t =
                     FederationRegistry(target).templateOf(_word(data, 0));
                 ok = t.status == FederationRegistry.TemplateStatus.APPROVED
-                    && t.version == uint256(_word(data, 1))
-                    && uint256(t.form) == uint256(_word(data, 2));
+                    && t.creationHash == _word(data, 1) && t.version == uint256(_word(data, 2))
+                    && uint256(t.form) == uint256(_word(data, 3));
             } else {
                 revert UnknownWiringSelector(selector);
             }

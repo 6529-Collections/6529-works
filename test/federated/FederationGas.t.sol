@@ -23,7 +23,7 @@ import { FederationBase } from "./FederationBase.sol";
 contract FederationGasTest is FederationBase {
     uint256 internal constant DEPLOY_721_CEILING = 5_370_000;
     uint256 internal constant DEPLOY_1155_CEILING = 3_870_000;
-    uint256 internal constant JOIN_CEILING = 295_000;
+    uint256 internal constant JOIN_CEILING = 345_000;
     uint256 internal constant APPROVE_CEILING = 61_000;
     uint256 internal constant FIRST_START_CEILING = 685_000;
     uint256 internal constant STEADY_START_CEILING = 415_000;
@@ -31,7 +31,7 @@ contract FederationGasTest is FederationBase {
     uint256 internal constant SETTLE_SOLD_CEILING = 182_000;
     uint256 internal constant SETTLE_UNBID_CEILING = 156_000;
     uint256 internal constant RESTART_CEILING = 253_000;
-    uint256 internal constant EDITION_OPEN_CEILING = 371_000;
+    uint256 internal constant EDITION_OPEN_CEILING = 380_000;
     uint256 internal constant CREATE_EDITION_CEILING = 90_000;
     uint256 internal constant EDITION_SETTLE_CEILING = 162_000;
 
@@ -60,6 +60,11 @@ contract FederationGasTest is FederationBase {
             address(fedRegistry),
             abi.encodeCall(fedRegistry.setAdapter, (address(fea), true))
         );
+        // A join reads the published creation code: probe its data contracts.
+        address[] memory code = fedRegistry.codeOf(keccak256(type(FederatedStream).creationCode));
+        for (uint256 i; i < code.length; ++i) {
+            _extra.push(code[i]);
+        }
     }
 
     address[] internal _extra;
@@ -162,22 +167,32 @@ contract FederationGasTest is FederationBase {
         assertLe(total1155, DEPLOY_1155_CEILING);
     }
 
+    /// @dev F1: an artist deploys through the deterministic deployment proxy (the transaction
+    ///      carries the salt and the same initcode), so the bytes deployed are the same as a
+    ///      plain CREATE; the proxy adds its call, the initcode copy and CREATE2's hashing.
+    function test_Gas_DeployThroughTheDeploymentProxy() public {
+        bytes memory initcode = abi.encodePacked(
+            type(FederatedStream).creationCode, abi.encode(_streamConfig(fedArtist))
+        );
+        (, uint256 direct,,) = _deploy(initcode);
+        bytes memory data = bytes.concat(bytes32(uint256(0x6529)), initcode);
+        uint256 before = gasleft();
+        (bool ok,) = CREATE2_FACTORY.call(data);
+        uint256 frame = before - gasleft();
+        assertTrue(ok);
+        uint256 total = _txGas(data, frame);
+        emit log_named_uint("FederatedStream deploy, plain CREATE (tx, Prague)", direct);
+        emit log_named_uint("FederatedStream deploy, through the proxy (tx, Prague)", total);
+        assertLe(total, direct + direct / 100, "the proxy adds under 1%");
+    }
+
     // ------------------------------------------------------------------ the 1/1 path
 
     function test_Gas_JoinCreatingTheIdentity() public {
-        uint64 deadline = uint64(block.timestamp + 1 days);
-        bytes memory sig = _sign(
-            fedArtist,
-            artists.registrationDigest(
-                fedArtist, _profileId(fedArtist), _profileDoc(fedArtist), deadline
-            )
-        );
         (uint256 total,, StateGrowth.Growth memory g) = _measureGrowth(
             fedArtist,
             address(fed),
-            abi.encodeCall(
-                fed.joinFederation, (_profileId(fedArtist), _profileDoc(fedArtist), deadline, sig)
-            ),
+            abi.encodeCall(fed.joinFederation, (_joinRequest(address(fed), fedArtist))),
             0
         );
         _row("join, creating the identity", total, g);

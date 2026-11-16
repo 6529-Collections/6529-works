@@ -33,12 +33,15 @@ contract FederationGovernanceTest is FederationBase {
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, collector)
         );
         vm.prank(collector);
-        fedRegistry.approveTemplate(keccak256("x"), 2, IFederationRegistry.Form.ERC721);
+        fedRegistry.approveTemplate(
+            keccak256("x"), keccak256("y"), 2, IFederationRegistry.Form.ERC721
+        );
         (, uint32 delay) =
             manager.canCall(hotAdmin, address(fedRegistry), fedRegistry.approveTemplate.selector);
         assertEq(delay, 30 days);
         bytes memory again = abi.encodeCall(
-            fedRegistry.approveTemplate, (streamHash, 2, IFederationRegistry.Form.ERC721)
+            fedRegistry.approveTemplate,
+            (streamHash, keccak256("y"), 2, IFederationRegistry.Form.ERC721)
         );
         assertFalse(_governTry(hotAdmin, address(fedRegistry), again), "once per code hash");
         FederationRegistry.Template memory t = fedRegistry.templateOf(streamHash);
@@ -56,6 +59,7 @@ contract FederationGovernanceTest is FederationBase {
         vm.expectEmit(address(fedRegistry));
         emit FederationRegistry.TemplateSet(
             streamHash,
+            keccak256(type(FederatedStream).creationCode),
             1,
             IFederationRegistry.Form.ERC721,
             FederationRegistry.TemplateStatus.SUSPENDED
@@ -186,8 +190,9 @@ contract FederationGovernanceTest is FederationBase {
     function test_Replacement_InheritsEveryListingWithNothingToMigrate() public {
         (uint256 saleId, uint256 tokenId) = _startFed(_fedWork(fedArtist));
         _ethBid(saleId, collector, 1 ether);
-        FederationRegistry next =
-            new FederationRegistry(address(manager), address(artists), address(economics));
+        FederationRegistry next = new FederationRegistry(
+            address(manager), address(artists), address(economics), address(store)
+        );
         _mapRegistryRoles(address(next));
         _approveTemplates(next);
         _govern(hotAdmin, address(next), abi.encodeCall(next.setAdapter, (address(auction), true)));
@@ -274,7 +279,7 @@ contract FederationGovernanceTest is FederationBase {
         assertTrue(left);
         vm.prank(fedArtist);
         vm.expectRevert(IFederatedToken.FederationStateInvalid.selector);
-        solo.joinFederation(0, 0, 0, "");
+        solo.joinFederation(_noJoin());
     }
 
     function _payment(address payer, uint256 amount) internal pure returns (Payment memory) {

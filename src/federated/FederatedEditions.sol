@@ -8,6 +8,7 @@ import { ISplitFactory } from "../economics/interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "../economics/interfaces/ISplitWallet.sol";
 import { Splits } from "../economics/Splits.sol";
 import { EditionRules } from "../editions/EditionRules.sol";
+import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
 import { IEditions } from "../interfaces/IEditions.sol";
 import { IFederatedEditions } from "../interfaces/IFederatedEditions.sol";
 import { IFederatedStream } from "../interfaces/IFederatedStream.sol";
@@ -280,6 +281,16 @@ contract FederatedEditions is ERC1155, FederatedMembership, IFederatedEditions {
     }
 
     // ------------------------------------------------------------------ internal
+
+    /// @dev After the exit, the artist's own minters mint only once the partner is out of the
+    ///      federation too (unlisted, LEFT or LEFT_DELISTED), so no edition of a master sold at
+    ///      the network's fee sells without it while the partner is listed.
+    function _ownMinters() internal view override returns (bool) {
+        (, IArtistRegistry.FederationStatus status) =
+            IArtistRegistry(_artistRegistry).federatedListing(_partner);
+        return status != IArtistRegistry.FederationStatus.ACTIVE
+            && status != IArtistRegistry.FederationStatus.DELISTED;
+    }
 
     /// @dev Reverts unless `item` is the partner's EDITION_MASTER item for `editionId`, with ETH
     ///      edition terms, and (when `settled`) the master's primary sale settled.

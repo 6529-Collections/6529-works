@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { FederatedStream } from "src/federated/FederatedStream.sol";
 import { IFederatedStream } from "src/interfaces/IFederatedStream.sol";
+import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { IFederatedToken } from "src/interfaces/IFederatedToken.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { Burner, GasRuleAssertions } from "../helpers/GasRule.sol";
@@ -74,17 +75,25 @@ contract FederationGasRuleTest is FederationBase, GasRuleAssertions {
         Burner burner = new Burner(address(store), 10_000);
         IFederatedStream.Config memory c = _streamConfig(fedArtist);
         c.contentStore = address(burner);
-        FederatedStream other = new FederatedStream(c);
-        _join(address(other), fedArtist);
+        FederatedStream other = _deployStream(c);
+        // The registry lists only a copy naming the canonical store, so this one mints after
+        // its exit, through a minter the artist admits.
+        _join(
+            address(other),
+            fedArtist,
+            abi.encodeWithSelector(IFederationRegistry.NotListable.selector, address(other))
+        );
+        vm.startPrank(fedArtist);
+        other.leaveFederation();
+        other.setAdmittedMinter(address(this), true);
         Work memory w = _fedWork(fedArtist);
-        vm.prank(fedArtist);
         other.approveItem(_itemHash(w), RATE);
-        bytes memory start = abi.encodeCall(auction.start, (address(other), _mintData(w)));
-        Outcome memory o =
-            _assertSameAtEveryMultiple(burner, address(this), address(auction), start);
+        vm.stopPrank();
+        bytes memory mint = abi.encodeCall(other.mint, (address(this), 0, 1, _mintData(w)));
+        Outcome memory o = _assertSameAtEveryMultiple(burner, address(this), address(other), mint);
         assertTrue(o.ok);
         burner.burnerSetMultiple(4);
-        _assertNeverAnswersShort(address(this), address(auction), start);
+        _assertNeverAnswersShort(address(this), address(other), mint);
     }
 
     function test_GasRule_TokenUriReadsTheRendererWithAllGas() public {
@@ -103,7 +112,7 @@ contract FederationGasRuleTest is FederationBase, GasRuleAssertions {
         Burner burner = new Burner(address(artists), 10_000);
         IFederatedStream.Config memory c = _streamConfig(fedArtist);
         c.artistRegistry = address(burner);
-        FederatedStream other = new FederatedStream(c);
+        FederatedStream other = _deployStream(c);
         bytes memory call = abi.encodeCall(other.approveItem, (keccak256("item"), RATE));
         Outcome memory o = _assertSameAtEveryMultiple(burner, fedArtist, address(other), call);
         assertTrue(o.ok, "the artist acts at every multiple");

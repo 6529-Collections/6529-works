@@ -151,19 +151,24 @@ interface IConsolidationSource is IERC165 {
 ///      record of every federated contract: one entry per token (`federatedListing`), written by
 ///      the current federation registry (`listFederatedContract`, `setFederatedStatus`: ACTIVE
 ///      and DELISTED) except exit, which only the token itself writes (`recordFederationExit`:
-///      LEFT, terminal). An entry's artist, code hash (computed here), form, partner and fee
-///      terms are fixed when it is listed. Entries never name this registry, 6529 Stream, its
-///      Editions, or a bound contract. No identity, payout, standing or change
+///      LEFT, or LEFT_DELISTED when it left while delisted; both terminal). An entry's artist,
+///      code hash (computed here), form, partner and fee terms are fixed when it is listed, and
+///      only with the artist's consent, verified here: its active authority's
+///      `FederatedListing` signature for that token. Entries never name this registry, 6529
+///      Stream, its Editions, or a bound contract. No identity, payout, standing or change
 ///      reads a directory entry, so the federation registry has no authority over any artist,
 ///      work, token or fund: it can create identities only for accounts that signed for them,
-///      and write directory entries about other contracts.
+///      and list only contracts their artists signed for.
 interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
-    /// @notice A federated contract's directory status. LEFT is terminal.
+    /// @notice A federated contract's directory status. LEFT and LEFT_DELISTED are terminal:
+    ///         LEFT is an exit from ACTIVE (sales started before it may finish), LEFT_DELISTED an
+    ///         exit from DELISTED (nothing of it is served again).
     enum FederationStatus {
         NONE,
         ACTIVE,
         DELISTED,
-        LEFT
+        LEFT,
+        LEFT_DELISTED
     }
 
     /// @notice The governed waits, in seconds. Each lies between a compiled floor, its genesis
@@ -271,11 +276,11 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
         address feeRecipient
     );
     /// @notice A federated contract's status changed: ACTIVE or DELISTED by the federation
-    ///         registry, or LEFT by the token itself.
+    ///         registry, or LEFT or LEFT_DELISTED by the token itself.
     /// @param token The federated token contract.
     /// @param artistId The artist it is listed under.
     /// @param status The new status.
-    /// @param ref The federation registry's reference for the decision (a vote), zero for LEFT.
+    /// @param ref The federation registry's reference for the decision (a vote), zero for an exit.
     event FederatedContractStatus(
         address indexed token, uint256 indexed artistId, FederationStatus status, bytes32 ref
     );
@@ -358,7 +363,7 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     ///         code or is an EIP-7702 delegated account, or it, its partner or its fee recipient
     ///         is this registry, 6529 Stream, its Editions, or a bound contract.
     error FederatedContractRefused(address token);
-    /// @notice The status write is refused: the token is unlisted or LEFT, or the requested
+    /// @notice The status write is refused: the token is unlisted or has left, or the requested
     ///         status is not ACTIVE or DELISTED.
     error FederatedStatusRefused(address token, FederationStatus current);
     /// @notice A wait is outside its floor and ceiling, or the contest timeout would not exceed
@@ -531,30 +536,39 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     ///         federation registry only. Refused (`FederatedContractRefused`) for a listed token,
     ///         a token without code or EIP-7702 delegated, and when the token, partner or fee
     ///         recipient is a contract this registry knows as canonical. The code hash is read
-    ///         here, never taken from the caller.
+    ///         here, never taken from the caller. The artist's consent is checked here, so no
+    ///         federation registry can list a contract under an artist who did not sign for it:
+    ///         `consent` must be the artist's active authority's EIP-712 `FederatedListing(uint256
+    ///         artistId,address token,uint64 deadline)` signature in this registry's domain (ECDSA,
+    ///         or ERC-1271 for a contract authority; `InvalidSignature`, `SignatureExpired`).
     /// @param artistId The registered artist to list the contract under.
     /// @param token The federated token contract.
     /// @param form The token's form, recorded and not interpreted (see `FederatedContractListed`).
     /// @param partner The other half of a linked pair, or zero.
     /// @param feeShare The network's share, out of 100,000, as locked in the token.
     /// @param feeRecipient The network fee recipient locked in the token.
+    /// @param deadline The consent's expiry, inclusive.
+    /// @param consent The artist's active authority's `FederatedListing` signature.
     function listFederatedContract(
         uint256 artistId,
         address token,
         uint8 form,
         address partner,
         uint32 feeShare,
-        address feeRecipient
+        address feeRecipient,
+        uint64 deadline,
+        bytes calldata consent
     ) external;
     /// @notice Sets a listed token's status to ACTIVE or DELISTED. Bound federation registry
-    ///         only; never for an unlisted or LEFT token (`FederatedStatusRefused`).
+    ///         only; never for an unlisted token or one that left (`FederatedStatusRefused`).
     /// @param token The federated token contract.
     /// @param status ACTIVE or DELISTED.
     /// @param ref The federation registry's reference for the decision.
     function setFederatedStatus(address token, FederationStatus status, bytes32 ref) external;
-    /// @notice Records that the calling token left the federation: its status becomes LEFT,
-    ///         for good. Only the token itself can write it, so exit never depends on replaceable
-    ///         code; a repeat does nothing, and an unlisted caller reverts.
+    /// @notice Records that the calling token left the federation: its status becomes LEFT, or
+    ///         LEFT_DELISTED from DELISTED, for good. Only the token itself can write it, so exit
+    ///         never depends on replaceable code; a repeat does nothing, and an unlisted caller
+    ///         reverts.
     function recordFederationExit() external;
     /// @notice Sets one governed wait. SUCCESSOR_SETTER role (the 30-day class). It must lie
     ///         within `timerBounds`, and afterwards CONTEST_TIMEOUT must exceed OVERRIDE_DELAY by

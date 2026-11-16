@@ -10,6 +10,7 @@ import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { IFederatedEditions } from "src/interfaces/IFederatedEditions.sol";
 import { IFederatedStream } from "src/interfaces/IFederatedStream.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
+import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
@@ -167,31 +168,23 @@ contract FederatedPairTest is FederationBase {
     /// @dev FED-54: the fee locked at open is the registry's, whatever the token answers.
     function test_Pair_ATokenThatReportsNoFeeStillPaysTheRegistryShare() public {
         FederatedStream s = _deployStream(fedArtist);
-        FeeDodgingEditions dodge = new FeeDodgingEditions(
-            IFederatedEditions.Config(
-                "Dodge",
-                "DGE",
-                address(artists),
-                address(splitFactory),
-                uint160(fedArtist),
-                FED_SHARE,
-                networkFee,
-                address(s),
-                fedArtist
+        FeeDodgingEditions dodge = FeeDodgingEditions(
+            _copy(
+                type(FeeDodgingEditions).creationCode,
+                abi.encode(_editionsConfig(fedArtist, address(s)))
             )
         );
-        _govern(
-            hotAdmin,
-            address(fedRegistry),
-            abi.encodeCall(
-                fedRegistry.approveTemplate,
-                (address(dodge).codehash, 98, IFederationRegistry.Form.ERC1155)
-            )
+        _approveTemplate(
+            fedRegistry,
+            type(FeeDodgingEditions).creationCode,
+            address(dodge).codehash,
+            98,
+            IFederationRegistry.Form.ERC1155
         );
         vm.prank(fedArtist);
         s.linkEditions(address(dodge));
-        _join(address(s), fedArtist);
         _join(address(dodge), fedArtist);
+        _join(address(s), fedArtist);
         Work memory w = _fedMaster(fedArtist, 0);
         (uint256 oneSaleId, uint256 tokenId) = _startFed(s, fedArtist, w, RATE);
         uint256 saleId = fea.open(address(dodge), tokenId, abi.encode(w.item));
@@ -229,5 +222,65 @@ contract FederatedPairTest is FederationBase {
             )
         );
         pairEditions.bindMinter(tokenId, w.item);
+    }
+
+    // ------------------------------------------------------------------ the pair as one (F3)
+
+    /// @dev The 1/1 half joins only once its editions are listed ACTIVE under the same artist,
+    ///      and listed editions mint nothing while their 1/1 contract is unlisted.
+    function test_Pair_The1of1JoinsOnlyAfterItsEditions() public {
+        FederatedStream s = _deployStream(fedArtist);
+        FederatedEditions ed = _deployEditions(fedArtist, address(s));
+        vm.prank(fedArtist);
+        s.linkEditions(address(ed));
+        _join(
+            address(s),
+            fedArtist,
+            abi.encodeWithSelector(IFederationRegistry.NotListable.selector, address(s))
+        );
+        _join(address(ed), fedArtist);
+        assertFalse(fedRegistry.canMint(address(ed), address(fea)), "not before its 1/1 half");
+        _join(address(s), fedArtist);
+        assertTrue(fedRegistry.canMint(address(ed), address(fea)));
+    }
+
+    /// @dev Editions that leave while their 1/1 contract is listed admit no minter of their
+    ///      own, and the 1/1 contract mints no new master, until it leaves too.
+    function test_Pair_EditionsThatLeaveFirstSellNothingWithoutTheFee() public {
+        address own = makeAddr("ownMinter");
+        vm.startPrank(fedArtist);
+        pairEditions.leaveFederation();
+        pairEditions.setAdmittedMinter(own, true);
+        vm.stopPrank();
+        assertFalse(pairEditions.isAdmittedMinter(own), "not while the 1/1 half is listed");
+        Work memory w = _fedMaster(fedArtist, 0);
+        vm.prank(fedArtist);
+        pairStream.approveItem(_itemHash(w), RATE);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        auction.start(address(pairStream), _mintData(w));
+        Work memory original = _fedWork(fedArtist);
+        _startFed(pairStream, fedArtist, original, RATE);
+        vm.prank(fedArtist);
+        pairStream.leaveFederation();
+        assertTrue(pairEditions.isAdmittedMinter(own), "both halves out");
+    }
+
+    /// @dev F2 for editions: delisted, then left, the running edition sale stays void.
+    function test_Pair_EditionsLeavingWhileDelistedReviveNoEditionSale() public {
+        (,,, uint256 saleId) = _openPair(0);
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(pairEditions);
+        _govern(
+            hotAdmin,
+            address(fedRegistry),
+            abi.encodeCall(
+                fedRegistry.setStatus, (tokens, IFederationRegistry.Status.DELISTED, "vote")
+            )
+        );
+        assertFalse(fl.isTarget(address(pairEditions)));
+        vm.prank(fedArtist);
+        pairEditions.leaveFederation();
+        assertFalse(fl.isTarget(address(pairEditions)), "an exit serves nothing again");
+        assertTrue(fea.settle(saleId, new uint256[](0)), "voided");
     }
 }

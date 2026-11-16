@@ -77,6 +77,9 @@ contract ArtistRegistryTest is IdentityFixture {
     function testFuzz_Register_ArtistIdIsTheFirstAuthority(address account) public {
         vm.assume(account != address(0) && registry.artistIdOf(account) == 0);
         vm.assume(account != packageRegistry && account != address(registry));
+        // The CREATE2 deployer runs any call's data as initcode, which can consume all the gas
+        // forwarded to it: by design a shortfall, not an answer.
+        vm.assume(account != CREATE2_FACTORY);
         assertEq(_register(account), uint256(uint160(account)));
         assertEq(registry.authorityOf(uint256(uint160(account))), account);
     }

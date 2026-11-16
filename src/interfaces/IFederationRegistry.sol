@@ -17,9 +17,10 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 ///      storage (fee terms, partner), and the registry's table of template code hashes (form
 ///      and version). Nothing migrates when the registry is replaced.
 ///      Through the artist registry a registry may only create an identity for an account that
-///      signed for it, list a non-canonical contract, and set a listed contract ACTIVE or
-///      DELISTED; it has no authority over any artist's authority, payout or standing, nor over
-///      any token, work or fund. A token records its own exit (`LEFT`) without it.
+///      signed for it, list a non-canonical contract whose artist signed for it, and set a
+///      listed contract ACTIVE or DELISTED; it has no authority over any artist's authority,
+///      payout or standing, nor over any token, work or fund. A token records its own exit
+///      (`LEFT`, or `LEFT_DELISTED` from DELISTED) without it.
 interface IFederationRegistry is IERC165 {
     /// @notice What a federated contract is: the 1/1 template or the linked pair's editions.
     ///         `PAIR` is not used by the v1 templates (each half is listed on its own, with its
@@ -62,34 +63,60 @@ interface IFederationRegistry is IERC165 {
         Status status;
     }
 
-    /// @notice A template contract joined: the artist registry listed it.
+    /// @notice What a template passes to join (`IFederatedToken.joinFederation`, `register`).
+    /// @param salt The CREATE2 salt the contract was deployed with through the deterministic
+    ///        deployment proxy.
+    /// @param config Its constructor arguments, exactly as ABI-encoded after the creation code.
+    /// @param profileId The artist's claimed 6529 profile ID (used only to create an identity).
+    /// @param profileDocHash The profile document's hash (likewise).
+    /// @param deadline The expiry of both signatures below.
+    /// @param registration The artist account's `ArtistRegistration` signature, or empty when the
+    ///        artist already has an identity.
+    /// @param consent The artist's active authority's `FederatedListing` signature for this
+    ///        contract, which the artist registry verifies (`listFederatedContract`).
+    struct Join {
+        bytes32 salt;
+        bytes config;
+        bytes32 profileId;
+        bytes32 profileDocHash;
+        uint64 deadline;
+        bytes registration;
+        bytes consent;
+    }
+
+    /// @notice A template contract joined: the artist registry listed it. With the creation code
+    ///         of its template version (`codeHash`'s approval names the creation code's hash), a
+    ///         logs-only reader recomputes the contract's address from `salt` and `config`.
     /// @param token The federated contract.
     /// @param artistId The artist it is listed under.
     /// @param codeHash Its runtime code hash, an approved template version.
-    event Registered(address indexed token, uint256 indexed artistId, bytes32 codeHash);
+    /// @param salt Its CREATE2 salt through the deterministic deployment proxy.
+    /// @param config Its ABI-encoded constructor arguments.
+    event Registered(
+        address indexed token,
+        uint256 indexed artistId,
+        bytes32 codeHash,
+        bytes32 salt,
+        bytes config
+    );
 
     /// @notice Unknown or unusable template code, or a contract this registry cannot list.
     /// @param token The contract.
     error NotListable(address token);
 
     /// @notice Lists the calling contract under its artist (`IArtistRegistry
-    ///         .listFederatedContract`), first creating the artist's identity from the artist's
-    ///         own signature if it has none (`IArtistRegistry.registerFederated`). The caller
-    ///         must run an approved, unsuspended template version, name the canonical artist
-    ///         registry and split ledger, and lock the network's current federated fee share and
-    ///         recipient (`NotListable`); a partner must run an approved template of the other
-    ///         form and name the caller back, with the same artist and terms.
-    /// @param profileId The artist's claimed 6529 profile ID (used only to create an identity).
-    /// @param profileDocHash The profile document's hash (likewise).
-    /// @param deadline The signature's expiry (likewise).
-    /// @param signature The artist account's `ArtistRegistration` signature, or empty when the
-    ///        artist already has an identity.
-    function register(
-        bytes32 profileId,
-        bytes32 profileDocHash,
-        uint64 deadline,
-        bytes calldata signature
-    ) external;
+    ///         .listFederatedContract`, which verifies the artist's consent), first creating the
+    ///         artist's identity from the artist's own signature if it has none
+    ///         (`IArtistRegistry.registerFederated`). The caller must run an approved,
+    ///         unsuspended template version and be the deterministic deployment proxy's CREATE2
+    ///         deployment, with `j.salt`, of that version's published creation code followed by
+    ///         `j.config`; it must name the canonical artist registry, split ledger and (a 1/1
+    ///         template) content store, and lock the network's current federated fee share and
+    ///         recipient (`NotListable`). A partner must run an approved template of the other
+    ///         form and name the caller back, with the same artist and terms; a 1/1 template's
+    ///         partner must already be listed ACTIVE under the same artist.
+    /// @param j The provenance, identity and consent (`Join`).
+    function register(Join calldata j) external;
 
     /// @notice A contract's entry; all zero (`status` NONE) for a contract that is not listed,
     ///         whose code hash this registry does not know, or that left the federation. Every
@@ -100,15 +127,17 @@ interface IFederationRegistry is IERC165 {
     function entry(address token) external view returns (Entry memory);
 
     /// @notice Whether the shared adapters serve `token`'s sales: listed ACTIVE or LEFT (a sale
-    ///         started before an exit finishes; a new one also needs an `entry`, which a left
-    ///         contract has not), and its template version not revoked. A delisted contract's
-    ///         running sales end unsold with refunds.
+    ///         started before an exit from ACTIVE finishes; a new one also needs an `entry`,
+    ///         which a left contract has not), and its template version not revoked. A delisted
+    ///         contract's running sales end unsold with refunds, and so do those of a contract
+    ///         that left while delisted (LEFT_DELISTED).
     /// @param token The federated contract.
     /// @return True while it is served.
     function isActive(address token) external view returns (bool);
 
     /// @notice Whether `adapter` may mint a new work into `token` now: an admitted adapter, a
-    ///         contract listed ACTIVE, and a template version approved and not suspended.
+    ///         contract listed ACTIVE, and a template version approved and not suspended; for an
+    ///         editions contract, its partner listed ACTIVE too.
     /// @param token The federated contract (the caller, when a template asks).
     /// @param adapter The sale adapter asking to mint.
     /// @return True when the mint may proceed.

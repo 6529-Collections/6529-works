@@ -258,7 +258,8 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
     }
 
     /// @dev The federation directory matches the model: canonical contracts are never listed,
-    ///      LEFT is terminal, and each entry names this artist.
+    ///      an exit is terminal (LEFT, or LEFT_DELISTED from DELISTED), and each entry names
+    ///      this artist.
     function invariant_FederationDirectoryMatchesTheModel() public view {
         for (uint256 i; i < 8; ++i) {
             address token = handler.fedToken(i);
@@ -269,7 +270,7 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
                 assertEq(uint8(status), uint8(IArtistRegistry.FederationStatus.NONE));
             }
             if (handler.everLeft(token)) {
-                assertEq(uint8(status), uint8(IArtistRegistry.FederationStatus.LEFT));
+                assertGe(uint8(status), uint8(IArtistRegistry.FederationStatus.LEFT));
             }
             bool isListed = status != IArtistRegistry.FederationStatus.NONE;
             assertEq(listedArtist, isListed ? artistId : 0);

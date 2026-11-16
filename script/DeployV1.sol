@@ -30,6 +30,7 @@ import { ConsolidationAdapter } from "src/identity/ConsolidationAdapter.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IStatementLog, Statement } from "src/interfaces/IStatementLog.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
+import { SSTORE2 } from "src/libraries/SSTORE2.sol";
 import { HashRef, HASH_SHA256 } from "src/interfaces/types/HashRef.sol";
 import { License } from "src/interfaces/types/PackageTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
@@ -56,6 +57,9 @@ import { WorkRecords } from "src/stream/WorkRecords.sol";
 ///      it; `dropped` lists what is left out, and `Deploy.s.sol` refuses anything there off
 ///      anvil except an explicitly declined entropy module.
 library DeployV1 {
+    /// @dev The CREATE2 deployer a broadcasting script deploys through (Foundry's default).
+    address private constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
+
     Vm private constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
     /// @notice Anvil's chain ID: the only chain where stand-ins and placeholders are allowed.
@@ -205,8 +209,39 @@ library DeployV1 {
                 d.manager = d.configurator.worksManager();
             } else if (_eq(name, "ContentStore")) {
                 d.cc0TextFileId = uploadText(d.contentStore, p.cc0Text, "text/plain");
+            } else if (_eq(name, "FederationRegistry")) {
+                publishTemplateCode(d.federationRegistry, type(FederatedStream).creationCode);
+                publishTemplateCode(d.federationRegistry, type(FederatedEditions).creationCode);
             }
         }
+    }
+
+    /// @notice Stores a federated template's creation code in data contracts (`SSTORE2`, at
+    ///         most `MAX_CHUNK_LENGTH` bytes each; a chunk already stored by the CREATE2 deployer
+    ///         or this context is reused) and records them in `registry` (`publishCode`, which
+    ///         rehashes them), so copies deployed from that code can join.
+    /// @param registry The federation registry.
+    /// @param code The template's creation code.
+    /// @return creationHash `keccak256(code)`, as the registry recorded it.
+    function publishTemplateCode(FederationRegistry registry, bytes memory code)
+        internal
+        returns (bytes32 creationHash)
+    {
+        uint256 size = SSTORE2.MAX_CHUNK_LENGTH;
+        address[] memory pointers = new address[]((code.length + size - 1) / size);
+        for (uint256 i; i < pointers.length; ++i) {
+            uint256 start = i * size;
+            uint256 end = start + size < code.length ? start + size : code.length;
+            bytes memory chunk = new bytes(end - start);
+            for (uint256 j; j < chunk.length; ++j) {
+                chunk[j] = code[start + j];
+            }
+            address stored = SSTORE2.pointerOf(CREATE2_DEPLOYER, chunk);
+            if (stored.code.length == 0) stored = SSTORE2.pointerOf(address(this), chunk);
+            pointers[i] = stored.code.length == 0 ? SSTORE2.write(chunk) : stored;
+        }
+        creationHash = registry.publishCode(pointers);
+        if (creationHash != keccak256(code)) revert Create2Failed("template code");
     }
 
     /// @notice The addresses `deploy(p)` creates through CREATE2 deployer `factory`, recomputed
@@ -488,7 +523,7 @@ library DeployV1 {
             // Its split ledger is the economics resolver's split factory, read at construction.
             return _code(
                 type(FederationRegistry).creationCode,
-                abi.encode(m, d.artistRegistry, d.economicsResolver)
+                abi.encode(m, d.artistRegistry, d.economicsResolver, d.contentStore)
             );
         }
         if (n == keccak256("FederatedEditionAuctionLens")) {
@@ -518,17 +553,26 @@ library DeployV1 {
         revert UnknownContract(name);
     }
 
-    /// @notice The runtime code hash of a v1 federated template, which the genesis wiring
-    ///         approves in the federation registry: `keccak256(type(T).runtimeCode)`, the code
-    ///         hash of every copy (the templates have no immutables), computed from this build
-    ///         rather than held as a literal, so it follows any change to a template's source or
-    ///         compiler settings.
-    /// @param name "FederatedStream" or "FederatedEditions".
+    /// @notice A v1 federated template's hashes, which the genesis wiring approves in the
+    ///         federation registry: for "FederatedStream" and "FederatedEditions" the runtime
+    ///         code hash, `keccak256(type(T).runtimeCode)`, every copy's (the templates have no
+    ///         immutables); for "FederatedStream.creationCode" and
+    ///         "FederatedEditions.creationCode" the keccak256 of the creation code every copy
+    ///         must be deployed from. Computed from this build rather than held as literals, so
+    ///         they follow any change to a template's source or compiler settings (the CBOR
+    ///         metadata hash included).
+    /// @param name A template name, optionally followed by ".creationCode".
     function templateCodeHash(string memory name) internal pure returns (bytes32) {
         bytes32 n = keccak256(bytes(name));
         if (n == keccak256("FederatedStream")) return keccak256(type(FederatedStream).runtimeCode);
         if (n == keccak256("FederatedEditions")) {
             return keccak256(type(FederatedEditions).runtimeCode);
+        }
+        if (n == keccak256("FederatedStream.creationCode")) {
+            return keccak256(type(FederatedStream).creationCode);
+        }
+        if (n == keccak256("FederatedEditions.creationCode")) {
+            return keccak256(type(FederatedEditions).creationCode);
         }
         revert UnknownTemplate(name);
     }

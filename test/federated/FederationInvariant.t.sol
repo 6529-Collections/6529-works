@@ -179,14 +179,15 @@ contract FederationInvariantTest is FederationBase {
     function setUp() public override {
         super.setUp();
         _joinedFed();
-        bad = new FaultyFederatedStream(_streamConfig(fedArtist));
-        _govern(
-            hotAdmin,
-            address(fedRegistry),
-            abi.encodeCall(
-                fedRegistry.approveTemplate,
-                (address(bad).codehash, 99, IFederationRegistry.Form.ERC721)
-            )
+        bad = FaultyFederatedStream(
+            _copy(type(FaultyFederatedStream).creationCode, abi.encode(_streamConfig(fedArtist)))
+        );
+        _approveTemplate(
+            fedRegistry,
+            type(FaultyFederatedStream).creationCode,
+            address(bad).codehash,
+            99,
+            IFederationRegistry.Form.ERC721
         );
         _join(address(bad), fedArtist);
         handler = new FederationHandler(

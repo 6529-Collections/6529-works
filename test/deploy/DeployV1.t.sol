@@ -35,6 +35,7 @@ import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { Editions } from "src/editions/Editions.sol";
 import { FederatedStream } from "src/federated/FederatedStream.sol";
 import { FederationRegistry } from "src/federated/FederationRegistry.sol";
+import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { VerifyV1 } from "script/VerifyV1.sol";
 import { MockVrfCoordinator } from "../mocks/entropy/EntropyMocks.sol";
@@ -302,6 +303,35 @@ contract DeployV1Test is Test {
 
     function templateHash(string memory name) external pure returns (bytes32) {
         return DeployV1.templateCodeHash(name);
+    }
+
+    /// @dev Review F (F8): the approved template is the genesis build's creation code, stored
+    ///      in data contracts at genesis. A rebuild whose bytes differ (here only the CBOR
+    ///      metadata hash, as any edit to an imported source makes it) computes another creation
+    ///      hash, and `checkTemplate` refuses it; the genesis build passes.
+    function test_CheckTemplate_RefusesARebuiltArtifact() public {
+        (DeployV1.Deployment memory d,,) = _genesis(_params());
+        bytes memory code = type(FederatedStream).creationCode;
+        bytes32 runtime = DeployV1.templateCodeHash("FederatedStream");
+        this.checkTemplate(d.federationRegistry, runtime, keccak256(code));
+        address[] memory pointers = d.federationRegistry.codeOf(keccak256(code));
+        assertEq(pointers.length, 2, "two data contracts: over one EIP-170 chunk");
+        // The last byte of the metadata hash, before "solc", its version and the CBOR length.
+        bytes memory rebuilt = bytes.concat(code);
+        rebuilt[rebuilt.length - 12] = bytes1(uint8(rebuilt[rebuilt.length - 12]) ^ 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(VerifyV1.FederationMismatch.selector, "FederatedStream")
+        );
+        this.checkTemplate(d.federationRegistry, runtime, keccak256(rebuilt));
+    }
+
+    function checkTemplate(FederationRegistry registry, bytes32 codeHash, bytes32 creationHash)
+        external
+        view
+    {
+        VerifyV1.checkTemplate(
+            registry, "FederatedStream", codeHash, creationHash, IFederationRegistry.Form.ERC721
+        );
     }
 
     function test_GenesisStoresTheCc0TextCompleteOnChain() public {

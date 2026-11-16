@@ -4,6 +4,8 @@ pragma solidity ^0.8.24;
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
+import { IMintTarget } from "src/interfaces/IMintTarget.sol";
+import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 
 /// @notice A peer that answers ERC-165, like the contracts a genesis bind checks.
 contract Erc165PeerMock is IERC165 {
@@ -67,6 +69,13 @@ contract WiringTargetMock is AccessManaged {
         verifier = next;
     }
 
+    /// Declares the interfaces its admitted-minter and sale-target selectors are wired for.
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IERC165).interfaceId
+            || interfaceId == type(IMintTarget).interfaceId
+            || interfaceId == type(ISaleAdapter).interfaceId;
+    }
+
     function _bind(address current, address peer) private returns (address) {
         if (current != address(0)) revert AlreadyBound(msg.sig);
         _checkErc165(peer);
@@ -97,6 +106,11 @@ contract GenesisTargetMock is AccessManaged {
         return _manager;
     }
 
+    /// @dev Stands in for any v1 contract, so it declares every interface (ERC-165).
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId != 0xffffffff;
+    }
+
     fallback() external {
         _checkCanCall(_msgSender(), _msgData());
         bytes32 key = keccak256(msg.data);
@@ -111,7 +125,7 @@ contract WiringValidationHarness {
     function validateWiring(
         GovernanceConfig.Config memory cfg,
         GovernanceConfig.Call[] memory wiring
-    ) external pure {
+    ) external view {
         GovernanceConfig.validateWiring(cfg, wiring);
     }
 }

@@ -5,11 +5,13 @@ import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessMana
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
+import { IFederatedStream } from "../interfaces/IFederatedStream.sol";
 import { IFederatedToken } from "../interfaces/IFederatedToken.sol";
 import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
 import { PRODUCT_FEDERATED, ProductEconomics } from "../interfaces/types/EconomicsTypes.sol";
 import { Dependency } from "../libraries/Dependency.sol";
+import { SSTORE2 } from "../libraries/SSTORE2.sol";
 
 /// @title FederationRegistry
 /// @notice The replaceable, governed admission layer of 6529 Stream Federated (ADR 0008;
@@ -20,10 +22,16 @@ import { Dependency } from "../libraries/Dependency.sol";
 ///      directory, the token's locked storage and the template table (`IFederationRegistry`),
 ///      so a replacement registry inherits every listing at once. It has no authority over any
 ///      deployed federated token, work or fund: it decides only which code may join, which
-///      adapters may mint new works, and a listing's ACTIVE or DELISTED status. Roles (genesis
-///      configuration): template approval, revocation and adapter admission SUCCESSOR_SETTER (30
-///      days); suspension GUARDIAN (immediate, tightening only); resumption and delisting
-///      PARAMETER_SETTER (48 hours, guardian-vetoable).
+///      adapters may mint new works, and a listing's ACTIVE or DELISTED status. A template
+///      version is a runtime code hash bound to the creation code that deploys it: a contract
+///      joins only if it was created by the deterministic deployment proxy (`DEPLOYER`) from
+///      exactly that creation code and the constructor arguments it presents, so its starting
+///      storage is the constructor's and nothing else. Once replaced in the artist registry,
+///      every read answers as the current registry does, so an adapter that still points here
+///      never disagrees with the templates. Roles (genesis configuration): template approval,
+///      revocation and adapter admission SUCCESSOR_SETTER (30 days); suspension GUARDIAN
+///      (immediate, tightening only); resumption and delisting PARAMETER_SETTER (48 hours,
+///      guardian-vetoable).
 contract FederationRegistry is IFederationRegistry, AccessManaged {
     /// @notice A template code hash's status. REVOKED is terminal.
     enum TemplateStatus {
@@ -37,25 +45,45 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
     /// @param version Its version number.
     /// @param form Its form (ERC721 or ERC1155).
     /// @param status Its status.
+    /// @param creationHash The keccak256 of the creation code (constructor arguments excluded)
+    ///        every copy must be deployed from.
     struct Template {
         uint32 version;
         Form form;
         TemplateStatus status;
+        bytes32 creationHash;
     }
 
     /// @notice A template code hash's version, form or status changed.
     /// @param codeHash The template's runtime code hash.
+    /// @param creationHash Its creation code's keccak256.
     /// @param version Its version.
     /// @param form Its form.
     /// @param status Its new status.
-    event TemplateSet(bytes32 indexed codeHash, uint32 version, Form form, TemplateStatus status);
+    event TemplateSet(
+        bytes32 indexed codeHash,
+        bytes32 creationHash,
+        uint32 version,
+        Form form,
+        TemplateStatus status
+    );
     /// @notice A sale adapter was admitted or removed for new federated works.
     /// @param adapter The adapter.
     /// @param admitted Whether it may mint new federated works.
     event AdapterSet(address indexed adapter, bool admitted);
+    /// @notice Creation code was published: the data contracts (`SSTORE2`) that hold it, in
+    ///         order, whose bytes hash to `creationHash`.
+    /// @param creationHash The creation code's keccak256.
+    /// @param pointers The data contracts.
+    event CodePublished(bytes32 indexed creationHash, address[] pointers);
 
     /// @notice The transition is not allowed from the template's current status.
     error TemplateStatusInvalid(bytes32 codeHash, TemplateStatus current);
+
+    /// @notice The deterministic deployment proxy (ownerless, keyless, permissionless: it
+    ///         CREATE2-deploys `calldata[32:]` with salt `calldata[:32]`), from which every
+    ///         federated copy is deployed.
+    address public constant DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
     /// @notice The canonical artist registry, the permanent directory this registry writes.
     IArtistRegistry public immutable artistRegistry;
@@ -64,38 +92,67 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
     IEconomicsResolver public immutable economics;
     /// @notice The canonical split ledger every template must name.
     address public immutable splitLedger;
+    /// @notice The canonical content store every 1/1 template must name.
+    address public immutable contentStore;
 
     mapping(bytes32 codeHash => Template) private _templates;
     mapping(address adapter => bool) private _adapters;
+    mapping(bytes32 creationHash => address[]) private _code;
 
     /// @param authority_ The AccessManager.
     /// @param artistRegistry_ The artist registry (ERC-165 `IArtistRegistry`).
     /// @param economics_ The economics resolver (ERC-165 `IEconomicsResolver`); its split factory
     ///        is the split ledger.
-    constructor(address authority_, address artistRegistry_, address economics_)
-        AccessManaged(authority_)
-    {
+    /// @param contentStore_ The canonical content store.
+    constructor(
+        address authority_,
+        address artistRegistry_,
+        address economics_,
+        address contentStore_
+    ) AccessManaged(authority_) {
         Dependency.check(artistRegistry_, type(IArtistRegistry).interfaceId);
         Dependency.check(economics_, type(IEconomicsResolver).interfaceId);
+        Dependency.check(contentStore_);
         artistRegistry = IArtistRegistry(artistRegistry_);
         economics = IEconomicsResolver(economics_);
         splitLedger = IEconomicsResolver(economics_).splitFactory();
+        contentStore = contentStore_;
     }
 
     // ------------------------------------------------------------------ governance
 
-    /// @notice Approves a template version's runtime code hash. SUCCESSOR_SETTER (30 days).
-    ///         Once only per code hash.
+    /// @notice Approves a template version: its runtime code hash, bound to the creation code
+    ///         every copy must be deployed from. SUCCESSOR_SETTER (30 days). Once only per code
+    ///         hash. Copies join once the creation code is published (`publishCode`).
     /// @param codeHash The runtime code hash of the reviewed template build.
+    /// @param creationHash The keccak256 of that build's creation code.
     /// @param version Its version number.
     /// @param form ERC721 or ERC1155.
-    function approveTemplate(bytes32 codeHash, uint32 version, Form form) external restricted {
+    function approveTemplate(bytes32 codeHash, bytes32 creationHash, uint32 version, Form form)
+        external
+        restricted
+    {
         Template storage t = _templates[codeHash];
-        if (t.status != TemplateStatus.NONE || form == Form.PAIR || codeHash == 0) {
-            revert TemplateStatusInvalid(codeHash, t.status);
+        if (
+            t.status != TemplateStatus.NONE || form == Form.PAIR || codeHash == 0
+                || creationHash == 0
+        ) revert TemplateStatusInvalid(codeHash, t.status);
+        (t.version, t.form, t.status, t.creationHash) =
+        (version, form, TemplateStatus.APPROVED, creationHash);
+        emit TemplateSet(codeHash, creationHash, version, form, TemplateStatus.APPROVED);
+    }
+
+    /// @notice Records the data contracts (`SSTORE2` pointers) that hold a creation code, in
+    ///         order, under the keccak256 of their bytes. Permissionless: the bytes are read and
+    ///         hashed here, so a record is always true; the first one for a hash stays.
+    /// @param pointers The data contracts.
+    /// @return creationHash The keccak256 of the bytes they hold.
+    function publishCode(address[] calldata pointers) external returns (bytes32 creationHash) {
+        creationHash = keccak256(_concat(pointers, msg.data[:0]));
+        if (_code[creationHash].length == 0 && pointers.length != 0) {
+            _code[creationHash] = pointers;
+            emit CodePublished(creationHash, pointers);
         }
-        (t.version, t.form, t.status) = (version, form, TemplateStatus.APPROVED);
-        emit TemplateSet(codeHash, version, form, TemplateStatus.APPROVED);
     }
 
     /// @notice Suspends an approved template version: no contract of it joins or mints a new work;
@@ -121,7 +178,7 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
             revert TemplateStatusInvalid(codeHash, current);
         }
         t.status = TemplateStatus.REVOKED;
-        emit TemplateSet(codeHash, t.version, t.form, TemplateStatus.REVOKED);
+        emit TemplateSet(codeHash, t.creationHash, t.version, t.form, TemplateStatus.REVOKED);
     }
 
     /// @notice Admits or removes a sale adapter for new federated works (ERC-165 `ISaleAdapter`,
@@ -179,42 +236,32 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
     /// @inheritdoc IFederationRegistry
     /// @dev The caller is the token: a genuine template whose code checked the artist's authority
     ///      before calling. Its terms are read from its own storage, and the code hash the artist
-    ///      registry records is read there too.
-    function register(
-        bytes32 profileId,
-        bytes32 profileDocHash,
-        uint64 deadline,
-        bytes calldata signature
-    ) external {
+    ///      registry records is read there too. Its provenance is recomputed: the CREATE2 address
+    ///      of `DEPLOYER`, `j.salt` and the approved creation code followed by `j.config` must be
+    ///      the caller. A 1/1 template must name the canonical content store; one with a partner
+    ///      joins after it, so a listed 1/1 contract's editions are always a listed contract.
+    function register(Join calldata j) external {
         address token = msg.sender;
         Template memory t = _templates[token.codehash];
-        (,, uint256 artistId, uint32 feeShare, address feeRecipient, address partner) =
-            _terms(token);
+        Terms memory x = _terms(token);
         ProductEconomics memory e = economics.economics(PRODUCT_FEDERATED);
         if (
-            t.status != TemplateStatus.APPROVED || feeShare != e.feeShare
-                || feeRecipient != e.feeRecipient
-                || (t.form == Form.ERC1155 && partner == address(0))
+            t.status != TemplateStatus.APPROVED || x.feeShare != e.feeShare
+                || x.feeRecipient != e.feeRecipient
+                || (t.form == Form.ERC1155
+                        ? x.partner == address(0)
+                        : IFederatedStream(token).contentStore() != contentStore)
+                || !_deployedFrom(token, t.creationHash, j.salt, j.config)
         ) revert NotListable(token);
-        if (partner != address(0)) {
-            Template memory p = _templates[partner.codehash];
-            (,, uint256 pArtist, uint32 pShare, address pRecipient, address pPartner) =
-                _terms(partner);
-            if (
-                p.status != TemplateStatus.APPROVED || p.form == t.form || pArtist != artistId
-                    || pShare != feeShare || pRecipient != feeRecipient || pPartner != token
-            ) revert NotListable(token);
-        }
-        address account = address(uint160(artistId));
-        if (artistRegistry.artistIdOf(account) != artistId) {
+        if (x.partner != address(0)) _checkPartner(token, t.form, x);
+        address account = address(uint160(x.artistId));
+        if (artistRegistry.artistIdOf(account) != x.artistId) {
             artistRegistry.registerFederated(
-                account, profileId, profileDocHash, deadline, signature
+                account, j.profileId, j.profileDocHash, j.deadline, j.registration
             );
         }
-        artistRegistry.listFederatedContract(
-            artistId, token, uint8(t.form), partner, feeShare, feeRecipient
-        );
-        emit Registered(token, artistId, token.codehash);
+        _list(token, t.form, x, j);
+        emit Registered(token, x.artistId, token.codehash, j.salt, j.config);
     }
 
     // ------------------------------------------------------------------ reads
@@ -226,13 +273,15 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
     ///      minter still starts no sale there, at the network's fee or any other, while
     ///      `isActive` lets the sales it started before the exit finish.
     function entry(address token) external view returns (Entry memory e) {
+        IFederationRegistry current = _current();
+        if (_forwards(current)) return current.entry(token);
         (uint256 artistId, IArtistRegistry.FederationStatus status) =
             artistRegistry.federatedListing(token);
         bytes32 codeHash = token.codehash;
-        Template memory t = _templates[codeHash];
+        Template storage t = _templates[codeHash];
         if (
-            status == IArtistRegistry.FederationStatus.NONE
-                || status == IArtistRegistry.FederationStatus.LEFT
+            (status != IArtistRegistry.FederationStatus.ACTIVE
+                    && status != IArtistRegistry.FederationStatus.DELISTED)
                 || t.status == TemplateStatus.NONE
         ) return e;
         (,,, uint32 feeShare,, address partner) = IFederatedToken(token).federationTerms();
@@ -248,7 +297,11 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
     }
 
     /// @inheritdoc IFederationRegistry
+    /// @dev LEFT is an exit from ACTIVE; a contract that left while delisted is LEFT_DELISTED in
+    ///      the directory and is not served.
     function isActive(address token) external view returns (bool) {
+        IFederationRegistry current = _current();
+        if (_forwards(current)) return current.isActive(token);
         (, IArtistRegistry.FederationStatus status) = artistRegistry.federatedListing(token);
         TemplateStatus t = _templates[token.codehash].status;
         return (status == IArtistRegistry.FederationStatus.ACTIVE
@@ -257,12 +310,17 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
     }
 
     /// @inheritdoc IFederationRegistry
+    /// @dev An editions contract mints only while its partner is listed ACTIVE too.
     function canMint(address token, address adapter) external view returns (bool) {
-        if (!_adapters[adapter] || _templates[token.codehash].status != TemplateStatus.APPROVED) {
+        IFederationRegistry current = _current();
+        if (_forwards(current)) return current.canMint(token, adapter);
+        Template storage t = _templates[token.codehash];
+        if (!_adapters[adapter] || t.status != TemplateStatus.APPROVED || !_listedActive(token)) {
             return false;
         }
-        (, IArtistRegistry.FederationStatus status) = artistRegistry.federatedListing(token);
-        return status == IArtistRegistry.FederationStatus.ACTIVE;
+        if (t.form != Form.ERC1155) return true;
+        (,,,,, address partner) = IFederatedToken(token).federationTerms();
+        return _listedActive(partner);
     }
 
     /// @notice A template code hash's version, form and status.
@@ -270,6 +328,13 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
     /// @return The template.
     function templateOf(bytes32 codeHash) external view returns (Template memory) {
         return _templates[codeHash];
+    }
+
+    /// @notice The data contracts holding a published creation code, in order.
+    /// @param creationHash The creation code's keccak256.
+    /// @return The pointers, empty if unpublished.
+    function codeOf(bytes32 creationHash) external view returns (address[] memory) {
+        return _code[creationHash];
     }
 
     /// @notice Whether a sale adapter may mint new federated works.
@@ -287,29 +352,116 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
 
     // ------------------------------------------------------------------ internal
 
+    /// @dev A token's locked terms (`IFederatedToken.federationTerms`).
+    struct Terms {
+        address artistRegistry;
+        address splitLedger;
+        uint256 artistId;
+        uint32 feeShare;
+        address feeRecipient;
+        address partner;
+    }
+
     /// @dev A token's locked terms, required to name this deployment's artist registry and split
     ///      ledger (`NotListable`).
-    function _terms(address token)
+    function _terms(address token) private view returns (Terms memory x) {
+        (x.artistRegistry, x.splitLedger, x.artistId, x.feeShare, x.feeRecipient, x.partner) =
+            IFederatedToken(token).federationTerms();
+        if (x.artistRegistry != address(artistRegistry) || x.splitLedger != splitLedger) {
+            revert NotListable(token);
+        }
+    }
+
+    /// @dev Lists `token` with its terms and the artist's consent.
+    function _list(address token, Form form, Terms memory x, Join calldata j) private {
+        artistRegistry.listFederatedContract(
+            x.artistId,
+            token,
+            uint8(form),
+            x.partner,
+            x.feeShare,
+            x.feeRecipient,
+            j.deadline,
+            j.consent
+        );
+    }
+
+    /// @dev Reverts unless `partner`, the other half of `token`'s pair, runs an approved template
+    ///      of the other form under the same artist and terms and names `token` back; a 1/1
+    ///      template's partner must already be listed ACTIVE under the same artist.
+    function _checkPartner(address token, Form form, Terms memory x) private view {
+        Template storage p = _templates[x.partner.codehash];
+        Terms memory y = _terms(x.partner);
+        (uint256 listedAs, IArtistRegistry.FederationStatus status) =
+            artistRegistry.federatedListing(x.partner);
+        if (
+            p.status != TemplateStatus.APPROVED || p.form == form || y.artistId != x.artistId
+                || y.feeShare != x.feeShare || y.feeRecipient != x.feeRecipient
+                || y.partner != token
+                || (form == Form.ERC721
+                    && (listedAs != x.artistId
+                        || status != IArtistRegistry.FederationStatus.ACTIVE))
+        ) revert NotListable(token);
+    }
+
+    /// @dev Whether `token` is the CREATE2 deployment of `DEPLOYER` with `salt` of the creation
+    ///      code published for `creationHash` followed by `config`.
+    function _deployedFrom(address token, bytes32 creationHash, bytes32 salt, bytes calldata config)
         private
         view
-        returns (address, address, uint256, uint32, address, address)
+        returns (bool)
     {
-        (
-            address ar,
-            address ledger,
-            uint256 artistId,
-            uint32 feeShare,
-            address feeRecipient,
-            address partner
-        ) = IFederatedToken(token).federationTerms();
-        if (ar != address(artistRegistry) || ledger != splitLedger) revert NotListable(token);
-        return (ar, ledger, artistId, feeShare, feeRecipient, partner);
+        address[] memory pointers = _code[creationHash];
+        if (pointers.length == 0) return false;
+        bytes32 init = keccak256(_concat(pointers, config));
+        return address(
+            uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), DEPLOYER, salt, init))))
+        ) == token;
+    }
+
+    /// @dev The bytes behind `pointers`, in order, followed by `tail`.
+    function _concat(address[] memory pointers, bytes calldata tail)
+        private
+        view
+        returns (bytes memory out)
+    {
+        uint256 total;
+        for (uint256 i; i < pointers.length; ++i) {
+            total += SSTORE2.size(pointers[i]);
+        }
+        out = new bytes(total + tail.length);
+        uint256 done;
+        for (uint256 i; i < pointers.length; ++i) {
+            done += SSTORE2.copyInto(pointers[i], out, done);
+        }
+        assembly ("memory-safe") {
+            calldatacopy(add(add(out, 0x20), total), tail.offset, tail.length)
+        }
+    }
+
+    /// @dev Whether the directory lists `token` ACTIVE.
+    function _listedActive(address token) private view returns (bool) {
+        (, IArtistRegistry.FederationStatus status) = artistRegistry.federatedListing(token);
+        return status == IArtistRegistry.FederationStatus.ACTIVE;
+    }
+
+    /// @dev The registry the artist registry names now (this one before the bind).
+    function _current() private view returns (IFederationRegistry) {
+        address current = artistRegistry.federationRegistry();
+        return IFederationRegistry(current == address(0) ? address(this) : current);
+    }
+
+    /// @dev Whether a read is answered by `current` rather than here: once replaced, unless the
+    ///      current registry itself asks (one that consults this one gets this one's own answer,
+    ///      so forwarding never loops).
+    function _forwards(IFederationRegistry current) private view returns (bool) {
+        return address(current) != address(this) && msg.sender != address(current);
     }
 
     function _move(bytes32 codeHash, TemplateStatus from, TemplateStatus to) private {
         Template storage t = _templates[codeHash];
         if (t.status != from) revert TemplateStatusInvalid(codeHash, t.status);
         t.status = to;
-        emit TemplateSet(codeHash, t.version, t.form, to);
+        emit TemplateSet(codeHash, t.creationHash, t.version, t.form, to);
     }
 }

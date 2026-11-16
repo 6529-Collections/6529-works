@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IFederationRegistry } from "./IFederationRegistry.sol";
 import { IMintTarget } from "./IMintTarget.sol";
 
 /// @title IFederatedToken
@@ -8,14 +9,17 @@ import { IMintTarget } from "./IMintTarget.sol";
 ///         share: the terms each locks at deployment, joining and leaving the federation, and
 ///         the artist's marketplace metadata (ADR 0008; spec `docs/spec/federation.md`).
 /// @dev A template carries no immutable, so every deployment of one version has one runtime code
-///      hash, and the federation registry recognises a genuine copy by that hash alone. Every
+///      hash; the federation registry recognises a genuine copy by that hash and by its
+///      deployment, through the deterministic deployment proxy, from the version's approved
+///      creation code and the constructor arguments it presents at joining. Every
 ///      power is the artist's, checked against the artist registry's active authority of the
 ///      locked artist ID (so lost-key recovery works); the network holds none over a deployed
 ///      contract. Before the artist has an identity, the account whose address is the artist ID
 ///      acts for it (it can then only join, which creates the identity, or leave). Minting
 ///      (`IMintTarget.isAdmittedMinter`): before the exit, the federation registry's `canMint`
 ///      for this contract, once joined; after it, the artist's own list
-///      (`IMintTarget.setAdmittedMinter`, the artist only, refused before the exit).
+///      (`IMintTarget.setAdmittedMinter`, the artist only, refused before the exit); an
+///      editions contract's own minters mint only once its partner left too.
 interface IFederatedToken is IMintTarget {
     /// @notice The terms fixed at deployment, for good (constructor).
     /// @param artistId The artist the contract belongs to.
@@ -105,17 +109,11 @@ interface IFederatedToken is IMintTarget {
     ///         exists, the account whose address is the artist ID, whose signature then creates
     ///         it). Reverts unless the artist registry lists this contract under its artist in
     ///         this transaction (`FederationStateInvalid`): a listing made by anyone else first
-    ///         can never be confirmed, so the token never sells under it.
-    /// @param profileId The artist's claimed 6529 profile ID (for a new identity).
-    /// @param profileDocHash The profile document's hash (for a new identity).
-    /// @param deadline The signature's expiry (for a new identity).
-    /// @param signature The account's `ArtistRegistration` signature, or empty.
-    function joinFederation(
-        bytes32 profileId,
-        bytes32 profileDocHash,
-        uint64 deadline,
-        bytes calldata signature
-    ) external;
+    ///         can never be confirmed, so the token never sells under it. An editions contract
+    ///         joins before its partner.
+    /// @param j The contract's CREATE2 salt and constructor arguments, the identity fields and
+    ///        the artist's signatures (`IFederationRegistry.Join`).
+    function joinFederation(IFederationRegistry.Join calldata j) external;
     /// @notice Leaves the federation, for good. The artist only. Records `LEFT` in the artist
     ///         registry if the contract was listed (the token itself writes it, so the exit
     ///         needs no replaceable contract). Running sales finish; tokens, ownership, records,

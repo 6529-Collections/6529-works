@@ -76,12 +76,7 @@ abstract contract FederatedMembership is IFederatedToken {
     // ------------------------------------------------------------------ the federation
 
     /// @inheritdoc IFederatedToken
-    function joinFederation(
-        bytes32 profileId,
-        bytes32 profileDocHash,
-        uint64 deadline,
-        bytes calldata signature
-    ) external {
+    function joinFederation(IFederationRegistry.Join calldata j) external {
         _onlyArtist();
         IArtistRegistry ar = IArtistRegistry(_artistRegistry);
         (, IArtistRegistry.FederationStatus before) = ar.federatedListing(address(this));
@@ -89,7 +84,7 @@ abstract contract FederatedMembership is IFederatedToken {
             revert FederationStateInvalid();
         }
         address registry = ar.federationRegistry();
-        IFederationRegistry(registry).register(profileId, profileDocHash, deadline, signature);
+        IFederationRegistry(registry).register(j);
         (uint256 listedAs, IArtistRegistry.FederationStatus status) =
             ar.federatedListing(address(this));
         if (listedAs != _artistId || status != IArtistRegistry.FederationStatus.ACTIVE) {
@@ -125,7 +120,7 @@ abstract contract FederatedMembership is IFederatedToken {
     /// @return True while it may mint.
     function isAdmittedMinter(address adapter) public view returns (bool) {
         uint8 state = _state;
-        if (state & LEFT != 0) return _minters[adapter];
+        if (state & LEFT != 0) return _minters[adapter] && _ownMinters();
         if (state == 0) return false;
         return IFederationRegistry(IArtistRegistry(_artistRegistry).federationRegistry())
             .canMint(address(this), adapter);
@@ -187,6 +182,18 @@ abstract contract FederatedMembership is IFederatedToken {
     /// @dev Reverts unless the caller may mint now.
     function _onlyMinter() internal view {
         if (!isAdmittedMinter(msg.sender)) revert NotAdmittedMinter(msg.sender);
+    }
+
+    /// @dev Whether the artist's own minters may mint after the exit (always, unless overridden).
+    function _ownMinters() internal view virtual returns (bool) {
+        return true;
+    }
+
+    /// @dev Whether the directory lists `token` ACTIVE.
+    function _listedActive(address token) internal view returns (bool) {
+        (, IArtistRegistry.FederationStatus status) =
+            IArtistRegistry(_artistRegistry).federatedListing(token);
+        return status == IArtistRegistry.FederationStatus.ACTIVE;
     }
 
     /// @dev Whether the contract has left the federation.

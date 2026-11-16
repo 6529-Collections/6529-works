@@ -139,6 +139,9 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     bytes32 private constant ARTIST_REGISTRATION = keccak256(
         "ArtistRegistration(address account,bytes32 profileId,bytes32 profileDocHash,uint64 deadline)"
     );
+    /// @dev The artist's active authority's consent to one directory entry.
+    bytes32 private constant FEDERATED_LISTING =
+        keccak256("FederatedListing(uint256 artistId,address token,uint64 deadline)");
 
     /// @dev The identity fields with `restrained` beside the authority, so the active authority
     ///      is one storage read: `restrained` is whether the pending change is an override that
@@ -564,17 +567,25 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     /// @inheritdoc IArtistRegistry
     /// @dev Writes only the token's own entry: nothing that decides an identity, a payout or
     ///      standing reads it. No list and no cap: each listing is its own slot, paid by its
-    ///      registrant; enumeration is by events.
+    ///      registrant; enumeration is by events. The consent is verified against the active
+    ///      authority (zero, so never valid, while a recovery override restrains it); a listing
+    ///      happens once per token, so the signature needs no nonce.
     function listFederatedContract(
         uint256 artistId,
         address token,
         uint8 form,
         address partner,
         uint32 feeShare,
-        address feeRecipient
+        address feeRecipient,
+        uint64 deadline,
+        bytes calldata consent
     ) external {
         if (msg.sender != federationRegistry) revert UnboundCaller(msg.sender);
         _artist(artistId);
+        SignatureVerifier.checkDeadline(deadline);
+        SignatureVerifier.check(
+            _active(artistId), listingDigest(artistId, token, deadline), consent
+        );
         address s = stream;
         address e = IStream(s).editions();
         if (
@@ -596,7 +607,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         Listing storage l = _listings[token];
         FederationStatus current = l.status;
         if (
-            current == FederationStatus.NONE || current == FederationStatus.LEFT
+            (current != FederationStatus.ACTIVE && current != FederationStatus.DELISTED)
                 || (status != FederationStatus.ACTIVE && status != FederationStatus.DELISTED)
         ) revert FederatedStatusRefused(token, current);
         l.status = status;
@@ -604,13 +615,18 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IArtistRegistry
+    /// @dev An exit never makes a contract more served than it was: from DELISTED it is
+    ///      LEFT_DELISTED, which no federation registry may serve.
     function recordFederationExit() external {
         Listing storage l = _listings[msg.sender];
         FederationStatus current = l.status;
         if (current == FederationStatus.NONE) revert FederatedStatusRefused(msg.sender, current);
-        if (current == FederationStatus.LEFT) return;
-        l.status = FederationStatus.LEFT;
-        emit FederatedContractStatus(msg.sender, l.artistId, FederationStatus.LEFT, bytes32(0));
+        if (current >= FederationStatus.LEFT) return;
+        FederationStatus next = current == FederationStatus.DELISTED
+            ? FederationStatus.LEFT_DELISTED
+            : FederationStatus.LEFT;
+        l.status = next;
+        emit FederatedContractStatus(msg.sender, l.artistId, next, bytes32(0));
     }
 
     // ----- reads -----
@@ -736,6 +752,20 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         return _hashTypedDataV4(
             keccak256(abi.encode(ARTIST_REGISTRATION, account, profileId, profileDocHash, deadline))
         );
+    }
+
+    /// @notice The EIP-712 digest an artist's active authority signs to consent to `token`'s
+    ///         listing under the artist (`listFederatedContract`).
+    /// @param artistId The artist.
+    /// @param token The federated contract.
+    /// @param deadline The Unix time in seconds after which the signature is expired.
+    /// @return The `FederatedListing` digest in this registry's EIP-712 domain.
+    function listingDigest(uint256 artistId, address token, uint64 deadline)
+        public
+        view
+        returns (bytes32)
+    {
+        return _hashTypedDataV4(keccak256(abi.encode(FEDERATED_LISTING, artistId, token, deadline)));
     }
 
     /// @inheritdoc IArtistRegistry

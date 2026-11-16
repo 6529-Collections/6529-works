@@ -3,7 +3,7 @@
 6529 Stream Federated: artist-run token contracts built from the network's templates, listed
 in the network's directory without curation, sold through the network's shared adapters at the
 network's locked 10% share, and earning no TDH
-([ADR 0008](../../docs/adr/0008-federation.md); rules FED-1 to FED-63 in
+([ADR 0008](../../docs/adr/0008-federation.md); rules FED-1 to FED-70 in
 [Federation](../../docs/spec/federation.md)).
 
 ## Files
@@ -13,7 +13,7 @@ network's locked 10% share, and earning no TDH
 | [`FederatedStream.sol`](FederatedStream.sol) | The 1/1 template (ERC-721): works approved on chain by the artist, minted only into an admitted adapter's custody, unsold works held and restarted, the record the shared renderer reads, the 90/10 royalty vault | Permanent per artist once deployed |
 | [`FederatedEditions.sol`](FederatedEditions.sol) | The pair's ERC-1155: editions of the partner's EDITION_MASTER works, bound to one sale adapter and sealed at its count | Permanent per artist once deployed |
 | [`FederatedMembership.sol`](FederatedMembership.sol) | Source both templates inherit: locked terms, the artist's authority, joining and leaving, minter admission, marketplace metadata | (inherited) |
-| [`FederationRegistry.sol`](FederationRegistry.sol) | Approved template code hashes, admitted adapters, permissionless joining, delisting by vote; stores no entry | Replaceable (governed) |
+| [`FederationRegistry.sol`](FederationRegistry.sol) | Approved template versions (runtime code hash bound to creation code), published creation code, admitted adapters, permissionless joining with provenance, delisting by vote; stores no entry; once replaced, answers as the current registry | Replaceable (governed) |
 | [`FederatedEditionAuction.sol`](FederatedEditionAuction.sol) | The uniform-price edition auction for federated pairs: `UniformEditionAuctionBase` deployed a second time | Replaceable adapter |
 | [`FederatedEditionAuctionLens.sol`](FederatedEditionAuctionLens.sol) | Its lens: the shared lens base plus the federation rules (served contracts, the locked fee, the clock a delisting cancels) | Replaceable |
 
@@ -26,11 +26,16 @@ artist registry's (`IArtistRegistry.federatedListing` and its events).
 ## Entry points
 
 - **Deploy and join.** The artist deploys `FederatedStream` (and, for a pair,
-  `FederatedEditions` naming it, then `linkEditions`), then calls `joinFederation` on each.
-  The token itself calls the current registry's `register` (FED-6, FED-43), which checks the
-  code hash and the locked terms, creates the artist's identity from its signature if needed,
-  and lists the token in the artist registry; the token confirms the listing in the same
-  transaction (`FederationJoined`), or reverts.
+  `FederatedEditions` naming it, then `linkEditions`) through the deterministic deployment proxy
+  (`0x4e59b44847b379578588920cA78FbF26c0B4956C`: calldata `salt ++ creationCode ++
+  abi.encode(config)`, the creation code being the published genesis build, `codeOf`), then
+  calls `joinFederation(Join)` on each, the editions first, passing the salt, the encoded config,
+  the identity fields and the signatures (a registration signature for a new artist, and the
+  listing consent, `ArtistRegistry.listingDigest`). The token itself calls the current
+  registry's `register` (FED-6, FED-43), which checks the code hash, the provenance (FED-64) and
+  the locked terms, creates the artist's identity from its signature if needed, and lists the
+  token in the artist registry, which verifies the consent (FED-65); the token confirms the
+  listing in the same transaction (`FederationJoined`), or reverts.
 - **Sell a 1/1.** `approveItem(itemHash, royaltyRate)` (artist), then anyone calls
   `EnglishAuction.start(token, abi.encode(FederatedMint(item, media)))` (FED-11 to FED-15).
   Settlement, the refusal exit and claims are the auction's (AUC-45 to AUC-48); an unsold work
@@ -44,13 +49,17 @@ artist registry's (`IArtistRegistry.federatedListing` and its events).
   48 hours); `propagateRevocation` (anyone) (FED-44 to FED-50).
 - **Leave.** `leaveFederation` (artist), one-way; then `setAdmittedMinter` (FED-8, FED-9). A
   contract that left has no registry entry, so no shared adapter starts a new sale of it, even
-  one the artist admits as its own minter; its running sales finish (FED-59).
+  one the artist admits as its own minter; its running sales finish (FED-59), unless it left
+  while delisted (LEFT_DELISTED: they end unsold with refunds, FED-66). An editions contract's
+  own minters mint only once its 1/1 partner is out of the federation too (FED-67).
 
 ## Developer notes
 
 - **No immutables in the templates.** Every value is in storage, so every deployment of a
-  version has one runtime code hash; the registry recognises a genuine copy by that hash alone,
-  with no factory. Do not add an immutable or a constructor-dependent constant to a template.
+  version has one runtime code hash; the registry recognises a genuine copy by that hash and by
+  its deployment from the version's published creation code (FED-64), with no factory that
+  holds power. Do not add an immutable or a constructor-dependent constant to a template, and do
+  not read `msg.sender` in a constructor (the proxy deploys every copy).
 - **Settlement makes no external call** and reads no identity state (the nine template
   guarantees, [stream-and-auctions](../../docs/spec/stream-and-auctions.md#what-a-federated-template-must-guarantee));
   keep it so. Every other call out is a plain call that forwards all gas and reverts on any
@@ -80,9 +89,10 @@ artist registry's (`IArtistRegistry.federatedListing` and its events).
 
 Genesis deploys the registry, the federated edition auction's lens and the federated edition
 auction, binds the registry in the artist registry, points the English auction at it, admits
-both shared adapters and approves the two v1 template code hashes, computed by
-`DeployV1.templateCodeHash` from the build (FED-63); `VerifyV1.checkFederation` reads them
-back. The economics resolver's `PRODUCT_FEDERATED` fee recipient is the governed fee vault
+both shared adapters and approves the two v1 template versions (runtime and creation code
+hashes, computed by `DeployV1.templateCodeHash` from the build), after writing and publishing
+both creation codes (FED-63); `VerifyV1.checkFederation` reads them back and rehashes the
+published code. The economics resolver's `PRODUCT_FEDERATED` fee recipient is the governed fee vault
 from construction, with a 10% share: joining checks that a template locked the same recipient
 and share, and the English auction locks them for each sale at start (AUC-48).
 

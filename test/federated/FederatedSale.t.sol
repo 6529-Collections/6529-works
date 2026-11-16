@@ -59,7 +59,7 @@ contract FederatedSaleTest is FederationBase {
     function test_Join_OnlyTheArtist() public {
         vm.prank(collector);
         vm.expectRevert(abi.encodeWithSelector(IFederatedToken.NotArtist.selector, collector));
-        fed.joinFederation(0, 0, 0, "");
+        fed.joinFederation(_noJoin());
     }
 
     function test_Join_RefusesAnUnapprovedCopyAndWrongFeeTerms() public {
@@ -69,7 +69,7 @@ contract FederatedSaleTest is FederationBase {
         // Wrong fee terms: a copy locking 5%.
         IFederatedStream.Config memory c = _streamConfig(fedArtist);
         c.feeShare = 5_000;
-        FederatedStream cheap = new FederatedStream(c);
+        FederatedStream cheap = _deployStream(c);
         _join(
             address(cheap),
             fedArtist,
@@ -77,7 +77,7 @@ contract FederatedSaleTest is FederationBase {
         );
         c = _streamConfig(fedArtist);
         c.feeRecipient = makeAddr("artistWallet");
-        FederatedStream redirected = new FederatedStream(c);
+        FederatedStream redirected = _deployStream(c);
         _join(
             address(redirected),
             fedArtist,
@@ -97,7 +97,9 @@ contract FederatedSaleTest is FederationBase {
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes memory sig =
             _sign(other, artists.registrationDigest(other, bytes32(0), bytes32(0), deadline));
-        HostileLister(hostile).listAs(address(fed), other, deadline, sig);
+        bytes memory consent =
+            _sign(other, artists.listingDigest(uint160(other), address(fed), deadline));
+        HostileLister(hostile).listAs(address(fed), other, deadline, sig, consent);
         _govern(
             hotAdmin,
             address(artists),
@@ -105,7 +107,7 @@ contract FederatedSaleTest is FederationBase {
         );
         vm.prank(fedArtist);
         vm.expectRevert(IFederatedToken.FederationStateInvalid.selector);
-        fed.joinFederation(0, 0, 0, "");
+        fed.joinFederation(_noJoin());
         assertFalse(fed.isAdmittedMinter(address(auction)), "it never sells under that listing");
     }
 
@@ -118,7 +120,7 @@ contract FederatedSaleTest is FederationBase {
         assertEq(keccak256(type(FederatedEditions).runtimeCode), editionsHash);
         IFederatedStream.Config memory c = _streamConfig(collector);
         c.name = "Another";
-        assertEq(address(new FederatedStream(c)).codehash, streamHash);
+        assertEq(address(_deployStream(c)).codehash, streamHash);
         emit log_named_bytes32("FederatedStream code hash", streamHash);
         emit log_named_bytes32("FederatedEditions code hash", editionsHash);
         emit log_named_bytes32("IFederatedToken id", bytes32(type(IFederatedToken).interfaceId));
@@ -290,9 +292,21 @@ contract HostileLister {
         _ar = ar;
     }
 
-    function listAs(address token, address account, uint64 deadline, bytes calldata sig) external {
+    function listAs(
+        address token,
+        address account,
+        uint64 deadline,
+        bytes calldata sig,
+        bytes calldata consent
+    ) external {
         uint256 artistId = _ar.registerFederated(account, 0, 0, deadline, sig);
-        _ar.listFederatedContract(artistId, token, 0, address(0), 0, address(0));
+        _ar.listFederatedContract(artistId, token, 0, address(0), 0, address(0), deadline, consent);
+    }
+
+    function listUnder(uint256 artistId, address token, uint64 deadline, bytes calldata consent)
+        external
+    {
+        _ar.listFederatedContract(artistId, token, 0, address(0), 0, address(0), deadline, consent);
     }
 
     function supportsInterface(bytes4 id) external pure returns (bool) {

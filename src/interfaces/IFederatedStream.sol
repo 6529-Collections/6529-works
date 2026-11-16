@@ -133,6 +133,10 @@ interface IFederatedStream is IFederatedToken {
     /// @notice The artist linked the pair's editions contract.
     /// @param editions The editions contract.
     event EditionsLinked(address editions);
+    /// @notice The content store that vouches for every work's media, fixed at construction (the
+    ///         federation registry lists only a contract naming the canonical one).
+    /// @param contentStore The content store.
+    event ContentStoreSet(address contentStore);
 
     /// @notice Only the adapter that minted the token.
     /// @param caller The caller.
@@ -263,6 +267,9 @@ interface IFederatedStream is IFederatedToken {
     /// @notice The record satellite the renderer reads: this contract.
     /// @return This contract.
     function workRecords() external view returns (address);
+    /// @notice The content store, fixed at construction, that checks every work's media.
+    /// @return The content store.
+    function contentStore() external view returns (address);
     /// @notice A file's locator and its index in the work's media list.
     /// @param tokenId A live token.
     /// @param fileId One of the work's media files.

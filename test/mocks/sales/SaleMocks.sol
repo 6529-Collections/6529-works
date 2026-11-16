@@ -293,10 +293,10 @@ contract MockFederationRegistry is IFederationRegistry {
 
     function register(address token, Entry calldata e) external {
         _entries[token] = e;
-        emit Registered(token, e.artistId, e.codeHash);
+        emit Registered(token, e.artistId, e.codeHash, bytes32(0), "");
     }
 
-    function register(bytes32, bytes32, uint64, bytes calldata) external { }
+    function register(Join calldata) external { }
 
     function setStatus(address token, Status status, bytes32) external {
         _entries[token].status = status;
