@@ -175,7 +175,10 @@ stateDiagram-v2
 ### Item and content hash (6529 Stream)
 
 Stream holds this state (AUC-44). If an upheld dispute burns a work, `Stream.releaseContent`
-tombstones its item: never minted again, through any root. The content hash:
+tombstones its item: the item never claims its released content again, and since every genesis
+item hash commits to its content hash, it never mints again, through any root (a successor
+mint policy must keep item hashes committing to their content: the core holds content
+uniqueness, not item identifiers, AUC-44). The content hash:
 
 ```mermaid
 stateDiagram-v2

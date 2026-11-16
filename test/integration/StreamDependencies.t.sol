@@ -44,6 +44,24 @@ contract DependencyStandIn is IERC165 {
     function artistRegistry() external view returns (address) {
         return IStream(msg.sender).artistRegistry();
     }
+
+    /// @dev As an economics resolver must, names the split factory of the Stream asking.
+    function splitFactory() external view virtual returns (address) {
+        return IStream(msg.sender).splitFactory();
+    }
+}
+
+/// @dev A replacement economics resolver that names another split factory.
+contract ForeignFactoryStandIn is DependencyStandIn {
+    address internal immutable _factory;
+
+    constructor(bytes4 id, address factory) DependencyStandIn(id) {
+        _factory = factory;
+    }
+
+    function splitFactory() external view override returns (address) {
+        return _factory;
+    }
 }
 
 /// @dev A replacement dependency governed by `authority`: it also answers `authority()`, as
@@ -681,6 +699,21 @@ contract StreamDependenciesTest is IntegrationBase {
                 KINDS[i], address(new ManagedStandIn(_interfaceOf(KINDS[i]), address(manager)))
             );
         }
+    }
+
+    /// @dev A replacement economics resolver must name Stream's own split factory (fixed at its
+    ///      construction): one naming another would derive other wallets for existing works,
+    ///      so their edition sales could not deploy the wallets their terms name (automated
+    ///      review, 16 November 2026). Fails without the check: the foreign resolver installs.
+    function test_AReplacementResolverMustNameStreamsSplitFactory() public {
+        address foreign =
+            address(new ForeignFactoryStandIn(_interfaceOf("ECONOMICS"), address(0xFAC)));
+        _refuse(
+            "ECONOMICS", foreign, abi.encodeWithSelector(IStream.InvalidBinding.selector, foreign)
+        );
+        _replace(
+            "ECONOMICS", address(new ManagedStandIn(_interfaceOf("ECONOMICS"), address(manager)))
+        );
     }
 
     /// @dev F7's other side: only a successful one-word `authority()` answer is compared. A

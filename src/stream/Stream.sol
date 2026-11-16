@@ -260,6 +260,9 @@ contract Stream is ERC721, AccessManaged, IStream {
     ///         its answer, or its revert, is passed on as it is. Every other selector Stream does
     ///         not implement reverts with no data, so a replaced extension can never answer a
     ///         receiver hook, a signature check, `owner()` or anything else on Stream's behalf.
+    /// @dev All gas is forwarded and the answer copied whole: it is this call's own result,
+    ///      sized by what the caller asked, as `tokenURI` passes the renderer's on; nothing
+    ///      permanent reads these views (AUC-49).
     fallback() external {
         address views = extension();
         bytes4 work = IStreamViews.work.selector;
@@ -706,8 +709,10 @@ contract Stream is ERC721, AccessManaged, IStream {
     /// @dev SUCCESSOR_SETTER role (the 30-day class). The entropy module may be installed on a
     ///      Stream deployed without one, but never removed; replacing it records the module it
     ///      replaces with the last token ID minted so far (`entropyModuleOf`). A replacement
-    ///      policy must resolve parties through Stream's own artist registry. A replacement that
-    ///      answers `authority()` with one word must name Stream's own AccessManager
+    ///      policy must resolve parties through Stream's own artist registry, and a replacement
+    ///      economics resolver must name Stream's own split factory (`splitFactory`, fixed at
+    ///      construction), so every existing work's wallets stay the ones its sales deploy and
+    ///      pay. A replacement that answers `authority()` with one word must name Stream's own AccessManager
     ///      (`InvalidBinding`); the read gets all the gas the call has, and a failure that left
     ///      a shortfall reverts (`BoundedCall.BoundedCallShortfall`), so the check cannot be
     ///      starved away.
@@ -715,9 +720,9 @@ contract Stream is ERC721, AccessManaged, IStream {
         (uint8 index, bytes4 interfaceId, address current) = _dependencyOf(kind);
         if (current != expected) revert ExpectedValueMismatch();
         Dependency.check(next, interfaceId);
-        if (index == 0 && IMintPolicy(next).artistRegistry() != artistRegistry) {
-            revert InvalidBinding(next);
-        }
+        if (index == 0
+                ? IMintPolicy(next).artistRegistry() != artistRegistry
+                : index == 1 && IEconomicsResolver(next).splitFactory() != splitFactory) revert InvalidBinding(next);
         (bool ok, bytes32 word) =
             BoundedCall.tryReadWordAll(next, abi.encodeCall(this.authority, ()));
         if (ok && (uint256(word) >> 160 != 0 || address(uint160(uint256(word))) != authority())) {
@@ -861,7 +866,10 @@ contract Stream is ERC721, AccessManaged, IStream {
     ///      the tuple's offset word) is the record's memory layout, one word per field, with only
     ///      the offset of `params` to rebase. A policy revert is passed on. Every word must be a
     ///      clean value of its field's type and `params` must lie inside the answer
-    ///      (`InvalidMintRequest`), so the record is never read out of type.
+    ///      (`InvalidMintRequest`), so the record is never read out of type. The answer is copied
+    ///      whole, with all gas forwarded: the call is all or nothing, and a policy that answers
+    ///      at length costs the mint no more than one that burns its gas or refuses, which it
+    ///      always can; a bound would only fix a limit on `params` in a permanent contract.
     function _authorize(address policy, IMintPolicy.MintContext memory context, bytes calldata data)
         private
         returns (IMintPolicy.MintRecord memory r)
