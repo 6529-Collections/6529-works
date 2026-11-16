@@ -155,7 +155,7 @@ contract EditionAuctionDifferentialTest is EditionAuctionStack {
     {
         (oneSaleId, workId) = _start(root, _package(root), index);
         sale =
-            editionAuction.open(address(editions), workId, abi.encode(_package(root)[index].item));
+            editionAuction.open(address(editions), workId, _openData(root, _package(root), index));
     }
 
     /// @dev Up to 16 bids of 1 to 5 units, mostly on a band of 10 low steps, one in eight a

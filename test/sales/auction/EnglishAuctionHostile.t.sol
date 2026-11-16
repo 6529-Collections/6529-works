@@ -8,6 +8,7 @@ import { console2 } from "forge-std/console2.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
+import { PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import { Payment, PaymentMethod, PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
@@ -77,6 +78,7 @@ contract EnglishAuctionHostileTest is AuctionBase {
         t.seller = address(burner);
         t.feeRecipient = address(burner);
         stream.setTerms(t);
+        resolver.set(PRODUCT_STREAM, address(burner), FEE);
         uint256 saleId = _start();
         _bidEth(saleId, alice, 1 ether);
         _end(saleId);

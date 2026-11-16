@@ -87,9 +87,10 @@ contract UniformClearingTest is UniformClearingBase {
                 assertGt(r.count, 0);
             }
         }
-        // As the reference model counts them: none at 10^11 or 10^18, and from 10^12 the step
-        // counts whose top step is at least 10 ETH (from 0 at 192 steps a decade up to all 449).
-        assertEq(governed, 5017);
+        // As the reference model counts them: none at 10^11, and from 10^12 the step counts
+        // whose top step is at least 10 ETH (from 0 at 192 steps a decade up to all 449); 10^18
+        // is a base price too since R19 removed the cap.
+        assertEq(governed, 6651);
         assertTrue(h.isValidLadder(3e16, N), "the domain also holds bases governance may not set");
     }
 

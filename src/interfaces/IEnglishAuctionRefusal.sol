@@ -5,7 +5,7 @@ pragma solidity ^0.8.24;
 /// @notice The English auction's exit for a sale whose token will not let it settle (AUC-45 to
 ///         AUC-48). The settlement is attempted in full, in a frame given exactly the governed
 ///         refusal gas (`IEnglishAuction.AuctionConfig.refusalGas`); only if that attempt fails,
-///         and no earlier than the sale's end plus its refusal delay, does the sale close with the
+///         and no earlier than 2 days (fixed) after the sale's end, does the sale close with the
 ///         standing bid credited back and the work left for its artist to claim. Federated sales
 ///         only: a listed token's sale, 6529 Stream's included, settles only through `settle`. A
 ///         token that settles is never affected: the attempt then settles the sale exactly as
@@ -13,7 +13,7 @@ pragma solidity ^0.8.24;
 ///         ERC-165: `IEnglishAuction`'s interface ID is unchanged by it.
 interface IEnglishAuctionRefusal {
     /// @notice A sale's settlement failed although it was given the refusal gas in full, at
-    ///         least the refusal delay after its end. Every effect of the attempt was undone, the
+    ///         least 2 days after its end. Every effect of the attempt was undone, the
     ///         token's included: nothing was reported to the token, paid or delivered; the
     ///         standing bid, if any, was credited back to its bidder (`Credited`); and the work
     ///         stays in the auction's custody as a pending delivery that its artist, the creator
@@ -28,12 +28,12 @@ interface IEnglishAuctionRefusal {
     error SaleNotRefusable(uint256 saleId);
     /// @notice A refused settlement may not close the sale before `allowedAt`.
     /// @param saleId The auction's sale ID.
-    /// @param allowedAt The sale's end plus its refusal delay.
+    /// @param allowedAt The sale's end plus 2 days.
     error RefusalTooEarly(uint256 saleId, uint256 allowedAt);
 
     /// @notice Settles an ended federated sale, or closes it with refunds if its token refuses.
     ///         A listed token's sale is refused (`SaleNotRefusable`). Permissionless, from the
-    ///         sale's end plus the refusal delay it locked at start (`RefusalTooEarly` before),
+    ///         sale's end plus 2 days (`RefusalTooEarly` before),
     ///         and not while its currency is frozen short of the freeze exit
     ///         (`AssetNotActive`), nor inside a guarded call of the auction or of its escrow
     ///         (`ReentrancyGuardReentrantCall`). It calls `IEnglishAuction.settle` on the auction
@@ -44,8 +44,8 @@ interface IEnglishAuctionRefusal {
     /// @param saleId The ended auction's sale ID.
     function settleOrRefund(uint256 saleId) external;
 
-    /// @notice When a refused settlement may first close a federated sale: its end plus the
-    ///         refusal delay it locked at start (answered by the auction's lens; a listed token's
+    /// @notice When a refused settlement may first close a federated sale: its end plus 2 days
+    ///         (answered by the auction's lens; a listed token's
     ///         sale reverts with `SaleNotRefusable`). A dispute pause that ran its course moves
     ///         the end as `IEnglishAuction.auction` reports it.
     /// @param saleId The auction's sale ID; reverts with `ISaleAdapter.UnknownSale` for none.

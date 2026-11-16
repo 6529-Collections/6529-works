@@ -36,11 +36,18 @@ import { LockedTerms, Payment } from "./types/SaleTypes.sol";
 ///      of an EDITION_MASTER work (`IUniformEditionAuction`) runs alongside and reads this
 ///      auction's `endTime`: it closes `closeOffset` after this auction's final end.
 ///
-///      Disputes: the guardian may pause a live auction once, for at most 7 days (`MAX_PAUSE`);
-///      bidders may withdraw while it is paused; an upheld dispute cancels it, refunds the bid
-///      and burns the token; a rejected dispute, or no outcome within the 7 days, resumes it.
-///      `saleKind()` is `SaleKind.ENGLISH_AUCTION`. PERMIT2 bids use the `Typehashes.BID_WITNESS`
-///      and `Typehashes.START_BID_WITNESS` witnesses.
+///      Disputes: the pauser may pause a live auction once, for at most 3 days (`MAX_PAUSE`);
+///      bidders may withdraw while it is paused; the network may cancel it (an upheld dispute:
+///      the bid is refunded and the token burned) or resume it at any moment of the pause; with
+///      no call within the 3 days it resumes by itself.
+///
+///      Money: the seller receives `floor(price * (100,000 - share) / 100,000)` and the network
+///      the rest, paid to the recipient the economics resolver names at settlement (or the
+///      token's when it names none). A credit not claimed within 180 days of when it was last
+///      added to may be sent to the network's fee recipient by anyone (`expireCredit`).
+///      `saleKind()` is `SaleKind.ENGLISH_AUCTION`. Payments are DIRECT or PERMIT2 (an EIP-2612
+///      PERMIT payment is refused); PERMIT2 bids use the `Typehashes.BID_WITNESS` and
+///      `Typehashes.START_BID_WITNESS` witnesses.
 interface IEnglishAuction is ISaleAdapter {
     /// @notice An auction's lifecycle. ENDED is derived: ACTIVE with the end passed.
     enum AuctionState {
@@ -56,17 +63,13 @@ interface IEnglishAuction is ISaleAdapter {
     /// @param duration Seconds from start to end (24 hours at launch).
     /// @param extensionWindow The anti-snipe window and extension, in seconds.
     /// @param incrementShare The minimum relative increment, out of 100,000 (5,000 at launch).
-    /// @param refusalDelay Seconds after a sale's end before a refused settlement may close it
-    ///        with refunds (`IEnglishAuctionRefusal.settleOrRefund`, AUC-46); only a federated
-    ///        sale can be refused, and it locks the value current at its start.
     /// @param refusalGas The gas a settlement attempt is given, and must be given in full, for
     ///        its failure to count as the token's refusal (AUC-47): raise-only, at most doubled
-    ///        per step, applying at once to every sale.
+    ///        per step, applying at once to every sale. The refusal delay is a fixed 2 days.
     struct AuctionConfig {
         uint32 duration;
         uint32 extensionWindow;
         uint32 incrementShare;
-        uint32 refusalDelay;
         uint32 refusalGas;
     }
 
@@ -106,9 +109,9 @@ interface IEnglishAuction is ISaleAdapter {
         uint256 amount,
         uint64 endTime
     );
-    /// @notice The guardian paused an auction for a dispute.
+    /// @notice The pauser paused an auction for a dispute.
     /// @param saleId The auction's sale ID.
-    /// @param disputeRef The dispute reference the guardian passed; the adapter does not check it.
+    /// @param disputeRef The dispute reference the pauser passed; the adapter does not check it.
     event AuctionPaused(uint256 indexed saleId, bytes32 disputeRef);
     /// @notice A halted auction resumed and ends at `endTime`: after a dispute pause, its
     ///         remaining time at the pause, the governed duration or the sale's anti-snipe window,
@@ -209,7 +212,7 @@ interface IEnglishAuction is ISaleAdapter {
     ///         the end, or within the sale's last anti-snipe window before it, the first call
     ///         reopens the auction for the governed duration (or the anti-snipe window if longer)
     ///         and emits `AuctionResumed` instead of settling. Once the currency has been
-    ///         deprecated for 60 days, the call ends the sale unsold: the standing bid is
+    ///         deprecated for 14 days, the call ends the sale unsold: the standing bid is
     ///         credited back and the work goes where an unbid work goes, the museum for 6529
     ///         Stream and the artist for any other token (MARKET-2; ADR 0005, owner decision 10).
     ///         A sale of a federated contract the registry has since delisted settles the same
@@ -218,7 +221,7 @@ interface IEnglishAuction is ISaleAdapter {
     function settle(uint256 saleId) external;
     /// @notice Delivers a pending token to `to`. The winning bidder (the payer of the high bid)
     ///         names any `to` at any time; the recipient it named may claim to itself at any
-    ///         time, and to another address only from 30 days after the auction's end, so the
+    ///         time, and to another address only from 14 days after the auction's end, so the
     ///         bidder acts first and a recipient that cannot receive the token does not hold it
     ///         forever. For an unsold work of a token other than 6529 Stream, the artist recorded
     ///         at settlement claims it, or the artist the token reports now (L-5). An unsold 6529
@@ -226,7 +229,7 @@ interface IEnglishAuction is ISaleAdapter {
     /// @param saleId The auction's sale ID.
     /// @param to The address that receives the token; neither zero nor this adapter, and the
     ///        caller itself when the caller is the recipient but not the winning bidder and the
-    ///        auction ended less than 30 days ago (`InvalidRecipient`).
+    ///        auction ended less than 14 days ago (`InvalidRecipient`).
     function claimDelivery(uint256 saleId, address to) external;
     /// @notice Sends all of `account`'s credits in ERC-20 `currency` to `account` itself.
     ///         Permissionless: a seller split wallet or fee wallet whose ERC-20 payout failed at
@@ -238,22 +241,28 @@ interface IEnglishAuction is ISaleAdapter {
     /// @param currency The ERC-20 currency; zero (ETH) reverts.
     /// @return amount The amount sent, in the currency's base units.
     function claimFor(address account, address currency) external returns (uint256 amount);
+    /// @notice Sends `account`'s credits in `currency` to the network's fee recipient (the
+    ///         economics resolver's 6529 Stream recipient, read now) once 180 days have passed
+    ///         since the credit was last added to (R12; `CreditNotExpired` before).
+    ///         Permissionless. Emits `Claimed` with that recipient as `to`.
+    /// @param account The credited account.
+    /// @param currency The currency, zero for ETH.
+    /// @return amount The amount sent, in the currency's base units.
+    function expireCredit(address account, address currency) external returns (uint256 amount);
 
-    /// @notice Pauses a live auction for a dispute, once per auction. GUARDIAN role (immediate).
+    /// @notice Pauses a live auction for a dispute, once per auction, for at most 3 days. PAUSER
+    ///         role (no delay).
     /// @param saleId The live auction's sale ID.
     /// @param disputeRef A reference to the dispute, emitted in `AuctionPaused`; not checked.
     function pause(uint256 saleId, bytes32 disputeRef) external;
     /// @notice Resumes a paused auction after a rejected dispute, for its remaining time or the
     ///         governed duration, whichever is longer (the anti-snipe window if longer still),
-    ///         even with a standing bid. UNPAUSER role (pause and unpause have separate holders).
-    ///         Refused until 48 hours (`Roles.STANDARD`) after the pause, so the guardians can
-    ///         always cancel a resume, even one scheduled before the pause. A pause also ends by
-    ///         itself 7 days (`MAX_PAUSE`) after it began, without any call.
+    ///         even with a standing bid. The network (no delay, C30), at any moment of the pause.
+    ///         A pause also ends by itself 3 days (`MAX_PAUSE`) after it began, without any call.
     /// @param saleId The paused auction's sale ID.
     function resume(uint256 saleId) external;
     /// @notice Cancels a paused auction after an upheld dispute: credits the high bid back and
-    ///         burns the token. PARAMETER_SETTER role, while paused, and like `resume` no earlier
-    ///         than 48 hours after the pause (`UnpauseTooEarly`), and no later than
+    ///         burns the token. The network (no delay, C30), at any moment of the pause through
     ///         `pausedAt + MAX_PAUSE` inclusive. `outcomeRef` must be nonzero and be the token's
     ///         own latest outcome, `IStatementLog.disputeOutcomeOf(token, tokenId)` (no item
     ///         fallback), recorded after the pause: an outcome recorded before the pause, or one

@@ -586,10 +586,10 @@ contract AuctionRefusedSettlementTest is AuctionBase {
 
     // --------------------------------------------------------- the network's fee
 
-    /// @dev A federated sale pays the network the registry's fee share to the federated
-    ///      recipient, both locked when the sale opened: neither the token's answer nor a later
-    ///      change of the resolver or the registry moves it (AUC-41).
-    function test_TheFederatedFeeIsTheOneLockedAtStart() public {
+    /// @dev A federated sale pays the network the registry's fee share locked when the sale
+    ///      opened (neither the token's answer nor a later registry change moves it, AUC-48), to
+    ///      the federated recipient the resolver names at settlement (R18).
+    function test_TheFederatedShareIsLockedAndTheRecipientIsCurrent() public {
         HostileMintTarget fed = _hostile(true);
         address tokenWallet = makeAddr("tokenChosenFeeWallet");
         fed.setReported(PrimarySettlement(seller, tokenWallet, 100_000, address(0)));
@@ -600,7 +600,8 @@ contract AuctionRefusedSettlementTest is AuctionBase {
         registry.setEntry(address(fed), 50_000, true);
         _end(saleId);
         auction.settle{ gas: KEEPER_GAS }(saleId);
-        assertEq(federatedNetwork.balance, BID / 10, "10% to the recipient locked at start");
+        assertEq(makeAddr("laterRecipient").balance, BID / 10, "10% to the current recipient");
+        assertEq(federatedNetwork.balance, 0, "not the one current at start");
         assertEq(seller.balance, BID - BID / 10, "the rest to the seller the token names");
         assertEq(tokenWallet.balance, 0, "nothing to the token's own fee wallet");
     }
@@ -669,32 +670,32 @@ contract AuctionRefusedSettlementTest is AuctionBase {
         _artistClaims(fed, saleId);
     }
 
-    /// @dev A federated sale locks its refusal delay at start; a later change reaches only sales
-    ///      started afterwards.
-    function test_TheRefusalDelayIsLockedForAFederatedSale() public {
-        uint256 before = auction.start(address(hostile), "");
-        IEnglishAuction.AuctionConfig memory next = _config();
-        next.refusalDelay = 20 days;
-        vm.prank(setter);
-        auction.setConfig(_config(), next);
-        uint256 afterwards = auction.start(address(hostile), "");
-        uint256 end = auction.auction(before).endTime;
-        assertEq(auction.refusableAt(before), end + REFUSAL_DELAY, "locked");
-        assertEq(auction.refusableAt(afterwards), end + 20 days, "the new delay");
+    /// @dev The refusal exit of a federated sale opens exactly 2 days after its end, a fixed
+    ///      value no configuration changes. Fails without the change: the exit waited the
+    ///      governed 7 days.
+    function test_TheRefusalExitOpensAtTwoDays() public {
+        uint256 saleId = auction.start(address(hostile), "");
+        uint256 end = auction.auction(saleId).endTime;
+        assertEq(auction.refusableAt(saleId), end + 2 days);
+        assertEq(auction.REFUSAL_DELAY(), 2 days);
+        hostile.fail(HostileMintTarget.Call.SETTLE, HostileMintTarget.Fault.REVERT);
+        vm.warp(end + 2 days - 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IEnglishAuctionRefusal.RefusalTooEarly.selector, saleId, end + 2 days
+            )
+        );
+        auction.settleOrRefund{ gas: KEEPER_GAS }(saleId);
+        vm.warp(end + 2 days);
+        vm.expectEmit(address(auction));
+        emit IEnglishAuctionRefusal.SettlementRefused(saleId);
+        auction.settleOrRefund{ gas: KEEPER_GAS }(saleId);
     }
 
     // ------------------------------------------------------------ governed values
 
-    function test_SetConfig_RefusalBoundsAndRaiseOnly() public {
+    function test_SetConfig_RefusalGasBoundsAndRaiseOnly() public {
         IEnglishAuction.AuctionConfig memory c = _config();
-        uint32[2] memory badDelay = [uint32(1 days - 1), 30 days + 1];
-        for (uint256 i; i < 2; ++i) {
-            IEnglishAuction.AuctionConfig memory n = _config();
-            n.refusalDelay = badDelay[i];
-            vm.prank(setter);
-            vm.expectRevert(IEnglishAuction.InvalidConfig.selector);
-            auction.setConfig(c, n);
-        }
         uint32[4] memory badGas =
             [REFUSAL_GAS - 1, 2 * REFUSAL_GAS + 1, uint32(2_999_999), uint32(15_000_001)];
         for (uint256 i; i < 4; ++i) {
@@ -705,19 +706,19 @@ contract AuctionRefusedSettlementTest is AuctionBase {
             auction.setConfig(c, n);
         }
         IEnglishAuction.AuctionConfig memory raised = _config();
-        (raised.refusalDelay, raised.refusalGas) = (1 days, 2 * REFUSAL_GAS);
+        raised.refusalGas = 2 * REFUSAL_GAS;
         vm.prank(setter);
         vm.expectEmit(address(auction));
         emit IEnglishAuction.ConfigSet(c, raised);
         auction.setConfig(c, raised);
         assertEq(abi.encode(auction.config()), abi.encode(raised));
-        // Compare-and-set covers the refusal fields too.
+        // Compare-and-set covers the refusal gas too.
         vm.prank(setter);
         vm.expectRevert(ISaleAdapter.ExpectedValueMismatch.selector);
         auction.setConfig(c, raised);
         // The ceiling.
         IEnglishAuction.AuctionConfig memory top = _config();
-        (top.refusalDelay, top.refusalGas) = (1 days, 15_000_000);
+        top.refusalGas = 15_000_000;
         vm.prank(setter);
         auction.setConfig(raised, top);
     }

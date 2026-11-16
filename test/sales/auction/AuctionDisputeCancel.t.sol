@@ -19,19 +19,55 @@ contract AuctionDisputeCancelTest is IntegrationBase {
         artist = _actor("disputedArtist");
     }
 
-    function _cancel(uint256 saleId, bytes32 outcome) internal {
-        _govern(hotAdmin, address(auction), abi.encodeCall(auction.cancel, (saleId, outcome)));
+    /// @dev The network's cancels of `saleId`: each `refused` outcome is refused
+    ///      (`OutcomeNotRecorded`) and `accepted` cancels the sale. Every call is scheduled at
+    ///      once and executed after the role's delay (none, or one wait, inside the 3-day pause).
+    function _cancels(uint256 saleId, bytes32[] memory refused, bytes32 accepted) internal {
+        (bool immediate, uint32 delay) =
+            manager.canCall(hotAdmin, address(auction), IEnglishAuction.cancel.selector);
+        if (!immediate) {
+            for (uint256 i; i < refused.length; ++i) {
+                _schedule(
+                    hotAdmin, address(auction), abi.encodeCall(auction.cancel, (saleId, refused[i]))
+                );
+            }
+            _schedule(
+                hotAdmin, address(auction), abi.encodeCall(auction.cancel, (saleId, accepted))
+            );
+            vm.warp(block.timestamp + delay);
+        }
+        for (uint256 i; i < refused.length; ++i) {
+            bytes memory data = abi.encodeCall(auction.cancel, (saleId, refused[i]));
+            vm.prank(hotAdmin);
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    IEnglishAuction.OutcomeNotRecorded.selector, saleId, refused[i]
+                )
+            );
+            if (immediate) _call(data);
+            else manager.execute(address(auction), data);
+        }
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.AuctionCancelled(saleId, accepted);
+        vm.prank(hotAdmin);
+        if (immediate) {
+            _call(abi.encodeCall(auction.cancel, (saleId, accepted)));
+        } else {
+            manager.execute(address(auction), abi.encodeCall(auction.cancel, (saleId, accepted)));
+        }
+        assertEq(
+            uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.CANCELLED)
+        );
     }
 
-    function _expectCancelRefused(uint256 saleId, bytes32 outcome) internal {
-        bytes memory data = abi.encodeCall(auction.cancel, (saleId, outcome));
-        _schedule(hotAdmin, address(auction), data);
-        vm.warp(block.timestamp + 48 hours);
-        vm.prank(hotAdmin);
-        vm.expectRevert(
-            abi.encodeWithSelector(IEnglishAuction.OutcomeNotRecorded.selector, saleId, outcome)
-        );
-        manager.execute(address(auction), data);
+    function _call(bytes memory data) internal {
+        (bool ok, bytes memory reason) = address(auction).call(data);
+        _bubble(ok, reason);
+    }
+
+    function _one(bytes32 a) internal pure returns (bytes32[] memory list) {
+        list = new bytes32[](1);
+        list[0] = a;
     }
 
     /// Regression: LIFECYCLE-4 (docs/security/internal-review-2026-10.md)
@@ -46,21 +82,10 @@ contract AuctionDisputeCancelTest is IntegrationBase {
         assertEq(statements.latestDisputeOutcome(address(stream), tokenId), early);
         vm.prank(guardian1);
         auction.pause(saleId, keccak256("dispute"));
-        _expectCancelRefused(saleId, early);
-
         bytes32 fresh = _platformStatement(
             address(stream), tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://upheld-after-pause"
         );
-        bytes memory data = abi.encodeCall(auction.cancel, (saleId, fresh));
-        _schedule(hotAdmin, address(auction), data);
-        vm.warp(block.timestamp + 48 hours);
-        vm.expectEmit(address(auction));
-        emit IEnglishAuction.AuctionCancelled(saleId, fresh);
-        vm.prank(hotAdmin);
-        manager.execute(address(auction), data);
-        assertEq(
-            uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.CANCELLED)
-        );
+        _cancels(saleId, _one(early), fresh);
     }
 
     /// Regression: LIFECYCLE-4 (docs/security/internal-review-2026-10.md)
@@ -77,12 +102,10 @@ contract AuctionDisputeCancelTest is IntegrationBase {
         _ethBid(saleId, bidder, 1 ether);
         vm.prank(guardian1);
         auction.pause(saleId, keccak256("dispute"));
-        _expectCancelRefused(saleId, itemOutcome);
-
         bytes32 fresh = _platformStatement(
             address(stream), tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://upheld-after-pause"
         );
-        _cancel(saleId, fresh);
+        _cancels(saleId, _one(itemOutcome), fresh);
         assertEq(auction.claimable(bidder, address(0)), 1 ether, "the bid is credited back");
     }
 
@@ -99,8 +122,8 @@ contract AuctionDisputeCancelTest is IntegrationBase {
         bytes32 second = _platformStatement(
             address(stream), tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://second-outcome"
         );
-        _expectCancelRefused(saleId, first);
-        _expectCancelRefused(saleId, bytes32(0));
-        _cancel(saleId, second);
+        bytes32[] memory refused = new bytes32[](2);
+        (refused[0], refused[1]) = (first, bytes32(0));
+        _cancels(saleId, refused, second);
     }
 }

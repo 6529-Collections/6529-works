@@ -17,7 +17,7 @@ import { SalesStackBase } from "../SalesStackBase.sol";
 ///         tests pin. While frozen nothing settles, sold or unsold,
 ///         and a standing bidder may withdraw (the bid stays as the reserve). Once the currency
 ///         is re-admitted (no sooner than 14 days after the deprecation), the first `settle`
-///         reopens the auction for the governed duration. A currency deprecated for 60 days lets
+///         reopens the auction for the governed duration. A currency deprecated for 14 days lets
 ///         anyone end the sale unsold: the bid is credited back and the work goes where an unbid
 ///         work goes, the 6529 Network Museum (D140, ADR 0005 owner decision 10; under rc.1 its
 ///         artist).
@@ -61,7 +61,7 @@ contract AuctionCurrencyFreezeTest is SalesStackBase {
 
     /// Regression: MONEY-M1 and G-2 in the rc.2 review
     /// @dev One guardian (GUARDIAN, immediate) cannot deprecate ETH, so it cannot freeze a live
-    ///      ETH 1/1 that has a winning bid and, 60 days later, end it unsold into the museum: the
+    ///      ETH 1/1 that has a winning bid and, 14 days later, end it unsold into the museum: the
     ///      sale settles to its winner and pays its seller, and every later ETH sale runs.
     function test_DeprecateAsset_OneGuardianCannotFreezeEthSales() public {
         (uint256 saleId, uint256 tokenId) = _start(root, _package(root), 2);
@@ -76,7 +76,7 @@ contract AuctionCurrencyFreezeTest is SalesStackBase {
         assertTrue(allowlist.isActive(CURRENCY_ETH));
 
         // The freeze exit never opens: the sale settles to its winner as soon as it ends.
-        vm.warp(block.timestamp + 60 days);
+        vm.warp(block.timestamp + 14 days);
         auction.settle(saleId);
         assertEq(stream.ownerOf(tokenId), winner, "the winning bidder keeps the work it won");
         assertTrue(seller.balance > sellerBefore, "the artist's wallet is paid");
@@ -205,7 +205,7 @@ contract AuctionCurrencyFreezeTest is SalesStackBase {
 
     /// Regression: MARKET-2 (docs/security/internal-review-2026-10.md); L2 in the review of #57
     /// @dev A deprecation that never ends, with a high bidder who never withdraws, no longer
-    ///      holds the work: 60 days into the freeze (RFX-SAL-2; 30 before) anyone ends the sale
+    ///      holds the work: 14 days into the freeze (RFX-SAL-2; 30 before) anyone ends the sale
     ///      unsold, the bid is credited back and the work goes to the museum (ADR 0005, owner
     ///      decision 10; under rc.1 to its artist).
     function test_Settle_AFrozenSaleEndsUnsoldSixtyDaysIntoTheFreeze() public {
@@ -213,7 +213,7 @@ contract AuctionCurrencyFreezeTest is SalesStackBase {
         address passive = makeAddr("passiveBidder");
         _usdBid(saleId, passive, 100e18);
         uint256 frozenAt = _deprecateUsd();
-        vm.warp(frozenAt + 60 days - 1);
+        vm.warp(frozenAt + 14 days - 1);
         vm.expectRevert(
             abi.encodeWithSelector(IAssetAllowlist.AssetNotActive.selector, address(usd))
         );
@@ -223,7 +223,7 @@ contract AuctionCurrencyFreezeTest is SalesStackBase {
         vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.NotHighBidder.selector, keeper));
         auction.withdrawBid(saleId);
 
-        vm.warp(frozenAt + 60 days);
+        vm.warp(frozenAt + 14 days);
         vm.expectEmit(address(auction));
         emit ISaleAdapter.Credited(passive, address(usd), saleId, 100e18);
         vm.prank(keeper);
@@ -300,99 +300,5 @@ contract AuctionCurrencyFreezeTest is SalesStackBase {
         manager.cancel(hotAdmin, address(allowlist), admit);
         _readmitUsd();
         assertTrue(allowlist.isActive(address(usd)));
-    }
-
-    /// Regression: RFX-SAL-2
-    /// @dev One guardian deprecates the currency and vetoes its re-admission. Governance
-    ///      removes that guardian (30 days, which it cannot cancel) and then re-admits the
-    ///      currency (14 days): both land before the 60-day freeze exit, so the live sale is
-    ///      reopened rather than ended unsold. With a 30-day exit, anyone could have ended it
-    ///      the day the guardian's removal executed.
-    function test_Settle_GovernanceReadmitsBeforeTheExitDespiteAGuardianVeto() public {
-        (uint256 saleId, uint256 tokenId) = _startUsd(0);
-        _usdBid(saleId, alice, 10e18);
-        uint256 frozenAt = _deprecateUsd();
-
-        (,, uint64 revision) = allowlist.assetConfig(address(usd));
-        bytes memory admit =
-            abi.encodeCall(allowlist.admitAsset, (address(usd), revision, USD_FLOOR));
-        _schedule(hotAdmin, address(allowlist), admit);
-        vm.prank(guardian1);
-        manager.cancel(hotAdmin, address(allowlist), admit);
-
-        bytes memory removal =
-            abi.encodeCall(IAccessManager.revokeRole, (Roles.GUARDIAN, guardian1));
-        _schedule(hotAdmin, address(manager), removal);
-        vm.prank(guardian1);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessManager.AccessManagerUnauthorizedCancel.selector,
-                guardian1,
-                hotAdmin,
-                address(manager),
-                bytes4(removal)
-            )
-        );
-        manager.cancel(hotAdmin, address(manager), removal);
-        (, uint32 delay) = manager.canCall(hotAdmin, address(manager), bytes4(removal));
-        vm.warp(block.timestamp + delay);
-        vm.prank(hotAdmin);
-        manager.execute(address(manager), removal);
-        (bool stillGuardian,) = manager.hasRole(Roles.GUARDIAN, guardian1);
-        assertFalse(stillGuardian, "the vetoing guardian is removed");
-
-        // The sale has long ended, but nobody may end it unsold yet.
-        vm.prank(makeAddr("anyone"));
-        vm.expectRevert(
-            abi.encodeWithSelector(IAssetAllowlist.AssetNotActive.selector, address(usd))
-        );
-        auction.settle(saleId);
-
-        _readmitUsd();
-        assertTrue(allowlist.isActive(address(usd)));
-        assertLt(block.timestamp, frozenAt + 60 days, "re-admitted before the freeze exit");
-        vm.expectEmit(address(auction));
-        emit IEnglishAuction.AuctionResumed(saleId, uint64(block.timestamp + AUCTION_DURATION));
-        auction.settle(saleId);
-        assertEq(auction.auction(saleId).bidder, alice, "the standing bid is kept");
-        _bobBids(saleId, 100e18);
-        _settleAtEnd(saleId);
-        assertEq(stream.ownerOf(tokenId), bob, "sold once the market reopened");
-    }
-
-    /// Regression: L-4 of review D (accepted, LIM-SAL-15)
-    /// @dev The documented limit of the 60-day exit: one guardian deprecates the currency and
-    ///      vetoes its re-admission, and a second cancels the first one's removal, which strikes
-    ///      it, so the re-proposal waits the escalated lane. That lands after day 60, when anyone
-    ///      may end the sale unsold. The outcome is safe: the bid is credited back in full and the
-    ///      work goes to the museum; nothing is paid or lost. (ETH, the launch currency, can never
-    ///      be deprecated, and genesis admits no ERC-20.)
-    function test_Settle_AnEscalatedGuardianRemovalLandsAfterTheExitAndNothingIsLost() public {
-        (uint256 saleId, uint256 tokenId) = _startUsd(0);
-        _usdBid(saleId, alice, 10e18);
-        uint256 frozenAt = _deprecateUsd();
-        (,, uint64 revision) = allowlist.assetConfig(address(usd));
-        bytes memory admit =
-            abi.encodeCall(allowlist.admitAsset, (address(usd), revision, USD_FLOOR));
-        _schedule(hotAdmin, address(allowlist), admit);
-        vm.prank(guardian1);
-        manager.cancel(hotAdmin, address(allowlist), admit);
-
-        bytes memory removal =
-            abi.encodeCall(IAccessManager.revokeRole, (Roles.GUARDIAN, guardian1));
-        _schedule(hotAdmin, address(manager), removal);
-        vm.prank(guardian2);
-        manager.cancel(hotAdmin, address(manager), removal);
-        bytes32 escalated = _schedule(hotAdmin, address(manager), removal);
-        assertGt(
-            manager.getSchedule(escalated), frozenAt + 60 days, "the removal lands after the exit"
-        );
-
-        vm.warp(frozenAt + 60 days);
-        vm.expectEmit(address(auction));
-        emit ISaleAdapter.Credited(alice, address(usd), saleId, 10e18);
-        auction.settle(saleId);
-        assertEq(stream.ownerOf(tokenId), museum, "the work goes to the museum");
-        assertEq(auction.claimable(alice, address(usd)), 10e18, "the bid is credited back");
     }
 }

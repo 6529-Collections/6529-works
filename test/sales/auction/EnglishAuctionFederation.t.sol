@@ -232,25 +232,16 @@ contract EnglishAuctionFederationTest is AuctionBase {
         );
     }
 
-    /// Regression: MARKET-3 (docs/security/internal-review-2026-10.md); L6 in the review of #57
-    /// @dev A federated sale's fee goes to the network's federated recipient, so that recipient,
-    ///      not the token's own, is checked at start: a zero one is refused while nothing is in
-    ///      custody, in ETH and in ERC-20.
-    function test_Federation_StartNeedsANetworkRecipient() public {
+    /// @dev R18: a federated start no longer reads the resolver's recipient; at settlement, when
+    ///      the resolver names none, the token's reported recipient is paid the registry's share.
+    function test_Federation_NoResolverRecipientPaysTheTokens() public {
         resolver.set(PRODUCT_FEDERATED, address(0), 0);
-        address[2] memory currencies = [ETH, address(usd)];
-        for (uint256 i; i < 2; ++i) {
-            MockMintTarget federated = _federated(_terms(currencies[i]));
-            vm.expectRevert(
-                abi.encodeWithSelector(
-                    ISaleAdapter.InvalidSaleTerms.selector, address(federated), 1
-                )
-            );
-            auction.start(address(federated), "");
-            address installed = auction.federationRegistry();
-            vm.prank(successor);
-            auction.setFederationRegistry(installed, address(0));
-        }
+        MockMintTarget federated = _federated(_terms(ETH));
+        uint256 saleId = auction.start(address(federated), "");
+        _bidEth(saleId, alice, 1 ether);
+        _end(saleId);
+        auction.settle(saleId);
+        assertEq(network.balance, 0.1 ether, "the token's recipient, the registry's 10%");
     }
 
     /// Regression: MARKET-3 (docs/security/internal-review-2026-10.md); L6 in the review of #57

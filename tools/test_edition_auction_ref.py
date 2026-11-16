@@ -84,9 +84,10 @@ class LadderTest(unittest.TestCase):
         self.assertTrue(ref.ladder_is_valid(10**17, 192, 512))
 
     def test_base_price_is_a_power_of_ten(self):
-        for k in range(12, 18):  # every power of ten in range, on the 512-step default ladder
+        # R19: no price cap; every power of ten up to the 96-bit bound, on the default ladder.
+        for k in range(12, 29):
             self.assertTrue(ref.ladder_is_valid(10**k, 48, 512), k)
-        for base in (10**11, 10**18, 3 * 10**16, 5 * 10**14, 10**14 + 1, 2 * 10**12,
+        for base in (10**11, 10**29, 3 * 10**16, 5 * 10**14, 10**14 + 1, 2 * 10**12,
                      10**17 - 1, 15 * 10**13):
             self.assertGreaterEqual(ref.price(511, base, 48), ref.MIN_TOP_PRICE)
             self.assertFalse(ref.ladder_is_valid(base, 48, 512), base)
@@ -171,9 +172,10 @@ class BookTest(unittest.TestCase):
                        lambda: book.raise_bid(9, 7)):
             with self.assertRaises(ref.InvalidAction):
                 action()
-        book.withdraw(1)
-        with self.assertRaises(ref.InvalidAction):
-            book.withdraw(1)
+        # R21: bids are firm; there is no withdrawal.
+        self.assertFalse(hasattr(book, "withdraw"))
+        with self.assertRaises(ValueError):
+            book.apply({"op": "withdraw", "bidId": 1})
 
     @staticmethod
     def _state(book):
@@ -195,14 +197,12 @@ class BookTest(unittest.TestCase):
         self.assertEqual(book.total_units(), ref.MAX_QUANTITY)
 
     def test_a_refused_raise_changes_nothing(self):
-        # A capped sale: step 7 has entered 2^32 - 6 units, all withdrawn, so a raise of 6
-        # units into it would take its entered units past 2^32 - 1.
-        book = book_of(ref._bids(("A", 7, ref.MAX_QUANTITY - 5)), cap=10)
-        book.withdraw(1)
-        book.bid("B", 6, 6)
+        # A raise that would take the sale's live units past 2^32 - 1 cannot happen (a raise
+        # moves units), but one into a step past the ladder is refused and changes nothing.
+        book = book_of(ref._bids(("A", 7, 5), ("B", 6, 6)), cap=10)
         before = self._state(book)
         with self.assertRaises(ref.InvalidAction):
-            book.raise_bid(2, 7)
+            book.raise_bid(2, 336)
         # B is still on step 6, at its position, and left no departure there.
         self.assertEqual(self._state(book), before)
         self.assertEqual((book.bids[2].step, book.bids[2].position), (6, 0))
@@ -210,11 +210,11 @@ class BookTest(unittest.TestCase):
         self.assertEqual(book.raise_bid(2, 8), 6 * (ref.price(8) - ref.price(6)))
 
     def test_entered_units_are_limited_in_a_capped_sale(self):
-        # Entered units only grow: a withdrawal frees live units but not the step's queue, so
-        # 11 more units at step 5 are refused although its live units would be 11.
+        # Entered units only grow: a raise moves units up but not out of the step's queue, so
+        # 11 more units at step 5 are refused (the sale's live units would pass 2^32 - 1 too).
         events = ref._bids(("A", 5, ref.MAX_QUANTITY - 10))
         capped = book_of(events, cap=10)
-        capped.withdraw(1)
+        capped.raise_bid(1, 6)
         before = self._state(capped)
         with self.assertRaises(ref.InvalidAction):
             capped.bid("B", 5, 11)
@@ -222,18 +222,13 @@ class BookTest(unittest.TestCase):
         bid_id = capped.bid("B", 5, 10)  # exactly 2^32 - 1 entered units
         self.assertEqual(capped.bids[bid_id].position, ref.MAX_QUANTITY - 10)
         self.assertEqual(capped.entered[5], ref.MAX_QUANTITY)
-        # Without a cap there are no positions, so only live units count.
-        uncapped = book_of(events)
-        uncapped.withdraw(1)
-        uncapped.bid("B", 5, 11)
-        self.assertEqual(uncapped.live[5], 11)
 
     def test_settlement_order_sorts_the_cut_step_departures(self):
         book = book_of(ref.fifo_holes_events(), cap=30)
         c = book.clearing()
-        self.assertEqual(book.departures[200], [(6, 5), (21, 8), (35, 4), (0, 6)])
-        self.assertEqual(book.settlement_order(c), [3, 0, 1, 2])
-        self.assertEqual((c.cut_units, book.cutoff(c)), (11, 30))
+        self.assertEqual(book.departures[200], [(6, 5), (35, 4), (0, 6)])
+        self.assertEqual(book.settlement_order(c), [2, 0, 1])
+        self.assertEqual((c.cut_units, book.cutoff(c)), (11, 22))
 
 
 class VectorTest(unittest.TestCase):

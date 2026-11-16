@@ -7,13 +7,14 @@ import { IEditions } from "src/interfaces/IEditions.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IMintPolicy } from "src/interfaces/IMintPolicy.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
-import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
+import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
+import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { EditionAuctionStack } from "./EditionAuctionStack.sol";
 import { DependencyStandIn } from "./StreamDependencies.t.sol";
 
 /// @notice The permanence changes of the edition auction on the real, wired stack: an edition's
-///         own open period, the exit when its master can never be settled, and its split
-///         wallets deployed before any money is owed to them (EA-17 to EA-19).
+///         fixed close (R20), the abandonment exit (R16), and its split wallets deployed before
+///         any money is owed to them (EA-17 to EA-19).
 contract EditionAuctionPermanenceTest is EditionAuctionStack {
     address internal fan = makeAddr("permanenceFan");
     address internal other = makeAddr("permanenceOther");
@@ -27,7 +28,7 @@ contract EditionAuctionPermanenceTest is EditionAuctionStack {
         assertEq(_editionRoyalty(w).code.length, 0, "no royalty wallet before the open");
         bytes32 root = _publish(_one(w));
         (uint256 oneSaleId, uint256 tokenId) = _start(root, _one(w), 0);
-        uint256 saleId = editionAuction.open(address(editions), tokenId, abi.encode(w.item));
+        uint256 saleId = editionAuction.open(address(editions), tokenId, _openData(w));
         address seller = _editionSeller(w);
         assertTrue(seller.code.length != 0, "the seller wallet");
         assertTrue(_editionRoyalty(w).code.length != 0, "the royalty wallet");
@@ -40,81 +41,83 @@ contract EditionAuctionPermanenceTest is EditionAuctionStack {
         assertEq(IEditions(address(editions)).edition(tokenId).maxSupply, 2, "sealed at 2");
     }
 
-    /// @dev A seven-day window: the 1/1 sells and settles, bids keep arriving for a week, the
-    ///      sale settles after its own close and seals at the count sold.
-    function test_Window_ASevenDayEditionOnTheRealStack() public {
+    /// @dev R20 on the real stack: an edition whose terms name a close offset is refused, and a
+    ///      sale closes exactly 15 minutes after its 1/1's final end.
+    function test_Window_FifteenMinutesOnTheRealStack() public {
         Work memory w = _masterWork(_actor("windowArtist"), 0);
         w.item.edition.params = abi.encode(uint256(7 days));
         bytes32 root = _publish(_one(w));
-        (uint256 oneSaleId, uint256 tokenId) = _start(root, _one(w), 0);
-        uint256 saleId = editionAuction.open(address(editions), tokenId, abi.encode(w.item));
-        assertEq(ea.auction(saleId).terms.closeOffset, 7 days);
-        _editionBid(saleId, fan, 40, 1);
-        _ethBid(oneSaleId, other, 1 ether);
-        _settleOneOfOneAndCreate(oneSaleId, root, w);
-        vm.warp(block.timestamp + 6 days);
-        assertTrue(ea.endTimes(saleId).biddingOpen, "still open six days after the 1/1");
-        _editionBid(saleId, other, 41, 2);
+        (, uint256 tokenId) = _start(root, _one(w), 0);
+        bytes memory data = _openData(w);
         vm.expectRevert(
-            abi.encodeWithSelector(IUniformEditionAuction.SettlementNotReady.selector, saleId)
+            abi.encodeWithSelector(
+                ISaleAdapter.InvalidSaleTerms.selector, address(editions), tokenId
+            )
         );
-        editionAuction.settle(saleId, new uint256[](0));
-        _settleEditions(saleId);
-        assertEq(IEditions(address(editions)).edition(tokenId).maxSupply, 3);
-        vm.prank(other);
-        (uint256 won,) = editionAuction.claimBid(saleId, 2, other);
-        assertEq(won, 2);
+        editionAuction.open(address(editions), tokenId, data);
+        (,, uint256 oneSaleId,, uint256 saleId) = _startMaster(_actor("windowArtist2"), 0);
+        IUniformEditionAuction.EndTimes memory e = ea.endTimes(saleId);
+        assertEq(e.closeAt, auction.auction(oneSaleId).endTime + 15 minutes);
     }
 
-    /// @dev The review's case (REVIEW-sal16 F1, now with the exit): an unbid master whose
-    ///      settlement fails because Stream's economics dependency cannot name the museum. The
-    ///      English auction never refuses a Stream sale, so the master waits; the edition sale
-    ///      cannot settle; after its end plus the 150-day delay, anyone abandons it, every edition
-    ///      bid is refunded in full, and the edition is sealed at zero. A later repair settles
-    ///      the master and lets the edition be created, with no copy ever mintable.
-    function test_Abandon_AStreamMasterThatCannotSettle() public {
-        (bytes32 root, Work memory w, uint256 oneSaleId, uint256 tokenId, uint256 saleId) =
+    /// @dev R16 and Part E 15: a Stream master whose settlement fails (Stream's economics cannot
+    ///      name the museum) keeps its 1/1 ENDED, unsettled; the edition sale is never abandoned
+    ///      while it is (anyone may settle the 1/1 once repaired). After the repair the master
+    ///      settles; 21 days after the close `abandon` creates the missing edition and the sale
+    ///      completes, copies minted.
+    function test_Abandon_AStreamMasterWaitsForItsRepairThenCompletes() public {
+        (, Work memory w, uint256 oneSaleId, uint256 tokenId, uint256 saleId) =
             _startMaster(_actor("stuckArtist"), 0);
         _editionBid(saleId, fan, 40, 2);
-        _stickAndAbandon(oneSaleId, tokenId, saleId);
-        // The repair: the master goes to the museum, the edition can be created, but sealed at 0.
-        vm.clearMockedCalls();
-        auction.settle(oneSaleId);
-        assertEq(
-            uint8(auction.auction(oneSaleId).state), uint8(IEnglishAuction.AuctionState.SETTLED)
-        );
-        editions.createEdition(tokenId, w.item);
-        IEditions.Edition memory ed = IEditions(address(editions)).edition(tokenId);
-        assertEq(ed.maxSupply, 0, "no copy can ever exist");
-        assertTrue(ed.supplySealed);
-    }
-
-    /// @dev Breaks the museum read, shows the master and the sale waiting, abandons the sale at
-    ///      its end plus 150 days, and claims the one bid's full refund.
-    function _stickAndAbandon(uint256 oneSaleId, uint256 tokenId, uint256 saleId) internal {
         vm.mockCallRevert(
             address(economics), abi.encodeWithSelector(IEconomicsResolver.museum.selector), "broken"
         );
         vm.warp(auction.auction(oneSaleId).endTime);
         vm.expectRevert();
         auction.settle(oneSaleId);
-        uint256 end = ea.endTimes(saleId).endTime;
-        vm.warp(end);
-        vm.expectRevert(
-            abi.encodeWithSelector(IUniformEditionAuction.SettlementNotReady.selector, saleId)
-        );
-        editionAuction.settle(saleId, new uint256[](0));
-        // Merely slow until the delay passes.
-        vm.warp(end + 150 days - 1);
+        uint256 close = ea.endTimes(saleId).closeAt;
+        vm.warp(close + 400 days);
         vm.expectRevert(
             abi.encodeWithSelector(IUniformEditionAuction.NotAbandonable.selector, saleId)
         );
-        editionAuction.abandon(saleId);
-        vm.warp(end + 150 days);
+        editionAuction.abandon(saleId, abi.encode(w.item));
+        // The repair: the master goes to the museum and is settled; its edition is missing.
+        vm.clearMockedCalls();
+        auction.settle(oneSaleId);
+        assertTrue(stream.primarySaleSettled(tokenId));
+        vm.prank(other);
+        editionAuction.abandon(saleId, abi.encode(w.item));
+        assertTrue(editions.exists(tokenId), "the edition was created");
+        _settleEditions(saleId);
+        vm.prank(fan);
+        (uint256 won,) = editionAuction.claimBid(saleId, 1, fan);
+        assertEq(won, 2, "copies minted");
+    }
+
+    /// @dev R16: an upheld dispute burns the master (its sale never completes); 21 days after
+    ///      the close anyone abandons the edition sale: every bid refunded in full, the edition
+    ///      sealed at zero.
+    function test_Abandon_ACancelledMasterIsVoidedAndSealedAtZero() public {
+        (, Work memory w, uint256 oneSaleId, uint256 tokenId, uint256 saleId) =
+            _startMaster(_actor("disputedArtist"), 0);
+        _editionBid(saleId, fan, 40, 2);
+        vm.prank(guardian1);
+        auction.pause(oneSaleId, keccak256("dispute"));
+        bytes32 outcome = _platformStatement(
+            address(stream), tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://upheld"
+        );
+        _govern(hotAdmin, address(auction), abi.encodeCall(auction.cancel, (oneSaleId, outcome)));
+        uint256 close = ea.endTimes(saleId).closeAt;
+        vm.warp(close + 21 days - 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(IUniformEditionAuction.NotAbandonable.selector, saleId)
+        );
+        editionAuction.abandon(saleId, abi.encode(w.item));
+        vm.warp(close + 21 days);
         vm.expectEmit(address(editions));
         emit IEditions.EditionSupplySealed(tokenId, 0);
         vm.prank(other);
-        editionAuction.abandon(saleId);
+        editionAuction.abandon(saleId, abi.encode(w.item));
         uint256 escrowed = 2 * ea.stepPrice(saleId, 40);
         uint256 before = fan.balance;
         vm.prank(fan);
@@ -124,7 +127,7 @@ contract EditionAuctionPermanenceTest is EditionAuctionStack {
         assertEq(fan.balance - before, escrowed, "refunded in full");
     }
 
-    /// @dev The same master, repaired before the delay passes: it settles, the sale settles as
+    /// @dev The same master, repaired: it settles, the edition is created, the sale settles as
     ///      usual, and abandonment is refused.
     function test_Abandon_ARepairedMasterSettlesInstead() public {
         (bytes32 root, Work memory w, uint256 oneSaleId,, uint256 saleId) =
@@ -140,7 +143,7 @@ contract EditionAuctionPermanenceTest is EditionAuctionStack {
         vm.expectRevert(
             abi.encodeWithSelector(IUniformEditionAuction.NotAbandonable.selector, saleId)
         );
-        editionAuction.abandon(saleId);
+        editionAuction.abandon(saleId, abi.encode(w.item));
         _settleEditions(saleId);
         vm.prank(fan);
         (uint256 won,) = editionAuction.claimBid(saleId, 1, fan);
@@ -182,91 +185,6 @@ contract EditionAuctionPermanenceTest is EditionAuctionStack {
         assertEq(editions.balanceOf(fan, tokenId), 1, "the edition copy");
     }
 
-    /// @dev L-4 (review A): the abandonment delay's 120-day minimum assumed Stream's 90-day
-    ///      rescue floor. Governance lengthens Stream's rescue delay to 180 days; a master that
-    ///      cannot settle then keeps its edition sale open for the 90 extra days too, in the lens
-    ///      and in the adapter, so a rescue under the longer delay can still land first.
-    function test_L4_ALongerRescueDelayLengthensTheAbandonment() public {
-        _govern(hotAdmin, address(stream), abi.encodeCall(stream.setRescueDelay, (180 days)));
-        (,, uint256 oneSaleId, uint256 tokenId, uint256 saleId) =
-            _startMaster(_actor("slowRescueArtist"), 0);
-        _editionBid(saleId, fan, 40, 1);
-        vm.mockCallRevert(
-            address(economics), abi.encodeWithSelector(IEconomicsResolver.museum.selector), "broken"
-        );
-        vm.warp(auction.auction(oneSaleId).endTime);
-        vm.expectRevert();
-        auction.settle(oneSaleId);
-        uint256 end = ea.endTimes(saleId).endTime;
-        (, uint256 abandonAt) =
-            IUniformEditionAuctionLens(address(editionAuction)).abandonable(saleId);
-        assertEq(abandonAt, end + 150 days + 90 days, "the delay plus the rescue lengthening");
-        vm.warp(end + 150 days);
-        vm.expectRevert(
-            abi.encodeWithSelector(IUniformEditionAuction.NotAbandonable.selector, saleId)
-        );
-        editionAuction.abandon(saleId);
-        vm.warp(end + 240 days - 1);
-        vm.expectRevert(
-            abi.encodeWithSelector(IUniformEditionAuction.NotAbandonable.selector, saleId)
-        );
-        editionAuction.abandon(saleId);
-        vm.warp(end + 240 days);
-        vm.expectEmit(address(editions));
-        emit IEditions.EditionSupplySealed(tokenId, 0);
-        editionAuction.abandon(saleId);
-    }
-
-    /// @dev Review E, N-2, on the real Stream: once governance removes the English auction, its
-    ///      works keep the rescue delay Stream locked then, so later lengthenings do not reach
-    ///      their edition sales; while it is admitted the delay in force applies, and however long
-    ///      governance makes it, it adds at most the 730-day rescue cap. Fails without the change:
-    ///      the abandonment follows the live delay, without bound.
-    function test_N2_ARemovalLocksTheDelayAndTheCapBoundsTheWait() public {
-        (,, uint256 oneSaleId,, uint256 saleId) = _startMaster(_actor("cappedRescueArtist"), 0);
-        _editionBid(saleId, fan, 40, 1);
-        vm.mockCallRevert(
-            address(economics), abi.encodeWithSelector(IEconomicsResolver.museum.selector), "broken"
-        );
-        vm.warp(auction.auction(oneSaleId).endTime);
-        vm.expectRevert();
-        auction.settle(oneSaleId);
-        uint256 end = ea.endTimes(saleId).endTime;
-        IUniformEditionAuctionLens l = IUniformEditionAuctionLens(address(editionAuction));
-        _govern(hotAdmin, address(stream), abi.encodeCall(stream.setRescueDelay, (180 days)));
-        _govern(
-            hotAdmin,
-            address(stream),
-            abi.encodeCall(stream.setAdmittedMinter, (address(auction), false))
-        );
-        // Governance removed it after the end: Stream rescues from the removal, so the floor
-        // moves with it (the automated review of 16 November 2026).
-        uint256 late = block.timestamp - end;
-        _govern(hotAdmin, address(stream), abi.encodeCall(stream.setRescueDelay, (360 days)));
-        _govern(hotAdmin, address(stream), abi.encodeCall(stream.setRescueDelay, (720 days)));
-        (, uint256 at) = l.abandonable(saleId);
-        assertEq(at, end + 150 days + 90 days + late, "the 180 days locked at the removal");
-        _govern(
-            hotAdmin,
-            address(stream),
-            abi.encodeCall(stream.setAdmittedMinter, (address(auction), true))
-        );
-        (, at) = l.abandonable(saleId);
-        assertEq(at, end + 150 days + 630 days, "admitted again: the 720 days in force");
-        _govern(hotAdmin, address(stream), abi.encodeCall(stream.setRescueDelay, (1440 days)));
-        _govern(hotAdmin, address(stream), abi.encodeCall(stream.setRescueDelay, (2880 days)));
-        (, at) = l.abandonable(saleId);
-        assertEq(at, end + 150 days + 730 days, "capped");
-        vm.warp(at - 1);
-        vm.expectRevert(
-            abi.encodeWithSelector(IUniformEditionAuction.NotAbandonable.selector, saleId)
-        );
-        editionAuction.abandon(saleId);
-        vm.warp(at);
-        editionAuction.abandon(saleId);
-        assertEq(uint8(ea.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.VOID));
-    }
-
     /// @dev Review C, F16: `open` confirms each payout wallet through the ledger
     ///      (`createWallet`, idempotent for a wallet it deployed), never by code at the predicted
     ///      address. Code planted at the seller's predicted address is refused, so no edition
@@ -278,7 +196,7 @@ contract EditionAuctionPermanenceTest is EditionAuctionStack {
         (, uint256 tokenId) = _start(root, _one(w), 0);
         address seller = _editionSeller(w);
         vm.etch(seller, hex"00");
-        bytes memory data = abi.encode(w.item);
+        bytes memory data = _openData(w);
         vm.expectRevert(
             abi.encodeWithSelector(ISplitFactory.WalletAddressMismatch.selector, seller, address(0))
         );
@@ -290,6 +208,6 @@ contract EditionAuctionPermanenceTest is EditionAuctionStack {
         (, uint256 tokenId2) = _start(root2, _one(v), 0);
         splitFactory.createWallet(v.item.payees, bytes32(0));
         assertTrue(splitFactory.isWallet(_editionSeller(v)));
-        editionAuction.open(address(editions), tokenId2, abi.encode(v.item));
+        editionAuction.open(address(editions), tokenId2, _openData(v));
     }
 }

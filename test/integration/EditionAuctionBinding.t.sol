@@ -60,7 +60,7 @@ contract EditionAuctionBindingTest is EditionAuctionStack {
                 IEditions.MinterMismatch.selector, tokenId, address(editionAuction)
             )
         );
-        second.open(address(editions), tokenId, abi.encode(w.item));
+        second.open(address(editions), tokenId, _openData(w));
         uint256 secondSale = ea.saleIdOf(address(editions), tokenId);
         vm.expectRevert(
             abi.encodeWithSelector(IUniformEditionAuction.UnknownAuction.selector, secondSale)
@@ -70,16 +70,16 @@ contract EditionAuctionBindingTest is EditionAuctionStack {
         vm.expectRevert(
             abi.encodeWithSelector(IUniformEditionAuction.AuctionExists.selector, saleId)
         );
-        editionAuction.open(address(editions), tokenId, abi.encode(w.item));
+        editionAuction.open(address(editions), tokenId, _openData(w));
 
         // The converse: whichever adapter opens first holds the edition.
         (, Work memory w2,, uint256 token2) = _startUnopened(0);
         vm.prank(attacker);
-        second.open(address(editions), token2, abi.encode(w2.item));
+        second.open(address(editions), token2, _openData(w2));
         vm.expectRevert(
             abi.encodeWithSelector(IEditions.MinterMismatch.selector, token2, address(second))
         );
-        editionAuction.open(address(editions), token2, abi.encode(w2.item));
+        editionAuction.open(address(editions), token2, _openData(w2));
 
         // The first sale runs to the end on its own adapter.
         _editionBid(saleId, makeAddr("fan"), 20, 3);
@@ -126,7 +126,7 @@ contract EditionAuctionBindingTest is EditionAuctionStack {
         vm.expectRevert(
             abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, address(editionAuction))
         );
-        editionAuction.open(address(editions), token2, abi.encode(w2.item));
+        editionAuction.open(address(editions), token2, _openData(w2));
     }
 
     /// @dev `open` is permissionless, so an attacker may trigger it: it binds only the adapter
@@ -160,12 +160,12 @@ contract EditionAuctionBindingTest is EditionAuctionStack {
                 ISaleAdapter.InvalidSaleTerms.selector, address(editions), tokenId
             )
         );
-        editionAuction.open(address(editions), tokenId, abi.encode(forged.item));
+        editionAuction.open(address(editions), tokenId, _openData(forged));
 
         vm.expectEmit(true, true, false, true, address(editions));
         emit IEditions.EditionMinterBound(tokenId, address(editionAuction));
         vm.prank(attacker);
-        editionAuction.open(address(editions), tokenId, abi.encode(w.item));
+        editionAuction.open(address(editions), tokenId, _openData(w));
         // Bound now: the other kind still cannot take it.
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -178,8 +178,9 @@ contract EditionAuctionBindingTest is EditionAuctionStack {
     }
 
     /// @dev The fee snapshot: the network fee changes after the edition sale opened and before
-    ///      the edition is created. The sale pays the economics it locked at open, and the
-    ///      edition, bound in that transaction, records exactly those.
+    ///      the edition is created. The sale pays the share it locked at open, and the edition,
+    ///      bound in that transaction, records exactly those; the fee goes to the recipient the
+    ///      resolver names at settlement (R18).
     function test_Binding_TheEditionReportsTheSplitItsSalePaid() public {
         address newFee = makeAddr("newNetworkFee");
         bytes memory change =
@@ -213,8 +214,10 @@ contract EditionAuctionBindingTest is EditionAuctionStack {
         uint256 sellerBefore = seller.balance;
         uint256 feeBefore = networkFee.balance;
         _settleEditions(saleId);
-        assertEq(networkFee.balance - feeBefore, revenue * e.feeShare / 100_000, "the fee paid");
+        // The share is the one locked at open; the recipient is the resolver's at settlement
+        // (R18), the new one.
+        assertEq(newFee.balance, revenue * e.feeShare / 100_000, "the fee paid, now");
         assertEq(seller.balance - sellerBefore, revenue - revenue * e.feeShare / 100_000);
-        assertEq(newFee.balance, 0);
+        assertEq(networkFee.balance, feeBefore, "not the recipient recorded at open");
     }
 }

@@ -267,7 +267,6 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
         n = _record(n, abi.encodeCall(IEnglishAuctionFull.economicsResolver, ()));
         n = _record(n, abi.encodeCall(IEnglishAuctionFull.permit2, ()));
         n = _record(n, abi.encodeCall(IEnglishAuctionFull.MAX_PAUSE, ()));
-        n = _record(n, abi.encodeCall(IEnglishAuctionFull.OPENING_BID_FLOORS, ()));
         n = _record(n, abi.encodeCall(IEnglishAuctionFull.PAYOUT_GAS, ()));
         address[4] memory currencies = [ETH, address(usd), address(0xC0FFEE), address(stream)];
         for (uint256 i; i < currencies.length; ++i) {
@@ -351,7 +350,6 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
                 uint32(1 hours + a % 3 days),
                 uint32(1 minutes + (a >> 32) % 1 hours),
                 1_000 + uint32((a >> 64) % 99_000),
-                REFUSAL_DELAY,
                 REFUSAL_GAS
             );
             // forge-lint: disable-end(unsafe-typecast)

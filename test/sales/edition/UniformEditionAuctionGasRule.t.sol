@@ -55,7 +55,7 @@ contract UniformEditionAuctionGasRuleTest is EditionAuctionBase, GasRuleAssertio
 
     function _openData() internal returns (bytes memory) {
         PackageItem memory item = _item(ID, 0);
-        return abi.encodeCall(wrapped.open, (address(editions), ID, abi.encode(item)));
+        return abi.encodeCall(wrapped.open, (address(editions), ID, _openData(item)));
     }
 
     /// @dev At 1x the clock read is too cheap to be the call that runs short (a later plain call
@@ -90,7 +90,7 @@ contract UniformEditionAuctionGasRuleTest is EditionAuctionBase, GasRuleAssertio
     function test_GasRule_AbandonReadsTheClock() public {
         uint256 saleId = _stuckSale();
         streamBurner.burnerSetBase(0);
-        bytes memory data = abi.encodeCall(wrapped.abandon, (saleId));
+        bytes memory data = abi.encodeCall(wrapped.abandon, (saleId, abi.encode(_item(ID, 0))));
         Outcome memory o = _assertSameAtEveryMultiple(clockBurner, alice, address(wrapped), data);
         assertTrue(o.ok, "abandoned at every multiple");
         _assertShortfallNeverAnswers(clockBurner, alice, address(wrapped), data);
@@ -103,7 +103,7 @@ contract UniformEditionAuctionGasRuleTest is EditionAuctionBase, GasRuleAssertio
     function test_GasRule_AbandonReadsStreamsRecord() public {
         uint256 saleId = _stuckSale();
         clockBurner.burnerSetBase(0);
-        bytes memory data = abi.encodeCall(wrapped.abandon, (saleId));
+        bytes memory data = abi.encodeCall(wrapped.abandon, (saleId, abi.encode(_item(ID, 0))));
         Outcome memory o = _assertSameAtEveryMultiple(streamBurner, alice, address(wrapped), data);
         assertTrue(o.ok);
         _assertShortfallNeverAnswers(streamBurner, alice, address(wrapped), data);
@@ -130,8 +130,8 @@ contract UniformEditionAuctionGasRuleTest is EditionAuctionBase, GasRuleAssertio
         _settle(first);
         assertEq(escrow.owed(address(payee), address(0)), sellerPart, "100,000: escrowed");
         // Raise-only, at most doubling per change: two steps.
-        _setLimits(IUniformEditionAuction.Limits(30 days, 150, 200_000, 730));
-        _setLimits(IUniformEditionAuction.Limits(30 days, 150, 400_000, 730));
+        _setLimits(IUniformEditionAuction.Limits(200_000));
+        _setLimits(IUniformEditionAuction.Limits(400_000));
         english.set(
             address(stream),
             8,
@@ -160,7 +160,7 @@ contract UniformEditionAuctionGasRuleTest is EditionAuctionBase, GasRuleAssertio
         economics.set(address(burner), networkFee, FEE_SHARE);
         uint32[5] memory steps = [uint32(200_000), 400_000, 800_000, 1_600_000, 3_000_000];
         for (uint256 i; i < steps.length; ++i) {
-            _setLimits(IUniformEditionAuction.Limits(30 days, 150, steps[i], 730));
+            _setLimits(IUniformEditionAuction.Limits(steps[i]));
         }
         uint256 saleId = _open(0);
         _bid(saleId, alice, 100, 1);

@@ -184,9 +184,12 @@ contract AuctionHandler is Test {
             uint256 key = _keys[actorSeed % actors.length];
             _token().mint(bidder, amount);
             Payment memory p = _permit(key, amount);
+            // EIP-2612 permit payments are refused (second pass); nothing moves.
             vm.prank(bidder);
+            vm.expectRevert(ISaleAdapter.InvalidPayment.selector);
             auction.bid(saleId, recipient, p);
-            ++hits["permit"];
+            ++hits["permitRefused"];
+            return;
         } else {
             uint256 key = _keys[actorSeed % actors.length];
             _token().mint(bidder, amount);
@@ -237,21 +240,14 @@ contract AuctionHandler is Test {
         if (saleId != 0) _withdraw(saleId);
     }
 
-    /// @dev GOV-5: a resume earlier than 48 hours after the pause is refused.
+    /// @dev C30: the network resumes a paused sale at any moment of the pause.
     function resume(uint256 saleSeed) external {
         if (sales.length == 0) return;
         uint256 saleId = _sale(saleSeed);
         IEnglishAuction.Auction memory a = auction.auction(saleId);
         if (a.state != IEnglishAuction.AuctionState.PAUSED) return;
-        uint256 allowedAt = uint256(a.pausedAt) + Roles.STANDARD;
+        // C30: the network resumes at any moment of the pause, with no wait.
         vm.prank(unpauser);
-        if (block.timestamp < allowedAt) {
-            vm.expectRevert(
-                abi.encodeWithSelector(ISaleAdapter.UnpauseTooEarly.selector, allowedAt)
-            );
-            auction.resume(saleId);
-            return;
-        }
         auction.resume(saleId);
         ++hits["resume"];
     }
@@ -266,16 +262,7 @@ contract AuctionHandler is Test {
         uint256 saleId = _sale(saleSeed);
         IEnglishAuction.Auction memory a = auction.auction(saleId);
         if (a.state != IEnglishAuction.AuctionState.PAUSED) return;
-        // L4: as `resume`, `cancel` waits 48 hours from the pause.
-        uint256 allowedAt = uint256(a.pausedAt) + Roles.STANDARD;
-        if (block.timestamp < allowedAt) {
-            vm.prank(setter);
-            vm.expectRevert(
-                abi.encodeWithSelector(ISaleAdapter.UnpauseTooEarly.selector, allowedAt)
-            );
-            auction.cancel(saleId, bytes32(0));
-            return;
-        }
+        // C30: as `resume`, `cancel` takes no wait after the pause.
         Statement memory s = Statement(
             a.token,
             a.tokenId,
@@ -310,7 +297,7 @@ contract AuctionHandler is Test {
     }
 
     /// @dev The winning bidder claims to any address; the pending recipient to itself, or to any
-    ///      address from 30 days after the end.
+    ///      address from 14 days after the end.
     function claimDelivery(uint256 saleSeed, bool asWinner) external {
         if (sales.length == 0) return;
         uint256 saleId = _sale(saleSeed);
@@ -320,10 +307,10 @@ contract AuctionHandler is Test {
         address winner = a.bidder;
         address to = sink;
         // RFX-SAL-1: the winning bidder names any address; the recipient its bid named claims
-        // to itself, and to another address only from 30 days after the end. Before then a
+        // to itself, and to another address only from 14 days after the end. Before then a
         // recipient that refuses the token (the hostile actor) leaves the claim to the bidder.
         if (winner != address(0) && claimant != winner && !asWinner) {
-            if (block.timestamp < uint256(a.endTime) + 30 days) {
+            if (block.timestamp < uint256(a.endTime) + 14 days) {
                 _expectRedirectRefused(saleId, claimant);
                 if (claimant == address(hostile)) claimant = winner;
                 else to = claimant;
@@ -344,7 +331,7 @@ contract AuctionHandler is Test {
         ++hits["delivery"];
     }
 
-    /// @dev Within 30 days of the end the recipient's claim to another address is refused.
+    /// @dev Within 14 days of the end the recipient's claim to another address is refused.
     function _expectRedirectRefused(uint256 saleId, address recipient) internal {
         bytes memory claim = abi.encodeCall(auction.claimDelivery, (saleId, sink));
         vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, sink));
@@ -360,15 +347,7 @@ contract AuctionHandler is Test {
     /// @dev The emergency pause stops only new starts; live auctions must carry on.
     function toggleStartPause() external {
         if (auction.paused()) {
-            uint256 allowedAt = startPausedAt + Roles.STANDARD;
             vm.prank(unpauser);
-            if (block.timestamp < allowedAt) {
-                vm.expectRevert(
-                    abi.encodeWithSelector(ISaleAdapter.UnpauseTooEarly.selector, allowedAt)
-                );
-                auction.unpause();
-                return;
-            }
             auction.unpause();
         } else {
             vm.prank(pauser);
@@ -389,14 +368,13 @@ contract AuctionHandler is Test {
                 duration,
                 uint32(bound(seed >> 40, 1 minutes, 1 hours)),
                 uint32(bound(seed >> 72, 1_000, 100_000)),
-                c.refusalDelay,
                 c.refusalGas
             );
             vm.prank(setter);
             auction.setConfig(c, next);
         } else if (what == 1) {
-            uint256 ceiling = allowlist.incrementFloor(currency) * auction.OPENING_BID_FLOORS();
-            uint256 next = bound(seed >> 8, 0, ceiling / 10);
+            // R19: no ceiling past 96 bits; a range of up to 100 increment floors.
+            uint256 next = bound(seed >> 8, 0, allowlist.incrementFloor(currency) * 100);
             (,, uint64 revision) = allowlist.assetConfig(currency);
             vm.prank(setter);
             allowlist.setOpeningBid(currency, revision, next);

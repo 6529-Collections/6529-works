@@ -144,21 +144,29 @@ contract StepLadderTest is Test {
         assertFalse(StepLadder.isStepsPerDecade(384));
     }
 
-    /// @dev Every power of ten from 10^12 to 10^17 wei is a base price governance may set, on
+    /// @dev Every power of ten from 10^12 to 10^28 wei is a base price governance may set, on
     ///      the 512-step default ladder (whose top step is at least 10 ETH from 10^12 up); the
-    ///      powers of ten just outside are not.
+    ///      powers of ten just outside are not. R19: there is no price cap; 10^28 is the largest
+    ///      power of ten that fits the 96-bit field (`BASE_PRICE_BOUND`, a safety bound), and
+    ///      even its top step's price fits 256 bits with room for any count and fee share.
     function test_IsValid_AcceptsEveryPowerOfTen() public pure {
         uint256 p = StepLadder.MIN_BASE_PRICE;
-        for (uint256 k; k < 6; ++k) {
+        for (uint256 k; k < 17; ++k) {
             assertTrue(StepLadder.isBasePrice(p));
             assertTrue(StepLadder.isValid(p, 48, StepLadder.MAX_STEP_COUNT));
             p *= 10;
         }
-        assertEq(p, StepLadder.MAX_BASE_PRICE * 10);
+        assertEq(p, StepLadder.BASE_PRICE_BOUND * 10);
+        assertLe(StepLadder.BASE_PRICE_BOUND, type(uint96).max);
+        assertGt(StepLadder.BASE_PRICE_BOUND * 10, type(uint96).max);
         assertFalse(StepLadder.isBasePrice(1e11));
         assertFalse(StepLadder.isValid(1e11, 24, StepLadder.MAX_STEP_COUNT));
-        assertFalse(StepLadder.isBasePrice(1e18));
-        assertFalse(StepLadder.isValid(1e18, 48, StepLadder.DEFAULT_STEP_COUNT));
+        assertTrue(StepLadder.isBasePrice(1e18), "no price cap (R19)");
+        assertFalse(StepLadder.isBasePrice(1e29));
+        // The overflow bound: the highest price times 2^32 copies times the 100,000 denominator.
+        uint256 top =
+            StepLadder.price(StepLadder.BASE_PRICE_BOUND, 24, StepLadder.MAX_STEP_COUNT - 1);
+        assertLt(top, type(uint256).max / (uint256(type(uint32).max) * 100_000));
     }
 
     /// @dev A base price in range that is not a power of ten is refused, though its ladder
@@ -173,7 +181,7 @@ contract StepLadderTest is Test {
         }
     }
 
-    /// @dev `isBasePrice` against its definition: a power of ten, 10^12 to 10^17.
+    /// @dev `isBasePrice` against its definition: a power of ten, 10^12 to 10^28.
     function testFuzz_IsBasePrice_IsAPowerOfTenInRange(uint256 base) public pure {
         uint256 rest = base;
         uint256 k;
@@ -181,7 +189,7 @@ contract StepLadderTest is Test {
             rest /= 10;
             ++k;
         }
-        assertEq(StepLadder.isBasePrice(base), rest == 1 && k >= 12 && k <= 17);
+        assertEq(StepLadder.isBasePrice(base), rest == 1 && k >= 12 && k <= 28);
     }
 
     function test_MantissaIndexOutOfRangeReverts() public {
@@ -200,7 +208,7 @@ contract StepLadderTest is Test {
     /// @dev A decade up is exactly ten times the price, a step up is 4% to 26% more (the
     ///      coarsest ladder's widest gap), and step 0 is the base price.
     function testFuzz_DecadesAndSteps(uint256 base, uint8 ladder, uint16 step) public pure {
-        base = bound(base, StepLadder.MIN_BASE_PRICE, StepLadder.MAX_BASE_PRICE);
+        base = bound(base, StepLadder.MIN_BASE_PRICE, StepLadder.BASE_PRICE_BOUND);
         base -= base % 100;
         uint256 n = [uint256(24), 48, 96, 192][ladder % 4];
         uint256 i = bound(step, 0, StepLadder.MAX_STEP_COUNT - 1);

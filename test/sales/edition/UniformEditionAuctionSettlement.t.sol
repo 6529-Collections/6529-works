@@ -236,7 +236,7 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
     /// @dev Every bid's claim against the lens, over any governed ladder and any chunking. The
     ///      ladder is random (24, 48, 96 or 192 steps per decade, any governed base price and
     ///      any step count the bounds allow), so a resumed scan starts in any decade. The book is
-    ///      spread or clustered on a few steps, with raises and dispute withdrawals leaving
+    ///      spread or clustered on a few steps, with raises leaving
     ///      departures at the cut step. A griefer settles first with a random skipping or
     ///      out-of-order order (its progress, if any, is its own). The honest settler is then fed
     ///      random prefixes of the order, so its sweep resumes at any boundary. Before settling,
@@ -281,7 +281,7 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
     function _randomLadder(uint256 ladder, uint32 marginShare) internal returns (uint256) {
         IUniformEditionAuction.AuctionConfig memory c = defaultConfig();
         c.stepsPerDecade = uint16(24 << (ladder % 4));
-        // Governed base prices are the powers of ten from 10^12 to 10^17 (`isBasePrice`).
+        // Governed base prices are powers of ten from 10^12 (`isBasePrice`); 10^12 to 10^17 here.
         c.basePrice = uint96(10 ** (12 + (ladder >> 8) % 6));
         c.stepCount = uint16(bound(ladder >> 128, 64, 512));
         c.marginShare = uint32(bound(marginShare, 0, 50_000));
@@ -294,8 +294,7 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
     }
 
     /// @dev `bids` random bids over `steps` steps, spread or on four steps, with every third
-    ///      raising an earlier live bid and every fifth (otherwise) withdrawing one during a
-    ///      dispute pause: departures in a capped sale.
+    ///      raising an earlier live bid: departures in a capped sale (bids are firm, R21).
     function _randomBook(uint256 saleId, uint256 seed, uint256 bids, uint256 steps, bool spread)
         internal
     {
@@ -316,8 +315,6 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
                 // Clustered books raise by one or two steps, so departures stay near the cut.
                 uint256 span = spread || room < 2 ? room : 2;
                 if (room != 0) _raise(saleId, bidId, from + 1 + (r >> 40) % span);
-            } else if (i % 5 == 4) {
-                _withdrawDuringPause(saleId, bidId);
             }
         }
     }

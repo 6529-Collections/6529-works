@@ -24,7 +24,8 @@ interface IEnglishAuctionFull is
     IAccessManaged
 {
     function MAX_PAUSE() external view returns (uint64);
-    function OPENING_BID_FLOORS() external view returns (uint256);
+    function REFUSAL_DELAY() external view returns (uint256);
+    function creditExpiresAt(address account, address currency) external view returns (uint256);
     function PAYOUT_GAS() external view returns (uint256);
     function allowlist() external view returns (IAssetAllowlist);
     function economicsResolver() external view returns (IEconomicsResolver);

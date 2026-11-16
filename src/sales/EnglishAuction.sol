@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
-import { IERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -41,7 +40,6 @@ import {
     SaleKind
 } from "../interfaces/types/SaleTypes.sol";
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
-import { Roles } from "../governance/Roles.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 import { EnglishAuctionLens } from "./EnglishAuctionLens.sol";
@@ -58,14 +56,17 @@ import { EnglishAuctionLens } from "./EnglishAuctionLens.sol";
 ///      The currency's increment floor is locked by the first bid (E2), which only later bids need.
 ///      Seller, fee recipient and fee share are read back from the token
 ///      at settlement, as `LockedTerms`, by the call that reports the sale's outcome
-///      (`IMintTarget.settlePrimary`, owner decision 17). An unsold 6529 Stream work is moved to
+///      (`IMintTarget.settlePrimary`, owner decision 17); the network's fee goes to the recipient
+///      the economics resolver names at that moment, or the token's when it names none (R18).
+///      The seller receives `floor(price * (100,000 - share) / 100,000)` and the network the
+///      rest, so rounding never favours the seller. An unsold 6529 Stream work is moved to
 ///      the museum by Stream itself in that call; any other token's unsold work goes to the
 ///      artist's active authority the token reports (D140, owner decision 9). A VRF item's
 ///      seed is checked
 ///      by the token's `mint` (`IEntropyModule.isDelivered(itemHash)`), since the mint data is
 ///      opaque here. A pause is recorded once (`pausedAt`) and is live through `pausedAt +
-///      MAX_PAUSE` inclusive, so an upheld `cancel` scheduled with the 48-hour delay exactly at day
-///      5 still lands. After that it ends by itself: views and every mutating entry point treat it
+///      MAX_PAUSE` inclusive; the network may cancel or resume at any moment inside it (both
+///      take no delay). After that it ends by itself: views and every mutating entry point treat it
 ///      as resumed with a {MAX_PAUSE} pause, and the first mutating call writes the resumption
 ///      down. Every bid checks that the locked currency is still active in the allowlist.
 ///      Deprecation freezes a running auction (MARKET-2): a standing bid settles only once the
@@ -78,9 +79,10 @@ contract EnglishAuction is
     AccessManaged,
     ReentrancyGuardTransient
 {
-    /// @dev The longest a dispute pause lasts; one pause per auction (ADR 0001 section 12). The
-    ///      lens answers `MAX_PAUSE()` with the same value.
-    uint64 private constant _MAX_PAUSE = 7 days;
+    /// @dev The longest a dispute pause lasts; one pause per auction (ADR 0001 section 12, C30).
+    ///      A fixed value: this number is the guarantee to bidders. The lens answers
+    ///      `MAX_PAUSE()` with the same value.
+    uint64 private constant _MAX_PAUSE = 3 days;
     /// @notice Bounds of the governed duration.
     uint32 internal constant MIN_DURATION = 1 hours;
     /// @notice Bounds of the governed duration.
@@ -111,19 +113,21 @@ contract EnglishAuction is
     uint256 private constant _ERC20_PAYOUT_GAS = 1_000_000;
     /// @dev How long a sale's currency must have been deprecated before anyone may end the
     ///      frozen sale unsold (MARKET-2): the standing bid is credited back and the work goes
-    ///      where an unbid work goes (D140: the museum for 6529 Stream, else the artist). It is
-    ///      longer than a guardian's removal (30 days) plus a re-admission after it (14 days), so
-    ///      governance can re-admit a currency a single guardian deprecated and keeps vetoing
-    ///      before any sale in it can be ended this way (RFX-SAL-2).
-    uint256 private constant _FREEZE_EXIT = 60 days;
+    ///      where an unbid work goes (D140: the museum for 6529 Stream, else the artist). A fixed
+    ///      value: the number is the guarantee (RFX-SAL-2).
+    uint256 private constant _FREEZE_EXIT = 14 days;
     /// @dev How long after an auction's end only the winning bidder may send a pending delivery
     ///      to an address other than the recipient it named (RFX-SAL-1); after it the recipient
-    ///      may too.
-    uint256 private constant _REDIRECT_DELAY = 30 days;
-    /// @dev Bounds of the governed refusal delay (AUC-46): long enough for a passing failure to
-    ///      clear, short enough that no token holds a standing bid for long.
-    uint32 private constant _MIN_REFUSAL_DELAY = 1 days;
-    uint32 private constant _MAX_REFUSAL_DELAY = 30 days;
+    ///      may too. A fixed value: the number is the guarantee.
+    uint256 private constant _REDIRECT_DELAY = 14 days;
+    /// @dev How long after a federated sale's end a refused settlement may close it with refunds
+    ///      (AUC-46). A fixed value: the number is the guarantee to the sale's bidders.
+    uint256 private constant _REFUSAL_DELAY = 2 days;
+    /// @dev How long after it was last added to a credit may be sent to the network's fee
+    ///      recipient by anyone (R12). A fixed value: the number is the guarantee.
+    uint256 private constant _CREDIT_EXPIRY = 180 days;
+    /// @dev A credit word: the amount in the low 208 bits, the time it was last added to above.
+    uint256 private constant _CREDIT_AMOUNT = type(uint208).max;
     /// @dev The least refusal gas (AUC-47). The auction's own worst case in one settlement, both
     ///      ERC-20 payout frames spending their whole 1,000,000 (credits written instead) and the
     ///      delivery its 300,000, with a cooperating token, measured 2,434,325 Prague gas
@@ -166,20 +170,13 @@ contract EnglishAuction is
         uint40 outcomeFrom;
     }
 
-    /// @dev The governed parameters and the emergency start pause (when it began, zero while
-    ///      not paused): one slot, read once per start.
+    /// @dev The governed parameters, the emergency start pause (when it began, zero while not
+    ///      paused) and the refusal gas (AUC-47): one slot, read once per start.
     struct Settings {
         uint32 duration;
         uint32 extensionWindow;
         uint32 incrementShare;
         uint40 pausedAt;
-    }
-
-    /// @dev The governed refusal parameters (AUC-46, AUC-47), in their own slot, which no start
-    ///      reads: a federated start locks the delay with its network fee recipient
-    ///      ({_federatedTerms}); every other sale reads it when the exit is used.
-    struct Refusal {
-        uint32 refusalDelay;
         uint32 refusalGas;
     }
 
@@ -206,7 +203,7 @@ contract EnglishAuction is
     address private immutable _statementLog;
     /// @dev The asset allowlist: currencies, defaults and increment floors (`allowlist()`).
     IAssetAllowlist private immutable _allowlist;
-    /// @dev The economics resolver: the network fee recipient of federated sales (MARKET-3)
+    /// @dev The economics resolver: the network fee recipient, read at settlement (R18)
     ///      (`economicsResolver()`).
     IEconomicsResolver private immutable _economicsResolver;
     /// @dev The canonical Permit2, or zero when PERMIT2 payments are disabled (`permit2()`).
@@ -223,19 +220,14 @@ contract EnglishAuction is
     mapping(bytes32 key => uint16) private _termsIds;
     mapping(uint16 termsId => Terms) private _terms;
     mapping(uint256 saleId => Sale) private _sales;
+    /// @dev Each credit: the amount (low 208 bits) and when it was last added to (above).
     mapping(address account => mapping(address currency => uint256)) private _credits;
-    /// @dev A federated terms record's network fee recipient (low 160 bits), read from the
-    ///      economics resolver when the first sale under it starts, and refusal delay (the next 32
-    ///      bits), both locked there and part of the record's key (MARKET-3, AUC-46, AUC-48). Zero
-    ///      for a listed token's record, whose key and gas are as before.
-    mapping(uint16 termsId => uint256) private _federatedTerms;
-    Refusal private _refusal;
 
     /// @param authority The AccessManager governing this adapter.
     /// @param escrow_ The revenue escrow for refused payouts.
     /// @param economicsResolver_ The economics resolver (ERC-165, not EIP-7702 delegated): the
-    ///        federated network fee recipient, and its asset allowlist, read at start, on every
-    ///        bid and at settlement.
+    ///        network fee recipient, read at settlement, and its asset allowlist, read at start,
+    ///        on every bid and at settlement.
     /// @param statementLog_ The statement log `cancel` reads.
     /// @param permit2_ The canonical Permit2, or zero to disable PERMIT2 payments.
     /// @param lens_ The lens, deployed beforehand in its own transaction (the rc.2 review's GAS
@@ -394,11 +386,13 @@ contract EnglishAuction is
     ///         the end, or within the sale's last anti-snipe window before it, the first call
     ///         reopens the auction for the governed duration (or the anti-snipe window if longer)
     ///         and emits `AuctionResumed` instead of settling. Once the currency has been
-    ///         deprecated for 60 days, the call ends the sale unsold: the standing bid is
+    ///         deprecated for 14 days, the call ends the sale unsold: the standing bid is
     ///         credited back and the work goes where an unbid work goes, the museum for 6529
     ///         Stream and the artist for any other token (MARKET-2; ADR 0005, owner decision 10).
     ///         A sale of a federated contract the registry has since delisted settles the same
-    ///         way, to its artist (MARKET-5).
+    ///         way, to its artist (MARKET-5). The network's fee goes to the recipient the
+    ///         economics resolver names now, or the token's when it names none or the escrow
+    ///         (R18); the seller's part rounds down.
     /// @param saleId The ended auction's sale ID.
     /// @dev Reports the outcome to the token first (`IMintTarget.settlePrimary`, owner decision
     ///      17, E11): SOLD with the bidder, the locked currency and the price; FROZEN_OUT when
@@ -441,8 +435,9 @@ contract EnglishAuction is
         // With no bidder, `s.bid` is at most a withdrawn bid's reserve: nothing is paid.
         uint256 price = bidder == address(0) ? 0 : s.bid;
         (LockedTerms memory lt, bool taken) = _settleWithToken(s, bidder, price, frozenOut);
-        // Exact: a bid fits 96 bits and the share 17, so the product cannot overflow.
-        uint256 fee = price * lt.feeShare / Splits.DENOMINATOR;
+        // R18: the seller's part rounds down, so the leftover wei is the network's. Exact: a bid
+        // fits 96 bits and the share 17, and `_lock` bounds the share by the denominator.
+        uint256 fee = price - price * (Splits.DENOMINATOR - lt.feeShare) / Splits.DENOMINATOR;
         _pay(lt.currency, lt.seller, price - fee, saleId);
         _pay(lt.currency, lt.feeRecipient, fee, saleId);
         // 6529 Stream moved an unsold work to the museum itself (owner decision 17).
@@ -451,7 +446,7 @@ contract EnglishAuction is
     }
 
     /// @notice Settles an ended sale, or closes it with refunds when its token refuses (AUC-45).
-    ///         Permissionless, from the sale's end plus its locked refusal delay, and not while
+    ///         Permissionless, from the sale's end plus the fixed 2-day refusal delay, and not while
     ///         its currency is frozen short of the freeze exit. {settle}'s whole settlement runs
     ///         in a frame of exactly the refusal gas, which the caller must be able to forward in
     ///         full: if the frame succeeds the sale settled exactly as {settle} settles it; if it
@@ -475,19 +470,18 @@ contract EnglishAuction is
     ///      whole call reverts, so a shortfall never closes a sale.
     function settleOrRefund(uint256 saleId) external {
         Sale storage s = _require(saleId, IEnglishAuction.AuctionState.ENDED);
-        // AUC-45: only a federated sale (its terms record carries the locked delay, never zero)
-        // may close as refused. A listed token's settlement is curated not to fail, and a 6529
-        // Stream sale whose settlement fails waits for governance to repair its dependency.
-        uint256 federatedTerms = _federatedTerms[s.termsId];
-        if (federatedTerms == 0) revert IEnglishAuctionRefusal.SaleNotRefusable(saleId);
-        uint256 allowedAt = uint256(s.endTime) + (federatedTerms >> 160);
+        // AUC-45: only a federated sale may close as refused. A listed token's settlement is
+        // curated not to fail, and a 6529 Stream sale whose settlement fails waits for the
+        // network to repair its dependency.
+        if (!_terms[s.termsId].federated) revert IEnglishAuctionRefusal.SaleNotRefusable(saleId);
+        uint256 allowedAt = uint256(s.endTime) + _REFUSAL_DELAY;
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp < allowedAt) {
             revert IEnglishAuctionRefusal.RefusalTooEarly(saleId, allowedAt);
         }
         // A currency freeze is the auction's own wait, not the token's refusal (MARKET-2).
         _frozenOut(s);
-        uint256 gasLimit = _refusal.refusalGas;
+        uint256 gasLimit = _settings.refusalGas;
         (address escrow, bytes4 probe, bytes4 zeroAmount, bytes4 short, bytes4 attempt) = (
             _escrow,
             IRevenueEscrow.depositETH.selector,
@@ -530,14 +524,14 @@ contract EnglishAuction is
 
     /// @notice Delivers a pending token to `to`. The winning bidder (the payer of the high bid)
     ///         names any `to` at any time; the recipient it named may claim to itself at any
-    ///         time, and to another address only from 30 days after the auction's end. For an
+    ///         time, and to another address only from 14 days after the auction's end. For an
     ///         unsold work of a token other than 6529 Stream, the artist recorded at settlement
     ///         claims it, or the artist the token reports now (L-5). An unsold 6529 Stream work
     ///         is never pending: Stream moved it to the museum.
     /// @param saleId The auction's sale ID.
     /// @param to The address that receives the token; neither zero nor this adapter, and the
     ///        caller itself when the caller is the recipient but not the winning bidder and the
-    ///        auction ended less than 30 days ago.
+    ///        auction ended less than 14 days ago.
     /// @dev RFX-SAL-1. The bidder chose the recipient, so for {_REDIRECT_DELAY} after the end
     ///      (the stored end, after any pause) only the bidder may send the token elsewhere, and a
     ///      recipient contract that forwards calls cannot redirect it first. After that the
@@ -574,7 +568,8 @@ contract EnglishAuction is
 
     // ---------------------------------------------------------------------------- disputes
 
-    /// @notice Pauses a live auction for a dispute, once per auction. GUARDIAN role (immediate).
+    /// @notice Pauses a live auction for a dispute, once per auction, for at most 3 days. PAUSER
+    ///         role (no delay).
     /// @param saleId The live auction's sale ID.
     /// @param disputeRef A reference to the dispute, emitted in `AuctionPaused`; not checked.
     function pause(uint256 saleId, bytes32 disputeRef) external restricted nonReentrant {
@@ -593,22 +588,16 @@ contract EnglishAuction is
 
     /// @notice Resumes a paused auction after a rejected dispute, for its remaining time or the
     ///         governed duration, whichever is longer (the anti-snipe window if longer still),
-    ///         even with a standing bid. UNPAUSER role (pause and unpause have separate holders).
-    ///         Refused until 48 hours (`Roles.STANDARD`) after the pause, so the guardians can
-    ///         always cancel a resume, even one scheduled before the pause. A pause also ends by
-    ///         itself 7 days (`MAX_PAUSE`) after it began, without any call.
+    ///         even with a standing bid. The network (no delay, C30), at any moment of the pause.
+    ///         A pause also ends by itself 3 days (`MAX_PAUSE`) after it began, without any call.
     /// @param saleId The paused auction's sale ID.
-    /// @dev Reverts with `UnpauseTooEarly` before `pausedAt + Roles.STANDARD` (GOV-5).
     function resume(uint256 saleId) external restricted nonReentrant {
         Sale storage s = _require(saleId, IEnglishAuction.AuctionState.PAUSED);
-        uint256 pausedAt = s.pausedAt;
-        _requireUnpausable(pausedAt);
-        _endPause(saleId, s, block.timestamp - pausedAt);
+        _endPause(saleId, s, block.timestamp - s.pausedAt);
     }
 
     /// @notice Cancels a paused auction after an upheld dispute: credits the high bid back and
-    ///         burns the token. PARAMETER_SETTER role, while paused, and like `resume` no earlier
-    ///         than 48 hours after the pause (`UnpauseTooEarly`), and no later than
+    ///         burns the token. The network (no delay, C30), at any moment of the pause through
     ///         `pausedAt + MAX_PAUSE` inclusive. `outcomeRef` must be nonzero and be the token's
     ///         own latest outcome, `IStatementLog.disputeOutcomeOf(token, tokenId)` (no item
     ///         fallback), recorded after the pause: an outcome recorded before the pause, or one
@@ -616,14 +605,11 @@ contract EnglishAuction is
     /// @param saleId The paused auction's sale ID.
     /// @param outcomeRef The statement-log entry hash of the token's latest DISPUTE_OUTCOME.
     /// @dev The statement log does not record on-chain whether an outcome upheld or rejected
-    ///      the dispute. The decision to cancel is the governed 48-hour action itself
-    ///      (PARAMETER_SETTER, cancellable by the guardian during its delay); the recorded
+    ///      the dispute. The decision to cancel is the network's call itself; the recorded
     ///      DISPUTE_OUTCOME entry is the public record it must cite, so no auction is cancelled
     ///      without one. Accepted through `pausedAt + MAX_PAUSE` inclusive.
     function cancel(uint256 saleId, bytes32 outcomeRef) external restricted nonReentrant {
         Sale storage s = _require(saleId, IEnglishAuction.AuctionState.PAUSED);
-        // As `resume`: not in the pause's own window, even when scheduled before the pause.
-        _requireUnpausable(s.pausedAt);
         // LIFECYCLE-4: the cited outcome is the token's own latest one (no item fallback) and
         // was recorded after the pause, so neither an outcome recorded before the pause nor one
         // about the package item can cancel.
@@ -632,7 +618,7 @@ contract EnglishAuction is
             revert IEnglishAuction.OutcomeNotRecorded(saleId, outcomeRef);
         }
         s.status = IEnglishAuction.AuctionState.CANCELLED;
-        // Safe: a live pause is at most MAX_PAUSE (7 days) long, far below 2^24 seconds.
+        // Safe: a live pause is at most MAX_PAUSE (3 days) long, far below 2^24 seconds.
         // forge-lint: disable-next-line(unsafe-typecast)
         s.pausedTotal = uint24(block.timestamp - s.pausedAt);
         s.pausedAt = 0;
@@ -666,6 +652,24 @@ contract EnglishAuction is
         return _claim(account, currency, account);
     }
 
+    /// @notice Sends `account`'s credits in `currency` to the network's fee recipient (the
+    ///         economics resolver's 6529 Stream recipient, read now), once 180 days have passed
+    ///         since the credit was last added to (R12). Permissionless. Emits `Claimed` with that
+    ///         recipient as `to`.
+    /// @param account The credited account.
+    /// @param currency The currency, zero for ETH.
+    /// @return amount The amount sent, in the currency's base units.
+    function expireCredit(address account, address currency)
+        external
+        nonReentrant
+        returns (uint256)
+    {
+        uint256 expiresAt = (_credits[account][currency] >> 208) + _CREDIT_EXPIRY;
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp < expiresAt) revert ISaleAdapter.CreditNotExpired(account, expiresAt);
+        return _claim(account, currency, _economicsResolver.networkFeeRecipient(PRODUCT_STREAM));
+    }
+
     /// @notice Pays one ERC-20 settlement payout in its own call frame, so that `settle` can
     ///         catch its failure (MONEY-1). Only this contract may call it.
     /// @param currency The sale's ERC-20 currency.
@@ -692,14 +696,9 @@ contract EnglishAuction is
         emit ISaleAdapter.Paused(msg.sender);
     }
 
-    /// @notice Unpauses the adapter. UNPAUSER role. Refused until 48 hours (`Roles.STANDARD`)
-    ///         after the pause, so the guardians always have the standard delay to cancel an
-    ///         unpause, even one scheduled before the pause.
-    /// @dev Reverts with `UnpauseTooEarly` before `pausedAt + Roles.STANDARD` (GOV-5).
+    /// @notice Unpauses the adapter. The network's role map decides who may.
     function unpause() external restricted {
-        uint256 pausedAt = _settings.pausedAt;
-        if (pausedAt == 0) revert ISaleAdapter.NotPaused();
-        _requireUnpausable(pausedAt);
+        if (_settings.pausedAt == 0) revert ISaleAdapter.NotPaused();
         _settings.pausedAt = 0;
         emit ISaleAdapter.Unpaused(msg.sender);
     }
@@ -730,8 +729,8 @@ contract EnglishAuction is
 
     /// @notice Sets the auction parameters, within the implementation's bounds: a duration of 1
     ///         hour to 7 days, an anti-snipe window of 1 minute to 1 day and at most the
-    ///         duration, an increment share of 1,000 to 100,000 (1% to 100%), a refusal delay of
-    ///         1 to 30 days, and a refusal gas that is kept or raised, at most doubled, between
+    ///         duration, an increment share of 1,000 to 100,000 (1% to 100%), and a refusal gas
+    ///         that is kept or raised, at most doubled, between
     ///         the gas of the auction's own bounded calls in one settlement and 15,000,000
     ///         (AUC-46, AUC-47). PARAMETER_SETTER role, compare-and-set.
     /// @param expected The parameters the caller expects are current; a stale value reverts.
@@ -828,7 +827,7 @@ contract EnglishAuction is
     ///         declare (`auction`, `lockedTerms`, `minimumBid`, `pendingDelivery`, `config`,
     ///         `openingBid`, `claimable`, `paused`, `isTarget`, `saleIdOf`, `federationRegistry`,
     ///         `escrow`, `statementLog`, `supportsInterface`), and the getters `MAX_PAUSE`,
-    ///         `OPENING_BID_FLOORS`, `PAYOUT_GAS`, `allowlist`, `economicsResolver`, `permit2` and
+    ///         `PAYOUT_GAS`, `allowlist`, `economicsResolver`, `permit2` and
     ///         `federationRegistryCodeHash`: it sends this call's calldata unchanged to the lens,
     ///         which declares each with the same signature, and returns or reverts with its
     ///         answer, byte for byte. Any other call reverts there. ETH is refused.
@@ -876,11 +875,10 @@ contract EnglishAuction is
         if (terms.saleKind != SaleKind.ENGLISH_AUCTION) {
             revert IMintTarget.SaleKindMismatch(SaleKind.ENGLISH_AUCTION, terms.saleKind);
         }
-        (Terms memory t, uint256 federatedTerms) =
-            _lockTerms(token, tokenId, listed, terms.currency, c);
+        Terms memory t = _lockTerms(token, tokenId, listed, terms.currency, c);
         // CALLS-1: the escrow refuses to be paid as a wallet, so a work whose seller or fee
         // recipient is the escrow could never settle; it is refused while nothing is at stake.
-        // A federated token's own fee recipient is never paid ({_lockTerms} checks the network's).
+        // A federated token's own fee recipient is paid only if the resolver names none (R18).
         if (
             tokenId >> 32 != 0 || terms.seller == address(0) || terms.seller == _escrow
                 || terms.seller == address(this)
@@ -898,7 +896,7 @@ contract EnglishAuction is
             revert IEnglishAuction.InvalidAuctionState(saleId, s.status);
         }
         uint32 endTime = SafeCast.toUint32(block.timestamp + c.duration);
-        uint16 termsId = _termsId(t, federatedTerms);
+        uint16 termsId = _termsId(t);
         // The sale's first word in one write, as `Sale` lays it out: the token, its ID (below
         // 2^32, checked above), the end, the terms ID and the status ACTIVE (1), with no flags.
         // The word was zero: a sale with status NONE was never written.
@@ -925,17 +923,15 @@ contract EnglishAuction is
 
     /// @dev The values a sale locks: `CURRENCY_DEFAULT` resolved once to the product's default
     ///      (6529 Stream for listed tokens, Federated for registry tokens), which must be active,
-    ///      the governed parameters, and a federated token's fee from its registry entry, whose
-    ///      code hash must match the token's, with the network fee recipient it is paid to and
-    ///      the refusal delay, packed as {_federatedTerms} stores them (zero for a listed token:
-    ///      MARKET-3, AUC-46, AUC-48).
+    ///      the governed parameters, and a federated token's fee share from its registry entry,
+    ///      whose code hash must match the token's (MARKET-3, AUC-48).
     function _lockTerms(
         address token,
         uint256 tokenId,
         bool listed,
         address currency,
         Settings memory c
-    ) private view returns (Terms memory t, uint256 federatedTerms) {
+    ) private view returns (Terms memory t) {
         // The currency's status and opening bid come from one allowlist word.
         uint256 bid;
         if (currency == CURRENCY_DEFAULT) {
@@ -956,52 +952,47 @@ contract EnglishAuction is
         if (!listed) {
             IFederationRegistry.Entry memory e =
                 IFederationRegistry(_federationRegistry).entry(token);
-            // MARKET-3: the registry's fee goes to the network's federated recipient, locked
-            // here, which must be payable when the fee is nonzero.
-            address feeRecipient = _economicsResolver.networkFeeRecipient(PRODUCT_FEDERATED);
-            if (
-                e.codeHash != token.codehash || e.feeShare > Splits.DENOMINATOR
-                    || feeRecipient == _escrow || (feeRecipient == address(0) && e.feeShare != 0)
-            ) revert ISaleAdapter.InvalidSaleTerms(token, tokenId);
+            if (e.codeHash != token.codehash || e.feeShare > Splits.DENOMINATOR) {
+                revert ISaleAdapter.InvalidSaleTerms(token, tokenId);
+            }
             t.federated = true;
             t.registryFee = e.feeShare;
-            // Nonzero: the delay is at least a day.
-            federatedTerms = uint160(feeRecipient) | uint256(_refusal.refusalDelay) << 160;
         }
     }
 
-    /// @dev The ID of an identical terms record with the same federated terms (zero for a listed
-    ///      token, whose key is unchanged), created the first time it is needed.
-    function _termsId(Terms memory t, uint256 federatedTerms) private returns (uint16 id) {
+    /// @dev The ID of an identical terms record, created the first time it is needed.
+    function _termsId(Terms memory t) private returns (uint16 id) {
         bytes32 key = keccak256(abi.encode(t));
-        if (federatedTerms != 0) key = keccak256(abi.encode(key, federatedTerms));
         id = _termsIds[key];
         if (id == 0) {
             id = ++_termsCount;
             _termsIds[key] = id;
             _terms[id] = t;
-            if (federatedTerms != 0) _federatedTerms[id] = federatedTerms;
         }
     }
 
-    /// @dev The sale's terms: the locked currency, the token's seller and fee terms, and for a
-    ///      federated token the registry fee share and the resolver's federated network fee
-    ///      recipient, both locked at start, never a fee the token reports (MARKET-3, AUC-48).
+    /// @dev The sale's terms: the locked currency, the token's seller and fee terms (for a
+    ///      federated token, the registry fee share locked at start, never the share the token
+    ///      reports: MARKET-3, AUC-48), and the network fee recipient the economics resolver
+    ///      names now for the sale's product, or the token's when the resolver names none or the
+    ///      escrow (R18, B3).
     function _lock(Sale storage s, address seller, address feeRecipient, uint32 feeShare)
         private
         view
         returns (LockedTerms memory lt)
     {
-        uint16 termsId = s.termsId;
-        Terms storage t = _terms[termsId];
+        Terms storage t = _terms[s.termsId];
         bool federated = t.federated;
+        address current =
+            _economicsResolver.networkFeeRecipient(federated ? PRODUCT_FEDERATED : PRODUCT_STREAM);
+        if (current != address(0) && current != _escrow) feeRecipient = current;
         lt = LockedTerms(
             s.token,
             s.tokenId,
             t.currency,
             0,
             seller,
-            federated ? address(uint160(_federatedTerms[termsId])) : feeRecipient,
+            feeRecipient,
             federated ? t.registryFee : feeShare
         );
         if (lt.feeShare > Splits.DENOMINATOR) {
@@ -1034,8 +1025,7 @@ contract EnglishAuction is
                 uint96(Math.min(_allowlist.incrementFloor(currency), type(uint96).max));
             // `t` keeps pointing at the start record: the two differ only in the floor, which
             // the first bid does not use, and rereading the new record would cost a cold slot.
-            // A federated record keeps its locked network fee recipient and refusal delay.
-            s.termsId = _termsId(locked, locked.federated ? _federatedTerms[s.termsId] : 0);
+            s.termsId = _termsId(locked);
         } else if (!_allowlist.isActive(currency)) {
             revert IAssetAllowlist.AssetNotActive(currency);
         }
@@ -1078,8 +1068,8 @@ contract EnglishAuction is
     }
 
     /// @dev Takes exactly `p.amount` from `p.payer`. ERC-20 moves are checked by exact balance
-    ///      delta on both sides. An EIP-2612 permit that fails (for example because it was
-    ///      front-run) is ignored, and the pull then needs the allowance it would have set.
+    ///      delta on both sides. Only DIRECT and PERMIT2 pay; an EIP-2612 PERMIT payment is
+    ///      refused (`InvalidPayment`).
     function _collect(address currency, Payment calldata p, bytes32 witness, bool starting)
         private
     {
@@ -1119,20 +1109,8 @@ contract EnglishAuction is
             ) revert TokenTransfer.TokenBalanceMismatch(currency);
             return;
         }
-        if (p.payer != msg.sender) revert ISaleAdapter.InvalidPayment();
-        if (p.method == PaymentMethod.PERMIT) {
-            if (p.signature.length != 65) revert ISaleAdapter.InvalidPayment();
-            try IERC20Permit(currency)
-                .permit(
-                    p.payer,
-                    address(this),
-                    p.amount,
-                    p.deadline,
-                    uint8(p.signature[64]),
-                    bytes32(p.signature[0:32]),
-                    bytes32(p.signature[32:64])
-                ) { }
-                catch { }
+        if (p.payer != msg.sender || p.method != PaymentMethod.DIRECT) {
+            revert ISaleAdapter.InvalidPayment();
         }
         TokenTransfer.pullExact(currency, p.payer, p.amount);
     }
@@ -1185,7 +1163,7 @@ contract EnglishAuction is
         returns (uint256 amount)
     {
         if (to == address(0)) revert ISaleAdapter.InvalidRecipient(to);
-        amount = _credits[account][currency];
+        amount = _credits[account][currency] & _CREDIT_AMOUNT;
         if (amount == 0) revert ISaleAdapter.NothingToClaim(account, currency);
         _credits[account][currency] = 0;
         emit ISaleAdapter.Claimed(account, currency, to, amount);
@@ -1308,8 +1286,11 @@ contract EnglishAuction is
         }
     }
 
+    /// @dev Adds to a credit and restarts its 180-day clock (R12). The amount stays far below
+    ///      2^208: every credit is a sum of 96-bit bids and payouts.
     function _credit(address account, address currency, uint256 saleId, uint256 amount) private {
-        _credits[account][currency] += amount;
+        mapping(address => uint256) storage credits = _credits[account];
+        credits[currency] = ((credits[currency] & _CREDIT_AMOUNT) + amount) | block.timestamp << 208;
         emit ISaleAdapter.Credited(account, currency, saleId, amount);
     }
 
@@ -1407,7 +1388,7 @@ contract EnglishAuction is
     function _endPause(uint256 saleId, Sale storage s, uint256 length) private {
         uint32 end = SafeCast.toUint32(_resumedEnd(s, length));
         s.endTime = end;
-        // Safe: `length` is at most MAX_PAUSE (7 days), far below 2^24 seconds.
+        // Safe: `length` is at most MAX_PAUSE (3 days), far below 2^24 seconds.
         // forge-lint: disable-next-line(unsafe-typecast)
         s.pausedTotal = uint24(length);
         s.pausedAt = 0;
@@ -1449,13 +1430,6 @@ contract EnglishAuction is
         return Math.max(_settings.duration, _terms[s.termsId].extensionWindow);
     }
 
-    /// @dev GOV-5: a pause that began at `pausedAt` ends no earlier than `Roles.STANDARD` later.
-    function _requireUnpausable(uint256 pausedAt) private view {
-        uint256 allowedAt = pausedAt + Roles.STANDARD;
-        // forge-lint: disable-next-line(block-timestamp)
-        if (block.timestamp < allowedAt) revert ISaleAdapter.UnpauseTooEarly(allowedAt);
-    }
-
     /// @dev The token's recipient: the stored one, or the bidder when none is stored.
     function _recipientOf(Sale storage s) private view returns (address) {
         return s.flags & _RECIPIENT_SET != 0 ? s.recipient : s.bidder;
@@ -1468,33 +1442,30 @@ contract EnglishAuction is
     }
 
     function _setConfig(IEnglishAuction.AuctionConfig memory next) private {
-        Refusal storage r = _refusal;
+        Settings storage st = _settings;
         // AUC-47, ADR 0001 section 13.9: the refusal gas is raise-only once set (the constructor
         // sets it from zero), at most doubled per step, within its floor and ceiling. Both fit
         // 32 bits, so the shift cannot overflow.
-        uint256 gasNow = r.refusalGas;
+        uint256 gasNow = st.refusalGas;
         uint256 gasNext = next.refusalGas;
         if (
             next.duration < MIN_DURATION || next.duration > MAX_DURATION
                 || next.extensionWindow < MIN_EXTENSION_WINDOW
                 || next.extensionWindow > MAX_EXTENSION_WINDOW
                 || next.extensionWindow > next.duration || next.incrementShare < MIN_INCREMENT_SHARE
-                || next.incrementShare > Splits.DENOMINATOR
-                || next.refusalDelay < _MIN_REFUSAL_DELAY || next.refusalDelay > _MAX_REFUSAL_DELAY
-                || gasNext < _MIN_REFUSAL_GAS || gasNext > _MAX_REFUSAL_GAS || gasNext < gasNow
+                || next.incrementShare > Splits.DENOMINATOR || gasNext < _MIN_REFUSAL_GAS
+                || gasNext > _MAX_REFUSAL_GAS || gasNext < gasNow
                 || (gasNow != 0 && gasNext > gasNow << 1)
         ) revert IEnglishAuction.InvalidConfig();
         emit IEnglishAuction.ConfigSet(_currentConfig(), next);
-        Settings storage st = _settings;
-        (st.duration, st.extensionWindow, st.incrementShare) =
-        (next.duration, next.extensionWindow, next.incrementShare);
-        (r.refusalDelay, r.refusalGas) = (next.refusalDelay, next.refusalGas);
+        (st.duration, st.extensionWindow, st.incrementShare, st.refusalGas) =
+        (next.duration, next.extensionWindow, next.incrementShare, next.refusalGas);
     }
 
     function _currentConfig() private view returns (IEnglishAuction.AuctionConfig memory) {
-        (Settings storage st, Refusal storage r) = (_settings, _refusal);
+        Settings storage st = _settings;
         return IEnglishAuction.AuctionConfig(
-            st.duration, st.extensionWindow, st.incrementShare, r.refusalDelay, r.refusalGas
+            st.duration, st.extensionWindow, st.incrementShare, st.refusalGas
         );
     }
 }

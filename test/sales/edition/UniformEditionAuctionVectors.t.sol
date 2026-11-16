@@ -6,8 +6,8 @@ import { EditionAuctionBase } from "./EditionAuctionBase.sol";
 
 /// @notice Replays the golden vectors (`test/fixtures/edition-auction/clearing.json`, made by
 ///         `tools/edition_auction_ref.py`, ADR 0005) through the real adapter and its lens: every
-///         case on the default ladder, with its configuration, cap and events (bids, raises and
-///         dispute withdrawals). Before the close it checks the live clearing, the step totals,
+///         case on the default ladder, with its configuration, cap and events (bids and
+///         raises; bids are firm, R21). Before the close it checks the live clearing, the step totals,
 ///         the departure logs, the settlement order, every bid's outcome, and the case's quotes
 ///         and lowest winning steps; then it settles with the lens's order and claims every bid,
 ///         checking each claim against the expected outcome, exactly `count` copies, the payout
@@ -131,8 +131,8 @@ contract UniformEditionAuctionVectorsTest is EditionAuctionBase {
                     vm.parseJsonUint(json, string.concat(ev, ".toStep"))
                 );
             } else {
-                assertEq(op, keccak256("withdraw"), "unknown event");
-                _withdrawDuringPause(saleId, vm.parseJsonUint(json, string.concat(ev, ".bidId")));
+                // R21: bids are firm; the vectors hold only bids and raises.
+                revert("unknown event");
             }
         }
     }
@@ -327,7 +327,6 @@ contract UniformEditionAuctionVectorsTest is EditionAuctionBase {
         t.stepsPerDecade = uint16(vm.parseJsonUint(json, string.concat(p, ".stepsPerDecade")));
         t.stepCount = uint16(vm.parseJsonUint(json, string.concat(p, ".stepCount")));
         t.marginShare = uint32(vm.parseJsonUint(json, string.concat(p, ".marginShare")));
-        t.closeOffset = uint32(vm.parseJsonUint(json, string.concat(p, ".closeOffset")));
         t.softWindow = uint32(vm.parseJsonUint(json, string.concat(p, ".softWindow")));
         t.maxExtension = uint32(vm.parseJsonUint(json, string.concat(p, ".maxExtension")));
     }

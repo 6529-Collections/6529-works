@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import { Roles } from "src/governance/Roles.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
@@ -32,9 +31,9 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
     address internal alice = makeAddr("alice");
     address internal bob = makeAddr("bob");
     address internal carol = makeAddr("carol");
-    /// @dev `IUniformEditionAuction`'s interface ID: `abandon`, `abandonable`, `setLimits` and
-    ///      `limits` joined the frozen interface on 15 November 2026 (was 0x69e7405b).
-    uint32 internal constant INTERFACE_ID = 0x94ff7508;
+    /// @dev `IUniformEditionAuction`'s interface ID: the second pass removed `withdrawBid`, gave
+    ///      `abandon` the item and added `expireCredit` (was 0x94ff7508).
+    uint32 internal constant INTERFACE_ID = 0xcced0690;
 
     // ================================================================== construction
 
@@ -55,9 +54,10 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         _assertConfig(ua.config(), defaultConfig());
         assertEq(ua.saleKind(), SaleKind.UNIFORM_AUCTION);
         IUniformEditionAuction.Limits memory limits = ua.limits();
-        assertEq(limits.maxCloseOffset, 30 days);
-        assertEq(limits.voidDelayDays, 150);
         assertEq(limits.payoutGas, 100_000);
+        IUniformEditionAuctionLens l2 = IUniformEditionAuctionLens(lensAddress);
+        assertEq(l2.CLOSE_OFFSET(), 15 minutes, "every sale closes 15 minutes after its 1/1");
+        assertEq(l2.ABANDON_DELAY(), 21 days);
         assertEq(ua.federationRegistry(), address(0));
     }
 
@@ -175,10 +175,6 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         assertEq(UniformEditionAuctionBase.open.selector, IUniformEditionAuction.open.selector);
         assertEq(UniformEditionAuctionBase.bid.selector, IUniformEditionAuction.bid.selector);
         assertEq(UniformEditionAuctionBase.raise.selector, IUniformEditionAuction.raise.selector);
-        assertEq(
-            UniformEditionAuctionBase.withdrawBid.selector,
-            IUniformEditionAuction.withdrawBid.selector
-        );
         assertEq(UniformEditionAuctionBase.settle.selector, IUniformEditionAuction.settle.selector);
         assertEq(
             UniformEditionAuctionBase.claimBid.selector, IUniformEditionAuction.claimBid.selector
@@ -195,6 +191,10 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         );
         assertEq(
             UniformEditionAuctionBase.abandon.selector, IUniformEditionAuction.abandon.selector
+        );
+        assertEq(
+            UniformEditionAuctionBase.expireCredit.selector,
+            IUniformEditionAuction.expireCredit.selector
         );
         assertEq(UniformEditionAuctionBase.claim.selector, ISaleAdapter.claim.selector);
         assertEq(UniformEditionAuctionBase.pause.selector, ISaleAdapter.pause.selector);
@@ -272,7 +272,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
     function test_SetConfig_EveryFieldOfTheExpectationCounts() public {
         IUniformEditionAuction.AuctionConfig memory next = defaultConfig();
         next.marginShare = 30_000;
-        for (uint256 field; field < 7; ++field) {
+        for (uint256 field; field < 6; ++field) {
             for (uint256 up; up < 2; ++up) {
                 IUniformEditionAuction.AuctionConfig memory stale = defaultConfig();
                 _nudge(stale, field, up == 1);
@@ -297,8 +297,6 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         } else if (field == 3) {
             c.marginShare = up ? c.marginShare + 1 : c.marginShare - 1;
         } else if (field == 4) {
-            c.closeOffset = up ? c.closeOffset + 1 : c.closeOffset - 1;
-        } else if (field == 5) {
             c.softWindow = up ? c.softWindow + 1 : c.softWindow - 1;
         } else {
             c.maxExtension = up ? c.maxExtension + 1 : c.maxExtension - 1;
@@ -309,7 +307,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         uint256 saleId = _open(0);
         IUniformEditionAuction.AuctionConfig memory next = defaultConfig();
         next.marginShare = 30_000;
-        next.closeOffset = 1 hours;
+        next.softWindow = 10 minutes;
         vm.expectEmit(address(auction));
         emit IUniformEditionAuction.ConfigSet(defaultConfig(), next);
         auction.setConfig(defaultConfig(), next);
@@ -353,7 +351,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
                 _expectInvalidConfig(c);
             }
         }
-        assertEq(n, 28, "every bounds case");
+        assertEq(n, 32, "every bounds case");
     }
 
     function test_SetConfig_Bounds() public {
@@ -361,9 +359,19 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         c = defaultConfig();
         c.basePrice = 1e12 - 1;
         _expectInvalidConfig(c);
+        // R19: no price cap. Any power of ten that fits the 96-bit field is a base price; the
+        // 96-bit field itself is the overflow bound (`StepLadder.BASE_PRICE_BOUND`).
         c = defaultConfig();
         c.basePrice = 1e17 + 1;
         _expectInvalidConfig(c);
+        c = defaultConfig();
+        c.basePrice = 1e18;
+        _setConfig(c);
+        _assertConfig(ua.config(), c);
+        c.basePrice = 1e28;
+        _setConfig(c);
+        _assertConfig(ua.config(), c);
+        _setConfig(defaultConfig());
         // Only a power of ten (`StepLadder.isBasePrice`), so prices read as the table does.
         c = defaultConfig();
         c.basePrice = 1.5e14;
@@ -387,10 +395,6 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         c = defaultConfig();
         c.marginShare = 50_001;
         _expectInvalidConfig(c);
-        // The default close offset is bounded by the governed maximum (30 days here).
-        c = defaultConfig();
-        c.closeOffset = 30 days + 1;
-        _expectInvalidConfig(c);
         c = defaultConfig();
         c.softWindow = 59;
         _expectInvalidConfig(c);
@@ -404,9 +408,9 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         c.maxExtension = 7 days + 1;
         _expectInvalidConfig(c);
         // The edges are accepted.
-        c = IUniformEditionAuction.AuctionConfig(1e17, 24, 64, 50_000, 30 days, 1 hours, 7 days);
+        c = IUniformEditionAuction.AuctionConfig(1e17, 24, 64, 50_000, 1 hours, 7 days);
         _setConfig(c);
-        c = IUniformEditionAuction.AuctionConfig(1e12, 192, 512, 0, 0, 1 minutes, 1 hours);
+        c = IUniformEditionAuction.AuctionConfig(1e12, 192, 512, 0, 1 minutes, 1 hours);
         // 1e12 over 512 steps of 192 per decade tops below 10 ETH: refused.
         _expectInvalidConfig(c);
         c.stepsPerDecade = 24;
@@ -451,21 +455,15 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         _bid(saleId, alice, 10, 2);
         PackageItem memory item = _item(8, 0);
         vm.expectRevert(ISaleAdapter.SalePaused.selector);
-        auction.open(address(editions), 8, abi.encode(item));
-        // GOV-5: not before 48 hours after the pause.
-        uint256 allowedAt = block.timestamp + Roles.STANDARD;
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.UnpauseTooEarly.selector, allowedAt));
-        auction.unpause();
-        vm.warp(allowedAt);
+        auction.open(address(editions), 8, _openData(item));
+        // No wait after the pause: the role map decides who may unpause.
         vm.expectEmit(address(auction));
         emit ISaleAdapter.Unpaused(address(this));
         auction.unpause();
         assertFalse(ua.paused());
         vm.expectRevert(ISaleAdapter.NotPaused.selector);
         auction.unpause();
-        // Any time after the delay, not only its first second.
         auction.pause();
-        vm.warp(block.timestamp + Roles.STANDARD + 1 days);
         auction.unpause();
         assertFalse(ua.paused());
     }
@@ -485,7 +483,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         vm.expectRevert(
             abi.encodeWithSelector(ISaleAdapter.TargetNotAllowed.selector, address(editions))
         );
-        auction.open(address(editions), ID, abi.encode(item));
+        auction.open(address(editions), ID, _openData(item));
     }
 
     /// @dev The adapter sells only 6529 Stream Editions in v1 and keeps no federation registry:
@@ -524,7 +522,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
             saleId, address(editions), ID, address(stream), 60, defaultConfig(), closeAt
         );
         vm.prank(opener);
-        assertEq(auction.open(address(editions), ID, abi.encode(item)), saleId);
+        assertEq(auction.open(address(editions), ID, _openData(item)), saleId);
         IUniformEditionAuction.Auction memory a = ua.auction(saleId);
         assertEq(a.token, address(editions));
         assertEq(a.id, ID);
@@ -542,7 +540,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         vm.expectRevert(
             abi.encodeWithSelector(IUniformEditionAuction.AuctionExists.selector, saleId)
         );
-        auction.open(address(editions), ID, abi.encode(item));
+        auction.open(address(editions), ID, _openData(item));
     }
 
     function test_Open_ChecksTokenAndId() public {
@@ -550,12 +548,12 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         vm.expectRevert(
             abi.encodeWithSelector(ISaleAdapter.TargetNotAllowed.selector, address(stream))
         );
-        auction.open(address(stream), ID, abi.encode(item));
+        auction.open(address(stream), ID, _openData(item));
         uint256 big = uint256(1) << 32;
         vm.expectRevert(
             abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(editions), big)
         );
-        auction.open(address(editions), big, abi.encode(item));
+        auction.open(address(editions), big, _openData(item));
     }
 
     function test_Open_NeedsALiveOneOfOne() public {
@@ -565,7 +563,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
                 IUniformEditionAuction.NoOneOfOneAuction.selector, address(stream), 9
             )
         );
-        auction.open(address(editions), 9, abi.encode(item));
+        auction.open(address(editions), 9, _openData(item));
         english.set(
             address(stream), 9, IEnglishAuction.AuctionState.CANCELLED, uint64(block.timestamp)
         );
@@ -574,7 +572,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
                 IUniformEditionAuction.NoOneOfOneAuction.selector, address(stream), 9
             )
         );
-        auction.open(address(editions), 9, abi.encode(item));
+        auction.open(address(editions), 9, _openData(item));
     }
 
     function test_Open_ChecksTheItem() public {
@@ -585,27 +583,27 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         PackageItem memory other = _item(ID, 0);
         other.contentHash = keccak256("another");
         vm.expectRevert(terms);
-        auction.open(address(editions), ID, abi.encode(other));
+        auction.open(address(editions), ID, _openData(other));
         // Not an EDITION_MASTER.
         stream.setWork(ID, WorksHashing.itemHash(item), ItemKind.ORIGINAL);
         vm.expectRevert(terms);
-        auction.open(address(editions), ID, abi.encode(item));
+        auction.open(address(editions), ID, _openData(item));
         // Another sale kind, a currency other than ETH, params.
         item = _item(ID, 0);
         item.edition.saleKind = SaleKind.FIXED_PRICE;
         stream.setWork(ID, WorksHashing.itemHash(item), ItemKind.EDITION_MASTER);
         vm.expectRevert(terms);
-        auction.open(address(editions), ID, abi.encode(item));
+        auction.open(address(editions), ID, _openData(item));
         item = _item(ID, 0);
         item.edition.currency = address(0xE20);
         stream.setWork(ID, WorksHashing.itemHash(item), ItemKind.EDITION_MASTER);
         vm.expectRevert(terms);
-        auction.open(address(editions), ID, abi.encode(item));
+        auction.open(address(editions), ID, _openData(item));
         item = _item(ID, 0);
         item.edition.params = hex"01";
         stream.setWork(ID, WorksHashing.itemHash(item), ItemKind.EDITION_MASTER);
         vm.expectRevert(terms);
-        auction.open(address(editions), ID, abi.encode(item));
+        auction.open(address(editions), ID, _openData(item));
         // Malformed data: the lens's ABI decoding reverts without data.
         vm.expectRevert(bytes(""));
         auction.open(address(editions), ID, hex"1234");
@@ -613,7 +611,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
 
     function test_Open_ChecksThePayout() public {
         PackageItem memory item = _item(ID, 0);
-        bytes memory data = abi.encode(item);
+        bytes memory data = _openData(item);
         bytes memory terms =
             abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(editions), ID);
         economics.set(address(0), networkFee, FEE_SHARE);
@@ -643,37 +641,40 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         assertEq(a.feeShare, 0);
     }
 
-    function test_Open_InternsTheFeeRecipient() public {
-        _open(0);
-        english.set(
-            address(stream),
-            8,
-            IEnglishAuction.AuctionState.ACTIVE,
-            uint64(block.timestamp + 1 days)
+    /// @dev C23: an edition sale opens only on a package the registry still approves (a revoked
+    ///      package, or one whose signer was disabled, answers false); a sale already open is
+    ///      untouched by a later revocation. Fails without the check: the revoked open succeeds.
+    function test_Open_RefusesARevokedPackage() public {
+        PackageItem memory item = _item(ID, 0);
+        stream.setRevoked(ROOT, true);
+        vm.expectRevert(
+            abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(editions), ID)
         );
-        uint256 second = _openId(8, 0);
-        assertEq(ua.auction(second).feeRecipient, networkFee);
-        assertEq(
-            lens.storageWord(IUniformEditionAuctionStorage.Space.FEE_RECIPIENT, 0, 1),
-            uint160(networkFee)
-        );
-        assertEq(lens.storageWord(IUniformEditionAuctionStorage.Space.FEE_RECIPIENT, 0, 2), 0);
-        // Another recipient gets the next index, and the earlier sales keep theirs.
-        address otherFee = makeAddr("otherFeeSafe");
-        economics.set(seller, otherFee, FEE_SHARE);
-        english.set(
-            address(stream),
-            9,
-            IEnglishAuction.AuctionState.ACTIVE,
-            uint64(block.timestamp + 1 days)
-        );
-        uint256 third = _openId(9, 0);
-        assertEq(ua.auction(third).feeRecipient, otherFee);
-        assertEq(ua.auction(second).feeRecipient, networkFee);
-        assertEq(
-            lens.storageWord(IUniformEditionAuctionStorage.Space.FEE_RECIPIENT, 0, 2),
-            uint160(otherFee)
-        );
+        auction.open(address(editions), ID, _openData(item));
+        stream.setRevoked(ROOT, false);
+        uint256 saleId = auction.open(address(editions), ID, _openData(item));
+        stream.setRevoked(ROOT, true);
+        _bid(saleId, alice, 10, 1);
+        assertEq(ua.auction(saleId).liveUnits, 1, "an open sale is untouched");
+    }
+
+    /// @dev R20: every edition sale closes exactly 15 minutes after its 1/1; edition terms that
+    ///      name an offset, zero or 8 days alike, are refused. Fails without the change: the
+    ///      offset was accepted and locked.
+    function test_Open_RefusesACloseOffset() public {
+        bytes memory terms =
+            abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(editions), ID);
+        uint256[2] memory offsets = [uint256(0), 8 days];
+        for (uint256 i; i < 2; ++i) {
+            PackageItem memory item = _item(ID, 0);
+            item.edition.params = abi.encode(offsets[i]);
+            stream.setWork(ID, WorksHashing.itemHash(item), ItemKind.EDITION_MASTER);
+            vm.expectRevert(terms);
+            auction.open(address(editions), ID, _openData(item));
+        }
+        uint256 saleId = _open(0);
+        IUniformEditionAuction.EndTimes memory e = ua.endTimes(saleId);
+        assertEq(e.closeAt, e.oneOfOneEnd + 15 minutes);
     }
 
     function test_Open_Timing() public {
@@ -688,12 +689,12 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
                 uint64(closeAt)
             )
         );
-        auction.open(address(editions), ID, abi.encode(item));
+        auction.open(address(editions), ID, _openData(item));
         // A 1/1 paused for a dispute keeps the edition sale openable.
         english.set(
             address(stream), ID, IEnglishAuction.AuctionState.PAUSED, uint64(closeAt - 15 minutes)
         );
-        auction.open(address(editions), ID, abi.encode(item));
+        auction.open(address(editions), ID, _openData(item));
     }
 
     function test_Open_AfterTheOneOfOneSettled_BeforeTheClose() public {
@@ -779,24 +780,25 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
     }
 
     /// @dev In a capped sale a bid's queue position counts every unit that ever entered its step,
-    ///      withdrawn ones included, so the step's entered units also stay below 2^32: a bid
-    ///      that would pass that limit is refused, though the sale's live units are low, and the
-    ///      queue stays exact. The departure log's 32-bit fields therefore cannot overflow.
+    ///      raised-away ones included, so the step's entered units also stay below 2^32: a bid
+    ///      that would pass that limit is refused, and the queue stays exact. The departure
+    ///      log's 32-bit fields therefore cannot overflow.
     function test_Bid_QueuePositionsStayBelow2To32() public {
         uint256 saleId = _open(10);
         uint256 max = type(uint32).max;
         _bid(saleId, alice, 5, max - 1);
-        _withdrawDuringPause(saleId, 1);
-        assertEq(ua.auction(saleId).liveUnits, 0);
+        // A raise leaves a departure at step 5; its units stay live (R21: bids never leave),
+        // so a step's entered units never pass the sale's live units, below 2^32.
+        _raise(saleId, 1, 6);
+        assertEq(ua.auction(saleId).liveUnits, max - 1);
         uint256 amount = 2 * _price(saleId, 5);
         vm.deal(bob, amount);
         vm.prank(bob);
         vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.InvalidQuantity.selector, 2));
         auction.bid{ value: amount }(saleId, 5, 2);
-        // One unit still fits, at the last position; another step is unaffected.
+        // One unit still fits, at the last position.
         uint256 last = _bid(saleId, bob, 5, 1);
         assertEq(ua.bidOf(saleId, last).position, max - 1);
-        _bid(saleId, carol, 6, 2);
         IUniformEditionAuction.Departure[] memory d = ua.departures(saleId, 5);
         assertEq(d.length, 1);
         assertEq(d[0].position, 0);
@@ -911,7 +913,6 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         assertEq(_saleWord(saleId).softEnd, 0, "a pause never extends");
         IUniformEditionAuction.EndTimes memory e = ua.endTimes(saleId);
         assertTrue(e.biddingOpen);
-        assertTrue(e.withdrawalsOpen);
         assertEq(uint8(e.oneOfOneState), uint8(IEnglishAuction.AuctionState.PAUSED));
         // Settlement waits for the 1/1.
         vm.expectRevert(
@@ -1074,55 +1075,34 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         assertEq(ua.bidOf(saleId, last).position, 45);
     }
 
-    // ================================================================== withdraw
+    // ================================================================== firm bids
 
-    function test_WithdrawBid_OnlyWhileTheOneOfOneIsPaused() public {
+    /// @dev R21: an edition bid cannot leave during a dispute on its 1/1: the adapter has no
+    ///      withdrawal (the old selector reaches the lens and reverts), the bid stays live, and
+    ///      an upheld dispute (the 1/1 cancelled) voids the sale and refunds every bid in full.
+    ///      Fails without the change: the withdrawal paid the bid back during the pause.
+    function test_FirmBids_StayDuringADisputeAndAreRefundedWhenUpheld() public {
         uint256 saleId = _open(10);
         _bid(saleId, alice, 40, 3);
-        _bid(saleId, bob, 40, 2);
-        vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(IUniformEditionAuction.WithdrawalsClosed.selector, saleId)
-        );
-        auction.withdrawBid(saleId, 1, alice);
         uint64 end = uint64(block.timestamp + 1 days);
-        // The pause begins a minute after the bids (only bids placed before it may leave).
         vm.warp(block.timestamp + 60);
         english.set(address(stream), ID, IEnglishAuction.AuctionState.PAUSED, end);
-        vm.prank(bob);
-        vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.NotBidder.selector, bob));
-        auction.withdrawBid(saleId, 1, bob);
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
-        auction.withdrawBid(saleId, 1, address(0));
-        address to = makeAddr("aliceCold");
-        uint256 amount = 3 * _price(saleId, 40);
-        vm.expectEmit(address(auction));
-        emit IUniformEditionAuction.BidWithdrawn(saleId, 1, alice, to, amount);
+        (bool ok,) = address(auction)
+            .call(abi.encodeWithSignature("withdrawBid(uint256,uint256,address)", saleId, 1, alice));
+        assertFalse(ok, "no withdrawal");
+        assertEq(ua.bidOf(saleId, 1).bidder, alice);
+        assertEq(ua.auction(saleId).liveUnits, 3);
+        // Upheld: the 1/1 is cancelled; the next settle voids the sale, and the bid comes back
+        // in full.
+        english.set(address(stream), ID, IEnglishAuction.AuctionState.CANCELLED, end);
+        assertTrue(auction.settle(saleId, new uint256[](0)));
+        uint256 escrowed = 3 * _price(saleId, 40);
         vm.prank(alice);
-        auction.withdrawBid(saleId, 1, to);
-        assertEq(to.balance, amount);
-        assertEq(ua.auction(saleId).liveUnits, 2);
-        assertEq(ua.departures(saleId, 40).length, 1);
-        vm.expectRevert(
-            abi.encodeWithSelector(IUniformEditionAuction.UnknownBid.selector, saleId, 1)
-        );
-        ua.bidOf(saleId, 1);
-        // An address that refuses ETH keeps the bid.
-        EthRefusingHolder refuser = new EthRefusingHolder();
-        vm.prank(bob);
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.ClaimFailed.selector, address(refuser)));
-        auction.withdrawBid(saleId, 2, address(refuser));
-        // Every bid withdrawn: the book empties and the next bid resets its bounds.
-        vm.prank(bob);
-        auction.withdrawBid(saleId, 2, bob);
-        assertEq(ua.auction(saleId).liveUnits, 0);
-        assertEq(ua.clearing(saleId).count, 0);
-        uint256 next = _bid(saleId, carol, 90, 1);
-        assertEq(ua.bidOf(saleId, next).position, 0);
-        IUniformEditionAuction.Auction memory a = ua.auction(saleId);
-        assertEq(a.lowStep, 90);
-        assertEq(a.highStep, 90);
+        (uint256 won, uint256 refund) = auction.claimBid(saleId, 1, alice);
+        assertEq(won, 0);
+        assertEq(refund, escrowed);
+        assertEq(alice.balance, escrowed);
     }
 
     // ================================================================== settle
@@ -1232,7 +1212,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
             0,
             seller,
             0,
-            networkFee,
+            address(0),
             0
         );
         assertTrue(auction.settle(saleId, new uint256[](0)));
@@ -1299,6 +1279,68 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         uint256 fee = revenue * FEE_SHARE / 100_000;
         assertEq(escrow.owed(address(refusing), address(0)), revenue - fee);
         assertEq(networkFee.balance, fee);
+    }
+
+    /// @dev R18: settlement pays the fee recipient the economics resolver names at settlement,
+    ///      even when it changed after the sale opened; when it names none, the recipient the
+    ///      edition recorded. Fails without the change: the recipient interned at open was paid.
+    function test_Settle_PaysTheFeeRecipientCurrentAtSettlement() public {
+        uint256 saleId = _open(0);
+        _bid(saleId, alice, 100, 2);
+        address moved = makeAddr("movedFeeVault");
+        economics.setNetworkFeeRecipient(moved);
+        assertEq(ua.auction(saleId).feeRecipient, moved);
+        _settle(saleId);
+        uint256 revenue = 2 * _price(saleId, 100);
+        uint256 fee = revenue - revenue * (100_000 - FEE_SHARE) / 100_000;
+        assertEq(moved.balance, fee);
+        assertEq(networkFee.balance, 0);
+        assertEq(seller.balance, revenue - fee);
+        // The resolver names none: the edition's recorded recipient is paid.
+        economics.setNetworkFeeRecipient(address(0));
+        english.set(
+            address(stream),
+            8,
+            IEnglishAuction.AuctionState.ACTIVE,
+            uint64(block.timestamp + 1 days)
+        );
+        uint256 second = _openId(8, 0);
+        _bid(second, bob, 100, 1);
+        IEnglishAuction.Auction memory o = english.auction(english.saleIdOf(address(stream), 8));
+        english.set(address(stream), 8, IEnglishAuction.AuctionState.SETTLED, o.endTime);
+        vm.warp(ua.endTimes(second).endTime);
+        editions.setExists(8, true);
+        assertTrue(auction.settle(second, new uint256[](0)));
+        assertEq(networkFee.balance, _price(second, 100) * FEE_SHARE / 100_000);
+    }
+
+    /// @dev R12: a credit is sent to the network's fee recipient 180 days after it was last added
+    ///      to, by anyone, and not a second earlier. Fails without the change: credits never
+    ///      expire.
+    function test_ExpireCredit_After180Days() public {
+        uint256 saleId = _open(0);
+        _bid(saleId, alice, 100, 1);
+        _bid(saleId, bob, 0, 1);
+        _settle(saleId);
+        auction.claimBidFor(saleId, 2);
+        uint256 credit = ua.claimable(bob, CURRENCY_ETH);
+        assertGt(credit, 0);
+        uint256 expiresAt = block.timestamp + 180 days;
+        assertEq(lens.creditExpiresAt(bob), expiresAt);
+        vm.warp(expiresAt - 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(ISaleAdapter.CreditNotExpired.selector, bob, expiresAt)
+        );
+        auction.expireCredit(bob, CURRENCY_ETH);
+        vm.warp(expiresAt);
+        vm.expectEmit(address(auction));
+        emit ISaleAdapter.Claimed(bob, CURRENCY_ETH, networkFee, credit);
+        vm.prank(carol);
+        assertEq(auction.expireCredit(bob, CURRENCY_ETH), credit);
+        assertEq(ua.claimable(bob, CURRENCY_ETH), 0);
+        assertEq(lens.creditExpiresAt(bob), 0);
+        refundsOut += credit;
+        _assertConserved();
     }
 
     function test_Settle_CapWithFifoAndHoles_ChunkedSweep() public {
@@ -1573,8 +1615,8 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         assertEq(uint96(terms), 1e14);
         uint256 payout = lens.storageWord(IUniformEditionAuctionStorage.Space.PAYOUT, saleId, 0);
         assertEq(address(uint160(payout)), seller);
-        assertEq(uint32(payout >> 208), ID);
-        assertEq(payout >> 240, 150, "the abandonment delay, locked at open");
+        assertEq(uint32(payout >> 192), ID);
+        assertEq(payout >> 224, 0, "nothing past the edition ID");
         assertEq(lens.storageWord(IUniformEditionAuctionStorage.Space.RESULT, saleId, 0), 0);
         assertEq(
             lens.storageWord(IUniformEditionAuctionStorage.Space.DEPARTURE, saleId, 17 << 32), 0
@@ -1592,46 +1634,43 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         _settle(saleId);
         auction.claimBidFor(saleId, 1);
         address a = address(auction);
-        bytes32 m = keccak256(abi.encode(saleId, uint256(9)));
-        uint256[13] memory raw = [
+        bytes32 m = keccak256(abi.encode(saleId, uint256(7)));
+        uint256[11] memory raw = [
             uint256(vm.load(a, bytes32(uint256(1)))),
             uint256(vm.load(a, keccak256(abi.encode(uint256(1), uint256(2))))),
-            uint256(vm.load(a, keccak256(abi.encode(uint256(1), uint256(4))))),
+            uint256(vm.load(a, keccak256(abi.encode(saleId, uint256(3))))),
+            uint256(vm.load(a, keccak256(abi.encode(saleId, uint256(4))))),
             uint256(vm.load(a, keccak256(abi.encode(saleId, uint256(5))))),
             uint256(vm.load(a, keccak256(abi.encode(saleId, uint256(6))))),
-            uint256(vm.load(a, keccak256(abi.encode(saleId, uint256(7))))),
-            uint256(vm.load(a, keccak256(abi.encode(saleId, uint256(8))))),
             uint256(vm.load(a, keccak256(abi.encode(uint256(2), m)))),
             uint256(
                 vm.load(
-                    a, keccak256(abi.encode(uint256(2), keccak256(abi.encode(saleId, uint256(10)))))
+                    a, keccak256(abi.encode(uint256(2), keccak256(abi.encode(saleId, uint256(8)))))
                 )
             ),
             uint256(
                 vm.load(
                     a,
                     keccak256(
-                        abi.encode(uint256(17) << 32, keccak256(abi.encode(saleId, uint256(11))))
+                        abi.encode(uint256(17) << 32, keccak256(abi.encode(saleId, uint256(9))))
                     )
                 )
             ),
-            uint256(vm.load(a, keccak256(abi.encode(uint256(uint160(alice)), uint256(12))))),
+            uint256(vm.load(a, keccak256(abi.encode(uint256(uint160(alice)), uint256(10))))),
             uint256(
                 vm.load(
                     a,
                     keccak256(
                         abi.encode(
-                            uint256(uint160(alice)), keccak256(abi.encode(saleId, uint256(13)))
+                            uint256(uint160(alice)), keccak256(abi.encode(saleId, uint256(11)))
                         )
                     )
                 )
-            ),
-            0
+            )
         ];
-        IUniformEditionAuctionStorage.Space[12] memory spaces = [
+        IUniformEditionAuctionStorage.Space[11] memory spaces = [
             IUniformEditionAuctionStorage.Space.SETTINGS,
             IUniformEditionAuctionStorage.Space.TERMS,
-            IUniformEditionAuctionStorage.Space.FEE_RECIPIENT,
             IUniformEditionAuctionStorage.Space.SALE,
             IUniformEditionAuctionStorage.Space.PAYOUT,
             IUniformEditionAuctionStorage.Space.RESULT,
@@ -1642,15 +1681,14 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
             IUniformEditionAuctionStorage.Space.CREDIT,
             IUniformEditionAuctionStorage.Space.SWEEP
         ];
-        uint256[12] memory keys = [
-            uint256(0), 1, 1, 0, 0, 0, 0, 2, 2, uint256(17) << 32, uint160(alice), uint160(alice)
-        ];
-        for (uint256 i; i < 12; ++i) {
+        uint256[11] memory keys =
+            [uint256(0), 1, 0, 0, 0, 0, 2, 2, uint256(17) << 32, uint160(alice), uint160(alice)];
+        for (uint256 i; i < 11; ++i) {
             assertEq(lens.storageWord(spaces[i], saleId, keys[i]), raw[i], vm.toString(i));
         }
-        // The words compared are live ones: settings, terms, the recipient, the sale, payout and
-        // result, bob's bid, the live word of steps 16-23 and the departure head of step 17.
-        uint8[9] memory nonzero = [0, 1, 2, 3, 4, 5, 7, 8, 9];
+        // The words compared are live ones: settings, terms, the sale, payout and result, bob's
+        // bid, the live word of steps 16-23 and the departure head of step 17.
+        uint8[8] memory nonzero = [0, 1, 2, 3, 4, 6, 7, 8];
         for (uint256 i; i < nonzero.length; ++i) {
             assertTrue(raw[nonzero[i]] != 0, vm.toString(nonzero[i]));
         }
@@ -1690,7 +1728,6 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         assertEq(a.stepsPerDecade, b.stepsPerDecade, "stepsPerDecade");
         assertEq(a.stepCount, b.stepCount, "stepCount");
         assertEq(a.marginShare, b.marginShare, "marginShare");
-        assertEq(a.closeOffset, b.closeOffset, "closeOffset");
         assertEq(a.softWindow, b.softWindow, "softWindow");
         assertEq(a.maxExtension, b.maxExtension, "maxExtension");
     }
