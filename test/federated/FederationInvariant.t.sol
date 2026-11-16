@@ -245,6 +245,9 @@ contract FederationInvariantTest is FederationBase {
                 bool custody = holder == address(auction) || holder == address(token);
                 (PrimaryOutcome outcome,,) = token.primarySale(a.tokenId);
                 assertEq(!custody, outcome == PrimaryOutcome.SOLD, "held by a person iff sold");
+                // No action of this campaign moves a sold work on, so its holder is the bidder
+                // who paid for it.
+                if (!custody) assertEq(holder, a.bidder, "held by the paying bidder");
             } catch { }
         }
     }

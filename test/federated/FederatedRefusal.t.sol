@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { FederatedStream } from "src/federated/FederatedStream.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IEnglishAuctionRefusal } from "src/interfaces/IEnglishAuctionRefusal.sol";
@@ -149,10 +150,12 @@ contract FederatedRefusalTest is FederationBase {
         (uint256 saleId, uint256 tokenId) = _startFed(_fedWork(fedArtist));
         _ethBid(saleId, collector, 1 ether);
         _settleAtEnd(saleId);
+        bytes memory refused =
+            abi.encodeWithSelector(IERC721Errors.ERC721InvalidReceiver.selector, address(fed));
         vm.prank(collector);
-        vm.expectRevert();
+        vm.expectRevert(refused);
         fed.safeTransferFrom(collector, address(fed), tokenId);
-        vm.expectRevert();
+        vm.expectRevert(refused);
         fed.onERC721Received(address(auction), address(auction), tokenId, "");
     }
 

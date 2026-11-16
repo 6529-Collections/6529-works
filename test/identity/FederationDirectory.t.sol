@@ -226,6 +226,36 @@ contract FederationDirectoryTest is IdentityFixture {
         registry.listFederatedContract(_l(artistId, token, 0, partner, 10_000, feeVault), consent);
     }
 
+    /// @dev The consent binds each of the seven signed facts on its own: a listing that differs
+    ///      from the signed one in any single field lists nothing, and the signed one lists.
+    function test_List_TheConsentBindsEachFieldAlone() public {
+        IArtistRegistry.FederatedListing memory signed =
+            _l(artistId, token, 0, partner, 10_000, feeVault);
+        bytes memory consent = _ok(signed);
+        address other = makeAddr("otherArtist");
+        uint256 otherId = _register(other);
+        for (uint256 field; field < 7; ++field) {
+            IArtistRegistry.FederatedListing memory l = _l(artistId, token, 0, partner, 10_000, feeVault);
+            address signer = artist;
+            if (field == 0) (l.artistId, signer) = (otherId, other);
+            else if (field == 1) l.token = address(new FederationRegistryStub());
+            else if (field == 2) l.form = 1;
+            else if (field == 3) l.partner = address(new EditionsMastersMock());
+            else if (field == 4) l.feeShare = 10_001;
+            else if (field == 5) l.feeRecipient = makeAddr("otherFeeVault");
+            else l.deadline = DEADLINE - 1;
+            vm.expectRevert(
+                abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, signer)
+            );
+            vm.prank(federation);
+            registry.listFederatedContract(l, consent);
+        }
+        vm.prank(federation);
+        registry.listFederatedContract(signed, consent);
+        (uint256 listedArtist,) = registry.federatedListing(token);
+        assertEq(listedArtist, artistId);
+    }
+
     /// Regression: the 64-entry append-only list (study H): an artist lists any number.
     function test_List_HasNoCap() public {
         vm.startPrank(federation);

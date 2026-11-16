@@ -26,6 +26,9 @@ import { FederationBase } from "./FederationBase.sol";
 ///         its running sales finish, and a federated edition sale's abandonment waits only its
 ///         locked delay (a federated 1/1 has no rescue).
 contract FederatedPermanenceTest is FederationBase {
+    /// @dev The failure injected into a master's settlement.
+    error InjectedSettlementFailure();
+
     FederatedEditionAuction internal fea;
     IUniformEditionAuctionLens internal fl;
     FederatedStream internal pairStream;
@@ -240,10 +243,12 @@ contract FederatedPermanenceTest is FederationBase {
         uint256 saleId = fea.open(address(pairEditions), tokenId, abi.encode(w.item));
         // The master's settlement fails, so its 1/1 stays ended and unsettled.
         vm.mockCallRevert(
-            address(pairStream), abi.encodeWithSelector(IMintTarget.settlePrimary.selector), "x"
+            address(pairStream),
+            abi.encodeWithSelector(IMintTarget.settlePrimary.selector),
+            abi.encodeWithSelector(InjectedSettlementFailure.selector)
         );
         vm.warp(auction.auction(oneSaleId).endTime);
-        vm.expectRevert();
+        vm.expectRevert(InjectedSettlementFailure.selector);
         auction.settle(oneSaleId);
         uint256 end = fl.endTimes(saleId).endTime;
         (, uint256 abandonAt) = fl.abandonable(saleId);

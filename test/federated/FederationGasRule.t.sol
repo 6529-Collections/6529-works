@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
 import { FederatedStream } from "src/federated/FederatedStream.sol";
 import { IFederatedStream } from "src/interfaces/IFederatedStream.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
-import { IFederatedToken } from "src/interfaces/IFederatedToken.sol";
-import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { Burner, GasRuleAssertions } from "../helpers/GasRule.sol";
 import { FederationBase } from "./FederationBase.sol";
 
@@ -21,7 +20,9 @@ contract FederationGasRuleTest is FederationBase, GasRuleAssertions {
     }
 
     /// @dev Every gas limit below the least that reproduces the ample-gas outcome gives that
-    ///      outcome or a revert that carries no answer (empty, or a shortfall error).
+    ///      outcome or a revert that carries no answer: empty, or the split ledger's starved
+    ///      CREATE2 (`_starvedWallet`); any other error fails, so a starved read reported as a
+    ///      refusal of its own is caught.
     function _assertNeverAnswersShort(address from, address target, bytes memory data)
         internal
         returns (uint256 least)
@@ -40,17 +41,28 @@ contract FederationGasRuleTest is FederationBase, GasRuleAssertions {
             uint256 g = least - (least * i) / (GAS_RULE_SAMPLES + 1);
             Outcome memory o = _try(from, target, data, g);
             if (o.ok == full.ok && keccak256(o.data) == keccak256(full.data)) continue;
-            // Never a different success, and never the template's own refusal of the minter
-            // (a starved registry or store read reported as an answer).
+            // Never a different success, and never any refusal but those a shortfall makes: the
+            // caller's own out-of-gas (empty, which a template's plain call passes on), or the
+            // split ledger's starved CREATE2 (`WalletAddressMismatch` with nothing deployed). A
+            // starved read is never reported as an answer, a template refusal included.
             assertFalse(o.ok, string.concat("an answer at gas ", vm.toString(g)));
             assertTrue(
-                o.data.length < 4
-                    || (bytes4(o.data) != IMintTarget.NotAdmittedMinter.selector
-                        && bytes4(o.data) != IMintTarget.InvalidMintRequest.selector
-                        && bytes4(o.data) != IFederatedToken.NotArtist.selector),
+                o.data.length == 0 || _starvedWallet(o.data),
                 string.concat("a refusal at gas ", vm.toString(g), ": ", vm.toString(o.data))
             );
         }
+    }
+
+    /// @dev The split ledger's CREATE2 run out of gas: `WalletAddressMismatch(predicted, 0)`.
+    function _starvedWallet(bytes memory data) internal pure returns (bool) {
+        if (data.length != 68 || bytes4(data) != ISplitFactory.WalletAddressMismatch.selector) {
+            return false;
+        }
+        uint256 deployed;
+        assembly ("memory-safe") {
+            deployed := mload(add(data, 68))
+        }
+        return deployed == 0;
     }
 
     function test_GasRule_MintReadsTheRegistryWithAllGas() public {

@@ -351,6 +351,26 @@ class CheckGenesisTest(unittest.TestCase):
         )
         self.assertProblem("Ghost.bindStream(address): unknown contract")
 
+    def test_wiring_names_must_match_their_parameter_types(self) -> None:
+        # Regression (PR 105 review): a template's deployer in the code-hash slot, or its code
+        # hash in the deployer slot, fails closed instead of reverting at deployment.
+        sig = "approveTemplate(bytes32,address,uint32,uint8)"
+        self.repo.config["wiring"].append(
+            {"contract": "Foo", "signature": sig,
+             "args": ["FederatedStreamDeployer", "FederatedStream", 1, 0],
+             "calldata": "0x62c03b8e" + "00" * 128}
+        )
+        self.assertProblem(
+            "argument 0 names FederatedStreamDeployer, a address, for a bytes32 parameter"
+        )
+        self.assertProblem("argument 1 names FederatedStream, a bytes32, for a address parameter")
+        self.repo.config["wiring"][-1]["args"] = ["FederatedStream", "FederatedStreamDeployer", 1, 0]
+        problems = self.repo.problems()
+        self.assertFalse([p for p in problems if "names Federated" in p], problems)
+        # A contract's name in an address parameter is accepted.
+        self.repo.config["wiring"][0]["args"] = ["Foo"]
+        self.assertFalse([p for p in self.repo.problems() if "names Foo" in p])
+
     def test_wiring_calldata_must_be_even_length_hex(self) -> None:
         for bad in ("0x2222222", "22222222" + "00" * 32, "0x2222zz22" + "00" * 32, "0x"):
             self.repo.config["wiring"][0]["calldata"] = bad

@@ -95,9 +95,9 @@ contract FederationProvenanceTest is FederationBase {
         vm.prank(collector);
         address b = d.deploy(bytes32("s"), config);
         assertTrue(a != b && d.deployed(b));
-        // The same caller and salt again: the address is taken.
+        // The same caller and salt again: the address is taken (CREATE2 fails with no data).
         vm.prank(stranger);
-        vm.expectRevert();
+        vm.expectRevert(bytes(""));
         d.deploy(bytes32("s"), config);
         // The constructor's own refusal comes back unchanged.
         IFederatedStream.Config memory bad = _streamConfig(fedArtist);
