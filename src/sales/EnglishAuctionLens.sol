@@ -414,9 +414,10 @@ contract EnglishAuctionLens {
     /// @dev The creator in `token`'s `primaryTerms(tokenId, "")`, read forward-all with at most
     ///      `_TERMS_RETURN` bytes copied and decoded by hand: a refusal or an oversized answer
     ///      reverts with `BoundedCallFailed`, an answer that is not a canonical `PrimaryTerms`
-    ///      head (offset `0x20`, nine words, a clean creator word) with
-    ///      `BoundedCallMalformedReturn`, and a shortfall with `BoundedCallShortfall`. No gas
-    ///      cap: a view helper whose caller pays for its own request.
+    ///      encoding (offset `0x20`, nine head words, a clean creator word, and a `params` offset and
+    ///      length that lie inside the answer) with `BoundedCallMalformedReturn`, and a shortfall
+    ///      with `BoundedCallShortfall`. No gas cap: a view helper whose caller pays for its own
+    ///      request.
     function _creatorOf(address token, uint256 tokenId) private view returns (address) {
         (bool ok, bytes memory data) = BoundedCall.tryReadAll(
             token, abi.encodeCall(IMintTarget.primaryTerms, (tokenId, "")), _TERMS_RETURN
@@ -424,13 +425,25 @@ contract EnglishAuctionLens {
         if (!ok) revert BoundedCall.BoundedCallFailed(token);
         uint256 head;
         uint256 creator = type(uint256).max;
-        if (data.length >= 0x140) {
+        uint256 paramsOffset = type(uint256).max;
+        uint256 paramsLength = type(uint256).max;
+        uint256 size = data.length;
+        if (size >= 0x140) {
             assembly ("memory-safe") {
                 head := mload(add(data, 0x20))
+                paramsOffset := mload(add(data, 0xa0))
                 creator := mload(add(data, 0x120))
             }
+            // The struct starts at 0x20; its `params` length word sits `paramsOffset` bytes on,
+            // and the bytes follow it. Compared by subtraction, so nothing can wrap.
+            if (paramsOffset <= size - 0x40) {
+                assembly ("memory-safe") {
+                    paramsLength := mload(add(add(data, 0x40), paramsOffset))
+                }
+                if (paramsLength > size - 0x40 - paramsOffset) paramsLength = type(uint256).max;
+            }
         }
-        if (head != 0x20 || creator >> 160 != 0) {
+        if (head != 0x20 || creator >> 160 != 0 || paramsLength == type(uint256).max) {
             revert BoundedCall.BoundedCallMalformedReturn(token);
         }
         return address(uint160(creator));
