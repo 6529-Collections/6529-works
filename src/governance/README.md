@@ -22,7 +22,7 @@ one-shot configurator installs genesis in one transaction. Rules and flows:
 | --- | --- | --- |
 | The network | `schedule`, then `execute` (or the target itself) after the class delay; at-once powers directly; `cancel` of any operation | GV-1, GV-2, GV-8 |
 | The network (7 days) | `transferNetwork`, `setBrake`, remaps, closures, role settings, `updateAuthority` | GV-4, GV-5, GV-9 |
-| The network (24 hours) | `grantRole`, `revokeRole` of an operational key | GV-3 |
+| The network (no delay) | `grantRole`, `revokeRole` of an operational key | GV-3 |
 | The proposed network | `acceptNetwork` | GV-4 |
 | The brake | `brakeOnce(operationId)` | GV-6 |
 | An operational key | its mapped functions at once; `renounceRole` for itself | GV-3 |

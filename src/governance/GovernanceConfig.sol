@@ -198,7 +198,7 @@ library GovernanceConfig {
     }
 
     /// @notice Applies `cfg` to a freshly deployed manager whose installer is the caller:
-    ///         labels the roles, makes the network at 24 hours the admin of every operational
+    ///         labels the roles, makes the network (no delay) the admin of every operational
     ///         role, executes `wiring` before mapping any selector, maps the selectors, grants
     ///         the operational keys with no delay, sets the brake and proposes the network.
     /// @dev The caller still holds its installer record afterwards and must renounce it. A
@@ -209,7 +209,7 @@ library GovernanceConfig {
         for (uint64 role = 1; role < Roles.COUNT; ++role) {
             if (!Roles.isKnown(role)) continue;
             manager.labelRole(role, Roles.label(role));
-            if (!Roles.isNetworkRole(role)) manager.setRoleAdmin(role, Roles.PARAMETER_SETTER);
+            if (!Roles.isNetworkRole(role)) manager.setRoleAdmin(role, Roles.NETWORK);
         }
 
         for (uint256 i = 0; i < wiring.length; ++i) {
@@ -251,7 +251,7 @@ library GovernanceConfig {
         }
         for (uint64 role = 0; role < Roles.COUNT; ++role) {
             if (!Roles.isKnown(role)) continue;
-            uint64 admin = Roles.isNetworkRole(role) ? Roles.ADMIN : Roles.PARAMETER_SETTER;
+            uint64 admin = Roles.isNetworkRole(role) ? Roles.ADMIN : Roles.NETWORK;
             if (
                 manager.getRoleAdmin(role) != admin || manager.getRoleGuardian(role) != Roles.ADMIN
                     || manager.getRoleGrantDelay(role) != 0

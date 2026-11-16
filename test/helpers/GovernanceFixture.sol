@@ -87,9 +87,7 @@ abstract contract GovernanceFixture is Test {
     function _targetFunctions() internal pure returns (GovernanceConfig.FunctionRole[] memory f) {
         f = new GovernanceConfig.FunctionRole[](9);
         f[0] = GovernanceConfig.FunctionRole(GovernedTargetMock.pause.selector, Roles.PAUSER);
-        f[1] = GovernanceConfig.FunctionRole(
-            GovernedTargetMock.unpause.selector, Roles.PARAMETER_SETTER
-        );
+        f[1] = GovernanceConfig.FunctionRole(GovernedTargetMock.unpause.selector, Roles.NETWORK);
         f[2] = GovernanceConfig.FunctionRole(
             GovernedTargetMock.setFee.selector, Roles.PARAMETER_SETTER
         );

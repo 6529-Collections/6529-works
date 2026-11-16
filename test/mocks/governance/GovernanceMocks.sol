@@ -44,7 +44,7 @@ contract GovernedTargetMock is AccessManaged {
         emit PausedSet(true);
     }
 
-    /// The network at 24 hours (PARAMETER_SETTER).
+    /// The network at once (NETWORK).
     function unpause() external restricted {
         if (!paused) revert PauseUnchanged(false);
         paused = false;

@@ -73,21 +73,21 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
         configurator.verify(cfg);
     }
 
-    function test_EveryRoleIsLabelledAndOperationalKeysAnswerToTheNetworkAt24Hours() public {
+    function test_EveryRoleIsLabelledAndOperationalKeysAnswerToTheNetworkAtOnce() public {
         _configured();
         for (uint64 role = 1; role < Roles.COUNT; ++role) {
             if (!Roles.isKnown(role)) continue;
             assertEq(
-                manager.getRoleAdmin(role),
-                Roles.isNetworkRole(role) ? Roles.ADMIN : Roles.PARAMETER_SETTER
+                manager.getRoleAdmin(role), Roles.isNetworkRole(role) ? Roles.ADMIN : Roles.NETWORK
             );
             assertEq(manager.getRoleGuardian(role), Roles.ADMIN);
             assertEq(manager.getRoleGrantDelay(role), 0);
         }
-        // A grant of an operational key is the network at 24 hours.
-        bytes memory grant = abi.encodeCall(IAccessManager.grantRole, (Roles.PAUSER, outsider, 0));
-        bytes32 id = _schedule(adminSafe, address(manager), grant);
-        assertEq(manager.getSchedule(id), block.timestamp + 24 hours);
+        // A grant of an operational key is the network's, with no delay (integrator ruling 14).
+        vm.prank(adminSafe);
+        manager.grantRole(Roles.PAUSER, outsider, 0);
+        (bool member,) = manager.hasRole(Roles.PAUSER, outsider);
+        assertTrue(member);
     }
 
     function test_InitialGrantsAreActiveImmediately() public {
@@ -362,7 +362,9 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
         _configured();
         bytes memory data =
             abi.encodeCall(IAccessManager.grantRole, (Roles.PAUSER, guardianA, 1 days));
-        _scheduleAndExecute(adminSafe, address(manager), data);
+        vm.prank(adminSafe);
+        (bool ok,) = address(manager).call(data);
+        assertTrue(ok);
         vm.expectRevert(
             abi.encodeWithSelector(
                 GovernanceConfig.HolderMismatch.selector, Roles.PAUSER, guardianA

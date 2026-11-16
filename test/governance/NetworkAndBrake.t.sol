@@ -39,14 +39,12 @@ contract NetworkAndBrakeTest is GovernanceFixture {
     function test_EachClassRunsAtItsDelayAndNotBefore() public {
         bytes[5] memory calls = [
             abi.encodeCall(GovernedTargetMock.setFee, (7)),
-            abi.encodeCall(GovernedTargetMock.unpause, ()),
+            abi.encodeCall(GovernedTargetMock.raiseCallbackGas, (200_000)),
             abi.encodeCall(GovernedTargetMock.setRecipient, (recipient0, outsider)),
             abi.encodeCall(GovernedTargetMock.setVerifier, (verifier0, outsider)),
             abi.encodeCall(GovernedTargetMock.adminOnly, ())
         ];
         uint32[5] memory delays = [uint32(24 hours), 24 hours, 3 days, 7 days, 7 days];
-        vm.prank(guardianA);
-        target.pause(); // so the unpause can run
         for (uint256 i; i < calls.length; ++i) {
             (bool immediate, uint32 delay) =
                 manager.canCall(adminSafe, address(target), bytes4(calls[i]));
@@ -65,10 +63,28 @@ contract NetworkAndBrakeTest is GovernanceFixture {
             manager.execute(address(target), calls[i]);
         }
         assertEq(target.fee(), 7);
-        assertFalse(target.paused());
+        assertEq(target.callbackGas(), 200_000);
         assertEq(target.recipient(), outsider);
         assertEq(target.verifier(), outsider);
         assertEq(target.adminCalls(), 1);
+    }
+
+    /// @dev Integrator ruling 13: unpausing is the network's, with no delay.
+    function test_TheNetworkUnpausesAtOnce() public {
+        vm.prank(guardianA);
+        target.pause();
+        (bool immediate, uint32 delay) =
+            manager.canCall(adminSafe, address(target), GovernedTargetMock.unpause.selector);
+        assertTrue(immediate);
+        assertEq(delay, 0);
+        vm.prank(guardianA);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, guardianA)
+        );
+        target.unpause();
+        vm.prank(adminSafe);
+        target.unpause();
+        assertFalse(target.paused());
     }
 
     /// @dev GV-2: the manager's own administration is the 7-day class.
@@ -100,21 +116,20 @@ contract NetworkAndBrakeTest is GovernanceFixture {
     }
 
     /// @dev GV-3: operational keys act at once and are granted and revoked by the network at
-    ///      the 24-hour class.
-    function test_OperationalKeysAreGrantedAndRevokedAt24Hours() public {
+    ///      once (integrator ruling 14); nobody else grants one.
+    function test_OperationalKeysAreGrantedAndRevokedAtOnce() public {
         address key = makeAddr("newPauser");
-        bytes memory grant = abi.encodeCall(IAccessManager.grantRole, (Roles.PAUSER, key, 0));
-        bytes32 id = _schedule(adminSafe, address(manager), grant);
-        assertEq(manager.getSchedule(id), block.timestamp + 24 hours);
-        vm.warp(block.timestamp + 24 hours);
+        vm.prank(outsider);
+        vm.expectRevert();
+        manager.grantRole(Roles.PAUSER, key, 0);
         vm.prank(adminSafe);
-        manager.execute(address(manager), grant);
+        manager.grantRole(Roles.PAUSER, key, 0);
         vm.prank(key);
         target.pause();
         assertTrue(target.paused());
 
-        bytes memory revoke = abi.encodeCall(IAccessManager.revokeRole, (Roles.PAUSER, key));
-        _scheduleAndExecute(adminSafe, address(manager), revoke);
+        vm.prank(adminSafe);
+        manager.revokeRole(Roles.PAUSER, key);
         (bool still,) = manager.hasRole(Roles.PAUSER, key);
         assertFalse(still);
         // A key can drop its own role at once.

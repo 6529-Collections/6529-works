@@ -58,7 +58,7 @@ wiring from the genesis JSON ([deploy runbook](../../script/README.md)).
 | `MINTER` | 6 | Nobody | none | Unused in v1 |
 | `KEEPER` | 7 | Nobody | none | Unused in v1: upkeep is permissionless |
 | `PLATFORM` | 8 | Operational key | none | Collections, locators, platform statements |
-| `PARAMETER_SETTER` | 9 | The network | 24 hours | The 24-hour class; also granting and revoking operational keys |
+| `PARAMETER_SETTER` | 9 | The network | 24 hours | The 24-hour class |
 | `FUNDS_SETTER` | 10 | The network | 3 days | The 3-day class: money and recipients |
 | `SUCCESSOR_SETTER` | 11 | The network | 7 days | The 7-day class on managed contracts: dependency swaps and other long changes |
 | `CURATOR` | 12 | Operational key | none | Curator statements |
@@ -150,7 +150,7 @@ outsiders cannot.
 ## Suspension of operational keys
 
 There is no separate suspension. To stop an operational key, the network revokes its role
-(24 hours); the key can also drop its own role at once with `renounceRole`. A compromised curation
+at once (`NETWORK` administers every operational role); the key can also drop its own role at once with `renounceRole`. A compromised curation
 signer is stopped at once through the curation verifier's own `disableSigner`.
 
 ## Flows
@@ -169,7 +169,7 @@ sequenceDiagram
     Op->>T: deploy each target with authority = M
     Op->>Cfg: configure(cfg, manifestHash, wiring)
     Note over Cfg: validate cfg and wiring
-    Cfg->>M: labelRole per role; setRoleAdmin(operational, PARAMETER_SETTER)
+    Cfg->>M: labelRole per role; setRoleAdmin(operational, NETWORK)
     Cfg->>T: each wiring call, in order (installer acts with no delay)
     Cfg->>M: setTargetFunctionRole, one per selector
     Cfg->>M: grantRole for every operational key, no delay
@@ -239,7 +239,7 @@ Rule IDs use the prefix `GV`.
 | --- | --- | --- | --- |
 | GV-1 | Only `network()` holds the network roles (`ADMIN`, `NETWORK`, `PARAMETER_SETTER`, `FUNDS_SETTER`, `SUCCESSOR_SETTER`); nobody can be granted one; the zero address never holds one. The installer holds them with no delay only until it renounces. | `WorksAccessManager.hasRole`, `_grantRole` | [`NetworkAndBrake.t.sol`](../../test/governance/NetworkAndBrake.t.sol): `test_NobodyCanBeGrantedANetworkRole`, `testFuzz_OnlyTheNetworkHoldsTheNetworkRoles`, `test_NoNetworkBeforeAcceptance`; [`GovernanceConfigurator.t.sol`](../../test/governance/GovernanceConfigurator.t.sol): `test_ConfiguratorDeploysAndOwnsAWorksAccessManager` |
 | GV-2 | The network acts with a fixed delay per class: `NETWORK` none, `PARAMETER_SETTER` 24 hours, `FUNDS_SETTER` 3 days, `SUCCESSOR_SETTER` and `ADMIN` 7 days. Nothing runs before its delay. | `Roles.executionDelay`, OpenZeppelin `schedule` and `_consumeScheduledOp` | `NetworkAndBrake.t.sol`: `test_EachClassRunsAtItsDelayAndNotBefore`, `test_ManagerAdministrationIsTheSevenDayClass`, `test_TheNetworkActsAtOnceThroughTheNetworkRole`, `test_UnmappedSelectorFallsBackToTheSevenDayClass`; [`Roles.t.sol`](../../test/governance/Roles.t.sol) |
-| GV-3 | Operational keys act with no delay. The network grants and revokes them at 24 hours (their role admin is `PARAMETER_SETTER`); a key can renounce its own role at once. | `GovernanceConfig.install` (`setRoleAdmin`) | `NetworkAndBrake.t.sol`: `test_OperationalKeysAreGrantedAndRevokedAt24Hours`; `GovernanceConfigurator.t.sol`: `test_EveryRoleIsLabelledAndOperationalKeysAnswerToTheNetworkAt24Hours` |
+| GV-3 | Operational keys act with no delay. The network grants and revokes them at once (their role admin is `NETWORK`); a key can renounce its own role at once. | `GovernanceConfig.install` (`setRoleAdmin`) | `NetworkAndBrake.t.sol`: `test_OperationalKeysAreGrantedAndRevokedAtOnce`; `GovernanceConfigurator.t.sol`: `test_EveryRoleIsLabelledAndOperationalKeysAnswerToTheNetworkAtOnce` |
 | GV-4 | `transferNetwork(next)` (7 days) only proposes; `next` takes over only by calling `acceptNetwork` itself; a new proposal or zero replaces or withdraws it. After acceptance the former network holds nothing and its scheduled operations cannot run. | `WorksAccessManager.transferNetwork`, `acceptNetwork`, `hasRole` | `NetworkAndBrake.t.sol`: `test_TransferNetworkTakesEffectOnlyOnAccept`, `test_TransferCanBeWithdrawnOrReplaced`, `test_OnlyTheNetworkCanStartATransfer` |
 | GV-5 | `setBrake(next)` is the network at 7 days; zero means no brake. | `WorksAccessManager.setBrake` | `NetworkAndBrake.t.sol`: `test_OnlyTheBrakeCanBrake`, `test_TheBrakeCanDelayItsOwnRemovalOnce`; `GovernanceConfigurator.t.sol`: `test_NoBrakeIsAllowed` |
 | GV-6 | Only the brake can call `brakeOnce`, only on a scheduled, unexpired operation, and only once until that operation runs. The operation then cannot run, by `execute` or by a direct call on the target, before its ready time plus 7 days. Cancelling and scheduling again keeps the mark. An action with no delay is never scheduled, so it cannot be braked. | `WorksAccessManager.brakeOnce`, `_consumeScheduledOp` | `NetworkAndBrake.t.sol`: `test_TheBrakeDelaysAnOperationOnce`, `test_TheBrakeAlsoHoldsADirectDelayedCall`, `test_CancelAndRescheduleDoesNotEscapeTheBrake`, `test_OnlyTheBrakeCanBrake`, `test_AnActionWithNoDelayCannotBeBraked`, `test_ACancelledExecutedOrExpiredOperationCannotBeBraked` |
@@ -283,7 +283,7 @@ so the network, the brake and every brake mark can be rebuilt from logs alone.
 | The network's key is compromised | It can schedule anything, each at its class delay, and use the at-once powers. | Everyone sees each scheduled action for at least its delay; the brake, if there is one, can add 7 days once per action. The network's holders replace the address through `transferNetwork`. |
 | The network address is lost | No change can be made through the manager. | None on chain. Before the TDH bridge, the network is a Safe whose signers can rotate. |
 | The brake is compromised | It can delay each scheduled action once by 7 days, nothing more. | The network replaces or removes it with `setBrake` (7 days; the brake can delay that once too). |
-| An operational key is compromised | It acts for its role at once. | The network revokes it (24 hours); a curation signer is disabled at once through the verifier. |
+| An operational key is compromised | It acts for its role at once. | The network revokes it at once; a curation signer is disabled at once through the verifier. |
 | A proposed network cannot make calls | It never accepts, and the current network keeps every power. | The network proposes another address. |
 | An operation expires or is stale | `execute` reverts (`AccessManagerExpired`, or the setter's mismatch error). | Schedule it again, with the current value. |
 | A target's authority is moved (`updateAuthority`) | The target leaves this manager for good. | Prevention only: the move takes 7 days and is public. |
