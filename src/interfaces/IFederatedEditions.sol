@@ -15,7 +15,7 @@ import { EditionTerms, PackageItem } from "./types/PackageTypes.sol";
 ///      edition sale adapter calls (`stream`, `bindMinter`, `exists`, `edition`, `sealSupply`,
 ///      `masterOf`, `mint`) have 6529 Stream Editions' signatures, so the edition auction's code
 ///      serves both. An edition is bound to the one adapter whose sale opens it, sealed by that
-///      adapter at its sale's count, and paid at the locked network share. ETH only.
+///      adapter at its sale's count, and paid at the network share in force. ETH only.
 interface IFederatedEditions is IFederatedToken {
     /// @notice Deployment arguments; every one is written to storage (no immutables).
     struct Config {
@@ -35,12 +35,13 @@ interface IFederatedEditions is IFederatedToken {
     /// @param contentHash The master's content hash.
     /// @param terms The master item's edition terms.
     event EditionCreated(uint256 indexed editionId, bytes32 contentHash, EditionTerms terms);
-    /// @notice An edition's payout terms were locked (at its binding or its creation).
+    /// @notice An edition's seller vault was locked (at its binding or its creation), with the
+    ///         fee terms in force then; later reads follow the share in force, which only falls.
     /// @param editionId The edition.
     /// @param seller The master's seller vault.
-    /// @param royaltyReceiver The royalty receiver (the 90/10 vault while listed).
-    /// @param feeRecipient The network fee recipient, zero after the exit.
-    /// @param feeShare The network share, zero after the exit.
+    /// @param royaltyReceiver The royalty receiver deployed then (the seller vault at a zero share).
+    /// @param feeRecipient The network fee recipient.
+    /// @param feeShare The network share in force then.
     event EditionTermsLocked(
         uint256 indexed editionId,
         address seller,
@@ -109,7 +110,8 @@ interface IFederatedEditions is IFederatedToken {
     ///         sale kind.
     /// @param editionId The master's token ID.
     /// @param item The master's item (read only before the edition exists).
-    /// @return The locked terms: seller, fee recipient and share, royalty receiver and rate.
+    /// @return The terms: the locked seller, the fee recipient and share in force, the royalty
+    ///         receiver and the master's rate.
     function bindMinter(uint256 editionId, PackageItem calldata item)
         external
         returns (WorkTerms memory);

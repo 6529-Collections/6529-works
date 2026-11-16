@@ -21,10 +21,9 @@ import { FederationBase } from "./FederationBase.sol";
 /// @notice What the federated templates and adapters owe the permanence rules of ADR 0007 after
 ///         its review fixes: the shared renderer reads a federated work through the same native
 ///         path as a 6529 Stream work (`coreOf` and `extsload` at `StreamLayout`'s slots), a
-///         work's own locator can never break its metadata, an item names no one but the
-///         contract's artist, a contract that left starts no sale through a shared adapter while
-///         its running sales finish, and a federated edition sale's abandonment waits only its
-///         locked delay (a federated 1/1 has no rescue).
+///         work's own locator can never break its metadata, an item names only its artist and
+///         consenting parties, and a federated edition sale's abandonment waits only its locked
+///         delay (a federated 1/1 has no rescue).
 contract FederatedPermanenceTest is FederationBase {
     /// @dev The failure injected into a master's settlement.
     error InjectedSettlementFailure();
@@ -120,11 +119,11 @@ contract FederatedPermanenceTest is FederationBase {
 
     // ------------------------------------------------------------------ who an item names
 
-    /// @dev No party consents on chain to a federated work, so an item may name no one but the
-    ///      contract's artist: no other party's account, no other artist ID as a payee (a
-    ///      payout routed through another artist's identity), and the license ID follows the
-    ///      mint rule. A fixed payee is an account the artist pays.
-    function test_Mint_TheItemNamesOnlyTheArtist() public {
+    /// @dev The first party is the contract's artist and every later party consents on chain
+    ///      (`FederationSecondPass.t.sol` covers consents): a later party without a consent, an
+    ///      artist ID as a payee that names no party, an item with no parties, and a license ID
+    ///      outside the mint rule are refused. A fixed payee is an account the parties pay.
+    function test_Mint_TheItemNamesOnlyConsentingParties() public {
         address other = _actor("anotherArtist");
         Work memory w = _fedWork(fedArtist);
         w.item.parties = new Party[](2);
@@ -145,9 +144,12 @@ contract FederatedPermanenceTest is FederationBase {
         w.item.license = License("CC0 1.0", w.item.license.textFileId);
         _refused(w);
 
-        // The artist alone, with a fixed payee it pays, and no parties at all: accepted.
         w = _fedWork(fedArtist);
         w.item.parties = new Party[](0);
+        _refused(w);
+
+        // The artist alone, with a fixed payee it pays: accepted.
+        w = _fedWork(fedArtist);
         w.item.payees = new ISplitWallet.Payee[](2);
         w.item.payees[0] = ISplitWallet.Payee(0, other, 30_000);
         w.item.payees[1] = ISplitWallet.Payee(uint160(fedArtist), address(0), 70_000);
@@ -164,70 +166,6 @@ contract FederatedPermanenceTest is FederationBase {
         fed.approveItem(_itemHash(w), RATE);
         vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
         auction.start(address(fed), _mintData(w));
-    }
-
-    // ------------------------------------------------------------------ the exit
-
-    /// @dev A contract that left has no registry entry, so a shared adapter starts no new sale
-    ///      of it even when its artist admits that adapter as its own minter (the network's fee
-    ///      would otherwise be locked from the entry), while a sale started before the exit
-    ///      finishes and pays the share it locked.
-    function test_Exit_ALeftContractStartsNoSaleThroughTheSharedAuction() public {
-        (uint256 running,) = _startFed(_fedWork(fedArtist));
-        _ethBid(running, collector, 1 ether);
-        vm.startPrank(fedArtist);
-        fed.leaveFederation();
-        fed.setAdmittedMinter(address(auction), true);
-        vm.stopPrank();
-        assertTrue(fedRegistry.isActive(address(fed)), "its running sales are served");
-        assertEq(uint8(fedRegistry.entry(address(fed)).status), 0, "no entry");
-        assertFalse(fedRegistry.canMint(address(fed), address(auction)));
-        Work memory w = _fedWork(fedArtist);
-        vm.prank(fedArtist);
-        fed.approveItem(_itemHash(w), RATE);
-        vm.expectRevert(
-            abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(fed), 2)
-        );
-        auction.start(address(fed), _mintData(w));
-        uint256 feeBefore = networkFee.balance;
-        _settleAtEnd(running);
-        assertEq(networkFee.balance - feeBefore, 0.1 ether, "the running sale's locked share");
-    }
-
-    /// @dev The same for a pair's editions: an edition sale opened before the exit settles and
-    ///      pays its locked share; a new one, of a master whose 1/1 began before the exit, cannot
-    ///      open after it, even with the federated edition auction admitted by the artist.
-    function test_Exit_ALeftPairOpensNoEditionSaleAndARunningOneSettles() public {
-        Work memory w = _fedMaster(fedArtist, 0);
-        (uint256 oneSaleId, uint256 tokenId) = _startFed(pairStream, fedArtist, w, RATE);
-        uint256 saleId = fea.open(address(pairEditions), tokenId, abi.encode(w.item));
-        address a = makeAddr("a");
-        uint256 amount = 2 * fl.stepPrice(saleId, 100);
-        vm.deal(a, amount);
-        vm.prank(a);
-        fea.bid{ value: amount }(saleId, 100, 2);
-        Work memory v = _fedMaster(fedArtist, 0);
-        (, uint256 second) = _startFed(pairStream, fedArtist, v, RATE);
-
-        vm.startPrank(fedArtist);
-        pairStream.leaveFederation();
-        pairEditions.leaveFederation();
-        pairEditions.setAdmittedMinter(address(fea), true);
-        vm.stopPrank();
-        vm.expectRevert(
-            abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(pairEditions), 0)
-        );
-        fea.open(address(pairEditions), second, abi.encode(v.item));
-
-        _ethBid(oneSaleId, collector, 1 ether);
-        _settleAtEnd(oneSaleId);
-        pairEditions.createEdition(tokenId, w.item);
-        vm.warp(fl.endTimes(saleId).endTime);
-        uint256 feeBefore = networkFee.balance;
-        assertTrue(fea.settle(saleId, new uint256[](0)));
-        IUniformEditionAuction.Settlement memory st = fl.settlement(saleId);
-        assertEq(st.count, 2);
-        assertEq(networkFee.balance - feeBefore, st.count * st.price * FED_SHARE / 100_000);
     }
 
     // ------------------------------------------------------------------ abandonment
@@ -265,8 +203,7 @@ contract FederatedPermanenceTest is FederationBase {
 
     /// @dev Pass 3: a federated edition sale voided while its best-effort seal was refused
     ///      leaves the edition bound to this adapter's void sale for good: the adapter never
-    ///      reopens it, another adapter cannot bind it, and once both halves leave the artist's
-    ///      own minter cannot mint it either.
+    ///      reopens it and another adapter cannot bind it.
     function test_Abandon_ARefusedSealLeavesTheEditionDeadForGood() public {
         Work memory w = _fedMaster(fedArtist, 0);
         (uint256 oneSaleId, uint256 tokenId) = _startFed(pairStream, fedArtist, w, RATE);
@@ -301,18 +238,5 @@ contract FederatedPermanenceTest is FederationBase {
             )
         );
         pairEditions.bindMinter(tokenId, w.item);
-        address own = makeAddr("ownMinter");
-        vm.startPrank(fedArtist);
-        pairEditions.leaveFederation();
-        pairStream.leaveFederation();
-        pairEditions.setAdmittedMinter(own, true);
-        vm.stopPrank();
-        vm.prank(own);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IFederatedEditions.MinterMismatch.selector, tokenId, address(fea)
-            )
-        );
-        pairEditions.mint(own, tokenId, 1, abi.encode(address(0), uint256(0)));
     }
 }
