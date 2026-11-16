@@ -989,6 +989,19 @@ contract AuctionRefusedSettlementTest is AuctionBase {
         auction.pendingDelivery(saleId);
     }
 
+    /// @dev A `params` offset that points into the struct's own head (zero, or any word before
+    ///      the head ends) is not a canonical encoding and is refused. Fails without the lower
+    ///      bound: the head word it lands on reads as a small length and the creator is returned.
+    function test_PendingDeliveryRejectsAParamsOffsetInsideTheHead() public {
+        uint256 saleId = _refusedSale();
+        hostile.setRawTerms(_rawTerms(0, 0, ""));
+        vm.expectRevert(_malformed());
+        auction.pendingDelivery(saleId);
+        hostile.setRawTerms(_rawTerms(0xe0, 0, ""));
+        vm.expectRevert(_malformed());
+        auction.pendingDelivery(saleId);
+    }
+
     /// @dev A `params` length that overruns the answer (one byte over, the maximum, and one that
     ///      would wrap under addition) is refused with `BoundedCallMalformedReturn`. Fails
     ///      without the `params` check: all three decode to the artist.

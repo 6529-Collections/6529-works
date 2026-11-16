@@ -39,7 +39,7 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 | `WorkDelivery` (created by `WorkRecords`' constructor; replaceable) | [`src/stream/WorkDelivery.sol`](../../src/stream/WorkDelivery.sol) | 183 | 8,673 | 9,084 | 15,903 |
 | `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 484 | 19,025 | 20,854 | 5,551 |
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 898 | 24,062 | 27,384 | 514 |
-| `EnglishAuctionLens` | [`src/sales/EnglishAuctionLens.sol`](../../src/sales/EnglishAuctionLens.sol) | 342 | 7,459 | 7,752 | 17,117 |
+| `EnglishAuctionLens` | [`src/sales/EnglishAuctionLens.sol`](../../src/sales/EnglishAuctionLens.sol) | 342 | 7,473 | 7,766 | 17,103 |
 | `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 919 | 24,037 | 29,073 | 539 |
 | `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 882 | 23,253 | 23,675 | 1,323 |
 
