@@ -583,7 +583,7 @@ writing other storage); entries composed on read; unbid federated works stay wit
 template.)
 
 Federation lets an artist run their own contract, built from the network's
-templates, as a registered member of the 6529 network.
+audited templates, as a registered member of the 6529 network.
 
 **Purpose: open, automated discovery (owner direction, 11 October 2026).** The
 registry is a public, on-chain directory of every federated contract and work.
@@ -604,7 +604,7 @@ shared sale adapters, the template-ready token code, and a registry interface.
 
 **Components**
 - **Templates.** Each template is the 6529 Stream or 6529 Editions token code
-  with curation switched off. Each template version is approved by governance
+  with curation switched off. Each template version is reviewed and audited,
   and identified by its code hash. New template versions are published by
   governance. Deployed contracts never change.
 - **Factory.** Deploys a template as a full, non-proxy contract. It deploys
@@ -795,7 +795,7 @@ AccessManager governs all of them. The VRF module is optional.
   - Rejected: cheap copies would mix with 1/1s in one contract.
   - Editions go to the linked 1155 instead.
 - **Keep RC1's bespoke governance.**
-  - Rejected in favour of the standard OpenZeppelin AccessManager.
+  - Rejected in favour of a standard, audited AccessManager.
 - **Mandatory on-chain storage up to 1 MB.**
   - Rejected for gas-cost exposure.
   - Off-chain by default, with a collector-funded upgrade path.
@@ -946,6 +946,14 @@ AccessManager governs all of them. The VRF module is optional.
     signed releases; the fee recipient and the museum are governed vaults.
   - **§13.** The AccessManager gains a bounded veto, dead-admin recovery, a pre-registered
     successor with `migrate`, seat caps and a third admin seat (ADR 0002's amendment note).
+
+- **16 November 2026: the templates are governance-approved, and the project is pre-audit.**
+  Where this ADR says federation's templates, or a template version, are "audited" (§16's
+  opening sentence and its Components list), or that the AccessManager is "audited" (the
+  rejected alternatives), read "governance-approved" for the templates, and "the standard
+  OpenZeppelin AccessManager" for the manager. A template version is approved by governance
+  by its code hash ([ADR 0008](0008-federation.md)); no audit of any contract has been done
+  ([docs/spec/federation.md](../spec/federation.md)).
 
 ## Open items
 
