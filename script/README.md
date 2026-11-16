@@ -944,7 +944,14 @@ serve the predecessor's set before the switch, or every running federated sale f
 3. Before scheduling the switch, check the successor answers as the predecessor: for each
    approved code hash, `templateOf` matches (`VerifyV1.checkTemplate` against the successor
    reproduces genesis's template check), and `isAdmittedAdapter` matches for each adapter.
-4. Then, in one batch, `ArtistRegistry.setFederationRegistry(old, successor)` and
+4. Immediately before executing the switch, repeat the comparison:
+   `VerifyV1.checkSuccessorParity(predecessor, successor, codeHashes, adapters)` with every
+   code hash the predecessor has approved, suspended or revoked and every adapter either has
+   admitted. The switch's setters check only the expected pointer and ERC-165, and a
+   revocation, suspension or adapter change on the predecessor during the 30-day delay would
+   otherwise go unnoticed; once the switch lands, the successor answers every read. Do not
+   execute the switch while the check fails: mirror the change on the successor first.
+5. Then, in one batch, `ArtistRegistry.setFederationRegistry(old, successor)` and
    `EnglishAuction.setFederationRegistry(old, successor)`. The predecessor answers as the
    successor from then on (FED-69), so the order inside the batch does not matter.
 

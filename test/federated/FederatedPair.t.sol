@@ -396,10 +396,14 @@ contract FederatedPairTest is FederationBase {
         uint256 diff = 3 * (fl.stepPrice(saleId, 101) - amount);
         vm.deal(a, amount + diff);
         vm.prank(a);
-        vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.BiddingClosed.selector, saleId, 0));
+        vm.expectRevert(
+            abi.encodeWithSelector(IUniformEditionAuction.BiddingClosed.selector, saleId, 0)
+        );
         fea.bid{ value: amount }(saleId, 100, 1);
         vm.prank(a);
-        vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.BiddingClosed.selector, saleId, 0));
+        vm.expectRevert(
+            abi.encodeWithSelector(IUniformEditionAuction.BiddingClosed.selector, saleId, 0)
+        );
         fea.raise{ value: diff }(saleId, 1, 101);
     }
 
@@ -417,7 +421,9 @@ contract FederatedPairTest is FederationBase {
         pairEditions.createEdition(tokenId, w.item);
         vm.warp(fl.endTimes(saleId).endTime);
         assertFalse(fea.settle(saleId, new uint256[](0)), "the scan continues");
-        assertEq(uint8(fl.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.SETTLING));
+        assertEq(
+            uint8(fl.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.SETTLING)
+        );
         _delistPair();
         uint256 held = address(fea).balance;
         assertTrue(fea.settle(saleId, new uint256[](0)), "voided");

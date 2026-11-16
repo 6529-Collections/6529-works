@@ -15,6 +15,7 @@ import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { SSTORE2 } from "src/libraries/SSTORE2.sol";
+import { VerifyV1 } from "script/VerifyV1.sol";
 import { FederationBase } from "./FederationBase.sol";
 import { HostileLister } from "./FederatedSale.t.sol";
 
@@ -383,6 +384,50 @@ contract FederationProvenanceTest is FederationBase {
         assertFalse(auction.isTarget(address(fed)), "no approval, nothing served");
         _settleAtEnd(saleId);
         assertEq(auction.claimable(collector, CURRENCY_ETH), 1 ether);
+    }
+
+    /// @dev `VerifyV1.checkSuccessorParity`, the runbook's last check before the switch: a
+    ///      successor matching the predecessor passes; a revocation on the predecessor during the
+    ///      switch's delay, or an adapter admitted by only one of them, fails it.
+    function test_Replacement_ParityIsCheckedRightBeforeTheSwitch() public {
+        FederationRegistry next = new FederationRegistry(
+            address(manager), address(artists), address(economics), address(store)
+        );
+        _mapRegistryRoles(address(next));
+        _approveTemplates(next);
+        _govern(hotAdmin, address(next), abi.encodeCall(next.setAdapter, (address(auction), true)));
+        bytes32[] memory hashes = new bytes32[](2);
+        (hashes[0], hashes[1]) = (streamHash, editionsHash);
+        address[] memory adapters = new address[](1);
+        adapters[0] = address(auction);
+        this.parity(fedRegistry, next, hashes, adapters);
+        // The predecessor revokes during the switch's delay: the successor still approves it.
+        _govern(
+            hotAdmin, address(fedRegistry), abi.encodeCall(fedRegistry.revokeTemplate, (streamHash))
+        );
+        vm.expectRevert(abi.encodeWithSelector(VerifyV1.FederationMismatch.selector, "templateOf"));
+        this.parity(fedRegistry, next, hashes, adapters);
+        _govern(hotAdmin, address(next), abi.encodeCall(next.revokeTemplate, (streamHash)));
+        this.parity(fedRegistry, next, hashes, adapters);
+        // The predecessor removes an adapter the successor still admits.
+        _govern(
+            hotAdmin,
+            address(fedRegistry),
+            abi.encodeCall(fedRegistry.setAdapter, (address(auction), false))
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(VerifyV1.FederationMismatch.selector, "isAdmittedAdapter")
+        );
+        this.parity(fedRegistry, next, hashes, adapters);
+    }
+
+    function parity(
+        FederationRegistry predecessor,
+        FederationRegistry successor,
+        bytes32[] memory hashes,
+        address[] memory adapters
+    ) external view {
+        VerifyV1.checkSuccessorParity(predecessor, successor, hashes, adapters);
     }
 
     function _delist(address token) internal {

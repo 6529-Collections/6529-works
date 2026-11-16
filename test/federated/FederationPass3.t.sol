@@ -226,8 +226,7 @@ contract FederationPass3Test is FederationBase {
         for (uint256 i = 1; i < n; ++i) {
             bytes memory data = abi.encodePacked("federated role file ", vm.toString(i));
             bytes32 sha = sha256(data);
-            bytes32 fileId =
-                _registerOnly(data, IContentStore.Encoding.Identity, "image/png", sha);
+            bytes32 fileId = _registerOnly(data, IContentStore.Encoding.Identity, "image/png", sha);
             media[i] = MediaFile(fileId, sha, uint8(1 + i % 15));
         }
         media[n - 1].role = 15;
@@ -256,7 +255,9 @@ contract FederationPass3Test is FederationBase {
         Work memory w = _fedWork(fedArtist);
         bytes32 h = _itemHash(w);
         vm.prank(fedArtist);
-        vm.expectRevert(abi.encodeWithSelector(IFederatedStream.InvalidRoyaltyRate.selector, top + 1));
+        vm.expectRevert(
+            abi.encodeWithSelector(IFederatedStream.InvalidRoyaltyRate.selector, top + 1)
+        );
         fed.approveItem(h, top + 1);
         (uint256 saleId, uint256 tokenId) = _startFed(fed, fedArtist, w, top);
         (,,,,, uint32 rate) = fed.coreOf(tokenId);
@@ -300,7 +301,9 @@ contract FederationPass3Test is FederationBase {
         (, uint256 tokenId) = _startFed(_fedWork(fedArtist));
         Burner next = new Burner(address(renderer), 0);
         vm.expectEmit(address(fed));
-        emit IFederatedStream.DefaultRendererSet(address(renderer), address(next), address(next).codehash);
+        emit IFederatedStream.DefaultRendererSet(
+            address(renderer), address(next), address(next).codehash
+        );
         vm.prank(fedArtist);
         fed.setDefaultRenderer(address(renderer), address(next), address(next).codehash);
         assertEq(fed.rendererOf(tokenId), address(next));

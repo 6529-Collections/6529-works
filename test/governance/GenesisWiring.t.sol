@@ -159,7 +159,9 @@ contract GenesisWiringTest is GovernanceFixture {
     ///      `IFederationRegistry`: the wiring mock declares only `IMintTarget` and `ISaleAdapter`,
     ///      so both are refused there (explicit, so coverage does not rest on the fuzzer).
     function test_FederationRegistrySelectorsNeedTheirInterface() public {
-        assertFalse(IERC165(address(wired)).supportsInterface(type(IFederationRegistry).interfaceId));
+        assertFalse(
+            IERC165(address(wired)).supportsInterface(type(IFederationRegistry).interfaceId)
+        );
         _expectValidation(FederationRegistry.approveTemplate.selector);
         _expectValidation(FederationRegistry.setAdapter.selector);
         _expectValidation(IMintTarget.setAdmittedMinter.selector);

@@ -235,7 +235,8 @@ contract FederationDirectoryTest is IdentityFixture {
         address other = makeAddr("otherArtist");
         uint256 otherId = _register(other);
         for (uint256 field; field < 7; ++field) {
-            IArtistRegistry.FederatedListing memory l = _l(artistId, token, 0, partner, 10_000, feeVault);
+            IArtistRegistry.FederatedListing memory l =
+                _l(artistId, token, 0, partner, 10_000, feeVault);
             address signer = artist;
             if (field == 0) (l.artistId, signer) = (otherId, other);
             else if (field == 1) l.token = address(new FederationRegistryStub());

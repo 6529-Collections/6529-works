@@ -381,6 +381,41 @@ library VerifyV1 {
         if (!ok) revert FederationMismatch(name);
     }
 
+    /// @notice Run immediately before executing a federation-registry switch (the script
+    ///         README's replacement procedure, step 4): `successor` answers as `predecessor` for
+    ///         every template code hash in `codeHashes` (`templateOf`: version, form, status and
+    ///         deployer) and every adapter in `adapters` (`isAdmittedAdapter`). The switch's
+    ///         setters check only the expected pointer and ERC-165, so a revocation, suspension
+    ///         or adapter change on the predecessor during the 30-day delay is caught only here
+    ///         (`FederationMismatch("templateOf")` or `("isAdmittedAdapter")`). Read before the
+    ///         switch: `templateOf` and `isAdmittedAdapter` are each registry's own tables.
+    /// @param predecessor The federation registry the artist registry names now.
+    /// @param successor The registry the switch installs.
+    /// @param codeHashes Every template code hash the predecessor has approved, suspended or
+    ///        revoked.
+    /// @param adapters Every adapter either registry has admitted.
+    function checkSuccessorParity(
+        FederationRegistry predecessor,
+        FederationRegistry successor,
+        bytes32[] memory codeHashes,
+        address[] memory adapters
+    ) internal view {
+        for (uint256 i; i < codeHashes.length; ++i) {
+            if (
+                keccak256(abi.encode(predecessor.templateOf(codeHashes[i])))
+                    != keccak256(abi.encode(successor.templateOf(codeHashes[i])))
+            ) revert FederationMismatch("templateOf");
+        }
+        for (uint256 i; i < adapters.length; ++i) {
+            if (
+                predecessor.isAdmittedAdapter(adapters[i])
+                    != successor.isAdmittedAdapter(adapters[i])
+            ) {
+                revert FederationMismatch("isAdmittedAdapter");
+            }
+        }
+    }
+
     /// @notice The edition auction's lens is the one its constructor pinned and the record
     ///         names (deployed on its own before the auction, F8): `lens()` equals the recorded
     ///         address, with code, and the lens's Editions, Stream, English auction and escrow are
