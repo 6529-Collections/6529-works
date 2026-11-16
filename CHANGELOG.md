@@ -8,7 +8,7 @@
   - **Automated review fixes** (CodeRabbit and 6529bot, 16 November 2026; ADR 0007's review
     table):
     - Renderer and content store: `tokenURI` reads no file with a chunk linked from more than
-      4 parts (`IContentStore.maxParts`, new; `IContentStore` `0x943307d5`), serving it by
+      3 parts (`IContentStore.maxParts`, new; `IContentStore` `0x943307d5`), serving it by
       locator until anyone writes the chunk whole, so the 8M budget holds whatever the part
       count; `firstMissing` copies at most one chunk's ABI encoding from another store and
       counts a refusal as not served; `registerManifestList` refuses too many list chunks

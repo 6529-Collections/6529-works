@@ -481,7 +481,8 @@ the suite's 5,000 margin). Checking the tombstone on every start, as one finding
 measured at +2,217 gas a start (the tightest row 347,177, over the margin) and not adopted.
 `createEdition` rose by 220 (Editions' bounded reads), `claimSigned` by 30 and 42 (the router's
 signature-bytes check). The `tokenURI` budget proof's worst row is now the one with every chunk
-read linked from 4 parts, 7,974,892 (whole chunks: 7,696,856). No ceiling, count or budget moved.
+read linked from 3 parts, the renderer's bound, 7,902,021 (whole chunks: 7,697,762; at 4 parts
+it measured 7,974,892, too close to 8M to keep). No ceiling, count or budget moved.
 
 | Start row | Gas | Under 350K |
 | --- | --- | --- |
@@ -519,7 +520,7 @@ read linked from 4 parts, 7,974,892 (whole chunks: 7,696,856). No ceiling, count
 | `authorize`, the mint policy's share of a start, as a call (was `consume`) | 91,368 | 94,000 (regression) | 0 | 0 | part of `start` |
 | `createEdition` | 213,622 | 218,000 (regression) | 5 | 0 | 887,954 (sim.) |
 | `createEdition`, an edition its sale bound at open | 115,395 | 118,000 (regression) | 1 | 0 | — |
-| re-rate a work (governed `execute`) | 197,678 | 203,000 (regression) | 1 | 0 | — |
+| re-rate a work (governed `execute`) | 197,670 | 203,000 (regression) | 1 | 0 | — |
 | `refreshStanding`, a first wallet | 129,834 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
 | `refreshStanding`, a further wallet | 159,137 | 161,000 (regression) | 1 | 0 | 247,970 (r2) |
 | `royaltyInfo` (view; `RoyaltyInfoGas.t.sol` caps its gas) | 41,380 | 50,000 of execution | 0 | 0 | 36,426 |

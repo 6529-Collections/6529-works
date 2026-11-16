@@ -53,8 +53,8 @@ Integrators start at [Reading a work](../../docs/integrators/reading-a-work.md) 
   longer one, never the bytes, and a whole write replaces any link, so a chunk's part count only
   falls. `chunkPointer` is zero for a linked chunk: read it with `chunkData` or `readChunk`.
   `maxParts(fileId)` is the largest part count of a complete file's chunks: the renderer reads
-  no file with a chunk of more than 4 (RND-26, LIM-CNT-22), and uploaders write whole chunks
-  while the chain allows it.
+  no file with a chunk of more than 3 (RND-26, LIM-CNT-22), and uploaders write whole chunks
+  while the chain allows it (the uploader's `--part-size` is at least 8,192 bytes, 3 parts).
 - **Source answers are bounded (WS-52).** `firstMissing` reads another `IChunkStore` with all
   the gas it may and copies at most one chunk's ABI encoding; a refusal or a larger answer is a
   chunk not served, a shortfall reverts.

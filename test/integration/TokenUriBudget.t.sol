@@ -351,22 +351,22 @@ contract TokenUriBudgetTest is IntegrationBase {
     }
 
     /// @dev The dearest row with every chunk the renderer reads (the record, the primary's 11
-    ///      and the preview's) linked from `MAX_PARTS_PER_CHUNK` (4) parts, the most it reads
+    ///      and the preview's) linked from `MAX_PARTS_PER_CHUNK` (3) parts, the most it reads
     ///      from: each part costs one more storage read and code copy, and the row still fits
     ///      8M. Every other row stores whole chunks; this one is their upper bound.
     function test_Budget_LinkedAtTheBound_SpacedBefore_Zeros_Base64Preview() public {
-        linkParts = 4;
+        linkParts = 3;
         _row(
-            "every chunk linked from 4 parts, white space before each attribute, zeros, Base64 preview:",
+            "every chunk linked from 3 parts, white space before each attribute, zeros, Base64 preview:",
             _worstRecord(BEFORE, ZEROS),
             true
         );
     }
 
     /// @dev One part more than the bound in every chunk: the renderer neither reads the record
-    ///      nor inlines a file (`maxParts` above 4), so the work renders its core facts.
+    ///      nor inlines a file (`maxParts` above 3), so the work renders its core facts.
     function test_Budget_PastTheBoundNothingIsRead() public {
-        linkParts = 5;
+        linkParts = 4;
         Built memory b = _build(_worstRecord(BEFORE, ZEROS), true, false);
         string memory uri = stream.tokenURI(b.tokenId);
         assertTrue(_contains(uri, '"record_status":"incomplete"'), "record not read");

@@ -58,6 +58,7 @@ from .plan import (
     hex0x,
     list_chunks,
     split_chunks,
+    check_part_size,
     split_parts,
 )
 
@@ -183,7 +184,7 @@ def _build(
     emitted: set[bytes] = set()  # hashes a draft already writes, so each is written once
     mode = resolve_manifest_mode(manifest_mode, len(chunk_hashes))
     if part_size is not None:
-        split_parts(b"\0" * CHUNK_SIZE, part_size)  # refuse a size that needs too many parts
+        check_part_size(part_size)  # at most RENDERED_MAX_PARTS parts per chunk
 
     def write_draft(name: str, indexes: tuple[int, ...], data: bytes) -> Draft:
         call = abi.encode_write_chunk(data)
