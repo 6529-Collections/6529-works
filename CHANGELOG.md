@@ -30,6 +30,13 @@
       at most 64 payees (`TooManyPayees`); the edition auction's payout gas only rises, at most
       doubling per change; WorkRecords requires a SHA-256 digest of a stored license text; the
       renderer reads at most 3 parts per chunk.
+    - Fourth round: a completed dead-admin recovery withdraws a pending successor proposal;
+      the slow and escalated lanes never schedule before the caller's own delay; every move of
+      the admin-activity clock emits `AdminActivity(address indexed admin, uint48 at)`
+      (`0xdc84c09e…`). WorkRecords: every license text a work selects has at most 16 chunks,
+      before finalize too, and RELICENSE cannot be renounced while the text could never
+      finalize; the upgrade walk wraps once per call. The English auction lens reads the
+      creator in `pendingDelivery` with at most 4 KiB copied.
   - **Review fixes** (ADR 0007, "Independent review"):
     - Stream: the fallback forwards only `work`, `collection` and `totalSupply`; `owner()`,
       `contractURI()` and `extension()` are native; `StreamLayout` fixes the storage slots a

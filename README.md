@@ -83,7 +83,7 @@ products pay 75% to the artist's side and 25% to the network, and royalties are 
 | [`Editions`](src/editions/README.md) | 6529 Stream Editions, the shared ERC-1155, linked to Stream masters; supply sealed at settlement, prices logged | 484 |
 | [`PackageRegistry`](src/curation/README.md) | Stream's replaceable mint policy: package roots, party consent, the move signature, consume-once items, content uniqueness | 402 |
 | [`Eip712CurationVerifier`](src/curation/README.md) | Accepts curation signers' EIP-712 approvals | 103 |
-| [`EnglishAuction`](src/sales/README.md), [`EnglishAuctionLens`](src/sales/README.md) | Stream's primary sale: anti-snipe clock, pull refunds, pending claims, dispute pause; its views answered by a lens | 898 + 314 |
+| [`EnglishAuction`](src/sales/README.md), [`EnglishAuctionLens`](src/sales/README.md) | Stream's primary sale: anti-snipe clock, pull refunds, pending claims, dispute pause; its views answered by a lens | 898 + 332 |
 | [`UniformEditionAuction`](src/sales/README.md), [`UniformEditionAuctionLens`](src/sales/README.md) | The edition auction: firm ETH bids on a step ladder beside the 1/1, one clearing price, FIFO at a capped step, claims | 919 + 882 |
 | [`EconomicsResolver`](src/economics/README.md), [`AssetAllowlist`](src/economics/README.md) | Terms for new works, fee recipients, currencies and increment floors | 212 + 154 |
 | [`SplitLedger`](src/economics/README.md), [`SplitVault`](src/economics/README.md) | One permanent ledger for every split wallet (66-byte vaults at predicted addresses), its accounting and signed releases | 264 + 8 |
@@ -93,7 +93,7 @@ products pay 75% to the artist's side and 25% to the network, and royalties are 
 | [`Renderer`](src/content/README.md) | `tokenURI` and `fullTokenURI` for works and editions | 761 |
 | [`StatementLog`](src/records/README.md) | Append-only signed statements: dispute outcomes, curation evidence, manifests | 309 |
 | [`VrfEntropyModule`](src/entropy/README.md) | Optional Chainlink VRF seed per work, delivered before the start | 252 |
-| [`WorksAccessManager`](src/governance/README.md), [`GovernanceConfigurator`](src/governance/README.md) | One AccessManager for everything; guardians cancel and suspend, a bounded veto, dead-admin recovery and a successor handover | 451 + 51 |
+| [`WorksAccessManager`](src/governance/README.md), [`GovernanceConfigurator`](src/governance/README.md) | One AccessManager for everything; guardians cancel and suspend, a bounded veto, dead-admin recovery and a successor handover | 471 + 51 |
 
 nSLOC counts non-blank lines without comments. The [audit scope](docs/audit/scope.md) lists every
 file, its bytecode size and how the figures are measured; `tools/check_docs_facts.py` keeps
