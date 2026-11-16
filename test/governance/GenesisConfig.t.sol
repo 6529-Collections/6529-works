@@ -173,7 +173,7 @@ contract GenesisConfigTest is Test {
             all[7] = IStream.releaseContent.selector;
             all[8] = IStream.setDependency.selector;
             all[9] = IStream.rescueToMuseum.selector;
-            all[10] = IStream.setRescueDelay.selector;
+            all[10] = bytes4(keccak256("setRescueDelay(uint256)"));
             return all;
         }
         if (_eq(name, "WorkRecords")) {

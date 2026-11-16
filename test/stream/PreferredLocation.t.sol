@@ -10,8 +10,9 @@ import { preferredOf } from "test/helpers/WorkItems.sol";
 
 /// @notice Fuzzes preferred-location resolution (D10: file override, then collection kind, then
 ///         global kind, then first registered, then the implicit ONCHAIN copy) against a model.
-///         ONCHAIN matches only a work marked on-chain complete by `syncOnChain`, and only the
-///         file override selects a locator the platform added (RFX-REC-1).
+///         ONCHAIN matches only a work marked on-chain complete by `syncOnChain`. Every tier
+///         chooses among the live locators whoever added them (C33); a locator the storage
+///         operator marked dead is never served, a file override naming one included (C21).
 contract PreferredLocationTest is RecordsFixture {
     uint256 internal constant NONE = type(uint256).max;
 
@@ -20,17 +21,17 @@ contract PreferredLocationTest is RecordsFixture {
         return LocatorKind(raw % 4);
     }
 
-    /// @dev The first artist locator of `kind` (`byArtist`), or the implicit ONCHAIN copy.
+    /// @dev The first live locator of `kind`, or the implicit ONCHAIN copy.
     function _modelFirst(
         LocatorKind[] memory kinds,
-        bool[] memory byArtist,
+        bool[] memory live,
         LocatorKind kind,
         bool onChain
     ) internal pure returns (bool, uint256) {
         if (kind == LocatorKind.NONE) return (false, 0);
         if (kind == LocatorKind.ONCHAIN) return (onChain, NONE);
         for (uint256 i; i < kinds.length; ++i) {
-            if (byArtist[i] && kinds[i] == kind) return (true, i);
+            if (live[i] && kinds[i] == kind) return (true, i);
         }
         return (false, 0);
     }
@@ -73,30 +74,57 @@ contract PreferredLocationTest is RecordsFixture {
         }
     }
 
-    function _modelFirstArtist(bool[] memory byArtist) internal pure returns (bool, uint256) {
-        for (uint256 i; i < byArtist.length; ++i) {
-            if (byArtist[i]) return (true, i);
+    function _modelFirstLive(bool[] memory live) internal pure returns (bool, uint256) {
+        for (uint256 i; i < live.length; ++i) {
+            if (live[i]) return (true, i);
         }
         return (false, 0);
     }
 
     function _model(
         LocatorKind[] memory kinds,
-        bool[] memory byArtist,
+        bool[] memory live,
         uint256 filePref,
         LocatorKind collectionKind,
         LocatorKind globalKind,
         bool onChain
     ) internal pure returns (bool found, uint256 expected) {
-        found = filePref != NONE;
+        found = filePref != NONE && live[filePref];
         expected = filePref;
-        if (!found) (found, expected) = _modelFirst(kinds, byArtist, collectionKind, onChain);
-        if (!found) (found, expected) = _modelFirst(kinds, byArtist, globalKind, onChain);
-        if (!found) (found, expected) = _modelFirstArtist(byArtist);
+        if (!found) (found, expected) = _modelFirst(kinds, live, collectionKind, onChain);
+        if (!found) (found, expected) = _modelFirst(kinds, live, globalKind, onChain);
+        if (!found) (found, expected) = _modelFirstLive(live);
         if (!found && onChain) (found, expected) = (true, NONE);
     }
 
-    /// Regression: RFX-REC-1 (the adder of each locator is fuzzed)
+    /// @dev The storage operator marks dead each locator whose bit of `deadBits` is set.
+    function _markDead(uint256 tokenId, bytes32 file, uint256 count, uint256 deadBits)
+        internal
+        returns (bool[] memory live)
+    {
+        live = new bool[](count);
+        vm.startPrank(storageOperator);
+        for (uint256 i; i < count; ++i) {
+            live[i] = (deadBits >> i) & 1 == 0;
+            if (!live[i]) delivery.markLocatorDead(tokenId, file, i);
+        }
+        vm.stopPrank();
+    }
+
+    /// @dev One fuzzed case: locators, their adders, the preferences and the dead set. Bit 254
+    ///      of `deadBits`: the media is uploaded; bit 255: synced.
+    struct Case {
+        uint256 count;
+        uint256 kindBits;
+        uint256 adderBits;
+        uint8 globalRaw;
+        uint8 collectionRaw;
+        uint8 filePrefRaw;
+        uint256 deadBits;
+    }
+
+    /// Regression: RFX-REC-1 (the adder of each locator is fuzzed; C21 and C33: so are the dead
+    /// locators, and the adder no longer matters)
     function testFuzz_preferredLocator_matchesModel(
         uint8 count,
         uint256 kindBits,
@@ -104,26 +132,36 @@ contract PreferredLocationTest is RecordsFixture {
         uint8 globalRaw,
         uint8 collectionRaw,
         uint8 filePrefRaw,
-        bool complete,
-        bool synced
+        uint256 deadBits
     ) public {
-        count = uint8(bound(count, 0, 16));
-        // A complete file that was never synced does not resolve on-chain.
-        bool onChain = complete && synced;
-        (uint256 tokenId, bytes32 file, LocatorKind[] memory kinds, bool[] memory byArtist) =
-            _workWithLocators(count, kindBits, adderBits, complete, onChain);
+        _check(
+            Case(
+                bound(count, 0, 16),
+                kindBits,
+                adderBits,
+                globalRaw,
+                collectionRaw,
+                filePrefRaw,
+                deadBits
+            )
+        );
+    }
 
-        LocatorKind globalKind = _kind(globalRaw);
-        LocatorKind collectionKind = _kind(collectionRaw);
-        uint256 filePref = count == 0 || filePrefRaw % 3 == 0 ? NONE : filePrefRaw % count;
+    function _check(Case memory c) internal {
+        // A complete file that was never synced does not resolve on-chain.
+        bool onChain = c.deadBits >> 254 == 3;
+        (uint256 tokenId, bytes32 file, LocatorKind[] memory kinds,) = _workWithLocators(
+            c.count, c.kindBits, c.adderBits, (c.deadBits >> 254) & 1 == 1, onChain
+        );
+        uint256 filePref = c.count == 0 || c.filePrefRaw % 3 == 0 ? NONE : c.filePrefRaw % c.count;
         vm.startPrank(storageOperator);
-        delivery.setPreferredKind(globalKind);
-        delivery.setCollectionPreferredKind(collectionId, collectionKind);
+        delivery.setPreferredKind(_kind(c.globalRaw));
+        delivery.setCollectionPreferredKind(collectionId, _kind(c.collectionRaw));
         delivery.setFilePreference(tokenId, file, filePref);
         vm.stopPrank();
-
+        bool[] memory live = _markDead(tokenId, file, c.count, c.deadBits);
         (bool found, uint256 expected) =
-            _model(kinds, byArtist, filePref, collectionKind, globalKind, onChain);
+            _model(kinds, live, filePref, _kind(c.collectionRaw), _kind(c.globalRaw), onChain);
         (Locator memory chosen, uint256 index) = preferredOf(records, tokenId, file);
         if (!found) {
             assertEq(index, NONE);

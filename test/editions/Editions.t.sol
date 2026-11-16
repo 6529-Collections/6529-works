@@ -23,6 +23,9 @@ import { IStream } from "src/interfaces/IStream.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
+import { IArtistPayoutResolver } from "src/economics/interfaces/IArtistPayoutResolver.sol";
+import { SplitLedger } from "src/economics/SplitLedger.sol";
+import { Splits } from "src/economics/Splits.sol";
 import {
     CURRENCY_ETH,
     PRODUCT_EDITIONS,
@@ -1286,6 +1289,68 @@ contract EditionsTest is EditionsBase {
         assertEq(editions.edition(next).feeShare, 50_000);
     }
 
+    // ------------------------------------------------------------- fee share (R9)
+
+    /// @dev R9: the network lowers an edition's fee share; the royalty receiver is derived
+    ///      again for the new share (the seller at zero) and the edition reports the new share.
+    ///      Fails without the change: no path lowered an existing edition's share.
+    function test_LowerFeeShare_MovesTheReceiver() public {
+        SplitLedger factory = new SplitLedger(IArtistPayoutResolver(address(artists)));
+        stream.setSplitFactory(address(factory));
+        vm.prank(admin);
+        manager.setTargetFunctionRole(
+            address(editions), _one(IEditions.lowerFeeShare.selector), PARAMETER_SETTER
+        );
+        uint256 id = _create(_item(5));
+        IEditions.Edition memory before = editions.edition(id);
+        assertEq(before.feeShare, 25_000);
+        vm.expectEmit(address(editions));
+        emit IEditions.EditionFeeShareLowered(id, 25_000, 10_000);
+        vm.prank(governor);
+        editions.lowerFeeShare(id, 10_000);
+        IEditions.Edition memory e = editions.edition(id);
+        assertEq(e.feeShare, 10_000);
+        assertEq(e.feeRecipient, before.feeRecipient, "the recipient never changes");
+        address expected = factory.walletFor(
+            Splits.royaltyPayees(before.seller, before.feeRecipient, 10_000), bytes32(0)
+        );
+        assertEq(e.royaltyReceiver, expected);
+        (address receiver, uint256 amount) = editions.royaltyInfo(id, 1 ether);
+        assertEq(receiver, expected);
+        assertEq(amount, 0.06529 ether, "the rate is untouched");
+        assertEq(editions.primaryTerms(id, "").feeShare, 10_000);
+        vm.prank(governor);
+        editions.lowerFeeShare(id, 0);
+        assertEq(editions.edition(id).royaltyReceiver, before.seller, "no fee: the seller");
+    }
+
+    /// @dev R9: lower only (`InvalidFeeShare` for an equal or higher share), the role only, and
+    ///      only for an edition whose economics are locked (`UnknownEdition` otherwise).
+    function test_LowerFeeShare_NeverRaises() public {
+        stream.setSplitFactory(address(new SplitLedger(IArtistPayoutResolver(address(artists)))));
+        vm.prank(admin);
+        manager.setTargetFunctionRole(
+            address(editions), _one(IEditions.lowerFeeShare.selector), PARAMETER_SETTER
+        );
+        uint256 id = _create(_item(5));
+        uint32[2] memory refused = [uint32(25_000), 25_001];
+        for (uint256 i; i < refused.length; ++i) {
+            vm.prank(governor);
+            vm.expectRevert(abi.encodeWithSelector(IEditions.InvalidFeeShare.selector, refused[i]));
+            editions.lowerFeeShare(id, refused[i]);
+        }
+        vm.prank(outsider);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)
+        );
+        editions.lowerFeeShare(id, 1);
+        uint256 bare = _master(_item(5));
+        vm.prank(governor);
+        vm.expectRevert(abi.encodeWithSelector(IEditions.UnknownEdition.selector, bare));
+        editions.lowerFeeShare(bare, 1);
+        assertEq(editions.edition(id).feeShare, 25_000);
+    }
+
     /// @dev The edition starts at its master's current rate, not the `PRODUCT_EDITIONS` default,
     ///      so a consented re-rate of the master before the edition exists carries over.
     function test_CreateEdition_InheritsMasterRoyaltyRate() public {
@@ -1324,11 +1389,16 @@ contract EditionsTest is EditionsBase {
         assertEq(amount, 0.05 ether);
         assertEq(editions.edition(id).royaltyRate, 5_000);
 
-        // ADR 0006: lower-only, held here too whatever the satellite sends.
-        vm.expectRevert(abi.encodeWithSelector(IEditions.InvalidRoyaltyRate.selector, 5_001));
-        workRecordsMock.setRate(editions, id, 5_001);
+        // R10: the rate follows its master up as well as down, never past 100%, whatever the
+        // satellite sends. Fails without the change: a rise reverted (lower-only).
+        vm.expectEmit(true, false, false, true, address(editions));
+        emit IEditions.RoyaltyRateChanged(id, 5_000, 8_000);
+        workRecordsMock.setRate(editions, id, 8_000);
+        assertEq(editions.edition(id).royaltyRate, 8_000);
+        workRecordsMock.setRate(editions, id, 100_000);
         vm.expectRevert(abi.encodeWithSelector(IEditions.InvalidRoyaltyRate.selector, 100_001));
         workRecordsMock.setRate(editions, id, 100_001);
+        workRecordsMock.setRate(editions, id, 5_000);
         vm.prank(outsider);
         vm.expectRevert(abi.encodeWithSelector(IEditions.UnboundCaller.selector, outsider));
         editions.setRoyaltyRate(id, 0);

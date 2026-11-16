@@ -192,16 +192,16 @@ contract WorkStoresTest is RecordsFixture, GasRuleAssertions {
         _syncAs(artist, tokenId, id, 10);
     }
 
-    /// @dev Only the work's artist may choose an added store (governance review L-3): a third
-    ///      party cannot make a work complete in a store of its choosing. The content store stays
-    ///      open to anyone.
-    function test_syncOnChain_anAddedStoreIsTheArtistsChoice() public {
+    /// @dev Only the work's artist or the storage operator walks an added store (C21; before,
+    ///      governance review L-3: the artist only): a third party cannot make a work complete
+    ///      in a store of its choosing. The content store stays open to anyone.
+    function test_syncOnChain_anAddedStoreIsTheArtistsOrTheOperatorsChoice() public {
         uint256 id = _addStore(address(source));
         (bytes32 file, bytes[] memory chunks) = _bigFile(11, 1);
         source.put(chunks[0]);
         uint256 tokenId = _workOf(11, _one(file));
         vm.expectRevert(
-            abi.encodeWithSelector(IWorkRecords.NotWorkArtist.selector, tokenId, outsider)
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)
         );
         _syncAs(outsider, tokenId, id, 10);
         store.writeChunk(chunks[0]);
@@ -209,6 +209,80 @@ contract WorkStoresTest is RecordsFixture, GasRuleAssertions {
         (uint256 storeId, bool complete) = records.mediaStore(tokenId, 0);
         assertEq(storeId, 0);
         assertTrue(complete);
+    }
+
+    /// @dev C21: the storage operator walks an added store for any work. Fails without the
+    ///      change: only the artist could (`NotWorkArtist`).
+    function test_syncOnChain_theStorageOperatorWalksAnAddedStore() public {
+        uint256 id = _addStore(address(source));
+        (bytes32 file, bytes[] memory chunks) = _bigFile(12, 1);
+        source.put(chunks[0]);
+        uint256 tokenId = _workOf(12, _one(file));
+        vm.expectEmit(address(records));
+        emit IWorkRecords.MediaFileComplete(tokenId, 0, id);
+        _syncAs(storageOperator, tokenId, id, 10);
+        (uint256 storeId, bool complete) = records.mediaStore(tokenId, 0);
+        assertEq(storeId, id);
+        assertTrue(complete);
+        assertTrue(records.record(tokenId).onChainComplete);
+    }
+
+    /// @dev C16: any wallet of the artist's account walks an added store; one that left the
+    ///      account cannot.
+    function test_syncOnChain_aSecondWalletOfTheArtistWalksAnAddedStore() public {
+        uint256 id = _addStore(address(source));
+        (bytes32 file, bytes[] memory chunks) = _bigFile(13, 1);
+        source.put(chunks[0]);
+        uint256 tokenId = _workOf(13, _one(file));
+        address second = makeAddr("secondWallet");
+        artists.setWallet(uint160(artist), second, true);
+        _syncAs(second, tokenId, id, 10);
+        (uint256 storeId,) = records.mediaStore(tokenId, 0);
+        assertEq(storeId, id);
+    }
+
+    /// @dev C21: the network retires an added store: nothing more is counted through it (the
+    ///      artist's walk and the operator's are refused with `UnknownStore`), works already
+    ///      counted keep their record, and the view and event say so. The content store cannot
+    ///      be retired, nor an unused ID, nor by anyone but the role. Fails without the change:
+    ///      an added store could never be retired.
+    function test_retireStore_countsNothingNewAndKeepsWhatWasCounted() public {
+        uint256 id = _addStore(address(source));
+        (bytes32 fileA, bytes[] memory chunksA) = _bigFile(14, 1);
+        (bytes32 fileB, bytes[] memory chunksB) = _bigFile(15, 1);
+        source.put(chunksA[0]);
+        source.put(chunksB[0]);
+        uint256 counted = _workOf(14, _one(fileA));
+        uint256 later = _workOf(15, _one(fileB));
+        _syncAs(artist, counted, id, 10);
+
+        vm.prank(outsider);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)
+        );
+        records.retireStore(id);
+        vm.startPrank(governor);
+        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.UnknownStore.selector, 0));
+        records.retireStore(0);
+        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.UnknownStore.selector, id + 1));
+        records.retireStore(id + 1);
+        assertFalse(records.storeRetired(id));
+        vm.expectEmit(address(records));
+        emit IWorkRecords.StoreRetired(id);
+        records.retireStore(id);
+        vm.stopPrank();
+        assertTrue(records.storeRetired(id));
+        assertFalse(records.storeRetired(0));
+
+        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.UnknownStore.selector, id));
+        _syncAs(artist, later, id, 10);
+        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.UnknownStore.selector, id));
+        _syncAs(storageOperator, later, id, 10);
+        (uint256 storeId, bool complete) = records.mediaStore(counted, 0);
+        assertEq(storeId, id, "the counted work keeps its record");
+        assertTrue(complete);
+        assertTrue(records.record(counted).onChainComplete);
+        assertEq(records.store(id), address(source));
     }
 
     /// @dev Bytes that do not hash to the manifest's chunk, bytes of a length the layout rule does

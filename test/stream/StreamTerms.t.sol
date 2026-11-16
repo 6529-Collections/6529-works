@@ -86,7 +86,7 @@ contract StreamTermsTest is StreamFixture {
     }
 
     /// @dev A re-rate moves only that token to the terms with its new rate: the artist's other
-    ///      works keep theirs. Rates only go down (ADR 0006), so re-rating back up reverts.
+    ///      works keep theirs. Re-rating back up (R10) returns it to the shared terms.
     function test_Terms_ReRateMovesOnlyThatToken() public {
         _bindMocks();
         uint256 a = _mint(1);
@@ -102,8 +102,8 @@ contract StreamTermsTest is StreamFixture {
         assertEq(amountB, 0.06529 ether);
         (bytes32 key, uint256 word) = _key(uint160(artist), 5_000, 25_000, 1, 1);
         assertEq(uint256(vm.load(address(stream), _termsSlot(uint24(uint256(key)) & HASHED))), word);
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidRoyaltyRate.selector, 6_529));
         recordsMock.setRoyaltyRate(IStream(address(stream)), a, 6_529);
+        assertEq(_termsIdOfToken(a), _termsIdOfToken(b), "back on the shared terms");
         assertEq(IStreamViews(address(stream)).work(a).royaltyReceiver, _defaultRoyaltyWallet());
     }
 
@@ -200,6 +200,12 @@ contract StreamTermsTest is StreamFixture {
         assertEq(uint8(kind), uint8(ItemKind.ORIGINAL));
         assertEq(uint8(policy), uint8(SeedPolicy.VRF));
         assertEq(IStreamViews(address(stream)).work(vrfId).serial, 2);
+    }
+
+    /// @dev A token's terms ID: the top 24 bits of its token word (`StreamLayout.tokenSlot`).
+    function _termsIdOfToken(uint256 tokenId) internal view returns (uint24) {
+        bytes32 slot = keccak256(abi.encode(tokenId, uint256(18)));
+        return uint24(uint256(vm.load(address(stream), slot)) >> 232);
     }
 
     function _contains(bytes32[] memory list, bytes32 value) internal pure returns (bool) {

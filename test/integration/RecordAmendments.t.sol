@@ -60,7 +60,7 @@ contract RecordAmendmentsFlowTest is IntegrationBase {
             )
         );
         bytes[] memory sigs = new bytes[](1);
-        sigs[0] = _sign(artist, digest);
+        sigs[0] = abi.encodePacked(artist, _sign(artist, digest));
         return abi.encodeCall(
             records.relicense, (tokenId, next, _package(root)[index].item, state, deadline, sigs)
         );
@@ -115,9 +115,9 @@ contract RecordAmendmentsFlowTest is IntegrationBase {
         assertEq(records.licenseOf(1).spdxId, "MIT");
     }
 
-    /// @dev A new default renderer (30-day class) reaches works that are not finalized; a
-    ///      finalized work keeps its pin until the artist agrees to the errata repin (also 30
-    ///      days). Editions hear about the change.
+    /// @dev A new default renderer (the 7-day class) reaches works that are not finalized; a
+    ///      finalized work keeps its pin until the network's errata repin (C8, no artist
+    ///      signature). Editions hear about the change.
     function test_NewDefaultRendererAndTheErrataRepin() public {
         bytes32 state = records.workStateHash(3);
         vm.prank(artist);
@@ -137,27 +137,12 @@ contract RecordAmendmentsFlowTest is IntegrationBase {
         assertEq(stream.rendererOf(2), address(next), "not finalized: the new default");
         assertEq(stream.rendererOf(3), address(renderer), "finalized: still pinned");
 
-        uint64 deadline = uint64(block.timestamp + 40 days);
         bytes32 current = records.workStateHash(3);
-        bytes32 digest = _typedDigest(
-            address(records),
-            keccak256(
-                abi.encode(
-                    Typehashes.RENDERER_REPIN,
-                    3,
-                    address(next),
-                    address(next).codehash,
-                    current,
-                    deadline
-                )
-            )
-        );
         _govern(
             hotAdmin,
             address(records),
             abi.encodeCall(
-                records.repinRenderer,
-                (3, address(next), address(next).codehash, current, deadline, _sign(artist, digest))
+                records.repinRenderer, (3, address(next), address(next).codehash, current)
             )
         );
         assertEq(stream.rendererOf(3), address(next), "the errata repin");

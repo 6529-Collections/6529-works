@@ -9,16 +9,16 @@ import { MockRenderer } from "../mocks/stream/StreamMocks.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
-/// @notice Stateful invariants of the renounceable powers and lower-only royalty changes
-///         (ADR 0006): a work's renounced mask never loses a bit, a renounced power's function
-///         never succeeds again, and a work's royalty rate never rises.
+/// @notice Stateful invariants of the renounceable powers and royalty changes (ADR 0006 as
+///         amended by R10 and C7): a work's renounced mask never loses a bit, a renounced
+///         power's function never succeeds again, and a work's royalty rate stays at most 100%
+///         and never moves once its royalty power is renounced.
 contract WorkPowersInvariantTest is RecordsFixture {
     uint256 internal constant WORKS = 4;
-    /// @dev Every work mints at the fixture's default rate.
-    uint32 internal constant MINT_RATE = 6_529;
 
     WorkPowersHandler internal handler;
     mapping(uint256 tokenId => uint16) internal _seen;
+    mapping(uint256 tokenId => uint256) internal _frozenRate;
 
     function setUp() public override {
         super.setUp();
@@ -77,11 +77,17 @@ contract WorkPowersInvariantTest is RecordsFixture {
     }
 
     /// Regression: ADD-PWR-1
-    /// @dev A work's royalty rate never rises above the rate it minted with, and never rose at
-    ///      any step (each step is checked in the handler).
-    function invariant_royaltyRateNeverRises() public view {
+    /// @dev R10: a work's royalty rate moves both ways but never past 100%, and once the royalty
+    ///      power is renounced it never moves again (each step is checked in the handler).
+    function invariant_royaltyRateWithinTheCeilingAndFixedOnceRenounced() public {
         for (uint256 i; i < handler.workCount(); ++i) {
-            assertLe(IStreamViews(address(stream)).work(handler.tokenIds(i)).royaltyRate, MINT_RATE);
+            uint256 tokenId = handler.tokenIds(i);
+            uint256 rate = IStreamViews(address(stream)).work(tokenId).royaltyRate;
+            assertLe(rate, 100_000);
+            if (records.renouncedPowers(tokenId) & 1 == 0) continue;
+            // Stored plus one, so a frozen rate of zero is told from none recorded.
+            if (_frozenRate[tokenId] == 0) _frozenRate[tokenId] = rate + 1;
+            assertEq(rate + 1, _frozenRate[tokenId], "a renounced rate moved");
         }
         assertEq(handler.violations(), 0);
     }

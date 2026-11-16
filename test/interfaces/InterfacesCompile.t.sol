@@ -41,11 +41,11 @@ import { SaleKind } from "../../src/interfaces/types/SaleTypes.sol";
 contract InterfacesCompileTest is Test {
     function test_interfaceIds() public pure {
         assertEq(type(IMintTarget).interfaceId, bytes4(0xba4ae536), "IMintTarget");
-        assertEq(type(IStream).interfaceId, bytes4(0x829e6c7d), "IStream");
+        assertEq(type(IStream).interfaceId, bytes4(0xced242c8), "IStream");
         assertEq(type(IStreamExtension).interfaceId, bytes4(0x1b9217b1), "IStreamExtension");
-        assertEq(type(IWorkRecords).interfaceId, bytes4(0x2654eed1), "IWorkRecords");
+        assertEq(type(IWorkRecords).interfaceId, bytes4(0x5a8252d9), "IWorkRecords");
         assertEq(type(IWorkPowers).interfaceId, bytes4(0xbd18229c), "IWorkPowers");
-        assertEq(type(IEditions).interfaceId, bytes4(0xee6d6c6f), "IEditions");
+        assertEq(type(IEditions).interfaceId, bytes4(0x566c4b4c), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");
         // `setConfig` takes the refusal delay and gas (AUC-39, AUC-40).
         assertEq(type(IEnglishAuction).interfaceId, bytes4(0xb9e9cdd3), "IEnglishAuction");

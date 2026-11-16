@@ -23,7 +23,8 @@ auction).
 | --- | --- | --- |
 | Anyone | `createEdition(workId, item)`: checks the master's exact stored item and Stream's content record (permanent facts only, never the mint policy), locks the `PRODUCT_EDITIONS` economics and links both sides | ED-1 to ED-4, ED-7 |
 | Admitted sale adapters | `bindMinter` when a sale opens (before the edition exists if need be), `mint` with `abi.encode(currency, unitPrice)`, `sealSupply` when the sale settles (the bound adapter, even if removed), `burn`, `settlePrimary` (a no-op); `primaryTerms` (view) when opening a sale | ED-5, ED-6, ED-8, ED-25, ED-26 |
-| The bound `WorkRecords` | `setRoyaltyRate` (with the master's re-rate), `notifyMasterUpdated`; `notifyAllUpdated` (also from Stream) | ED-7 |
+| The bound `WorkRecords` | `setRoyaltyRate` (with the master's re-rate, up or down), `notifyMasterUpdated`; `notifyAllUpdated` (also from Stream) | ED-7 |
+| The network (PARAMETER_SETTER, 24 hours) | `lowerFeeShare(editionId, share)`: lowers a locked edition's fee share, never raises it, and derives its royalty receiver again (R9) | ED rules (paste text in the lane report) |
 | Governance | `setAdmittedMinter`, `setContractURI`, `setOwner`; the genesis bind `bindWorkRecords` | [Role matrix: Editions](../../docs/audit/roles.md#editions) |
 | Anyone (views) | `edition`, `masterOf`, `contentHashOf`, `exists`, `royaltyInfo`, `licenseOf`, `uri`, `name`, `symbol` | [Reading a work](../../docs/integrators/reading-a-work.md) |
 

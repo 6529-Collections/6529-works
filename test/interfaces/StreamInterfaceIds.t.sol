@@ -22,7 +22,7 @@ contract StreamInterfaceIdsTest is Test {
     }
 
     function _streamSignatures() internal pure returns (string[] memory s) {
-        s = new string[](46);
+        s = new string[](45);
         s[0] = "mint(address,uint256,uint256,bytes)";
         s[1] = "primaryTerms(uint256,bytes)";
         s[2] = "burn(uint256,uint256)";
@@ -43,37 +43,36 @@ contract StreamInterfaceIdsTest is Test {
         s[17] = "setDependency(bytes32,address,address)";
         s[18] = "rescueToMuseum(uint256)";
         s[19] = "rescueDelay()";
-        s[20] = "RESCUE_DELAY_FLOOR()";
-        s[21] = "setRescueDelay(uint256)";
-        s[22] = "extsload(bytes32,uint256)";
-        s[23] = "collectionCount()";
-        s[24] = "totalMinted()";
-        s[25] = "createCollection(string,bytes32)";
-        s[26] = "coreOf(uint256)";
-        s[27] = "releaseContent(uint256,bytes32,uint256)";
-        s[28] = "artistOf(uint256)";
-        s[29] = "primarySaleSettled(uint256)";
-        s[30] = "primarySale(uint256)";
-        s[31] = "defaultRenderer()";
-        s[32] = "setDefaultRenderer(address,address,bytes32)";
-        s[33] = "rendererOf(uint256)";
-        s[34] = "setRoyaltyRate(uint256,uint32)";
-        s[35] = "emitMetadataUpdate(uint256,uint256)";
-        s[36] = "editionOf(uint256)";
-        s[37] = "linkEdition(uint256,uint256)";
-        s[38] = "setContractURI(string)";
-        s[39] = "setOwner(address,address)";
-        s[40] = "consumedItemOf(bytes32)";
-        s[41] = "releasedTo(bytes32)";
-        s[42] = "isReleased(bytes32)";
-        s[43] = "contractURI()";
-        s[44] = "owner()";
-        s[45] = "extension()";
+        s[20] = "lowerFeeShare(uint256,uint32)";
+        s[21] = "extsload(bytes32,uint256)";
+        s[22] = "collectionCount()";
+        s[23] = "totalMinted()";
+        s[24] = "createCollection(string,bytes32)";
+        s[25] = "coreOf(uint256)";
+        s[26] = "releaseContent(uint256,bytes32,uint256)";
+        s[27] = "artistOf(uint256)";
+        s[28] = "primarySaleSettled(uint256)";
+        s[29] = "primarySale(uint256)";
+        s[30] = "defaultRenderer()";
+        s[31] = "setDefaultRenderer(address,address,bytes32)";
+        s[32] = "rendererOf(uint256)";
+        s[33] = "setRoyaltyRate(uint256,uint32)";
+        s[34] = "emitMetadataUpdate(uint256,uint256)";
+        s[35] = "editionOf(uint256)";
+        s[36] = "linkEdition(uint256,uint256)";
+        s[37] = "setContractURI(string)";
+        s[38] = "setOwner(address,address)";
+        s[39] = "consumedItemOf(bytes32)";
+        s[40] = "releasedTo(bytes32)";
+        s[41] = "isReleased(bytes32)";
+        s[42] = "contractURI()";
+        s[43] = "owner()";
+        s[44] = "extension()";
     }
 
     function test_IStreamIdIsTheWholeNativeSurface() public pure {
         assertEq(type(IStream).interfaceId, _xor(_streamSignatures()), "IStream from its selectors");
-        assertEq(type(IStream).interfaceId, bytes4(0x829e6c7d), "IStream golden");
+        assertEq(type(IStream).interfaceId, bytes4(0xced242c8), "IStream golden");
     }
 
     function test_IStreamViewsId() public pure {
