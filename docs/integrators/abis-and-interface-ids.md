@@ -337,7 +337,10 @@ selectors.
 | `IArtistRegistry` | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) | `0x2ccfc40e` | `0x3e70f8a1` | ArtistRegistry |
 | `IConsolidationSource` | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) | `0x88836e34` | `0x88836e34` | ConsolidationAdapter |
 | `IEntropyModule` | [`IEntropyModule.sol`](../../src/interfaces/IEntropyModule.sol) | `0x14c06eb4` | `0x3a410101` | VrfEntropyModule |
-| `IFederationRegistry` | [`IFederationRegistry.sol`](../../src/interfaces/IFederationRegistry.sol) | `0xeefee933` | `0xeefee933` | None: no implementation on this tree (federation is in v1, specified by a later ADR) |
+| `IFederationRegistry` | [`IFederationRegistry.sol`](../../src/interfaces/IFederationRegistry.sol) | `0x2063bc84` | `0xeefee933` | FederationRegistry ([ADR 0008](../adr/0008-federation.md)) |
+| `IFederatedToken` | [`IFederatedToken.sol`](../../src/interfaces/IFederatedToken.sol) | `0xe5ed11e8` | none | FederatedStream, FederatedEditions |
+| `IFederatedStream` | [`IFederatedStream.sol`](../../src/interfaces/IFederatedStream.sol) | `0xc7aac428` | none | FederatedStream |
+| `IFederatedEditions` | [`IFederatedEditions.sol`](../../src/interfaces/IFederatedEditions.sol) | `0x5c20a834` | none | FederatedEditions |
 | `IClaimRouter` | [`IClaimRouter.sol`](../../src/economics/interfaces/IClaimRouter.sol) | `0x5a97db73` (computed) | not answered on r2 | ClaimRouter |
 | `IRevenueEscrow` | [`IRevenueEscrow.sol`](../../src/economics/interfaces/IRevenueEscrow.sol) | `0xac48ee84` (computed) | not answered on r2 | RevenueEscrow |
 | `IGovernedVault` | [`IGovernedVault.sol`](../../src/economics/interfaces/IGovernedVault.sol) | `0xe804f32d` (computed) | none | GovernedVault (`FeeRecipientVault`, `MuseumVault`), which also answers `IERC721Receiver` and `IERC1155Receiver` |

@@ -14,8 +14,9 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 
 - **In scope:** the Solidity under [`src/`](../../src/) and the deployment scripts under
   [`script/`](../../script/README.md), deployed with the committed genesis policy
-  ([`config/genesis.example.json`](../../config/genesis.example.json)). 6529 Stream Federated
-  (v1.1) is out of scope: no federation registry is installed in v1.
+  ([`config/genesis.example.json`](../../config/genesis.example.json)), 6529 Stream Federated
+  included ([ADR 0008](../adr/0008-federation.md)): its templates, registry and federated
+  edition auction are installed at genesis.
 - **Review history.** The modules were reviewed adversarially while they were built
   ([ADR 0003](../adr/0003-build-time-decisions.md)), and the integrated system had an
   [internal adversarial review](../security/internal-review-2026-10.md) in October 2026, whose
@@ -274,8 +275,9 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
   ([LIM-SAL-1][lim-sal], [LIM-EA-5][lim-ea]).
 - **Chain-level behavior:** censorship, reorganizations, and mainnet's final Glamsterdam and
   EIP-7825 parameters ([LIM-GAS-1, LIM-GAS-2][lim-gas]).
-- **6529 Stream Federated (v1.1)** and **deployed-bytecode verification**
-  ([LIM-REL-1][lim-rel]).
+- **Deployed-bytecode verification** ([LIM-REL-1][lim-rel]); for 6529 Stream Federated, what
+  a template version cannot defend is in [Federation](../spec/federation.md) (LIM-FED-1 to
+  LIM-FED-5).
 
 ## Residual risks
 

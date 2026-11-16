@@ -73,7 +73,7 @@ checked against brute force and a gas prototype. The model is now
 | 6 | Edition auctions take ETH only. | Only ETH sales count for TDH (P29 §5), and hundreds of ERC-20 refunds multiply token risk. |
 | 7 | Anyone opens the edition auction, from the 1/1's start; the keeper batches it with the start. | No role is needed, and opening early gives the full bidding window. |
 | 8 | `FixedPriceSale`, `DutchSale`, `MintSaleBase` and `DutchPricing` are deleted; `FixedPriceSale` can be restored from v1.0.0-rc.1 if The Memes needs it (D84). | One sale method for editions, about 1,000 fewer audited lines. |
-| 9 | An unbid federated 1/1 stays with its artist; the museum rule covers 6529 Stream only. | Federated works are the artist's own contract, outside network curation. |
+| 9 | An unbid federated 1/1 stays with its artist; the museum rule covers 6529 Stream only. (Amendment note, 15 November 2026: an unbid or frozen-out federated work goes to the template's own custody and can be re-auctioned, not to its artist; see [ADR 0008](0008-federation.md) §5.) | Federated works are the artist's own contract, outside network curation. |
 | 10 | The 30-day currency-freeze exit sends the work to the museum, the same branch as no bids, with the bid refunded. | One unsold outcome, whatever made the work unsold. |
 | 11 | The museum's address lives in `EconomicsResolver`, set by FUNDS_SETTER in the 14-day class, wired at genesis. | It is a network-level recipient, the class ADR 0001 §13 reserves for them. |
 | 12 | While the 1/1 is disputed, edition bidding continues and withdrawals open; a cancel of the 1/1 voids the edition auction, with full refunds. | A contested work keeps selling, and an upheld dispute leaves nothing minted or paid. |

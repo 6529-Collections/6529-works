@@ -65,6 +65,11 @@ The deploy script follows one rule:
   - the ETH opening bid of 0.05 ETH that the English auction locks at start
     (`AssetAllowlist.setOpeningBid(ETH, 1, 0.05 ether)`, owner decision 19; ETH is at revision 1
     from its admission at deployment), later a 48-hour PARAMETER_SETTER action;
+  - the federation's first configuration ([ADR 0008](../docs/adr/0008-federation.md)): the
+    English auction's `setFederationRegistry`, and the federation registry's `setAdapter` (the
+    English auction and the federated edition auction) and `approveTemplate` (the two v1
+    templates, named in the arguments; `DeployV1.templateCodeHash` computes each code hash from
+    the build, so the file holds no literal and the calldata's first word is a placeholder);
   - the epoch-0 governance manifest (`appendGovernanceManifest` on the statement log).
 
   Nothing else can be wired: `GovernanceConfig.isGenesisSelector` is an allow-list.

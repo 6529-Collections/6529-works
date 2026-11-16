@@ -613,12 +613,14 @@ sequenceDiagram
 Anything else, such as a verifier swap or a recipient change, reverts with
 `WiringSelectorNotAllowed`. A wiring call must target a configured target, never the manager
 (`InvalidWiringCall`). There are at most `GovernanceConfig.MAX_WIRING_CALLS` (64) calls; the
-committed example's 15 are listed in order in the [matrix](../audit/roles.md#genesis-wiring).
+committed example's 24 are listed in order in the [matrix](../audit/roles.md#genesis-wiring).
 
 | Selector | Why it is wired |
 | --- | --- |
 | `bindWorkRecords`, `bindEditions`, `bindStream`, `bindPackageRegistry`, `bindSplitFactory`, `bindStatementLog` | The one-shot bindings |
-| `bindFederationRegistry` (artist registry) | Allowed but not wired: the federation registry is in v1, specified by a later ADR, and is bound when it ships by a 30-day `ADMIN` action (later replaced by `setFederationRegistry`, SUCCESSOR_SETTER) |
+| `bindFederationRegistry` (artist registry) | The federation registry ships at genesis ([ADR 0008](../adr/0008-federation.md)); later replaced by `setFederationRegistry` (SUCCESSOR_SETTER, 30 days) |
+| `setFederationRegistry(address,address)` (English auction) | Points the English auction at the genesis federation registry and pins its code hash; later a 30-day SUCCESSOR_SETTER action |
+| `setAdapter(address,bool)`, `approveTemplate(bytes32,uint32,uint8)` (federation registry) | Admits the English auction and the federated edition auction, and approves the two v1 template code hashes, which `DeployV1.templateCodeHash` computes from the build ([Federation](federation.md), FED-63); later 30-day SUCCESSOR_SETTER actions |
 | `setAdmittedMinter(address,bool)` | Admits each sale adapter to its token. A later one is admitted the same way, in the 30-day class; for 6529 Stream the review checks that the adapter reports each sale's true outcome to Stream (Stream itself moves an unbid or frozen-out work to the museum, owner decision 17), and the other obligations ADR 0005 lists: burns only on an upheld dispute, settles, pays the locked shares (ADR 0005, owner decision 15) |
 | `setTarget(address,bool)` | Lists each token on its sale adapter |
 | `setDefaultCurrency(bytes32,uint64,address)` | Each product's first default currency, ETH, the only active asset at genesis. Without it no auction could start for 14 days, because `EnglishAuction.start` reads `PRODUCT_STREAM`'s. |

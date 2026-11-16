@@ -77,6 +77,7 @@ MODULE_TESTS: dict[str, str] = {
     "economics": "test/economics/**",
     "editions": "test/editions/**",
     "entropy": "test/entropy/**",
+    "federated": "test/federated/**",
     "governance": "test/{governance,deploy}/**",
     "identity": "test/identity/**",
     "interfaces": "test/{interfaces,libraries,helpers}/**",

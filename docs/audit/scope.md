@@ -17,8 +17,8 @@ an audit.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 14,334 non-blank, non-comment lines in 100 files under `src/` (budget: 15,000; ADR 0001, amended 1 November 2026, and ADR 0007) |
-| Deployed contracts | 26 per deployment without the optional VRF entropy module and 27 with it: the 23 (or 24) that `DeployV1.order` lists, both auctions' lenses among them (each deployed in its own transaction and pinned by its auction) and the two governed vaults (`FeeRecipientVault`, `MuseumVault`, after the split ledger), plus the AccessManager the governance configurator creates, `StreamViews`, the read-only extension `Stream`'s constructor creates, and `WorkDelivery`, the first delivery contract `WorkRecords`' constructor creates (replaceable by `setDelivery`); and one 66-byte `SplitVault` per payee configuration, deployed on demand by the split ledger |
+| Source lines | 15,925 non-blank, non-comment lines in 109 files under `src/` (budget: 16,000; ADR 0001, amended 1 November 2026, ADR 0007 and ADR 0008) |
+| Deployed contracts | 29 per deployment without the optional VRF entropy module and 30 with it: the 26 (or 27) that `DeployV1.order` lists, the three auctions' lenses among them (each deployed in its own transaction and pinned by its auction) and the two governed vaults (`FeeRecipientVault`, `MuseumVault`, after the split ledger), plus the AccessManager the governance configurator creates, `StreamViews`, the read-only extension `Stream`'s constructor creates, and `WorkDelivery`, the first delivery contract `WorkRecords`' constructor creates (replaceable by `setDelivery`); one 66-byte `SplitVault` per payee configuration, deployed on demand by the split ledger; and, outside genesis, each federated artist's own template copies ([ADR 0008](../adr/0008-federation.md)) |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
 | Contract size | Every contract within EIP-170 (24,576 bytes of runtime) and EIP-3860 (49,152 bytes of initcode), and every contract declared in `src/` with at least 512 bytes of EIP-170 margin; [`tools/size-margins.json`](../../tools/size-margins.json) records no exemption since the permanence integration ([ADR 0007](../adr/0007-permanence.md)): the English auction regained its floor when its opening bids moved to the asset allowlist, the renderer when its reads stopped carrying gas caps, and the edition auction when its lane replaced the interim wiring. Checked by `tools/check_budgets.py` in CI ([Build, test and budgets](build-and-test.md)) |
@@ -40,8 +40,22 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 | `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 473 | 19,012 | 20,826 | 5,564 |
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 898 | 24,062 | 27,384 | 514 |
 | `EnglishAuctionLens` | [`src/sales/EnglishAuctionLens.sol`](../../src/sales/EnglishAuctionLens.sol) | 311 | 6,844 | 7,137 | 17,732 |
-| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 904 | 23,300 | 28,078 | 1,276 |
-| `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 857 | 22,887 | 23,295 | 1,689 |
+| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 956 | 23,322 | 28,145 | 1,254 |
+| `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 908 | 22,804 | 23,163 | 1,772 |
+
+### Federation
+
+| Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `FederatedStream` (a template: each artist deploys a full copy) | [`src/federated/FederatedStream.sol`](../../src/federated/FederatedStream.sol) | 521 | 22,608 | 24,684 | 1,968 |
+| `FederatedEditions` (a template: the pair's ERC-1155) | [`src/federated/FederatedEditions.sol`](../../src/federated/FederatedEditions.sol) | 231 | 16,194 | 17,799 | 8,382 |
+| `FederationRegistry` (replaceable) | [`src/federated/FederationRegistry.sol`](../../src/federated/FederationRegistry.sol) | 196 | 8,423 | 9,327 | 16,153 |
+| `FederatedEditionAuction` (replaceable) | [`src/federated/FederatedEditionAuction.sol`](../../src/federated/FederatedEditionAuction.sol) | 71 | 23,132 | 27,439 | 1,444 |
+| `FederatedEditionAuctionLens` | [`src/federated/FederatedEditionAuctionLens.sol`](../../src/federated/FederatedEditionAuctionLens.sol) | 108 | 23,751 | 24,052 | 825 |
+
+`FederatedMembership` (abstract, both templates' shared source) and the interfaces
+`IFederatedToken`, `IFederatedStream`, `IFederatedEditions` and `IFederationRegistry` count
+toward the line budget with the other interfaces.
 
 ### Curation, identity and records
 
@@ -79,7 +93,7 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
 | `WorksAccessManager` | [`src/governance/WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol) | 447 | 22,714 | 25,290 | 1,862 |
-| `GovernanceConfigurator` | [`src/governance/GovernanceConfigurator.sol`](../../src/governance/GovernanceConfigurator.sol) | 51 | 11,473 | 37,079 | 13,103 |
+| `GovernanceConfigurator` | [`src/governance/GovernanceConfigurator.sol`](../../src/governance/GovernanceConfigurator.sol) | 51 | 11,554 | 37,160 | 13,022 |
 
 `WorksAccessManager` is 71 lines over OpenZeppelin's `AccessManager`, whose code is part of
 what it deploys. `GovernanceConfigurator`'s initcode includes the manager it deploys.
@@ -91,7 +105,7 @@ Compiled into the contracts that use them; none is deployed or linked.
 | Library | Source | nSLOC | Used by |
 | --- | --- | ---: | --- |
 | `JsonScan` | [`src/content/JsonScan.sol`](../../src/content/JsonScan.sol) | 444 | Renderer |
-| `GovernanceConfig` | [`src/governance/GovernanceConfig.sol`](../../src/governance/GovernanceConfig.sol) | 247 | GovernanceConfigurator |
+| `GovernanceConfig` | [`src/governance/GovernanceConfig.sol`](../../src/governance/GovernanceConfig.sol) | 251 | GovernanceConfigurator |
 | `Utf8` | [`src/libraries/Utf8.sol`](../../src/libraries/Utf8.sol) | 152 | `Renderer`, `Stream`, `StatementLog` |
 | `UniformClearing` | [`src/sales/UniformClearing.sol`](../../src/sales/UniformClearing.sol) | 149 | `UniformEditionAuction` (sweep, claims), `UniformEditionAuctionLens` (every clearing view) |
 | `TokenTransfer` | [`src/economics/TokenTransfer.sol`](../../src/economics/TokenTransfer.sol) | 149 | Sale adapters, `SplitLedger`, `RevenueEscrow`, `AssetAllowlist`, `RevenuePayment` |
@@ -117,7 +131,7 @@ The "Used by" column is a reading aid; the import graph is authoritative.
 
 ### Interfaces and shared types
 
-2,302 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
+2,515 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
 [`src/economics/interfaces/`](../../src/economics/interfaces/), plus the 14-line Chainlink
 coordinator interface [`src/entropy/IVRFCoordinatorV2Plus.sol`](../../src/entropy/IVRFCoordinatorV2Plus.sol).
 `WorksHashing` is counted here and listed with the libraries above. They carry the external
@@ -154,10 +168,11 @@ are outside this scope, but their use (overrides, hooks, assumptions) is in scop
   the deployment path should include them. [SECURITY.md](../../SECURITY.md) accepts
   vulnerability reports against them.
 - **`tools/`:** off-chain Python: CI gates and the uploader.
-- **6529 Stream Federated:** in v1 by owner decision of 15 November 2026
-  ([ADR 0007](../adr/0007-permanence.md)), specified by a later ADR; its templates and federation
-  registry are not in this tree yet. The permanent artist registry's federation directory
-  (ID-33, ID-34) and the auctions' registry hooks are; no registry is installed.
+- **6529 Stream Federated:** in scope ([ADR 0008](../adr/0008-federation.md),
+  [Federation](../spec/federation.md)): the two templates (each artist deploys a full copy; a
+  template version's code hash is what governance approves), the federation registry and the
+  federated edition auction, installed at genesis; the permanent artist registry's federation
+  directory (ID-33, ID-34) lists every federated contract.
 - **External contracts:** the 6529 delegation contract, the Chainlink VRF coordinator,
   Permit2, Safe wallets and admitted ERC-20 tokens. The protocol's assumptions about each are
   in [Trust assumptions](trust-assumptions.md).

@@ -500,24 +500,37 @@ ceiling moved and no start budget or slot maximum was raised.
 | `release`, the artist's first ETH release | 93,147 | 96,000 (regression) | 2 | 0 | — |
 | `claimSigned`, the artist's first signed release | 137,632 | 145,000 (regression) | 3 | 0 | — |
 | `claimSigned`, a later signed release (next nonce) | 86,344 | 92,000 (regression) | 0 | 0 | — |
-| Edition auction `open`, steady state (binds the edition) | 290,125 | 296,000 (regression) | 6 | 0 | — |
-| Edition auction `open`, the adapter's first (one-time) | 335,862 | 342,000 (regression) | 8 | 0 | — |
-| Edition auction `open`, an artist's first sale (deploys both split wallets) | 429,441 | 443,000 (regression) | 8 | 2 | — |
+| Edition auction `open`, steady state (binds the edition) | 290,416 | 296,000 (regression) | 6 | 0 | — |
+| Edition auction `open`, the adapter's first (one-time) | 336,153 | 342,000 (regression) | 8 | 0 | — |
+| Edition auction `open`, an artist's first sale (deploys both split wallets) | 429,732 | 443,000 (regression) | 8 | 2 | — |
 | Edition `bid`, its 8-step word exists | 68,697 | 110,000 | 1 | 0 | — |
 | Edition `bid`, opens an 8-step word | 85,767 | 110,000 | 2 | 0 | — |
 | Edition `bid`, capped sale | 71,114 | 110,000 | 1 | 0 | — |
-| Edition `bid` near the close (1/1 read, soft close) | 78,018 | 110,000 | 1 | 0 | — |
+| Edition `bid` near the close (1/1 read, soft close) | 78,002 | 110,000 | 1 | 0 | — |
 | Edition `bid`, worst path (capped, opens an 8-step word, the 1/1 read live after its dispute pause lapsed, soft close; review PoC, not in CI) | 106,295 | 110,000 | 2 | 0 | — |
 | Edition `raise`, same 8-step word | 53,736 | 56,000 (regression) | 0 | 0 | — |
 | Edition `raise`, capped (departure logged) | 78,962 | 81,000 (regression) | 1 | 0 | — |
-| Edition `withdrawBid`, capped, 1/1 paused | 87,980 | 90,000 (regression) | 1 | 0 | — |
-| Edition `settle`, 40 used steps | 150,391 | 400,000 | 1 | 0 | — |
-| Edition `settle`, capped, one departure swept | 163,355 | 174,000 (regression) | 1 | 0 | — |
+| Edition `withdrawBid`, capped, 1/1 paused | 87,964 | 90,000 (regression) | 1 | 0 | — |
+| Edition `settle`, 40 used steps | 150,375 | 400,000 | 1 | 0 | — |
+| Edition `settle`, capped, one departure swept | 163,353 | 174,000 (regression) | 1 | 0 | — |
 | Edition `settle`, every step used (512 steps, departures at the cut), each call | at most 243,174 of execution | 350,000 of execution | 0 to 2 (the call that clears and leaves its sweep unfinished writes the result and its settler's progress) | 0 | — |
 | Edition `settle`, a 96-departure chunk with departures scattered over the log's words (336 steps), each call; review PoC, not in CI | at most 307,070 of execution | 350,000 of execution | 0 to 2 | 0 | — |
-| Edition `claimBid`, a winner and new holder | 98,539 | 100,000 | 1 | 0 | — |
+| Edition `claimBid`, a winner and new holder | 98,547 | 100,000 | 1 | 0 | — |
 | Edition `claimBid`, refund only | 47,504 | 49,000 (regression) | 0 | 0 | — |
 | Edition `claimBidFor`, refund credited | 64,482 | 67,000 (regression) | 1 | 0 | — |
+| Federated `joinFederation`, creating the identity | 284,685 | 295,000 (regression) | 7 | 0 | ~0.91M [E] |
+| Federated `approveItem` | 59,334 | 61,000 (regression) | 1 | 0 | ~0.15M [E] |
+| Federated `start`, first work (deploys both vaults) | 666,394 | 685,000 (regression) | 18 | 2 | ~2.76M [E] |
+| Federated `start`, steady | 403,304 | 415,000 (regression) | 10 | 0 | ~1.29M [E] |
+| Federated first `bid` | 189,476 | 196,000 (regression) | 5 | 0 | ~0.64M [E] |
+| Federated `settle`, sold | 176,220 | 182,000 (regression) | 2 | 0 | ~0.35M [E] |
+| Federated `settle`, unbid (to the template) | 150,850 | 156,000 (regression) | 2 | 0 | ~0.33M [E] |
+| Federated restart | 245,056 | 253,000 (regression) | 4 | 0 | ~0.60M [E] |
+| Federated edition `open` | 363,752 | 371,000 (regression) | 7 | 0 | ~0.99M [E] |
+| Federated `createEdition` | 86,758 | 90,000 (regression) | 1 | 0 | ~0.18M [E] |
+| Federated edition `settle` | 149,965 | 162,000 (regression) | 1 | 0 | ~0.24M [E] |
+| Deploy `FederatedStream` (whole transaction) | 5,214,822 | 5,370,000 (regression) | 11 | 1 | ~36.7M [E] ([ADR 0008](0008-federation.md) §9) |
+| Deploy `FederatedEditions` (whole transaction) | 3,754,423 | 3,870,000 (regression) | 8 | 1 | ~26.4M [E] |
 
 r2's Sepolia column, as accepted (receipts on `400f96d`, before the review fixes
 and the state-growth diet; the flows file compares the two rehearsals row by

@@ -723,7 +723,10 @@ to them, and governance checks them before it publishes a template version.
    moves the token: the auction trusts both for delivery (residual 1).
 8. **One settlement, by its adapter.** Only the adapter that minted a token settles its primary
    sale, once; transfers never settle it; `settlePrimary` returns `holder` zero, so the adapter
-   delivers (IMintTarget).
+   delivers (IMintTarget). The v1 template returns `holder` zero for SOLD; UNBID and FROZEN_OUT
+   move the work into the template's own custody with no receiver call and return the template,
+   so the adapter records it as taken and delivers nothing ([Federation](federation.md),
+   FED-17).
 9. **Fixed code.** No proxy and no delegatecall: the code hash the registry records is the code
    that runs at settlement (AUC-28).
 

@@ -576,6 +576,10 @@ before that chain.
 specified by a later ADR; the artist registry's permanent federation directory and replaceable
 federation-registry pointer are built. See [ADR 0007](0007-permanence.md) and [Amendments](#amendments).)
 
+(Amendment note, 15 November 2026: specified by [ADR 0008](0008-federation.md): no factory (a
+contract whose code hash is an approved template version joins itself); entries composed on
+read; unbid federated works stay with the template.)
+
 Federation lets an artist run their own contract, built from the network's
 audited templates, as a registered member of the 6529 network.
 
@@ -758,7 +762,8 @@ AccessManager governs all of them. The VRF module is optional.
 
 **Engineering budgets, enforced as CI gates:**
 - **Size:** 8–12K non-comment lines of production Solidity. (Amended 1 November 2026: the
-  gate is 13,000 lines; amended 15 November 2026: 15,000 lines; see [Amendments](#amendments).)
+  gate is 13,000 lines; amended 15 November 2026: 15,000 lines; 16 November 2026: 16,000 lines,
+  [ADR 0008](0008-federation.md); see [Amendments](#amendments).)
 - **Structure:** at most 5 linked libraries; no delegatecall; no proxies.
 - **Contract size:** EIP-170 enforced in every Foundry profile.
 - **CI time:** full build and test in under 15 minutes.

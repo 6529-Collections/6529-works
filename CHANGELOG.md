@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- Federation ([ADR 0008](docs/adr/0008-federation.md); [Federation](docs/spec/federation.md),
+  FED-1 to FED-63): Federated Stream and Federated Stream Editions templates (full copies, no
+  immutables, joined by the token itself and listed in the artist registry's directory; works
+  approved on chain by the artist, naming no party but the artist; unsold works held by the
+  template and restartable; 90/10 royalty vaults deployed at mint; read by the shared renderer
+  through `coreOf` and `extsload` at `StreamLayout`'s slots; locators printable ASCII);
+  `FederationRegistry` (template code hashes, admitted adapters, entries composed on read, no
+  entry for a contract that left, delisting by vote, suspension and revocation); the uniform
+  edition auction and its lens split into shared bases with a second deployment,
+  `FederatedEditionAuction`, for federated pairs (its abandonment waits the locked delay alone:
+  a federated 1/1 has no rescue); `IFederationRegistry` reshaped to what adapters and templates
+  call (`register`, `entry`, `isActive`, `canMint`; interface ID `0x2063bc84`); new
+  `IFederatedToken` `0xe5ed11e8`, `IFederatedStream` `0xc7aac428`, `IFederatedEditions`
+  `0x5c20a834`. Genesis deploys the registry, the federated edition auction and its lens,
+  binds the registry in the artist registry, points the English auction at it, admits both
+  shared adapters and approves the two v1 template code hashes computed by
+  `DeployV1.templateCodeHash` (`GovernanceConfig.isGenesisSelector` admits these three
+  selectors); `VerifyV1.checkFederation` reads them back. The source-line budget is 16,000.
 - Permanence ([ADR 0007](docs/adr/0007-permanence.md); owner instruction of 14 and 15 November
   2026), two integration rounds and the fixes of four independent reviews. Pre-launch interface
   reshaping:

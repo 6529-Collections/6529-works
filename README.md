@@ -84,7 +84,7 @@ products pay 75% to the artist's side and 25% to the network, and royalties are 
 | [`PackageRegistry`](src/curation/README.md) | Stream's replaceable mint policy: package roots, party consent, the move signature, consume-once items, content uniqueness | 402 |
 | [`Eip712CurationVerifier`](src/curation/README.md) | Accepts curation signers' EIP-712 approvals | 103 |
 | [`EnglishAuction`](src/sales/README.md), [`EnglishAuctionLens`](src/sales/README.md) | Stream's primary sale: anti-snipe clock, pull refunds, pending claims, dispute pause; its views answered by a lens | 898 + 311 |
-| [`UniformEditionAuction`](src/sales/README.md), [`UniformEditionAuctionLens`](src/sales/README.md) | The edition auction: firm ETH bids on a step ladder beside the 1/1, one clearing price, FIFO at a capped step, claims | 904 + 857 |
+| [`UniformEditionAuction`](src/sales/README.md), [`UniformEditionAuctionLens`](src/sales/README.md) | The edition auction: firm ETH bids on a step ladder beside the 1/1, one clearing price, FIFO at a capped step, claims | 956 + 908 |
 | [`EconomicsResolver`](src/economics/README.md), [`AssetAllowlist`](src/economics/README.md) | Terms for new works, fee recipients, currencies and increment floors | 212 + 154 |
 | [`SplitLedger`](src/economics/README.md), [`SplitVault`](src/economics/README.md) | One permanent ledger for every split wallet (66-byte vaults at predicted addresses), its accounting and signed releases | 264 + 8 |
 | [`RevenueEscrow`](src/economics/README.md), [`ClaimRouter`](src/economics/README.md), [`GovernedVault`](src/economics/README.md) | Failed-payment escrow, batch claims, the fee recipient's and museum's governed vaults | 122 + 132 + 108 |
