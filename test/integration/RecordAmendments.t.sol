@@ -76,7 +76,7 @@ contract RecordAmendmentsFlowTest is IntegrationBase {
         // CC0 is irrevocable.
         bytes memory back = _relicenseCall(1, 0, License("CC-BY-4.0", byTextFileId));
         _schedule(hotAdmin, address(records), back);
-        vm.warp(block.timestamp + 2 days);
+        vm.warp(block.timestamp + 3 days); // relicense: the network at 3 days
         vm.prank(hotAdmin);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.LicenseIrrevocable.selector, 1));
         manager.execute(address(records), back);
@@ -88,7 +88,7 @@ contract RecordAmendmentsFlowTest is IntegrationBase {
         bytes32 corrected = _storeText("CC0 1.0 Universal (corrected text)", "text/plain");
         bytes memory call = _relicenseCall(2, 1, License("CC0-1.0", corrected));
         _schedule(hotAdmin, address(records), call);
-        vm.warp(block.timestamp + 2 days);
+        vm.warp(block.timestamp + 3 days); // relicense: the network at 3 days
         vm.prank(hotAdmin);
         vm.expectRevert(IWorkRecords.InvalidLicense.selector);
         manager.execute(address(records), call);
@@ -105,7 +105,7 @@ contract RecordAmendmentsFlowTest is IntegrationBase {
             _registerOnly(text, IContentStore.Encoding.Identity, "text/plain", sha256(text));
         bytes memory call = _relicenseCall(1, 0, License("MIT", offChain));
         _schedule(hotAdmin, address(records), call);
-        vm.warp(block.timestamp + 2 days);
+        vm.warp(block.timestamp + 3 days); // relicense: the network at 3 days
         vm.prank(hotAdmin);
         vm.expectRevert(IWorkRecords.InvalidLicense.selector);
         manager.execute(address(records), call);

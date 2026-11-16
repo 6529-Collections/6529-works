@@ -196,7 +196,7 @@ contract StrandedWorkRescueTest is IntegrationBase {
         bytes memory again_ = abi.encodeCall(stream.setAdmittedMinter, (address(auction), false));
         vm.prank(hotAdmin);
         manager.schedule(address(stream), again_, 0);
-        vm.warp(block.timestamp + 30 days);
+        vm.warp(block.timestamp + 7 days);
         vm.prank(hotAdmin);
         vm.expectRevert(
             abi.encodeWithSelector(IStream.AdmissionUnchanged.selector, address(auction), false)

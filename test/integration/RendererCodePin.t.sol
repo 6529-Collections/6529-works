@@ -118,7 +118,7 @@ contract RendererCodePinTest is IntegrationBase {
         _changeCode(address(renderer));
         bytes memory call = _repinCall(open, address(renderer));
         _schedule(hotAdmin, address(records), call);
-        vm.warp(block.timestamp + 30 days);
+        vm.warp(block.timestamp + 7 days);
         vm.prank(hotAdmin);
         vm.expectRevert(
             abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, address(renderer))

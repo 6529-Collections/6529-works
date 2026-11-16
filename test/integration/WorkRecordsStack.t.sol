@@ -267,13 +267,13 @@ contract WorkRecordsStackTest is IntegrationBase {
             )
         );
         bytes[] memory sigs = new bytes[](1);
-        sigs[0] = _sign(artist, digest);
+        sigs[0] = abi.encodePacked(artist, _sign(artist, digest));
         return abi.encodeCall(records.relicense, (tokenId, next, w.item, state, deadline, sigs));
     }
 
     function _expectRelicenseRefused(bytes memory call) internal {
         _schedule(hotAdmin, address(records), call);
-        vm.warp(block.timestamp + 2 days);
+        vm.warp(block.timestamp + 3 days); // relicense: the network at 3 days
         vm.prank(hotAdmin);
         vm.expectRevert(IWorkRecords.InvalidLicense.selector);
         manager.execute(address(records), call);

@@ -219,6 +219,10 @@ contract MuseumTest is IntegrationBase {
             );
             manager.execute(address(economics), call);
             assertEq(economics.museum(), museum);
+            // The refused operation stays scheduled until it expires; cancel it so a repeated
+            // address in the list can be scheduled again.
+            vm.prank(hotAdmin);
+            manager.cancel(hotAdmin, address(economics), call);
         }
     }
 

@@ -148,7 +148,7 @@ contract RendererPermanenceTest is IntegrationBase {
                 keccak256(abi.encode(Typehashes.RENOUNCE_POWERS, tokenId, powers, state, deadline))
             )
         );
-        records.renounce(tokenId, powers, state, deadline, sig);
+        records.renounce(tokenId, powers, state, deadline, abi.encodePacked(artist, sig));
     }
 
     function _uris() internal view returns (bytes32) {
