@@ -374,10 +374,10 @@ abstract contract IntegrationBase is WorksDeployment {
         );
     }
 
-    /// @dev One guardian deprecates the test ERC-20 (immediate); returns when.
+    /// @dev The network deprecates the test ERC-20 (no delay); returns when.
     function _deprecateUsd() internal returns (uint256 frozenAt) {
         _govern(
-            guardian1, address(allowlist), abi.encodeCall(allowlist.deprecateAsset, (address(usd)))
+            hotAdmin, address(allowlist), abi.encodeCall(allowlist.deprecateAsset, (address(usd)))
         );
         frozenAt = block.timestamp;
     }

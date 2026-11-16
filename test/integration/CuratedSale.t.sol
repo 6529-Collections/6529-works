@@ -386,18 +386,18 @@ contract CuratedSaleFlowTest is IntegrationBase {
         assertEq(stream.ownerOf(tokenId), vault);
     }
 
-    /// @dev The guardian's curation controls (ADR 0003): revoking an approved root stops its
+    /// @dev The network's curation controls, with no delay (ADR 0003): revoking an approved root stops its
     ///      starts at once; disabling a curation signer stops its new attestations, and the
     ///      second genesis signer keeps curation running.
     function test_GuardianRevokesAPackageAndDisablesASigner() public {
         Work[] memory works = _package(root);
         bytes memory data = _mintData(root, works, 0);
-        vm.prank(guardian1);
+        vm.prank(hotAdmin);
         registry.revokePackage(root, keccak256("leaked attestation"));
         vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.PackageNotApproved.selector, root));
         auction.start(address(stream), data);
 
-        vm.prank(guardian2);
+        vm.prank(hotAdmin);
         verifier.disableSigner(signer1);
         Work[] memory fresh = _one(_work(artist, collectionId));
         bytes32 freshRoot = _rootOf(fresh);
@@ -429,7 +429,7 @@ contract CuratedSaleFlowTest is IntegrationBase {
     function test_ReEnablingASignerDoesNotReviveOlderApprovals() public {
         address unvetted = _actor("unvetted");
         uint256 epoch = verifier.signerEpoch(signer1);
-        vm.prank(guardian1);
+        vm.prank(hotAdmin);
         verifier.disableSigner(signer1);
         assertTrue(verifier.signerEpoch(signer1) != epoch, "disabling ends the epoch");
         Work[] memory unreviewed = _one(_work(unvetted, collectionId));
@@ -460,7 +460,7 @@ contract CuratedSaleFlowTest is IntegrationBase {
     ///      re-enable would start if it were not salted from the re-enable's block, does not
     ///      register after the re-enable.
     function test_AnApprovalSignedWhileDisabledCannotNameTheReEnableEpoch() public {
-        vm.prank(guardian1);
+        vm.prank(hotAdmin);
         verifier.disableSigner(signer1);
         Work[] memory works = _one(_work(_actor("unvetted"), collectionId));
         bytes32 packageRoot = _rootOf(works);
@@ -485,9 +485,13 @@ contract CuratedSaleFlowTest is IntegrationBase {
         bytes32 evidence = _evidence(packageRoot);
         bytes memory oldGrant = _attestation(signer1, packageRoot, evidence);
         uint64 role = Roles.CURATION_SIGNER;
-        _govern(hotAdmin, address(manager), abi.encodeCall(manager.revokeRole, (role, signer1)));
-        _govern(hotAdmin, address(manager), abi.encodeCall(manager.grantRole, (role, signer1, 0)));
-        vm.warp(block.timestamp + 31 days); // the role's grant delay
+        // The network administers operational keys with no delay (integrator ruling 14), some
+        // time after the genesis grant.
+        vm.warp(block.timestamp + 1 days);
+        vm.startPrank(hotAdmin);
+        manager.revokeRole(role, signer1);
+        manager.grantRole(role, signer1, 0);
+        vm.stopPrank();
         assertTrue(verifier.isSignerActive(signer1));
         vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.NotApproved.selector, packageRoot));
         registry.registerPackage(packageRoot, evidence, oldGrant);

@@ -186,19 +186,22 @@ contract FederationSecondPassTest is FederationBase {
     /// @dev A suspended template still serves its running sales (`isActive`) but mints no work
     ///      and opens no edition sale: binding asks `canMint`, as a mint does.
     function test_C1_ASuspendedTemplateMintsNothingAndOpensNoSale() public {
+        // Suspension is the network's at 24 hours: schedule both first, so the master's 1/1
+        // sale started below is still running when they land.
+        bytes memory s1 = abi.encodeCall(fedRegistry.suspendTemplate, (streamHash));
+        bytes memory s2 = abi.encodeCall(fedRegistry.suspendTemplate, (editionsHash));
+        vm.startPrank(hotAdmin);
+        manager.schedule(address(fedRegistry), s1, 0);
+        manager.schedule(address(fedRegistry), s2, 0);
+        vm.stopPrank();
+        Work memory restart = _unbid();
+        vm.warp(block.timestamp + 24 hours);
         Work memory master = _fedMaster(fedArtist, 0);
         (, uint256 masterToken) = _startFed(pairStream, fedArtist, master, RATE);
-        Work memory restart = _unbid();
-        _govern(
-            guardian1,
-            address(fedRegistry),
-            abi.encodeCall(fedRegistry.suspendTemplate, (streamHash))
-        );
-        _govern(
-            guardian1,
-            address(fedRegistry),
-            abi.encodeCall(fedRegistry.suspendTemplate, (editionsHash))
-        );
+        vm.startPrank(hotAdmin);
+        manager.execute(address(fedRegistry), s1);
+        manager.execute(address(fedRegistry), s2);
+        vm.stopPrank();
         assertTrue(fedRegistry.isActive(address(fed)), "running sales are served");
         _assertNothingMints(restart);
         vm.expectRevert(
@@ -299,11 +302,17 @@ contract FederationSecondPassTest is FederationBase {
     ///      signs (the artist registry answers `isWallet`).
     function test_Collaborators_AnyWalletOfTheAccountConsents() public {
         address second = _actor("collaboratorSecondWallet");
-        vm.mockCall(
-            address(artists),
-            abi.encodeCall(IAccounts.isWallet, (uint256(uint160(collab)), second)),
-            abi.encode(true)
-        );
+        // The collaborator is a registered account whose root is consolidated with `second`.
+        uint64 deadline = uint64(block.timestamp + 1 days);
+        bytes memory sig = _sign(collab, artists.registrationDigest(collab, 0, 0, deadline));
+        vm.prank(address(fedRegistry));
+        artists.registerFederated(collab, 0, 0, deadline, sig);
+        address all = 0x8888888888888888888888888888888888888888;
+        vm.prank(collab);
+        delegation.registerDelegationAddress(all, second, type(uint64).max, 999, true, 0);
+        vm.prank(second);
+        delegation.registerDelegationAddress(all, collab, type(uint64).max, 999, true, 0);
+        assertTrue(IAccounts(address(artists)).isWallet(uint256(uint160(collab)), second));
         Work memory w = _withCollaborator(_fedWork(fedArtist));
         vm.prank(fedArtist);
         fed.approveItem(_itemHash(w), RATE);

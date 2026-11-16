@@ -220,7 +220,8 @@ contract FederationGasTest is FederationBase {
             0
         );
         _row("join, creating the identity", total, g);
-        assertEq(g.slots, 7);
+        // Six: the account record has no activity word any more (identity second pass).
+        assertEq(g.slots, 6);
         assertLe(total, JOIN_CEILING);
     }
 

@@ -399,8 +399,15 @@ contract FederationProvenanceTest is FederationBase {
         verifier.successorParity();
 
         // Suspended in the predecessor during the delay, still approved in the successor.
-        vm.prank(guardian1);
-        fedRegistry.suspendTemplate(streamHash);
+        vm.prank(hotAdmin);
+        manager.schedule(
+            address(fedRegistry), abi.encodeCall(fedRegistry.suspendTemplate, (streamHash)), 0
+        );
+        vm.warp(block.timestamp + 24 hours);
+        vm.prank(hotAdmin);
+        manager.execute(
+            address(fedRegistry), abi.encodeCall(fedRegistry.suspendTemplate, (streamHash))
+        );
         vm.expectRevert(abi.encodeWithSelector(VerifyV1.FederationMismatch.selector, "templateOf"));
         verifier.successorParity();
 
