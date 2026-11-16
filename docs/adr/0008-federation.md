@@ -86,13 +86,15 @@ with refunds; neither delisting nor exit ever touches tokens, ownership, records
   deterministic deployment proxy is no longer a federation dependency (the genesis deploy still
   uses Foundry's CREATE2 factory, as before), and with it the permissionless `publishCode`, its
   first-writer-wins record and the griefing review G found there (G2) are gone.
-- **The artist's cost.** Deploying through the deployer costs **4,957,142** Prague gas for
-  `FederatedStream` against **5,310,951** for a plain CREATE of the same initcode (-353,809: no
-  25 KB of calldata, plus the code read and one record slot, 22,100), and **3,559,808** for
-  `FederatedEditions` against 3,805,265 (-245,457). The bytes deployed are the same; under
-  Glamsterdam the record slot costs about 111,000 and the estimate (§9) is about **37.1M** and
-  **26.6M**. Joining costs **303,102** (284,685 as first built; the consent signature, the
-  deployer's record read and the pair and content-store checks).
+- **The artist's cost.** Deploying through the deployer costs **5,097,751** Prague gas for
+  `FederatedStream` against **5,416,145** for a plain CREATE of the same initcode (-318,394: no
+  25 KB of calldata, plus the code read and one record slot, 22,100), and **3,592,141** for
+  `FederatedEditions` against 3,805,265 (-213,124); each row is measured in its own test, before
+  any state-diff recording (pass 3: the deployer rows were measured after one and read low).
+  The bytes deployed are the same; under Glamsterdam the record slot costs about 111,000 and the
+  estimate (§9) is about **37.9M** and **26.6M**. Joining costs **303,115** (284,685 as first
+  built; the consent signature, the deployer's record read and the pair and content-store
+  checks).
 
 ### 2. Joining: initiated and confirmed by the token
 
@@ -352,53 +354,56 @@ After ADR 0007's review fixes:
 
 ### 9. Budgets, sizes and the artist's deployment cost
 
-Measured at the tip that merges the permanence branch at 4dbf9dcb, after reviews F and G
-(16 November 2026).
+Measured at the tip that merges the permanence branch at 8b6f94cb, after reviews F and G and
+pass 3 (16 November 2026).
 
-- **Source lines:** **16,255** non-comment lines under `src/` (15,972 as first built; reviews F
-  and G add the provenance, the deployer, the consent, the pair rules, the exit statuses and the
-  genesis scoping; the rest is the permanence branch's later fixes). The budget was raised to
+- **Source lines:** **16,376** non-comment lines under `src/` (15,972 as first built; reviews F
+  and G and pass 3 add the provenance, the deployer, the consent, the pair rules, the exit
+  statuses, the genesis scoping, the license-text rule, the batch bound and the edition
+  adapter's registry checks; the rest is the permanence branch's later fixes). The budget was raised to
   **16,000** to admit federation and to **16,500** for the reviews' fixes (owner, 16 November
   2026; see Amendments).
-- **EIP-170 (runtime bytes, margin):** `FederatedStream` 23,044 (1,532), `FederatedEditions`
+- **EIP-170 (runtime bytes, margin):** `FederatedStream` 23,527 (1,049), `FederatedEditions`
   16,429 (8,147), `FederatedDeployer` 1,425 (23,151; initcode 2,398 plus the template's
-  creation code as its argument), `FederationRegistry` 10,706 (13,870), `FederatedEditionAuction`
-  23,389 (1,187), its lens 23,837 (739). Canonical contracts the federation changes:
+  creation code as its argument), `FederationRegistry` 10,816 (13,760), `FederatedEditionAuction`
+  23,930 (646), its lens 24,021 (555). Canonical contracts the federation changes:
   `UniformEditionAuction` 24,061 (515, with the permanence branch's payout-gas rule), its lens
-  23,168 (1,408); `GovernanceConfigurator` 11,813 runtime, 37,443 initcode (the genesis
+  23,168 (1,408); `GovernanceConfigurator` 11,813 runtime, 37,708 initcode (the genesis
   selectors and their interface scoping); the artist registry 23,485 (1,091: the listing
   consent over the entry's facts and the exit transitions). The English auction is unchanged at
   24,062 (514). Every contract keeps 512, with no exemption.
 - **The artist pays the templates' deployment once**, through each template's deployer (§1).
-  Measured (Prague, whole transaction): `FederatedStream` **4,957,142** through its deployer
-  (5,310,951 as a plain CREATE of the same initcode: the deployer saves the 25 KB of calldata,
-  reads the code from its data contracts and writes one record slot); `FederatedEditions`
-  **3,559,808** (3,805,265 plain); a pair about **8.5M**. Glamsterdam estimate from ADR 0004's
+  Measured (Prague, whole transaction, each row in its own test): `FederatedStream`
+  **5,097,751** through its deployer (5,416,145 as a plain CREATE of the same initcode: the
+  deployer saves the 25 KB of calldata, reads the code from its data contracts and writes one
+  record slot); `FederatedEditions` **3,592,141** (3,805,265 plain); a pair about **8.7M**. Glamsterdam estimate from ADR 0004's
   unit prices (code 1,542 per byte, a new slot about 111,000, an empty CREATE about 210,000),
   replacing the Prague components (code at 200 per byte, a slot at 22,100, the 53,000 of the
   transaction and CREATE bases):
-  - 721: 4,957,142 + 23,044 x 1,342 (30,925,048) + 12 x 88,900 (11 constructor slots and the
-    record: 1,066,800) + 157,000 = **37,105,990** (about 37.1M);
-  - 1155: 3,559,808 + 16,429 x 1,342 (22,047,718) + 9 x 88,900 (800,100) + 157,000 =
-    **26,564,626** (about 26.6M);
-  - a pair: about **63.7M**. Calldata repricing under Glamsterdam is not modelled [U]; it would
+  - 721: 5,097,751 + 23,527 x 1,342 (31,573,234) + 12 x 88,900 (11 constructor slots and the
+    record: 1,066,800) + 157,000 = **37,894,785** (about 37.9M);
+  - 1155: 3,592,141 + 16,429 x 1,342 (22,047,718) + 9 x 88,900 (800,100) + 157,000 =
+    **26,596,959** (about 26.6M);
+  - a pair: about **64.5M**. Calldata repricing under Glamsterdam is not modelled [U]; it would
     favour the deployer path, which sends no creation code. At 1 / 5 / 10 gwei that is about
-    0.037 / 0.19 / 0.37 ETH for a 721 alone. Clones (study H §4) would cut this to about 1.5M per
+    0.038 / 0.19 / 0.38 ETH for a 721 alone. Clones (study H §4) would cut this to about 1.5M per
     contract and remain a later template version, touching nothing permanent.
 - **Gas rows** (Prague; federated rows are their own, with ceilings in `FederationGas.t.sol`
-  and ADR 0004's table): join creating the identity 303,102 (7 slots; 284,685 as first built);
-  `approveItem` 59,357 (1); a first start deploying both vaults 669,675 (18 slots, 2 accounts);
-  a steady start 406,585 (10); a first bid 192,512 (5); settle sold 179,241 (2); settle unbid
-  153,871 (2); restart 248,347 (4); federated edition `open` 373,094 (7); `createEdition` 86,758
-  (1); edition settle 151,045 (1). The steady rows read the artist registry's pointer on each
+  and ADR 0004's table): join creating the identity 303,115 (7 slots; 284,685 as first built);
+  `approveItem` 59,357 (1); a first start deploying both vaults 679,109 (18 slots, 2 accounts);
+  a steady start 416,019 (10; the first mint's license-text check, pass 3); a first bid 192,512
+  (5); settle sold 179,197 (2); settle unbid 153,849 (2); restart 248,303 (4); federated edition
+  `open` 373,965 (7); `createEdition` 86,736 (1); edition settle 151,447 (1). The steady rows read the artist registry's pointer on each
   registry read (F7). Glamsterdam, adding about 89,000 per new slot (and about 245,600 per vault
-  created): steady start about 1.30M, first start about 2.76M. A federated settlement executes
+  created): steady start about 1.31M, first start about 2.77M. A federated settlement executes
   about 95,000 gas, far inside the refusal gas less the auction's 2.43M (guarantee 1).
-- **Canonical rows:** the tightest start row is 344,968 (5,032 under 350,000; the 345,000 gate
-  holds); start rows moved by at most 32 gas either way over the permanence tip (code hashes and
-  the artist registry's code; no start-path logic changed). The edition auction's three `open`
-  rows are 290,567, 336,304 and 429,883 (+442 each over the permanence tip: the shared bases'
-  hooks).
+- **Canonical rows** (pass 3, against the permanence tip at 8b6f94cb): every start and 1/1 row
+  is identical to the tip's; the tightest start row is 344,960 (40 under the 345,000 gate). The
+  edition auction's three `open` rows are 290,567, 336,304 and 429,883 (+291 each over the tip:
+  the shared bases' hooks), and its other rows move by at most 16 gas either way. The federated
+  edition adapter's bid, raise and settle overrides (pass 3) move no canonical row: the base
+  only makes those functions `public virtual` and three members `internal`, and 6529 Stream
+  Editions' deployment keeps its size.
 
 ### 10. Genesis wiring
 
@@ -496,6 +501,33 @@ alone:
   mint) sees the raised count and the maximum holds; a guard would add a permanent slot write to
   every mint for no property the template does not already keep. The order of an adapter's own
   claims is the adapter's (the edition auction's are `nonReentrant`).
+
+### 14. Pass 3: the automated review of PR 105
+
+- **Four-bit file roles.** A work's `files` word kept each role in a byte below the count in
+  the top byte, so a 32nd file's role landed in the count. Roles (0 to 15) now take four bits
+  each, bits 0 to 127; a 32-file work reads back every role. The other packed words of both
+  templates (the approval word: status byte, 24-bit rate bounded by 100,000, work ID above bit
+  32; the sale word: currency below bit 160, price capped at 96 bits) have boundary tests.
+- **Compare-and-set default renderer.** `setDefaultRenderer(expected, renderer, codeHash)`, as
+  6529 Stream's, and `DefaultRendererSet(previous, next, codeHash)`, 6529 Stream's event
+  (`IFederatedStream` is now `0x5b4e5ccb`). The other artist setters were swept for the same
+  two properties: `setRoyaltyRate` only falls and logs both rates; `approveItem`,
+  `revokeItem` and `setAdmittedMinter` set an explicit per-key state; `linkEditions` is
+  one-shot; `setOwner` logs both owners; `setContractURI` keeps ERC-7572's valueless event; `setRecord` and `setLocator` edit one work's own
+  record before finalize, the previous value is the last `WorkOpened`, `RecordChanged` or
+  `LocatorSet`, and only the artist acts, with no consent to go stale (6529 Stream's state
+  hash exists for its multi-party consents), so they stay as they are.
+- **A delisting closes the edition sale at once.** The federated edition adapter checks the
+  registry on every bid and raise (`BiddingClosed`, end zero), not only near the close, and
+  a settle call on a sale whose scan has paid nothing re-checks it, so a delisting between
+  settle calls voids the sale with full refunds; a paid clearing stands. 6529 Stream Editions
+  has no delisting (its target flag gates only `open`) and is unchanged.
+- **Measurement.** Each template deployment row is measured in its own test before any
+  state-diff recording (§1, §9 corrected). The template gas-rule test accepts below the passing
+  limit only an empty revert or the split ledger's starved CREATE2, never another error.
+- **Operations.** The registry replacement repeats its comparison immediately before the switch
+  (`VerifyV1.checkSuccessorParity`); `check_genesis.py` types each symbolic wiring name.
 
 ## Decisions the study left open, as built
 

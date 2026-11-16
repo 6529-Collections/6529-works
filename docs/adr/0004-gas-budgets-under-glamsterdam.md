@@ -560,24 +560,24 @@ or budget moved.
 | Edition `withdrawBid`, capped, 1/1 paused | 87,964 | 90,000 (regression) | 1 | 0 | — |
 | Edition `settle`, 40 used steps | 150,375 | 400,000 | 1 | 0 | — |
 | Edition `settle`, capped, one departure swept | 163,353 | 174,000 (regression) | 1 | 0 | — |
-| Edition `settle`, every step used (512 steps, departures at the cut), each call | at most 243,174 of execution | 350,000 of execution | 0 to 2 (the call that clears and leaves its sweep unfinished writes the result and its settler's progress) | 0 | — |
+| Edition `settle`, every step used (512 steps, departures at the cut), each call | at most 243,188 of execution | 350,000 of execution | 0 to 2 (the call that clears and leaves its sweep unfinished writes the result and its settler's progress) | 0 | — |
 | Edition `settle`, a 96-departure chunk with departures scattered over the log's words (336 steps), each call; review PoC, not in CI | at most 307,070 of execution | 350,000 of execution | 0 to 2 | 0 | — |
-| Edition `claimBid`, a winner and new holder | 98,580 | 100,000 | 1 | 0 | — |
+| Edition `claimBid`, a winner and new holder | 98,588 | 100,000 | 1 | 0 | — |
 | Edition `claimBid`, refund only | 47,504 | 49,000 (regression) | 0 | 0 | — |
 | Edition `claimBidFor`, refund credited | 64,482 | 67,000 (regression) | 1 | 0 | — |
-| Federated `joinFederation`, creating the identity (provenance and consent checked) | 303,102 | 345,000 (regression) | 7 | 0 | ~0.96M [E] |
+| Federated `joinFederation`, creating the identity (provenance and consent checked) | 303,115 | 345,000 (regression) | 7 | 0 | ~0.96M [E] |
 | Federated `approveItem` | 59,357 | 61,000 (regression) | 1 | 0 | ~0.15M [E] |
-| Federated `start`, first work (deploys both vaults) | 669,675 | 685,000 (regression) | 18 | 2 | ~2.77M [E] |
-| Federated `start`, steady | 406,585 | 415,000 (regression) | 10 | 0 | ~1.30M [E] |
+| Federated `start`, first work (deploys both vaults; license text checked) | 679,109 | 700,000 (regression) | 18 | 2 | ~2.77M [E] |
+| Federated `start`, steady | 416,019 | 425,000 (regression) | 10 | 0 | ~1.31M [E] |
 | Federated first `bid` | 192,512 | 196,000 (regression) | 5 | 0 | ~0.64M [E] |
-| Federated `settle`, sold | 179,241 | 182,000 (regression) | 2 | 0 | ~0.35M [E] |
-| Federated `settle`, unbid (to the template) | 153,871 | 156,000 (regression) | 2 | 0 | ~0.33M [E] |
-| Federated restart | 248,347 | 253,000 (regression) | 4 | 0 | ~0.60M [E] |
-| Federated edition `open` | 373,094 | 380,000 (regression) | 7 | 0 | ~1.00M [E] |
-| Federated `createEdition` | 86,758 | 90,000 (regression) | 1 | 0 | ~0.18M [E] |
-| Federated edition `settle` | 151,045 | 162,000 (regression) | 1 | 0 | ~0.24M [E] |
-| Deploy `FederatedStream` (whole transaction; 4,957,142 through its deployer, which records it) | 5,310,951 | 5,370,000 (regression) | 11 | 1 | ~37.1M [E] through its deployer ([ADR 0008](0008-federation.md) §1) |
-| Deploy `FederatedEditions` (whole transaction; 3,559,808 through its deployer) | 3,805,265 | 3,870,000 (regression) | 8 | 1 | ~26.6M [E] through its deployer |
+| Federated `settle`, sold | 179,197 | 182,000 (regression) | 2 | 0 | ~0.35M [E] |
+| Federated `settle`, unbid (to the template) | 153,849 | 156,000 (regression) | 2 | 0 | ~0.33M [E] |
+| Federated restart | 248,303 | 253,000 (regression) | 4 | 0 | ~0.60M [E] |
+| Federated edition `open` | 373,965 | 380,000 (regression) | 7 | 0 | ~1.00M [E] |
+| Federated `createEdition` | 86,736 | 90,000 (regression) | 1 | 0 | ~0.18M [E] |
+| Federated edition `settle` | 151,447 | 162,000 (regression) | 1 | 0 | ~0.24M [E] |
+| Deploy `FederatedStream` (whole transaction; 5,097,751 through its deployer, which records it; each deployment row measured in its own test) | 5,416,145 | 5,500,000 (regression) | 11 | 1 | ~37.9M [E] through its deployer ([ADR 0008](0008-federation.md) §1) |
+| Deploy `FederatedEditions` (whole transaction; 3,592,141 through its deployer) | 3,805,265 | 3,870,000 (regression) | 8 | 1 | ~26.6M [E] through its deployer |
 
 r2's Sepolia column, as accepted (receipts on `400f96d`, before the review fixes
 and the state-growth diet; the flows file compares the two rehearsals row by
@@ -776,19 +776,20 @@ replays further down is r2's.
 
 ### CI against the Sepolia replays
 
-The same operations, as CI measures them and as the r2 receipts replay with
+The same operations, as CI measured them for the r2 comparison (on the code r2 ran, before the
+state-growth diet; today's figures are in the table above) and as the r2 receipts replay with
 Prague costs (`cast run --evm-version prague`):
 
 | Operation | CI | Sepolia r2 at Prague | CI minus Sepolia |
 | --- | ---: | ---: | ---: |
-| `start`, steady state | 265,329 | 293,243 | −13 |
-| `startWithBid`, steady state | 307,381 | 334,572 | +12 |
-| `start`, VRF work | 271,027 | 298,748 | −12 |
-| `start`, edition master | 265,399 | 293,878 | +12 |
-| `start`, first work in a new collection | 265,372 | 293,257 | −13 |
+| `start`, steady state | 293,230 | 293,243 | −13 |
+| `startWithBid`, steady state | 334,584 | 334,572 | +12 |
+| `start`, VRF work | 298,736 | 298,748 | −12 |
+| `start`, edition master | 293,890 | 293,878 | +12 |
+| `start`, first work in a new collection | 293,244 | 293,257 | −13 |
 | `start`, first work ever | 442,314 | 442,302 | +12 |
 | `bid` that outbids | 73,348 | 73,312 | +36 |
-| `createEdition` | 213,622 | 323,819 | +14 |
+| `createEdition` | 323,833 | 323,819 | +14 |
 | `openSale` | 286,584 | 286,608 | −24 |
 | `refreshStanding`, a further wallet | 157,132 | 157,250 | −118 |
 | `settle`, first payout to a seller wallet | 158,414 | 164,743 | −6,329 |

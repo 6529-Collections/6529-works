@@ -17,7 +17,7 @@ an audit.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 16,255 non-blank, non-comment lines in 111 files under `src/` (budget: 16,500; ADR 0001, amended 1 November 2026, ADR 0007 and ADR 0008, as amended for the federation review's fixes) |
+| Source lines | 16,376 non-blank, non-comment lines in 111 files under `src/` (budget: 16,500; ADR 0001, amended 1 November 2026, ADR 0007 and ADR 0008, as amended for the federation review's fixes) |
 | Deployed contracts | 31 per deployment without the optional VRF entropy module and 32 with it: the 28 (or 29) that `DeployV1.order` lists, the three auctions' lenses among them (each deployed in its own transaction and pinned by its auction), the two governed vaults (`FeeRecipientVault`, `MuseumVault`, after the split ledger) and the two federated template deployers (`FederatedStreamDeployer`, `FederatedEditionsDeployer`, each a `FederatedDeployer`), plus the AccessManager the governance configurator creates, `StreamViews`, the read-only extension `Stream`'s constructor creates, and `WorkDelivery`, the first delivery contract `WorkRecords`' constructor creates (replaceable by `setDelivery`). Not counted as contracts: the three `SSTORE2` data contracts the two deployers' constructors create to hold the templates' creation code (two for `FederatedStream`'s, one for `FederatedEditions'`; code bytes behind a `STOP`, never called); one 66-byte `SplitVault` per payee configuration, deployed on demand by the split ledger; and, outside genesis, each federated artist's own template copies, created by the version's deployer ([ADR 0008](../adr/0008-federation.md)) |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
@@ -39,20 +39,20 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 | `WorkDelivery` (created by `WorkRecords`' constructor; replaceable) | [`src/stream/WorkDelivery.sol`](../../src/stream/WorkDelivery.sol) | 183 | 8,673 | 9,084 | 15,903 |
 | `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 484 | 19,025 | 20,854 | 5,551 |
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 898 | 24,062 | 27,384 | 514 |
-| `EnglishAuctionLens` | [`src/sales/EnglishAuctionLens.sol`](../../src/sales/EnglishAuctionLens.sol) | 314 | 7,022 | 7,315 | 17,554 |
-| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 971 | 24,061 | 29,175 | 515 |
+| `EnglishAuctionLens` | [`src/sales/EnglishAuctionLens.sol`](../../src/sales/EnglishAuctionLens.sol) | 342 | 7,473 | 7,766 | 17,103 |
+| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 982 | 24,061 | 29,175 | 515 |
 | `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 932 | 23,168 | 23,541 | 1,408 |
 
 ### Federation
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `FederatedStream` (a template: each artist deploys a full copy) | [`src/federated/FederatedStream.sol`](../../src/federated/FederatedStream.sol) | 528 | 23,044 | 25,170 | 1,532 |
+| `FederatedStream` (a template: each artist deploys a full copy) | [`src/federated/FederatedStream.sol`](../../src/federated/FederatedStream.sol) | 552 | 23,527 | 25,672 | 1,049 |
 | `FederatedEditions` (a template: the pair's ERC-1155) | [`src/federated/FederatedEditions.sol`](../../src/federated/FederatedEditions.sol) | 238 | 16,429 | 18,034 | 8,147 |
 | `FederatedDeployer` (one per template version, ownerless; genesis deploys two, which hold the creation code in `SSTORE2` data contracts and record every copy they create) | [`src/federated/FederatedDeployer.sol`](../../src/federated/FederatedDeployer.sol) | 49 | 1,425 | 2,398 | 23,151 |
-| `FederationRegistry` (replaceable) | [`src/federated/FederationRegistry.sol`](../../src/federated/FederationRegistry.sol) | 261 | 10,706 | 11,733 | 13,870 |
-| `FederatedEditionAuction` (replaceable) | [`src/federated/FederatedEditionAuction.sol`](../../src/federated/FederatedEditionAuction.sol) | 71 | 23,389 | 27,973 | 1,187 |
-| `FederatedEditionAuctionLens` | [`src/federated/FederatedEditionAuctionLens.sol`](../../src/federated/FederatedEditionAuctionLens.sol) | 108 | 23,837 | 24,138 | 739 |
+| `FederationRegistry` (replaceable) | [`src/federated/FederationRegistry.sol`](../../src/federated/FederationRegistry.sol) | 265 | 10,816 | 11,843 | 13,760 |
+| `FederatedEditionAuction` (replaceable) | [`src/federated/FederatedEditionAuction.sol`](../../src/federated/FederatedEditionAuction.sol) | 102 | 23,930 | 28,528 | 646 |
+| `FederatedEditionAuctionLens` | [`src/federated/FederatedEditionAuctionLens.sol`](../../src/federated/FederatedEditionAuctionLens.sol) | 109 | 24,021 | 24,329 | 555 |
 
 `FederatedMembership` (abstract, both templates' shared source) and the interfaces
 `IFederatedToken`, `IFederatedStream`, `IFederatedEditions` and `IFederationRegistry` count
@@ -93,8 +93,8 @@ toward the line budget with the other interfaces.
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `WorksAccessManager` | [`src/governance/WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol) | 451 | 22,738 | 25,314 | 1,838 |
-| `GovernanceConfigurator` | [`src/governance/GovernanceConfigurator.sol`](../../src/governance/GovernanceConfigurator.sol) | 51 | 11,813 | 37,443 | 12,763 |
+| `WorksAccessManager` | [`src/governance/WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol) | 471 | 23,003 | 25,579 | 1,573 |
+| `GovernanceConfigurator` | [`src/governance/GovernanceConfigurator.sol`](../../src/governance/GovernanceConfigurator.sol) | 51 | 11,813 | 37,708 | 12,763 |
 
 `WorksAccessManager` is 71 lines over OpenZeppelin's `AccessManager`, whose code is part of
 what it deploys. `GovernanceConfigurator`'s initcode includes the manager it deploys.
@@ -132,7 +132,7 @@ The "Used by" column is a reading aid; the import graph is authoritative.
 
 ### Interfaces and shared types
 
-2,548 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
+2,550 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
 [`src/economics/interfaces/`](../../src/economics/interfaces/), plus the 14-line Chainlink
 coordinator interface [`src/entropy/IVRFCoordinatorV2Plus.sol`](../../src/entropy/IVRFCoordinatorV2Plus.sol).
 `WorksHashing` is counted here and listed with the libraries above. They carry the external
