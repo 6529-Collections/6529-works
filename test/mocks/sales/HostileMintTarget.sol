@@ -119,9 +119,22 @@ contract HostileMintTarget is ERC721, IMintTarget {
         terms = _terms;
     }
 
+    /// @dev When set, `primaryTerms` answers with exactly these bytes (a hand-built encoding).
+    bytes public rawTerms;
+
+    function setRawTerms(bytes calldata raw) external {
+        rawTerms = raw;
+    }
+
     function primaryTerms(uint256, bytes calldata) external view returns (PrimaryTerms memory t) {
         Fault f = _active(Call.TERMS, address(0));
         _faultView(f);
+        bytes memory raw = rawTerms;
+        if (raw.length != 0) {
+            assembly ("memory-safe") {
+                return(add(raw, 0x20), mload(raw))
+            }
+        }
         t = _terms;
         if (f == Fault.REPORT) t.creator = liar;
     }
