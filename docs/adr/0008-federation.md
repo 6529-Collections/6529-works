@@ -86,12 +86,12 @@ with refunds; neither delisting nor exit ever touches tokens, ownership, records
   deterministic deployment proxy is no longer a federation dependency (the genesis deploy still
   uses Foundry's CREATE2 factory, as before), and with it the permissionless `publishCode`, its
   first-writer-wins record and the griefing review G found there (G2) are gone.
-- **The artist's cost.** Deploying through the deployer costs **4,957,166** Prague gas for
-  `FederatedStream` against **5,310,975** for a plain CREATE of the same initcode (-353,809: no
-  25 KB of calldata, plus the code read and one record slot, 22,100), and **3,559,820** for
-  `FederatedEditions` against 3,805,277 (-245,457). The bytes deployed are the same; under
+- **The artist's cost.** Deploying through the deployer costs **4,957,142** Prague gas for
+  `FederatedStream` against **5,310,951** for a plain CREATE of the same initcode (-353,809: no
+  25 KB of calldata, plus the code read and one record slot, 22,100), and **3,559,808** for
+  `FederatedEditions` against 3,805,265 (-245,457). The bytes deployed are the same; under
   Glamsterdam the record slot costs about 111,000 and the estimate (§9) is about **37.1M** and
-  **26.6M**. Joining costs **303,122** (284,685 as first built; the consent signature, the
+  **26.6M**. Joining costs **303,102** (284,685 as first built; the consent signature, the
   deployer's record read and the pair and content-store checks).
 
 ### 2. Joining: initiated and confirmed by the token
@@ -353,7 +353,7 @@ After ADR 0007's review fixes:
 Measured at the tip that merges the permanence branch at 4dbf9dcb, after reviews F and G
 (16 November 2026).
 
-- **Source lines:** **16,253** non-comment lines under `src/` (15,972 as first built; reviews F
+- **Source lines:** **16,255** non-comment lines under `src/` (15,972 as first built; reviews F
   and G add the provenance, the deployer, the consent, the pair rules, the exit statuses and the
   genesis scoping; the rest is the permanence branch's later fixes). The budget was raised to
   **16,000** to admit federation and to **16,500** for the reviews' fixes (owner, 16 November
@@ -368,26 +368,26 @@ Measured at the tip that merges the permanence branch at 4dbf9dcb, after reviews
   consent over the entry's facts and the exit transitions). The English auction is unchanged at
   24,062 (514). Every contract keeps 512, with no exemption.
 - **The artist pays the templates' deployment once**, through each template's deployer (§1).
-  Measured (Prague, whole transaction): `FederatedStream` **4,957,166** through its deployer
-  (5,310,975 as a plain CREATE of the same initcode: the deployer saves the 25 KB of calldata,
+  Measured (Prague, whole transaction): `FederatedStream` **4,957,142** through its deployer
+  (5,310,951 as a plain CREATE of the same initcode: the deployer saves the 25 KB of calldata,
   reads the code from its data contracts and writes one record slot); `FederatedEditions`
-  **3,559,820** (3,805,277 plain); a pair about **8.5M**. Glamsterdam estimate from ADR 0004's
+  **3,559,808** (3,805,265 plain); a pair about **8.5M**. Glamsterdam estimate from ADR 0004's
   unit prices (code 1,542 per byte, a new slot about 111,000, an empty CREATE about 210,000),
   replacing the Prague components (code at 200 per byte, a slot at 22,100, the 53,000 of the
   transaction and CREATE bases):
-  - 721: 4,957,166 + 23,044 x 1,342 (30,925,048) + 12 x 88,900 (11 constructor slots and the
-    record: 1,066,800) + 157,000 = **37,106,014** (about 37.1M);
-  - 1155: 3,559,820 + 16,429 x 1,342 (22,047,718) + 9 x 88,900 (800,100) + 157,000 =
-    **26,564,638** (about 26.6M);
+  - 721: 4,957,142 + 23,044 x 1,342 (30,925,048) + 12 x 88,900 (11 constructor slots and the
+    record: 1,066,800) + 157,000 = **37,105,990** (about 37.1M);
+  - 1155: 3,559,808 + 16,429 x 1,342 (22,047,718) + 9 x 88,900 (800,100) + 157,000 =
+    **26,564,626** (about 26.6M);
   - a pair: about **63.7M**. Calldata repricing under Glamsterdam is not modelled [U]; it would
     favour the deployer path, which sends no creation code. At 1 / 5 / 10 gwei that is about
     0.037 / 0.19 / 0.37 ETH for a 721 alone. Clones (study H §4) would cut this to about 1.5M per
     contract and remain a later template version, touching nothing permanent.
 - **Gas rows** (Prague; federated rows are their own, with ceilings in `FederationGas.t.sol`
-  and ADR 0004's table): join creating the identity 303,122 (7 slots; 284,685 as first built);
-  `approveItem` 59,357 (1); a first start deploying both vaults 669,685 (18 slots, 2 accounts);
-  a steady start 406,595 (10); a first bid 192,512 (5); settle sold 179,241 (2); settle unbid
-  153,871 (2); restart 248,347 (4); federated edition `open` 373,134 (7); `createEdition` 86,758
+  and ADR 0004's table): join creating the identity 303,102 (7 slots; 284,685 as first built);
+  `approveItem` 59,357 (1); a first start deploying both vaults 669,675 (18 slots, 2 accounts);
+  a steady start 406,585 (10); a first bid 192,512 (5); settle sold 179,241 (2); settle unbid
+  153,871 (2); restart 248,347 (4); federated edition `open` 373,094 (7); `createEdition` 86,758
   (1); edition settle 151,045 (1). The steady rows read the artist registry's pointer on each
   registry read (F7). Glamsterdam, adding about 89,000 per new slot (and about 245,600 per vault
   created): steady start about 1.30M, first start about 2.76M. A federated settlement executes
@@ -395,8 +395,8 @@ Measured at the tip that merges the permanence branch at 4dbf9dcb, after reviews
 - **Canonical rows:** the tightest start row is 344,968 (5,032 under 350,000; the 345,000 gate
   holds); start rows moved by at most 32 gas either way over the permanence tip (code hashes and
   the artist registry's code; no start-path logic changed). The edition auction's three `open`
-  rows are 290,597, 336,334 and 429,883 (+472, +472 and +442 over the permanence tip: the shared
-  bases' hooks).
+  rows are 290,567, 336,304 and 429,883 (+442 each over the permanence tip: the shared bases'
+  hooks).
 
 ### 10. Genesis wiring
 

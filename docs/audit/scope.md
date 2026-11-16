@@ -17,7 +17,7 @@ an audit.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 16,253 non-blank, non-comment lines in 111 files under `src/` (budget: 16,000; ADR 0001, amended 1 November 2026, ADR 0007 and ADR 0008) |
+| Source lines | 16,255 non-blank, non-comment lines in 111 files under `src/` (budget: 16,000; ADR 0001, amended 1 November 2026, ADR 0007 and ADR 0008) |
 | Deployed contracts | 29 per deployment without the optional VRF entropy module and 30 with it: the 26 (or 27) that `DeployV1.order` lists, the three auctions' lenses among them (each deployed in its own transaction and pinned by its auction) and the two governed vaults (`FeeRecipientVault`, `MuseumVault`, after the split ledger), plus the AccessManager the governance configurator creates, `StreamViews`, the read-only extension `Stream`'s constructor creates, and `WorkDelivery`, the first delivery contract `WorkRecords`' constructor creates (replaceable by `setDelivery`); one 66-byte `SplitVault` per payee configuration, deployed on demand by the split ledger; and, outside genesis, each federated artist's own template copies ([ADR 0008](../adr/0008-federation.md)) |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |

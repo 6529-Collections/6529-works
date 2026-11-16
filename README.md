@@ -87,7 +87,7 @@ products pay 75% to the artist's side and 25% to the network, and royalties are 
 | [`UniformEditionAuction`](src/sales/README.md), [`UniformEditionAuctionLens`](src/sales/README.md) | The edition auction: firm ETH bids on a step ladder beside the 1/1, one clearing price, FIFO at a capped step, claims | 971 + 932 |
 | [`EconomicsResolver`](src/economics/README.md), [`AssetAllowlist`](src/economics/README.md) | Terms for new works, fee recipients, currencies and increment floors | 212 + 154 |
 | [`SplitLedger`](src/economics/README.md), [`SplitVault`](src/economics/README.md) | One permanent ledger for every split wallet (66-byte vaults at predicted addresses), its accounting and signed releases | 264 + 8 |
-| [`RevenueEscrow`](src/economics/README.md), [`ClaimRouter`](src/economics/README.md), [`GovernedVault`](src/economics/README.md) | Failed-payment escrow, batch claims, the fee recipient's and museum's governed vaults | 122 + 146 + 108 |
+| [`RevenueEscrow`](src/economics/README.md), [`ClaimRouter`](src/economics/README.md), [`GovernedVault`](src/economics/README.md) | Failed-payment escrow, batch claims, the fee recipient's and museum's governed vaults | 122 + 148 + 108 |
 | [`ArtistRegistry`](src/identity/README.md), [`ConsolidationAdapter`](src/identity/README.md) | Permanent artist identity and payouts, governed recovery timers, the federation directory; consolidations through the adapter | 746 + 133 |
 | [`ContentStore`](src/content/README.md), [`DependencyRegistry`](src/content/README.md) | Content-addressed on-chain chunks and shared libraries | 436 + 66 |
 | [`Renderer`](src/content/README.md) | `tokenURI` and `fullTokenURI` for works and editions | 761 |
