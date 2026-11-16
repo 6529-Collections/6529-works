@@ -55,7 +55,9 @@ interface IWorkDelivery {
 /// @title IWorkLocators
 /// @notice The first delivery contract of 6529 Stream (`WorkDelivery`): append-only locators
 ///         per media file, registered by the artist before finalize and by the PLATFORM role at
-///         any time, and the storage operator's preferences among them. Replaceable as a whole.
+///         any time, the storage operator's preferences among them, and the storage operator's
+///         mark on a locator that no longer serves (dead, never served again). Replaceable as a
+///         whole.
 /// @dev Every bit of state has a getter and every change an event naming who made it, so a
 ///      successor or an indexer can rebuild it without calls into history.
 interface IWorkLocators is IWorkDelivery {
@@ -65,9 +67,8 @@ interface IWorkLocators is IWorkDelivery {
     /// @param index The locator's index among the file's locators, from 0.
     /// @param locator The locator added.
     /// @param addedBy The account that added it.
-    /// @param byArtist True when the work's artist added it (before finalize), false for the
-    ///        PLATFORM role; only the artist's locators feed the kind and first-registered
-    ///        fallbacks.
+    /// @param byArtist True when a wallet of the work's artist account added it (before
+    ///        finalize), false for the PLATFORM role.
     event LocatorAdded(
         uint256 indexed tokenId,
         bytes32 indexed fileId,
@@ -96,10 +97,15 @@ interface IWorkLocators is IWorkDelivery {
     event FilePreferenceSet(
         uint256 indexed tokenId, bytes32 indexed fileId, uint256 previous, uint256 next
     );
+    /// @notice The storage operator marked a locator dead (C21): it is never served again.
+    /// @param tokenId The work's token ID.
+    /// @param fileId The media file.
+    /// @param index The locator's index among the file's locators.
+    event LocatorDead(uint256 indexed tokenId, bytes32 indexed fileId, uint256 index);
 
     /// @notice The locator kind is NONE or ONCHAIN, the URI is not a content address of its kind
     ///         (see `Locator`) or is already registered for the file, or the caller's quota for
-    ///         the file is used up.
+    ///         the file is used up; or an index names no locator, or a dead one.
     error InvalidLocator();
 
     /// @notice Appends an ARWEAVE or IPFS locator for one of a work's media files. Callable by
@@ -135,12 +141,23 @@ interface IWorkLocators is IWorkDelivery {
     /// @param kind The collection's new preferred kind.
     function setCollectionPreferredKind(uint256 collectionId, LocatorKind kind) external;
     /// @notice Sets a file's preferred locator index (`type(uint256).max` clears it), which must
-    ///         be registered. STORAGE_OPERATOR role.
+    ///         be registered and live. STORAGE_OPERATOR role.
     /// @param tokenId A work with an open record.
     /// @param fileId One of the work's media files.
-    /// @param index An index into the file's locators (`InvalidLocator` otherwise), or
+    /// @param index An index into the file's live locators (`InvalidLocator` otherwise), or
     ///        `type(uint256).max`.
     function setFilePreference(uint256 tokenId, bytes32 fileId, uint256 index) external;
+    /// @notice Marks a file's locator dead, for good: it is never served again, whoever added it,
+    ///         and its URI stays registered (not added again). STORAGE_OPERATOR role.
+    /// @param tokenId A work with an open record.
+    /// @param fileId One of the work's media files.
+    /// @param index An index into the file's live locators (`InvalidLocator` otherwise).
+    function markLocatorDead(uint256 tokenId, bytes32 fileId, uint256 index) external;
+    /// @notice A file's dead locators.
+    /// @param tokenId Any token ID.
+    /// @param fileId Any file ID.
+    /// @return Bit `i` set when the locator at index `i` is dead.
+    function deadLocators(uint256 tokenId, bytes32 fileId) external view returns (uint256);
     /// @notice The global preferred kind.
     /// @return The kind, or NONE when unset.
     function preferredKind() external view returns (LocatorKind);

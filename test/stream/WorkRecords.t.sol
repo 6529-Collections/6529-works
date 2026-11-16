@@ -937,6 +937,104 @@ contract WorkRecordsTest is RecordsFixture {
         records.finalize(99, state);
     }
 
+    /// @dev C9: after the primary sale settled, anyone's first finalize records a notice and
+    ///      changes nothing else; a finalize by anyone fails at 13 days and 23 hours and
+    ///      succeeds at 14 days, pinning the record as it then stands. Fails without the change:
+    ///      only the artist could finalize (`NotWorkArtist`).
+    function test_finalize_anyoneFourteenDaysAfterANotice() public {
+        (uint256 tokenId,) = _work(1);
+        auction.settle(IStream(address(stream)), tokenId);
+        bytes32 state = records.workStateHash(tokenId);
+        uint256 noticedAt = block.timestamp;
+        vm.expectEmit(address(records));
+        emit IWorkRecords.FinalizeNoticeRecorded(tokenId, noticedAt + 14 days);
+        vm.prank(outsider);
+        records.finalize(tokenId, state);
+        assertEq(records.finalizeNoticeAt(tokenId), noticedAt);
+        assertFalse(records.record(tokenId).finalized, "a notice only");
+        assertEq(records.workStateHash(tokenId), state, "the state did not move");
+
+        vm.warp(noticedAt + 13 days);
+        vm.prank(platform);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IWorkRecords.FinalizeNotDue.selector, tokenId, noticedAt + 14 days
+            )
+        );
+        records.finalize(tokenId, state);
+        vm.warp(noticedAt + 14 days - 1);
+        vm.prank(outsider);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IWorkRecords.FinalizeNotDue.selector, tokenId, noticedAt + 14 days
+            )
+        );
+        records.finalize(tokenId, state);
+        vm.warp(noticedAt + 14 days);
+        vm.expectEmit(true, false, false, false, address(records));
+        emit IWorkRecords.WorkFinalized(tokenId, address(renderer), bytes32(0));
+        vm.prank(platform);
+        records.finalize(tokenId, state);
+        assertTrue(records.record(tokenId).finalized);
+        assertEq(records.pinnedRenderer(tokenId), address(renderer));
+        assertEq(records.finalizeNoticeAt(tokenId), noticedAt, "the notice stays");
+    }
+
+    /// @dev C9: before the primary sale settled no notice can be recorded; the artist finalizes
+    ///      at any time, a notice pending or not, and a second notice does not restart the wait.
+    function test_finalize_noticeNeedsASettledSaleAndTheArtistIsNeverHeldBack() public {
+        (uint256 tokenId,) = _work(1);
+        bytes32 state = records.workStateHash(tokenId);
+        vm.prank(outsider);
+        vm.expectRevert(
+            abi.encodeWithSelector(IWorkRecords.NotWorkArtist.selector, tokenId, outsider)
+        );
+        records.finalize(tokenId, state);
+        assertEq(records.finalizeNoticeAt(tokenId), 0);
+        auction.settle(IStream(address(stream)), tokenId);
+        uint256 noticedAt = block.timestamp;
+        vm.prank(outsider);
+        records.finalize(tokenId, state);
+        vm.warp(noticedAt + 1 days);
+        vm.prank(outsider);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IWorkRecords.FinalizeNotDue.selector, tokenId, noticedAt + 14 days
+            )
+        );
+        records.finalize(tokenId, state);
+        assertEq(records.finalizeNoticeAt(tokenId), noticedAt, "not restarted");
+        // A second wallet of the artist's account finalizes at once.
+        address second = makeAddr("secondWallet");
+        artists.setWallet(uint160(artist), second, true);
+        vm.prank(second);
+        records.finalize(tokenId, state);
+        assertTrue(records.record(tokenId).finalized);
+    }
+
+    /// @dev C9: a finalize after the notice still binds the state hash and the structural
+    ///      checks: a stale state hash is refused and the record can still change before.
+    function test_finalize_afterANoticeTheArtistMayStillEditFirst() public {
+        (uint256 tokenId,) = _work(1);
+        auction.settle(IStream(address(stream)), tokenId);
+        bytes32 state = records.workStateHash(tokenId);
+        vm.prank(outsider);
+        records.finalize(tokenId, state);
+        bytes32 nextRecord = _record(77);
+        vm.prank(artist);
+        records.setRecord(tokenId, nextRecord, state);
+        bytes32 moved = records.workStateHash(tokenId);
+        vm.warp(block.timestamp + 14 days);
+        vm.prank(outsider);
+        vm.expectRevert(
+            abi.encodeWithSelector(IWorkRecords.StateHashMismatch.selector, state, moved)
+        );
+        records.finalize(tokenId, state);
+        vm.prank(outsider);
+        records.finalize(tokenId, moved);
+        assertEq(records.record(tokenId).recordFileId, nextRecord);
+    }
+
     function _relicense(uint256 tokenId, PackageItem memory item, License memory next) internal {
         bytes32 state = records.workStateHash(tokenId);
         uint64 deadline = uint64(block.timestamp + 1 days);
@@ -1282,12 +1380,17 @@ contract WorkRecordsTest is RecordsFixture {
 
         bytes[] memory forged = _both(structHash);
         forged[1] = _sign(0xBAD, structHash);
-        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidConsent.selector, tokenId, 1));
+        vm.expectRevert(SignatureReverts.invalid(vm.addr(0xBAD)));
+        records.relicense(tokenId, next, item, state, deadline, forged);
+
+        // The collaborator's proof naming the artist's wallet: not a wallet of its account.
+        forged[1] = abi.encodePacked(artist, _sign(artistKey, structHash));
+        vm.expectRevert(SignatureReverts.invalid(artist));
         records.relicense(tokenId, next, item, state, deadline, forged);
 
         bytes[] memory otherPayload =
             _both(_relicenseHash(tokenId, _license("mit"), state, deadline));
-        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidConsent.selector, tokenId, 0));
+        vm.expectRevert(SignatureReverts.invalid(artist));
         records.relicense(tokenId, next, item, state, deadline, otherPayload);
 
         PackageItem memory other = _item(9);
@@ -1321,7 +1424,7 @@ contract WorkRecordsTest is RecordsFixture {
         bytes32 structHash = _relicenseHash(tokenId, next, state, deadline);
         bytes[] memory sigs = _both(structHash);
         vm.prank(governor);
-        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidConsent.selector, tokenId, 1));
+        vm.expectRevert(SignatureReverts.invalid(collaborator));
         records.relicense(tokenId, next, item, state, deadline, sigs);
         sigs[1] = _sign(newKey, structHash);
         vm.prank(governor);
@@ -1390,9 +1493,9 @@ contract WorkRecordsTest is RecordsFixture {
         bytes32 digest = _digest(_relicenseHash(tokenId, next, state, deadline));
         bytes[] memory sigs = new bytes[](2);
         (bytes32 r, bytes32 vs) = vm.signCompact(artistKey, digest);
-        sigs[0] = abi.encodePacked(r, vs);
+        sigs[0] = abi.encodePacked(artist, r, vs);
         (r, vs) = vm.signCompact(collaboratorKey, digest);
-        sigs[1] = abi.encodePacked(r, vs);
+        sigs[1] = abi.encodePacked(collaborator, r, vs);
         vm.prank(governor);
         records.relicense(tokenId, next, item, state, deadline, sigs);
         assertEq(records.licenseOf(tokenId).spdxId, "cc0-1.0");
@@ -1500,23 +1603,19 @@ contract WorkRecordsTest is RecordsFixture {
         assertTrue(found);
     }
 
-    /// @dev A rate above Stream's denominator is above the current rate, so lower-only refuses
-    ///      it first (ADR 0006); Stream's own `InvalidRoyaltyRate` stays as a second guard.
+    /// @dev A rate above 100,000 is refused by Stream (`InvalidRoyaltyRate`) even with every
+    ///      consent; a consent signed for another rate fails the registry's signature check.
     function test_setRoyaltyRate_reverts() public {
         (uint256 tokenId, PackageItem memory item) = _work(1);
         bytes32 state = records.workStateHash(tokenId);
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes[] memory sigs = _both(_royaltyHash(tokenId, 100_001, state, deadline));
         vm.prank(governor);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IWorkPowers.RoyaltyRateNotLowered.selector, tokenId, 6_529, 100_001
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidRoyaltyRate.selector, 100_001));
         records.setRoyaltyRate(tokenId, 100_001, item, state, deadline, sigs);
         sigs = _both(_royaltyHash(tokenId, 1, state, deadline));
         vm.prank(governor);
-        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidConsent.selector, tokenId, 0));
+        vm.expectRevert(SignatureReverts.invalid(artist));
         records.setRoyaltyRate(tokenId, 2, item, state, deadline, sigs);
         vm.prank(outsider);
         vm.expectRevert(
@@ -1550,11 +1649,57 @@ contract WorkRecordsTest is RecordsFixture {
         assertEq(editionsMock.rateOf(tokenId), 5_000);
     }
 
+    /// @dev R10: a rise with every party's consent applies in Stream (and the state hash moves);
+    ///      the same rise with one party's consent missing (or signed by a stranger) fails.
+    ///      Fails without the change: any rise reverted with `RoyaltyRateNotLowered`.
+    function test_setRoyaltyRate_risesWithEveryConsent() public {
+        (uint256 tokenId, PackageItem memory item) = _work(1);
+        bytes32 state = records.workStateHash(tokenId);
+        uint64 deadline = uint64(block.timestamp + 3 days);
+        bytes32 structHash = _royaltyHash(tokenId, 10_000, state, deadline);
+        bytes[] memory sigs = _both(structHash);
+        // One party missing: the stranger's signature stands in for the collaborator's.
+        bytes[] memory short = new bytes[](2);
+        (short[0], short[1]) = (sigs[0], _sign(0xBAD, structHash));
+        vm.prank(governor);
+        vm.expectRevert(SignatureReverts.invalid(vm.addr(0xBAD)));
+        records.setRoyaltyRate(tokenId, 10_000, item, state, deadline, short);
+        vm.expectEmit(address(stream));
+        emit IStream.RoyaltyRateChanged(tokenId, 6_529, 10_000);
+        vm.prank(governor);
+        records.setRoyaltyRate(tokenId, 10_000, item, state, deadline, sigs);
+        assertEq(IStreamViews(address(stream)).work(tokenId).royaltyRate, 10_000);
+        (, uint256 amount) = stream.royaltyInfo(tokenId, 1 ether);
+        assertEq(amount, 0.1 ether);
+    }
+
+    /// @dev C6: any wallet of a party's 6529 account consents for it; a wallet that left the
+    ///      account no longer does. Fails without the change: only the single authority's
+    ///      signature counted.
+    function test_setRoyaltyRate_aSecondWalletOfAnAccountConsents() public {
+        (uint256 tokenId, PackageItem memory item) = _work(1);
+        uint256 secondKey = 0xC0FFEE;
+        address second = vm.addr(secondKey);
+        artists.setWallet(uint160(collaborator), second, true);
+        bytes32 state = records.workStateHash(tokenId);
+        uint64 deadline = uint64(block.timestamp + 3 days);
+        bytes32 structHash = _royaltyHash(tokenId, 5_000, state, deadline);
+        bytes[] memory sigs = new bytes[](2);
+        (sigs[0], sigs[1]) = (_sign(artistKey, structHash), _sign(secondKey, structHash));
+        artists.setWallet(uint160(collaborator), second, false);
+        vm.prank(governor);
+        vm.expectRevert(SignatureReverts.invalid(second));
+        records.setRoyaltyRate(tokenId, 5_000, item, state, deadline, sigs);
+        artists.setWallet(uint160(collaborator), second, true);
+        vm.prank(governor);
+        records.setRoyaltyRate(tokenId, 5_000, item, state, deadline, sigs);
+        assertEq(IStreamViews(address(stream)).work(tokenId).royaltyRate, 5_000);
+    }
+
     /// Regression: M4 in the reviews of #22
-    /// @dev Consents signed at one state never replay once the version moved. Rates are
-    ///      lower-only (ADR 0006), so a round trip A -> B -> A no longer exists; two consents
-    ///      collected at the same state stand in for it: after the first applies, the second's
-    ///      state hash is gone.
+    /// @dev Consents signed at one state never replay once the version moved: two consents
+    ///      collected at the same state, after the first applies, the second's state hash is
+    ///      gone.
     function test_setRoyaltyRate_aRoundTripDoesNotReplayConsents() public {
         (uint256 tokenId, PackageItem memory item) = _work(1);
         bytes32 s0 = records.workStateHash(tokenId);
@@ -1637,16 +1782,6 @@ contract WorkRecordsTest is RecordsFixture {
 
     // ------------------------------------------------------------------------------ repin
 
-    function _repinHash(uint256 tokenId, address r, bytes32 state, uint64 deadline)
-        internal
-        view
-        returns (bytes32)
-    {
-        return keccak256(
-            abi.encode(Typehashes.RENDERER_REPIN, tokenId, r, r.codehash, state, deadline)
-        );
-    }
-
     function _finalized(uint256 salt) internal returns (uint256 tokenId) {
         (tokenId,) = _work(salt);
         bytes32 state = records.workStateHash(tokenId);
@@ -1654,12 +1789,12 @@ contract WorkRecordsTest is RecordsFixture {
         records.finalize(tokenId, state);
     }
 
+    /// @dev C8: the network repins a finalized work's renderer alone, with no artist signature.
+    ///      Fails without the change: the repin needed the artist's signature and a deadline.
     function test_repinRenderer_errataPath() public {
         uint256 tokenId = _finalized(1);
         MockRenderer next = new MockRenderer("errata");
         bytes32 state = records.workStateHash(tokenId);
-        uint64 deadline = uint64(block.timestamp + 31 days);
-        bytes memory sig = _sign(artistKey, _repinHash(tokenId, address(next), state, deadline));
         vm.expectEmit(address(records));
         emit IWorkRecords.RendererRepinned(
             tokenId,
@@ -1673,7 +1808,7 @@ contract WorkRecordsTest is RecordsFixture {
         vm.expectEmit(address(stream));
         emit MetadataUpdate(tokenId);
         vm.prank(governor);
-        records.repinRenderer(tokenId, address(next), address(next).codehash, state, deadline, sig);
+        records.repinRenderer(tokenId, address(next), address(next).codehash, state);
         assertEq(stream.rendererOf(tokenId), address(next));
         assertEq(records.record(tokenId).version, 2);
     }
@@ -1681,50 +1816,48 @@ contract WorkRecordsTest is RecordsFixture {
     function test_repinRenderer_reverts() public {
         (uint256 open,) = _work(9);
         MockRenderer next = new MockRenderer("errata");
-        uint64 deadline = uint64(block.timestamp + 1 days);
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.WorkNotFinalized.selector, open));
-        records.repinRenderer(open, address(next), bytes32(0), bytes32(0), deadline, "");
+        records.repinRenderer(open, address(next), bytes32(0), bytes32(0));
 
         uint256 tokenId = _finalized(1);
         bytes32 state = records.workStateHash(tokenId);
         address eoa = makeAddr("eoa");
         vm.startPrank(governor);
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
-        records.repinRenderer(tokenId, eoa, bytes32(0), state, deadline, "");
+        records.repinRenderer(tokenId, eoa, bytes32(0), state);
         vm.expectRevert(
             abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(next))
         );
-        records.repinRenderer(tokenId, address(next), keccak256("wrong"), state, deadline, "");
+        records.repinRenderer(tokenId, address(next), keccak256("wrong"), state);
         vm.expectRevert(
             abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(store))
         );
-        records.repinRenderer(tokenId, address(store), address(store).codehash, state, deadline, "");
-        bytes memory wrong =
-            _sign(collaboratorKey, _repinHash(tokenId, address(next), state, deadline));
-        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidConsent.selector, tokenId, 0));
-        records.repinRenderer(
-            tokenId, address(next), address(next).codehash, state, deadline, wrong
+        records.repinRenderer(tokenId, address(store), address(store).codehash, state);
+        vm.expectRevert(
+            abi.encodeWithSelector(IWorkRecords.StateHashMismatch.selector, bytes32(0), state)
         );
+        records.repinRenderer(tokenId, address(next), address(next).codehash, bytes32(0));
         vm.stopPrank();
 
-        bytes memory sig = _sign(artistKey, _repinHash(tokenId, address(next), state, deadline));
         vm.prank(outsider);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)
         );
-        records.repinRenderer(tokenId, address(next), address(next).codehash, state, deadline, sig);
-        vm.warp(deadline + 1);
-        vm.prank(governor);
-        vm.expectRevert(SignatureReverts.expired(deadline));
-        records.repinRenderer(tokenId, address(next), address(next).codehash, state, deadline, sig);
+        records.repinRenderer(tokenId, address(next), address(next).codehash, state);
+        // The artist alone cannot repin: it is the network's action.
+        vm.prank(artist);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, artist)
+        );
+        records.repinRenderer(tokenId, address(next), address(next).codehash, state);
     }
 
     function test_repinRenderer_samePinIsNoOp() public {
         uint256 tokenId = _finalized(1);
         vm.recordLogs();
         vm.prank(governor);
-        records.repinRenderer(tokenId, address(renderer), bytes32(0), bytes32(0), 0, "");
+        records.repinRenderer(tokenId, address(renderer), bytes32(0), bytes32(0));
         assertEq(vm.getRecordedLogs().length, 0);
     }
 
@@ -1751,26 +1884,22 @@ contract WorkRecordsTest is RecordsFixture {
         }
     }
 
-    /// @dev A repin names the renderer's code hash exactly (a wrong one sorting below or above
-    ///      is refused), and consents are good through their deadline second.
-    function test_repinRenderer_refusesAWrongHashEitherWayAndKeepsTheDeadlineSecond() public {
+    /// @dev A repin names the renderer's code hash exactly: a wrong one sorting below or above
+    ///      is refused.
+    function test_repinRenderer_refusesAWrongHashEitherWay() public {
         uint256 tokenId = _finalized(1);
         MockRenderer next = new MockRenderer("errata");
         bytes32 state = records.workStateHash(tokenId);
-        uint64 deadline = uint64(block.timestamp + 1 days);
         bytes32[2] memory wrong = [bytes32(0), bytes32(type(uint256).max)];
         vm.startPrank(governor);
         for (uint256 i; i < wrong.length; ++i) {
             vm.expectRevert(
                 abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(next))
             );
-            records.repinRenderer(tokenId, address(next), wrong[i], state, deadline, "");
+            records.repinRenderer(tokenId, address(next), wrong[i], state);
         }
+        records.repinRenderer(tokenId, address(next), address(next).codehash, state);
         vm.stopPrank();
-        bytes memory sig = _sign(artistKey, _repinHash(tokenId, address(next), state, deadline));
-        vm.warp(deadline);
-        vm.prank(governor);
-        records.repinRenderer(tokenId, address(next), address(next).codehash, state, deadline, sig);
         assertEq(stream.rendererOf(tokenId), address(next));
     }
 
@@ -1781,10 +1910,8 @@ contract WorkRecordsTest is RecordsFixture {
         uint256 first = _finalized(1);
         MockRenderer next = new MockRenderer("errata");
         bytes32 state = records.workStateHash(first);
-        uint64 deadline = uint64(block.timestamp + 1 days);
-        bytes memory sig = _sign(artistKey, _repinHash(first, address(next), state, deadline));
         vm.prank(governor);
-        records.repinRenderer(first, address(next), address(next).codehash, state, deadline, sig);
+        records.repinRenderer(first, address(next), address(next).codehash, state);
 
         uint256 tokenId = _finalized(2);
         state = records.workStateHash(tokenId);
@@ -1799,12 +1926,11 @@ contract WorkRecordsTest is RecordsFixture {
             if (lower) below = true;
             else above = true;
             vm.etch(address(next), moved);
-            sig = _sign(artistKey, _repinHash(tokenId, address(next), state, deadline));
             vm.prank(governor);
             vm.expectRevert(
                 abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, address(next))
             );
-            records.repinRenderer(tokenId, address(next), keccak256(moved), state, deadline, sig);
+            records.repinRenderer(tokenId, address(next), keccak256(moved), state);
         }
     }
 
@@ -2110,11 +2236,11 @@ contract WorkRecordsTest is RecordsFixture {
         preferredOf(records, tokenId, keccak256("x"));
     }
 
-    /// @dev Every fallback tier (collection kind, global kind, first registered) considers only
-    ///      the artist's locators, whatever the platform registered before them; the storage
-    ///      operator's file preference still selects a platform locator.
-    /// Regression: RFX-REC-1
-    function test_preferredLocator_fallbacksConsiderOnlyTheArtistsLocators() public {
+    /// @dev C33: every tier (collection kind, global kind, first registered) chooses among all
+    ///      live locators, the platform's included, in registration order; the storage
+    ///      operator's file preference still wins. Fails without the change: the kind and
+    ///      first-registered tiers considered only the artist's locators.
+    function test_preferredLocator_kindPreferencesChooseAmongAllLocators() public {
         (uint256 tokenId,) = _work(1);
         bytes32 file = _primary(tokenId);
         vm.startPrank(platform);
@@ -2125,50 +2251,28 @@ contract WorkRecordsTest is RecordsFixture {
         delivery.addLocator(tokenId, file, _ar("a2"));
         delivery.addLocator(tokenId, file, _ipfs("a3"));
         vm.stopPrank();
-        vm.prank(platform);
-        delivery.addLocator(tokenId, file, _ar("p4"));
 
-        // First registered: the artist's first, not the platform's index 0.
-        _expectPreferred(tokenId, file, 2, CA.arweave("a2"));
-        vm.startPrank(storageOperator);
-        // Global kind: the artist's first IPFS copy, not the platform's index 1.
-        delivery.setPreferredKind(LocatorKind.IPFS);
-        _expectPreferred(tokenId, file, 3, CA.ipfs("a3"));
-        // Collection kind: the artist's first Arweave copy, not the platform's index 0.
-        delivery.setCollectionPreferredKind(collectionId, LocatorKind.ARWEAVE);
-        _expectPreferred(tokenId, file, 2, CA.arweave("a2"));
-        // The operator's explicit pick of a platform locator is served.
-        delivery.setFilePreference(tokenId, file, 0);
+        // First registered: the platform's index 0.
         _expectPreferred(tokenId, file, 0, CA.arweave("p0"));
-        delivery.setFilePreference(tokenId, file, 4);
-        _expectPreferred(tokenId, file, 4, CA.arweave("p4"));
-        delivery.setFilePreference(tokenId, file, NONE);
-        _expectPreferred(tokenId, file, 2, CA.arweave("a2"));
-        vm.stopPrank();
-    }
-
-    /// @dev A kind only the platform registered never matches: resolution falls through to the
-    ///      artist's first locator.
-    /// Regression: RFX-REC-1
-    function test_preferredLocator_aPlatformOnlyKindFallsThroughToTheArtist() public {
-        (uint256 tokenId,) = _work(1);
-        bytes32 file = _primary(tokenId);
-        vm.prank(platform);
-        delivery.addLocator(tokenId, file, _ipfs("p0"));
-        vm.prank(artist);
-        delivery.addLocator(tokenId, file, _ar("a1"));
         vm.startPrank(storageOperator);
+        // Global kind: the first IPFS copy, the platform's index 1.
         delivery.setPreferredKind(LocatorKind.IPFS);
-        _expectPreferred(tokenId, file, 1, CA.arweave("a1"));
-        delivery.setCollectionPreferredKind(collectionId, LocatorKind.IPFS);
-        _expectPreferred(tokenId, file, 1, CA.arweave("a1"));
+        _expectPreferred(tokenId, file, 1, CA.ipfs("p1"));
+        // Collection kind: the first Arweave copy.
+        delivery.setCollectionPreferredKind(collectionId, LocatorKind.ARWEAVE);
+        _expectPreferred(tokenId, file, 0, CA.arweave("p0"));
+        // The operator's explicit pick wins.
+        delivery.setFilePreference(tokenId, file, 3);
+        _expectPreferred(tokenId, file, 3, CA.ipfs("a3"));
+        delivery.setFilePreference(tokenId, file, NONE);
+        _expectPreferred(tokenId, file, 0, CA.arweave("p0"));
         vm.stopPrank();
     }
 
-    /// @dev With only platform locators, the file resolves to the empty locator, then to the
-    ///      implicit ONCHAIN copy once the work is synced, until the operator picks one.
-    /// Regression: RFX-REC-1
-    function test_preferredLocator_platformOnlyLocatorsNeedTheOperatorsPick() public {
+    /// @dev C33: with only platform locators, the file is served from them at once: no
+    ///      operator pick is needed, and a kind preference picks the platform's copy of that
+    ///      kind. Fails without the change: the empty locator was served.
+    function test_preferredLocator_platformOnlyLocatorsAreServed() public {
         (uint256 tokenId, PackageItem memory item, MediaFile[] memory media) = _minted(1, true);
         records.openRecord(tokenId, item, media);
         bytes32 file = media[0].fileId;
@@ -2176,42 +2280,72 @@ contract WorkRecordsTest is RecordsFixture {
         delivery.addLocator(tokenId, file, _ar("p0"));
         delivery.addLocator(tokenId, file, _ipfs("p1"));
         vm.stopPrank();
-        _expectNoLocator(tokenId, file);
-        vm.startPrank(storageOperator);
-        delivery.setPreferredKind(LocatorKind.ARWEAVE);
-        delivery.setCollectionPreferredKind(collectionId, LocatorKind.IPFS);
-        vm.stopPrank();
-        _expectNoLocator(tokenId, file);
-
-        records.syncOnChain(tokenId, 0, type(uint256).max);
-        (Locator memory chosen, uint256 index) = preferredOf(records, tokenId, file);
-        assertEq(index, NONE);
-        assertEq(uint8(chosen.kind), uint8(LocatorKind.ONCHAIN));
-
+        _expectPreferred(tokenId, file, 0, CA.arweave("p0"));
         vm.prank(storageOperator);
-        delivery.setFilePreference(tokenId, file, 1);
+        delivery.setCollectionPreferredKind(collectionId, LocatorKind.IPFS);
         _expectPreferred(tokenId, file, 1, CA.ipfs("p1"));
     }
 
-    /// @dev After finalize only the platform adds; its locators still need the operator's pick,
-    ///      and the artist's earlier locators keep serving the fallbacks.
-    /// Regression: RFX-REC-1
-    function test_preferredLocator_platformLocatorsAfterFinalizeNeedTheOperatorsPick() public {
+    /// @dev C21: the storage operator marks a locator dead; it is never served again, by any
+    ///      tier, and a file preference naming it is passed over. When every locator is dead,
+    ///      the implicit ONCHAIN copy of a synced work, else nothing, is served. Fails without
+    ///      the change: no locator could be marked dead.
+    function test_markLocatorDead_aDeadLocatorIsNeverServed() public {
         (uint256 tokenId,) = _work(1);
         bytes32 file = _primary(tokenId);
         vm.prank(artist);
-        delivery.addLocator(tokenId, file, _ar("a0"));
-        bytes32 state = records.workStateHash(tokenId);
-        vm.prank(artist);
-        records.finalize(tokenId, state);
+        delivery.addLocator(tokenId, file, _ipfs("a0"));
         vm.prank(platform);
         delivery.addLocator(tokenId, file, _ipfs("p1"));
-        vm.prank(storageOperator);
+        vm.startPrank(storageOperator);
+        delivery.setFilePreference(tokenId, file, 0);
         delivery.setPreferredKind(LocatorKind.IPFS);
-        _expectPreferred(tokenId, file, 0, CA.arweave("a0"));
-        vm.prank(storageOperator);
-        delivery.setFilePreference(tokenId, file, 1);
+        vm.expectEmit(address(delivery));
+        emit IWorkLocators.LocatorDead(tokenId, file, 0);
+        vm.expectEmit(address(stream));
+        emit MetadataUpdate(tokenId);
+        delivery.markLocatorDead(tokenId, file, 0);
+        assertEq(delivery.deadLocators(tokenId, file), 1);
+        // The preference names a dead locator: passed over, the kind serves the live one.
         _expectPreferred(tokenId, file, 1, CA.ipfs("p1"));
+        // A dead locator can be neither picked nor marked again; an unknown index is refused.
+        vm.expectRevert(IWorkLocators.InvalidLocator.selector);
+        delivery.setFilePreference(tokenId, file, 0);
+        vm.expectRevert(IWorkLocators.InvalidLocator.selector);
+        delivery.markLocatorDead(tokenId, file, 0);
+        vm.expectRevert(IWorkLocators.InvalidLocator.selector);
+        delivery.markLocatorDead(tokenId, file, 2);
+        delivery.markLocatorDead(tokenId, file, 1);
+        vm.stopPrank();
+        _expectNoLocator(tokenId, file);
+        records.syncOnChain(tokenId, 0, type(uint256).max);
+        (Locator memory chosen, uint256 index) = preferredOf(records, tokenId, file);
+        assertEq(index, NONE);
+        assertEq(uint8(chosen.kind), uint8(LocatorKind.ONCHAIN), "the implicit on-chain copy");
+        // Its URI stays registered: the same copy is not added again.
+        vm.prank(platform);
+        vm.expectRevert(IWorkLocators.InvalidLocator.selector);
+        delivery.addLocator(tokenId, file, _ipfs("p1"));
+    }
+
+    /// @dev C21: only the storage operator marks a locator dead; the artist and the platform
+    ///      cannot.
+    function test_markLocatorDead_onlyTheStorageOperator() public {
+        (uint256 tokenId,) = _work(1);
+        bytes32 file = _primary(tokenId);
+        vm.prank(artist);
+        delivery.addLocator(tokenId, file, _ipfs("a0"));
+        address[2] memory callers = [artist, platform];
+        for (uint256 i; i < callers.length; ++i) {
+            vm.prank(callers[i]);
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    IAccessManaged.AccessManagedUnauthorized.selector, callers[i]
+                )
+            );
+            delivery.markLocatorDead(tokenId, file, 0);
+        }
+        assertEq(delivery.deadLocators(tokenId, file), 0);
     }
 
     /// @dev A platform locator emits the same events as before: `LocatorAdded` and ERC-4906

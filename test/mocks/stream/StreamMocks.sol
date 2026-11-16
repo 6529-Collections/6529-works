@@ -5,7 +5,10 @@ import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { Splits } from "src/economics/Splits.sol";
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import { IAccounts } from "src/interfaces/IAccounts.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
+import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
 import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
@@ -249,14 +252,80 @@ contract ConstantMintPolicy is Supports165 {
 }
 
 /// @notice Artist registry mock: identities are registered explicitly; an unknown ID reverts.
-contract MockArtistRegistry is Supports165 {
+///         Also the accounts view (`IAccounts`): an account's wallets are its root (the
+///         authority) and any wallet added with `setWallet`; an unregistered account is its own
+///         single wallet; `requireSigned` really verifies the signature.
+contract MockArtistRegistry is Supports165, EIP712, IAccounts {
     error UnknownArtist(uint256 artistId);
 
     mapping(uint256 => address) internal _authority;
     mapping(address => uint256) public artistIdOf;
+    mapping(uint256 => mapping(address => bool)) internal _extraWallets;
+    mapping(uint256 => uint48) internal _frozen;
+
+    constructor() EIP712("6529 Accounts", "1") { }
 
     function _interface() internal pure override returns (bytes4) {
         return type(IArtistRegistry).interfaceId;
+    }
+
+    /// @notice Adds or removes a consolidated wallet of `artistId`.
+    function setWallet(uint256 artistId, address wallet, bool isIt) external {
+        _extraWallets[artistId][wallet] = isIt;
+    }
+
+    /// @notice Freezes `artistId` (no wallet acts) or thaws it.
+    function setFrozen(uint256 artistId, bool frozen) external {
+        _frozen[artistId] = frozen ? type(uint48).max : 0;
+    }
+
+    function isWallet(uint256 accountId, address wallet) public view returns (bool) {
+        uint256 id = accountId;
+        if (_authority[id] == address(0) && id <= type(uint160).max) {
+            uint256 known = artistIdOf[address(uint160(id))];
+            if (known != 0) id = known;
+        }
+        if (_frozen[id] > block.timestamp) return false;
+        address root = _authority[id];
+        if (root == address(0)) return wallet != address(0) && uint256(uint160(wallet)) == id;
+        return wallet == root || _extraWallets[id][wallet];
+    }
+
+    function requireSigned(uint256 accountId, bytes32 digest, bytes calldata proof)
+        public
+        view
+        returns (address wallet)
+    {
+        if (proof.length < 20) revert SignatureVerifier.InvalidSignature(address(0));
+        wallet = address(bytes20(proof[:20]));
+        if (!isWallet(accountId, wallet)) revert SignatureVerifier.InvalidSignature(wallet);
+        SignatureVerifier.check(wallet, digest, proof[20:]);
+    }
+
+    function requireConsent(uint256 accountId, bytes32 what, bytes calldata proof)
+        external
+        view
+        returns (address)
+    {
+        return requireSigned(accountId, consentDigest(msg.sender, what), proof);
+    }
+
+    function consentDigest(address subject, bytes32 what) public view returns (bytes32) {
+        return _hashTypedDataV4(
+            keccak256(abi.encode(keccak256("Consent(address subject,bytes32 what)"), subject, what))
+        );
+    }
+
+    function frozenUntil(uint256 accountId) external view returns (uint48) {
+        return _frozen[accountId];
+    }
+
+    function isFederationDelisted(uint256) external pure returns (bool) {
+        return false;
+    }
+
+    function federatedFeeShare(address) external pure returns (uint32) {
+        return 0;
     }
 
     function register(address account) external returns (uint256 artistId) {

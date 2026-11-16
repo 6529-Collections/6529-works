@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
+import { Roles } from "src/governance/Roles.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
@@ -48,7 +49,8 @@ contract StreamInvariantTest is RecordsFixture {
         handler.addCollection(stream.createCollection("Third", keccak256("third")));
         vm.stopPrank();
         handler.setEconomics(econ, ISplitFactory(address(splitFactory)), feeRecipient);
-        bytes4[] memory selectors = new bytes4[](16);
+        _map(address(stream), stream.lowerFeeShare.selector, Roles.PARAMETER_SETTER);
+        bytes4[] memory selectors = new bytes4[](17);
         selectors[0] = handler.mint.selector;
         selectors[1] = handler.burn.selector;
         selectors[2] = handler.deliver.selector;
@@ -65,6 +67,7 @@ contract StreamInvariantTest is RecordsFixture {
         selectors[13] = handler.settle.selector;
         selectors[14] = handler.forgeSettle.selector;
         selectors[15] = handler.replayRoyalty.selector;
+        selectors[16] = handler.lowerFeeShare.selector;
         targetContract(address(handler));
         targetSelector(FuzzSelector({ addr: address(handler), selectors: selectors }));
     }
@@ -102,8 +105,9 @@ contract StreamInvariantTest is RecordsFixture {
     }
 
     /// @dev The royalty receiver is the one the handler derived from the mint's fee terms
-    ///      with the real split factory, and never changes; the rate changes only through the
-    ///      consented, governed path the handler tracks (replayed consents never apply).
+    ///      with the real split factory, and changes only when the network lowers the fee share
+    ///      (R9); the rate changes only through the consented, governed path the handler tracks
+    ///      (replayed consents never apply); the fee share never rises.
     function invariant_royaltyTermsLocked() public view {
         uint256 minted = IStream(address(stream)).totalMinted();
         for (uint256 id = 1; id <= minted; ++id) {
@@ -116,6 +120,7 @@ contract StreamInvariantTest is RecordsFixture {
             assertEq(IStreamViews(address(stream)).work(id).seller, handler.ghostSeller(id));
             assertEq(IStreamViews(address(stream)).work(id).royaltyRate, handler.ghostRate(id));
             assertEq(amount, uint256(handler.ghostRate(id)) * 1 ether / 100_000);
+            assertEq(stream.primaryTerms(id, "").feeShare, handler.ghostFeeShare(id));
         }
         assertEq(handler.violations(), 0);
     }

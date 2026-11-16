@@ -12,7 +12,8 @@ import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
-/// @notice Drives renunciations, consented royalty changes (lower, equal and higher) and
+/// @notice Drives renunciations (relayed by the network or by anyone), consented royalty
+///         changes (lower, equal and higher), network repins and
 ///         consented relicenses on a few open works, keeping a ghost of each work's renounced
 ///         mask, rate and license for `WorkPowersInvariantTest`.
 /// @dev Every call that can revert is made with try/catch, so `fail_on_revert` holds. A call
@@ -81,11 +82,13 @@ contract WorkPowersHandler is CommonBase, StdUtils {
     // -------------------------------------------------------------------------------- actions
 
     /// @dev The lead artist (or, one time in four, the collaborator) signs a renunciation of a
-    ///      random mask, unknown bits included.
+    ///      random mask, unknown bits included; the network relays it, or one time in three
+    ///      anyone else, which may not add the royalty or licence power (C7).
     function renounce(uint256 seed, uint16 powers) external {
-        (uint256 index, uint256 tokenId) = _pick(seed);
+        (, uint256 tokenId) = _pick(seed);
         powers = uint16(bound(powers, 0, 15));
         bool byCollaborator = (seed >> 8) % 4 == 0;
+        bool byNetwork = (seed >> 16) % 3 != 0;
         bytes32 state = records.workStateHash(tokenId);
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes memory sig = _sign(
@@ -93,23 +96,35 @@ contract WorkPowersHandler is CommonBase, StdUtils {
             keccak256(abi.encode(Typehashes.RENOUNCE_POWERS, tokenId, powers, state, deadline))
         );
         uint16 before = ghostMask[tokenId];
-        bool unknown = powers & ~WorkPowers.ALL != 0;
-        bool adds = powers & ~before != 0;
-        // Allowed: known bits, and either nothing new (a no-op) or the lead artist's signature,
-        // with the renderer repin renounceable only once the work is finalized.
-        bool repinTooEarly = powers & WorkPowers.RENDERER_REPIN != 0 && !ghostFinalized[tokenId];
-        bool allowed = !unknown && (!adds || (!byCollaborator && !repinTooEarly));
+        bool allowed = _renounceAllowed(tokenId, powers, byCollaborator, byNetwork);
+        vm.prank(byNetwork ? governor : address(0xCAFE));
         try records.renounce(tokenId, powers, state, deadline, sig) {
             if (!allowed) ++violations;
             ghostMask[tokenId] = before | powers;
-            if (adds) ++renounced;
+            if (powers & ~before != 0) ++renounced;
         } catch {
             if (allowed) ++violations;
         }
-        index;
     }
 
-    /// @dev Every party consents to a random rate, higher, equal or lower; FUNDS_SETTER applies.
+    /// @dev Allowed: known bits, and either nothing new (a no-op) or the lead artist's
+    ///      signature, with the renderer repin renounceable only once the work is finalized,
+    ///      and a new royalty or licence bit only through the network (C7).
+    function _renounceAllowed(uint256 tokenId, uint16 powers, bool byCollaborator, bool byNetwork)
+        internal
+        view
+        returns (bool)
+    {
+        uint16 added = powers & ~ghostMask[tokenId];
+        if (powers & ~WorkPowers.ALL != 0) return false;
+        if (added == 0) return true;
+        bool repinTooEarly = powers & WorkPowers.RENDERER_REPIN != 0 && !ghostFinalized[tokenId];
+        bool needsNetwork = added & (WorkPowers.ROYALTY_RATE | WorkPowers.RELICENSE) != 0;
+        return !byCollaborator && !repinTooEarly && (byNetwork || !needsNetwork);
+    }
+
+    /// @dev Every party consents to a random rate, higher, equal or lower; FUNDS_SETTER applies:
+    ///      allowed until the power is renounced (R10).
     function changeRoyalty(uint256 seed, uint32 rate) external {
         (uint256 index, uint256 tokenId) = _pick(seed);
         rate = uint32(bound(rate, 0, 100_000));
@@ -119,7 +134,7 @@ contract WorkPowersHandler is CommonBase, StdUtils {
         bytes[] memory sigs = _both(
             keccak256(abi.encode(Typehashes.ROYALTY_RATE_CHANGE, tokenId, rate, state, deadline))
         );
-        bool allowed = ghostMask[tokenId] & WorkPowers.ROYALTY_RATE == 0 && rate <= current;
+        bool allowed = ghostMask[tokenId] & WorkPowers.ROYALTY_RATE == 0;
         PackageItem memory item = _item(index);
         vm.prank(governor);
         try records.setRoyaltyRate(tokenId, rate, item, state, deadline, sigs) {
@@ -176,23 +191,16 @@ contract WorkPowersHandler is CommonBase, StdUtils {
         }
     }
 
-    /// @dev SUCCESSOR_SETTER applies the artist's errata repin to one of the renderers: allowed
-    ///      only for a finalized work whose repin power is not renounced.
+    /// @dev SUCCESSOR_SETTER repins one of the renderers alone (C8): allowed only for a
+    ///      finalized work whose repin power is not renounced.
     function repin(uint256 seed, uint256 which) external {
         (, uint256 tokenId) = _pick(seed);
         address next = _renderers[which % _renderers.length];
         bytes32 state = ghostFinalized[tokenId] ? records.workStateHash(tokenId) : bytes32(0);
-        uint64 deadline = uint64(block.timestamp + 31 days);
-        bytes memory sig = _sign(
-            artistKey,
-            keccak256(
-                abi.encode(Typehashes.RENDERER_REPIN, tokenId, next, next.codehash, state, deadline)
-            )
-        );
         bool allowed =
             ghostFinalized[tokenId] && ghostMask[tokenId] & WorkPowers.RENDERER_REPIN == 0;
         vm.prank(governor);
-        try records.repinRenderer(tokenId, next, next.codehash, state, deadline, sig) {
+        try records.repinRenderer(tokenId, next, next.codehash, state) {
             if (!allowed) ++violations;
             if (next != ghostRenderer[tokenId]) ++repinned;
             ghostRenderer[tokenId] = next;
@@ -229,7 +237,7 @@ contract WorkPowersHandler is CommonBase, StdUtils {
         );
         (uint8 v, bytes32 r, bytes32 s) =
             vm.sign(key, keccak256(abi.encodePacked("\x19\x01", domain, structHash)));
-        return abi.encodePacked(r, s, v);
+        return abi.encodePacked(vm.addr(key), r, s, v);
     }
 
     function _both(bytes32 structHash) internal view returns (bytes[] memory sigs) {

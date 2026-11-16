@@ -86,13 +86,16 @@ contract WorkRecordsFreezeTest is RecordsFixture {
             records.finalize(tokenId, state);
             (bytes32 s, uint64 d, bytes memory sig) = _renounceSig(tokenId, WorkPowers.RELICENSE);
             vm.expectRevert(IWorkRecords.InvalidLicense.selector);
+            vm.prank(governor);
             records.renounce(tokenId, WorkPowers.RELICENSE, s, d, sig);
             (s, d, sig) = _renounceSig(tokenId, WorkPowers.ROYALTY_RATE);
+            vm.prank(governor);
             records.renounce(tokenId, WorkPowers.ROYALTY_RATE, s, d, sig);
         }
         // A valid custom ID freezes.
         uint256 good = _workWithLicense(200, License("LicenseRef-Terms", text));
         (bytes32 s2, uint64 d2, bytes memory sig2) = _renounceSig(good, WorkPowers.RELICENSE);
+        vm.prank(governor);
         records.renounce(good, WorkPowers.RELICENSE, s2, d2, sig2);
         bytes32 state2 = records.workStateHash(good);
         vm.prank(artist);
@@ -164,6 +167,7 @@ contract WorkRecordsFreezeTest is RecordsFixture {
         uint256 tooLong = _workWithLicense(310, License("LicenseRef-Long", longText));
         (bytes32 s, uint64 d, bytes memory sig) = _renounceSig(tooLong, WorkPowers.RELICENSE);
         vm.expectRevert(IWorkRecords.InvalidLicense.selector);
+        vm.prank(governor);
         records.renounce(tooLong, WorkPowers.RELICENSE, s, d, sig);
         // Before finalize, a relicense to a 17-chunk text is refused before the consents.
         PackageItem memory item;
@@ -178,9 +182,11 @@ contract WorkRecordsFreezeTest is RecordsFixture {
         uint256 unregistered = _workWithLicense(311, License("LicenseRef-Unknown", unknown));
         (s, d, sig) = _renounceSig(unregistered, WorkPowers.RELICENSE);
         vm.expectRevert(abi.encodeWithSelector(IContentStore.ContentFileUnknown.selector, unknown));
+        vm.prank(governor);
         records.renounce(unregistered, WorkPowers.RELICENSE, s, d, sig);
         // Other powers still renounce.
         (s, d, sig) = _renounceSig(tooLong, WorkPowers.ROYALTY_RATE);
+        vm.prank(governor);
         records.renounce(tooLong, WorkPowers.ROYALTY_RATE, s, d, sig);
 
         // A registered 16-chunk text with no chunk written yet freezes, then finalizes once
@@ -188,6 +194,7 @@ contract WorkRecordsFreezeTest is RecordsFixture {
         uint256 bounded =
             _workWithLicense(312, License("LicenseRef-Bounded", _bigText(12, 16, false)));
         (s, d, sig) = _renounceSig(bounded, WorkPowers.RELICENSE);
+        vm.prank(governor);
         records.renounce(bounded, WorkPowers.RELICENSE, s, d, sig);
         bytes32 state = records.workStateHash(bounded);
         vm.prank(artist);

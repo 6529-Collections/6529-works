@@ -74,6 +74,7 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
     mapping(uint256 => address) public ghostReceiver;
     mapping(uint256 => address) public ghostSeller;
     mapping(uint256 => uint32) public ghostRate;
+    mapping(uint256 => uint32) public ghostFeeShare;
     mapping(uint256 => bool) public finalized;
     mapping(uint256 => bool) public settled;
     mapping(uint256 => Snapshot) internal _final;
@@ -177,8 +178,26 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         ghostSeller[tokenId] = sellerWallet;
         ghostReceiver[tokenId] = _expectedReceiver(sellerWallet, fee, feeShare);
         ghostRate[tokenId] = rate;
+        ghostFeeShare[tokenId] = feeShare;
         ghostCollection[tokenId] = collectionId;
         ghostSerial[tokenId] = ++ghostCollectionMinted[collectionId];
+    }
+
+    /// @dev The network lowers a work's fee share (R9): it applies only when lower, and the
+    ///      receiver ghost follows (the seller at zero); a raise or an equal share must revert.
+    function lowerFeeShare(uint256 seed, uint32 share) external {
+        (bool ok, uint256 tokenId) = _live(seed);
+        if (!ok) return;
+        uint32 current = ghostFeeShare[tokenId];
+        share = uint32(bound(share, 0, 100_000));
+        vm.prank(governor);
+        try stream.lowerFeeShare(tokenId, share) {
+            if (share >= current) ++violations;
+            ghostFeeShare[tokenId] = share;
+            ghostReceiver[tokenId] = _expectedReceiver(ghostSeller[tokenId], _feeRecipient, share);
+        } catch {
+            if (share < current) ++violations;
+        }
     }
 
     function burn(uint256 seed) external {
@@ -272,12 +291,12 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         } catch { }
     }
 
-    /// @dev A consented, governed royalty-rate change: the only way a rate may move, and only
-    ///      down (ADR 0006).
+    /// @dev A consented, governed royalty-rate change: the only way a rate may move, up or down
+    ///      (R10), at most 100%.
     function changeRoyalty(uint256 seed, uint32 rate) external {
         (bool ok, uint256 tokenId) = _live(seed);
         if (!ok || !opened[tokenId]) return;
-        rate = uint32(bound(rate, 0, ghostRate[tokenId]));
+        rate = uint32(bound(rate, 0, 100_000));
         if (rate == ghostRate[tokenId]) return;
         bytes32 state = records.workStateHash(tokenId);
         uint64 deadline = uint64(block.timestamp + 1 days);
@@ -411,6 +430,6 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         );
         (uint8 v, bytes32 r, bytes32 s) =
             vm.sign(key, keccak256(abi.encodePacked("\x19\x01", domain, structHash)));
-        return abi.encodePacked(r, s, v);
+        return abi.encodePacked(vm.addr(key), r, s, v);
     }
 }

@@ -245,7 +245,15 @@ contract EditionsStreamMock {
         defaultRenderer = renderer;
     }
 
+    /// @dev The split factory `IStream.splitFactory` answers (a lowered fee share derives the
+    ///      edition's royalty receiver through it).
+    address public splitFactory;
+
     // ----- knobs
+
+    function setSplitFactory(address factory) external {
+        splitFactory = factory;
+    }
 
     function bind(address workRecords_, address editions_) external {
         workRecords = workRecords_;

@@ -575,48 +575,91 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         _assertShortfallNeverAnswers(burner, governor, address(stream), call);
     }
 
-    /// @dev AUC-41: the rescue delay starts at its 90-day floor and only lengthens, at most
-    ///      doubling; a removal locks the delay in force then, so lengthening it later does not
-    ///      delay works already counting. Without the governed delay, the 90 days were compiled.
-    function test_setRescueDelay() public {
-        assertEq(stream.rescueDelay(), 90 days);
-        assertEq(stream.RESCUE_DELAY_FLOOR(), 90 days);
+    /// @dev C12: the rescue delay is a compiled 14 days for every removal, and nothing can change
+    ///      it (no setter). A work is rescuable 14 days after its adapter's removal, not one
+    ///      second before. Fails without the change: the delay was 90 days and governed.
+    function test_rescueDelay_isAFixed14Days() public {
+        assertEq(stream.rescueDelay(), 14 days);
         uint256 tokenId = _mint(1);
         vm.prank(governor);
-        stream.setAdmittedMinter(address(auction), false); // locks 90 days for its works
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidRescueDelay.selector, 90 days));
-        stream.setRescueDelay(90 days);
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidRescueDelay.selector, 180 days + 1));
-        stream.setRescueDelay(180 days + 1);
+        stream.setAdmittedMinter(address(auction), false);
+        uint256 removedAt = block.timestamp;
+        vm.warp(removedAt + 14 days - 1);
+        vm.expectRevert(abi.encodeWithSelector(IStream.WorkNotRescuable.selector, tokenId));
+        stream.rescueToMuseum(tokenId);
+        vm.warp(removedAt + 14 days);
+        stream.rescueToMuseum(tokenId);
+        assertEq(stream.ownerOf(tokenId), econ.museum());
+        // The setter is gone: the selector names no function.
+        (bool ok,) = address(stream).call(abi.encodeWithSignature("setRescueDelay(uint256)", 1));
+        assertFalse(ok, "no rescue-delay setter");
+        assertEq(stream.rescueDelay(), 14 days);
+    }
+
+    // ------------------------------------------------------------------- fee share (R9)
+
+    /// @dev R9: the network lowers a work's fee share; the work moves to terms with the lower
+    ///      share, so the ERC-2981 receiver and the share a settlement reports both follow, and
+    ///      a share of zero makes the seller the receiver. Fails without the change: no path
+    ///      lowers the share of an existing work.
+    function test_lowerFeeShare_movesTheReceiverAndTheSettlementShare() public {
+        _map(address(stream), stream.lowerFeeShare.selector, Roles.PARAMETER_SETTER);
+        uint256 tokenId = _mint(1);
+        (address before,) = stream.royaltyInfo(tokenId, 1 ether);
+        assertEq(before, _royaltyWallet(seller, feeRecipient, 25_000));
         vm.expectEmit(address(stream));
-        emit IStream.RescueDelaySet(90 days, 180 days);
-        stream.setRescueDelay(180 days);
-        assertEq(stream.rescueDelay(), 180 days);
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidRescueDelay.selector, 120 days));
-        stream.setRescueDelay(120 days);
+        emit IStream.FeeShareLowered(tokenId, 25_000, 10_000);
+        vm.prank(governor);
+        stream.lowerFeeShare(tokenId, 10_000);
+        (address receiver,) = stream.royaltyInfo(tokenId, 1 ether);
+        assertEq(receiver, _royaltyWallet(seller, feeRecipient, 10_000), "receiver follows");
+        assertEq(stream.primaryTerms(tokenId, "").feeShare, 10_000);
+        PrimarySettlement memory s =
+            auction.settleWith(stream, tokenId, PrimaryOutcome.SOLD, outsider, address(0), 1);
+        assertEq(s.feeShare, 10_000, "the settlement reports the lowered share");
+        assertEq(s.feeRecipient, feeRecipient, "the recipient never changes");
+        // After the sale too, down to zero: the seller receives royalties alone.
+        vm.prank(governor);
+        stream.lowerFeeShare(tokenId, 0);
+        (receiver,) = stream.royaltyInfo(tokenId, 1 ether);
+        assertEq(receiver, seller);
+    }
+
+    /// @dev R9: lower only. An equal or higher share reverts (`InvalidFeeShare`), as does a
+    ///      caller without the role; the work keeps its terms.
+    function test_lowerFeeShare_neverRaises() public {
+        _map(address(stream), stream.lowerFeeShare.selector, Roles.PARAMETER_SETTER);
+        uint256 tokenId = _mint(1);
+        uint32[3] memory refused = [uint32(25_000), 25_001, 99_999];
+        for (uint256 i; i < refused.length; ++i) {
+            vm.prank(governor);
+            vm.expectRevert(abi.encodeWithSelector(IStream.InvalidFeeShare.selector, refused[i]));
+            stream.lowerFeeShare(tokenId, refused[i]);
+        }
         vm.prank(outsider);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)
         );
-        stream.setRescueDelay(200 days);
-        // The removal made before the change keeps its 90 days.
-        vm.warp(block.timestamp + 90 days - 1);
-        vm.expectRevert(abi.encodeWithSelector(IStream.WorkNotRescuable.selector, tokenId));
-        stream.rescueToMuseum(tokenId);
-        vm.warp(block.timestamp + 1);
-        stream.rescueToMuseum(tokenId);
-        assertEq(stream.ownerOf(tokenId), econ.museum());
-        // A removal after the change waits the new delay.
+        stream.lowerFeeShare(tokenId, 1);
+        assertEq(stream.primaryTerms(tokenId, "").feeShare, 25_000);
         vm.prank(governor);
-        stream.setAdmittedMinter(address(auction), true);
-        uint256 later = _mint(2);
-        vm.prank(governor);
-        stream.setAdmittedMinter(address(auction), false);
-        vm.warp(block.timestamp + 90 days);
-        vm.expectRevert(abi.encodeWithSelector(IStream.WorkNotRescuable.selector, later));
-        stream.rescueToMuseum(later);
-        vm.warp(block.timestamp + 90 days);
-        stream.rescueToMuseum(later);
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 99));
+        stream.lowerFeeShare(99, 1);
+    }
+
+    /// @dev R9 fuzz: whatever sequence of shares the network asks for, the share never rises.
+    function testFuzz_lowerFeeShare_onlyEverFalls(uint32[4] memory shares) public {
+        _map(address(stream), stream.lowerFeeShare.selector, Roles.PARAMETER_SETTER);
+        uint256 tokenId = _mint(1);
+        uint32 current = 25_000;
+        for (uint256 i; i < shares.length; ++i) {
+            vm.prank(governor);
+            (bool ok,) =
+                address(stream).call(abi.encodeCall(stream.lowerFeeShare, (tokenId, shares[i])));
+            assertEq(ok, shares[i] < current);
+            if (ok) current = shares[i];
+            assertEq(stream.primaryTerms(tokenId, "").feeShare, current);
+        }
     }
 
     function test_setDependency_reverts() public {
@@ -1619,9 +1662,13 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         IStreamViews.WorkCore memory w = IStreamViews(address(stream)).work(1);
         assertEq(w.royaltyReceiver, _defaultRoyaltyWallet());
         assertEq(w.royaltyRate, 5_000);
-        // Lower-only in the core, whatever the satellite checked.
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidRoyaltyRate.selector, 5_001));
-        recordsMock.setRoyaltyRate(stream, 1, 5_001);
+        // R10: a rise is accepted, up to 100%; past it the core refuses, whatever the
+        // satellite checked. Fails without the change: any rise reverted.
+        vm.expectEmit(address(stream));
+        emit IStream.RoyaltyRateChanged(1, 5_000, 7_000);
+        recordsMock.setRoyaltyRate(stream, 1, 7_000);
+        assertEq(IStreamViews(address(stream)).work(1).royaltyRate, 7_000);
+        recordsMock.setRoyaltyRate(stream, 1, 100_000);
         vm.expectRevert(abi.encodeWithSelector(IStream.InvalidRoyaltyRate.selector, 100_001));
         recordsMock.setRoyaltyRate(stream, 1, 100_001);
         recordsMock.setRoyaltyRate(stream, 1, 5_000);

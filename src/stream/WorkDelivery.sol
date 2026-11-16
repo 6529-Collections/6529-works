@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
-import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
+import { IAccounts } from "../interfaces/IAccounts.sol";
 import { IStream } from "../interfaces/IStream.sol";
 import { IWorkDelivery, IWorkLocators } from "../interfaces/IWorkDelivery.sol";
 import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
@@ -13,8 +13,9 @@ import { Limits } from "../interfaces/types/Limits.sol";
 /// @title WorkDelivery
 /// @notice The first delivery contract of 6529 Stream: where copies of a work's media are
 ///         served from. Append-only, content-addressed locators per media file (the artist's
-///         before finalize, the PLATFORM role's at any time) and the storage operator's
-///         preferences among them (ADR 0001 sections 8 and 10). Replaceable as a whole through
+///         before finalize, the PLATFORM role's at any time), the storage operator's
+///         preferences among them and its mark on a locator that died (ADR 0001 sections 8 and
+///         10; C21, C33). Replaceable as a whole through
 ///         `IWorkRecords.setDelivery`; it has no authority over any fact of a work, and
 ///         `IWorkRecords.preferredLocator` checks every answer it gives.
 /// @dev Reads what it needs from the records satellite (open, finalized, on-chain complete,
@@ -36,12 +37,14 @@ contract WorkDelivery is AccessManaged, ERC165, IWorkLocators {
     uint256 private constant TXID_LAST = 0x888888022222220111000000000000;
     uint256 private constant CID_LAST = 0x2222222000000000010000000000000;
 
-    /// @dev How many of a file's locators the artist and the platform each added, and which
-    ///      the artist added: bit `i` of `byArtist` is set for the artist's locator at index `i`.
+    /// @dev How many of a file's locators the artist and the platform each added, which the
+    ///      artist added (bit `i` of `byArtist` for the locator at index `i`) and which are dead
+    ///      (bit `i` of `dead`).
     struct LocatorCounts {
         uint8 artist;
         uint8 platform;
         uint16 byArtist;
+        uint16 dead;
     }
 
     /// @inheritdoc IWorkDelivery
@@ -79,7 +82,7 @@ contract WorkDelivery is AccessManaged, ERC165, IWorkLocators {
     ///      whichever side adds a URI first holds it.
     function addLocator(uint256 tokenId, bytes32 fileId, Locator calldata locator) external {
         bool finalized = IWorkRecords(records).record(tokenId).finalized;
-        bool byArtist = !finalized && _artistOf(tokenId) == msg.sender;
+        bool byArtist = !finalized && _isArtist(tokenId);
         if (!byArtist) _checkCanCall(msg.sender, _msgData());
         IWorkRecords(records).mediaIndex(tokenId, fileId);
         _checkUri(locator);
@@ -125,11 +128,11 @@ contract WorkDelivery is AccessManaged, ERC165, IWorkLocators {
 
     /// @inheritdoc IWorkDelivery
     /// @dev The most specific setting wins: the file's preferred index, then the collection's
-    ///      preferred kind, then the global preferred kind, then the artist's first locator, then
-    ///      the implicit ONCHAIN copy of an on-chain complete work, else the empty locator. Only
-    ///      the file preference can select a locator the platform added: the kind and
-    ///      first-registered fallbacks consider the artist's locators alone. ONCHAIN matches on
-    ///      the records satellite's stored flag, never a content-store scan.
+    ///      preferred kind, then the global preferred kind, then the first locator, then the
+    ///      implicit ONCHAIN copy of an on-chain complete work, else the empty locator. Every
+    ///      choice is among the live locators, whoever added them (C33): a dead one is never
+    ///      served, and a file preference naming one is passed over. ONCHAIN matches on the
+    ///      records satellite's stored flag, never a content-store scan.
     function preferredLocator(uint256 tokenId, bytes32 fileId)
         external
         view
@@ -138,19 +141,20 @@ contract WorkDelivery is AccessManaged, ERC165, IWorkLocators {
         bool onChain = IWorkRecords(records).record(tokenId).onChainComplete;
         IWorkRecords(records).mediaIndex(tokenId, fileId);
         Locator[] storage list = _locators[tokenId][fileId];
-        uint256 artistMask = _locatorCounts[tokenId][fileId].byArtist;
+        // Bit `i` set for each live locator (at most 16).
+        uint256 live = ((1 << list.length) - 1) & ~uint256(_locatorCounts[tokenId][fileId].dead);
         index = _filePrefs[tokenId][fileId];
-        bool found = index != 0;
+        bool found = index != 0 && (live >> (index - 1)) & 1 != 0;
         if (found) index -= 1;
         if (!found) {
             (,, uint256 collectionId,,,) = IStream(stream).coreOf(tokenId);
-            (found, index) = _firstOfKind(list, artistMask, onChain, _collectionKinds[collectionId]);
+            (found, index) = _firstOfKind(list, live, onChain, _collectionKinds[collectionId]);
         }
-        if (!found) (found, index) = _firstOfKind(list, artistMask, onChain, preferredKind);
-        if (!found && artistMask != 0) {
-            // The artist's first locator: the mask's lowest set bit.
+        if (!found) (found, index) = _firstOfKind(list, live, onChain, preferredKind);
+        if (!found && live != 0) {
+            // The first live locator: the mask's lowest set bit.
             index = 0;
-            while ((artistMask >> index) & 1 == 0) {
+            while ((live >> index) & 1 == 0) {
                 ++index;
             }
             found = true;
@@ -188,11 +192,26 @@ contract WorkDelivery is AccessManaged, ERC165, IWorkLocators {
 
     /// @inheritdoc IWorkLocators
     function setFilePreference(uint256 tokenId, bytes32 fileId, uint256 index) external restricted {
-        IWorkRecords(records).mediaIndex(tokenId, fileId);
-        if (index != NONE && index >= _locators[tokenId][fileId].length) revert InvalidLocator();
+        if (index == NONE) IWorkRecords(records).mediaIndex(tokenId, fileId);
+        else _requireLive(tokenId, fileId, index);
         emit FilePreferenceSet(tokenId, fileId, filePreference(tokenId, fileId), index);
         _filePrefs[tokenId][fileId] = index == NONE ? 0 : index + 1;
         IWorkRecords(records).refreshMetadata(tokenId);
+    }
+
+    /// @inheritdoc IWorkLocators
+    function markLocatorDead(uint256 tokenId, bytes32 fileId, uint256 index) external restricted {
+        LocatorCounts storage counts = _requireLive(tokenId, fileId, index);
+        // Below 16: the file holds at most `Limits.MAX_LOCATORS_PER_FILE` locators.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        counts.dead |= uint16(1 << index);
+        emit LocatorDead(tokenId, fileId, index);
+        IWorkRecords(records).refreshMetadata(tokenId);
+    }
+
+    /// @inheritdoc IWorkLocators
+    function deadLocators(uint256 tokenId, bytes32 fileId) external view returns (uint256) {
+        return _locatorCounts[tokenId][fileId].dead;
     }
 
     /// @inheritdoc IWorkLocators
@@ -216,10 +235,24 @@ contract WorkDelivery is AccessManaged, ERC165, IWorkLocators {
             || super.supportsInterface(interfaceId);
     }
 
-    /// @dev The lead artist's active authority (zero while a recovery override is pending).
-    function _artistOf(uint256 tokenId) private view returns (address) {
+    /// @dev Whether the caller is a wallet of the work's lead artist account now.
+    function _isArtist(uint256 tokenId) private view returns (bool) {
         IStream core = IStream(stream);
-        return IArtistRegistry(core.artistRegistry()).activeAuthorityOf(core.artistOf(tokenId));
+        return IAccounts(core.artistRegistry()).isWallet(core.artistOf(tokenId), msg.sender);
+    }
+
+    /// @dev Reverts with `InvalidLocator` unless locator `index` of one of the work's media
+    ///      files exists and is not dead; returns the file's counts.
+    function _requireLive(uint256 tokenId, bytes32 fileId, uint256 index)
+        private
+        view
+        returns (LocatorCounts storage counts)
+    {
+        IWorkRecords(records).mediaIndex(tokenId, fileId);
+        counts = _locatorCounts[tokenId][fileId];
+        if (index >= _locators[tokenId][fileId].length || (counts.dead >> index) & 1 != 0) {
+            revert InvalidLocator();
+        }
     }
 
     /// @dev A locator URI is a content address in its one canonical spelling, with nothing after
@@ -254,19 +287,18 @@ contract WorkDelivery is AccessManaged, ERC165, IWorkLocators {
         }
     }
 
-    /// @dev The first locator of `kind` the artist added (`artistMask`, see `LocatorCounts`), or
-    ///      the implicit ONCHAIN one (`NONE`) when the work is on-chain complete. NONE as a kind
-    ///      never matches.
-    function _firstOfKind(
-        Locator[] storage list,
-        uint256 artistMask,
-        bool onChain,
-        LocatorKind kind
-    ) private view returns (bool, uint256) {
+    /// @dev The first live locator of `kind` (`live`, bit `i` for index `i`), or the implicit
+    ///      ONCHAIN one (`NONE`) when the work is on-chain complete. NONE as a kind never
+    ///      matches.
+    function _firstOfKind(Locator[] storage list, uint256 live, bool onChain, LocatorKind kind)
+        private
+        view
+        returns (bool, uint256)
+    {
         if (kind == LocatorKind.NONE) return (false, 0);
         if (kind == LocatorKind.ONCHAIN) return (onChain, NONE);
-        for (uint256 i; artistMask >> i != 0; ++i) {
-            if ((artistMask >> i) & 1 != 0 && list[i].kind == kind) return (true, i);
+        for (uint256 i; live >> i != 0; ++i) {
+            if ((live >> i) & 1 != 0 && list[i].kind == kind) return (true, i);
         }
         return (false, 0);
     }
