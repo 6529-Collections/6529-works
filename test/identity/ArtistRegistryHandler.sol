@@ -96,6 +96,11 @@ contract ArtistRegistryHandler is Test {
     bool public hostileInstalled;
     bool public ghostWalletStaged;
     uint256 public walletStagedWhileLive;
+    /// @dev Calls by a wallet other than the authority (stagings it signed, cancels, contests,
+    ///      heartbeats, nonce revocations), and executions of changes such a wallet signed that
+    ///      keep the authority, that moved the artist's last activity (review E, N-1: always
+    ///      zero).
+    uint256 public walletMovedActivity;
     uint256 public walletStagings;
     uint256 public sourceSwaps;
 
@@ -179,6 +184,7 @@ contract ArtistRegistryHandler is Test {
         Used memory u = Used(next, vm.addr(signerKey), deadline, _sign(signerKey, digest), "");
         u.acceptance = _sign(nextKey, digest);
         bytes memory err = _stageError(u.signer, next);
+        uint64 before = _lastActivity();
         if (err.length != 0) vm.expectRevert(err);
         registry.stageChange(artistId, next, u.signer, deadline, u.signature, u.acceptance);
         if (err.length != 0) return;
@@ -187,6 +193,7 @@ contract ArtistRegistryHandler is Test {
         if (byWallet) {
             ++walletStagings;
             if (!_dormant()) ++walletStagedWhileLive;
+            if (_lastActivity() != before) ++walletMovedActivity;
         } else {
             ghostLastActivity = uint64(block.timestamp);
         }
@@ -230,6 +237,7 @@ contract ArtistRegistryHandler is Test {
 
     function cancel(uint256 callerSeed) external {
         address caller = _caller(callerSeed);
+        uint64 before = _lastActivity();
         PendingChange memory p = registry.pendingChange(artistId);
         bool allowed = p.kind == ChangeKind.STANDARD && caller == p.previousAuthority;
         for (uint256 i; i < p.cancellers.length; ++i) {
@@ -255,6 +263,7 @@ contract ArtistRegistryHandler is Test {
         }
         vm.prank(caller);
         registry.cancelChange(artistId);
+        if (caller != ghostAuthority && _lastActivity() != before) ++walletMovedActivity;
         if (p.kind == ChangeKind.NONE || !allowed || late) return;
         PendingChange memory q = registry.pendingChange(artistId);
         if (p.contestedAt != 0) {
@@ -262,7 +271,8 @@ contract ArtistRegistryHandler is Test {
             assertEq(keccak256(abi.encode(q)), keccak256(abi.encode(p)));
             return;
         }
-        ghostLastActivity = uint64(block.timestamp);
+        // Only the artist's own key proves activity (review E, N-1).
+        if (caller == p.previousAuthority) ghostLastActivity = uint64(block.timestamp);
         if (!contests) return;
         assertEq(q.contestedAt, block.timestamp);
         assertEq(q.priorOutcome, outcomes.latestDisputeOutcome(address(registry), artistId));
@@ -309,11 +319,7 @@ contract ArtistRegistryHandler is Test {
         assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.NONE));
         ++resolved;
         if (!uphold || factory.isWallet(p.next.payout)) return;
-        ghostPayout = p.next.payout;
-        ghostAuthority = p.next.authority;
-        ghostWasAuthority[p.next.authority] = true;
-        ghostLastActivity = uint64(block.timestamp);
-        ++executed;
+        _onExecuted(p);
     }
 
     /// @dev Lets anyone lapse a contest nobody resolved within its locked timeout.
@@ -388,10 +394,20 @@ contract ArtistRegistryHandler is Test {
         // Never faster than the delay locked at staging, whatever the timers are now.
         assertEq(p.executableAt, p.stagedAt + ghostStagedDelay);
         assertGe(block.timestamp, p.stagedAt + ghostStagedDelay);
+        _onExecuted(p);
+    }
+
+    /// @dev An executed change: only a new authority's acceptance restarts the dormancy clock
+    ///      (review E, N-1), so a wallet-signed change that keeps the authority never does.
+    function _onExecuted(PendingChange memory p) private {
+        bool moves = p.next.authority != p.previousAuthority;
+        if (!moves && ghostWalletStaged && _lastActivity() != ghostLastActivity) {
+            ++walletMovedActivity;
+        }
         ghostPayout = p.next.payout;
         ghostAuthority = p.next.authority;
         ghostWasAuthority[p.next.authority] = true;
-        ghostLastActivity = uint64(block.timestamp);
+        if (moves) ghostLastActivity = uint64(block.timestamp);
         ++executed;
     }
 
@@ -399,18 +415,24 @@ contract ArtistRegistryHandler is Test {
     function heartbeat(uint256 callerSeed) external {
         address caller = _caller(callerSeed);
         bool ok = caller == ghostAuthority;
+        uint64 before = _lastActivity();
         if (!ok) _expect(_notAuthorized(caller));
         vm.prank(caller);
         registry.heartbeat(artistId);
+        if (!ok && _lastActivity() != before) ++walletMovedActivity;
         if (ok) ghostLastActivity = uint64(block.timestamp);
     }
 
     function revokeNonce(uint256 callerSeed) external {
         address caller = _caller(callerSeed);
+        uint64 before = _lastActivity();
         if (caller != ghostAuthority) _expect(_notAuthorized(caller));
         vm.prank(caller);
         registry.revokeNonce(artistId);
-        if (caller != ghostAuthority) return;
+        if (caller != ghostAuthority) {
+            if (_lastActivity() != before) ++walletMovedActivity;
+            return;
+        }
         ++ghostNonce;
         ghostLastActivity = uint64(block.timestamp);
     }
@@ -685,6 +707,10 @@ contract ArtistRegistryHandler is Test {
             if (!established) return _notAuthorized(signer);
         }
         return _nextError(next);
+    }
+
+    function _lastActivity() private view returns (uint64 last) {
+        (, last) = registry.artist(artistId);
     }
 
     function _dormant() private view returns (bool) {

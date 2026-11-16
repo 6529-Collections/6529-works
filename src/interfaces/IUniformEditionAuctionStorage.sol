@@ -128,7 +128,8 @@ interface IUniformEditionAuctionStorage {
     ///      `key` ignored; `termsId` (the current configuration's ID, bits 0-23), `termsCount`
     ///      (24-47), the fee recipients interned (48-63), `pausedAt` (64-103, zero while not
     ///      paused), `listed` (104-111), then `IUniformEditionAuction.Limits`:
-    ///      `maxCloseOffset` (112-143), `voidDelayDays` (144-159) and `payoutGas` (160-191).
+    ///      `maxCloseOffset` (112-143), `voidDelayDays` (144-159), `payoutGas` (160-191) and
+    ///      `rescueCapDays` (192-207).
     enum Space {
         SALE,
         PAYOUT,

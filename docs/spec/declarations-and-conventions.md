@@ -632,7 +632,10 @@ none is due before `RecordOpened` (DCL-8).
 
 **DCL-29. Residual risks.** The card always prints LIM-GV-1, LIM-GV-2, LIM-GV-9, LIM-GV-10,
 LIM-GV-11, LIM-ID-11, LIM-ID-13, LIM-CNT-2, LIM-CNT-3, LIM-CNT-12, LIM-CNT-13 and LIM-SAL-8;
-LIM-CNT-1 while the work is not on-chain complete; LIM-CNT-10 once it is finalized; and
+LIM-CNT-1 while the work is not on-chain complete; LIM-CNT-21 while it is on-chain complete with
+a media file not complete in the content store (complete only in an added store: the default
+renderer inlines none of it, and shows no media at all where the preferred kind is ONCHAIN);
+LIM-CNT-10 once it is finalized; and
 LIM-EA-14 when the work is an EDITION_MASTER with a linked edition (`editionOf` names an editions
 contract) and a dispute outcome is recorded about the token or its item (`dispute.entryHash` is
 set). Each links to [known limitations](../audit/known-limitations.md), which owns the text.

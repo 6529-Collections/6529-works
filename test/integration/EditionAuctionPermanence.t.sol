@@ -217,6 +217,53 @@ contract EditionAuctionPermanenceTest is EditionAuctionStack {
         editionAuction.abandon(saleId);
     }
 
+    /// @dev Review E, N-2, on the real Stream: once governance removes the English auction, its
+    ///      works keep the rescue delay Stream locked then, so later lengthenings do not reach
+    ///      their edition sales; while it is admitted the delay in force applies, and however long
+    ///      governance makes it, it adds at most the 730-day rescue cap. Fails without the change:
+    ///      the abandonment follows the live delay, without bound.
+    function test_N2_ARemovalLocksTheDelayAndTheCapBoundsTheWait() public {
+        (,, uint256 oneSaleId,, uint256 saleId) = _startMaster(_actor("cappedRescueArtist"), 0);
+        _editionBid(saleId, fan, 40, 1);
+        vm.mockCallRevert(
+            address(economics), abi.encodeWithSelector(IEconomicsResolver.museum.selector), "broken"
+        );
+        vm.warp(auction.auction(oneSaleId).endTime);
+        vm.expectRevert();
+        auction.settle(oneSaleId);
+        uint256 end = ea.endTimes(saleId).endTime;
+        IUniformEditionAuctionLens l = IUniformEditionAuctionLens(address(editionAuction));
+        _govern(hotAdmin, address(stream), abi.encodeCall(stream.setRescueDelay, (180 days)));
+        _govern(
+            hotAdmin,
+            address(stream),
+            abi.encodeCall(stream.setAdmittedMinter, (address(auction), false))
+        );
+        _govern(hotAdmin, address(stream), abi.encodeCall(stream.setRescueDelay, (360 days)));
+        _govern(hotAdmin, address(stream), abi.encodeCall(stream.setRescueDelay, (720 days)));
+        (, uint256 at) = l.abandonable(saleId);
+        assertEq(at, end + 150 days + 90 days, "the 180 days locked at the removal");
+        _govern(
+            hotAdmin,
+            address(stream),
+            abi.encodeCall(stream.setAdmittedMinter, (address(auction), true))
+        );
+        (, at) = l.abandonable(saleId);
+        assertEq(at, end + 150 days + 630 days, "admitted again: the 720 days in force");
+        _govern(hotAdmin, address(stream), abi.encodeCall(stream.setRescueDelay, (1440 days)));
+        _govern(hotAdmin, address(stream), abi.encodeCall(stream.setRescueDelay, (2880 days)));
+        (, at) = l.abandonable(saleId);
+        assertEq(at, end + 150 days + 730 days, "capped");
+        vm.warp(at - 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(IUniformEditionAuction.NotAbandonable.selector, saleId)
+        );
+        editionAuction.abandon(saleId);
+        vm.warp(at);
+        editionAuction.abandon(saleId);
+        assertEq(uint8(ea.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.VOID));
+    }
+
     /// @dev Review C, F16: `open` confirms each payout wallet through the ledger
     ///      (`createWallet`, idempotent for a wallet it deployed), never by code at the predicted
     ///      address. Code planted at the seller's predicted address is refused, so no edition

@@ -123,10 +123,12 @@ interface IConsolidationSource is IERC165 {
 ///      holder who revokes or reorders the artist's consolidations cannot strip their standing:
 ///      one refresh any time after consolidating suffices (a consolidation revoked before its 30
 ///      days never had standing to strip).
-///      Dormancy counts the artist's own activity only: registration (the first package
-///      acceptance), a change the authority signed, the authority's heartbeat, a cancellation by
-///      the old key or a captured wallet, a nonce revocation, and a change's execution. Governed
-///      overrides, guardian vetoes and changes signed by a consolidated wallet never count.
+///      Dormancy counts only acts of the artist's own authority: registration (the first package
+///      acceptance), a change the authority signed, the authority's heartbeat, its cancellation
+///      or contest, a nonce revocation, and the execution of a change that installs a new
+///      authority (the new authority's acceptance). A captured wallet's cancel or contest stops
+///      a change but never counts, nor do governed overrides, guardian vetoes, changes signed by
+///      a consolidated wallet, or an execution that keeps the authority.
 ///
 ///      `isArtist(token, id, account)` is true when `account` is the active authority
 ///      (`activeAuthorityOf`) of the lead artist of 6529 Stream work `id`, or of the master of
@@ -205,6 +207,12 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @param previous The identity before the change.
     /// @param next The identity after the change.
     event ChangeExecuted(uint256 indexed artistId, ArtistIdentity previous, ArtistIdentity next);
+    /// @notice An override's new-authority acceptance was consumed (`stageOverride`): its digest
+    ///         can never be staged again (`AcceptanceUsed`). With it the consumed set is rebuilt
+    ///         from this registry's logs alone (review C, F15; review E, N-5).
+    /// @param artistId The artist the override stages for.
+    /// @param digest The `Typehashes.OVERRIDE_ACCEPTANCE` digest consumed (`overrideDigest`).
+    event OverrideAcceptanceConsumed(uint256 indexed artistId, bytes32 digest);
     /// @notice Signed activity was recorded for dormancy purposes.
     /// @param artistId The artist whose activity was recorded.
     /// @param timestamp The block timestamp now stored as the artist's last activity.
@@ -476,7 +484,7 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @notice Cancels a pending STANDARD change (a captured consolidated wallet or the previous
     ///         authority), or contests a pending override (a captured wallet, before its notice
     ///         ends; it then waits for a vote). A cancel of an already contested override does
-    ///         nothing.
+    ///         nothing. Records activity only when the caller is the previous authority.
     /// @param artistId The artist whose pending change is cancelled or contested.
     function cancelChange(uint256 artistId) external;
     /// @notice Applies a TDH vote on a contested override: upholding executes it (once its notice

@@ -155,10 +155,10 @@ contract FederatedEditionAuctionLens is UniformEditionAuctionLensBase {
         return ok && word != 0;
     }
 
-    /// @dev A federated 1/1 has no rescue (no museum path): 90 days, so the wait is the locked
-    ///      delay alone, as the adapter enforces.
-    function _rescueDelay() internal pure override returns (uint256) {
-        return 90 days;
+    /// @dev A federated 1/1 has no rescue (no museum path): nothing added, so the wait is the
+    ///      locked delay alone, as the adapter enforces; no 6529 Stream slot is read.
+    function _rescueLengthening() internal pure override returns (uint256) {
+        return 0;
     }
 
     /// @dev Whether the current federation registry serves `token`.

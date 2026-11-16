@@ -106,12 +106,15 @@ interface IWorkRecords {
     /// @param storeId The store (0 is the content store).
     event MediaFileComplete(uint256 indexed tokenId, uint256 index, uint256 storeId);
     /// @notice `syncOnChain` progress of the walk over store `storeId`. For the content store
-    ///         (0): the first `files` media files are complete there and the next is verified up
-    ///         to chunk `chunk`. For an added store: the artist's walk stands at chunk `chunk` of
-    ///         file `files`. Progress is bookkeeping, not a fact: facts are `MediaFileComplete`
+    ///         (0): before the work is on-chain complete, the first `files` media files are
+    ///         complete (in the content store, or in the added store their latest
+    ///         `MediaFileComplete` names, which the walk passed over) and the next is verified up
+    ///         to chunk `chunk`; afterwards, where the upgrade walk stands. For an added store:
+    ///         the artist's walk stands at chunk `chunk` of file `files`. Progress is bookkeeping, not a fact: facts are `MediaFileComplete`
     ///         and `WorkOnChainComplete`.
     /// @param tokenId The work's token ID.
-    /// @param files The content store's complete leading files, or the added walk's file.
+    /// @param files The content walk's file (every file before it complete, until on-chain
+    ///        completion), or the added walk's file.
     /// @param chunk The next chunk to verify in file `files` (zero when none is in progress).
     /// @param storeId The store this call verified against.
     event OnChainSyncProgress(
@@ -234,13 +237,17 @@ interface IWorkRecords {
     ///         hash. Each call verifies at most `maxChunks` chunks, in media order, through
     ///         `IContentStore.firstMissing` against store `storeId`. Two independent walks:
     ///         - The content store (0): anyone; a cursor from where the last such call stopped;
-    ///           each chunk must be stored at its required length. It verifies every file, one
-    ///           complete in an added store included, which then becomes complete in the content
-    ///           store (an upgrade). No added store is called on this walk.
+    ///           each chunk must be stored at its required length. It verifies every file not
+    ///           yet complete there, one complete in an added store included, which then becomes
+    ///           complete in the content store (an upgrade); it passes over a file already
+    ///           complete in an added store when the content store lacks a chunk of it, so no
+    ///           order of files across stores holds back the others. Once the work is on-chain
+    ///           complete the walk goes round again over the files still complete only in an
+    ///           added store. No added store is called on this walk.
     ///         - An added store: only the work's artist (`NotWorkArtist`), until the work is
     ///           on-chain complete; one walk at a time, resumed on the same store and restarted at
-    ///           the first file not complete in the content store when the artist names another;
-    ///           it skips files already complete. Each chunk is checked alone: the bytes the store
+    ///           the content walk's cursor when the artist names another; it skips files already
+    ///           complete in any store. Each chunk is checked alone: the bytes the store
     ///           serves for the manifest's chunk hash must hash to it and have the required length,
     ///           and a chunk the store refuses (reverts, or serves other bytes) is missing.
     ///         A file's completion is recorded per store (`MediaFileComplete`, `mediaStore`):

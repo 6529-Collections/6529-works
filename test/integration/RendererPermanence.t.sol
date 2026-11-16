@@ -11,6 +11,7 @@ import { WorkPowers } from "src/interfaces/IWorkPowers.sol";
 import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
+import { StreamLayout } from "src/stream/StreamLayout.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
 /// @notice A view extension that answers Stream's fallback views with other facts: another
@@ -194,6 +195,62 @@ contract RendererPermanenceTest is IntegrationBase {
         assertEq(_uris(), before, "metadata unchanged");
         hostile.setBroken(true);
         assertEq(_uris(), before, "metadata unchanged with a reverting extension");
+    }
+
+    /// @dev Review E (missing test 4): the renderer decodes the collection name from Stream's
+    ///      storage string in both forms, end to end. Names of 31 bytes (the short form's
+    ///      largest), 32 and 73 bytes (the long form) and multibyte UTF-8 are written into the
+    ///      name's slot (`StreamLayout.collectionSlot + 2`); `tokenURI` shows each exactly. A
+    ///      wrong decode empties or garbles the name, which this catches (the budget test's
+    ///      256-byte name only measures gas).
+    function test_CollectionNamesOfEveryLengthAndMultibyteAreShownExactly() public {
+        string[5] memory names = [
+            "Thirty-one bytes, a short name.",
+            "Thirty-two bytes of a long name!",
+            "A collection name of seventy-three bytes, stored apart in its own words!!",
+            unicode"Ünïcödé コレクション ✓",
+            "A"
+        ];
+        assertEq(bytes(names[0]).length, 31);
+        assertEq(bytes(names[1]).length, 32);
+        assertEq(bytes(names[2]).length, 73);
+        uint256 slot = uint256(StreamLayout.collectionSlot(collectionId)) + 2;
+        for (uint256 i; i < names.length; ++i) {
+            _storeString(slot, bytes(names[i]));
+            assertEq(IStreamViews(address(stream)).collection(collectionId).name, names[i]);
+            string memory uri = stream.tokenURI(byLocator);
+            assertTrue(
+                _contains(
+                    uri, string.concat('{"trait_type":"Collection","value":"', names[i], '"}')
+                ),
+                names[i]
+            );
+        }
+    }
+
+    /// @dev Writes `value` at `slot` as Solidity lays out a storage string.
+    function _storeString(uint256 slot, bytes memory value) internal {
+        uint256 length = value.length;
+        if (length < 32) {
+            bytes32 head;
+            assembly ("memory-safe") {
+                head := mload(add(value, 0x20))
+            }
+            // The bytes in place, left-aligned, the rest zero, and twice the length in the low
+            // byte.
+            head = (head & ~bytes32((uint256(1) << (8 * (32 - length))) - 1)) | bytes32(length * 2);
+            vm.store(address(stream), bytes32(slot), head);
+            return;
+        }
+        vm.store(address(stream), bytes32(slot), bytes32(length * 2 + 1));
+        bytes32 data = keccak256(abi.encode(slot));
+        for (uint256 i; i * 32 < length; ++i) {
+            bytes32 word;
+            assembly ("memory-safe") {
+                word := mload(add(add(value, 0x20), mul(i, 0x20)))
+            }
+            vm.store(address(stream), bytes32(uint256(data) + i), word);
+        }
     }
 
     // ------------------------------------------------------------------ the delivery contract

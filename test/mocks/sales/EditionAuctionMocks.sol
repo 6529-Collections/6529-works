@@ -17,6 +17,7 @@ import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import { ItemKind, PackageItem, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamLayout } from "src/stream/StreamLayout.sol";
 
 /// @dev The English auction surface the edition auction reads: `auctionClock(saleId)` on its
 ///      hot paths and `auction(saleId)` in the lens's `endTimes`, with each 1/1's state and end
@@ -107,7 +108,8 @@ contract MockOneOfOneAuction {
 }
 
 /// @dev 6529 Stream's reads: `coreOf` (the stored item hash and kind), `economics`,
-///      `primarySaleSettled` and `rescueDelay` (set by the test).
+///      `primarySaleSettled`, `rescueDelay` (set by the test) and `extsload` (raw words of this
+///      mock, where `setRemoval` writes a sale adapter's admission word as Stream packs it).
 contract MockMasterStream {
     address public economics;
     mapping(uint256 id => bool) public primarySaleSettled;
@@ -116,6 +118,28 @@ contract MockMasterStream {
 
     function setRescueDelay(uint256 next) external {
         rescueDelay = next;
+    }
+
+    /// @dev Governance removed `adapter` at `removedAt` (zero: admitted again), locking `delay`
+    ///      for its works, at `StreamLayout.minterSlot(adapter)` as Stream packs it.
+    function setRemoval(address adapter, uint40 removedAt, uint32 delay) external {
+        bytes32 slot = StreamLayout.minterSlot(adapter);
+        uint256 word = uint256(removedAt) << 32 | uint256(delay) << 72 | 1 << 8;
+        if (removedAt == 0) word |= 1;
+        assembly ("memory-safe") {
+            sstore(slot, word)
+        }
+    }
+
+    function extsload(bytes32 slot, uint256 n) external view returns (bytes32[] memory words) {
+        words = new bytes32[](n);
+        for (uint256 i; i < n; ++i) {
+            bytes32 w;
+            assembly ("memory-safe") {
+                w := sload(add(slot, i))
+            }
+            words[i] = w;
+        }
     }
 
     function setSettled(uint256 id, bool value) external {

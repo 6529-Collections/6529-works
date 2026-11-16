@@ -48,7 +48,9 @@ restraint withholds are in the [stolen-key flow](../../docs/spec/identity-and-re
 - **The source decides nothing for a live artist** (ID-40). The registry is permanent and the
   consolidation source replaceable, so a wallet the source names signs a change only for a
   dormant artist (checked before the source is read), that change waits the override delay
-  and records no activity, and only the authority heartbeats. What a hostile source can still
+  and records no activity, and only the authority heartbeats. Only the authority's own acts
+  move the last activity: a captured wallet's cancel or contest records none, and an execution
+  records it only when it installs a new authority (review E, N-1). What a hostile source can still
   do is listed in the spec ([what the source decides](../../docs/spec/identity-and-recovery.md#what-the-consolidation-source-decides)).
 - **Refreshes are best-effort except `refreshStanding`.** Any source failure skips the refresh
   (`StandingRefreshSkipped`); a shortfall (a failed read that left at most 1/8 of the gas, or a

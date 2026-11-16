@@ -134,11 +134,16 @@ def _risk_key(risk: str) -> tuple[str, int]:
     return area, int(number)
 
 
-def residual_risks(*, on_chain_complete: bool, finalized: bool, ea14: bool) -> list[str]:
-    """DCL-29, sorted by area then number."""
+def residual_risks(
+    *, on_chain_complete: bool, finalized: bool, ea14: bool, added_store_only: bool = False
+) -> list[str]:
+    """DCL-29, sorted by area then number. `added_store_only`: a media file is not complete in
+    the content store (with `on_chain_complete`, it is complete only in an added store)."""
     risks = set(ALWAYS_RISKS)
     if not on_chain_complete:
         risks.add("LIM-CNT-1")
+    elif added_store_only:
+        risks.add("LIM-CNT-21")
     if finalized:
         risks.add("LIM-CNT-10")
     if ea14:
@@ -427,6 +432,7 @@ def build_card(inputs: Mapping[str, Any]) -> CardResult:
         "residualRisks": residual_risks(
             on_chain_complete=on_chain_complete, finalized=finalized,
             ea14=core["kind"] == "EDITION_MASTER" and has_edition and dispute["entryHash"] is not None,
+            added_store_only=any(not f["complete"] for f in files),
         ),
         "statements": {"count": chain["count"], "head": _lc(chain["head"])},
     }  # fmt: skip

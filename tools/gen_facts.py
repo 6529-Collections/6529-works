@@ -499,6 +499,11 @@ def edition_auction(root: Path, c: Constants, denominator: int) -> dict:
             "min": c.integer(EDITION_AUCTION, "_MIN_PAYOUT_GAS"),
             "max": c.integer(EDITION_AUCTION, "_MAX_PAYOUT_GAS"),
         },
+        "rescueCapDays": {
+            "default": limits["rescueCapDays"],
+            "min": c.integer(EDITION_AUCTION, "_MIN_RESCUE_CAP_DAYS"),
+            "max": c.integer(EDITION_AUCTION, "_MAX_RESCUE_CAP_DAYS"),
+        },
         "settlementPerCall": {
             "bookWordsScanned": c.integer(EDITION_AUCTION, "_SCAN_WORDS"),
             "departuresSweptByTheClearingCall": c.integer(EDITION_AUCTION, "_SWEEP_FIRST"),
@@ -526,7 +531,7 @@ def _deploy_edition_limits(root: Path) -> dict:
     if not m:
         raise FactError(f"{DEPLOY_LIBRARY}: no editionAuctionLimits")
     fields = dict(re.findall(r"(\w+)\s*:\s*([^,]+?)\s*(?:,|$)", m.group(1).strip()))
-    if set(fields) != {"maxCloseOffset", "voidDelayDays", "payoutGas"}:
+    if set(fields) != {"maxCloseOffset", "voidDelayDays", "payoutGas", "rescueCapDays"}:
         raise FactError(f"{DEPLOY_LIBRARY}: editionAuctionLimits sets {sorted(fields)}")
     return {key: literal(value) for key, value in fields.items()}
 

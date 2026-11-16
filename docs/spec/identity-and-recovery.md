@@ -129,8 +129,9 @@ ArtistRegistration(address account,bytes32 profileId,bytes32 profileDocHash,uint
   the authority moves (ID-5, ID-40). The deadline is inclusive.
 - **`OverrideAcceptance`** is signed by the new authority, only when the override moves the
   authority. It binds no nonce, so a key holder cannot void it, and is consumed once by digest
-  (`AcceptanceUsed`, ID-12). Its deadline is checked when the scheduled `stageOverride` executes,
-  after its 48 hours.
+  (`AcceptanceUsed`, ID-12; `OverrideAcceptanceConsumed` logs each consumed digest, so the set
+  is rebuilt from the registry's own logs). Its deadline is checked when the scheduled
+  `stageOverride` executes, after its 48 hours.
 - **`ArtistRegistration`** is the account's consent to an identity created through the
   federation registry (`registerFederated`, ID-32). The registry verifies it itself, so no
   federation registry can create an identity for an account that did not sign; it binds no
@@ -155,9 +156,10 @@ an EIP-7702 delegated account.
 
 `ESTATE` and `LOST_KEY` overrides, any override that moves the payout but keeps the
 authority, and any STANDARD change signed by a consolidated wallet, can be staged only when the
-artist's last signed activity is at least `DORMANCY` old (`NotDormant`). Only the artist's own
-signed calls count, never governed overrides, vetoes, refreshes or changes a consolidated wallet
-signed (ID-19); the [estate flow](#estate-or-lost-key-without-a-wallet) lists them. Dormancy is
+artist's last signed activity is at least `DORMANCY` old (`NotDormant`). Only acts of the
+artist's own authority count, never governed overrides, vetoes, refreshes, changes a consolidated
+wallet signed, a captured wallet's cancel or contest, or an execution that keeps the authority
+(ID-19, ID-40); the [estate flow](#estate-or-lost-key-without-a-wallet) lists them. Dormancy is
 checked at staging, never at execution, so activity during the notice does not stop the
 override (owner option L4, not implemented: LIM-ID-10). Heartbeats are the authority's alone
 and never depend on the consolidation source, so a dead source cannot make a live artist
@@ -171,7 +173,7 @@ The artist registry is permanent and the consolidation source is replaceable (SU
 
 | Power | Who, when | Why it exists |
 | --- | --- | --- |
-| Cancel a STANDARD change, contest an override | A wallet captured into the snapshot (by a refresh) before the staging | Defence against a stolen key: the artist's own wallets stop the thief's change, and send a hostile override to a vote |
+| Cancel a STANDARD change, contest an override | A wallet captured into the snapshot (by a refresh) before the staging; records no activity (review E, N-1) | Defence against a stolen key: the artist's own wallets stop the thief's change, and send a hostile override to a vote. It is no proof of life, so it cannot keep a dormant artist live |
 | Sign a STANDARD change | Only while the artist is dormant; the change waits `OVERRIDE_DELAY` and records no activity; the authority's cancel ends it | Recovery from a lost key without governance |
 | Heartbeat | Nobody but the authority | A wallet's heartbeat would let a source keep any artist live and block dormancy-gated recovery |
 
@@ -180,13 +182,18 @@ What a hostile source can still do, exactly:
   artist's later STANDARD changes and can contest overrides (which then wait for a vote), and
   they can fill the snapshot's free slots. It can also report the artist's genuine wallets as
   not consolidated, so a refresh marks them missing and, after `STANDING_GRACE` (30 days), removes
-  them. It cannot move the authority or the payout, freeze the payout, or record activity.
+  them. It cannot move the authority or the payout, freeze the payout, or record activity: its
+  wallets' cancels and contests stop changes but never move the artist's last activity.
 - **To a dormant artist** (no signed activity for `DORMANCY`, a year at genesis): stage a STANDARD
   change to any authority and payout through a wallet it names. That change freezes the payout
   and waits `OVERRIDE_DELAY` (180 days), the same notice as a governed override; the old
   authority (which then counts as activity, so no re-staging for another `DORMANCY`), any
   captured wallet or a guardian stops it, and a governed override replaces it. After a guardian
-  veto it can stage again at once.
+  veto, or its own captured wallet's cancel, it can stage again at once. If the change executes
+  and keeps the authority (a payout or profile change), the artist stays dormant: only a new
+  authority's acceptance restarts the clock. It cannot make the artist live, so it never blocks
+  an `ESTATE`, `LOST_KEY` or payout-only override (its wallets can contest one, which then waits
+  for a vote).
 - **To every artist:** answer garbage or burn all gas, so every path that refreshes (registration,
   staging, heartbeats, executions) reverts until the source is swapped (LIM-ID-16, LIM-ID-17).
 - **Who stops it:** guardians cancel the 30-day swap; after it, SUCCESSOR_SETTER swaps the source
@@ -421,7 +428,7 @@ sequenceDiagram
     Note over R: 180 days. The old key, captured wallets or a GUARDIAN may stop it
     Anyone->>R: executeChange(artistId)
     R->>S: consolidations(N) for the refresh
-    Note over R: N is the authority, the dormancy clock restarts
+    Note over R: N is the authority, the dormancy clock restarts (N accepted)
 ```
 
 - **Preconditions.** Nothing pending; the artist is dormant (`NotDormant` otherwise, before the
@@ -588,8 +595,10 @@ The calls that count as signed activity and reset the dormancy clock:
 | Call | Sets the last activity |
 | --- | --- |
 | `register`, `stageChange` signed by the authority, `revokeNonce`, `heartbeat` (the authority only) | Yes (`register` emits `ArtistRegistered`, not `ActivityRecorded`) |
-| `cancelChange` of a STANDARD change, or one that contests an override | Yes |
-| `executeChange`, or a `resolveContested` that upholds and applies | Yes: the clock restarts for the identity installed |
+| `cancelChange` by the previous authority (of a STANDARD change) | Yes |
+| `cancelChange` by a captured wallet, of a STANDARD change or contesting an override | No: it stops the change but is no proof of life (review E, N-1) |
+| `executeChange`, or a `resolveContested` that upholds and applies, installing a new authority | Yes: the new authority's acceptance restarts the clock |
+| `executeChange` or an upholding `resolveContested` that keeps the authority (payout or profile only) | No, whoever staged it |
 | `cancelChange` of an override already contested | No: it does nothing |
 | `stageChange` signed by a consolidated wallet, `stageOverride`, `vetoChange`, a voiding `resolveContested`, `expireContest`, `refreshStanding`, later package acceptances | No |
 
@@ -721,14 +730,14 @@ Test files: [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) (
 | ID-9 | A STANDARD change is cancelled by its previous authority or a captured wallet; an override only by a captured wallet's contest, never by the previous authority; standing is fixed at staging. | `ArtistRegistry.cancelChange` | AR `test_Cancel_ByTheOldKey`, `test_Cancel_ByACapturedWallet`, `test_Cancel_WalletEstablishedAfterStagingCannotCancel`, `test_Attack_OldKeyCannotCancelAnOverride` |
 | ID-10 | The guardian can delete any pending change and has no path that writes an identity. | `ArtistRegistry.vetoChange`; genesis role map | AR `test_Veto_ByGuardian`, `test_Veto_StopsAnOverride`, `test_Attack_GuardianCannotRedirect`; CO `test_Contest_GuardianVetoVoids` |
 | ID-11 | An override needs an override kind and a nonzero evidence hash; `ESTATE` and `LOST_KEY` need `DORMANCY` without activity at staging. | `ArtistRegistry.stageOverride` | AR `test_Override_RevertsForInvalidKindOrEvidence`, `test_Override_EstateRevertsBeforeOneYearOfDormancy`, `test_Override_LostKeyBlockedByRecentHeartbeat` |
-| ID-12 | An override that moves the authority needs the new authority's unexpired acceptance, consumed once by digest; a payout-only override needs none. | `ArtistRegistry.stageOverride` | AR `test_Override_AuthorityChangeNeedsTheNewAuthority`, `test_Override_AcceptanceIsSingleUseByDigest`, `test_Override_PayoutOnlyNeedsNoAcceptance` |
-| ID-13 | A captured wallet's cancel during the notice contests an override once; later cancels do nothing; a contested override never executes through `executeChange`; a contest after `executableAt` reverts. | `ArtistRegistry.cancelChange`, `executeChange` | CO `test_Contest_ThiefWalletContestsAndThePayoutStaysFrozen`, `test_Contest_ALateContestIsRefusedAndExecutionProceeds`, `test_Contest_IsActivityOnlyForTheCapturedWallet` |
+| ID-12 | An override that moves the authority needs the new authority's unexpired acceptance, consumed once by digest (`OverrideAcceptanceConsumed` logs it); a payout-only override needs none. | `ArtistRegistry.stageOverride` | AR `test_Override_AuthorityChangeNeedsTheNewAuthority`, `test_Override_AcceptanceIsSingleUseByDigest`, `test_Override_PayoutOnlyNeedsNoAcceptance` |
+| ID-13 | A captured wallet's cancel during the notice contests an override once; later cancels do nothing; a contested override never executes through `executeChange`; a contest after `executableAt` reverts. | `ArtistRegistry.cancelChange`, `executeChange` | CO `test_Contest_ThiefWalletContestsAndThePayoutStaysFrozen`, `test_Contest_ALateContestIsRefusedAndExecutionProceeds`, `test_Contest_IsNoActivity` |
 | ID-14 | A contest is resolved only by citing the latest DISPUTE_OUTCOME on `(registry, artistId)`, recorded after the contest; an uphold waits for `executableAt` and re-checks. | `ArtistRegistry.resolveContested` | CO `test_Contest_VoteUpholdsAndTheArtistRecovers`, `test_Resolve_RefusesAStaleOutcomeFromAnEarlierContest`, `test_Resolve_RefusesAnOutcomeRecordedBeforeTheContest`, `test_Resolve_UpholdRechecksAtExecution`; IR `test_ContestedOverrideUpheldByARecordedVote` |
 | ID-15 | A contest lapses its locked contest timeout after it began: the freeze and the restraint lift at once, and anyone may delete it. | `ArtistRegistry._lapsed`, `expireContest` | CO `test_Contest_LapsesAfterAYear`, `testFuzz_Contest_TheUpholdWindowIsAlwaysOpen`; RR `test_PowersReturnWhenAContestLapses` |
 | ID-16 | `payoutAddress` is zero exactly while a pending, unlapsed change would move the payout; the payout changes only through an executed change. | `ArtistRegistry.payoutAddress`, `_apply` | AR `test_PayoutFreeze_WhileAPayoutChangeIsPending`, `test_PayoutFreeze_NotForChangesThatKeepThePayout`; ARR `test_PayoutFreeze_ANoOpOverrideDoesNotFreeze`; INV `invariant_PayoutChangesOnlyThroughExecutedChanges` |
 | ID-17 | A payout that cannot pull is refused at registration and staging, and clears the change at execution. | `ArtistRegistry._payoutAllowed`, `register`, `_checkNext`, `_apply` | AR `test_PayoutValidation_RejectsProtocolContractsAndSplitWallets`, `test_PayoutValidation_RecheckedAtExecution`; RV `test_PayoutRefusesProtocolContractsThatCannotPull`, `test_PredictedWalletIsCaughtOnlyOnceDeployed` |
 | ID-18 | `activeAuthorityOf` is zero exactly while a pending, unlapsed override would move the authority; every creator power reads it. | `ArtistRegistry._active`; consumers in the restraint table | AR `test_ActiveAuthority_RestrainedUntilTheOverrideExecutes`, `test_ActiveAuthority_OnlyAnAuthorityMovingOverrideRestrains`; INV `invariant_ActiveAuthorityIsRestrainedOnlyByAnAuthorityMovingOverride`; RR (every test) |
-| ID-19 | Only the artist's own signed activity resets the dormancy clock; a change a consolidated wallet signed does not. | `ArtistRegistry._recordActivity` call sites | CT `test_SourceGetsNoFasterPathThanAnOverride`; ARR `test_Activity_OverridesAndVetoesDoNotCount`, `test_Activity_CancelsAndExecutionsCount`, `test_Standing_RefreshAddsButIsNotActivity`; INV `invariant_ActivityAndNonceMatchTheModel` |
+| ID-19 | Only acts of the artist's own authority reset the dormancy clock: registration, its signed changes, heartbeats, nonce revocations and cancels, and the execution of a change that installs a new authority. A change a consolidated wallet signed, a captured wallet's cancel or contest, and an execution that keeps the authority do not. | `ArtistRegistry._recordActivity` call sites | CT `test_SourceGetsNoFasterPathThanAnOverride`, `test_N1_TheAuthoritysOwnActsStillRecordActivity`; ARR `test_Activity_OverridesAndVetoesDoNotCount`, `test_Activity_CancelsAndExecutionsCount`, `test_Standing_RefreshAddsButIsNotActivity`; INV `invariant_ActivityAndNonceMatchTheModel` |
 | ID-20 | The snapshot holds at most 16 distinct wallets and evicts nothing; free slots go to established wallets before pending ones. | `ArtistRegistry._update` | ARR `test_Standing_BoundedToSixteen`, `test_Standing_FullSnapshotKeepsMissingEntriesAndSkipsNewOnes`, `test_Standing_EstablishedWalletsTakeFreeSlotsBeforePendingOnes`; INV `invariant_AuthorityAndStandingAreConsistent` |
 | ID-21 | A recorded, established wallet loses standing only after a refresh marks it missing and a refresh at least 30 days later removes it; a wallet still consolidated is never marked missing. | `ArtistRegistry._update` | ARR `test_Standing_LostOnlyAfterAPublicThirtyDayGrace`, `test_Standing_RevokeThenStageStillCapturesTheWallet`, `test_Standing_SwapAndPopCannotDisplaceStanding`, `test_Standing_AStillEstablishedWalletBeyondTheScanKeepsStanding`; IR `test_StickyStandingDefeatsAKeyThief` |
 | ID-22 | A pending entry found unconsolidated is removed at once; a pending entry follows its live clock; an established entry's clock only moves earlier; every change of an entry's clock emits `StandingAdded`. | `ArtistRegistry._update` | GR `test_Standing_EveryEffectiveAtChangeIsLogged`; ARR `test_Standing_PendingWalletRevokedBeforeThirtyDaysNeverGainsStanding`, `test_Standing_PendingEntryFollowsALaterReRegistration`, `test_Standing_ReConsolidationCannotResetTheClock` |
@@ -749,7 +758,7 @@ Test files: [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) (
 | ID-37 | An override that moves the payout but keeps the authority needs `DORMANCY` without signed activity, whatever its kind. | `ArtistRegistry.stageOverride` | RB `test_PayoutOnlyOverride_NeedsDormancy`, `test_PayoutOnlyOverride_RecoveryPathsUnchanged`, `testFuzz_PayoutOnlyOverride_RefusedForAnyLiveArtist`; INV handler `_overrideError` |
 | ID-38 | A call into another contract forwards all gas, and a failure that leaves at most 1/8 of the gas held before it, or a source revert reporting `BoundedCallInsufficientGas` or `BoundedCallShortfall`, reverts (never a skip, a refusal or `false`), at every gas limit on every refresh trigger; source times are clamped to 48 bits, never truncated. | `ArtistRegistry._refresh`, `_skipRefresh`, `_revertOnShortfall`, `isArtist`, `bindStatementLog`, `_clamp48` | GR `test_GasRule_*` (a gas sweep of `register`, `registerFederated`, `stageChange`, `stageOverride`, `heartbeat`, `executeChange` and an upholding `resolveContested`; the source convention); RB `test_RepricedSource_IsReadInFullAt2x4x10x`, `test_Shortfall_RevertsInsteadOfSkipping`, `test_IsArtist_ShortfallRevertsInsteadOfAnsweringFalse`, `test_SourceTimes_AreClampedNotTruncated`; CO `test_BindStatementLog_ResolverReadForwardsAllGas` |
 | ID-39 | An authority can be any account `SignatureVerifier` verifies, including a contract or EIP-7702 account that pre-approves digests and answers ERC-1271 from storage. | `SignatureVerifier`, every signed path | SA (every test) |
-| ID-40 | The replaceable consolidation source never acts for a live artist: a consolidated wallet signs a STANDARD change only after `DORMANCY` without signed activity (checked before the source is read), the change waits `OVERRIDE_DELAY` and records no activity, and only the authority heartbeats (review C finding F2). | `ArtistRegistry.stageChange`, `heartbeat`, `_requireDormant` | CT (every test); AR `test_StageChange_ByEstablishedWallet`, `test_Heartbeat_ByTheAuthorityOnly`; INV `invariant_ASourceNeverActsForALiveArtist` (the handler swaps in a source that names every wallet) |
+| ID-40 | The replaceable consolidation source never acts for a live artist: a consolidated wallet signs a STANDARD change only after `DORMANCY` without signed activity (checked before the source is read), the change waits `OVERRIDE_DELAY` and records no activity, and only the authority heartbeats (review C finding F2). A wallet the source names never moves the artist's last activity: its cancels and contests stop changes but record nothing, and a change it signed that keeps the authority restarts no clock when it executes, so it cannot keep a dormant artist live (review E, N-1). | `ArtistRegistry.stageChange`, `cancelChange`, `_apply`, `heartbeat`, `_requireDormant` | CT (every test, including `test_N1_ANamedWalletsCancelRecordsNoActivity`, `test_N1_ANamedWalletsContestRecordsNoActivity`, `test_N1_AWalletChangeKeepingTheAuthorityRestartsNoClock`); AR `test_StageChange_ByEstablishedWallet`, `test_Heartbeat_ByTheAuthorityOnly`; INV `invariant_ASourceNeverActsForALiveArtist` (the handler swaps in a source that names every wallet; no call by a non-authority wallet moves the last activity) |
 
 ## Events
 
