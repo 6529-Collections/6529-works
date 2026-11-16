@@ -69,6 +69,9 @@ interface IClaimRouter is IERC165 {
     /// @notice A continue-mode signed batch carries `total` signature bytes, more than the
     ///         router's `MAX_CONTINUE_SIGNATURE_BYTES`.
     error SignaturesTooLong(uint256 total);
+    /// @notice Item `index` names `payees` payees, more than any wallet has
+    ///         (`Splits.MAX_PAYEES`, 64), so it could never be paid.
+    error TooManyPayees(uint256 index, uint256 payees);
     /// @notice In continue mode, item `index` would get only `available` gas, less than its
     ///         minimum, or, offered `available` below {SHORTFALL_REVERT_CEILING}, it ran short of
     ///         gas; the whole batch reverts so gas estimation raises the limit.

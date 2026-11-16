@@ -598,6 +598,14 @@ contract WorksAccessManager is AccessManager {
     }
 
     /// @inheritdoc AccessManager
+    /// @dev Counts as admin activity of the sender before the call, immediate or scheduled
+    ///      (only an active admin moves the clock; a failed call reverts the update with it).
+    function execute(address target, bytes calldata data) public payable override returns (uint32) {
+        _touch(_msgSender());
+        return super.execute(target, data);
+    }
+
+    /// @inheritdoc AccessManager
     /// @dev Counts as admin activity of `caller`.
     function consumeScheduledOp(address caller, bytes calldata data) public override {
         super.consumeScheduledOp(caller, data);
@@ -605,7 +613,11 @@ contract WorksAccessManager is AccessManager {
     }
 
     /// @inheritdoc AccessManager
-    /// @dev Counts as admin activity of the sender (an `execute` or a direct admin call).
+    /// @dev Counts as admin activity of the sender: a direct call of a delayed manager function
+    ///      (an admin's always is: its class delay is at least 30 days) consumes its schedule here.
+    ///      A direct `restricted` call on a managed contract never reaches the manager's state (it
+    ///      only asks `canCall`, a view), so it cannot count; admins act through {execute}, which
+    ///      counts, or {heartbeat}.
     function _consumeScheduledOp(bytes32 operationId) internal override returns (uint32) {
         _touch(_msgSender());
         return super._consumeScheduledOp(operationId);

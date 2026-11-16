@@ -38,116 +38,29 @@ Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
 
 ## Developer notes
 
-- **Permanent core, replaceable policy (AUC-38).** `mint` checks the adapter (one SLOAD), then
-  `_authorize` encodes `authorize(context, data)` by hand and reads the policy's flat
-  `MintRecord` where the call returned it, after checking each word is a clean value of its type;
-  `_checked` applies the core's invariants. The policy has no write path into Stream. The artist
-  registry and split factory are immutables with no setter; the policy, economics resolver,
-  entropy module and view extension are genesis immutables until `setDependency` writes
-  `_replaced[i]` and sets bit `i` of `Counts.replaced`, in the counter word every mint already
-  reads, so genesis mints read no extra slot. Replacing the entropy module appends the module it
-  replaces, with the last token ID minted, to `_entropyEras`; `entropyModuleOf(tokenId)` walks
-  it (ENT-18).
-- **Extension and layout.** `StreamViews` and a pinned renderer read Stream through `extsload`
-  at `StreamLayout`'s slots (counters 11, owner 12, contract URI 13, collections 17, tokens 18),
-  part of the permanent interface and pinned by `StreamLayout.t.sol`: Stream's storage order
-  can never change. The fallback forwards only the three `IStreamViews` selectors; `owner`,
-  `contractURI` and `extension` are native. The renderer reads only native views and
-  `extsload` at those slots, never the fallback, so no extension replacement touches a work's
-  metadata (RND-22).
-  `collectionCount` and `totalMinted` stay native because `WorkRecords` reads them.
-- **Pluggable 1/1 sale (owner decision 15).** `_minterKinds` records each adapter's sale kind
-  at its first admission, after every earlier mapping, so the storage layout of the other
-  slots is unchanged; `primaryTerms` reads it for a minted work. `mint` compares the record's kind
-  with `Minter.kindKey`, the same kind as 152 bits of its keccak256 kept in the minter word it
-  reads anyway, so an adapter's later `saleKind()` answer changes nothing and the check costs no
-  extra slot.
-- **Primary-sale outcome (owner decision 17).** `settlePrimary` keeps the outcome in two
-  `TokenData.flags` bits beside `SETTLED` (`SALE_SOLD`, `SALE_FROZEN_OUT`; neither is UNBID,
-  and both, which no adapter can report, is `rescueToMuseum`'s RESCUED, owner decision 28), in
-  the word it rewrites anyway, and a SOLD work's currency and price in `_sales` (declared last),
-  the only new slot. An unsold work moves to the museum through `_update`, checked for the
-  adapter's custody and a nonzero museum, with no receiver callback; the only external call is
-  the resolver's `museum()`.
-- **Fail-closed metadata (AUC-42).** `rendererOf` reads the records satellite's
-  `pinnedRenderer` with all the gas it has (`BoundedCall.tryReadAll`): only "no pin" and
-  `RecordNotOpen` serve the default renderer; other reverts pass on, a malformed answer reverts
-  `RendererPinUnreadable`, and a shortfall reverts `BoundedCallShortfall`.
-- **Content uniqueness (AUC-44).** `_contents[contentHash]` packs the minting token ID, a
-  release's beneficiary and a released flag; `_claimContent` checks and sets it in `_store` (the
-  cold read and the one new slot the registry paid before). `releaseContent` and the tombstones
-  (`_tombstoned`) are Stream's; a burn leaves the record.
-- **Rescue delay (AUC-41).** `Counts.rescueDelay` (zero means the 90-day floor) is read at an
-  adapter's removal and locked in its `Minter.rescueDelay`.
-- **Start-path storage (QUALITY-6).** A mint writes the ERC-721 owner, two token words (seller,
-  serial, collection, a flags byte (kind and seed policy, two bits each, then the sale and link
-  bits) and a 24-bit terms ID; the item hash) and rewrites two
-  nonzero counter words (the global counts and the collection's). The
-  terms (lead artist ID, and 24 bits each for royalty rate, fee share, fee-recipient index
-  and minting-adapter index) are one word shared by every work under the same terms, at the position its hash names or,
-  after a 23-bit collision, in an overflow range found by the full hash; nothing loops. A first
-  start under new terms writes it. The layout is what keeps `start` within its budget and slot
-  maximum ([ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)); the
-  collision cost is LIM-GAS-10. `GasReport.t.sol` asserts every start row's exact slot count,
-  so any new word on this path fails CI until the ADR's table moves.
-- **Nothing in `WorkRecords` is written at mint.** Keep it that way: the record opens later
-  with the permissionless `openRecord`, and every per-token function reverts with
-  `RecordNotOpen` until then. Its first record word packs the pin, version, media count,
-  `syncedFiles`, a flags byte (opened, finalized, on-chain complete, custom license), the 24-bit
-  chunk cursor and the 16-bit `renounced` mask: it is full, so a new per-work field needs a new
-  slot. Media is one word per file plus one `files` word, a byte per file: the role in the low
-  four bits, the store in the high four.
-- **Permanent, so frozen at launch.** `WorkRecords` is bound once by Stream and Editions and can
-  never be replaced; `IWorkRecords`' ERC-165 ID (`0x2654eed1`) and `IWorkPowers`' (`0xbd18229c`)
-  freeze with it. What may change lives behind its two governed pointers: the delivery contract
-  (`setDelivery`) and the store set (`addStore`).
-- **Item fields are open `uint8`s** in the shared `PackageItem` and `MediaFile` (kind, seed
-  policy, party and media roles; the enums only name today's values), so a kind, seed policy or
-  role a future mint policy adds never makes `openRecord` revert (WS-45). The ABI, the item hash
-  and every selector are unchanged: an enum encodes as `uint8`.
-- **`royaltyInfo` makes one view call** (the split factory's `walletFor`) and nothing else, so a
-  gas shortfall reverts instead of returning a zero royalty. Do not add reads to it.
-- **Renderer pins fail closed** (DEPS-6): `rendererOf` re-checks the default renderer's and a
-  finalized work's pinned code hash at every call and reverts instead of falling back.
-- **`syncOnChain`** verifies at most the caller's `maxChunks` (no compiled budget) through the
-  content store's `firstMissing(fileId, from, to, source)`, which checks its own chunks or
-  re-hashes what an added store serves. Two walks: the content store's, anyone's, cursor in word
-  0; an added store's, the artist's only, cursor in `_storeCursors` (one slot per work, written
-  only on that walk). An added store is checked one chunk per call, so a refusal is a missing
-  chunk. The content walk passes over a file already complete in an added store whose bytes
-  it lacks, and goes round again once the work is on-chain complete (upgrades; after that,
-  `syncedFiles` is only the upgrade cursor and every file is complete). Each file that completes
-  emits `MediaFileComplete` with its store, every call that progressed `OnChainSyncProgress`, and
-  the call that finishes `WorkOnChainComplete` (WS-42, WS-43).
-- **Forwarding.** `preferredLocator` asks the delivery contract with all the gas the EIP-150
-  rule allows (`BoundedCall.tryReadAll`) and checks the answer (`_isLocation`); a refusal or a
-  malformed answer serves the work's own (WS-40; a URI with a byte outside printable ASCII, `"` or `\` is malformed), a
-  shortfall reverts. No renderer budget is held: a record is one chunk, and the pinned
-  renderer decides what it can show.
-- **Locator adders** (`WorkDelivery`). `LocatorCounts` keeps, beside the two quota counts, a
-  16-bit mask of the indices the artist added; the preferred-location fallbacks read only those
-  (WS-21), and `LocatorAdded` names the adder, so a successor can rebuild it.
-- **Amendments** bump the version before their external calls (Stream, Editions), and every
-  consent binds the state hash, so nothing applies twice. `renounce` bumps it too, which is its
-  replay protection; it shares the artist-only signature check with `repinRenderer`
-  (`_checkArtistConsent`).
-- **`IWorkPowers` is a second interface.** 6529 Stream and 6529 Stream Editions compile
-  `type(IWorkRecords).interfaceId` into their bind checks; both IDs freeze at launch.
-  `RENDERER_REPIN` (4) is renounceable only after finalize, and then `repinRenderer` reverts for
-  good for that work.
-- **Bytecode.** `WorkRecords` is the tighter of the two; current margins in the
+- **Storage order is permanent.** `StreamViews` and a pinned renderer read Stream through
+  `extsload` at `StreamLayout`'s slots (counters 11, owner 12, contract URI 13, collections 17,
+  tokens 18), pinned by `StreamLayout.t.sol`. Add new slots after the others, as `_minterKinds`
+  and `_sales` are (AUC-49, RND-22).
+- **Start path (QUALITY-6).** `GasReport.t.sol` asserts every start row's exact slot count, so
+  any new word on this path fails CI until the
+  [ADR 0004 table](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table) moves;
+  a replaced dependency is a bit of `Counts.replaced`, a word every mint reads (AUC-38, ENT-18).
+- **Nothing in `WorkRecords` is written at mint.** Keep it that way. Its first record word is
+  full, so a new per-work field needs a new slot; media is one word per file plus one `files`
+  word (role in the low four bits of each byte, store in the high four).
+- **Frozen interface ids** `0x2654eed1` (`IWorkRecords`) and `0xbd18229c` (`IWorkPowers`), in
+  Stream's and Editions' bind checks, pinned by `StreamInterfaceIds.t.sol`.
+- **`royaltyInfo` makes one view call.** Do not add reads to it.
+- **Amendments and `renounce` bump the version before external calls.**
+- **Behavior is owned by the spec:** fail-closed renderer reads (AUC-42, DEPS-6), content
+  uniqueness (AUC-44), the rescue delay (AUC-41), renunciation (WS-37, WS-38), delivery
+  forwarding (WS-40) and the sync walks (WS-42, WS-43).
+- **Bytecode.** `WorkRecords` is the tighter of the two; margins in the
   [audit scope](../../docs/audit/scope.md#products-and-sales).
-- **Tests:** `forge test --match-path 'test/stream/**'`: core and satellite units, preferred
-  location, the terms tests (`StreamTerms*.t.sol`, including real and ground collisions), the
-  stateful invariants and `StreamTxCap.t.sol`; a Halmos proof of `SpdxId` is in
+- **Tests:** `forge test --match-path 'test/stream/**'`; a Halmos proof of `SpdxId` is in
   `test/symbolic/` ([Testing](../../docs/testing/README.md)). End to end: `CuratedSale.t.sol`,
-  `RecordAmendments.t.sol`, `SyncOnChainResume.t.sol`, `RendererCodePin.t.sol`, the powers
-  on the deployed stack in `test/stream/WorkPowersStack.t.sol`; delivery, stores, future item
-  values and the governance invariant in `test/stream/WorkDelivery.t.sol`, `WorkStores.t.sol`,
-  `WorkRecordsFuture.t.sol` and `WorkRecordsGovernanceInvariant.t.sol`; and
-  `GasReport.t.sol` in [`test/integration/`](../../test/integration/). The mint policy's safety
-  (a hostile policy and its invariant) is `test/stream/StreamPolicySafety.t.sol`; the interface
-  ids are pinned in `test/interfaces/StreamInterfaceIds.t.sol`.
+  `SyncOnChainResume.t.sol` and `GasReport.t.sol` in [`test/integration/`](../../test/integration/).
 
 ## See also
 

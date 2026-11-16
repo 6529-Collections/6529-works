@@ -40,61 +40,36 @@ restraint withholds are in the [stolen-key flow](../../docs/spec/identity-and-re
 - **The registry is permanent.** Split wallets and Stream pin it immutably, so it is never
   redeployed; the identity source and the federation registry are swapped inside it
   (`setConsolidationSource`, `setFederationRegistry`, compare-and-set).
+- **Storage.** `_artists` (the identity fields, last activity and nonce), `_pending` (one change
+  with its captured cancellers), `_standing` (at most 16 entries), `artistIdOf` for every past
+  and present authority, `reservedFor` for a staged new authority, and `_acceptanceUsed` for
+  override acceptances consumed by digest.
 - **Timers are one packed word** (`_timerWord`, 48 bits per `IArtistRegistry.Timer`), between the
   packed `FLOORS` and `CEILINGS` constants. A staging locks its delay into `executableAt` and the
   contest timeout into `PendingChange.contestTimeout` (free: it shares `kind`'s slot).
 - **Federation directory.** `_listings[token]` is one slot (`uint160` artist ID and status); the
   fixed fields live only in `FederatedContractListed`. No identity path reads it.
-- **The source decides nothing for a live artist** (ID-40). The registry is permanent and the
-  consolidation source replaceable, so a wallet the source names signs a change only for a
-  dormant artist (checked before the source is read), that change waits the override delay
-  and records no activity, and only the authority heartbeats. Only the authority's own acts
-  move the last activity: a captured wallet's cancel or contest records none, and an execution
-  records it only when it installs a new authority (review E, N-1). What a hostile source can still
-  do is listed in the spec ([what the source decides](../../docs/spec/identity-and-recovery.md#what-the-consolidation-source-decides)).
-- **Refreshes are best-effort except `refreshStanding`.** A source that reverts, or answers
-  lists too long or of unequal lengths, skips the refresh (`StandingRefreshSkipped`); a
-  shortfall (a failed read that left at most 1/8 of the gas, or a source revert with
-  `BoundedCallInsufficientGas` or `BoundedCallShortfall`, the `IConsolidationSource`
-  convention) reverts. A successful answer must decode as `(address[], uint64[])`: one that
-  does not reverts the refresh (and the heartbeat or staging that ran it), as a shortfall does,
-  never skips it; the pinned `ConsolidationAdapter` never gives one (`DelegationReadFailed`
-  converts its bad reads into reverts). Source times are clamped to 48 bits, and every
-  change of an entry's `effectiveAt` emits `StandingAdded`.
-- **One-read active authority.** `Artist` keeps a `restrained` flag beside the authority: every
-  staging sets it, every end of a change (execution, veto, cancel, a voided or lapsed contest, a
-  failed re-check at execution) clears it, and `activeAuthorityOf` reads the pending change only
-  while it is set. Every new way a change can end must clear the flag;
+- **The `restrained` flag.** `activeAuthorityOf` reads the pending change only while
+  `Artist.restrained` is set, so every new way a change can end must clear the flag;
   [`RestrainedFlag.t.sol`](../../test/identity/RestrainedFlag.t.sol) and the identity invariants
-  check it against the pending change. `activeAuthorityOf` sits on the auction start and settle
-  paths, so its cost shows up in the
+  check it. It sits on the auction start and settle paths, so its cost shows up in the
   [ADR 0004 table](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table).
-- **Storage.** `_artists` (the identity fields, last activity and nonce), `_pending` (one change
-  with its captured cancellers), `_standing` (at most 16 entries), `artistIdOf` for every past
-  and present authority, `reservedFor` for a staged new authority, and `_acceptanceUsed` for
-  override acceptances consumed by digest.
-- **Bounded walks, worst cases.** Refreshes and stagings walk at most 32 scanned and 16 recorded
-  wallets with at most 8 cold registration reads each; the tests assert the worst cases stay
-  under half the EIP-7825 cap (figures in the spec's
-  [parameters](../../docs/spec/identity-and-recovery.md#parameters-and-limits)). Raising
-  `Limits.MAX_CANCELLERS` or the adapter's scan bounds means re-measuring them.
-- **The adapter fails closed.** Only a cheap revert with no data (the deployed delegation
-  contract's array getters past their end) ends a walk; a read that runs out of gas, reverts
-  with data or returns too much reverts with `DelegationReadFailed`, never reads as "not
-  consolidated". During an outage only `refreshStanding` and a consolidated wallet's signer
-  check revert (ID-26, LIM-ID-9).
+- **Bounded walks.** Raising `Limits.MAX_CANCELLERS` or the adapter's scan bounds means
+  re-measuring the worst cases against the spec's
+  [parameters](../../docs/spec/identity-and-recovery.md#parameters-and-limits).
+- **Behavior is owned by the spec:** what the consolidation source decides (ID-40,
+  [what the source decides](../../docs/spec/identity-and-recovery.md#what-the-consolidation-source-decides)),
+  refresh skips and shortfalls ([Refreshing standing](../../docs/spec/identity-and-recovery.md#refreshing-standing),
+  ID-38), and the adapter's fail-closed reads during an outage (ID-25, ID-26, LIM-ID-9).
 - **Delegation contract.** A constructor argument: mainnet's 6529 delegation contract, and on
   Sepolia the official deployment with identical runtime bytecode
   ([deployments](../../deployments/11155111/README.md)); on mainnet the deploy and Verify pin
   the address and code hash (GV-31).
 - **Bytecode:** comfortable margin; figures in the
   [audit scope](../../docs/audit/scope.md#curation-identity-and-records).
-- **Tests:** `forge test --match-path 'test/identity/**'`: units, the standing snapshot and its
-  worst cases (`ArtistRegistryStanding.t.sol`), contested overrides, the restrained flag, the adapter
-  against the real getter shapes, the federation directory, timers, recovery with a dead source,
-  signature agility, and the invariant suite. End to end:
-  `IdentityRecovery.t.sol` and `RecoveryRestraint.t.sol` in
-  [`test/integration/`](../../test/integration/). Coverage and mutation testing: [Testing](../../docs/testing/README.md).
+- **Tests:** `forge test --match-path 'test/identity/**'`. End to end: `IdentityRecovery.t.sol`
+  and `RecoveryRestraint.t.sol` in [`test/integration/`](../../test/integration/). Coverage and
+  mutation testing: [Testing](../../docs/testing/README.md).
 
 ## See also
 

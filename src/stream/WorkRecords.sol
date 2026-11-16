@@ -817,13 +817,17 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         _refresh(tokenId);
     }
 
-    /// @dev A license's text must be a registered content-store file, and complete on-chain,
-    ///      in at most `MAX_LICENSE_TEXT_CHUNKS` chunks, when `stored`.
+    /// @dev A license's text must be a registered content-store file with a SHA-256 digest, and
+    ///      complete on-chain, in at most `MAX_LICENSE_TEXT_CHUNKS` chunks, when `stored`. The
+    ///      digest kind is `_fileInfo`'s encoding above its low byte, zero only for SHA-256 (the
+    ///      unstored path's `sha256Of` refuses any other kind).
     function _requireLicenseText(bytes32 textFileId, bool stored) private view {
         IContentStore cs = IContentStore(contentStore);
         if (stored) {
-            (,, uint256 chunks,) = _fileInfo(textFileId, false);
-            if (chunks > MAX_LICENSE_TEXT_CHUNKS || !cs.isComplete(textFileId)) {
+            (,, uint256 chunks, uint256 encoding) = _fileInfo(textFileId, false);
+            if (
+                encoding >> 8 != 0 || chunks > MAX_LICENSE_TEXT_CHUNKS || !cs.isComplete(textFileId)
+            ) {
                 revert InvalidLicense();
             }
         } else if (cs.sha256Of(textFileId) == 0) {
