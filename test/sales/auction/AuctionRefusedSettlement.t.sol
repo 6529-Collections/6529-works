@@ -153,6 +153,9 @@ contract AuctionRefusedSettlementTest is AuctionBase {
         assertFalse(h.primarySettled(tokenId), "nothing reported to the token");
         assertEq(h.holderOf(tokenId), address(auction), "the work stays in custody");
         assertEq(auction.auction(saleId).bidder, address(0), "no winner");
+        // The lens reports the delivery as pending for the artist the token names (the no-bid
+        // path `claimDelivery` admits), never as none (automated review, 16 November 2026).
+        assertEq(auction.pendingDelivery(saleId), artist, "pending for the artist");
         // The former bidder cannot take the work; the artist the token names can.
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.NoPendingDelivery.selector, saleId));
