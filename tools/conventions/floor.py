@@ -64,7 +64,7 @@ MAX_DECLARATIONS_BYTES = 24_575
 FACTS = ("storage", "format", "license", "generative", "display")
 SCRIPT_MIMES = frozenset({"text/html", "text/javascript", "application/javascript", "text/ecmascript",
                           "application/ecmascript", "image/svg+xml"})  # fmt: skip
-WORK_POWERS = ("ROYALTY_RATE", "RELICENSE")  # WorkPowers bit order: bit 0, bit 1 (DCL-8)
+WORK_POWERS = ("ROYALTY_RATE", "RELICENSE", "RENDERER_REPIN")  # WorkPowers bits 0, 1, 2 (DCL-8)
 _ENCODINGS = {"Identity": Encoding.IDENTITY, "Gzip": Encoding.GZIP, "Base64": Encoding.BASE64,
               "GzipBase64": Encoding.GZIP_BASE64}  # fmt: skip
 _AR = re.compile(r"ar://[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]\Z")

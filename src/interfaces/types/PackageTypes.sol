@@ -37,7 +37,9 @@ enum SeedPolicy {
 ///      artist ID before any transaction.
 struct Party {
     address account;
-    PartyRole role;
+    /// An open `uint8`: today's values are named by `PartyRole`; a later mint policy may define
+    /// more, which permanent contracts record without reverting.
+    uint8 role;
 }
 
 /// @notice A work's license (ADR 0001 section 8, owner direction 11 October 2026).
@@ -76,7 +78,8 @@ struct SaleTerms {
 ///      `currency` and `params` are that kind's, opaque to the token and the package registry,
 ///      which check only a nonzero kind and a bounded `params` length (`EditionRules`); a priced
 ///      method carries its price in `params`, and the adapter validates both when it opens a
-///      sale. The edition auction takes `CURRENCY_ETH` and empty `params`. For an ORIGINAL item
+///      sale. The edition auction takes `CURRENCY_ETH`, and `params` empty or exactly
+///      `abi.encode(uint256 closeOffset)` (EA-17). For an ORIGINAL item
 ///      every field is zero or empty.
 struct EditionTerms {
     uint32 maxCount;
@@ -101,7 +104,9 @@ struct EditionTerms {
 ///      - `collectionId`: a 6529 Stream collection (chain-specific, below 2^32).
 ///      - `seed`: nonzero only under `SeedPolicy.ARTIST`.
 struct PackageItem {
-    ItemKind kind;
+    /// An open `uint8` (today's values named by `ItemKind`), so a kind a later mint policy
+    /// defines never makes a permanent contract's decode revert.
+    uint8 kind;
     uint256 collectionId;
     bytes32 contentHash;
     bytes32 mediaHash;
@@ -109,7 +114,8 @@ struct PackageItem {
     Party[] parties;
     ISplitWallet.Payee[] payees;
     License license;
-    SeedPolicy seedPolicy;
+    /// An open `uint8` (today's values named by `SeedPolicy`).
+    uint8 seedPolicy;
     bytes32 seed;
     SaleTerms sale;
     EditionTerms edition;

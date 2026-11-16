@@ -60,7 +60,7 @@ NOTES: dict[tuple[str, str], str] = {
         "that adapter; to the museum only (owner decision 20).",
     ("Stream", "releaseContent(uint256,bytes32,uint256)"):
         "After an upheld dispute; scheduled with the auction's `cancel`, to execute after it.",
-    ("WorkRecords", "addLocator(uint256,bytes32,(uint8,string))"):
+    ("WorkDelivery", "addLocator(uint256,bytes32,(uint8,string))"):
         "The work's artist may also call it directly before finalize; PLATFORM's path is a "
         "`canCall` check in the contract and needs a zero-delay grant.",
     ("WorkRecords", "relicense(uint256,(string,bytes32),(uint8,uint256,bytes32,bytes32,bytes32,"
@@ -70,7 +70,14 @@ NOTES: dict[tuple[str, str], str] = {
      "(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,"
      "(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])"): "Also needs every party's signed consent; re-rates the linked edition.",
     ("WorkRecords", "repinRenderer(uint256,address,bytes32,bytes32,uint64,bytes)"):
-        "The errata repin: also needs the lead artist's signature.",
+        "The errata repin: also needs the lead artist's signature; refused for good once the "
+        "lead artist renounced `RENDERER_REPIN`.",
+    ("WorkRecords", "setDelivery(address,address)"):
+        "Replaces the delivery contract (locators and preferences); compare-and-set; the "
+        "successor names its predecessor. No fact of any work changes.",
+    ("WorkRecords", "addStore(address,bytes32)"):
+        "Adds a store `syncOnChain` may verify media against, for good; code-hash pinned. No "
+        "existing file's store or completeness changes.",
     ("PackageRegistry", "revokePackage(bytes32,bytes32)"):
         "Also revokes a root before it is registered.",
     ("PackageRegistry", "setVerifier(address,address,bytes32)"):
@@ -111,12 +118,14 @@ NOTES: dict[tuple[str, str], str] = {
     ("EnglishAuction", "cancel(uint256,bytes32)"):
         "Upheld dispute: while paused, citing the token's DISPUTE_OUTCOME recorded after the "
         "pause.",
-    ("EnglishAuction", "setOpeningBid(address,uint256,uint256)"):
-        "Per currency; compare-and-set, with a ceiling.",
-    ("EnglishAuction", "setConfig((uint32,uint32,uint32),(uint32,uint32,uint32))"):
-        "Duration, anti-snipe window and increment share; compare-and-set.",
+    ("AssetAllowlist", "setOpeningBid(address,uint64,uint256)"):
+        "Per currency, the English auction's least first bid; compare-and-set, with a ceiling.",
+    ("EnglishAuction", "setConfig((uint32,uint32,uint32,uint32,uint32),"
+     "(uint32,uint32,uint32,uint32,uint32))"):
+        "Duration, anti-snipe window, increment share, refusal delay and raise-only refusal "
+        "gas; compare-and-set.",
     ("*", "setTarget(address,bool)"): "Also a genesis wiring call.",
-    ("*", "setFederationRegistry(address,address)"): "v1.1: no registry is installed in v1.",
+    ("*", "setFederationRegistry(address,address)"): "No federation registry is installed yet (federation is in v1, ADR 0007; a later ADR specifies it).",
     ("UniformEditionAuction", "setConfig((uint96,uint16,uint16,uint32,uint32,uint32,uint32),"
      "(uint96,uint16,uint16,uint32,uint32,uint32,uint32))"):
         "Margin, step ladder, close offset, soft-close window and backstop; compare-and-set, "
@@ -138,6 +147,11 @@ NOTES: dict[tuple[str, str], str] = {
         "Compare-and-set; also a genesis wiring call (ETH for each product).",
     ("AssetAllowlist", "deprecateAsset(address)"):
         "Halts sales in the asset; withdrawals and claims never stop.",
+    ("FeeRecipientVault", "setDestination(uint64,address)"):
+        "Where every held and future network fee goes; compare-and-set on the vault's revision.",
+    ("MuseumVault", "setDestination(uint64,address)"):
+        "Where every museum-held work and payout goes: authority over existing tokens, so the "
+        "30-day class, not the fee vault's 14 days; compare-and-set on the vault's revision.",
     ("RevenueEscrow", "recover(address,address,address)"): "Only to an identical-configuration "
      "replacement wallet, or to the replacement the account itself named.",
     ("DependencyRegistry", "register(bytes32,bytes32,bytes32)"):
@@ -161,7 +175,8 @@ MANAGER_NOTES: dict[str, str] = {
 # ADMIN role's execution delay; "target" adds the target's admin delay (the larger applies).
 MANAGER_FUNCTIONS: tuple[tuple[str, str, str, str], ...] = (
     ("grantRole(uint64,address,uint32)", "The role's admin (ADMIN for every role)", "admin",
-     "The grant then waits the role's grant delay."),
+     "The grant then waits the role's grant delay. Refused below the role's class delay "
+     "(`DelayBelowClass`), whoever the role's admin is."),
     ("revokeRole(uint64,address)", "The role's admin (ADMIN for every role)", "admin",
      "Only a guardian or its scheduler can cancel it, and the account it revokes only if it "
      "scheduled it."),
@@ -176,7 +191,9 @@ MANAGER_FUNCTIONS: tuple[tuple[str, str, str, str], ...] = (
      "A reduction takes effect after its length, and never sooner than `minSetback()`."),
     ("setTargetFunctionRole(address,bytes4[],uint64)", "ADMIN", "target", ""),
     ("setTargetClosed(address,bool)", "ADMIN", "target", ""),
-    ("updateAuthority(address,address)", "ADMIN", "target", ""),
+    ("updateAuthority(address,address)", "ADMIN", "target",
+     "Moves one target to another authority: no slow lane and no bounded veto, so any one "
+     "guardian can stop it, every time; it checks nothing about the new authority."),
     ("setAuthority(address)", "ADMIN, scheduled on the target itself", "target",
      "Stock OpenZeppelin lets only ADMIN cancel this; the guardians can too."),
 )
@@ -292,6 +309,10 @@ def validate(config: dict) -> None:
             raise ConfigError(f"manager.{sig}: unknown role {entry['role']!r}")
         if entry["delay"] != role["executionDelay"] or entry["class"] != role["executionClass"]:
             raise ConfigError(f"manager.{sig}: class or delay differs from role {entry['role']}")
+    for entry in (config.get("manager") or {}).get("open", []):
+        sig = entry["signature"]
+        if entry["selector"] != selector(sig):
+            raise ConfigError(f"manager.{sig}: selector {entry['selector']} is not {selector(sig)}")
     contracts = {c["name"] for c in config["contracts"]}
     for call in config["wiring"]:
         if call["contract"] not in contracts:
@@ -479,6 +500,9 @@ def render(config: dict) -> str:
         note = MANAGER_NOTES.get(f["signature"], f.get("note", ""))
         w(f"| `{f['signature']}` | `{f['selector']}` | `{f['role']}` | "
           f"{format_delay(f['delay'])} | {guardian_cancel(f['delay'])} | {note} |")
+    for f in (config.get("manager") or {}).get("open", []):
+        w(f"| `{f['signature']}` | `{f['selector']}` | No role (checked in the function) | "
+          f"{format_delay(0)} | {guardian_cancel(0)} | {f.get('note', '')} |")
     w("")
     w("`schedule`, `execute` and `cancel` are open to anyone and check the caller's permission")
     w("for the call they carry.")

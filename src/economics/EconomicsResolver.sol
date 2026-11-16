@@ -40,8 +40,8 @@ import { Splits } from "./Splits.sol";
 ///      `Roles.PARAMETER_SETTER` (48 hours). Each setter compares its own revision, bumped by
 ///      every change to that setting (the museum's is {museumRevision}).
 ///      A fee recipient must be able to accept payments, because works lock it at mint: the
-///      resolver refuses itself, its allowlist and factory, the factory's release verifier, and
-///      every protocol contract that declares an interface it cannot be paid through
+///      resolver refuses itself, its allowlist and the split ledger (which is also the release
+///      verifier), and every protocol contract that declares an interface it cannot be paid through
 ///      (`ProtocolContracts`: the revenue escrow, the claim router, the sale adapters, 6529
 ///      Stream and 6529 Stream Editions, the artist and package registries and the work
 ///      records).
@@ -281,11 +281,11 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
         (_museum, _museumRevision) = (next, revision);
     }
 
-    /// @dev The fee-recipient rule (CALLS-1): this resolver, its allowlist, factory and release
-    ///      verifier, and every protocol contract that cannot be paid or hold a work.
+    /// @dev The fee-recipient rule (CALLS-1): this resolver, its allowlist, the split ledger (also
+    ///      the release verifier), and every protocol contract that cannot be paid or hold a work.
     function _refused(address r) private view returns (bool) {
         return r == address(this) || r == address(_allowlist) || r == address(_factory)
-            || r == address(_factory.verifier()) || ProtocolContracts.isProtocolContract(r);
+            || ProtocolContracts.isProtocolContract(r);
     }
 
     function _validateLicense(License memory license) private pure {

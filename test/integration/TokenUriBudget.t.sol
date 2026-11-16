@@ -26,7 +26,7 @@ import { IntegrationBase } from "./IntegrationBase.sol";
 ///           attribute's name is 33 characters, the longest the renderer compares letter by
 ///           letter with its own names (`TRAIT`).
 ///         - **The media**: 256 KiB of attested `Base64` `text/html` as the primary (inlined),
-///           a PREVIEW image at the WorkRecords cap (`Limits.MAX_PREVIEW_BYTES`), stored as
+///           a PREVIEW image at the renderer's bound (`Limits.MAX_PREVIEW_BYTES`), stored as
 ///           `Identity` or as attested `Base64` (inlined), and 32 media files in all
 ///           (`Limits.MAX_MEDIA_FILES`).
 ///         - **The rest**: a 64-byte `LicenseRef` license whose text is a media file served by
@@ -46,8 +46,9 @@ contract TokenUriBudgetTest is IntegrationBase {
     bytes internal constant ATTR = '{"trait_type":"abcdefghijklmnopqrstuvwxyzabcdefg","value":1,'
         '"display_type":"number","max_value":9}';
     uint256 internal constant ATTR_UNITS = 9;
-    /// @dev The largest PREVIEW image of each encoding `openRecord` accepts.
-    uint256 internal constant PREVIEW_IDENTITY = Limits.MAX_PREVIEW_BYTES / 4;
+    /// @dev The largest PREVIEW image of each encoding the renderer inlines (its preview bound is
+    ///      `Limits.MAX_PREVIEW_BYTES` of weight, an `Identity` byte weighing eight).
+    uint256 internal constant PREVIEW_IDENTITY = Limits.MAX_PREVIEW_BYTES / 8;
     uint256 internal constant PREVIEW_BASE64 = Limits.MAX_PREVIEW_BYTES;
 
     // Where the attributes' white space goes, and what the leftover units are.
@@ -60,6 +61,9 @@ contract TokenUriBudgetTest is IntegrationBase {
     address internal artist;
     address internal reader = makeAddr("budgetReader");
     uint256 internal salt;
+    /// @dev When above 1, every chunk uploaded is stored as a link of this many parts, never
+    ///      whole (`_writeChunks`).
+    uint256 internal linkParts;
 
     function setUp() public override {
         super.setUp();
@@ -154,6 +158,27 @@ contract TokenUriBudgetTest is IntegrationBase {
         return _record(hex"6161c3a9", shape, attributes, ATTR_UNITS * n);
     }
 
+    // ------------------------------------------------------------------ linked chunks
+
+    /// @dev Stores each chunk whole, or, with `linkParts` above 1, as a link of `linkParts`
+    ///      parts (fewer only for a chunk shorter than that many bytes).
+    function _writeChunks(bytes memory stored) internal override returns (bytes32[] memory hashes) {
+        if (linkParts < 2) return super._writeChunks(stored);
+        uint256 size = store.CHUNK_SIZE();
+        hashes = new bytes32[]((stored.length + size - 1) / size);
+        for (uint256 i; i < hashes.length; ++i) {
+            bytes memory chunk = _slice(stored, i * size, size);
+            hashes[i] = keccak256(chunk);
+            if (store.chunkPointer(hashes[i]) != address(0)) continue;
+            uint256 step = (chunk.length + linkParts - 1) / linkParts;
+            bytes32[] memory parts = new bytes32[]((chunk.length + step - 1) / step);
+            for (uint256 j; j < parts.length; ++j) {
+                (parts[j],) = store.writeChunk(_slice(chunk, j * step, step));
+            }
+            if (parts.length > 1) assertEq(store.linkChunk(parts), hashes[i], "linked");
+        }
+    }
+
     // ------------------------------------------------------------------ the work
 
     /// @dev The dearest collection name to render, of those `createCollection` accepts (it
@@ -171,7 +196,7 @@ contract TokenUriBudgetTest is IntegrationBase {
         MediaFile[] media;
     }
 
-    /// @dev A PREVIEW image at the cap: `Identity` of `MAX_PREVIEW_BYTES / 4` bytes, or attested
+    /// @dev A PREVIEW image at the bound: `Identity` of `MAX_PREVIEW_BYTES / 8` bytes, or attested
     ///      `Base64` text of `MAX_PREVIEW_BYTES` bytes.
     function _preview(bool base64) internal returns (bytes32 id, bytes32 sha) {
         bytes memory png = _bytes(base64 ? PREVIEW_BASE64 / 4 * 3 : PREVIEW_IDENTITY, 1000 + salt);
@@ -190,18 +215,19 @@ contract TokenUriBudgetTest is IntegrationBase {
         b.media[0] = MediaFile(
             _upload(text, IContentStore.Encoding.Base64, "text/html", content),
             content,
-            FileRole.PRIMARY
+            uint8(FileRole.PRIMARY)
         );
         _attestAll(b.media[0].fileId);
         (bytes32 preview, bytes32 previewSha) = _preview(base64Preview);
-        b.media[1] = MediaFile(preview, previewSha, FileRole.PREVIEW);
+        b.media[1] = MediaFile(preview, previewSha, uint8(FileRole.PREVIEW));
         bytes memory terms = abi.encodePacked("The terms of the license, #", vm.toString(salt));
         b.licenseText = _storeText(terms, "text/plain");
-        b.media[2] = MediaFile(b.licenseText, sha256(terms), FileRole.AUXILIARY);
+        b.media[2] = MediaFile(b.licenseText, sha256(terms), uint8(FileRole.AUXILIARY));
         for (uint256 i = 3; i < b.media.length; ++i) {
             bytes memory aux =
                 abi.encodePacked("auxiliary ", vm.toString(salt), "/", vm.toString(i));
-            b.media[i] = MediaFile(_storeText(aux, "text/plain"), sha256(aux), FileRole.AUXILIARY);
+            b.media[i] =
+                MediaFile(_storeText(aux, "text/plain"), sha256(aux), uint8(FileRole.AUXILIARY));
         }
     }
 
@@ -220,10 +246,10 @@ contract TokenUriBudgetTest is IntegrationBase {
         w.item = _item(artist, coll, content, b.media, _storeText(json, "application/json"));
         w.item.license =
             License(string.concat("LicenseRef-", string(_fill("x", 53))), b.licenseText);
-        w.item.seedPolicy = SeedPolicy.ARTIST;
+        w.item.seedPolicy = uint8(SeedPolicy.ARTIST);
         w.item.seed = keccak256(abi.encode("seed", salt));
         if (master) {
-            w.item.kind = ItemKind.EDITION_MASTER;
+            w.item.kind = uint8(ItemKind.EDITION_MASTER);
             w.item.edition = EditionTerms(20, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
         }
         b.tokenId = _mintAndOpen(w, master);
@@ -239,10 +265,10 @@ contract TokenUriBudgetTest is IntegrationBase {
         if (master) {
             _ethBid(saleId, makeAddr("budgetCollector"), 1 ether);
             _settleAtEnd(saleId);
-            editions.createEdition(tokenId, w.item, root, _proofOf(works, 0));
+            editions.createEdition(tokenId, w.item);
         }
         records.openRecord(tokenId, w.item, w.media);
-        records.syncOnChain(tokenId);
+        records.syncOnChain(tokenId, 0, type(uint256).max);
     }
 
     /// @dev 16 locators on the license text, of the longest kind (IPFS, 66 bytes) last and
@@ -253,12 +279,12 @@ contract TokenUriBudgetTest is IntegrationBase {
         for (uint256 i; i < 16; ++i) {
             string memory seed = string.concat(vm.toString(salt), "/", vm.toString(i));
             vm.prank(i < 8 ? platform : artist);
-            records.addLocator(
+            delivery.addLocator(
                 b.tokenId, b.licenseText, i == 15 ? CA.ipfsLocator(seed) : CA.ar(seed)
             );
         }
         vm.prank(storageOperator);
-        records.setPreferredKind(LocatorKind.IPFS);
+        delivery.setPreferredKind(LocatorKind.IPFS);
     }
 
     // ------------------------------------------------------------------ measuring
@@ -322,6 +348,31 @@ contract TokenUriBudgetTest is IntegrationBase {
             _worstRecord(BEFORE, ZEROS),
             true
         );
+    }
+
+    /// @dev The dearest row with every chunk the renderer reads (the record, the primary's 11
+    ///      and the preview's) linked from `MAX_PARTS_PER_CHUNK` (3) parts, the most it reads
+    ///      from: each part costs one more storage read and code copy, and the row still fits
+    ///      8M. Every other row stores whole chunks; this one is their upper bound.
+    function test_Budget_LinkedAtTheBound_SpacedBefore_Zeros_Base64Preview() public {
+        linkParts = 3;
+        _row(
+            "every chunk linked from 3 parts, white space before each attribute, zeros, Base64 preview:",
+            _worstRecord(BEFORE, ZEROS),
+            true
+        );
+    }
+
+    /// @dev One part more than the bound in every chunk: the renderer neither reads the record
+    ///      nor inlines a file (`maxParts` above 3), so the work renders its core facts.
+    function test_Budget_PastTheBoundNothingIsRead() public {
+        linkParts = 4;
+        Built memory b = _build(_worstRecord(BEFORE, ZEROS), true, false);
+        string memory uri = stream.tokenURI(b.tokenId);
+        assertTrue(_contains(uri, '"record_status":"incomplete"'), "record not read");
+        assertFalse(_contains(uri, ";base64,"), "nothing inlined");
+        uint256 used = _cold(address(stream), abi.encodeCall(stream.tokenURI, (b.tokenId)));
+        assertLt(used, TOKEN_URI_BUDGET);
     }
 
     /// @dev An edition renders its master: `Editions.uri` adds the master link and one trait.
@@ -403,14 +454,12 @@ contract TokenUriBudgetTest is IntegrationBase {
 
     // ------------------------------------------------------------------ the preview cap
 
-    /// @dev `openRecord` refuses an inlinable PREVIEW file (`Identity` or `Base64`) over the cap,
-    ///      `Identity` counted four times, so the renderer never inlines a preview the budget
-    ///      does not cover; a work whose media passes opens. A gzip preview is never inlined, so
-    ///      it is not bounded.
-    function test_PreviewCap_OpenRecordRefusesALargerPreview() public {
+    /// @dev `openRecord` holds no renderer budget: a PREVIEW of any size opens, and the renderer
+    ///      decides what it inlines (its preview bound keeps `tokenURI` within 8M).
+    function test_PreviewCap_OpenRecordAcceptsAnyPreview() public {
         uint256 cap = Limits.MAX_PREVIEW_BYTES;
-        _expectPreview(_bytes(cap / 4 + 1, 1), IContentStore.Encoding.Identity, false);
-        _expectPreview(_bytes(cap + 4, 2), IContentStore.Encoding.Base64, false);
+        _expectPreview(_bytes(cap / 4 + 1, 1), IContentStore.Encoding.Identity, true);
+        _expectPreview(_bytes(cap + 4, 2), IContentStore.Encoding.Base64, true);
         _expectPreview(_bytes(4 * cap, 3), IContentStore.Encoding.Gzip, true);
         _expectPreview(_bytes(4 * cap, 6), IContentStore.Encoding.GzipBase64, true);
         _expectPreview(_bytes(cap / 4, 4), IContentStore.Encoding.Identity, true);
@@ -423,7 +472,7 @@ contract TokenUriBudgetTest is IntegrationBase {
         media[1] = MediaFile(
             _registerOnly(big, IContentStore.Encoding.Identity, "image/png", sha256(big)),
             sha256(big),
-            FileRole.AUXILIARY
+            uint8(FileRole.AUXILIARY)
         );
         _open(w, media, true);
     }
@@ -435,8 +484,9 @@ contract TokenUriBudgetTest is IntegrationBase {
         MediaFile[] memory media = new MediaFile[](2);
         media[0] = w.media[0];
         bytes32 sha = sha256(stored);
-        media[1] =
-            MediaFile(_registerOnly(stored, encoding, "image/png", sha), sha, FileRole.PREVIEW);
+        media[1] = MediaFile(
+            _registerOnly(stored, encoding, "image/png", sha), sha, uint8(FileRole.PREVIEW)
+        );
         _open(w, media, fits);
     }
 

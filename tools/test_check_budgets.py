@@ -136,13 +136,13 @@ class BudgetTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("3 Solidity code lines", out)
 
-    def test_default_line_limit_is_thirteen_thousand(self) -> None:
-        self.repo.write("Big.sol", "uint256 constant X = 1;\n" * 13_000)
+    def test_default_line_limit_is_fifteen_thousand(self) -> None:
+        self.repo.write("Big.sol", "uint256 constant X = 1;\n" * 15_000)
         self.assertEqual(self.repo.run("--skip-sizes")[0], 0)
         self.repo.write("Bigger.sol", "uint256 constant Y = 1;\n")
         code, out = self.repo.run("--skip-sizes")
         self.assertEqual(code, 1)
-        self.assertIn("13001 Solidity code lines in src/ (limit 13000)", out)
+        self.assertIn("15001 Solidity code lines in src/ (limit 15000)", out)
 
     def test_lib_directories_are_excluded(self) -> None:
         self.repo.write("lib/vendor/V.sol", "contract V { function f(address t) external { t.delegatecall(\"\"); } }\n")
@@ -434,7 +434,9 @@ class MarginTest(unittest.TestCase):
     def test_the_committed_exemptions_are_well_formed(self) -> None:
         path = Path(__file__).with_name("size-margins.json")
         exempt = cb.load_margins(path, cb.MIN_RUNTIME_MARGIN)
-        self.assertTrue(exempt, "the committed file lists the contracts below the floor")
+        # Every entry is below the floor (an empty file is well formed: no contract needs an
+        # exemption since the permanence integration, ADR 0007).
+        self.assertIsInstance(exempt, dict)
         for name, entry in exempt.items():
             self.assertLess(entry["margin"], cb.MIN_RUNTIME_MARGIN, name)
 

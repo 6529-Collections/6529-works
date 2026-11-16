@@ -119,7 +119,8 @@ class FakeStore:
                 + uint_word(f["length"])
                 + uint_word(len(f["chunks"]))
                 + uint_word(f["encoding"])
-                + uint_word(5 * 32)
+                + uint_word(6 * 32)
+                + uint_word(0)
                 + tail
             )
         if sel == abi.CHUNK_HASH:
@@ -150,10 +151,14 @@ class FakeStore:
             if not self.supports_attest:
                 raise Revert(b"")
             return uint_word(1 if word(0) in self.attested else 0)
-        if sel == abi.ATTEST_CHUNKS_PER_CALL:
-            if not self.supports_attest:
-                raise Revert(b"")
-            return uint_word(48)
+        if sel == abi.FIRST_MISSING:
+            f = self._file(word(0))
+            start = int.from_bytes(word(1), "big")
+            stop = min(int.from_bytes(word(2), "big"), len(f["chunks"]))
+            for i in range(start, stop):
+                if not self._present(f, i):
+                    return uint_word(i)
+            return uint_word(stop)
         if sel == abi.CHUNK_POINTER:
             digest = word(0)
             return bytes(12) + STORE_ADDRESS if digest in self.chunks else bytes(32)

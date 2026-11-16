@@ -22,7 +22,11 @@ Checks `config/genesis.example.json`:
      method of the compiled manager with the listed selector, a mapped one names a role whose
      delay and class match, and every added method is listed (`check_manager`);
   8. every role's `suspendable` flag is a boolean, and only zero-delay roles other than GUARDIAN,
-     PAUSER and CURATION_SIGNER are suspendable.
+     PAUSER and CURATION_SIGNER are suspendable;
+  9. the holders name at most as many distinct ADMIN and GUARDIAN accounts as the manager's
+     default seat caps (`ADMIN_SEATS`, `GUARDIAN_SEATS`, read from the `_params` defaults in the
+     manager's source), which `configure` enforces; the configurator's own seat takes none
+     (`check_seats`).
 
 A configured contract whose artifact source is not in the repository yet (a lane that has
 not merged) is reported as pending and skips checks 1 and 2; it fails nothing.
@@ -56,6 +60,9 @@ GENESIS_FUNCTIONS = frozenset({
 # Zero-delay roles a guardian may never suspend (check 8): the veto, the pause, and the curation
 # signer, whose kill switch is the verifier's `disableSigner` (it also ends the signer's epoch).
 NEVER_SUSPENDABLE = frozenset({"GUARDIAN", "PAUSER", "CURATION_SIGNER"})
+
+# Seated roles and their index in the manager's `_params` defaults (check 9).
+SEATED = {"ADMIN": 4, "GUARDIAN": 5}
 
 # What a deployment's copy of the configuration may change (check 6).
 DEPLOYMENT_KEYS = frozenset({"holders", "description"})
@@ -432,7 +439,7 @@ def check_manager(config: dict, ids: MethodIds, present: Present = lambda ref: T
         return problems
     methods, base_methods = ids(artifact), ids(base)
     listed: set[str] = set()
-    for group in ("functions", "views"):
+    for group in ("functions", "open", "views"):
         for e in manager.get(group, []):
             sig = e["signature"]
             listed.add(sig)
@@ -457,9 +464,41 @@ def check_manager(config: dict, ids: MethodIds, present: Present = lambda ref: T
             )
     for sig in sorted(set(methods) - set(base_methods) - listed):
         problems.append(
-            f"manager: {sig} is added to the OpenZeppelin base but not listed in manager.functions "
-            f"or manager.views"
+            f"manager: {sig} is added to the OpenZeppelin base but not listed in manager.functions, "
+            f"manager.open or manager.views"
         )
+    return problems
+
+
+def seat_caps(root: Path, config: dict) -> dict[str, int] | None:
+    """The manager's default seat caps, from the `_params = [...]` initialiser in its source,
+    or None when the manager or its source is absent (check 9)."""
+    manager = config.get("manager")
+    if not manager:
+        return None
+    path = root / manager["artifact"].split(":")[0]
+    if not path.is_file():
+        return None
+    text = strip_comments(path.read_text(encoding="utf-8"))
+    match = re.search(r"_params\s*=\s*\[([^\]]*)\]", text)
+    if match is None:
+        raise ValueError(f"{path}: no `_params = [...]` defaults to read the seat caps from")
+    values = [v.strip() for v in match.group(1).split(",")]
+    return {role: int(values[index]) for role, index in SEATED.items()}
+
+
+def check_seats(config: dict, caps: dict[str, int] | None) -> list[str]:
+    """Check 9: no seated role has more distinct genesis holders than its default cap."""
+    if caps is None:
+        return []
+    problems = []
+    for role, cap in caps.items():
+        accounts = {h["account"].lower() for h in config.get("holders", []) if h["role"] == role}
+        if len(accounts) > cap:
+            problems.append(
+                f"holders: {len(accounts)} {role} holders exceed the manager's default seat cap "
+                f"of {cap}; configure would revert with SeatCapReached"
+            )
     return problems
 
 
@@ -534,6 +573,7 @@ def main(argv: list[str] | None = None) -> int:
     present = source_present(root)
     try:
         problems = check(config, ids, scan_sources(root / "src"), present)
+        problems += check_seats(config, seat_caps(root, config))
         if policy is not None:
             problems += policy_differences(config, policy)
         waiting = pending(config, present)

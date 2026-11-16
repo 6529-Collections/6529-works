@@ -23,10 +23,12 @@ events do not tell you. The rules are in the [specification](../spec/README.md),
   `FederationRegistrySet`, `Paused` and `Unpaused`; 6529 Stream and 6529 Stream Editions share
   `RoyaltyRateChanged`, `MetadataUpdate`, `BatchMetadataUpdate`, `OwnershipTransferred`,
   `ContractURISet`, `ContractURIUpdated`, `AdmittedMinterSet` and `ApprovalForAll`; `Bound`
-  comes from both tokens and both registries, `AuthorityUpdated` from every governed contract.
+  comes from both tokens and both registries, `AuthorityUpdated` from every governed contract,
+  and the two governed vaults (`FeeRecipientVault`, `MuseumVault`) share every `GovernedVault`
+  event.
   `Credited` (adapters, escrow) and `NonceRevoked` (artist registry, statement log) each name
-  two events with different topic0 values, and `ConfigSet` three (the English auction, the edition
-  auction and the entropy module).
+  two events with different topic0 values, and `ConfigSet` three (the English auction, the
+  edition auction and the entropy module).
   `Transfer(address,address,uint256)` is also ERC-20's (the ERC-721 log has four topics), and
   `Paused`, `Unpaused` and `OwnershipTransferred` match OpenZeppelin's `Pausable` and `Ownable`.
 - **Topics.** `indexed` parameters are topics 1 to 3, in declaration order. Structs, strings,
@@ -55,18 +57,27 @@ events do not tell you. The rules are in the [specification](../spec/README.md),
   page for its prefix: [CUR][cur], [AUC][auc], [ED][ed], [WS][ws], [RND][rnd], [ECO][eco],
   [ID][id], [DSP][dsp], [GV][gv], [ENT][ent].
 
-**Enum values in event data.** Enums are encoded as `uint8`.
+**Enum values in event data.** Enums are encoded as `uint8`. The permanent contracts carry
+several of these as open `uint8` (or `uint16`) ids that they record without interpreting, so a
+later reader may assign new values without a new contract: an indexer must keep an unknown value,
+not reject it.
 
 | Enum | Values | Source |
 | --- | --- | --- |
-| `ItemKind` | 0 `ORIGINAL`, 1 `EDITION_MASTER` | [`PackageTypes.sol`](../../src/interfaces/types/PackageTypes.sol) |
-| `SeedPolicy` | 0 `NONE`, 1 `ARTIST`, 2 `VRF` | [`PackageTypes.sol`](../../src/interfaces/types/PackageTypes.sol) |
-| `LocatorKind` | 0 `NONE`, 1 `ARWEAVE`, 2 `IPFS`, 3 `ONCHAIN` | [`ContentTypes.sol`](../../src/interfaces/types/ContentTypes.sol) |
-| `IContentStore.Encoding` | 0 `Identity`, 1 `Gzip`, 2 `Base64`, 3 `GzipBase64` | [`IContentStore.sol`](../../src/interfaces/IContentStore.sol) |
+| Item kind (open `uint8`: `PackageItem.kind`, `WorkMinted.flags & 3`; `ItemKind` names) | 0 `ORIGINAL`, 1 `EDITION_MASTER`; Stream stores values up to 3; the genesis mint policy refuses others for new items | [`PackageTypes.sol`](../../src/interfaces/types/PackageTypes.sol) |
+| Seed policy (open `uint8`: `PackageItem.seedPolicy`; `SeedPolicy` names) | 0 `NONE`, 1 `ARTIST`, 2 `VRF`; Stream stores values up to 3; `WorkRecords` keeps the item's seed for any other ([WS-46][ws]) | [`PackageTypes.sol`](../../src/interfaces/types/PackageTypes.sol) |
+| Party role (open `uint8`: `Party.role`; `PartyRole` names) | 0 `ARTIST`, 1 `COLLABORATOR` | [`PackageTypes.sol`](../../src/interfaces/types/PackageTypes.sol) |
+| Media role (open `uint8`: `MediaFile.role`; `FileRole` names) | 0 `PRIMARY`, 1 `PREVIEW`, 2 `AUXILIARY`; `WorkRecords` records values up to 15, and the renderer treats any role but 0 and 1 as auxiliary | [`ContentTypes.sol`](../../src/interfaces/types/ContentTypes.sol) |
+| Locator kind (`LocatorKind`; an open `uint8` in `WorkRecords.preferredLocator`'s answer) | 0 `NONE`, 1 `ARWEAVE`, 2 `IPFS`, 3 `ONCHAIN`; a later delivery contract may add kinds | [`ContentTypes.sol`](../../src/interfaces/types/ContentTypes.sol), [`IWorkDelivery.sol`](../../src/interfaces/IWorkDelivery.sol) |
+| Content-store encoding (open `uint8` id) | 0 `Identity`, 1 `Gzip`, 2 `Base64`, 3 `GzipBase64` (the names of `IContentStore.Encoding`); any other value is recorded and is part of the file ID; the store interprets only 2 and 3 ([WS-54][ws]) | [`IContentStore.sol`](../../src/interfaces/IContentStore.sol) |
+| Content-store digest kind (open `uint8` id) | 0 SHA-256 (`sha256Of`); any other value is recorded and is part of the file ID ([WS-54][ws]) | [`IContentStore.sol`](../../src/interfaces/IContentStore.sol) |
 | `Role` (statement log) | 0 `NONE`, 1 `ARTIST`, 2 `OWNER`, 3 `CURATOR`, 4 `PLATFORM` | [`IStatementLog.sol`](../../src/interfaces/IStatementLog.sol) |
 | `ChangeKind` | 0 `NONE`, 1 `STANDARD`, 2 `CONTESTED`, 3 `ESTATE`, 4 `LOST_KEY` | [`IdentityTypes.sol`](../../src/interfaces/types/IdentityTypes.sol) |
+| `IArtistRegistry.FederationStatus` | 0 `NONE`, 1 `ACTIVE`, 2 `DELISTED`, 3 `LEFT` | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) |
+| `IArtistRegistry.Timer` | 0 `CHANGE_DELAY`, 1 `OVERRIDE_DELAY`, 2 `DORMANCY`, 3 `CONTEST_TIMEOUT`, 4 `STANDING_GRACE` | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) |
+| `WorksAccessManager.Parameter` | 0 `SLOW_DELAY`, 1 `ESCALATED_DELAY`, 2 `RECOVERY_SILENCE`, 3 `RECOVERY_DELAY`, 4 `ADMIN_SEATS`, 5 `GUARDIAN_SEATS` | [`WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol) |
 | `IAssetAllowlist.Status` | 0 `None`, 1 `Active`, 2 `Deprecated` | [`IAssetAllowlist.sol`](../../src/economics/interfaces/IAssetAllowlist.sol) |
-| `HashRef.algorithm` | 1 keccak256, 2 SHA-256, 3 BLAKE3 | [`HashRef.sol`](../../src/interfaces/types/HashRef.sol) |
+| `HashRef.algorithm` (open `uint16` id) | 1 keccak256, 2 SHA-256, 3 BLAKE3; the log records any non-zero value without interpreting it ([DSP-2][dsp]) | [`HashRef.sol`](../../src/interfaces/types/HashRef.sol) |
 
 The well-known `bytes32` labels in event data (`saleKind`, product IDs and the reserved
 statement kinds) are `keccak256` of an ASCII name; their values are in
@@ -75,34 +86,54 @@ may be any non-zero value.
 
 ## Events by contract
 
-Contracts are grouped by area. Two deployed contracts emit no events at all: the
-`ConsolidationAdapter` ([`src/identity/ConsolidationAdapter.sol`](../../src/identity/ConsolidationAdapter.sol))
-and the `Renderer` ([`src/content/Renderer.sol`](../../src/content/Renderer.sol)).
+Contracts are grouped by area. Three deployed contracts emit no events at all: the
+`ConsolidationAdapter` ([`src/identity/ConsolidationAdapter.sol`](../../src/identity/ConsolidationAdapter.sol)),
+the `Renderer` ([`src/content/Renderer.sol`](../../src/content/Renderer.sol)) and 6529 Stream's
+read-only view extension `StreamViews` ([`src/stream/StreamViews.sol`](../../src/stream/StreamViews.sol)),
+which 6529 Stream's constructor deploys. The split wallets (`SplitVault`, 66 bytes of code) emit
+nothing either: the split ledger emits for them.
+
+**Consensus reads logs only.** The permanent contracts (6529 Stream, `WorkRecords`, 6529 Stream
+Editions, the statement log, the content store, the artist registry, the split ledger and the
+revenue escrow) emit, for every consensus-relevant change, an event sufficient to rebuild the
+new state without a call ([ADR 0007](../adr/0007-permanence.md)). TDH and revenue read 6529
+Stream's `PrimarySaleSettled` and 6529 Stream Editions' `EditionPrimaryMint`, not a sale
+adapter's `SaleSettled`; holdings come from the standard `Transfer`, `TransferSingle` and
+`TransferBatch` events, which credit whoever holds the token, a sale contract included.
+`WorkRecords` is permanent; its replaceable delivery contract (`WorkDelivery`: locators, kinds
+and preferences) has its own section, and its events are delivery, not consensus, facts.
 
 ### Stream
 
 [`src/stream/Stream.sol`](../../src/stream/Stream.sol), interface
 [`IStream`](../../src/interfaces/IStream.sol) and [`IMintTarget`](../../src/interfaces/IMintTarget.sol).
+A mint hands the adapter's request to the replaceable mint policy (the package registry's
+`authorize`), which answers the work's record; 6529 Stream checks it and emits everything the
+work locks ([AUC-38][auc], [AUC-43][auc]).
 ERC-721 events come from OpenZeppelin 5.7.0's `ERC721`; ERC-4906 events from `IERC4906`.
 
 | Event | topic0 | Emitted by | Meaning and indexing notes |
 | --- | --- | --- | --- |
-| `WorkMinted(uint256 indexed tokenId, uint256 indexed collectionId, bytes32 indexed itemHash, uint64 serial, uint256 artistId, ItemKind kind, bytes32 packageRoot, bytes32 contentHash, bytes32 mediaHash, bytes32 recordFileId)` | `0x2f52e67a…` | `mint`, called by an admitted sale adapter (the English auction's `start` or `startWithBid`) | A curated work exists, in the adapter's custody. `artistId` is the lead artist; `serial` is its number in the collection. The only on-chain join from item hash to token ID. No economic terms ([what is not emitted](#what-is-not-emitted)). |
+| `WorkMinted(uint256 indexed tokenId, uint256 indexed collectionId, uint256 indexed artistId, bytes32 itemHash, uint64 serial, uint8 flags, bytes32 packageRoot, bytes32 contentHash, bytes32 mediaHash, bytes32 recordFileId, address seller, uint24 termsId)` | `0xf6cc1a1d…` | `mint`, called by an admitted sale adapter (the English auction's `start` or `startWithBid`) | A curated work exists, in the adapter's custody. `artistId` is the lead artist (indexed: works by artist); `serial` is its number in the collection; `flags` is the item kind (bits 0-1) and the seed policy (bits 2-3), as `coreOf` returns them; `seller` is the seller wallet; `termsId` names the `TermsInterned` record of its royalty rate, fee share, fee recipient and minting adapter. The only on-chain join from item hash to token ID, and the record of the consumed item (the package registry emits no event of its own for it). With `TermsInterned` it carries everything the work locks at mint ([AUC-43][auc]). |
+| `TermsInterned(uint24 indexed termsId, uint32 royaltyRate, uint32 feeShare, uint24 feeRecipientId, uint24 minterId)` | `0x30c73bd0…` | `mint`, before the `WorkMinted` that first uses the terms; a re-rate, before its `RoyaltyRateChanged`, when no work had the new terms yet | Terms are stored once per distinct terms and shared by every work that uses them. `feeRecipientId` names a `FeeRecipientRegistered` address, `minterId` the adapter of an `AdmittedMinterSet`. A work's terms are those its `WorkMinted.termsId` names, until a re-rate moves it. |
+| `FeeRecipientRegistered(uint24 indexed feeRecipientId, address feeRecipient)` | `0x69bdf787…` | `mint`, the first time a fee recipient is used | The fee recipient's index, for good (from 1). |
 | `Transfer(address indexed from, address indexed to, uint256 indexed tokenId)` | `0xddf252ad…` | The mint (to the adapter), delivery at `settle` or `claimDelivery`, holder transfers, and the burn in `EnglishAuction.cancel` (to zero) | Ownership. A transfer clears the token's approval without an `Approval` event (OpenZeppelin 5). |
 | `Approval(address indexed owner, address indexed approved, uint256 indexed tokenId)` | `0x8c5be1e5…` | `approve` | Standard ERC-721. |
 | `ApprovalForAll(address indexed owner, address indexed operator, bool approved)` | `0x17307eab…` | `setApprovalForAll` | Standard ERC-721. |
-| `PrimarySaleSettled(uint256 indexed tokenId, PrimaryOutcome outcome, address indexed buyer, address currency, uint256 price)` | `0xbb0a6d98…` | `settlePrimary`, by the adapter that minted the token, inside its `settle` (owner decision 17); `rescueToMuseum`, with RESCUED (owner decision 28) | The primary sale is final. `outcome` is SOLD (1), UNBID (2), FROZEN_OUT (3) or RESCUED (4, governance's rescue; never an adapter's report); `buyer` and the exact `price` are zero unless SOLD; `currency` is the sale's, and zero for RESCUED. For UNBID, FROZEN_OUT and RESCUED, Stream's `Transfer` of the work to the museum follows at once. Every settlement goes through this event, so it alone gives each work's outcome. Emitted before delivery is attempted, whether delivery then succeeds or is left pending ([AUC-8, AUC-21][auc]). At most once per token; it allows the master's edition ([ED-1][ed]). `primarySale(tokenId)` reads the outcome back, the price held in 96 bits. |
+| `PrimarySaleSettled(uint256 indexed tokenId, PrimaryOutcome outcome, address indexed buyer, address currency, uint256 price)` | `0xbb0a6d98…` | `settlePrimary`, by the adapter that minted the token, inside its `settle` (owner decision 17); `rescueToMuseum`, with RESCUED (owner decision 28) | The primary sale is final. `outcome` is SOLD (1), UNBID (2), FROZEN_OUT (3) or RESCUED (4, governance's rescue; never an adapter's report); `buyer` and the exact `price` are zero unless SOLD; `currency` is the sale's, and zero for RESCUED. For UNBID, FROZEN_OUT and RESCUED, Stream's `Transfer` of the work to the museum follows at once. Every settlement goes through this event, so it alone gives each work's outcome; TDH and revenue read it, not the adapter's `SaleSettled`. It names no custody recipient: who holds the work follows from `Transfer`. Emitted before delivery is attempted, whether delivery then succeeds or is left pending ([AUC-8, AUC-21][auc]). At most once per token; it allows the master's edition ([ED-1][ed]). `primarySale(tokenId)` reads the outcome back, the price held in 96 bits. |
 | `CollectionCreated(uint256 indexed collectionId, string name, bytes32 metadataHash)` | `0x8966ba95…` | `createCollection` (PLATFORM, immediate) | Collection IDs run from 1. A collection's count, and its last serial, is the number of `WorkMinted` naming it. |
-| `RoyaltyRateChanged(uint256 indexed tokenId, uint32 previous, uint32 next)` | `0x2114cdf5…` | `setRoyaltyRate`, callable only by the bound work-records satellite, from `WorkRecords.setRoyaltyRate` | The ERC-2981 rate (out of 100,000) changed; the receiver never does ([AUC-6][auc]). Followed by the satellite's `RoyaltyRateSet`. |
+| `RoyaltyRateChanged(uint256 indexed tokenId, uint32 previous, uint32 next)` | `0x2114cdf5…` | `setRoyaltyRate`, callable only by the bound work-records satellite, from `WorkRecords.setRoyaltyRate` | The ERC-2981 rate (out of 100,000) changed, lower-only (6529 Stream refuses a higher rate itself); the receiver never does ([AUC-6][auc]). The work moves to the terms with the new rate, whose `TermsInterned` precedes this event when they are new. Followed by the satellite's `RoyaltyRateSet`. |
 | `DefaultRendererSet(address previous, address next, bytes32 codeHash)` | `0xe2fab5e9…` | The constructor (`previous` zero) and `setDefaultRenderer` (SUCCESSOR_SETTER, 30 days) | The renderer for every unfinalized work; `codeHash` is pinned. Followed by both tokens' `BatchMetadataUpdate`. Changes every unfinalized work's state hash, with no per-token event. |
-| `DependencySet(bytes32 indexed kind, address previous, address next)` | `0xb584a2a6…` | `setDependency` (SUCCESSOR_SETTER, 30 days, compare-and-set) | Stream's package registry, artist registry, economics resolver or entropy module (`kind` is the right-padded ASCII name, such as `"ECONOMICS"`) was replaced; new works use `next`. Existing tokens are unaffected, so no metadata event follows. 6529 Stream Editions and `WorkRecords` read the pointer from Stream and follow at once (owner decision 16). |
-| `WorkRescued(uint256 indexed tokenId, address indexed adapter, address museum)` | `0x77ac3c64…` | `rescueToMuseum` (SUCCESSOR_SETTER, 30 days) | A work stranded in a removed sale adapter's custody, unsettled 90 days after the removal, moved to the museum (owner decision 20); it follows `PrimarySaleSettled` with RESCUED and the work's `Transfer` (owner decision 28). `primarySale` then reports RESCUED. |
+| `DependencySet(bytes32 indexed kind, address previous, address next)` | `0xb584a2a6…` | `setDependency` (SUCCESSOR_SETTER, 30 days, compare-and-set) | Stream's mint policy (`"PACKAGE_REGISTRY"`), economics resolver (`"ECONOMICS"`), entropy module (`"ENTROPY_MODULE"`) or view extension (`"EXTENSION"`) was replaced (`kind` is the right-padded ASCII name); new works use `next`. The artist registry is fixed at deployment: `setDependency("ARTIST_REGISTRY")` reverts ([AUC-39][auc]). Existing tokens are unaffected, so no metadata event follows. 6529 Stream Editions and `WorkRecords` read the pointer from Stream and follow at once (owner decision 16). |
+| `WorkRescued(uint256 indexed tokenId, address indexed adapter, address museum)` | `0x77ac3c64…` | `rescueToMuseum` (SUCCESSOR_SETTER, 30 days) | A work stranded in a removed sale adapter's custody, unsettled for the rescue delay after the removal (90 days at genesis; the delay in force at the removal applies), moved to the museum (owner decision 20); it follows `PrimarySaleSettled` with RESCUED and the work's `Transfer` (owner decision 28). `primarySale` then reports RESCUED. |
+| `RescueDelaySet(uint256 previous, uint256 next)` | `0xf6d9de13…` | `setRescueDelay` (SUCCESSOR_SETTER, 30 days) | The rescue delay for later removals, in seconds: only lengthened, at most doubled per change, never below the 90-day floor (`RESCUE_DELAY_FLOOR`, [AUC-41][auc]). Each removal keeps the delay in force when it happened. |
+| `ContentReleased(uint256 indexed tokenId, bytes32 contentHash, uint256 beneficiary)` | `0xdd81ba43…` | `releaseContent` (PARAMETER_SETTER, 48 hours), after an upheld-dispute burn | Governance released the burned work's content hash to items led by `beneficiary` and tombstoned the burned item for good. 6529 Stream holds content uniqueness itself (`consumedItemOf`, `releasedTo`, `isReleased`; the package registry's views of the same names answer from Stream), so this is the only release event ([CUR-14][cur], [AUC-44][auc]). |
 | `EditionLinked(uint256 indexed tokenId, address indexed editions, uint256 editionId)` | `0xbab490db…` | `linkEdition`, callable only by bound 6529 Stream Editions, from `createEdition` | The master's edition exists; `editionId` always equals `tokenId`. Followed by `MetadataUpdate(tokenId)`. |
 | `Bound(bytes32 indexed name, address target)` | `0xd18d9295…` | `bindWorkRecords` (`"WORK_RECORDS"`), `bindEditions` (`"EDITIONS"`), run by the genesis wiring | Once per name, never changed. |
 | `OwnershipTransferred(address indexed previousOwner, address indexed newOwner)` | `0x8be0079c…` | The constructor (from zero) and `setOwner` (FUNDS_SETTER, 14 days) | The marketplace owner (`owner()`); no on-chain powers. |
 | `ContractURISet(string previous, string next)` | `0xd144c591…` | `setContractURI` (PARAMETER_SETTER, 48 hours) | Followed by `ContractURIUpdated`. |
 | `ContractURIUpdated()` | `0xa5d4097e…` | `setContractURI` | ERC-7572. |
-| `AdmittedMinterSet(address indexed adapter, uint16 indexed id, bool admitted)` | `0x4a137c32…` | `setAdmittedMinter` (SUCCESSOR_SETTER, 30 days; at genesis through the wiring) | Emitted only on a real transition: admitting an admitted adapter, or removing one that is not admitted, reverts (`AdmissionUnchanged`, owner decision 28). `id` is the adapter's ID from its first admission, kept for good, so the events alone rebuild every adapter's state, and a removal's block starts its 90-day rescue clock ([AUC-35][auc]). Removal stops new mints only ([AUC-9][auc]). |
+| `AdmittedMinterSet(address indexed adapter, uint24 indexed id, bool admitted, bytes32 saleKind)` | `0xa70d819c…` | `setAdmittedMinter` (SUCCESSOR_SETTER, 30 days; at genesis through the wiring) | Emitted only on a real transition: admitting an admitted adapter, or removing one that is not admitted, reverts (`AdmissionUnchanged`, owner decision 28). `id` is the adapter's ID from its first admission, kept for good (`TermsInterned.minterId` names it), and `saleKind` the sale kind it reported, so the events alone rebuild every adapter's state, and a removal's block starts its rescue clock ([AUC-35][auc]). Removal stops new mints only ([AUC-9][auc]). |
 | `MetadataUpdate(uint256 _tokenId)` | `0xf8e1a15a…` | `emitMetadataUpdate` (bound work-records satellite only) and `linkEdition` | ERC-4906. The parameter is not indexed. See [ERC-4906 refresh triggers](#erc-4906-refresh-triggers). |
 | `BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId)` | `0x6bd5c950…` | `setDefaultRenderer`, and `emitMetadataUpdate` after a global or collection preferred-kind change | ERC-4906. Always `1` to `totalMinted()`, burned IDs included; not emitted while nothing is minted. With exactly one token minted, a preferred-kind change emits `MetadataUpdate(1)` instead. |
 
@@ -110,22 +141,40 @@ ERC-721 events come from OpenZeppelin 5.7.0's `ERC721`; ERC-4906 events from `IE
 
 [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol), interfaces
 [`IWorkRecords`](../../src/interfaces/IWorkRecords.sol) and
-[`IWorkPowers`](../../src/interfaces/IWorkPowers.sol). Every per-token change below also
-emits ERC-4906 events through both tokens ([refresh triggers](#erc-4906-refresh-triggers)),
-except `PowersRenounced`: `tokenURI` does not show the renounced powers.
+[`IWorkPowers`](../../src/interfaces/IWorkPowers.sol). Permanent: the facts of each work.
+Delivery (locators, kinds, preferences) is the replaceable `WorkDelivery` below, and the stores
+`syncOnChain` verifies against are an append-only set. Every per-token change below also emits
+ERC-4906 events through both tokens ([refresh triggers](#erc-4906-refresh-triggers)), except
+`PowersRenounced`, `DeliverySet` and `StoreAdded`.
 
 | Event | topic0 | Emitted by | Meaning and indexing notes |
 | --- | --- | --- | --- |
-| `RecordOpened(uint256 indexed tokenId, bytes32 recordFileId, bytes32 mediaHash)` | `0xaa2a63e2…` | `openRecord` (permissionless) | The work's record exists, from the approved item and media. The media list, a non-default license and an ARTIST seed are stored but not emitted: read `mediaOf`, `licenseOf` and `seedOf`. Per-token views revert before this event ([WS-1][ws]). |
+| `RecordOpened(uint256 indexed tokenId, PackageItem item, MediaFile[] media, bytes32 licenseKey, bytes32 seed)` | `0xb8781067…` | `openRecord` (permissionless) | The work's record exists. `item` is the approved package item (its `WorksHashing.itemHash` is the item hash 6529 Stream stored at mint): record file, media commitment, initial license, seed policy, parties and payees with their shares. `media` is the media list, primary first; `licenseKey` the initial license's key; `seed` the seed fixed at open. Item kind, seed policy and roles are open `uint8`s. A logs-only reader learns a work's parties here, not at mint, and anyone may open a record at any time after mint ([WS-1][ws], [WS-44][ws]). |
 | `RecordSet(uint256 indexed tokenId, bytes32 recordFileId, bytes32 stateHash)` | `0xe459e8a9…` | `setRecord` (the lead artist's active authority, before finalize) | The work points at a new record file. `stateHash` is the new state hash. Re-publishing the current file emits nothing. |
 | `WorkFinalized(uint256 indexed tokenId, address renderer, bytes32 stateHash)` | `0x01445583…` | `finalize` (the artist) | The record is immutable and `renderer`, the default renderer then, is pinned ([WS-9][ws]). `stateHash` is the new state hash. |
-| `OnChainSyncProgress(uint256 indexed tokenId, uint256 files)` | `0x2ac9493b…` | `syncOnChain` (permissionless), when its budget of 512 chunks (`SYNC_CHUNKS`) stops it | The first `files` media files are complete in the content store; the next call resumes there. No metadata or state-hash change. |
-| `WorkOnChainComplete(uint256 indexed tokenId)` | `0x15405c6b…` | The `syncOnChain` call that finds the last media file complete | Every media file is on-chain. One-way; the state hash does not change. Enables the implicit ONCHAIN locator ([WS-21][ws]) and inlining of the primary ([RND-17][rnd]). |
-| `LicenseChanged(uint256 indexed tokenId, License previous, License next)` | `0x8f67810f…` | `relicense` (PARAMETER_SETTER, 48 hours, plus every party's `Relicense` signature) | `License` is `(string spdxId, bytes32 textFileId)`. The record version bumps; the event carries no state hash (read `workStateHash`). |
+| `OnChainSyncProgress(uint256 indexed tokenId, uint256 files, uint256 chunk, uint256 storeId)` | `0x9f94058f…` | Each `syncOnChain(tokenId, storeId, maxChunks)` (permissionless) that made progress | The first `files` media files are complete and the next one is verified up to chunk `chunk`; the call verified against store `storeId` (0 is the content store). It is the cursor a keeper resumes from, and a file's store is that of the event in which `files` first passed its index ([WS-41][ws] to [WS-43][ws]). No metadata or state-hash change. |
+| `MediaFileComplete(uint256 indexed tokenId, uint256 index, uint256 storeId)` | `0x34b39a84…` | `syncOnChain` when media file `index` verifies complete, on either walk | File `index` is complete in store `storeId` (0 is the content store). The latest event per file wins: a file complete in an added store can later complete in the content store (an upgrade, `storeId` 0), never the reverse ([WS-43][ws]). |
+| `WorkOnChainComplete(uint256 indexed tokenId)` | `0x15405c6b…` | The `syncOnChain` call that completes the last media file | Every media file is on-chain. One-way; the state hash does not change. Enables the implicit ONCHAIN locator ([WS-21][ws]) and inlining of the primary ([RND-17][rnd]). |
+| `LicenseChanged(uint256 indexed tokenId, License previous, License next, bytes32 stateHash)` | `0x65b760e0…` | `relicense` (PARAMETER_SETTER, 48 hours, plus every party's `Relicense` signature) | `License` is `(string spdxId, bytes32 textFileId)`. The record version bumps; `stateHash` is the new state hash. |
 | `RoyaltyRateSet(uint256 indexed tokenId, uint32 previous, uint32 next, bytes32 stateHash)` | `0xe8cb8922…` | `setRoyaltyRate` (FUNDS_SETTER, 14 days, plus every party's `RoyaltyRateChange` signature) | The authoritative record of a rate change, with the new state hash. Lower-only: `next` is always below `previous` ([WS-14][ws]). Follows 6529 Stream's and, for a linked master, 6529 Stream Editions' `RoyaltyRateChanged`. An unchanged rate emits nothing. |
-| `RendererRepinned(uint256 indexed tokenId, address previous, address next, bytes32 codeHash)` | `0x382b0879…` | `repinRenderer` (SUCCESSOR_SETTER, 30 days, plus the artist's `RendererRepin` signature) | The errata path replaced a finalized work's renderer pin. No state hash in the event. |
-| `PowersRenounced(uint256 indexed tokenId, uint16 powers, uint16 renounced, bytes32 stateHash)` | `0x16458312…` | `renounce` (permissionless to submit, with the lead artist's `RenouncePowers` signature; [WS-37][ws]) | The lead artist gave up, for good, the `WorkPowers` bits in `powers` (1 `ROYALTY_RATE`, 2 `RELICENSE`); `renounced` is every bit renounced for the work after the call, and `stateHash` the new state hash (the version bumped). Renouncing nothing new emits nothing. No ERC-4906 event follows. Read `renouncedPowers(tokenId)` for the current mask. |
-| `LocatorAdded(uint256 indexed tokenId, bytes32 indexed fileId, uint256 index, Locator locator)` | `0x728460e4…` | `addLocator` (the artist before finalize, or PLATFORM) | `Locator` is `(uint8 kind, string uri)`. `index` is its position in the file's list, which is append-only. No state-hash change. |
+| `RendererRepinned(uint256 indexed tokenId, address previous, address next, bytes32 codeHash, bytes32 stateHash)` | `0x4decb991…` | `repinRenderer` (SUCCESSOR_SETTER, 30 days, plus the artist's `RendererRepin` signature) | The errata path replaced a finalized work's renderer pin; `stateHash` is the new state hash. Never for a work whose artist renounced `RENDERER_REPIN` ([WS-37][ws]). |
+| `PowersRenounced(uint256 indexed tokenId, uint16 powers, uint16 renounced, bytes32 stateHash)` | `0x16458312…` | `renounce` (permissionless to submit, with the lead artist's `RenouncePowers` signature; [WS-37][ws]) | The lead artist gave up, for good, the `WorkPowers` bits in `powers` (1 `ROYALTY_RATE`, 2 `RELICENSE`, 4 `RENDERER_REPIN`, the last only after finalize); `renounced` is every bit renounced for the work after the call, and `stateHash` the new state hash (the version bumped). Renouncing nothing new emits nothing. No ERC-4906 event follows. Read `renouncedPowers(tokenId)` for the current mask. |
+| `DeliverySet(address indexed previous, address indexed next)` | `0x113e2022…` | The constructor (which deploys the first `WorkDelivery`) and `setDelivery` (SUCCESSOR_SETTER, 30 days, compare-and-set) | The delivery contract changed. The new one names its predecessor (`predecessor()`) and must keep serving its locators; it can change no fact here ([WS-39][ws]). Key delivery events by the emitter this event names. |
+| `StoreAdded(uint256 indexed storeId, address store, bytes32 codeHash)` | `0x33a00673…` | `addStore` (SUCCESSOR_SETTER, 30 days) | A store joined the set `syncOnChain` may verify media against, for good, with its pinned code hash. IDs run from 1 (0 is the content store) and are never reused ([WS-41][ws]). |
+
+### WorkDelivery
+
+[`src/stream/WorkDelivery.sol`](../../src/stream/WorkDelivery.sol), interfaces
+[`IWorkDelivery` and `IWorkLocators`](../../src/interfaces/IWorkDelivery.sol). The first,
+replaceable delivery contract, deployed by `WorkRecords`' constructor (`DeliverySet` names it
+and each successor). A delivery contract answers `WorkRecords.preferredLocator`, which serves its
+answer only when it is well-formed (fail-soft, [WS-40][ws]); its refreshes go through
+`WorkRecords.refreshMetadata` and `refreshAllMetadata`. A locator kind is an open `uint8`: a
+later delivery contract may add kinds, and the renderer serves any kind but NONE and ONCHAIN.
+
+| Event | topic0 | Emitted by | Meaning and indexing notes |
+| --- | --- | --- | --- |
+| `LocatorAdded(uint256 indexed tokenId, bytes32 indexed fileId, uint256 index, Locator locator, address addedBy, bool byArtist)` | `0xae55b5f8…` | `addLocator` (the artist before finalize, or PLATFORM) | `Locator` is `(uint8 kind, string uri)`. `index` is its position in the file's list, which is append-only. `addedBy` is who added it; `byArtist` is true for the artist's (only those feed the kind and first-registered fallbacks). No state-hash change. |
 | `PreferredKindSet(LocatorKind previous, LocatorKind next)` | `0x0c7addff…` | `setPreferredKind` (STORAGE_OPERATOR, immediate) | The global preferred locator kind. Emitted even when unchanged; refreshes every token and edition. |
 | `CollectionPreferredKindSet(uint256 indexed collectionId, LocatorKind previous, LocatorKind next)` | `0x57ab57ed…` | `setCollectionPreferredKind` (STORAGE_OPERATOR) | A collection's preferred kind. The refresh covers every token, not only the collection's. |
 | `FilePreferenceSet(uint256 indexed tokenId, bytes32 indexed fileId, uint256 previous, uint256 next)` | `0x700a41d4…` | `setFilePreference` (STORAGE_OPERATOR) | A file's preferred locator index; `type(uint256).max` means none. |
@@ -134,13 +183,17 @@ except `PowersRenounced`: `tokenURI` does not show the renounced powers.
 
 [`src/editions/Editions.sol`](../../src/editions/Editions.sol), interface
 [`IEditions`](../../src/interfaces/IEditions.sol). ERC-1155 events come from OpenZeppelin
-`ERC1155`. The edition ID equals the master's Stream token ID.
+`ERC1155`. The edition ID equals the master's Stream token ID. Its logs alone rebuild an
+edition's terms, supply, holders and price history ([ED-25 to ED-27][ed]).
 
 | Event | topic0 | Emitted by | Meaning and indexing notes |
 | --- | --- | --- | --- |
-| `EditionCreated(uint256 indexed editionId, bytes32 indexed contentHash, EditionTerms terms)` | `0x3a4f273b…` | `createEdition` (permissionless, once the master's primary sale settled) | `EditionTerms` is `(uint32 maxCount, address currency, bytes32 saleKind, bytes params)`. The economics locked at creation are not emitted: read `edition(id)`. |
+| `EditionCreated(uint256 indexed editionId, bytes32 indexed contentHash, EditionTerms terms)` | `0x3a4f273b…` | `createEdition` (permissionless, once the master's primary sale settled) | `EditionTerms` is `(uint32 maxCount, address currency, bytes32 saleKind, bytes params)`. Followed by `EditionTermsLocked`, which carries the economics. |
 | `EditionMinterBound(uint256 indexed editionId, address indexed minter)` | `0x35bb9c80…` | `bindMinter`, when an adapter's sale of the edition opens; or else the first `mint` of an edition no sale bound | The edition is bound to `minter`, the only adapter that may mint it from now on ([ED-5][ed]). From `bindMinter` it may precede the edition's `EditionCreated` (the edition auction opens with the 1/1); from a mint it precedes that mint's `TransferSingle`. |
-| `TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)` | `0xc3d58168…` | Each mint (`operator` is the sale adapter, `from` zero), holder transfers, and an adapter's `burn` (to zero) | Copies minted is the sum of `value` with `from` zero. No v1 adapter calls `burn`. |
+| `EditionTermsLocked(uint256 indexed editionId, address seller, address royaltyReceiver, uint32 royaltyRate, address feeRecipient, uint32 feeShare)` | `0xfd8bc2cd…` | `createEdition`, right after `EditionCreated` | The economics locked at the binding (`bindMinter` before creation) or at creation, and the initial royalty rate (the master's then). Once per edition; the rate then changes only by `RoyaltyRateChanged` ([ED-27][ed]). |
+| `EditionPrimaryMint(uint256 indexed editionId, address indexed to, uint256 amount, address currency, uint256 unitPrice)` | `0xb55f6fc8…` | Each `mint`, right before its `TransferSingle` | The bound adapter's price record: `amount` copies to `to` at `unitPrice` each in `currency` (`CURRENCY_ETH` zero, or an ERC-20; the terms' own unless they name `CURRENCY_DEFAULT`). The price is the adapter's report ([ED-26][ed]); TDH and revenue read this event, not the adapter's `SaleSettled`. |
+| `EditionSupplySealed(uint256 indexed editionId, uint256 supply)` | `0xbf26eb1f…` | `sealSupply`, by the edition's bound adapter when its sale settles; once | The edition's final maximum: no copy past `supply` can be minted, and nothing reopens it; winners claim afterwards ([ED-25][ed]). May precede `EditionCreated` (a sale that sold nothing seals at 0). Editions holds no duration: an adapter that never seals keeps its mint power within the cap until governance removes it, and a removed adapter mints only an edition it sealed. |
+| `TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)` | `0xc3d58168…` | Each mint (`operator` is the sale adapter, `from` zero), holder transfers, and an adapter's `burn` (to zero) | Copies minted is the sum of `value` with `from` zero; each mint's is preceded by its `EditionPrimaryMint`. No v1 adapter calls `burn`. |
 | `TransferBatch(address indexed operator, address indexed from, address indexed to, uint256[] ids, uint256[] values)` | `0x4a39dc06…` | Holder batch transfers | Never from a mint: adapters mint one ID per call. |
 | `ApprovalForAll(address indexed account, address indexed operator, bool approved)` | `0x17307eab…` | `setApprovalForAll` | Standard ERC-1155. |
 | `URI(string value, uint256 indexed id)` | `0x6bb7ff70…` | Never emitted | Metadata is `uri(id)`; use ERC-4906 events instead. |
@@ -148,24 +201,29 @@ except `PowersRenounced`: `tokenURI` does not show the renounced powers.
 | `MetadataUpdate(uint256 _tokenId)` | `0xf8e1a15a…` | `createEdition`, `setRoyaltyRate`, and `notifyMasterUpdated` (the satellite, after the master changed) | ERC-4906 for one edition. |
 | `BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId)` | `0x6bd5c950…` | `notifyAllUpdated` (6529 Stream after a new default renderer, or the satellite after a preferred-kind change) | Always `(0, type(uint256).max)`: refresh every edition. |
 | `Bound(bytes32 indexed name, address target)` | `0xd18d9295…` | `bindWorkRecords` (`"WORK_RECORDS"`), at genesis | Once. |
-| `AdmittedMinterSet(address indexed adapter, uint16 indexed id, bool admitted)` | `0x4a137c32…` | `setAdmittedMinter` (SUCCESSOR_SETTER, 30 days) | Emitted only on a change; a no-op call returns silently, where 6529 Stream's reverts. `id` is the adapter's binding ID. |
+| `AdmittedMinterSet(address indexed adapter, uint24 indexed id, bool admitted, bytes32 saleKind)` | `0xa70d819c…` | `setAdmittedMinter` (SUCCESSOR_SETTER, 30 days) | Emitted only on a change; a no-op call returns silently, where 6529 Stream's reverts. `id` is the adapter's binding ID and `saleKind` its sale kind. |
 | `ContractURISet(string previous, string next)` | `0xd144c591…` | `setContractURI` (PARAMETER_SETTER, 48 hours) | Followed by `ContractURIUpdated`. |
 | `ContractURIUpdated()` | `0xa5d4097e…` | `setContractURI` | ERC-7572. |
 | `OwnershipTransferred(address indexed previousOwner, address indexed newOwner)` | `0x8be0079c…` | The constructor (from zero) and `setOwner` (FUNDS_SETTER, 14 days) | The marketplace owner; no on-chain powers. |
 
 ### PackageRegistry
 
-[`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol), interface
-[`IPackageRegistry`](../../src/interfaces/IPackageRegistry.sol).
+[`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol), interfaces
+[`IPackageRegistry`](../../src/interfaces/IPackageRegistry.sol) and
+[`IMintPolicy`](../../src/interfaces/IMintPolicy.sol): it is 6529 Stream's replaceable mint
+policy. `authorize`, which only bound 6529 Stream calls inside `mint`, consumes the item and
+spends the lead artist's move nonce with no event: 6529 Stream's `WorkMinted` records the
+consumed item (the registry's former `ItemConsumed` is gone). Content uniqueness and releases are
+6529 Stream's ([AUC-38][auc]): the registry keeps no consumed-content record and no longer
+emits `ContentReleased`; its `consumedItemOf`, `releasedTo` and `isReleased` answer from 6529
+Stream. A kind, seed policy or party role the registry does not know refuses a new item
+([CUR-9][cur]).
 
 | Event | topic0 | Emitted by | Meaning and indexing notes |
 | --- | --- | --- | --- |
 | `PackageRegistered(bytes32 indexed packageRoot, bytes32 evidenceHash, address indexed verifier, address indexed signer)` | `0x0c1aff27…` | `registerPackage` (permissionless; the verifier decides) | The root is APPROVED. `verifier` is the curation verifier contract, `signer` the curation signer whose attestation it accepted. Approvals do not expire. |
 | `PackageRevoked(bytes32 indexed packageRoot, bytes32 reasonHash)` | `0x6d695ea2…` | `revokePackage` (GUARDIAN, immediate) | The root is REVOKED for good: unconsumed items can no longer mint. It can come before, or without, a `PackageRegistered` ([CUR-2][cur]). |
 | `PackageAccepted(bytes32 indexed packageRoot, uint256 indexed artistId, address indexed account)` | `0x49639e31…` | `acceptPackage` (permissionless relay of the party's signature) | `acceptedAs[root][account] = artistId`. Only the first acceptance per root and account emits; a repeat is a silent no-op. For an account with no artist ID yet, followed by the artist registry's `ArtistRegistered`. |
-| `ItemConsumed(bytes32 indexed packageRoot, bytes32 indexed itemHash, uint256 indexed artistId, bytes32 contentHash)` | `0x1acc8cae…` | `consume`, callable only by bound 6529 Stream, inside `mint` during an auction start | The item is used and its content hash is claimed under `PRODUCT_STREAM`. The lead artist's move nonce is spent here with no event of its own. |
-| `ContentClaimed(bytes32 indexed contentHash, bytes32 indexed itemHash)` | `0x7ee6542c…` | `claimContent`, callable only by bound 6529 Stream Editions, inside `createEdition` | The master's content hash is claimed under `PRODUCT_EDITIONS`. |
-| `ContentReleased(bytes32 indexed contentHash, bytes32 indexed itemHash, uint256 indexed beneficiary)` | `0x0f5bb07b…` | `releaseContent`, callable only by 6529 Stream, from `Stream.releaseContent` (PARAMETER_SETTER, 48 hours) after an upheld-dispute burn | `itemHash` is tombstoned; the content hash is reserved for items led by `beneficiary` ([CUR-14][cur]). 6529 Stream emits nothing for this call. |
 | `MoveRevoked(uint256 indexed artistId, uint256 indexed nonce)` | `0x7cfb5149…` | `revokeMove` (the artist's active authority) | An unused move nonce is void. |
 | `VerifierSet(address previous, address next, bytes32 codeHash)` | `0xa3fb3ba5…` | The constructor (`previous` zero) and `setVerifier` (SUCCESSOR_SETTER, 30 days) | The previous verifier is retired for good. Registered approvals are unaffected. |
 | `Bound(bytes32 indexed name, address target)` | `0xd18d9295…` | `bindStream` (`"STREAM"`), `bindEditions` (`"EDITIONS"`), at genesis | Once per name. |
@@ -188,26 +246,30 @@ for role 4 (`CURATION_SIGNER`). The signer's epoch also changes with a new grant
 ### EnglishAuction
 
 [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol), interfaces
-[`IEnglishAuction`](../../src/interfaces/IEnglishAuction.sol) and
+[`IEnglishAuction`](../../src/interfaces/IEnglishAuction.sol),
+[`IEnglishAuctionRefusal`](../../src/interfaces/IEnglishAuctionRefusal.sol) and
 [`ISaleAdapter`](../../src/interfaces/ISaleAdapter.sol). Sale IDs are derived:
-`saleIdOf(token, tokenId) = uint256(keccak256(abi.encode(token, tokenId)))`.
+`saleIdOf(token, tokenId) = uint256(keccak256(abi.encode(token, tokenId)))`. A start locks its
+currency's opening bid, which the asset allowlist holds (`OpeningBidSet` below, under
+[AssetAllowlist](#assetallowlist-and-economicsresolver)); the auction emits no opening-bid event
+of its own.
 
 | Event | topic0 | Emitted by | Meaning and indexing notes |
 | --- | --- | --- | --- |
 | `SaleStarted(uint256 indexed saleId, address indexed token, uint256 indexed tokenId, bytes32 saleKind, address currency, uint256 price, uint64 startTime, uint64 endTime)` | `0x36e87edc…` | `start`, `startWithBid` (permissionless) | An auction opened on a work just minted into custody. `saleKind` is `ENGLISH_AUCTION`; `currency` is the locked currency (`CURRENCY_DEFAULT` resolved); `price` is the locked opening bid; `endTime` is `startTime` plus the governed duration. |
 | `BidPlaced(uint256 indexed saleId, address indexed bidder, address recipient, uint256 amount, uint64 endTime)` | `0x6dcc6bb7…` | `bid`, `startWithBid` | The new high bid. `bidder` is the payer (`payment.payer`; under Permit2 not always the sender); `recipient` receives the token if the bid wins; `endTime` includes any anti-snipe extension. Preceded by `Credited` to the outbid bidder. |
-| `Credited(address indexed account, address indexed currency, uint256 indexed saleId, uint256 amount)` | `0xdd0ef63b…` | `bid` (the outbid bidder), `withdrawBid`, `cancel`, and `settle` (a refund at a freeze exit or for a delisted federated contract, or an ERC-20 payout that failed in its own frame, MONEY-1, [AUC-23][auc]) | `amount` is now claimable by `account` in `currency`; for a failed payout `account` is the seller wallet or the fee recipient. Credits pool per account and currency, across sales. |
+| `Credited(address indexed account, address indexed currency, uint256 indexed saleId, uint256 amount)` | `0xdd0ef63b…` | `bid` (the outbid bidder), `withdrawBid`, `cancel`, `settle` (a refund at a freeze exit or for a delisted federated contract, or an ERC-20 payout that failed in its own frame, MONEY-1, [AUC-23][auc]), and `settleOrRefund` (the standing bid of a refused sale, [AUC-45][auc]) | `amount` is now claimable by `account` in `currency`; for a failed payout `account` is the seller wallet or the fee recipient. Credits pool per account and currency, across sales. |
 | `Claimed(address indexed account, address indexed currency, address indexed to, uint256 amount)` | `0x913c9923…` | `claim` (by the account, to `to`) and `claimFor` (ERC-20 only, to the account itself) | All of the account's credit in that currency was paid out. |
 | `BidWithdrawn(uint256 indexed saleId, address indexed bidder, uint256 amount)` | `0x8f861952…` | `withdrawBid`, while the auction is paused or its currency is deprecated | Preceded by `Credited`. The auction has no bidder; `amount` stays as the reserve ([DSP-15][dsp]). |
 | `AuctionPaused(uint256 indexed saleId, bytes32 disputeRef)` | `0xc5ebe769…` | `pause(saleId, disputeRef)` (GUARDIAN, immediate) | A dispute pause, once per auction, at most 7 days ([AUC-26][auc]). |
 | `AuctionResumed(uint256 indexed saleId, uint64 endTime)` | `0xd6998361…` | `resume` (UNPAUSER); the first state-changing call that touches an auction whose pause ran out; `settle` after a late re-admission of the locked currency (MARKET-2), which reopens instead of settling | The auction runs again until `endTime` ([AUC-27][auc]). An expired pause is [written down lazily](#event-ordering-within-a-transaction). |
 | `AuctionCancelled(uint256 indexed saleId, bytes32 outcomeRef)` | `0x49d67654…` | `cancel` (PARAMETER_SETTER, 48 hours) | An upheld dispute. Preceded by `Credited` (the high bid) and 6529 Stream's `Transfer` to zero. `outcomeRef` is the token's own DISPUTE_OUTCOME entry hash ([DSP-18][dsp]). |
 | `DeliveryPending(uint256 indexed saleId, address indexed recipient)` | `0x96b5b68e…` | `settle`, when the token's transfer to the recipient failed | The token stays in custody until `claimDelivery`. |
-| `DeliveryClaimed(uint256 indexed saleId, address indexed recipient, address to)` | `0x97b1d318…` | `claimDelivery` (the recipient, the winning bidder, or with no bids the artist) | `recipient` is the recorded recipient; `to` is where the token went. Preceded by 6529 Stream's `Transfer`. |
-| `RescuedSaleClosed(uint256 indexed saleId)` | `0xbab3719d…` | `settle`, when 6529 Stream already records the work settled because governance rescued it to the museum (owner decision 20) | The sale ended with refunds only: the standing bid, if any, was credited back (`Credited` just before), nothing was reported to the token, paid, minted or delivered, and the auction is SETTLED. No `SaleSettled` is emitted. |
+| `DeliveryClaimed(uint256 indexed saleId, address indexed recipient, address to)` | `0x97b1d318…` | `claimDelivery` (the recipient, the winning bidder, or with no bids, after a refused settlement, or after a federated token's early outcome, the artist) | `recipient` is the recorded recipient, zero after a refused settlement; `to` is where the token went. Preceded by the token's `Transfer`. |
+| `RescuedSaleClosed(uint256 indexed saleId)` | `0xbab3719d…` | `settle`, when 6529 Stream already records the work settled because governance rescued it to the museum (owner decision 20), or another token reports an outcome early ([AUC-36][auc]) | The sale ended with refunds only: the standing bid, if any, was credited back (`Credited` just before), nothing was reported to the token, paid, minted or delivered, and the auction is SETTLED. No `SaleSettled` is emitted. A federated token's work is then a pending delivery its artist claims. |
+| `SettlementRefused(uint256 indexed saleId)` | `0x682bf7ce…` | `settleOrRefund` (permissionless, federated sales only, from the sale's refusal delay after its end), when its attempt at `settle` failed ([AUC-45][auc]) | The token would not let the sale settle. Every effect of the attempt was undone, so no `PrimarySaleSettled`, payout or `SaleSettled` appears; the standing bid, if any, was credited back (`Credited` just before); the work is in custody as a pending delivery the artist claims; the auction is SETTLED. A successful attempt emits exactly `settle`'s events instead. |
 | `SaleSettled(uint256 indexed saleId, address indexed token, uint256 indexed tokenId, address buyer, address recipient, uint256 quantity, address currency, uint256 price, address seller, uint256 sellerProceeds, address feeRecipient, uint256 fee)` | `0x16010625…` | `settle` (permissionless after the end) | The last event of a settlement. `quantity` is 1. With no standing bid (including a freeze exit or a delisted federated contract) `buyer` and `price` are zero and `recipient` is the museum 6529 Stream moved the work to, or for any other token the artist's active authority. `price = sellerProceeds + fee`. |
-| `ConfigSet(AuctionConfig previous, AuctionConfig next)` | `0xb2088623…` | The constructor and `setConfig` (PARAMETER_SETTER, 48 hours) | `AuctionConfig` is `(uint32 duration, uint32 extensionWindow, uint32 incrementShare)`. What a start locks is [AUC-15][auc]. |
-| `OpeningBidSet(address indexed currency, uint256 previous, uint256 next)` | `0xdb7c74c4…` | `setOpeningBid` (PARAMETER_SETTER, 48 hours) | Applies to auctions that start afterwards. |
+| `ConfigSet(AuctionConfig previous, AuctionConfig next)` | `0x2991b213…` | The constructor (from all zeros) and `setConfig` (PARAMETER_SETTER, 48 hours) | `AuctionConfig` is `(uint32 duration, uint32 extensionWindow, uint32 incrementShare, uint32 refusalDelay, uint32 refusalGas)`. What a start locks is [AUC-15][auc] and [AUC-46][auc]. |
 | `TargetSet(address indexed token, bool listed)` | `0xd79dab7c…` | The constructor's targets and `setTarget` (SUCCESSOR_SETTER, 30 days; at genesis through the wiring) | A token contract listed or unlisted for new auctions. |
 | `FederationRegistrySet(address previous, address next)` | `0xb6b3a87c…` | `setFederationRegistry` (SUCCESSOR_SETTER) | No federation registry exists in v1. |
 | `Paused(address account)` | `0x62e78cea…` | `pause()` (PAUSER, immediate) | Adapter-wide pause; on the auction it stops only new starts ([AUC-13][auc]). `account` is the immediate caller: the role holder, or the AccessManager through `execute`. |
@@ -216,13 +278,15 @@ for role 4 (`CURATION_SIGNER`). The signer's epoch also changes with a new grant
 ### UniformEditionAuction
 
 [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol), interfaces
-[`IUniformEditionAuction`](../../src/interfaces/IUniformEditionAuction.sol) and `ISaleAdapter`.
+[`IUniformEditionAuction`](../../src/interfaces/IUniformEditionAuction.sol), and `ISaleAdapter`
+through its lens (the adapter answers every view, `ISaleAdapter`'s included, from
+`UniformEditionAuctionLens`; it keeps no federation registry).
 The sale ID is `saleIdOf(editions, editionId)`, a hash; bid IDs run from 1 in each sale, so key a
-bid by `(saleId, bidId)`. The rules are [EA-1 to EA-16][ed].
+bid by `(saleId, bidId)`. The rules are [EA-1 to EA-20][ed].
 
 | Event | topic0 | Emitted by | Meaning and indexing notes |
 | --- | --- | --- | --- |
-| `AuctionOpened(uint256 indexed saleId, address indexed token, uint256 indexed id, address master, uint32 maxCount, AuctionConfig terms, uint64 closeAt)` | `0x54085347…` | `open` (anyone, from the 1/1's start until the close) | `AuctionConfig` is `(uint96 basePrice, uint16 stepsPerDecade, uint16 stepCount, uint32 marginShare, uint32 closeOffset, uint32 softWindow, uint32 maxExtension)`, the terms the sale locked. `maxCount` is the creator's cap, zero for none; `closeAt` the close at opening. Follows `SaleStarted`. |
+| `AuctionOpened(uint256 indexed saleId, address indexed token, uint256 indexed id, address master, uint32 maxCount, AuctionConfig terms, uint64 closeAt)` | `0x54085347…` | `open` (anyone, from the 1/1's start until the close) | `AuctionConfig` is `(uint96 basePrice, uint16 stepsPerDecade, uint16 stepCount, uint32 marginShare, uint32 closeOffset, uint32 softWindow, uint32 maxExtension)`, the terms the sale locked. `terms.closeOffset` is the sale's own close offset: the artist's, from the edition terms' params (`abi.encode(uint256 closeOffset)`), at most the governed maximum, or the governed default for empty params ([EA-17][ed]). `maxCount` is the creator's cap, zero for none; `closeAt` the close at opening. Follows `SaleStarted`; `open` first deploys the seller's and royalty receiver's split wallets if they have no code ([EA-20][ed]). |
 | `SaleStarted(…)` | `0x36e87edc…` | `open` | `saleKind` is `UNIFORM_AUCTION`, `currency` zero (ETH), `price` step 0's price, `endTime` the close at opening; it moves later with the 1/1 and the soft close. |
 | `BidPlaced(uint256 indexed saleId, uint256 indexed bidId, address indexed bidder, uint256 step, uint256 quantity, uint256 position, uint64 endTime)` | `0xea05b7c0…` | `bid` (anyone) | The escrow is `quantity × stepPrice(step)`. `position` is the bid's place in its step's queue (capped sales; zero otherwise). `endTime` is the sale's end as the adapter knows it after the bid: a soft-close extension shows here, but the adapter reads the 1/1 only within `softWindow` of its cached close, so a 1/1 extension shows only from then on, and a bid that reads the 1/1 paused carries `type(uint64).max`. Read `endTimes(saleId)` for the live close. |
 | `BidRaised(uint256 indexed saleId, uint256 indexed bidId, address indexed bidder, uint256 fromStep, uint256 toStep, uint256 position, uint256 paid, uint64 endTime)` | `0x147e61d6…` | `raise` (the bidder) | The whole bid moved up; `paid` is the top-up. In a capped sale it leaves a departure at `fromStep` and joins `toStep` at `position`. |
@@ -232,13 +296,13 @@ bid by `(saleId, bidId)`. The rules are [EA-1 to EA-16][ed].
 | `SettlementScanned(uint256 indexed saleId, uint256 wordsLeft)` | `0x5ba31e1b…` | A `settle` call that stops at its gas bound before the scan of the book ends (declared in `IUniformEditionAuctionStorage`) | `wordsLeft` live words of eight steps remain; the next `settle` continues. |
 | `DeparturesSwept(uint256 indexed saleId, uint256 swept, uint256 total, uint256 cutoff)` | `0xcd2f0b03…` | `settle` of a rationed sale with departures, once per call | Progress of the caller's own sweep (each settler sweeps on its own): `swept` of `total` departures, and its cutoff so far. Interleaved settlers' events can show `swept` going down; `sweepOf(saleId, settler)` reads one settler's. |
 | `AuctionSettled(uint256 indexed saleId, uint256 count, uint256 cutoff)` | `0x449bedd3…` | The `settle` that completes the sale: the first settler to sweep every departure | Claims are open. `cutoff` is final (rationed sales; zero otherwise). |
-| `AuctionVoided(uint256 indexed saleId)` | `0x5b720134…` | `settle` after the 1/1 was cancelled | Nothing is minted or paid; every bid's claim refunds its whole escrow. |
+| `AuctionVoided(uint256 indexed saleId)` | `0x5b720134…` | `settle` after the 1/1 was cancelled, or `abandon` (permissionless; a sale that paid nothing, its end plus its locked abandonment delay passed, and its 1/1 neither in progress nor settled with its edition; [EA-19][ed]), which is followed by Editions' `EditionSupplySealed(id, 0)` | Nothing is minted or paid; every bid's claim refunds its whole escrow. |
 | `BidClaimed(uint256 indexed saleId, uint256 indexed bidId, address indexed bidder, address to, uint256 unitsWon, uint256 refund)` | `0x0c081c9a…` | `claimBid` (the bidder) and `claimBidFor` (anyone) | `unitsWon` copies minted to `to` (the bidder for `claimBidFor`); `refund` sent to `to`, or credited to the bidder by `claimBidFor` (with `Credited`). The bid is gone. |
 | `Credited(…)` | `0xdd0ef63b…` | `claimBidFor` | A refund credited to the bidder (`currency` zero). |
 | `Claimed(…)` | `0x913c9923…` | `claim(address(0), to)` | |
 | `ConfigSet(AuctionConfig previous, AuctionConfig next)` | `0x15d7d731…` | The constructor (from all zeros) and `setConfig` (PARAMETER_SETTER, 48 hours) | Sales opened afterwards lock `next`; open sales keep theirs. |
 | `TargetSet(address indexed token, bool listed)` | `0xd79dab7c…` | `setTarget` (SUCCESSOR_SETTER; at genesis through the wiring) | |
-| `FederationRegistrySet(address previous, address next)` | `0xb6b3a87c…` | `setFederationRegistry` (SUCCESSOR_SETTER) | None in v1. |
+| `LimitsSet(uint256 previous, uint256 next)` | `0x2a00ae88…` | The constructor (from zero) and `setLimits` (PARAMETER_SETTER, 48 hours, compare-and-set) | The governed limits, packed `maxCloseOffset \| voidDelayDays << 32 \| payoutGas << 48 \| rescueCapDays << 80`: the maximum close offset an edition may name (30 days at launch), the abandonment delay in days (150 at launch), the payout gas (100,000 at launch) and the most days Stream's rescue lengthening adds to an abandonment (730 at launch) ([EA-18][ed]). A sale locks its close offset and abandonment delay when it opens. |
 | `Paused(address account)`, `Unpaused(address account)` | `0x62e78cea…`, `0x5db9ee0a…` | `pause()` (PAUSER, immediate), `unpause()` (UNPAUSER, no earlier than 48 hours after the pause) | A pause stops `open` only. |
 
 The fixed-price and Dutch adapters left with ADR 0005, and with them `PhasesSet`, `SaleClosed`
@@ -264,34 +328,41 @@ version of this page lists them.
 
 | Event | topic0 | Emitted by | Meaning and indexing notes |
 | --- | --- | --- | --- |
-| `ArtistRegistered(uint256 indexed artistId, ArtistIdentity identity)` | `0xd245a084…` | `register`, callable only by the package registry, inside an account's first `acceptPackage` | `ArtistIdentity` is `(address authority, address payout, bytes32 profileId, bytes32 profileDocHash)`. `artistId = uint256(uint160(authority))` and `payout = authority` ([ID-1][id]). It counts as first activity but emits no `ActivityRecorded`: use the block timestamp. |
-| `ChangeStaged(uint256 indexed artistId, PendingChange change)` | `0x132aeaf2…` | `stageChange` (signed; STANDARD) and `stageOverride` (PARAMETER_SETTER, 48 hours; CONTESTED, ESTATE or LOST_KEY) | `PendingChange` is `(uint8 kind, ArtistIdentity next, address previousAuthority, uint64 stagedAt, uint64 executableAt, uint64 contestedAt, bytes32 priorOutcome, bytes32 evidenceHash, address[] cancellers)`; `contestedAt` and `priorOutcome` are zero here. `executableAt` is 7 days after staging for STANDARD, 180 days for an override ([ID-8][id]). Over a pending STANDARD change, `stageOverride` first emits its `ChangeCancelled`. |
+| `ArtistRegistered(uint256 indexed artistId, ArtistIdentity identity)` | `0xd245a084…` | `register`, callable only by the package registry, inside an account's first `acceptPackage`; or `registerFederated`, callable only by the federation registry, with the account's own `ArtistRegistration` signature | `ArtistIdentity` is `(address authority, address payout, bytes32 profileId, bytes32 profileDocHash)`. `artistId = uint256(uint160(authority))` and `payout = authority` ([ID-1][id]). It counts as first activity but emits no `ActivityRecorded`: use the block timestamp. |
+| `ChangeStaged(uint256 indexed artistId, PendingChange change)` | `0x58e2b3fa…` | `stageChange` (signed; STANDARD) and `stageOverride` (PARAMETER_SETTER, 48 hours; CONTESTED, ESTATE or LOST_KEY) | `PendingChange` is `(uint8 kind, uint48 contestTimeout, ArtistIdentity next, address previousAuthority, uint64 stagedAt, uint64 executableAt, uint64 contestedAt, bytes32 priorOutcome, bytes32 evidenceHash, address[] cancellers)`; `contestedAt` and `priorOutcome` are zero here. `executableAt` and `contestTimeout` are locked at staging from the governed timers (`CHANGE_DELAY`, 7 days at genesis, for STANDARD; `OVERRIDE_DELAY`, 180 days at genesis, for an override; `CONTEST_TIMEOUT`, 365 days at genesis), whatever `setTimer` sets later ([ID-8][id], [ID-36][id]). Over a pending STANDARD change, `stageOverride` first emits its `ChangeCancelled`. |
 | `ChangeCancelled(uint256 indexed artistId, address indexed by, bool vetoed)` | `0x88a03d9c…` | `cancelChange` on a STANDARD change (`vetoed` false); `vetoChange` (GUARDIAN, immediate; `vetoed` true); a voiding `resolveContested` (`vetoed` true); `stageOverride` replacing a STANDARD change (`vetoed` true); `executeChange` or an upholding `resolveContested` whose re-checks fail, and `expireContest` (`by` is the registry itself, `vetoed` false) | The pending change is gone and its reservation is released. |
 | `ChangeContested(uint256 indexed artistId, address indexed by)` | `0xd96e40f8…` | `cancelChange` by a captured wallet on an override, before its notice ends | The override stays pending until resolved or lapsed ([ID-13][id]). `contestedAt` is this block's timestamp; `priorOutcome` is not in the event: read `pendingChange`. |
-| `ChangeExecuted(uint256 indexed artistId, ArtistIdentity previous, ArtistIdentity next)` | `0x8e7ef8fd…` | `executeChange` (permissionless once due) and an upholding `resolveContested` | The identity changed. Preceded by `ActivityRecorded`; followed by the new authority's standing refresh events. |
+| `ChangeExecuted(uint256 indexed artistId, ArtistIdentity previous, ArtistIdentity next)` | `0x8e7ef8fd…` | `executeChange` (permissionless once due) and an upholding `resolveContested` | The identity changed. Preceded by `ActivityRecorded` when the authority changed; followed by the (new) authority's standing refresh events. |
 | `ContestResolved(uint256 indexed artistId, bool upheld, bool executed, bytes32 outcomeRef)` | `0x82a368c0…` | `resolveContested` (SUCCESSOR_SETTER, 30 days) | The vote was applied. Follows the `ChangeExecuted` (upheld and executed) or the `ChangeCancelled` (voided, or re-checks failed). |
-| `ContestExpired(uint256 indexed artistId)` | `0x7581cc54…` | `expireContest` (permissionless, 365 days after the contest, `CONTEST_TIMEOUT`) | Followed by `ChangeCancelled(artistId, registry, false)`. The lapse takes effect at the timeout, before anyone calls this ([ID-15][id]). |
-| `ActivityRecorded(uint256 indexed artistId, uint64 timestamp)` | `0xb54d675a…` | `stageChange`, `cancelChange` (a cancel or a contest), `heartbeat`, `revokeNonce`, and every executed change | Signed artist activity, for dormancy ([ID-19][id]). |
+| `ContestExpired(uint256 indexed artistId)` | `0x7581cc54…` | `expireContest` (permissionless, once the contest timeout locked at staging has passed since the contest) | Followed by `ChangeCancelled(artistId, registry, false)`. The lapse takes effect at the timeout (`ChangeContested`'s block time plus `ChangeStaged`'s `contestTimeout`), before anyone calls this ([ID-15][id]). |
+| `ActivityRecorded(uint256 indexed artistId, uint64 timestamp)` | `0xb54d675a…` | `stageChange` signed by the authority, `cancelChange` by the previous authority, `heartbeat`, `revokeNonce`, and an executed change that installs a new authority | Activity of the artist's own authority, for dormancy ([ID-19][id]). A captured wallet's cancel or contest, a change a consolidated wallet signed, and an execution that keeps the authority emit none (review E, N-1). |
+| `OverrideAcceptanceConsumed(uint256 indexed artistId, bytes32 digest)` | `0x2bb2cdaf…` | `stageOverride` (PARAMETER_SETTER, 48 hours) of an override that moves the authority, after `AcceptanceUsed`'s check | The new authority's `OverrideAcceptance` digest is consumed for good: the registry's consumed-acceptance set is the set of these digests ([ID-12][id]). Precedes the override's `ChangeStaged`. |
 | `NonceRevoked(uint256 indexed artistId, uint256 nonce)` | `0x7b1a3f30…` | `revokeNonce` (the current authority) | The change nonce `nonce` is burnt. Followed by `ActivityRecorded`. |
-| `StandingAdded(uint256 indexed artistId, address indexed wallet, uint64 effectiveAt)` | `0xd59a9b09…` | Any standing refresh: registration, staging, `heartbeat`, execution, `refreshStanding` (permissionless) | A consolidated wallet was recorded, or a missing one was found again. It has standing from `effectiveAt`. |
-| `StandingMissing(uint256 indexed artistId, address indexed wallet)` | `0x38ff12c3…` | A standing refresh | An established wallet is no longer consolidated; it keeps standing for 30 days (`STANDING_GRACE`, [ID-21][id]). |
+| `StandingAdded(uint256 indexed artistId, address indexed wallet, uint64 effectiveAt)` | `0xd59a9b09…` | Any standing refresh: registration, staging, `heartbeat`, execution, `refreshStanding` (permissionless) | A consolidated wallet was recorded, a missing one was found again, or an entry's `effectiveAt` changed (a pending entry following its live clock, an established one moving earlier). It has standing from `effectiveAt`; the latest event per wallet gives its entry. |
+| `StandingMissing(uint256 indexed artistId, address indexed wallet)` | `0x38ff12c3…` | A standing refresh | An established wallet is no longer consolidated; it keeps standing for the standing grace (`STANDING_GRACE`, 30 days at genesis, governed; [ID-21][id]). |
 | `StandingRemoved(uint256 indexed artistId, address indexed wallet)` | `0xe79c9b80…` | A standing refresh | The wallet lost standing ([ID-21][id], [ID-22][id]). |
-| `StandingRefreshSkipped(uint256 indexed artistId)` | `0x103bc6dd…` | Registration or execution, when the consolidation source could not read or no longer has its pinned code hash | Nobody lost standing; a later `refreshStanding` catches up. |
-| `FederatedContractListed(uint256 indexed artistId, address indexed token)` | `0x4004e60c…` | `listFederatedContract`, callable only by the v1.1 federation registry | Not emitted in v1. |
-| `ConsolidationSourceSet(address previous, address next)` | `0x5b375cc7…` | The constructor and `setConsolidationSource` (SUCCESSOR_SETTER, 30 days) | |
+| `StandingRefreshSkipped(uint256 indexed artistId)` | `0x103bc6dd…` | Every standing refresh except `refreshStanding` (registration, `registerFederated`, staging, overrides, `heartbeat`, execution), when the consolidation source failed (a revert, an oversize answer, or a code-hash mismatch) | Nobody lost standing; a later `refreshStanding` catches up. A source that ran short of gas, or reported `BoundedCallInsufficientGas` or `BoundedCallShortfall`, reverts the call instead ([ID-38][id]). |
+| `FederatedContractListed(uint256 indexed artistId, address indexed token, bytes32 codeHash, uint8 form, address partner, uint32 feeShare, address feeRecipient)` | `0x6b2a1b3a…` | `listFederatedContract`, callable only by the federation registry | A federated token joined the permanent directory, ACTIVE, once per token ([ID-33][id]). `codeHash` is the token's code hash, read by the artist registry itself; `form` is recorded, not interpreted (0 ERC-721, 1 ERC-1155 under `IFederationRegistry.Form`); `partner` is the other half of a linked pair, or zero; `feeShare` and `feeRecipient` are the network's terms locked in the token. Federated contracts earn no TDH. No federation registry is installed on this tree. |
+| `FederatedContractStatus(address indexed token, uint256 indexed artistId, FederationStatus previous, FederationStatus status, bytes32 ref)` | `0x34ddebd7…` | `setFederatedStatus` (the federation registry: ACTIVE and DELISTED only) and `recordFederationExit` (the token itself: LEFT, terminal) | The entry's status changed from `previous` (the same status when set again); `ref` is the registry's reference for a decision, zero for LEFT ([ID-34][id]). Never touches tokens, ownership or owed funds. |
+| `FederationRegistrySet(address previous, address next)` | `0xb6b3a87c…` | `setFederationRegistry` (SUCCESSOR_SETTER, 30 days, compare-and-set) | The federation registry was replaced; the genesis bind emits `Bound("FEDERATION_REGISTRY")` instead. Not the sale adapters' event of the same signature. |
+| `TimerSet(Timer indexed timer, uint48 previous, uint48 value)` | `0xf67b0661…` | The constructor (all five, at their floors, `previous` zero) and `setTimer` (SUCCESSOR_SETTER, 30 days) | A governed wait in seconds (and its value before), for changes staged and refreshes made from then on; each stays between its floor (its genesis value) and its ceiling (`timerBounds`) ([ID-35][id]). |
+| `ConsolidationSourceSet(address previous, address next, bytes32 codeHash)` | `0x8d645963…` | The constructor and `setConsolidationSource` (SUCCESSOR_SETTER, 30 days) | `codeHash` is the pinned `consolidationSourceCodeHash`. |
 | `PackageRegistrySet(address previous, address next)` | `0xf602f9bc…` | `setPackageRegistry` (SUCCESSOR_SETTER, 30 days, compare-and-set) | The only `register` caller changed to Stream's successor package registry (owner decision 16); `packageRegistry()` reads it. The genesis bind emits `Bound` instead. |
 | `Bound(bytes32 indexed name, address target)` | `0xd18d9295…` | `bindPackageRegistry` (`"PACKAGE_REGISTRY"`), `bindStream` (`"STREAM"`), `bindFederationRegistry` (`"FEDERATION_REGISTRY"`), `bindSplitFactory` (`"SPLIT_FACTORY"`), `bindStatementLog` (`"STATEMENT_LOG"`) | Once per name. |
 
 ### ContentStore
 
-[`src/content/ContentStore.sol`](../../src/content/ContentStore.sol), interface
-[`IContentStore`](../../src/interfaces/IContentStore.sol). Not governed.
+[`src/content/ContentStore.sol`](../../src/content/ContentStore.sol), interfaces
+[`IContentStore`](../../src/interfaces/IContentStore.sol) and
+[`IChunkStore`](../../src/interfaces/IChunkStore.sol). Not governed. With `ChunkWritten`,
+`ChunkLinked` and `ManifestRegistered`, the logs reconstruct the whole index.
 
 | Event | topic0 | Emitted by | Meaning and indexing notes |
 | --- | --- | --- | --- |
 | `ChunkWritten(bytes32 indexed chunkHash, address pointer, uint256 length)` | `0xa720bfe8…` | `writeChunk` (anyone), the first time those bytes are stored | `chunkHash = keccak256(bytes)`. Chunks are shared by every file that lists them. Writing stored bytes again emits nothing. |
-| `ManifestRegistered(bytes32 indexed fileId, uint256 length, uint256 chunkCount, Encoding encoding, bytes32 sha256Hash, string mimeType)` | `0x1642eab5…` | `registerManifest` (anyone), the first time | A file is declared. The chunk hashes are not in the event: read `chunkHash(fileId, i)` or decode the call. |
-| `Base64Progress(bytes32 indexed fileId, uint256 chunksValidated)` | `0x02b839e8…` | `attestBase64` (anyone) when more calls are needed | `chunksValidated` chunks are checked; a call checks at most 48 (`ATTEST_CHUNKS_PER_CALL`). |
+| `ChunkLinked(bytes32 indexed chunkHash, bytes32[] parts, uint256 length)` | `0x056e8d2d…` | `linkChunk` (anyone): a chunk built from 1 to 256 stored whole chunks, or relinked from fewer parts | `chunkHash = keccak256` of the concatenated bytes; the latest event for a hash names its current parts, and the bytes never change ([WS-50][ws]). A linked chunk has no single pointer: `chunkPointer` answers zero for it; read `chunkData`. |
+| `ManifestRegistered(bytes32 indexed fileId, uint256 length, uint8 encoding, uint8 digestKind, bytes32 digest, string mimeType, bytes32[] chunkHashes)` | `0x9d2280aa…` | `registerManifest` or `registerManifestList` (anyone), the first time | A file is declared, with its chunk hashes in order (the chunk count is their number). `encoding` and `digestKind` are open `uint8` ids ([WS-54][ws]); `digest` is the decoded media's SHA-256 when `digestKind` is 0. A manifest registered from list chunks has the same file ID and fields as one registered in one call ([WS-51][ws]). |
+| `Base64Progress(bytes32 indexed fileId, uint256 chunksValidated)` | `0x02b839e8…` | `attestBase64` (anyone) when more calls are needed | `chunksValidated` chunks are checked; each call checks as many as its caller asks for (`maxChunks`). |
 | `Base64Attested(bytes32 indexed fileId)` | `0xde611757…` | The `attestBase64` call that checks the last chunk | The whole file is strict base64, for good. Once per file. |
 
 ### DependencyRegistry
@@ -317,28 +388,34 @@ record calls it `EntropyModule`), interface [`IEntropyModule`](../../src/interfa
 | `CoordinatorSet(address previous, address next, bytes32 codeHash)` | `0x04092dc0…` | The constructor and `setCoordinator` (SUCCESSOR_SETTER, 30 days) | The old coordinator's requests can no longer deliver ([ENT-8][ent]). |
 | `ConfigSet(VrfConfig previous, VrfConfig next)` | `0xc5843e71…` | The constructor, `setConfig` (PARAMETER_SETTER, 48 hours) and `lowerCallbackGasLimit` (SUCCESSOR_SETTER, 30 days) | `VrfConfig` is `(uint256 subscriptionId, bytes32 keyHash, uint32 callbackGasLimit, uint16 confirmations, bool nativePayment)`. Not the auction's `ConfigSet`. |
 
-### SplitFactory and SplitWallet
+### SplitLedger (split wallets)
 
-[`src/economics/SplitFactory.sol`](../../src/economics/SplitFactory.sol) and
-[`src/economics/SplitWallet.sol`](../../src/economics/SplitWallet.sol), interfaces
-[`ISplitFactory`](../../src/economics/interfaces/ISplitFactory.sol) and
-[`ISplitWallet`](../../src/economics/interfaces/ISplitWallet.sol). Each split wallet is its own
-contract at a CREATE2 address.
-
-| Event | topic0 | Emitted by | Meaning and indexing notes |
-| --- | --- | --- | --- |
-| `WalletCreated(address indexed wallet, bytes32 indexed configHash, bytes32 salt, ISplitWallet.Payee[] payees)` | `0x140f5f99…` | `SplitFactory.createWallet` (anyone), the first deployment only | `Payee` is `(uint256 artistId, address account, uint32 share)`. Sales pay predicted addresses, so funds can arrive long before this event, or without it ([ECO-11][eco]). |
-| `Released(address indexed asset, uint256 indexed payee, address indexed recipient, address account, uint256 amount, uint256 observed)` | `0x8cb42764…` | A wallet's `release`, `releaseTo` and `releaseWithAuthorization` | `payee` is the payee index; `account` is its payout address at that moment (resolved through the artist registry for an artist-resolved payee); `observed` is the wallet's cumulative receipts of `asset` then. ETH is `asset` zero. The emitter is the wallet. |
-
-### ReleaseVerifier and ClaimRouter
-
-[`src/economics/ReleaseVerifier.sol`](../../src/economics/ReleaseVerifier.sol) and
-[`src/economics/ClaimRouter.sol`](../../src/economics/ClaimRouter.sol).
+[`src/economics/SplitLedger.sol`](../../src/economics/SplitLedger.sol), interface
+[`ISplitLedger`](../../src/economics/interfaces/ISplitLedger.sol) (which joins
+[`ISplitFactory`](../../src/economics/interfaces/ISplitFactory.sol),
+[`ISplitWallet`](../../src/economics/interfaces/ISplitWallet.sol) and
+[`IReleaseVerifier`](../../src/economics/interfaces/IReleaseVerifier.sol)). One permanent
+ledger deploys every split wallet as a 66-byte vault
+([`SplitVault.sol`](../../src/economics/SplitVault.sol)) at a CREATE2 address, keeps every
+wallet's accounting, verifies signed releases and executes every release through the vault.
+The ledger emits every money event; a vault emits nothing. The deployment record calls the
+ledger `SplitFactory`.
 
 | Event | topic0 | Emitted by | Meaning and indexing notes |
 | --- | --- | --- | --- |
-| `NonceUsed(address indexed account, uint256 indexed nonce, bool revoked)` | `0x4efdf80e…` | `ReleaseVerifier.consume`, called by the wallet inside `releaseWithAuthorization` (`revoked` false), and `revokeNonce` (`revoked` true) | A signed-release nonce is spent. A consumed nonce is followed by the wallet's `Released`. |
-| `ClaimFailed(address indexed wallet, address indexed asset, uint256 indexed payee, uint256 index, uint256 size, bytes reason)` | `0xdaabf7a5…` | `ClaimRouter.claim` and `claimSigned`, in continue mode, for an item that failed | `index` is the item's position in the batch; `reason` is at most the first 256 bytes of the revert data: decode it against the wallet, the release verifier and the shared library errors (a bad signature reverts with the error `SignatureVerifier.InvalidSignature`, an expired one with `SignatureVerifier.SignatureExpired`). Successful items appear only as the wallets' `Released`. |
+| `WalletCreated(address indexed wallet, bytes32 indexed configHash, bytes32 salt, ISplitWallet.Payee[] payees)` | `0x140f5f99…` | `createWallet` (anyone), the first deployment only | `Payee` is `(uint256 artistId, address account, uint32 share)`. Sales pay predicted addresses, so funds can arrive long before this event, or without it ([ECO-11][eco]). The only record of a wallet's payee list; releases name the wallet by that list and its salt. |
+| `Released(address indexed wallet, address indexed asset, address indexed recipient, uint256 payee, address account, uint256 amount, uint256 observed)` | `0x6f6357cd…` | `release`, `releaseTo` and `releaseWithAuthorization` | `payee` is the payee index; `account` is its payout address at that moment (resolved through the artist registry for an artist-resolved payee); `observed` is the wallet's cumulative receipts of `asset` then. ETH is `asset` zero. The emitter is the ledger, and `wallet` names the vault the funds left. |
+| `NonceUsed(address indexed account, uint256 indexed nonce, bool revoked)` | `0x4efdf80e…` | `releaseWithAuthorization` (`revoked` false) and `revokeNonce` (`revoked` true) | A signed-release nonce is spent. A consumed nonce is followed by the ledger's `Released`. |
+
+### ClaimRouter
+
+[`src/economics/ClaimRouter.sol`](../../src/economics/ClaimRouter.sol), interface
+[`IClaimRouter`](../../src/economics/interfaces/IClaimRouter.sol). Each item names its wallet
+by payee list and salt.
+
+| Event | topic0 | Emitted by | Meaning and indexing notes |
+| --- | --- | --- | --- |
+| `ClaimFailed(address indexed wallet, address indexed asset, uint256 indexed payee, uint256 index, uint256 size, bytes reason)` | `0xdaabf7a5…` | `ClaimRouter.claim` and `claimSigned`, in continue mode, for an item that failed | `wallet` is the address the item's payee list and salt name for a plain item, and for a signed item the wallet its authorization declares, not checked by the router (an authorization whose wallet differs from the list and salt fails with the ledger's `WrongWallet`), so index by it only for plain items; `index` is the item's position in the batch; `reason` is at most the first 256 bytes of the ledger's revert data: decode it against the ledger and the shared library errors (a bad signature reverts with `SignatureVerifier.InvalidSignature`, an expired one with `SignatureVerifier.SignatureExpired`, a dependency that ran short with `BoundedCall.BoundedCallShortfall`). Successful items appear only as the ledger's `Released`. |
 
 ### RevenueEscrow
 
@@ -351,6 +428,21 @@ contract at a CREATE2 address.
 | `Flushed(address indexed wallet, address indexed asset, address indexed caller, uint256 amount)` | `0xf5c342af…` | `flush` (anyone) | Everything owed was paid to the wallet; it is owed zero. |
 | `Recovered(address indexed wallet, address indexed replacement, address indexed asset, uint256 amount, uint256 owed)` | `0xc8e2b659…` | `recover` (FUNDS_SETTER, 14 days) | The whole credit moved to `replacement`, now owed `owed`; `wallet` is owed zero. For a non-factory account it uses up the recovery consent ([ECO-28][eco]). |
 | `RecoveryConsentSet(address indexed account, address indexed replacement)` | `0x4d47077d…` | `consentToRecovery` (the account) | Zero withdraws the consent. |
+| `ExcessSwept(address indexed asset, address indexed recipient, uint256 amount)` | `0xb3c71476…` | `sweepExcess` (FUNDS_SETTER, 14 days) | The escrow sent `recipient` exactly its balance of `asset` beyond every credit (`totalOwed`); no credit changes ([ECO-40][eco]). |
+
+### GovernedVault (fee recipient and museum)
+
+[`src/economics/GovernedVault.sol`](../../src/economics/GovernedVault.sol), interface
+[`IGovernedVault`](../../src/economics/interfaces/IGovernedVault.sol). Two deployments at
+genesis: `FeeRecipientVault`, the network fee recipient the economics resolver names, and
+`MuseumVault`, its museum. Each holds what it receives and forwards it only to its
+destination; key every log by emitter address.
+
+| Event | topic0 | Emitted by | Meaning and indexing notes |
+| --- | --- | --- | --- |
+| `DestinationSet(address indexed previous, address indexed next, uint64 revision)` | `0x7d092768…` | The constructor (`previous` zero, revision 1) and `setDestination` (FUNDS_SETTER, 14 days, compare-and-set) | Where the vault forwards from now on ([ECO-41][eco]). |
+| `Forwarded(address indexed asset, address indexed destination, uint256 amount)` | `0x0571d85f…` | `forward` (anyone) | `amount` of ETH (`asset` zero) or of an ERC-20 went to the destination. Arrivals into the vault are not logged by it: ETH arrives as a plain transfer, and a split wallet's payment as the ledger's `Released` naming the vault. `releaseToDestination` (anyone) pays the vault's share of a split wallet straight to the destination: the ledger's `Released` with the destination as `recipient`, and no vault event. |
+| `TokenForwarded(address indexed token, uint256 id, address indexed destination, uint256 amount)` | `0x6d58ff68…` | `forwardERC721`, `forwardERC1155` (anyone) | A token the vault held went to the destination (`amount` is 1 for an ERC-721). An unbid or rescued 6529 Stream work reaches the museum vault by its `Transfer`. |
 
 ### AssetAllowlist and EconomicsResolver
 
@@ -363,10 +455,11 @@ contract at a CREATE2 address.
 | --- | --- | --- | --- |
 | `AssetStatusChanged(address indexed asset, Status previous, Status current, uint64 revision)` | `0xd5701084…` | The allowlist's constructor (ETH admitted), `admitAsset` (FUNDS_SETTER, 14 days; [ECO-33][eco]) and `deprecateAsset` (GUARDIAN, immediate) | A deprecation freezes running auctions in that currency ([AUC-25][auc]); edition sales are ETH-only. |
 | `IncrementFloorChanged(address indexed asset, uint256 previous, uint256 current, uint64 revision)` | `0x866085d8…` | Every admission (with the same revision as its `AssetStatusChanged`) and `setIncrementFloor` (PARAMETER_SETTER, 48 hours) | The absolute minimum bid increment; an auction locks it at its first bid. |
+| `OpeningBidSet(address indexed asset, uint256 previous, uint256 current, uint64 revision)` | `0x1d028eb3…` | `setOpeningBid` (PARAMETER_SETTER, 48 hours, compare-and-set on the asset's revision; ETH's 0.05 ETH at genesis through the wiring) | The least first bid of an English auction that starts in `asset` (at most `OPENING_BID_FLOORS`, 1,000, increment floors and `type(uint96).max`); an auction locks it at start. It shares the asset's status word, so a start reads both in one call (`activeOpeningBid`, `defaultCurrencyOpeningBid`). Moved here from the English auction ([ADR 0007](../adr/0007-permanence.md)). |
 | `DefaultCurrencyChanged(bytes32 indexed product, address previous, address current, uint64 revision)` | `0x067a6334…` | `setDefaultCurrency` (FUNDS_SETTER, 14 days; each product's first at genesis through the wiring) | The currency a sale of `product` locks when its terms say `CURRENCY_DEFAULT`. |
 | `EconomicsSet(bytes32 indexed product, ProductEconomics previous, ProductEconomics next, uint64 revision)` | `0x7b619472…` | The resolver's constructor (once per product, from zeros, revision 1), `setFeeTerms` (FUNDS_SETTER, 14 days) and `setRoyaltyRate` (PARAMETER_SETTER, 48 hours) | `ProductEconomics` is `(address feeRecipient, uint32 feeShare, uint32 royaltyRate)`. Applies to new works and editions only ([ECO-6][eco]). `revision` is the changed setting's own counter: compare `previous` and `next` to tell fee terms from royalty rate. |
 | `DefaultLicenseSet(bytes32 indexed product, License previous, License next, uint64 revision)` | `0x45967214…` | The constructor (once per product) and `setDefaultLicense` (PARAMETER_SETTER, 48 hours) | The default license for new packages. |
-| `MuseumSet(address previous, address next, uint64 revision)` | `0x2a1c0960…` | The constructor (once, from zero, revision 1) and `setMuseum` (FUNDS_SETTER, 14 days) | The 6529 Network Museum (D140): where an unbid canonical 6529 Stream work goes. 6529 Stream reads it at settlement and moves the work there itself (owner decision 17), so it applies to every settlement after the change, sales already running included ([AUC-24][auc], [ECO-37][eco]). Not indexed: filter by the resolver's address. |
+| `MuseumSet(address previous, address next, uint64 revision)` | `0x2a1c0960…` | The constructor (once, from zero, revision 1) and `setMuseum` (FUNDS_SETTER, 14 days) | The 6529 Network Museum (D140): where an unbid canonical 6529 Stream work goes; at genesis the museum's governed vault. 6529 Stream reads it at settlement and moves the work there itself (owner decision 17), so it applies to every settlement after the change, sales already running included ([AUC-24][auc], [ECO-37][eco]). Not indexed: filter by the resolver's address. |
 
 ### GovernanceConfigurator and WorksAccessManager
 
@@ -374,8 +467,10 @@ contract at a CREATE2 address.
 and [`src/governance/WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol). The
 manager is OpenZeppelin 5.7.0's `AccessManager`
 ([`IAccessManager.sol` at v5.7.0](https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.7.0/contracts/access/manager/IAccessManager.sol))
-with three cancellation rules and the guardians' suspension of operational keys, which adds two
-events, `RoleSuspended` and `RoleSuspensionLifted`. Role IDs are in
+with three cancellation rules, the guardians' suspension of operational keys (`RoleSuspended`,
+`RoleSuspensionLifted`), and the permanence additions: a bounded guardian veto with an escalated
+lane, dead-admin recovery, a pre-registered successor with `migrate`, seat caps and governed
+parameters ([GV-37 to GV-47][gv]). Role IDs are in
 [`Roles.sol`](../../src/governance/Roles.sol): 0 `ADMIN`, 1 `GUARDIAN`, 2 `PAUSER`, 3
 `UNPAUSER`, 4 `CURATION_SIGNER`, 5 `STORAGE_OPERATOR`, 6 `MINTER`, 7 `KEEPER`, 8 `PLATFORM`,
 9 `PARAMETER_SETTER`, 10 `FUNDS_SETTER`, 11 `SUCCESSOR_SETTER`, 12 `CURATOR`.
@@ -397,6 +492,17 @@ events, `RoleSuspended` and `RoleSuspensionLifted`. Role IDs are in
 | `TargetAdminDelayUpdated(address indexed target, uint32 delay, uint48 since)` | `0xa56b7601…` | `setTargetAdminDelay`, at genesis for the manager and every target | The new admin delay applies from `since`. |
 | `TargetFunctionRoleUpdated(address indexed target, bytes4 selector, uint64 indexed roleId)` | `0x9ea6790c…` | `setTargetFunctionRole`, at genesis one per mapped selector | The role a selector needs. Unmapped selectors fall back to `ADMIN`. |
 | `TargetClosed(address indexed target, bool closed)` | `0x90d4e7bb…` | `setTargetClosed` | A closed target refuses every `restricted` call. |
+| `TargetManaged(address indexed target)` | `0xdc955f50…` | The first configuration of a target (an admin delay or a selector mapping), at genesis for every target | `target` joined the managed list a handover's `migrate` moves ([GV-44][gv]); read `managedTargets()`. |
+| `ActionStruck(bytes32 indexed action, bytes32 indexed operationId)` | `0xd3e3beb6…` | `cancel` by an active guardian that did not schedule it, of a guardian's removal or a successor registration | The action (`actionOf`) is struck: its next proposal waits the escalated delay and enters the escalated lane ([GV-37][gv]). |
+| `OperationEscalated(bytes32 indexed operationId, uint32 nonce, bytes32 indexed action, uint256 seats)` | `0xf57f951e…` | `schedule` of a struck action | Only its scheduler or a majority of `seats` guardian seats (at least two) can stop it; its ballot is `keccak256(abi.encode(operationId, nonce))`. |
+| `GuardianVoted(bytes32 indexed ballot, address indexed guardian, uint256 votes, uint256 seats)` | `0x6a717630…` | `cancel` of an escalated operation by a guardian; `approveRecovery`, `objectToRecovery` (GUARDIAN, immediate) | One guardian's vote; the ballot decides at a majority of `seats`. A recovery's ballot is `keccak256(abi.encode(candidate, openedAt))`. |
+| `ParameterSet(Parameter indexed which, uint32 previous, uint32 value)` | `0xbede1f19…` | `setParameter` (ADMIN, slow lane, compare-and-set) | A governed parameter changed within its compiled bounds ([GV-41][gv]). |
+| `RecoveryAddressSet(address indexed previous, address indexed next)` | `0xe2e82f73…` | `setRecoveryAddress` (ADMIN, slow lane, compare-and-set) | The pre-registered recovery address ([GV-42][gv]). |
+| `RecoveryOpened(address indexed candidate, uint48 readyAt, bool registered, uint256 seats)` | `0xeb8006be…` | `openRecovery` (anyone, after `RECOVERY_SILENCE` without admin activity) | A dead-admin recovery for `candidate`, completable from `readyAt`; for the recovery address (`registered`) guardian votes object, otherwise they approve. Any admin activity voids it. |
+| `RecoveryCompleted(address indexed candidate)` | `0x46f50089…` | `completeRecovery` (anyone, once ready and allowed) | Every former ADMIN record was revoked (their `RoleRevoked` events precede it) and `candidate` is the only admin. A successor proposal still pending was withdrawn first (`SuccessorProposed` with zero), and `AdminActivity` names `candidate` ([GV-42][gv]). |
+| `AdminActivity(address indexed admin, uint48 at)` | `0xdc84c09e…` | An active ADMIN holder's `schedule`, `execute`, `consumeScheduledOp` (through a managed target), `cancel` or `heartbeat`; `completeRecovery` | `lastAdminActivity` moved to `at`; every recovery opened before it is void. Not emitted when the clock already read `at`; the clock starts at deployment, so the last event (or the deployment block) gives its value ([GV-42][gv]). |
+| `SuccessorProposed(address indexed next, address probe)` | `0x685e741d…` | `registerSuccessor` (ADMIN, slow lane; escalated after a guardian's cancellation) | `next` is proposed (zero: the proposal is withdrawn) with the `SuccessionProbe` it must re-point to the manager; the manager keeps every power until `next` accepts ([GV-43][gv]). |
+| `SuccessorAccepted(address indexed next)` | `0x68c11551…` | `acceptSuccession` (only the pending successor, once its probe names the manager) | The manager is handed over: from this block it grants no permission. `migrate` (anyone) then re-points every managed target to `next`, each emitting its own `AuthorityUpdated` ([GV-43, GV-45][gv]). |
 
 ### AccessManaged and EIP-712 events
 
@@ -409,11 +515,13 @@ Every governed contract declares `AuthorityUpdated`, and the EIP-712 signers dec
 | `AuthorityUpdated(address authority)` | `0x2f658b44…` | Every governed contract's constructor, and `setAuthority`, which only the current AccessManager can call (`updateAuthority`) | The contract is now governed by `authority`. A change after deployment moves the whole contract to another manager: alert on it. |
 | `EIP712DomainChanged()` | `0x0a6387c9…` | Never emitted | Declared by EIP-5267 in OpenZeppelin `EIP712`. Each domain is fixed at deployment; read it with `eip712Domain()`. |
 
-### Not deployed: federation registry
+### Not deployed yet: federation registry
 
 [`IFederationRegistry`](../../src/interfaces/IFederationRegistry.sol) declares `Registered`,
-`StatusSet` and `ArtistDelistingSet`. v1 ships no implementation, so nothing emits them; their
-signatures are in the appendix.
+`StatusSet` and `ArtistDelistingSet`. Federation is in v1 ([ADR 0007](../adr/0007-permanence.md);
+a later ADR specifies it), but this tree has no implementation, so nothing emits them; their
+signatures are in the appendix. The artist registry's directory events (`FederatedContractListed`,
+`FederatedContractStatus`) are the permanent, logs-only record of federated contracts.
 
 ## Reconstructing state from events
 
@@ -430,12 +538,13 @@ document.
 - **Evidence.** `PackageRegistered.evidenceHash` and `signer`, and the CURATOR's
   `CURATION_EVIDENCE` statement on the subject `(address(0), uint256(packageRoot))`.
 - **Consent.** One `PackageAccepted` per party: `acceptedAs(root, account)`.
-- **Items.** One `ItemConsumed` per item that started an auction, followed in the same
-  transaction by `WorkMinted` with the same `itemHash`. An item with none is unconsumed.
+- **Items.** Each item that started an auction appears as 6529 Stream's `WorkMinted` with its
+  `itemHash` and `packageRoot`; the registry, as Stream's mint policy, emits nothing for it. An
+  item with none is unconsumed.
 - **Moves.** A consumed item spends its move nonce silently; `MoveRevoked` records a
   revocation. Read `isMoveNonceUsed(artistId, nonce)` for either.
-- **Content.** `consumedItemOf`, `editionClaimOf` and `releasedTo` follow `ItemConsumed`,
-  `ContentClaimed` and `ContentReleased`.
+- **Content.** 6529 Stream's `consumedItemOf` and `releasedTo` follow its `WorkMinted` and
+  `ContentReleased`.
 
 ### A Stream work
 
@@ -447,32 +556,33 @@ sequenceDiagram
     participant Registry as PackageRegistry
     Starter->>Auction: start(stream, mintData)
     Auction->>Stream: mint(auction, 0, 1, mintData)
-    Stream->>Registry: consume(root, item, proof, move)
-    Note over Registry: ItemConsumed
-    Note over Stream: WorkMinted, then Transfer from zero to the auction
+    Stream->>Registry: authorize(context, mintData)
+    Note over Registry: no event (the mint policy answers the record)
+    Note over Stream: TermsInterned when new, WorkMinted, then Transfer from zero to the auction
     Note over Auction: SaleStarted
 ```
 
 | Stage | Events | Read |
 | --- | --- | --- |
-| Minted | `ItemConsumed`, `WorkMinted`, `Transfer(0, auction, tokenId)` | The full item: the published package, or the start calldata (`mintData` is `abi.encode(StreamMintRequest)`) |
-| Record opened | `RecordOpened` | `mediaOf`, `licenseOf`, `seedOf` |
+| Minted | `FeeRecipientRegistered` and `TermsInterned` when new, `WorkMinted`, `Transfer(0, auction, tokenId)` | The locked terms are the `TermsInterned` that `WorkMinted.termsId` names; the full item is in the published package, or the start calldata (`mintData` is `abi.encode(StreamMintRequest)`) |
+| Record opened | `RecordOpened` (the item: parties, payees and shares, initial license, seed policy; the media list, license key and seed) | `mediaOf`, `licenseOf`, `seedOf` |
 | Record set | `RecordSet`, each time until finalize | `record(tokenId)` |
-| Locators | `LocatorAdded` per copy; `FilePreferenceSet`, `CollectionPreferredKindSet`, `PreferredKindSet` | `preferredLocator(tokenId, fileId)` ([WS-21][ws]) |
-| On-chain complete | Zero or more `OnChainSyncProgress`, then `WorkOnChainComplete` | |
+| Locators | The delivery contract's `LocatorAdded` per copy; `FilePreferenceSet`, `CollectionPreferredKindSet`, `PreferredKindSet` | `preferredLocator(tokenId, fileId)` ([WS-21][ws], [WS-40][ws]) |
+| On-chain complete | `OnChainSyncProgress` after each call that made progress (that walk's cursor: the content store's, open to anyone, or the added store's, the artist's only), `MediaFileComplete` per file (the latest per file gives its store), then `WorkOnChainComplete` | `mediaStore(tokenId, index)` |
 | Finalized | `WorkFinalized` | `record(tokenId)` |
-| Amended | `RoyaltyRateChanged` then `RoyaltyRateSet`; `LicenseChanged`; `RendererRepinned` | `workStateHash(tokenId)` |
+| Amended | `TermsInterned` when the new terms are new, `RoyaltyRateChanged` then `RoyaltyRateSet`; `LicenseChanged`; `RendererRepinned` (each with the new state hash) | `workStateHash(tokenId)` |
 | Powers renounced | `PowersRenounced` | `renouncedPowers(tokenId)` |
 | Edition linked | `EditionLinked(tokenId, editions, tokenId)` | `editionOf(tokenId)` |
 | Delivered, transferred | `Transfer` | `ownerOf(tokenId)` |
-| Burned | `Transfer(auction, 0, tokenId)` with `AuctionCancelled`, only before the sale settled ([DSP-20][dsp]); a later `ContentReleased` names the item | |
+| Burned | `Transfer(auction, 0, tokenId)` with `AuctionCancelled`, only before the sale settled ([DSP-20][dsp]); a later release emits 6529 Stream's `ContentReleased` (naming the token) | |
+| Settled | `PrimarySaleSettled` (the outcome, buyer, currency and price TDH reads) | `primarySale(tokenId)` |
 
 The record version is the number of `RecordSet`, `WorkFinalized`, `LicenseChanged`,
 `RoyaltyRateSet`, `RendererRepinned` and `PowersRenounced` events for the token, from zero at
 `openRecord`
-([WS-11][ws]). The state hash also commits to values no event carries, so read
-`workStateHash(tokenId)` rather than recompute it
-([formula](abis-and-interface-ids.md#work-state-hash)).
+([WS-11][ws]). Every amendment event carries the new state hash; after `openRecord`, and for an
+unfinalized work after a new default renderer, read `workStateHash(tokenId)` rather than
+recompute it ([formula](abis-and-interface-ids.md#work-state-hash)).
 
 ### An auction
 
@@ -498,6 +608,10 @@ Per `saleId`:
   governance rescued it to the museum (`PrimarySaleSettled` with RESCUED and `WorkRescued`
   earlier, owner decisions 20 and 28): any refund `Credited`, then `RescuedSaleClosed`, and
   neither `PrimarySaleSettled` nor `SaleSettled`.
+- **Refused.** `settleOrRefund` whose attempt failed: any refund `Credited`, then
+  `SettlementRefused`, and no `PrimarySaleSettled` or `SaleSettled`; `pendingDelivery(saleId)` is
+  zero although the artist may claim the work ([AUC-45][auc]). Whose attempt succeeded: exactly
+  the settled sequence above.
 - **Cancelled.** `Credited` (the high bid), `Transfer` to zero, `AuctionCancelled`.
 - **Credits.** Per account and currency on one adapter, `claimable` is the sum of `Credited`
   minus the sum of `Claimed`.
@@ -511,44 +625,55 @@ Per `saleId`:
   bid's step, quantity and position give the live units per step, which `stepTotals(saleId)`
   returns. A raise or withdrawal in a capped sale also logs a departure at its old step
   (`departures(saleId, step)`).
-- **The clocks.** The close is the 1/1's end plus the offset, or the last soft-close extension,
-  whichever is later: watch the 1/1's `BidPlaced` and `AuctionResumed` too, or read
+- **The clocks.** The close is the 1/1's end plus the sale's own close offset
+  (`AuctionOpened.terms.closeOffset`, up to the governed maximum: 30 days at launch), or the last
+  soft-close extension, whichever is later: watch the 1/1's `BidPlaced` and `AuctionResumed` too, or read
   `endTimes(saleId)`. Each `BidPlaced` and `BidRaised` carries the end as the adapter knew it
   after it: a lower bound of the live close, or `type(uint64).max` when it read the 1/1 paused.
 - **Settled.** Settlement runs in calls of bounded gas: a call that stops before the end of the
   book emits `SettlementScanned`; `AuctionCleared` and `SaleSettled` come in the call that
   finishes the scan, `DeparturesSwept` in each call of a sweep (the caller's own progress: each
   settler sweeps on its own), and `AuctionSettled` when the first sweep completes and claims
-  open. A cancelled
-  1/1 gives `AuctionVoided` instead.
-- **Created.** `EditionCreated`, `MetadataUpdate(editionId)`, the registry's `ContentClaimed`, and
-  6529 Stream's `EditionLinked` and `MetadataUpdate`, in one transaction, any time after the
+  open. In the call that clears, the auction seals the edition at the count sold: Editions'
+  `EditionSupplySealed`. A cancelled 1/1 gives `AuctionVoided` instead, and so does `abandon`
+  for a sale that paid nothing once its end plus its locked abandonment delay passed (150 days at
+  launch), followed by `EditionSupplySealed(id, 0)` ([EA-19][ed]).
+- **Created.** `EditionCreated`, `MetadataUpdate(editionId)`, and 6529 Stream's `EditionLinked`
+  and `MetadataUpdate`, in one transaction, any time after the
   master's sale settled; when copies sold, before the settle call that clears the edition sale
-  (`EditionNotCreated`). Read `edition(editionId)` for the locked
-  economics.
+  (`EditionNotCreated`). `EditionTermsLocked`, right after `EditionCreated`, carries the locked
+  economics and the initial royalty rate.
 - **Bound.** `EditionMinterBound` names the adapter that sells the edition: emitted when its
   sale opens (`bindMinter`, often before `EditionCreated`), or else on the first mint;
   `edition(id).minter` reads it once the edition exists.
-- **Claims.** Each `BidClaimed` with `unitsWon` above zero comes with Editions' `TransferSingle`
-  from zero (the adapter as operator). The sum of `TransferSingle.value` from zero equals
-  `edition(id).minted`, and reaches the sale's `count` once every winning bid is claimed. Reaching the
-  creator's cap emits nothing.
+- **Claims.** Each `BidClaimed` with `unitsWon` above zero comes with Editions'
+  `EditionPrimaryMint` (the clearing price per copy, in ETH) and `TransferSingle` from zero (the
+  adapter as operator). The sum of `TransferSingle.value` from zero equals
+  `edition(id).minted`, and reaches the sale's `count`, the sealed supply, once every winning bid is claimed. Reaching the
+  creator's cap emits nothing. The edition's primary revenue is the sum of
+  `EditionPrimaryMint.amount * unitPrice`.
 
 ### Money
 
-- **Split wallets.** A work's seller and royalty wallets are predicted addresses
-  (`work(tokenId)`, or `edition(id)`). Payments into them emit no protocol event; an ERC-20
-  emits its own `Transfer`.
-- **Releases.** Per wallet, asset and payee index, the released total is the sum of
-  `Released.amount`. For current figures read `observed(asset)` and `releasable(asset, index)`.
-- **Signed releases and batches.** `NonceUsed(account, nonce, false)`, then the wallet's
+- **Split wallets.** A work's seller wallet is `WorkMinted.seller`; its royalty wallet is the
+  salt-zero wallet of `Splits.royaltyPayees(seller, feeRecipient, feeShare)` from its terms
+  ([ECO-7][eco]), or the seller wallet at a zero fee share. An edition's are in
+  `EditionTermsLocked`. Payments into them emit no protocol event (an ERC-20 emits its own
+  `Transfer`); revenue counts when it is released, or when the payer logs it (6529 Stream's
+  `PrimarySaleSettled`, Editions' `EditionPrimaryMint`).
+- **Releases.** Per wallet, asset and payee index, the released total is the sum of the
+  ledger's `Released.amount` (topic 1 is the wallet); `observed` records the wallet's receipts
+  up to each release. For current figures read the ledger's views.
+- **Signed releases and batches.** `NonceUsed(account, nonce, false)`, then the ledger's
   `Released`; `NonceUsed(account, nonce, true)` is a revocation. A claim router batch shows its
   successes only as `Released`, and its failures in continue mode as `ClaimFailed`.
 - **Escrow.** Per `(wallet, asset)`, the balance is the `owed` of the latest `Credited`, or of a
   `Recovered` naming the wallet as `replacement`; `Flushed`, or a `Recovered` naming it as
   `wallet`, sets it to zero. A non-factory account's recovery consent is its latest
-  `RecoveryConsentSet`, cleared by its next `Recovered`. `WalletCreated` tells factory wallets
-  apart.
+  `RecoveryConsentSet`, cleared by its next `Recovered`. `WalletCreated` tells split wallets
+  apart. `ExcessSwept` moves only what no credit is owed, so it changes no balance.
+- **The fee recipient and the museum.** Two governed vaults: each one's destination is its
+  latest `DestinationSet`; what it passes on shows as `Forwarded` and `TokenForwarded`.
 - **Sale credits.** See [an auction](#an-auction).
 
 ### Identity
@@ -561,8 +686,13 @@ Per `saleId`:
 - **Ended.** Exactly one of: `ChangeExecuted`; `ChangeCancelled`; or, for a contested override,
   `ContestResolved` (after `ChangeExecuted` or `ChangeCancelled`) or `ContestExpired` (then
   `ChangeCancelled`).
-- **Contested.** `ChangeContested`. The contest lapses 365 days later with no event
-  ([ID-15][id]).
+- **Contested.** `ChangeContested`. The contest lapses with no event once the contest timeout
+  that `ChangeStaged` locked has passed ([ID-15][id], [ID-36][id]).
+- **Timers.** The governed waits are the latest `TimerSet` per timer; a pending change keeps
+  the values locked at its staging.
+- **Federated contracts.** One `FederatedContractListed` per token, then its
+  `FederatedContractStatus` events (ACTIVE and DELISTED by the federation registry, LEFT by the
+  token, terminal); `federatedListing(token)` reads it back.
 - **Derived answers.** `activeAuthorityOf` ([ID-18][id]) and `payoutAddress` ([ID-16][id])
   depend on the pending change and the clock: read them rather than replay the rules.
 - **Dormancy.** The last activity is the later of the registration block's timestamp and the
@@ -620,7 +750,15 @@ and a head. Also:
   `isSuspended`. A lift by admin operation is announced by its `OperationScheduled`; one by
   `renounceRole` is not ([GV-28][gv]).
 - **Selectors.** `TargetFunctionRoleUpdated` per `(target, selector)`; `TargetClosed` per
-  target.
+  target; `TargetManaged` per target on the handover list.
+- **Escalation.** `ActionStruck` marks an action whose next proposal is escalated;
+  `OperationEscalated` such an operation, and `GuardianVoted` the votes against it.
+- **Recovery and succession.** `RecoveryOpened`, the guardians' `GuardianVoted`, then
+  `RecoveryCompleted` (or nothing, if an admin acts in the meantime: an `AdminActivity` voids
+  every recovery opened before it, and `SuccessorAccepted` every open one); `SuccessorProposed`
+  names a candidate successor (the manager keeps its power), `SuccessorAccepted` ends the
+  manager's power, and each target's `AuthorityUpdated` records its `migrate`. Alert on all
+  five.
 - **Blind spots.** The manager has no getter for a pending grant-delay or target-admin-delay
   cut (a `RoleGrantDelayChanged` or `TargetAdminDelayUpdated` with a future `since`), a role's
   members, or pending operations, so the deployment CI scans for them
@@ -635,15 +773,17 @@ and a head. Also:
 - **A claim's `TransferSingle` follows its `BidClaimed`.** An edition-auction claim deletes the
   bid and emits `BidClaimed` before it mints, so the recipient's ERC-1155 hook runs after the
   event; a hook that reverts reverts the whole claim, and the bid stays claimable.
-- **Effects come before the summary event.** `ItemConsumed` precedes `WorkMinted`;
+- **Effects come before the summary event.** `FeeRecipientRegistered` and `TermsInterned`
+  precede the `WorkMinted` that first uses them; `EditionPrimaryMint` precedes its
+  `TransferSingle`;
   `PrimarySaleSettled` and the delivery precede `SaleSettled`; `Credited` precedes
   `BidPlaced` and `BidWithdrawn`; `RoyaltyRateChanged` precedes `RoyaltyRateSet`;
   `ChangeExecuted` or `ChangeCancelled` precede `ContestResolved`.
 - **Lazy events.** An expired auction pause is written down (`AuctionResumed`) by a later
   transaction; a contest lapses with no event until `expireContest`. Apply the time rules
   yourself, or read the views.
-- **Several contracts in one transaction.** A start touches the package registry, 6529 Stream
-  and the auction; a settlement may also touch the escrow; a royalty change touches both tokens
+- **Several contracts in one transaction.** A start touches the package registry (with no
+  event), 6529 Stream and the auction; a settlement may also touch the escrow; a royalty change touches both tokens
   and the satellite. Order by log index, not by contract.
 
 ### Reorgs
@@ -670,23 +810,22 @@ and a head that matches `chainOf`, and each collection's serials must run 1, 2, 
 ### Derived state with no event
 
 - **Content-store completeness.** No event marks it. A file is complete when every chunk its
-  manifest lists is written at the length the layout requires ([WS-27][ws]). Derive it from
-  `ManifestRegistered` and the `ChunkWritten` events of its chunk hashes (which may come first,
-  and may be shared with other files), or read `isComplete(fileId)`.
+  manifest lists is held, written whole or linked, at the length the layout requires
+  ([WS-27][ws]). Derive it from `ManifestRegistered` (which lists the chunk hashes) and the
+  `ChunkWritten` and `ChunkLinked` events of those hashes (which may come first, and may be
+  shared with other files), or read `isComplete(fileId)` or, in pieces, `firstMissing`
+  ([WS-52][ws]).
 ### What is not emitted
 
 | Value | Where to read it |
 | --- | --- |
-| A work's seller wallet, royalty receiver and current royalty rate | `Stream.work(tokenId)`; the receiver is derived, never stored ([ECO-7][eco]) |
-| A work's fee recipient and fee share, locked at mint | `Stream.primaryTerms(tokenId, "")`: the `PRODUCT_STREAM` terms of the latest `EconomicsSet` before the mint ([ECO-6][eco]) |
-| An edition's seller, fee terms, royalty receiver and rate | `Editions.edition(id)` |
-| A record's media list, stored license and ARTIST seed | `mediaOf`, `licenseOf`, `seedOf` on the satellite |
-| A work's state hash after `openRecord`, `LicenseChanged`, `RendererRepinned` or a new default renderer | `workStateHash(tokenId)` |
-| A manifest's chunk hashes | `chunkHash(fileId, index)`, or the `registerManifest` calldata |
+| A work's royalty receiver | Derived, never stored, from `WorkMinted.seller` and the terms' fee recipient and share ([ECO-7][eco]); or `royaltyInfo` |
+| A work's state hash after `openRecord`, or after a new default renderer for an unfinalized work | `workStateHash(tokenId)` |
+| A work's parties before its record is opened | The published package, or the calldata of `start` (`RecordOpened` carries them once anyone opens the record) |
 | The full package item | The published package, or the calldata of `start`, `openRecord`, `createEdition` or `requestSeed` |
-| A move nonce spent by `consume` | `isMoveNonceUsed` |
+| A move nonce spent by the mint policy's `authorize` | `isMoveNonceUsed` |
 | A contest's `priorOutcome` | `pendingChange(artistId)` |
-| Money arriving in a split wallet | The wallet's balance, or the token's `Transfer` events |
+| Money arriving in a split wallet or a governed vault | The balance, or the token's `Transfer` events; counted when released or when the payer logs it |
 | An auction's minimum next bid | `minimumBid(saleId)` |
 
 ### ERC-4906 refresh triggers
@@ -696,9 +835,9 @@ The mint itself emits none: a new token has no cached metadata.
 
 | Change | 6529 Stream emits | 6529 Stream Editions emits |
 | --- | --- | --- |
-| `openRecord`, `setRecord`, `finalize`, the `syncOnChain` that completes, `relicense`, `setRoyaltyRate`, `repinRenderer`, `addLocator`, `setFilePreference` | `MetadataUpdate(tokenId)` | `MetadataUpdate(tokenId)` when the master has an edition |
+| `openRecord`, `setRecord`, `finalize`, the `syncOnChain` that completes, `relicense`, `setRoyaltyRate`, `repinRenderer`; the delivery contract's `addLocator` and `setFilePreference` (through `WorkRecords.refreshMetadata`) | `MetadataUpdate(tokenId)` | `MetadataUpdate(tokenId)` when the master has an edition |
 | `setRoyaltyRate` on a master with an edition | (as above) | also `MetadataUpdate(editionId)` from the rate change itself |
-| `setPreferredKind`, `setCollectionPreferredKind` | `BatchMetadataUpdate(1, totalMinted)` | `BatchMetadataUpdate(0, type(uint256).max)` |
+| The delivery contract's `setPreferredKind`, `setCollectionPreferredKind` (through `WorkRecords.refreshAllMetadata`) | `BatchMetadataUpdate(1, totalMinted)` | `BatchMetadataUpdate(0, type(uint256).max)` |
 | `setDefaultRenderer` | `BatchMetadataUpdate(1, totalMinted)` | `BatchMetadataUpdate(0, type(uint256).max)` |
 | `createEdition` | `MetadataUpdate(tokenId)` (from `linkEdition`) | `MetadataUpdate(editionId)` |
 | `setContractURI` | `ContractURIUpdated` (ERC-7572) | `ContractURIUpdated` |
@@ -712,16 +851,18 @@ and its `Transfer` to zero is the signal.
 
 ## Appendix: full topic0 values
 
-Every distinct event signature in the compiled ABIs of the deployed contracts on `main`, with
-structs expanded to tuples: 132 signatures.
+Every distinct event signature in the compiled ABIs of the deployed contracts on this tree, with
+structs expanded to tuples: 164 signatures.
 
 <details>
 <summary>All topic0 values</summary>
 
 | Event (canonical signature) | topic0 | Emitted by |
 | --- | --- | --- |
+| `ActionStruck(bytes32,bytes32)` | `0xd3e3beb626b464e6089f4efba6c506d85bf6ce5dcc1802272a6165f7bdb04bd1` | WorksAccessManager |
 | `ActivityRecorded(uint256,uint64)` | `0xb54d675a5c19358e8f54f81f0cac7fd6943dfd2d92b364e3b26d42636a051b84` | ArtistRegistry |
-| `AdmittedMinterSet(address,uint16,bool)` | `0x4a137c320049b45f43fed26c19f2f1cbf20973f6ae17e5854aac2fd480b3b232` | Stream, Editions |
+| `AdminActivity(address,uint48)` | `0xdc84c09e4f5eaf4b1f2d2a45d8185c3e24032a860d00b29dee4b76cf82e30a02` | WorksAccessManager |
+| `AdmittedMinterSet(address,uint24,bool,bytes32)` | `0xa70d819c10500da6d19e930cca70fe20dbc8af527c2ceb3f1568fc006b4bbf28` | Stream, Editions |
 | `Approval(address,address,uint256)` | `0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925` | Stream |
 | `ApprovalForAll(address,address,bool)` | `0x17307eab39ab6107e8899845ad3d59bd9653f200f220920489ca2b5937696c31` | Stream, Editions |
 | `ArtistRegistered(uint256,(address,address,bytes32,bytes32))` | `0xd245a084992a93fd6ea576a8978336bc03798bf9ae33d7863f3f5ac2464d2e8e` | ArtistRegistry |
@@ -734,7 +875,7 @@ structs expanded to tuples: 132 signatures.
 | `AuctionResumed(uint256,uint64)` | `0xd6998361646975076830fd22deba76d0ebb862929692ac6a7c878737e9ab430d` | EnglishAuction |
 | `AuctionSettled(uint256,uint256,uint256)` | `0x449bedd35ef4d34030a7128545897ef9f6410285965aa60a74992094336d6851` | UniformEditionAuction |
 | `AuctionVoided(uint256)` | `0x5b7201342ffb4a6650d6108ed4e2b82dac9e7efc56b5f0e5a8d0757dc186b1c6` | UniformEditionAuction |
-| `AuthorityUpdated(address)` | `0x2f658b440c35314f52658ea8a740e05b284cdc84dc9ae01e891f21b8933e7cad` | DependencyRegistry, ArtistRegistry, AssetAllowlist, EconomicsResolver, RevenueEscrow, Eip712CurationVerifier, PackageRegistry, StatementLog, VrfEntropyModule, Stream, WorkRecords, Editions, EnglishAuction, UniformEditionAuction |
+| `AuthorityUpdated(address)` | `0x2f658b440c35314f52658ea8a740e05b284cdc84dc9ae01e891f21b8933e7cad` | DependencyRegistry, ArtistRegistry, GovernedVault, AssetAllowlist, EconomicsResolver, RevenueEscrow, Eip712CurationVerifier, PackageRegistry, StatementLog, VrfEntropyModule, Stream, WorkRecords, WorkDelivery, Editions, EnglishAuction, UniformEditionAuction |
 | `Base64Attested(bytes32)` | `0xde611757905ea5f13eedb7ea4f8e87ddcbc29ce9429073a6a8b0cf12101e563e` | ContentStore |
 | `Base64Progress(bytes32,uint256)` | `0x02b839e82d6e5c2ec40d13754cce314a887150d421bd3eeb478b03567c686971` | ContentStore |
 | `BatchMetadataUpdate(uint256,uint256)` | `0x6bd5c950a8d8df17f772f5af37cb3655737899cbf903264b9795592da439661c` | Stream, Editions |
@@ -748,18 +889,18 @@ structs expanded to tuples: 132 signatures.
 | `ChangeCancelled(uint256,address,bool)` | `0x88a03d9ccb529a0c33b398ed874de8eb17013d6989134d8ca2bb31d264882ddf` | ArtistRegistry |
 | `ChangeContested(uint256,address)` | `0xd96e40f81122d9e08069624062bbcc05e00ba4d74c189a8bff7b33ced8299792` | ArtistRegistry |
 | `ChangeExecuted(uint256,(address,address,bytes32,bytes32),(address,address,bytes32,bytes32))` | `0x8e7ef8fd2a03e7165c8094e3607108b18469eeed2ed508186ffefd3fa6e0488c` | ArtistRegistry |
-| `ChangeStaged(uint256,(uint8,(address,address,bytes32,bytes32),address,uint64,uint64,uint64,bytes32,bytes32,address[]))` | `0x132aeaf28d0224ddcdd5cd42f1f2019354ba9d972372922378473c32c4a15e94` | ArtistRegistry |
+| `ChangeStaged(uint256,(uint8,uint48,(address,address,bytes32,bytes32),address,uint64,uint64,uint64,bytes32,bytes32,address[]))` | `0x58e2b3fab0badf095c1e7d341064e7fff85418188d1f96b5cb8aab50b4631e7f` | ArtistRegistry |
+| `ChunkLinked(bytes32,bytes32[],uint256)` | `0x056e8d2d0e279c919bc0abf134aa1cbaa238e1c82e00b6a5824a9cbd4b045425` | ContentStore |
 | `ChunkWritten(bytes32,address,uint256)` | `0xa720bfe8fb78f1436f460c61e8c1a02410fc148201c63e8e07a8f54a82e5627a` | ContentStore |
 | `Claimed(address,address,address,uint256)` | `0x913c992353dc81b7a8ba31496c484e9b6306bd2f6c509a649a38fdf5e1c953b2` | EnglishAuction, UniformEditionAuction |
 | `ClaimFailed(address,address,uint256,uint256,uint256,bytes)` | `0xdaabf7a59b4eba4a2596b828b3ea851d5c37ae2de75087cf6d2c2bdd159d7070` | ClaimRouter |
 | `CollectionCreated(uint256,string,bytes32)` | `0x8966ba956c90c682e7629fa1eff72812e2a5d54259d1e684285c761439588057` | Stream |
-| `CollectionPreferredKindSet(uint256,uint8,uint8)` | `0x57ab57edc511e68ceac9b1e49b80959a2aa7279eb6fa0a548dabba84f3f42d33` | WorkRecords |
+| `CollectionPreferredKindSet(uint256,uint8,uint8)` | `0x57ab57edc511e68ceac9b1e49b80959a2aa7279eb6fa0a548dabba84f3f42d33` | WorkDelivery |
 | `ConfigSet((uint256,bytes32,uint32,uint16,bool),(uint256,bytes32,uint32,uint16,bool))` | `0xc5843e7141f604b3110f98ce25e5557fe89b0f64cff0657e5cefc993f00511a9` | VrfEntropyModule |
-| `ConfigSet((uint32,uint32,uint32),(uint32,uint32,uint32))` | `0xb208862316333bb2d7b1d4c78c1fe2307cb8fcc7de4ef87712dcbe581689fe52` | EnglishAuction |
+| `ConfigSet((uint32,uint32,uint32,uint32,uint32),(uint32,uint32,uint32,uint32,uint32))` | `0x2991b2137e7503dc3b28dec74fd2c18cab2784d5070d22027a95c9f9873a156a` | EnglishAuction |
 | `ConfigSet((uint96,uint16,uint16,uint32,uint32,uint32,uint32),(uint96,uint16,uint16,uint32,uint32,uint32,uint32))` | `0x15d7d731063b5081995cf6646e843f77da2b2d04be98b1f26dd3587b253b8db7` | UniformEditionAuction |
-| `ConsolidationSourceSet(address,address)` | `0x5b375cc73af25458e0e96a18adb844a77f4f149bbacebcad4489a1c1926a83fa` | ArtistRegistry |
-| `ContentClaimed(bytes32,bytes32)` | `0x7ee6542c3bb14fbd1d5f2469b3fe9a3bc0f12f90717d2df3d785ca1c5e34ca51` | PackageRegistry |
-| `ContentReleased(bytes32,bytes32,uint256)` | `0x0f5bb07b99770b114d938317e5ef610ece9a8fd796e204b663203cfcc17ac974` | PackageRegistry |
+| `ConsolidationSourceSet(address,address,bytes32)` | `0x8d645963c52b8e54544a25d9c9cd4e06057464ce600dd092641fd970f630c37b` | ArtistRegistry |
+| `ContentReleased(uint256,bytes32,uint256)` | `0xdd81ba436305d34f5866960f30a9170d41375c2cb34e977cbb433a4ed0297d12` | Stream |
 | `ContestExpired(uint256)` | `0x7581cc54a135d361750f6124773095c416d451f6b06538f823864a9755ec25df` | ArtistRegistry |
 | `ContestResolved(uint256,bool,bool,bytes32)` | `0x82a368c0e2070f2987a33692517ce1d64696a873b53c7323dbca5a8a998bfb10` | ArtistRegistry |
 | `ContractURISet(string,string)` | `0xd144c5914915e649557dfce6d3199a18bae1ec7c249c1766603a2b76ade11c06` | Stream, Editions |
@@ -772,52 +913,70 @@ structs expanded to tuples: 132 signatures.
 | `DefaultRendererSet(address,address,bytes32)` | `0xe2fab5e93f4326fb3c630fb4727e23f53f515c7850a15793f49130e5c0bcd320` | Stream |
 | `DeliveryClaimed(uint256,address,address)` | `0x97b1d318557d1873c3d7a8a9ef7fb4b4c83f2bb976bb53525208ed7712543748` | EnglishAuction |
 | `DeliveryPending(uint256,address)` | `0x96b5b68e86af123b788e4434fa8a32249a60a4f022f6bb2451d03055a8dfcb26` | EnglishAuction |
+| `DeliverySet(address,address)` | `0x113e2022127f41af1670206bb33d2c69486d7f4f382e9284c2c974fea2fbd666` | WorkRecords |
 | `DeparturesSwept(uint256,uint256,uint256,uint256)` | `0xcd2f0b03cb6f968ada1bbdaff91cc336fb6973b27da2abf27ce51dae3bfa057e` | UniformEditionAuction |
 | `DependencyDeprecated(bytes32,bytes32)` | `0x1ec1691a0ca2ee98d4fbcf4e43b0bb0e0a14423b3295cb62e5b0e3ab1f57cae5` | DependencyRegistry |
 | `DependencyRegistered(bytes32,bytes32,bytes32)` | `0x5e1b96d09ad31255e23f0b0144c328663f9dcfd03600de24ba76bed97f415716` | DependencyRegistry |
 | `DependencySet(bytes32,address,address)` | `0xb584a2a692666686fcb905c82c0288fcf5affc0262d8ee91245238fdd26cc677` | Stream |
+| `DestinationSet(address,address,uint64)` | `0x7d092768b36924d875a609cceff41f2f080e2e26b997ff2dfe602459fe066d22` | GovernedVault |
 | `EconomicsSet(bytes32,(address,uint32,uint32),(address,uint32,uint32),uint64)` | `0x7b619472492d3cc46abfe0e47b5d8d9cda2fc6d6d600c6419416f2216b2ae7d3` | EconomicsResolver |
 | `EditionCreated(uint256,bytes32,(uint32,address,bytes32,bytes))` | `0x3a4f273bace47a11e8e5de24d0acbc869a740c271e97cfecf75bd80c2cb740da` | Editions |
-| `EditionMinterBound(uint256,address)` | `0x35bb9c806dab754b3f2ba332514b28be18c8c25f824111ab5ca68be3d8fbbc93` | Editions |
 | `EditionLinked(uint256,address,uint256)` | `0xbab490db1fd479b73eef98c43ceeab4d158fbc6ac6a8dd914df5849d80a60b99` | Stream |
-| `EIP712DomainChanged()` | `0x0a6387c9ea3628b88a633bb4f3b151770f70085117a15f9bf3787cda53f13d31` | ArtistRegistry, ReleaseVerifier, Eip712CurationVerifier, PackageRegistry, StatementLog, WorkRecords |
-| `FederatedContractListed(uint256,address)` | `0x4004e60cf220a5ca24e2a0c0c4cb54e0759d8673a29f64b5c7afe580b01a51fc` | ArtistRegistry |
-| `FederationRegistrySet(address,address)` | `0xb6b3a87c0596650c0cf0eb6eca374c8ddc3de178190eabdc7b67d09f2f3a431e` | EnglishAuction, UniformEditionAuction |
-| `FilePreferenceSet(uint256,bytes32,uint256,uint256)` | `0x700a41d4664d4e095541038a6ae434f80ea7c64a803f26a15c0731a550f59855` | WorkRecords |
+| `EditionMinterBound(uint256,address)` | `0x35bb9c806dab754b3f2ba332514b28be18c8c25f824111ab5ca68be3d8fbbc93` | Editions |
+| `EditionPrimaryMint(uint256,address,uint256,address,uint256)` | `0xb55f6fc86ee3461384b52d2e7af0f915fea4f827385a1b154208870d6eaf503c` | Editions |
+| `EditionSupplySealed(uint256,uint256)` | `0xbf26eb1fb29573bf3ae0bba9e4607e51bbe158ec8720aaee88bc9f1d83abf356` | Editions |
+| `EditionTermsLocked(uint256,address,address,uint32,address,uint32)` | `0xfd8bc2cddbf1e979335e7adacb5b5f9d522b30e14343c3e0d8d1d7c3291ab1c0` | Editions |
+| `EIP712DomainChanged()` | `0x0a6387c9ea3628b88a633bb4f3b151770f70085117a15f9bf3787cda53f13d31` | ArtistRegistry, SplitLedger, Eip712CurationVerifier, PackageRegistry, StatementLog, WorkRecords |
+| `ExcessSwept(address,address,uint256)` | `0xb3c71476dfd272eb50cc448234b60ee937ab332f54e7eaab71159ca6eb677440` | RevenueEscrow |
+| `FederatedContractListed(uint256,address,bytes32,uint8,address,uint32,address)` | `0x6b2a1b3a8725954154a06c0e100d75e409c0ff5593e919df78a8de1b952bd40b` | ArtistRegistry |
+| `FederatedContractStatus(address,uint256,uint8,uint8,bytes32)` | `0x34ddebd723a6fae844a0667301c47c47f0b958a848e80ac6a6d9f98937629a7b` | ArtistRegistry |
+| `FederationRegistrySet(address,address)` | `0xb6b3a87c0596650c0cf0eb6eca374c8ddc3de178190eabdc7b67d09f2f3a431e` | ArtistRegistry, EnglishAuction |
+| `FeeRecipientRegistered(uint24,address)` | `0x69bdf78741820f5caa14a7ef4d189d7fde519f3edc06e5473d43b02efd2948a2` | Stream |
+| `FilePreferenceSet(uint256,bytes32,uint256,uint256)` | `0x700a41d4664d4e095541038a6ae434f80ea7c64a803f26a15c0731a550f59855` | WorkDelivery |
 | `Flushed(address,address,address,uint256)` | `0xf5c342afbc0fd5497d66d2246a8208902c06a969755b7f7c415041a67d222caf` | RevenueEscrow |
+| `Forwarded(address,address,uint256)` | `0x0571d85fc9cce8d2ebf18e983becef6cc884e37503f377f9b6383d65850f96d2` | GovernedVault |
 | `GovernanceConfigured(address,bytes32,bytes32,bytes32)` | `0xeb9f30f841bfc2bc2f6aebff0405fc98dd6e152e030304669b0dcb91e6668529` | GovernanceConfigurator |
+| `GuardianVoted(bytes32,address,uint256,uint256)` | `0x6a717630e704bde1d54aab5bf89556240270582fc633e512a314e9bcd65ac67d` | WorksAccessManager |
 | `IncrementFloorChanged(address,uint256,uint256,uint64)` | `0x866085d802dfc753eb059bc39bdea997aaaefc005a15744952a21ae167284f43` | AssetAllowlist |
-| `ItemConsumed(bytes32,bytes32,uint256,bytes32)` | `0x1acc8caea45736c0b63da474d6b10e90cfaf3eb87a5bb8d60a18967e09b3fb60` | PackageRegistry |
-| `LicenseChanged(uint256,(string,bytes32),(string,bytes32))` | `0x8f67810fb582d968f9657bdbd5c11d48fbbacbc03dcd748f7f1a32d10ee1eb3a` | WorkRecords |
-| `LocatorAdded(uint256,bytes32,uint256,(uint8,string))` | `0x728460e4f943f61d09e65ec94ea0e763b99bc49428b9251f51cbc781e15d5dc2` | WorkRecords |
-| `ManifestRegistered(bytes32,uint256,uint256,uint8,bytes32,string)` | `0x1642eab57d0dfde0dbc96816fadfb0ff51124ba555f539163ab21409a54c2d6f` | ContentStore |
+| `LicenseChanged(uint256,(string,bytes32),(string,bytes32),bytes32)` | `0x65b760e0af5d980706ddd8d0fb2a36bf185861fb11d3df573d90455355703d99` | WorkRecords |
+| `LimitsSet(uint256,uint256)` | `0x2a00ae88790916c355d74c47251101f6daa7fe1b163c26b2add418af558d8080` | UniformEditionAuction |
+| `LocatorAdded(uint256,bytes32,uint256,(uint8,string),address,bool)` | `0xae55b5f8169727474b9a0919153dd994347738359264f23322588476f32ed939` | WorkDelivery |
+| `ManifestRegistered(bytes32,uint256,uint8,uint8,bytes32,string,bytes32[])` | `0x9d2280aa98b792abae06fab8602782374ae1ba5da821d3bf33469828424a6fea` | ContentStore |
+| `MediaFileComplete(uint256,uint256,uint256)` | `0x34b39a845bc0217c0f9eeb94c80e0deae37b42c15a7481651a934cddc6ff4ba7` | WorkRecords |
 | `MetadataUpdate(uint256)` | `0xf8e1a15aba9398e019f0b49df1a4fde98ee17ae345cb5f6b5e2c27f5033e8ce7` | Stream, Editions |
 | `MoveRevoked(uint256,uint256)` | `0x7cfb514923d27af9b82a4a821fe5a0bcd7ec408a9eb63cb78d0938a49b32e66e` | PackageRegistry |
 | `MuseumSet(address,address,uint64)` | `0x2a1c096078cbb1875dbcbf421f3c0f318e9bed496c866d5b4c3b234470ce684f` | EconomicsResolver |
 | `NonceRevoked(address,uint256)` | `0x22cd1acb7e7a306800a1b2c0ca9b0280187bbc00b7fbf55d38ad6cbf73082aec` | StatementLog |
 | `NonceRevoked(uint256,uint256)` | `0x7b1a3f30c1ca888cfd6defd5d5df604c39c92f54a37840d7b876254accf0d4d7` | ArtistRegistry |
-| `NonceUsed(address,uint256,bool)` | `0x4efdf80e1ee210a464536b94135bd8ee19bc4cfe4f456dee6baa71426721a82b` | ReleaseVerifier |
-| `OnChainSyncProgress(uint256,uint256)` | `0x2ac9493bfa97be588f74d557d9ca6adde42edf1750dda020d1004fecde9a9f95` | WorkRecords |
-| `OpeningBidSet(address,uint256,uint256)` | `0xdb7c74c48042b2021c70932a529e546b1424727d95e82be79d520e252e58be44` | EnglishAuction |
+| `NonceUsed(address,uint256,bool)` | `0x4efdf80e1ee210a464536b94135bd8ee19bc4cfe4f456dee6baa71426721a82b` | SplitLedger |
+| `OnChainSyncProgress(uint256,uint256,uint256,uint256)` | `0x9f94058f71fd08b8591d89976d6cdaed6f95ef35a5b6f919bf7be18b1fa034fe` | WorkRecords |
+| `OpeningBidSet(address,uint256,uint256,uint64)` | `0x1d028eb330db5a5432221d450b43b0c134b8ce8c37f5ee1ee007d67b57690e0d` | AssetAllowlist |
 | `OperationCanceled(bytes32,uint32)` | `0xbd9ac67a6e2f6463b80927326310338bcbb4bdb7936ce1365ea3e01067e7b9f7` | WorksAccessManager |
+| `OperationEscalated(bytes32,uint32,bytes32,uint256)` | `0xf57f951edc742a13e483f8298bb9e36eecf1ace1d6851d6e8a8f2254cc151c8f` | WorksAccessManager |
 | `OperationExecuted(bytes32,uint32)` | `0x76a2a46953689d4861a5d3f6ed883ad7e6af674a21f8e162707159fc9dde614d` | WorksAccessManager |
 | `OperationScheduled(bytes32,uint32,uint48,address,address,bytes)` | `0x82a2da5dee54ea8021c6545b4444620291e07ee83be6dd57edb175062715f3b4` | WorksAccessManager |
+| `OverrideAcceptanceConsumed(uint256,bytes32)` | `0x2bb2cdafb6182ba96c47b8f1eaaef760926093f68e0baba8859b1e0fbde193e1` | ArtistRegistry |
 | `OwnershipTransferred(address,address)` | `0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0` | Stream, Editions |
 | `PackageAccepted(bytes32,uint256,address)` | `0x49639e3178859abe27d1fabf424f120e3144b903fbc59fb7a6d5666da877907d` | PackageRegistry |
 | `PackageRegistered(bytes32,bytes32,address,address)` | `0x0c1aff273f69c590d79d6ec4500fbec709412c9d6f5aca50140d6f1e72d8b821` | PackageRegistry |
 | `PackageRegistrySet(address,address)` | `0xf602f9bca87ed171d7fdb8fdcbde47a70bb58e7a2029620f431ea07ddb8edb93` | ArtistRegistry |
 | `PackageRevoked(bytes32,bytes32)` | `0x6d695ea27d607e410f90e6b81ed7be5aacde025347b8885f0eef8a60c796dd90` | PackageRegistry |
+| `ParameterSet(uint8,uint32,uint32)` | `0xbede1f19821d14729f3ab84f115485596dc46406ec7b6dcc298801b145f0da10` | WorksAccessManager |
 | `Paused(address)` | `0x62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258` | EnglishAuction, UniformEditionAuction |
 | `PowersRenounced(uint256,uint16,uint16,bytes32)` | `0x1645831232817ad28692844e620258135b764cbc32106d9c36fc183ae2e4bd70` | WorkRecords |
-| `PreferredKindSet(uint8,uint8)` | `0x0c7addff33115506eceb32af47e39cfa360f77cd274f7a61785628f220a420e8` | WorkRecords |
+| `PreferredKindSet(uint8,uint8)` | `0x0c7addff33115506eceb32af47e39cfa360f77cd274f7a61785628f220a420e8` | WorkDelivery |
 | `PrimarySaleSettled(uint256,uint8,address,address,uint256)` | `0xbb0a6d98d06d32ed01207833227c13c8ef140cc29411188e5f0e63d544ecd471` | Stream |
-| `RecordOpened(uint256,bytes32,bytes32)` | `0xaa2a63e255d7826a28755f26ec86b6a056cf997cc736f42a4b0af2b13dcb48b8` | WorkRecords |
+| `RecordOpened(uint256,(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),(bytes32,bytes32,uint8)[],bytes32,bytes32)` | `0xb87810676022db88ecd7836f0ff5c5740b79dd50cb2ab388f02c1d3167b69689` | WorkRecords |
 | `RecordSet(uint256,bytes32,bytes32)` | `0xe459e8a97a49d1b5f56a31c6ab1565c10a52e0bbc110dcccb81c2e3a745ec19a` | WorkRecords |
 | `Recovered(address,address,address,uint256,uint256)` | `0xc8e2b659b1d85626596b21f7945db0a7a6af6e14418d8abc2027b3bd5e86701b` | RevenueEscrow |
+| `RecoveryAddressSet(address,address)` | `0xe2e82f7331b2182b7fda48768de4f8fd938e0e5a8ee5f14279257343c8e1bc8e` | WorksAccessManager |
+| `RecoveryCompleted(address)` | `0x46f5008939fa0b4beb46ae7f0e8368318bb72b56608910ca71c23e83382f609f` | WorksAccessManager |
 | `RecoveryConsentSet(address,address)` | `0x4d47077de11627502b9cf0f9e550c82b6776030b1e996a5688440f97717726b7` | RevenueEscrow |
-| `Released(address,uint256,address,address,uint256,uint256)` | `0x8cb42764ffcce5f55f7e8bec3c9963b3d27b7ece201dff26d2f2fb2d44663362` | SplitWallet |
+| `RecoveryOpened(address,uint48,bool,uint256)` | `0xeb8006be4743a731d9dfef1db0b6be19b848365f7b667d0b473538f76609596c` | WorksAccessManager |
+| `Released(address,address,address,uint256,address,uint256,uint256)` | `0x6f6357cde2444cd0595d716c6d2f41683d4bcbc3792451a714a1f8e6e7dcabd1` | SplitLedger |
+| `RendererRepinned(uint256,address,address,bytes32,bytes32)` | `0x4decb991d34e1966c6aec825348b2da0d1ad9d127f691f50eeee04454cfd4add` | WorkRecords |
+| `RescueDelaySet(uint256,uint256)` | `0xf6d9de13ae4dcea50ce3edec1d226e27a504c37a5334b4ea972cb5833191ab43` | Stream |
 | `RescuedSaleClosed(uint256)` | `0xbab3719d55f70261b89020b4298a74439ac35d304dad421a736479cab6f1d7a8` | EnglishAuction |
-| `RendererRepinned(uint256,address,address,bytes32)` | `0x382b0879887d53c2bd61ffffd40942bd2b11a72433e864886dc052d87380aeda` | WorkRecords |
 | `RoleAdminChanged(uint64,uint64)` | `0x1fd6dd7631312dfac2205b52913f99de03b4d7e381d5d27d3dbfe0713e6e6340` | WorksAccessManager |
 | `RoleGrantDelayChanged(uint64,uint32,uint48)` | `0xfeb69018ee8b8fd50ea86348f1267d07673379f72cffdeccec63853ee8ce8b48` | WorksAccessManager |
 | `RoleGranted(uint64,address,uint32,uint48,bool)` | `0xf98448b987f1428e0e230e1f3c6e2ce15b5693eaf31827fbd0b1ec4b424ae7cf` | WorksAccessManager |
@@ -833,6 +992,7 @@ structs expanded to tuples: 132 signatures.
 | `SeedDelivered(bytes32,uint256,bytes32)` | `0x2a1a98d789f6210c2fb6c327204a52242c65b0c98a164f3fc8bc1c6b0479eb0d` | VrfEntropyModule |
 | `SeedLinked(bytes32,bytes32)` | `0xf4e9ac388df032c7aa58c87fffa65eea30eafa553518699548720ef2f6f64f42` | VrfEntropyModule |
 | `SeedRequested(bytes32,uint256)` | `0x13ccebb8a291fc5c387c182a5403c0aa3e322623fa2b250e1820cf8be4c55b2e` | VrfEntropyModule |
+| `SettlementRefused(uint256)` | `0x682bf7cea42c85fae76f5d2f0ff51745ffe27dd355f679d2c694a455504bc859` | EnglishAuction |
 | `SettlementScanned(uint256,uint256)` | `0x5ba31e1bbb69e573c0a45536d92c79905d779f65b3b09f73ac88014db70b9429` | UniformEditionAuction |
 | `SignerDisabled(address)` | `0xcd7d415743afbe3da9a397922c4a1d3f20efecad669641a0665b8fbd1f62d740` | Eip712CurationVerifier |
 | `SignerEnabled(address)` | `0x71b97cfbc2b8e475857f737bec1103b6beebaca04b52e11c9f7ecb527e64a6ca` | Eip712CurationVerifier |
@@ -842,23 +1002,30 @@ structs expanded to tuples: 132 signatures.
 | `StandingRemoved(uint256,address)` | `0xe79c9b802ddd8723e612c30d239c7bf1074f07a11b351601c8d88dd74d978884` | ArtistRegistry |
 | `StatementAppended(bytes32,bytes32,address,uint8,address,uint64,uint64,bytes32,bytes32,(address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))` | `0x5cc78d0bb8cba9859acd138dcd052b94f324e46596996fa42262ccee5d1a45a5` | StatementLog |
 | `StatementRelayed(bytes32,address,uint256)` | `0x080f9921ae00d2f63d13ca84de2d985b72f4a84a0a7b898d568853dc747754fc` | StatementLog |
+| `StoreAdded(uint256,address,bytes32)` | `0x33a0067382509bd225121e0df109204fa1c0f3a77159dd2cfe964663410d72d7` | WorkRecords |
+| `SuccessorAccepted(address)` | `0x68c115519e93f65dab04a72da0a5af3ddfc43c750d0b47a9f0967f8b287a2df8` | WorksAccessManager |
+| `SuccessorProposed(address,address)` | `0x685e741d2911a7c4d49f13586efb78475861fa118d91b781eb2572ece25b57f1` | WorksAccessManager |
 | `TargetAdminDelayUpdated(address,uint32,uint48)` | `0xa56b76017453f399ec2327ba00375dbfb1fd070ff854341ad6191e6a2e2de19c` | WorksAccessManager |
 | `TargetClosed(address,bool)` | `0x90d4e7bb7e5d933792b3562e1741306f8be94837e1348dacef9b6f1df56eb138` | WorksAccessManager |
 | `TargetFunctionRoleUpdated(address,bytes4,uint64)` | `0x9ea6790c7dadfd01c9f8b9762b3682607af2c7e79e05a9f9fdf5580dde949151` | WorksAccessManager |
+| `TargetManaged(address)` | `0xdc955f50823c0939c2c3c5b34a0da9bbc57523475c5c629217ba5151b11d820f` | WorksAccessManager |
 | `TargetSet(address,bool)` | `0xd79dab7c1ad9be25388690df227462ca1accba2033dbdbd3011ff0eb30c25088` | EnglishAuction, UniformEditionAuction |
+| `TermsInterned(uint24,uint32,uint32,uint24,uint24)` | `0x30c73bd08c42aadc4ff9cd4e7dd70df7221810db3b2b6852de3c5f05f99c3304` | Stream |
+| `TimerSet(uint8,uint48,uint48)` | `0xf67b0661d38c46a74c9edc1f14bc8ec16944840f8fc4752053237fd7ee4ad915` | ArtistRegistry |
+| `TokenForwarded(address,uint256,address,uint256)` | `0x6d58ff684d44243032dd67f713e8663a4a1b0233564136db7cea1a16f19aac5e` | GovernedVault |
 | `Transfer(address,address,uint256)` | `0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef` | Stream |
 | `TransferBatch(address,address,address,uint256[],uint256[])` | `0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb` | Editions |
 | `TransferSingle(address,address,address,uint256,uint256)` | `0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62` | Editions |
 | `Unpaused(address)` | `0x5db9ee0a495bf2e6ff9c91a7834c1ba4fdd244a5e8aa4e537bd38aeae4b073aa` | EnglishAuction, UniformEditionAuction |
 | `URI(string,uint256)` | `0x6bb7ff708619ba0610cba295a58592e0451dee2622938c8755667688daf3529b` | Editions |
 | `VerifierSet(address,address,bytes32)` | `0xa3fb3ba52a3f33a4d15ad313aff346c928cc1b2b39194ec69d2b7785d362a0ea` | PackageRegistry |
-| `WalletCreated(address,bytes32,bytes32,(uint256,address,uint32)[])` | `0x140f5f9969cb7742e82b483caead38e16ee71968d0c0147939e24b8cc251372f` | SplitFactory |
+| `WalletCreated(address,bytes32,bytes32,(uint256,address,uint32)[])` | `0x140f5f9969cb7742e82b483caead38e16ee71968d0c0147939e24b8cc251372f` | SplitLedger |
 | `WorkFinalized(uint256,address,bytes32)` | `0x01445583576e00c75dcf7097e261819caa20e55dc9609e8d62000ae1ea472986` | WorkRecords |
-| `WorkMinted(uint256,uint256,bytes32,uint64,uint256,uint8,bytes32,bytes32,bytes32,bytes32)` | `0x2f52e67a66ac559d9d69c3e1de3044d92d5dfc95d07d41c4a9f46d06ece8393f` | Stream |
+| `WorkMinted(uint256,uint256,uint256,bytes32,uint64,uint8,bytes32,bytes32,bytes32,bytes32,address,uint24)` | `0xf6cc1a1d15a1fb0103fa5d9540690ff72c36812162d1db9744ad76cfd5ee2d31` | Stream |
 | `WorkOnChainComplete(uint256)` | `0x15405c6beca1812d5599c3c71668ef2f894705b2271421a61bceb70c6fcb1428` | WorkRecords |
 | `WorkRescued(uint256,address,address)` | `0x77ac3c6455fa9305b1c12dc5c6cefeb7417b9d5ed5009a19a6bb464e41428ea8` | Stream |
 
-Not deployed in v1 ([`IFederationRegistry`](../../src/interfaces/IFederationRegistry.sol)):
+Not deployed yet ([`IFederationRegistry`](../../src/interfaces/IFederationRegistry.sol)):
 
 | Event (canonical signature) | topic0 |
 | --- | --- |

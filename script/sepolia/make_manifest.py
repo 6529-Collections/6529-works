@@ -21,8 +21,9 @@ REPO = Path(__file__).resolve().parents[2]
 # `DeployV1.Deployment`'s fields, in deploy order (the manager is created by the configurator).
 CONTRACTS = [
     "configurator", "manager", "contentStore", "dependencyRegistry", "consolidationAdapter",
-    "artistRegistry", "releaseVerifier", "splitFactory", "claimRouter", "assetAllowlist",
-    "economicsResolver", "revenueEscrow", "curationVerifier", "packageRegistry", "statementLog",
+    "artistRegistry", "splitFactory", "feeRecipientVault", "museumVault", "claimRouter",
+    "assetAllowlist", "economicsResolver", "revenueEscrow", "curationVerifier", "packageRegistry",
+    "statementLog",
     "entropyModule", "renderer", "stream", "workRecords", "editions", "englishAuctionLens",
     "englishAuction", "editionAuctionLens", "editionAuction",
 ]

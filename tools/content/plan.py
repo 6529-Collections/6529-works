@@ -3,7 +3,11 @@
 The rules mirrored from `src/content/ContentStore.sol`:
 
 - every chunk except the last holds exactly `CHUNK_SIZE` (24,575) bytes, and a file has 1 to
-  `MAX_CHUNKS` (512) chunks;
+  `MAX_CHUNKS` (4,096) chunks;
+- a chunk may be written whole or as parts of any size joined by `linkChunk`; either way it is
+  the same chunk, with the same hash;
+- a manifest's chunk-hash list may be written as list chunks (the packed hashes, `PER_LIST` per
+  chunk) and registered by `registerManifestList`, with the same file ID;
 - a chunk's hash is `keccak256(chunk bytes)`;
 - the file ID is `keccak256(abi.encode(bytes32[] chunkHashes, uint256 length, uint8 encoding,
   string mimeType, bytes32 sha256Hash))`, where `length` is the STORED length and `sha256Hash`
@@ -40,10 +44,23 @@ from .errors import ToolError
 from .keccak import keccak256
 
 CHUNK_SIZE = 24_575  # SSTORE2.MAX_CHUNK_LENGTH: EIP-170's 24,576 minus the STOP byte
-MAX_CHUNKS = 512  # IContentStore.MAX_CHUNKS
+MAX_CHUNKS = 4096  # IContentStore.MAX_CHUNKS
+MAX_PARTS = 256  # IContentStore.MAX_PARTS: the most parts one linked chunk may have
+# Renderer.MAX_PARTS_PER_CHUNK: the default renderer reads no file with a chunk linked from more
+# parts (RND-26), so the uploader writes at most this many parts per chunk.
+RENDERED_MAX_PARTS = 3
+MIN_PART_SIZE = -(-CHUNK_SIZE // RENDERED_MAX_PARTS)  # 8,192: three parts make a full chunk
+DEFAULT_PART_SIZE = MIN_PART_SIZE  # `--part-size` given without a value
 MAX_MIME_LENGTH = 64  # ContentStore.MAX_MIME_LENGTH
-ATTEST_CHUNKS_PER_CALL = 48  # ContentStore.ATTEST_CHUNKS_PER_CALL
-MAX_STORED_BYTES = CHUNK_SIZE * MAX_CHUNKS  # 12,582,400
+PER_LIST = CHUNK_SIZE // 32  # 767: the most chunk hashes in one list chunk
+# The chunk count this tool asks each `attestBase64` call to check (the caller's choice; 48 keeps
+# the worst call near half of the EIP-7825 cap).
+ATTEST_CHUNKS_PER_CALL = 48
+# The largest manifest `--manifest auto` registers in one call; above it the hash list goes into
+# list chunks. One call stores a slot per hash; list chunks store the list as code, which costs
+# less from a few chunks up but takes at least two transactions.
+ONE_CALL_MAX_CHUNKS = 16
+MAX_STORED_BYTES = CHUNK_SIZE * MAX_CHUNKS  # 100,659,200
 
 SCHEMA = "6529-works/content-plan/v1"
 
@@ -101,9 +118,47 @@ def max_input_bytes(encoding: Encoding, already_encoded: bool) -> int:
     return MAX_DECODED_BYTES
 
 
-def attest_call_count(chunks: int) -> int:
-    """How many `attestBase64` calls a file of this many chunks needs: `ceil(chunks / 48)`."""
-    return -(-chunks // ATTEST_CHUNKS_PER_CALL)
+def attest_call_count(chunks: int, per_call: int = ATTEST_CHUNKS_PER_CALL) -> int:
+    """How many `attestBase64` calls a file of this many chunks needs at `per_call` chunks per
+    call: `ceil(chunks / per_call)`."""
+    if per_call < 1:
+        raise ToolError("an attestBase64 call must check at least one chunk")
+    return -(-chunks // per_call)
+
+
+def check_part_size(part_size: int) -> None:
+    """Refuses a part size that splits a full chunk into more than `RENDERED_MAX_PARTS` parts:
+    the store would link it, but the default renderer would not read the file (RND-26)."""
+    if not MIN_PART_SIZE <= part_size <= CHUNK_SIZE:
+        raise ToolError(
+            f"a part is {MIN_PART_SIZE:,} to {CHUNK_SIZE:,} bytes: a smaller part splits a full "
+            f"chunk into more than {RENDERED_MAX_PARTS} parts, and tokenURI reads no file with "
+            "such a chunk (RND-26)"
+        )
+
+
+def split_parts(chunk: bytes, part_size: int) -> list[bytes]:
+    """The parts `linkChunk` joins back into `chunk`: pieces of `part_size` bytes, the last
+    shorter. Refuses a size that would need more than `MAX_PARTS` parts."""
+    if not 1 <= part_size <= CHUNK_SIZE:
+        raise ToolError(f"a part is 1 to {CHUNK_SIZE:,} bytes")
+    parts = [chunk[i : i + part_size] for i in range(0, len(chunk), part_size)]
+    if len(parts) > MAX_PARTS:
+        raise ToolError(
+            f"parts of {part_size:,} bytes would split a {len(chunk):,}-byte chunk into "
+            f"{len(parts)} parts; a link takes at most {MAX_PARTS}"
+        )
+    return parts
+
+
+def list_chunks(chunk_hashes: Sequence[bytes], per_list: int = PER_LIST) -> list[bytes]:
+    """The list chunks `registerManifestList` reads: the packed hashes, `per_list` in each chunk
+    but the last."""
+    if not 1 <= per_list <= PER_LIST:
+        raise ToolError(f"a list chunk holds 1 to {PER_LIST} hashes")
+    return [
+        b"".join(chunk_hashes[i : i + per_list]) for i in range(0, len(chunk_hashes), per_list)
+    ]
 
 
 def describe_base64_problem(problem: Base64Problem, text_length: int) -> str:

@@ -14,7 +14,7 @@ import unittest
 
 from tools.content.errors import ToolError
 from tools.conventions import eip712, testdata
-from tools.conventions.eip712 import HALF_N, SECP256K1_N, verify_signature
+from tools.conventions.eip712 import HALF_N, MAX_SIGNATURE_LENGTH, SECP256K1_N, verify_signature
 
 CUSTODY_DIGEST = "a03cc2c3767834df2ef6c583fd5d08e6d65ddd616d2f90a96e0ad8e00e152e2a"
 CONTROL_DIGEST = "2548db021144b031169071ded42000449c5128184168ca0bd94e5d56c4e0a057"
@@ -122,7 +122,7 @@ class SignatureRulesTest(unittest.TestCase):
 
     def test_zero_signer_and_oversized_signature(self) -> None:
         self.assertFalse(self.check(self.sig, signer=testdata.ZERO).valid)
-        self.assertFalse(self.check(b"\x01" * 4097, code=b"\x60\x00").valid)
+        self.assertFalse(self.check(b"\x01" * (MAX_SIGNATURE_LENGTH + 1), code=b"\x60\x00").valid)
 
     def test_contract_uses_erc1271_only(self) -> None:
         code = bytes.fromhex("6080604052")

@@ -7,25 +7,17 @@ import { ContentStore } from "src/content/ContentStore.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { SSTORE2 } from "src/libraries/SSTORE2.sol";
 
-/// @dev The store's selectors typed so the compiler lets a test send value to `writeChunk` and an
-///      out-of-range encoding (an enum is `uint8` in the ABI, so the selectors match).
+/// @dev The store's selectors typed so the compiler lets a test send value to `writeChunk`.
 interface IUncheckedStore {
     function writeChunk(bytes calldata data) external payable returns (bytes32, address);
-    function registerManifest(
-        bytes32[] calldata chunkHashes,
-        uint256 length,
-        uint8 encoding,
-        string calldata mimeType,
-        bytes32 sha256Hash
-    ) external returns (bytes32);
 }
 
 /// @dev Uploads, manifests, completeness and failure modes of the content store.
 contract ContentStoreTest is ContentBase {
-    IContentStore.Encoding internal constant IDENTITY = IContentStore.Encoding.Identity;
-    IContentStore.Encoding internal constant GZIP = IContentStore.Encoding.Gzip;
-    IContentStore.Encoding internal constant BASE64 = IContentStore.Encoding.Base64;
-    IContentStore.Encoding internal constant GZIP_BASE64 = IContentStore.Encoding.GzipBase64;
+    uint8 internal constant IDENTITY = uint8(IContentStore.Encoding.Identity);
+    uint8 internal constant GZIP = uint8(IContentStore.Encoding.Gzip);
+    uint8 internal constant BASE64 = uint8(IContentStore.Encoding.Base64);
+    uint8 internal constant GZIP_BASE64 = uint8(IContentStore.Encoding.GzipBase64);
 
     /// @dev EIP-7825 (Fusaka): no transaction may use more gas than this.
     uint256 internal constant TX_GAS_CAP = 16_777_216;
@@ -115,7 +107,7 @@ contract ContentStoreTest is ContentBase {
 
         vm.expectEmit(true, false, false, true, address(store));
         emit IContentStore.ManifestRegistered(
-            expectedId, file.length, 3, GZIP, digest, "text/javascript"
+            expectedId, file.length, GZIP, 0, digest, "text/javascript", hashes
         );
         bytes32 fileId =
             store.registerManifest(hashes, file.length, GZIP, "text/javascript", digest);
@@ -240,7 +232,8 @@ contract ContentStoreTest is ContentBase {
         // File IDs and uploaded chunks are permanent, so these must never drift.
         assertEq(CHUNK, 24_575);
         assertEq(store.CHUNK_SIZE(), 24_575);
-        assertEq(store.MAX_CHUNKS(), 512);
+        assertEq(store.MAX_CHUNKS(), 4096);
+        assertEq(store.MAX_PARTS(), 256);
         assertEq(store.MAX_MIME_LENGTH(), 64);
         // Encoding values are part of every file ID.
         assertEq(uint8(IContentStore.Encoding.Identity), 0);
@@ -270,12 +263,14 @@ contract ContentStoreTest is ContentBase {
         assertEq(store.fileInfo(fileId).length, max * CHUNK);
     }
 
-    /// @dev EIP-7825 caps every transaction at 16,777,216 gas. A manifest at `MAX_CHUNKS`, with
-    ///      the longest MIME type, fresh storage for every chunk hash and incompressible hashes,
-    ///      must fit with room to spare: execution, plus 21,000, plus calldata at 16 gas per
-    ///      non-zero byte and 4 per zero byte.
-    function test_RegisterManifest_AtMaxChunksFitsTheTransactionGasCap() public {
-        uint256 max = store.MAX_CHUNKS();
+    /// @dev EIP-7825 caps every transaction at 16,777,216 gas. A one-call manifest of 512 chunks
+    ///      (the largest the uploader sends in one call), with the longest MIME type, fresh
+    ///      storage for every chunk hash and incompressible hashes, fits with room to spare:
+    ///      execution, plus 21,000, plus calldata at 16 gas per non-zero byte and 4 per zero
+    ///      byte. Larger manifests go through `registerManifestList`, in pieces
+    ///      (`ContentStorePermanence.t.sol`).
+    function test_RegisterManifest_OneCallOf512FitsTheTransactionGasCap() public {
+        uint256 max = 512;
         bytes32[] memory limit = new bytes32[](max);
         for (uint256 i; i < max; ++i) {
             limit[i] = keccak256(abi.encode("chunk", i));
@@ -288,8 +283,8 @@ contract ContentStoreTest is ContentBase {
 
         uint256 execution = _gasOf(callData);
         uint256 txGas = 21_000 + _calldataGas(callData) + execution;
-        console2.log("registerManifest at MAX_CHUNKS: execution", execution);
-        console2.log("registerManifest at MAX_CHUNKS: transaction gas", txGas);
+        console2.log("registerManifest, 512 chunks in one call: execution", execution);
+        console2.log("registerManifest, 512 chunks in one call: transaction gas", txGas);
         assertLe(txGas, TX_GAS_CAP, "fits the EIP-7825 cap");
         assertLe(txGas, TX_GAS_CAP * 3 / 4, "keeps a quarter of the cap as margin");
         bytes32 fileId = store.manifestId(limit, max * CHUNK, GZIP_BASE64, longestMime, sha256("x"));
@@ -328,20 +323,26 @@ contract ContentStoreTest is ContentBase {
         store.registerManifest(one, 10, IDENTITY, HTML, bytes32(0));
     }
 
-    function test_RegisterManifest_AcceptsExactlyTheFourEncodings() public {
+    /// @dev Encodings are open ids: the store records any `uint8`, each is a different file
+    ///      ID, and the four defined ones keep their numbers.
+    function testFuzz_RegisterManifest_RecordsAnyEncodingId(uint8 encoding) public {
         bytes32[] memory one = new bytes32[](1);
-        for (uint8 e; e < 4; ++e) {
-            bytes32 id = IUncheckedStore(address(store)).registerManifest(one, 10, e, HTML, DIGEST);
-            assertEq(uint8(store.fileInfo(id).encoding), e);
+        bytes32 id = store.registerManifest(one, 10, encoding, HTML, DIGEST);
+        assertEq(store.fileInfo(id).encoding, encoding);
+        assertEq(store.fileInfo(id).digestKind, 0);
+        assertEq(id, keccak256(abi.encode(one, uint256(10), uint256(encoding), HTML, DIGEST)));
+        if (encoding != 0) {
+            assertTrue(id != store.manifestId(one, 10, 0, HTML, DIGEST), "distinct per id");
         }
     }
 
-    function testFuzz_RegisterManifest_RejectsUnknownEncoding(uint8 encoding) public {
-        encoding = uint8(bound(encoding, 4, type(uint8).max));
-        bytes32[] memory one = new bytes32[](1);
-        // An encoding outside the enum cannot be decoded, so the call reverts.
-        vm.expectRevert();
-        IUncheckedStore(address(store)).registerManifest(one, 10, encoding, HTML, DIGEST);
+    /// @dev An encoding the store does not know is still served byte for byte.
+    function test_UnknownEncodingIdIsStoredAndRead() public {
+        bytes memory file = _data(CHUNK + 9, 77);
+        bytes32 fileId = _publish(file, 200, "application/octet-stream");
+        assertTrue(store.isComplete(fileId));
+        assertEq(store.read(fileId, 0, file.length), file);
+        assertEq(store.fileInfo(fileId).encoding, 200);
     }
 
     function test_RegisterManifest_MimeValidation() public {
@@ -580,6 +581,10 @@ contract ContentStoreTest is ContentBase {
         store.readChunk(id, 0);
         vm.expectRevert(err);
         store.read(id, 0, 0);
+        vm.expectRevert(err);
+        store.firstMissing(id, 0, 1, address(store));
+        vm.expectRevert(err);
+        store.attestBase64(id, 1);
     }
 
     function test_ChunkIndexOutOfBoundsReverts() public {
@@ -636,7 +641,7 @@ contract ContentStoreRangeTest is ContentBase {
     function setUp() public {
         store = new ContentStore();
         file = _data(2 * CHUNK + 1234, 20);
-        fileId = _publish(file, IContentStore.Encoding.Identity, HTML);
+        fileId = _publish(file, uint8(IContentStore.Encoding.Identity), HTML);
     }
 
     function test_Read_AcrossChunkBoundaries() public view {
@@ -705,7 +710,7 @@ contract ContentStoreRangeTest is ContentBase {
 ///      cold: the store, its storage and the chunk contracts are all first touches, as in a fresh
 ///      `eth_call`. Execution gas only, unless a test says it adds calldata and the 21,000 base.
 contract ContentStoreGasTest is ContentBase {
-    IContentStore.Encoding internal constant IDENTITY = IContentStore.Encoding.Identity;
+    uint8 internal constant IDENTITY = uint8(IContentStore.Encoding.Identity);
     uint256 internal constant LEN_100K = 100 * 1024;
     uint256 internal constant LEN_256K = 256 * 1024;
     uint256 internal constant LEN_1M = 1024 * 1024;

@@ -5,6 +5,7 @@ import { ERC1155 } from "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import { IERC1155Receiver } from "@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
+import { Splits } from "src/economics/Splits.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
@@ -16,6 +17,7 @@ import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import { ItemKind, PackageItem, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamLayout } from "src/stream/StreamLayout.sol";
 
 /// @dev The English auction surface the edition auction reads: `auctionClock(saleId)` on its
 ///      hot paths and `auction(saleId)` in the lens's `endTimes`, with each 1/1's state and end
@@ -53,6 +55,19 @@ contract MockOneOfOneAuction {
         shortAnswer = value;
     }
 
+    /// @dev Whether `auctionClock` refuses to answer (a broken auction), and whether it burns
+    ///      all its gas instead.
+    bool public refuseClock;
+    bool public burnClock;
+
+    function setRefuseClock(bool value) external {
+        refuseClock = value;
+    }
+
+    function setBurnClock(bool value) external {
+        burnClock = value;
+    }
+
     function auction(uint256 saleId) external view returns (IEnglishAuction.Auction memory a) {
         a = _auctions[saleId];
         if (a.state == IEnglishAuction.AuctionState.NONE) revert ISaleAdapter.UnknownSale(saleId);
@@ -69,6 +84,12 @@ contract MockOneOfOneAuction {
         view
         returns (IEnglishAuction.AuctionState state, uint64 endTime, uint64 pausedAt)
     {
+        require(!refuseClock, "broken");
+        if (burnClock) {
+            assembly ("memory-safe") {
+                invalid()
+            }
+        }
         IEnglishAuction.Auction storage a = _auctions[saleId];
         (state, endTime, pausedAt) = (a.state, a.endTime, a.pausedAt);
         if (state == IEnglishAuction.AuctionState.NONE) revert ISaleAdapter.UnknownSale(saleId);
@@ -86,9 +107,45 @@ contract MockOneOfOneAuction {
     }
 }
 
-/// @dev 6529 Stream's reads: `coreOf` (the stored item hash and kind) and `economics`.
+/// @dev 6529 Stream's reads: `coreOf` (the stored item hash and kind), `economics`,
+///      `primarySaleSettled`, `rescueDelay` (set by the test) and `extsload` (raw words of this
+///      mock, where `setRemoval` writes a sale adapter's admission word as Stream packs it).
 contract MockMasterStream {
     address public economics;
+    mapping(uint256 id => bool) public primarySaleSettled;
+    /// @dev Stream's rescue delay, its 90-day floor until the test lengthens it.
+    uint256 public rescueDelay = 90 days;
+
+    function setRescueDelay(uint256 next) external {
+        rescueDelay = next;
+    }
+
+    /// @dev Governance removed `adapter` at `removedAt` (zero: admitted again), locking `delay`
+    ///      for its works, at `StreamLayout.minterSlot(adapter)` as Stream packs it.
+    function setRemoval(address adapter, uint40 removedAt, uint32 delay) external {
+        bytes32 slot = StreamLayout.minterSlot(adapter);
+        uint256 word = uint256(removedAt) << 32 | uint256(delay) << 72 | 1 << 8;
+        if (removedAt == 0) word |= 1;
+        assembly ("memory-safe") {
+            sstore(slot, word)
+        }
+    }
+
+    function extsload(bytes32 slot, uint256 n) external view returns (bytes32[] memory words) {
+        words = new bytes32[](n);
+        for (uint256 i; i < n; ++i) {
+            bytes32 w;
+            assembly ("memory-safe") {
+                w := sload(add(slot, i))
+            }
+            words[i] = w;
+        }
+    }
+
+    function setSettled(uint256 id, bool value) external {
+        primarySaleSettled[id] = value;
+    }
+
     mapping(uint256 id => bytes32) internal _itemHashes;
     mapping(uint256 id => ItemKind) internal _kinds;
 
@@ -103,11 +160,11 @@ contract MockMasterStream {
     function coreOf(uint256 id)
         external
         view
-        returns (bytes32, uint256, uint256, ItemKind, SeedPolicy, uint32)
+        returns (bytes32, uint256, uint256, uint8, uint8, uint32)
     {
         bytes32 itemHash = _itemHashes[id];
         if (itemHash == 0) revert IStream.UnknownWork(id);
-        return (itemHash, 1, 1, _kinds[id], SeedPolicy.NONE, 6529);
+        return (itemHash, 1, 1, uint8(_kinds[id]), uint8(SeedPolicy.NONE), 6529);
     }
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
@@ -133,6 +190,11 @@ contract MockEditionToken is ERC1155 {
     address public resolver;
     /// @dev Counts the `bindMinter` calls.
     uint256 public binds;
+    /// @dev Editions' seal (`sealSupply`): whether and at what count, and the last price record.
+    mapping(uint256 id => bool) public sealed_;
+    mapping(uint256 id => uint256) public sealedCount;
+    address public lastCurrency;
+    uint256 public lastUnitPrice;
 
     constructor(address stream_) ERC1155("") {
         stream = stream_;
@@ -186,8 +248,8 @@ contract MockEditionToken is ERC1155 {
     /// @dev The fields the lens reads: the economics locked at the binding.
     function edition(uint256 id) external view returns (IEditions.Edition memory e) {
         WorkTerms memory w = _locked[id];
-        (e.seller, e.feeRecipient, e.feeShare, e.minter) =
-        (w.seller, w.feeRecipient, w.feeShare, minterOf[id]);
+        (e.seller, e.feeRecipient, e.feeShare, e.minter, e.royaltyReceiver) =
+        (w.seller, w.feeRecipient, w.feeShare, minterOf[id], w.royaltyReceiver);
         e.minted = uint64(minted[id]);
     }
 
@@ -202,13 +264,26 @@ contract MockEditionToken is ERC1155 {
             if (!admitted[msg.sender]) revert IMintTarget.NotAdmittedMinter(msg.sender);
             if (bound != address(0)) revert IEditions.MinterMismatch(id, bound);
         }
-        if (amount == 0 || data.length != 0 || !exists[id]) {
+        if (amount == 0 || data.length != 64 || !exists[id]) {
             revert IMintTarget.InvalidMintRequest();
+        }
+        (lastCurrency, lastUnitPrice) = abi.decode(data, (address, uint256));
+        if (sealed_[id] && minted[id] + amount > sealedCount[id]) {
+            revert IEditions.EditionUnavailable(id);
         }
         minted[id] += amount;
         terms.saleKind = ISaleAdapter(msg.sender).saleKind();
         _mint(to, id, amount, "");
         return (id + returnOffset, terms);
+    }
+
+    /// @dev Editions' rule: the bound adapter seals once, at or above the copies minted.
+    function sealSupply(uint256 id, uint256 count) external {
+        if (minterOf[id] != msg.sender) revert IEditions.MinterMismatch(id, minterOf[id]);
+        if (sealed_[id]) revert IEditions.EditionSealed(id);
+        if (count < minted[id]) revert IEditions.InvalidSealCount(id, count);
+        (sealed_[id], sealedCount[id]) = (true, count);
+        emit IEditions.EditionSupplySealed(id, count);
     }
 
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
@@ -217,17 +292,31 @@ contract MockEditionToken is ERC1155 {
     }
 }
 
-/// @dev The economics resolver's `newWorkTerms`, returning the payout terms the test sets.
+/// @dev The economics resolver's `newWorkTerms`, returning the payout terms the test sets, and
+///      its split factory (`splitFactory` is this contract): `createWallet` counts its calls and
+///      returns the royalty receiver for the royalty payees and the seller for any other list,
+///      or `walletOverride` when set. It deploys nothing; a test etches code where it needs it.
 contract MockWorkTermsResolver {
     WorkTerms internal _terms;
     bool public refuse;
+    uint256 public createWalletCalls;
+    address public walletOverride;
+    bytes32 public lastPayeesHash;
 
     function set(address seller, address feeRecipient, uint32 feeShare) external {
         _terms = WorkTerms(seller, feeRecipient, feeShare, seller, 6529);
     }
 
+    function setRoyaltyReceiver(address receiver) external {
+        _terms.royaltyReceiver = receiver;
+    }
+
     function setRefuse(bool value) external {
         refuse = value;
+    }
+
+    function setWalletOverride(address wallet) external {
+        walletOverride = wallet;
     }
 
     function newWorkTerms(bytes32, ISplitWallet.Payee[] calldata)
@@ -237,6 +326,24 @@ contract MockWorkTermsResolver {
     {
         require(!refuse, "payees");
         return _terms;
+    }
+
+    function splitFactory() external view returns (address) {
+        return address(this);
+    }
+
+    function createWallet(ISplitWallet.Payee[] calldata payees, bytes32)
+        external
+        returns (address)
+    {
+        ++createWalletCalls;
+        bytes32 h = keccak256(abi.encode(payees));
+        lastPayeesHash = h;
+        if (walletOverride != address(0)) return walletOverride;
+        bytes32 royalty = keccak256(
+            abi.encode(Splits.royaltyPayees(_terms.seller, _terms.feeRecipient, _terms.feeShare))
+        );
+        return h == royalty ? _terms.royaltyReceiver : _terms.seller;
     }
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {

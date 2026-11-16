@@ -30,11 +30,17 @@ CHUNK_HASH = selector("chunkHash(bytes32,uint256)")
 CHUNK_POINTER = selector("chunkPointer(bytes32)")
 READ_CHUNK = selector("readChunk(bytes32,uint256)")
 MISSING_CHUNKS = selector("missingChunks(bytes32)")
+FIRST_MISSING = selector("firstMissing(bytes32,uint256,uint256,address)")
 CHUNK_SIZE = selector("CHUNK_SIZE()")
 MAX_CHUNKS = selector("MAX_CHUNKS()")
-ATTEST_BASE64 = selector("attestBase64(bytes32)")
+MAX_PARTS = selector("MAX_PARTS()")
+ATTEST_BASE64 = selector("attestBase64(bytes32,uint256)")
 IS_BASE64_ATTESTED = selector("isBase64Attested(bytes32)")
-ATTEST_CHUNKS_PER_CALL = selector("ATTEST_CHUNKS_PER_CALL()")
+LINK_CHUNK = selector("linkChunk(bytes32[])")
+REGISTER_MANIFEST_LIST = selector(
+    "registerManifestList(bytes32[],uint256,uint256,uint8,string,bytes32,uint8)"
+)
+CHUNK_DATA = selector("chunkData(bytes32)")
 
 # --- Encoding ---
 
@@ -88,6 +94,38 @@ def encode_register_manifest(
     return REGISTER_MANIFEST + encode_manifest_args(
         chunk_hashes, length, encoding, mime_type, sha256
     )
+
+
+def _bytes32_array(items: Sequence[bytes]) -> bytes:
+    """The tail encoding of `bytes32[]`: length, then the words."""
+    return uint_word(len(items)) + b"".join(bytes32_word(h) for h in items)
+
+
+def encode_link_chunk(parts: Sequence[bytes]) -> bytes:
+    """Calldata for `linkChunk(bytes32[])`."""
+    return LINK_CHUNK + uint_word(WORD) + _bytes32_array(parts)
+
+
+def encode_register_manifest_list(
+    lists: Sequence[bytes], per_list: int, length: int, encoding: int, mime_type: str,
+    digest: bytes, digest_kind: int = 0,
+) -> bytes:
+    """Calldata for
+    `registerManifestList(bytes32[],uint256,uint256,uint8,string,bytes32,uint8)`."""
+    if not 0 <= encoding <= 0xFF or not 0 <= digest_kind <= 0xFF:
+        raise AbiError("encoding and digest kind are uint8")
+    array_tail = _bytes32_array(lists)
+    head_size = 7 * WORD
+    head = (
+        uint_word(head_size)
+        + uint_word(per_list)
+        + uint_word(length)
+        + uint_word(encoding)
+        + uint_word(head_size + len(array_tail))
+        + bytes32_word(digest)
+        + uint_word(digest_kind)
+    )
+    return REGISTER_MANIFEST_LIST + head + array_tail + _dynamic_bytes(mime_type.encode("utf-8"))
 
 
 def encode_write_chunk(data: bytes) -> bytes:
@@ -158,18 +196,21 @@ def decode_uint_array(ret: bytes) -> list[int]:
 
 @dataclass(frozen=True)
 class FileInfoData:
-    """What `fileInfo` returns: the struct `IContentStore.FileInfo`."""
+    """What `fileInfo` returns: the struct `IContentStore.FileInfo`. `sha256` is the declared
+    digest, a SHA-256 when `digest_kind` is 0."""
 
     sha256: bytes
     length: int
     chunk_count: int
     encoding: int
     mime_type: str
+    digest_kind: int = 0
 
 
 def decode_file_info(ret: bytes) -> FileInfoData:
     """The `FileInfo` struct, which is dynamic (it holds a string), so it is returned behind an
-    offset: `[offset][sha256][length][chunkCount][encoding][mimeOffset] ... [mimeLen][mime]`."""
+    offset: `[offset][sha256][length][chunkCount][encoding][mimeOffset][digestKind] ...
+    [mimeLen][mime]`. A store without digest kinds has no `digestKind` word (kind 0)."""
     base = _word(ret, 0)
     sha256 = bytes(ret[base : base + WORD]) if base + WORD <= len(ret) else b""
     if len(sha256) != WORD:
@@ -177,14 +218,16 @@ def decode_file_info(ret: bytes) -> FileInfoData:
     length = _word(ret, base + WORD)
     chunk_count = _word(ret, base + 2 * WORD)
     encoding = _word(ret, base + 3 * WORD)
-    start, mime_length = _decode_dynamic(ret, base, _word(ret, base + 4 * WORD))
+    mime_offset = _word(ret, base + 4 * WORD)
+    digest_kind = _word(ret, base + 5 * WORD) if mime_offset >= 6 * WORD else 0
+    start, mime_length = _decode_dynamic(ret, base, mime_offset)
     if start + mime_length > len(ret):
         raise AbiError("string length runs past the return data")
     try:
         mime = bytes(ret[start : start + mime_length]).decode("utf-8")
     except UnicodeDecodeError as exc:
         raise AbiError("the MIME type is not valid UTF-8") from exc
-    return FileInfoData(sha256, length, chunk_count, encoding, mime)
+    return FileInfoData(sha256, length, chunk_count, encoding, mime, digest_kind)
 
 
 # --- Custom errors, for readable revert messages ---
@@ -209,6 +252,12 @@ for _name, _types in (
     ("ContentNotBase64", ("bytes32", "uint8")),
     ("ContentBase64LengthInvalid", ("bytes32", "uint256")),
     ("ContentBase64Invalid", ("bytes32", "uint256")),
+    ("ContentChunkUnknown", ("bytes32",)),
+    ("ContentPartCountInvalid", ("uint256",)),
+    ("ContentLinkTooLong", ("uint256",)),
+    ("ContentListInvalid", ("uint256",)),
+    ("ContentDigestNotSha256", ("bytes32", "uint8")),
+    ("ContentLinkedChunkCorrupt", ("bytes32",)),
     ("SSTORE2ChunkTooLarge", ("uint256",)),
     ("SSTORE2WriteFailed", ()),
     ("SSTORE2InvalidPointer", ("address",)),

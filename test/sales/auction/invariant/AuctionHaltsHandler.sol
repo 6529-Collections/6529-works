@@ -519,16 +519,18 @@ contract AuctionHaltsHandler is Test {
             IEnglishAuction.AuctionConfig memory next = IEnglishAuction.AuctionConfig(
                 duration,
                 uint32(bound(seed >> 40, 1 minutes, 1 hours)),
-                uint32(bound(seed >> 72, 1_000, 100_000))
+                uint32(bound(seed >> 72, 1_000, 100_000)),
+                c.refusalDelay,
+                c.refusalGas
             );
             vm.prank(setter);
             auction.setConfig(c, next);
         } else if (what == 1) {
             uint256 ceiling = allowlist.incrementFloor(currency) * auction.OPENING_BID_FLOORS();
             uint256 next = bound(seed >> 8, 0, ceiling / 10);
-            uint256 current = auction.openingBid(currency);
+            (,, uint64 revision) = allowlist.assetConfig(currency);
             vm.prank(setter);
-            auction.setOpeningBid(currency, current, next);
+            allowlist.setOpeningBid(currency, revision, next);
         } else {
             (,, uint64 revision) = allowlist.assetConfig(currency);
             vm.prank(admin);

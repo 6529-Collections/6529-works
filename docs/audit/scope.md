@@ -17,11 +17,11 @@ an audit.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 12,204 non-blank, non-comment lines in 88 files under `src/` (budget: 13,000; ADR 0001, amended 1 November 2026) |
-| Deployed contracts | 23 per deployment without the optional VRF entropy module and 24 with it: the 21 (or 22) that `DeployV1.order` lists, the edition auction's lens among them (deployed in its own transaction and pinned by the auction), plus the AccessManager the governance configurator creates and the lens the English auction creates; and one `SplitWallet` per payee configuration, deployed on demand |
+| Source lines | 14,522 non-blank, non-comment lines in 100 files under `src/` (budget: 15,000; ADR 0001, amended 1 November 2026, and ADR 0007) |
+| Deployed contracts | 26 per deployment without the optional VRF entropy module and 27 with it: the 23 (or 24) that `DeployV1.order` lists, both auctions' lenses among them (each deployed in its own transaction and pinned by its auction) and the two governed vaults (`FeeRecipientVault`, `MuseumVault`, after the split ledger), plus the AccessManager the governance configurator creates, `StreamViews`, the read-only extension `Stream`'s constructor creates, and `WorkDelivery`, the first delivery contract `WorkRecords`' constructor creates (replaceable by `setDelivery`); and one 66-byte `SplitVault` per payee configuration, deployed on demand by the split ledger |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
-| Contract size | Every contract within EIP-170 (24,576 bytes of runtime) and EIP-3860 (49,152 bytes of initcode), and every contract declared in `src/` with at least 512 bytes of EIP-170 margin unless [`tools/size-margins.json`](../../tools/size-margins.json) exempts it at a recorded margin it may not fall below (`Stream`, `Renderer`, `UniformEditionAuction`), checked by `tools/check_budgets.py` in CI ([Build, test and budgets](build-and-test.md)) |
+| Contract size | Every contract within EIP-170 (24,576 bytes of runtime) and EIP-3860 (49,152 bytes of initcode), and every contract declared in `src/` with at least 512 bytes of EIP-170 margin; [`tools/size-margins.json`](../../tools/size-margins.json) records no exemption since the permanence integration ([ADR 0007](../adr/0007-permanence.md)): the English auction regained its floor when its opening bids moved to the asset allowlist, the renderer when its reads stopped carrying gas caps, and the edition auction when its lane replaced the interim wiring. Checked by `tools/check_budgets.py` in CI ([Build, test and budgets](build-and-test.md)) |
 
 ## Contracts in scope
 
@@ -33,51 +33,53 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 749 | 24,373 | 26,210 | **203** |
-| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 677 | 23,946 | 26,641 | 630 |
-| `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 374 | 19,015 | 20,697 | 5,561 |
-| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 824 | 23,429 | 26,465 | 1,147 |
-| `EnglishAuctionLens` | [`src/sales/EnglishAuctionLens.sol`](../../src/sales/EnglishAuctionLens.sol) | 290 | 6,372 | 6,665 | 18,204 |
-| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 848 | 24,156 | 28,190 | 420 |
-| `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 668 | 19,102 | 19,461 | 5,474 |
+| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 793 | 22,863 | 29,055 | **1,713** |
+| `StreamViews` (created by `Stream`'s constructor) | [`src/stream/StreamViews.sol`](../../src/stream/StreamViews.sol) | 79 | 4,110 | 4,138 | 20,466 |
+| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 732 | 23,139 | 35,598 | 1,437 |
+| `WorkDelivery` (created by `WorkRecords`' constructor; replaceable) | [`src/stream/WorkDelivery.sol`](../../src/stream/WorkDelivery.sol) | 183 | 8,673 | 9,084 | 15,903 |
+| `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 484 | 19,025 | 20,854 | 5,551 |
+| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 898 | 24,062 | 27,384 | 514 |
+| `EnglishAuctionLens` | [`src/sales/EnglishAuctionLens.sol`](../../src/sales/EnglishAuctionLens.sol) | 342 | 7,473 | 7,766 | 17,103 |
+| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 919 | 24,037 | 29,073 | 539 |
+| `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 882 | 23,253 | 23,675 | 1,323 |
 
 ### Curation, identity and records
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | 359 | 13,975 | 15,391 | 10,601 |
-| `Eip712CurationVerifier` | [`src/curation/Eip712CurationVerifier.sol`](../../src/curation/Eip712CurationVerifier.sol) | 103 | 5,694 | 6,385 | 18,882 |
-| `ArtistRegistry` | [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol) | 568 | 20,616 | 21,884 | 3,960 |
+| `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | 402 | 15,725 | 17,113 | 8,851 |
+| `Eip712CurationVerifier` | [`src/curation/Eip712CurationVerifier.sol`](../../src/curation/Eip712CurationVerifier.sol) | 103 | 5,383 | 6,074 | 19,193 |
+| `ArtistRegistry` | [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol) | 724 | 23,015 | 24,563 | 1,561 |
 | `ConsolidationAdapter` | [`src/identity/ConsolidationAdapter.sol`](../../src/identity/ConsolidationAdapter.sol) | 133 | 3,059 | 3,371 | 21,517 |
-| `StatementLog` | [`src/records/StatementLog.sol`](../../src/records/StatementLog.sol) | 337 | 12,054 | 13,350 | 12,522 |
-| `VrfEntropyModule` (optional) | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol) | 252 | 8,903 | 10,848 | 15,673 |
+| `StatementLog` | [`src/records/StatementLog.sol`](../../src/records/StatementLog.sol) | 309 | 11,125 | 12,386 | 13,451 |
+| `VrfEntropyModule` (optional) | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol) | 252 | 8,791 | 10,701 | 15,785 |
 
 ### Economics
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `EconomicsResolver` | [`src/economics/EconomicsResolver.sol`](../../src/economics/EconomicsResolver.sol) | 212 | 9,577 | 13,370 | 14,999 |
-| `AssetAllowlist` | [`src/economics/AssetAllowlist.sol`](../../src/economics/AssetAllowlist.sol) | 123 | 4,580 | 5,596 | 19,996 |
-| `SplitFactory` | [`src/economics/SplitFactory.sol`](../../src/economics/SplitFactory.sol) | 100 | 9,731 | 16,870 | 14,845 |
-| `SplitWallet` (one per payee configuration) | [`src/economics/SplitWallet.sol`](../../src/economics/SplitWallet.sol) | 143 | 5,097 | 6,608 | 19,479 |
-| `ReleaseVerifier` | [`src/economics/ReleaseVerifier.sol`](../../src/economics/ReleaseVerifier.sol) | 41 | 3,672 | 4,193 | 20,904 |
-| `RevenueEscrow` | [`src/economics/RevenueEscrow.sol`](../../src/economics/RevenueEscrow.sol) | 89 | 5,244 | 5,689 | 19,332 |
-| `ClaimRouter` | [`src/economics/ClaimRouter.sol`](../../src/economics/ClaimRouter.sol) | 99 | 3,026 | 3,054 | 21,550 |
+| `EconomicsResolver` | [`src/economics/EconomicsResolver.sol`](../../src/economics/EconomicsResolver.sol) | 212 | 8,917 | 12,028 | 15,659 |
+| `AssetAllowlist` | [`src/economics/AssetAllowlist.sol`](../../src/economics/AssetAllowlist.sol) | 154 | 5,275 | 6,291 | 19,301 |
+| `SplitLedger` (deployed under the name `SplitFactory`; also the release verifier) | [`src/economics/SplitLedger.sol`](../../src/economics/SplitLedger.sol) | 264 | 8,851 | 9,776 | 15,725 |
+| `SplitVault` (the 66-byte wallet, one per payee configuration; raw bytecode constants, not a compiled contract) | [`src/economics/SplitVault.sol`](../../src/economics/SplitVault.sol) | 8 | 85 | 135 | 24,491 |
+| `RevenueEscrow` | [`src/economics/RevenueEscrow.sol`](../../src/economics/RevenueEscrow.sol) | 122 | 6,430 | 6,875 | 18,146 |
+| `ClaimRouter` | [`src/economics/ClaimRouter.sol`](../../src/economics/ClaimRouter.sol) | 148 | 4,102 | 4,421 | 20,474 |
+| `GovernedVault` (deployed twice: `FeeRecipientVault`, `MuseumVault`) | [`src/economics/GovernedVault.sol`](../../src/economics/GovernedVault.sol) | 108 | 5,277 | 6,039 | 19,299 |
 
 ### Content and rendering
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `ContentStore` | [`src/content/ContentStore.sol`](../../src/content/ContentStore.sol) | 240 | 7,257 | 7,285 | 17,319 |
-| `DependencyRegistry` | [`src/content/DependencyRegistry.sol`](../../src/content/DependencyRegistry.sol) | 66 | 3,007 | 3,452 | 21,569 |
-| `Renderer` | [`src/content/Renderer.sol`](../../src/content/Renderer.sol) | 770 | 24,365 | 24,680 | **211** |
+| `ContentStore` | [`src/content/ContentStore.sol`](../../src/content/ContentStore.sol) | 436 | 11,436 | 11,464 | 13,140 |
+| `DependencyRegistry` | [`src/content/DependencyRegistry.sol`](../../src/content/DependencyRegistry.sol) | 66 | 2,988 | 3,433 | 21,588 |
+| `Renderer` | [`src/content/Renderer.sol`](../../src/content/Renderer.sol) | 761 | 24,064 | 24,379 | **512** |
 
 ### Governance
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `WorksAccessManager` | [`src/governance/WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol) | 71 | 11,636 | 13,045 | 12,940 |
-| `GovernanceConfigurator` | [`src/governance/GovernanceConfigurator.sol`](../../src/governance/GovernanceConfigurator.sol) | 43 | 10,661 | 24,008 | 13,915 |
+| `WorksAccessManager` | [`src/governance/WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol) | 471 | 23,003 | 25,579 | 1,573 |
+| `GovernanceConfigurator` | [`src/governance/GovernanceConfigurator.sol`](../../src/governance/GovernanceConfigurator.sol) | 51 | 11,473 | 37,368 | 13,103 |
 
 `WorksAccessManager` is 71 lines over OpenZeppelin's `AccessManager`, whose code is part of
 what it deploys. `GovernanceConfigurator`'s initcode includes the manager it deploys.
@@ -89,24 +91,24 @@ Compiled into the contracts that use them; none is deployed or linked.
 | Library | Source | nSLOC | Used by |
 | --- | --- | ---: | --- |
 | `JsonScan` | [`src/content/JsonScan.sol`](../../src/content/JsonScan.sol) | 444 | Renderer |
-| `GovernanceConfig` | [`src/governance/GovernanceConfig.sol`](../../src/governance/GovernanceConfig.sol) | 248 | GovernanceConfigurator |
+| `GovernanceConfig` | [`src/governance/GovernanceConfig.sol`](../../src/governance/GovernanceConfig.sol) | 247 | GovernanceConfigurator |
 | `Utf8` | [`src/libraries/Utf8.sol`](../../src/libraries/Utf8.sol) | 152 | `Renderer`, `Stream`, `StatementLog` |
 | `UniformClearing` | [`src/sales/UniformClearing.sol`](../../src/sales/UniformClearing.sol) | 149 | `UniformEditionAuction` (sweep, claims), `UniformEditionAuctionLens` (every clearing view) |
-| `TokenTransfer` | [`src/economics/TokenTransfer.sol`](../../src/economics/TokenTransfer.sol) | 149 | Sale adapters, `SplitWallet`, `RevenueEscrow`, `AssetAllowlist`, `RevenuePayment` |
+| `TokenTransfer` | [`src/economics/TokenTransfer.sol`](../../src/economics/TokenTransfer.sol) | 149 | Sale adapters, `SplitLedger`, `RevenueEscrow`, `AssetAllowlist`, `RevenuePayment` |
 | `JsonEscape` | [`src/libraries/JsonEscape.sol`](../../src/libraries/JsonEscape.sol) | 129 | Renderer |
-| `BoundedCall` | [`src/libraries/BoundedCall.sol`](../../src/libraries/BoundedCall.sol) | 104 | `Renderer`, `ConsolidationAdapter`, `ArtistRegistry`, `StatementLog`, `EnglishAuction`, `ClaimRouter`, `SignatureVerifier`, `TokenTransfer`, `RevenuePayment` |
+| `BoundedCall` | [`src/libraries/BoundedCall.sol`](../../src/libraries/BoundedCall.sol) | 202 | `Renderer`, `ConsolidationAdapter`, `ArtistRegistry`, `StatementLog`, `EnglishAuction`, `ClaimRouter`, `SignatureVerifier`, `TokenTransfer`, `RevenuePayment` |
 | `HtmlScript` | [`src/content/HtmlScript.sol`](../../src/content/HtmlScript.sol) | 84 | Renderer |
 | `DataUri` | [`src/content/DataUri.sol`](../../src/content/DataUri.sol) | 82 | Renderer |
 | `Base64Validator` | [`src/content/Base64Validator.sol`](../../src/content/Base64Validator.sol) | 78 | ContentStore |
-| `SSTORE2` | [`src/libraries/SSTORE2.sol`](../../src/libraries/SSTORE2.sol) | 76 | `ContentStore`, `Renderer` |
+| `SSTORE2` | [`src/libraries/SSTORE2.sol`](../../src/libraries/SSTORE2.sol) | 88 | `ContentStore`, `Renderer` |
 | `Roles` | [`src/governance/Roles.sol`](../../src/governance/Roles.sol) | 60 | Governance, `Eip712CurationVerifier`, `AssetAllowlist`, `EnglishAuction` |
-| `SignatureVerifier` | [`src/libraries/SignatureVerifier.sol`](../../src/libraries/SignatureVerifier.sol) | 55 | `PackageRegistry`, `Eip712CurationVerifier`, `ArtistRegistry`, `WorkRecords`, `StatementLog`, `ReleaseVerifier` |
-| `Splits` | [`src/economics/Splits.sol`](../../src/economics/Splits.sol) | 44 | Economics, `Stream`, `Editions`, `PackageRegistry`, `EnglishAuction` |
+| `SignatureVerifier` | [`src/libraries/SignatureVerifier.sol`](../../src/libraries/SignatureVerifier.sol) | 49 | `PackageRegistry`, `Eip712CurationVerifier`, `ArtistRegistry`, `WorkRecords`, `StatementLog`, `SplitLedger` |
+| `Splits` | [`src/economics/Splits.sol`](../../src/economics/Splits.sol) | 42 | Economics, `Stream`, `Editions`, `PackageRegistry`, `EnglishAuction` |
 | `RevenuePayment` | [`src/economics/RevenuePayment.sol`](../../src/economics/RevenuePayment.sol) | 43 | `EnglishAuction` |
 | `WorksHashing` | [`src/interfaces/types/WorksHashing.sol`](../../src/interfaces/types/WorksHashing.sol) | 37 | `PackageRegistry`, `WorkRecords`, `Editions`, `EconomicsResolver`, `VrfEntropyModule` |
 | `Dependency` | [`src/libraries/Dependency.sol`](../../src/libraries/Dependency.sol) | 32 | Every install, bind and listing check, and every use-time code-hash pin |
 | `SpdxId` | [`src/stream/SpdxId.sol`](../../src/stream/SpdxId.sol) | 29 | Stream, WorkRecords |
-| `ProtocolContracts` | [`src/libraries/ProtocolContracts.sol`](../../src/libraries/ProtocolContracts.sol) | 27 | ArtistRegistry, EconomicsResolver |
+| `ProtocolContracts` | [`src/libraries/ProtocolContracts.sol`](../../src/libraries/ProtocolContracts.sol) | 24 | ArtistRegistry, EconomicsResolver |
 | `BoundedParameter` | [`src/governance/BoundedParameter.sol`](../../src/governance/BoundedParameter.sol) | 22 | VrfEntropyModule |
 | `DelegatedEOA` | [`src/libraries/DelegatedEOA.sol`](../../src/libraries/DelegatedEOA.sol) | 21 | `Dependency` and `SignatureVerifier` |
 | `EditionRules` | [`src/editions/EditionRules.sol`](../../src/editions/EditionRules.sol) | 8 | Editions, PackageRegistry |
@@ -115,7 +117,7 @@ The "Used by" column is a reading aid; the import graph is authoritative.
 
 ### Interfaces and shared types
 
-1,975 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
+2,315 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
 [`src/economics/interfaces/`](../../src/economics/interfaces/), plus the 14-line Chainlink
 coordinator interface [`src/entropy/IVRFCoordinatorV2Plus.sol`](../../src/entropy/IVRFCoordinatorV2Plus.sol).
 `WorksHashing` is counted here and listed with the libraries above. They carry the external
@@ -135,8 +137,8 @@ are outside this scope, but their use (overrides, hooks, assumptions) is in scop
 | `AccessManaged` | Every governed contract |
 | `ERC721` | `Stream` |
 | `ERC1155` | `Editions` |
-| `EIP712` | `PackageRegistry`, `Eip712CurationVerifier`, `ArtistRegistry`, `StatementLog`, `WorkRecords`, `ReleaseVerifier` |
-| `ReentrancyGuardTransient` | `EnglishAuction`, `SplitWallet`, `RevenueEscrow`, `UniformEditionAuction` |
+| `EIP712` | `PackageRegistry`, `Eip712CurationVerifier`, `ArtistRegistry`, `StatementLog`, `WorkRecords`, `SplitLedger` |
+| `ReentrancyGuardTransient` | `EnglishAuction`, `RevenueEscrow`, `UniformEditionAuction` (the split ledger keeps a per-wallet transient lock of its own) |
 | `ERC165`, `ERC165Checker`, `MerkleProof`, `ECDSA`, `Math`, `SafeCast`, `Base64`, `Strings`, `Create2` | Utilities across modules |
 
 ## Out of scope
@@ -152,8 +154,10 @@ are outside this scope, but their use (overrides, hooks, assumptions) is in scop
   the deployment path should include them. [SECURITY.md](../../SECURITY.md) accepts
   vulnerability reports against them.
 - **`tools/`:** off-chain Python: CI gates and the uploader.
-- **6529 Stream Federated:** v1.1, only if needed. v1 contains only the interfaces it needs
-  (`IFederationRegistry`) and the auction's registry hooks; no registry is installed.
+- **6529 Stream Federated:** in v1 by owner decision of 15 November 2026
+  ([ADR 0007](../adr/0007-permanence.md)), specified by a later ADR; its templates and federation
+  registry are not in this tree yet. The permanent artist registry's federation directory
+  (ID-33, ID-34) and the auctions' registry hooks are; no registry is installed.
 - **External contracts:** the 6529 delegation contract, the Chainlink VRF coordinator,
   Permit2, Safe wallets and admitted ERC-20 tokens. The protocol's assumptions about each are
   in [Trust assumptions](trust-assumptions.md).
@@ -170,10 +174,11 @@ python tools/check_docs_facts.py --artifacts out --update  # refresh the figures
 ```
 
 Per-file nSLOC uses `strip_solidity` and `count_code_lines` from `tools/check_budgets.py`;
-sizes are the compiled `bytecode` and `deployedBytecode` lengths. `Renderer` and `Stream` have
-the smallest EIP-170 margins (see the tables); CI fails any change that crosses the limit, that
-leaves a contract declared in `src/` under 512 bytes of margin, or that takes an exempt contract
-below the margin [`tools/size-margins.json`](../../tools/size-margins.json) records for it.
+sizes are the compiled `bytecode` and `deployedBytecode` lengths. `EnglishAuction`,
+`UniformEditionAuction` and `Renderer` have the smallest EIP-170 margins (see the tables); CI fails
+any change that crosses the limit, that leaves a contract declared in `src/` under 512 bytes of
+margin, or that takes an exempt contract below the margin
+[`tools/size-margins.json`](../../tools/size-margins.json) records for it (none today).
 
 ## Related
 

@@ -5,9 +5,8 @@ import { Test, console2 } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { AssetAllowlist } from "src/economics/AssetAllowlist.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
-import { ReleaseVerifier } from "src/economics/ReleaseVerifier.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
-import { SplitFactory } from "src/economics/SplitFactory.sol";
+import { SplitLedger } from "src/economics/SplitLedger.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
@@ -68,7 +67,7 @@ contract EnglishAuctionGasTest is Test {
 
     AccessManager internal manager;
     AssetAllowlist internal allowlist;
-    SplitFactory internal factory;
+    SplitLedger internal factory;
     LeanArtistRegistry internal artists;
     LeanPackageRegistry internal registry;
     LeanEconomicsResolver internal resolver;
@@ -85,7 +84,7 @@ contract EnglishAuctionGasTest is Test {
     function setUp() public {
         manager = new AccessManager(address(this));
         allowlist = new AssetAllowlist(address(manager), 0.001 ether);
-        factory = new SplitFactory(new MockArtistResolver(), new ReleaseVerifier());
+        factory = new SplitLedger(new MockArtistResolver());
         artists = new LeanArtistRegistry();
         registry = new LeanPackageRegistry(artists);
         resolver = new LeanEconomicsResolver(factory, network);
@@ -115,7 +114,7 @@ contract EnglishAuctionGasTest is Test {
                     address(0),
                     lens_,
                     lens_.codehash,
-                    IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000),
+                    IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000, 7 days, 4_000_000),
                     targets
                 )
             )
@@ -173,7 +172,8 @@ contract EnglishAuctionGasTest is Test {
         _startItem(0, 1, artistPk);
         _priorBid(_startItem(1, 2, otherArtistPk));
         auction.setConfig(
-            auction.config(), IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 6_000)
+            auction.config(),
+            IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 6_000, 7 days, 4_000_000)
         );
         uint256 total = _measureStartWithBid("startWithBid after a config change, whole tx");
         assertLe(total, FIRST_AFTER_CHANGE_BOUND, "one-off cost after a config change");
@@ -195,7 +195,8 @@ contract EnglishAuctionGasTest is Test {
     function test_StartWithBidGas_FirstAfterAnOpeningBidChange() public {
         _startItem(0, 1, artistPk);
         _priorBid(_startItem(1, 2, otherArtistPk));
-        auction.setOpeningBid(address(0), 0, 0.01 ether);
+        (,, uint64 revision) = allowlist.assetConfig(address(0));
+        allowlist.setOpeningBid(address(0), revision, 0.01 ether);
         uint256 total = _measureStartWithBid("startWithBid after an opening-bid change, whole tx");
         assertLe(total, FIRST_AFTER_CHANGE_BOUND, "one-off cost after an opening-bid change");
     }
@@ -391,15 +392,15 @@ contract EnglishAuctionGasTest is Test {
     function _item(PackageItem storage item, uint256 i, address artist, uint256 collection)
         internal
     {
-        item.kind = ItemKind.ORIGINAL;
+        item.kind = uint8(ItemKind.ORIGINAL);
         item.collectionId = collection;
         item.contentHash = sha256(abi.encode("media", i));
         item.mediaHash = keccak256(abi.encode("media list", i));
         item.recordFileId = keccak256(abi.encode("record", i));
-        item.parties.push(Party(artist, PartyRole.ARTIST));
+        item.parties.push(Party(artist, uint8(PartyRole.ARTIST)));
         item.payees.push(ISplitWallet.Payee(uint160(artist), address(0), 100_000));
         item.license = License("CC0-1.0", keccak256("CC0 text"));
-        item.seedPolicy = SeedPolicy.NONE;
+        item.seedPolicy = uint8(SeedPolicy.NONE);
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_DEFAULT, "");
         item.edition = EditionTerms(0, address(0), bytes32(0), "");
     }

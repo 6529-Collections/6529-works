@@ -8,10 +8,18 @@ import { IEditions } from "src/interfaces/IEditions.sol";
 import { IRenderer } from "src/interfaces/IRenderer.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { License, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
+
+/// @dev An entropy module that has not delivered a seed: `seedOf` reverts.
+contract SeedNotDeliveredMock {
+    function seedOf(bytes32) external pure returns (bytes32) {
+        revert("seed not delivered");
+    }
+}
 
 /// @dev Metadata, record handling, escaping and failure behaviour of the renderer; the media
 ///      rules are in `RendererMedia.t.sol`.
@@ -62,11 +70,11 @@ contract RendererTest is RendererBase {
         r.attributes[0] = Trait("Palette", "Warm");
         r.attributes[1] = Trait("Edition size", "1");
         _install(file, r);
-        IStream.WorkCore memory core = _core();
+        IStreamViews.WorkCore memory core = _core();
         core.collectionId = 3;
         core.serial = 12;
         stream.setWork(ID, core);
-        stream.setCollection(3, IStream.Collection("Spring", bytes32(0), 12));
+        stream.setCollection(3, IStreamViews.Collection("Spring", bytes32(0), 12));
 
         string memory j = _out();
 
@@ -101,12 +109,12 @@ contract RendererTest is RendererBase {
             r.artists[i] = vm.toString(i);
         }
         _install(file, r);
-        IStream.WorkCore memory core = _core();
+        IStreamViews.WorkCore memory core = _core();
         core.collectionId = 3;
         core.serial = 12;
-        core.seedPolicy = SeedPolicy.ARTIST;
+        core.seedPolicy = uint8(SeedPolicy.ARTIST);
         stream.setWork(ID, core);
-        stream.setCollection(3, IStream.Collection("Spring", bytes32(0), 12));
+        stream.setCollection(3, IStreamViews.Collection("Spring", bytes32(0), 12));
         records.setSeed(ID, SeedPolicy.ARTIST, bytes32(uint256(0xabc)));
         disputeLog.set(address(stream), ID, bytes32(uint256(0xd15b)));
         RendererEditionsMock editions = new RendererEditionsMock(address(stream));
@@ -156,16 +164,36 @@ contract RendererTest is RendererBase {
     function test_Metadata_Seed() public {
         bytes32 file = _file(png, IDENTITY, "image/png");
         _install(file);
-        IStream.WorkCore memory core = _core();
-        core.seedPolicy = SeedPolicy.ARTIST;
+        IStreamViews.WorkCore memory core = _core();
+        core.seedPolicy = uint8(SeedPolicy.ARTIST);
         stream.setWork(ID, core);
         records.setSeed(ID, SeedPolicy.ARTIST, bytes32(uint256(0xabc)));
         assertEq(_attr(_out(), "Seed"), vm.toString(bytes32(uint256(0xabc))));
 
-        core.seedPolicy = SeedPolicy.VRF; // delivered before the mint, so always available
+        core.seedPolicy = uint8(SeedPolicy.VRF); // delivered before the mint, so always available
         stream.setWork(ID, core);
         records.setSeed(ID, SeedPolicy.VRF, bytes32(uint256(0xdef)));
         assertEq(_attr(_out(), "Seed"), vm.toString(bytes32(uint256(0xdef))));
+    }
+
+    /// @dev Review B L4: a VRF work whose seed is not delivered yet (the entropy module refuses)
+    ///      gets core-only metadata without a seed, never a revert; once delivered, the seed shows.
+    function test_CoreOnly_AVrfWorkAwaitingItsSeed() public {
+        bytes32 file = _file(png, IDENTITY, "image/png");
+        _install(file);
+        IStreamViews.WorkCore memory core = _core();
+        core.seedPolicy = uint8(SeedPolicy.VRF);
+        stream.setWork(ID, core);
+        SeedNotDeliveredMock pending = new SeedNotDeliveredMock();
+        stream.setEntropyModule(address(pending));
+        _setOpen(false);
+        string memory j = _out();
+        assertEq(_str(j, ".record_status"), "not_open");
+        assertFalse(_hasAttr(j, "Seed"));
+        RendererEntropyMock entropy = new RendererEntropyMock();
+        entropy.set(core.itemHash, bytes32(uint256(0xfeed)));
+        stream.setEntropyModule(address(entropy));
+        assertEq(_attr(_out(), "Seed"), vm.toString(bytes32(uint256(0xfeed))));
     }
 
     /// @dev Decision E9: until `openRecord` has run every view of the satellite reverts, and the
@@ -173,13 +201,13 @@ contract RendererTest is RendererBase {
     function test_CoreOnly_UntilTheRecordIsOpen() public {
         bytes32 file = _file(png, IDENTITY, "image/png");
         _install(file);
-        IStream.WorkCore memory core = _core();
+        IStreamViews.WorkCore memory core = _core();
         core.collectionId = 3;
         core.serial = 12;
         core.artistId = 0xabc;
-        core.seedPolicy = SeedPolicy.VRF;
+        core.seedPolicy = uint8(SeedPolicy.VRF);
         stream.setWork(ID, core);
-        stream.setCollection(3, IStream.Collection("Spring", bytes32(0), 12));
+        stream.setCollection(3, IStreamViews.Collection("Spring", bytes32(0), 12));
         RendererEntropyMock entropy = new RendererEntropyMock();
         entropy.set(core.itemHash, bytes32(uint256(0xfeed)));
         stream.setEntropyModule(address(entropy));
@@ -351,12 +379,12 @@ contract RendererTest is RendererBase {
         renderer.tokenURI(address(stream), ID);
 
         records.setLicense(ID, _license());
-        IStream.WorkCore memory core = _core();
+        IStreamViews.WorkCore memory core = _core();
         core.collectionId = 1;
         stream.setWork(ID, core);
-        stream.setCollection(1, IStream.Collection(bad, bytes32(0), 1));
-        vm.expectRevert(IRenderer.RendererInvalidUtf8.selector);
-        renderer.tokenURI(address(stream), ID);
+        stream.setCollection(1, IStreamViews.Collection(bad, bytes32(0), 1));
+        // A collection name is read from Stream's storage; one that is not UTF-8 is no name.
+        assertEq(_attr(_out(), "Collection"), "");
 
         // A locator is read only when the file is not inlined.
         bytes32 big = _file(_data(THRESHOLD + 1, 1), IDENTITY, "image/png");
@@ -372,11 +400,11 @@ contract RendererTest is RendererBase {
     function test_Escaping_PercentAndHashInStreamAndSatelliteStrings() public {
         bytes32 file = _file(_data(THRESHOLD + 1, 6), IDENTITY, "image/png");
         _install(file);
-        IStream.WorkCore memory core = _core();
+        IStreamViews.WorkCore memory core = _core();
         core.collectionId = 1;
         core.serial = 4;
         stream.setWork(ID, core);
-        stream.setCollection(1, IStream.Collection("50% off #1", bytes32(0), 4));
+        stream.setCollection(1, IStreamViews.Collection("50% off #1", bytes32(0), 4));
         records.addLocator(ID, file, Locator(LocatorKind.IPFS, "ipfs://a%b#c"));
         records.setLicense(ID, License("Nonsense%License#1", bytes32(0)));
 
@@ -461,8 +489,8 @@ contract RendererTest is RendererBase {
         bytes32 file = _file(png, IDENTITY, "image/png");
         _install(file);
         MediaFile[] memory media = new MediaFile[](2);
-        media[0] = MediaFile(file, _sha(file), FileRole.PRIMARY);
-        media[1] = MediaFile(text, _sha(text), FileRole.AUXILIARY);
+        media[0] = MediaFile(file, _sha(file), uint8(FileRole.PRIMARY));
+        media[1] = MediaFile(text, _sha(text), uint8(FileRole.AUXILIARY));
         records.setMedia(ID, media);
         records.setLicense(ID, License("LicenseRef-Studio-1", text));
         records.addLocator(ID, text, Locator(LocatorKind.ARWEAVE, "ar://terms"));
@@ -492,8 +520,8 @@ contract RendererTest is RendererBase {
         records.setLicense(ID, License("LicenseRef-Studio-1", bare));
         bytes32 file = _file(png, IDENTITY, "image/png");
         MediaFile[] memory media = new MediaFile[](2);
-        media[0] = MediaFile(file, _sha(file), FileRole.PRIMARY);
-        media[1] = MediaFile(bare, _sha(bare), FileRole.AUXILIARY);
+        media[0] = MediaFile(file, _sha(file), uint8(FileRole.PRIMARY));
+        media[1] = MediaFile(bare, _sha(bare), uint8(FileRole.AUXILIARY));
         records.setMedia(ID, media);
         j = _out();
         assertEq(_str(j, ".license_text_file"), vm.toString(bare));
@@ -646,15 +674,15 @@ contract RendererTest is RendererBase {
     function test_FailsClosed_EveryReadOfTheStreamAndRecords() public {
         bytes32 file = _file(png, IDENTITY, "image/png");
         _install(file);
-        IStream.WorkCore memory core = _core();
+        IStreamViews.WorkCore memory core = _core();
         core.collectionId = 1;
-        core.seedPolicy = SeedPolicy.ARTIST;
+        core.seedPolicy = uint8(SeedPolicy.ARTIST);
         stream.setWork(ID, core);
-        stream.setCollection(1, IStream.Collection("C", bytes32(0), 1));
+        stream.setCollection(1, IStreamViews.Collection("C", bytes32(0), 1));
         records.setSeed(ID, SeedPolicy.ARTIST, bytes32(uint256(1)));
         renderer.tokenURI(address(stream), ID); // the baseline works
 
-        bytes4[2] memory onStream = [IStream.work.selector, IStream.collection.selector];
+        bytes4[2] memory onStream = [IStream.coreOf.selector, IStream.extsload.selector];
         for (uint256 i; i < onStream.length; ++i) {
             stream.fail(onStream[i], true);
             vm.expectRevert(
@@ -687,17 +715,17 @@ contract RendererTest is RendererBase {
     function test_FailsClosed_NotAToken() public {
         vm.expectRevert(
             abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector, address(0xdead), IStream.work.selector
+                IRenderer.RendererReadFailed.selector, address(0xdead), IStream.coreOf.selector
             )
         );
         renderer.tokenURI(address(0xdead), 1);
     }
 
     function test_FailsClosed_ABurnedOrUnknownToken() public {
-        stream.fail(IStream.work.selector, true); // `UnknownWork` in the real Stream
+        stream.fail(IStream.coreOf.selector, true); // `UnknownWork` in the real Stream
         vm.expectRevert(
             abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector, address(stream), IStream.work.selector
+                IRenderer.RendererReadFailed.selector, address(stream), IStream.coreOf.selector
             )
         );
         renderer.tokenURI(address(stream), ID);
@@ -713,12 +741,12 @@ contract RendererTest is RendererBase {
         renderer.tokenURI(address(stream), ID);
 
         MediaFile[] memory aux = new MediaFile[](1);
-        aux[0] = MediaFile(file, sha256(png), FileRole.AUXILIARY);
+        aux[0] = MediaFile(file, sha256(png), uint8(FileRole.AUXILIARY));
         records.setMedia(ID, aux);
         _expectInvalidRecord();
         renderer.tokenURI(address(stream), ID);
 
-        aux[0] = MediaFile(file, sha256(png), FileRole.PREVIEW);
+        aux[0] = MediaFile(file, sha256(png), uint8(FileRole.PREVIEW));
         records.setMedia(ID, aux);
         _expectInvalidRecord();
         renderer.tokenURI(address(stream), ID);

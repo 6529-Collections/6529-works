@@ -32,6 +32,8 @@ import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { ContentAddresses } from "../../helpers/ContentAddresses.sol";
 import { HostileActor } from "../../mocks/sales/AuctionMocks.sol";
 import { IntegrationBase } from "../IntegrationBase.sol";
+import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice The handler of the Stream lifecycle invariant suite: one actor set driving 6529 Stream,
 ///         the package registry, the records satellite, the English auction and the artist
@@ -200,7 +202,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         }
         _withCollaborator(works[1].item, lead);
         works[1].item.license = License("CC-BY-4.0", byTextFileId);
-        works[2].item.seedPolicy = SeedPolicy.ARTIST;
+        works[2].item.seedPolicy = uint8(SeedPolicy.ARTIST);
         works[2].item.seed = keccak256(abi.encode("artist seed", i));
         _withCollaborator(works[3].item, lead);
     }
@@ -209,8 +211,8 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
     ///      the payees in canonical (ascending artist ID) order.
     function _withCollaborator(PackageItem memory item, address lead) internal view {
         item.parties = new Party[](2);
-        item.parties[0] = Party(lead, PartyRole.ARTIST);
-        item.parties[1] = Party(lcCollaborator, PartyRole.COLLABORATOR);
+        item.parties[0] = Party(lead, uint8(PartyRole.ARTIST));
+        item.parties[1] = Party(lcCollaborator, uint8(PartyRole.COLLABORATOR));
         ISplitWallet.Payee memory a = ISplitWallet.Payee(uint160(lead), address(0), 70_000);
         ISplitWallet.Payee memory b =
             ISplitWallet.Payee(uint160(lcCollaborator), address(0), 30_000);
@@ -737,7 +739,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
                 ? uint256(t.platformLocators) + t.artistLocators < FILE_QUOTA
                 : t.platformLocators < SIDE_QUOTA;
         vm.prank(byArtist ? artist : platform);
-        try records.addLocator(tokenId, pool[t.item].fileId, locator) {
+        try delivery.addLocator(tokenId, pool[t.item].fileId, locator) {
             if (malformed || !room) _violation("a locator past its quota or rule was added");
             ghostLocators[tokenId].push(locator);
             if (byArtist) ++t.artistLocators;
@@ -987,7 +989,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
 
     /// @dev Records a new token: IDs are assigned in order, once.
     function _minted(uint256 p, uint256 saleId, uint256 paid) internal {
-        uint256 tokenId = stream.totalMinted();
+        uint256 tokenId = IStream(address(stream)).totalMinted();
         if (tokenId != ghostMinted + 1) _violation("token IDs are not sequential");
         ghostMinted = tokenId;
         pool[p].tokenId = tokenId;
@@ -1192,7 +1194,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
                 return false;
             }
         }
-        try records.addLocator(tokenId, fileId, locator) {
+        try delivery.addLocator(tokenId, fileId, locator) {
             return true;
         } catch {
             return false;
@@ -1265,7 +1267,11 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         for (uint256 h; h < holders.length; ++h) {
             held += stream.balanceOf(holders[h]);
         }
-        assertEq(held, stream.totalSupply(), "every live token is held by one known holder");
+        assertEq(
+            held,
+            IStreamViews(address(stream)).totalSupply(),
+            "every live token is held by one known holder"
+        );
         for (uint256 tokenId = 1; tokenId <= ghostMinted; ++tokenId) {
             TokenGhost storage t = tok[tokenId];
             IEnglishAuction.AuctionState state = auction.auction(t.saleId).state;
@@ -1290,8 +1296,14 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
     /// @dev Token IDs run from 1 without gaps, each assigned once to one item; burned IDs are
     ///      never reused.
     function _assertIds() internal view {
-        assertEq(stream.totalMinted(), ghostMinted, "every start assigned one new ID");
-        assertEq(stream.totalSupply(), ghostMinted - ghostBurned, "supply is minted minus burned");
+        assertEq(
+            IStream(address(stream)).totalMinted(), ghostMinted, "every start assigned one new ID"
+        );
+        assertEq(
+            IStreamViews(address(stream)).totalSupply(),
+            ghostMinted - ghostBurned,
+            "supply is minted minus burned"
+        );
         for (uint256 tokenId = 1; tokenId <= ghostMinted; ++tokenId) {
             TokenGhost storage t = tok[tokenId];
             assertEq(pool[t.item].tokenId, tokenId, "one item, one token ID");
@@ -1349,7 +1361,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
                 assertEq(r.licenseKey, WorksHashing.CC0_LICENSE_KEY, "CC0 stays CC0");
                 assertEq(l.textFileId, cc0TextFileId, "CC0 keeps the pinned text");
             }
-            Locator[] memory stored = records.locators(tokenId, pool[t.item].fileId);
+            Locator[] memory stored = delivery.locators(tokenId, pool[t.item].fileId);
             Locator[] storage expected = ghostLocators[tokenId];
             assertEq(stored.length, expected.length, "locators are append-only");
             for (uint256 i; i < stored.length; ++i) {

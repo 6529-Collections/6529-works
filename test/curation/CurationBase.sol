@@ -19,18 +19,35 @@ import {
     PartyAcceptance,
     PartyRole,
     SaleTerms,
-    SeedPolicy
+    SeedPolicy,
+    StreamMintRequest
 } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IMintPolicy } from "src/interfaces/IMintPolicy.sol";
+import { ProductEconomics } from "src/interfaces/types/EconomicsTypes.sol";
 import { CurationArtistRegistryMock } from "test/mocks/curation/CurationArtistRegistryMock.sol";
 import { MockBoundCaller } from "test/mocks/curation/MockBoundCaller.sol";
+import { StreamContentMock } from "test/mocks/curation/StreamContentMock.sol";
 
 /// @dev Pure fixtures shared by the curation tests and the invariant handler: items, Merkle
 ///      trees with sorted-pair hashing, and the three signature forms.
+/// @dev Stub economics resolver and split factory for the policy's quote.
+contract CurationPolicyStub {
+    function economics(bytes32) external pure returns (ProductEconomics memory) {
+        return ProductEconomics(address(0), 0, 5000);
+    }
+
+    function walletFor(ISplitWallet.Payee[] calldata, bytes32) external pure returns (address) {
+        return address(0x5E11E7);
+    }
+}
+
 abstract contract CurationHelpers is Test {
+    CurationPolicyStub internal _policyStub = new CurationPolicyStub();
+
     uint256 internal constant SECP256K1_N =
         0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141;
 
@@ -47,13 +64,13 @@ abstract contract CurationHelpers is Test {
         pure
         returns (PackageItem memory i)
     {
-        i.kind = ItemKind.ORIGINAL;
+        i.kind = uint8(ItemKind.ORIGINAL);
         i.collectionId = 1;
         i.contentHash = contentHash;
         i.mediaHash = keccak256(abi.encode("media list", contentHash));
         i.recordFileId = keccak256(abi.encode("record file", contentHash));
         i.parties = new Party[](1);
-        i.parties[0] = Party(artist, PartyRole.ARTIST);
+        i.parties[0] = Party(artist, uint8(PartyRole.ARTIST));
         i.payees = new ISplitWallet.Payee[](1);
         i.payees[0] = ISplitWallet.Payee(_id(artist), address(0), 100_000);
         i.license = License("CC0-1.0", keccak256("cc0"));
@@ -191,7 +208,7 @@ abstract contract CurationBase is CurationHelpers {
         registry = _newRegistry();
         artists.bindPackageRegistry(address(registry));
         // Stand-ins for the bound 6529 Stream and 6529 Stream Editions, with their ERC-165 answers.
-        stream = address(new MockBoundCaller(type(IStream).interfaceId));
+        stream = address(new StreamContentMock());
         editions = address(new MockBoundCaller(type(IEditions).interfaceId));
 
         vm.startPrank(admin);
@@ -229,10 +246,10 @@ abstract contract CurationBase is CurationHelpers {
     /// @dev An EDITION_MASTER by `lead` with `collab` credited and paid (fixed payee first).
     function _masterItem(bytes32 contentHash) internal view returns (PackageItem memory i) {
         i = _item(lead, contentHash);
-        i.kind = ItemKind.EDITION_MASTER;
+        i.kind = uint8(ItemKind.EDITION_MASTER);
         i.parties = new Party[](2);
-        i.parties[0] = Party(lead, PartyRole.ARTIST);
-        i.parties[1] = Party(collab, PartyRole.COLLABORATOR);
+        i.parties[0] = Party(lead, uint8(PartyRole.ARTIST));
+        i.parties[1] = Party(collab, uint8(PartyRole.COLLABORATOR));
         i.payees = new ISplitWallet.Payee[](2);
         i.payees[0] = ISplitWallet.Payee(0, collab, 20_000);
         i.payees[1] = ISplitWallet.Payee(_id(lead), address(0), 80_000);
@@ -278,19 +295,43 @@ abstract contract CurationBase is CurationHelpers {
         bytes32[] memory proof,
         MoveAuthorization memory move
     ) internal returns (bytes32 itemHash, uint256 artistId) {
-        vm.prank(stream);
-        (itemHash, artistId,) = registry.consume(root, item, proof, move);
+        IMintPolicy.MintRecord memory r = _authorize(root, item, proof, move);
+        (itemHash, artistId) = (r.itemHash, r.artistId);
     }
 
-    function _claim(bytes32 contentHash, bytes32 itemHash) internal {
-        vm.prank(editions);
-        registry.claimContent(contentHash, itemHash);
+    /// @dev `IMintPolicy.authorize` as the bound Stream calls it, with stub economics (no fee)
+    ///      and a stub split factory.
+    function _authorize(
+        bytes32 root,
+        PackageItem memory item,
+        bytes32[] memory proof,
+        MoveAuthorization memory move
+    ) internal returns (IMintPolicy.MintRecord memory) {
+        IMintPolicy.MintContext memory c = IMintPolicy.MintContext(
+            stream, address(_policyStub), address(0), address(_policyStub)
+        );
+        // Through the Stream stand-in, which applies Stream's content rule (AUC-44).
+        return StreamContentMock(stream)
+            .mintThrough(registry, c, abi.encode(StreamMintRequest(root, item, proof, move)));
     }
 
-    /// @dev Stream's dispute-burn path, releasing to `beneficiary`.
+    /// @dev `IMintPolicy.authorize` on `target` with the caller the test set up (no prank).
+    function _policyCall(
+        PackageRegistry target,
+        bytes32 root,
+        PackageItem memory item,
+        bytes32[] memory proof,
+        MoveAuthorization memory move
+    ) internal returns (IMintPolicy.MintRecord memory) {
+        IMintPolicy.MintContext memory c = IMintPolicy.MintContext(
+            stream, address(_policyStub), address(0), address(_policyStub)
+        );
+        return target.authorize(c, abi.encode(StreamMintRequest(root, item, proof, move)));
+    }
+
+    /// @dev Stream's dispute-burn release (held by Stream since AUC-44), on the stand-in.
     function _release(bytes32 contentHash, bytes32 itemHash, uint256 beneficiary) internal {
-        vm.prank(stream);
-        registry.releaseContent(contentHash, itemHash, beneficiary);
+        StreamContentMock(stream).release(contentHash, itemHash, beneficiary, address(artists));
     }
 
     /// @dev A registered one-item package by `lead`, accepted, with its move signed at nonce 0.

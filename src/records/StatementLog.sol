@@ -4,15 +4,12 @@ pragma solidity ^0.8.24;
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { AuthorityUtils } from "@openzeppelin/contracts/access/manager/AuthorityUtils.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
-import { ERC165Checker } from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
-import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { IERC1155 } from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 import { Utf8 } from "../libraries/Utf8.sol";
-import { isKnownHashAlgorithm } from "../interfaces/types/HashRef.sol";
 import { IArtistRoleResolver } from "../interfaces/IArtistRoleResolver.sol";
 import { IStatementLog, Role, Statement } from "../interfaces/IStatementLog.sol";
 import { IStream } from "../interfaces/IStream.sol";
@@ -54,12 +51,29 @@ import { StatementKinds } from "../interfaces/types/StatementKinds.sol";
 ///      No statement is ever attributed to the AccessManager, with one exception: a governance
 ///      manifest (ADR 0002 section 6) written by {appendGovernanceManifest}, which records the
 ///      AccessManager as the signer of a statement about itself.
+///
+///      Calls out (the gas rule): every read of a token (ERC-165 probes, `ownerOf`, `balanceOf`,
+///      `coreOf`) and the ERC-1271 check forward all the gas EIP-150 allows through
+///      `BoundedCall`, and a read that fails while leaving only the retained share reverts the
+///      transaction with `BoundedCall.BoundedCallShortfall`. No gas number is compiled in, and
+///      running short never yields an answer: not "no outcome", not "not a token", not "not the
+///      owner".
+///
+///      Content hashes. `HashRef.algorithm` is an open numeric ID that the log records and never
+///      interprets: 1 keccak256, 2 SHA-256 and 3 BLAKE3 keep their numbers; 4 to 6 keep RC1's
+///      meanings (a multihash, a CID, an Arweave ID), which a 32-byte digest cannot carry, so
+///      conventions do not assign them; any other non-zero ID is accepted, and readers give it
+///      meaning. Zero stays invalid: it would mark an untagged digest.
+///
+///      Logs only: every state change is reconstructible from events without a call.
+///      `StatementAppended` carries the subject key, kind, signer, role, resolver, index, time,
+///      entry hash, new head and the full statement, so a subject's count, head, latest dispute
+///      outcome and its index follow; `StatementRelayed` and `NonceRevoked` each spend one
+///      nonce; `ArtistResolverSet` carries the resolver and its pinned code hash.
 contract StatementLog is IStatementLog, AccessManaged, EIP712 {
-    /// @notice The longest accepted URI, in bytes.
-    uint256 public constant MAX_URI_BYTES = 2_048;
-
-    /// @notice Gas forwarded to each token ownership read.
-    uint256 public constant OWNER_READ_GAS = 50_000;
+    /// @notice The longest accepted URI, in bytes: a safety bound on the UTF-8 check and the
+    ///         event, not a policy; a longer document is stored and named by its file ID.
+    uint256 public constant MAX_URI_BYTES = 8_192;
 
     bytes32 private constant HASHREF_TYPEHASH =
         keccak256("HashRef(uint16 algorithm,bytes32 digest)");
@@ -210,12 +224,14 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IStatementLog
-    /// @dev The item fallback is one bounded read of `coreOf(id)` on a token that declares
-    ///      `IStream` by ERC-165, checked first. A token that does not declare it is never asked
-    ///      for `coreOf`, so whatever it would answer, it keeps its own result, zero; so does a
-    ///      Stream's burned or unminted token (`IStream.UnknownWork`). Any other failure of a
-    ///      token that declares `IStream` reverts with `BoundedCall.BoundedCallFailed` (fail
-    ///      closed), so a failed read never passes for "no outcome".
+    /// @dev The item fallback reads `coreOf(id)` on a token that declares `IStream` by ERC-165,
+    ///      checked first in full (with the `0xffffffff` probe, so a contract that answers every
+    ///      call with a true word declares nothing); both reads forward all the gas EIP-150 allows. A token that does not
+    ///      declare it is never asked for `coreOf`, so whatever it would answer, it keeps its own
+    ///      result, zero; so does a Stream's burned or unminted token (`IStream.UnknownWork`).
+    ///      Either read running short reverts with `BoundedCall.BoundedCallShortfall`, and any
+    ///      other failure of a token that declares `IStream` reverts with
+    ///      `BoundedCall.BoundedCallFailed` (fail closed), so neither passes for "no outcome".
     function latestDisputeOutcome(address token, uint256 id)
         external
         view
@@ -224,27 +240,21 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
         entryHash = _latestDispute[subjectKey(token, id)];
         if (entryHash != 0 || token == address(0) || token.code.length == 0) return entryHash;
         // RFX-REC-2: only a declared Stream's answer can name an item.
-        if (!_declaresStream(token)) return 0;
-        if (!BoundedCall.hasSufficientGas(gasleft(), OWNER_READ_GAS, BoundedCall.CALL_RESERVE)) {
-            revert BoundedCall.BoundedCallInsufficientGas(OWNER_READ_GAS);
-        }
-        bytes memory input = abi.encodeCall(IStream.coreOf, (id));
-        bool ok;
-        uint256 size;
+        if (!BoundedCall.supportsInterface(token, type(IStream).interfaceId)) return 0;
+        // `coreOf` answers six static words, the item hash first; `UnknownWork` reverts with 36.
+        (bool ok, bytes memory answer) =
+            BoundedCall.tryReadAll(token, abi.encodeCall(IStream.coreOf, (id)), 192);
         bytes32 head;
         assembly ("memory-safe") {
-            ok := staticcall(OWNER_READ_GAS, token, add(input, 0x20), mload(input), 0, 0)
-            size := returndatasize()
             // The first word: the item hash of an answer, or the selector of a revert.
-            if gt(size, 31) {
-                returndatacopy(0, 0, 32)
-                head := mload(0)
-            }
+            head := mload(add(answer, 0x20))
         }
-        if (ok && size == 192) return _latestDispute[subjectKey(address(0), uint256(head))];
+        if (ok && answer.length == 192) {
+            return _latestDispute[subjectKey(address(0), uint256(head))];
+        }
         // Only the selector is compared, so truncating to four bytes is intended.
         // forge-lint: disable-next-line(unsafe-typecast)
-        if (!ok && size == 36 && bytes4(head) == IStream.UnknownWork.selector) return 0;
+        if (!ok && answer.length == 36 && bytes4(head) == IStream.UnknownWork.selector) return 0;
         revert BoundedCall.BoundedCallFailed(token);
     }
 
@@ -350,7 +360,7 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
                 || s.kind == StatementKinds.CURATION_EVIDENCE && role != Role.CURATOR
         ) revert ReservedKind(s.kind, role);
         if (s.schema == 0) revert InvalidSchema();
-        if (s.content.digest == 0 || !isKnownHashAlgorithm(s.content.algorithm)) {
+        if (s.content.digest == 0 || s.content.algorithm == 0) {
             revert InvalidHashRef(s.content.algorithm);
         }
         // Exactly one locator: a URI or a ContentStore file.
@@ -363,34 +373,20 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     }
 
     /// @dev A DISPUTE_OUTCOME's token subject (see the contract notes): an ERC-721 (by ERC-165)
-    ///      must own the ID now, and an ERC-1155 is refused. Each read is bounded.
+    ///      must own the ID now, and an ERC-1155 is refused. Each read forwards all the gas
+    ///      EIP-150 allows; one that runs short reverts (`BoundedCall.BoundedCallShortfall`), so
+    ///      a shortfall never passes a subject unchecked.
     function _checkDisputeSubject(address token, uint256 id) private view {
-        if (token == address(0)) return;
-        bytes4[] memory kinds = new bytes4[](2);
-        kinds[0] = type(IERC721).interfaceId;
-        kinds[1] = type(IERC1155).interfaceId;
-        bool[] memory supported = ERC165Checker.getSupportedInterfaces(token, kinds);
-        if (!supported[0] && !supported[1]) return;
-        if (!supported[1]) {
-            (bool ok, bytes memory owner) = BoundedCall.tryRead(
-                token, abi.encodeCall(IERC721.ownerOf, (id)), OWNER_READ_GAS, 32, 0
-            );
-            if (ok && owner.length == 32 && abi.decode(owner, (uint256)) != 0) return;
+        if (token == address(0) || !BoundedCall.supportsERC165(token)) return;
+        bool is721 = BoundedCall.supportsInterfaceUnchecked(token, type(IERC721).interfaceId);
+        bool is1155 = BoundedCall.supportsInterfaceUnchecked(token, type(IERC1155).interfaceId);
+        if (!is721 && !is1155) return;
+        if (!is1155) {
+            (bool ok, bytes32 owner) =
+                BoundedCall.tryReadWordAll(token, abi.encodeCall(IERC721.ownerOf, (id)));
+            if (ok && owner != 0) return;
         }
         revert UnknownDisputeSubject(token, id);
-    }
-
-    /// @dev Whether `token` declares `IStream` by ERC-165, in one bounded read; a failed or
-    ///      malformed answer is "no".
-    function _declaresStream(address token) private view returns (bool) {
-        (bool ok, bytes memory answer) = BoundedCall.tryRead(
-            token,
-            abi.encodeCall(IERC165.supportsInterface, (type(IStream).interfaceId)),
-            OWNER_READ_GAS,
-            32,
-            0
-        );
-        return ok && answer.length == 32 && abi.decode(answer, (uint256)) == 1;
     }
 
     function _isAuthorized(Role role, Statement calldata s, address who)
@@ -413,23 +409,21 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
         return immediate && delay == 0;
     }
 
-    /// @dev Tries ERC-721 `ownerOf`, then ERC-1155 `balanceOf`, each gas-capped and size-capped so
-    ///      a hostile token can neither burn the caller's gas nor return a bomb. Any failure is
-    ///      "not the owner". Any holder of an edition counts as an owner of that token ID.
+    /// @dev Tries ERC-721 `ownerOf`, then ERC-1155 `balanceOf`. Each read forwards all the gas
+    ///      EIP-150 allows and copies at most one word, so a return bomb costs the caller
+    ///      nothing; a read that runs short reverts (`BoundedCall.BoundedCallShortfall`). Any
+    ///      other failure is "not the owner". Any holder of an edition counts as an owner of
+    ///      that token ID.
     function _owns(address token, uint256 id, address who) private view returns (bool) {
         if (token == address(0) || who == address(0)) return false;
-        (bool ok, bytes memory result) = BoundedCall.tryRead(
-            token, abi.encodeCall(IERC721.ownerOf, (id)), OWNER_READ_GAS, 32, 0
-        );
+        (bool ok, bytes32 word) =
+            BoundedCall.tryReadWordAll(token, abi.encodeCall(IERC721.ownerOf, (id)));
         // Only a full 32-byte answer is an ERC-721 answer; anything else (a revert, an empty
         // fallback return) falls through to the ERC-1155 read.
-        if (ok && result.length == 32) {
-            return abi.decode(result, (uint256)) == uint256(uint160(who));
-        }
-        (ok, result) = BoundedCall.tryRead(
-            token, abi.encodeCall(IERC1155.balanceOf, (who, id)), OWNER_READ_GAS, 32, 0
-        );
-        return ok && result.length == 32 && abi.decode(result, (uint256)) != 0;
+        if (ok) return word == bytes32(uint256(uint160(who)));
+        (ok, word) =
+            BoundedCall.tryReadWordAll(token, abi.encodeCall(IERC1155.balanceOf, (who, id)));
+        return ok && word != 0;
     }
 
     function _spendNonce(address signer, uint256 nonce) private {

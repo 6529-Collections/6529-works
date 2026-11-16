@@ -21,7 +21,7 @@ abstract contract EditionAuctionStack is IntegrationBase {
         super.setUp();
         ea = IUniformEditionAuction(address(editionAuction));
         assertEq(
-            keccak256(abi.encode(editionAuction.config())),
+            keccak256(abi.encode(IUniformEditionAuctionLens(address(editionAuction)).config())),
             keccak256(abi.encode(_editionConfig())),
             "the genesis parameters"
         );
@@ -42,7 +42,8 @@ abstract contract EditionAuctionStack is IntegrationBase {
             address(auction),
             l,
             l.codehash,
-            _editionConfig()
+            _editionConfig(),
+            _editionLimits()
         );
     }
 
@@ -53,11 +54,16 @@ abstract contract EditionAuctionStack is IntegrationBase {
         );
     }
 
+    /// @dev The launch limits (`DeployV1.editionAuctionLimits`).
+    function _editionLimits() internal pure returns (IUniformEditionAuction.Limits memory) {
+        return IUniformEditionAuction.Limits(30 days, 150, 100_000, 730);
+    }
+
     /// @dev An EDITION_MASTER work by `lead` whose edition is sold by the uniform auction, in ETH,
     ///      capped at `maxCount` (zero for none).
     function _masterWork(address lead, uint32 maxCount) internal returns (Work memory w) {
         w = _work(lead, collectionId);
-        w.item.kind = ItemKind.EDITION_MASTER;
+        w.item.kind = uint8(ItemKind.EDITION_MASTER);
         w.item.edition = EditionTerms(maxCount, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
     }
 
@@ -91,7 +97,7 @@ abstract contract EditionAuctionStack is IntegrationBase {
     function _settleOneOfOneAndCreate(uint256 oneSaleId, bytes32 root, Work memory w) internal {
         _settleAtEnd(oneSaleId);
         uint256 tokenId = auction.auction(oneSaleId).tokenId;
-        editions.createEdition(tokenId, w.item, root, _proofOf(_one(w), 0));
+        editions.createEdition(tokenId, w.item);
     }
 
     /// @dev Warps to the edition close and settles with the lens's order.
@@ -113,5 +119,10 @@ abstract contract EditionAuctionStack is IntegrationBase {
     /// @dev The seller split wallet a master's edition pays (predicted, maybe undeployed).
     function _editionSeller(Work memory w) internal view returns (address) {
         return economics.newWorkTerms(PRODUCT_EDITIONS, w.item.payees).seller;
+    }
+
+    /// @dev The royalty receiver split wallet a master's edition locks (deployed by its open).
+    function _editionRoyalty(Work memory w) internal view returns (address) {
+        return economics.newWorkTerms(PRODUCT_EDITIONS, w.item.payees).royaltyReceiver;
     }
 }

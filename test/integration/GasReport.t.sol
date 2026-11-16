@@ -7,7 +7,7 @@ import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol"
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { EditionRules } from "src/editions/EditionRules.sol";
 import { IEnglishAuctionClock } from "src/interfaces/IEnglishAuctionClock.sol";
-import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
+import { IMintPolicy } from "src/interfaces/IMintPolicy.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import {
     CURRENCY_ETH,
@@ -26,6 +26,8 @@ import { Payment, PaymentMethod, SaleKind } from "src/interfaces/types/SaleTypes
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { StateGrowth } from "../helpers/StateGrowth.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
+import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice The integration gas report: the budgets of ADR 0001, ADR 0003 and ADR 0004, measured
 ///         on the real, wired contracts. `forge test --match-test test_Gas_Table -vv` prints one
@@ -63,14 +65,20 @@ contract IntegrationGasReport is IntegrationBase {
     /// @dev Test ceilings in Prague gas, kept by ADR 0004.
     uint256 internal constant SETTLE_CEILING = 400_000;
     /// @dev The margin every start row with Stream's genesis dependencies keeps under the 350K
-    ///      budget (the review of #81).
+    ///      budget (the review of #81): the largest round value the measured rows support. The
+    ///      mint policy and the locked-terms events took it to 2,500 during the permanence
+    ///      integration; moving the opening bid into the asset allowlist's status word (one read
+    ///      fewer per start) restored it: the tightest row is 344,980, 5,020 under the budget.
     uint256 internal constant START_MARGIN = 5000;
-    /// @dev After governance replaced all four of Stream's dependencies (owner decision 16), a
-    ///      mint reads each it uses from storage: about 2,100 more per dependency. The binding
-    ///      rows are then measured against these regression ceilings, not the 350K budget
-    ///      (LIM-GAS-11, ADR 0004).
-    uint256 internal constant REPLACED_BINDING_CEILING = 346_000;
-    uint256 internal constant REPLACED_BINDING_VRF_CEILING = 354_000;
+    /// @dev After governance replaced Stream's three mint-path dependencies (the mint policy,
+    ///      the economics resolver and the entropy module; owner decision 16), a mint reads each
+    ///      it uses from storage: about 2,100 more per dependency. The binding rows are then
+    ///      measured against these regression ceilings, not the 350K budget (LIM-GAS-11,
+    ///      ADR 0004): measured 344,367 and 350,023 (review A, I-2: the earlier 355,000 and
+    ///      361,000 came from an interim lane measurement), plus about 2%, rounded up to the
+    ///      thousand.
+    uint256 internal constant REPLACED_BINDING_CEILING = 352_000;
+    uint256 internal constant REPLACED_BINDING_VRF_CEILING = 358_000;
     /// @dev `createCollection` writes a new collection's counter word, so the first start in it
     ///      costs what any steady-state start costs; this ceiling only tracks it.
     uint256 internal constant FIRST_IN_COLLECTION_CEILING = 400_000;
@@ -81,12 +89,20 @@ contract IntegrationGasReport is IntegrationBase {
     uint256 internal constant NEW_TERMS_CEILING = 390_000;
     uint256 internal constant PERMIT2_START_CEILING = 365_000;
     uint256 internal constant BID_CEILING = 75_000;
-    uint256 internal constant CONSUME_CEILING = 97_000;
-    uint256 internal constant CREATE_EDITION_CEILING = 275_000;
+    /// @dev The mint policy's `authorize` (consent, item rules, consume, terms quote): measured
+    ///      91,180; it writes no slot since Stream holds content uniqueness (AUC-44). 2% up.
+    uint256 internal constant CONSUME_CEILING = 94_000;
+    /// @dev Moved down from 275,000: Editions no longer proves the item under a package root nor
+    ///      claims its content in the mint policy (review A, M-1). Measured 213,166, plus 2%.
+    uint256 internal constant CREATE_EDITION_CEILING = 218_000;
     uint256 internal constant REFRESH_FIRST_CEILING = 131_000;
-    uint256 internal constant RERATE_CEILING = 192_000;
+    /// @dev Moved from 192,000 (permanence integration, 15 November 2026): an admin's governed
+    ///      `execute` also updates the manager's admin-liveness clock and checks its hand-over
+    ///      flag (GV-42, GV-43; one cold ADMIN-membership read, one shared-slot read and a
+    ///      write). Measured 198,314, plus about 2%, rounded up.
+    uint256 internal constant RERATE_CEILING = 203_000;
     uint256 internal constant REFRESH_FURTHER_CEILING = 161_000;
-    uint256 internal constant CREATE_WALLET_CEILING = 1_262_000;
+    uint256 internal constant CREATE_WALLET_CEILING = 100_000;
     uint256 internal constant RELEASE_FIRST_CEILING = 96_000;
     uint256 internal constant SIGNED_FIRST_CEILING = 145_000;
     uint256 internal constant SIGNED_LATER_CEILING = 92_000;
@@ -210,7 +226,7 @@ contract IntegrationGasReport is IntegrationBase {
         if (account == address(artists)) return "ArtistRegistry";
         if (account == address(escrow)) return "RevenueEscrow";
         if (account == address(economics)) return "EconomicsResolver";
-        if (account == address(splitFactory)) return "SplitFactory";
+        if (account == address(splitFactory)) return "SplitLedger";
         if (account == address(statements)) return "StatementLog";
         if (account == address(entropy)) return "VrfEntropyModule";
         if (account == PERMIT2) return "Permit2";
@@ -341,8 +357,8 @@ contract IntegrationGasReport is IntegrationBase {
         for (uint256 i; i < ITEMS; ++i) {
             works[i] = _work(lead, collectionId);
             works[i].item.parties = new Party[](2);
-            works[i].item.parties[0] = Party(lead, PartyRole.ARTIST);
-            works[i].item.parties[1] = Party(collaborator, PartyRole.COLLABORATOR);
+            works[i].item.parties[0] = Party(lead, uint8(PartyRole.ARTIST));
+            works[i].item.parties[1] = Party(collaborator, uint8(PartyRole.COLLABORATOR));
             works[i].item.payees = new ISplitWallet.Payee[](2);
             works[i].item.payees[0] = ISplitWallet.Payee(0, collaborator, 20_000);
             works[i].item.payees[1] = ISplitWallet.Payee(uint160(lead), address(0), 80_000);
@@ -382,7 +398,7 @@ contract IntegrationGasReport is IntegrationBase {
     function _rowStartVrf() internal returns (Row memory r) {
         _steadyState();
         Work[] memory works = _eightWorks();
-        works[0].item.seedPolicy = SeedPolicy.VRF;
+        works[0].item.seedPolicy = uint8(SeedPolicy.VRF);
         bytes32 vrfRoot = _publish(works);
         uint256 requestId = entropy.requestSeed(works[0].item, vrfRoot, _proofOf(works, 0));
         coordinator.fulfill(requestId, uint256(keccak256("gas report randomness")));
@@ -398,7 +414,7 @@ contract IntegrationGasReport is IntegrationBase {
     ///      10 by its creator.
     function _masterWorks() internal returns (Work[] memory works) {
         works = _eightWorks();
-        works[0].item.kind = ItemKind.EDITION_MASTER;
+        works[0].item.kind = uint8(ItemKind.EDITION_MASTER);
         works[0].item.edition =
             EditionTerms(EDITION_CAP, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
     }
@@ -585,18 +601,14 @@ contract IntegrationGasReport is IntegrationBase {
         _growthIs(r, 7, 0);
     }
 
-    /// @dev Each of Stream's four dependencies replaced with itself, each a 30-day
-    ///      SUCCESSOR_SETTER action.
+    /// @dev Each of Stream's three mint-path dependencies (the mint policy, the economics
+    ///      resolver, the entropy module) replaced with itself, each a 30-day SUCCESSOR_SETTER
+    ///      action. The artist registry is permanent; the view extension is off the mint path.
     function _replaceAllDependencies() internal {
-        bytes32[4] memory kinds =
-            [bytes32("PACKAGE_REGISTRY"), "ARTIST_REGISTRY", "ECONOMICS", "ENTROPY_MODULE"];
-        address[4] memory current = [
-            stream.packageRegistry(),
-            stream.artistRegistry(),
-            stream.economics(),
-            stream.entropyModule()
-        ];
-        for (uint256 i; i < 4; ++i) {
+        bytes32[3] memory kinds = [bytes32("PACKAGE_REGISTRY"), "ECONOMICS", "ENTROPY_MODULE"];
+        address[3] memory current =
+            [stream.packageRegistry(), stream.economics(), stream.entropyModule()];
+        for (uint256 i; i < 3; ++i) {
             _govern(
                 hotAdmin,
                 address(stream),
@@ -619,13 +631,13 @@ contract IntegrationGasReport is IntegrationBase {
         for (uint256 i; i < ITEMS; ++i) {
             works[i] = _work(lead, collectionId);
             works[i].item.parties = new Party[](2);
-            works[i].item.parties[0] = Party(lead, PartyRole.ARTIST);
-            works[i].item.parties[1] = Party(collaborator, PartyRole.COLLABORATOR);
+            works[i].item.parties[0] = Party(lead, uint8(PartyRole.ARTIST));
+            works[i].item.parties[1] = Party(collaborator, uint8(PartyRole.COLLABORATOR));
             works[i].item.payees = new ISplitWallet.Payee[](2);
             works[i].item.payees[0] = ISplitWallet.Payee(0, collaborator, 20_000);
             works[i].item.payees[1] = ISplitWallet.Payee(uint160(lead), address(0), 80_000);
         }
-        works[0].item.seedPolicy = SeedPolicy.VRF;
+        works[0].item.seedPolicy = uint8(SeedPolicy.VRF);
         bytes32 root = _publish(works);
         uint256 requestId = entropy.requestSeed(works[0].item, root, _proofOf(works, 0));
         coordinator.fulfill(requestId, uint256(keccak256("gas report randomness")));
@@ -656,7 +668,7 @@ contract IntegrationGasReport is IntegrationBase {
         for (uint256 i; i < params.length; ++i) {
             params[i] = bytes1(uint8(i % 251 + 1));
         }
-        w.item.kind = ItemKind.EDITION_MASTER;
+        w.item.kind = uint8(ItemKind.EDITION_MASTER);
         w.item.edition = EditionTerms(10, CURRENCY_ETH, SaleKind.FIXED_PRICE, params);
     }
 
@@ -670,13 +682,13 @@ contract IntegrationGasReport is IntegrationBase {
         for (uint256 i; i < ITEMS; ++i) {
             works[i] = _work(lead, collectionId);
             works[i].item.parties = new Party[](2);
-            works[i].item.parties[0] = Party(lead, PartyRole.ARTIST);
-            works[i].item.parties[1] = Party(collaborator, PartyRole.COLLABORATOR);
+            works[i].item.parties[0] = Party(lead, uint8(PartyRole.ARTIST));
+            works[i].item.parties[1] = Party(collaborator, uint8(PartyRole.COLLABORATOR));
             works[i].item.payees = new ISplitWallet.Payee[](2);
             works[i].item.payees[0] = ISplitWallet.Payee(0, collaborator, 20_000);
             works[i].item.payees[1] = ISplitWallet.Payee(uint160(lead), address(0), 80_000);
         }
-        works[0].item.seedPolicy = SeedPolicy.VRF;
+        works[0].item.seedPolicy = uint8(SeedPolicy.VRF);
         _maxParamsMaster(works[0]);
         bytes32 masterRoot = _publish(works);
         uint256 requestId = entropy.requestSeed(works[0].item, masterRoot, _proofOf(works, 0));
@@ -793,7 +805,7 @@ contract IntegrationGasReport is IntegrationBase {
     ///      slot is the sale's recipient, and Stream records UNBID in a word it rewrites.
     function _rowSettleNoBid() internal returns (Row memory r) {
         _steadyState();
-        uint256 earlier = auction.saleIdOf(address(stream), stream.totalMinted()); // unbid
+        uint256 earlier = auction.saleIdOf(address(stream), IStream(address(stream)).totalMinted()); // unbid
         (uint256 saleId,) = _start(root, _package(root), 2);
         vm.warp(auction.auction(saleId).endTime);
         auction.settle(earlier);
@@ -848,18 +860,19 @@ contract IntegrationGasReport is IntegrationBase {
     function _rowConsume() internal returns (Row memory r) {
         _steadyState();
         bytes memory request = _mintData(root, _package(root), 2);
-        StreamMintRequest memory m = abi.decode(request, (StreamMintRequest));
-        bytes memory data =
-            abi.encodeCall(IPackageRegistry.consume, (m.packageRoot, m.item, m.proof, m.move));
+        IMintPolicy.MintContext memory c = IMintPolicy.MintContext(
+            address(auction), stream.economics(), stream.entropyModule(), stream.splitFactory()
+        );
+        bytes memory data = abi.encodeCall(IMintPolicy.authorize, (c, request));
         r = _row(
-            "consume (the registry's share of start, as a call)",
+            "authorize (the mint policy's share of start, as a call)",
             address(stream),
             address(registry),
             data,
             0
         );
         _gasAtMost(r, CONSUME_CEILING, "regression ceiling");
-        _growthIs(r, 1, 0);
+        _growthIs(r, 0, 0);
     }
 
     // ------------------------------------------------------------------ 6529 Stream Editions
@@ -887,13 +900,11 @@ contract IntegrationGasReport is IntegrationBase {
     }
 
     function _rowCreateEdition() internal returns (Row memory r) {
-        (uint256 workId, bytes32 masterRoot, Work[] memory works) = _settledMaster();
-        bytes memory data = abi.encodeCall(
-            editions.createEdition, (workId, works[0].item, masterRoot, _proofOf(works, 0))
-        );
+        (uint256 workId,, Work[] memory works) = _settledMaster();
+        bytes memory data = abi.encodeCall(editions.createEdition, (workId, works[0].item));
         r = _row("createEdition", starter, address(editions), data, 0);
         _gasAtMost(r, CREATE_EDITION_CEILING, "regression ceiling");
-        _growthIs(r, 6, 0);
+        _growthIs(r, 5, 0);
     }
 
     // ------------------------------------------------------------------ re-rate
@@ -935,7 +946,9 @@ contract IntegrationGasReport is IntegrationBase {
         );
         _gasAtMost(r, RERATE_CEILING, "regression ceiling");
         _growthIs(r, 1, 0);
-        if (pass == Pass.BOTH) assertEq(stream.work(tokenId).royaltyRate, rate);
+        if (pass == Pass.BOTH) {
+            assertEq(IStreamViews(address(stream)).work(tokenId).royaltyRate, rate);
+        }
     }
 
     // ------------------------------------------------------------------ identity
@@ -1025,12 +1038,14 @@ contract IntegrationGasReport is IntegrationBase {
             block.timestamp + 1 days
         );
         IClaimRouter.SignedClaim[] memory claims = new IClaimRouter.SignedClaim[](1);
-        claims[0] = IClaimRouter.SignedClaim(a, _sign(artistA, releaseVerifier.releaseDigest(a)));
+        claims[0] = IClaimRouter.SignedClaim(
+            a, _sign(artistA, releaseVerifier.releaseDigest(a)), _soloPayees(), bytes32(0)
+        );
         return abi.encodeCall(IClaimRouter.claimSigned, (claims, false));
     }
 
     /// @dev A new payee configuration's seller wallet, deployed once (permissionless, off the
-    ///      sale path): the payee list, its configuration hash and the code.
+    ///      sale path): the ledger's one word for its configuration hash and the 66-byte vault.
     function _rowCreateWallet() internal returns (Row memory r) {
         bytes memory data = abi.encodeCall(splitFactory.createWallet, (_soloPayees(), bytes32(0)));
         r = _row(
@@ -1041,18 +1056,18 @@ contract IntegrationGasReport is IntegrationBase {
             0
         );
         _gasAtMost(r, CREATE_WALLET_CEILING, "regression ceiling");
-        _growthIs(r, 4, 1);
+        _growthIs(r, 1, 1);
     }
 
-    /// @dev The artist pulls its first ETH from the seller wallet: the payee's and the wallet's
-    ///      release totals (ETH keeps no receipts high-water mark).
+    /// @dev The artist pulls its first ETH from the seller wallet through the split ledger: the
+    ///      payee's and the wallet's release totals (ETH keeps no receipts high-water mark).
     function _rowReleaseFirst() internal returns (Row memory r) {
-        address wallet = _fundedWallet();
+        _fundedWallet();
         r = _row(
             "release, the artist's first ETH release",
             artistA,
-            wallet,
-            abi.encodeCall(ISplitWallet.release, (CURRENCY_ETH, 0)),
+            address(splitFactory),
+            abi.encodeCall(ISplitWallet.release, (_soloPayees(), bytes32(0), CURRENCY_ETH, 0)),
             0
         );
         _gasAtMost(r, RELEASE_FIRST_CEILING, "regression ceiling");

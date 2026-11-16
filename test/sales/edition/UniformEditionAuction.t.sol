@@ -29,14 +29,17 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
     address internal alice = makeAddr("alice");
     address internal bob = makeAddr("bob");
     address internal carol = makeAddr("carol");
+    /// @dev `IUniformEditionAuction`'s interface ID: `abandon`, `abandonable`, `setLimits` and
+    ///      `limits` joined the frozen interface on 15 November 2026 (was 0x69e7405b).
+    uint32 internal constant INTERFACE_ID = 0x94ff7508;
 
     // ================================================================== construction
 
     function test_Constructor_WiresAndPinsItsLens() public view {
-        assertEq(auction.editions(), address(editions));
-        assertEq(auction.stream(), address(stream));
-        assertEq(auction.englishAuction(), address(english));
-        assertEq(auction.escrow(), address(escrow));
+        assertEq(lens.editions(), address(editions));
+        assertEq(lens.stream(), address(stream));
+        assertEq(ua.englishAuction(), address(english));
+        assertEq(ua.escrow(), address(escrow));
         assertEq(auction.lens(), lensAddress);
         assertTrue(lensAddress.code.length != 0);
         // The lens's immutables are the adapter's wiring (the fallback forwards their getters
@@ -46,9 +49,13 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         assertEq(l.stream(), address(stream));
         assertEq(l.englishAuction(), address(english));
         assertEq(l.escrow(), address(escrow));
-        _assertConfig(auction.config(), defaultConfig());
-        assertEq(auction.saleKind(), SaleKind.UNIFORM_AUCTION);
-        assertEq(auction.PAYOUT_GAS(), 100_000);
+        _assertConfig(ua.config(), defaultConfig());
+        assertEq(ua.saleKind(), SaleKind.UNIFORM_AUCTION);
+        IUniformEditionAuction.Limits memory limits = ua.limits();
+        assertEq(limits.maxCloseOffset, 30 days);
+        assertEq(limits.voidDelayDays, 150);
+        assertEq(limits.payoutGas, 100_000);
+        assertEq(ua.federationRegistry(), address(0));
     }
 
     function _construct(
@@ -60,7 +67,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         IUniformEditionAuction.AuctionConfig memory c
     ) internal returns (UniformEditionAuction) {
         return new UniformEditionAuction(
-            address(manager), escrow_, editions_, english_, lens_, lensHash, c
+            address(manager), escrow_, editions_, english_, lens_, lensHash, c, defaultLimits()
         );
     }
 
@@ -149,13 +156,13 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
     }
 
     function test_SupportsInterface() public view {
-        assertEq(type(IUniformEditionAuction).interfaceId, bytes4(0x69e7405b));
-        assertTrue(auction.supportsInterface(type(IUniformEditionAuction).interfaceId));
-        assertTrue(auction.supportsInterface(type(ISaleAdapter).interfaceId));
-        assertTrue(auction.supportsInterface(type(IERC165).interfaceId));
-        assertFalse(auction.supportsInterface(0xffffffff));
-        assertFalse(auction.supportsInterface(0x00000000));
-        assertFalse(auction.supportsInterface(type(IUniformEditionAuctionStorage).interfaceId));
+        assertEq(type(IUniformEditionAuction).interfaceId, bytes4(INTERFACE_ID));
+        assertTrue(ua.supportsInterface(type(IUniformEditionAuction).interfaceId));
+        assertTrue(ua.supportsInterface(type(ISaleAdapter).interfaceId));
+        assertTrue(ua.supportsInterface(type(IERC165).interfaceId));
+        assertFalse(ua.supportsInterface(0xffffffff));
+        assertFalse(ua.supportsInterface(0x00000000));
+        assertFalse(ua.supportsInterface(type(IUniformEditionAuctionStorage).interfaceId));
     }
 
     /// @dev The adapter does not inherit the frozen interface (its views are the lens's), so the
@@ -176,10 +183,33 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         assertEq(
             UniformEditionAuction.setConfig.selector, IUniformEditionAuction.setConfig.selector
         );
-        assertEq(UniformEditionAuction.config.selector, IUniformEditionAuction.config.selector);
-        assertEq(UniformEditionAuction.saleIdOf.selector, IUniformEditionAuction.saleIdOf.selector);
-        assertEq(auction.englishAuction.selector, IUniformEditionAuction.englishAuction.selector);
-        assertEq(auction.escrow.selector, IUniformEditionAuction.escrow.selector);
+        assertEq(
+            UniformEditionAuction.setLimits.selector, IUniformEditionAuction.setLimits.selector
+        );
+        assertEq(UniformEditionAuction.abandon.selector, IUniformEditionAuction.abandon.selector);
+        assertEq(UniformEditionAuction.claim.selector, ISaleAdapter.claim.selector);
+        assertEq(UniformEditionAuction.pause.selector, ISaleAdapter.pause.selector);
+        assertEq(UniformEditionAuction.unpause.selector, ISaleAdapter.unpause.selector);
+        assertEq(UniformEditionAuction.setTarget.selector, ISaleAdapter.setTarget.selector);
+    }
+
+    /// @dev Every view of the frozen interfaces the adapter does not declare is the lens's, with
+    ///      the same selector, so its fallback answers it at the adapter's address.
+    function test_Selectors_TheLensAnswersEveryView() public pure {
+        IUniformEditionAuctionLens l;
+        assertEq(l.config.selector, IUniformEditionAuction.config.selector);
+        assertEq(l.limits.selector, IUniformEditionAuction.limits.selector);
+        assertEq(l.abandonable.selector, IUniformEditionAuction.abandonable.selector);
+        assertEq(l.saleIdOf.selector, IUniformEditionAuction.saleIdOf.selector);
+        assertEq(l.englishAuction.selector, IUniformEditionAuction.englishAuction.selector);
+        assertEq(l.escrow.selector, IUniformEditionAuction.escrow.selector);
+        assertEq(l.saleKind.selector, ISaleAdapter.saleKind.selector);
+        assertEq(l.paused.selector, ISaleAdapter.paused.selector);
+        assertEq(l.isTarget.selector, ISaleAdapter.isTarget.selector);
+        assertEq(l.claimable.selector, ISaleAdapter.claimable.selector);
+        assertEq(l.federationRegistry.selector, ISaleAdapter.federationRegistry.selector);
+        assertEq(l.setFederationRegistry.selector, ISaleAdapter.setFederationRegistry.selector);
+        assertEq(l.supportsInterface.selector, IERC165.supportsInterface.selector);
     }
 
     function test_Fallback_RefusesEthAndUnknownCalls() public {
@@ -242,7 +272,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
             }
         }
         auction.setConfig(defaultConfig(), next);
-        _assertConfig(auction.config(), next);
+        _assertConfig(ua.config(), next);
     }
 
     function _nudge(IUniformEditionAuction.AuctionConfig memory c, uint256 field, bool up)
@@ -274,7 +304,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         vm.expectEmit(address(auction));
         emit IUniformEditionAuction.ConfigSet(defaultConfig(), next);
         auction.setConfig(defaultConfig(), next);
-        _assertConfig(auction.config(), next);
+        _assertConfig(ua.config(), next);
         // The open sale keeps its locked parameters.
         _assertConfig(ua.auction(saleId).terms, defaultConfig());
         // A stale expectation reverts.
@@ -309,7 +339,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
             assertEq(StepLadder.isValid(c.basePrice, c.stepsPerDecade, c.stepCount), valid, key);
             if (valid) {
                 _setConfig(c);
-                _assertConfig(auction.config(), c);
+                _assertConfig(ua.config(), c);
             } else {
                 _expectInvalidConfig(c);
             }
@@ -348,8 +378,9 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         c = defaultConfig();
         c.marginShare = 50_001;
         _expectInvalidConfig(c);
+        // The default close offset is bounded by the governed maximum (30 days here).
         c = defaultConfig();
-        c.closeOffset = 1 days + 1;
+        c.closeOffset = 30 days + 1;
         _expectInvalidConfig(c);
         c = defaultConfig();
         c.softWindow = 59;
@@ -364,14 +395,14 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         c.maxExtension = 7 days + 1;
         _expectInvalidConfig(c);
         // The edges are accepted.
-        c = IUniformEditionAuction.AuctionConfig(1e17, 24, 64, 50_000, 1 days, 1 hours, 7 days);
+        c = IUniformEditionAuction.AuctionConfig(1e17, 24, 64, 50_000, 30 days, 1 hours, 7 days);
         _setConfig(c);
         c = IUniformEditionAuction.AuctionConfig(1e12, 192, 512, 0, 0, 1 minutes, 1 hours);
         // 1e12 over 512 steps of 192 per decade tops below 10 ETH: refused.
         _expectInvalidConfig(c);
         c.stepsPerDecade = 24;
         _setConfig(c);
-        _assertConfig(auction.config(), c);
+        _assertConfig(ua.config(), c);
     }
 
     function test_Governance_IsRestricted() public {
@@ -395,7 +426,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, alice)
         );
-        auction.setFederationRegistry(address(0), address(0));
+        auction.setLimits(_packedLimits(defaultLimits()), _packedLimits(defaultLimits()));
         vm.stopPrank();
     }
 
@@ -404,7 +435,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         vm.expectEmit(address(auction));
         emit ISaleAdapter.Paused(address(this));
         auction.pause();
-        assertTrue(auction.paused());
+        assertTrue(ua.paused());
         vm.expectRevert(ISaleAdapter.SalePaused.selector);
         auction.pause();
         // Running sales bid, settle and claim.
@@ -420,19 +451,19 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         vm.expectEmit(address(auction));
         emit ISaleAdapter.Unpaused(address(this));
         auction.unpause();
-        assertFalse(auction.paused());
+        assertFalse(ua.paused());
         vm.expectRevert(ISaleAdapter.NotPaused.selector);
         auction.unpause();
         // Any time after the delay, not only its first second.
         auction.pause();
         vm.warp(block.timestamp + Roles.STANDARD + 1 days);
         auction.unpause();
-        assertFalse(auction.paused());
+        assertFalse(ua.paused());
     }
 
     function test_SetTarget_OnlyEditions() public {
-        assertTrue(auction.isTarget(address(editions)));
-        assertFalse(auction.isTarget(address(stream)));
+        assertTrue(ua.isTarget(address(editions)));
+        assertFalse(ua.isTarget(address(stream)));
         vm.expectRevert(
             abi.encodeWithSelector(ISaleAdapter.TargetNotAllowed.selector, address(stream))
         );
@@ -440,7 +471,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         vm.expectEmit(address(auction));
         emit ISaleAdapter.TargetSet(address(editions), false);
         auction.setTarget(address(editions), false);
-        assertFalse(auction.isTarget(address(editions)));
+        assertFalse(ua.isTarget(address(editions)));
         PackageItem memory item = _item(ID, 0);
         vm.expectRevert(
             abi.encodeWithSelector(ISaleAdapter.TargetNotAllowed.selector, address(editions))
@@ -448,29 +479,25 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         auction.open(address(editions), ID, abi.encode(item));
     }
 
-    function test_SetFederationRegistry() public {
+    /// @dev The adapter sells only 6529 Stream Editions in v1 and keeps no federation registry:
+    ///      the lens answers zero and refuses any installation, from anyone.
+    function test_SetFederationRegistry_IsRefused() public {
         MockFederationRegistry registry = new MockFederationRegistry();
-        vm.expectRevert(ISaleAdapter.ExpectedValueMismatch.selector);
-        auction.setFederationRegistry(address(1), address(registry));
         vm.expectRevert(
-            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(editions))
+            abi.encodeWithSelector(ISaleAdapter.TargetNotAllowed.selector, address(registry))
         );
-        auction.setFederationRegistry(address(0), address(editions));
-        vm.expectEmit(address(auction));
-        emit ISaleAdapter.FederationRegistrySet(address(0), address(registry));
-        auction.setFederationRegistry(address(0), address(registry));
-        assertEq(auction.federationRegistry(), address(registry));
-        assertEq(auction.federationRegistryCodeHash(), address(registry).codehash);
-        auction.setFederationRegistry(address(registry), address(0));
-        assertEq(auction.federationRegistry(), address(0));
-        assertEq(auction.federationRegistryCodeHash(), bytes32(0));
+        ua.setFederationRegistry(address(0), address(registry));
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.TargetNotAllowed.selector, address(0)));
+        ua.setFederationRegistry(address(0), address(0));
+        assertEq(ua.federationRegistry(), address(0));
     }
 
     // ================================================================== open
 
     function test_Open_LocksTermsAndEmits() public {
         PackageItem memory item = _item(ID, 60);
-        uint256 saleId = auction.saleIdOf(address(editions), ID);
+        uint256 saleId = ua.saleIdOf(address(editions), ID);
         uint64 closeAt = uint64(block.timestamp + 1 days + 15 minutes);
         vm.expectEmit(address(auction));
         emit ISaleAdapter.SaleStarted(
@@ -618,10 +645,10 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         uint256 second = _openId(8, 0);
         assertEq(ua.auction(second).feeRecipient, networkFee);
         assertEq(
-            auction.storageWord(IUniformEditionAuctionStorage.Space.FEE_RECIPIENT, 0, 1),
+            lens.storageWord(IUniformEditionAuctionStorage.Space.FEE_RECIPIENT, 0, 1),
             uint160(networkFee)
         );
-        assertEq(auction.storageWord(IUniformEditionAuctionStorage.Space.FEE_RECIPIENT, 0, 2), 0);
+        assertEq(lens.storageWord(IUniformEditionAuctionStorage.Space.FEE_RECIPIENT, 0, 2), 0);
         // Another recipient gets the next index, and the earlier sales keep theirs.
         address otherFee = makeAddr("otherFeeSafe");
         economics.set(seller, otherFee, FEE_SHARE);
@@ -635,7 +662,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         assertEq(ua.auction(third).feeRecipient, otherFee);
         assertEq(ua.auction(second).feeRecipient, networkFee);
         assertEq(
-            auction.storageWord(IUniformEditionAuctionStorage.Space.FEE_RECIPIENT, 0, 2),
+            lens.storageWord(IUniformEditionAuctionStorage.Space.FEE_RECIPIENT, 0, 2),
             uint160(otherFee)
         );
     }
@@ -648,7 +675,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         vm.expectRevert(
             abi.encodeWithSelector(
                 IUniformEditionAuction.BiddingClosed.selector,
-                auction.saleIdOf(address(editions), ID),
+                ua.saleIdOf(address(editions), ID),
                 uint64(closeAt)
             )
         );
@@ -1468,8 +1495,8 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         (uint256 won, uint256 refund) = auction.claimBidFor(saleId, 2);
         assertEq(won, 0);
         assertEq(refund, bobRefund);
-        assertEq(auction.claimable(bob, CURRENCY_ETH), bobRefund);
-        assertEq(auction.claimable(bob, address(1)), 0);
+        assertEq(ua.claimable(bob, CURRENCY_ETH), bobRefund);
+        assertEq(ua.claimable(bob, address(1)), 0);
         vm.prank(carol);
         (won, refund) = auction.claimBidFor(saleId, 1);
         assertEq(won, 2);
@@ -1529,20 +1556,95 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         assertEq(w.liveUnits, 3);
         assertEq(w.bidCount, 1);
         assertEq(
-            auction.storageWord(IUniformEditionAuctionStorage.Space.LIVE, saleId, 2),
-            uint256(3) << 32
+            lens.storageWord(IUniformEditionAuctionStorage.Space.LIVE, saleId, 2), uint256(3) << 32
         );
-        uint256 bidWord = auction.storageWord(IUniformEditionAuctionStorage.Space.BID, saleId, 1);
+        uint256 bidWord = lens.storageWord(IUniformEditionAuctionStorage.Space.BID, saleId, 1);
         assertEq(address(uint160(bidWord)), alice);
-        uint256 terms = auction.storageWord(IUniformEditionAuctionStorage.Space.TERMS, 0, 1);
+        uint256 terms = lens.storageWord(IUniformEditionAuctionStorage.Space.TERMS, 0, 1);
         assertEq(uint96(terms), 1e14);
-        uint256 payout = auction.storageWord(IUniformEditionAuctionStorage.Space.PAYOUT, saleId, 0);
+        uint256 payout = lens.storageWord(IUniformEditionAuctionStorage.Space.PAYOUT, saleId, 0);
         assertEq(address(uint160(payout)), seller);
         assertEq(uint32(payout >> 208), ID);
-        assertEq(auction.storageWord(IUniformEditionAuctionStorage.Space.RESULT, saleId, 0), 0);
+        assertEq(payout >> 240, 150, "the abandonment delay, locked at open");
+        assertEq(lens.storageWord(IUniformEditionAuctionStorage.Space.RESULT, saleId, 0), 0);
         assertEq(
-            auction.storageWord(IUniformEditionAuctionStorage.Space.DEPARTURE, saleId, 17 << 32), 0
+            lens.storageWord(IUniformEditionAuctionStorage.Space.DEPARTURE, saleId, 17 << 32), 0
         );
+    }
+
+    /// @dev The lens finds each word from the adapter's storage layout (its `_SLOT_*`
+    ///      constants): every family, read raw at the slot Solidity places it, equals the lens's
+    ///      word. A layout change that the lens does not follow fails here.
+    function test_StorageWord_TheLensFollowsTheAdaptersLayout() public {
+        uint256 saleId = _open(9);
+        _bid(saleId, alice, 17, 3);
+        _bid(saleId, bob, 30, 2);
+        _raise(saleId, 1, 18);
+        _settle(saleId);
+        auction.claimBidFor(saleId, 1);
+        address a = address(auction);
+        bytes32 m = keccak256(abi.encode(saleId, uint256(9)));
+        uint256[13] memory raw = [
+            uint256(vm.load(a, bytes32(uint256(1)))),
+            uint256(vm.load(a, keccak256(abi.encode(uint256(1), uint256(2))))),
+            uint256(vm.load(a, keccak256(abi.encode(uint256(1), uint256(4))))),
+            uint256(vm.load(a, keccak256(abi.encode(saleId, uint256(5))))),
+            uint256(vm.load(a, keccak256(abi.encode(saleId, uint256(6))))),
+            uint256(vm.load(a, keccak256(abi.encode(saleId, uint256(7))))),
+            uint256(vm.load(a, keccak256(abi.encode(saleId, uint256(8))))),
+            uint256(vm.load(a, keccak256(abi.encode(uint256(2), m)))),
+            uint256(
+                vm.load(
+                    a, keccak256(abi.encode(uint256(2), keccak256(abi.encode(saleId, uint256(10)))))
+                )
+            ),
+            uint256(
+                vm.load(
+                    a,
+                    keccak256(
+                        abi.encode(uint256(17) << 32, keccak256(abi.encode(saleId, uint256(11))))
+                    )
+                )
+            ),
+            uint256(vm.load(a, keccak256(abi.encode(uint256(uint160(alice)), uint256(12))))),
+            uint256(
+                vm.load(
+                    a,
+                    keccak256(
+                        abi.encode(
+                            uint256(uint160(alice)), keccak256(abi.encode(saleId, uint256(13)))
+                        )
+                    )
+                )
+            ),
+            0
+        ];
+        IUniformEditionAuctionStorage.Space[12] memory spaces = [
+            IUniformEditionAuctionStorage.Space.SETTINGS,
+            IUniformEditionAuctionStorage.Space.TERMS,
+            IUniformEditionAuctionStorage.Space.FEE_RECIPIENT,
+            IUniformEditionAuctionStorage.Space.SALE,
+            IUniformEditionAuctionStorage.Space.PAYOUT,
+            IUniformEditionAuctionStorage.Space.RESULT,
+            IUniformEditionAuctionStorage.Space.SCAN,
+            IUniformEditionAuctionStorage.Space.BID,
+            IUniformEditionAuctionStorage.Space.LIVE,
+            IUniformEditionAuctionStorage.Space.DEPARTURE,
+            IUniformEditionAuctionStorage.Space.CREDIT,
+            IUniformEditionAuctionStorage.Space.SWEEP
+        ];
+        uint256[12] memory keys = [
+            uint256(0), 1, 1, 0, 0, 0, 0, 2, 2, uint256(17) << 32, uint160(alice), uint160(alice)
+        ];
+        for (uint256 i; i < 12; ++i) {
+            assertEq(lens.storageWord(spaces[i], saleId, keys[i]), raw[i], vm.toString(i));
+        }
+        // The words compared are live ones: settings, terms, the recipient, the sale, payout and
+        // result, bob's bid, the live word of steps 16-23 and the departure head of step 17.
+        uint8[9] memory nonzero = [0, 1, 2, 3, 4, 5, 7, 8, 9];
+        for (uint256 i; i < nonzero.length; ++i) {
+            assertTrue(raw[nonzero[i]] != 0, vm.toString(nonzero[i]));
+        }
     }
 
     // ================================================================== helpers
@@ -1552,21 +1654,21 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         view
         returns (IUniformEditionAuctionStorage.SaleWord memory a)
     {
-        uint256 w = auction.storageWord(IUniformEditionAuctionStorage.Space.SALE, saleId, 0);
+        uint256 w = lens.storageWord(IUniformEditionAuctionStorage.Space.SALE, saleId, 0);
         a.status = IUniformEditionAuction.AuctionStatus(uint8(w));
-        a.termsId = uint16(w >> 8);
-        a.maxCount = uint32(w >> 24);
-        a.oneOfOneEnd = uint32(w >> 56);
-        a.softEnd = uint32(w >> 88);
-        a.openedAt = uint32(w >> 120);
-        a.lowStep = uint16(w >> 152);
-        a.highStep = uint16(w >> 168);
-        a.liveUnits = uint32(w >> 184);
-        a.bidCount = uint32(w >> 216);
+        a.termsId = uint24(w >> 8);
+        a.maxCount = uint32(w >> 32);
+        a.oneOfOneEnd = uint32(w >> 64);
+        a.softEnd = uint32(w >> 96);
+        a.openedAt = uint32(w >> 128);
+        a.lowStep = uint16(w >> 160);
+        a.highStep = uint16(w >> 176);
+        a.liveUnits = uint32(w >> 192);
+        a.bidCount = uint32(w >> 224);
     }
 
     function _expectInvalidConfig(IUniformEditionAuction.AuctionConfig memory c) internal {
-        IUniformEditionAuction.AuctionConfig memory current = auction.config();
+        IUniformEditionAuction.AuctionConfig memory current = ua.config();
         vm.expectRevert(IUniformEditionAuction.InvalidConfig.selector);
         auction.setConfig(current, c);
     }

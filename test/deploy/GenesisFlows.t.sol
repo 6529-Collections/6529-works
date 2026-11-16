@@ -36,6 +36,9 @@ import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
 import { IEnglishAuctionFull } from "test/helpers/IEnglishAuctionFull.sol";
+import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
+import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
 
 /// @notice Integration finding G-1 on the deployed system: items priced in `CURRENCY_DEFAULT`
 ///         start without waiting out FUNDS_SETTER's 14-day `setDefaultCurrency`, because
@@ -78,7 +81,7 @@ contract GenesisFlowsTest is Test {
         p.cc0Text = vm.readFileBinary("test/fixtures/cc0-legalcode.txt");
         p.ethIncrementFloor = 0.001 ether;
         p.permit2 = DeployV1.CANONICAL_PERMIT2;
-        p.auction = IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000);
+        p.auction = IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000, 7 days, 4_000_000);
         p.editionAuction = DeployV1.editionAuctionDefaults();
         DeployV1.Deployment memory deployed = DeployV1.deploy(p);
         d = deployed;
@@ -121,13 +124,13 @@ contract GenesisFlowsTest is Test {
         files[0] = MediaFile(
             d.contentStore
                 .registerManifest(
-                    chunks, media.length, IContentStore.Encoding.Identity, "image/png", sha
+                    chunks, media.length, uint8(IContentStore.Encoding.Identity), "image/png", sha
                 ),
             sha,
-            FileRole.PRIMARY
+            uint8(FileRole.PRIMARY)
         );
 
-        item.kind = kind;
+        item.kind = uint8(kind);
         item.collectionId = collection;
         item.contentHash = sha;
         item.mediaHash = WorksHashing.mediaHash(files);
@@ -142,11 +145,11 @@ contract GenesisFlowsTest is Test {
             "application/json"
         );
         item.parties = new Party[](1);
-        item.parties[0] = Party(artist, PartyRole.ARTIST);
+        item.parties[0] = Party(artist, uint8(PartyRole.ARTIST));
         item.payees = new ISplitWallet.Payee[](1);
         item.payees[0] = ISplitWallet.Payee(uint256(uint160(artist)), address(0), 100_000);
         item.license = License("CC0-1.0", d.cc0TextFileId);
-        item.seedPolicy = SeedPolicy.NONE;
+        item.seedPolicy = uint8(SeedPolicy.NONE);
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, currency, "");
         item.edition = edition;
 
@@ -225,7 +228,7 @@ contract GenesisFlowsTest is Test {
         uint256 genesisTime = block.timestamp;
         (bytes memory mintData,,) = _curatedWork(ItemKind.ORIGINAL, CURRENCY_DEFAULT, _noEdition());
         uint256 saleId = d.englishAuction.start(address(d.stream), mintData);
-        assertEq(d.stream.totalMinted(), 1, "the work is minted into the auction");
+        assertEq(IStream(address(d.stream)).totalMinted(), 1, "the work is minted into the auction");
         assertEq(
             IEnglishAuctionFull(address(d.englishAuction)).lockedTerms(saleId).currency,
             CURRENCY_ETH,
@@ -243,8 +246,9 @@ contract GenesisFlowsTest is Test {
         (bytes memory mintData, PackageItem memory item,) =
             _curatedWork(ItemKind.EDITION_MASTER, CURRENCY_ETH, _editionTerms());
         d.englishAuction.start(address(d.stream), mintData);
-        uint256 workId = d.stream.totalMinted();
-        uint256 saleId = d.editionAuction.saleIdOf(address(d.editions), workId);
+        uint256 workId = IStream(address(d.stream)).totalMinted();
+        uint256 saleId = IUniformEditionAuctionLens(address(d.editionAuction))
+            .saleIdOf(address(d.editions), workId);
         vm.prank(makeAddr("anyone"));
         assertEq(d.editionAuction.open(address(d.editions), workId, abi.encode(item)), saleId);
         IUniformEditionAuction.Auction memory a =

@@ -101,6 +101,13 @@ Every page has the same headings, so a reader can jump straight to what they nee
   [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md) defines it; Sepolia figures are
   Glamsterdam receipts from [flows.md](../../deployments/11155111/flows.md).
 - **"Anyone"** means a permissionless function: no role and no allow-list.
+- **Calls out of permanent contracts** compile in no gas number. They use the forward-all
+  family of [`BoundedCall`](../../src/libraries/BoundedCall.sol): all the gas EIP-150 allows is
+  forwarded, at most a stated number of return bytes is copied, and a call that fails while
+  leaving at most 1/8 of the gas held before it reverts with `BoundedCallShortfall(target)`, so
+  running short never reads as a refusal or a default answer. The library's NatSpec states why
+  1/8 and the residuals; the statement log's rule is
+  [DSP-26](disputes-and-statements.md#rules-and-invariants).
 
 ## Differences from the ADRs
 
@@ -147,7 +154,7 @@ the current behavior in full.
 | [Editions and sales](editions-and-sales.md) | ED-2 | ADR 0001 §6: the link is permanent once both sides finalize | Permanent from `createEdition`, finalized or not | None recorded |
 | [Editions and sales](editions-and-sales.md) | ED-1 | ADR 0001 §6: the link comes only from the approved package | The root must be registered, revoked or not | Review finding SIGS-4 |
 | [Editions and sales](editions-and-sales.md) | ED-4, EA-1 to EA-16 | ADR 0001 §5, §6: fixed-price and Dutch adapters; the artist picks size, format and price, in ETH or an ERC-20 | One uniform-price edition auction beside the 1/1, in ETH; the terms carry only an optional cap; the fixed-price and Dutch adapters are deleted | ADR 0005 (D138, D141), owner decisions 6 and 8 |
-| [Editions and sales](editions-and-sales.md) | ED-5 | ADR 0003: an adapter mints for a token once admitted | An adapter of the edition's sale kind, within its cap: the edition is bound to the adapter whose sale opened it (`bindMinter`), or else to the first to mint it, and only that adapter mints it, even after its removal | ADR 0005, owner decision 14 and the 31 October amendment |
+| [Editions and sales](editions-and-sales.md) | ED-5 | ADR 0003: an adapter mints for a token once admitted | An adapter of the edition's sale kind, within its cap: the edition is bound to the adapter whose sale opened it (`bindMinter`), or else to the first to mint it, and only that adapter mints it; it seals the supply when its sale settles, and after its removal mints only an edition it sealed (owner decision of 15 November 2026, ADR 0007) | ADR 0005, owner decision 14 and the 31 October amendment |
 | [Editions and sales](editions-and-sales.md) | – | ADR 0001 §6: the collection is "6529 Editions" | "6529 Stream Editions", `STREAMEDITIONS`; the contract and identifiers keep their names | ADR 0005 (D139), owner decision 13 |
 | [Editions and sales](editions-and-sales.md) | EA-12 | No ADR barred the escrow as a payee | A sale paying the escrow is refused at open | Review finding CALLS-1 |
 | [Economics and payouts](economics-and-payouts.md) | ECO-8 | ADR 0001 §7: split wallets take any number of recipients | At most 64 payees per wallet, 16 parties per item | ADR 0003, economics |
@@ -165,6 +172,7 @@ the current behavior in full.
 | [Identity and recovery](identity-and-recovery.md) | – | ADR 0001 §11: the registry holds the artist ID, authority and profile | Also payout, nonce, activity, pending change, standing, reservations and federated list | ADR 0003, identity; review finding IDENTITY-2 |
 | [Identity and recovery](identity-and-recovery.md) | ID-26, ID-27 | ADR 0001 §11: the identity source is swapped when the 6529 chain arrives | Swappable any time (30 days); its code hash is re-checked at use | Review finding DEPS-6 (PR #53) |
 | [Identity and recovery](identity-and-recovery.md) | ID-2, ID-3 | ADR 0001 §11: nothing barred a past authority or reserved a pending one | A new authority must be current or never used; staged changes reserve theirs | Review findings SIGS-3 (ADR 0003), IDENTITY-2 |
+| [Identity and recovery](identity-and-recovery.md) | ID-19, ID-40 | ADR 0003, identity: a cancel by the old key or a captured wallet, and every executed change, reset the dormancy clock | Only the authority's cancel does, and only an execution that installs a new authority; a captured wallet's cancel or contest records nothing | Review E, finding N-1 ([ADR 0007](../adr/0007-permanence.md)) |
 | [Disputes and statements](disputes-and-statements.md) | DSP-18, AUC-26 | ADR 0001 §12: an upheld dispute cancels the auction, then records the outcome | The outcome comes first; the governed `cancel` (48 hours) must cite it | ADR 0003, disputes; review finding LIFECYCLE-4 |
 | [Disputes and statements](disputes-and-statements.md) | DSP-13 | ADR 0001 §12: a guardian pause lasts at most 7 days | One pause per auction, not renewable after an early `resume` | None recorded |
 | [Disputes and statements](disputes-and-statements.md) | DSP-19 | ADR 0001 §12: all bids are refunded | As pull credits | None recorded |
@@ -175,6 +183,8 @@ the current behavior in full.
 | [Entropy](entropy.md) | ENT-11, GV-21 | ADR 0001 §13.9: gas parameters are raise-only | The callback gas limit can also be lowered (30 days, floor 100,000) | Review finding DEPS-5 (ADR 0003) |
 | [Entropy](entropy.md) | ENT-13 | Sepolia `flows.md` §6 (not an ADR): the callback writes a new slot | No new slot: the seed overwrites the request ID | Review finding DEPS-2; ADR 0004 |
 | [Governance](governance.md) | GV-1 | ADR 0001 §13: a guardian-guarded meta role or a TimelockController | Neither: under Rule 1 any guardian cancels any operation | ADR 0002, decisions 1 and 2 |
+| [Editions and sales](editions-and-sales.md) | EA-17 to EA-19 | ADR 0005 §4: one governed close offset of 0 to 1 day; D140/D141: 15 minutes | Per-sale close offset in the artist-signed edition params, bounded by a governed maximum (`setLimits`, 30 days at launch), with an abandonment exit (150 days at launch) and wallets deployed at open | ADR 0005 §14 amendment; ADR 0007 (owner, 15 November 2026) |
+| [Governance](governance.md) | GV-37 to GV-47 | ADR 0002: OpenZeppelin's manager with the cancel rules (Rules 1 to 3) and suspension | WorksAccessManager v2: a bounded veto on a guardian's removal and on a successor registration, dead-admin recovery, a pre-registered successor with `migrate`, ADMIN and GUARDIAN seat caps, a 30-day floor on admin grants, and no remapping or closing of the manager itself; Rules 1 to 3, suspension and the delay classes are unchanged outside the escalated lane | ADR 0007 (owner, 15 November 2026) |
 | [Governance](governance.md) | GV-2 | ADR 0001 §13: a guardian cannot cancel its own replacement | Rule 2 generalizes this to every role and canceller | ADR 0002, decision 1 |
 | [Governance](governance.md) | GV-25 | ADR 0002 decision 1: two cancellation rules | Three: Rule 3 lets only an active guardian cancel another account's manager `revokeRole` | Review finding GOV-1; ADR 0002 addendum |
 | [Governance](governance.md) | GV-26 | ADR 0001 §13: guardians only veto | They also suspend PLATFORM, CURATOR and STORAGE_OPERATOR holders | Review finding GOV-2; ADR 0002 addendum |
@@ -188,7 +198,7 @@ the current behavior in full.
 | [Governance](governance.md) | GV-15 | ADR 0002 decision 3: the readback rejects any unexpected admin | `verify` misses admins granted later; `Verify.s.sol`'s `RoleGranted` scan catches them | None recorded |
 | [Governance](governance.md) | GV-23, AUC-13, DSP-16, EA-15 | ADR 0002 decision 7, ADR 0003: unpause, resume and cancel wait 48 hours from scheduling | None lands before 48 hours after the pause | Review finding GOV-5 (PR #57) |
 | [Build, test and budgets](../audit/build-and-test.md) | – | ADR 0001: EIP-170 holds in every Foundry profile | Measured for the one defined profile, `default` | None recorded |
-| [Build, test and budgets](../audit/build-and-test.md) | – | ADR 0001: 8–12K non-comment lines | Only the maximum is enforced: 13,000 lines since the 1 November 2026 amendment (owner decision 24) | ADR 0001 amendment |
+| [Build, test and budgets](../audit/build-and-test.md) | – | ADR 0001: 8–12K non-comment lines | Only the maximum is enforced: 13,000 lines since the 1 November 2026 amendment (owner decision 24), 15,000 since ADR 0007 (owner decision of 15 November 2026) | ADR 0001 amendment, ADR 0007 |
 | [Build, test and budgets](../audit/build-and-test.md) | – | ADR 0001: build and test in under 15 minutes | Per-job timeouts: 15 minutes for Contracts and Static analysis, 5 for Docs | None recorded |
 | [Build, test and budgets](../audit/build-and-test.md) | – | ADR 0001: reproducible from a committed standard-JSON input | None committed; `Verify.s.sol` does not rebuild bytecode | Known gap LIM-REL-1 |
 | [Invariants](../audit/invariants.md) | INV-CUR-1, INV-CUR-3, INV-CUR-4, INV-CUR-6 | ADR 0001 test plan: single-use packages and items as an invariant | Items and content hashes are tested directly; a package's single use only through the model's exactness | None recorded |

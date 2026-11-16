@@ -205,7 +205,7 @@ The edition auction's parameters are one `AuctionConfig`, set by `setConfig(expe
 | Steps per decade (the step size) | 48 | 24, 48, 96 or 192 | PARAMETER_SETTER, 48 hours |
 | Base price | 0.0001 ETH | 10^12 to 10^17 wei; a power of ten since [§8](#8-amendment-31-october-2026-base-prices-are-powers-of-ten) | PARAMETER_SETTER, 48 hours |
 | Steps | 336 | 64 to 512, with a top step of at least 10 ETH | PARAMETER_SETTER, 48 hours |
-| Close offset after the 1/1 (D140) | 15 minutes | 0 to 1 day | PARAMETER_SETTER, 48 hours |
+| Close offset after the 1/1 (D140) | 15 minutes | 0 to 1 day (per sale since [§14](#14-amendment-15-november-2026-sealed-supply-the-editions-own-open-period-an-abandonment-exit-wallets-at-open-adr-0007), up to a governed maximum) | PARAMETER_SETTER, 48 hours |
 | Soft-close window (D141) | 5 minutes | 1 minute to 1 hour | PARAMETER_SETTER, 48 hours |
 | Extension backstop (decision 5) | 24 hours | 1 hour to 7 days | PARAMETER_SETTER, 48 hours |
 | The museum (decision 11) | The 6529 Network Museum Safe | Nonzero, not a protocol contract | FUNDS_SETTER, 14 days |
@@ -529,6 +529,35 @@ free; 6529 Stream Editions by 12. Gas: `settle` with a bid costs 52 more and wit
 more (the extra outcome check and its decoding, and the new deployment addresses). Every start
 row moved by at most 32 with the new addresses, and the budgeted ETH start rows keep their 5,000
 of margin under 350,000 (the tightest is 344,917).
+
+### 14. Amendment (15 November 2026): sealed supply, the edition's own open period, an abandonment exit, wallets at open ([ADR 0007](0007-permanence.md))
+
+- **Built.** 6529 Stream Editions seals an edition's supply when its sale settles: the bound
+  adapter calls `sealSupply(id, count)` once, the maximum drops to the count sold, and no
+  contract can mint past it; a removed adapter mints only an edition it sealed (ED-25; closes
+  LIM-EA-10). `mint`'s data is `abi.encode(currency, unitPrice)`, logged by
+  `EditionPrimaryMint`, and `createEdition` emits `EditionTermsLocked` (ED-26, ED-27).
+  Editions holds no duration.
+- **The edition's own open period** (owner decisions of 15 November 2026: uncapped editions
+  may stay open much longer than a day, with no global rule). The close offset is the artist's,
+  signed in the edition terms' params (`abi.encode(uint256 closeOffset)`, or empty for the
+  governed default), locked at open in a terms record of the current parameters with that
+  offset; `AuctionConfig.closeOffset` is the default, bounded by a governed maximum. Bids stay
+  firm, so bidders' ETH is locked for the whole window, and copies mint only after the close
+  (EA-17).
+- **Governed limits** (`setLimits`, PARAMETER_SETTER, 48 hours, compare-and-set on one packed
+  word): the maximum close offset (launch 30 days, owner to confirm; bounds 1 to 3,650 days),
+  the abandonment delay (launch 150 days; bounds 120 to 730: governance's 30-day dependency
+  replacement plus Stream's 90-day rescue floor) and the payout gas (launch 100,000; bounds
+  30,000 to 3,000,000; was the constant `PAYOUT_GAS`) (EA-18).
+- **`abandon(saleId)`**, permissionless: a sale that has paid nothing is voided after its end
+  plus its locked delay when its 1/1 is neither in progress nor settled with its master and
+  edition; every bid is refunded and the edition sealed at zero (EA-19).
+- **Wallets at open.** `open` deploys the seller's and royalty receiver's split wallets, so no
+  payment from the sale and no royalty on its copies reaches an undeployed wallet (EA-20).
+- §4's close-offset row and decision 5's wording change accordingly; `setFederationRegistry`
+  leaves the adapter (it sells only 6529 Stream Editions); the 15-minute rule of D140/D141
+  becomes the default, not a floor: an edition may close with its 1/1.
 
 ## What this amends
 

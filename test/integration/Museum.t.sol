@@ -154,11 +154,12 @@ contract MuseumTest is IntegrationBase {
             manager.canCall(hotAdmin, address(economics), IEconomicsResolver.setMuseum.selector);
         assertFalse(immediate);
         assertEq(delay, Roles.FUNDS);
-        this.checkMuseum(museum);
+        // The resolver names the museum's governed vault, which forwards to the recorded Safe.
+        this.checkMuseum(museumSafe);
         vm.expectRevert(
-            abi.encodeWithSelector(VerifyV1.MuseumMismatch.selector, networkFee, museum)
+            abi.encodeWithSelector(VerifyV1.MuseumMismatch.selector, networkFeeSafe, museumSafe)
         );
-        this.checkMuseum(networkFee);
+        this.checkMuseum(networkFeeSafe);
     }
 
     /// @dev A governed change waits its 14 days, names the old and the new museum in its event,

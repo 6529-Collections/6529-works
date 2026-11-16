@@ -191,7 +191,7 @@ contract Deploy is ScriptIO {
 
     /// @notice No contract's predicted CREATE2 address has code. Exact for every contract whose
     ///         constructor arguments are known before the broadcast, in particular those with
-    ///         none (ContentStore, ReleaseVerifier, ClaimRouter), whose address depends on the
+    ///         none (ContentStore), and the ClaimRouter from the split ledger, whose address depends on the
     ///         namespace alone; a contract that pins an earlier one's code hash is predicted
     ///         before that code exists, so it is only caught by the simulation.
     function checkAddressesFree(DeployV1.Params memory p) public view {
@@ -240,7 +240,9 @@ contract Deploy is ScriptIO {
         p.auction = IEnglishAuction.AuctionConfig(
             SafeCast.toUint32(_envUint("AUCTION_DURATION", 24 hours)),
             SafeCast.toUint32(_envUint("AUCTION_EXTENSION_WINDOW", 15 minutes)),
-            SafeCast.toUint32(_envUint("AUCTION_INCREMENT_SHARE", 5_000))
+            SafeCast.toUint32(_envUint("AUCTION_INCREMENT_SHARE", 5_000)),
+            SafeCast.toUint32(_envUint("AUCTION_REFUSAL_DELAY", 7 days)),
+            SafeCast.toUint32(_envUint("AUCTION_REFUSAL_GAS", 4_000_000))
         );
         p.editionAuction = _editionAuction();
         _vrf(p, local);
@@ -417,6 +419,8 @@ contract Deploy is ScriptIO {
         vm.serializeUint(o, "auctionDuration", p.auction.duration);
         vm.serializeUint(o, "auctionExtensionWindow", p.auction.extensionWindow);
         vm.serializeUint(o, "auctionIncrementShare", p.auction.incrementShare);
+        vm.serializeUint(o, "auctionRefusalDelay", p.auction.refusalDelay);
+        vm.serializeUint(o, "auctionRefusalGas", p.auction.refusalGas);
         vm.serializeUint(o, "editionBasePrice", p.editionAuction.basePrice);
         vm.serializeUint(o, "editionStepsPerDecade", p.editionAuction.stepsPerDecade);
         vm.serializeUint(o, "editionStepCount", p.editionAuction.stepCount);

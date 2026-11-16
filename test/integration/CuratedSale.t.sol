@@ -8,6 +8,7 @@ import { Splits } from "src/economics/Splits.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { CURRENCY_ETH, PRODUCT_STREAM, WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import { ItemKind, Party, PartyRole } from "src/interfaces/types/PackageTypes.sol";
 import { Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
@@ -46,8 +47,8 @@ contract CuratedSaleFlowTest is IntegrationBase {
     /// @dev The lead artist with a collaborator paid as a fixed payee: 80/20 of the artist portion.
     function _collaboration(Work memory w) internal view returns (Work memory) {
         w.item.parties = new Party[](2);
-        w.item.parties[0] = Party(artist, PartyRole.ARTIST);
-        w.item.parties[1] = Party(collaborator, PartyRole.COLLABORATOR);
+        w.item.parties[0] = Party(artist, uint8(PartyRole.ARTIST));
+        w.item.parties[1] = Party(collaborator, uint8(PartyRole.COLLABORATOR));
         w.item.payees = new ISplitWallet.Payee[](2);
         w.item.payees[0] = ISplitWallet.Payee(0, collaborator, 20_000);
         w.item.payees[1] = ISplitWallet.Payee(uint256(uint160(artist)), address(0), 80_000);
@@ -71,18 +72,20 @@ contract CuratedSaleFlowTest is IntegrationBase {
         Work[] memory works = _package(root);
         bytes memory data = _mintData(root, works, 0);
         bytes32 itemHash = WorksHashing.itemHash(works[0].item);
-        vm.expectEmit(address(stream));
+        vm.expectEmit(true, true, true, false, address(stream));
         emit IStream.WorkMinted(
             1,
             collectionId,
+            uint160(artist),
             itemHash,
             1,
-            uint160(artist),
-            ItemKind.ORIGINAL,
+            uint8(ItemKind.ORIGINAL),
             root,
             works[0].item.contentHash,
             works[0].item.mediaHash,
-            works[0].item.recordFileId
+            works[0].item.recordFileId,
+            address(0),
+            0
         );
         uint256 saleId = auction.start(address(stream), data);
         uint256 tokenId = 1;
@@ -160,9 +163,8 @@ contract CuratedSaleFlowTest is IntegrationBase {
     ///      pushed by a keeper or the claim router, the artist (artist-resolved) pulls.
     function _releaseSellerWallet(address seller, ISplitWallet.Payee[] memory payees) internal {
         assertEq(splitFactory.createWallet(payees, bytes32(0)), seller, "predicted = deployed");
-        ISplitWallet wallet = ISplitWallet(seller);
         IClaimRouter.Claim[] memory claims = new IClaimRouter.Claim[](1);
-        claims[0] = IClaimRouter.Claim(seller, CURRENCY_ETH, 0);
+        claims[0] = IClaimRouter.Claim(payees, bytes32(0), CURRENCY_ETH, 0);
         vm.prank(keeper);
         claimRouter.claim(claims, false);
         assertEq(collaborator.balance, 0.3 ether, "20% of the artist portion, pushed");
@@ -171,9 +173,9 @@ contract CuratedSaleFlowTest is IntegrationBase {
         vm.expectRevert(
             abi.encodeWithSelector(ISplitWallet.NotPayoutAddress.selector, keeper, artist)
         );
-        wallet.release(CURRENCY_ETH, 1);
+        splitFactory.release(payees, bytes32(0), CURRENCY_ETH, 1);
         vm.prank(artist);
-        wallet.release(CURRENCY_ETH, 1);
+        splitFactory.release(payees, bytes32(0), CURRENCY_ETH, 1);
         assertEq(artist.balance, 1.2 ether, "80% of the artist portion, pulled");
     }
 
@@ -186,7 +188,7 @@ contract CuratedSaleFlowTest is IntegrationBase {
     ) internal {
         (address receiver, uint256 amount) = stream.royaltyInfo(tokenId, 10 ether);
         assertEq(receiver, terms.royaltyReceiver, "receiver = the resolver's derivation");
-        assertEq(receiver, stream.work(tokenId).royaltyReceiver);
+        assertEq(receiver, IStreamViews(address(stream)).work(tokenId).royaltyReceiver);
         assertEq(amount, 0.6529 ether, "6.529%");
         assertEq(terms.royaltyRate, 6_529);
 
@@ -202,7 +204,7 @@ contract CuratedSaleFlowTest is IntegrationBase {
         uint256 sellerBefore = terms.seller.balance;
         for (uint256 i; i < 2; ++i) {
             vm.prank(keeper);
-            ISplitWallet(receiver).release(CURRENCY_ETH, i);
+            splitFactory.release(royaltyPayees, bytes32(0), CURRENCY_ETH, i);
         }
         assertEq(networkFee.balance - feeBefore, amount / 4, "25% of royalties to the network");
         assertEq(terms.seller.balance - sellerBefore, amount - amount / 4, "75% to the seller");
@@ -293,7 +295,7 @@ contract CuratedSaleFlowTest is IntegrationBase {
         assertEq(usd.balanceOf(networkFee), 50e18);
         splitFactory.createWallet(w.item.payees, bytes32(0));
         vm.prank(artist);
-        ISplitWallet(terms.seller).release(address(usd), 1);
+        splitFactory.release(w.item.payees, bytes32(0), address(usd), 1);
         assertEq(usd.balanceOf(artist), 120e18, "the artist pulls ERC-20 too");
     }
 

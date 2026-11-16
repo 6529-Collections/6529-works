@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { SplitFactory } from "src/economics/SplitFactory.sol";
+import { SplitLedger } from "src/economics/SplitLedger.sol";
 import { IArtistPayoutResolver } from "src/economics/interfaces/IArtistPayoutResolver.sol";
-import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { Splits } from "src/economics/Splits.sol";
 import { Test } from "forge-std/Test.sol";
@@ -55,7 +54,7 @@ abstract contract StreamFixture is Test {
     AccessManager internal manager;
     MockPackageRegistry internal registry;
     MockArtistRegistry internal artists;
-    SplitFactory internal splitFactory;
+    SplitLedger internal splitFactory;
     MockEconomics internal econ;
     MockEntropy internal entropy;
     MockRenderer internal renderer;
@@ -71,10 +70,9 @@ abstract contract StreamFixture is Test {
         manager = new AccessManager(address(this));
         registry = new MockPackageRegistry();
         artists = new MockArtistRegistry();
+        registry.setArtistRegistry(address(artists));
         renderer = new MockRenderer("default");
-        splitFactory = new SplitFactory(
-            IArtistPayoutResolver(address(artists)), IReleaseVerifier(address(renderer))
-        );
+        splitFactory = new SplitLedger(IArtistPayoutResolver(address(artists)));
         seller = _sellerOf(_item(0).payees);
         econ = new MockEconomics(_defaultTerms(), address(splitFactory));
         entropy = new MockEntropy();
@@ -95,6 +93,21 @@ abstract contract StreamFixture is Test {
         artists.register(artist);
         vm.prank(platform);
         collectionId = stream.createCollection("Genesis", keccak256("genesis"));
+    }
+
+    /// @dev The terms ID Stream interns a terms word at when its hashed position is free.
+    function _termsIdOf(
+        uint160 artistId,
+        uint24 royaltyRate,
+        uint24 feeShare,
+        uint24 feeRecipientId,
+        uint24 minterId
+    ) internal pure returns (uint24) {
+        return uint24(
+            uint256(
+            keccak256(abi.encode(artistId, royaltyRate, feeShare, feeRecipientId, minterId))
+        )
+        ) & 0x7fffff;
     }
 
     function _defaultTerms() internal view returns (WorkTerms memory) {
@@ -176,17 +189,17 @@ abstract contract StreamFixture is Test {
 
     /// @dev An ORIGINAL item by `artist` in the fixture collection; `salt` varies the content.
     function _item(uint256 salt) internal view returns (PackageItem memory item) {
-        item.kind = ItemKind.ORIGINAL;
+        item.kind = uint8(ItemKind.ORIGINAL);
         item.collectionId = collectionId;
         item.contentHash = keccak256(abi.encode("content", salt));
         item.mediaHash = keccak256(abi.encode("media", salt));
         item.recordFileId = keccak256(abi.encode("record", salt));
         item.parties = new Party[](1);
-        item.parties[0] = Party(artist, PartyRole.ARTIST);
+        item.parties[0] = Party(artist, uint8(PartyRole.ARTIST));
         item.payees = new ISplitWallet.Payee[](1);
         item.payees[0] = ISplitWallet.Payee(uint256(uint160(artist)), address(0), 100_000);
         item.license = _license("cc0-1.0");
-        item.seedPolicy = SeedPolicy.NONE;
+        item.seedPolicy = uint8(SeedPolicy.NONE);
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, address(0), "");
         item.edition = EditionTerms(0, address(0), bytes32(0), "");
     }

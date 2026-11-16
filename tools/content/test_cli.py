@@ -95,17 +95,33 @@ class PlanCommandTest(TempDirCase):
         source = self.media_file("big.bin", bytes(pl.MAX_STORED_BYTES + 1))
         code, out, err = run("plan", str(source), "--mime", "a/b", "--encoding", "identity")
         self.assertEqual(code, 2)
-        self.assertIn("at most 12,582,400 bytes", err)
+        self.assertIn("at most 100,659,200 bytes", err)
         self.assertEqual(out, "")
         self.assertEqual([p.name for p in self.dir.iterdir()], ["big.bin"])
 
     def test_the_input_limit_depends_on_the_encoding(self) -> None:
         source = self.media_file("big.bin", bytes(pl.MAX_STORED_BYTES // 4 * 3 + 1))
         code, _, err = run("plan", str(source), "--mime", "a/b", "--encoding", "base64")
-        self.assertEqual((code, "at most 9,436,800 bytes" in err), (2, True))
+        self.assertEqual((code, "at most 75,494,400 bytes" in err), (2, True))
         # The same file is fine as gzip, which shrinks it far below the limit.
         code, _, err = run("plan", str(source), "--mime", "a/b", "--encoding", "gzip")
         self.assertEqual(code, 0, err)
+
+    def test_part_size_keeps_the_renderer_part_bound(self) -> None:
+        """`--part-size` is 8,192 bytes or more (three parts a full chunk, the most `tokenURI`
+        reads, RND-26); given without a value it is 8,192."""
+        source = self.media_file()
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as raised:
+            main(["plan", str(source), "--mime", "a/b", "--encoding", "identity",
+                  "--part-size", "8191"])
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("RND-26", err.getvalue())
+        code, out, err2 = run(
+            "plan", str(source), "--mime", "a/b", "--encoding", "identity", "--part-size"
+        )
+        self.assertEqual(code, 0, err2)
+        self.assertIn("with parts    of 8,192 bytes", out)
 
     def test_a_refusal_leaves_no_partial_output(self) -> None:
         source = self.media_file()

@@ -103,12 +103,12 @@ contract ContentStoreInvariantTest is Test {
         uint256 f = seed % FILES;
         (bytes32[] memory hashes, uint256 length, bytes32 sha) = _manifest(f);
         bytes32 id = store.registerManifest(
-            hashes, length, IContentStore.Encoding.Identity, specs[f].mime, sha
+            hashes, length, uint8(IContentStore.Encoding.Identity), specs[f].mime, sha
         );
         if (
             id
                 != store.manifestId(
-                    hashes, length, IContentStore.Encoding.Identity, specs[f].mime, sha
+                    hashes, length, uint8(IContentStore.Encoding.Identity), specs[f].mime, sha
                 )
         ) {
             _violation("a file ID is not its manifest's hash");
@@ -133,7 +133,7 @@ contract ContentStoreInvariantTest is Test {
         if (kind == 2) sha = 0;
         if (kind == 3) mime = "Image/PNG";
         try store.registerManifest(
-            hashes, length, IContentStore.Encoding.Identity, mime, sha
+            hashes, length, uint8(IContentStore.Encoding.Identity), mime, sha
         ) returns (
             bytes32
         ) {

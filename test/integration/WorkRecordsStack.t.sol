@@ -13,6 +13,10 @@ import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 import { IRenderer } from "src/interfaces/IRenderer.sol";
 
+import { preferredOf } from "test/helpers/WorkItems.sol";
+
+import { IWorkLocators } from "src/interfaces/IWorkDelivery.sol";
+
 /// @notice The work-records satellite on the real stack (`IntegrationBase`): locators are
 ///         canonical content addresses and, after finalize, only the platform adds them; an
 ///         approved record file that was never registered renders core-only metadata instead of
@@ -42,14 +46,14 @@ contract WorkRecordsStackTest is IntegrationBase {
     }
 
     function _served(uint256 tokenId, bytes32 file) internal view returns (string memory uri) {
-        (Locator memory l,) = records.preferredLocator(tokenId, file);
+        (Locator memory l,) = preferredOf(records, tokenId, file);
         uri = l.uri;
     }
 
     function _refused(address caller, uint256 tokenId, bytes32 file, Locator memory l) internal {
         vm.prank(caller);
-        vm.expectRevert(IWorkRecords.InvalidLocator.selector);
-        records.addLocator(tokenId, file, l);
+        vm.expectRevert(IWorkLocators.InvalidLocator.selector);
+        delivery.addLocator(tokenId, file, l);
     }
 
     // ------------------------------------------------- CONTENT-3: locators are content addresses
@@ -84,12 +88,12 @@ contract WorkRecordsStackTest is IntegrationBase {
             _refused(platform, tokenId, file, bad[i]);
         }
         vm.startPrank(artist);
-        records.addLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, txid));
-        records.addLocator(tokenId, file, Locator(LocatorKind.IPFS, cid));
+        delivery.addLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, txid));
+        delivery.addLocator(tokenId, file, Locator(LocatorKind.IPFS, cid));
         vm.stopPrank();
         vm.prank(platform);
-        records.addLocator(tokenId, file, Locator(LocatorKind.IPFS, CA.ipfsRoot("work")));
-        assertEq(records.locators(tokenId, file).length, 3);
+        delivery.addLocator(tokenId, file, Locator(LocatorKind.IPFS, CA.ipfsRoot("work")));
+        assertEq(delivery.locators(tokenId, file).length, 3);
     }
 
     /// Regression: CONTENT-3 (docs/security/internal-review-2026-10.md)
@@ -123,8 +127,8 @@ contract WorkRecordsStackTest is IntegrationBase {
         _refused(platform, tokenId, file, Locator(LocatorKind.IPFS, _swap(cid, 14, "z")));
         _refused(platform, tokenId, file, Locator(LocatorKind.IPFS, _swap(cid, 14, "i")));
         vm.startPrank(platform);
-        records.addLocator(tokenId, file, Locator(LocatorKind.IPFS, string(cid)));
-        records.addLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, string(txid)));
+        delivery.addLocator(tokenId, file, Locator(LocatorKind.IPFS, string(cid)));
+        delivery.addLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, string(txid)));
         vm.stopPrank();
     }
 
@@ -140,7 +144,7 @@ contract WorkRecordsStackTest is IntegrationBase {
         (uint256 tokenId, bytes32 file) = _openWork();
         string memory arweaveCopy = CA.arweave("platform arweave copy");
         vm.prank(platform);
-        records.addLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, arweaveCopy));
+        delivery.addLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, arweaveCopy));
         _finalize(tokenId);
         bytes32 state = records.workStateHash(tokenId);
 
@@ -149,18 +153,18 @@ contract WorkRecordsStackTest is IntegrationBase {
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, artist)
         );
-        records.addLocator(tokenId, file, canonical);
-        assertEq(records.locators(tokenId, file).length, 1);
+        delivery.addLocator(tokenId, file, canonical);
+        assertEq(delivery.locators(tokenId, file).length, 1);
 
-        vm.expectEmit(address(records));
-        emit IWorkRecords.LocatorAdded(tokenId, file, 1, canonical);
+        vm.expectEmit(address(delivery));
+        emit IWorkLocators.LocatorAdded(tokenId, file, 1, canonical, platform, false);
         vm.prank(platform);
-        records.addLocator(tokenId, file, canonical);
+        delivery.addLocator(tokenId, file, canonical);
         vm.prank(storageOperator);
-        records.setPreferredKind(LocatorKind.IPFS);
+        delivery.setPreferredKind(LocatorKind.IPFS);
         assertEq(_served(tokenId, file), "", "platform copies wait for the operator's pick");
         vm.prank(storageOperator);
-        records.setFilePreference(tokenId, file, 1);
+        delivery.setFilePreference(tokenId, file, 1);
         assertEq(_served(tokenId, file), canonical.uri, "the operator's pick serves it");
         assertTrue(_contains(stream.tokenURI(tokenId), canonical.uri));
         assertEq(records.workStateHash(tokenId), state, "locators never change the state hash");
@@ -173,20 +177,20 @@ contract WorkRecordsStackTest is IntegrationBase {
     function test_Locator_ArtistBeforeAndPlatformAfterFinalizeAreServed() public {
         (uint256 tokenId, bytes32 file) = _openWork();
         vm.prank(artist);
-        records.addLocator(tokenId, file, CA.ar("artist before"));
+        delivery.addLocator(tokenId, file, CA.ar("artist before"));
         _finalize(tokenId);
         assertEq(_served(tokenId, file), CA.arweave("artist before"), "the fallback");
         vm.prank(platform);
-        records.addLocator(tokenId, file, CA.ipfsLocator("platform after"));
+        delivery.addLocator(tokenId, file, CA.ipfsLocator("platform after"));
         vm.prank(storageOperator);
-        records.setPreferredKind(LocatorKind.IPFS);
+        delivery.setPreferredKind(LocatorKind.IPFS);
         assertEq(_served(tokenId, file), CA.arweave("artist before"), "no platform fallback");
         vm.prank(storageOperator);
-        records.setFilePreference(tokenId, file, 1);
+        delivery.setFilePreference(tokenId, file, 1);
         assertEq(_served(tokenId, file), CA.ipfs("platform after"), "the operator's pick");
         vm.startPrank(storageOperator);
-        records.setFilePreference(tokenId, file, type(uint256).max);
-        records.setPreferredKind(LocatorKind.ARWEAVE);
+        delivery.setFilePreference(tokenId, file, type(uint256).max);
+        delivery.setPreferredKind(LocatorKind.ARWEAVE);
         vm.stopPrank();
         assertEq(_served(tokenId, file), CA.arweave("artist before"));
     }
@@ -203,7 +207,11 @@ contract WorkRecordsStackTest is IntegrationBase {
         bytes32[] memory hashes = new bytes32[](1);
         hashes[0] = keccak256(json);
         bytes32 recordFile = store.manifestId(
-            hashes, json.length, IContentStore.Encoding.Identity, "application/json", sha256(json)
+            hashes,
+            json.length,
+            uint8(IContentStore.Encoding.Identity),
+            "application/json",
+            sha256(json)
         );
         w.item = _item(artist, collectionId, w.media[0].sha256Hash, w.media, recordFile);
         Work[] memory works = _one(w);
@@ -224,7 +232,11 @@ contract WorkRecordsStackTest is IntegrationBase {
 
         // Registered: still incomplete until the bytes are there; then the record renders.
         store.registerManifest(
-            hashes, json.length, IContentStore.Encoding.Identity, "application/json", sha256(json)
+            hashes,
+            json.length,
+            uint8(IContentStore.Encoding.Identity),
+            "application/json",
+            sha256(json)
         );
         assertTrue(_contains(stream.tokenURI(tokenId), '"record_status":"incomplete"'));
         store.writeChunk(json);

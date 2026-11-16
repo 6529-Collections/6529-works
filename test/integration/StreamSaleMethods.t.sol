@@ -11,6 +11,7 @@ import {
 import { SaleTerms } from "src/interfaces/types/PackageTypes.sol";
 import { PrimaryOutcome, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { FixedPriceOneOfOneMock } from "../mocks/stream/OneOfOneSaleMocks.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
@@ -76,14 +77,14 @@ contract StreamSaleMethodsTest is IntegrationBase {
     function test_TheAdapterRefusesACurrencyItDoesNotTake() public {
         _admit(address(fixedPrice), true);
         bytes memory data = _mintData(root, _package(root), 3);
-        uint256 minted = stream.totalMinted();
+        uint256 minted = IStream(address(stream)).totalMinted();
         vm.deal(buyer, PRICE);
         vm.prank(buyer);
         vm.expectRevert(
             abi.encodeWithSelector(FixedPriceOneOfOneMock.WrongCurrency.selector, CURRENCY_DEFAULT)
         );
         fixedPrice.buy{ value: PRICE }(address(stream), data);
-        assertEq(stream.totalMinted(), minted, "nothing minted");
+        assertEq(IStream(address(stream)).totalMinted(), minted, "nothing minted");
     }
 
     /// @dev A second sale method, admitted after launch, sells a 6529 Stream 1/1 end to end: it

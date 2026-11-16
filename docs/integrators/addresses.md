@@ -78,7 +78,10 @@ Read the edition auction's views (`endTimes`, `clearing`, `quote`, `bidOutcome`,
 | ClaimRouter | [`0xF7BE40426d2dC4606664625a340fa74b3cB0C4bC`](https://sepolia.etherscan.io/address/0xF7BE40426d2dC4606664625a340fa74b3cB0C4bC) |
 
 Split wallets are not listed: each is deployed on demand at its predicted CREATE2 address
-(`SplitFactory.walletFor`).
+(`SplitFactory.walletFor`). r4 predates the permanence restructuring
+([ADR 0007](../adr/0007-permanence.md)): its `SplitFactory` and `ReleaseVerifier` are the
+separate contracts the split ledger (`SplitLedger`, recorded as `SplitFactory`) replaces, and it
+has no governed fee-recipient or museum vault.
 
 ### Content, records and entropy
 

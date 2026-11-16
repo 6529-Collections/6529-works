@@ -62,7 +62,7 @@ contract RescuedSaleCloseTest is EditionAuctionStack {
 
         // The edition sale is free: the edition is created from the rescued master (Stream
         // records it settled, RESCUED), the sale settles, and the edition bidder's copy is minted.
-        editions.createEdition(tokenId, w.item, root, _proofOf(_one(w), 0));
+        editions.createEdition(tokenId, w.item);
         _settleEditions(saleId);
         vm.prank(fan);
         (uint256 won,) = editionAuction.claimBid(saleId, bidId, fan);

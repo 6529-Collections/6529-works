@@ -7,6 +7,7 @@ import { Renderer } from "src/content/Renderer.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
@@ -383,9 +384,9 @@ contract RendererMediaTest is RendererBase {
         bytes32 b = _file(_data(100, 32), IDENTITY, PNG);
         _install(primary);
         MediaFile[] memory media = new MediaFile[](3);
-        media[0] = MediaFile(primary, _sha(primary), FileRole.PRIMARY);
-        media[1] = MediaFile(a, _sha(a), FileRole.PREVIEW);
-        media[2] = MediaFile(b, _sha(b), FileRole.PREVIEW);
+        media[0] = MediaFile(primary, _sha(primary), uint8(FileRole.PRIMARY));
+        media[1] = MediaFile(a, _sha(a), uint8(FileRole.PREVIEW));
+        media[2] = MediaFile(b, _sha(b), uint8(FileRole.PREVIEW));
         records.setMedia(ID, media);
 
         assertEq(_str(_out(), ".image"), _dataUri(PNG, first));
@@ -396,8 +397,8 @@ contract RendererMediaTest is RendererBase {
         bytes32 aux = _file(_data(100, 34), IDENTITY, PNG);
         _install(primary);
         MediaFile[] memory media = new MediaFile[](2);
-        media[0] = MediaFile(primary, _sha(primary), FileRole.PRIMARY);
-        media[1] = MediaFile(aux, _sha(aux), FileRole.AUXILIARY);
+        media[0] = MediaFile(primary, _sha(primary), uint8(FileRole.PRIMARY));
+        media[1] = MediaFile(aux, _sha(aux), uint8(FileRole.AUXILIARY));
         records.setMedia(ID, media);
 
         _noMedia(_out());
@@ -512,7 +513,7 @@ contract RendererMediaTest is RendererBase {
         for (uint256 i; i < count; ++i) {
             hashes[i] = keccak256(abi.encode("missing", i));
         }
-        fileId = store.registerManifest(hashes, length, IDENTITY, mime, DIGEST);
+        fileId = store.registerManifest(hashes, length, uint8(IDENTITY), mime, DIGEST);
     }
 
     // ---------------------------------------------------------------- the HTML page of a script
@@ -616,8 +617,8 @@ contract RendererMediaTest is RendererBase {
         bytes memory js = "go();";
         bytes32 file = _file(js, IDENTITY, "text/javascript");
         _install(file);
-        IStream.WorkCore memory core = _core();
-        core.seedPolicy = SeedPolicy.ARTIST;
+        IStreamViews.WorkCore memory core = _core();
+        core.seedPolicy = uint8(SeedPolicy.ARTIST);
         stream.setWork(ID, core);
         records.setSeed(ID, SeedPolicy.ARTIST, bytes32(uint256(0xfeed)));
 
@@ -636,7 +637,7 @@ contract RendererMediaTest is RendererBase {
         );
 
         // No seed at all is null.
-        core.seedPolicy = SeedPolicy.NONE;
+        core.seedPolicy = uint8(SeedPolicy.NONE);
         stream.setWork(ID, core);
         assertTrue(
             _contains(_page(), "window.works={v:1,tokenId:7,seed:null};</script><script>go();")

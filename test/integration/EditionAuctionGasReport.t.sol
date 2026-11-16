@@ -27,17 +27,37 @@ contract EditionAuctionGasReport is EditionAuctionStack {
     /// @dev The settlement's worst case, held to 350,000 execution gas (ADR 0004).
     uint256 internal constant SETTLE_EXECUTION_BUDGET = 350_000;
     /// @dev Regression ceilings (ADR 0004).
-    uint256 internal constant OPEN_CEILING = 275_000;
-    uint256 internal constant OPEN_FIRST_CEILING = 322_000;
+    /// @dev From 275,000 and 322,000 (measured 283,843 and 329,580, were 273,304 and 319,029)
+    ///      by the permanence plan: `open` checks that the seller's and royalty receiver's split
+    ///      wallets have code (deploying them otherwise) and reads the 1/1's clock forwarding all
+    ///      gas. To 296,000 and 342,000 (measured 289,387 and 335,124, were 282,248 and 327,985)
+    ///      by review C, F16: `open` confirms an existing wallet through the ledger's idempotent
+    ///      `createWallet` (about 3,600 each: the payee validation, the hash and one cold word),
+    ///      never by code at the address.
+    uint256 internal constant OPEN_CEILING = 296_000;
+    uint256 internal constant OPEN_FIRST_CEILING = 342_000;
     /// @dev Moved from 144,000 by owner decision 16: 6529 Stream Editions reads the package
-    ///      registry from Stream (two reads) instead of an immutable.
-    uint256 internal constant CREATE_BOUND_CEILING = 148_000;
+    ///      registry from Stream (two reads) instead of an immutable; from 148,000 (measured
+    ///      154,373, was 143,819) by the permanence plan: Editions emits `EditionTermsLocked` and
+    ///      forwards all gas on every call out (ED-27, ED-28); down to 118,000 (measured 115,395)
+    ///      once Editions stopped reading the mint policy (review A, M-1).
+    uint256 internal constant CREATE_BOUND_CEILING = 118_000;
     uint256 internal constant RAISE_CEILING = 56_000;
     uint256 internal constant RAISE_CAPPED_CEILING = 81_000;
     uint256 internal constant CLAIM_LOSER_CEILING = 49_000;
     uint256 internal constant CLAIM_FOR_CEILING = 67_000;
     uint256 internal constant WITHDRAW_CEILING = 90_000;
-    uint256 internal constant SWEEP_SETTLE_CEILING = 153_000;
+    /// @dev From 153,000 (measured 169,657, was 149,586) by the permanence plan: the clearing call
+    ///      seals the edition's supply at the count sold (`Editions.sealSupply`, ED-25, +12.6K),
+    ///      reads the governed payout gas (+2.1K), and pays a seller wallet that now exists (its
+    ///      `receive` runs; it was an empty address before `open` deployed it).
+    uint256 internal constant SWEEP_SETTLE_CEILING = 174_000;
+    /// @dev On the split ledger (permanence integration, 15 November 2026): each wallet is a
+    ///      66-byte vault and one configuration word, so the first open deploys two vaults and
+    ///      writes 8 new slots (was 14 and 2,611,680 gas on the split factory). Measured 434,296,
+    ///      plus about 2%, rounded up (`test_Gas_EditionAuction_OpenDeploysWallets`).
+    uint256 internal constant OPEN_WALLETS_CEILING = 443_000;
+    uint256 internal constant OPEN_WALLETS_SLOTS = 8;
 
     address internal artist;
     address internal keeper = makeAddr("keeper");
@@ -66,6 +86,7 @@ contract EditionAuctionGasReport is EditionAuctionStack {
         (, uint256 id) = _start(r, _one(w), 0);
         bytes memory data =
             abi.encodeCall(editionAuction.open, (address(editions), id, abi.encode(w.item)));
+        _probeWallets(w);
         _rowGate(
             "open, first (fee recipient interned)",
             keeper,
@@ -83,20 +104,54 @@ contract EditionAuctionGasReport is EditionAuctionStack {
         (, uint256 id) = _start(r, _one(w), 0);
         bytes memory data =
             abi.encodeCall(editionAuction.open, (address(editions), id, abi.encode(w.item)));
+        _probeWallets(w);
         _rowGate("open, steady state", keeper, address(editionAuction), data, 0, OPEN_CEILING, 6, 0);
+    }
+
+    /// @dev An artist's first edition sale: `open` deploys the seller's and the royalty
+    ///      receiver's split wallets (rule 4: nothing is ever paid to an undeployed wallet). On
+    ///      this tree the factory deploys a full `SplitWallet` (about 1.19M Prague gas each); the
+    ///      split ledger's 66-byte vault costs about 96K, so the integration lowers this ceiling
+    ///      and the slot count with that merge.
+    function test_Gas_EditionAuction_OpenDeploysWallets() public {
+        address newArtist = _actor("gasFirstEditionArtist");
+        Work memory w = _masterWork(newArtist, 0);
+        bytes32 r = _publish(_one(w));
+        (, uint256 id) = _start(r, _one(w), 0);
+        assertEq(_editionSeller(w).code.length, 0, "the seller wallet is not deployed yet");
+        bytes memory data =
+            abi.encodeCall(editionAuction.open, (address(editions), id, abi.encode(w.item)));
+        _probeWallets(w);
+        probes.push(newArtist);
+        _rowGate(
+            "open, an artist's first sale (deploys both split wallets)",
+            keeper,
+            address(editionAuction),
+            data,
+            0,
+            OPEN_WALLETS_CEILING,
+            OPEN_WALLETS_SLOTS,
+            2
+        );
+        assertTrue(_editionSeller(w).code.length != 0, "the seller wallet");
+        assertTrue(_editionRoyalty(w).code.length != 0, "the royalty wallet");
+    }
+
+    function _probeWallets(Work memory w) internal {
+        probes.push(_editionSeller(w));
+        probes.push(_editionRoyalty(w));
     }
 
     /// @dev `createEdition` of an edition its sale bound at open (`bindMinter`): the seller,
     ///      royalty and fee words were written then, so creation writes the rest. Compare the
-    ///      unbound `createEdition` row of `GasReport` (6 new slots).
+    ///      unbound `createEdition` row of `GasReport` (5 new slots; Editions claims no content in the
+    ///      mint policy since review A, M-1, one slot fewer).
     function test_Gas_EditionAuction_CreateBoundEdition() public {
         _openMaster(0);
         _ethBid(oneSaleId, collector, 1 ether);
         Work memory w = _package(keccak256(abi.encode("kept", saleId)))[0];
-        bytes32 r = _rootOf(_one(w));
         _settleAtEnd(oneSaleId);
-        bytes memory data =
-            abi.encodeCall(editions.createEdition, (tokenId, w.item, r, _proofOf(_one(w), 0)));
+        bytes memory data = abi.encodeCall(editions.createEdition, (tokenId, w.item));
         _rowGate(
             "createEdition, bound at open",
             keeper,
@@ -104,7 +159,7 @@ contract EditionAuctionGasReport is EditionAuctionStack {
             data,
             0,
             CREATE_BOUND_CEILING,
-            2,
+            1,
             0
         );
     }
@@ -533,9 +588,8 @@ contract EditionAuctionGasReport is EditionAuctionStack {
     function _readyToSettle() internal {
         _ethBid(oneSaleId, collector, 1 ether);
         Work memory w = _package(keccak256(abi.encode("kept", saleId)))[0];
-        bytes32 r = _rootOf(_one(w));
         _settleAtEnd(oneSaleId);
-        editions.createEdition(tokenId, w.item, r, _proofOf(_one(w), 0));
+        editions.createEdition(tokenId, w.item);
         IUniformEditionAuction.EndTimes memory e = ea.endTimes(saleId);
         if (block.timestamp < e.endTime) vm.warp(e.endTime);
         probes.push(_editionSeller(w));

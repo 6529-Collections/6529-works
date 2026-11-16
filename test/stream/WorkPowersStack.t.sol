@@ -37,13 +37,13 @@ contract WorkPowersStackTest is IntegrationBase {
 
         Work[] memory works = new Work[](2);
         works[0] = _work(artist, collectionId);
-        works[0].item.kind = ItemKind.EDITION_MASTER;
+        works[0].item.kind = uint8(ItemKind.EDITION_MASTER);
         works[0].item.edition = EditionTerms(50, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
         works[1] = _work(artist, collectionId);
         root = _publish(works);
         _keep(root, works);
         masterId = _sell(root, works, 0, collector, 1 ether);
-        editions.createEdition(masterId, works[0].item, root, _proofOf(works, 0));
+        editions.createEdition(masterId, works[0].item);
         records.openRecord(masterId, works[0].item, works[0].media);
         workId = _sell(root, works, 1, collector, 1 ether);
         records.openRecord(workId, works[1].item, works[1].media);
@@ -167,10 +167,15 @@ contract WorkPowersStackTest is IntegrationBase {
         uint64 deadline = uint64(block.timestamp + 1 days);
         records.renounce(
             masterId,
-            WorkPowers.ALL,
+            WorkPowers.ROYALTY_RATE | WorkPowers.RELICENSE,
             state,
             deadline,
-            _sign(artist, _renounceDigest(masterId, WorkPowers.ALL, state, deadline))
+            _sign(
+                artist,
+                _renounceDigest(
+                    masterId, WorkPowers.ROYALTY_RATE | WorkPowers.RELICENSE, state, deadline
+                )
+            )
         );
         (, uint32 delay) = manager.canCall(hotAdmin, address(records), bytes4(scheduled));
         vm.warp(block.timestamp + delay);

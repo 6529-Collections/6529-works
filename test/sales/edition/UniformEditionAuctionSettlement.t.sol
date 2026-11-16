@@ -104,7 +104,7 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
         assertEq(
             uint8(ua.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.SETTLING)
         );
-        assertTrue(auction.storageWord(IUniformEditionAuctionStorage.Space.SCAN, saleId, 0) != 0);
+        assertTrue(lens.storageWord(IUniformEditionAuctionStorage.Space.SCAN, saleId, 0) != 0);
         assertEq(ua.settlement(saleId).count, 0, "no result yet");
         assertEq(ua.settlementOrder(saleId), order, "the live clearing's order");
         uint256 price = _price(saleId, 5);
@@ -138,7 +138,7 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
         if (!done) {
             assertTrue(auction.settle(saleId, lens.settlementOrderFor(saleId, address(this))));
         }
-        assertEq(auction.storageWord(IUniformEditionAuctionStorage.Space.SCAN, saleId, 0), 0);
+        assertEq(lens.storageWord(IUniformEditionAuctionStorage.Space.SCAN, saleId, 0), 0);
         IUniformEditionAuction.Settlement memory s = ua.settlement(saleId);
         assertEq(s.count, live.count);
         if (live.rationed) assertEq(s.cutoff, live.cutoff);
@@ -192,7 +192,7 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
         // The first call scans 24 words and keeps its state in the scan word: the demand of 192
         // steps, below 2^32.
         assertFalse(auction.settle(saleId, new uint256[](0)));
-        uint256 left = auction.storageWord(IUniformEditionAuctionStorage.Space.SCAN, saleId, 0);
+        uint256 left = lens.storageWord(IUniformEditionAuctionStorage.Space.SCAN, saleId, 0);
         assertEq(uint8(left), 40, "the cursor: 64 words less 24");
         assertEq(uint32(left >> 8), 192 * each, "the demand so far");
         uint256 balance = address(auction).balance;
@@ -285,7 +285,7 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
         c.basePrice = uint96(10 ** (12 + (ladder >> 8) % 6));
         c.stepCount = uint16(bound(ladder >> 128, 64, 512));
         c.marginShare = uint32(bound(marginShare, 0, 50_000));
-        try auction.setConfig(auction.config(), c) { }
+        try auction.setConfig(ua.config(), c) { }
         catch {
             (c.basePrice, c.stepCount) = (1e17, 512);
             _setConfig(c);

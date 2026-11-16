@@ -13,6 +13,7 @@ import { Renderer } from "src/content/Renderer.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
@@ -39,7 +40,7 @@ contract RendererHostileTest is RendererBase {
         records.setRecord(ID, info);
         records.setOpen(ID, true);
         MediaFile[] memory media = new MediaFile[](1);
-        media[0] = MediaFile(bytes32(uint256(0xf11e)), bytes32(uint256(1)), FileRole.PRIMARY);
+        media[0] = MediaFile(bytes32(uint256(0xf11e)), bytes32(uint256(1)), uint8(FileRole.PRIMARY));
         records.setMedia(ID, media);
         records.setLicense(ID, _license());
     }
@@ -76,11 +77,13 @@ contract RendererHostileTest is RendererBase {
             );
             _uriOnHostile();
         }
-        // One byte over the chunk size is refused by the bounded decoder before the length check.
+        // One byte over the chunk size is refused by the return-size cap before the length check.
         HostileStore tooLong = _withStore(HostileStore.Mode.LongChunk);
         vm.expectRevert(
             abi.encodeWithSelector(
-                BoundedCall.BoundedCallMalformedReturn.selector, address(tooLong)
+                IRenderer.RendererReadFailed.selector,
+                address(tooLong),
+                IContentStore.readChunk.selector
             )
         );
         _uriOnHostile();
@@ -92,23 +95,25 @@ contract RendererHostileTest is RendererBase {
         for (uint256 i; i < modes.length; ++i) {
             HostileStore hostile = _withStore(modes[i]);
             vm.expectRevert(
-                abi.encodeWithSelector(BoundedCall.BoundedCallFailed.selector, address(hostile))
+                abi.encodeWithSelector(
+                    IRenderer.RendererReadFailed.selector,
+                    address(hostile),
+                    IContentStore.readChunk.selector
+                )
             );
             _uriOnHostile();
         }
     }
 
-    function test_Store_AChunkThatBurnsGasCostsOnlyItsCap() public {
+    /// @dev The gas rule (ADR 0007): every read forwards all the gas it may, so a chunk read
+    ///      that burns everything is a shortfall, which reverts as one; it never reads as a
+    ///      refusal or yields a token without media.
+    function test_Store_AChunkThatBurnsGasIsAShortfall() public {
         HostileStore hostile = _withStore(HostileStore.Mode.BurnChunk);
         vm.expectRevert(
-            abi.encodeWithSelector(BoundedCall.BoundedCallFailed.selector, address(hostile))
+            abi.encodeWithSelector(BoundedCall.BoundedCallShortfall.selector, address(hostile))
         );
         _uriOnHostile();
-
-        // The cost: the chunk's cap (300,000 gas) plus the other reads.
-        uint256 before = gasleft();
-        try onHostile.tokenURI(address(stream), ID) returns (string memory) { } catch { }
-        assertLt(before - gasleft(), 900_000);
     }
 
     function test_Store_BadCompletenessAnswersFailClosed() public {
@@ -118,11 +123,7 @@ contract RendererHostileTest is RendererBase {
 
         HostileStore hostile = _withStore(HostileStore.Mode.BurnComplete);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector,
-                address(hostile),
-                IContentStore.isComplete.selector
-            )
+            abi.encodeWithSelector(BoundedCall.BoundedCallShortfall.selector, address(hostile))
         );
         _uriOnHostile();
     }
@@ -134,11 +135,7 @@ contract RendererHostileTest is RendererBase {
 
         HostileStore hostile = _withStore(HostileStore.Mode.BurnAttest);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector,
-                address(hostile),
-                IContentStore.isBase64Attested.selector
-            )
+            abi.encodeWithSelector(BoundedCall.BoundedCallShortfall.selector, address(hostile))
         );
         _uriOnHostile();
     }
@@ -161,22 +158,16 @@ contract RendererHostileTest is RendererBase {
         address bomb = address(new ReturnBombMock(1_000_000, bytes32(uint256(1))));
         vm.expectRevert(
             abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector, bomb, IStream.work.selector
+                IRenderer.RendererReadFailed.selector, bomb, IStream.coreOf.selector
             )
         );
         renderer.tokenURI(bomb, ID);
 
+        // A token that burns everything it is given is a shortfall (the gas rule): the call
+        // reverts as one and never answers.
         address burner = address(new GasBurnerMock());
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector, burner, IStream.work.selector
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(BoundedCall.BoundedCallShortfall.selector, burner));
         renderer.tokenURI(burner, ID);
-        // Two reads, each capped at 300,000 gas.
-        uint256 before = gasleft();
-        try renderer.tokenURI(burner, ID) returns (string memory) { } catch { }
-        assertLt(before - gasleft(), 800_000);
     }
 
     function test_Token_GarbageAnswersFailClosed() public {
@@ -209,25 +200,27 @@ contract RendererHostileTest is RendererBase {
         );
         renderer.tokenURI(address(stream), ID);
 
-        // A collection name above 4 KiB.
+        // A collection name above 4 KiB, or not UTF-8, is no name: the work still renders,
+        // with an empty collection name (Stream's own storage is read, never its extension).
         records.setLicense(ID, _license());
-        IStream.WorkCore memory core = _core();
+        IStreamViews.WorkCore memory core = _core();
         core.collectionId = 1;
         stream.setWork(ID, core);
-        stream.setCollection(1, IStream.Collection(_text(5_000), bytes32(0), 1));
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector, address(stream), IStream.collection.selector
-            )
-        );
-        renderer.tokenURI(address(stream), ID);
+        stream.setCollection(1, IStreamViews.Collection(_text(5_000), bytes32(0), 1));
+        assertEq(_attr(_out(), "Collection"), "");
+        stream.setCollectionName(1, hex"ff");
+        assertEq(_attr(_out(), "Collection"), "");
+        stream.setCollectionName(1, bytes(_text(200)));
+        assertEq(_attr(_out(), "Collection"), _text(200));
 
         // More media files than a work may have.
         stream.setWork(ID, _core());
         MediaFile[] memory media = new MediaFile[](33);
         for (uint256 i; i < media.length; ++i) {
             media[i] = MediaFile(
-                bytes32(i + 1), bytes32(i + 1), i == 0 ? FileRole.PRIMARY : FileRole.AUXILIARY
+                bytes32(i + 1),
+                bytes32(i + 1),
+                i == 0 ? uint8(FileRole.PRIMARY) : uint8(FileRole.AUXILIARY)
             );
         }
         records.setMedia(ID, media);
@@ -258,57 +251,55 @@ contract RendererHostileTest is RendererBase {
         renderer.tokenURI(address(stream), ID);
     }
 
-    /// @dev The media list has a read cap of its own, 1,000,000 gas: the real satellite's
-    ///      `mediaOf` makes one content-store read per file, under 200,000 gas fully cold at 32
-    ///      files (`TokenUriBudget.t.sol`), so a repricing of cold reads does not stop
-    ///      `tokenURI` for the largest works. A read past the cap still fails closed.
-    function test_Records_TheMediaReadHasRoomAboveItsCost() public {
+    /// @dev No read has a gas cap (the gas rule, ADR 0007): a repricing that makes the media
+    ///      read cost 2x, 4x or 10x its cost today (under 200,000 gas fully cold at 32 files,
+    ///      `TokenUriBudget.t.sol`) makes `tokenURI` dearer, never different or failed, so a work
+    ///      whose renderer is pinned for good keeps its metadata.
+    function test_Records_TheMediaReadHasNoGasCap() public {
         bytes32 file = _file(hex"89504e47", IDENTITY, "image/png");
         _install(file);
-        records.burn(IWorkRecords.mediaOf.selector, 800_000);
-        assertFalse(_has(_out(), ".record_status"), "the full metadata");
-
-        records.burn(IWorkRecords.mediaOf.selector, 1_000_000);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector,
-                address(records),
-                IWorkRecords.mediaOf.selector
-            )
-        );
-        renderer.tokenURI(address(stream), ID);
+        string memory full = _out();
+        uint256[3] memory burns = [uint256(400_000), 800_000, 2_000_000];
+        for (uint256 i; i < burns.length; ++i) {
+            records.burn(IWorkRecords.mediaOf.selector, burns[i]);
+            assertEq(_out(), full, "the same metadata at any cost");
+        }
     }
 
     /// Regression: M1 in the review of #20
-    /// @dev A satellite that spends its gas cap on `preferredLocator` (a stream lane walking a
-    ///      large file to answer an on-chain preference) fails the call: it is not "no media".
+    /// @dev A satellite whose `preferredLocator` costs more than the old 300,000-gas cap still
+    ///      answers (no cap); one that burns everything it is given is a shortfall and fails the
+    ///      call: it is not "no media".
     function test_Records_APreferredLocatorThatRunsOutOfGasFailsClosed() public {
         bytes32 file = _file(_data(THRESHOLD + 1, 5), IDENTITY, "text/html");
         _install(file);
         records.addLocator(ID, file, Locator(LocatorKind.ARWEAVE, "ar://tx"));
-        assertTrue(_has(_out(), ".animation_url"));
+        string memory full = _out();
+        assertTrue(_has(full, ".animation_url"));
 
         BurningRecords burning = new BurningRecords(address(records), 310_000);
         stream.setWorkRecords(address(burning));
+        assertEq(_out(), full, "a dearer locator read gives the same metadata");
 
+        BurningRecords burnsAll = new BurningRecords(address(records), type(uint64).max);
+        stream.setWorkRecords(address(burnsAll));
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector,
-                address(burning),
-                IWorkRecords.preferredLocator.selector
-            )
+            abi.encodeWithSelector(BoundedCall.BoundedCallShortfall.selector, address(burnsAll))
         );
         renderer.tokenURI(address(stream), ID);
     }
 
+    /// @dev Too little gas for the whole call reverts; it never returns metadata that a
+    ///      starved read made plausible but wrong.
     function test_NotEnoughGasRevertsInsteadOfMisreporting() public {
         bytes32 file = _file(hex"89504e47", IDENTITY, "image/png");
         _install(file);
-        // The first read is capped at 300,000 gas and needs that much, plus a share, to be sent.
-        vm.expectRevert(
-            abi.encodeWithSelector(BoundedCall.BoundedCallInsufficientGas.selector, 300_000)
-        );
-        renderer.tokenURI{ gas: 250_000 }(address(stream), ID);
+        string memory full = renderer.tokenURI(address(stream), ID);
+        for (uint256 g = 50_000; g <= 400_000; g += 50_000) {
+            try renderer.tokenURI{ gas: g }(address(stream), ID) returns (string memory out) {
+                assertEq(out, full, "an answer is the full answer");
+            } catch { }
+        }
     }
 
     function _text(uint256 n) internal pure returns (string memory) {

@@ -82,10 +82,10 @@ ALWAYS_RISKS = (
     "LIM-GV-1", "LIM-GV-2", "LIM-GV-9", "LIM-GV-10", "LIM-GV-11", "LIM-ID-11", "LIM-ID-13",
     "LIM-CNT-2", "LIM-CNT-3", "LIM-CNT-12", "LIM-CNT-13", "LIM-SAL-8",
 )  # fmt: skip
-#: The `WorkPowers` names in bit order (bit 0 = 1, bit 1 = 2), and the `changeable` row each
-#: covers (DCL-8, DCL-27).
+#: The `WorkPowers` names in bit order (bit 0 = 1, bit 1 = 2, bit 2 = 4), and the `changeable`
+#: row each covers (DCL-8, DCL-27).
 POWERS = floor.WORK_POWERS
-COVERS = {"ROYALTY_RATE": ["royalty_rate"], "RELICENSE": ["license"]}
+COVERS = {"ROYALTY_RATE": ["royalty_rate"], "RELICENSE": ["license"], "RENDERER_REPIN": ["renderer"]}
 UNTIL = {"record": "finalize", "burn_and_release": "settlement"}
 GENERATOR = {"name": "6529-works tools.conventions", "version": "1"}
 
@@ -134,11 +134,16 @@ def _risk_key(risk: str) -> tuple[str, int]:
     return area, int(number)
 
 
-def residual_risks(*, on_chain_complete: bool, finalized: bool, ea14: bool) -> list[str]:
-    """DCL-29, sorted by area then number."""
+def residual_risks(
+    *, on_chain_complete: bool, finalized: bool, ea14: bool, added_store_only: bool = False
+) -> list[str]:
+    """DCL-29, sorted by area then number. `added_store_only`: a media file is not complete in
+    the content store (with `on_chain_complete`, it is complete only in an added store)."""
     risks = set(ALWAYS_RISKS)
     if not on_chain_complete:
         risks.add("LIM-CNT-1")
+    elif added_store_only:
+        risks.add("LIM-CNT-21")
     if finalized:
         risks.add("LIM-CNT-10")
     if ea14:
@@ -427,6 +432,7 @@ def build_card(inputs: Mapping[str, Any]) -> CardResult:
         "residualRisks": residual_risks(
             on_chain_complete=on_chain_complete, finalized=finalized,
             ea14=core["kind"] == "EDITION_MASTER" and has_edition and dispute["entryHash"] is not None,
+            added_store_only=any(not f["complete"] for f in files),
         ),
         "statements": {"count": chain["count"], "head": _lc(chain["head"])},
     }  # fmt: skip

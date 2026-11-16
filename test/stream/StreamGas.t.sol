@@ -13,9 +13,11 @@ import {
     ConstantArtists,
     ConstantAuction,
     ConstantEconomics,
-    ConstantPackageRegistry
+    ConstantMintPolicy
 } from "../mocks/stream/StreamMocks.sol";
 import { StreamFixture } from "./StreamFixture.sol";
+import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice 6529 Stream's own share of the auction start (ADR 0003 and ADR 0004 budget: 350K
 ///         Prague gas for the whole steady-state start). The registry, economics and
@@ -26,10 +28,12 @@ import { StreamFixture } from "./StreamFixture.sol";
 ///         (review G-2).
 contract StreamGasTest is StreamFixture {
     /// @dev Regression guards for Stream's share of the start, per case. Since G-2 the share
-    ///      includes the seller-wallet `walletFor` that the resolver's `newWorkTerms` used to do.
+    ///      includes the seller-wallet `walletFor` that the resolver's `newWorkTerms` used to do,
+    ///      and since AUC-44 the content record the package registry wrote before (measured:
+    ///      139,318 typical, 156,418 idle adapter, 252,503 first mint ever).
     uint256 internal constant MINT_SHARE_BUDGET = 150_000;
     uint256 internal constant IDLE_ADAPTER_BUDGET = 165_000;
-    uint256 internal constant FIRST_MINT_BUDGET = 240_000;
+    uint256 internal constant FIRST_MINT_BUDGET = 258_000;
     /// @dev The two-payee start share with the real resolver and factory: 156,827 before G-2.
     uint256 internal constant REAL_ECONOMICS_BUDGET = 150_000;
 
@@ -41,10 +45,11 @@ contract StreamGasTest is StreamFixture {
 
     function setUp() public override {
         super.setUp();
+        address constantArtists = address(new ConstantArtists());
         lean = new Stream(
             address(manager),
-            address(new ConstantPackageRegistry(uint256(uint160(artist)))),
-            address(new ConstantArtists()),
+            address(new ConstantMintPolicy(uint256(uint160(artist)), constantArtists)),
+            constantArtists,
             address(new ConstantEconomics(address(splitFactory))),
             address(entropy),
             address(renderer),
@@ -166,7 +171,7 @@ contract StreamGasTest is StreamFixture {
         vm.cool(address(stream));
         vm.cool(address(splitFactory));
         before = gasleft();
-        stream.work(1);
+        IStreamViews(address(stream)).work(1);
         uint256 core = before - gasleft();
         console2.log("royaltyInfo, cold, real SplitFactory:", royalty);
         console2.log("work(), cold, real SplitFactory:", core);
@@ -204,7 +209,7 @@ contract StreamGasTest is StreamFixture {
     function test_gas_mintShare_artistSeed() public {
         _measure(_item(1));
         PackageItem memory item = _item(2);
-        item.seedPolicy = SeedPolicy.ARTIST;
+        item.seedPolicy = uint8(SeedPolicy.ARTIST);
         item.seed = keccak256("seed");
         uint256 used = _measure(item);
         console2.log("Stream.mint share, ARTIST seed:", used);

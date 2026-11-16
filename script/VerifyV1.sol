@@ -6,8 +6,10 @@ import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Roles } from "src/governance/Roles.sol";
+import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
@@ -22,6 +24,8 @@ import {
 import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
 import { EnglishAuctionLens } from "src/sales/EnglishAuctionLens.sol";
 import { DeployV1 } from "./DeployV1.sol";
+
+import { IWorkLocators } from "src/interfaces/IWorkDelivery.sol";
 
 /// @title VerifyV1
 /// @notice Reads a deployed system back against its genesis configuration and wiring. Static
@@ -47,6 +51,25 @@ library VerifyV1 {
     error HolderSuspended(uint64 role, address account);
     /// @notice The economics resolver's museum is not the recorded one.
     error MuseumMismatch(address recorded, address actual);
+    /// @notice The manager has a registered successor: it is handed over (GV-43).
+    error ManagerHandedOver(address successor);
+    /// @notice A configured target, or any deployed contract governed by the manager, is not on
+    ///         the manager's managed list, so a handover's `migrate` would not move it (GV-44).
+    error TargetNotManaged(address target);
+    /// @notice A recipient the deployment record names is not where the chain sends the money
+    ///         or the marketplace role: `what` names the check.
+    error RecipientMismatch(string what, address expected, address actual);
+    /// @notice The manager has a pending successor proposal (GV-43).
+    error SuccessionPending(address next);
+    /// @notice Genesis readback: a manager parameter is not its compiled default.
+    error ManagerParameterMismatch(uint8 which, uint32 expected, uint32 actual);
+    /// @notice Genesis readback: the manager has a recovery address; genesis registers none.
+    error UnexpectedRecoveryAddress(address recovery);
+    /// @notice Genesis readback: the manager's governance chain does not hold exactly the
+    ///         epoch-0 manifest.
+    error ManifestChainMismatch(uint64 count);
+    /// @notice Genesis readback: a sale's governed configuration is not the recorded one.
+    error SaleConfigMismatch(address sale);
     /// @notice The English auction's `lens()` is not the recorded lens, or the lens has no code
     ///         or other dependencies than the recorded deployment's.
     error LensMismatch(address recorded, address actual);
@@ -83,12 +106,89 @@ library VerifyV1 {
         if (d.contentStore.sha256Of(id) != digest) revert Cc0Mismatch("SHA-256");
     }
 
-    /// @notice The economics resolver names `museum`, the recorded 6529 Network Museum (D140),
-    ///         as the account unbid canonical works go to. Genesis readback: a later governed
-    ///         change (FUNDS_SETTER, 14 days) fails it by design.
+    /// @notice The economics resolver names the museum's governed vault as the account unbid
+    ///         canonical works go to, and that vault forwards to `museum`, the recorded 6529
+    ///         Network Museum (D140); the resolver's fee recipient is the fee recipient's vault.
+    ///         Genesis readback: a later governed change (the resolver's museum, FUNDS_SETTER,
+    ///         14 days; the vault's destination, SUCCESSOR_SETTER, 30 days) fails it by design.
     function checkMuseum(DeployV1.Deployment memory d, address museum) internal view {
         address actual = d.economicsResolver.museum();
+        if (actual != address(d.museumVault)) {
+            revert MuseumMismatch(address(d.museumVault), actual);
+        }
+        actual = d.museumVault.destination();
         if (actual != museum) revert MuseumMismatch(museum, actual);
+    }
+
+    /// @notice The money and marketplace recipients the deployment record names are the ones the
+    ///         chain uses: every product's network fee recipient is the fee recipient's vault,
+    ///         that vault forwards to `feeRecipient`, and 6529 Stream's and 6529 Stream Editions'
+    ///         marketplace `owner()` is `marketOwner`. Genesis readback: a later governed change
+    ///         fails it by design. No on-chain check can establish that the record's addresses
+    ///         are the intended ones: a human compares them with the signed manifest.
+    function checkRecipients(
+        DeployV1.Deployment memory d,
+        address feeRecipient,
+        address marketOwner
+    ) internal view {
+        bytes32[3] memory products = [PRODUCT_STREAM, PRODUCT_EDITIONS, PRODUCT_FEDERATED];
+        address vault = address(d.feeRecipientVault);
+        for (uint256 i; i < products.length; ++i) {
+            address actual = d.economicsResolver.networkFeeRecipient(products[i]);
+            if (actual != vault) revert RecipientMismatch("networkFeeRecipient", vault, actual);
+        }
+        address dest = d.feeRecipientVault.destination();
+        if (dest != feeRecipient) {
+            revert RecipientMismatch("fee vault destination", feeRecipient, dest);
+        }
+        address owner = _getter(address(d.stream), "owner()");
+        if (owner != marketOwner) revert RecipientMismatch("Stream owner", marketOwner, owner);
+        if (address(d.editions) != address(0)) {
+            owner = _getter(address(d.editions), "owner()");
+            if (owner != marketOwner) {
+                revert RecipientMismatch("Editions owner", marketOwner, owner);
+            }
+        }
+    }
+
+    /// @notice The manager's compiled defaults, in `WorksAccessManager.Parameter` order
+    ///         (`VerifyGenesisState.t.sol` pins them against a freshly deployed manager).
+    function managerDefaults() internal pure returns (uint32[6] memory) {
+        return [uint32(60 days), 120 days, 365 days, 180 days, 5, 7];
+    }
+
+    /// @notice Genesis readback of the governance state `check` does not read: every manager
+    ///         parameter is its compiled default, no recovery address is registered, no successor
+    ///         is pending, the manager's governance chain holds exactly the epoch-0 manifest, and
+    ///         both sales run the recorded configuration (`p.auction`, `p.editionAuction`). A
+    ///         later slow-lane or 48-hour change fails it by design; `Verify.s.sol` skips it in
+    ///         epoch mode.
+    function checkGenesisState(DeployV1.Deployment memory d, DeployV1.Params memory p)
+        internal
+        view
+    {
+        uint32[6] memory defaults = managerDefaults();
+        for (uint8 i; i < 6; ++i) {
+            uint32 actual = d.manager.parameter(WorksAccessManager.Parameter(i));
+            if (actual != defaults[i]) revert ManagerParameterMismatch(i, defaults[i], actual);
+        }
+        address recovery = d.manager.recoveryAddress();
+        if (recovery != address(0)) revert UnexpectedRecoveryAddress(recovery);
+        address pending = d.manager.pendingSuccessor();
+        if (pending != address(0)) revert SuccessionPending(pending);
+        (uint64 count,) = d.statementLog.chainOf(address(d.manager), 0);
+        if (count != 1) revert ManifestChainMismatch(count);
+        address english = address(d.englishAuction);
+        if (
+            keccak256(abi.encode(IEnglishAuction(english).config()))
+                != keccak256(abi.encode(p.auction))
+        ) revert SaleConfigMismatch(english);
+        address edition = address(d.editionAuction);
+        if (
+            edition != address(0)
+                && keccak256(abi.encode(IUniformEditionAuction(edition).config()))
+                    != keccak256(abi.encode(p.editionAuction))
+        ) revert SaleConfigMismatch(edition);
     }
 
     /// @notice The English auction answers its views through the lens it pinned (EIP-170
@@ -126,6 +226,23 @@ library VerifyV1 {
             address authority = IAccessManaged(cfg.targets[i].target).authority();
             if (authority != address(d.manager)) {
                 revert WrongAuthority(cfg.targets[i].target, authority);
+            }
+        }
+        // The manager is not handed over, and a handover would move every configured target
+        // and every other deployed contract the manager governs.
+        address next = d.manager.successor();
+        if (next != address(0)) revert ManagerHandedOver(next);
+        address[] memory managed = d.manager.managedTargets();
+        for (uint256 i; i < cfg.targets.length; ++i) {
+            _requireManaged(managed, cfg.targets[i].target);
+        }
+        string[] memory names = DeployV1.names();
+        for (uint256 i; i < names.length; ++i) {
+            address a = DeployV1.addressOf(d, names[i]);
+            if (a == address(d.manager) || a.code.length == 0) continue;
+            (bool ok, bytes memory ret) = a.staticcall(abi.encodeCall(IAccessManaged.authority, ()));
+            if (ok && ret.length == 32 && abi.decode(ret, (address)) == address(d.manager)) {
+                _requireManaged(managed, a);
             }
         }
         // No configured holder is suspended (the readback below would only see a missing
@@ -174,8 +291,8 @@ library VerifyV1 {
     }
 
     /// @notice Reverts unless the wired getter reflects `call`. This is genesis readback: a
-    ///         default currency must still be at the revision its wiring produced, and the
-    ///         English auction's opening bid at its wired value, so a later governed change
+    ///         default currency must still be at the revision its wiring produced, and an
+    ///         asset's opening bid at its wired value, so a later governed change
     ///         makes it fail by design.
     function checkWired(DeployV1.Deployment memory d, GovernanceConfig.Call memory call)
         internal
@@ -197,9 +314,9 @@ library VerifyV1 {
             (bool configured, address current, uint64 revision) =
                 IAssetAllowlist(target).defaultCurrencyConfig(product);
             ok = configured && current == asset && revision == expected + 1;
-        } else if (selector == IEnglishAuction.setOpeningBid.selector) {
+        } else if (selector == IAssetAllowlist.setOpeningBid.selector) {
             address currency = address(uint160(uint256(_word(data, 0))));
-            ok = IEnglishAuction(target).openingBid(currency) == uint256(_word(data, 2));
+            ok = IAssetAllowlist(target).openingBid(currency) == uint256(_word(data, 2));
         } else {
             address arg = address(uint160(uint256(_word(data, 0))));
             if (selector == IStream.bindWorkRecords.selector) {
@@ -240,7 +357,9 @@ library VerifyV1 {
             if (cfg.grants[i].role == Roles.PLATFORM) platform = cfg.grants[i].account;
         }
         if (platform == address(0)) revert PlatformHolderMissing();
-        _platformCan(d, platform, address(d.workRecords), IWorkRecords.addLocator.selector);
+        address records = address(d.workRecords);
+        address delivery = records == address(0) ? address(0) : d.workRecords.delivery();
+        _platformCan(d, platform, delivery, IWorkLocators.addLocator.selector);
     }
 
     function _platformCan(
@@ -253,6 +372,13 @@ library VerifyV1 {
         (bool immediate,) =
             AuthorityUtils.canCallWithDelay(address(d.manager), platform, target, selector);
         if (!immediate) revert PlatformPathClosed(target, selector);
+    }
+
+    function _requireManaged(address[] memory managed, address target) private pure {
+        for (uint256 j; j < managed.length; ++j) {
+            if (managed[j] == target) return;
+        }
+        revert TargetNotManaged(target);
     }
 
     /// @dev Fails closed: a getter that reverts or returns anything but one word is an error,

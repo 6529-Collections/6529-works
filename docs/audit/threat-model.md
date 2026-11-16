@@ -35,8 +35,9 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 | Bidder ETH and ERC-20 | The standing high bid; outbid and refunded bids as per-account credits | The bidder: `claim`, and `withdrawBid` while paused or frozen. Settlement pays out only the winning bid | Lock-up, theft, hostile tokens, a currency that never returns |
 | Edition bidders' ETH | Every live edition bid's escrow in `UniformEditionAuction`, until it is claimed or withdrawn; refunds credited by `claimBidFor` | The bidder: `claimBid` after settlement, `withdrawBid` while the 1/1 is paused (a bid placed or last raised before the pause's minute). Settlement pays out only `count × price` | Lock-up, a wrong clearing or allocation, double claims, an unsold copy |
 | Sale proceeds in flight | Payments from the two auctions' `settle` to the seller wallet and fee recipient; failed ERC-20 settlement payouts credited in the English auction | `RevenuePayment` (pay, else escrow); `EnglishAuction.claimFor` | A refusing wallet, a blocking token, gas starvation |
-| Split wallet balances | Each `SplitWallet`, for ETH and any ERC-20 | Fixed payees: anyone, to the payee. Artist payees: only the current payout address, or its signature | A push to a lost key, a redirected payout, a replayed release, hostile tokens |
-| Escrow credits | `RevenueEscrow` | Anyone flushes a credit to its own wallet; governed `recover` moves it to an equivalent wallet or a consented replacement | Governance taking credits, a blocked wallet |
+| Split wallet balances | Each 66-byte `SplitVault` wallet, for ETH and any ERC-20; its accounting in the permanent `SplitLedger` | Fixed payees: anyone, to the payee. Artist payees: only the current payout address, or its signature | A push to a lost key, a redirected payout, a replayed release, hostile tokens |
+| Escrow credits | `RevenueEscrow` | Anyone flushes a credit to its own wallet; governed `recover` moves it to an equivalent wallet or a consented replacement; governed `sweepExcess` moves only the balance above `totalOwed` | Governance taking credits, a blocked wallet |
+| Network fee and museum holdings | `FeeRecipientVault` and `MuseumVault` (governed vaults) | Anyone forwards to the vault's destination (ERC-721s and ERC-1155s by safe transfer); FUNDS_SETTER changes the fee vault's destination (14 days), SUCCESSOR_SETTER the museum vault's (30 days), compare-and-set | A hostile destination change, a refusing destination |
 | Artist identity and payout routing | `ArtistRegistry` | The artist (7-day change); governance (180-day override); captured wallets cancel or contest; guardians veto | Key theft, planted wallets, abuse of recovery, a broken identity source |
 | Curation integrity | `PackageRegistry` and `Eip712CurationVerifier` | The curation signer approves; guardians revoke; only the bound Stream consumes | Forged or leaked approvals, signer compromise, reuse, squatting, copies |
 | Metadata integrity and permanence | `WorkRecords`, `ContentStore`, the renderer | The artist until finalize; governance with every party's consent; PLATFORM and STORAGE_OPERATOR for copies and routing; nobody for stored bytes | JSON injection, unbounded gas, look-alike traits, script break-out, renderer substitution, locator repointing |
@@ -59,6 +60,7 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 | Keepers and relayers | Call permissionless entry points; relay signed payloads | Liveness only |
 | VRF coordinator | Deliver random words for its requests | Unbiased randomness |
 | Token issuers | Blocklist, charge fees, rebase, upgrade token behavior | Standard transfers, judged at admission |
+| A federated token (uncurated) | Revert, burn gas, answer malformed or unpayable values, re-enter, or change behaviour in any call `settle` makes into it, alone or with its artist, a bidder or a third party | Its own ledger only; never a bidder's funds or the network's fee ([the refusal exit][exit]). A listed token is curated not to fail and has no exit |
 | MEV searchers and block builders | Order, insert and front-run transactions | Nothing |
 | Attackers with stolen keys | Any key or Safe above, each bounded in [trust assumptions](trust-assumptions.md) | Nothing |
 | Copiers | Submit another artist's content as their own | Nothing |
@@ -71,6 +73,7 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 | --- | --- | --- |
 | `start`, `startWithBid` | Start a work whose terms can never settle (the escrow as seller or fee recipient) | [AUC-14][auc]: refused at start, while nothing is in custody (CALLS-1) |
 | `start` | Start an unapproved, revoked, reused or copied item, or one without the artist's move | [AUC-3][auc], [CUR-1, CUR-6, CUR-10, CUR-12][cur]: every mint consumes an approved, accepted, moved item, once per content hash; a VRF item also needs its seed ([AUC-4][auc]) |
+| Stream's mint policy | A replaced or hostile mint policy (`PackageRegistry`) changes existing tokens or mints outside Stream's invariants | [AUC-38][auc]: the policy decides new mints only and has no write path into Stream, which re-checks every record it answers; the artist registry is fixed ([AUC-39][auc]); content uniqueness is Stream's, so no policy mints a content hash twice ([AUC-44][auc]) |
 | `startWithBid` | A searcher front-runs a start with the same move | Accepted: the victim loses only gas, and a move has no "not before" ([LIM-SAL-9][lim-sal], MARKET-4) |
 | `bid` | A zero or dust bid claims a work | [AUC-16][auc]: a minimum first bid and a minimum increment |
 | `bid` | Sniping in the last seconds | [AUC-17][auc]: a late bid extends the end by the anti-snipe window |
@@ -79,6 +82,8 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 | `settle` | A settler starves the call so delivery or a payout fails into its fallback | [AUC-22][auc]: the call reverts unless it forwards the delivery gas and the ERC-20 payout frame in full (MONEY-1) |
 | `settle` (no bid) | The artist, or a key under recovery, blocks a no-bid settlement or takes the museum's work | [AUC-24][auc]: the auction reports UNBID and 6529 Stream itself moves the work to the museum the resolver names then, whatever the artist's state, with no receiver callback, so nothing is pending and nobody can claim it ([AUC-33][auc], owner decision 17); any other token's work goes to the active authority, and settlement waits while it is zero (IDENTITY-1) |
 | `settle` | A seller wallet or token blocks the payout and so the delivery | [AUC-23][auc]: escrow, else a credit for `claimFor`, while the work is delivered (MONEY-1) |
+| `settle` | A federated token reverts, burns gas or answers malformed or unpayable values, so `settle` never completes and the bid and the work are held | [The refusal exit][exit]: from the refusal delay after the end, `settleOrRefund` attempts the whole settlement with fixed, governed gas (AUC-40) and, if it fails, credits the bid back and leaves the work for its artist; a cooperating token settles exactly as with `settle`; a listed token's sale, 6529 Stream's included, is never refusable, so a broken governance dependency cannot hand an unsold Stream work to its artist. The analysis case by case is in [Stream and auctions](../spec/stream-and-auctions.md#why-this-is-sound) |
+| `settleOrRefund` | A token, bidder or third party steers a sale into a refusal, or a refused sale into someone else's hands | The attempt's gas is fixed and must be forwarded in full; the call is refused inside the auction's and the escrow's guards; a recipient's or wallet's failure is absorbed, not a refusal; a refused close credits only the bidder that paid and hands the work only to the artist the token reports; a federated sale's fee share and recipient are locked at start ([the refusal exit][exit]) |
 | Value-moving entry points | Reentrancy through a token, wallet or receiver callback | [AUC-31][auc]: a transient reentrancy guard on every value-moving entry point |
 | Currency deprecation | A deprecated currency strands bids and works, or a hasty re-admission undoes it | ETH can never be deprecated (`EthNotDeprecable`), so only ERC-20 sales can freeze, never an edition auction. [AUC-25][auc]: the auction freezes, the bidder may withdraw, and after 60 days it ends unsold (FROZEN_OUT: 6529 Stream moves the work to the museum, owner decision 17); [ECO-33][eco]: re-admission waits 14 days from the deprecation (MARKET-2) |
 | `onERC721Received` | Tokens sent to the auction outside a start are stranded | [AUC-29][auc]: every safe transfer but its own mint is refused; a plain `transferFrom` is the sender's loss ([LIM-SAL-10][lim-sal], CALLS-5) |
@@ -90,7 +95,7 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 | --- | --- | --- |
 | ERC-20 bids | Fee-on-transfer, rebasing, no-return or false-returning tokens underpay | Exact balance deltas on both sides on every path ([ECO-23][eco], [AUC-19][auc]). Return values are checked on the direct paths, not on Permit2 pulls, which check only balances. The guard against non-standard tokens is governance vetting at `AssetAllowlist.admitAsset` ([LIM-SAL-7][lim-sal]). Edition bids are ETH only |
 | Payouts | A blocklisting token blocks a seller or fee wallet | [ECO-26][eco]: the payment reaches the wallet or a credit under it; with the escrow blocked too, the English auction credits the payout ([AUC-23][auc], MONEY-1) |
-| ETH payouts | A wallet that refuses ETH or burns gas blocks a sale | [ECO-26][eco], [EA-12][ed]: 100,000 gas per payout (`PAYOUT_GAS`), escrow on refusal |
+| ETH payouts | A wallet that refuses ETH or burns gas blocks a sale | [ECO-26][eco], [EA-12][ed]: 100,000 gas per payout (the English auction's `PAYOUT_GAS`; the edition auction's governed payout gas, [EA-18][ed]), escrow on refusal; the edition auction deploys its wallets at open ([EA-20][ed]) |
 | `PERMIT2` payments | Replay, or a relayer redirecting the payment | [AUC-19][auc]: Permit2's nonce is the replay key, and the witness binds the sale or start, the recipient, the amount and the deadline |
 | `PERMIT` (EIP-2612) | A front-run permit makes the payment fail | A failing permit is ignored and the pull uses the allowance it set; only the 65-byte form is accepted (QUALITY-7): `test_Bid_Erc20FrontRunPermitStillBids` in [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol) |
 
@@ -116,7 +121,7 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 | Dispute of the 1/1 | Editions of a work later cancelled stay sold | [EA-13][ed]: a cancelled 1/1 voids the sale with full refunds; bidders whose bids were placed or last raised before the pause's minute may withdraw during it ([LIM-EA-14, LIM-EA-16][lim-ea]) |
 | Whole lifecycle | Value leaks, or the clearing drifts from its definition | [EA-14][ed]: ETH conservation, the per-unit reference, FIFO and the clocks, as stateful invariants on the real stack |
 
-### Split wallets and releases
+### Split wallets and releases (the split ledger)
 
 | Entry point | Threat | Mitigation |
 | --- | --- | --- |
@@ -124,7 +129,9 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 | `release` during a recovery | The key being recovered from pulls the balance | [ECO-18][eco], [ID-16][id]: the payout resolves to zero while a change would move it, and the wallet refuses |
 | Payout rotation | A payout points at a contract that can never pull | [ECO-19][eco], [ID-17][id]: such payouts are refused (MONEY-4); a predicted wallet address cannot be ([LIM-ID-12][lim-id]) |
 | `releaseWithAuthorization` | A signed release is replayed, on this or another chain or wallet | [ECO-20, ECO-21][eco]: bound to wallet, chain and deadline; replay keyed on the nonce |
-| Resolver | Replaced code at the resolver's address redirects artist shares | [ECO-18][eco]: the resolver's code hash is checked at every artist-payee release |
+| Resolver | Replaced code at the resolver's address redirects artist shares | The resolver is the permanent artist registry, which has no code to replace (no proxy, no `selfdestruct` after EIP-6780); the ledger pins no code hash, so no change can freeze artist shares ([ECO-12][eco]); while the payout is unresolved only artist-resolved payees stop ([ECO-18][eco]) |
+| The vault | A call other than the ledger's moves funds out of a wallet | [ECO-39][eco]: a vault executes only its ledger's instructions, accepts plain ETH within a 2,300-gas stipend and refuses any other call with calldata; every move is proved by its balances |
+| A dependency that burns gas | A payee, token, resolver or signer that costs 1x to 100x its base changes a release, or a shortfall reads as a refusal | [ECO-42][eco]: no gas number in the ledger; a failure leaving at most 1/8 of the gas reverts with `BoundedCallShortfall` |
 | `ClaimRouter.claim` | A stranger routes an artist's share through the batch router | [ECO-16, ECO-29][eco]: plain items serve fixed payees only, and the router cannot redirect a release |
 | `ClaimRouter` continue mode | An item silently runs out of gas and is skipped | [ECO-30][eco]: a shortfall below the ceiling reverts the batch (MONEY-3) |
 | Value accounting | Releases exceed entitlements, or rebases distort them | [ECO-13, ECO-14, ECO-24][eco]: cumulative entitlements, conservation, and a high-water mark that freezes on a shrinking balance |
@@ -135,6 +142,7 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 | --- | --- | --- |
 | `RevenueEscrow.recover` (FUNDS_SETTER, 14 days) | Governance moves a blocked wallet's credit where it chooses | [ECO-28][eco]: only to an equivalent wallet or the consented replacement (MONEY-2) |
 | `RevenueEscrow.flush` | A hostile token re-enters, or a flush loses the credit | [ECO-27][eco]: a flush pays only the credited wallet, and a failed transfer reverts it; a transient guard blocks reentry (`test_FlushReentryIsBlocked` in [`RevenueEscrow.t.sol`](../../test/economics/RevenueEscrow.t.sol)) |
+| `RevenueEscrow.sweepExcess` (FUNDS_SETTER, 14 days) | Governance takes credited funds | [ECO-40][eco]: it moves only `balance - totalOwed[asset]`, and no credit is reduced |
 
 ### Curation
 
@@ -143,8 +151,8 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 | `registerPackage` | A forged attestation, or one from another chain or deployment | [CUR-4, CUR-5][cur]: an active signer, its current epoch, this domain, and the canonical encoding only |
 | `registerPackage` | A leaked attestation is registered before anyone can react | [CUR-2][cur]: a root revoked in advance never registers |
 | Signer compromise | A compromised signer keeps approving, or its old approvals revive | [CUR-17][cur]: an immediate, one-way disable; [CUR-4][cur]: approvals bind the signer epoch (SIGS-2). Registered roots stay usable, so guardians revoke them per root ([CUR-16][cur]) |
-| `consume` | An item, or its content, is used twice | [CUR-12][cur]: one consume per content hash, through any root |
-| `consume` | A copier consumes a work's content hash first | Off-chain first: the signer checks every declared SHA-256 ([LIM-GV-2][lim-gv]). On-chain: an upheld dispute burns the copy and [CUR-14][cur] reserves the hash for the rightful artist (SIGS-1) |
+| `authorize` (the mint policy's item check) | An item, or its content, is used twice | [AUC-44][auc]: Stream mints a content hash once, whatever the policy answers; [CUR-12][cur]: the policy also refuses a used content |
+| `authorize` | A copier consumes a work's content hash first | Off-chain first: the signer checks every declared SHA-256 ([LIM-GV-2][lim-gv]). On-chain: an upheld dispute burns the copy and [CUR-14][cur] reserves the hash for the rightful artist (SIGS-1) |
 | Copied works | A copier gets another artist's work approved | As above, and guardians revoke every root listing the copier's items ([CUR-16][cur]); after a sale a dispute yields only a statement ([DSP-22][dsp]) |
 | `acceptPackage` | Pre-signed acceptances with different profiles race | [CUR-7][cur]: the first relayed sets the profile; the rest revert |
 | `revokePackage` | Revoking a root strands a sold master's edition | [ED-1][ed]: a registered root counts, revoked or not (SIGS-4) |
@@ -157,6 +165,7 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 | `stageChange` with a stolen key | A thief rotates the authority and payout | [ID-8, ID-9, ID-10][id]: a 7-day wait, cancellable by the previous authority, captured wallets and guardians |
 | Consolidation data | A thief revokes or reorders consolidations to strip the cancellers | [ID-21, ID-23][id]: the sticky standing snapshot, and cancellers fixed at staging |
 | Consolidation data | Wallets planted with the artist's key gain standing | [ID-20, ID-22][id]: 30 days pending, dropped if unconsolidated (IDENTITY-3); residual in [LIM-ID-4][lim-id] |
+| Consolidation source swap | A hostile or broken source names any wallet as established to take over artists | [ID-40][id]: wallets it names act only for dormant artists, with the 180-day override delay, the authority's cancel and the guardian veto; heartbeats are the authority's, and its wallets' cancels and contests record no activity (review E, N-1); residual in LIM-ID-18 |
 | `cancelChange` on an override | A thief's captured wallet kills the network's recovery override | [ID-13, ID-14][id]: the cancel only contests; a later recorded vote decides; the payout stays frozen |
 | `stageOverride` (PARAMETER_SETTER, 48 hours) | The network abuses recovery to take an identity | [ID-11, ID-12][id]: 180-day notice, the new authority's acceptance, a year of dormancy for estate and lost-key overrides; captured wallets contest and guardians veto ([ID-10][id]). The restraint is the trade-off ([LIM-ID-2][lim-id]) |
 | Signatures during a recovery | The key under recovery, or the reserved new key, acts as the artist | [ID-18][id]: no active authority while an authority-moving override is pending (IDENTITY-1) |
@@ -192,6 +201,10 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 | `execute` with value | ETH sent through `execute` lands in a target | [GV-18][gv]: every governed function is non-payable |
 | Stale operations | An operation written against an old value executes later | [GV-19][gv]: compare-and-set; [GV-7][gv]: operations expire a week after they mature |
 | Whole system | A compromised admin gains control against vigilant guardians | [GV-16, GV-30][gv]: stateful invariant campaigns, with Rule 3 and suspensions |
+| Guardian removal and handover | Colluding guardians shield each other or block a handover | [GV-37][gv]: after a first cancellation the re-proposal waits the escalated delay and only a majority of the guardian seats stops it; with three seats any two are that majority, so it bites against a colluding pair from four seats ([LIM-GV-4][lim-gv]) |
+| Dead admins | Every admin key is lost and governance stops for good | [GV-42][gv]: after a year of silence and 180 public days a guardian majority, or the pre-registered recovery address, recovers the admin seat; any admin activity voids it ([LIM-GV-19][lim-gv]) |
+| Handover | A successor that cannot act takes over and freezes every contract; a successor leaves a target behind, or a migration half-moves | [GV-43 to GV-45][gv]: a proposed successor takes over only when it re-points its probe to the manager and accepts itself, the manager keeping every power until then; `migrate` moves every listed target, all-or-nothing per piece. A successor that later loses the ability to act is its own design risk ([LIM-GV-20][lim-gv]) |
+| Seats and the manager itself | A fresh admin acts at once, seats are flooded, or the manager remaps its own functions | [GV-38 to GV-40][gv]: every grant carries at least its role's class delay (30 days for ADMIN), seats are capped, and the manager configures nothing on itself |
 
 ### Content and rendering
 
@@ -202,9 +215,12 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 | `tokenURI` | Unbounded gas makes metadata unreadable | [RND-26][rnd]: at most 8M Prague gas with every cap at once; [RND-10][rnd]: record caps |
 | Record attributes | A look-alike of a trait the renderer vouches for | [RND-13][rnd]: ASCII trait names, no renderer name in any case or spacing (CONTENT-5) |
 | Script works | The artist's script breaks out of the renderer's page | [RND-19][rnd]: `</script` and `<!--` neutralized; large scripts served by locator |
-| Renderer reads | A hostile token, satellite or store returns garbage and the renderer reports plausible metadata | [RND-6, RND-7][rnd]: bounded reads that revert on failure or starvation |
+| Renderer reads | A hostile token, satellite or store returns garbage, or a repricing starves a read, and the renderer reports plausible metadata | [RND-6, RND-7][rnd]: reads that forward all gas with a return-size cap and revert on failure; a shortfall reverts (`BoundedCallShortfall`), so no compiled cap can break a pinned work's metadata |
+| `WorkRecords.setDelivery`, the delivery contract | A replaced or hostile delivery contract changes a work's facts or serves another file | [WS-39, WS-40][ws]: no write path but two refresh hooks; only a well-formed answer is served, else the work's own answer ([LIM-GV-23][lim-gv]) |
+| `WorkRecords.addStore`, `syncOnChain` | A store adapter serves wrong bytes, or a caller undoes another's sync | [WS-41 to WS-43][ws]: every chunk re-hashed through `firstMissing`; a file's store is final once complete, and a file in progress switches only away from a missing chunk |
 | Renderer pins | Code under a pinned renderer address changes | [RND-2, RND-3][rnd]: checked at every use, with no fallback (DEPS-6) |
-| `addLocator` | A locator is repointed, or listed twice | [WS-18, WS-19][ws]: canonical content addresses, no duplicates, quotas, PLATFORM alone after finalize (CONTENT-3, LIFECYCLE-3) |
+| `rendererOf` | A records fault or a starved read serves the default renderer for a pinned work | [AUC-42][auc]: only "no pin" and `RecordNotOpen` serve the default; any other revert is passed on and a shortfall reverts |
+| `WorkDelivery.addLocator` | A locator is repointed, or listed twice | [WS-18, WS-19][ws]: canonical content addresses, no duplicates, quotas, PLATFORM alone after finalize (CONTENT-3, LIFECYCLE-3) |
 | Preferences | The storage operator points a file at another file's copy | [WS-22][ws]: only the file's own copies |
 | Licenses | A CC0 work is relicensed, or names another CC0 text | [WS-5, WS-12][ws]: the pinned CC0 text, irrevocably |
 
@@ -253,7 +269,7 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 - **Marketplace behavior:** ERC-2981 royalties are advisory ([LIM-SAL-8][lim-sal]).
 - **Availability of off-chain copies** before a work is on-chain complete ([LIM-CNT-1][lim-cnt]).
 - **Legal effect** of CC0 or any license text.
-- **Low prices**: an opening bid of 0.05 ETH at genesis (zero in other currencies), a self-bid
+- **Low prices**: an opening bid of 0.05 ETH at genesis (the asset allowlist's; zero in other currencies), a self-bid
   at that floor, and demand reduction in the edition auction
   ([LIM-SAL-1][lim-sal], [LIM-EA-5][lim-ea]).
 - **Chain-level behavior:** censorship, reorganizations, and mainnet's final Glamsterdam and
@@ -275,6 +291,8 @@ The accepted residual risks this model relies on most, each stated once in
 - Raise-only parameters per operation, not per window ([LIM-GV-7][lim-gv]).
 - Signed releases reviving on a return to an old payout address ([LIM-ECO-2][lim-eco]).
 - Front-run starts and tokens sent with a plain transfer ([LIM-SAL-9, LIM-SAL-10][lim-sal]).
+- A token whose settlement fails holds its sale until the refusal delay, and a token's ledger is
+  trusted for delivery ([LIM-SAL-16][lim-sal]).
 - The edition auction's game theory: soft-close griefing, the breadth-rule tilt, shill bids and
   firm bids ([LIM-EA-1 to LIM-EA-3, LIM-EA-13][lim-ea]).
 - Fixed gas allowances, state gas and the EIP-8037 reservoir under Glamsterdam
@@ -298,6 +316,7 @@ See the [register](../spec/README.md#differences-from-the-adrs).
 - Architecture: [call flows and trust boundaries](../architecture.md#trust-boundaries).
 
 [auc]: ../spec/stream-and-auctions.md#rules-and-invariants
+[exit]: ../spec/stream-and-auctions.md#a-token-that-will-not-settle
 [cur]: ../spec/curation.md#rules-and-invariants
 [dsp]: ../spec/disputes-and-statements.md#rules-and-invariants
 [eco]: ../spec/economics-and-payouts.md#rules-and-invariants

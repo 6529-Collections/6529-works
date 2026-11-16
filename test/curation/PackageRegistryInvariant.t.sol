@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { StreamContentMock } from "test/mocks/curation/StreamContentMock.sol";
+import { IMintPolicy } from "src/interfaces/IMintPolicy.sol";
+import { StreamMintRequest } from "src/interfaces/types/PackageTypes.sol";
 import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol";
 import { PackageRegistry } from "src/curation/PackageRegistry.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
@@ -60,14 +63,11 @@ contract CurationHandler is CurationHelpers {
     mapping(bytes32 itemHash => uint256) public consumeCount;
     mapping(bytes32 itemHash => bool) public released;
     mapping(bytes32 sha => bytes32) public streamItemOf;
-    mapping(bytes32 sha => bytes32) public editionItemOf;
     /// @dev The artist the latest release of each content hash named (its first account's ID).
     mapping(bytes32 sha => uint256) public releasedTo;
     bool public unexpectedSuccess;
     bool public unexpectedFailure;
-    bool public pairViolation;
     uint256 public consumed;
-    uint256 public claimed;
     uint256 public releases;
 
     constructor(
@@ -95,7 +95,7 @@ contract CurationHandler is CurationHelpers {
             item.collectionId = i;
             item.mediaHash = keccak256(abi.encode("media list", i));
             if (i % 2 == 1) {
-                item.kind = ItemKind.EDITION_MASTER;
+                item.kind = uint8(ItemKind.EDITION_MASTER);
                 item.edition = EditionTerms(10, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
             }
             encodedItems[i] = abi.encode(item);
@@ -168,10 +168,16 @@ contract CurationHandler is CurationHelpers {
             _sig(key, registry.moveDigest(t.root, itemHashes[t.i], t.nonce, t.deadline))
         );
         PackageItem memory item = abi.decode(encodedItems[t.i], (PackageItem));
-        vm.prank(t.caller);
-        try registry.consume(t.root, item, proof, move) returns (
-            bytes32 itemHash, uint256, address
+        try this.mintAs(
+            t.caller,
+            IMintPolicy.MintContext(
+                t.caller, address(_policyStub), address(0), address(_policyStub)
+            ),
+            abi.encode(StreamMintRequest(t.root, item, proof, move))
+        ) returns (
+            IMintPolicy.MintRecord memory rec
         ) {
+            bytes32 itemHash = rec.itemHash;
             if (!t.expected || itemHash != itemHashes[t.i]) {
                 unexpectedSuccess = true;
             }
@@ -184,24 +190,18 @@ contract CurationHandler is CurationHelpers {
         }
     }
 
-    /// @param honest Name the item Stream consumed for the hash, rather than any item.
-    function claimEdition(uint256 shaSeed, uint256 itemSeed, bool honest, uint8 callerSeed)
+    /// @dev Stream mints through its stand-in, which applies Stream's content rule (AUC-44);
+    ///      any other caller calls the registry itself.
+    function mintAs(address caller, IMintPolicy.MintContext calldata c, bytes calldata request)
         external
+        returns (IMintPolicy.MintRecord memory)
     {
-        bytes32 sha = shas[bound(shaSeed, 0, MEDIA - 1)];
-        bytes32 itemHash = honest ? streamItemOf[sha] : itemHashes[bound(itemSeed, 0, ITEMS - 1)];
-        address caller = callerSeed % 4 == 1 ? stream : editions;
-        bool expected = caller == editions && itemHash != 0 && streamItemOf[sha] == itemHash
-            && editionItemOf[sha] == 0;
-        vm.prank(caller);
-        try registry.claimContent(sha, itemHash) {
-            if (!expected) unexpectedSuccess = true;
-            if (streamItemOf[sha] != itemHash) pairViolation = true;
-            editionItemOf[sha] = itemHash;
-            ++claimed;
-        } catch {
-            if (expected) unexpectedFailure = true;
+        require(msg.sender == address(this), "self only");
+        if (caller == stream) {
+            return StreamContentMock(stream).mintThrough(registry, c, request);
         }
+        vm.prank(caller);
+        return registry.authorize(c, request);
     }
 
     /// @dev Stream's dispute-burn path, honest or not, or a caller that is not Stream. The
@@ -210,10 +210,10 @@ contract CurationHandler is CurationHelpers {
         bytes32 sha = shas[bound(shaSeed, 0, MEDIA - 1)];
         bytes32 itemHash = honest ? streamItemOf[sha] : itemHashes[bound(itemSeed, 0, ITEMS - 1)];
         address caller = callerSeed % 4 == 1 ? editions : stream;
-        bool expected = caller == stream && itemHash != 0 && streamItemOf[sha] == itemHash;
+        bool expected = itemHash != 0 && streamItemOf[sha] == itemHash;
         uint256 beneficiary = uint160(accounts[(itemSeed >> 8) % ARTISTS]);
-        vm.prank(caller);
-        try registry.releaseContent(sha, itemHash, beneficiary) {
+        caller; // Stream holds releases since AUC-44: the stand-in plays Stream's part.
+        try StreamContentMock(stream).release(sha, itemHash, beneficiary, address(artists)) {
             if (!expected) unexpectedSuccess = true;
             streamItemOf[sha] = 0;
             releasedTo[sha] = beneficiary;
@@ -353,16 +353,15 @@ contract PackageRegistryInvariantTest is CurationBase {
         handler = new CurationHandler(
             registry, verifier, signerKey1, artists, [stream, editions, guardian, admin]
         );
-        bytes4[] memory selectors = new bytes4[](9);
+        bytes4[] memory selectors = new bytes4[](8);
         selectors[0] = CurationHandler.consume.selector;
-        selectors[1] = CurationHandler.claimEdition.selector;
-        selectors[2] = CurationHandler.release.selector;
-        selectors[3] = CurationHandler.revokeMove.selector;
-        selectors[4] = CurationHandler.rotate.selector;
-        selectors[5] = CurationHandler.revokePackage.selector;
-        selectors[6] = CurationHandler.registerLate.selector;
-        selectors[7] = CurationHandler.acceptLate.selector;
-        selectors[8] = CurationHandler.rebind.selector;
+        selectors[1] = CurationHandler.release.selector;
+        selectors[2] = CurationHandler.revokeMove.selector;
+        selectors[3] = CurationHandler.rotate.selector;
+        selectors[4] = CurationHandler.revokePackage.selector;
+        selectors[5] = CurationHandler.registerLate.selector;
+        selectors[6] = CurationHandler.acceptLate.selector;
+        selectors[7] = CurationHandler.rebind.selector;
         targetSelector(FuzzSelector({ addr: address(handler), selectors: selectors }));
         targetContract(address(handler));
     }
@@ -394,15 +393,7 @@ contract PackageRegistryInvariantTest is CurationBase {
         for (uint256 m; m < 8; ++m) {
             bytes32 sha = handler.shas(m);
             assertEq(registry.consumedItemOf(sha), handler.streamItemOf(sha));
-            assertEq(registry.editionClaimOf(sha), handler.editionItemOf(sha));
         }
-    }
-
-    /// @dev The only cross-product reuse is the linked pair: an edition claims only a content
-    ///      hash 6529 Stream consumed, naming the item that consumed it.
-    function invariant_editionsReuseOnlyTheirMaster() public view {
-        assertFalse(handler.pairViolation());
-        assertLe(handler.claimed(), handler.consumed());
     }
 
     /// @dev Move nonces and root statuses match the model exactly.

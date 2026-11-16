@@ -8,7 +8,6 @@ import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
 import { Roles } from "src/governance/Roles.sol";
-import { SplitWallet } from "src/economics/SplitWallet.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
@@ -18,16 +17,52 @@ import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import {
     BlocklistToken,
     ForceSender,
+    NoReturnToken,
+    RebasingToken,
     ReentrantRecipient,
     ToggleRecipient
 } from "../mocks/economics/EconomicsMocks.sol";
+import { MockERC20 } from "../mocks/economics/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
+
+/// @dev A token with two addresses over one balance (the legacy-proxy shape): the alias reads and
+///      moves the primary's balances.
+contract DoubleEntryToken is MockERC20 {
+    address public immutable aliasToken;
+
+    constructor() MockERC20("Legacy", "LGC") {
+        aliasToken = address(new DoubleEntryAlias(this));
+    }
+
+    function aliasTransfer(address from, address to, uint256 amount) external {
+        require(msg.sender == aliasToken, "alias only");
+        _balances[from] -= amount;
+        _balances[to] += amount;
+    }
+}
+
+contract DoubleEntryAlias {
+    DoubleEntryToken internal immutable primary;
+
+    constructor(DoubleEntryToken primary_) {
+        primary = primary_;
+    }
+
+    function balanceOf(address account) external view returns (uint256) {
+        return primary.balanceOf(account);
+    }
+
+    function transfer(address to, uint256 amount) external returns (bool) {
+        primary.aliasTransfer(msg.sender, to, amount);
+        return true;
+    }
+}
 
 contract RevenueEscrowTest is EconomicsBase {
     address internal depositor = makeAddr("depositor");
     address internal keeper = makeAddr("keeper");
-    SplitWallet internal wallet;
+    address internal wallet;
 
     function setUp() public override {
         super.setUp();
@@ -108,7 +143,7 @@ contract RevenueEscrowTest is EconomicsBase {
         assertEq(keeper.balance, 0);
         assertEq(escrow.owed(address(wallet), ETH), 0);
         assertEq(escrow.totalOwed(ETH), 0);
-        wallet.release(ETH, _indexOf(wallet, alice));
+        _release(wallet, ETH, _indexOf(wallet, alice));
         assertEq(alice.balance, 3 ether);
     }
 
@@ -153,7 +188,7 @@ contract RevenueEscrowTest is EconomicsBase {
     }
 
     function test_CreditsAreIsolatedPerWalletAndAsset() public {
-        SplitWallet other = _solo(bob);
+        address other = _solo(bob);
         vm.startPrank(depositor);
         escrow.depositETH{ value: 1 ether }(address(wallet));
         escrow.depositETH{ value: 2 ether }(address(other));
@@ -211,7 +246,7 @@ contract RevenueEscrowTest is EconomicsBase {
 
     function testFuzz_CreditsAndFlushesConserve(uint96 a, uint96 b, bool flushFirst) public {
         vm.assume(a > 0 && b > 0);
-        SplitWallet other = _solo(bob);
+        address other = _solo(bob);
         vm.deal(depositor, uint256(a) + b);
         vm.startPrank(depositor);
         escrow.depositETH{ value: a }(address(wallet));
@@ -244,7 +279,7 @@ contract RevenueEscrowTest is EconomicsBase {
     ///      original wallet's own balance stays stuck.
     function test_RecoverMovesCreditsToAnEquivalentReplacement() public {
         BlocklistToken usdc = new BlocklistToken();
-        ISplitWallet.Payee[] memory payees = wallet.payees();
+        ISplitWallet.Payee[] memory payees = _payeesOf(wallet);
         usdc.mint(address(wallet), 100);
         usdc.setBlocked(address(wallet), true);
         usdc.mint(address(payer), 1000);
@@ -256,7 +291,7 @@ contract RevenueEscrowTest is EconomicsBase {
         );
         escrow.flush(address(wallet), address(usdc));
 
-        address replacement = factory.createWallet(payees, bytes32(uint256(1)));
+        address replacement = _wallet(payees, bytes32(uint256(1)));
         vm.expectEmit(true, true, true, true, address(escrow));
         emit IRevenueEscrow.Recovered(address(wallet), replacement, address(usdc), 1000, 1000);
         escrow.recover(address(wallet), replacement, address(usdc));
@@ -266,8 +301,8 @@ contract RevenueEscrowTest is EconomicsBase {
 
         vm.prank(keeper);
         escrow.flush(replacement, address(usdc));
-        SplitWallet r = SplitWallet(payable(replacement));
-        r.release(address(usdc), _indexOf(r, alice));
+        address r = replacement;
+        _release(r, address(usdc), _indexOf(r, alice));
         assertEq(usdc.balanceOf(alice), 600);
         assertEq(usdc.balanceOf(address(wallet)), 100, "the blocked wallet's own balance stays");
     }
@@ -275,8 +310,8 @@ contract RevenueEscrowTest is EconomicsBase {
     function test_RecoverRejectsWalletsThatAreNotEquivalent() public {
         vm.prank(depositor);
         escrow.depositETH{ value: 1 ether }(address(wallet));
-        SplitWallet different = _wallet(_list(_fixed(alice, 50_000), _fixed(bob, 50_000)));
-        address undeployed = factory.walletFor(wallet.payees(), bytes32(uint256(2)));
+        address different = _wallet(_list(_fixed(alice, 50_000), _fixed(bob, 50_000)));
+        address undeployed = factory.walletFor(_payeesOf(wallet), bytes32(uint256(2)));
         address[4] memory bad = [address(different), address(wallet), undeployed, alice];
         for (uint256 i; i < bad.length; ++i) {
             vm.expectRevert(
@@ -376,7 +411,7 @@ contract RevenueEscrowTest is EconomicsBase {
     function test_RecoverRefusesAnAccountsCreditWithoutMatchingConsent() public {
         vm.prank(depositor);
         escrow.depositETH{ value: 1 ether }(alice);
-        address replacement = factory.createWallet(wallet.payees(), bytes32(uint256(1)));
+        address replacement = _wallet(_payeesOf(wallet), bytes32(uint256(1)));
         address[3] memory targets = [bob, replacement, address(0)];
         for (uint256 i; i < targets.length; ++i) {
             vm.expectRevert(
@@ -431,7 +466,7 @@ contract RevenueEscrowTest is EconomicsBase {
         );
         escrow.recover(address(wallet), keeper, ETH);
 
-        address predicted = factory.walletFor(wallet.payees(), bytes32(uint256(9)));
+        address predicted = factory.walletFor(_payeesOf(wallet), bytes32(uint256(9)));
         vm.prank(depositor);
         escrow.depositETH{ value: 1 ether }(predicted);
         vm.expectRevert(
@@ -456,7 +491,7 @@ contract RevenueEscrowTest is EconomicsBase {
         escrow.depositETH{ value: 1 ether }(address(wallet));
         address[3] memory zeroConfig = [
             address(new ToggleRecipient()),
-            factory.walletFor(wallet.payees(), bytes32(uint256(5))),
+            factory.walletFor(_payeesOf(wallet), bytes32(uint256(5))),
             address(0)
         ];
         for (uint256 i; i < zeroConfig.length; ++i) {
@@ -472,7 +507,7 @@ contract RevenueEscrowTest is EconomicsBase {
     }
 
     function test_RecoverAddsToTheReplacementsExistingCredit() public {
-        address replacement = factory.createWallet(wallet.payees(), bytes32(uint256(1)));
+        address replacement = _wallet(_payeesOf(wallet), bytes32(uint256(1)));
         vm.startPrank(depositor);
         escrow.depositETH{ value: 1 ether }(address(wallet));
         escrow.depositETH{ value: 2 ether }(replacement);
@@ -488,7 +523,7 @@ contract RevenueEscrowTest is EconomicsBase {
     }
 
     function test_RecoverWithNothingOwedReverts() public {
-        address replacement = factory.createWallet(wallet.payees(), bytes32(uint256(1)));
+        address replacement = _wallet(_payeesOf(wallet), bytes32(uint256(1)));
         vm.expectRevert(
             abi.encodeWithSelector(IRevenueEscrow.NothingOwed.selector, address(wallet), ETH)
         );
@@ -496,7 +531,7 @@ contract RevenueEscrowTest is EconomicsBase {
     }
 
     function test_RecoverIsGovernedInTheFundsClass() public {
-        address replacement = factory.createWallet(wallet.payees(), bytes32(uint256(1)));
+        address replacement = _wallet(_payeesOf(wallet), bytes32(uint256(1)));
         vm.prank(depositor);
         escrow.depositETH{ value: 1 ether }(address(wallet));
         vm.expectRevert(
@@ -556,5 +591,199 @@ contract RevenueEscrowTest is EconomicsBase {
             abi.encodeWithSelector(IRevenueEscrow.NothingOwed.selector, address(this), ETH)
         );
         escrow.flush(address(this), ETH);
+    }
+
+    // ------------------------------------------------------------------ sweepExcess
+
+    /// @dev Credits in ETH and the token for two wallets, plus unowed ETH (force-sent) and unowed
+    ///      tokens (transferred without a deposit).
+    function _creditsAndExcess() internal returns (address other) {
+        other = _solo(bob);
+        vm.startPrank(depositor);
+        escrow.depositETH{ value: 3 ether }(wallet);
+        escrow.depositETH{ value: 2 ether }(other);
+        escrow.depositERC20(wallet, address(token), 700);
+        escrow.depositERC20(other, address(token), 300);
+        token.transfer(address(escrow), 55);
+        vm.stopPrank();
+        new ForceSender{ value: 1.5 ether }(payable(address(escrow)));
+    }
+
+    /// @dev Only the excess over every credit moves: afterwards the balance is exactly the total
+    ///      owed, every credit is unchanged and still flushes in full.
+    function test_SweepExcess_TakesOnlyWhatNobodyIsOwed() public {
+        address other = _creditsAndExcess();
+        address treasury = makeAddr("treasury");
+
+        vm.expectEmit(true, true, false, true, address(escrow));
+        emit IRevenueEscrow.ExcessSwept(ETH, treasury, 1.5 ether);
+        assertEq(escrow.sweepExcess(ETH, treasury), 1.5 ether);
+        vm.expectEmit(true, true, false, true, address(escrow));
+        emit IRevenueEscrow.ExcessSwept(address(token), treasury, 55);
+        assertEq(escrow.sweepExcess(address(token), treasury), 55);
+
+        assertEq(treasury.balance, 1.5 ether);
+        assertEq(token.balanceOf(treasury), 55);
+        assertEq(address(escrow).balance, escrow.totalOwed(ETH));
+        assertEq(token.balanceOf(address(escrow)), escrow.totalOwed(address(token)));
+        assertEq(escrow.owed(wallet, ETH), 3 ether);
+        assertEq(escrow.owed(other, ETH), 2 ether);
+        assertEq(escrow.owed(wallet, address(token)), 700);
+        assertEq(escrow.owed(other, address(token)), 300);
+
+        assertEq(escrow.flush(wallet, ETH), 3 ether);
+        assertEq(escrow.flush(other, ETH), 2 ether);
+        assertEq(escrow.flush(wallet, address(token)), 700);
+        assertEq(escrow.flush(other, address(token)), 300);
+        assertEq(address(escrow).balance, 0);
+        assertEq(token.balanceOf(address(escrow)), 0);
+    }
+
+    /// @dev Review C F3, the documented limit of `sweepExcess`: its bound is per token address. For
+    ///      a token with two addresses over one balance, a sweep of the address nothing was
+    ///      credited under reads the shared balance against a zero total and takes the credits'
+    ///      backing. No on-chain check can see an alias, so the NatSpec and ECO-40 state the limit
+    ///      and governance must not sweep such tokens; this test pins it.
+    function test_SweepExcess_ADoubleEntryTokensAliasIsADocumentedLimit() public {
+        DoubleEntryToken legacy = new DoubleEntryToken();
+        legacy.mint(depositor, 100);
+        vm.startPrank(depositor);
+        legacy.approve(address(escrow), 100);
+        escrow.depositERC20(wallet, address(legacy), 100);
+        vm.stopPrank();
+        address treasury = makeAddr("treasury");
+        vm.expectRevert(
+            abi.encodeWithSelector(IRevenueEscrow.NothingToSweep.selector, address(legacy))
+        );
+        escrow.sweepExcess(address(legacy), treasury);
+        assertEq(escrow.sweepExcess(legacy.aliasToken(), treasury), 100, "the alias sweeps");
+        assertEq(escrow.owed(wallet, address(legacy)), 100, "the credit is still recorded");
+        assertEq(legacy.balanceOf(address(escrow)), 0, "but no longer backed");
+    }
+
+    /// @dev Nothing beyond the credits, or less than the credits (a negative rebase), is never an
+    ///      excess: `NothingToSweep`, and nothing moves.
+    function test_SweepExcess_NothingToSweepWhenNoExcess() public {
+        address treasury = makeAddr("treasury");
+        vm.expectRevert(abi.encodeWithSelector(IRevenueEscrow.NothingToSweep.selector, ETH));
+        escrow.sweepExcess(ETH, treasury);
+        vm.prank(depositor);
+        escrow.depositETH{ value: 1 ether }(wallet);
+        vm.expectRevert(abi.encodeWithSelector(IRevenueEscrow.NothingToSweep.selector, ETH));
+        escrow.sweepExcess(ETH, treasury);
+
+        RebasingToken r = new RebasingToken();
+        r.mint(depositor, 1000);
+        vm.startPrank(depositor);
+        r.approve(address(escrow), type(uint256).max);
+        escrow.depositERC20(wallet, address(r), 1000);
+        vm.stopPrank();
+        r.setIndex(0.5e18);
+        assertLt(r.balanceOf(address(escrow)), escrow.totalOwed(address(r)));
+        vm.expectRevert(abi.encodeWithSelector(IRevenueEscrow.NothingToSweep.selector, address(r)));
+        escrow.sweepExcess(address(r), treasury);
+        assertEq(escrow.owed(wallet, address(r)), 1000);
+    }
+
+    function test_SweepExcess_RefusesZeroAndTheEscrowAsRecipient() public {
+        _creditsAndExcess();
+        vm.expectRevert(abi.encodeWithSelector(IRevenueEscrow.InvalidWallet.selector, address(0)));
+        escrow.sweepExcess(ETH, address(0));
+        vm.expectRevert(
+            abi.encodeWithSelector(IRevenueEscrow.InvalidWallet.selector, address(escrow))
+        );
+        escrow.sweepExcess(address(token), address(escrow));
+    }
+
+    /// @dev A recipient that refuses ETH fails the sweep, which keeps the excess for a retry.
+    function test_SweepExcess_RefusedETHRevertsAndKeepsTheExcess() public {
+        _creditsAndExcess();
+        ToggleRecipient closed = new ToggleRecipient();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IRevenueEscrow.ETHTransferFailed.selector, address(closed), 1.5 ether
+            )
+        );
+        escrow.sweepExcess(ETH, address(closed));
+        assertEq(address(escrow).balance - escrow.totalOwed(ETH), 1.5 ether);
+    }
+
+    /// @dev Tokens nobody chose to send here may return nothing from `transfer`: the sweep counts
+    ///      such a move once both balances changed by exactly the excess.
+    function test_SweepExcess_NoReturnToken() public {
+        NoReturnToken t = new NoReturnToken();
+        t.mint(address(escrow), 42);
+        address treasury = makeAddr("treasury");
+        assertEq(escrow.sweepExcess(address(t), treasury), 42);
+        assertEq(t.balanceOf(treasury), 42);
+        assertEq(t.balanceOf(address(escrow)), 0);
+    }
+
+    /// @dev `sweepExcess` is FUNDS_SETTER with the 14-day funds delay: unauthorized callers are
+    ///      refused, and a scheduled sweep runs only after the delay.
+    function test_SweepExcess_IsGovernedInTheFundsClass() public {
+        _creditsAndExcess();
+        address treasury = makeAddr("treasury");
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, keeper)
+        );
+        vm.prank(keeper);
+        escrow.sweepExcess(ETH, treasury);
+
+        uint64 funds = Roles.FUNDS_SETTER;
+        uint32 delay = Roles.FUNDS;
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = IRevenueEscrow.sweepExcess.selector;
+        manager.setTargetFunctionRole(address(escrow), selectors, funds);
+        manager.grantRole(funds, keeper, delay);
+        bytes memory call = abi.encodeCall(IRevenueEscrow.sweepExcess, (ETH, treasury));
+        vm.startPrank(keeper);
+        manager.schedule(address(escrow), call, 0);
+        vm.warp(block.timestamp + delay - 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessManager.AccessManagerNotReady.selector,
+                manager.hashOperation(keeper, address(escrow), call)
+            )
+        );
+        manager.execute(address(escrow), call);
+        vm.warp(block.timestamp + 1);
+        manager.execute(address(escrow), call);
+        vm.stopPrank();
+        assertEq(treasury.balance, 1.5 ether);
+        assertEq(address(escrow).balance, escrow.totalOwed(ETH));
+    }
+
+    function test_SweepExcess_IsNonPayable() public {
+        (bool ok,) = address(escrow).call{ value: 1 }(
+            abi.encodeCall(IRevenueEscrow.sweepExcess, (ETH, keeper))
+        );
+        assertFalse(ok);
+    }
+
+    /// @dev Whatever mix of credits, flushes and unowed arrivals, a sweep takes exactly the excess
+    ///      and leaves the escrow holding exactly what it owes.
+    function testFuzz_SweepExcess_NeverTouchesCredits(uint96 credit, uint96 stray, bool flushFirst)
+        public
+    {
+        uint256 c = bound(credit, 1, 1_000_000 - 1);
+        uint256 x = bound(stray, 0, 1_000_000 - c);
+        vm.startPrank(depositor);
+        escrow.depositERC20(wallet, address(token), c);
+        if (x != 0) token.transfer(address(escrow), x);
+        vm.stopPrank();
+        if (flushFirst) escrow.flush(wallet, address(token));
+        uint256 owed = escrow.totalOwed(address(token));
+        if (x == 0) {
+            vm.expectRevert(
+                abi.encodeWithSelector(IRevenueEscrow.NothingToSweep.selector, address(token))
+            );
+            escrow.sweepExcess(address(token), keeper);
+        } else {
+            assertEq(escrow.sweepExcess(address(token), keeper), x);
+        }
+        assertEq(escrow.totalOwed(address(token)), owed);
+        assertEq(token.balanceOf(address(escrow)), owed);
+        if (!flushFirst) assertEq(escrow.flush(wallet, address(token)), c);
     }
 }

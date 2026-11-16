@@ -6,6 +6,8 @@ import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 
+import { preferredOf } from "test/helpers/WorkItems.sol";
+
 /// @notice Fuzzes preferred-location resolution (D10: file override, then collection kind, then
 ///         global kind, then first registered, then the implicit ONCHAIN copy) against a model.
 ///         ONCHAIN matches only a work marked on-chain complete by `syncOnChain`, and only the
@@ -52,7 +54,7 @@ contract PreferredLocationTest is RecordsFixture {
         (tokenId, item, media) = _minted(1, complete);
         records.openRecord(tokenId, item, media);
         file = media[0].fileId;
-        if (sync) records.syncOnChain(tokenId);
+        if (sync) records.syncOnChain(tokenId, 0, type(uint256).max);
         kinds = new LocatorKind[](count);
         byArtist = new bool[](count);
         uint256 artistAdded;
@@ -67,7 +69,7 @@ contract PreferredLocationTest is RecordsFixture {
             byArtist[i] = artistAdds;
             if (artistAdds) ++artistAdded;
             vm.prank(artistAdds ? artist : platform);
-            records.addLocator(tokenId, file, Locator(kinds[i], uri));
+            delivery.addLocator(tokenId, file, Locator(kinds[i], uri));
         }
     }
 
@@ -115,14 +117,14 @@ contract PreferredLocationTest is RecordsFixture {
         LocatorKind collectionKind = _kind(collectionRaw);
         uint256 filePref = count == 0 || filePrefRaw % 3 == 0 ? NONE : filePrefRaw % count;
         vm.startPrank(storageOperator);
-        records.setPreferredKind(globalKind);
-        records.setCollectionPreferredKind(collectionId, collectionKind);
-        records.setFilePreference(tokenId, file, filePref);
+        delivery.setPreferredKind(globalKind);
+        delivery.setCollectionPreferredKind(collectionId, collectionKind);
+        delivery.setFilePreference(tokenId, file, filePref);
         vm.stopPrank();
 
         (bool found, uint256 expected) =
             _model(kinds, byArtist, filePref, collectionKind, globalKind, onChain);
-        (Locator memory chosen, uint256 index) = records.preferredLocator(tokenId, file);
+        (Locator memory chosen, uint256 index) = preferredOf(records, tokenId, file);
         if (!found) {
             assertEq(index, NONE);
             assertEq(uint8(chosen.kind), uint8(LocatorKind.NONE));
@@ -135,7 +137,7 @@ contract PreferredLocationTest is RecordsFixture {
             assertEq(bytes(chosen.uri).length, 0);
         } else {
             assertEq(uint8(chosen.kind), uint8(kinds[expected]));
-            assertEq(chosen.uri, records.locators(tokenId, file)[expected].uri);
+            assertEq(chosen.uri, delivery.locators(tokenId, file)[expected].uri);
         }
     }
 
@@ -151,16 +153,16 @@ contract PreferredLocationTest is RecordsFixture {
         bytes32 fileA = mediaA[0].fileId;
         bytes32 fileB = mediaB[0].fileId;
         vm.startPrank(artist);
-        records.addLocator(idA, fileA, CA.ipfsLocator("a"));
-        records.addLocator(idB, fileB, CA.ar("b"));
+        delivery.addLocator(idA, fileA, CA.ipfsLocator("a"));
+        delivery.addLocator(idB, fileB, CA.ar("b"));
         vm.stopPrank();
         vm.startPrank(storageOperator);
-        records.setPreferredKind(_kind(globalRaw));
-        records.setCollectionPreferredKind(collectionId, _kind(collectionRaw));
+        delivery.setPreferredKind(_kind(globalRaw));
+        delivery.setCollectionPreferredKind(collectionId, _kind(collectionRaw));
         vm.stopPrank();
-        (Locator memory chosen,) = records.preferredLocator(idA, fileA);
+        (Locator memory chosen,) = preferredOf(records, idA, fileA);
         assertEq(chosen.uri, CA.ipfs("a"));
-        (chosen,) = records.preferredLocator(idB, fileB);
+        (chosen,) = preferredOf(records, idB, fileB);
         assertEq(chosen.uri, CA.arweave("b"));
     }
 }

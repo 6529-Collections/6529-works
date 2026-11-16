@@ -29,6 +29,8 @@ import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { StateGrowth } from "../helpers/StateGrowth.sol";
 import { WorksDeployment } from "./WorksDeployment.sol";
+import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice Actors, package building, signatures and sale helpers shared by the end-to-end flows.
 /// @dev Every helper drives the real contracts the way an off-chain tool or a wallet would: it
@@ -121,7 +123,7 @@ abstract contract IntegrationBase is WorksDeployment {
         bytes32 sha = sha256(media);
         bytes32 fileId = _registerOnly(media, IContentStore.Encoding.Identity, "image/png", sha);
         w.media = new MediaFile[](1);
-        w.media[0] = MediaFile(fileId, sha, FileRole.PRIMARY);
+        w.media[0] = MediaFile(fileId, sha, uint8(FileRole.PRIMARY));
         w.item = _item(
             lead, collection, sha, w.media, _record(string.concat("Work ", vm.toString(salt)))
         );
@@ -134,17 +136,17 @@ abstract contract IntegrationBase is WorksDeployment {
         MediaFile[] memory media,
         bytes32 recordFileId
     ) internal view returns (PackageItem memory item) {
-        item.kind = ItemKind.ORIGINAL;
+        item.kind = uint8(ItemKind.ORIGINAL);
         item.collectionId = collection;
         item.contentHash = contentHash;
         item.mediaHash = WorksHashing.mediaHash(media);
         item.recordFileId = recordFileId;
         item.parties = new Party[](1);
-        item.parties[0] = Party(lead, PartyRole.ARTIST);
+        item.parties[0] = Party(lead, uint8(PartyRole.ARTIST));
         item.payees = new ISplitWallet.Payee[](1);
         item.payees[0] = ISplitWallet.Payee(uint256(uint160(lead)), address(0), 100_000);
         item.license = License("CC0-1.0", cc0TextFileId);
-        item.seedPolicy = SeedPolicy.NONE;
+        item.seedPolicy = uint8(SeedPolicy.NONE);
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_ETH, "");
         item.edition = EditionTerms(0, address(0), bytes32(0), "");
     }
@@ -349,7 +351,7 @@ abstract contract IntegrationBase is WorksDeployment {
         returns (uint256 saleId, uint256 tokenId)
     {
         saleId = auction.start(address(stream), _mintData(root, works, index));
-        tokenId = stream.totalMinted();
+        tokenId = IStream(address(stream)).totalMinted();
         assertEq(saleId, auction.saleIdOf(address(stream), tokenId), "sale ID");
     }
 
@@ -505,7 +507,7 @@ abstract contract IntegrationBase is WorksDeployment {
     ) internal returns (Work memory w) {
         bytes32 fileId = _upload(stored, encoding, "image/png", sha);
         w.media = new MediaFile[](1);
-        w.media[0] = MediaFile(fileId, sha, FileRole.PRIMARY);
+        w.media[0] = MediaFile(fileId, sha, uint8(FileRole.PRIMARY));
         w.item = _item(lead, collectionId, sha, w.media, _record(name));
     }
 
@@ -544,7 +546,7 @@ abstract contract IntegrationBase is WorksDeployment {
             (, ids[i]) = _start(root, works, i);
             records.openRecord(ids[i], works[i].item, works[i].media);
             if (i < 4) _attestAll(works[i].media[0].fileId);
-            records.syncOnChain(ids[i]);
+            records.syncOnChain(ids[i], 0, type(uint256).max);
         }
         // Every gas figure first: none can be measured after a state-diff recording. Each view
         // is called once before it is measured, so every account it reaches is warm and the
@@ -602,7 +604,7 @@ abstract contract IntegrationBase is WorksDeployment {
     ///      delegation contract, Permit2 and the test ERC-20. A report that measures calls into
     ///      other accounts (split wallets) adds them.
     function _cooled() internal view virtual returns (address[] memory all) {
-        address[24] memory list = [
+        address[25] memory list = [
             address(store),
             address(dependencies),
             address(consolidation),
@@ -619,6 +621,7 @@ abstract contract IntegrationBase is WorksDeployment {
             address(entropy),
             address(stream),
             address(records),
+            address(delivery),
             address(editions),
             address(auction),
             address(editionAuction),
@@ -853,11 +856,11 @@ abstract contract IntegrationBase is WorksDeployment {
     }
 
     /// @dev Runs the permissionless base64 attestation to completion, bounded: each call checks
-    ///      `ATTEST_CHUNKS_PER_CALL` chunks, so a file of at most `MAX_CHUNKS` needs few calls.
+    ///      48 chunks, so a file of at most `MAX_CHUNKS` needs few calls.
     function _attestAll(bytes32 fileId) internal {
-        uint256 calls = store.MAX_CHUNKS() / store.ATTEST_CHUNKS_PER_CALL() + 1;
+        uint256 calls = store.MAX_CHUNKS() / 48 + 1;
         for (uint256 i; i < calls; ++i) {
-            if (store.attestBase64(fileId)) return;
+            if (store.attestBase64(fileId, 48)) return;
         }
         revert("attestBase64 did not complete");
     }

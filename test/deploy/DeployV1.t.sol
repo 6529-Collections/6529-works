@@ -17,6 +17,7 @@ import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import {
     CURRENCY_DEFAULT,
     CURRENCY_ETH,
@@ -38,6 +39,9 @@ import { MockVrfCoordinator } from "../mocks/entropy/EntropyMocks.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { IEnglishAuctionFull } from "test/helpers/IEnglishAuctionFull.sol";
+
+import { IWorkLocators } from "src/interfaces/IWorkDelivery.sol";
+import { WorkDelivery } from "src/stream/WorkDelivery.sol";
 
 /// @notice The deploy library the script broadcasts and the integration tests reuse: every
 ///         merged v1 contract, the genesis configuration from config/genesis.example.json, the
@@ -69,7 +73,7 @@ contract DeployV1Test is Test {
         p.cc0Text = vm.readFileBinary("test/fixtures/cc0-legalcode.txt");
         p.ethIncrementFloor = 0.001 ether;
         p.permit2 = DeployV1.CANONICAL_PERMIT2;
-        p.auction = IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000);
+        p.auction = IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000, 7 days, 4_000_000);
         p.editionAuction = DeployV1.editionAuctionDefaults();
     }
 
@@ -162,8 +166,8 @@ contract DeployV1Test is Test {
         ) = _genesis(_params());
         // Every v1 contract with a governance map; the optional entropy module is not
         // deployed here.
-        assertEq(cfg.targets.length, 13, "governed targets");
-        assertEq(cfg.grants.length, 17, "holders");
+        assertEq(cfg.targets.length, 16, "governed targets");
+        assertEq(cfg.grants.length, 18, "holders");
         // Every wiring call in the genesis JSON: nine binds, two admitted minters (the 1/1
         // auction on Stream, the edition auction on Editions), their two sale targets, three
         // default currencies and the manifest.
@@ -209,11 +213,20 @@ contract DeployV1Test is Test {
         assertEq(d.editions.workRecords(), address(d.workRecords));
         assertTrue(d.editions.isAdmittedMinter(address(d.editionAuction)));
         assertFalse(d.editions.isAdmittedMinter(address(d.englishAuction)));
-        assertTrue(d.editionAuction.isTarget(address(d.editions)));
-        assertEq(d.editionAuction.editions(), address(d.editions));
-        assertEq(d.editionAuction.stream(), address(d.stream));
-        assertEq(d.editionAuction.englishAuction(), address(d.englishAuction));
-        assertEq(d.editionAuction.escrow(), address(d.revenueEscrow));
+        assertTrue(
+            IUniformEditionAuctionLens(address(d.editionAuction)).isTarget(address(d.editions))
+        );
+        assertEq(
+            IUniformEditionAuctionLens(address(d.editionAuction)).editions(), address(d.editions)
+        );
+        assertEq(IUniformEditionAuctionLens(address(d.editionAuction)).stream(), address(d.stream));
+        assertEq(
+            IUniformEditionAuctionLens(address(d.editionAuction)).englishAuction(),
+            address(d.englishAuction)
+        );
+        assertEq(
+            IUniformEditionAuctionLens(address(d.editionAuction)).escrow(), address(d.revenueEscrow)
+        );
         // Its lens is deployed in its own CREATE2 entry before it (F8), recorded beside it, and
         // pinned by the auction with this adapter's wiring.
         assertEq(d.editionAuction.lens(), d.editionAuctionLens);
@@ -228,7 +241,7 @@ contract DeployV1Test is Test {
             IUniformEditionAuctionLens(d.editionAuctionLens).escrow(), address(d.revenueEscrow)
         );
         assertEq(
-            keccak256(abi.encode(d.editionAuction.config())),
+            keccak256(abi.encode(IUniformEditionAuctionLens(address(d.editionAuction)).config())),
             keccak256(abi.encode(DeployV1.editionAuctionDefaults())),
             "genesis parameters"
         );
@@ -276,7 +289,7 @@ contract DeployV1Test is Test {
             GovernanceConfig.Call[] memory calls
         ) = _genesis(p);
         assertTrue(address(d.entropyModule) != address(0));
-        assertEq(cfg.targets.length, 14);
+        assertEq(cfg.targets.length, 17);
         assertEq(d.stream.entropyModule(), address(d.entropyModule));
         _settle(d);
         VerifyV1.check(d, cfg, calls);
@@ -544,8 +557,8 @@ contract DeployV1Test is Test {
         vm.expectRevert(
             abi.encodeWithSelector(
                 VerifyV1.PlatformPathClosed.selector,
-                address(d.workRecords),
-                IWorkRecords.addLocator.selector
+                address(d.workDelivery),
+                IWorkLocators.addLocator.selector
             )
         );
         this.checkPlatformPathExternal(d, cfg);
@@ -636,7 +649,9 @@ contract DeployV1Test is Test {
         chunks[0] = keccak256("never uploaded");
         bytes32 neverSha = sha256("never uploaded");
         bytes32 incomplete = d.contentStore
-            .registerManifest(chunks, 14, IContentStore.Encoding.Identity, "text/plain", neverSha);
+            .registerManifest(
+                chunks, 14, uint8(IContentStore.Encoding.Identity), "text/plain", neverSha
+            );
         Cc0Views views = new Cc0Views(incomplete, d.cc0TextFileId);
         other.cc0TextFileId = incomplete;
         other.workRecords = WorkRecords(address(views));

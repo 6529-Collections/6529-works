@@ -22,12 +22,15 @@ library Roles {
 
     // --------------------------------------------------------------------- role IDs
 
-    /// @notice `AccessManager.ADMIN_ROLE`: the hot admin Safe and a cold recovery admin Safe,
-    ///         30-day execution delay. Also the manager's own admin functions.
+    /// @notice `AccessManager.ADMIN_ROLE`: the hot admin Safe and independent recovery admin
+    ///         Safes (three seats in the genesis layout), never less than the 30-day execution
+    ///         delay (`WorksAccessManager` refuses a shorter one). Also the manager's own admin
+    ///         functions.
     uint64 internal constant ADMIN = 0;
     /// @notice Guardian Safes (at least two; three by default): `WorksAccessManager` lets them
-    ///         cancel any scheduled operation and suspend a holder of a suspendable role
-    ///         ({isSuspendable}). Mapped to immediate protective actions: the auction's dispute
+    ///         cancel any scheduled operation, suspend a holder of a suspendable role
+    ///         ({isSuspendable}) and, by majority, stop an escalated operation or decide a
+    ///         dead-admin recovery. Mapped to immediate protective actions: the auction's dispute
     ///         pause, the identity-change veto, curation `disableSigner` and `revokePackage`,
     ///         `deprecateAsset`, and deprecating a dependency version. Holds nothing but
     ///         `PAUSER`.

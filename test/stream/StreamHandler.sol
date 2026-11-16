@@ -17,9 +17,12 @@ import {
 import { PrimaryOutcome } from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { Stream } from "src/stream/Stream.sol";
+import { WorkDelivery } from "src/stream/WorkDelivery.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { MockEconomics, MockRenderer, MockSaleAdapter } from "../mocks/stream/StreamMocks.sol";
+import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice Drives 6529 Stream and its records satellite through random sequences of mints
 ///         (with random fee terms, into random collections), burns, transfers, record edits,
@@ -44,6 +47,7 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
 
     Stream internal immutable stream;
     WorkRecords internal immutable records;
+    WorkDelivery internal immutable delivery;
     MockSaleAdapter internal immutable auction;
     address internal immutable artist;
     uint256 internal immutable artistKey;
@@ -91,6 +95,7 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
     ) {
         stream = stream_;
         records = records_;
+        delivery = WorkDelivery(records_.delivery());
         auction = auction_;
         artistKey = artistKey_;
         artist = vm.addr(artistKey_);
@@ -165,7 +170,7 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         address fee = feeShare == 0 ? address(0) : _feeRecipient;
         _econ.setTerms(WorkTerms(sellerWallet, fee, feeShare, address(0), rate));
 
-        uint256 expected = stream.totalMinted() + 1;
+        uint256 expected = IStream(address(stream)).totalMinted() + 1;
         (uint256 tokenId,) = auction.start(stream, _request(item));
         if (tokenId != expected) ++violations;
         ++ghostMinted;
@@ -195,7 +200,7 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
     function settle(uint256 seed) external {
         (bool ok, uint256 tokenId) = _live(seed);
         if (!ok || settled[tokenId]) return;
-        auction.settle(stream, tokenId);
+        auction.settle(IStream(address(stream)), tokenId);
         settled[tokenId] = true;
     }
 
@@ -336,11 +341,11 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         if (!ok || !opened[tokenId]) return;
         (, MediaFile[] memory media) = _item(tokenId - 1);
         bytes32 file = media[0].fileId;
-        uint256 n = records.locators(tokenId, file).length;
+        uint256 n = delivery.locators(tokenId, file).length;
         // The platform's quota is 8 per file.
         if (n >= 8) return;
         vm.prank(platform);
-        records.addLocator(tokenId, file, Locator(LocatorKind.IPFS, CA.ipfs(vm.toString(n))));
+        delivery.addLocator(tokenId, file, Locator(LocatorKind.IPFS, CA.ipfs(vm.toString(n))));
     }
 
     function warp(uint256 secondsAhead) external {
@@ -358,7 +363,7 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
     }
 
     function _live(uint256 seed) internal view returns (bool, uint256) {
-        uint256 minted = stream.totalMinted();
+        uint256 minted = IStream(address(stream)).totalMinted();
         if (minted == 0) return (false, 0);
         uint256 tokenId = seed % minted + 1;
         return (!burned[tokenId], tokenId);

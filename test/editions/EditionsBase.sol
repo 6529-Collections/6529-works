@@ -114,19 +114,19 @@ abstract contract EditionsBase is Test {
     ///      canonical payee list (fixed payee first, then the artist ID), CC0, and edition terms
     ///      for the uniform-price edition auction in ETH with creator cap `maxCount` (zero: none).
     function _item(uint32 maxCount) internal returns (PackageItem memory item) {
-        item.kind = ItemKind.EDITION_MASTER;
+        item.kind = uint8(ItemKind.EDITION_MASTER);
         item.collectionId = 1;
         item.contentHash = sha256(abi.encode("content", ++_contentNonce));
         item.mediaHash = keccak256(abi.encode("media", _contentNonce));
         item.recordFileId = keccak256(abi.encode("record", _contentNonce));
         item.parties = new Party[](2);
-        item.parties[0] = Party(artist, PartyRole.ARTIST);
-        item.parties[1] = Party(collaborator, PartyRole.COLLABORATOR);
+        item.parties[0] = Party(artist, uint8(PartyRole.ARTIST));
+        item.parties[1] = Party(collaborator, uint8(PartyRole.COLLABORATOR));
         item.payees = new ISplitWallet.Payee[](2);
         item.payees[0] = ISplitWallet.Payee(0, collaborator, 20_000);
         item.payees[1] = ISplitWallet.Payee(uint256(uint160(artist)), address(0), 80_000);
         item.license = License("CC0-1.0", keccak256("CC0 1.0 legal code"));
-        item.seedPolicy = SeedPolicy.NONE;
+        item.seedPolicy = uint8(SeedPolicy.NONE);
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_ETH, "");
         item.edition = EditionTerms(maxCount, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
     }
@@ -148,11 +148,10 @@ abstract contract EditionsBase is Test {
     /// @dev `createEdition` with the item's package (salt 0). Makes no external call before it,
     ///      so a preceding `vm.prank` or `vm.expectRevert` applies to `createEdition` itself.
     function _createEdition(uint256 id, PackageItem memory item) internal returns (uint256) {
-        (bytes32 root, bytes32[] memory proof) = EditionsPackages.packageOf(item, 0);
-        return editions.createEdition(id, item, root, proof);
+        return editions.createEdition(id, item);
     }
 
-    function _create(PackageItem memory item) internal returns (uint256 id) {
+    function _create(PackageItem memory item) internal virtual returns (uint256 id) {
         id = _master(item);
         _createEdition(id, item);
     }

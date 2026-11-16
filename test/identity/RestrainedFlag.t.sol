@@ -62,7 +62,8 @@ contract RestrainedFlagTest is IdentityFixture {
         vm.prank(guardian);
         registry.vetoChange(artistId);
         _check();
-        // A payout-only override keeps the authority.
+        // A payout-only override keeps the authority (and needs dormancy).
+        vm.warp(block.timestamp + 365 days);
         _stageOverride(ChangeKind.CONTESTED, _identity(artist, payout), 0);
         assertFalse(_flag());
         _check();

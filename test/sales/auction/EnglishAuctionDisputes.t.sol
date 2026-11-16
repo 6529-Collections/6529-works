@@ -122,8 +122,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
     // ------------------------------------------------------------------------ withdrawals
 
     function test_WithdrawBid_WhilePaused() public {
-        vm.prank(setter);
-        auction.setOpeningBid(ETH, 0, 0.1 ether);
+        _setOpeningBid(ETH, 0.1 ether);
         uint256 saleId = _start();
         _bidEth(saleId, alice, 1 ether);
         _bidEth(saleId, bob, 2 ether);
@@ -341,7 +340,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
     function test_Resume_ReopeningIsNeverShorterThanTheLockedWindow() public {
         IEnglishAuction.AuctionConfig memory c = auction.config();
         IEnglishAuction.AuctionConfig memory wide =
-            IEnglishAuction.AuctionConfig(7 days, 1 days, SHARE);
+            IEnglishAuction.AuctionConfig(7 days, 1 days, SHARE, REFUSAL_DELAY, REFUSAL_GAS);
         vm.prank(setter);
         auction.setConfig(c, wide);
         uint256 withdrawn = _start();
@@ -355,7 +354,10 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         vm.prank(alice);
         auction.withdrawBid(withdrawn);
         vm.prank(setter);
-        auction.setConfig(wide, IEnglishAuction.AuctionConfig(1 hours, 1 minutes, SHARE));
+        auction.setConfig(
+            wide,
+            IEnglishAuction.AuctionConfig(1 hours, 1 minutes, SHARE, REFUSAL_DELAY, REFUSAL_GAS)
+        );
         vm.warp(pausedAt + auction.MAX_PAUSE() + 1);
         uint256 resumedAt = pausedAt + auction.MAX_PAUSE();
         assertEq(auction.auction(withdrawn).endTime, resumedAt + 1 days, "withdrawn: the window");
@@ -587,7 +589,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
 
     function test_SetConfig_CompareAndSet() public {
         IEnglishAuction.AuctionConfig memory next =
-            IEnglishAuction.AuctionConfig(12 hours, 10 minutes, 10_000);
+            IEnglishAuction.AuctionConfig(12 hours, 10 minutes, 10_000, REFUSAL_DELAY, REFUSAL_GAS);
         vm.prank(setter);
         vm.expectRevert(ISaleAdapter.ExpectedValueMismatch.selector);
         auction.setConfig(next, next);
@@ -619,29 +621,30 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         assertEq(a.endTime - block.timestamp, 12 hours, "new sales use the new config");
     }
 
-    /// @dev The opening bid is a two-way compare-and-set price within an absolute ceiling.
+    /// @dev The opening bid is a two-way price within an absolute ceiling, held by the asset
+    ///      allowlist since ADR 0007 and compare-and-set on the asset's revision (ETH is at
+    ///      revision 1 from its admission).
     function test_SetOpeningBid_MovesBothWaysWithinTheCeiling() public {
-        uint256 ceiling = ETH_FLOOR * auction.OPENING_BID_FLOORS();
+        uint256 ceiling = ETH_FLOOR * allowlist.OPENING_BID_FLOORS();
+        assertEq(ceiling, ETH_FLOOR * auction.OPENING_BID_FLOORS(), "the lens answers the same");
         vm.startPrank(setter);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IEnglishAuction.OpeningBidAboveCeiling.selector, ceiling + 1, ceiling
+                IAssetAllowlist.OpeningBidAboveCeiling.selector, ceiling + 1, ceiling
             )
         );
-        auction.setOpeningBid(ETH, 0, ceiling + 1);
-        vm.expectEmit(address(auction));
-        emit IEnglishAuction.OpeningBidSet(ETH, 0, 0.5 ether);
-        auction.setOpeningBid(ETH, 0, 0.5 ether);
-        vm.expectRevert(ISaleAdapter.ExpectedValueMismatch.selector);
-        auction.setOpeningBid(ETH, 0, 0.2 ether);
-        vm.expectRevert(ISaleAdapter.ExpectedValueMismatch.selector);
-        auction.setOpeningBid(ETH, 1 ether, 0.2 ether); // stale from above as well
-        auction.setOpeningBid(ETH, 0.5 ether, 0.2 ether);
-        auction.setOpeningBid(ETH, 0.2 ether, ceiling);
-        auction.setOpeningBid(ETH, ceiling, 0);
-        auction.setOpeningBid(ETH, 0, 0.2 ether);
+        allowlist.setOpeningBid(ETH, 1, ceiling + 1);
+        vm.expectEmit(address(allowlist));
+        emit IAssetAllowlist.OpeningBidSet(ETH, 0, 0.5 ether, 2);
+        allowlist.setOpeningBid(ETH, 1, 0.5 ether);
+        vm.expectRevert(abi.encodeWithSelector(IAssetAllowlist.RevisionMismatch.selector, 1, 2));
+        allowlist.setOpeningBid(ETH, 1, 0.2 ether); // stale
+        allowlist.setOpeningBid(ETH, 2, 0.2 ether);
+        allowlist.setOpeningBid(ETH, 3, ceiling);
+        allowlist.setOpeningBid(ETH, 4, 0);
+        allowlist.setOpeningBid(ETH, 5, 0.2 ether);
         vm.expectRevert(abi.encodeWithSelector(IAssetAllowlist.AssetNotActive.selector, alice));
-        auction.setOpeningBid(alice, 0, 1);
+        allowlist.setOpeningBid(alice, 0, 1);
         vm.stopPrank();
         assertEq(auction.openingBid(ETH), 0.2 ether);
         uint256 saleId = _start();
@@ -652,27 +655,25 @@ contract EnglishAuctionDisputesTest is AuctionBase {
             abi.encodeWithSelector(IEnglishAuction.BidTooLow.selector, 0.2 ether, 0.1 ether)
         );
         auction.bid{ value: 0.1 ether }(saleId, address(0), _direct(alice, 0.1 ether));
-        vm.prank(setter);
-        auction.setOpeningBid(ETH, 0.2 ether, 0);
+        _setOpeningBid(ETH, 0);
         assertEq(auction.minimumBid(saleId), 0.2 ether, "locked for the running sale");
     }
 
     function testFuzz_SetOpeningBid_AnyValueUpToTheCeiling(uint256 first, uint256 next) public {
-        uint256 ceiling = ETH_FLOOR * auction.OPENING_BID_FLOORS();
+        uint256 ceiling = ETH_FLOOR * allowlist.OPENING_BID_FLOORS();
         first = bound(first, 0, ceiling);
-        vm.prank(setter);
-        auction.setOpeningBid(ETH, 0, first);
+        _setOpeningBid(ETH, first);
         vm.prank(setter);
         if (next > ceiling) {
             vm.expectRevert(
                 abi.encodeWithSelector(
-                    IEnglishAuction.OpeningBidAboveCeiling.selector, next, ceiling
+                    IAssetAllowlist.OpeningBidAboveCeiling.selector, next, ceiling
                 )
             );
-            auction.setOpeningBid(ETH, first, next);
+            allowlist.setOpeningBid(ETH, 2, next);
             assertEq(auction.openingBid(ETH), first);
         } else {
-            auction.setOpeningBid(ETH, first, next);
+            allowlist.setOpeningBid(ETH, 2, next);
             assertEq(auction.openingBid(ETH), next);
         }
     }
@@ -685,10 +686,10 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         uint256 cap = type(uint96).max;
         vm.startPrank(setter);
         vm.expectRevert(
-            abi.encodeWithSelector(IEnglishAuction.OpeningBidAboveCeiling.selector, cap + 1, cap)
+            abi.encodeWithSelector(IAssetAllowlist.OpeningBidAboveCeiling.selector, cap + 1, cap)
         );
-        auction.setOpeningBid(address(big), 0, cap + 1);
-        auction.setOpeningBid(address(big), 0, cap);
+        allowlist.setOpeningBid(address(big), 1, cap + 1);
+        allowlist.setOpeningBid(address(big), 1, cap);
         vm.stopPrank();
         stream.setTerms(_terms(address(big)));
         uint256 saleId = auction.start(address(stream), "");
@@ -747,7 +748,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, alice)
         );
-        auction.setOpeningBid(ETH, 0, 1);
+        allowlist.setOpeningBid(ETH, 1, 1);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, alice)
         );

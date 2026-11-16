@@ -208,3 +208,27 @@ role: PLATFORM, CURATOR or STORAGE_OPERATOR.
   KEEPER and CURATION_SIGNER. A curation signer's kill switch is the verifier's
   one-way `disableSigner`, which also ends its approval epoch; a lift by grant would
   not.
+
+## Amendment note (15 November 2026, [ADR 0007](0007-permanence.md))
+
+`WorksAccessManager` gains, for governance that must last decades: a bounded veto on a
+guardian's removal and on a successor registration (a struck action waits an escalated delay
+and only a majority of guardian seats, at least two, can stop it), dead-admin recovery (a year
+of admin silence, then a 180-day public delay any live admin can void), a two-step succession
+(the admins propose; the successor itself accepts after re-pointing a probe contract to the
+manager, so one that cannot act never takes over) with one permissionless `migrate`, ADMIN and
+GUARDIAN seat caps, a class-delay floor on every grant (30 days for ADMIN; before review D's
+L-1 fix only ADMIN grants were held to their class), and no remapping or closing of the manager
+itself (GV-37 to GV-47 in the
+[governance specification](../spec/governance.md#rules-and-invariants)). Genesis names a third
+admin Safe. Rules 1 to 3 and suspension are unchanged outside the escalated lane. With three
+guardian seats any two are a majority, so the bounded veto bites against a colluding pair only
+from four seats (LIM-GV-4).
+
+Amendment note (16 November 2026): Rule 2 holds outside the escalated lane. In that lane a
+cancellation is a guardian-majority vote in which the guardian a struck removal names votes
+with its seat like every other seated guardian (it never decides alone: a majority of the
+seats and at least two votes). Taking its vote away would let a compromised admin with one
+dishonest guardian remove honest guardians at three or four seats; the comparison by seat
+count is in the governance specification's escalated-lane section, and the rule's wording there
+and in the manager's NatSpec now says so.

@@ -15,8 +15,8 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///         they start, so later changes only affect later sales.
 /// @dev Governed through AccessManager, with the delay classes of ADR 0002 and the role IDs of
 ///      `Roles` (src/governance/Roles.sol): {admitAsset} and {setDefaultCurrency} map to
-///      `Roles.FUNDS_SETTER` (`Roles.FUNDS`, 14 days), {setIncrementFloor} to
-///      `Roles.PARAMETER_SETTER` (`Roles.STANDARD`, 48 hours), and {deprecateAsset}, which only
+///      `Roles.FUNDS_SETTER` (`Roles.FUNDS`, 14 days), {setIncrementFloor} and {setOpeningBid}
+///      to `Roles.PARAMETER_SETTER` (`Roles.STANDARD`, 48 hours), and {deprecateAsset}, which only
 ///      tightens, to `Roles.GUARDIAN` (`Roles.IMMEDIATE`). Direction rules and compare-and-set
 ///      live here because AccessManager only sees selectors. Every setter compares a revision
 ///      counter that every change bumps, so a queued operation never applies to a later state
@@ -25,14 +25,20 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 contract AssetAllowlist is IAssetAllowlist, AccessManaged {
     /// @notice ETH, which is always identified by the zero address.
     address public constant ETH = address(0);
+    /// @notice An opening bid is at most this many increment floors (a sanity ceiling against a
+    ///         mistyped price, not a policy: governance chooses the bid below it).
+    uint256 public constant OPENING_BID_FLOORS = 1_000;
 
     /// @dev `since` is when the status last changed; `inactiveTotal` sums the seconds of earlier,
-    ///      closed deprecations. Both share the status word, so recording them costs no new slot.
+    ///      closed deprecations; `openingBid` is the English auction's least first bid in the
+    ///      asset. All share the status word, so an auction's start reads status and opening bid
+    ///      from one slot.
     struct AssetConfig {
         Status status;
         uint64 revision;
         uint40 since;
         uint40 inactiveTotal;
+        uint96 openingBid;
         uint256 incrementFloor;
     }
 
@@ -116,6 +122,45 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
         current.configured = true;
         current.asset = asset;
         emit DefaultCurrencyChanged(product, previous, asset, ++current.revision);
+    }
+
+    /// @inheritdoc IAssetAllowlist
+    function setOpeningBid(address asset, uint64 expectedRevision, uint256 bid)
+        external
+        restricted
+    {
+        AssetConfig storage config = _activeConfig(asset);
+        _checkRevision(expectedRevision, config.revision);
+        uint256 ceiling = config.incrementFloor * OPENING_BID_FLOORS;
+        if (ceiling > type(uint96).max) ceiling = type(uint96).max;
+        if (bid > ceiling) revert OpeningBidAboveCeiling(bid, ceiling);
+        uint256 previous = config.openingBid;
+        // Safe: `bid` is at most `type(uint96).max` (the ceiling above).
+        // forge-lint: disable-next-line(unsafe-typecast)
+        config.openingBid = uint96(bid);
+        emit OpeningBidSet(asset, previous, bid, ++config.revision);
+    }
+
+    /// @inheritdoc IAssetAllowlist
+    function openingBid(address asset) external view returns (uint256) {
+        return _assets[asset].openingBid;
+    }
+
+    /// @inheritdoc IAssetAllowlist
+    function activeOpeningBid(address asset) external view returns (uint256) {
+        return _activeConfig(asset).openingBid;
+    }
+
+    /// @inheritdoc IAssetAllowlist
+    function defaultCurrencyOpeningBid(bytes32 product)
+        external
+        view
+        returns (address asset, uint256 bid)
+    {
+        Currency storage currency = _defaults[product];
+        if (!currency.configured) revert CurrencyNotConfigured(product);
+        asset = currency.asset;
+        bid = _activeConfig(asset).openingBid;
     }
 
     /// @inheritdoc IAssetAllowlist

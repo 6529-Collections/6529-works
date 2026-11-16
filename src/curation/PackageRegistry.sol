@@ -6,13 +6,17 @@ import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
+import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IEditions } from "../interfaces/IEditions.sol";
+import { IEntropyModule } from "../interfaces/IEntropyModule.sol";
 import { ICurationVerifier } from "../interfaces/ICurationVerifier.sol";
+import { IMintPolicy } from "../interfaces/IMintPolicy.sol";
 import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
 import { IStream } from "../interfaces/IStream.sol";
+import { ISplitFactory } from "../economics/interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "../economics/interfaces/ISplitWallet.sol";
 import { Splits } from "../economics/Splits.sol";
-import { PRODUCT_EDITIONS, PRODUCT_STREAM } from "../interfaces/types/EconomicsTypes.sol";
+import { PRODUCT_STREAM, ProductEconomics } from "../interfaces/types/EconomicsTypes.sol";
 import { ArtistIdentity } from "../interfaces/types/IdentityTypes.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
 import {
@@ -23,19 +27,23 @@ import {
     Party,
     PartyAcceptance,
     PartyRole,
-    SeedPolicy
+    SeedPolicy,
+    StreamMintRequest
 } from "../interfaces/types/PackageTypes.sol";
+import { PrimaryTerms } from "../interfaces/types/SaleTypes.sol";
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
 import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 import { EditionRules } from "../editions/EditionRules.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
+import { SpdxId } from "../stream/SpdxId.sol";
 
 /// @title PackageRegistry
 /// @notice Approved package roots, party consent, single-use items, per-product content
 ///         uniqueness and the lead artist's revocable "move to Stream" (ADR 0001 section 3).
-/// @dev Gas (the auction start's budget: 350K Prague gas, ADR 0004). `consume` writes one fresh
-///      slot, 6529 Stream's `contentHash => itemHash`, which is both the consume-once record and
+/// @dev Gas (the auction start's budget: 350K Prague gas, ADR 0004). A mint consumes an item
+///      without an event of its own: Stream's permanent `WorkMinted` carries the package root,
+///      item hash, lead artist and content hash. The consume writes one fresh slot, 6529 Stream's `contentHash => itemHash`, which is both the consume-once record and
 ///      the uniqueness record. It reads consent from `acceptedAs[root][account]`, and its only
 ///      external call is the lead's active authority. Move nonces live in a per-artist bitmap of
 ///      255 nonces per word whose top bit is a sentinel: the acceptance that creates an identity
@@ -50,8 +58,9 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      Uniqueness keys on the item's declared `contentHash` (the decoded SHA-256 of its primary
 ///      media), never on a file ID. It is defense in depth: the curation signer verifies every
 ///      declared SHA-256 against the decoded bytes before attesting, and the evidence hash covers
-///      that check. The one cross-product reuse, the linked pair, is enforced from the Editions
-///      side: an edition may claim only the content hash its master item consumed on Stream.
+///      that check. The one cross-product reuse, the linked pair, is decided by Editions from
+///      Stream's permanent record (an edition is created only for the item Stream recorded as
+///      consuming its content); this registry plays no part in it.
 ///      When an upheld dispute burns a work during its auction, the governed
 ///      `IStream.releaseContent` passes on the rightful artist the dispute outcome names: the
 ///      content hash is reserved for that artist, so only an item whose lead artist it is may
@@ -63,19 +72,17 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      also listed in another approved root stays consumable there; the guardian revokes every
 ///      root that lists it. Disabling a curation signer stops only future registrations.
 ///
-///      Callers: `consume` and `releaseContent` trust only the bound Stream, and `claimContent`
-///      only the bound Editions. Each slot is bound once, independently, by the genesis
+///      Callers: `authorize` trusts only the bound Stream; the Editions binding is kept for the
+///      genesis wiring and is informational. Each slot is bound once, independently, by the genesis
 ///      configurator (which holds ADMIN with no delay until it renounces ADMIN); no bound call
 ///      goes through the AccessManager.
-contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
+contract PackageRegistry is IPackageRegistry, IMintPolicy, AccessManaged, EIP712 {
     /// @dev Move nonces per bitmap word; bit 255 of every written word is the sentinel.
     uint256 private constant NONCES_PER_WORD = 255;
     uint256 private constant SENTINEL = 1 << 255;
     /// @dev Binding names (`Bound`, `AlreadyBound`).
     bytes32 private constant STREAM = "STREAM";
     bytes32 private constant EDITIONS = "EDITIONS";
-    /// @dev A Stream content slot whose item was burned and released: free for a new item.
-    bytes32 private constant RELEASED = bytes32(uint256(1));
 
     struct Package {
         PackageStatus status;
@@ -97,11 +104,7 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
 
     mapping(bytes32 root => Package) private _packages;
     mapping(bytes32 root => mapping(address account => uint256 artistId)) private _acceptedAs;
-    mapping(bytes32 contentHash => bytes32 itemHash) private _streamItems;
-    mapping(bytes32 contentHash => bytes32 itemHash) private _editionItems;
     mapping(uint256 artistId => mapping(uint256 word => uint256 bits)) private _moveNonces;
-    mapping(bytes32 itemHash => bool) private _released;
-    mapping(bytes32 contentHash => uint256 artistId) private _releasedTo;
     /// @dev Verifiers replaced by `setVerifier`: never installable again.
     mapping(address verifier => bool) private _retired;
 
@@ -218,7 +221,59 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
         }
     }
 
-    /// @inheritdoc IPackageRegistry
+    /// @inheritdoc IMintPolicy
+    /// @dev The v1 policy: `request` is `abi.encode(StreamMintRequest)`. Checks the Stream item
+    ///      rules (`_checkItem`), consumes the item (`_consume`), checks a VRF item's delivered
+    ///      seed at Stream's current entropy module, and quotes the terms from Stream's economics
+    ///      resolver and split factory (`_quote`). The lead artist's active authority, which
+    ///      signed the move, is the work's creator.
+    function authorize(MintContext calldata context, bytes calldata request)
+        external
+        returns (MintRecord memory r)
+    {
+        if (msg.sender != stream) revert UnboundCaller(msg.sender);
+        StreamMintRequest calldata req = _request(request);
+        PackageItem calldata item = req.item;
+        _checkItem(item, context.entropyModule);
+        address creator;
+        (r.itemHash, r.artistId, creator) = _consume(req.packageRoot, item, req.proof, req.move);
+        if (
+            item.seedPolicy == uint8(SeedPolicy.VRF)
+                && !IEntropyModule(context.entropyModule).isDeliveredContent(item.contentHash)
+        ) revert SeedNotDelivered(r.itemHash);
+        (r.seller, r.feeRecipient, r.feeShare, r.royaltyRate) = _quote(item, context);
+        r.creator = creator;
+        r.saleKind = item.sale.saleKind;
+        r.currency = item.sale.currency;
+        r.params = item.sale.params;
+        r.collectionId = item.collectionId;
+        r.kind = uint8(item.kind);
+        r.seedPolicy = uint8(item.seedPolicy);
+        r.packageRoot = req.packageRoot;
+        r.contentHash = item.contentHash;
+        r.mediaHash = item.mediaHash;
+        r.recordFileId = item.recordFileId;
+    }
+
+    /// @inheritdoc IMintPolicy
+    /// @dev Resolves the lead artist through `artistIdOf`, so it reverts while the lead artist
+    ///      has no identity. Does not check that the collection exists (Stream does, at mint).
+    function preview(MintContext calldata context, bytes calldata request)
+        external
+        view
+        returns (PrimaryTerms memory terms)
+    {
+        StreamMintRequest calldata req = _request(request);
+        _checkItem(req.item, context.entropyModule);
+        uint256 artistId = _artists.artistIdOf(req.item.parties[0].account);
+        if (artistId == 0) revert InvalidLeadArtist();
+        (terms.seller, terms.feeRecipient, terms.feeShare,) = _quote(req.item, context);
+        terms.saleKind = req.item.sale.saleKind;
+        terms.currency = req.item.sale.currency;
+        terms.params = req.item.sale.params;
+        terms.creator = _artists.activeAuthorityOf(artistId);
+    }
+
     /// @dev Checks, in order: the caller is the bound Stream; the root is approved; the proof
     ///      places the item; its content hash is unused on Stream; the seed and edition terms;
     ///      every party accepted the root and is a distinct artist; the payee list is canonical
@@ -227,72 +282,21 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     ///      released, reverts with `ContentUsed` naming the item itself. A released content hash
     ///      is consumed only by an item whose lead artist is the release's beneficiary
     ///      (`ContentReserved` otherwise).
-    function consume(
+    function _consume(
         bytes32 packageRoot,
         PackageItem calldata item,
         bytes32[] calldata proof,
         MoveAuthorization calldata move
-    ) external returns (bytes32 itemHash, uint256 artistId, address authority) {
-        if (msg.sender != stream) revert UnboundCaller(msg.sender);
+    ) private returns (bytes32 itemHash, uint256 artistId, address authority) {
         _requireApproved(packageRoot);
         itemHash = WorksHashing.itemHashCalldata(item);
         if (
             proof.length > Limits.MAX_PROOF_DEPTH
                 || !MerkleProof.verifyCalldata(proof, packageRoot, WorksHashing.leaf(itemHash))
         ) revert ItemNotInPackage(packageRoot, itemHash);
-        bytes32 contentHash = item.contentHash;
-        bytes32 prior = _streamItems[contentHash];
-        if (prior != 0) {
-            if (prior != RELEASED) revert ContentUsed(PRODUCT_STREAM, contentHash, prior);
-            // Only a released slot can hold a tombstoned item: fresh content skips this read. A
-            // burned item reverts as if it still held the content, like a second consume.
-            if (_released[itemHash]) revert ContentUsed(PRODUCT_STREAM, contentHash, itemHash);
-        }
         _checkTerms(item, itemHash);
         artistId = _checkParties(packageRoot, item, itemHash);
-        if (prior == RELEASED && artistId != _releasedTo[contentHash]) {
-            revert ContentReserved(contentHash, _releasedTo[contentHash]);
-        }
         authority = _useMove(packageRoot, itemHash, artistId, move);
-        _streamItems[contentHash] = itemHash;
-        emit ItemConsumed(packageRoot, itemHash, artistId, contentHash);
-    }
-
-    /// @inheritdoc IPackageRegistry
-    /// @dev Reverts with `ClaimNotAllowed` unless 6529 Stream consumed `contentHash` for `itemHash`
-    ///      (the linked pair), and with `ContentUsed` when an edition already claimed it.
-    function claimContent(bytes32 contentHash, bytes32 itemHash) external {
-        if (msg.sender != editions) revert UnboundCaller(msg.sender);
-        if (uint256(itemHash) <= uint256(RELEASED) || _streamItems[contentHash] != itemHash) {
-            revert ClaimNotAllowed(PRODUCT_EDITIONS, contentHash);
-        }
-        bytes32 prior = _editionItems[contentHash];
-        if (prior != 0) revert ContentUsed(PRODUCT_EDITIONS, contentHash, prior);
-        _editionItems[contentHash] = itemHash;
-        emit ContentClaimed(contentHash, itemHash);
-    }
-
-    /// @inheritdoc IPackageRegistry
-    /// @dev Reverts with `ClaimNotAllowed(PRODUCT_STREAM, contentHash)` unless `itemHash` holds
-    ///      the slot, so a release happens once per burned item. The beneficiary must be a
-    ///      registered artist: the artist registry's `authorityOf` reverts with `UnknownArtist`
-    ///      for zero or an unknown ID, so the release waits until the rightful artist has an
-    ///      identity. Editions are created only after a
-    ///      master's sale settles, so a burned work never has an edition claim to release; the
-    ///      Editions slot is left untouched.
-    function releaseContent(bytes32 contentHash, bytes32 itemHash, uint256 beneficiary) external {
-        if (msg.sender != stream) revert UnboundCaller(msg.sender);
-        // Zero (never consumed) and the release marker are not item hashes.
-        if (uint256(itemHash) <= uint256(RELEASED) || _streamItems[contentHash] != itemHash) {
-            revert ClaimNotAllowed(PRODUCT_STREAM, contentHash);
-        }
-        if (_artists.authorityOf(beneficiary) == address(0)) {
-            revert IArtistRegistry.UnknownArtist(beneficiary);
-        }
-        _streamItems[contentHash] = RELEASED;
-        _released[itemHash] = true;
-        _releasedTo[contentHash] = beneficiary;
-        emit ContentReleased(contentHash, itemHash, beneficiary);
     }
 
     /// @inheritdoc IPackageRegistry
@@ -325,11 +329,17 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return interfaceId == type(IERC165).interfaceId
-            || interfaceId == type(IPackageRegistry).interfaceId;
+            || interfaceId == type(IPackageRegistry).interfaceId
+            || interfaceId == type(IMintPolicy).interfaceId;
     }
 
     /// @inheritdoc IPackageRegistry
-    function artistRegistry() external view returns (address) {
+    function artistRegistry()
+        external
+        view
+        override(IMintPolicy, IPackageRegistry)
+        returns (address)
+    {
         return address(_artists);
     }
 
@@ -349,26 +359,22 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IPackageRegistry
+    /// @dev Stream holds content uniqueness (AUC-44); this answers from it.
     function consumedItemOf(bytes32 contentHash) external view returns (bytes32 itemHash) {
-        itemHash = _streamItems[contentHash];
-        if (itemHash == RELEASED) itemHash = 0;
+        return IStream(stream).consumedItemOf(contentHash);
     }
 
     /// @notice Whether `itemHash` was burned and released, so it can never be consumed again.
     /// @param itemHash The item hash.
     /// @return True if `releaseContent` tombstoned the item.
     function isReleased(bytes32 itemHash) external view returns (bool) {
-        return _released[itemHash];
+        return IStream(stream).isReleased(itemHash);
     }
 
     /// @inheritdoc IPackageRegistry
+    /// @dev Answered from Stream (AUC-44).
     function releasedTo(bytes32 contentHash) external view returns (uint256 artistId) {
-        return _releasedTo[contentHash];
-    }
-
-    /// @inheritdoc IPackageRegistry
-    function editionClaimOf(bytes32 contentHash) external view returns (bytes32) {
-        return _editionItems[contentHash];
+        return IStream(stream).releasedTo(contentHash);
     }
 
     /// @inheritdoc IPackageRegistry
@@ -415,6 +421,55 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
         );
     }
 
+    /// @dev Views `data` as `abi.encode(StreamMintRequest)` in place. Member offsets are
+    ///      bounds-checked by the compiler on access.
+    function _request(bytes calldata data) private pure returns (StreamMintRequest calldata req) {
+        if (data.length < 160 || uint256(bytes32(data[:32])) != 32) revert InvalidMintRequest();
+        assembly ("memory-safe") {
+            req := add(data.offset, 32)
+        }
+    }
+
+    /// @dev Stream rules: a sale kind (whose adapter checks the sale's currency and params), a
+    ///      lead party, a coherent seed policy (a VRF item needs Stream's entropy module), and a
+    ///      license ID that follows the `SpdxId` rule `WorkRecords` applies at relicense.
+    ///      `openRecord` stores the approved record file and license as they are; the media
+    ///      commitments it checks are not visible here, so the curation signer's tooling must
+    ///      simulate `openRecord` before attesting an item.
+    function _checkItem(PackageItem calldata item, address entropy) private pure {
+        if (item.sale.saleKind == 0) revert InvalidItemSale();
+        if (item.parties.length == 0) revert InvalidLeadArtist();
+        // Kinds, seed policies and roles are open `uint8`s in the package types; this policy
+        // knows today's values and refuses any other for a new item (a successor may add some).
+        uint8 policy = item.seedPolicy;
+        if (
+            policy > uint8(SeedPolicy.VRF)
+                || (policy == uint8(SeedPolicy.ARTIST)) != (item.seed != 0)
+                || (policy == uint8(SeedPolicy.VRF) && entropy == address(0))
+        ) revert InvalidSeedPolicy();
+        if (!SpdxId.isValidCalldata(item.license.spdxId)) revert InvalidLicenseId();
+    }
+
+    /// @dev The terms a work of `item` locks now: the seller wallet, the split factory's
+    ///      salt-zero wallet for the item's payees (the factory validates the list), and the
+    ///      product's economics (one view read). The fee terms must yield a valid royalty payee
+    ///      list: a fee share below 100,000 with a fee recipient other than the seller, or no fee
+    ///      at all. The adapter resolves `CURRENCY_DEFAULT`, checks the allowlist when it locks
+    ///      the currency, and checks the params (the English auction refuses any).
+    function _quote(PackageItem calldata item, MintContext calldata context)
+        private
+        view
+        returns (address seller, address feeRecipient, uint32 feeShare, uint32 royaltyRate)
+    {
+        ProductEconomics memory e = IEconomicsResolver(context.economics).economics(PRODUCT_STREAM);
+        seller = ISplitFactory(context.splitFactory).walletFor(item.payees, bytes32(0));
+        if (
+            e.royaltyRate > Splits.DENOMINATOR || e.feeShare >= Splits.DENOMINATOR
+                || (e.feeShare != 0 && (e.feeRecipient == address(0) || e.feeRecipient == seller))
+        ) revert InvalidWorkTerms();
+        return (seller, e.feeRecipient, e.feeShare, e.royaltyRate);
+    }
+
     function _requireApproved(bytes32 packageRoot) private view {
         if (_packages[packageRoot].status != PackageStatus.APPROVED) {
             revert PackageNotApproved(packageRoot);
@@ -428,9 +483,10 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     ///      later revocation of its root does not stop that either).
     function _checkTerms(PackageItem calldata item, bytes32 itemHash) private pure {
         EditionTerms calldata e = item.edition;
-        bool bad =
-            item.contentHash == 0 || (item.seedPolicy == SeedPolicy.ARTIST) == (item.seed == 0);
-        if (item.kind == ItemKind.ORIGINAL) {
+        bool bad = item.contentHash == 0
+            || (item.seedPolicy == uint8(SeedPolicy.ARTIST)) == (item.seed == 0)
+            || item.kind > uint8(ItemKind.EDITION_MASTER);
+        if (item.kind == uint8(ItemKind.ORIGINAL)) {
             bad = bad || e.maxCount != 0 || e.currency != address(0) || e.saleKind != 0
                 || e.params.length != 0;
         } else {
@@ -454,12 +510,13 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
         ISplitWallet.Payee[] calldata payees = item.payees;
         uint256 n = parties.length;
         if (
-            n == 0 || n > Limits.MAX_PARTIES || parties[0].role != PartyRole.ARTIST
+            n == 0 || n > Limits.MAX_PARTIES || parties[0].role != uint8(PartyRole.ARTIST)
                 || payees.length == 0 || payees.length > n
         ) revert InvalidItem(itemHash);
         mapping(address => uint256) storage accepted = _acceptedAs[packageRoot];
         uint256[] memory ids = new uint256[](n);
         for (uint256 i; i < n; ++i) {
+            if (parties[i].role > uint8(PartyRole.COLLABORATOR)) revert InvalidItem(itemHash);
             uint256 id = accepted[parties[i].account];
             if (id == 0) revert PartyNotAccepted(packageRoot, parties[i].account);
             for (uint256 j; j < i; ++j) {

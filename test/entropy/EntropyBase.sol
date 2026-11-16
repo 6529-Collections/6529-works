@@ -41,17 +41,17 @@ abstract contract EntropyItems {
         returns (PackageItem memory item)
     {
         address artist = address(uint160(uint256(keccak256(abi.encode("artist", salt)))));
-        item.kind = ItemKind.ORIGINAL;
+        item.kind = uint8(ItemKind.ORIGINAL);
         item.collectionId = 1;
         item.contentHash = keccak256(abi.encode("content", salt));
         item.mediaHash = keccak256(abi.encode("media", salt));
         item.recordFileId = keccak256(abi.encode("record", salt));
         item.parties = new Party[](1);
-        item.parties[0] = Party(artist, PartyRole.ARTIST);
+        item.parties[0] = Party(artist, uint8(PartyRole.ARTIST));
         item.payees = new ISplitWallet.Payee[](1);
         item.payees[0] = ISplitWallet.Payee(0, artist, 100_000);
         item.license = License("CC0-1.0", keccak256("cc0 text"));
-        item.seedPolicy = policy;
+        item.seedPolicy = uint8(policy);
         if (policy == SeedPolicy.ARTIST) item.seed = keccak256(abi.encode("seed", salt));
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_DEFAULT, "");
     }

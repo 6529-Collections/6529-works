@@ -28,6 +28,9 @@ import { EnglishAuctionPreLens } from "./legacy/EnglishAuctionPreLens.sol";
 contract EnglishAuctionLensDifferentialTest is AuctionBase {
     /// @dev Where both builds are installed, one per pass (set by the first).
     address internal AT;
+    /// @dev Whether the installed build is the lens build (opening bids live in the allowlist
+    ///      since ADR 0007; the pre-lens build keeps its own).
+    bool internal lensPass;
     uint256 internal constant STEPS = 40;
 
     uint256[] internal sales;
@@ -45,6 +48,7 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
         // The same deployer nonce in both passes, so both builds land at the same address: the
         // lens is deployed in both (the pre-lens build ignores it).
         address lens_ = _lens(address(permit2));
+        lensPass = lensBuild;
         address deployed = lensBuild
             ? address(
                 new EnglishAuction(
@@ -79,7 +83,7 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
         _map(AT, IEnglishAuction.resume.selector, UNPAUSER);
         _map(AT, IEnglishAuction.cancel.selector, PARAMETER_SETTER);
         _map(AT, IEnglishAuction.setConfig.selector, PARAMETER_SETTER);
-        _map(AT, IEnglishAuction.setOpeningBid.selector, PARAMETER_SETTER);
+        _map(AT, EnglishAuctionPreLens.setOpeningBid.selector, PARAMETER_SETTER);
         _map(AT, ISaleAdapter.setTarget.selector, SUCCESSOR_SETTER);
         _map(AT, EnglishAuction.setFederationRegistry.selector, SUCCESSOR_SETTER);
         hostile = new HostileActor();
@@ -234,6 +238,14 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
         return acc;
     }
 
+    function _recordConfig(bytes32 acc) internal view returns (bytes32) {
+        (bool ok, bytes memory ret) = AT.staticcall(abi.encodeCall(IEnglishAuction.config, ()));
+        assembly ("memory-safe") {
+            if gt(mload(ret), 96) { mstore(ret, 96) }
+        }
+        return keccak256(abi.encode(acc, ok, ret));
+    }
+
     function _observe() internal view returns (bytes32 n) {
         uint256 unknown = uint256(keccak256("no such sale"));
         for (uint256 i; i <= sales.length; ++i) {
@@ -243,7 +255,9 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
             n = _record(n, abi.encodeCall(IEnglishAuction.minimumBid, (saleId)));
             n = _record(n, abi.encodeCall(IEnglishAuction.pendingDelivery, (saleId)));
         }
-        n = _record(n, abi.encodeCall(IEnglishAuction.config, ()));
+        // The pre-lens build has no refusal parameters (AUC-39, AUC-40): its `config` answers
+        // zero for both, so only the first three words are compared.
+        n = _recordConfig(n);
         n = _record(n, abi.encodeCall(ISaleAdapter.paused, ()));
         n = _record(n, abi.encodeCall(ISaleAdapter.federationRegistry, ()));
         n = _record(n, abi.encodeCall(IEnglishAuctionFull.federationRegistryCodeHash, ()));
@@ -336,7 +350,9 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
             IEnglishAuction.AuctionConfig memory next = IEnglishAuction.AuctionConfig(
                 uint32(1 hours + a % 3 days),
                 uint32(1 minutes + (a >> 32) % 1 hours),
-                1_000 + uint32((a >> 64) % 99_000)
+                1_000 + uint32((a >> 64) % 99_000),
+                REFUSAL_DELAY,
+                REFUSAL_GAS
             );
             // forge-lint: disable-end(unsafe-typecast)
             IEnglishAuction.AuctionConfig memory current = auction.config();
@@ -344,9 +360,16 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
             try auction.setConfig(current, next) { } catch { }
         } else if (op == 16) {
             address currency = a % 2 == 0 ? ETH : address(usd);
-            uint256 current = auction.openingBid(currency);
-            vm.prank(setter);
-            try auction.setOpeningBid(currency, current, (a >> 8) % 2 ether) { } catch { }
+            uint256 next = (a >> 8) % 2 ether;
+            if (lensPass) {
+                (,, uint64 revision) = allowlist.assetConfig(currency);
+                vm.prank(setter);
+                try allowlist.setOpeningBid(currency, revision, next) { } catch { }
+            } else {
+                uint256 current = auction.openingBid(currency);
+                vm.prank(setter);
+                try EnglishAuctionPreLens(AT).setOpeningBid(currency, current, next) { } catch { }
+            }
         } else if (op == 17) {
             if (address(other) == address(0)) {
                 other = _listedToken(a % 2 == 0 ? ETH : address(usd));

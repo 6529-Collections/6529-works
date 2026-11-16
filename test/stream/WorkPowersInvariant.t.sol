@@ -5,6 +5,9 @@ import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 import { WorkPowersHandler } from "./WorkPowersHandler.sol";
+import { MockRenderer } from "../mocks/stream/StreamMocks.sol";
+import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice Stateful invariants of the renounceable powers and lower-only royalty changes
 ///         (ADR 0006): a work's renounced mask never loses a bit, a renounced power's function
@@ -23,6 +26,8 @@ contract WorkPowersInvariantTest is RecordsFixture {
         handler.addLicense(_license("cc-by-4.0"));
         handler.addLicense(_license("cc-by-sa-4.0"));
         handler.addLicense(_license("mit"));
+        handler.addRenderer(address(new MockRenderer("errata A")));
+        handler.addRenderer(address(new MockRenderer("errata B")));
         for (uint256 i; i < WORKS; ++i) {
             MediaFile[] memory media = _single(i, true);
             PackageItem memory item = _recordsItem(i, media);
@@ -31,10 +36,12 @@ contract WorkPowersInvariantTest is RecordsFixture {
             records.openRecord(tokenId, item, media);
             handler.addWork(tokenId, item);
         }
-        bytes4[] memory selectors = new bytes4[](3);
+        bytes4[] memory selectors = new bytes4[](5);
         selectors[0] = handler.renounce.selector;
         selectors[1] = handler.changeRoyalty.selector;
         selectors[2] = handler.relicense.selector;
+        selectors[3] = handler.finalize.selector;
+        selectors[4] = handler.repin.selector;
         targetContract(address(handler));
         targetSelector(FuzzSelector({ addr: address(handler), selectors: selectors }));
     }
@@ -59,10 +66,13 @@ contract WorkPowersInvariantTest is RecordsFixture {
         assertEq(handler.violations(), 0);
         for (uint256 i; i < handler.workCount(); ++i) {
             uint256 tokenId = handler.tokenIds(i);
-            assertEq(stream.work(tokenId).royaltyRate, handler.ghostRate(tokenId));
+            assertEq(
+                IStreamViews(address(stream)).work(tokenId).royaltyRate, handler.ghostRate(tokenId)
+            );
             assertEq(
                 abi.encode(records.licenseOf(tokenId)), abi.encode(handler.ghostLicenseOf(tokenId))
             );
+            assertEq(records.pinnedRenderer(tokenId), handler.ghostRenderer(tokenId));
         }
     }
 
@@ -71,7 +81,7 @@ contract WorkPowersInvariantTest is RecordsFixture {
     ///      any step (each step is checked in the handler).
     function invariant_royaltyRateNeverRises() public view {
         for (uint256 i; i < handler.workCount(); ++i) {
-            assertLe(stream.work(handler.tokenIds(i)).royaltyRate, MINT_RATE);
+            assertLe(IStreamViews(address(stream)).work(handler.tokenIds(i)).royaltyRate, MINT_RATE);
         }
         assertEq(handler.violations(), 0);
     }

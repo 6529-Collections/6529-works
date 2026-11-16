@@ -41,12 +41,22 @@ See: [editions and sales](spec/editions-and-sales.md).
 
 ### 6529 Stream Federated
 
-The v1.1 tier, built only if needed: artist-deployed contracts sold through the shared
-[sale adapters](#sale-adapter). v1 installs no federation registry.
+Artist-deployed contracts (a Federated Stream 721 and its linked Federated Stream Editions)
+sold through the shared [sale adapters](#sale-adapter) and listed in the artist registry's
+federation directory. In v1 by owner decision of 15 November 2026 ([ADR 0007](adr/0007-permanence.md)),
+specified by a later ADR; it earns no TDH. No federation registry is installed yet.
 
 See: [federated README](../src/federated/README.md).
 
 ## A
+
+### abandonment
+
+The edition auction's exit for a sale that paid nothing and whose master cannot settle or whose
+edition was never created: after its end plus its locked abandonment delay (150 days at launch),
+anyone calls `abandon`, every bid is refunded and the edition sealed at zero (EA-19).
+
+See: [editions and sales](spec/editions-and-sales.md).
 
 ### acceptance
 
@@ -290,9 +300,9 @@ See: [identity and recovery](spec/identity-and-recovery.md).
 
 ### consume
 
-The package registry's single-use check when a Stream auction start mints
-(`PackageRegistry.consume`). It verifies the item and the [move](#move), and marks the content
-used.
+The check a Stream mint makes that an item may mint once: the [mint policy](#mint-policy)
+(`PackageRegistry.authorize`) verifies the item and the [move](#move), and Stream records the
+content hash as used, whatever policy is installed (`Stream.consumedItemOf`, AUC-44).
 
 See: [curation](spec/curation.md).
 
@@ -327,7 +337,8 @@ See: [works and storage](spec/works-and-storage.md).
 ### contest
 
 A [captured wallet](#captured-wallet)'s cancel of a pending [override](#override), which then
-waits for a TDH vote or lapses after 365 days (`ArtistRegistry.CONTEST_TIMEOUT`).
+waits for a TDH vote or lapses after `CONTEST_TIMEOUT` (365 days at genesis, governed within
+compiled bounds and locked at staging; `ArtistRegistry.timer`).
 
 See: [identity and recovery](spec/identity-and-recovery.md).
 
@@ -447,6 +458,15 @@ How long a governed action waits: immediate, standard (48 hours), funds (14 days
 
 See: [governance](spec/governance.md).
 
+### delivery contract
+
+The replaceable contract behind `WorkRecords.delivery()` that holds locators, kinds, preferences
+and the URI grammar (`WorkDelivery` at genesis; replaced by `setDelivery`, SUCCESSOR_SETTER, 30
+days). `WorkRecords` forwards `preferredLocator` to it and serves only a well-formed answer; it can
+change no fact.
+
+See: [works and storage](spec/works-and-storage.md).
+
 ### delegation contract
 
 The 6529 delegation contract, whose use case 999 registrations are the
@@ -506,8 +526,9 @@ See: [stream and auctions](spec/stream-and-auctions.md).
 
 ### dormancy
 
-A year without the artist's own signed activity (`ArtistRegistry.DORMANCY`), required before an
-ESTATE or LOST_KEY [override](#override).
+`DORMANCY` (365 days at genesis, governed) without the artist's own signed activity, required
+before an ESTATE or LOST_KEY [override](#override), and before any override that moves the payout
+but keeps the authority (`ArtistRegistry.timer`).
 
 See: [identity and recovery](spec/identity-and-recovery.md).
 
@@ -629,8 +650,8 @@ See: [`Editions.sol`](../src/editions/Editions.sol).
 
 ### ERC-1271
 
-Signature validation for contract accounts, accepted for every protocol signature with 200,000
-gas (`SignatureVerifier.ERC1271_GAS_LIMIT`).
+Signature validation for contract accounts, accepted for every protocol signature, forwarding
+all gas (a check that runs short reverts with `BoundedCallShortfall`).
 
 See: [`SignatureVerifier.sol`](../src/libraries/SignatureVerifier.sol).
 
@@ -663,7 +684,7 @@ See: [reading a work](integrators/reading-a-work.md).
 ### errata repin
 
 The only way to change a finalized work's renderer (`WorkRecords.repinRenderer`, 30 days), with
-the lead artist's signature.
+the lead artist's signature, until the lead artist renounces it (`RENDERER_REPIN`).
 
 See: [rendering and tokenURI](spec/rendering-and-tokenuri.md).
 
@@ -677,8 +698,9 @@ See: [economics and payouts](spec/economics-and-payouts.md).
 
 ### established wallet
 
-A wallet consolidated with an account in both directions for at least 30 days. It may stage a
-[standard change](#standard-change) and gain [standing](#standing).
+A wallet consolidated with an account in both directions for at least 30 days. It gains
+[standing](#standing), and, only for a dormant artist (no signed activity for DORMANCY), may stage
+a [standard change](#standard-change), which then waits the override delay.
 
 See: [identity and recovery](spec/identity-and-recovery.md).
 
@@ -706,8 +728,8 @@ See: [storage](integrators/storage.md).
 
 ### file role
 
-A media file's role (`FileRole`): PRIMARY (the artwork, first), PREVIEW (a small still image) or
-AUXILIARY.
+A media file's role (named by `FileRole`, an open `uint8`): PRIMARY (the artwork, first), PREVIEW
+(a small still image) or AUXILIARY; readers treat a role they do not know as auxiliary.
 
 See: [works and storage](spec/works-and-storage.md).
 
@@ -760,6 +782,15 @@ hash is on-chain.
 
 See: [governance](spec/governance.md).
 
+### governed vault
+
+A small governed contract (`GovernedVault`) holding what is paid to it and forwarding it only to a
+destination FUNDS_SETTER sets (14 days, compare-and-set). Genesis deploys two: the network fee
+recipient (`FeeRecipientVault`) and the [6529 Network Museum](#6529-network-museum)
+(`MuseumVault`).
+
+See: [economics and payouts](spec/economics-and-payouts.md).
+
 ### grant delay
 
 How long a newly granted role takes to become active, never shorter than the role's execution delay.
@@ -777,8 +808,8 @@ See: [governance](spec/governance.md).
 
 ### heartbeat
 
-`ArtistRegistry.heartbeat`: recorded activity by the authority or an established wallet, which
-resets [dormancy](#dormancy).
+`ArtistRegistry.heartbeat`: recorded activity by the authority (never a consolidated wallet),
+which resets [dormancy](#dormancy).
 
 See: [identity and recovery](spec/identity-and-recovery.md).
 
@@ -813,7 +844,10 @@ See: [curation](spec/curation.md).
 
 ### item kind
 
-What an item mints (`ItemKind`): ORIGINAL or EDITION_MASTER.
+What an item mints: ORIGINAL (0) or EDITION_MASTER (1), named by `ItemKind`. The field is an open
+`uint8`, as are the seed policy and party and media roles, so a value a later mint policy defines
+never makes a permanent contract's decode revert; the genesis policy refuses values it does not
+know for new items.
 
 See: [curation](spec/curation.md).
 
@@ -909,6 +943,14 @@ effect.
 
 See: [governance](spec/governance.md).
 
+### mint policy
+
+The replaceable contract 6529 Stream hands each mint request to, unread (`IMintPolicy`; the
+package registry at genesis). It does consent, item rules, VRF delivery and the terms quote and
+answers a record Stream re-checks; it has no write path into Stream and decides new mints only.
+
+See: [Stream and auctions](spec/stream-and-auctions.md).
+
 ### move
 
 The lead artist's revocable EIP-712 `MoveToStream` signature authorizing a Stream mint, checked
@@ -957,7 +999,9 @@ See: [works and storage](spec/works-and-storage.md).
 
 ### opening bid
 
-A currency's governed minimum first bid (`openingBid`), locked by each auction at its start.
+A currency's governed minimum first bid in the English auction, held by the
+[asset allowlist](#asset-allowlist) in the asset's status word (`AssetAllowlist.setOpeningBid`,
+PARAMETER_SETTER) and locked by each auction at its start (`openingBid`).
 
 See: [stream and auctions](spec/stream-and-auctions.md).
 
@@ -1013,8 +1057,8 @@ See: [identity and recovery](spec/identity-and-recovery.md).
 
 ### payout resolver
 
-The contract split wallets ask for an artist's payout address: the artist registry, pinned by
-code hash.
+The contract the split ledger asks for an artist's payout address: the artist registry, an
+immutable of the ledger with no code-hash pin.
 
 See: [economics and payouts](spec/economics-and-payouts.md).
 
@@ -1035,6 +1079,14 @@ Uniswap's signature-transfer contract. A `PERMIT2` payment's witness binds the a
 relayer can submit it.
 
 See: [buying, bidding and settling](integrators/buying-bidding-settling.md).
+
+### permanent contract
+
+A contract with authority over existing tokens, existing works' facts or funds already owed. It
+is never redeployed, holds invariants rather than policy numbers, forwards all gas on calls out and
+takes no instruction from replaceable code ([ADR 0007](adr/0007-permanence.md)).
+
+See: [trust assumptions](audit/trust-assumptions.md).
 
 ### pin
 
@@ -1118,8 +1170,9 @@ See: [entropy](spec/entropy.md).
 
 ### record
 
-A work's descriptive JSON file in the content store, at most 12,288 bytes
-(`Limits.MAX_RECORD_BYTES`), which the lead artist may replace until [finalize](#finalize).
+A work's descriptive JSON file in the content store, one chunk (`WorkRecords` checks only
+that); the renderer shows a record of at most 12,288 bytes (`Limits.MAX_RECORD_BYTES`). The lead
+artist may replace it until [finalize](#finalize).
 
 See: [works and storage](spec/works-and-storage.md).
 
@@ -1161,7 +1214,8 @@ See: [rendering and tokenURI](spec/rendering-and-tokenuri.md).
 
 A power over one work (`ROYALTY_RATE`, any further royalty change; `RELICENSE`, any further
 license change) that the lead artist gave up for good through `IWorkPowers.renounce`; the
-function then always reverts for that work. The errata repin cannot be renounced.
+function then always reverts for that work; and, after finalize, `RENDERER_REPIN`, the
+[errata repin](#errata-repin), after which the work's renderer pin never moves again.
 
 See: [works and storage](spec/works-and-storage.md#rules-and-invariants).
 
@@ -1281,6 +1335,14 @@ out, and claims then mint the copies.
 
 See: [stream and auctions](spec/stream-and-auctions.md), [editions and sales](spec/editions-and-sales.md).
 
+### shortfall
+
+A call into another contract that failed leaving at most 1/8 of the gas held before it. A
+permanent contract reverts with `BoundedCallShortfall` on one, and never reads it as a refusal or a
+default answer.
+
+See: [`BoundedCall.sol`](../src/libraries/BoundedCall.sol).
+
 ### signed release
 
 A payee's EIP-712 `ReleaseAuthorization` that anyone may submit, with a revocable nonce.
@@ -1301,10 +1363,20 @@ the bid, never past a governed backstop.
 
 See: [editions and sales](spec/editions-and-sales.md#timing-alongside-the-11).
 
+### split ledger
+
+The permanent contract (`SplitLedger`, deployed under the name `SplitFactory`) that deploys every
+[split wallet](#split-wallet), keeps each wallet's accounting, verifies signed releases and executes
+every release through the wallet. It replaced the split factory, the per-wallet contract and the
+release verifier ([ADR 0007](adr/0007-permanence.md)).
+
+See: [economics and payouts](spec/economics-and-payouts.md).
+
 ### split wallet
 
-An immutable pull-payment wallet (`SplitWallet`) whose CREATE2 address commits to its
-[canonical payee list](#canonical-payee-list).
+A 66-byte pull-payment vault (`SplitVault`) that the [split ledger](#split-ledger) deploys at a
+CREATE2 address committing to its [canonical payee list](#canonical-payee-list) and a salt. It
+executes only its ledger's instructions; the ledger keeps its accounting.
 
 See: [economics and payouts](spec/economics-and-payouts.md).
 
@@ -1324,8 +1396,8 @@ See: [identity and recovery](spec/identity-and-recovery.md).
 ### standing
 
 A consolidated wallet's right to cancel or contest an artist's pending identity change. A
-refresh records it once the consolidation is 30 days old, and it lasts 30 days
-(`ArtistRegistry.STANDING_GRACE`) after the consolidation ends.
+refresh records it once the consolidation is 30 days old, and it lasts `STANDING_GRACE` (30 days
+at genesis, governed; `ArtistRegistry.timer`) after the consolidation ends.
 
 See: [identity and recovery](spec/identity-and-recovery.md).
 
@@ -1392,6 +1464,14 @@ Each artist's list of at most 16 wallets with [standing](#standing) (`standingOf
 evicted early, so a thief cannot strip it.
 
 See: [identity and recovery](spec/identity-and-recovery.md).
+
+### store set
+
+`WorkRecords`' append-only list of content stores a file may sync from: store 0 is the content
+store, and `addStore` (SUCCESSOR_SETTER, 30 days) adds an `IChunkStore` with its code hash
+pinned. A file's store is final once it is complete.
+
+See: [works and storage](spec/works-and-storage.md).
 
 ### storage operator
 

@@ -1,7 +1,8 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 #
 # Review configuration for 6529 Works. The rules mirrored here come from ADR 0001
-# (docs/adr/0001-v1-scope.md) and AGENTS.md; when they disagree, the ADR wins.
+# (docs/adr/0001-v1-scope.md) as amended by later ADRs (ADR 0007, permanence, for the gas rule
+# and the line budget) and AGENTS.md; when they disagree, the ADRs win.
 language: en-US
 
 reviews:
@@ -21,8 +22,8 @@ reviews:
   path_instructions:
     - path: "src/**/*.sol"
       instructions: |
-        Review as pre-audit protocol code. ADR 0001 is the scope and the law; flag anything
-        outside it. Report concrete defects, with the failing scenario, before style.
+        Review as pre-audit protocol code. ADR 0001, as amended by later ADRs (ADR 0007:
+        permanence), is the scope and the law; flag anything outside it. Report concrete defects, with the failing scenario, before style.
 
         Hard rules (a violation is a finding):
         - Custom errors only: no string reverts or bare `require(cond)` without an error.
@@ -41,9 +42,16 @@ reviews:
           plausible default from a failed read.
         - EIP-170: runtime size at most 24,576 bytes and initcode at most 49,152 (EIP-3860)
           for every contract. At most 5 linked libraries repo-wide; prefer internal
-          libraries. The whole repository budget is 8-12K non-comment Solidity lines.
-        - External calls to untrusted code are gas-capped with bounded return data, and
-          state is updated before the call (checks, effects, interactions).
+          libraries. At most 15,000 non-comment Solidity lines under `src/` (ADR 0007;
+          `tools/check_budgets.py`).
+        - External calls follow ADR 0007's gas rule: permanent contracts (Stream, Editions,
+          WorkRecords, StatementLog, ContentStore, ArtistRegistry, the split ledger and
+          vaults, the revenue escrow) and the renderer compile no gas number and forward all
+          gas (`BoundedCall`'s forward-all family); a failed call that left at most 1/8 of
+          the gas reverts as a shortfall, never a refusal or a default. Replaceable contracts
+          may cap gas. Every call to code the caller does not control bounds the return data
+          it copies, and state is updated before the call (checks, effects, interactions).
+          Do not ask for a gas cap in a permanent contract or the renderer.
         - NatSpec on every external function and every event.
         Also check Solidity 0.8.37 (EVM `prague`) assumptions, storage layout and packing,
         integer rounding direction in money math, and that reuse goes through the existing

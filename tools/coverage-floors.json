@@ -56,23 +56,11 @@
       "lines": 99.0,
       "branches": 98.0
     },
-    "src/economics/ReleaseVerifier.sol": {
-      "lines": 99.0,
-      "branches": 98.0
-    },
     "src/economics/RevenueEscrow.sol": {
       "lines": 99.0,
       "branches": 98.0
     },
     "src/economics/RevenuePayment.sol": {
-      "lines": 99.0,
-      "branches": 98.0
-    },
-    "src/economics/SplitFactory.sol": {
-      "lines": 99.0,
-      "branches": 98.0
-    },
-    "src/economics/SplitWallet.sol": {
       "lines": 99.0,
       "branches": 98.0
     },

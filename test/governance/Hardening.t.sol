@@ -7,6 +7,7 @@ import { Errors } from "@openzeppelin/contracts/utils/Errors.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { BoundedParameter } from "src/governance/BoundedParameter.sol";
+import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
 import { GovernanceFixture } from "../helpers/GovernanceFixture.sol";
 import { GovernedTargetMock, PayableGovernedMock } from "../mocks/governance/GovernanceMocks.sol";
 
@@ -62,31 +63,68 @@ contract HardeningTest is GovernanceFixture {
     }
 
     function test_AdminCannotShortenItsOwnExecutionDelayWithoutWaiting() public {
+        // Below 30 days is refused outright (GV-38).
+        bytes memory zero = abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, adminSafe, 0));
+        bytes32 id = _schedule(adminSafe, address(manager), zero);
+        vm.warp(manager.getSchedule(id));
+        vm.expectRevert(
+            abi.encodeWithSelector(WorksAccessManager.DelayBelowClass.selector, Roles.ADMIN, 0)
+        );
+        vm.prank(adminSafe);
+        manager.execute(address(manager), zero);
+        // Above it, a cut waits its own size (OpenZeppelin Time.Delay.withUpdate).
+        _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, adminSafe, 45 days)));
         uint256 start = block.timestamp;
-        _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, adminSafe, 0)));
+        _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, adminSafe, 30 days)));
         (, uint32 current, uint32 pending, uint48 effect) =
             manager.getAccess(Roles.ADMIN, adminSafe);
-        assertEq(current, 30 days);
-        assertEq(pending, 0);
-        assertEq(effect, start + 60 days);
-        vm.warp(start + 60 days);
+        assertEq(current, 45 days);
+        assertEq(pending, 30 days);
+        assertEq(effect, start + 45 days + 15 days);
+        vm.warp(effect);
         (, uint32 lowered) = manager.hasRole(Roles.ADMIN, adminSafe);
-        assertEq(lowered, 0);
+        assertEq(lowered, 30 days);
     }
 
-    function test_FreshZeroDelayHolderWaitsScheduleAndGrantDelay() public {
-        // OpenZeppelin lets an admin "reset" a delay by granting a fresh holder; that holder
-        // still waits the 30-day admin delay plus the role's grant delay.
+    function test_AFreshHolderCarriesTheClassDelayAndWaitsTheGrantDelay() public {
+        // OpenZeppelin would let an admin "reset" a delay by granting a fresh zero-delay
+        // holder; the manager refuses any grant below the role's class (review L-1).
+        bytes memory zero =
+            abi.encodeCall(IAccessManager.grantRole, (Roles.FUNDS_SETTER, attacker, 0));
+        bytes32 id = _schedule(adminSafe, address(manager), zero);
+        vm.warp(manager.getSchedule(id));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WorksAccessManager.DelayBelowClass.selector, Roles.FUNDS_SETTER, 0
+            )
+        );
+        vm.prank(adminSafe);
+        manager.execute(address(manager), zero);
+        // At the class delay, the holder waits the 30-day admin delay, the 14-day grant delay
+        // and then its own 14-day execution delay for every call.
         uint256 start = block.timestamp;
-        _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.FUNDS_SETTER, attacker, 0)));
+        _adminExecute(
+            abi.encodeCall(IAccessManager.grantRole, (Roles.FUNDS_SETTER, attacker, Roles.FUNDS))
+        );
         bytes memory data = abi.encodeCall(GovernedTargetMock.setRecipient, (recipient0, attacker));
         vm.warp(start + 30 days + 14 days - 1);
-        vm.expectRevert(
+        vm.expectRevert( // not active yet
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, attacker)
         );
         vm.prank(attacker);
         target.setRecipient(recipient0, attacker);
         vm.warp(start + 30 days + 14 days);
+        vm.expectRevert( // active, but never immediate
+            abi.encodeWithSelector(
+                IAccessManager.AccessManagerNotScheduled.selector,
+                manager.hashOperation(attacker, address(target), data)
+            )
+        );
+        vm.prank(attacker);
+        target.setRecipient(recipient0, attacker);
+        bytes32 op = _schedule(attacker, address(target), data);
+        assertEq(manager.getSchedule(op), block.timestamp + Roles.FUNDS);
+        vm.warp(manager.getSchedule(op));
         vm.prank(attacker);
         manager.execute(address(target), data);
         assertEq(target.recipient(), attacker);

@@ -82,6 +82,8 @@ abstract contract IdentityFixture is Test {
         _map(target, ArtistRegistry.stageOverride.selector, PARAMETER_SETTER);
         _map(target, ArtistRegistry.setConsolidationSource.selector, SUCCESSOR_SETTER);
         _map(target, ArtistRegistry.resolveContested.selector, SUCCESSOR_SETTER);
+        _map(target, ArtistRegistry.setTimer.selector, SUCCESSOR_SETTER);
+        _map(target, ArtistRegistry.setFederationRegistry.selector, SUCCESSOR_SETTER);
         // The bind* selectors stay on the AccessManager default (ADMIN): genesis wiring.
         manager.grantRole(GUARDIAN, guardian, 0);
         manager.grantRole(PARAMETER_SETTER, governor, 0);

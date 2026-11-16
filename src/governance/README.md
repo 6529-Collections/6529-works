@@ -1,21 +1,19 @@
 # governance
 
 One OpenZeppelin 5.7.0 `AccessManager`, subclassed as `WorksAccessManager`, governs every 6529
-Works contract: each restricted selector maps to one role, each role is one delay class, any
-guardian can cancel any scheduled operation and suspend a compromised operational key, and a
-one-shot configurator installs the whole genesis configuration in one transaction. There are no
-bespoke executor, policy or registry contracts. The rules, role table and flows are in
-[Governance](../../docs/spec/governance.md) (`GV-*`); every selector with its role, delay and
-cancel rule is in the generated [role and permission matrix](../../docs/audit/roles.md).
+Works contract; a one-shot configurator installs genesis in one transaction. Rules and flows:
+[Governance](../../docs/spec/governance.md) (`GV-*`); selectors, roles and delays: the generated
+[role and permission matrix](../../docs/audit/roles.md).
 
 ## Files
 
 | File | What it is |
 | --- | --- |
 | `Roles.sol` | Internal library: role IDs 0 to 12, the four delay classes, each role's execution delay, grant delay and label, `isSuspendable`. Every contract imports it; nothing hard-codes a role ID. `MINTER` (6) and `KEEPER` (7) are defined but unused in v1: genesis grants them to nobody and no selector maps to them. |
-| `WorksAccessManager.sol` | Stock `AccessManager` with four overrides: `_canCancel` (the three cancellation rules), `hasRole` (a suspended holder is not a member), and `_grantRole` and `_revokeRole` (each lifts a suspension; OpenZeppelin's `renounceRole` runs through `_revokeRole`). Adds `suspend` and `isSuspended`. |
+| `WorksAccessManager.sol` | Stock `AccessManager` plus: the three cancellation rules and the escalated lane (`_canCancel`, `schedule`, `cancel`); suspension (`suspend`, `isSuspended`, `hasRole`); seat lists, caps and the class-delay floor (`_grantRole`, `_revokeRole`; OpenZeppelin's `renounceRole` runs through `_revokeRole`); the managed list (the target setters); governed parameters, recovery and succession (`setParameter`, `setRecoveryAddress`, `registerSuccessor`, `acceptSuccession`, `migrate`, `heartbeat`, `openRecovery`, `approveRecovery`, `objectToRecovery`, `completeRecovery`). |
+| `SuccessionProbe.sol` | A stock `AccessManaged` contract `registerSuccessor` creates for the proposed successor, which must re-point it to the manager before `acceptSuccession` (proof it can make the `setAuthority` call every permanent contract needs). |
 | `GovernanceConfig.sol` | Internal library: `validate`, `validateWiring`, `isGenesisSelector`, `install`, `verify` (readback) and `hasRecord`. |
-| `GovernanceConfigurator.sol` | Deploys its own `WorksAccessManager`, runs `configure(cfg, manifestHash, wiring)` once for its `deployer`, renounces `ADMIN`, and exposes `verify(cfg)` for readback. |
+| `GovernanceConfigurator.sol` | Deploys its own `WorksAccessManager`, runs `configure(cfg, manifestHash, wiring)` once for its `deployer`, renounces `ADMIN`, and exposes `verify(cfg)` for readback (which also checks the managed list). |
 | `BoundedParameter.sol` | Internal library for raise-only parameters: at most double per step, never above a ceiling fixed in the target's code. Its one v1 user is the entropy module's callback gas limit. |
 
 ## Entry points
@@ -24,75 +22,60 @@ cancel rule is in the generated [role and permission matrix](../../docs/audit/ro
 | --- | --- | --- |
 | Holders of a delayed role | `schedule`, then `execute` (or the target itself) after the delay and within the one-week expiry | GV-4, GV-5, GV-7 |
 | Any active guardian | `cancel` of any scheduled operation, except as Rules 2 and 3 restrict; `suspend(roleId, account)` for a `PLATFORM`, `CURATOR` or `STORAGE_OPERATOR` record | GV-1 to GV-3, GV-25 to GV-28 |
-| `ADMIN` (30 days) | `grantRole`, `revokeRole`, remaps, target closure and authority moves; a grant or revocation of a suspended record lifts it | GV-4, GV-28 |
+| `ADMIN` (30 days) | `grantRole`, `revokeRole`, remaps, target closure and authority moves; a grant or revocation of a suspended record lifts it | GV-4, GV-28, GV-38 to GV-40 |
+| `ADMIN` (slow lane, 60 days by default) | `setParameter`, `setRecoveryAddress`, `registerSuccessor` (only proposes; zero withdraws; escalated after a guardian's cancellation) | GV-37, GV-41, GV-43 |
+| The pending successor itself | `acceptSuccession`, once it has re-pointed `successionProbe()` to the manager | GV-43 |
+| Any active guardian | on an escalated operation, `cancel` is one vote; `approveRecovery`, `objectToRecovery` | GV-37, GV-42 |
+| Any active admin | `heartbeat` | GV-42 |
+| Anyone | `openRecovery` and `completeRecovery` when their conditions hold; `migrate(from, to)` once the successor has accepted | GV-42, GV-45 |
 | A role holder | `renounceRole` for itself, at once; it also lifts its own suspension | GV-28 |
 | The deployer, once | `GovernanceConfigurator.configure`, then `verify` by `eth_call` five days later | GV-8 to GV-13 |
 | Every governed contract | `restricted` asks `canCall`; some read `PLATFORM`, `CURATOR` or `CURATION_SIGNER` directly | [Roles that targets read directly](../../docs/spec/governance.md#roles-that-targets-read-directly) |
 
-The genesis flow, the wiring allow-list and the readback checks are under
-[Genesis configure](../../docs/spec/governance.md#genesis-configure); the suspension state
-machine under [Suspension of operational keys](../../docs/spec/governance.md#suspension-of-operational-keys).
-
-## Rules for every target contract
-
-These are what a new or changed governed function must do; each is a spec rule that CI or the
-tests check.
-
-- **Map every `restricted` selector** in [`config/genesis.example.json`](../../config/genesis.example.json)
-  to exactly one class role, or list it as genesis-only or deferred (GV-17;
-  `tools/check_genesis.py` fails otherwise). An unmapped selector falls back to `ADMIN`.
-  Then regenerate the matrix with `python tools/gen_role_matrix.py` (CI runs `--check`).
-- **Keep governed functions non-payable** (GV-18): `AccessManager.execute` forwards
-  `msg.value`. `GovernanceFixture._acceptsValue` probes it.
-- **Compare-and-set** setters for funds, recipients, verifiers, renderers and sale parameters
-  take the expected current value or revision (GV-19).
-- **Emit an event** from every governed setter: value setters the old and the new value,
-  per-key toggles (`setTarget`, `setAdmittedMinter`) the key and its new state (GV-20).
-- **Raise-only parameters** use `BoundedParameter.initial` in the constructor and `raise` in the
-  setter, with a code-level ceiling (GV-21). "At most double" bounds each operation, not each
-  window (LIM-GV-7).
-- **Contract-to-contract calls** use a one-shot `bind*` resolved to `ADMIN` and run by the
-  genesis wiring, never a shared role (GV-24). A new bind must be added to
-  `GovernanceConfig.isGenesisSelector` and to the wiring.
-- **Delays that reverse a tightening action** (an unpause, a resume, a re-admission) count from
-  that action in the target's own code, not from scheduling (GV-23).
+Flows: [Genesis configure](../../docs/spec/governance.md#genesis-configure),
+[Suspension of operational keys](../../docs/spec/governance.md#suspension-of-operational-keys).
 
 ## Developer notes
 
-- **`WorksAccessManager` changes OpenZeppelin behavior in four places only.** Rules 2 and 3
-  depend on the operation's arguments and scheduler, which no per-selector setting can express;
-  keep them in `_canCancel`. Upgrading OpenZeppelin means rechecking that `renounceRole` still
-  reaches `_revokeRole`, that `multicall` and nested `execute` still cannot carry a revocation
-  (GV-3), and the readback getters `verify` relies on.
-- **The `Multicall` exemption.** OpenZeppelin `Multicall`'s self-`delegatecall` is the one
-  sanctioned exception to the no-delegatecall rule; `tools/check_budgets.py` scans only
-  `src/`, so it does not see it (LIM-GV-8).
-- **`configure` gas.** With the maximum 64 wiring calls it must stay inside the EIP-7825 cap;
-  the figure and its gate are in the spec's
-  [parameters](../../docs/spec/governance.md#parameters-and-limits), measured by
-  `GenesisConfig.t.sol` and `Genesis.t.sol`.
-- **Suspendable flags.** `tools/check_genesis.py` checks only that each `suspendable` flag in
-  the genesis JSON is a boolean on a zero-delay operational role; `GenesisConfig.t.sol`
-  compares the flags with `Roles.isSuspendable`.
-- **What readback cannot see** (pending grant-delay and target-admin-delay cuts, holders outside
-  `cfg`, what the wiring did) is covered by `script/Verify.s.sol`
-  ([runbook, step 11](../../script/README.md#11-verify-after-5-days); LIM-GV-6).
-- **Test fixture.** Integration tests inherit
-  [`GovernanceFixture.sol`](../../test/helpers/GovernanceFixture.sol): hot and cold admins,
-  three guardians, two curation signers, a curator and one key per operational role.
-  [`GovernanceMocks.sol`](../../test/mocks/governance/GovernanceMocks.sol) holds a sample target.
-- **Tests:** `forge test --match-path 'test/governance/**'` (cancellation rules against a stock
-  manager, hardening, suspension, genesis, wiring, the invariant campaign);
-  `GovernanceRecovery.t.sol` and `Genesis.t.sol` in [`test/integration/`](../../test/integration/).
-  Coverage and mutation testing: [Testing](../../docs/testing/README.md).
-
-## Operating it
-
-Guardian liveness, emergencies, rotations, onboarding a target and publishing a configuration
-epoch are in the runbook's [operating procedures](../../script/README.md#operating-procedures)
-and [admin recovery](../../script/README.md#admin-recovery). Residual risks (colluding or
-dishonest guardians, liveness, suspension length) are LIM-GV-4 to LIM-GV-15 in
-[known limitations](../../docs/audit/known-limitations.md#trust-and-governance).
+- **A new governed function** follows GV-17 to GV-24
+  ([rules](../../docs/spec/governance.md#rules-and-invariants)): map its selector in
+  [`config/genesis.example.json`](../../config/genesis.example.json) (unmapped falls back to
+  `ADMIN`), run `python tools/gen_role_matrix.py`, and add a new `bind*` to
+  `GovernanceConfig.isGenesisSelector` and the wiring.
+- **Bytecode.** Run `forge build --sizes` (manager runtime and configurator initcode) before
+  adding to the manager; figures in the [audit scope](../../docs/audit/scope.md#governance).
+- **Storage.** Escalated operations live in OpenZeppelin's schedule, each with an `Escalation`
+  record; seats are `EnumerableSet`s for
+  `ADMIN` and `GUARDIAN`; handed over means `successor != 0`, and `migrate` keeps no state.
+- **Where `WorksAccessManager` changes OpenZeppelin, and what each change relies on.** Rules 2
+  and 3 depend on the operation's arguments and scheduler, which no per-selector setting can
+  express; keep them in `_canCancel`. Upgrading OpenZeppelin means rechecking each override
+  against the upstream behavior it depends on:
+  - `canCall`, `hasRole`: answer nothing once handed over; `hasRole` hides a suspended holder.
+  - `schedule`: adds the slow and escalated delays by raising `when` before `super.schedule`,
+    so it relies on upstream accepting a later `when` and on its own setback and minimum-delay
+    handling; records the escalation from the nonce `super.schedule` returns.
+  - `cancel`, `_canCancel`: the vote counts on `hashOperation`, `getNonce` and `getSchedule`
+    (an escalation is live only for the current nonce of a scheduled operation) and on
+    `super.cancel` calling `_canCancel` before it clears the schedule.
+  - `consumeScheduledOp`, `_consumeScheduledOp`: record admin activity around upstream
+    consumption; `execute` must keep reaching `_consumeScheduledOp`.
+  - `_grantRole`, `_revokeRole`: seat caps, class delays, serials and suspension lifts rely on
+    `_grantRole`'s `newMember` return and on `renounceRole` reaching `_revokeRole`.
+  - `_setTargetFunctionRole`, `_setTargetAdminDelay`, `_setTargetClosed`: the managed-target
+    list and the refusal to remap or close the manager rely on the public setters routing
+    through these hooks.
+  - `migrate` calls each target's stock `AccessManaged.setAuthority` directly, and
+    `acceptSuccession` reads the probe's `authority()` after the successor's own
+    `setAuthority`: both rely on that function accepting only the current authority as caller.
+  - `multicall` and nested `execute` still cannot carry a revocation (GV-3), and the readback
+    getters `verify` relies on keep their shapes.
+- **`Multicall`'s self-`delegatecall`** is the one sanctioned exception to the no-delegatecall
+  rule, unseen by `tools/check_budgets.py` (LIM-GV-8). Readback gaps: `script/Verify.s.sol`
+  (LIM-GV-6).
+- **Tests:** `forge test --match-path 'test/governance/**'`, the
+  [`GovernanceFixture.sol`](../../test/helpers/GovernanceFixture.sol) base, and
+  [`test/integration/`](../../test/integration/); [Testing](../../docs/testing/README.md).
 
 ## See also
 
@@ -100,4 +83,6 @@ dishonest guardians, liveness, suspension length) are LIM-GV-4 to LIM-GV-15 in
 [ADR 0002](../../docs/adr/0002-access-manager-hardening.md) and its addendum,
 [ADR 0003, governance](../../docs/adr/0003-build-time-decisions.md#governance-extends-adr-0002);
 [trust assumptions](../../docs/audit/trust-assumptions.md#governance-roles),
-[threat model](../../docs/audit/threat-model.md).
+[threat model](../../docs/audit/threat-model.md),
+[known limitations](../../docs/audit/known-limitations.md#trust-and-governance);
+[runbook](../../script/README.md#operating-procedures).

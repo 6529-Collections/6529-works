@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { ICurationVerifier } from "./ICurationVerifier.sol";
-import { MoveAuthorization, PackageItem, PartyAcceptance } from "./types/PackageTypes.sol";
+import { PartyAcceptance } from "./types/PackageTypes.sol";
 
 /// @title IPackageRegistry
 /// @notice Approved packages, party consent, single-use items, per-product content uniqueness and
@@ -16,7 +16,7 @@ import { MoveAuthorization, PackageItem, PartyAcceptance } from "./types/Package
 ///      2. `acceptPackage`: each party's signed acceptance is stored as
 ///         `acceptedAs[root][account] = artistId`; a first acceptance creates the identity in
 ///         the artist registry, and only first acceptances count as artist activity.
-///      3. `consume`: the bound 6529 Stream consumes one item when its sale starts, checking the
+///      3. `IMintPolicy.authorize`: the bound 6529 Stream consumes one item when its sale starts, checking the
 ///         Merkle proof, every party's `acceptedAs` entry (no registry calls), that the payee list
 ///         is canonical, sums to 100,000 and pays only parties, and the lead artist's move
 ///         authorization.
@@ -57,29 +57,6 @@ interface IPackageRegistry is IERC165 {
     event PackageAccepted(
         bytes32 indexed packageRoot, uint256 indexed artistId, address indexed account
     );
-    /// @notice 6529 Stream consumed an item and claimed its content hash under `PRODUCT_STREAM`.
-    /// @param packageRoot The package root the item was proved against.
-    /// @param itemHash The consumed item's hash (`WorksHashing.itemHash`).
-    /// @param artistId The lead artist's ID.
-    /// @param contentHash The item's content hash.
-    event ItemConsumed(
-        bytes32 indexed packageRoot,
-        bytes32 indexed itemHash,
-        uint256 indexed artistId,
-        bytes32 contentHash
-    );
-    /// @notice 6529 Stream Editions claimed a master's content hash under `PRODUCT_EDITIONS`.
-    /// @param contentHash The master's content hash.
-    /// @param itemHash The master item, which consumed `contentHash` on 6529 Stream.
-    event ContentClaimed(bytes32 indexed contentHash, bytes32 indexed itemHash);
-    /// @notice An upheld-dispute burn released a content hash to the artist `beneficiary`;
-    ///         `itemHash` is tombstoned.
-    /// @param contentHash The released content hash.
-    /// @param itemHash The burned item that had consumed it.
-    /// @param beneficiary The artist ID the content hash is now reserved for.
-    event ContentReleased(
-        bytes32 indexed contentHash, bytes32 indexed itemHash, uint256 indexed beneficiary
-    );
     /// @notice An artist revoked an unused move nonce.
     /// @param artistId The artist whose nonce was revoked.
     /// @param nonce The revoked move nonce.
@@ -104,9 +81,6 @@ interface IPackageRegistry is IERC165 {
     error ItemNotInPackage(bytes32 packageRoot, bytes32 itemHash);
     /// @notice The content hash is already claimed in `product`, by `claimedBy`.
     error ContentUsed(bytes32 product, bytes32 contentHash, bytes32 claimedBy);
-    /// @notice The claim is not allowed: an edition may only claim the content hash its master
-    ///         item consumed on 6529 Stream.
-    error ClaimNotAllowed(bytes32 product, bytes32 contentHash);
     /// @notice A released content hash is reserved for the item of artist `beneficiary`.
     error ContentReserved(bytes32 contentHash, uint256 beneficiary);
     /// @notice A listed party has not accepted the package root.
@@ -125,13 +99,16 @@ interface IPackageRegistry is IERC165 {
     error AlreadyBound(bytes32 name);
     /// @notice A compare-and-set setter's expected current value is stale.
     error ExpectedValueMismatch();
+    /// @notice The mint request is not `abi.encode(StreamMintRequest)` (`IMintTarget`'s error).
+    error InvalidMintRequest();
 
     /// @notice Binds 6529 Stream, the only `consume` caller, once (ERC-165 for `IStream`, not an
     ///         EIP-7702 delegated account). ADMIN role.
     /// @param target The 6529 Stream contract.
     function bindStream(address target) external;
-    /// @notice Binds 6529 Stream Editions, the only `claimContent` caller, once (ERC-165 for
-    ///         `IEditions`, not an EIP-7702 delegated account). ADMIN role.
+    /// @notice Binds 6529 Stream Editions, once (ERC-165 for `IEditions`, not an EIP-7702
+    ///         delegated account). ADMIN role. Informational since Editions stopped reading the
+    ///         mint policy (it claims no content here: Stream's record decides an edition).
     /// @param target The 6529 Stream Editions contract.
     function bindEditions(address target) external;
     /// @notice Registers an approved package root. Permissionless; the verifier decides.
@@ -162,38 +139,6 @@ interface IPackageRegistry is IERC165 {
         PartyAcceptance calldata acceptance,
         bytes calldata signature
     ) external returns (uint256 artistId);
-    /// @notice Consumes an item and claims its content hash under `PRODUCT_STREAM`. Bound 6529
-    ///         Stream only.
-    /// @param packageRoot The approved package root that lists the item.
-    /// @param item The package item to consume.
-    /// @param proof The Merkle proof of the item's leaf under `packageRoot`, at most
-    ///        `Limits.MAX_PROOF_DEPTH` hashes.
-    /// @param move The lead artist's signed move authorization.
-    /// @return itemHash The item hash.
-    /// @return artistId The lead artist's ID.
-    /// @return authority The lead artist's active authority, which signed `move`: 6529 Stream
-    ///         reports it as the work's creator, with no second read of the artist registry.
-    function consume(
-        bytes32 packageRoot,
-        PackageItem calldata item,
-        bytes32[] calldata proof,
-        MoveAuthorization calldata move
-    ) external returns (bytes32 itemHash, uint256 artistId, address authority);
-    /// @notice Releases `contentHash` after an upheld-dispute burn to the artist `beneficiary`
-    ///         the dispute outcome names: checks that `itemHash` consumed it, clears its
-    ///         `PRODUCT_STREAM` claim, reserves it for items whose lead artist is `beneficiary`,
-    ///         and tombstones `itemHash` so it can never be consumed again. Once per burned item;
-    ///         `beneficiary` must be a registered artist (`IArtistRegistry.UnknownArtist`
-    ///         otherwise). Bound 6529 Stream only, through the governed `IStream.releaseContent`.
-    /// @param contentHash The content hash to release.
-    /// @param itemHash The burned item that consumed `contentHash`.
-    /// @param beneficiary The artist ID the content hash is reserved for.
-    function releaseContent(bytes32 contentHash, bytes32 itemHash, uint256 beneficiary) external;
-    /// @notice Claims a master's content hash under `PRODUCT_EDITIONS`; `consumedItemOf` must
-    ///         already record `itemHash` for it. Bound 6529 Stream Editions only.
-    /// @param contentHash The master's content hash.
-    /// @param itemHash The master item.
-    function claimContent(bytes32 contentHash, bytes32 itemHash) external;
     /// @notice Revokes one of the caller's unused move nonces. The caller must be the active
     ///         authority of `artistId` (`IArtistRegistry.activeAuthorityOf`).
     /// @param artistId The artist whose move nonce is revoked.
@@ -247,10 +192,6 @@ interface IPackageRegistry is IERC165 {
     /// @param contentHash The content hash.
     /// @return artistId The beneficiary's artist ID, or zero.
     function releasedTo(bytes32 contentHash) external view returns (uint256 artistId);
-    /// @notice The master item whose content hash 6529 Stream Editions claimed, or zero.
-    /// @param contentHash The content hash.
-    /// @return itemHash The master item's hash, or zero.
-    function editionClaimOf(bytes32 contentHash) external view returns (bytes32 itemHash);
     /// @notice Whether an artist's move nonce is used or revoked.
     /// @param artistId The artist ID.
     /// @param nonce The move nonce.

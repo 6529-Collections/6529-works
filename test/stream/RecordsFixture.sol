@@ -10,6 +10,7 @@ import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { PackageItem, Party, PartyRole } from "src/interfaces/types/PackageTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { WorkDelivery } from "src/stream/WorkDelivery.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { StreamFixture } from "./StreamFixture.sol";
 
@@ -26,6 +27,7 @@ abstract contract RecordsFixture is StreamFixture {
 
     ContentStore internal store;
     WorkRecords internal records;
+    WorkDelivery internal delivery;
 
     function setUp() public virtual override {
         super.setUp();
@@ -39,15 +41,20 @@ abstract contract RecordsFixture is StreamFixture {
         }
         records =
             new WorkRecords(address(manager), address(stream), address(store), _license("cc0-1.0"));
+        delivery = WorkDelivery(records.delivery());
         stream.bindWorkRecords(address(records));
         stream.bindEditions(address(editionsMock));
-        _map(address(records), records.addLocator.selector, Roles.PLATFORM);
+        _map(address(delivery), delivery.addLocator.selector, Roles.PLATFORM);
         _map(address(records), records.relicense.selector, Roles.PARAMETER_SETTER);
         _map(address(records), records.setRoyaltyRate.selector, Roles.FUNDS_SETTER);
         _map(address(records), records.repinRenderer.selector, Roles.SUCCESSOR_SETTER);
-        _map(address(records), records.setPreferredKind.selector, Roles.STORAGE_OPERATOR);
-        _map(address(records), records.setCollectionPreferredKind.selector, Roles.STORAGE_OPERATOR);
-        _map(address(records), records.setFilePreference.selector, Roles.STORAGE_OPERATOR);
+        _map(address(records), records.setDelivery.selector, Roles.SUCCESSOR_SETTER);
+        _map(address(records), records.addStore.selector, Roles.SUCCESSOR_SETTER);
+        _map(address(delivery), delivery.setPreferredKind.selector, Roles.STORAGE_OPERATOR);
+        _map(
+            address(delivery), delivery.setCollectionPreferredKind.selector, Roles.STORAGE_OPERATOR
+        );
+        _map(address(delivery), delivery.setFilePreference.selector, Roles.STORAGE_OPERATOR);
         manager.grantRole(Roles.STORAGE_OPERATOR, storageOperator, 0);
     }
 
@@ -61,7 +68,7 @@ abstract contract RecordsFixture is StreamFixture {
         bytes32[] memory hashes = new bytes32[](1);
         hashes[0] = keccak256(data);
         fileId = store.registerManifest(
-            hashes, data.length, IContentStore.Encoding.Identity, mime, sha256(data)
+            hashes, data.length, uint8(IContentStore.Encoding.Identity), mime, sha256(data)
         );
         if (upload) store.writeChunk(data);
     }
@@ -78,7 +85,11 @@ abstract contract RecordsFixture is StreamFixture {
         bytes32[] memory hashes = new bytes32[](1);
         hashes[0] = keccak256(text);
         fileId = store.registerManifest(
-            hashes, text.length, IContentStore.Encoding.Identity, "text/plain", keccak256(text)
+            hashes,
+            text.length,
+            uint8(IContentStore.Encoding.Identity),
+            "text/plain",
+            keccak256(text)
         );
         assertEq(fileId, _textFileId(text));
     }
@@ -92,7 +103,7 @@ abstract contract RecordsFixture is StreamFixture {
         returns (MediaFile memory)
     {
         bytes memory data = _mediaBytes(salt);
-        return MediaFile(_file(data, "image/png", upload), sha256(data), role);
+        return MediaFile(_file(data, "image/png", upload), sha256(data), uint8(role));
     }
 
     function _upload(uint256 salt) internal {
@@ -118,8 +129,8 @@ abstract contract RecordsFixture is StreamFixture {
         item.mediaHash = WorksHashing.mediaHash(media);
         item.recordFileId = _record(salt);
         item.parties = new Party[](2);
-        item.parties[0] = Party(artist, PartyRole.ARTIST);
-        item.parties[1] = Party(collaborator, PartyRole.COLLABORATOR);
+        item.parties[0] = Party(artist, uint8(PartyRole.ARTIST));
+        item.parties[1] = Party(collaborator, uint8(PartyRole.COLLABORATOR));
         item.payees = new ISplitWallet.Payee[](2);
         item.payees[0] = ISplitWallet.Payee(0, collaborator, 20_000);
         item.payees[1] = ISplitWallet.Payee(uint256(uint160(artist)), address(0), 80_000);

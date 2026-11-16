@@ -36,7 +36,7 @@ Docs).
 
 | Role | ID | Execution delay | Grant delay | Holders at genesis | Mapped selectors | Guardian may suspend |
 | --- | ---: | --- | --- | --- | ---: | --- |
-| `ADMIN` | 0 | 30 days | 30 days | Hot admin Safe, Cold recovery admin Safe | 0 | No |
+| `ADMIN` | 0 | 30 days | 30 days | Hot admin Safe, Cold recovery admin Safe, Third admin Safe | 0 | No |
 | `GUARDIAN` | 1 | immediate | 30 days | Guardian Safe 1, Guardian Safe 2, Guardian Safe 3 | 6 | No |
 | `PAUSER` | 2 | immediate | 48 hours | Guardian Safe 1, Guardian Safe 2, Guardian Safe 3 | 2 | No |
 | `UNPAUSER` | 3 | 48 hours | 48 hours | Hot admin Safe | 3 | No |
@@ -45,9 +45,9 @@ Docs).
 | `MINTER` | 6 | immediate | 30 days | none (unused in v1) | 0 | No |
 | `KEEPER` | 7 | immediate | 48 hours | none (unused in v1) | 0 | No |
 | `PLATFORM` | 8 | immediate | 48 hours | Platform key | 3 | Yes |
-| `PARAMETER_SETTER` | 9 | 48 hours | 48 hours | Hot admin Safe | 14 | No |
-| `FUNDS_SETTER` | 10 | 14 days | 14 days | Hot admin Safe | 8 | No |
-| `SUCCESSOR_SETTER` | 11 | 30 days | 30 days | Hot admin Safe | 19 | No |
+| `PARAMETER_SETTER` | 9 | 48 hours | 48 hours | Hot admin Safe | 15 | No |
+| `FUNDS_SETTER` | 10 | 14 days | 14 days | Hot admin Safe | 10 | No |
+| `SUCCESSOR_SETTER` | 11 | 30 days | 30 days | Hot admin Safe | 24 | No |
 | `CURATOR` | 12 | immediate | 30 days | Curator key | 1 | Yes |
 
 Every role's admin is ADMIN, and every role except ADMIN has GUARDIAN as its guardian
@@ -61,10 +61,10 @@ Every role's admin is ADMIN, and every role except ADMIN has GUARDIAN as its gua
 | Class | Delay | Mapped selectors |
 | --- | --- | ---: |
 | Immediate | immediate | 15 |
-| Standard | 48 hours | 17 |
-| Funds and recipients | 14 days | 8 |
-| Verifier and successor | 30 days | 19 |
-| **Total** | | **59** |
+| Standard | 48 hours | 18 |
+| Funds and recipients | 14 days | 10 |
+| Verifier and successor | 30 days | 24 |
+| **Total** | | **67** |
 
 ## Matrix by contract
 
@@ -82,6 +82,7 @@ Source: [`src/stream/Stream.sol`](../../src/stream/Stream.sol).
 | `releaseContent(uint256,bytes32,uint256)` | `0x56c6d728` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | After an upheld dispute; scheduled with the auction's `cancel`, to execute after it. |
 | `setDependency(bytes32,address,address)` | `0x480b197d` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Replaces the package registry, artist registry, economics resolver or entropy module (owner decision 16); compare-and-set. Existing tokens are unaffected. |
 | `rescueToMuseum(uint256)` | `0xe9c794a4` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Only a never-settled work its minting adapter holds, 90 days after governance removed that adapter; to the museum only (owner decision 20). |
+| `setRescueDelay(uint256)` | `0x5968b5f3` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay |  |
 
 ### WorkRecords
 
@@ -89,13 +90,22 @@ Source: [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol).
 
 | Function | Selector | Role | Class | Delay | Guardian cancel | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
+| `relicense(uint256,(string,bytes32),(…),bytes32,uint64,bytes[])` | `0xd60ad0db` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Also needs every party's signed consent. CC0 is irrevocable. |
+| `setRoyaltyRate(uint256,uint32,(…),bytes32,uint64,bytes[])` | `0xc13560ef` | `FUNDS_SETTER` | Funds and recipients | 14 days | Yes: any guardian, during the delay | Also needs every party's signed consent; re-rates the linked edition. |
+| `repinRenderer(uint256,address,bytes32,bytes32,uint64,bytes)` | `0x12e96e4a` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | The errata repin: also needs the lead artist's signature; refused for good once the lead artist renounced `RENDERER_REPIN`. |
+| `setDelivery(address,address)` | `0x118e803d` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Replaces the delivery contract (locators and preferences); compare-and-set; the successor names its predecessor. No fact of any work changes. |
+| `addStore(address,bytes32)` | `0xce8238dd` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Adds a store `syncOnChain` may verify media against, for good; code-hash pinned. No existing file's store or completeness changes. |
+
+### WorkDelivery
+
+Source: [`src/stream/WorkDelivery.sol`](../../src/stream/WorkDelivery.sol).
+
+| Function | Selector | Role | Class | Delay | Guardian cancel | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
 | `setPreferredKind(uint8)` | `0x40ff5d7f` | `STORAGE_OPERATOR` | Immediate | immediate | No: executes at once |  |
 | `setCollectionPreferredKind(uint256,uint8)` | `0x4ddc92d1` | `STORAGE_OPERATOR` | Immediate | immediate | No: executes at once |  |
 | `setFilePreference(uint256,bytes32,uint256)` | `0x65a48a4e` | `STORAGE_OPERATOR` | Immediate | immediate | No: executes at once |  |
 | `addLocator(uint256,bytes32,(uint8,string))` | `0xf3326c0f` | `PLATFORM` | Immediate | immediate | No: executes at once | The work's artist may also call it directly before finalize; PLATFORM's path is a `canCall` check in the contract and needs a zero-delay grant. |
-| `relicense(uint256,(string,bytes32),(…),bytes32,uint64,bytes[])` | `0xd60ad0db` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Also needs every party's signed consent. CC0 is irrevocable. |
-| `setRoyaltyRate(uint256,uint32,(…),bytes32,uint64,bytes[])` | `0xc13560ef` | `FUNDS_SETTER` | Funds and recipients | 14 days | Yes: any guardian, during the delay | Also needs every party's signed consent; re-rates the linked edition. |
-| `repinRenderer(uint256,address,bytes32,bytes32,uint64,bytes)` | `0x12e96e4a` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | The errata repin: also needs the lead artist's signature. |
 
 ### Editions
 
@@ -136,6 +146,8 @@ Source: [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.so
 | `setConsolidationSource(address,address,bytes32)` | `0x741cbdad` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Compare-and-set; code hash re-checked at every use. |
 | `setPackageRegistry(address,address)` | `0x00752cf1` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Replaces the only `register` caller with Stream's successor package registry (owner decision 16); compare-and-set. |
 | `resolveContested(uint256,bool,bytes32)` | `0xd16d1602` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Must cite the DISPUTE_OUTCOME statement recorded after the contest. |
+| `setFederationRegistry(address,address)` | `0x747e3199` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | No federation registry is installed yet (federation is in v1, ADR 0007; a later ADR specifies it). |
+| `setTimer(uint8,uint48)` | `0xd5f2e860` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay |  |
 
 ### StatementLog
 
@@ -159,10 +171,9 @@ Source: [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol).
 | `pause(uint256,bytes32)` | `0xa9f8f393` | `GUARDIAN` | Immediate | immediate | No: executes at once | Dispute pause: one per auction, lasting at most 7 days (`MAX_PAUSE`). |
 | `resume(uint256)` | `0x414000b5` | `UNPAUSER` | Standard | 48 hours | Yes: any guardian, during the delay | Refused until 48 hours after the pause, whenever it was scheduled. |
 | `cancel(uint256,bytes32)` | `0xeafb64d5` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Upheld dispute: while paused, citing the token's DISPUTE_OUTCOME recorded after the pause. |
-| `setConfig((uint32,uint32,uint32),(uint32,uint32,uint32))` | `0x8a5268b2` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Duration, anti-snipe window and increment share; compare-and-set. |
-| `setOpeningBid(address,uint256,uint256)` | `0x5d918358` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Per currency; compare-and-set, with a ceiling. |
+| `setConfig((…),(…))` | `0x1b380907` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Duration, anti-snipe window, increment share, refusal delay and raise-only refusal gas; compare-and-set. |
 | `setTarget(address,bool)` | `0x80ffe77f` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Also a genesis wiring call. |
-| `setFederationRegistry(address,address)` | `0x747e3199` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | v1.1: no registry is installed in v1. |
+| `setFederationRegistry(address,address)` | `0x747e3199` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | No federation registry is installed yet (federation is in v1, ADR 0007; a later ADR specifies it). |
 
 ### UniformEditionAuction
 
@@ -174,7 +185,7 @@ Source: [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAu
 | `unpause()` | `0x3f4ba83a` | `UNPAUSER` | Standard | 48 hours | Yes: any guardian, during the delay | Refused until 48 hours after the pause, whenever it was scheduled. |
 | `setConfig((…),(…))` | `0x3a59bb19` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Margin, step ladder, close offset, soft-close window and backstop; compare-and-set, with bounds in code. An auction keeps the values locked at its open. |
 | `setTarget(address,bool)` | `0x80ffe77f` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Also a genesis wiring call. |
-| `setFederationRegistry(address,address)` | `0x747e3199` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | v1.1: no registry is installed in v1. |
+| `setLimits(uint256,uint256)` | `0xc4590d3f` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay |  |
 
 ### EconomicsResolver
 
@@ -197,6 +208,7 @@ Source: [`src/economics/AssetAllowlist.sol`](../../src/economics/AssetAllowlist.
 | `setDefaultCurrency(bytes32,uint64,address)` | `0xbc27c0e9` | `FUNDS_SETTER` | Funds and recipients | 14 days | Yes: any guardian, during the delay | Compare-and-set; also a genesis wiring call (ETH for each product). |
 | `setIncrementFloor(address,uint64,uint256)` | `0xad176f96` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay |  |
 | `deprecateAsset(address)` | `0x41003c89` | `GUARDIAN` | Immediate | immediate | No: executes at once | Halts sales in the asset; withdrawals and claims never stop. |
+| `setOpeningBid(address,uint64,uint256)` | `0x373577fc` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Per currency, the English auction's least first bid; compare-and-set, with a ceiling. |
 
 ### RevenueEscrow
 
@@ -205,6 +217,23 @@ Source: [`src/economics/RevenueEscrow.sol`](../../src/economics/RevenueEscrow.so
 | Function | Selector | Role | Class | Delay | Guardian cancel | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | `recover(address,address,address)` | `0x159c61f8` | `FUNDS_SETTER` | Funds and recipients | 14 days | Yes: any guardian, during the delay | Only to an identical-configuration replacement wallet, or to the replacement the account itself named. |
+| `sweepExcess(address,address)` | `0xfc6e9367` | `FUNDS_SETTER` | Funds and recipients | 14 days | Yes: any guardian, during the delay |  |
+
+### FeeRecipientVault
+
+Source: [`src/economics/GovernedVault.sol`](../../src/economics/GovernedVault.sol).
+
+| Function | Selector | Role | Class | Delay | Guardian cancel | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| `setDestination(uint64,address)` | `0x765b2cf1` | `FUNDS_SETTER` | Funds and recipients | 14 days | Yes: any guardian, during the delay | Where every held and future network fee goes; compare-and-set on the vault's revision. |
+
+### MuseumVault
+
+Source: [`src/economics/GovernedVault.sol`](../../src/economics/GovernedVault.sol).
+
+| Function | Selector | Role | Class | Delay | Guardian cancel | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| `setDestination(uint64,address)` | `0x765b2cf1` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Where every museum-held work and payout goes: authority over existing tokens, so the 30-day class, not the fee vault's 14 days; compare-and-set on the vault's revision. |
 
 ### DependencyRegistry
 
@@ -250,7 +279,7 @@ Restricted functions neither mapped nor wired in v1. Until mapped, they resolve 
 
 | Contract | Function | Selector | Note |
 | --- | --- | --- | --- |
-| ArtistRegistry | `bindFederationRegistry(address)` | `0x3d4dbd3c` | v1.1: bound when the federation registry ships, as a 30-day ADMIN action |
+| ArtistRegistry | `bindFederationRegistry(address)` | `0x3d4dbd3c` | Bound when the federation registry ships (in v1, specified by a later ADR), as a 30-day ADMIN action; replaceable afterwards by setFederationRegistry |
 
 ## Genesis wiring
 
@@ -271,7 +300,7 @@ and renounces ADMIN. `GovernanceConfig.isGenesisSelector` admits nothing else.
 | 9 | Stream | `setAdmittedMinter(address,bool)` | EnglishAuction, `true` |
 | 10 | Editions | `setAdmittedMinter(address,bool)` | UniformEditionAuction, `true` (The genesis edition sale; later sale methods are admitted the same way, in the 30-day class (owner decision 14)) |
 | 11 | EnglishAuction | `setTarget(address,bool)` | Stream, `true` |
-| 12 | EnglishAuction | `setOpeningBid(address,uint256,uint256)` | `address(0)` (ETH), 0, 50000000000000000 (ETH opening bid 0.05 ETH (owner decision 19): a 1-wei self-bid can no longer take a 1/1 past the museum) |
+| 12 | AssetAllowlist | `setOpeningBid(address,uint64,uint256)` | `address(0)` (ETH), 1, 50000000000000000 (ETH opening bid 0.05 ETH (owner decision 19), held by the asset allowlist since ADR 0007 (ETH is at revision 1 from its admission at deployment): a 1-wei self-bid can no longer take a 1/1 past the museum) |
 | 13 | UniformEditionAuction | `setTarget(address,bool)` | Editions, `true` |
 | 14 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0x8d6f9a23…`, 0, `address(0)` (ETH) (PRODUCT_STREAM: ETH, revision 0) |
 | 15 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0xdda24e9b…`, 0, `address(0)` (ETH) (PRODUCT_EDITIONS: ETH, revision 0) |
@@ -287,7 +316,7 @@ delay applies if it is longer. Every target's admin delay is the successor class
 
 | Function | Selector | Caller | Delay | Guardian cancel | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `grantRole(uint64,address,uint32)` | `0x25c471a0` | The role's admin (ADMIN for every role) | 30 days | Yes: any guardian, during the delay | The grant then waits the role's grant delay. |
+| `grantRole(uint64,address,uint32)` | `0x25c471a0` | The role's admin (ADMIN for every role) | 30 days | Yes: any guardian, during the delay | The grant then waits the role's grant delay. Refused below the role's class delay (`DelayBelowClass`), whoever the role's admin is. |
 | `revokeRole(uint64,address)` | `0xb7d2b162` | The role's admin (ADMIN for every role) | 30 days | Yes, except by the account being revoked | Only a guardian or its scheduler can cancel it, and the account it revokes only if it scheduled it. |
 | `renounceRole(uint64,address)` | `0xfe0776f5` | The holder itself | immediate | No: executes at once | Immediate; the second argument must be the caller. |
 | `labelRole(uint64,string)` | `0x853551b8` | ADMIN | 30 days | Yes: any guardian, during the delay |  |
@@ -297,9 +326,19 @@ delay applies if it is longer. Every target's admin delay is the successor class
 | `setTargetAdminDelay(address,uint32)` | `0xd22b5989` | ADMIN | 30 days | Yes: any guardian, during the delay | A reduction takes effect after its length, and never sooner than `minSetback()`. |
 | `setTargetFunctionRole(address,bytes4[],uint64)` | `0x08d6122d` | ADMIN | 30 days (or the target's admin delay) | Yes: any guardian, during the delay |  |
 | `setTargetClosed(address,bool)` | `0x167bd395` | ADMIN | 30 days (or the target's admin delay) | Yes: any guardian, during the delay |  |
-| `updateAuthority(address,address)` | `0x18ff183c` | ADMIN | 30 days (or the target's admin delay) | Yes: any guardian, during the delay |  |
+| `updateAuthority(address,address)` | `0x18ff183c` | ADMIN | 30 days (or the target's admin delay) | Yes: any guardian, during the delay | Moves one target to another authority: no slow lane and no bounded veto, so any one guardian can stop it, every time; it checks nothing about the new authority. |
 | `setAuthority(address)` | `0x7a9e5e4b` | ADMIN, scheduled on the target itself | 30 days (or the target's admin delay) | Yes: any guardian, during the delay | Stock OpenZeppelin lets only ADMIN cancel this; the guardians can too. |
 | `suspend(uint64,address)` | `0x64bf6e5d` | `GUARDIAN` | immediate | No: executes at once | Suspends a holder of a suspendable role at once. Lifted by an ADMIN `grantRole` or `revokeRole` of that role to that account (30 days), or by the holder's own `renounceRole`; no guardian can lift it. |
+| `setParameter(uint8,uint32,uint32)` | `0x5c2b54bd` | `ADMIN` | 30 days | Yes: any guardian, during the delay | Slow lane: scheduled at least SLOW_DELAY (default 60 days) ahead, ADMIN's 30 days included; compare-and-set within compiled bounds (GV-41) |
+| `setRecoveryAddress(address,address)` | `0x81163a33` | `ADMIN` | 30 days | Yes: any guardian, during the delay | Slow lane: scheduled at least SLOW_DELAY (default 60 days) ahead, ADMIN's 30 days included; compare-and-set (GV-42) |
+| `registerSuccessor(address)` | `0xa488b91d` | `ADMIN` | 30 days | Yes: any guardian, during the delay | Slow lane: scheduled at least SLOW_DELAY (default 60 days) ahead, ADMIN's 30 days included; ESCALATED_DELAY (default 120 days) and a guardian majority after a guardian's cancellation (GV-37, GV-43). Only proposes (zero withdraws); nothing is handed over until the successor accepts |
+| `approveRecovery(address)` | `0xcbc3b3c2` | `GUARDIAN` | immediate | No: executes at once | Vote approving a live recovery of an unregistered candidate (GV-42) |
+| `objectToRecovery(address)` | `0x1886f8bc` | `GUARDIAN` | immediate | No: executes at once | Vote objecting to a live recovery of the recovery address (GV-42) |
+| `heartbeat()` | `0x3defb962` | No role (checked in the function) | immediate | No: executes at once | Any active ADMIN holder, at once: resets the inactivity clock (GV-42) |
+| `openRecovery(address)` | `0x24d48fe5` | No role (checked in the function) | immediate | No: executes at once | Anyone, after RECOVERY_SILENCE without admin activity (GV-42) |
+| `completeRecovery(address)` | `0xf480dd7e` | No role (checked in the function) | immediate | No: executes at once | Anyone, after RECOVERY_DELAY, if the guardian decision allows it (GV-42) |
+| `acceptSuccession()` | `0x922fbae1` | No role (checked in the function) | immediate | No: executes at once | Only the pending successor itself, once it has re-pointed successionProbe() to the manager: completes the handover (GV-43) |
+| `migrate(uint256,uint256)` | `0x3e54bacb` | No role (checked in the function) | immediate | No: executes at once | Anyone, once a successor has accepted (GV-45) |
 
 `schedule`, `execute` and `cancel` are open to anyone and check the caller's permission
 for the call they carry.
@@ -314,5 +353,6 @@ for the call they carry.
 | `0xa054305a` | `appendCurator((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))` |
 | `0x8479b292` | `appendPlatform((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))` |
 | `0x5cab7fab` | `appendGovernanceManifest((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))` |
+| `0x1b380907` | `setConfig((uint32,uint32,uint32,uint32,uint32),(uint32,uint32,uint32,uint32,uint32))` |
 | `0x3a59bb19` | `setConfig((uint96,uint16,uint16,uint32,uint32,uint32,uint32),(uint96,uint16,uint16,uint32,uint32,uint32,uint32))` |
 | `0x058832db` | `setConfig((uint256,bytes32,uint32,uint16,bool),(uint256,bytes32,uint32,uint16,bool))` |

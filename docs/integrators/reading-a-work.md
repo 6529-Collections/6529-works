@@ -84,22 +84,22 @@ cast call "$RENDERER" "fullTokenURI(address,uint256)(string)" "$EDITIONS" 42 --r
 
 ### Supply enough gas
 
-Every call the renderer makes is bounded: before each read it checks that the gas left covers
-that read's cap plus a margin, and reverts with `BoundedCallInsufficientGas(gasLimit)` if not
-([RND-6][rnd], [RND-7][rnd]).
-A work with an open record needs about 1.07M gas left when the renderer reads its media list
-(the 1,000,000 cap plus EIP-150's retention and a 51,000 margin), even though a typical
-`tokenURI` uses about 0.3M ([flows.md](../../deployments/11155111/flows.md), section 4). The
-worst case the protocol allows uses about 7.8M (the budget proof in
+The renderer compiles no gas figure: every read forwards all the gas it may (the gas rule of
+[ADR 0007](../adr/0007-permanence.md)), with a cap only on the size of the answer
+([RND-28][rnd]). A finalized work pins its renderer, possibly for good, so a future repricing
+makes `tokenURI` cost more, never fail or change. A read that fails having left at most 1/8 of
+the gas it held reverts the whole call with `BoundedCallShortfall(target)`: your call ran short,
+or a dependency burns everything it is given. A typical `tokenURI` uses about 0.3M gas
+([flows.md](../../deployments/11155111/flows.md), section 4); the worst case the protocol allows
+uses about 7.8M (the budget proof in
 [`TokenUriBudget.t.sol`](../../test/integration/TokenUriBudget.t.sol)).
 
 - Leave `gas` unset in `eth_call` (nodes then use their call gas cap), or set at least
   10,000,000 for `tokenURI` and `uri`, and 40,000,000 for `fullTokenURI`.
-- A `BoundedCallInsufficientGas` revert means "retry with more gas". It never comes back as
-  partial or empty metadata.
-- `eth_estimateGas` returns more than the gas used, by design. It measured about 1.0M for an
-  inlined `tokenURI` on Sepolia ([flows.md](../../deployments/11155111/flows.md)), before the
-  media-list read got its own 1,000,000 cap; expect somewhat more now.
+- A `BoundedCallShortfall` revert means "retry with more gas". It never comes back as partial or
+  empty metadata.
+- `eth_estimateGas` returns more than the gas used, by design; it measured about 1.0M for an
+  inlined `tokenURI` on Sepolia ([flows.md](../../deployments/11155111/flows.md)).
 
 ## Decoding the URI
 
@@ -322,14 +322,19 @@ only when the work is on-chain complete (every media file stored in the content 
 `syncOnChain` called), the file is under the threshold, and it is stored as attested base64
 text or as raw bytes small enough to encode ([RND-17][rnd], [RND-18][rnd]). A preview image
 is inlined as soon as the preview file itself is stored (and, if it is base64 text, attested),
-before the work is on-chain complete. The base64 payload of an inlined primary decodes to bytes whose SHA-256 is
+before the work is on-chain complete, when its cost-weighted size is at most 16,384
+(`Limits.MAX_PREVIEW_BYTES`: 16,384 attested base64 characters, or 2,048 raw bytes, which weigh
+eight each); a larger preview is served by locator. The base64 payload of an inlined primary decodes to bytes whose SHA-256 is
 `content_hash` (except a script page, which wraps the script).
 
 ### Locators
 
 When the primary is not inlined, `media_url` is its preferred copy, and `image` or
-`animation_url` points at the same copy (or at the preview, for an image work). A locator is a
-bare content address ([WS-18][ws]):
+`animation_url` points at the same copy (or at the preview, for an image work). The copy comes
+from `WorkRecords.preferredLocator`, which asks the current delivery contract (`WorkDelivery`,
+replaceable) and serves its answer only when it is well-formed ([WS-40][ws]); the locator's kind
+is an open `uint8`, so a later delivery contract may add kinds the renderer serves as they are.
+Today's locators are bare content addresses ([WS-18][ws]):
 
 - `ar://` and a 43-character Arweave transaction ID;
 - `ipfs://` and a base32 CIDv1 (`bafkrei…` or `bafybei…`, 66 characters in all).
@@ -417,7 +422,7 @@ who made them.
 | `royaltyInfo(id, salePrice)` | Editions | receiver, amount | Read from storage, no external call. Receiver locked at creation; the rate follows the master's. |
 | `licenseOf(tokenId)` | WorkRecords | `(spdxId, textFileId)` | Reverts with `RecordNotOpen` until the record opens. Defaults to the deployment's CC0. |
 | `licenseOf(editionId)` | Editions | the master's license | Reverts with `UnknownEdition`, or `RecordNotOpen` until the master's record opens. |
-| `work(tokenId)` | Stream | item hash, artist ID, collection, serial, kind, seed policy, seller, royalty receiver, royalty rate | Reverts with `UnknownWork`. |
+| `work(tokenId)` | Stream (`IStreamViews`, answered by its `StreamViews` extension) | item hash, artist ID, collection, serial, kind, seed policy, seller, royalty receiver, royalty rate | Reverts with `UnknownWork`. Kind and seed policy are `uint8`. |
 | `coreOf(tokenId)` | Stream | item hash, artist ID, collection, kind, seed policy, royalty rate | The cheap read. |
 | `primarySaleSettled(tokenId)` | Stream | bool | True once the auction settled; false before, and for burned IDs. |
 | `primarySale(tokenId)` | Stream | outcome, currency, price | NONE, SOLD, UNBID, FROZEN_OUT or RESCUED; the price is held in 96 bits, the exact one is in `PrimarySaleSettled` ([DCL-32][dcl]). |
@@ -426,9 +431,10 @@ who made them.
 | `edition(editionId)`, `exists(editionId)` | Editions | edition state, terms, minted count, bound sale adapter | |
 | `isOpen(tokenId)` | WorkRecords | bool | Never reverts. Every other per-token WorkRecords view reverts with `RecordNotOpen` until the record opens. |
 | `record(tokenId)` | WorkRecords | record file ID, media hash, license key, version, `finalized`, `onChainComplete`, pinned renderer | |
-| `mediaOf(tokenId)`, `locators(tokenId, fileId)`, `preferredLocator(tokenId, fileId)` | WorkRecords | the media list (primary first), every registered copy, the served copy | See [Storage](storage.md). |
+| `mediaOf(tokenId)`, `preferredLocator(tokenId, fileId)`, `mediaStore(tokenId, index)` | WorkRecords | the media list (primary first, roles as open `uint8`s), the served copy, the store a synced file was verified against | See [Storage](storage.md). |
+| `locators(tokenId, fileId)`, `locatorCounts(tokenId, fileId)` | WorkDelivery (`WorkRecords.delivery()`) | every registered copy, and how many the artist and PLATFORM added | Replaceable: a successor names its predecessor and keeps its locators. |
 | `seedOf(tokenId)` | WorkRecords | seed policy and seed | |
-| `rendererOf(tokenId)` | Stream | renderer address | Reverts if the renderer's code changed (below). |
+| `rendererOf(tokenId)` | Stream | renderer address | Reverts if the renderer's code changed (below). Only a work with no pin, or whose record is not open, gets the default renderer; any other fault of the records satellite reverts (`RendererPinUnreadable` for a malformed answer), and a call short of gas reverts with `BoundedCallShortfall` ([AUC-42](../spec/stream-and-auctions.md#rules-and-invariants)). |
 | `collection(collectionId)` | Stream | name, metadata hash, works minted | |
 | `contractURI()` | Stream, Editions | ERC-7572 contract-level metadata URI | Changes emit `ContractURIUpdated`. |
 | `owner()` | Stream, Editions | the marketplace owner | Held by 6529 for marketplace settings such as creator earnings; it has no on-chain powers. |
@@ -491,9 +497,9 @@ Do not cache a revert as empty metadata.
 | --- | --- | --- |
 | `UnknownWork(tokenId)` | Burned or never minted | Drop the token. A burn is also a `Transfer` to the zero address. |
 | `UnknownEdition(id)` | No edition with this ID | Check the ID against `editionOf`. |
-| `BoundedCallInsufficientGas(gasLimit)` | Your call supplied too little gas | Retry with more gas, or with `gas` unset. |
+| `BoundedCallShortfall(target)` | A read ran short of gas: your call supplied too little, or `target` burns everything it is given | Retry with more gas, or with `gas` unset. |
 | `DependencyCodeChanged(renderer)` (Stream or WorkRecords) | The renderer's code is no longer the code it was installed or pinned with; the metadata is withheld on purpose | Keep the last good metadata and retry later. A new default renderer or an errata repin restores it, with ERC-4906 events. |
-| `RendererReadFailed(target, selector)`, `BoundedCallFailed(target)`, `BoundedCallMalformedReturn(target)` | A contract the renderer reads failed or returned malformed data | Keep the last good metadata and retry later. |
+| `RendererReadFailed(target, selector)` | A contract the renderer reads failed, answered nothing or returned too much or malformed data | Keep the last good metadata and retry later. |
 | `RendererNotInlineable(token, id)` | Only from `fullTokenURI`: the work cannot be served fully inline | Use `tokenURI`. |
 
 [rnd]: ../spec/rendering-and-tokenuri.md#rules-and-invariants

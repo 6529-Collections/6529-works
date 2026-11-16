@@ -2,6 +2,169 @@
 
 ## Unreleased
 
+- Permanence ([ADR 0007](docs/adr/0007-permanence.md); owner instruction of 14 and 15 November
+  2026), two integration rounds and the fixes of four independent reviews. Pre-launch interface
+  reshaping:
+  - **Automated review fixes** (CodeRabbit and 6529bot, 16 November 2026; ADR 0007's review
+    table):
+    - Renderer and content store: `tokenURI` reads no file with a chunk linked from more than
+      3 parts (`IContentStore.maxParts`, new; `IContentStore` `0x943307d5`), serving it by
+      locator until anyone writes the chunk whole, so the 8M budget holds whatever the part
+      count; `firstMissing` copies at most one chunk's ABI encoding from another store and
+      counts a refusal as not served; `registerManifestList` refuses too many list chunks
+      before reading them.
+    - Stream: a replacement economics resolver must name Stream's split factory. Edition
+      auction: the abandonment floor follows Stream's rescue horizon from the English
+      auction's removal, within the rescue cap; the lens reverts with `StreamReadFailed` on a
+      failed Stream read. English auction lens: `pendingDelivery` names the creator after a
+      refused close. Editions copies at most 4 KiB from a dependency (the renderer's `uri`
+      answer whole). ClaimRouter: a continue-mode signed batch carries at most 131,072
+      signature bytes (`SignaturesTooLong`).
+    - Events: `TimerSet(Timer indexed, uint48 previous, uint48 value)` (`0xf67b0661…`) and
+      `FederatedContractStatus(token, artistId, previous, status, ref)` (`0x34ddebd7…`) carry
+      the previous value. `Typehashes.ARTIST_REGISTRATION` moves to the shared typehashes.
+    - Rule texts follow ADR 0007's gas rule (AGENTS.md, CONTRIBUTING.md, `.coderabbit.yaml`):
+      no gas number in permanent contracts or the renderer, return data always bounded.
+    - Later rounds: the manager's `execute` counts an active admin's immediate calls as
+      activity; the statement log's Stream check is the full ERC-165 check; every claim names
+      at most 64 payees (`TooManyPayees`); the edition auction's payout gas only rises, at most
+      doubling per change; WorkRecords requires a SHA-256 digest of a stored license text; the
+      renderer reads at most 3 parts per chunk.
+    - Fourth round: a completed dead-admin recovery withdraws a pending successor proposal;
+      the slow and escalated lanes never schedule before the caller's own delay; every move of
+      the admin-activity clock emits `AdminActivity(address indexed admin, uint48 at)`
+      (`0xdc84c09e…`). WorkRecords: every license text a work selects has at most 16 chunks,
+      before finalize too, and RELICENSE cannot be renounced while the text could never
+      finalize; the upgrade walk wraps once per call. The English auction lens reads the
+      creator in `pendingDelivery` with at most 4 KiB copied.
+  - **Review fixes** (ADR 0007, "Independent review"):
+    - Stream: the fallback forwards only `work`, `collection` and `totalSupply`; `owner()`,
+      `contractURI()` and `extension()` are native; `StreamLayout` fixes the storage slots a
+      pinned renderer reads with `extsload` (AUC-49); `releaseContent` works again after a
+      re-mint; `WorkMinted`'s `kind` field is now `flags` (kind and seed policy);
+      `TermsInterned` precedes `RoyaltyRateChanged`; the policy answer's bounds never wrap.
+      `IStream` `0x829e6c7d`, `IStreamViews` `0xb039ffcb`, `IStreamExtension` `0x1b9217b1`.
+    - Editions: `createEdition(workId, item)` reads only Stream's stored item and content
+      record, never the mint policy; the registry's `claimContent`, `editionClaimOf` and
+      `ContentClaimed` are removed. `IEditions` `0xee6d6c6f`, `IPackageRegistry` `0x91325cdf`.
+    - Edition auction: `abandon` enforces its time floor and adds Stream's rescue-delay
+      lengthening; `settle` reads its words once; `open` confirms payout wallets through the
+      ledger's `createWallet`.
+    - WorkRecords: two independent sync walks (the content store by anyone, an added store by
+      the artist only), `MediaFileComplete` per file and store, `StoreInUse` removed, frozen
+      licenses checked, served locators printable ASCII. Renderer: native reads at
+      `StreamLayout` slots, the preview read only when shown, a refused seed read is no seed.
+    - ArtistRegistry: a consolidated wallet stages a STANDARD change only for a dormant artist,
+      waiting the override delay; heartbeats are the authority's; a starved source reverts
+      every refresh; `StandingAdded` on every `effectiveAt` change; `ConsolidationSourceSet`
+      carries the code hash; the split ledger is refused as a payout. Split ledger: payees that
+      can never be paid are refused. GovernedVault forwards works by safe transfer;
+      RevenueEscrow refuses a vault's stale recovery consent; ClaimRouter continue mode takes
+      at most 8 items.
+    - WorksAccessManager: two-step succession (the successor accepts after re-pointing a probe
+      it governs); every grant carries its class delay; the configurator's seat does not count
+      (genesis may name up to five admins); a recovery cannot seat a guardian. The museum
+      vault's destination is SUCCESSOR_SETTER (30 days). Verify checks recipients, the genesis
+      manager state and that every governed contract is listed.
+  - **Gas rule for permanent contracts.** `BoundedCall` gains a forward-all family
+    (`tryReadAll`, `tryCallAll`, `tryReadWordAll`, ERC-165 probes) that forwards all the gas
+    EIP-150 allows and reverts with `BoundedCallShortfall(target)` when a failed call left at
+    most 1/8 of the gas before it. `SignatureVerifier` drops the 200,000-gas ERC-1271 cap and
+    accepts signatures up to 65,536 bytes; `Dependency` and `ProtocolContracts` stop using
+    OpenZeppelin's 30,000-gas probe; `StatementLog` drops `OWNER_READ_GAS`, records any
+    non-zero hash-algorithm ID uninterpreted and accepts URIs up to 8,192 bytes (DSP-2,
+    DSP-26). A stress harness (`test/helpers/GasRule.sol`) runs each call out at 1x to 100x
+    its cost (LIM-GAS-13).
+  - **6529 Stream: a permanent core with a replaceable mint policy** (AUC-38 to AUC-43).
+    `mint` hands the request to `PackageRegistry.authorize` (which replaces `consume`; its
+    `ItemConsumed` is gone) and checks its own invariants on the answer; a read-only
+    `StreamViews` extension serves the informational views; the artist registry is fixed;
+    `ItemKind` and `SeedPolicy` are `uint8`; lower-only royalty in the core; `rendererOf`
+    fails closed; the rescue delay is governed above a 90-day floor (`setRescueDelay`);
+    `WorkMinted` and `TermsInterned` carry the locked terms, with `FeeRecipientRegistered`,
+    `ContentReleased` and `RescueDelaySet`. Stream holds content uniqueness itself (a content
+    hash mints once whatever the policy; `releaseContent` moved from the registry to Stream,
+    AUC-44). `IStream` is one flat interface ID (`0xcacd4413`), `IStreamViews` another;
+    `IPackageRegistry` is `0xe5668b29`. Stream falls from 24,373 to 22,616 bytes and its size
+    exemption is removed.
+  - **6529 Stream Editions** seals an edition's supply at its sale's settlement
+    (`sealSupply(id, count)`, once; a removed adapter mints only an edition it sealed; closes
+    LIM-EA-10) and holds no duration; `mint`'s data is `abi.encode(currency, unitPrice)`,
+    logged by `EditionPrimaryMint`; `createEdition` emits `EditionTermsLocked`; every call out
+    forwards all gas, the receiver hook included; royalty is lower-only in Editions too
+    (ED-25 to ED-28; `IEditions` `0xfbeabb2a`).
+  - **WorkRecords** (permanent): delivery (locators, kinds, preferences, URI grammar) moves to a
+    replaceable `WorkDelivery` behind `setDelivery` (SUCCESSOR_SETTER), with fail-soft,
+    forward-all `preferredLocator` forwarding; `syncOnChain(tokenId, storeId, maxChunks)` with a
+    chunk cursor and a governed, append-only store set (`addStore`); the third renounceable
+    power `RENDERER_REPIN` (amends ADR 0006); only structural bounds (a record is one chunk;
+    previews unbounded here, the renderer decides); `RecordOpened` carries the item, media,
+    license key and seed, and every amendment event the state hash (WS-39 to WS-46).
+    `IWorkRecords` `0x2654eed1`; new `IWorkDelivery`, `IWorkLocators`.
+  - **Shared package types.** `PackageItem.kind`, `seedPolicy`, `Party.role` and
+    `MediaFile.role` are open `uint8`s (the enums name today's values); selectors, interface
+    IDs, topics and item hashes are unchanged; the genesis mint policy refuses values it does
+    not know for new items.
+  - **Renderer.** Every read forwards all gas (no compiled caps; a shortfall reverts with
+    `BoundedCallShortfall`), the preview bound is `Limits.MAX_PREVIEW_BYTES` (16,384), and the
+    locator kind is an open `uint8`. 24,321 to 23,714 bytes; its size exemption is removed.
+  - **English auction.** `settleOrRefund` ends a federated sale whose token will not settle,
+    after a governed refusal delay and in a frame of exactly the governed refusal gas, crediting
+    the bid (AUC-45 to AUC-48; LIM-SAL-16 solved for federated sales; 6529 Stream's sales never
+    take it). Opening bids move to the asset allowlist (`AssetAllowlist.setOpeningBid`,
+    PARAMETER_SETTER, compare-and-set on the asset's revision; read with the currency's status
+    in one call): the auction is 24,062 bytes (margin 514) and its exemption is removed; no
+    payment method is removed. `IEnglishAuction` `0xb9e9cdd3`, `IEnglishAuctionRefusal`
+    `0x625761b5`.
+  - **Edition auction.** It seals the edition at the clearing count and prices every mint; an
+    edition's terms may name its close offset (`params = abi.encode(uint256 seconds)`) up to a
+    governed maximum (30 days at launch); governed limits (`setLimits`: maximum close offset,
+    abandonment delay, payout gas, formerly `PAYOUT_GAS`); `abandon` voids a sale that has
+    paid nothing 150 days after its end (full refunds, the edition sealed at zero); `open`
+    deploys the seller and royalty wallets; no federation registry on the adapter
+    (EA-17 to EA-20). `IUniformEditionAuction` `0x94ff7508`; margin 696 bytes.
+  - **ArtistRegistry**: a permanent federation directory (per-token entries with the code hash
+    it reads itself, exit by the token, a replaceable federation registry
+    `setFederationRegistry`, consented federated identities `registerFederated`); the five
+    identity timers governed between floors and ceilings (`setTimer`) and locked at staging;
+    best-effort refresh on every recovery path, with a shortfall always reverting; payout-only
+    overrides need dormancy (ID-33 to ID-39).
+  - **Split ledger replaces the split factory, wallets and release verifier.** One permanent
+    `SplitLedger` deploys every split wallet as a 66-byte `SplitVault` at the same CREATE2
+    derivation, keeps every wallet's accounting, verifies signed releases and executes every
+    release through the vault: a one-payee wallet costs 95,950 Prague gas (was 1,185,635),
+    about 0.43M under Glamsterdam (was about 8.5M). Releases name a wallet by payee list and
+    salt; `Released` gains the wallet; no code-hash re-checks; `ClaimRouter(ledger)`.
+    `RevenueEscrow.sweepExcess` (FUNDS_SETTER, 14 days) sweeps only `balance - totalOwed`.
+    The network fee recipient and the museum are `GovernedVault` contracts at genesis
+    (`setDestination`, FUNDS_SETTER, 14 days), whose first destinations are the deployment's
+    `NETWORK_FEE_RECIPIENT` and `MUSEUM` (ECO-39 to ECO-42, LIM-ECO-7).
+  - **ContentStore**: `linkChunk` (a full chunk from parts of any size), `registerManifestList`
+    (manifests up to 4,096 chunks in pieces, same file IDs), `firstMissing` (ranged
+    completeness, also against any `IChunkStore`), `attestBase64(fileId, maxChunks)`, open
+    `uint8` encoding and digest-kind IDs, `ManifestRegistered` with the chunk hashes;
+    `MAX_CHUNKS` 512 to 4,096; `SSTORE2.write` trusts the deployed address. The uploader gains
+    `--part-size`, `--manifest`, `--attest-chunks` and a resumable `--only-missing` (WS-50 to
+    WS-54).
+  - **WorksAccessManager**: a bounded veto on a guardian's removal and on a successor
+    registration, dead-admin recovery, a pre-registered successor with a permissionless
+    `migrate`, seat caps, a 30-day floor on admin grants and no remapping of itself (GV-37 to
+    GV-47); genesis names a third admin Safe and the deploy requires three off anvil; Verify
+    refuses a handed-over manager or an unlisted target.
+  - **Genesis and deployment.** New governed selectors (`setRescueDelay`,
+    `setFederationRegistry`, `setTimer`, `sweepExcess`, both vaults' `setDestination`,
+    `setDelivery`, `addStore`, the edition auction's `setLimits`, `AssetAllowlist.setOpeningBid`,
+    the manager's functions and a new `open` group), the role matrix regenerated; `DeployV1`
+    deploys the split ledger, both vaults (genesis addresses 0xa013 and 0xa014) and the edition
+    auction's limits; `tools/size-margins.json` holds no exemption.
+  - **Budgets.** The source-line budget rises from 13,000 to 15,000 (owner decision, 15
+    November 2026; `tools/check_budgets.py`). ADR 0004's table is re-measured: the tightest
+    start row is 344,968 and the suite's start margin stays 5,000; the re-rate (203,000), the
+    bound `createEdition` (158,000), `authorize` (94,000, 0 new slots), the edition auction's
+    `open` (290,000 and 337,000) and capped-sweep `settle` (174,000) regression ceilings move
+    with stated reasons, and a new row measures an edition `open` that deploys both wallets
+    (434,052 gas, ceiling 443,000); no start budget or slot maximum is raised.
+
 - Work powers and conventions ([ADR 0006](docs/adr/0006-work-powers-and-conventions.md)):
   - **Lower-only royalty changes.** `WorkRecords.setRoyaltyRate` refuses a rate above the
     work's current one (`RoyaltyRateNotLowered`), before any signature is checked; the rate new

@@ -138,6 +138,11 @@
       "label": "Cold recovery admin Safe (ADMIN only; 3-of-5, signers distinct from the hot admin's and the guardians')"
     },
     {
+      "role": "ADMIN",
+      "account": "0x000000000000000000000000000000000000b004",
+      "label": "Third admin Safe (ADMIN only; an independent recovery council, signers distinct from both other admins' and the guardians')"
+    },
+    {
       "role": "GUARDIAN",
       "account": "0x000000000000000000000000000000000000b011",
       "label": "Guardian Safe 1"
@@ -217,7 +222,7 @@
     {
       "name": "SplitFactory",
       "address": "0x000000000000000000000000000000000000a010",
-      "note": "not governed; passed to ArtistRegistry.bindSplitFactory"
+      "note": "the split ledger; not governed; passed to ArtistRegistry.bindSplitFactory"
     },
     {
       "name": "WorksAccessManager",
@@ -238,12 +243,131 @@
         "class": "immediate",
         "delay": 0,
         "note": "One-way suspension of a holder of a suspendable role (roles[].suspendable); an ADMIN grantRole or revokeRole of that role to that account (30 days) clears it"
+      },
+      {
+        "signature": "setParameter(uint8,uint32,uint32)",
+        "selector": "0x5c2b54bd",
+        "role": "ADMIN",
+        "class": "successor",
+        "delay": 2592000,
+        "note": "Slow lane: scheduled at least SLOW_DELAY (default 60 days) ahead, ADMIN's 30 days included; compare-and-set within compiled bounds (GV-41)"
+      },
+      {
+        "signature": "setRecoveryAddress(address,address)",
+        "selector": "0x81163a33",
+        "role": "ADMIN",
+        "class": "successor",
+        "delay": 2592000,
+        "note": "Slow lane: scheduled at least SLOW_DELAY (default 60 days) ahead, ADMIN's 30 days included; compare-and-set (GV-42)"
+      },
+      {
+        "signature": "registerSuccessor(address)",
+        "selector": "0xa488b91d",
+        "role": "ADMIN",
+        "class": "successor",
+        "delay": 2592000,
+        "note": "Slow lane: scheduled at least SLOW_DELAY (default 60 days) ahead, ADMIN's 30 days included; ESCALATED_DELAY (default 120 days) and a guardian majority after a guardian's cancellation (GV-37, GV-43). Only proposes (zero withdraws); nothing is handed over until the successor accepts"
+      },
+      {
+        "signature": "approveRecovery(address)",
+        "selector": "0xcbc3b3c2",
+        "role": "GUARDIAN",
+        "class": "immediate",
+        "delay": 0,
+        "note": "Vote approving a live recovery of an unregistered candidate (GV-42)"
+      },
+      {
+        "signature": "objectToRecovery(address)",
+        "selector": "0x1886f8bc",
+        "role": "GUARDIAN",
+        "class": "immediate",
+        "delay": 0,
+        "note": "Vote objecting to a live recovery of the recovery address (GV-42)"
+      }
+    ],
+    "open": [
+      {
+        "signature": "heartbeat()",
+        "selector": "0x3defb962",
+        "note": "Any active ADMIN holder, at once: resets the inactivity clock (GV-42)"
+      },
+      {
+        "signature": "openRecovery(address)",
+        "selector": "0x24d48fe5",
+        "note": "Anyone, after RECOVERY_SILENCE without admin activity (GV-42)"
+      },
+      {
+        "signature": "completeRecovery(address)",
+        "selector": "0xf480dd7e",
+        "note": "Anyone, after RECOVERY_DELAY, if the guardian decision allows it (GV-42)"
+      },
+      {
+        "signature": "acceptSuccession()",
+        "selector": "0x922fbae1",
+        "note": "Only the pending successor itself, once it has re-pointed successionProbe() to the manager: completes the handover (GV-43)"
+      },
+      {
+        "signature": "migrate(uint256,uint256)",
+        "selector": "0x3e54bacb",
+        "note": "Anyone, once a successor has accepted (GV-45)"
       }
     ],
     "views": [
       {
         "signature": "isSuspended(uint64,address)",
         "selector": "0xbd2e6ac3"
+      },
+      {
+        "signature": "actionOf(address,bytes)",
+        "selector": "0x16922876"
+      },
+      {
+        "signature": "getEscalation(bytes32)",
+        "selector": "0x7068639f"
+      },
+      {
+        "signature": "getRecovery(address)",
+        "selector": "0x9769c3fe"
+      },
+      {
+        "signature": "isStruck(bytes32)",
+        "selector": "0xc7e7e16e"
+      },
+      {
+        "signature": "lastAdminActivity()",
+        "selector": "0x5811b5b1"
+      },
+      {
+        "signature": "managedTargets()",
+        "selector": "0xf4b68392"
+      },
+      {
+        "signature": "parameter(uint8)",
+        "selector": "0xedbdabac"
+      },
+      {
+        "signature": "parameterBounds(uint8)",
+        "selector": "0x5421d77f"
+      },
+      {
+        "signature": "pendingSuccessor()",
+        "selector": "0xed60ed63"
+      },
+      {
+        "signature": "recoveryAddress()",
+        "selector": "0x710eb26c"
+      },
+      {
+        "signature": "seatHolders(uint64)",
+        "selector": "0x59bd67dd"
+      },
+      {
+        "signature": "successionProbe()",
+        "selector": "0x34da8a1c"
+      },
+      {
+        "signature": "successor()",
+        "selector": "0x6ff968c3"
       }
     ]
   },
@@ -310,6 +434,13 @@
           "role": "SUCCESSOR_SETTER",
           "class": "successor",
           "delay": 2592000
+        },
+        {
+          "signature": "setRescueDelay(uint256)",
+          "selector": "0x5968b5f3",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
         }
       ],
       "genesisOnly": [
@@ -330,6 +461,52 @@
       "implementation": "src/stream/WorkRecords.sol:WorkRecords",
       "address": "0x000000000000000000000000000000000000a002",
       "status": "implemented (stream lane)",
+      "functions": [
+        {
+          "signature": "relicense(uint256,(string,bytes32),(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])",
+          "selector": "0xd60ad0db",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
+        },
+        {
+          "signature": "setRoyaltyRate(uint256,uint32,(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])",
+          "selector": "0xc13560ef",
+          "role": "FUNDS_SETTER",
+          "class": "funds",
+          "delay": 1209600
+        },
+        {
+          "signature": "repinRenderer(uint256,address,bytes32,bytes32,uint64,bytes)",
+          "selector": "0x12e96e4a",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        },
+        {
+          "signature": "setDelivery(address,address)",
+          "selector": "0x118e803d",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        },
+        {
+          "signature": "addStore(address,bytes32)",
+          "selector": "0xce8238dd",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "WorkDelivery",
+      "artifact": "src/stream/WorkDelivery.sol:WorkDelivery",
+      "implementation": "src/stream/WorkDelivery.sol:WorkDelivery",
+      "address": "0x000000000000000000000000000000000000a011",
+      "status": "created by WorkRecords' constructor (records lane); replaceable through WorkRecords.setDelivery",
       "functions": [
         {
           "signature": "setPreferredKind(uint8)",
@@ -358,27 +535,6 @@
           "role": "PLATFORM",
           "class": "immediate",
           "delay": 0
-        },
-        {
-          "signature": "relicense(uint256,(string,bytes32),(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])",
-          "selector": "0xd60ad0db",
-          "role": "PARAMETER_SETTER",
-          "class": "standard",
-          "delay": 172800
-        },
-        {
-          "signature": "setRoyaltyRate(uint256,uint32,(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])",
-          "selector": "0xc13560ef",
-          "role": "FUNDS_SETTER",
-          "class": "funds",
-          "delay": 1209600
-        },
-        {
-          "signature": "repinRenderer(uint256,address,bytes32,bytes32,uint64,bytes)",
-          "selector": "0x12e96e4a",
-          "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
         }
       ],
       "genesisOnly": [],
@@ -521,6 +677,20 @@
           "role": "SUCCESSOR_SETTER",
           "class": "successor",
           "delay": 2592000
+        },
+        {
+          "signature": "setFederationRegistry(address,address)",
+          "selector": "0x747e3199",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        },
+        {
+          "signature": "setTimer(uint8,uint48)",
+          "selector": "0xd5f2e860",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
         }
       ],
       "genesisOnly": [
@@ -545,7 +715,7 @@
         {
           "signature": "bindFederationRegistry(address)",
           "selector": "0x3d4dbd3c",
-          "note": "v1.1: bound when the federation registry ships, as a 30-day ADMIN action"
+          "note": "Bound when the federation registry ships (in v1, specified by a later ADR), as a 30-day ADMIN action; replaceable afterwards by setFederationRegistry"
         }
       ]
     },
@@ -631,15 +801,8 @@
           "delay": 172800
         },
         {
-          "signature": "setConfig((uint32,uint32,uint32),(uint32,uint32,uint32))",
-          "selector": "0x8a5268b2",
-          "role": "PARAMETER_SETTER",
-          "class": "standard",
-          "delay": 172800
-        },
-        {
-          "signature": "setOpeningBid(address,uint256,uint256)",
-          "selector": "0x5d918358",
+          "signature": "setConfig((uint32,uint32,uint32,uint32,uint32),(uint32,uint32,uint32,uint32,uint32))",
+          "selector": "0x1b380907",
           "role": "PARAMETER_SETTER",
           "class": "standard",
           "delay": 172800
@@ -698,11 +861,11 @@
           "delay": 2592000
         },
         {
-          "signature": "setFederationRegistry(address,address)",
-          "selector": "0x747e3199",
-          "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
+          "signature": "setLimits(uint256,uint256)",
+          "selector": "0xc4590d3f",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
         }
       ],
       "genesisOnly": [],
@@ -781,6 +944,13 @@
           "role": "GUARDIAN",
           "class": "immediate",
           "delay": 0
+        },
+        {
+          "signature": "setOpeningBid(address,uint64,uint256)",
+          "selector": "0x373577fc",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
         }
       ],
       "genesisOnly": [],
@@ -799,6 +969,52 @@
           "role": "FUNDS_SETTER",
           "class": "funds",
           "delay": 1209600
+        },
+        {
+          "signature": "sweepExcess(address,address)",
+          "selector": "0xfc6e9367",
+          "role": "FUNDS_SETTER",
+          "class": "funds",
+          "delay": 1209600
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "FeeRecipientVault",
+      "artifact": "src/economics/GovernedVault.sol:GovernedVault",
+      "implementation": "src/economics/GovernedVault.sol:GovernedVault",
+      "address": "0x000000000000000000000000000000000000a013",
+      "status": "implemented on main",
+      "note": "The network fee recipient: a governed vault the economics resolver names; it forwards what it holds only to its destination (the deployment's NETWORK_FEE_RECIPIENT first)",
+      "functions": [
+        {
+          "signature": "setDestination(uint64,address)",
+          "selector": "0x765b2cf1",
+          "role": "FUNDS_SETTER",
+          "class": "funds",
+          "delay": 1209600
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "MuseumVault",
+      "artifact": "src/economics/GovernedVault.sol:GovernedVault",
+      "implementation": "src/economics/GovernedVault.sol:GovernedVault",
+      "address": "0x000000000000000000000000000000000000a014",
+      "status": "implemented on main",
+      "note": "The museum: a governed vault the economics resolver names; unbid and rescued works and museum payouts land here and move only to its destination (the deployment's MUSEUM first)",
+      "functions": [
+        {
+          "signature": "setDestination(uint64,address)",
+          "selector": "0x765b2cf1",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000,
+          "note": "30-day class, not the fee vault's 14: the museum vault holds existing works (every museum-held 1/1), so its destination is an authority over existing tokens (ADR 0007)"
         }
       ],
       "genesisOnly": [],
@@ -964,15 +1180,15 @@
       "calldata": "0x80ffe77f000000000000000000000000000000000000000000000000000000000000a0010000000000000000000000000000000000000000000000000000000000000001"
     },
     {
-      "contract": "EnglishAuction",
-      "signature": "setOpeningBid(address,uint256,uint256)",
+      "contract": "AssetAllowlist",
+      "signature": "setOpeningBid(address,uint64,uint256)",
       "args": [
         "0x0000000000000000000000000000000000000000",
-        0,
+        1,
         50000000000000000
       ],
-      "note": "ETH opening bid 0.05 ETH (owner decision 19): a 1-wei self-bid can no longer take a 1/1 past the museum",
-      "calldata": "0x5d9183580000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000b1a2bc2ec50000"
+      "note": "ETH opening bid 0.05 ETH (owner decision 19), held by the asset allowlist since ADR 0007 (ETH is at revision 1 from its admission at deployment): a 1-wei self-bid can no longer take a 1/1 past the museum",
+      "calldata": "0x373577fc0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000b1a2bc2ec50000"
     },
     {
       "contract": "UniformEditionAuction",
@@ -1046,8 +1262,8 @@
     },
     {
       "contract": "FederationRegistry",
-      "lane": "federated (v1.1)",
-      "note": "Not deployed at genesis. setStatus and setArtistDelisted map to PARAMETER_SETTER; ArtistRegistry.bindFederationRegistry (deferred above) and the adapters' setFederationRegistry run when it ships."
+      "lane": "federation (v1, a later ADR)",
+      "note": "Not deployed yet. setStatus and setArtistDelisted map to PARAMETER_SETTER; ArtistRegistry.bindFederationRegistry (deferred above) and the adapters' setFederationRegistry run when it ships; later replacements use ArtistRegistry.setFederationRegistry (30 days)."
     }
   ],
   "unusedRoles": [

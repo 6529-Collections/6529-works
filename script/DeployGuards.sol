@@ -20,8 +20,9 @@ library DeployGuards {
     /// @notice Holder addresses at or below this are placeholders (the example's `0x…b0xx`) or
     ///         precompiles, never a Safe or a key.
     uint160 internal constant MAX_PLACEHOLDER = 0xFFFF;
-    /// @notice Off anvil, at least two admin Safes: the hot admin and the cold recovery admin.
-    uint256 internal constant MIN_ADMINS = 2;
+    /// @notice Off anvil, at least three admin Safes: the hot admin, the cold recovery admin and
+    ///         the third admin (owner decision of 15 November 2026, ADR 0007).
+    uint256 internal constant MIN_ADMINS = 3;
     /// @notice Off anvil, at least three guardian Safes (`GovernanceConfig` alone requires two).
     uint256 internal constant MIN_GUARDIANS = 3;
     /// @notice Off anvil, at least two curation signer keys.
@@ -161,7 +162,7 @@ library DeployGuards {
     ///           `singletons` (a canonical Safe singleton, with its code hash), with no
     ///           enabled module and no transaction guard.
     ///         - No holder may be a placeholder or a system address.
-    ///         - At least `MIN_ADMINS` admins (hot and cold), `MIN_GUARDIANS` guardians and
+    ///         - At least `MIN_ADMINS` admins (hot, cold and third), `MIN_GUARDIANS` guardians and
     ///           `MIN_CURATION_SIGNERS` curation signers. `GovernanceConfig` rejects duplicate
     ///           grants, so the counts are of distinct accounts.
     ///         - No signer is shared between any two of the admin and guardian Safes (owner
@@ -363,7 +364,8 @@ library DeployGuards {
     /// @notice On mainnet, the accounts the deployment pins at construction are not the
     ///         deployer EOA (`Deploy.s.sol` runs it before the broadcast, `Verify.s.sol` against
     ///         the record): the 6529 Network Museum, the marketplace `owner()` and the network
-    ///         fee recipient. Each is changed later only by a 14-day FUNDS_SETTER action, and the
+    ///         fee recipient. Each is changed later only by a governed action (the museum vault's
+    ///         destination in 30 days, SUCCESSOR_SETTER; the others in 14, FUNDS_SETTER), and the
     ///         deployer's key, used once to deploy, is not a network-held account (owner decision
     ///         18).
     function checkRecipients(DeployV1.Params memory p) internal pure {

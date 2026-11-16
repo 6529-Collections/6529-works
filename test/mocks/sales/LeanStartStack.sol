@@ -220,7 +220,7 @@ contract LeanStream is ERC721, IMintTarget {
     function setAdmittedMinter(address adapter, bool admitted) external {
         if (minterIdOf[adapter] == 0) minterIdOf[adapter] = ++minterCount;
         isAdmittedMinter[adapter] = admitted;
-        emit AdmittedMinterSet(adapter, 0, admitted);
+        emit AdmittedMinterSet(adapter, 0, admitted, 0);
     }
 
     function mint(address to, uint256 id, uint256 amount, bytes calldata data)
@@ -232,7 +232,7 @@ contract LeanStream is ERC721, IMintTarget {
         require(ISaleAdapter(msg.sender).saleKind() == SaleKind.ENGLISH_AUCTION, "kind");
         StreamMintRequest calldata request = _request(data);
         PackageItem calldata item = request.item;
-        require(item.seedPolicy != SeedPolicy.VRF, "seed not delivered");
+        require(item.seedPolicy != uint8(SeedPolicy.VRF), "seed not delivered");
         (bytes32 itemHash, uint256 artistId) =
             registry.consume(request.packageRoot, item, request.proof, request.move);
         WorkTerms memory w = resolver.newWorkTerms(item.payees);

@@ -59,7 +59,7 @@ contract StreamTxCapTest is RecordsFixture {
         item = _recordsItem(salt, media);
         item.parties = new Party[](16);
         item.payees = new ISplitWallet.Payee[](16);
-        item.parties[0] = Party(artist, PartyRole.ARTIST);
+        item.parties[0] = Party(artist, uint8(PartyRole.ARTIST));
         item.payees[0] = ISplitWallet.Payee(uint256(uint160(artist)), address(0), 6_250);
         delete partyKeys;
         partyKeys.push(artistKey);
@@ -68,7 +68,7 @@ contract StreamTxCapTest is RecordsFixture {
             address account = vm.addr(key);
             artists.register(account);
             partyKeys.push(key);
-            item.parties[i] = Party(account, PartyRole.COLLABORATOR);
+            item.parties[i] = Party(account, uint8(PartyRole.COLLABORATOR));
             item.payees[i] = ISplitWallet.Payee(uint256(uint160(account)), address(0), 6_250);
         }
         // The split factory needs the payees in canonical order: by artist ID.
@@ -142,8 +142,8 @@ contract StreamTxCapTest is RecordsFixture {
         (uint256 tokenId,) = _work(1);
         bytes32 file = records.mediaOf(tokenId)[0].fileId;
         Locator memory locator = CA.ipfsLocator("longest");
-        bytes memory callData = abi.encodeCall(records.addLocator, (tokenId, file, locator));
-        _call(address(records), platform, callData, "addLocator, 66-byte URI:");
+        bytes memory callData = abi.encodeCall(delivery.addLocator, (tokenId, file, locator));
+        _call(address(delivery), platform, callData, "addLocator, 66-byte URI:");
     }
 
     function test_txCap_preferredLocatorScansSixteen() public {
@@ -152,10 +152,10 @@ contract StreamTxCapTest is RecordsFixture {
         // The platform's 8 and the artist's 8: the most a file can hold.
         for (uint256 i; i < 16; ++i) {
             vm.prank(i < 8 ? platform : artist);
-            records.addLocator(tokenId, file, CA.ar(vm.toString(i)));
+            delivery.addLocator(tokenId, file, CA.ar(vm.toString(i)));
         }
         vm.prank(storageOperator);
-        records.setPreferredKind(LocatorKind.IPFS);
+        delivery.setPreferredKind(LocatorKind.IPFS);
         bytes memory callData = abi.encodeCall(records.preferredLocator, (tokenId, file));
         _call(address(records), outsider, callData, "preferredLocator, 16 scanned:");
     }
@@ -168,7 +168,7 @@ contract StreamTxCapTest is RecordsFixture {
         for (uint256 i; i < 32; ++i) {
             _upload(200 + i);
         }
-        bytes memory callData = abi.encodeCall(records.syncOnChain, (tokenId));
+        bytes memory callData = abi.encodeCall(records.syncOnChain, (tokenId, 0, type(uint256).max));
         _call(address(records), outsider, callData, "syncOnChain, 32 files:");
     }
 }

@@ -6,6 +6,8 @@ import { Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { DeployGuards } from "script/DeployGuards.sol";
 import { WorksForkBase } from "./WorksForkBase.sol";
+import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @dev The two reads of the canonical Permit2 these tests use.
 interface IPermit2Reads {
@@ -136,7 +138,7 @@ abstract contract Permit2ForkTests is WorksForkBase {
         );
         assertEq(auction.claimable(buyer, address(usd)), amount, "the outbid is credited");
         _settleAtEnd(saleId);
-        assertEq(stream.ownerOf(stream.totalMinted()), buyer);
+        assertEq(stream.ownerOf(IStream(address(stream)).totalMinted()), buyer);
         assertEq(usd.balanceOf(address(auction)), amount, "only the credit stays");
     }
 

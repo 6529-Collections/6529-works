@@ -14,6 +14,7 @@ import { Renderer } from "src/content/Renderer.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { ItemKind, License, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
@@ -55,7 +56,7 @@ abstract contract RendererBase is ContentBase {
     uint256 internal constant MAX_ATTRIBUTES = 32;
     uint256 internal constant MAX_SCRIPT_LT = 1_024;
     uint256 internal constant SCRIPT_LIMIT = 8_192;
-    uint256 internal constant PREVIEW_LIMIT = 65_536;
+    uint256 internal constant PREVIEW_LIMIT = 16_384; // `Limits.MAX_PREVIEW_BYTES`
     uint256 internal constant MAX_INLINE_BYTES = 1_048_576;
     string internal constant PREFIX = "data:application/json;utf8,";
 
@@ -91,7 +92,8 @@ abstract contract RendererBase is ContentBase {
         returns (bytes32 fileId)
     {
         (bytes[] memory chunks, bytes32[] memory hashes) = _split(stored);
-        fileId = store.registerManifest(hashes, stored.length, encoding, mime, sha256(stored));
+        fileId =
+            store.registerManifest(hashes, stored.length, uint8(encoding), mime, sha256(stored));
         _uploadAll(chunks);
     }
 
@@ -99,8 +101,8 @@ abstract contract RendererBase is ContentBase {
     ///      base64 stays unattested, which is what a renderer must find out.
     function _attest(bytes32 fileId) internal {
         // A file of many chunks takes several calls; a file that is not strict base64 reverts.
-        try store.attestBase64(fileId) returns (bool done) {
-            while (!done) done = store.attestBase64(fileId);
+        try store.attestBase64(fileId, 48) returns (bool done) {
+            while (!done) done = store.attestBase64(fileId, 48);
         } catch { }
     }
 
@@ -115,7 +117,8 @@ abstract contract RendererBase is ContentBase {
         string memory mime
     ) internal returns (bytes32 fileId) {
         (bytes[] memory chunks, bytes32[] memory hashes) = _split(stored);
-        fileId = store.registerManifest(hashes, stored.length, encoding, mime, sha256(stored));
+        fileId =
+            store.registerManifest(hashes, stored.length, uint8(encoding), mime, sha256(stored));
         for (uint256 i; i + 1 < chunks.length; ++i) {
             store.writeChunk(chunks[i]);
         }
@@ -134,10 +137,10 @@ abstract contract RendererBase is ContentBase {
         return License("CC0-1.0", bytes32(0));
     }
 
-    function _core() internal pure returns (IStream.WorkCore memory core) {
+    function _core() internal pure returns (IStreamViews.WorkCore memory core) {
         core.itemHash = bytes32(uint256(1));
         core.artistId = 1;
-        core.kind = ItemKind.ORIGINAL;
+        core.kind = uint8(ItemKind.ORIGINAL);
     }
 
     /// @dev The record file the work points at, in the order RFC 8785 gives the keys.
@@ -204,8 +207,8 @@ abstract contract RendererBase is ContentBase {
 
     function _media(bytes32 primary, bytes32 preview) internal view returns (MediaFile[] memory m) {
         m = new MediaFile[](preview == 0 ? 1 : 2);
-        m[0] = MediaFile(primary, _sha(primary), FileRole.PRIMARY);
-        if (preview != 0) m[1] = MediaFile(preview, _sha(preview), FileRole.PREVIEW);
+        m[0] = MediaFile(primary, _sha(primary), uint8(FileRole.PRIMARY));
+        if (preview != 0) m[1] = MediaFile(preview, _sha(preview), uint8(FileRole.PREVIEW));
     }
 
     function _sha(bytes32 fileId) internal view returns (bytes32) {

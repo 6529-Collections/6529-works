@@ -103,8 +103,8 @@ Every path validates the struct (`StatementLog._validate`):
 | `token`, `id` | The subject; `(address(0), 0)` is refused. | `InvalidSubject` |
 | `kind` | Non-zero; a reserved kind only under its role or path. | `InvalidKind`, `ReservedKind(kind, role)` |
 | `schema` | Non-zero hash of the schema the document follows. | `InvalidSchema` |
-| `content` | `HashRef{algorithm, digest}`: algorithm 1 (keccak256), 2 (SHA-256) or 3 (BLAKE3), digest non-zero. IDs 4 to 6 (multihash, CID, Arweave ID) are refused; such identifiers go in `uri`. | `InvalidHashRef(algorithm)` |
-| `uri`, `fileId` | Exactly one locator: a URI of at most 2,048 bytes (`MAX_URI_BYTES`) of well-formed UTF-8, or a `ContentStore` file ID, opaque to the log. | `InvalidUri`, `ConflictingLocators`, `MissingLocator` |
+| `content` | `HashRef{algorithm, digest}`: a non-zero algorithm ID and a non-zero digest. The ID is open: the log records it and never interprets it. 1 (keccak256), 2 (SHA-256) and 3 (BLAKE3) keep their numbers; 4 to 6 keep RC1's names (multihash, CID, Arweave ID), which a 32-byte digest cannot carry, so conventions do not assign them and such identifiers go in `uri`; any other ID is accepted and given meaning by readers. | `InvalidHashRef(algorithm)` (zero ID or zero digest) |
+| `uri`, `fileId` | Exactly one locator: a URI of at most 8,192 bytes (`MAX_URI_BYTES`) of well-formed UTF-8, or a `ContentStore` file ID, opaque to the log. | `InvalidUri`, `ConflictingLocators`, `MissingLocator` |
 | `supersedes` | The entry hash of an earlier entry this one corrects, or zero. Not checked on-chain. | none |
 
 ### Who may write
@@ -115,7 +115,7 @@ never passes.
 | Role | Entry points | Who qualifies |
 | --- | --- | --- |
 | ARTIST | `append(Role.ARTIST, s)`, `appendSigned` | `isArtist(token, id, signer)` on the installed resolver, its code hash checked at every use. In v1 the resolver is `ArtistRegistry`: for a Stream work, the lead artist's active authority; for an edition, the same through its master; every other subject answers false. A zero resolver disables ARTIST statements. |
-| OWNER | `append(Role.OWNER, s)`, `appendSigned` | ERC-721 `ownerOf(id) == signer`, otherwise ERC-1155 `balanceOf(signer, id) > 0` (any edition holder). Each read is capped at 50,000 gas (`OWNER_READ_GAS`) and 32 bytes; any failure means "not the owner". |
+| OWNER | `append(Role.OWNER, s)`, `appendSigned` | ERC-721 `ownerOf(id) == signer`, otherwise ERC-1155 `balanceOf(signer, id) > 0` (any edition holder). Each read forwards all the gas EIP-150 allows and copies at most 32 bytes; a read that runs short reverts with `BoundedCallShortfall` (DSP-26), and any other failure means "not the owner". |
 | CURATOR | `appendCurator(s)` (restricted), `appendSigned` | A holder of the role mapped to `appendCurator` (`CURATOR` at genesis, zero delay). |
 | PLATFORM | `appendPlatform(s)` (restricted), `appendSigned` | A holder of the role mapped to `appendPlatform` (`PLATFORM` at genesis, zero delay). |
 | PLATFORM, signed by the AccessManager | `appendGovernanceManifest(s)` (restricted) | A scheduled operation of `SUCCESSOR_SETTER` (30 days); subject `(authority(), 0)` and kind `GOVERNANCE_MANIFEST` only. |
@@ -222,7 +222,7 @@ subject the entry count, chain head and latest outcome; two views read it:
 
 | View | Answers | Read by |
 | --- | --- | --- |
-| `latestDisputeOutcome(token, id)` | The subject's own latest outcome; if none and `token` is not zero, a token that declares `IStream` by ERC-165 (checked first) gets one bounded read of `IStream.coreOf(id)`, which gives the latest outcome about the item the token was minted from. A token that does not declare `IStream` is never read, so it reads zero whatever its `coreOf` would answer; a Stream's `UnknownWork` (a burned or unminted token) also leaves zero; any other failure of a token that declares `IStream` reverts with `BoundedCallFailed` (fail closed), so the renderer's `tokenURI` reverts rather than show no outcome. | The renderer and `ArtistRegistry.resolveContested` |
+| `latestDisputeOutcome(token, id)` | The subject's own latest outcome; if none and `token` is not zero, a token that declares `IStream` by ERC-165 (checked first, in full: a contract that answers `0xffffffff` true, as an always-true fallback does, declares nothing) gets one bounded read of `IStream.coreOf(id)`, which gives the latest outcome about the item the token was minted from. A token that does not declare `IStream` is never read, so it reads zero whatever its `coreOf` would answer; a Stream's `UnknownWork` (a burned or unminted token) also leaves zero; any other failure of a token that declares `IStream` reverts with `BoundedCallFailed` (fail closed), so the renderer's `tokenURI` reverts rather than show no outcome. | The renderer and `ArtistRegistry.resolveContested` |
 | `disputeOutcomeOf(token, id)` | The subject's own latest outcome (no item fallback) and its zero-based index in the subject's chain. | The auction's `pause` and `cancel` |
 
 - **Precedence.** Once the token has an outcome of its own, item outcomes are no longer shown,
@@ -304,23 +304,22 @@ sequenceDiagram
     participant S as Hot admin Safe
     participant M as WorksAccessManager
     participant T as Stream
-    participant R as PackageRegistry
     participant AR as ArtistRegistry
     S->>M: execute releaseContent after the cancel
     M->>T: releaseContent(tokenId, contentHash, beneficiary)
     Note over T: token must be burned, else NotBurned
-    T->>R: releaseContent(contentHash, burned token itemHash, beneficiary)
-    Note over R: itemHash must hold contentHash, else ClaimNotAllowed
-    R->>AR: authorityOf(beneficiary)
-    Note over R: an unregistered beneficiary reverts with UnknownArtist
-    Note over R: content reserved for the beneficiary, item tombstoned, ContentReleased
+    Note over T: the burned token must hold contentHash, else ClaimNotAllowed
+    T->>AR: authorityOf(beneficiary)
+    Note over T: an unregistered beneficiary reverts with UnknownArtist
+    Note over T: content reserved for the beneficiary, item tombstoned, ContentReleased
 ```
 
 - **The outcome** must still be the token's latest when the cancel executes, so a later outcome
   invalidates a scheduled cancel (DSP-18, LIFECYCLE-4).
 - **`cancel`** sets `pausedTotal` to the time since the pause and credits the high bid. A
   cancelled sale keeps the last amount in `Auction.bid`; its `bidder` is zero.
-- **`releaseContent`** (DSP-21) reserves the content for the beneficiary's items
+- **`releaseContent`** (DSP-21) is 6529 Stream's alone, since Stream holds content uniqueness
+  (AUC-44; the package registry keeps no content record). It reserves the content for the beneficiary's items
   (`ContentReserved` for anyone else) and tombstones the burned item (`ContentUsed`). The
   beneficiary comes from the outcome document, unchecked on chain, so the guardians check it
   during the delay. A VRF item of the rightful artist joins the content's delivered seed
@@ -409,7 +408,7 @@ sequenceDiagram
   `nonceUsed(signer, nonce)` reads the per-signer bitmap.
 - **Signatures** go through [`SignatureVerifier`](../../src/libraries/SignatureVerifier.sol):
   low-s ECDSA (65 bytes, or 64 in ERC-2098 form), EIP-7702 delegated accounts, and ERC-1271
-  with a 200,000-gas cap. A rotated key never verifies again, and the entry records `signer`,
+  forwarding all the gas EIP-150 allows (DSP-26), for signatures of at most 65,536 bytes. A rotated key never verifies again, and the entry records `signer`,
   never the relayer.
 - **Digest.** Domain `"6529 Works Statement Log"`, version `"1"`, the chain ID and the log's
   address; it binds the role, signer, nonce, deadline and every statement field. The type
@@ -489,7 +488,7 @@ Test files: `SL` is [`StatementLog.t.sol`](../../test/records/StatementLog.t.sol
 | ID | Rule | Enforced in | Tested by |
 | --- | --- | --- | --- |
 | DSP-1 | The log is append-only: no entry is edited or deleted, and each subject's count and head match the events emitted for it. | `StatementLog._write` (the only write path) | SLI `invariant_CountAndHeadMatchEmittedEvents`; SL `test_Supersession_IsANewEntryAndNothingIsOverwritten`, `test_HashChainRebuiltFromEventsEqualsStoredHeads` |
-| DSP-2 | Every entry has a subject other than `(0, 0)`, a non-zero kind and schema, a known non-zero `HashRef`, exactly one locator, and a URI of at most 2,048 bytes of UTF-8. | `StatementLog._validate` | SL `test_Validation_RejectsMalformedStatements`, `test_Validation_Locators`, `test_Validation_UriMustBeUtf8`, `test_Validation_AcceptsEveryRecognisedAlgorithm` |
+| DSP-2 | Every entry has a subject other than `(0, 0)`, a non-zero kind and schema, a `HashRef` with a non-zero algorithm ID (recorded, never interpreted) and a non-zero digest, exactly one locator, and a URI of at most 8,192 bytes of UTF-8. | `StatementLog._validate` | SL `test_Validation_RejectsMalformedStatements`, `test_Validation_Locators`, `test_Validation_UriMustBeUtf8`, `test_Validation_AcceptsEveryRecognisedAlgorithm`, `test_Validation_AcceptsUnknownAlgorithmIds`, `testFuzz_Validation_RecordsAnyNonZeroAlgorithmUninterpreted` |
 | DSP-3 | `append` serves only ARTIST and OWNER. CURATOR and PLATFORM write through their restricted functions, or by relay only when the signer holds the role with zero execution delay; a delayed holder cannot write at once or by relay. | `StatementLog.append`, `_isAuthorized` | SL `test_Append_RefusesCuratorPlatformAndNoneRoles`, `test_CuratorAndPlatform_RejectStrangersAndTheOtherRole`, `test_Curator_DelayedRoleCannotWriteDirectlyOrByRelay`, `test_Relay_CuratorSignerWithoutTheRoleIsRejected` |
 | DSP-4 | `DISPUTE_OUTCOME` is written only as PLATFORM (`appendPlatform`, or `appendSigned` signed by a PLATFORM holder), `CURATION_EVIDENCE` only as CURATOR, `GOVERNANCE_MANIFEST` only by `appendGovernanceManifest`. | `StatementLog._validate`, `_append`, `appendGovernanceManifest` | SLP `test_ReservedKinds_DisputeOutcomeIsPlatformOnly`, `test_ReservedKinds_CurationEvidenceIsCuratorOnly`, `test_ReservedKinds_AlsoHoldForRelayedStatements`, `test_GovernanceManifest_EveryOtherPathRejectsTheKind`; SLI `invariant_RolesAreSpokenOnlyByTheirHoldersAndReservedKindsStayReserved` |
 | DSP-5 | No entry names the AccessManager as signer, except a governance manifest with subject `(authority(), 0)`. | `StatementLog._append` (`AuthorityCannotSign`), `appendGovernanceManifest` | SLP `test_Manager_CannotBeTheRecordedSignerOnAnyPath`, `test_GovernanceManifest_MustBeAboutTheManagerWithTheGovernanceKind`, `test_GovernanceManifest_ManagerStillCannotSignOnOtherPaths`; SL `test_Curator_ScheduledExecutionCannotBeAttributedToTheManager` |
@@ -499,7 +498,7 @@ Test files: `SL` is [`StatementLog.t.sol`](../../test/records/StatementLog.t.sol
 | DSP-9 | A relayed entry needs an unexpired deadline (inclusive), an unused nonce of the signer, a valid signature over the full authorization under this log and chain, and the signer's role; a nonce is spent once, a failed append spends none. | `StatementLog.appendSigned`, `_spendNonce`, `revokeNonce` | SL `test_Relay_ReplayIsRejected`, `test_Relay_DeadlineIsInclusive`, `test_Relay_RevokeBeforeUse`, `test_Relay_WrongChainIsRejected`, `test_Relay_WrongContractIsRejected`, `test_Relay_AnyTamperedFieldIsRejected`, `test_Relay_FailedAppendDoesNotSpendTheNonce`; SLI `invariant_SpentNoncesStaySpent` |
 | DSP-10 | Type hashes, the domain, the entry hash and the head follow the formulas on this page. | `StatementLog._statementHash`, `_authorizationHash`, `_write` | [`StatementLogGolden.t.sol`](../../test/records/StatementLogGolden.t.sol) `test_Golden_TypeHashesAndDomainTags`, `test_Golden_DigestMatchesForgeTypedDataEncoder`, `test_Golden_EntryHashAndHead` |
 | DSP-11 | A `DISPUTE_OUTCOME` about an ERC-721 token needs the token to exist; any ERC-1155 subject is refused. | `StatementLog._checkDisputeSubject` | SLP `test_DisputeOutcome_SubjectRules`; DI `test_ADisputeOutcomeNamesAnExistingToken` |
-| DSP-12 | `latestDisputeOutcome` returns the subject's own latest outcome, else, only for a token that declares `IStream`, its item's (a token that does not declare it reads zero, whatever its `coreOf` answers); a failed item read of a token that declares `IStream` reverts, except its `UnknownWork`; `disputeOutcomeOf` returns the own latest outcome and its index, with no fallback. | `StatementLog.latestDisputeOutcome`, `disputeOutcomeOf` | SLP `test_LatestDisputeOutcome_TracksOnlyDisputeEntries`, `test_DisputeOutcomeOf_IsTheOwnLatestOutcomeAndItsPosition`, `test_LatestDisputeOutcome_AStreamWhoseCoreReadFailsReverts`, `test_LatestDisputeOutcome_ANonStreamTokenStillReadsZero`, `test_LatestDisputeOutcome_AnUndeclaredTokensAnswerNamesNoItem`, `test_LatestDisputeOutcome_FollowsOnlyAFullCoreOfAnswer`; DI `test_APreMintOutcomeShowsOnTheWorkAndItsEdition`; SLI `invariant_LatestDisputeOutcomeMatchesEvents` |
+| DSP-12 | `latestDisputeOutcome` returns the subject's own latest outcome, else, only for a token that declares `IStream`, its item's (a token that does not declare it reads zero, whatever its `coreOf` answers); a failed item read of a token that declares `IStream` reverts, except its `UnknownWork`, and a read that runs short reverts with `BoundedCallShortfall` (DSP-26); `disputeOutcomeOf` returns the own latest outcome and its index, with no fallback. | `StatementLog.latestDisputeOutcome`, `disputeOutcomeOf` | SLP `test_LatestDisputeOutcome_TracksOnlyDisputeEntries`, `test_DisputeOutcomeOf_IsTheOwnLatestOutcomeAndItsPosition`, `test_LatestDisputeOutcome_AStreamWhoseCoreReadFailsReverts`, `test_LatestDisputeOutcome_ANonStreamTokenStillReadsZero`, `test_LatestDisputeOutcome_AnUndeclaredTokensAnswerNamesNoItem`, `test_LatestDisputeOutcome_FollowsOnlyAFullCoreOfAnswer`; DI `test_APreMintOutcomeShowsOnTheWorkAndItsEdition`; SLI `invariant_LatestDisputeOutcomeMatchesEvents` |
 | DSP-13 | Only a guardian pauses, only a live auction, and only once. | `EnglishAuction.pause` | EAD `test_Pause_OnlyTheGuardian`, `test_Pause_OnlyALiveAuctionOnce` |
 | DSP-14 | A pause is live through `pausedAt + 7 days` inclusive and then ends by itself. | `EnglishAuction._state`, `_require`, `_endPause` | EAD `test_Pause_EndsByItselfAfterSevenDays`, `test_Pause_ExpiredPauseSettlesWithoutAResumeCall` |
 | DSP-15 | While paused, nobody bids or settles; only the high bidder may withdraw, and the withdrawn amount stays as the reserve the next bid must reach. | `EnglishAuction._bid`, `settle`, `withdrawBid`, `_minimumBid`, `_refundHighBid` | EAD `test_Pause_FreezesTheAuction`, `test_WithdrawBid_WhilePaused`; [`AuctionDisputePause.t.sol`](../../test/sales/auction/AuctionDisputePause.t.sol) `test_WithdrawBid_StaysAsTheReserveThroughALapse` |
@@ -508,11 +507,12 @@ Test files: `SL` is [`StatementLog.t.sol`](../../test/records/StatementLog.t.sol
 | DSP-18 | `cancel` cites the token's own latest outcome, recorded after the pause; an earlier outcome, a superseded one or an item outcome cannot cancel. | `EnglishAuction.pause` (`outcomeFrom`), `cancel`, `_ownOutcome` | EAD `test_Cancel_NeedsTheRecordedOutcome`; [`AuctionDisputeCancel.t.sol`](../../test/sales/auction/AuctionDisputeCancel.t.sol) `test_Cancel_RefusesAnOutcomeRecordedBeforeThePause`, `test_Cancel_RefusesAnItemOutcomeRecordedBeforeTheMint`, `test_Cancel_OnlyTheLatestOutcomeCancels` |
 | DSP-19 | `cancel` runs only while the pause is live, credits the high bid and burns the token. | `EnglishAuction.cancel`, `Stream.burn` | EAD `test_Cancel_UpheldDisputeRefundsAndBurns`, `test_Cancel_WithNoBids`, `test_Cancel_OnlyWhileThePauseIsLive`, `test_Cancel_PauseWindowBoundary`, `test_Cancel_ThroughTheStandardDelay`; DI `test_CancelIsRefusedOnceThePauseHasLapsed` |
 | DSP-20 | Only the adapter that minted a token burns it, while holding it and before its primary sale settled, even after the adapter's removal. | `Stream.burn` | [`Stream.t.sol`](../../test/stream/Stream.t.sol) `test_burn_onlyByMintingAdapter`, `test_burn_byRemovedMintingAdapter`, `test_burn_neverAfterSettlement`, `test_burn_refusedAfterSettlement` |
-| DSP-21 | `releaseContent` is governed, needs a burned token, the item that held the content and a registered beneficiary, happens once per burned item, reserves the content for the beneficiary's items and tombstones the burned item. | `Stream.releaseContent`, `PackageRegistry.releaseContent`, `PackageRegistry.consume` | DI `test_ReleaseIsGovernedNamesAnArtistAndHappensOnce`, `test_ReleasedContentIsReservedForTheNamedArtist`, `test_AGuardianCancelsAPendingRelease`; [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol) `test_releaseContent_tombstonesTheItemEverywhere`, `test_releaseContent_revertsOnMismatch`, `test_releaseContent_onlyBoundStream`; `Stream.t.sol` `test_releaseContent_reverts` |
+| DSP-21 | `releaseContent` is governed, needs a burned token, the item that held the content and a registered beneficiary, happens once per burned item, reserves the content for the beneficiary's items and tombstones the burned item. | `Stream.releaseContent`, `Stream._claimContent` (6529 Stream holds content uniqueness and releases, AUC-44) | DI `test_ReleaseIsGovernedNamesAnArtistAndHappensOnce`, `test_ReleasedContentIsReservedForTheNamedArtist`, `test_AGuardianCancelsAPendingRelease`; `Stream.t.sol` `test_releaseContent_afterBurnLetsTheRealArtistMint`, `test_releaseContent_reverts` |
 | DSP-22 | After a sale, a dispute moves nothing: no path burns or transfers a settled work. | `Stream.burn` (`SaleAlreadySettled`) | DI `test_DisputeAfterASaleIsAStatementOnly`; `Stream.t.sol` `test_burn_neverAfterSettlement` |
 | DSP-23 | Through pauses, withdrawals, resumptions and cancels, the auction's balance covers every live bid and credit, value is conserved, and custody is exact. | `EnglishAuction` | [`AuctionHaltsInvariant.t.sol`](../../test/sales/auction/invariant/AuctionHaltsInvariant.t.sol) `invariant_BalanceCoversOwed`, `invariant_ValueIsConserved`, `invariant_ExactCustody` |
 | DSP-24 | Metadata shows the display rule's answer for a work, and the master's for an edition, and fails closed when the log cannot be read. | `Renderer._chainTraits` | [`Renderer.t.sol`](../../test/content/renderer/Renderer.t.sol) `test_Dispute_ShownWhenTheLogHasAnOutcome`, `test_Dispute_ReadsTheMastersSubjectForAnEdition`, `test_Dispute_ABrokenLogFailsClosed` |
 | DSP-25 | A contest resolves only with the artist's latest outcome, recorded after the contest began. | `ArtistRegistry.resolveContested`, `cancelChange` | [`ContestedOverrides.t.sol`](../../test/identity/ContestedOverrides.t.sol) `test_Resolve_RevertsForAMismatchedOrZeroOutcome`, `test_Resolve_RefusesAnOutcomeRecordedBeforeTheContest`, `test_Resolve_RefusesAStaleOutcomeFromAnEarlierContest` |
+| DSP-26 | The log compiles in no gas number. Every call out (the ERC-165 probes, `ownerOf`, `balanceOf`, `coreOf` and the ERC-1271 check) forwards all the gas EIP-150 allows, and one that fails while leaving at most 1/8 of the gas held before it reverts with `BoundedCallShortfall(target)`: running short never yields "no outcome", an unchecked dispute subject, "not the owner" or "invalid signature". The answer does not depend on what a dependency costs. | `StatementLog.latestDisputeOutcome`, `_checkDisputeSubject`, `_owns`; `BoundedCall` forward-all family; `SignatureVerifier.isValidERC1271` | [`StatementLogGasRule.t.sol`](../../test/records/StatementLogGasRule.t.sol) `test_GasRule_LatestDisputeOutcome_ItemOutcomeAtEveryCostNeverZeroWhenShort`, `test_GasRule_LatestDisputeOutcome_UnknownWorkAtEveryCost`, `test_GasRule_DisputeSubject_NonexistentTokenRefusedAtEveryCostNeverAccepted`, `test_GasRule_Owner_Erc721OwnerAuthorisedAtEveryCostNeverRefusedWhenShort`, `test_GasRule_Owner_Erc1155HolderAuthorisedAtEveryCostNeverRefusedWhenShort`, `test_GasRule_Relay_Erc1271SignerAcceptedAtEveryCostNeverInvalidWhenShort`; SL `test_Owner_HostileTokensRevertWithTheShortfallError` |
 
 ## Events
 
@@ -541,6 +541,7 @@ outcome emits no ERC-4906 event, so an indexer refreshes a work's metadata on
 | The resolver's code changes after install. | Every ARTIST append reverts with `DependencyCodeChanged`. | `setArtistResolver` to a reviewed resolver (30 days). |
 | The lead artist is restrained. | ARTIST appends revert with `NotAuthorized`. | Wait for the override's outcome ([Identity and recovery](identity-and-recovery.md)). |
 | The statement log cannot be read during rendering. | `tokenURI` reverts with `RendererReadFailed`. | A new default renderer or the errata repin. |
+| A token read or an ERC-1271 check runs short of gas (the sender's gas limit, or a dependency that costs more after a repricing). | `BoundedCallShortfall(target)`; nothing is written and no answer is given. | Resend with a higher gas limit; there is no cap to outgrow. |
 
 ## Parameters and limits
 
@@ -548,10 +549,10 @@ outcome emits no ERC-4906 event, so an indexer refreshes a work's metadata on
 | --- | --- | --- |
 | Dispute pause | at most 7 days, one per auction, live through `pausedAt + 7 days` inclusive | `EnglishAuction.MAX_PAUSE`; `_PAUSE_USED` |
 | Earliest `resume` or `cancel`; latest scheduling of the cancel | `pausedAt + 48 hours`; `pausedAt + 5 days` | `Roles.STANDARD`, `_requireUnpausable`; `test_Cancel_ThroughTheStandardDelay` |
-| URI length | 2,048 bytes | `StatementLog.MAX_URI_BYTES` |
-| Owner and item-fallback read | 50,000 gas; 32 bytes (`ownerOf`, `balanceOf`) or 192 bytes (`coreOf`) | `StatementLog.OWNER_READ_GAS`, `latestDisputeOutcome` |
+| URI length | 8,192 bytes, a safety bound on the UTF-8 check and the event (a longer document goes in the content store) | `StatementLog.MAX_URI_BYTES` |
+| Owner, dispute-subject and item-fallback reads | all the gas EIP-150 allows; a shortfall is a failure leaving at most 1/8 of the gas held before the call; at most 32 bytes copied (ERC-165, `ownerOf`, `balanceOf`) or 192 (`coreOf`) | `BoundedCall.SHORTFALL_DIVISOR`, `StatementLog.latestDisputeOutcome`, `_checkDisputeSubject`, `_owns` |
 | Relay nonces | one bitmap per signer, 256 nonces per word | `StatementLog._spendNonce`, `_bit` |
-| ERC-1271 gas; signature size | 200,000; at most 4,096 bytes | `SignatureVerifier.ERC1271_GAS_LIMIT`, `MAX_SIGNATURE_LENGTH` |
+| ERC-1271 gas; signature size | all the gas EIP-150 allows (DSP-26); at most 65,536 bytes | `SignatureVerifier.isValidERC1271`, `MAX_SIGNATURE_LENGTH` |
 | EIP-712 domain | `"6529 Works Statement Log"`, version `"1"` | `StatementLog` constructor |
 | Append gas | below 85,000 execution gas for a first ARTIST entry | `test_Gas_PerAppend` in `StatementLog.t.sol` |
 

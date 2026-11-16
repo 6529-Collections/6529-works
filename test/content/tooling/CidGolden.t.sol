@@ -7,6 +7,8 @@ import { ContentAddresses } from "../../helpers/ContentAddresses.sol";
 import { IntegrationBase } from "../../integration/IntegrationBase.sol";
 import { CidGoldenData as Golden } from "./CidGoldenData.sol";
 
+import { IWorkLocators } from "src/interfaces/IWorkDelivery.sol";
+
 /// @dev Cross-language agreement between the `cid` helper (`tools/content/cid.py`) and the real
 ///      `WorkRecords`: every CID the helper computes for the golden files is accepted as an
 ///      `ipfs://` locator, and Solidity re-derives each single-block (raw) CID from the SHA-256
@@ -31,9 +33,9 @@ contract CidGoldenTest is IntegrationBase {
         Golden.Vector[] memory v = Golden.vectors();
         for (uint256 i; i < v.length; ++i) {
             vm.prank(artist);
-            records.addLocator(tokenId, fileId, Locator(LocatorKind.IPFS, v[i].uri));
+            delivery.addLocator(tokenId, fileId, Locator(LocatorKind.IPFS, v[i].uri));
         }
-        Locator[] memory stored = records.locators(tokenId, fileId);
+        Locator[] memory stored = delivery.locators(tokenId, fileId);
         assertEq(stored.length, v.length);
         for (uint256 i; i < v.length; ++i) {
             assertEq(stored[i].uri, v[i].uri, v[i].name);
@@ -71,8 +73,8 @@ contract CidGoldenTest is IntegrationBase {
         ];
         for (uint256 i; i < bad.length; ++i) {
             vm.prank(artist);
-            vm.expectRevert(IWorkRecords.InvalidLocator.selector);
-            records.addLocator(tokenId, fileId, Locator(LocatorKind.IPFS, bad[i]));
+            vm.expectRevert(IWorkLocators.InvalidLocator.selector);
+            delivery.addLocator(tokenId, fileId, Locator(LocatorKind.IPFS, bad[i]));
         }
     }
 

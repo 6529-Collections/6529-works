@@ -12,6 +12,7 @@ import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import {
@@ -46,20 +47,17 @@ library EditionsPackages {
     }
 }
 
-/// @dev The package registry's content claims: Stream's consume records `contentHash -> itemHash`
-///      under PRODUCT_STREAM; Editions may claim a hash under PRODUCT_EDITIONS only for the item
-///      Stream consumed, once (`IPackageRegistry.claimContent`).
+/// @dev The content record: Stream's consume records `contentHash -> itemHash` under
+///      PRODUCT_STREAM, which the Stream mock answers as `consumedItemOf` (Editions reads only
+///      that, never the registry).
 contract EditionsRegistryMock {
     mapping(bytes32 => IPackageRegistry.PackageStatus) internal _status;
     /// @dev Roots registered (approved at some point): only they carry an evidence hash.
     mapping(bytes32 => bool) internal _registered;
     mapping(bytes32 => bytes32) public consumedItemOf;
-    mapping(bytes32 => bytes32) public editionClaimOf;
     address public stream;
     address public editions;
     bool public skipStreamUniqueness;
-
-    event ContentClaimed(bytes32 indexed contentHash, bytes32 indexed itemHash);
 
     function bindCallers(address stream_, address editions_) external {
         stream = stream_;
@@ -93,10 +91,6 @@ contract EditionsRegistryMock {
         consumedItemOf[contentHash] = itemHash;
     }
 
-    function preclaim(bytes32 contentHash, bytes32 itemHash) external {
-        editionClaimOf[contentHash] = itemHash;
-    }
-
     /// @dev What Stream's mint does through `consume`, reduced to the uniqueness word.
     function consume(bytes32 itemHash, bytes32 contentHash) external {
         if (msg.sender != stream) revert IPackageRegistry.UnboundCaller(msg.sender);
@@ -105,19 +99,6 @@ contract EditionsRegistryMock {
             revert IPackageRegistry.ContentUsed(PRODUCT_STREAM, contentHash, claimedBy);
         }
         consumedItemOf[contentHash] = itemHash;
-    }
-
-    function claimContent(bytes32 contentHash, bytes32 itemHash) external {
-        if (msg.sender != editions) revert IPackageRegistry.UnboundCaller(msg.sender);
-        if (consumedItemOf[contentHash] != itemHash) {
-            revert IPackageRegistry.ClaimNotAllowed(PRODUCT_EDITIONS, contentHash);
-        }
-        bytes32 claimedBy = editionClaimOf[contentHash];
-        if (claimedBy != 0) {
-            revert IPackageRegistry.ContentUsed(PRODUCT_EDITIONS, contentHash, claimedBy);
-        }
-        editionClaimOf[contentHash] = itemHash;
-        emit ContentClaimed(contentHash, itemHash);
     }
 }
 
@@ -249,7 +230,7 @@ contract EditionsStreamMock {
     bytes public reentryItem;
     bytes public reentryError;
 
-    mapping(uint256 => IStream.WorkCore) internal _works;
+    mapping(uint256 => IStreamViews.WorkCore) internal _works;
     mapping(uint256 => address) internal _owners;
     mapping(uint256 => bool) internal _settled;
     mapping(uint256 => address) public pinnedRenderer;
@@ -283,12 +264,12 @@ contract EditionsStreamMock {
         bytes32 itemHash = WorksHashing.itemHashCalldata(item);
         EditionsRegistryMock(packageRegistry).consume(itemHash, item.contentHash);
         id = ++totalMinted;
-        IStream.WorkCore storage w = _works[id];
+        IStreamViews.WorkCore storage w = _works[id];
         w.itemHash = itemHash;
         w.artistId = uint256(uint160(item.parties[0].account));
         w.collectionId = item.collectionId;
-        w.kind = item.kind;
-        w.seedPolicy = item.seedPolicy;
+        w.kind = uint8(item.kind);
+        w.seedPolicy = uint8(item.seedPolicy);
         w.royaltyRate = 6_529; // the launch rate Stream locks at mint
         _owners[id] = to;
     }
@@ -322,7 +303,7 @@ contract EditionsStreamMock {
             || interfaceId == type(IStream).interfaceId;
     }
 
-    function work(uint256 id) external view returns (IStream.WorkCore memory) {
+    function work(uint256 id) external view returns (IStreamViews.WorkCore memory) {
         if (_owners[id] == address(0)) revert IStream.UnknownWork(id);
         return _works[id];
     }
@@ -330,15 +311,20 @@ contract EditionsStreamMock {
     function coreOf(uint256 id)
         external
         view
-        returns (bytes32, uint256, uint256, ItemKind, SeedPolicy, uint32)
+        returns (bytes32, uint256, uint256, uint8, uint8, uint32)
     {
         if (_owners[id] == address(0)) revert IStream.UnknownWork(id);
-        IStream.WorkCore storage w = _works[id];
+        IStreamViews.WorkCore storage w = _works[id];
         return (w.itemHash, w.artistId, w.collectionId, w.kind, w.seedPolicy, w.royaltyRate);
     }
 
     function primarySaleSettled(uint256 id) external view returns (bool) {
         return _settled[id] && _owners[id] != address(0);
+    }
+
+    /// @dev Stream holds content uniqueness; here the registry mock's consume record stands in.
+    function consumedItemOf(bytes32 contentHash) external view returns (bytes32) {
+        return EditionsRegistryMock(packageRegistry).consumedItemOf(contentHash);
     }
 
     function ownerOf(uint256 id) external view returns (address holder) {
@@ -359,7 +345,7 @@ contract EditionsStreamMock {
     function linkEdition(uint256 tokenId, uint256 editionId) external {
         if (msg.sender != editions) revert IStream.UnboundCaller(msg.sender);
         if (
-            editionId != tokenId || _works[tokenId].kind != ItemKind.EDITION_MASTER
+            editionId != tokenId || _works[tokenId].kind != uint8(ItemKind.EDITION_MASTER)
                 || _linked[tokenId] != 0
         ) {
             revert IStream.EditionLinkInvalid(tokenId);
@@ -367,8 +353,7 @@ contract EditionsStreamMock {
         if (linkMode == LinkMode.IGNORE) return;
         if (linkMode == LinkMode.REENTER) {
             PackageItem memory item = abi.decode(reentryItem, (PackageItem));
-            (bytes32 root, bytes32[] memory proof) = EditionsPackages.packageOf(item, 0);
-            try Editions(editions).createEdition(tokenId, item, root, proof) {
+            try Editions(editions).createEdition(tokenId, item) {
                 reentryError = "";
             } catch (bytes memory reason) {
                 reentryError = reason;
@@ -384,9 +369,22 @@ contract EditionsStreamMock {
 contract EditionsAdapterMock is ERC1155Holder {
     bytes32 public saleKind;
     PrimaryTerms internal _last;
+    /// @dev The currency and unit price this adapter reports with each mint.
+    address public currency;
+    uint256 public unitPrice = 0.01 ether;
 
     constructor(bytes32 kind) {
         saleKind = kind;
+    }
+
+    /// @dev Sets the currency and unit price reported with each mint.
+    function setPrice(address currency_, uint256 unitPrice_) external {
+        (currency, unitPrice) = (currency_, unitPrice_);
+    }
+
+    /// @dev What a sale adapter does when its sale settles (`IEditions.sealSupply`).
+    function seal(IEditions target, uint256 id, uint256 count) external {
+        target.sealSupply(id, count);
     }
 
     /// @dev Changes the kind this adapter answers (an adapter whose answer is not constant).
@@ -402,7 +400,7 @@ contract EditionsAdapterMock is ERC1155Holder {
         external
         returns (uint256 tokenId, PrimaryTerms memory terms)
     {
-        (tokenId, terms) = target.mint(to, id, amount, "");
+        (tokenId, terms) = target.mint(to, id, amount, abi.encode(currency, unitPrice));
         _last = terms;
     }
 
@@ -516,11 +514,14 @@ contract ReentrantReceiver1155 is ERC1155Holder {
                     .call(abi.encodeCall(adapter.buy, (editions, id, address(this), 1)));
             } else if (mode == Mode.DIRECT) {
                 (ok, reason) = address(editions)
-                    .call(abi.encodeCall(IMintTarget.mint, (address(this), id, 1, "")));
+                    .call(
+                        abi.encodeCall(
+                            IMintTarget.mint, (address(this), id, 1, abi.encode(address(0), 0))
+                        )
+                    );
             } else {
                 PackageItem memory item = abi.decode(_item, (PackageItem));
-                (bytes32 root, bytes32[] memory proof) = EditionsPackages.packageOf(item, 0);
-                try Editions(address(editions)).createEdition(id, item, root, proof) {
+                try Editions(address(editions)).createEdition(id, item) {
                     ok = true;
                 } catch (bytes memory r) {
                     reason = r;
@@ -560,6 +561,6 @@ contract HashedParamsAdapterMock is ERC1155Holder {
     }
 
     function buy(IMintTarget target, uint256 id, address to, uint256 amount) external {
-        target.mint(to, id, amount, "");
+        target.mint(to, id, amount, abi.encode(address(0), uint256(0)));
     }
 }

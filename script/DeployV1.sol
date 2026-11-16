@@ -11,9 +11,9 @@ import { PackageRegistry } from "src/curation/PackageRegistry.sol";
 import { AssetAllowlist } from "src/economics/AssetAllowlist.sol";
 import { ClaimRouter } from "src/economics/ClaimRouter.sol";
 import { EconomicsResolver } from "src/economics/EconomicsResolver.sol";
-import { ReleaseVerifier } from "src/economics/ReleaseVerifier.sol";
+import { GovernedVault } from "src/economics/GovernedVault.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
-import { SplitFactory } from "src/economics/SplitFactory.sol";
+import { SplitLedger } from "src/economics/SplitLedger.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
@@ -34,6 +34,7 @@ import { UniformEditionAuction } from "src/sales/UniformEditionAuction.sol";
 import { UniformEditionAuctionLens } from "src/sales/UniformEditionAuctionLens.sol";
 import { EnglishAuctionLens } from "src/sales/EnglishAuctionLens.sol";
 import { Stream } from "src/stream/Stream.sol";
+import { WorkDelivery } from "src/stream/WorkDelivery.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
 
 /// @title DeployV1
@@ -73,7 +74,7 @@ library DeployV1 {
     /// @notice The default renderer's inline threshold (`Renderer.DEFAULT_INLINE_THRESHOLD`).
     uint256 internal constant RENDERER_INLINE_THRESHOLD = 262_144;
     /// @notice The English auction's genesis ETH opening bid (owner decision 19), wired by the
-    ///         genesis file (`setOpeningBid`, then governed by PARAMETER_SETTER): a 1/1's first
+    ///         genesis file (`AssetAllowlist.setOpeningBid`, then PARAMETER_SETTER): a 1/1's first
     ///         bid is at least this, so a 1-wei self-bid cannot keep an unsold work from the
     ///         museum. `DeployV1.t.sol` checks the committed policy wires exactly this.
     uint256 internal constant ETH_OPENING_BID = 0.05 ether;
@@ -85,10 +86,13 @@ library DeployV1 {
         address deployer;
         /// CREATE2 salt namespace; one namespace deploys one system.
         bytes32 namespace;
-        /// Network share recipient of every product (EconomicsResolver defaults).
+        /// The first destination of the network fee recipient's governed vault, which the
+        /// EconomicsResolver names as every product's network share recipient.
         address feeRecipient;
-        /// The 6529 Network Museum (D140): where an unbid canonical 6529 Stream work goes. An
-        /// existing Safe or EOA; FUNDS_SETTER can change it.
+        /// The 6529 Network Museum (D140): the first destination of the museum's governed vault,
+        /// where an unbid canonical 6529 Stream work goes. An existing Safe or EOA;
+        /// SUCCESSOR_SETTER (30 days) can change the vault's destination (`setDestination`),
+        /// FUNDS_SETTER (14 days) the resolver's museum.
         address museum;
         /// The marketplace `owner()` of 6529 Stream (and 6529 Stream Editions): collection admin
         /// on marketplaces, no protocol power. FUNDS_SETTER can change it.
@@ -122,8 +126,13 @@ library DeployV1 {
         DependencyRegistry dependencyRegistry;
         ConsolidationAdapter consolidationAdapter;
         ArtistRegistry artistRegistry;
-        ReleaseVerifier releaseVerifier;
-        SplitFactory splitFactory;
+        SplitLedger splitFactory;
+        /// The network fee recipient the economics resolver names: a governed vault whose first
+        /// destination is `Params.feeRecipient`.
+        GovernedVault feeRecipientVault;
+        /// The museum the economics resolver names: a governed vault whose first destination is
+        /// `Params.museum`.
+        GovernedVault museumVault;
         ClaimRouter claimRouter;
         AssetAllowlist assetAllowlist;
         EconomicsResolver economicsResolver;
@@ -144,6 +153,9 @@ library DeployV1 {
         Renderer renderer;
         Stream stream;
         WorkRecords workRecords;
+        /// The first delivery contract, created by the work-records constructor (its first
+        /// CREATE); replaceable through `WorkRecords.setDelivery`.
+        WorkDelivery workDelivery;
         Editions editions;
     }
 
@@ -211,14 +223,15 @@ library DeployV1 {
     ///         Each lens is its own entry, just before its auction, so no deployment carries two
     ///         contracts' code (F8, the rc.2 review's GAS M-2).
     function order(Params memory p) internal pure returns (string[] memory list) {
-        string[22] memory all = [
+        string[23] memory all = [
             "GovernanceConfigurator",
             "ContentStore",
             "DependencyRegistry",
             "ConsolidationAdapter",
             "ArtistRegistry",
-            "ReleaseVerifier",
             "SplitFactory",
+            "FeeRecipientVault",
+            "MuseumVault",
             "ClaimRouter",
             "AssetAllowlist",
             "EconomicsResolver",
@@ -268,13 +281,20 @@ library DeployV1 {
             return
                 _code(type(ArtistRegistry).creationCode, abi.encode(m, adapter, adapter.codehash));
         }
-        if (n == keccak256("ReleaseVerifier")) return type(ReleaseVerifier).creationCode;
         if (n == keccak256("SplitFactory")) {
+            return _code(type(SplitLedger).creationCode, abi.encode(d.artistRegistry));
+        }
+        if (n == keccak256("FeeRecipientVault")) {
             return _code(
-                type(SplitFactory).creationCode, abi.encode(d.artistRegistry, d.releaseVerifier)
+                type(GovernedVault).creationCode, abi.encode(m, d.splitFactory, p.feeRecipient)
             );
         }
-        if (n == keccak256("ClaimRouter")) return type(ClaimRouter).creationCode;
+        if (n == keccak256("MuseumVault")) {
+            return _code(type(GovernedVault).creationCode, abi.encode(m, d.splitFactory, p.museum));
+        }
+        if (n == keccak256("ClaimRouter")) {
+            return _code(type(ClaimRouter).creationCode, abi.encode(d.splitFactory));
+        }
         if (n == keccak256("AssetAllowlist")) {
             return _code(type(AssetAllowlist).creationCode, abi.encode(m, p.ethIncrementFloor));
         }
@@ -282,7 +302,12 @@ library DeployV1 {
             return _code(
                 type(EconomicsResolver).creationCode,
                 abi.encode(
-                    m, d.assetAllowlist, d.splitFactory, p.feeRecipient, p.museum, d.cc0TextFileId
+                    m,
+                    d.assetAllowlist,
+                    d.splitFactory,
+                    d.feeRecipientVault,
+                    d.museumVault,
+                    d.cc0TextFileId
                 )
             );
         }
@@ -427,7 +452,8 @@ library DeployV1 {
                     d.englishAuction,
                     lens,
                     lens.codehash,
-                    p.editionAuction
+                    p.editionAuction,
+                    editionAuctionLimits()
                 )
             );
         }
@@ -452,6 +478,18 @@ library DeployV1 {
             closeOffset: 15 minutes,
             softWindow: 5 minutes,
             maxExtension: 24 hours
+        });
+    }
+
+    /// @notice The edition auction's genesis limits (ADR 0005 §4, as amended 15 November 2026):
+    ///         an edition's terms may name a close offset of up to 30 days (owner to confirm the
+    ///         maximum), a sale whose master cannot be settled may be abandoned 150 days after its
+    ///         end, and each payout forwards 100,000 gas. Each is governed (`setLimits`,
+    ///         PARAMETER_SETTER); a sale locks its close offset and abandonment delay when it
+    ///         opens.
+    function editionAuctionLimits() internal pure returns (IUniformEditionAuction.Limits memory) {
+        return IUniformEditionAuction.Limits({
+            maxCloseOffset: 30 days, voidDelayDays: 150, payoutGas: 100_000, rescueCapDays: 730
         });
     }
 
@@ -485,7 +523,7 @@ library DeployV1 {
             (hashes[i],) = store.writeChunk(chunk);
         }
         fileId = store.registerManifest(
-            hashes, text.length, IContentStore.Encoding.Identity, mime, sha256(text)
+            hashes, text.length, uint8(IContentStore.Encoding.Identity), mime, sha256(text)
         );
     }
 
@@ -525,8 +563,9 @@ library DeployV1 {
         if (n == keccak256("DependencyRegistry")) return address(d.dependencyRegistry);
         if (n == keccak256("ConsolidationAdapter")) return address(d.consolidationAdapter);
         if (n == keccak256("ArtistRegistry")) return address(d.artistRegistry);
-        if (n == keccak256("ReleaseVerifier")) return address(d.releaseVerifier);
         if (n == keccak256("SplitFactory")) return address(d.splitFactory);
+        if (n == keccak256("FeeRecipientVault")) return address(d.feeRecipientVault);
+        if (n == keccak256("MuseumVault")) return address(d.museumVault);
         if (n == keccak256("ClaimRouter")) return address(d.claimRouter);
         if (n == keccak256("AssetAllowlist")) return address(d.assetAllowlist);
         if (n == keccak256("EconomicsResolver")) return address(d.economicsResolver);
@@ -542,6 +581,7 @@ library DeployV1 {
         if (n == keccak256("Renderer")) return address(d.renderer);
         if (n == keccak256("Stream")) return address(d.stream);
         if (n == keccak256("WorkRecords")) return address(d.workRecords);
+        if (n == keccak256("WorkDelivery")) return address(d.workDelivery);
         if (n == keccak256("Editions")) return address(d.editions);
         revert UnknownContract(name);
     }
@@ -561,10 +601,12 @@ library DeployV1 {
             d.consolidationAdapter = ConsolidationAdapter(a);
         } else if (n == keccak256("ArtistRegistry")) {
             d.artistRegistry = ArtistRegistry(a);
-        } else if (n == keccak256("ReleaseVerifier")) {
-            d.releaseVerifier = ReleaseVerifier(a);
         } else if (n == keccak256("SplitFactory")) {
-            d.splitFactory = SplitFactory(a);
+            d.splitFactory = SplitLedger(a);
+        } else if (n == keccak256("FeeRecipientVault")) {
+            d.feeRecipientVault = GovernedVault(payable(a));
+        } else if (n == keccak256("MuseumVault")) {
+            d.museumVault = GovernedVault(payable(a));
         } else if (n == keccak256("ClaimRouter")) {
             d.claimRouter = ClaimRouter(a);
         } else if (n == keccak256("AssetAllowlist")) {
@@ -595,6 +637,9 @@ library DeployV1 {
             d.stream = Stream(a);
         } else if (n == keccak256("WorkRecords")) {
             d.workRecords = WorkRecords(a);
+            d.workDelivery = WorkDelivery(vm.computeCreateAddress(a, 1));
+        } else if (n == keccak256("WorkDelivery")) {
+            d.workDelivery = WorkDelivery(a);
         } else if (n == keccak256("Editions")) {
             d.editions = Editions(a);
         } else {
@@ -604,15 +649,16 @@ library DeployV1 {
 
     /// @notice Every contract name `addressOf` knows, for records and readback.
     function names() internal pure returns (string[] memory list) {
-        string[24] memory all = [
+        string[26] memory all = [
             "GovernanceConfigurator",
             "WorksAccessManager",
             "ContentStore",
             "DependencyRegistry",
             "ConsolidationAdapter",
             "ArtistRegistry",
-            "ReleaseVerifier",
             "SplitFactory",
+            "FeeRecipientVault",
+            "MuseumVault",
             "ClaimRouter",
             "AssetAllowlist",
             "EconomicsResolver",
@@ -624,6 +670,7 @@ library DeployV1 {
             "Renderer",
             "Stream",
             "WorkRecords",
+            "WorkDelivery",
             "EnglishAuction",
             "EnglishAuctionLens",
             "UniformEditionAuction",

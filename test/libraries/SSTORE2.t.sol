@@ -44,6 +44,17 @@ contract SSTORE2Harness {
     function pointerOf(address deployer, bytes calldata data) external pure returns (address) {
         return SSTORE2.pointerOf(deployer, data);
     }
+
+    /// @dev Copies `first` then `second` into one buffer of `length` bytes.
+    function copyBoth(address first, address second, uint256 length)
+        external
+        view
+        returns (bytes memory out)
+    {
+        out = new bytes(length);
+        uint256 n = SSTORE2.copyInto(first, out, 0);
+        SSTORE2.copyInto(second, out, n);
+    }
 }
 
 contract SSTORE2Test is Test {
@@ -86,15 +97,48 @@ contract SSTORE2Test is Test {
         store.write(new bytes(MAX + 1));
     }
 
-    function test_RewriteIsIdempotentAndCheap() public {
+    /// @dev The library no longer predicts the pointer: a second write of the same bytes is a
+    ///      CREATE2 collision and reverts, which is why `ContentStore` deduplicates by its own
+    ///      mapping before writing. The first write pays the code deposit.
+    function test_RewriteCollidesAndRevertsSoCallersDeduplicate() public {
         bytes memory data = _data(MAX, 7);
         (address first, uint256 firstGas) = store.writeMeasured(data);
-        (address second, uint256 secondGas) = store.writeMeasured(data);
-        assertEq(first, second);
-        assertEq(store.read(second), data);
-        console2.log("write 24,575 bytes: first / repeat gas", firstGas, secondGas);
-        assertLt(secondGas, 60_000, "a repeat write deploys nothing");
+        assertEq(store.read(first), data);
+        console2.log("write 24,575 bytes: gas", firstGas);
         assertGt(firstGas, 200 * MAX, "the first write pays the code deposit");
+        vm.expectRevert(SSTORE2.SSTORE2WriteFailed.selector);
+        store.write{ gas: 1_000_000 }(data);
+    }
+
+    /// @dev `write` returns the address CREATE2 actually used and never adopts code it did not
+    ///      create: with foreign code already at today's predicted address (unreachable on a real
+    ///      chain), the old prediction check returned that address as the pointer; now the write
+    ///      reverts, and nothing depends on the prediction.
+    function test_WriteNeverAdoptsCodeAtThePredictedAddress() public {
+        bytes memory data = bytes("6529 Stream content");
+        address predicted = store.pointerOf(address(store), data);
+        vm.etch(predicted, bytes.concat(hex"00", bytes("something else entirely")));
+        vm.expectRevert(SSTORE2.SSTORE2WriteFailed.selector);
+        store.write{ gas: 1_000_000 }(data);
+    }
+
+    /// @dev The returned pointer is where the code is, and its code is exactly STOP plus data.
+    function testFuzz_WriteReturnsTheCreatedContract(bytes memory data) public {
+        vm.assume(data.length <= MAX);
+        address pointer = store.write(data);
+        assertEq(pointer.code, bytes.concat(hex"00", data));
+        assertEq(pointer, store.pointerOf(address(store), data), "today's rule, for tooling");
+    }
+
+    /// @dev `copyInto` places a pointer's bytes at an offset and refuses to overrun the buffer.
+    function test_CopyIntoPlacesBytesAndRefusesOverrun() public {
+        bytes memory a = _data(40, 1);
+        bytes memory b = _data(25, 2);
+        address pa = store.write(a);
+        address pb = store.write(b);
+        assertEq(store.copyBoth(pa, pb, 65), bytes.concat(a, b));
+        vm.expectRevert(abi.encodeWithSelector(SSTORE2.SSTORE2OutOfBounds.selector, 40, 65, 64));
+        store.copyBoth(pa, pb, 64);
     }
 
     function test_PointersDependOnDeployerAndBytes() public {
@@ -187,7 +231,6 @@ contract SSTORE2Test is Test {
         a = bound(a, 0, data.length);
         b = bound(b, a, data.length);
         assertEq(store.readRange(pointer, a, b), _slice(data, a, b));
-        assertEq(store.write(data), pointer, "idempotent");
     }
 
     function _slice(bytes memory data, uint256 start, uint256 end)

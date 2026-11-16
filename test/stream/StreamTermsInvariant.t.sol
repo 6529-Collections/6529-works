@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
@@ -80,8 +81,8 @@ library Pool {
     }
 
     function word(T memory t) internal pure returns (uint256) {
-        return uint256(t.a) | uint256(t.r) << 160 | uint256(t.s) << 192 | uint256(t.f) << 224
-            | uint256(t.m) << 240;
+        return uint256(t.a) | uint256(t.r) << 160 | uint256(t.s) << 184 | uint256(t.f) << 208
+            | uint256(t.m) << 232;
     }
 }
 
@@ -168,20 +169,22 @@ contract TermsHandler is Test {
         _record(tokenId);
     }
 
-    /// @dev Re-rates a token, preferring a pool rate that collides under the token's other terms.
+    /// @dev Re-rates a token down, preferring a lower pool rate that collides under the token's
+    ///      other terms.
     function reRate(uint256 tokenSeed, uint256 rateSeed) external {
         if (tokens.length == 0) return;
         uint256 tokenId = tokens[tokenSeed % tokens.length];
         Pool.T memory cur = shadow[tokenId];
-        uint32 rate = uint32(rateSeed % 100_001);
+        // Rates only go down (ADR 0006, enforced by Stream itself).
+        uint32 rate = uint32(rateSeed % (uint256(cur.r) + 1));
         for (uint256 k; k < pool.length; ++k) {
             Pool.T memory c = pool[(rateSeed % pool.length + k) % pool.length];
-            if (c.a == cur.a && c.s == cur.s && c.f == cur.f && c.m == cur.m && c.r != cur.r) {
+            if (c.a == cur.a && c.s == cur.s && c.f == cur.f && c.m == cur.m && c.r < cur.r) {
                 rate = c.r;
                 break;
             }
         }
-        records.setRoyaltyRate(stream, tokenId, rate);
+        records.setRoyaltyRate(IStream(address(stream)), tokenId, rate);
         cur.r = rate;
         shadow[tokenId] = cur;
         ++reRates;
@@ -220,7 +223,7 @@ contract TermsHandler is Test {
         if (stream.primarySaleSettled(tokenId)) return;
         uint16 m = uint16(1 + minterSeed % 2);
         bool ok;
-        try adapters[m].settle(stream, tokenId) {
+        try adapters[m].settle(IStream(address(stream)), tokenId) {
             ok = true;
         } catch { }
         assertEq(ok, m == shadow[tokenId].m, "settle gated on the minting adapter");
@@ -307,7 +310,7 @@ contract StreamTermsInvariantTest is StreamFixture {
 
     function _checkViews(uint256 id) internal view {
         Pool.T memory t = handler.expected(id);
-        IStream.WorkCore memory w = stream.work(id);
+        IStreamViews.WorkCore memory w = IStreamViews(address(stream)).work(id);
         assertEq(w.artistId, t.a, "artist");
         assertEq(w.royaltyRate, t.r, "rate");
         assertEq(stream.artistOf(id), t.a);

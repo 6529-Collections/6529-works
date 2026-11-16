@@ -11,6 +11,8 @@ import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { EditionsAdapterMock } from "../mocks/editions/EditionsMocks.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
+import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice Flow 2 (integration brief, lane B): an edition master and its linked 6529 Stream
 ///         Editions edition on the real contracts. The master settles; `createEdition` proves the
@@ -51,7 +53,7 @@ contract MasterEditionFlowTest is IntegrationBase {
     }
 
     function _master(Work memory w, EditionTerms memory terms) internal pure returns (Work memory) {
-        w.item.kind = ItemKind.EDITION_MASTER;
+        w.item.kind = uint8(ItemKind.EDITION_MASTER);
         w.item.edition = terms;
         return w;
     }
@@ -64,11 +66,9 @@ contract MasterEditionFlowTest is IntegrationBase {
         _ethBid(saleId, collector, 1 ether);
         // Not before the master's sale settles.
         vm.expectRevert(abi.encodeWithSelector(IEditions.NotEditionMaster.selector, workId));
-        editions.createEdition(workId, works[index].item, root, _proofOf(works, index));
+        editions.createEdition(workId, works[index].item);
         _settleAtEnd(saleId);
-        assertEq(
-            editions.createEdition(workId, works[index].item, root, _proofOf(works, index)), workId
-        );
+        assertEq(editions.createEdition(workId, works[index].item), workId);
     }
 
     // ------------------------------------------------------------------ the link
@@ -85,7 +85,7 @@ contract MasterEditionFlowTest is IntegrationBase {
         vm.prank(guardian1);
         registry.revokePackage(root, keccak256("another item of the package is disputed"));
 
-        assertEq(editions.createEdition(workId, works[0].item, root, _proofOf(works, 0)), workId);
+        assertEq(editions.createEdition(workId, works[0].item), workId);
         assertTrue(editions.exists(workId));
         // The revocation still stops the package's unconsumed masters.
         bytes memory unsold = _mintData(root, works, 1);
@@ -93,22 +93,18 @@ contract MasterEditionFlowTest is IntegrationBase {
         auction.start(address(stream), unsold);
     }
 
-    /// @dev The root must be one the registry registered: a root revoked before anyone
-    ///      registered it, or never seen, proves nothing.
-    function test_AnEditionNeedsARegisteredRoot() public {
+    /// @dev M-1 (review A): no package root is named or read. The master's stored item hash,
+    ///      and Stream's record that the item consumed its content, decide alone: another item
+    ///      of the same package is refused, the master's own item is accepted.
+    function test_AnEditionNeedsOnlyTheMastersStoredItem() public {
         Work[] memory works = _package(root);
         (uint256 saleId, uint256 workId) = _start(root, works, 0);
         _ethBid(saleId, collector, 1 ether);
         _settleAtEnd(saleId);
-        Work[] memory alone = _one(works[0]);
-        bytes32 unregistered = _rootOf(alone);
         bytes memory notMaster = abi.encodeWithSelector(IEditions.NotEditionMaster.selector, workId);
         vm.expectRevert(notMaster);
-        editions.createEdition(workId, works[0].item, unregistered, _proofOf(alone, 0));
-        vm.prank(guardian1);
-        registry.revokePackage(unregistered, keccak256("pre-revoked"));
-        vm.expectRevert(notMaster);
-        editions.createEdition(workId, works[0].item, unregistered, _proofOf(alone, 0));
+        editions.createEdition(workId, works[1].item);
+        assertEq(editions.createEdition(workId, works[0].item), workId);
     }
 
     function test_EditionLinksBothWaysToItsMaster() public {
@@ -121,9 +117,9 @@ contract MasterEditionFlowTest is IntegrationBase {
         assertEq(master, address(stream));
         assertEq(masterId, workId);
         assertEq(contentHash, w.item.contentHash, "the master's own content hash");
-        assertEq(registry.editionClaimOf(w.item.contentHash), WorksHashing.itemHash(w.item));
+        assertEq(stream.consumedItemOf(w.item.contentHash), WorksHashing.itemHash(w.item));
         vm.expectRevert(abi.encodeWithSelector(IEditions.EditionExists.selector, workId));
-        editions.createEdition(workId, w.item, root, _proofOf(_package(root), 0));
+        editions.createEdition(workId, w.item);
     }
 
     // ------------------------------------------------------------------ sale methods
@@ -152,6 +148,8 @@ contract MasterEditionFlowTest is IntegrationBase {
         assertEq(t.saleKind, FIXED_PRICE);
         assertEq(t.currency, address(usd));
         assertEq(abi.decode(t.params, (uint256)), FIXED_UNIT_PRICE, "its params, as approved");
+        // Each mint carries the price it sold at, in the terms' currency (ED-26).
+        fixedPrice.setPrice(address(usd), FIXED_UNIT_PRICE);
         fixedPrice.buy(editions, workId, buyer, 25);
         assertEq(editions.balanceOf(buyer, workId), 25);
         assertEq(editions.edition(workId).minter, address(fixedPrice));
@@ -205,7 +203,9 @@ contract MasterEditionFlowTest is IntegrationBase {
 
     /// @dev Every party agrees and FUNDS_SETTER (14 days) applies a new rate to the master.
     function _rerate(uint256 workId, Work memory w, uint32 rate) internal {
-        if (!records.isOpen(workId)) records.openRecord(workId, w.item, w.media);
+        if (!records.isOpen(workId)) {
+            records.openRecord(workId, w.item, w.media);
+        }
         uint64 deadline = uint64(block.timestamp + 30 days);
         bytes[] memory sigs = new bytes[](1);
         sigs[0] = _sign(artist, _rateDigest(workId, rate, deadline));
@@ -238,10 +238,13 @@ contract MasterEditionFlowTest is IntegrationBase {
         _ethBid(saleId, collector, 1 ether);
         _settleAtEnd(saleId);
         _rerate(workId, works[2], 5_000);
-        editions.createEdition(workId, works[2].item, root, _proofOf(works, 2));
+        editions.createEdition(workId, works[2].item);
         (, uint256 amount) = editions.royaltyInfo(workId, 1 ether);
         assertEq(amount, 0.05 ether, "the master's current rate");
-        assertEq(editions.edition(workId).royaltyRate, stream.work(workId).royaltyRate);
+        assertEq(
+            editions.edition(workId).royaltyRate,
+            IStreamViews(address(stream)).work(workId).royaltyRate
+        );
     }
 
     /// @dev Zero-fee terms with no fee recipient (formerly finding L-1, fixed by #35): the

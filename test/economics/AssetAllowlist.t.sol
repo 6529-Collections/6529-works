@@ -233,6 +233,60 @@ contract AssetAllowlistTest is EconomicsBase {
         allowlist.setIncrementFloor(address(usdc), 2, 5e6);
     }
 
+    /// @dev The English auction's opening bid lives in the asset's status word (ADR 0007): set
+    ///      compare-and-set on the revision within `OPENING_BID_FLOORS` floors and the 96-bit
+    ///      bid cap; read with the status (`activeOpeningBid`, `defaultCurrencyOpeningBid`), which
+    ///      refuse an inactive asset; a deprecation keeps the value for a re-admission.
+    function test_OpeningBid_LivesInTheStatusWord() public {
+        uint256 ceiling = ETH_FLOOR * allowlist.OPENING_BID_FLOORS();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAssetAllowlist.OpeningBidAboveCeiling.selector, ceiling + 1, ceiling
+            )
+        );
+        allowlist.setOpeningBid(ETH, 1, ceiling + 1);
+        vm.expectEmit(true, false, false, true, address(allowlist));
+        emit IAssetAllowlist.OpeningBidSet(ETH, 0, 0.05 ether, 2);
+        allowlist.setOpeningBid(ETH, 1, 0.05 ether);
+        vm.expectRevert(_mismatch(1, 2));
+        allowlist.setOpeningBid(ETH, 1, 0.06 ether);
+        assertEq(allowlist.openingBid(ETH), 0.05 ether);
+        assertEq(allowlist.activeOpeningBid(ETH), 0.05 ether);
+        assertEq(allowlist.incrementFloor(ETH), ETH_FLOOR, "the floor is untouched");
+
+        allowlist.setDefaultCurrency(STREAM, 0, ETH);
+        (address asset, uint256 bid) = allowlist.defaultCurrencyOpeningBid(STREAM);
+        assertEq(asset, ETH);
+        assertEq(bid, 0.05 ether);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAssetAllowlist.CurrencyNotConfigured.selector, EDITIONS)
+        );
+        allowlist.defaultCurrencyOpeningBid(EDITIONS);
+
+        allowlist.admitAsset(address(usdc), 0, 1e6);
+        allowlist.setOpeningBid(address(usdc), 1, 5e6);
+        allowlist.setDefaultCurrency(EDITIONS, 0, address(usdc));
+        allowlist.deprecateAsset(address(usdc));
+        vm.expectRevert(
+            abi.encodeWithSelector(IAssetAllowlist.AssetNotActive.selector, address(usdc))
+        );
+        allowlist.activeOpeningBid(address(usdc));
+        vm.expectRevert(
+            abi.encodeWithSelector(IAssetAllowlist.AssetNotActive.selector, address(usdc))
+        );
+        allowlist.defaultCurrencyOpeningBid(EDITIONS);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAssetAllowlist.AssetNotActive.selector, address(usdc))
+        );
+        allowlist.setOpeningBid(address(usdc), 3, 1);
+        assertEq(allowlist.openingBid(address(usdc)), 5e6, "kept while deprecated");
+        vm.prank(stranger);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, stranger)
+        );
+        allowlist.setOpeningBid(ETH, 2, 0);
+    }
+
     /// @dev Regression for review L-2 (both rounds). Round 2 ported, inverted, from
     ///      `test_R2_L2_QueuedAdmissionRevivesAfterEmergencyDeprecation`: two admissions are
     ///      queued while the asset is deprecated; the first executes, the guardian deprecates in

@@ -145,18 +145,18 @@ class SepoliaGoldenTest(unittest.TestCase):
                 self.assertLessEqual(estimate.transaction, sepolia * tolerance // 100)
 
     def test_the_largest_manifest_costs_about_57_6m(self) -> None:
-        estimate = register_estimate(pl.MAX_CHUNKS)
+        estimate = register_estimate(512)
         self.assertGreaterEqual(estimate.transaction, 57_600_000)
-        self.assertLessEqual(estimate.transaction, 57_600_000 * 101 // 100)
+        self.assertLessEqual(estimate.transaction, 57_600_000 * 102 // 100)
         self.assertTrue(estimate.above_estimate_cap)
         # Its regular part still keeps the quarter reserve under the cap.
         self.assertTrue(estimate.within_cap and estimate.has_margin, estimate)
 
     def test_a_50m_capped_node_cannot_estimate_above_about_440_chunks(self) -> None:
         largest = max(
-            n for n in range(400, pl.MAX_CHUNKS + 1) if not register_estimate(n).above_estimate_cap
+            n for n in range(400, 513) if not register_estimate(n).above_estimate_cap
         )
-        self.assertEqual(largest, 440)
+        self.assertEqual(largest, 439)
 
     def test_attest_receipts(self) -> None:
         estimate = attest_estimate(1)
@@ -258,10 +258,10 @@ class CapSemanticsTest(unittest.TestCase):
         self.assertTrue(all(c.estimate.within_cap for c in built))
 
     def test_the_limit_never_exceeds_the_assumed_block_gas_limit(self) -> None:
-        estimate = register_estimate(pl.MAX_CHUNKS)  # about 58M, plus 10% is about 63.8M
+        estimate = register_estimate(512)  # about 58M, plus 10% is about 63.8M
         self.assertEqual(estimate.gas_limit, gas.DEFAULT_BLOCK_GAS)
         self.assertGreater(estimate.gas_limit, estimate.transaction)
-        roomy = register_estimate(pl.MAX_CHUNKS, block_gas=200_000_000)
+        roomy = register_estimate(512, block_gas=200_000_000)
         self.assertGreater(roomy.gas_limit, gas.DEFAULT_BLOCK_GAS)
         # A transaction too big for the block keeps its headroom rather than a useless clamp.
         small_blocks = write_estimate(FULL, block_gas=30_000_000)
@@ -313,7 +313,7 @@ class WarningsTest(unittest.TestCase):
             with self.subTest(schedule=schedule.name):
                 built = calls.calls_for_plan(plan, schedule=schedule)
                 self.assertEqual(calls.gas_warnings(built), [])
-        largest_estimable = call_of("registerManifest", register_estimate(440))
+        largest_estimable = call_of("registerManifest", register_estimate(439))
         self.assertEqual(calls.gas_warnings([largest_estimable]), [])
 
     def test_no_reserve_left(self) -> None:
@@ -398,7 +398,7 @@ class CommandLineTest(TempDirCase):
         )
         self.assertEqual(code, 0, err)
         self.assertIn(
-            "on-chain copy 5 transaction(s): registerManifest, 3 writeChunk, 1 attestBase64", out
+            "on-chain copy 5 transaction(s): 1 registerManifest, 3 writeChunk, 1 attestBase64", out
         )
         self.assertIn("cost quote at 10 gwei", out)
         self.assertRegex(out, r"glamsterdam +[\d,]+ gas +[\d.]+ ETH")

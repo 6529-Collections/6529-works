@@ -270,7 +270,9 @@ contract Flows is Script {
 
     function _fileId(Addrs memory a, File memory f) internal view returns (bytes32) {
         return IContentStore(a.store)
-            .manifestId(_chunkHashes(a, f.stored), f.stored.length, f.encoding, f.mime, f.sha);
+            .manifestId(
+                _chunkHashes(a, f.stored), f.stored.length, uint8(f.encoding), f.mime, f.sha
+            );
     }
 
     function _registered(Addrs memory a, bytes32 fileId) internal view returns (bool) {
@@ -292,20 +294,20 @@ contract Flows is Script {
         address lead = _artist();
         File memory primary = _primary(i);
         w.media = new MediaFile[](1);
-        w.media[0] = MediaFile(_fileId(a, primary), primary.sha, FileRole.PRIMARY);
+        w.media[0] = MediaFile(_fileId(a, primary), primary.sha, uint8(FileRole.PRIMARY));
         PackageItem memory item;
         bool master = _isMaster(i);
-        item.kind = master ? ItemKind.EDITION_MASTER : ItemKind.ORIGINAL;
+        item.kind = master ? uint8(ItemKind.EDITION_MASTER) : uint8(ItemKind.ORIGINAL);
         item.collectionId = i == ITEM_NEW_COLLECTION ? _collection2() : _collection();
         item.contentHash = primary.sha;
         item.mediaHash = WorksHashing.mediaHash(w.media);
         item.recordFileId = _fileId(a, _recordFile(i));
         item.parties = new Party[](1);
-        item.parties[0] = Party(lead, PartyRole.ARTIST);
+        item.parties[0] = Party(lead, uint8(PartyRole.ARTIST));
         item.payees = new ISplitWallet.Payee[](1);
         item.payees[0] = ISplitWallet.Payee(uint256(uint160(lead)), address(0), 100_000);
         item.license = License("CC0-1.0", a.cc0TextFileId);
-        item.seedPolicy = i == ITEM_VRF ? SeedPolicy.VRF : SeedPolicy.NONE;
+        item.seedPolicy = i == ITEM_VRF ? uint8(SeedPolicy.VRF) : uint8(SeedPolicy.NONE);
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_ETH, "");
         item.edition = master
             ? EditionTerms(
@@ -455,7 +457,13 @@ contract Flows is Script {
                     0,
                     abi.encodeCall(
                         IContentStore.registerManifest,
-                        (_chunkHashes(a, f.stored), f.stored.length, f.encoding, f.mime, f.sha)
+                        (
+                            _chunkHashes(a, f.stored),
+                            f.stored.length,
+                            uint8(f.encoding),
+                            f.mime,
+                            f.sha
+                        )
                     )
                 );
             }
@@ -465,7 +473,7 @@ contract Flows is Script {
                     "any",
                     a.store,
                     0,
-                    abi.encodeCall(IContentStore.attestBase64, (fileId))
+                    abi.encodeCall(IContentStore.attestBase64, (fileId, type(uint256).max))
                 );
             }
         }
@@ -489,7 +497,13 @@ contract Flows is Script {
                     0,
                     abi.encodeCall(
                         IContentStore.registerManifest,
-                        (_chunkHashes(a, r.stored), r.stored.length, r.encoding, r.mime, r.sha)
+                        (
+                            _chunkHashes(a, r.stored),
+                            r.stored.length,
+                            uint8(r.encoding),
+                            r.mime,
+                            r.sha
+                        )
                     )
                 );
             }
@@ -502,7 +516,13 @@ contract Flows is Script {
                     0,
                     abi.encodeCall(
                         IContentStore.registerManifest,
-                        (_chunkHashes(a, p.stored), p.stored.length, p.encoding, p.mime, p.sha)
+                        (
+                            _chunkHashes(a, p.stored),
+                            p.stored.length,
+                            uint8(p.encoding),
+                            p.mime,
+                            p.sha
+                        )
                     )
                 );
             }
@@ -752,7 +772,7 @@ contract Flows is Script {
             "any",
             a.records,
             0,
-            abi.encodeCall(IWorkRecords.openRecord, (tokenId, w.item, w.media))
+            abi.encodeWithSelector(IWorkRecords.openRecord.selector, tokenId, w.item, w.media)
         );
     }
 
@@ -782,16 +802,12 @@ contract Flows is Script {
         Addrs memory a = _addrs();
         require(_isMaster(index), "not an edition master item");
         Work[] memory works = _works(a);
-        bytes32[] memory leaves = _leaves(works);
         _tx(
             string.concat("createEdition-", workId.toString()),
             "any",
             a.editions,
             0,
-            abi.encodeCall(
-                IEditions.createEdition,
-                (workId, works[index].item, _root(leaves), _proof(leaves, index))
-            )
+            abi.encodeCall(IEditions.createEdition, (workId, works[index].item))
         );
     }
 

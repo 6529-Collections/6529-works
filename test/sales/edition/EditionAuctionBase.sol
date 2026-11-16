@@ -109,7 +109,8 @@ abstract contract EditionAuctionBase is Test {
             address(english),
             l,
             l.codehash,
-            config
+            config,
+            defaultLimits()
         );
     }
 
@@ -123,7 +124,24 @@ abstract contract EditionAuctionBase is Test {
     }
 
     function _setConfig(IUniformEditionAuction.AuctionConfig memory next) internal {
-        auction.setConfig(auction.config(), next);
+        auction.setConfig(ua.config(), next);
+    }
+
+    /// @dev The launch limits (ADR 0005 section 4, as amended 15 November 2026): a close offset
+    ///      of up to 30 days, abandonment 150 days after the end, 100,000 gas per payout, and
+    ///      at most 730 days of Stream's rescue lengthening added to an abandonment.
+    function defaultLimits() internal pure returns (IUniformEditionAuction.Limits memory) {
+        return IUniformEditionAuction.Limits(30 days, 150, 100_000, 730);
+    }
+
+    /// @dev Limits packed as `setLimits` takes them.
+    function _packedLimits(IUniformEditionAuction.Limits memory l) internal pure returns (uint256) {
+        return uint256(l.maxCloseOffset) | uint256(l.voidDelayDays) << 32 | uint256(l.payoutGas)
+            << 48 | uint256(l.rescueCapDays) << 80;
+    }
+
+    function _setLimits(IUniformEditionAuction.Limits memory next) internal {
+        auction.setLimits(_packedLimits(ua.limits()), _packedLimits(next));
     }
 
     // ------------------------------------------------------------------ the master
@@ -131,17 +149,17 @@ abstract contract EditionAuctionBase is Test {
     /// @dev The EDITION_MASTER item of edition `id` with cap `maxCount`, in the auction's kind and
     ///      ETH; its hash is what the master stream reports for `id`.
     function _item(uint256 id, uint32 maxCount) internal returns (PackageItem memory item) {
-        item.kind = ItemKind.EDITION_MASTER;
+        item.kind = uint8(ItemKind.EDITION_MASTER);
         item.collectionId = 1;
         item.contentHash = keccak256(abi.encode("content", id));
         item.mediaHash = keccak256(abi.encode("media", id));
         item.recordFileId = keccak256(abi.encode("record", id));
         item.parties = new Party[](1);
-        item.parties[0] = Party(lead, PartyRole.ARTIST);
+        item.parties[0] = Party(lead, uint8(PartyRole.ARTIST));
         item.payees = new ISplitWallet.Payee[](1);
         item.payees[0] = ISplitWallet.Payee(uint256(uint160(lead)), address(0), 100_000);
         item.license = License("CC0-1.0", keccak256("cc0"));
-        item.seedPolicy = SeedPolicy.NONE;
+        item.seedPolicy = uint8(SeedPolicy.NONE);
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_ETH, "");
         item.edition = EditionTerms(maxCount, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
         stream.setWork(id, WorksHashing.itemHash(item), ItemKind.EDITION_MASTER);

@@ -8,11 +8,12 @@ import { IAssetAllowlist } from "../economics/interfaces/IAssetAllowlist.sol";
 import { Splits } from "../economics/Splits.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "../interfaces/IEnglishAuction.sol";
+import { IEnglishAuctionRefusal } from "../interfaces/IEnglishAuctionRefusal.sol";
 import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
-import { PRODUCT_FEDERATED } from "../interfaces/types/EconomicsTypes.sol";
 import { LockedTerms, PrimaryTerms } from "../interfaces/types/SaleTypes.sol";
+import { BoundedCall } from "../libraries/BoundedCall.sol";
 
 /// @title IEnglishAuctionStorage
 /// @notice The raw storage reader `EnglishAuction` exposes for its lens.
@@ -65,8 +66,14 @@ contract EnglishAuctionLens {
     uint256 private constant _LISTED_SLOT = 5;
     uint256 private constant _TERMS_SLOT = 7;
     uint256 private constant _SALES_SLOT = 8;
-    uint256 private constant _OPENING_BIDS_SLOT = 9;
-    uint256 private constant _CREDITS_SLOT = 10;
+    uint256 private constant _CREDITS_SLOT = 9;
+    uint256 private constant _FEDERATED_TERMS_SLOT = 10;
+    uint256 private constant _REFUSAL_SLOT = 11;
+
+    /// @dev The most bytes of a `primaryTerms` answer `pendingDelivery` copies: the ten-word
+    ///      head of a `PrimaryTerms` with up to 3,776 bytes of params (4 KiB in all), a bound
+    ///      against unbounded copying.
+    uint256 private constant _TERMS_RETURN = 4096;
 
     /// @dev The auction's sale flags.
     uint8 private constant _PAUSE_USED = 1;
@@ -79,7 +86,8 @@ contract EnglishAuctionLens {
     address public immutable statementLog;
     /// @notice The asset allowlist: currencies, defaults and increment floors.
     IAssetAllowlist public immutable allowlist;
-    /// @notice The economics resolver: the network fee recipient of federated sales (MARKET-3).
+    /// @notice The economics resolver, whose federated network fee recipient a federated sale
+    ///         locks at start (MARKET-3).
     IEconomicsResolver public immutable economicsResolver;
     /// @notice The canonical Permit2, or zero when PERMIT2 payments are disabled.
     address public immutable permit2;
@@ -178,7 +186,7 @@ contract EnglishAuctionLens {
 
     /// @notice The terms a sale settles on (`IEnglishAuction.lockedTerms`): the locked currency,
     ///         the token's seller and fee terms, and for a federated token the registry fee share
-    ///         locked at start, paid to the resolver's federated network fee recipient.
+    ///         and the resolver's federated network fee recipient, both locked at start (AUC-41).
     /// @param saleId The sale ID.
     /// @return lt The terms; reverts with `UnknownSale` for a sale ID with no sale, and with
     ///         `InvalidSaleTerms` for a fee share above 100,000.
@@ -196,12 +204,37 @@ contract EnglishAuctionLens {
             t.currency,
             0,
             p.seller,
-            federated ? economicsResolver.networkFeeRecipient(PRODUCT_FEDERATED) : p.feeRecipient,
+            federated ? address(uint160(_federatedTerms(s.termsId))) : p.feeRecipient,
             federated ? t.registryFee : p.feeShare
         );
         if (lt.feeShare > Splits.DENOMINATOR) {
             revert ISaleAdapter.InvalidSaleTerms(s.token, s.tokenId);
         }
+    }
+
+    /// @notice When a refused settlement may first close the sale
+    ///         (`IEnglishAuctionRefusal.refusableAt`, AUC-39): its end, as `auction` reports it,
+    ///         plus the refusal delay it locked at start.
+    /// @param saleId The sale ID.
+    /// @return The first second `settleOrRefund` may close the sale as refused; reverts with
+    ///         `UnknownSale` for a sale ID with no sale, and with `SaleNotRefusable` for a sale
+    ///         that is not federated (AUC-38).
+    function refusableAt(uint256 saleId) external view returns (uint256) {
+        uint256 base = _saleBase(saleId);
+        bytes32[] memory w = _read3(bytes32(base), bytes32(base + 1), bytes32(base + 2));
+        Sale memory s = _decodeSale(uint256(w[0]), uint256(w[1]), uint256(w[2]));
+        if (s.status == IEnglishAuction.AuctionState.NONE) revert ISaleAdapter.UnknownSale(saleId);
+        uint256 federated = _federatedTerms(s.termsId);
+        if (federated == 0) revert IEnglishAuctionRefusal.SaleNotRefusable(saleId);
+        uint256 end = s.endTime;
+        // A pause that has run its course moves the end, as `auction` reports it.
+        // forge-lint: disable-next-line(block-timestamp)
+        if (s.pausedAt != 0 && block.timestamp > s.pausedAt + MAX_PAUSE) {
+            Terms memory t = _decodeTerms(0, uint256(_read1(bytes32(_termsBase(s.termsId) + 1))));
+            // forge-lint: disable-next-line(unsafe-typecast)
+            end = uint32(_resumedEnd(s, t, uint256(_read1(bytes32(_SETTINGS_SLOT))), MAX_PAUSE));
+        }
+        return end + (federated >> 160);
     }
 
     /// @notice The smallest bid the sale accepts now (`IEnglishAuction.minimumBid`, D12).
@@ -229,32 +262,42 @@ contract EnglishAuctionLens {
     /// @notice The recipient the sale's delivery is pending for
     ///         (`IEnglishAuction.pendingDelivery`): it may claim the token to itself (to any
     ///         address from 30 days after the end), and the winning bidder to any address.
+    ///         A pending delivery with neither a stored recipient nor a bidder (a federated sale
+    ///         closed as refused, whose standing bid was credited back) is the no-bid path: the
+    ///         token's current creator may claim it, as `claimDelivery` checks, so that creator
+    ///         is returned (read from the token's `primaryTerms`, as the auction reads it, with
+    ///         at most 4 KiB copied; a refused, oversized or malformed answer reverts).
     /// @param saleId The sale ID.
-    /// @return The pending recipient, or zero when no delivery is pending.
-    function pendingDelivery(uint256 saleId) external view returns (address) {
+    /// @return recipient The pending recipient, or zero when no delivery is pending.
+    function pendingDelivery(uint256 saleId) external view returns (address recipient) {
         uint256 base = _saleBase(saleId);
-        // forge-lint: disable-next-line(unsafe-typecast)
-        uint8 flags = uint8(uint256(_read1(bytes32(base))) >> 248);
-        if (flags & _DELIVERY_PENDING == 0) return address(0);
-        // The recipient when one is stored, else the bidder: one more word, as in the auction.
-        bytes32 slot = bytes32(flags & _RECIPIENT_SET != 0 ? base + 2 : base + 1);
-        return address(uint160(uint256(_read1(slot))));
+        Sale memory s = _decodeSale(uint256(_read1(bytes32(base))), 0, 0);
+        if (s.flags & _DELIVERY_PENDING == 0) return address(0);
+        // The recipient when one is stored, else the bidder: one more word, as in the auction;
+        // else the creator, whom `claimDelivery` admits when no bid stands.
+        bytes32 slot = bytes32(s.flags & _RECIPIENT_SET != 0 ? base + 2 : base + 1);
+        recipient = address(uint160(uint256(_read1(slot))));
+        if (recipient == address(0)) recipient = _creatorOf(s.token, s.tokenId);
     }
 
     /// @notice The governed auction parameters (`IEnglishAuction.config`).
     /// @return The duration, anti-snipe window and increment share new sales lock.
     function config() external view returns (IEnglishAuction.AuctionConfig memory) {
-        uint256 c = uint256(_read1(bytes32(_SETTINGS_SLOT)));
-        // The settings word packs three 32-bit fields from the low end.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        return IEnglishAuction.AuctionConfig(uint32(c), uint32(c >> 32), uint32(c >> 64));
+        bytes32[] memory w = _read2(bytes32(_SETTINGS_SLOT), bytes32(_REFUSAL_SLOT));
+        (uint256 c, uint256 r) = (uint256(w[0]), uint256(w[1]));
+        // The settings word packs three 32-bit fields from the low end, and the refusal word two.
+        // forge-lint: disable-start(unsafe-typecast)
+        return IEnglishAuction.AuctionConfig(
+            uint32(c), uint32(c >> 32), uint32(c >> 64), uint32(r), uint32(r >> 32)
+        );
+        // forge-lint: disable-end(unsafe-typecast)
     }
 
     /// @notice The opening bid a sale in `currency` locks at start (`IEnglishAuction.openingBid`).
     /// @param currency The currency.
     /// @return The opening bid, in the currency's base units.
     function openingBid(address currency) external view returns (uint256) {
-        return uint256(_read1(_mapSlot(bytes32(uint256(uint160(currency))), _OPENING_BIDS_SLOT)));
+        return allowlist.openingBid(currency);
     }
 
     /// @notice An account's claimable credit in a currency (`ISaleAdapter.claimable`).
@@ -368,9 +411,55 @@ contract EnglishAuctionLens {
         return _read(slots);
     }
 
+    /// @dev The creator in `token`'s `primaryTerms(tokenId, "")`, read forward-all with at most
+    ///      `_TERMS_RETURN` bytes copied and decoded by hand: a refusal or an oversized answer
+    ///      reverts with `BoundedCallFailed`, an answer that is not a canonical `PrimaryTerms`
+    ///      encoding (offset `0x20`, nine head words, a clean creator word, and a `params` offset and
+    ///      length that lie inside the answer) with `BoundedCallMalformedReturn`, and a shortfall
+    ///      with `BoundedCallShortfall`. No gas cap: a view helper whose caller pays for its own
+    ///      request.
+    function _creatorOf(address token, uint256 tokenId) private view returns (address) {
+        (bool ok, bytes memory data) = BoundedCall.tryReadAll(
+            token, abi.encodeCall(IMintTarget.primaryTerms, (tokenId, "")), _TERMS_RETURN
+        );
+        if (!ok) revert BoundedCall.BoundedCallFailed(token);
+        uint256 head;
+        uint256 creator = type(uint256).max;
+        uint256 paramsOffset = type(uint256).max;
+        uint256 paramsLength = type(uint256).max;
+        uint256 size = data.length;
+        if (size >= 0x140) {
+            assembly ("memory-safe") {
+                head := mload(add(data, 0x20))
+                paramsOffset := mload(add(data, 0xa0))
+                creator := mload(add(data, 0x120))
+            }
+            // The struct starts at 0x20; its `params` length word sits `paramsOffset` bytes on,
+            // past the eight-word head, and the bytes follow it. Compared by subtraction, so
+            // nothing can wrap.
+            if (paramsOffset >= 0x100 && paramsOffset <= size - 0x40) {
+                assembly ("memory-safe") {
+                    paramsLength := mload(add(add(data, 0x40), paramsOffset))
+                }
+                if (paramsLength > size - 0x40 - paramsOffset) paramsLength = type(uint256).max;
+            }
+        }
+        if (head != 0x20 || creator >> 160 != 0 || paramsLength == type(uint256).max) {
+            revert BoundedCall.BoundedCallMalformedReturn(token);
+        }
+        return address(uint160(creator));
+    }
+
     /// @dev The first slot of a sale in `EnglishAuction._sales`.
     function _saleBase(uint256 saleId) private pure returns (uint256) {
         return uint256(_mapSlot(bytes32(saleId), _SALES_SLOT));
+    }
+
+    /// @dev A federated terms record's locked network fee recipient (low 160 bits) and refusal
+    ///      delay (the next 32), or zero for a listed token's record
+    ///      (`EnglishAuction._federatedTerms`).
+    function _federatedTerms(uint16 termsId) private view returns (uint256) {
+        return uint256(_read1(_mapSlot(bytes32(uint256(termsId)), _FEDERATED_TERMS_SLOT)));
     }
 
     /// @dev The first slot of a terms record in `EnglishAuction._terms`.

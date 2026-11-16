@@ -40,23 +40,32 @@ merged in PRs #51 to #57 and are cited by finding ID. No external audit has star
 
 Areas where a small change has large effects, or where the review concentrated:
 
-- **Contract size.** `Renderer` has the smallest EIP-170 margin, then `Stream`,
-  `UniformEditionAuction`, `EnglishAuction` and `WorkRecords`; both auctions' views are
+- **Contract size.** `EnglishAuction` has the smallest EIP-170 margin (just over the 512-byte
+  floor), then `UniformEditionAuction` and `Renderer`; no contract is exempt. Both auctions' views are
   answered by their lenses through a read-only `staticcall` fallback
   ([scope](scope.md#contracts-in-scope)).
-- **The auction start path.** `EnglishAuction.start` → `Stream.mint` →
-  `PackageRegistry.consume` carries a 350K Prague-gas budget and a cap of 6 new storage
+- **The auction start path.** `EnglishAuction.start` → `Stream.mint` → the mint policy's
+  `PackageRegistry.authorize` carries a 350K Prague-gas budget and a cap of 6 new storage
   slots, asserted exactly in `test/integration/GasReport.t.sol`
   ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md)).
 - **Settlement under hostile counterparties.** Receivers that refuse NFTs or ETH, tokens that
-  block addresses, and the fixed gas allowances that absorb them
-  ([ADR 0004, Security impact](../adr/0004-gas-budgets-under-glamsterdam.md#security-impact)).
+  block addresses, and the fixed gas allowances that absorb them in the replaceable sale
+  adapters ([ADR 0004, Security impact](../adr/0004-gas-budgets-under-glamsterdam.md#security-impact)).
+- **The permanence boundary and the gas rule** ([ADR 0007](../adr/0007-permanence.md)). The
+  permanent contracts take no instruction from replaceable code (Stream's mint policy, the
+  federation registry, the governed vaults), and forward all gas on every call out, reverting
+  with `BoundedCallShortfall` on a shortfall ([trust assumptions](trust-assumptions.md#the-model-in-brief)).
+- **The split ledger.** One permanent `SplitLedger` keeps every wallet's accounting, verifies
+  signed releases and moves funds through 66-byte vaults, proving each move by balances
+  ([economics spec](../spec/economics-and-payouts.md#payee-lists-wallets-and-the-split-ledger)).
 - **Identity recovery.** The 7-day changes, 180-day overrides, contests decided by a recorded
   vote, the sticky standing snapshot and the restraint while an override is pending
   ([identity spec](../spec/identity-and-recovery.md)).
 - **The governance cancel rules and suspension.** `WorksAccessManager` overrides
   OpenZeppelin's cancel check (three rules) and its membership check (`hasRole`, for the
-  guardians' suspension of operational keys)
+  guardians' suspension of operational keys), and adds the bounded veto, dead-admin recovery,
+  a two-step succession (the successor accepts itself) with `migrate`, seat caps and a class-delay
+  floor on every grant (GV-37 to GV-47)
   ([governance spec](../spec/governance.md), [ADR 0002](../adr/0002-access-manager-hardening.md)
   and its addendum).
 - **The deployment and readback guards.** The trust model assumes bare, independent admin and

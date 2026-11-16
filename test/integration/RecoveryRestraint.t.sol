@@ -21,6 +21,8 @@ import { FailingConsolidationSource } from "../mocks/identity/IdentityWorksMocks
 import { IntegrationBase } from "./IntegrationBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
+import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice IDENTITY-1 (owner decision A, 14 October 2026) on the real contracts: while a recovery
 ///         override that would move the authority is pending (staged or contested, until it
@@ -61,14 +63,14 @@ contract RecoveryRestraintTest is IntegrationBase {
 
         Work[] memory works = new Work[](3);
         works[0] = _work(artist, collectionId);
-        works[0].item.kind = ItemKind.EDITION_MASTER;
+        works[0].item.kind = uint8(ItemKind.EDITION_MASTER);
         works[0].item.edition = EditionTerms(50, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
         works[1] = _work(artist, collectionId); // approved, accepted, not yet minted
         works[2] = _work(artist, collectionId); // minted and sold, record not finalized
         root = _publish(works);
         _keep(root, works);
         masterId = _sell(root, works, 0, collector, 1 ether);
-        editions.createEdition(masterId, works[0].item, root, _proofOf(works, 0));
+        editions.createEdition(masterId, works[0].item);
     }
 
     function _consolidate(address a, address b) internal {
@@ -148,7 +150,7 @@ contract RecoveryRestraintTest is IntegrationBase {
         assertEq(stream.primaryTerms(0, byNewKey).creator, newKey);
         uint256 saleId =
             auction.start(address(stream), _mintDataSignedBy(root, works, 1, newKey, nonce));
-        uint256 tokenId = stream.totalMinted();
+        uint256 tokenId = IStream(address(stream)).totalMinted();
         assertEq(stream.primaryTerms(tokenId, "").creator, newKey, "the recovered key's work");
         _settleAtEnd(saleId);
         assertEq(stream.ownerOf(tokenId), museum, "unbid: the museum");
@@ -206,13 +208,13 @@ contract RecoveryRestraintTest is IntegrationBase {
         assertGt(seller.balance, 0);
         vm.prank(artist);
         vm.expectRevert(abi.encodeWithSelector(ISplitWallet.PayoutUnresolved.selector, artistId));
-        ISplitWallet(seller).release(CURRENCY_ETH, 0);
+        splitFactory.release(works[1].item.payees, bytes32(0), CURRENCY_ETH, 0);
 
         vm.warp(p.executableAt);
         artists.executeChange(artistId);
         uint256 before = newKey.balance;
         vm.prank(newKey);
-        ISplitWallet(seller).release(CURRENCY_ETH, 0);
+        splitFactory.release(works[1].item.payees, bytes32(0), CURRENCY_ETH, 0);
         assertGt(newKey.balance, before, "the recovered payout collects");
         assertEq(artist.balance, 0);
     }
@@ -235,7 +237,7 @@ contract RecoveryRestraintTest is IntegrationBase {
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, artist)
         );
-        records.addLocator(tokenId, fileId, Locator(LocatorKind.ARWEAVE, THIEF_TX));
+        delivery.addLocator(tokenId, fileId, Locator(LocatorKind.ARWEAVE, THIEF_TX));
         vm.expectRevert(
             abi.encodeWithSelector(IWorkRecords.NotWorkArtist.selector, tokenId, artist)
         );
@@ -258,7 +260,7 @@ contract RecoveryRestraintTest is IntegrationBase {
         vm.warp(p.executableAt);
         artists.executeChange(artistId);
         vm.startPrank(newKey);
-        records.addLocator(tokenId, fileId, Locator(LocatorKind.ARWEAVE, REAL_TX));
+        delivery.addLocator(tokenId, fileId, Locator(LocatorKind.ARWEAVE, REAL_TX));
         statements.append(Role.ARTIST, _statement(tokenId));
         bytes32 done = records.workStateHash(tokenId);
         records.finalize(tokenId, done);
@@ -330,15 +332,13 @@ contract RecoveryRestraintTest is IntegrationBase {
     }
 
     /// @dev A profile-only STANDARD change by the new key reverts with `err`.
-    function _expectStagingReverts(bytes memory err) internal {
+    function _stageSame() internal {
         ArtistIdentity memory same =
             ArtistIdentity(newKey, newKey, _profileId(artist), keccak256("profile document v2"));
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes32 digest =
             artists.changeDigest(artistId, same, artists.changeNonce(artistId), deadline);
-        bytes memory byNewKey = _sign(newKey, digest);
-        vm.expectRevert(err);
-        artists.stageChange(artistId, same, newKey, deadline, byNewKey, "");
+        artists.stageChange(artistId, same, newKey, deadline, _sign(newKey, digest), "");
     }
 
     /// Regression: DEPS-6 (docs/security/internal-review-2026-10.md)
@@ -361,7 +361,10 @@ contract RecoveryRestraintTest is IntegrationBase {
         _registerFreshSkippingTheRefresh();
         vm.expectRevert(changed);
         artists.refreshStanding(artistId);
-        _expectStagingReverts(changed);
+        // Staging skips its refresh instead of reverting (ID-26).
+        vm.expectEmit(address(artists));
+        emit IArtistRegistry.StandingRefreshSkipped(artistId);
+        _stageSame();
 
         // The governed path: install a reviewed adapter (30 days); refreshes work again.
         ConsolidationAdapter fixed_ =
@@ -389,7 +392,7 @@ contract RecoveryRestraintTest is IntegrationBase {
         bytes32 digest =
             artists.changeDigest(artistId, next, artists.changeNonce(artistId), deadline);
         artists.stageChange(
-            artistId, next, wallet, deadline, _sign(wallet, digest), _sign(newKey, digest)
+            artistId, next, artist, deadline, _sign(artist, digest), _sign(newKey, digest)
         );
         assertEq(artists.activeAuthorityOf(artistId), artist);
         (, uint256 tokenId) = _start(root, _package(root), 1);
@@ -399,6 +402,8 @@ contract RecoveryRestraintTest is IntegrationBase {
 
     /// @dev A payout-only override restrains nothing.
     function test_PayoutOnlyOverrideDoesNotRestrain() public {
+        // A payout-only override needs the artist's dormancy (ID-37).
+        vm.warp(block.timestamp + 365 days);
         ArtistIdentity memory next = ArtistIdentity(
             artist, makeAddr("estatePayout"), _profileId(artist), _profileDoc(artist)
         );

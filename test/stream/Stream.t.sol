@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
+import { IMintPolicy } from "src/interfaces/IMintPolicy.sol";
+import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
+import { Burner, GasRuleAssertions } from "test/helpers/GasRule.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IERC2981 } from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
@@ -15,6 +19,7 @@ import { Roles } from "src/governance/Roles.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { CURRENCY_DEFAULT, WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
@@ -53,7 +58,7 @@ import { StreamFixture } from "./StreamFixture.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 
-contract StreamTest is StreamFixture {
+contract StreamTest is StreamFixture, GasRuleAssertions {
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
     event MetadataUpdate(uint256 _tokenId);
     event BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId);
@@ -72,9 +77,9 @@ contract StreamTest is StreamFixture {
         assertEq(stream.editions(), address(0));
         assertEq(stream.name(), "6529 Stream");
         assertEq(stream.symbol(), "STREAM");
-        assertEq(stream.totalMinted(), 0);
-        assertEq(stream.totalSupply(), 0);
-        assertEq(stream.collectionCount(), 1);
+        assertEq(IStream(address(stream)).totalMinted(), 0);
+        assertEq(IStreamViews(address(stream)).totalSupply(), 0);
+        assertEq(IStream(address(stream)).collectionCount(), 1);
         assertTrue(stream.isAdmittedMinter(address(auction)));
     }
 
@@ -180,7 +185,7 @@ contract StreamTest is StreamFixture {
     function test_setAdmittedMinter() public {
         MockSaleAdapter other = new MockSaleAdapter(SaleKind.ENGLISH_AUCTION);
         vm.expectEmit(address(stream));
-        emit IMintTarget.AdmittedMinterSet(address(other), 2, true);
+        emit IMintTarget.AdmittedMinterSet(address(other), 2, true, other.saleKind());
         vm.prank(governor);
         stream.setAdmittedMinter(address(other), true);
         assertTrue(stream.isAdmittedMinter(address(other)));
@@ -189,7 +194,7 @@ contract StreamTest is StreamFixture {
 
         // Removal stops new mints; the minting adapter still finishes its running sales.
         vm.expectEmit(address(stream));
-        emit IMintTarget.AdmittedMinterSet(address(other), 2, false);
+        emit IMintTarget.AdmittedMinterSet(address(other), 2, false, other.saleKind());
         vm.prank(governor);
         stream.setAdmittedMinter(address(other), false);
         assertFalse(stream.isAdmittedMinter(address(other)));
@@ -201,7 +206,7 @@ contract StreamTest is StreamFixture {
         other.settle(stream, tokenId);
         assertTrue(stream.primarySaleSettled(tokenId));
         other.burn(stream, disputed, 1);
-        assertEq(stream.totalSupply(), 1);
+        assertEq(IStreamViews(address(stream)).totalSupply(), 1);
 
         // Owner decision 28: only real transitions. Removing an address that was never
         // admitted, removing an adapter already removed, and admitting an admitted adapter all
@@ -222,7 +227,7 @@ contract StreamTest is StreamFixture {
         stream.setAdmittedMinter(address(auction), true);
         // Admitting a removed adapter again is a transition: it keeps its ID.
         vm.expectEmit(address(stream));
-        emit IMintTarget.AdmittedMinterSet(address(other), 2, true);
+        emit IMintTarget.AdmittedMinterSet(address(other), 2, true, other.saleKind());
         stream.setAdmittedMinter(address(other), true);
         vm.stopPrank();
         assertFalse(stream.isAdmittedMinter(notAnAdapter));
@@ -369,18 +374,25 @@ contract StreamTest is StreamFixture {
         bytes32 itemHash = WorksHashing.itemHash(item);
         bytes memory data = _request(item);
 
+        uint24 termsId = _termsIdOf(uint160(artist), 6_529, 25_000, 1, 1);
+        vm.expectEmit(address(stream));
+        emit IStream.FeeRecipientRegistered(1, feeRecipient);
+        vm.expectEmit(address(stream));
+        emit IStream.TermsInterned(termsId, 6_529, 25_000, 1, 1);
         vm.expectEmit(address(stream));
         emit IStream.WorkMinted(
             1,
             collectionId,
+            uint256(uint160(artist)),
             itemHash,
             1,
-            uint256(uint160(artist)),
-            ItemKind.ORIGINAL,
+            uint8(ItemKind.ORIGINAL),
             keccak256("root"),
             item.contentHash,
             item.mediaHash,
-            item.recordFileId
+            item.recordFileId,
+            seller,
+            termsId
         );
         vm.expectEmit(address(stream));
         emit Transfer(address(0), address(auction), 1);
@@ -397,7 +409,7 @@ contract StreamTest is StreamFixture {
         assertEq(terms.feeShare, 25_000);
         assertEq(terms.creator, artist);
 
-        IStream.WorkCore memory w = stream.work(1);
+        IStreamViews.WorkCore memory w = IStreamViews(address(stream)).work(1);
         assertEq(w.itemHash, itemHash);
         assertEq(w.artistId, uint256(uint160(artist)));
         assertEq(w.collectionId, collectionId);
@@ -410,9 +422,9 @@ contract StreamTest is StreamFixture {
         assertEq(stream.artistOf(1), uint256(uint160(artist)));
         assertFalse(stream.primarySaleSettled(1));
         assertEq(stream.totalMinted(), 1);
-        assertEq(stream.totalSupply(), 1);
-        assertEq(stream.collection(collectionId).minted, 1);
-        assertTrue(registry.isConsumed(itemHash));
+        assertEq(IStreamViews(address(stream)).totalSupply(), 1);
+        assertEq(IStreamViews(address(stream)).collection(collectionId).minted, 1);
+        assertEq(stream.consumedItemOf(item.contentHash), itemHash, "Stream holds the record");
         assertEq(registry.lastRoot(), keccak256("root"));
         assertEq(registry.lastProofLength(), 2);
         assertEq(registry.lastMoveNonce(), 7);
@@ -426,11 +438,11 @@ contract StreamTest is StreamFixture {
         assertEq(_mint(_item(1)), 1);
         assertEq(_mint(b), 2);
         assertEq(_mint(_item(3)), 3);
-        assertEq(stream.work(1).serial, 1);
-        assertEq(stream.work(2).serial, 1);
-        assertEq(stream.work(3).serial, 2);
-        assertEq(stream.collection(collectionId).minted, 2);
-        assertEq(stream.collection(second).minted, 1);
+        assertEq(IStreamViews(address(stream)).work(1).serial, 1);
+        assertEq(IStreamViews(address(stream)).work(2).serial, 1);
+        assertEq(IStreamViews(address(stream)).work(3).serial, 2);
+        assertEq(IStreamViews(address(stream)).collection(collectionId).minted, 2);
+        assertEq(IStreamViews(address(stream)).collection(second).minted, 1);
     }
 
     /// @dev The item's currency passes through unresolved: the adapter resolves
@@ -450,19 +462,19 @@ contract StreamTest is StreamFixture {
     ///      reverts for an unminted or burned token.
     function test_coreOf() public {
         PackageItem memory item = _item(1);
-        item.seedPolicy = SeedPolicy.ARTIST;
+        item.seedPolicy = uint8(SeedPolicy.ARTIST);
         item.seed = keccak256("seed");
-        item.kind = ItemKind.EDITION_MASTER;
+        item.kind = uint8(ItemKind.EDITION_MASTER);
         uint256 tokenId = _mint(item);
         (
             bytes32 itemHash,
             uint256 artistId,
             uint256 collection,
-            ItemKind kind,
-            SeedPolicy seedPolicy,
+            uint8 kind,
+            uint8 seedPolicy,
             uint32 royaltyRate
         ) = stream.coreOf(tokenId);
-        IStream.WorkCore memory w = stream.work(tokenId);
+        IStreamViews.WorkCore memory w = IStreamViews(address(stream)).work(tokenId);
         assertEq(itemHash, WorksHashing.itemHash(item));
         assertEq(itemHash, w.itemHash);
         assertEq(artistId, w.artistId);
@@ -479,52 +491,132 @@ contract StreamTest is StreamFixture {
 
     function test_mint_artistSeedAndEditionMaster() public {
         PackageItem memory item = _item(1);
-        item.seedPolicy = SeedPolicy.ARTIST;
+        item.seedPolicy = uint8(SeedPolicy.ARTIST);
         item.seed = keccak256("seed");
-        item.kind = ItemKind.EDITION_MASTER;
+        item.kind = uint8(ItemKind.EDITION_MASTER);
         uint256 tokenId = _mint(item);
-        assertEq(uint8(stream.work(tokenId).kind), uint8(ItemKind.EDITION_MASTER));
-        assertEq(uint8(stream.work(tokenId).seedPolicy), uint8(SeedPolicy.ARTIST));
+        assertEq(
+            uint8(IStreamViews(address(stream)).work(tokenId).kind), uint8(ItemKind.EDITION_MASTER)
+        );
+        assertEq(
+            uint8(IStreamViews(address(stream)).work(tokenId).seedPolicy), uint8(SeedPolicy.ARTIST)
+        );
     }
 
     function test_mint_vrfNeedsDeliveredSeed() public {
         PackageItem memory item = _item(1);
-        item.seedPolicy = SeedPolicy.VRF;
+        item.seedPolicy = uint8(SeedPolicy.VRF);
         bytes32 itemHash = WorksHashing.itemHash(item);
         bytes memory data = _request(item);
         vm.expectRevert(abi.encodeWithSelector(IStream.SeedNotDelivered.selector, itemHash));
         auction.start(stream, data);
         entropy.deliver(item, keccak256("vrf"));
         (uint256 tokenId,) = auction.start(stream, data);
-        assertEq(uint8(stream.work(tokenId).seedPolicy), uint8(SeedPolicy.VRF));
+        assertEq(
+            uint8(IStreamViews(address(stream)).work(tokenId).seedPolicy), uint8(SeedPolicy.VRF)
+        );
     }
 
     // --------------------------------------------------- governed dependencies (decision 16)
 
-    /// @dev Each dependency is replaced by SUCCESSOR_SETTER, compare-and-set, after the same
-    ///      install checks as the constructor's; the getter follows and the event names both.
+    /// @dev Each replaceable dependency is replaced by SUCCESSOR_SETTER, compare-and-set, after
+    ///      the same install checks as the constructor's; the getter follows and the event names
+    ///      both. The artist registry and the split factory are permanent.
     function test_setDependency_replacesEachDependency() public {
-        bytes32[4] memory kinds =
-            [bytes32("PACKAGE_REGISTRY"), "ARTIST_REGISTRY", "ECONOMICS", "ENTROPY_MODULE"];
-        address[4] memory nexts = [
-            address(new MockPackageRegistry()),
-            address(new MockArtistRegistry()),
+        bytes32[3] memory kinds = [bytes32("PACKAGE_REGISTRY"), "ECONOMICS", "ENTROPY_MODULE"];
+        MockPackageRegistry policy = new MockPackageRegistry();
+        policy.setArtistRegistry(address(artists));
+        address[3] memory nexts = [
+            address(policy),
             address(new MockEconomics(_defaultTerms(), address(splitFactory))),
             address(new MockEntropy())
         ];
-        address[4] memory previous =
-            [address(registry), address(artists), address(econ), address(entropy)];
-        for (uint256 i; i < 4; ++i) {
+        address[3] memory previous = [address(registry), address(econ), address(entropy)];
+        for (uint256 i; i < 3; ++i) {
             vm.expectEmit(address(stream));
             emit IStream.DependencySet(kinds[i], previous[i], nexts[i]);
             vm.prank(governor);
             stream.setDependency(kinds[i], previous[i], nexts[i]);
         }
         assertEq(stream.packageRegistry(), nexts[0]);
-        assertEq(stream.artistRegistry(), nexts[1]);
-        assertEq(stream.economics(), nexts[2]);
-        assertEq(stream.entropyModule(), nexts[3]);
+        assertEq(stream.economics(), nexts[1]);
+        assertEq(stream.entropyModule(), nexts[2]);
+        assertEq(stream.artistRegistry(), address(artists), "the artist registry stays");
         assertEq(stream.splitFactory(), address(splitFactory), "the split factory stays");
+        address otherArtists = address(new MockArtistRegistry());
+        vm.prank(governor);
+        vm.expectRevert(
+            abi.encodeWithSelector(IStream.UnknownDependency.selector, bytes32("ARTIST_REGISTRY"))
+        );
+        stream.setDependency("ARTIST_REGISTRY", address(artists), otherArtists);
+    }
+
+    /// @dev A replacement policy must resolve parties through Stream's own artist registry.
+    function test_setDependency_refusesAPolicyWithAnotherArtistRegistry() public {
+        MockPackageRegistry policy = new MockPackageRegistry();
+        policy.setArtistRegistry(address(new MockArtistRegistry()));
+        vm.prank(governor);
+        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, address(policy)));
+        stream.setDependency("PACKAGE_REGISTRY", address(registry), address(policy));
+    }
+
+    /// @dev The gas rule at `setDependency`'s `authority()` probe: with the replacement costing
+    ///      1x to 100x its base the outcome is the same (installed); with too little gas it is
+    ///      installed, `BoundedCallShortfall` or the caller's own out-of-gas, never an install
+    ///      that skipped the probe's answer.
+    function test_GasRule_setDependencyAuthorityProbe() public {
+        Burner burner = new Burner(address(new ManagedEntropy(address(manager))), 20_000);
+        bytes memory call = abi.encodeCall(
+            stream.setDependency, ("ENTROPY_MODULE", address(entropy), address(burner))
+        );
+        Outcome memory first = _assertSameAtEveryMultiple(burner, governor, address(stream), call);
+        assertTrue(first.ok, "Stream's own manager: installed");
+        burner.burnerSetMultiple(10);
+        _assertShortfallNeverAnswers(burner, governor, address(stream), call);
+    }
+
+    /// @dev AUC-41: the rescue delay starts at its 90-day floor and only lengthens, at most
+    ///      doubling; a removal locks the delay in force then, so lengthening it later does not
+    ///      delay works already counting. Without the governed delay, the 90 days were compiled.
+    function test_setRescueDelay() public {
+        assertEq(stream.rescueDelay(), 90 days);
+        assertEq(stream.RESCUE_DELAY_FLOOR(), 90 days);
+        uint256 tokenId = _mint(1);
+        vm.prank(governor);
+        stream.setAdmittedMinter(address(auction), false); // locks 90 days for its works
+        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidRescueDelay.selector, 90 days));
+        stream.setRescueDelay(90 days);
+        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidRescueDelay.selector, 180 days + 1));
+        stream.setRescueDelay(180 days + 1);
+        vm.expectEmit(address(stream));
+        emit IStream.RescueDelaySet(90 days, 180 days);
+        stream.setRescueDelay(180 days);
+        assertEq(stream.rescueDelay(), 180 days);
+        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidRescueDelay.selector, 120 days));
+        stream.setRescueDelay(120 days);
+        vm.prank(outsider);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)
+        );
+        stream.setRescueDelay(200 days);
+        // The removal made before the change keeps its 90 days.
+        vm.warp(block.timestamp + 90 days - 1);
+        vm.expectRevert(abi.encodeWithSelector(IStream.WorkNotRescuable.selector, tokenId));
+        stream.rescueToMuseum(tokenId);
+        vm.warp(block.timestamp + 1);
+        stream.rescueToMuseum(tokenId);
+        assertEq(stream.ownerOf(tokenId), econ.museum());
+        // A removal after the change waits the new delay.
+        vm.prank(governor);
+        stream.setAdmittedMinter(address(auction), true);
+        uint256 later = _mint(2);
+        vm.prank(governor);
+        stream.setAdmittedMinter(address(auction), false);
+        vm.warp(block.timestamp + 90 days);
+        vm.expectRevert(abi.encodeWithSelector(IStream.WorkNotRescuable.selector, later));
+        stream.rescueToMuseum(later);
+        vm.warp(block.timestamp + 90 days);
+        stream.rescueToMuseum(later);
     }
 
     function test_setDependency_reverts() public {
@@ -561,12 +653,15 @@ contract StreamTest is StreamFixture {
     function test_setDependency_newWorksUseTheReplacement() public {
         uint256 first = _mint(1);
         MockPackageRegistry next = new MockPackageRegistry();
+        next.setArtistRegistry(address(artists));
         vm.prank(governor);
         stream.setDependency("PACKAGE_REGISTRY", address(registry), address(next));
         (uint256 second,) = auction.start(stream, _request(_item(2)));
         assertEq(second, first + 1);
         assertEq(stream.ownerOf(first), address(auction));
-        assertEq(stream.work(first).itemHash, WorksHashing.itemHash(_item(1)));
+        assertEq(
+            IStreamViews(address(stream)).work(first).itemHash, WorksHashing.itemHash(_item(1))
+        );
     }
 
     /// @dev A Stream deployed without an entropy module can install one later; VRF works then
@@ -585,10 +680,12 @@ contract StreamTest is StreamFixture {
         vm.prank(governor);
         noVrf.setDependency("ENTROPY_MODULE", address(0), address(entropy));
         PackageItem memory item = _item(1);
-        item.seedPolicy = SeedPolicy.VRF;
+        item.seedPolicy = uint8(SeedPolicy.VRF);
         entropy.deliver(item, keccak256("vrf"));
         (uint256 tokenId,) = auction.start(noVrf, _request(item));
-        assertEq(uint8(noVrf.work(tokenId).seedPolicy), uint8(SeedPolicy.VRF));
+        assertEq(
+            uint8(IStreamViews(address(noVrf)).work(tokenId).seedPolicy), uint8(SeedPolicy.VRF)
+        );
         assertEq(noVrf.entropyModuleOf(tokenId), address(entropy));
     }
 
@@ -598,7 +695,7 @@ contract StreamTest is StreamFixture {
     ///      back changes no existing work's answer.
     function test_entropyModuleOf_answersTheModuleCurrentAtMint() public {
         PackageItem memory a = _item(1);
-        a.seedPolicy = SeedPolicy.VRF;
+        a.seedPolicy = uint8(SeedPolicy.VRF);
         entropy.deliver(a, keccak256("a"));
         uint256 first = _mint(a);
         uint256 plain = _mint(2);
@@ -611,7 +708,7 @@ contract StreamTest is StreamFixture {
         stream.setDependency("ENTROPY_MODULE", address(b), address(c));
         vm.stopPrank();
         PackageItem memory d = _item(3);
-        d.seedPolicy = SeedPolicy.VRF;
+        d.seedPolicy = uint8(SeedPolicy.VRF);
         c.deliver(d, keccak256("d"));
         uint256 second = _mint(d);
 
@@ -639,7 +736,7 @@ contract StreamTest is StreamFixture {
         vm.prank(platform);
         noVrf.createCollection("c", bytes32(0));
         PackageItem memory item = _item(1);
-        item.seedPolicy = SeedPolicy.VRF;
+        item.seedPolicy = uint8(SeedPolicy.VRF);
         bytes memory data = _request(item);
         vm.expectRevert(IStream.InvalidSeedPolicy.selector);
         auction.start(noVrf, data);
@@ -690,44 +787,6 @@ contract StreamTest is StreamFixture {
         assertEq(stream.primaryTerms(_mint(3), "").saleKind, SaleKind.ENGLISH_AUCTION);
     }
 
-    /// @dev `_consume` forwards `data[32:]` as `consume`'s arguments without re-encoding. This
-    ///      pins the layout it relies on: after the leading offset word, the encoding of a
-    ///      `StreamMintRequest` is byte for byte the encoding of `(packageRoot, item, proof,
-    ///      move)`, for any number of parties, payees, proof nodes and signature bytes.
-    function testFuzz_mintRequestEncodesAsConsumeArguments(
-        uint8 parties,
-        uint8 proofLength,
-        uint8 signatureLength
-    ) public view {
-        PackageItem memory item = _item(1);
-        item.parties = new Party[](bound(parties, 1, 16));
-        for (uint256 i; i < item.parties.length; ++i) {
-            item.parties[i] = Party(address(uint160(0x1000 + i)), PartyRole.COLLABORATOR);
-        }
-        bytes32[] memory proof = new bytes32[](bound(proofLength, 0, 32));
-        for (uint256 i; i < proof.length; ++i) {
-            proof[i] = keccak256(abi.encode(i));
-        }
-        MoveAuthorization memory move =
-            MoveAuthorization(9, 1 days, new bytes(bound(signatureLength, 0, 130)));
-        bytes memory request = abi.encode(StreamMintRequest(keccak256("root"), item, proof, move));
-        bytes memory arguments = abi.encode(keccak256("root"), item, proof, move);
-        assertEq(uint256(bytes32(request)), 32);
-        assertEq(request.length, arguments.length + 32);
-        assertEq(keccak256(_tail(request)), keccak256(arguments));
-        assertEq(
-            abi.encodeCall(IPackageRegistry.consume, (keccak256("root"), item, proof, move)),
-            bytes.concat(IPackageRegistry.consume.selector, _tail(request))
-        );
-    }
-
-    function _tail(bytes memory data) internal pure returns (bytes memory out) {
-        out = new bytes(data.length - 32);
-        for (uint256 i; i < out.length; ++i) {
-            out[i] = data[i + 32];
-        }
-    }
-
     function test_mint_revertsForMalformedData() public {
         vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
         auction.start(stream, new bytes(159));
@@ -765,7 +824,7 @@ contract StreamTest is StreamFixture {
         _expectInvalid(item, abi.encodeWithSelector(IStream.UnknownCollection.selector, 99));
 
         item = _item(1);
-        item.seedPolicy = SeedPolicy.ARTIST;
+        item.seedPolicy = uint8(SeedPolicy.ARTIST);
         _expectInvalid(item, abi.encodeWithSelector(IStream.InvalidSeedPolicy.selector));
 
         item = _item(1);
@@ -773,7 +832,7 @@ contract StreamTest is StreamFixture {
         _expectInvalid(item, abi.encodeWithSelector(IStream.InvalidSeedPolicy.selector));
 
         item = _item(1);
-        item.seedPolicy = SeedPolicy.VRF;
+        item.seedPolicy = uint8(SeedPolicy.VRF);
         item.seed = keccak256("stray");
         _expectInvalid(item, abi.encodeWithSelector(IStream.InvalidSeedPolicy.selector));
 
@@ -809,23 +868,43 @@ contract StreamTest is StreamFixture {
         (uint256 tokenId,) = auction.start(stream, _request(outer));
         assertEq(tokenId, 2);
         assertEq(stream.totalMinted(), 2);
-        assertEq(stream.work(1).itemHash, WorksHashing.itemHash(inner));
-        assertEq(stream.work(2).itemHash, WorksHashing.itemHash(outer));
-        assertEq(stream.work(1).serial, 1);
-        assertEq(stream.work(2).serial, 2);
-        assertEq(stream.collection(collectionId).minted, 2);
+        assertEq(IStreamViews(address(stream)).work(1).itemHash, WorksHashing.itemHash(inner));
+        assertEq(IStreamViews(address(stream)).work(2).itemHash, WorksHashing.itemHash(outer));
+        assertEq(IStreamViews(address(stream)).work(1).serial, 1);
+        assertEq(IStreamViews(address(stream)).work(2).serial, 2);
+        assertEq(IStreamViews(address(stream)).collection(collectionId).minted, 2);
     }
 
     function test_mint_bubblesRegistryRevert() public {
         PackageItem memory item = _item(1);
+        item.sale.saleKind = 0;
+        vm.expectRevert(IMintPolicy.InvalidItemSale.selector);
+        auction.start(stream, _request(item));
+    }
+
+    /// @dev AUC-44: Stream, not the policy, refuses a second mint of a content hash, by the
+    ///      same item or another (here the mock policy keeps no record at all).
+    function test_mint_contentMintsOnce() public {
+        PackageItem memory item = _item(1);
         _mint(item);
-        bytes memory data = _request(item);
+        bytes32 itemHash = WorksHashing.itemHash(item);
+        bytes memory again = _request(item);
         vm.expectRevert(
             abi.encodeWithSelector(
-                MockPackageRegistry.ItemConsumedAlready.selector, WorksHashing.itemHash(item)
+                IStream.ContentUsed.selector, PRODUCT_STREAM, item.contentHash, itemHash
             )
         );
-        auction.start(stream, data);
+        auction.start(stream, again);
+        PackageItem memory other = _item(1);
+        other.recordFileId = keccak256("another record, the same content");
+        bytes memory otherData = _request(other);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IStream.ContentUsed.selector, PRODUCT_STREAM, item.contentHash, itemHash
+            )
+        );
+        auction.start(stream, otherData);
+        assertEq(stream.consumedItemOf(item.contentHash), itemHash);
     }
 
     function test_mint_revertsForUnusableArtistId() public {
@@ -863,7 +942,7 @@ contract StreamTest is StreamFixture {
         item.payees[1] = ISplitWallet.Payee(0, address(0x2000), 60_000);
         (, PrimaryTerms memory terms) = auction.start(stream, _request(item));
         assertEq(terms.seller, _sellerOf(item.payees));
-        assertEq(stream.work(1).seller, _sellerOf(item.payees));
+        assertEq(IStreamViews(address(stream)).work(1).seller, _sellerOf(item.payees));
         assertTrue(terms.seller != seller);
 
         item = _item(2);
@@ -946,16 +1025,16 @@ contract StreamTest is StreamFixture {
     ///      unseeded edition master and an artist-seeded original.
     function test_mint_kindAndSeedPolicyReadBackApart() public {
         PackageItem memory master = _item(1);
-        master.kind = ItemKind.EDITION_MASTER;
+        master.kind = uint8(ItemKind.EDITION_MASTER);
         uint256 a = _mint(master);
         PackageItem memory original = _item(2);
-        original.seedPolicy = SeedPolicy.ARTIST;
+        original.seedPolicy = uint8(SeedPolicy.ARTIST);
         original.seed = keccak256("seed");
         uint256 b = _mint(original);
-        assertEq(uint8(stream.work(a).kind), uint8(ItemKind.EDITION_MASTER));
-        assertEq(uint8(stream.work(a).seedPolicy), uint8(SeedPolicy.NONE));
-        assertEq(uint8(stream.work(b).kind), uint8(ItemKind.ORIGINAL));
-        assertEq(uint8(stream.work(b).seedPolicy), uint8(SeedPolicy.ARTIST));
+        assertEq(uint8(IStreamViews(address(stream)).work(a).kind), uint8(ItemKind.EDITION_MASTER));
+        assertEq(uint8(IStreamViews(address(stream)).work(a).seedPolicy), uint8(SeedPolicy.NONE));
+        assertEq(uint8(IStreamViews(address(stream)).work(b).kind), uint8(ItemKind.ORIGINAL));
+        assertEq(uint8(IStreamViews(address(stream)).work(b).seedPolicy), uint8(SeedPolicy.ARTIST));
     }
 
     // ----------------------------------------------------------------------- primaryTerms
@@ -987,7 +1066,10 @@ contract StreamTest is StreamFixture {
         assertEq(read.creator, artist);
         assertEq(stream.primaryTerms(2, "garbage").feeShare, 10_000);
         assertEq(stream.primaryTerms(2, "").feeRecipient, otherFee);
-        assertEq(stream.work(2).royaltyReceiver, _royaltyWallet(seller, otherFee, 10_000));
+        assertEq(
+            IStreamViews(address(stream)).work(2).royaltyReceiver,
+            _royaltyWallet(seller, otherFee, 10_000)
+        );
 
         // The creator is resolved when read, so recovery redirects a no-bid return.
         address recovered = makeAddr("recovered");
@@ -999,7 +1081,7 @@ contract StreamTest is StreamFixture {
         vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 1));
         stream.primaryTerms(1, "");
         PackageItem memory item = _item(1);
-        item.parties[0] = Party(makeAddr("stranger"), PartyRole.ARTIST);
+        item.parties[0] = Party(makeAddr("stranger"), uint8(PartyRole.ARTIST));
         bytes memory data = _request(item);
         vm.expectRevert(IStream.InvalidLeadArtist.selector);
         stream.primaryTerms(0, data);
@@ -1182,12 +1264,12 @@ contract StreamTest is StreamFixture {
         emit Transfer(address(auction), address(0), 1);
         auction.burn(stream, 1, 1);
         assertEq(stream.totalMinted(), 2);
-        assertEq(stream.totalSupply(), 1);
+        assertEq(IStreamViews(address(stream)).totalSupply(), 1);
         assertEq(stream.balanceOf(address(auction)), 1);
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, 1));
         stream.ownerOf(1);
         vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 1));
-        stream.work(1);
+        IStreamViews(address(stream)).work(1);
         vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 1));
         stream.artistOf(1);
         vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 1));
@@ -1195,75 +1277,99 @@ contract StreamTest is StreamFixture {
         assertEq(_mint(3), 3);
     }
 
-    /// @dev Curation review: an upheld dispute burns the copier's work; releasing its content
-    ///      hash lets the real artist mint the same media, and tombstones the copier's item.
+    /// @dev Curation review, AUC-44: an upheld dispute burns the copier's work; releasing its
+    ///      content hash, in Stream, lets the rightful artist mint the same media and tombstones
+    ///      the copier's item.
     function test_releaseContent_afterBurnLetsTheRealArtistMint() public {
+        address rightful = makeAddr("rightful");
+        artists.register(rightful);
         PackageItem memory copy = _item(1);
         bytes32 copyHash = WorksHashing.itemHash(copy);
         uint256 tokenId = _mint(copy);
 
         PackageItem memory original = _item(1);
-        original.recordFileId = keccak256("the original record");
+        original.parties[0].account = rightful;
+        original.payees[0] = ISplitWallet.Payee(uint256(uint160(rightful)), address(0), 100_000);
         bytes memory data = _request(original);
         vm.expectRevert(
             abi.encodeWithSelector(
-                MockPackageRegistry.ContentUsed.selector, copy.contentHash, copyHash
+                IStream.ContentUsed.selector, PRODUCT_STREAM, copy.contentHash, copyHash
             )
         );
         auction.start(stream, data);
 
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IStream.NotBurned.selector, tokenId));
-        stream.releaseContent(tokenId, copy.contentHash, 7);
+        stream.releaseContent(tokenId, copy.contentHash, uint160(rightful));
         auction.burn(stream, tokenId, 1);
 
         vm.prank(governor);
         vm.expectRevert(
             abi.encodeWithSelector(
-                MockPackageRegistry.NotConsumedBy.selector, keccak256("other"), copyHash
+                IStream.ClaimNotAllowed.selector, PRODUCT_STREAM, keccak256("other")
             )
         );
-        stream.releaseContent(tokenId, keccak256("other"), 7);
+        stream.releaseContent(tokenId, keccak256("other"), uint160(rightful));
+        vm.prank(governor);
+        vm.expectRevert(abi.encodeWithSelector(MockArtistRegistry.UnknownArtist.selector, 7));
+        stream.releaseContent(tokenId, copy.contentHash, 7);
 
         // Governed (PARAMETER_SETTER): nobody else may release.
         vm.prank(outsider);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)
         );
-        stream.releaseContent(tokenId, copy.contentHash, 7);
+        stream.releaseContent(tokenId, copy.contentHash, uint160(rightful));
 
-        vm.expectEmit(address(registry));
-        emit MockPackageRegistry.ContentReleased(copy.contentHash, copyHash, 7);
+        vm.expectEmit(address(stream));
+        emit IStream.ContentReleased(tokenId, copy.contentHash, uint160(rightful));
         vm.prank(governor);
-        stream.releaseContent(tokenId, copy.contentHash, 7);
-        assertTrue(registry.isTombstoned(copyHash));
-        assertEq(registry.consumedItemOf(copy.contentHash), bytes32(0));
+        stream.releaseContent(tokenId, copy.contentHash, uint160(rightful));
+        assertTrue(stream.isReleased(copyHash));
+        assertEq(stream.consumedItemOf(copy.contentHash), bytes32(0));
+        assertEq(stream.releasedTo(copy.contentHash), uint160(rightful));
+
+        // Reserved for the rightful artist; the copier's item never again.
+        PackageItem memory third = _item(1);
+        third.recordFileId = keccak256("a third item, the copier's artist");
+        bytes memory thirdData = _request(third);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IStream.ContentReserved.selector, copy.contentHash, uint160(rightful)
+            )
+        );
+        auction.start(stream, thirdData);
+        bytes memory copyData = _request(copy);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IStream.ContentUsed.selector, PRODUCT_STREAM, copy.contentHash, copyHash
+            )
+        );
+        auction.start(stream, copyData);
 
         (uint256 realId,) = auction.start(stream, data);
         assertEq(realId, tokenId + 1);
-        assertEq(registry.consumedItemOf(copy.contentHash), WorksHashing.itemHash(original));
+        assertEq(stream.consumedItemOf(copy.contentHash), WorksHashing.itemHash(original));
+        assertEq(stream.releasedTo(copy.contentHash), uint160(rightful), "the record stays");
     }
 
     function test_releaseContent_reverts() public {
         vm.startPrank(governor);
         vm.expectRevert(abi.encodeWithSelector(IStream.NotBurned.selector, 0));
-        stream.releaseContent(0, bytes32(0), 7);
+        stream.releaseContent(0, bytes32(0), uint160(artist));
         vm.expectRevert(abi.encodeWithSelector(IStream.NotBurned.selector, 1));
-        stream.releaseContent(1, bytes32(0), 7);
+        stream.releaseContent(1, bytes32(0), uint160(artist));
         vm.stopPrank();
         uint256 tokenId = _mint(1);
         auction.burn(stream, tokenId, 1);
         bytes32 contentHash = _item(1).contentHash;
         vm.startPrank(governor);
-        stream.releaseContent(tokenId, contentHash, 7);
+        stream.releaseContent(tokenId, contentHash, uint160(artist));
         // A second release finds nothing to free.
-        bytes32 itemHash = WorksHashing.itemHash(_item(1));
         vm.expectRevert(
-            abi.encodeWithSelector(
-                MockPackageRegistry.NotConsumedBy.selector, contentHash, itemHash
-            )
+            abi.encodeWithSelector(IStream.ClaimNotAllowed.selector, PRODUCT_STREAM, contentHash)
         );
-        stream.releaseContent(tokenId, contentHash, 7);
+        stream.releaseContent(tokenId, contentHash, uint160(artist));
         vm.stopPrank();
     }
 
@@ -1296,7 +1402,7 @@ contract StreamTest is StreamFixture {
         auction.start(stream, data);
         auction.burn(stream, 1, 1);
         auction.settle(stream, 2);
-        assertEq(stream.totalSupply(), 1);
+        assertEq(IStreamViews(address(stream)).totalSupply(), 1);
         assertTrue(stream.primarySaleSettled(2));
     }
 
@@ -1348,7 +1454,7 @@ contract StreamTest is StreamFixture {
         emit IStream.CollectionCreated(2, unicode"Ünïcode", keccak256("m"));
         vm.prank(platform);
         assertEq(stream.createCollection(unicode"Ünïcode", keccak256("m")), 2);
-        IStream.Collection memory c = stream.collection(2);
+        IStreamViews.Collection memory c = IStreamViews(address(stream)).collection(2);
         assertEq(c.name, unicode"Ünïcode");
         assertEq(c.metadataHash, keccak256("m"));
         assertEq(c.minted, 0);
@@ -1370,9 +1476,9 @@ contract StreamTest is StreamFixture {
         );
         stream.createCollection("x", bytes32(0));
         vm.expectRevert(abi.encodeWithSelector(IStream.UnknownCollection.selector, 0));
-        stream.collection(0);
+        IStreamViews(address(stream)).collection(0);
         vm.expectRevert(abi.encodeWithSelector(IStream.UnknownCollection.selector, 2));
-        stream.collection(2);
+        IStreamViews(address(stream)).collection(2);
     }
 
     /// @dev The name bound is exact: 256 printable bytes are accepted and 257 refused.
@@ -1422,6 +1528,8 @@ contract StreamTest is StreamFixture {
         public
     {
         vm.assume(payee != address(0) && fee != address(0));
+        // The ledger refuses itself as a fixed payee (ECO: a share it could never pay out).
+        vm.assume(payee != address(splitFactory) && fee != address(splitFactory));
         PackageItem memory item = _item(1);
         item.payees[0] = ISplitWallet.Payee(0, payee, 100_000);
         address sellerWallet = _sellerOf(item.payees);
@@ -1429,7 +1537,7 @@ contract StreamTest is StreamFixture {
         feeShare = uint32(bound(feeShare, 1, 99_999));
         econ.setTerms(WorkTerms(sellerWallet, fee, feeShare, address(0), 6_529));
         uint256 tokenId = _mint(item);
-        assertEq(stream.work(tokenId).seller, sellerWallet);
+        assertEq(IStreamViews(address(stream)).work(tokenId).seller, sellerWallet);
         (address receiver,) = stream.royaltyInfo(tokenId, 1 ether);
 
         ISplitWallet.Payee[] memory payees = new ISplitWallet.Payee[](2);
@@ -1442,7 +1550,7 @@ contract StreamTest is StreamFixture {
         assertEq(receiver, deployed);
         assertTrue(splitFactory.isWallet(receiver));
         assertEq(splitFactory.configOf(receiver), keccak256(abi.encode(payees)));
-        assertEq(stream.work(tokenId).royaltyReceiver, deployed);
+        assertEq(IStreamViews(address(stream)).work(tokenId).royaltyReceiver, deployed);
     }
 
     function test_royaltyInfo_noFeeIsTheSeller() public {
@@ -1455,6 +1563,8 @@ contract StreamTest is StreamFixture {
 
     function testFuzz_royaltyInfo_matchesMulDiv(uint256 price, uint32 rate) public {
         rate = uint32(bound(rate, 0, 100_000));
+        // Minted at the 100% ceiling, then lowered: rates only go down (ADR 0006).
+        econ.setTerms(WorkTerms(seller, feeRecipient, 25_000, address(0), 100_000));
         _bindMocks();
         _mint(1);
         recordsMock.setRoyaltyRate(stream, 1, rate);
@@ -1498,14 +1608,23 @@ contract StreamTest is StreamFixture {
     function test_setRoyaltyRate_fromRecords() public {
         _bindMocks();
         _mint(1);
+        // New terms are announced before the change that first uses them (I-3, review A).
         vm.expectEmit(address(stream));
-        emit IStream.RoyaltyRateChanged(1, 6_529, 10_000);
-        recordsMock.setRoyaltyRate(stream, 1, 10_000);
-        IStream.WorkCore memory w = stream.work(1);
+        emit IStream.TermsInterned(
+            _termsIdOf(uint160(artist), 5_000, 25_000, 1, 1), 5_000, 25_000, 1, 1
+        );
+        vm.expectEmit(address(stream));
+        emit IStream.RoyaltyRateChanged(1, 6_529, 5_000);
+        recordsMock.setRoyaltyRate(stream, 1, 5_000);
+        IStreamViews.WorkCore memory w = IStreamViews(address(stream)).work(1);
         assertEq(w.royaltyReceiver, _defaultRoyaltyWallet());
-        assertEq(w.royaltyRate, 10_000);
+        assertEq(w.royaltyRate, 5_000);
+        // Lower-only in the core, whatever the satellite checked.
+        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidRoyaltyRate.selector, 5_001));
+        recordsMock.setRoyaltyRate(stream, 1, 5_001);
         vm.expectRevert(abi.encodeWithSelector(IStream.InvalidRoyaltyRate.selector, 100_001));
         recordsMock.setRoyaltyRate(stream, 1, 100_001);
+        recordsMock.setRoyaltyRate(stream, 1, 5_000);
         vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 2));
         recordsMock.setRoyaltyRate(stream, 2, 1);
         vm.prank(outsider);
@@ -1604,7 +1723,7 @@ contract StreamTest is StreamFixture {
     function test_linkEdition() public {
         _bindMocks();
         PackageItem memory item = _item(1);
-        item.kind = ItemKind.EDITION_MASTER;
+        item.kind = uint8(ItemKind.EDITION_MASTER);
         _mint(item);
         (address e, uint256 id) = stream.editionOf(1);
         assertEq(e, address(0));
@@ -1626,7 +1745,7 @@ contract StreamTest is StreamFixture {
         _bindMocks();
         _mint(1);
         PackageItem memory master = _item(2);
-        master.kind = ItemKind.EDITION_MASTER;
+        master.kind = uint8(ItemKind.EDITION_MASTER);
         _mint(master);
         // The master's primary sale has not settled.
         vm.expectRevert(abi.encodeWithSelector(IStream.EditionLinkInvalid.selector, 2));
@@ -1649,7 +1768,7 @@ contract StreamTest is StreamFixture {
         _bindMocks();
         _mint(1);
         PackageItem memory master = _item(2);
-        master.kind = ItemKind.EDITION_MASTER;
+        master.kind = uint8(ItemKind.EDITION_MASTER);
         _mint(master);
         auction.settle(stream, 2);
         vm.expectRevert(abi.encodeWithSelector(IStream.EditionLinkInvalid.selector, 2));
@@ -1670,78 +1789,58 @@ contract StreamTest is StreamFixture {
         assertEq(stream.tokenURI(1), pinned.tokenURI(address(stream), 1));
     }
 
-    /// @dev A fault in the records satellite never takes metadata down: a revert, running out
-    ///      of gas, an empty or over-long answer, a word that is not an address, and an address
-    ///      without code each fall back to the default renderer. A finalized work's pin whose
-    ///      code changed still fails closed (WS-16).
-    function test_rendererOf_fallsBackOnARecordsFault() public {
+    /// @dev Fail closed (rule 2): only "no pin" and `RecordNotOpen` serve the default renderer.
+    ///      A revert is passed on, running out of gas is a shortfall, and an empty, over-long or
+    ///      non-address answer reverts with `RendererPinUnreadable`; a finalized work's pin whose
+    ///      code changed reverts with `DependencyCodeChanged` (WS-16). Before this change each
+    ///      of faults 1 to 5 served the default renderer, which this test refuses.
+    function test_rendererOf_failsClosedOnARecordsFault() public {
         _bindMocks();
         _mint(1);
         MockRenderer pinned = new MockRenderer("pinned");
         recordsMock.setPin(1, address(pinned));
         assertEq(stream.rendererOf(1), address(pinned));
-        string memory fallbackUri = renderer.tokenURI(address(stream), 1);
-        for (uint8 fault = 1; fault <= 6; ++fault) {
+
+        recordsMock.setFault(1);
+        vm.expectRevert(bytes("records fault"));
+        stream.rendererOf(1);
+        recordsMock.setFault(2);
+        vm.expectRevert(
+            abi.encodeWithSelector(BoundedCall.BoundedCallShortfall.selector, address(recordsMock))
+        );
+        stream.rendererOf(1);
+        for (uint8 fault = 3; fault <= 5; ++fault) {
             recordsMock.setFault(fault);
-            assertEq(stream.rendererOf(1), address(renderer), "the default renderer");
-            assertEq(stream.tokenURI(1), fallbackUri);
+            vm.expectRevert(abi.encodeWithSelector(IStream.RendererPinUnreadable.selector, 1));
+            stream.rendererOf(1);
         }
         recordsMock.setFault(7);
         vm.expectRevert(
             abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, address(pinned))
         );
         stream.rendererOf(1);
+        recordsMock.setFault(8);
+        assertEq(stream.rendererOf(1), address(renderer), "a record not open: the default");
         recordsMock.setFault(0);
         assertEq(stream.rendererOf(1), address(pinned), "a sound answer is used again");
     }
 
-    /// @dev The satellite always gets its full gas: a caller holding too little to forward it
-    ///      is refused, never answered with the default renderer.
-    function test_rendererOf_refusesACallerTooShortOfGasForTheRecords() public {
-        _bindMocks();
-        _mint(1);
-        recordsMock.setPin(1, address(new MockRenderer("pinned")));
-        (bool ok, bytes memory answer) =
-            address(stream).staticcall{ gas: 90_000 }(abi.encodeCall(stream.rendererOf, (1)));
-        assertFalse(ok);
-        assertEq(
-            answer,
-            abi.encodeWithSelector(
-                BoundedCall.BoundedCallInsufficientGas.selector, stream.RECORDS_GAS()
-            )
-        );
-    }
-
-    /// @dev The satellite gets all of `RECORDS_GAS` even when its account is cold (EIP-2929)
-    ///      and the caller holds the least gas `rendererOf` accepts: the answer is the pin or a
-    ///      refusal, never the default renderer for want of gas. Isolated, so each probe is its
-    ///      own transaction and the satellite's account starts cold (`vm.cool` cools only its
-    ///      storage); the probe's gas then includes the intrinsic cost.
-    /// forge-config: default.isolate = true
-    function test_rendererOf_givesAColdRecordsSatelliteItsFullGas() public {
-        _bindMocks();
+    /// @dev The gas rule at `rendererOf`'s one external read: with the records satellite costing
+    ///      1x to 100x its base, the answer is the same pin; with too little gas it is the pin,
+    ///      `BoundedCallShortfall` or the caller's own out-of-gas, never the default renderer.
+    function test_GasRule_rendererOf() public {
+        recordsMock = new MockWorkRecords(address(stream));
+        Burner burner = new Burner(address(recordsMock), 20_000);
+        stream.bindWorkRecords(address(burner));
         _mint(1);
         MockRenderer pinned = new MockRenderer("pinned");
         recordsMock.setPin(1, address(pinned));
-        recordsMock.setFault(8);
         bytes memory call = abi.encodeCall(stream.rendererOf, (1));
-        bool answered;
-        for (uint256 gas = 100_000; gas < 140_000; gas += 25) {
-            (bool ok, bytes memory answer) = address(stream).staticcall{ gas: gas }(call);
-            if (!ok) {
-                assertEq(
-                    answer,
-                    abi.encodeWithSelector(
-                        BoundedCall.BoundedCallInsufficientGas.selector, stream.RECORDS_GAS()
-                    )
-                );
-                assertFalse(answered, "refused after answering with less gas");
-                continue;
-            }
-            answered = true;
-            assertEq(abi.decode(answer, (address)), address(pinned), "the pin, never the default");
-        }
-        assertTrue(answered);
+        Outcome memory first = _assertSameAtEveryMultiple(burner, outsider, address(stream), call);
+        assertTrue(first.ok);
+        assertEq(abi.decode(first.data, (address)), address(pinned));
+        burner.burnerSetMultiple(10);
+        _assertShortfallNeverAnswers(burner, outsider, address(stream), call);
     }
 
     function test_tokenURI_revertsForUnknownToken() public {
@@ -1911,7 +2010,7 @@ contract StreamTest is StreamFixture {
         vm.prank(collector);
         stream.safeTransferFrom(collector, outsider, 1);
         assertEq(stream.ownerOf(1), outsider);
-        assertEq(stream.totalSupply(), 1);
+        assertEq(IStreamViews(address(stream)).totalSupply(), 1);
     }
 
     // ----------------------------------------------------------------------------- helpers
@@ -1933,6 +2032,19 @@ contract StreamTest is StreamFixture {
 /// @notice Stream's behaviour where the work-records satellite takes part: the license checks
 ///         at mint that keep every work openable, burns by the minting adapter, the one-shot
 ///         satellite bindings, edition links, and the rate `coreOf` reports after a re-rate.
+/// @dev An entropy-module stand-in governed by `authority`, as every genesis dependency is.
+contract ManagedEntropy is IERC165 {
+    address public immutable authority;
+
+    constructor(address authority_) {
+        authority = authority_;
+    }
+
+    function supportsInterface(bytes4 id) external pure returns (bool) {
+        return id == type(IEntropyModule).interfaceId || id == type(IERC165).interfaceId;
+    }
+}
+
 contract StreamWithRecordsTest is RecordsFixture {
     /// Regression: F1 (M2) in the reviews of #22
     /// @dev A license ID `WorkRecords` would refuse never mints, so no license can leave a work
@@ -1956,9 +2068,9 @@ contract StreamWithRecordsTest is RecordsFixture {
         vm.prank(governor);
         stream.setAdmittedMinter(address(auction), false);
         auction.burn(stream, tokenId, 1);
-        assertEq(stream.totalSupply(), 0);
+        assertEq(IStreamViews(address(stream)).totalSupply(), 0);
         vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, tokenId));
-        stream.work(tokenId);
+        IStreamViews(address(stream)).work(tokenId);
     }
 
     /// Regression: F2b (M3) in the reviews of #22
@@ -1975,7 +2087,7 @@ contract StreamWithRecordsTest is RecordsFixture {
         stream.transferFrom(collector, address(other), tokenId);
         vm.expectRevert(abi.encodeWithSelector(IStream.NotMintingAdapter.selector, address(other)));
         other.burn(stream, tokenId, 1);
-        assertEq(stream.totalSupply(), 1);
+        assertEq(IStreamViews(address(stream)).totalSupply(), 1);
     }
 
     /// Regression: F3 (L1) in the reviews of #22
@@ -2014,7 +2126,7 @@ contract StreamWithRecordsTest is RecordsFixture {
     function test_linkEdition_needsASettledMaster() public {
         MediaFile[] memory media = _single(1, true);
         PackageItem memory item = _recordsItem(1, media);
-        item.kind = ItemKind.EDITION_MASTER;
+        item.kind = uint8(ItemKind.EDITION_MASTER);
         uint256 tokenId = _mint(item);
         assertFalse(stream.primarySaleSettled(tokenId));
         vm.expectRevert(abi.encodeWithSelector(IStream.EditionLinkInvalid.selector, tokenId));

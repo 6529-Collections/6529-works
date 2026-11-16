@@ -428,11 +428,8 @@ contract StatementLogPolicyTest is StatementLogFixture {
         token.setMode(StreamCoreMock.Mode.UNKNOWN_WORK);
         assertEq(stmtLog.latestDisputeOutcome(address(token), 1), bytes32(0), "no such work");
 
-        StreamCoreMock.Mode[3] memory failures = [
-            StreamCoreMock.Mode.OTHER_REVERT,
-            StreamCoreMock.Mode.OUT_OF_GAS,
-            StreamCoreMock.Mode.SHORT_ANSWER
-        ];
+        StreamCoreMock.Mode[2] memory failures =
+            [StreamCoreMock.Mode.OTHER_REVERT, StreamCoreMock.Mode.SHORT_ANSWER];
         for (uint256 i; i < failures.length; ++i) {
             token.setMode(failures[i]);
             vm.expectRevert(
@@ -440,6 +437,12 @@ contract StatementLogPolicyTest is StatementLogFixture {
             );
             stmtLog.latestDisputeOutcome(address(token), 1);
         }
+        // Running out of gas is a shortfall, not a failed read: it reverts with its own error.
+        token.setMode(StreamCoreMock.Mode.OUT_OF_GAS);
+        vm.expectRevert(
+            abi.encodeWithSelector(BoundedCall.BoundedCallShortfall.selector, address(token))
+        );
+        stmtLog.latestDisputeOutcome(address(token), 1);
 
         // A token's own outcome is answered without reading `coreOf` at all.
         Statement memory own = _statement(address(token), 1);
@@ -459,6 +462,15 @@ contract StatementLogPolicyTest is StatementLogFixture {
         token.configure(abi.encodeWithSelector(IStream.UnknownWork.selector, 1), true);
         assertEq(stmtLog.latestDisputeOutcome(address(token), 1), bytes32(0));
         assertEq(stmtLog.latestDisputeOutcome(address(0xC0DE), 1), bytes32(0), "no code");
+    }
+
+    /// @dev A contract that answers every call with a true word declares nothing: the full
+    ///      ERC-165 check (its `0xffffffff` probe) refuses it, so it reads zero instead of being
+    ///      asked for `coreOf` and reverting. Fails with the one-probe check: `BoundedCallFailed`.
+    function test_LatestDisputeOutcome_AnAlwaysTrueFallbackIsNoStream() public {
+        ReturnDataMock token = new ReturnDataMock();
+        token.configure(abi.encode(uint256(1)), false);
+        assertEq(stmtLog.latestDisputeOutcome(address(token), 1), bytes32(0));
     }
 
     // ----------------------------------------------------- relayed nonce event

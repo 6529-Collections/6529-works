@@ -56,10 +56,18 @@ interface IEnglishAuction is ISaleAdapter {
     /// @param duration Seconds from start to end (24 hours at launch).
     /// @param extensionWindow The anti-snipe window and extension, in seconds.
     /// @param incrementShare The minimum relative increment, out of 100,000 (5,000 at launch).
+    /// @param refusalDelay Seconds after a sale's end before a refused settlement may close it
+    ///        with refunds (`IEnglishAuctionRefusal.settleOrRefund`, AUC-46); only a federated
+    ///        sale can be refused, and it locks the value current at its start.
+    /// @param refusalGas The gas a settlement attempt is given, and must be given in full, for
+    ///        its failure to count as the token's refusal (AUC-47): raise-only, at most doubled
+    ///        per step, applying at once to every sale.
     struct AuctionConfig {
         uint32 duration;
         uint32 extensionWindow;
         uint32 incrementShare;
+        uint32 refusalDelay;
+        uint32 refusalGas;
     }
 
     /// @notice One auction, as stored; `currency` is locked at start and `incrementFloor` at the
@@ -141,11 +149,6 @@ interface IEnglishAuction is ISaleAdapter {
     /// @param previous The parameters before the change (all zero in the constructor).
     /// @param next The parameters after the change.
     event ConfigSet(AuctionConfig previous, AuctionConfig next);
-    /// @notice A currency's opening bid changed.
-    /// @param currency The currency, zero for ETH.
-    /// @param previous The opening bid before the change, in the currency's base units.
-    /// @param next The opening bid after the change, in the currency's base units.
-    event OpeningBidSet(address indexed currency, uint256 previous, uint256 next);
 
     /// @notice The auction is not in a state that allows this action.
     error InvalidAuctionState(uint256 saleId, AuctionState state);
@@ -164,8 +167,6 @@ interface IEnglishAuction is ISaleAdapter {
     error InvalidTarget(address token);
     /// @notice The caller is not the high bidder.
     error NotHighBidder(address caller);
-    /// @notice The opening bid is above its absolute ceiling.
-    error OpeningBidAboveCeiling(uint256 next, uint256 ceiling);
     /// @notice The caller cannot forward the 300,000-gas delivery allowance (`DELIVERY_GAS`) in
     ///         full.
     error DeliveryInsufficientGas();
@@ -275,13 +276,6 @@ interface IEnglishAuction is ISaleAdapter {
     /// @param expected The parameters the caller expects are current; a stale value reverts.
     /// @param next The new parameters, within the bounds above.
     function setConfig(AuctionConfig calldata expected, AuctionConfig calldata next) external;
-    /// @notice Sets a currency's opening bid, raising or lowering it up to the implementation's
-    ///         ceiling (zero at launch; the first bid is still at least 1). PARAMETER_SETTER role,
-    ///         compare-and-set.
-    /// @param currency The currency, zero for ETH; it must be active on the asset allowlist.
-    /// @param expected The opening bid the caller expects is current; a stale value reverts.
-    /// @param next The new opening bid, in the currency's base units.
-    function setOpeningBid(address currency, uint256 expected, uint256 next) external;
 
     /// @notice The derived sale ID: `uint256(keccak256(abi.encode(token, tokenId)))`.
     /// @param token The token contract.
@@ -305,11 +299,14 @@ interface IEnglishAuction is ISaleAdapter {
     /// @notice The governed auction parameters.
     /// @return The current duration, anti-snipe window and increment share.
     function config() external view returns (AuctionConfig memory);
-    /// @notice A currency's opening bid.
+    /// @notice A currency's opening bid, as the asset allowlist holds it
+    ///         (`IAssetAllowlist.openingBid`, set by `IAssetAllowlist.setOpeningBid`).
     /// @param currency The currency, zero for ETH.
     /// @return The opening bid in the currency's base units; zero when never set.
     function openingBid(address currency) external view returns (uint256);
-    /// @notice The recipient whose delivery is pending, or zero.
+    /// @notice The recipient whose delivery is pending, or zero: the stored recipient, else the
+    ///         winning bidder, else (no bid stands, as after a refused federated close) the
+    ///         token's current creator, who may claim it.
     /// @param saleId The auction's sale ID.
     /// @return The pending recipient, or zero when no delivery is pending.
     function pendingDelivery(uint256 saleId) external view returns (address);

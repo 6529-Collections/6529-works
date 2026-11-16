@@ -7,9 +7,11 @@ import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IEnglishAuctionClock } from "src/interfaces/IEnglishAuctionClock.sol";
+import { IEnglishAuctionRefusal } from "src/interfaces/IEnglishAuctionRefusal.sol";
 
 /// @dev Everything the deployed English auction answers, as one type for the tests:
-///      `IEnglishAuction`, the integration view `IEnglishAuctionClock`, the getters its lens adds
+///      `IEnglishAuction`, the integration view `IEnglishAuctionClock`, the refusal exit
+///      `IEnglishAuctionRefusal`, the getters its lens adds
 ///      (constants and dependencies), the functions `EnglishAuction` itself adds (`lens`,
 ///      `storageWords`, `settlePayout`), the ERC-721
 ///      receiver hook and `AccessManaged`. The auction declares some of these and forwards the
@@ -17,6 +19,7 @@ import { IEnglishAuctionClock } from "src/interfaces/IEnglishAuctionClock.sol";
 interface IEnglishAuctionFull is
     IEnglishAuction,
     IEnglishAuctionClock,
+    IEnglishAuctionRefusal,
     IERC721Receiver,
     IAccessManaged
 {

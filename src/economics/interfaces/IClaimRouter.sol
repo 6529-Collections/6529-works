@@ -3,11 +3,13 @@ pragma solidity ^0.8.24;
 
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IReleaseVerifier } from "./IReleaseVerifier.sol";
+import { ISplitLedger } from "./ISplitLedger.sol";
+import { ISplitWallet } from "./ISplitWallet.sol";
 
 /// @title IClaimRouter
 /// @notice Stateless batch claims across split wallets (ADR 0001 section 7, "optional batch
-///         claims"). Plain items call `ISplitWallet.release`, which pays only a fixed payee's own
-///         account; artist-resolved payees are pull-only, so a plain item for one fails (and is
+///         claims"). Plain items call the split ledger's `release`, which pays only a fixed
+///         payee's own account; artist-resolved payees are pull-only, so a plain item for one fails (and is
 ///         skipped in continue mode). Signed items call `releaseWithAuthorization`, so an artist
 ///         or any payee can batch its own releases with one signature per wallet. The router can
 ///         never redirect funds and never holds any.
@@ -22,28 +24,37 @@ import { IReleaseVerifier } from "./IReleaseVerifier.sol";
 ///      Declares itself through ERC-165, so the artist registry and the economics resolver can
 ///      refuse the router as a payout or fee recipient (`ProtocolContracts`).
 interface IClaimRouter is IERC165 {
-    /// @notice One plain release: payee `payee` of `wallet`, in `asset`.
+    /// @notice One plain release: payee `payee`, in `asset`, of the wallet whose payee list is
+    ///         `payees` and whose salt is `salt` (zero for the wallets sale adapters pay).
     struct Claim {
-        address wallet;
+        ISplitWallet.Payee[] payees;
+        bytes32 salt;
         address asset;
         uint256 payee;
     }
 
-    /// @notice One signed release; the target is `authorization.wallet`.
+    /// @notice One signed release from `authorization.wallet`, whose payee list and salt are
+    ///         `payees` and `salt`.
     struct SignedClaim {
         IReleaseVerifier.Authorization authorization;
         bytes signature;
+        ISplitWallet.Payee[] payees;
+        bytes32 salt;
     }
 
-    /// @notice In continue mode, item `index` failed. `size` is the size of the data the wallet
+    /// @notice In continue mode, item `index` failed. `size` is the size of the data the ledger
     ///         returned, and `reason` is at most its first 256 bytes, or a router error.
-    /// @param wallet The item's target wallet.
+    /// @param wallet The item's wallet: for a plain item, the address its payee list and salt
+    ///        name; for a signed item, the wallet the authorization declares, which is not
+    ///        checked here (the ledger refuses an authorization whose wallet differs from the
+    ///        list and salt with `WrongWallet`, so a failed signed item's `wallet` may be any
+    ///        address the authorization named). Index by it only for plain items.
     /// @param asset The item's asset (ETH is `address(0)`).
     /// @param payee The item's payee index in the wallet.
     /// @param index The item's position in the batch.
-    /// @param size The size of the wallet's return data in bytes; zero for a target with no code.
-    /// @param reason The wallet's revert data, cut to 256 bytes, or an encoded
-    ///        {ClaimTargetHasNoCode} or {InvalidClaimReturnData} error.
+    /// @param size The size of the ledger's return data in bytes.
+    /// @param reason The ledger's revert data, cut to 256 bytes, or an encoded
+    ///        {InvalidClaimReturnData} error.
     event ClaimFailed(
         address indexed wallet,
         address indexed asset,
@@ -55,16 +66,24 @@ interface IClaimRouter is IERC165 {
 
     /// @notice The batch has `count` items, more than its maximum.
     error TooManyClaims(uint256 count);
+    /// @notice A continue-mode signed batch carries `total` signature bytes, more than the
+    ///         router's `MAX_CONTINUE_SIGNATURE_BYTES`.
+    error SignaturesTooLong(uint256 total);
+    /// @notice Item `index` names `payees` payees, more than any wallet has
+    ///         (`Splits.MAX_PAYEES`, 64), so it could never be paid.
+    error TooManyPayees(uint256 index, uint256 payees);
     /// @notice In continue mode, item `index` would get only `available` gas, less than its
     ///         minimum, or, offered `available` below {SHORTFALL_REVERT_CEILING}, it ran short of
     ///         gas; the whole batch reverts so gas estimation raises the limit.
     error ClaimInsufficientGas(uint256 index, uint256 available);
     /// @notice In atomic mode, item `index` failed and the whole batch reverted.
     error ClaimCallFailed(uint256 index, address wallet, uint256 size, bytes reason);
-    /// @notice The claim target has no code.
-    error ClaimTargetHasNoCode(address wallet);
-    /// @notice The wallet succeeded but returned `size` bytes instead of one word.
+    /// @notice The ledger succeeded but returned `size` bytes instead of one word.
     error InvalidClaimReturnData(uint256 size);
+
+    /// @notice The split ledger every item is released through.
+    /// @return The ledger, fixed at deployment.
+    function ledger() external view returns (ISplitLedger);
 
     /// @notice The most plain claims one batch may carry, so a batch fits the EIP-7825
     ///         per-transaction gas cap of 16,777,216.
@@ -95,7 +114,8 @@ interface IClaimRouter is IERC165 {
     /// @notice Releases every plain claim in order. In atomic mode any failure reverts the batch;
     ///         in continue mode a failed item emits {ClaimFailed}, releases 0 and the batch goes
     ///         on.
-    /// @param claims The plain releases, at most {MAX_CLAIMS}.
+    /// @param claims The plain releases, at most {MAX_CLAIMS} (at most 8 in continue mode, the
+    ///        router's `MAX_CONTINUE_CLAIMS`; `TooManyClaims` otherwise).
     /// @param continueOnFailure True for continue mode, false for atomic mode.
     /// @return amounts The amount each item released.
     function claim(Claim[] calldata claims, bool continueOnFailure)
@@ -103,7 +123,9 @@ interface IClaimRouter is IERC165 {
         returns (uint256[] memory amounts);
 
     /// @notice Executes every signed claim in order, with the same failure modes as {claim}.
-    /// @param claims The signed releases, at most {MAX_SIGNED_CLAIMS}.
+    /// @param claims The signed releases, at most {MAX_SIGNED_CLAIMS} (at most 8 in continue
+    ///        mode, as for {claim}, with at most 131,072 signature bytes in all, the router's
+    ///        `MAX_CONTINUE_SIGNATURE_BYTES`; `SignaturesTooLong` otherwise).
     /// @param continueOnFailure True for continue mode, false for atomic mode.
     /// @return amounts The amount each item released.
     function claimSigned(SignedClaim[] calldata claims, bool continueOnFailure)

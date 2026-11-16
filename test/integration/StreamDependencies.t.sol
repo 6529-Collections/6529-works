@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IMintPolicy } from "src/interfaces/IMintPolicy.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
@@ -8,6 +9,9 @@ import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamExtension } from "src/interfaces/IStreamExtension.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
+import { StreamLayout } from "src/stream/StreamLayout.sol";
 import { CURRENCY_ETH, PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
 import {
     EditionTerms,
@@ -19,10 +23,13 @@ import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { PackageRegistry } from "src/curation/PackageRegistry.sol";
 import { ICurationVerifier } from "src/interfaces/ICurationVerifier.sol";
+import { PrimaryOutcome } from "src/interfaces/types/SaleTypes.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
-/// @dev A replacement dependency that only reports its interface: any other call reverts, so a
-///      read of it on a measured path fails loudly instead of returning plausible data.
+/// @dev A replacement dependency that only reports its interface (and, as a mint policy must,
+///      names the artist registry of the Stream asking): any other call reverts, so a read of it
+///      on a measured path fails loudly instead of returning plausible data.
 contract DependencyStandIn is IERC165 {
     bytes4 internal immutable _id;
 
@@ -32,6 +39,28 @@ contract DependencyStandIn is IERC165 {
 
     function supportsInterface(bytes4 interfaceId) external view returns (bool) {
         return interfaceId == _id || interfaceId == type(IERC165).interfaceId;
+    }
+
+    function artistRegistry() external view returns (address) {
+        return IStream(msg.sender).artistRegistry();
+    }
+
+    /// @dev As an economics resolver must, names the split factory of the Stream asking.
+    function splitFactory() external view virtual returns (address) {
+        return IStream(msg.sender).splitFactory();
+    }
+}
+
+/// @dev A replacement economics resolver that names another split factory.
+contract ForeignFactoryStandIn is DependencyStandIn {
+    address internal immutable _factory;
+
+    constructor(bytes4 id, address factory) DependencyStandIn(id) {
+        _factory = factory;
+    }
+
+    function splitFactory() external view override returns (address) {
+        return _factory;
     }
 }
 
@@ -65,7 +94,7 @@ contract RevertingAuthorityStandIn is DependencyStandIn {
 }
 
 /// @dev A replacement that answers `authority()` with a foreign manager, but only after spending
-///      more gas than Stream forwards to the read (`RECORDS_GAS`).
+///      more gas than Stream used to forward to the read (100,000).
 contract SlowAuthorityStandIn is DependencyStandIn {
     address internal immutable _authority;
 
@@ -148,6 +177,104 @@ contract DeliveringEntropy is IERC165 {
     }
 }
 
+/// @dev A replacement view extension that answers every view with other facts (another serial,
+///      no seed, another artist and collection, another name) and also implements selectors a
+///      forwarding fallback would let it answer on Stream's behalf: receiver hooks, ERC-1271,
+///      `owner()`, `contractURI()` and an ERC-20 `transfer`.
+contract HostileExtension is IStreamExtension {
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IStreamExtension).interfaceId
+            || interfaceId == type(IStreamViews).interfaceId
+            || interfaceId == type(IERC165).interfaceId;
+    }
+
+    function isValidCollectionName(string calldata) external pure returns (bool) {
+        return true;
+    }
+
+    function work(uint256 tokenId) external pure returns (WorkCore memory w) {
+        w.itemHash = keccak256(abi.encode("another item", tokenId));
+        w.artistId = 6529;
+        w.collectionId = 1;
+        w.serial = uint64(tokenId) + 1000;
+        w.kind = 0;
+        w.seedPolicy = 0;
+        w.royaltyRate = 100_000;
+    }
+
+    function collection(uint256) external pure returns (Collection memory c) {
+        c.name = "Another name";
+        c.minted = 1;
+    }
+
+    function totalSupply() external pure returns (uint256) {
+        return 0;
+    }
+
+    function onERC721Received(address, address, uint256, bytes calldata)
+        external
+        pure
+        returns (bytes4)
+    {
+        return this.onERC721Received.selector;
+    }
+
+    function onERC1155Received(address, address, uint256, uint256, bytes calldata)
+        external
+        pure
+        returns (bytes4)
+    {
+        return this.onERC1155Received.selector;
+    }
+
+    function isValidSignature(bytes32, bytes calldata) external pure returns (bytes4) {
+        return 0x1626ba7e;
+    }
+
+    function owner() external pure returns (address) {
+        return address(0xBAD);
+    }
+
+    function contractURI() external pure returns (string memory) {
+        return "data:,another";
+    }
+
+    function transfer(address, uint256) external pure returns (bool) {
+        return true;
+    }
+}
+
+/// @notice An extension Stream accepts (its ERC-165 answers) whose collection-name rule refuses
+///         (mode 0), reverts (1), burns every gas unit it gets (2) or answers a malformed word
+///         (3).
+contract RefusingNameExtension {
+    uint256 public immutable mode;
+
+    constructor(uint256 mode_) {
+        mode = mode_;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IStreamExtension).interfaceId
+            || interfaceId == type(IStreamViews).interfaceId
+            || interfaceId == type(IERC165).interfaceId;
+    }
+
+    function isValidCollectionName(string calldata) external view returns (bool) {
+        if (mode == 1) revert("refused");
+        if (mode == 2) {
+            while (true) { }
+        }
+        if (mode == 3) {
+            assembly ("memory-safe") {
+                mstore(0, 2)
+                return(0, 32)
+            }
+        }
+        return false;
+    }
+}
+
 /// @notice Owner decision 16 on the real genesis deployment: Stream's package registry, artist
 ///         registry, economics resolver and entropy module are replaceable by governance in the
 ///         30-day class, and 6529 Stream Editions and the work-records satellite follow at once.
@@ -155,8 +282,10 @@ contract DeliveringEntropy is IERC165 {
 ///         work's seed comes from the module current at its mint, `entropyModuleOf`) and their
 ///         royalty info are byte for byte the same after every replacement.
 contract StreamDependenciesTest is IntegrationBase {
+    /// @dev The replaceable dependencies: the three on the mint path and the view extension; the
+    ///      artist registry is permanent.
     bytes32[4] internal KINDS =
-        [bytes32("PACKAGE_REGISTRY"), "ARTIST_REGISTRY", "ECONOMICS", "ENTROPY_MODULE"];
+        [bytes32("PACKAGE_REGISTRY"), "ECONOMICS", "ENTROPY_MODULE", "EXTENSION"];
 
     address internal artist;
     address internal collector = makeAddr("dependencyCollector");
@@ -176,7 +305,7 @@ contract StreamDependenciesTest is IntegrationBase {
         Work[] memory works = new Work[](3);
         works[0] = _work(artist, collectionId);
         works[1] = _work(artist, collectionId);
-        works[1].item.seedPolicy = SeedPolicy.VRF;
+        works[1].item.seedPolicy = uint8(SeedPolicy.VRF);
         works[2] = _master(artist);
         bytes32 root = _publish(works);
         _keep(root, works);
@@ -190,16 +319,16 @@ contract StreamDependenciesTest is IntegrationBase {
             vm.prank(artist);
             records.finalize(tokenId, state);
         }
-        editionIds.push(editions.createEdition(tokens[2], works[2].item, root, _proofOf(works, 2)));
+        editionIds.push(editions.createEdition(tokens[2], works[2].item));
 
         // Works that are not finalized: a record open, two VRF works whose records are not open
         // (one an edition master with an edition), and a work still in its auction.
         Work[] memory pending = new Work[](4);
         pending[0] = _work(artist, collectionId);
         pending[1] = _work(artist, collectionId);
-        pending[1].item.seedPolicy = SeedPolicy.VRF;
+        pending[1].item.seedPolicy = uint8(SeedPolicy.VRF);
         pending[2] = _master(artist);
-        pending[2].item.seedPolicy = SeedPolicy.VRF;
+        pending[2].item.seedPolicy = uint8(SeedPolicy.VRF);
         pending[3] = _work(artist, collectionId);
         pendingRoot = _publish(pending);
         _keep(pendingRoot, pending);
@@ -209,11 +338,7 @@ contract StreamDependenciesTest is IntegrationBase {
             tokens.push(_sell(pendingRoot, pending, i, collector, 1 ether));
         }
         records.openRecord(tokens[3], pending[0].item, pending[0].media);
-        editionIds.push(
-            editions.createEdition(
-                tokens[PENDING_VRF_MASTER], pending[2].item, pendingRoot, _proofOf(pending, 2)
-            )
-        );
+        editionIds.push(editions.createEdition(tokens[PENDING_VRF_MASTER], pending[2].item));
         (, uint256 inAuction) = _start(pendingRoot, pending, 3);
         tokens.push(inAuction);
         assertEq(stream.ownerOf(inAuction), address(auction));
@@ -221,7 +346,7 @@ contract StreamDependenciesTest is IntegrationBase {
 
     function _master(address lead) internal returns (Work memory w) {
         w = _work(lead, collectionId);
-        w.item.kind = ItemKind.EDITION_MASTER;
+        w.item.kind = uint8(ItemKind.EDITION_MASTER);
         w.item.edition = EditionTerms(0, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
     }
 
@@ -231,16 +356,16 @@ contract StreamDependenciesTest is IntegrationBase {
     }
 
     function _interfaceOf(bytes32 kind) internal pure returns (bytes4) {
-        if (kind == "PACKAGE_REGISTRY") return type(IPackageRegistry).interfaceId;
-        if (kind == "ARTIST_REGISTRY") return type(IArtistRegistry).interfaceId;
+        if (kind == "PACKAGE_REGISTRY") return type(IMintPolicy).interfaceId;
         if (kind == "ECONOMICS") return type(IEconomicsResolver).interfaceId;
+        if (kind == "EXTENSION") return type(IStreamExtension).interfaceId;
         return type(IEntropyModule).interfaceId;
     }
 
     function _current(bytes32 kind) internal view returns (address) {
         if (kind == "PACKAGE_REGISTRY") return stream.packageRegistry();
-        if (kind == "ARTIST_REGISTRY") return stream.artistRegistry();
         if (kind == "ECONOMICS") return stream.economics();
+        if (kind == "EXTENSION") return stream.extension();
         return stream.entropyModule();
     }
 
@@ -272,6 +397,46 @@ contract StreamDependenciesTest is IntegrationBase {
         assertEq(_current(kind), previous, "unchanged");
     }
 
+    /// @dev An existing token's permanent facts, everything but its metadata: the native views
+    ///      (`coreOf`, ownership, royalty, sale, edition link, renderer) and the storage words a
+    ///      pinned renderer reads at `StreamLayout`'s slots (the token's two words, its
+    ///      collection's counter word and name).
+    function _coreSnapshot() internal view returns (bytes32) {
+        bytes memory all;
+        for (uint256 i; i < tokens.length; ++i) {
+            uint256 id = tokens[i];
+            (address receiver, uint256 amount) = stream.royaltyInfo(id, 1 ether);
+            (,, uint256 collection,,,) = stream.coreOf(id);
+            (PrimaryOutcome outcome, address currency, uint256 price) = stream.primarySale(id);
+            (address linked, uint256 editionId) = stream.editionOf(id);
+            all = abi.encode(
+                all,
+                abi.encode(stream.ownerOf(id), receiver, amount, _core(id), stream.rendererOf(id)),
+                abi.encode(outcome, currency, price, linked, editionId),
+                stream.extsload(StreamLayout.tokenSlot(id), 2),
+                stream.extsload(StreamLayout.collectionSlot(collection), 3)
+            );
+        }
+        for (uint256 i; i < editionIds.length; ++i) {
+            (address receiver, uint256 amount) = editions.royaltyInfo(editionIds[i], 1 ether);
+            (address master, uint256 workId, bytes32 contentHash) = editions.masterOf(editionIds[i]);
+            all = abi.encode(all, master, workId, contentHash, receiver, amount);
+        }
+        return keccak256(all);
+    }
+
+    function _core(uint256 id) internal view returns (bytes memory) {
+        (
+            bytes32 itemHash,
+            uint256 artistId,
+            uint256 collection,
+            uint8 kind,
+            uint8 seed,
+            uint32 rate
+        ) = stream.coreOf(id);
+        return abi.encode(itemHash, artistId, collection, kind, seed, rate);
+    }
+
     /// @dev Everything an existing token shows the world.
     function _snapshot() internal view returns (bytes32) {
         bytes memory all;
@@ -294,17 +459,16 @@ contract StreamDependenciesTest is IntegrationBase {
     ///      ERC-165, so no existing token's metadata or royalty reads a replaced contract.
     function test_ReplacingEachDependencyLeavesExistingTokensUnchanged() public {
         bytes32 before = _snapshot();
-        bytes32 vrfSeed = entropy.seedOf(stream.work(tokens[PENDING_VRF]).itemHash);
+        bytes32 vrfSeed =
+            entropy.seedOf(IStreamViews(address(stream)).work(tokens[PENDING_VRF]).itemHash);
         address genesisEntropy = stream.entropyModule();
         for (uint256 i; i < KINDS.length; ++i) {
             _replace(KINDS[i], address(new DependencyStandIn(_interfaceOf(KINDS[i]))));
             assertEq(_snapshot(), before, "existing tokens are unaffected");
         }
         // One source of truth: the satellites read Stream's pointers.
-        assertEq(address(editions.packageRegistry()), stream.packageRegistry());
         assertEq(address(editions.economics()), stream.economics());
         assertEq(address(editions.artistRegistry()), stream.artistRegistry());
-        assertEq(records.artistRegistry(), stream.artistRegistry());
         // Every existing work keeps the module its seed was delivered by.
         for (uint256 i; i < tokens.length; ++i) {
             assertEq(stream.entropyModuleOf(tokens[i]), genesisEntropy);
@@ -323,7 +487,7 @@ contract StreamDependenciesTest is IntegrationBase {
     ///      records open; works minted after it take its seeds.
     function test_ReplacingTheEntropyModuleNeverChangesAnExistingWorksSeed() public {
         bytes32 before = _snapshot();
-        bytes32 itemHash = stream.work(tokens[PENDING_VRF]).itemHash;
+        bytes32 itemHash = IStreamViews(address(stream)).work(tokens[PENDING_VRF]).itemHash;
         bytes32 vrfSeed = entropy.seedOf(itemHash);
         address genesisEntropy = address(entropy);
         OtherSeedsEntropy other = new OtherSeedsEntropy();
@@ -337,7 +501,7 @@ contract StreamDependenciesTest is IntegrationBase {
 
         // A VRF work minted after the replacement takes the new module's seed.
         Work memory w = _work(artist, collectionId);
-        w.item.seedPolicy = SeedPolicy.VRF;
+        w.item.seedPolicy = uint8(SeedPolicy.VRF);
         Work[] memory one = _one(w);
         bytes32 root = _publish(one);
         (, uint256 later) = _start(root, one, 0);
@@ -355,7 +519,7 @@ contract StreamDependenciesTest is IntegrationBase {
         DeliveringEntropy second = new DeliveringEntropy();
         _replace("ENTROPY_MODULE", address(second));
         Work memory w = _work(artist, collectionId);
-        w.item.seedPolicy = SeedPolicy.VRF;
+        w.item.seedPolicy = uint8(SeedPolicy.VRF);
         Work[] memory one = _one(w);
         bytes32 root = _publish(one);
         second.deliver(w.item, keccak256("the second era's seed"));
@@ -371,7 +535,9 @@ contract StreamDependenciesTest is IntegrationBase {
         _open(PENDING_VRF, 1);
         records.openRecord(secondEra, w.item, w.media);
         (, bytes32 seed) = records.seedOf(tokens[PENDING_VRF]);
-        assertEq(seed, entropy.seedOf(stream.work(tokens[PENDING_VRF]).itemHash));
+        assertEq(
+            seed, entropy.seedOf(IStreamViews(address(stream)).work(tokens[PENDING_VRF]).itemHash)
+        );
         (, seed) = records.seedOf(secondEra);
         assertEq(seed, keccak256("the second era's seed"));
     }
@@ -381,7 +547,7 @@ contract StreamDependenciesTest is IntegrationBase {
     ///      delivery (`mint` checks the current module), so it is requested again there.
     function test_AVrfRequestInFlightAcrossAReplacement() public {
         Work memory w = _work(artist, collectionId);
-        w.item.seedPolicy = SeedPolicy.VRF;
+        w.item.seedPolicy = uint8(SeedPolicy.VRF);
         Work[] memory one = _one(w);
         bytes32 root = _publish(one);
         bytes32 itemHash = WorksHashing.itemHash(w.item);
@@ -403,6 +569,97 @@ contract StreamDependenciesTest is IntegrationBase {
         assertEq(seed, keccak256("the current module's seed"));
     }
 
+    /// @dev H-1 (review A): the view extension is replaceable, so nothing permanent or pinned
+    ///      reads it. Governance replaces it through the real 30-day path with one that answers
+    ///      every view with other facts; every existing work's permanent facts (ownership,
+    ///      royalty, `coreOf`, sale, edition link, renderer and the `StreamLayout` words) and its
+    ///      metadata (`tokenURI`, and each edition's `uri`) stay byte for byte the same.
+    ///      Cross-branch: the metadata half needs the renderer that reads `coreOf` and
+    ///      `extsload` instead of `IStreamViews` (the content pass's half of H-1); run
+    ///      `forge test --match-contract StreamDependenciesTest` once both are merged.
+    function test_ReplacingTheExtensionWithAHostileOneLeavesEveryExistingWorkUnchanged() public {
+        bytes32 core = _coreSnapshot();
+        bytes32 before = _snapshot();
+        HostileExtension hostile = new HostileExtension();
+        _replace("EXTENSION", address(hostile));
+        // The views are informational: they now serve the hostile answer...
+        assertEq(IStreamViews(address(stream)).work(tokens[0]).serial, uint64(tokens[0]) + 1000);
+        // ...and nothing else changed.
+        assertEq(_coreSnapshot(), core, "permanent facts are unaffected");
+        assertEq(_snapshot(), before, "metadata is unaffected");
+    }
+
+    /// @dev L-2 (review A): the fallback forwards only the three `IStreamViews` selectors. With
+    ///      an extension that implements receiver hooks, ERC-1271, an ERC-20 `transfer`,
+    ///      `owner()` and `contractURI()`, Stream still answers none of the first three (a
+    ///      revert with no data), and the last two natively with what governance set.
+    function test_TheFallbackForwardsOnlyTheViews() public {
+        _replace("EXTENSION", address(new HostileExtension()));
+        bytes[5] memory refused = [
+            abi.encodeWithSelector(
+                HostileExtension.onERC721Received.selector, address(this), address(this), 1, ""
+            ),
+            abi.encodeWithSelector(
+                HostileExtension.onERC1155Received.selector, address(this), address(this), 1, 1, ""
+            ),
+            abi.encodeWithSelector(HostileExtension.isValidSignature.selector, bytes32(0), ""),
+            abi.encodeWithSelector(HostileExtension.transfer.selector, address(this), 1),
+            hex"00"
+        ];
+        for (uint256 i; i < refused.length; ++i) {
+            (bool ok, bytes memory answer) = address(stream).staticcall(refused[i]);
+            assertFalse(ok, "not forwarded");
+            assertEq(answer.length, 0, "a revert with no data");
+        }
+        assertEq(stream.owner(), marketOwner, "native owner");
+        assertEq(stream.contractURI(), "", "native contract URI");
+        assertEq(IStreamViews(address(stream)).totalSupply(), 0, "a view is forwarded");
+    }
+
+    /// @dev Review round 4 (LIM-GV-25): `createCollection` asks the view extension's name rule
+    ///      directly. An extension whose rule refuses, reverts, burns its gas or answers a
+    ///      malformed word only stops NEW collections, until governance replaces it: the existing
+    ///      collection, every work's permanent facts and metadata stay byte for byte the same,
+    ///      and the next extension creates collections again.
+    function test_createCollection_aRefusingExtensionBlocksOnlyNewCollections() public {
+        bytes32 core = _coreSnapshot();
+        bytes32 before = _snapshot();
+        uint256 count = stream.collectionCount();
+        address genesisExtension = stream.extension();
+        for (uint256 mode; mode < 4; ++mode) {
+            _replace("EXTENSION", address(new RefusingNameExtension(mode)));
+            vm.prank(platform);
+            if (mode == 0) vm.expectRevert(IStream.InvalidCollectionName.selector);
+            else vm.expectRevert();
+            stream.createCollection{ gas: 2_000_000 }("Refused", keccak256("refused"));
+            assertEq(stream.collectionCount(), count, "no new collection");
+            assertEq(_coreSnapshot(), core, "permanent facts are unaffected");
+            assertEq(_snapshot(), before, "metadata is unaffected");
+        }
+        _replace("EXTENSION", genesisExtension);
+        vm.prank(platform);
+        stream.createCollection("After the replacement", keccak256("after"));
+        assertEq(stream.collectionCount(), count + 1);
+    }
+
+    /// @dev `supportsInterface(IStreamViews)` is true of every extension Stream accepts: the
+    ///      replacement must answer `IStreamExtension`'s flat id, which covers the three views.
+    ///      One that answers only the name rule's selector is refused.
+    function test_AnExtensionMustCoverTheViews() public {
+        assertEq(
+            type(IStreamExtension).interfaceId,
+            bytes4(keccak256("isValidCollectionName(string)")) ^ type(IStreamViews).interfaceId
+        );
+        address nameOnly =
+            address(new DependencyStandIn(bytes4(keccak256("isValidCollectionName(string)"))));
+        _refuse(
+            "EXTENSION",
+            nameOnly,
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, nameOnly)
+        );
+        assertTrue(IERC165(address(stream)).supportsInterface(type(IStreamViews).interfaceId));
+    }
+
     /// @dev Opens the record of `tokens[index]`, the `item`-th of the pending works.
     function _open(uint256 index, uint256 item) internal {
         Work[] memory pending = _package(pendingRoot);
@@ -414,7 +671,7 @@ contract StreamDependenciesTest is IntegrationBase {
     ///      restores it.
     function test_NewWorksUseTheReplacement() public {
         address original = stream.packageRegistry();
-        address next = address(new DependencyStandIn(type(IPackageRegistry).interfaceId));
+        address next = address(new DependencyStandIn(type(IMintPolicy).interfaceId));
         _govern(
             hotAdmin,
             address(stream),
@@ -432,7 +689,39 @@ contract StreamDependenciesTest is IntegrationBase {
             abi.encodeCall(stream.setDependency, ("PACKAGE_REGISTRY", next, original))
         );
         auction.start(address(stream), _mintData(root, one, 0));
-        assertEq(stream.ownerOf(stream.totalMinted()), address(auction));
+        assertEq(stream.ownerOf(IStream(address(stream)).totalMinted()), address(auction));
+    }
+
+    /// @dev Uniqueness lives in the mint policy (the package registry's content records), not
+    ///      in Stream. Putting a predecessor back never rolls it back: the original registry
+    ///      still holds every item it consumed, so the same item cannot start twice across a
+    ///      replacement and a return. A successor that is a different contract must read its
+    ///      predecessor's records (`consumedItemOf`) to keep this; Stream cannot enforce it.
+    function test_APolicyRoundTripNeverReconsumesAnItem() public {
+        address original = stream.packageRegistry();
+        Work memory w = _work(artist, collectionId);
+        Work[] memory one = _one(w);
+        bytes32 root = _publish(one);
+        auction.start(address(stream), _mintData(root, one, 0));
+        address next = address(new DependencyStandIn(type(IMintPolicy).interfaceId));
+        _govern(
+            hotAdmin,
+            address(stream),
+            abi.encodeCall(stream.setDependency, ("PACKAGE_REGISTRY", original, next))
+        );
+        _govern(
+            hotAdmin,
+            address(stream),
+            abi.encodeCall(stream.setDependency, ("PACKAGE_REGISTRY", next, original))
+        );
+        bytes memory again = _mintData(root, one, 0);
+        bytes32 itemHash = WorksHashing.itemHash(w.item);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPackageRegistry.ContentUsed.selector, PRODUCT_STREAM, w.item.contentHash, itemHash
+            )
+        );
+        auction.start(address(stream), again);
     }
 
     /// @dev The rc.2 review's G I-1 (fix F7): a replacement that answers `authority()` must name
@@ -458,16 +747,30 @@ contract StreamDependenciesTest is IntegrationBase {
             address(real),
             abi.encodeWithSelector(IStream.InvalidBinding.selector, address(real))
         );
-        // One word that is not an address is refused too (its decoding fails, with no data,
-        // which the manager reports as `FailedCall`).
+        // One word that is not an address is refused too.
         address dirty = address(new DirtyAuthorityStandIn(_interfaceOf("ECONOMICS")));
-        _refuse("ECONOMICS", dirty, abi.encodeWithSignature("FailedCall()"));
+        _refuse("ECONOMICS", dirty, abi.encodeWithSelector(IStream.InvalidBinding.selector, dirty));
 
         for (uint256 i; i < KINDS.length; ++i) {
             _replace(
                 KINDS[i], address(new ManagedStandIn(_interfaceOf(KINDS[i]), address(manager)))
             );
         }
+    }
+
+    /// @dev A replacement economics resolver must name Stream's own split factory (fixed at its
+    ///      construction): one naming another would derive other wallets for existing works,
+    ///      so their edition sales could not deploy the wallets their terms name (automated
+    ///      review, 16 November 2026). Fails without the check: the foreign resolver installs.
+    function test_AReplacementResolverMustNameStreamsSplitFactory() public {
+        address foreign =
+            address(new ForeignFactoryStandIn(_interfaceOf("ECONOMICS"), address(0xFAC)));
+        _refuse(
+            "ECONOMICS", foreign, abi.encodeWithSelector(IStream.InvalidBinding.selector, foreign)
+        );
+        _replace(
+            "ECONOMICS", address(new ManagedStandIn(_interfaceOf("ECONOMICS"), address(manager)))
+        );
     }
 
     /// @dev F7's other side: only a successful one-word `authority()` answer is compared. A
@@ -480,12 +783,13 @@ contract StreamDependenciesTest is IntegrationBase {
         }
     }
 
-    /// @dev The read forwards at most `RECORDS_GAS` (GV-35): an `authority()` that needs more to
-    ///      answer is not read, so its replacement installs as one with no answer does. Its
-    ///      answer here would name a foreign manager.
-    function test_TheAuthorityReadIsBoundedByRecordsGas() public {
+    /// @dev The read forwards all the gas the call has (the gas rule): an `authority()` that
+    ///      needs more than the 100,000 Stream used to forward is still read, so a foreign
+    ///      manager it names is refused. Before, this replacement installed.
+    function test_ASlowAuthorityAnswerIsStillRead() public {
         address foreign = address(new AccessManager(address(this)));
-        _replace("ECONOMICS", address(new SlowAuthorityStandIn(_interfaceOf("ECONOMICS"), foreign)));
+        address slow = address(new SlowAuthorityStandIn(_interfaceOf("ECONOMICS"), foreign));
+        _refuse("ECONOMICS", slow, abi.encodeWithSelector(IStream.InvalidBinding.selector, slow));
     }
 
     /// @dev The permanence gap the review of #81 found, closed: the artist registry's only
@@ -583,7 +887,7 @@ contract StreamDependenciesTest is IntegrationBase {
     ///      whose own content has no seed cannot start, whatever other content is seeded.
     function test_AVrfStartChecksTheItemsContentAndContentIsMintedOnce() public {
         Work memory w = _work(artist, collectionId);
-        w.item.seedPolicy = SeedPolicy.VRF;
+        w.item.seedPolicy = uint8(SeedPolicy.VRF);
         Work[] memory first = _one(w);
         bytes32 firstRoot = _publish(first);
         uint256 requestId = entropy.requestSeed(w.item, firstRoot, _proofOf(first, 0));
@@ -619,7 +923,7 @@ contract StreamDependenciesTest is IntegrationBase {
 
         // Another item, whose own content has no seed, cannot start.
         Work memory unseeded = _work(artist, collectionId);
-        unseeded.item.seedPolicy = SeedPolicy.VRF;
+        unseeded.item.seedPolicy = uint8(SeedPolicy.VRF);
         Work[] memory third = _one(unseeded);
         bytes32 thirdRoot = _publish(third);
         bytes memory thirdData = _mintData(thirdRoot, third, 0);

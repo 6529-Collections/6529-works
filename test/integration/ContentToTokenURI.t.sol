@@ -35,7 +35,7 @@ contract ContentToTokenURIFlowTest is IntegrationBase {
         assertTrue(ok, "golden writeChunk");
         assertTrue(store.isComplete(v.fileId));
         w.media = new MediaFile[](1);
-        w.media[0] = MediaFile(v.fileId, v.mediaSha256, FileRole.PRIMARY);
+        w.media[0] = MediaFile(v.fileId, v.mediaSha256, uint8(FileRole.PRIMARY));
         w.item = _item(artist, collectionId, v.mediaSha256, w.media, _record("Golden Work"));
     }
 
@@ -53,7 +53,7 @@ contract ContentToTokenURIFlowTest is IntegrationBase {
 
         // attestBase64 is permissionless and one-time.
         assertFalse(store.isBase64Attested(v.fileId));
-        assertTrue(store.attestBase64(v.fileId), "one chunk: done in one call");
+        assertTrue(store.attestBase64(v.fileId, type(uint256).max), "one chunk: done in one call");
         assertTrue(store.isBase64Attested(v.fileId));
 
         // openRecord is permissionless and checks the committed media.
@@ -68,11 +68,11 @@ contract ContentToTokenURIFlowTest is IntegrationBase {
         // Locator mode: the artist and the platform register copies; the storage operator
         // chooses among them (a platform copy is served only by its explicit pick, WS-21).
         vm.prank(artist);
-        records.addLocator(tokenId, v.fileId, CA.ar("golden arweave"));
+        delivery.addLocator(tokenId, v.fileId, CA.ar("golden arweave"));
         vm.prank(platform);
-        records.addLocator(tokenId, v.fileId, CA.ipfsLocator("golden ipfs"));
+        delivery.addLocator(tokenId, v.fileId, CA.ipfsLocator("golden ipfs"));
         vm.prank(storageOperator);
-        records.setPreferredKind(LocatorKind.IPFS);
+        delivery.setPreferredKind(LocatorKind.IPFS);
         assertTrue(
             _contains(
                 stream.tokenURI(tokenId),
@@ -80,7 +80,7 @@ contract ContentToTokenURIFlowTest is IntegrationBase {
             )
         );
         vm.prank(storageOperator);
-        records.setFilePreference(tokenId, v.fileId, 1);
+        delivery.setFilePreference(tokenId, v.fileId, 1);
         assertTrue(
             _contains(
                 stream.tokenURI(tokenId), string.concat('"image":"', CA.ipfs("golden ipfs"), '"')
@@ -98,7 +98,7 @@ contract ContentToTokenURIFlowTest is IntegrationBase {
 
         // syncOnChain: every media file is complete, so the work is on-chain complete and the
         // attested base64 text is inlined as stored.
-        records.syncOnChain(tokenId);
+        records.syncOnChain(tokenId, 0, type(uint256).max);
         assertTrue(records.record(tokenId).onChainComplete);
         uri = stream.tokenURI(tokenId);
         assertTrue(
@@ -120,9 +120,9 @@ contract ContentToTokenURIFlowTest is IntegrationBase {
         bytes32 root = _publish(works);
         (, uint256 tokenId) = _start(root, works, 0);
         records.openRecord(tokenId, w.item, w.media);
-        records.syncOnChain(tokenId);
+        records.syncOnChain(tokenId, 0, type(uint256).max);
         vm.prank(artist);
-        records.addLocator(tokenId, v.fileId, CA.ar("fallback"));
+        delivery.addLocator(tokenId, v.fileId, CA.ar("fallback"));
         string memory uri = stream.tokenURI(tokenId);
         assertFalse(_contains(uri, "base64,"), "not attested: not inlined");
         assertTrue(_contains(uri, string.concat('"image":"', CA.arweave("fallback"), '"')));

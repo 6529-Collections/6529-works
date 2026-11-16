@@ -5,6 +5,7 @@ import { Vm } from "forge-std/Vm.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
+import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import {
     HashRef,
@@ -172,15 +173,20 @@ contract StatementLogTest is StatementLogFixture {
         _append(Role.OWNER, tokenOwner, s);
     }
 
-    function test_Owner_HostileTokensFailClosedWithBoundedGas() public {
-        Statement memory s = _statement(address(new GasBurnerMock()), 1);
-        uint256 gasBefore = gasleft();
-        vm.expectRevert(
-            abi.encodeWithSelector(IStatementLog.NotAuthorized.selector, Role.OWNER, tokenOwner)
-        );
-        _append(Role.OWNER, tokenOwner, s);
-        // Two reads of at most 50k gas each; the rest is a fixed overhead.
-        assertLt(gasBefore - gasleft(), 200_000, "hostile token burned the caller's gas");
+    /// @dev A token that burns all the gas it is given is indistinguishable from one that ran
+    ///      short, so the append reverts with the shortfall error at every limit: it is neither
+    ///      authorised nor read as "not the owner". Only the sender who named that token pays.
+    function test_Owner_HostileTokensRevertWithTheShortfallError() public {
+        address burner = address(new GasBurnerMock());
+        Statement memory s = _statement(burner, 1);
+        uint256[2] memory limits = [uint256(300_000), 3_000_000];
+        for (uint256 i; i < limits.length; ++i) {
+            vm.expectRevert(
+                abi.encodeWithSelector(BoundedCall.BoundedCallShortfall.selector, burner)
+            );
+            vm.prank(tokenOwner);
+            stmtLog.append{ gas: limits[i] }(Role.OWNER, s);
+        }
     }
 
     // ------------------------------------------------------- CURATOR / PLATFORM
@@ -663,12 +669,7 @@ contract StatementLogTest is StatementLogFixture {
         _append(Role.ARTIST, artist, s);
 
         s = _statement();
-        s.content.algorithm = 4; // variable-length multihash: reserved, not accepted
-        vm.expectRevert(abi.encodeWithSelector(IStatementLog.InvalidHashRef.selector, 4));
-        _append(Role.ARTIST, artist, s);
-
-        s = _statement();
-        s.content.algorithm = 0;
+        s.content.algorithm = 0; // an untagged digest
         vm.expectRevert(abi.encodeWithSelector(IStatementLog.InvalidHashRef.selector, 0));
         _append(Role.ARTIST, artist, s);
     }
@@ -686,10 +687,12 @@ contract StatementLogTest is StatementLogFixture {
         vm.expectRevert(IStatementLog.MissingLocator.selector);
         _append(Role.ARTIST, artist, s);
 
-        s.uri = _ascii(2048);
+        // The specification states the bound: 8,192 bytes.
+        assertEq(stmtLog.MAX_URI_BYTES(), 8_192);
+        s.uri = _ascii(8_192);
         _append(Role.ARTIST, artist, s);
 
-        s.uri = _ascii(2049);
+        s.uri = _ascii(8_193);
         vm.expectRevert(IStatementLog.InvalidUri.selector);
         _append(Role.ARTIST, artist, s);
     }
@@ -717,13 +720,30 @@ contract StatementLogTest is StatementLogFixture {
             s.content.algorithm = ok[i];
             _append(Role.ARTIST, artist, s);
         }
-        // 4 and 5 (variable-length multihash, CID) and 6 (an Arweave transaction ID, which is a
-        // locator, not a digest) are not digests the log accepts.
-        for (uint16 a = 4; a <= 7; ++a) {
-            Statement memory s = _statement();
-            s.content.algorithm = a;
-            vm.expectRevert(abi.encodeWithSelector(IStatementLog.InvalidHashRef.selector, a));
+    }
+
+    /// @dev Algorithm IDs are open: any non-zero ID, known or not (4 to 6 keep RC1's names; 7 and
+    ///      65,535 have none), is recorded as given, in the entry's statement and its hash, and
+    ///      never interpreted. Zero stays invalid.
+    function testFuzz_Validation_RecordsAnyNonZeroAlgorithmUninterpreted(uint16 algorithm) public {
+        Statement memory s = _statement();
+        s.content.algorithm = algorithm;
+        if (algorithm == 0) {
+            vm.expectRevert(abi.encodeWithSelector(IStatementLog.InvalidHashRef.selector, 0));
             _append(Role.ARTIST, artist, s);
+            return;
+        }
+        (bytes32 entryHash,) = _expectAppend(Role.ARTIST, artist, s);
+        assertEq(_append(Role.ARTIST, artist, s), entryHash);
+    }
+
+    function test_Validation_AcceptsUnknownAlgorithmIds() public {
+        uint16[5] memory ids = [uint16(4), 5, 6, 7, type(uint16).max];
+        for (uint256 i; i < ids.length; ++i) {
+            Statement memory s = _statement();
+            s.content.algorithm = ids[i];
+            (bytes32 entryHash,) = _expectAppend(Role.ARTIST, artist, s);
+            assertEq(_append(Role.ARTIST, artist, s), entryHash);
         }
     }
 

@@ -9,8 +9,9 @@
 
 - **Always-green `main` and small PRs.** No long-lived integration branches.
 - **Budgets are CI gates, not intentions:**
-  - 8–13K non-comment lines of Solidity under `src/` (12K until ADR 0001's amendment of 1
-    November 2026, owner decision 24);
+  - at most 15,000 non-comment lines of Solidity under `src/` (12K until ADR 0001's amendment
+    of 1 November 2026, owner decision 24; 13K until ADR 0007, owner decision of 15 November
+    2026);
   - at most 5 linked libraries;
   - no delegatecall or proxies;
   - EIP-170 respected;

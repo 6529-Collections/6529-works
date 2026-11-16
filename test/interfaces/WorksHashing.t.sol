@@ -44,28 +44,28 @@ contract WorksHashingTest is Test {
 
     function _media() internal pure returns (MediaFile[] memory media) {
         media = new MediaFile[](2);
-        media[0] = MediaFile(keccak256("file1"), keccak256("sha1"), FileRole.PRIMARY);
-        media[1] = MediaFile(keccak256("file2"), keccak256("sha2"), FileRole.PREVIEW);
+        media[0] = MediaFile(keccak256("file1"), keccak256("sha1"), uint8(FileRole.PRIMARY));
+        media[1] = MediaFile(keccak256("file2"), keccak256("sha2"), uint8(FileRole.PREVIEW));
     }
 
     /// @dev A lead artist, a credited and paid collaborator (artist-resolved), and a fixed payee
     ///      who is also a party, in canonical payee order: fixed first, then by artist ID.
     function _item() internal pure returns (PackageItem memory item) {
-        item.kind = ItemKind.EDITION_MASTER;
+        item.kind = uint8(ItemKind.EDITION_MASTER);
         item.collectionId = 7;
         item.contentHash = keccak256("sha1");
         item.mediaHash = WorksHashing.mediaHash(_media());
         item.recordFileId = keccak256("record");
         item.parties = new Party[](3);
-        item.parties[0] = Party(A1, PartyRole.ARTIST);
-        item.parties[1] = Party(A2, PartyRole.COLLABORATOR);
-        item.parties[2] = Party(A3, PartyRole.COLLABORATOR);
+        item.parties[0] = Party(A1, uint8(PartyRole.ARTIST));
+        item.parties[1] = Party(A2, uint8(PartyRole.COLLABORATOR));
+        item.parties[2] = Party(A3, uint8(PartyRole.COLLABORATOR));
         item.payees = new ISplitWallet.Payee[](3);
         item.payees[0] = ISplitWallet.Payee(0, A3, 10_000);
         item.payees[1] = ISplitWallet.Payee(uint256(uint160(A1)), address(0), 65_000);
         item.payees[2] = ISplitWallet.Payee(uint256(uint160(A2)), address(0), 25_000);
         item.license = License("CC0-1.0", keccak256("cc0 text"));
-        item.seedPolicy = SeedPolicy.ARTIST;
+        item.seedPolicy = uint8(SeedPolicy.ARTIST);
         item.seed = keccak256("seed");
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_DEFAULT, "");
         item.edition = EditionTerms(100, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
@@ -94,7 +94,7 @@ contract WorksHashingTest is Test {
     function test_mediaHash_golden() public pure {
         assertEq(WorksHashing.mediaHash(_media()), GOLDEN_MEDIA_HASH);
         MediaFile[] memory media = _media();
-        media[1].role = FileRole.AUXILIARY;
+        media[1].role = uint8(FileRole.AUXILIARY);
         assertTrue(WorksHashing.mediaHash(media) != GOLDEN_MEDIA_HASH);
     }
 
@@ -167,7 +167,7 @@ contract WorksHashingTest is Test {
         item.sale.currency = CURRENCY_ETH;
         assertTrue(WorksHashing.itemHash(item) != GOLDEN_ITEM_HASH);
         item = _item();
-        item.kind = ItemKind.ORIGINAL;
+        item.kind = uint8(ItemKind.ORIGINAL);
         assertTrue(WorksHashing.itemHash(item) != GOLDEN_ITEM_HASH);
     }
 

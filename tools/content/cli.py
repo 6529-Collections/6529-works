@@ -18,8 +18,15 @@ from .errors import ToolError
 from .plan import (
     ATTEST_CHUNKS_PER_CALL,
     CHUNK_SIZE,
+    DEFAULT_PART_SIZE,
     MAX_CHUNKS,
+    PER_LIST,
+    check_part_size,
+    chunk_hash,
     hex0x,
+    list_chunks,
+    split_chunks,
+    split_parts,
     load_manifest,
     manifest_dict,
     manifest_json,
@@ -162,14 +169,14 @@ def cmd_plan(args: argparse.Namespace) -> int:
     print(f"manifest      {manifest_path}")
     print(f"stored stream {stored_path}")
     upload = calls_module.calls_for_plan(plan)
-    writes = sum(c.name == "writeChunk" for c in upload)
-    attests = len(upload) - writes - 1
-    print(
-        f"on-chain copy {len(upload)} transaction(s): registerManifest, {writes} writeChunk"
-        + (f", {attests} attestBase64" if attests else "")
-    )
+    print(f"on-chain copy {_call_summary(upload)}")
     for line in _quote_lines(calls_module.quotes(upload, args.gwei), args.gwei):
         print(line)
+    if args.part_size is not None:
+        parted = calls_module.calls_for_plan(plan, part_size=args.part_size)
+        print(f"with parts    of {args.part_size:,} bytes: {_call_summary(parted)}")
+        for line in _quote_lines(calls_module.quotes(parted, args.gwei), args.gwei):
+            print(line)
     if not plan.reproducible:
         _eprint(
             "warning: re-encoding the decoded media does not give this stream. It is valid, but "
@@ -181,6 +188,36 @@ def cmd_plan(args: argparse.Namespace) -> int:
             "encoding; the file ID names these exact bytes."
         )
     return 0
+
+
+def _call_summary(calls: Sequence[calls_module.CallPlan]) -> str:
+    counts: dict[str, int] = {}
+    for c in calls:
+        counts[c.name] = counts.get(c.name, 0) + 1
+    return f"{len(calls)} transaction(s): " + ", ".join(f"{n} {name}" for name, n in counts.items())
+
+
+def _part_size(text: str) -> int:
+    try:
+        value = int(text.replace(",", "").replace("_", ""))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a whole number of bytes: {text!r}") from None
+    try:
+        check_part_size(value)
+        split_parts(bytes(CHUNK_SIZE), value)
+    except ToolError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from None
+    return value
+
+
+def _attest_chunks(text: str) -> int:
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a whole number: {text!r}") from None
+    if value < 1:
+        raise argparse.ArgumentTypeError("an attest call checks at least one chunk")
+    return value
 
 
 # --- calls ---
@@ -217,29 +254,42 @@ def cmd_calls(args: argparse.Namespace) -> int:
     skip_register = False
     skip_attest = False
     present: set[bytes] = set()
+    file_chunks_present = 0
     if args.only_missing:
         assert client is not None
         skip_register = client.file_info(manifest.file_id) is not None
-        for digest in dict.fromkeys(manifest.chunk_hashes):
-            if client.chunk_pointer(digest) is not None:
-                present.add(digest)
+        distinct = list(dict.fromkeys(manifest.chunk_hashes))
+        if skip_register:
+            # The store counts linked chunks too; ranges keep every call small.
+            missing = set(client.missing_in_pieces(manifest.file_id, len(manifest.chunk_hashes)))
+            absent = {manifest.chunk_hashes[i] for i in missing}
+            present.update(d for d in distinct if d not in absent)
+        else:
+            present.update(d for d in distinct if client.chunk_pointer(d) is not None)
+        file_chunks_present = len(present)
+        # Parts of chunks still missing, and list chunks of an unregistered manifest, are found by
+        # their pointers: they are whole chunks.
+        extra: list[bytes] = []
+        if args.part_size is not None:
+            for index, chunk in enumerate(split_chunks(stored)):
+                if manifest.chunk_hashes[index] not in present:
+                    extra += [chunk_hash(p) for p in split_parts(chunk, args.part_size)]
+        if not skip_register:
+            extra += [chunk_hash(c) for c in list_chunks(manifest.chunk_hashes, PER_LIST)]
+        present.update(d for d in dict.fromkeys(extra) if client.chunk_pointer(d) is not None)
         if manifest.encoding.uses_base64 and not args.no_attest:
-            per_call = client.attest_chunks_per_call()
-            if per_call is None:
+            attested = client.is_base64_attested(manifest.file_id)
+            if attested is None:
                 skip_attest = True
                 _eprint("warning: this store has no attestBase64; no attest calls are emitted")
-            elif per_call != ATTEST_CHUNKS_PER_CALL:
-                raise ToolError(
-                    f"the store's ATTEST_CHUNKS_PER_CALL is {per_call}, not "
-                    f"{ATTEST_CHUNKS_PER_CALL}; this tool cannot size the attest calls for it"
-                )
             else:
-                skip_attest = client.is_base64_attested(manifest.file_id) is True
+                skip_attest = attested
 
     plan = calls_module.build_calls(
         manifest, stored, register=args.register, skip_register=skip_register,
         present_chunk_hashes=present, attest=not args.no_attest, skip_attest=skip_attest,
-        schedule=schedule, block_gas=args.block_gas,
+        schedule=schedule, block_gas=args.block_gas, part_size=args.part_size,
+        manifest_mode=args.manifest_mode, attest_chunks=args.attest_chunks,
     )
     notes: list[str] = []
     if rpc_limits:
@@ -248,7 +298,7 @@ def cmd_calls(args: argparse.Namespace) -> int:
         plan, notes = calls_module.with_rpc_limits(plan, lambda data: rpc.estimate_gas(store, data))
     document = calls_module.calls_document(
         plan, manifest.file_id, store, skipped_register=skip_register,
-        skipped_chunks=len(present), skipped_attest=skip_attest, schedule=schedule,
+        skipped_chunks=file_chunks_present, skipped_attest=skip_attest, schedule=schedule,
         block_gas=args.block_gas, gwei=args.gwei, notes=notes,
     )
     out_dir = Path(args.out_dir) if args.out_dir else manifest_path.with_suffix(".calls")
@@ -279,7 +329,7 @@ def cmd_calls(args: argparse.Namespace) -> int:
     if skip_register or present or skip_attest:
         _eprint(
             f"skipped: manifest {'already registered' if skip_register else 'not yet registered'}"
-            f", {len(present)} chunk(s) already stored"
+            f", {file_chunks_present} chunk(s) already stored"
             + (", already attested" if skip_attest else "")
         )
     if largest is not None and schedule.cap_counts_state:
@@ -299,7 +349,7 @@ def cmd_calls(args: argparse.Namespace) -> int:
             f"gas limits from the node's eth_estimateGas plus 10% for {from_node} of {len(plan)} "
             "transaction(s); the rest from the offline model"
         )
-    if any(c.name == "writeChunk" for c in plan):
+    if any(c.name == "writeChunk" for c in plan) and args.part_size is None:
         per_batch = gas.chunks_per_transaction(schedule=schedule, block_gas=args.block_gas)
         _eprint(
             f"batching: at most {per_batch} full chunk(s) per transaction under {schedule.name}, "
@@ -453,6 +503,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--already-encoded", action="store_true",
         help="FILE is already the encoded stream (for example fetched from Arweave)",
     )
+    p.add_argument(
+        "--part-size", type=_part_size, metavar="BYTES", nargs="?", const=DEFAULT_PART_SIZE,
+        help="also quote writing each chunk as parts of BYTES (8,192 to 24,575; 8,192, three "
+        "parts a chunk, when no value is given) joined by linkChunk",
+    )
     p.add_argument("--force", action="store_true", help="overwrite existing output files")
     _add_gwei(p)
     p.set_defaults(func=cmd_plan)
@@ -463,7 +518,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out-dir", help="where to write calldata files (default: <manifest>.calls)")
     p.add_argument(
         "--register", choices=("first", "last"), default="first",
-        help="send registerManifest before (default) or after the chunks",
+        help="send the registration before (default) or after the chunks",
+    )
+    p.add_argument(
+        "--manifest", dest="manifest_mode", choices=calls_module.MANIFEST_MODES, default="auto",
+        help="register in one call (one), from list chunks in pieces (list), or by size (auto, "
+        "the default: one call up to 16 chunks)",
+    )
+    p.add_argument(
+        "--part-size", type=_part_size, metavar="BYTES", nargs="?", const=DEFAULT_PART_SIZE,
+        help="write each chunk longer than BYTES as parts of BYTES (8,192 to 24,575; 8,192, "
+        "three parts a chunk, when no value is given) joined by linkChunk",
+    )
+    p.add_argument(
+        "--attest-chunks", type=_attest_chunks, default=ATTEST_CHUNKS_PER_CALL, metavar="N",
+        help=f"chunks each attestBase64 call checks (default {ATTEST_CHUNKS_PER_CALL})",
     )
     p.add_argument("--stored", help="the stored stream, if not the file the manifest names")
     p.add_argument(

@@ -459,7 +459,7 @@ during the 48 hours.
 (`test_ReleasedContentIsReservedForTheNamedArtist`,
 `test_ReleaseIsGovernedNamesAnArtistAndHappensOnce`,
 `test_TheRightfulVrfItemReadsTheContentsSeed`, `test_AGuardianCancelsAPendingRelease`);
-`test/curation/PackageRegistry.t.sol` (`test_releaseContent_reservesTheContentForTheNamedArtist`).
+`test/curation/PackageRegistry.t.sol` (then its release test; since ADR 0007 the release is Stream's, `test/stream/Stream.t.sol` `test_releaseContent_afterBurnLetsTheRealArtistMint`).
 
 **Fix review: approve with nits.** The copier's release now reverts with
 `AccessManagedUnauthorized`, and a sibling item reverts with `ContentReserved`. The reviewer found

@@ -10,9 +10,8 @@ import { PackageRegistry } from "src/curation/PackageRegistry.sol";
 import { AssetAllowlist } from "src/economics/AssetAllowlist.sol";
 import { ClaimRouter } from "src/economics/ClaimRouter.sol";
 import { EconomicsResolver } from "src/economics/EconomicsResolver.sol";
-import { ReleaseVerifier } from "src/economics/ReleaseVerifier.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
-import { SplitFactory } from "src/economics/SplitFactory.sol";
+import { SplitLedger } from "src/economics/SplitLedger.sol";
 import { Editions } from "src/editions/Editions.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
@@ -27,6 +26,7 @@ import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import { UniformEditionAuction } from "src/sales/UniformEditionAuction.sol";
 import { IEnglishAuctionFull } from "test/helpers/IEnglishAuctionFull.sol";
 import { Stream } from "src/stream/Stream.sol";
+import { WorkDelivery } from "src/stream/WorkDelivery.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { MockVrfCoordinator } from "../mocks/entropy/EntropyMocks.sol";
@@ -58,6 +58,8 @@ abstract contract WorksDeployment is Test {
     uint32 internal constant AUCTION_DURATION = 24 hours;
     uint32 internal constant EXTENSION_WINDOW = 15 minutes;
     uint32 internal constant INCREMENT_SHARE = 5_000;
+    uint32 internal constant REFUSAL_DELAY = 7 days;
+    uint32 internal constant REFUSAL_GAS = 4_000_000;
 
     // ------------------------------------------------------------------ external systems
     DelegationManagementMock internal delegation;
@@ -74,8 +76,9 @@ abstract contract WorksDeployment is Test {
     DependencyRegistry internal dependencies;
     ConsolidationAdapter internal consolidation;
     ArtistRegistry internal artists;
-    ReleaseVerifier internal releaseVerifier;
-    SplitFactory internal splitFactory;
+    /// @dev The split ledger, which is also the release verifier (one contract, two names).
+    SplitLedger internal releaseVerifier;
+    SplitLedger internal splitFactory;
     ClaimRouter internal claimRouter;
     AssetAllowlist internal allowlist;
     EconomicsResolver internal economics;
@@ -87,6 +90,7 @@ abstract contract WorksDeployment is Test {
     VrfEntropyModule internal entropy;
     Stream internal stream;
     WorkRecords internal records;
+    WorkDelivery internal delivery;
     Editions internal editions;
     IEnglishAuctionFull internal auction;
     UniformEditionAuction internal editionAuction;
@@ -94,6 +98,7 @@ abstract contract WorksDeployment is Test {
     // ------------------------------------------------------------------ genesis holders
     address internal hotAdmin = makeAddr("hotAdminSafe");
     address internal coldAdmin = makeAddr("coldAdminSafe");
+    address internal thirdAdmin = makeAddr("thirdAdminSafe");
     address internal guardian1 = makeAddr("guardianSafe1");
     address internal guardian2 = makeAddr("guardianSafe2");
     address internal guardian3 = makeAddr("guardianSafe3");
@@ -104,9 +109,16 @@ abstract contract WorksDeployment is Test {
     address internal storageOperator = makeAddr("storageOperator");
     address internal platform = makeAddr("platform");
     address internal curator = makeAddr("curator");
-    address internal networkFee = makeAddr("networkFeeSafe");
-    /// @dev The 6529 Network Museum (D140): where an unbid canonical 6529 Stream work goes.
-    address internal museum = makeAddr("networkMuseumSafe");
+    /// @dev The network fee Safe and the 6529 Network Museum's Safe (D140): the first
+    ///      destinations of the two governed vaults the deployment creates (ADR 0007).
+    address internal networkFeeSafe = makeAddr("networkFeeSafe");
+    address internal museumSafe = makeAddr("networkMuseumSafe");
+    /// @dev The network fee recipient the economics resolver names: the fee recipient's
+    ///      governed vault, set at deployment.
+    address internal networkFee;
+    /// @dev The museum the economics resolver names, where an unbid canonical 6529 Stream work
+    ///      goes: the museum's governed vault, set at deployment.
+    address internal museum;
     address internal marketOwner = makeAddr("marketOwner");
 
     bytes32 internal cc0TextFileId;
@@ -141,15 +153,16 @@ abstract contract WorksDeployment is Test {
     function _params() internal view virtual returns (DeployV1.Params memory p) {
         p.deployer = address(this);
         p.namespace = keccak256("6529-works/integration-lane-b");
-        p.feeRecipient = networkFee;
-        p.museum = museum;
+        p.feeRecipient = networkFeeSafe;
+        p.museum = museumSafe;
         p.marketOwner = marketOwner;
         p.delegation = address(delegation);
         p.cc0Text = CC0_TEXT;
         p.ethIncrementFloor = ETH_INCREMENT_FLOOR;
         p.permit2 = PERMIT2;
-        p.auction =
-            IEnglishAuction.AuctionConfig(AUCTION_DURATION, EXTENSION_WINDOW, INCREMENT_SHARE);
+        p.auction = IEnglishAuction.AuctionConfig(
+            AUCTION_DURATION, EXTENSION_WINDOW, INCREMENT_SHARE, REFUSAL_DELAY, REFUSAL_GAS
+        );
         p.editionAuction = DeployV1.editionAuctionDefaults();
         p.vrfCoordinator = address(coordinator);
         p.vrfCoordinatorCodeHash = address(coordinator).codehash;
@@ -165,8 +178,10 @@ abstract contract WorksDeployment is Test {
         dependencies = d.dependencyRegistry;
         consolidation = d.consolidationAdapter;
         artists = d.artistRegistry;
-        releaseVerifier = d.releaseVerifier;
+        releaseVerifier = d.splitFactory;
         splitFactory = d.splitFactory;
+        networkFee = address(d.feeRecipientVault);
+        museum = address(d.museumVault);
         claimRouter = d.claimRouter;
         allowlist = d.assetAllowlist;
         economics = d.economicsResolver;
@@ -178,6 +193,7 @@ abstract contract WorksDeployment is Test {
         entropy = d.entropyModule;
         stream = d.stream;
         records = d.workRecords;
+        delivery = WorkDelivery(records.delivery());
         editions = Editions(address(d.editions));
         auction = IEnglishAuctionFull(address(d.englishAuction));
         editionAuction = d.editionAuction;
@@ -186,9 +202,10 @@ abstract contract WorksDeployment is Test {
     /// @dev The committed genesis JSON with each placeholder holder (`0x...b0xx`) replaced by
     ///      this test's actor for it.
     function _withHolders(string memory json) internal view returns (string memory) {
-        address[10] memory actors = [
+        address[11] memory actors = [
             hotAdmin,
             coldAdmin,
+            thirdAdmin,
             guardian1,
             guardian2,
             guardian3,
@@ -198,9 +215,10 @@ abstract contract WorksDeployment is Test {
             platform,
             curator
         ];
-        uint16[10] memory placeholders =
-            [0xb001, 0xb002, 0xb011, 0xb012, 0xb013, 0xb021, 0xb022, 0xb031, 0xb051, 0xb061];
-        for (uint256 i; i < 10; ++i) {
+        uint16[11] memory placeholders = [
+            0xb001, 0xb002, 0xb004, 0xb011, 0xb012, 0xb013, 0xb021, 0xb022, 0xb031, 0xb051, 0xb061
+        ];
+        for (uint256 i; i < 11; ++i) {
             string memory from = vm.toLowercase(vm.toString(address(uint160(placeholders[i]))));
             json = vm.replace(json, from, vm.toString(actors[i]));
         }
@@ -228,7 +246,7 @@ abstract contract WorksDeployment is Test {
         bytes32 sha
     ) internal returns (bytes32 fileId) {
         bytes32[] memory hashes = _writeChunks(stored);
-        fileId = store.registerManifest(hashes, stored.length, encoding, mime, sha);
+        fileId = store.registerManifest(hashes, stored.length, uint8(encoding), mime, sha);
     }
 
     /// @dev Registers the manifest of `stored` without uploading any chunk (the off-chain default).
@@ -238,10 +256,12 @@ abstract contract WorksDeployment is Test {
         string memory mime,
         bytes32 sha
     ) internal returns (bytes32 fileId) {
-        fileId = store.registerManifest(_chunkHashes(stored), stored.length, encoding, mime, sha);
+        fileId = store.registerManifest(
+            _chunkHashes(stored), stored.length, uint8(encoding), mime, sha
+        );
     }
 
-    function _writeChunks(bytes memory stored) internal returns (bytes32[] memory hashes) {
+    function _writeChunks(bytes memory stored) internal virtual returns (bytes32[] memory hashes) {
         uint256 size = store.CHUNK_SIZE();
         hashes = new bytes32[]((stored.length + size - 1) / size);
         for (uint256 i; i < hashes.length; ++i) {

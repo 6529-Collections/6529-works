@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { CURRENCY_DEFAULT } from "src/interfaces/types/EconomicsTypes.sol";
 import { SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
@@ -24,9 +25,9 @@ contract VrfWorkFlowTest is IntegrationBase {
         artist = _actor("vrfArtist");
         Work[] memory works = new Work[](2);
         works[0] = _work(artist, collectionId);
-        works[0].item.seedPolicy = SeedPolicy.VRF;
+        works[0].item.seedPolicy = uint8(SeedPolicy.VRF);
         works[1] = _work(artist, collectionId);
-        works[1].item.seedPolicy = SeedPolicy.ARTIST;
+        works[1].item.seedPolicy = uint8(SeedPolicy.ARTIST);
         works[1].item.seed = keccak256("the artist's committed seed");
         root = _publish(works);
         _keep(root, works);
@@ -52,14 +53,16 @@ contract VrfWorkFlowTest is IntegrationBase {
         assertEq(entropy.seedOf(itemHash), bytes32(word));
 
         (uint256 saleId, uint256 tokenId) = _start(root, works, 0);
-        assertEq(uint8(stream.work(tokenId).seedPolicy), uint8(SeedPolicy.VRF));
+        assertEq(
+            uint8(IStreamViews(address(stream)).work(tokenId).seedPolicy), uint8(SeedPolicy.VRF)
+        );
         string memory seedTrait =
             string.concat('{"trait_type":"Seed","value":"', Strings.toHexString(word, 32), '"}');
         assertTrue(
             _contains(stream.tokenURI(tokenId), seedTrait), "seed shown before the record opens"
         );
         records.openRecord(tokenId, works[0].item, works[0].media);
-        (SeedPolicy policy, bytes32 seed) = records.seedOf(tokenId);
+        (uint8 policy, bytes32 seed) = records.seedOf(tokenId);
         assertEq(uint8(policy), uint8(SeedPolicy.VRF));
         assertEq(seed, bytes32(word));
         assertTrue(_contains(stream.tokenURI(tokenId), seedTrait), "and from the record");
@@ -142,7 +145,7 @@ contract VrfWorkFlowTest is IntegrationBase {
         Work[] memory revision = _package(revisionRoot);
         (, uint256 tokenId) = _start(revisionRoot, revision, 0);
         records.openRecord(tokenId, revision[0].item, revision[0].media);
-        (SeedPolicy policy, bytes32 seed) = records.seedOf(tokenId);
+        (uint8 policy, bytes32 seed) = records.seedOf(tokenId);
         assertEq(uint8(policy), uint8(SeedPolicy.VRF));
         assertEq(seed, bytes32(word), "the token carries the work's one draw");
     }

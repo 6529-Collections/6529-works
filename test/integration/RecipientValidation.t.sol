@@ -29,6 +29,7 @@ contract RecipientValidationTest is IntegrationBase {
     address internal bidder = makeAddr("recipientBidder");
     address internal stranger = makeAddr("recipientStranger");
     uint256 internal artistId;
+    ISplitWallet.Payee[] internal sellerPayees;
 
     function setUp() public override {
         super.setUp();
@@ -66,6 +67,9 @@ contract RecipientValidationTest is IntegrationBase {
         WorkTerms memory t = economics.newWorkTerms(PRODUCT_STREAM, w.item.payees);
         seller = splitFactory.createWallet(w.item.payees, bytes32(0));
         assertEq(seller, t.seller);
+        for (uint256 i; i < w.item.payees.length; ++i) {
+            sellerPayees.push(w.item.payees[i]);
+        }
     }
 
     // ------------------------------------------------------------------ MONEY-4
@@ -107,7 +111,7 @@ contract RecipientValidationTest is IntegrationBase {
         this.stagePayout(address(claimRouter));
 
         IClaimRouter.Claim[] memory claims = new IClaimRouter.Claim[](1);
-        claims[0] = IClaimRouter.Claim(seller, address(usd), 0);
+        claims[0] = IClaimRouter.Claim(sellerPayees, bytes32(0), address(usd), 0);
         bytes memory reason = abi.encodeWithSelector(
             ISplitWallet.NotPayoutAddress.selector, address(claimRouter), artist
         );
@@ -119,9 +123,9 @@ contract RecipientValidationTest is IntegrationBase {
         );
         claimRouter.claim(claims, false);
         assertEq(usd.balanceOf(address(claimRouter)), 0);
-        assertEq(ISplitWallet(seller).releasable(address(usd), 0), 750e18);
+        assertEq(splitFactory.releasable(sellerPayees, bytes32(0), address(usd), 0), 750e18);
         vm.prank(artist);
-        assertEq(ISplitWallet(seller).release(address(usd), 0), 750e18);
+        assertEq(splitFactory.release(sellerPayees, bytes32(0), address(usd), 0), 750e18);
         assertEq(usd.balanceOf(artist), 750e18);
     }
 
@@ -136,7 +140,7 @@ contract RecipientValidationTest is IntegrationBase {
             vm.recordLogs();
             _stagePayout(allowed[i]);
             assertTrue(_logged(IArtistRegistry.ChangeStaged.selector), "ChangeStaged");
-            vm.warp(block.timestamp + artists.CHANGE_DELAY());
+            vm.warp(block.timestamp + artists.timer(IArtistRegistry.Timer.CHANGE_DELAY));
             artists.executeChange(artistId);
             assertEq(artists.payoutAddress(artistId), allowed[i]);
         }
@@ -150,7 +154,7 @@ contract RecipientValidationTest is IntegrationBase {
         address predicted = _otherWallet(false);
         _stagePayout(predicted);
         _otherWallet(true);
-        vm.warp(block.timestamp + artists.CHANGE_DELAY());
+        vm.warp(block.timestamp + artists.timer(IArtistRegistry.Timer.CHANGE_DELAY));
         vm.expectEmit(address(artists));
         emit IArtistRegistry.ChangeCancelled(artistId, address(artists), false);
         artists.executeChange(artistId);

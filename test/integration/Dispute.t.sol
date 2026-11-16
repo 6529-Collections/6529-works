@@ -19,6 +19,8 @@ import { Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
+import { IStream } from "src/interfaces/IStream.sol";
+import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
 /// @notice Flow 5 (integration brief, lane B): a dispute on the real contracts. A copier's
 ///         package reaches auction; a guardian pauses it; PLATFORM appends the
@@ -119,7 +121,11 @@ contract DisputeFlowTest is IntegrationBase {
             abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, tokenId)
         );
         stream.ownerOf(tokenId);
-        assertEq(stream.totalSupply(), stream.totalMinted() - 1, "a gap: the ID is never reused");
+        assertEq(
+            IStreamViews(address(stream)).totalSupply(),
+            IStream(address(stream)).totalMinted() - 1,
+            "a gap: the ID is never reused"
+        );
         uint256 before = bidder.balance;
         vm.prank(bidder);
         auction.claim(CURRENCY_ETH, bidder);
@@ -317,10 +323,8 @@ contract DisputeFlowTest is IntegrationBase {
             abi.encodeCall(stream.releaseContent, (tokenId, contentHash, rightfulId));
         _schedule(hotAdmin, address(stream), named);
         vm.warp(block.timestamp + 48 hours);
-        vm.expectEmit(true, true, true, true, address(registry));
-        emit IPackageRegistry.ContentReleased(
-            contentHash, WorksHashing.itemHash(_package(copierRoot)[0].item), rightfulId
-        );
+        vm.expectEmit(true, true, true, true, address(stream));
+        emit IStream.ContentReleased(tokenId, contentHash, rightfulId);
         vm.prank(hotAdmin);
         manager.execute(address(stream), named);
 
@@ -331,9 +335,7 @@ contract DisputeFlowTest is IntegrationBase {
         vm.warp(block.timestamp + 48 hours);
         vm.prank(hotAdmin);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IPackageRegistry.ClaimNotAllowed.selector, PRODUCT_STREAM, contentHash
-            )
+            abi.encodeWithSelector(IStream.ClaimNotAllowed.selector, PRODUCT_STREAM, contentHash)
         );
         manager.execute(address(stream), again);
         assertEq(registry.releasedTo(contentHash), rightfulId, "the first release stands");
@@ -345,12 +347,12 @@ contract DisputeFlowTest is IntegrationBase {
     ///      release it joins the content's delivered draw, with no new request, and starts.
     function test_TheRightfulVrfItemReadsTheContentsSeed() public {
         Work memory original = _work(rightful, collectionId);
-        original.item.seedPolicy = SeedPolicy.VRF;
+        original.item.seedPolicy = uint8(SeedPolicy.VRF);
         Work memory copy = _work(copier, collectionId);
         copy.media = original.media;
         copy.item.contentHash = original.item.contentHash;
         copy.item.mediaHash = original.item.mediaHash;
-        copy.item.seedPolicy = SeedPolicy.VRF;
+        copy.item.seedPolicy = uint8(SeedPolicy.VRF);
         bytes32 copyRoot = _publish(_one(copy));
         bytes32 originalRoot = _publish(_one(original));
         bytes32[] memory none = new bytes32[](0);
@@ -382,7 +384,10 @@ contract DisputeFlowTest is IntegrationBase {
         assertEq(coordinator.nextId(), nextId, "no second draw");
         assertEq(entropy.seedOf(originalItem), bytes32(uint256(77)));
         (, uint256 rightfulToken) = _start(originalRoot, _one(original), 0);
-        assertEq(uint8(stream.work(rightfulToken).seedPolicy), uint8(SeedPolicy.VRF));
+        assertEq(
+            uint8(IStreamViews(address(stream)).work(rightfulToken).seedPolicy),
+            uint8(SeedPolicy.VRF)
+        );
     }
 
     /// @dev A guardian vetoes a mistaken release during its delay.
@@ -433,7 +438,7 @@ contract DisputeFlowTest is IntegrationBase {
     /// @dev LIFECYCLE-4: an outcome can name only a token that exists (not one not yet minted,
     ///      nor a burned one), and an edition's outcome goes on its master.
     function test_ADisputeOutcomeNamesAnExistingToken() public {
-        uint256 nextId = stream.totalMinted() + 1;
+        uint256 nextId = IStream(address(stream)).totalMinted() + 1;
         vm.prank(platform);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -466,7 +471,7 @@ contract DisputeFlowTest is IntegrationBase {
     ///      that work's edition, until an outcome about the token itself takes precedence.
     function test_APreMintOutcomeShowsOnTheWorkAndItsEdition() public {
         Work memory w = _work(rightful, collectionId);
-        w.item.kind = ItemKind.EDITION_MASTER;
+        w.item.kind = uint8(ItemKind.EDITION_MASTER);
         w.item.edition = EditionTerms(10, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
         bytes32 masterRoot = _publish(_one(w));
         bytes32 preMint = _platformStatement(
@@ -480,7 +485,7 @@ contract DisputeFlowTest is IntegrationBase {
         (bytes32 own,) = statements.disputeOutcomeOf(address(stream), tokenId);
         assertEq(own, bytes32(0), "no outcome about the token itself");
         assertTrue(_shows(stream.tokenURI(tokenId), preMint), "(a) on the work");
-        editions.createEdition(tokenId, w.item, masterRoot, _proofOf(_one(w), 0));
+        editions.createEdition(tokenId, w.item);
         assertTrue(_shows(editions.uri(tokenId), preMint), "(b) on its edition");
 
         // An outcome about the token is the work's current status from then on.

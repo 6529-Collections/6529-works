@@ -108,15 +108,25 @@ contract ArtistRegistryTest is IdentityFixture {
         assertEq(registry.payoutAddress(artistId), address(0), "payout frozen while pending");
     }
 
+    /// @dev An established wallet signs a change only for a dormant artist; the change waits
+    ///      the override delay and records no activity (review C, F2).
     function test_StageChange_ByEstablishedWallet() public {
+        (, uint64 last) = registry.artist(artistId);
+        _armRevert(abi.encodeWithSelector(IArtistRegistry.NotDormant.selector, artistId, last));
+        _stage(walletKey, _identity(wallet, wallet), walletKey);
+        vm.warp(block.timestamp + 365 days);
         _stage(walletKey, _identity(wallet, wallet), walletKey);
         PendingChange memory p = registry.pendingChange(artistId);
         assertEq(uint8(p.kind), uint8(ChangeKind.STANDARD));
         assertEq(p.next.authority, wallet);
         assertEq(p.previousAuthority, artist);
+        assertEq(p.executableAt, block.timestamp + 180 days);
+        (, uint64 after_) = registry.artist(artistId);
+        assertEq(after_, last, "no activity recorded");
     }
 
     function test_StageChange_RevertsForFreshlyConsolidatedWallet() public {
+        vm.warp(block.timestamp + 365 days);
         _consolidate(artist, wallet2);
         vm.warp(block.timestamp + 30 days - 1);
         _armRevert(_notAuthorized(wallet2));
@@ -155,8 +165,10 @@ contract ArtistRegistryTest is IdentityFixture {
     function test_StageChange_OtherEstablishedWalletsStillSignAfterARotation() public {
         _consolidate(newAuthority, wallet2);
         _rotateKeepingTheOldKeyConsolidated();
+        _expectNotAuthorized(wallet2);
         vm.prank(wallet2);
         registry.heartbeat(artistId);
+        vm.warp(block.timestamp + 365 days);
         _stage(wallet2Key, _identity(newAuthority, payout), 0);
         PendingChange memory p = registry.pendingChange(artistId);
         assertEq(uint8(p.kind), uint8(ChangeKind.STANDARD));
@@ -180,7 +192,14 @@ contract ArtistRegistryTest is IdentityFixture {
         assertTrue(registry.pendingChange(artistId).contestedAt != 0, "captured: it contests");
     }
 
+    /// @dev A stranger's signature is refused: for a live artist before the source is read
+    ///      (`NotDormant`: only a dormant artist's consolidated wallet may sign), and for a dormant
+    ///      one because the source does not name it.
     function test_StageChange_RevertsForStranger() public {
+        (, uint64 last) = registry.artist(artistId);
+        _armRevert(abi.encodeWithSelector(IArtistRegistry.NotDormant.selector, artistId, last));
+        _stage(thiefKey, _identity(artist, thief), 0);
+        vm.warp(block.timestamp + 365 days);
         _armRevert(_notAuthorized(thief));
         _stage(thiefKey, _identity(artist, thief), 0);
     }
@@ -296,7 +315,9 @@ contract ArtistRegistryTest is IdentityFixture {
     function test_Constructor_EmitsTheConsolidationSource() public {
         address next = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
         vm.expectEmit(next);
-        emit IArtistRegistry.ConsolidationSourceSet(address(0), address(adapter));
+        emit IArtistRegistry.ConsolidationSourceSet(
+            address(0), address(adapter), address(adapter).codehash
+        );
         new ArtistRegistry(address(manager), adapter, address(adapter).codehash);
     }
 
@@ -352,6 +373,7 @@ contract ArtistRegistryTest is IdentityFixture {
     function test_ExecuteChange_AppliesAfterSevenDays() public {
         ArtistIdentity memory next = _identity(artist, payout);
         _stage(artistKey, next, 0);
+        uint256 stagedAt = block.timestamp;
         vm.warp(block.timestamp + 7 days);
         (ArtistIdentity memory previous,) = registry.artist(artistId);
         vm.expectEmit(address(registry));
@@ -361,7 +383,9 @@ contract ArtistRegistryTest is IdentityFixture {
         assertEq(registry.payoutAddress(artistId), payout);
         (ArtistIdentity memory current, uint64 lastActivity) = registry.artist(artistId);
         assertEq(keccak256(abi.encode(current)), keccak256(abi.encode(next)));
-        assertEq(lastActivity, block.timestamp);
+        // The authority's signed staging was the activity; an execution that keeps the
+        // authority restarts no clock (review E, N-1).
+        assertEq(lastActivity, stagedAt);
         assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.NONE));
     }
 
@@ -491,6 +515,7 @@ contract ArtistRegistryTest is IdentityFixture {
     // ----------------------------------------------------------------- cancellation
 
     function test_Cancel_ByTheOldKey() public {
+        vm.warp(block.timestamp + 365 days);
         _stage(walletKey, _identity(wallet, wallet), walletKey);
         vm.expectEmit(address(registry));
         emit IArtistRegistry.ChangeCancelled(artistId, artist, false);
@@ -603,6 +628,10 @@ contract ArtistRegistryTest is IdentityFixture {
             current, IConsolidationSource(address(delegation)), address(delegation).codehash
         );
         vm.stopPrank();
+        (, uint64 last) = registry.artist(artistId);
+        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.NotDormant.selector, artistId, last));
+        registry.stageChange(artistId, _identity(guardian, guardian), guardian, 1, "", "");
+        vm.warp(block.timestamp + 365 days);
         _expectNotAuthorized(guardian);
         registry.stageChange(artistId, _identity(guardian, guardian), guardian, 1, "", "");
         assertEq(registry.payoutAddress(artistId), artist);
@@ -615,6 +644,7 @@ contract ArtistRegistryTest is IdentityFixture {
         ArtistIdentity memory next = _identity(newAuthority, payout);
         PendingChange memory expected = PendingChange({
             kind: ChangeKind.CONTESTED,
+            contestTimeout: 365 days,
             next: next,
             previousAuthority: artist,
             stagedAt: uint64(block.timestamp),
@@ -664,7 +694,7 @@ contract ArtistRegistryTest is IdentityFixture {
 
     function test_Override_LostKeyBlockedByRecentHeartbeat() public {
         vm.warp(block.timestamp + 300 days);
-        vm.prank(wallet);
+        vm.prank(artist);
         registry.heartbeat(artistId);
         vm.warp(block.timestamp + 100 days);
         _armRevert(
@@ -729,7 +759,7 @@ contract ArtistRegistryTest is IdentityFixture {
         manager.grantRole(PARAMETER_SETTER, delayed, 48 hours);
         bytes memory call = abi.encodeCall(
             ArtistRegistry.stageOverride,
-            (artistId, ChangeKind.CONTESTED, _identity(artist, payout), keccak256("e"), 0, "")
+            (artistId, ChangeKind.CONTESTED, _identity(artist, artist), keccak256("e"), 0, "")
         );
         vm.prank(delayed);
         manager.schedule(address(registry), call, 0);
@@ -798,6 +828,9 @@ contract ArtistRegistryTest is IdentityFixture {
         bytes32 digest =
             registry.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, deadline);
         bytes memory acceptance = _sign(newKey, digest);
+        // Review E, N-5: the consumed digest is in the registry's own logs.
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.OverrideAcceptanceConsumed(artistId, digest);
         vm.prank(governor);
         registry.stageOverride(artistId, ChangeKind.CONTESTED, next, evidence, deadline, acceptance);
         vm.prank(guardian);
@@ -887,17 +920,22 @@ contract ArtistRegistryTest is IdentityFixture {
 
     // ----------------------------------------------------------------- heartbeat
 
-    function test_Heartbeat_ByAuthorityAndWallet() public {
-        address[2] memory callers = [artist, wallet];
-        for (uint256 i; i < callers.length; ++i) {
-            vm.warp(block.timestamp + 1 days);
-            vm.expectEmit(address(registry));
-            emit IArtistRegistry.ActivityRecorded(artistId, uint64(block.timestamp));
-            vm.prank(callers[i]);
-            registry.heartbeat(artistId);
-            (, uint64 last) = registry.artist(artistId);
-            assertEq(last, block.timestamp);
-        }
+    /// @dev The authority's heartbeat records activity; an established wallet's is refused, so
+    ///      a replaceable consolidation source can never keep an artist live (review C, F2).
+    ///      Fails without the change: the wallet's heartbeat counts.
+    function test_Heartbeat_ByTheAuthorityOnly() public {
+        vm.warp(block.timestamp + 1 days);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.ActivityRecorded(artistId, uint64(block.timestamp));
+        vm.prank(artist);
+        registry.heartbeat(artistId);
+        (, uint64 last) = registry.artist(artistId);
+        assertEq(last, block.timestamp);
+        assertTrue(_source().isEstablished(artist, wallet));
+        vm.warp(block.timestamp + 1 days);
+        _expectNotAuthorized(wallet);
+        vm.prank(wallet);
+        registry.heartbeat(artistId);
     }
 
     function test_Heartbeat_RevertsForStrangerPackageRegistryAndFreshWallet() public {
@@ -948,30 +986,40 @@ contract ArtistRegistryTest is IdentityFixture {
         assertEq(now_, last);
     }
 
-    /// Regression: M2 (dormancy accounting) in the review of #16
+    /// Regression: M2 (dormancy accounting) in the review of #16, as narrowed by review E, N-1
+    /// @dev The authority's cancel and the execution of a change that installs a new authority
+    ///      count; a captured wallet's contest and an execution that keeps the authority do not.
     function test_Activity_CancelsAndExecutionsCount() public {
+        (, uint64 start) = registry.artist(artistId);
         vm.warp(block.timestamp + 1 days);
         _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, newAuthority), newKey);
         vm.warp(block.timestamp + 1 days);
         vm.prank(wallet);
         registry.cancelChange(artistId);
-        _assertActivityNow();
+        (, uint64 last) = registry.artist(artistId);
+        assertEq(last, start, "a captured wallet's contest is no activity");
         vm.prank(guardian);
         registry.vetoChange(artistId);
 
         vm.warp(block.timestamp + 1 days);
         vm.prank(governor);
         registry.stageOverride(
-            artistId, ChangeKind.CONTESTED, _identity(artist, payout), keccak256("e"), 0, ""
+            artistId, ChangeKind.CONTESTED, _identity(artist, artist), keccak256("e"), 0, ""
         );
         vm.warp(block.timestamp + 180 days);
         registry.executeChange(artistId);
-        _assertActivityNow();
+        (, last) = registry.artist(artistId);
+        assertEq(last, start, "an execution that keeps the authority is no activity");
 
         _stage(artistKey, _identity(artist, artist), 0);
         vm.warp(block.timestamp + 1 days);
         vm.prank(artist);
         registry.cancelChange(artistId);
+        _assertActivityNow();
+
+        _stage(artistKey, _identity(newAuthority, artist), newKey);
+        vm.warp(block.timestamp + 7 days);
+        registry.executeChange(artistId);
         _assertActivityNow();
     }
 
@@ -981,7 +1029,9 @@ contract ArtistRegistryTest is IdentityFixture {
         IConsolidationSource next =
             new ConsolidationAdapter(IDelegationManagement(address(delegation)));
         vm.expectEmit(address(registry));
-        emit IArtistRegistry.ConsolidationSourceSet(address(adapter), address(next));
+        emit IArtistRegistry.ConsolidationSourceSet(
+            address(adapter), address(next), address(next).codehash
+        );
         vm.prank(successorSetter);
         registry.setConsolidationSource(adapter, next, address(next).codehash);
         assertEq(address(registry.consolidationSource()), address(next));
@@ -991,9 +1041,11 @@ contract ArtistRegistryTest is IdentityFixture {
     /// Regression: DEPS-6 (docs/security/internal-review-2026-10.md)
     /// @dev DEPS-6: the consolidation source's install-time code-hash pin holds at every use. A
     ///      source whose code no longer matches the pin (simulated with `vm.etch`) is never
-    ///      trusted: staging, heartbeats and refreshes revert with `DependencyCodeChanged`, while an
-    ///      execution and a registration go ahead and skip their refresh without reading it
-    ///      (review L-1), so nobody's standing changes. The original code works again.
+    ///      trusted: `refreshStanding` (and a consolidated wallet's signer check,
+    ///      `ConsolidationTrust.t.sol`) reverts with `DependencyCodeChanged`, while an execution,
+    ///      a registration, the authority's heartbeat and staging go ahead and skip their refresh
+    ///      without reading it (review L-1), so nobody's standing changes. The original code
+    ///      works again.
     function test_ConsolidationSource_CodeHashRecheckedAtUse() public {
         _stage(artistKey, _identity(newAuthority, newAuthority), newKey);
         vm.warp(block.timestamp + 7 days);
@@ -1006,9 +1058,6 @@ contract ArtistRegistryTest is IdentityFixture {
 
         vm.expectRevert(changed);
         registry.refreshStanding(artistId);
-        vm.expectRevert(changed);
-        vm.prank(wallet);
-        registry.heartbeat(artistId);
 
         vm.expectEmit(address(registry));
         emit IArtistRegistry.StandingRefreshSkipped(artistId);
@@ -1018,13 +1067,18 @@ contract ArtistRegistryTest is IdentityFixture {
         vm.expectEmit(address(registry));
         emit IArtistRegistry.StandingRefreshSkipped(uint160(stranger));
         _register(stranger);
-        _armRevert(changed);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingRefreshSkipped(artistId);
+        vm.prank(newAuthority);
+        registry.heartbeat(artistId);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingRefreshSkipped(artistId);
         _stage(newKey, _identity(newAuthority, payout), 0);
+        assertEq(registry.standingOf(artistId)[0].missingSince, 0, "still nothing read");
 
         vm.etch(address(adapter), original);
         registry.refreshStanding(artistId);
         assertEq(registry.standingOf(artistId)[0].missingSince, block.timestamp, "caught up");
-        _stage(newKey, _identity(newAuthority, payout), 0);
     }
 
     function test_SetConsolidationSource_RevertsForStaleExpected() public {
@@ -1074,21 +1128,31 @@ contract ArtistRegistryTest is IdentityFixture {
         registry.setConsolidationSource(adapter, adapter, address(adapter).codehash);
     }
 
-    function test_Stage_RevertsWhenTheSourceReturnsTooManyWallets() public {
+    /// @dev An oversized answer is refused: `refreshStanding` reverts, and a staging (a best-effort
+    ///      refresh) skips it and goes ahead without reading it.
+    function test_Stage_SkipsASourceThatReturnsTooManyWallets() public {
         OversizedConsolidationSource bad = new OversizedConsolidationSource();
         vm.prank(successorSetter);
         registry.setConsolidationSource(
             adapter, IConsolidationSource(address(bad)), address(bad).codehash
         );
-        _armRevert(abi.encodeWithSelector(IArtistRegistry.InvalidSource.selector, address(bad)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtistRegistry.InvalidSource.selector, address(bad))
+        );
+        registry.refreshStanding(artistId);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingRefreshSkipped(artistId);
         _stage(artistKey, _identity(artist, payout), 0);
+        assertEq(registry.standingOf(artistId).length, 1, "nothing recorded from it");
+        assertEq(_cancellers().length, 1, "the snapshot is captured as it was");
     }
 
     /// Regression: IDENTITY-4 (docs/security/internal-review-2026-10.md)
-    /// @dev IDENTITY-4: a repriced read within the stipend's headroom changes nothing, and a read
-    ///      that exhausts it makes staging, heartbeats and refreshes revert instead of reading
-    ///      "not consolidated", while a registration goes ahead and skips its refresh (review
-    ///      L3). The recorded wallet is never marked missing, and its standing is intact once
+    /// @dev IDENTITY-4, as amended by the permanence pass: a repriced read within the stipend's
+    ///      headroom changes nothing, and a read that exhausts it makes `refreshStanding` revert
+    ///      instead of reading "not consolidated", while a
+    ///      registration, a staging and the authority's heartbeat go ahead and skip their
+    ///      refresh. The recorded wallet is never marked missing, and its standing is intact once
     ///      reads work again.
     function test_SourceReadFailure_FailsClosed() public {
         RepricedDelegationMock repriced = new RepricedDelegationMock(delegation);
@@ -1102,21 +1166,24 @@ contract ArtistRegistryTest is IdentityFixture {
         vm.cool(address(delegation));
         registry.refreshStanding(artistId);
         assertEq(registry.standingOf(artistId)[0].missingSince, 0, "not marked missing");
-        vm.prank(wallet);
+        vm.prank(artist);
         registry.heartbeat(artistId);
 
-        // Reads that exhaust their gas: every call that reads the source reverts.
+        // Reads that exhaust their gas: the refresh that must succeed reverts, the others skip.
         repriced.setExtraGas(type(uint256).max);
         bytes memory err = abi.encodeWithSelector(
             IConsolidationSource.DelegationReadFailed.selector, address(repriced)
         );
         vm.expectRevert(err);
         registry.refreshStanding(artistId);
-        vm.expectRevert(err);
-        vm.prank(wallet);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingRefreshSkipped(artistId);
+        vm.prank(artist);
         registry.heartbeat(artistId);
-        _armRevert(err);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingRefreshSkipped(artistId);
         _stage(artistKey, _identity(artist, payout), 0);
+        assertEq(_cancellers().length, 1, "the recorded wallet is captured");
         uint256 strangerId = uint160(stranger);
         vm.expectEmit(address(registry));
         emit IArtistRegistry.StandingRefreshSkipped(strangerId);
@@ -1129,8 +1196,6 @@ contract ArtistRegistryTest is IdentityFixture {
         assertEq(s.length, 1);
         assertEq(s[0].wallet, wallet);
         assertEq(s[0].missingSince, 0, "standing intact");
-        vm.prank(wallet);
-        registry.heartbeat(artistId);
     }
 
     /// @dev Review L3: an execution during a source outage applies the change and skips its
@@ -1159,10 +1224,9 @@ contract ArtistRegistryTest is IdentityFixture {
         assertEq(registry.standingOf(artistId)[0].missingSince, block.timestamp, "caught up");
     }
 
-    /// @dev Review L3: only the source's `DelegationReadFailed` is skipped, in the scan and in a
-    ///      recorded wallet's direct check; any other failure still reverts a registration or an
-    ///      execution, and the fail-closed calls revert on both.
-    function test_SourceReadFailure_OnlyTheOutageErrorIsSkipped() public {
+    /// @dev Any source failure, in the scan or in a recorded wallet's direct check, is skipped by
+    ///      a best-effort refresh (registration, execution), and `refreshStanding` rethrows it.
+    function test_SourceReadFailure_AnyFailureIsSkipped() public {
         FailingConsolidationSource failing = new FailingConsolidationSource();
         _stage(artistKey, _identity(newAuthority, newAuthority), newKey);
         vm.warp(block.timestamp + 7 days);
@@ -1170,40 +1234,29 @@ contract ArtistRegistryTest is IdentityFixture {
         registry.setConsolidationSource(
             adapter, IConsolidationSource(address(failing)), address(failing).codehash
         );
-        bytes memory outage = abi.encodeWithSelector(
-            IConsolidationSource.DelegationReadFailed.selector, address(failing)
-        );
 
+        // Another error, in the scan: registration goes ahead; a refresh rethrows it.
         failing.set(true, false, true);
-        vm.expectRevert(FailingConsolidationSource.Broken.selector);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingRefreshSkipped(uint160(stranger));
         _register(stranger);
+        vm.expectRevert(FailingConsolidationSource.Broken.selector);
+        registry.refreshStanding(uint160(stranger));
+
+        // Another error, in the recorded wallet's direct check: execution goes ahead.
         failing.set(false, true, true);
         vm.expectRevert(FailingConsolidationSource.Broken.selector);
-        registry.executeChange(artistId);
-
-        // The outage, in the recorded wallet's direct check: execution goes ahead.
-        failing.set(false, true, false);
-        vm.expectRevert(outage);
         registry.refreshStanding(artistId);
         vm.expectEmit(address(registry));
         emit IArtistRegistry.StandingRefreshSkipped(artistId);
         registry.executeChange(artistId);
         assertEq(registry.authorityOf(artistId), newAuthority);
         assertEq(registry.standingOf(artistId)[0].missingSince, 0);
-
-        // The outage, in the scan: registration goes ahead; a refresh still reverts.
-        failing.set(true, false, false);
-        vm.expectEmit(address(registry));
-        emit IArtistRegistry.StandingRefreshSkipped(uint160(stranger));
-        _register(stranger);
-        vm.expectRevert(outage);
-        registry.refreshStanding(uint160(stranger));
     }
 
-    /// @dev A best-effort refresh skips only the exact 36-byte `DelegationReadFailed`: a reason
-    ///      that starts with its selector but is longer or shorter, or a 36-byte reason whose
-    ///      selector sorts either side of it, reverts a registration (found by mutation testing).
-    function test_SourceReadFailure_OnlyTheExactOutageFormIsSkipped() public {
+    /// @dev A best-effort refresh skips whatever the source reverts with, and `refreshStanding`
+    ///      rethrows exactly that reason.
+    function test_SourceReadFailure_EveryRevertReasonIsSkipped() public {
         FailingConsolidationSource failing = new FailingConsolidationSource();
         vm.prank(successorSetter);
         registry.setConsolidationSource(
@@ -1211,22 +1264,25 @@ contract ArtistRegistryTest is IdentityFixture {
         );
         failing.set(true, false, false);
         bytes4 outage = IConsolidationSource.DelegationReadFailed.selector;
-        bytes[4] memory reasons = [
+        bytes[5] memory reasons = [
+            abi.encodeWithSelector(outage, address(failing)),
             abi.encodeWithSelector(outage, address(failing), uint256(1)),
             abi.encodePacked(outage, bytes31(0)),
             abi.encodeWithSelector(bytes4(uint32(outage) - 1), address(failing)),
-            abi.encodeWithSelector(bytes4(uint32(outage) + 1), address(failing))
+            bytes("")
         ];
         for (uint256 i; i < reasons.length; ++i) {
+            address account = address(uint160(0xA000 + i));
             failing.setReason(reasons[i]);
-            vm.expectRevert(reasons[i]);
-            _register(stranger);
+            if (reasons[i].length == 0) failing.set(true, false, true);
+            vm.expectEmit(address(registry));
+            emit IArtistRegistry.StandingRefreshSkipped(uint160(account));
+            _register(account);
+            if (reasons[i].length != 0) {
+                vm.expectRevert(reasons[i]);
+                registry.refreshStanding(uint160(account));
+            }
         }
-
-        failing.setReason(abi.encodeWithSelector(outage, address(failing)));
-        vm.expectEmit(address(registry));
-        emit IArtistRegistry.StandingRefreshSkipped(uint160(stranger));
-        _register(stranger);
     }
 
     function test_Bindings_AreOneShot() public {
@@ -1298,49 +1354,7 @@ contract ArtistRegistryTest is IdentityFixture {
         registry.bindStream(stream);
     }
 
-    // ----------------------------------------------------------------- federated listing
-
-    function test_ListFederatedContract_OnlyByTheFederationRegistry() public {
-        address federation = _federationStub();
-        address token = makeAddr("federatedToken");
-        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.UnboundCaller.selector, federation));
-        vm.prank(federation);
-        registry.listFederatedContract(artistId, token);
-
-        vm.prank(admin);
-        registry.bindFederationRegistry(federation);
-        vm.expectEmit(address(registry));
-        emit IArtistRegistry.FederatedContractListed(artistId, token);
-        vm.prank(federation);
-        registry.listFederatedContract(artistId, token);
-        assertEq(registry.federatedContracts(artistId).length, 1);
-        assertEq(registry.federatedContracts(artistId)[0], token);
-
-        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.UnboundCaller.selector, stranger));
-        vm.prank(stranger);
-        registry.listFederatedContract(artistId, token);
-        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.UnknownArtist.selector, 5));
-        vm.prank(federation);
-        registry.listFederatedContract(5, token);
-    }
-
-    /// Regression: the bounds in the review of #16
-    function test_FederatedList_BoundedToSixtyFour() public {
-        address federation = address(new FederationRegistryStub());
-        vm.prank(admin);
-        registry.bindFederationRegistry(federation);
-        // By number, not through the constant it bounds.
-        assertEq(registry.MAX_FEDERATED(), 64);
-        vm.startPrank(federation);
-        for (uint256 i; i < 64; ++i) {
-            registry.listFederatedContract(artistId, address(uint160(0xF000 + i)));
-        }
-        vm.expectRevert(
-            abi.encodeWithSelector(IArtistRegistry.FederatedListFull.selector, artistId)
-        );
-        registry.listFederatedContract(artistId, stranger);
-        vm.stopPrank();
-    }
+    // Federation directory tests: FederationDirectory.t.sol.
 
     // ----------------------------------------------------------------- artist role resolution
 
@@ -1406,6 +1420,8 @@ contract ArtistRegistryTest is IdentityFixture {
         assertEq(registry.activeAuthorityOf(artistId), artist, "a STANDARD change");
         vm.prank(artist);
         registry.cancelChange(artistId);
+        // A payout-only override needs dormancy.
+        vm.warp(block.timestamp + 365 days);
         _stageOverride(ChangeKind.CONTESTED, _identity(artist, payout), 0);
         assertEq(registry.payoutAddress(artistId), address(0), "the payout is frozen");
         assertEq(registry.activeAuthorityOf(artistId), artist, "a payout-only override");
@@ -1696,6 +1712,7 @@ contract ArtistRegistryTest is IdentityFixture {
     {
         return PendingChange({
             kind: ChangeKind.STANDARD,
+            contestTimeout: 365 days,
             next: next,
             previousAuthority: artist,
             stagedAt: uint64(block.timestamp),

@@ -16,6 +16,7 @@ import { IEconomicsResolver } from "../../src/interfaces/IEconomicsResolver.sol"
 import { IEditions } from "../../src/interfaces/IEditions.sol";
 import { IEnglishAuction } from "../../src/interfaces/IEnglishAuction.sol";
 import { IEnglishAuctionClock } from "../../src/interfaces/IEnglishAuctionClock.sol";
+import { IEnglishAuctionRefusal } from "../../src/interfaces/IEnglishAuctionRefusal.sol";
 import { IEntropyModule } from "../../src/interfaces/IEntropyModule.sol";
 import { IFederationRegistry } from "../../src/interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "../../src/interfaces/IMintTarget.sol";
@@ -24,6 +25,7 @@ import { IRenderer } from "../../src/interfaces/IRenderer.sol";
 import { ISaleAdapter } from "../../src/interfaces/ISaleAdapter.sol";
 import { IStatementLog } from "../../src/interfaces/IStatementLog.sol";
 import { IStream } from "../../src/interfaces/IStream.sol";
+import { IStreamExtension } from "../../src/interfaces/IStreamExtension.sol";
 import { IUniformEditionAuction } from "../../src/interfaces/IUniformEditionAuction.sol";
 import { IWorkPowers } from "../../src/interfaces/IWorkPowers.sol";
 import { IWorkRecords } from "../../src/interfaces/IWorkRecords.sol";
@@ -37,24 +39,30 @@ import { SaleKind } from "../../src/interfaces/types/SaleTypes.sol";
 contract InterfacesCompileTest is Test {
     function test_interfaceIds() public pure {
         assertEq(type(IMintTarget).interfaceId, bytes4(0xba4ae536), "IMintTarget");
-        assertEq(type(IStream).interfaceId, bytes4(0x37709465), "IStream");
-        assertEq(type(IWorkRecords).interfaceId, bytes4(0xc109676d), "IWorkRecords");
+        assertEq(type(IStream).interfaceId, bytes4(0x829e6c7d), "IStream");
+        assertEq(type(IStreamExtension).interfaceId, bytes4(0x1b9217b1), "IStreamExtension");
+        assertEq(type(IWorkRecords).interfaceId, bytes4(0x2654eed1), "IWorkRecords");
         assertEq(type(IWorkPowers).interfaceId, bytes4(0xbd18229c), "IWorkPowers");
-        assertEq(type(IEditions).interfaceId, bytes4(0xe183b26f), "IEditions");
+        assertEq(type(IEditions).interfaceId, bytes4(0xee6d6c6f), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");
-        assertEq(type(IEnglishAuction).interfaceId, bytes4(0x75122f3e), "IEnglishAuction");
+        // `setConfig` takes the refusal delay and gas (AUC-39, AUC-40).
+        assertEq(type(IEnglishAuction).interfaceId, bytes4(0xb9e9cdd3), "IEnglishAuction");
         // An integration view, never reported through ERC-165.
         assertEq(type(IEnglishAuctionClock).interfaceId, bytes4(0x968c7b07), "IEnglishAuctionClock");
+        // The refusal exit (AUC-38), never reported through ERC-165.
         assertEq(
-            type(IUniformEditionAuction).interfaceId, bytes4(0x69e7405b), "IUniformEditionAuction"
+            type(IEnglishAuctionRefusal).interfaceId, bytes4(0x625761b5), "IEnglishAuctionRefusal"
+        );
+        assertEq(
+            type(IUniformEditionAuction).interfaceId, bytes4(0x94ff7508), "IUniformEditionAuction"
         );
         // Errors only: no function, so the ID is zero and nothing reports it.
         assertEq(type(ICurationVerifier).interfaceId, bytes4(0x492733ca), "ICurationVerifier");
         assertEq(
             type(ICurationSignerVerifier).interfaceId, bytes4(0x9f12d97a), "ICurationSignerVerifier"
         );
-        assertEq(type(IPackageRegistry).interfaceId, bytes4(0xe7669f7c), "IPackageRegistry");
-        assertEq(type(IContentStore).interfaceId, bytes4(0x3f437f81), "IContentStore");
+        assertEq(type(IPackageRegistry).interfaceId, bytes4(0x91325cdf), "IPackageRegistry");
+        assertEq(type(IContentStore).interfaceId, bytes4(0x943307d5), "IContentStore");
         assertEq(type(IDependencyRegistry).interfaceId, bytes4(0xe5338d57), "IDependencyRegistry");
         assertEq(type(IRenderer).interfaceId, bytes4(0xa772216d), "IRenderer");
         assertEq(type(IEconomicsResolver).interfaceId, bytes4(0x9ba8ecb3), "IEconomicsResolver");
@@ -63,7 +71,7 @@ contract InterfacesCompileTest is Test {
         assertEq(
             type(IArtistPayoutResolver).interfaceId, bytes4(0x9b2c1793), "IArtistPayoutResolver"
         );
-        assertEq(type(IArtistRegistry).interfaceId, bytes4(0xee1e8c55), "IArtistRegistry");
+        assertEq(type(IArtistRegistry).interfaceId, bytes4(0x2ccfc40e), "IArtistRegistry");
         assertEq(type(IConsolidationSource).interfaceId, bytes4(0x88836e34), "IConsolidationSource");
         assertEq(type(IEntropyModule).interfaceId, bytes4(0x14c06eb4), "IEntropyModule");
         assertEq(type(IFederationRegistry).interfaceId, bytes4(0xeefee933), "IFederationRegistry");

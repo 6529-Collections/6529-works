@@ -5,9 +5,8 @@ import { Test } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { AssetAllowlist } from "src/economics/AssetAllowlist.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
-import { ReleaseVerifier } from "src/economics/ReleaseVerifier.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
-import { SplitFactory } from "src/economics/SplitFactory.sol";
+import { SplitLedger } from "src/economics/SplitLedger.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
@@ -52,6 +51,8 @@ abstract contract AuctionBase is Test {
     uint32 internal constant DURATION = 24 hours;
     uint32 internal constant WINDOW = 15 minutes;
     uint32 internal constant SHARE = 5_000;
+    uint32 internal constant REFUSAL_DELAY = 7 days;
+    uint32 internal constant REFUSAL_GAS = 4_000_000;
     uint32 internal constant FEE = 25_000;
     uint256 internal constant ETH_FLOOR = 0.001 ether;
     uint256 internal constant USD_FLOOR = 1e18;
@@ -99,9 +100,7 @@ abstract contract AuctionBase is Test {
         carol = vm.addr(carolPk);
         manager = new AccessManager(address(this));
         allowlist = new AssetAllowlist(address(manager), ETH_FLOOR);
-        escrow = new RevenueEscrow(
-            address(manager), new SplitFactory(new MockArtistResolver(), new ReleaseVerifier())
-        );
+        escrow = new RevenueEscrow(address(manager), new SplitLedger(new MockArtistResolver()));
         statements = new StatementLog(address(manager), address(0), bytes32(0));
         permit2 = new MockPermit2();
         stream = new MockMintTarget();
@@ -128,7 +127,7 @@ abstract contract AuctionBase is Test {
     // ------------------------------------------------------------------------ deployment
 
     function _config() internal pure returns (IEnglishAuction.AuctionConfig memory) {
-        return IEnglishAuction.AuctionConfig(DURATION, WINDOW, SHARE);
+        return IEnglishAuction.AuctionConfig(DURATION, WINDOW, SHARE, REFUSAL_DELAY, REFUSAL_GAS);
     }
 
     /// @dev A lens on this test's escrow, statement log, allowlist and resolver, deployed on its
@@ -171,9 +170,17 @@ abstract contract AuctionBase is Test {
         _map(address(a), IEnglishAuction.resume.selector, UNPAUSER);
         _map(address(a), IEnglishAuction.cancel.selector, PARAMETER_SETTER);
         _map(address(a), IEnglishAuction.setConfig.selector, PARAMETER_SETTER);
-        _map(address(a), IEnglishAuction.setOpeningBid.selector, PARAMETER_SETTER);
+        _map(address(allowlist), IAssetAllowlist.setOpeningBid.selector, PARAMETER_SETTER);
         _map(address(a), ISaleAdapter.setTarget.selector, SUCCESSOR_SETTER);
         _map(address(a), EnglishAuction.setFederationRegistry.selector, SUCCESSOR_SETTER);
+    }
+
+    /// @dev Sets `currency`'s opening bid on the asset allowlist, where it lives since ADR 0007,
+    ///      at the asset's current revision, as the parameter setter.
+    function _setOpeningBid(address currency, uint256 bid) internal {
+        (,, uint64 revision) = allowlist.assetConfig(currency);
+        vm.prank(setter);
+        allowlist.setOpeningBid(currency, revision, bid);
     }
 
     function _map(address target, bytes4 selector, uint64 role) internal {

@@ -26,13 +26,17 @@ from pathlib import Path
 from typing import Any
 
 from . import abi, cid_golden, gas, golden_attest
+from .keccak import keccak256 as _keccak
 from .encoding import Encoding, decode, encode
 from .errors import ToolError
 from .keccak import keccak256
 from .plan import (
+    ATTEST_CHUNKS_PER_CALL,
     CHUNK_SIZE,
+    ONE_CALL_MAX_CHUNKS,
     Plan,
     hex0x,
+    list_chunks,
     parse_hex,
     plan_from_media,
     plan_from_stored,
@@ -60,6 +64,9 @@ class Spec:
 
 
 OCTETS = "application/octet-stream"
+# The hashes per list chunk in the vectors' `registerManifestList` calldata: small, so the
+# multi-chunk vectors exercise several list chunks and a short last one.
+GOLDEN_LIST_STRIDE = 2
 
 SPECS: tuple[Spec, ...] = (
     Spec("identity", "image/svg+xml", Encoding.IDENTITY, sample="identity.svg"),
@@ -98,6 +105,16 @@ def _media(spec: Spec) -> bytes:
     return counter_bytes(spec.seed, spec.length)
 
 
+def _register_list_calldata(plan: Plan) -> bytes:
+    """`registerManifestList` calldata for the plan's hashes in list chunks of
+    `GOLDEN_LIST_STRIDE` hashes."""
+    lists = [_keccak(c) for c in list_chunks(plan.chunk_hashes, GOLDEN_LIST_STRIDE)]
+    return abi.encode_register_manifest_list(
+        lists, GOLDEN_LIST_STRIDE, plan.stored_length, int(plan.encoding), plan.mime_type,
+        plan.media_sha256,
+    )
+
+
 def _vector(spec: Spec, plan: Plan) -> dict[str, Any]:
     source: dict[str, Any] = (
         {"kind": "file", "path": f"samples/{spec.sample}"}
@@ -122,6 +139,7 @@ def _vector(spec: Spec, plan: Plan) -> dict[str, Any]:
                 plan.media_sha256,
             )
         ),
+        "registerListCalldata": hex0x(_register_list_calldata(plan)),
     }
     if spec.encoding.uses_gzip:
         vector["storedFile"] = f"samples/{stored_file_name(spec.name)}"
@@ -138,7 +156,15 @@ def gas_model() -> dict[str, int]:
         "registerLongMime": gas.REGISTER_LONG_MIME_GAS,
         "attestBase": gas.ATTEST_BASE_GAS,
         "attestPerChunk": gas.ATTEST_CHUNK_GAS,
+        "linkBase": gas.LINK_BASE_GAS,
+        "linkPerPart": gas.LINK_PART_GAS,
+        "linkPerByte": gas.LINK_BYTE_GAS,
+        "registerListBase": gas.REGISTER_LIST_BASE_GAS,
+        "registerListPerList": gas.REGISTER_LIST_LIST_GAS,
+        "registerListPerChunk": gas.REGISTER_LIST_CHUNK_GAS,
         "txGasCap": gas.TX_GAS_CAP,
+        "attestChunksPerCall": ATTEST_CHUNKS_PER_CALL,
+        "oneCallMaxChunks": ONE_CALL_MAX_CHUNKS,
     }
 
 
@@ -192,6 +218,8 @@ def _solidity_vector(
     lines.append(f"        v.fileId = {v['fileId']};")
     register_calldata = bytes.fromhex(v["registerCalldata"][2:])
     lines.append(f"        v.registerCalldata = {_hex_literal(register_calldata)};")
+    list_calldata = bytes.fromhex(v["registerListCalldata"][2:])
+    lines.append(f"        v.registerListCalldata = {_hex_literal(list_calldata)};")
     if inline:
         assert stored is not None and media is not None
         lines.append(f"        v.media = {_hex_literal(media)};")
@@ -254,6 +282,8 @@ library UploaderGoldenData {{
     /// @param stored The stored stream (inline vectors only).
     /// @param writeCalldata `writeChunk` calldata per chunk as the tooling encodes it (inline
     ///        vectors only).
+    /// @param registerListCalldata `registerManifestList` calldata for the hashes in list chunks
+    ///        of `LIST_STRIDE` hashes.
     /// @param seed Generator seed (generated vectors only): media is the first `mediaLength` bytes
     ///        of `keccak256(abi.encode(seed, offset))` for offset 0, 32, 64, ...
     struct Vector {{
@@ -266,6 +296,7 @@ library UploaderGoldenData {{
         bytes32[] chunkHashes;
         bytes32 fileId;
         bytes registerCalldata;
+        bytes registerListCalldata;
         bytes media;
         bytes stored;
         bytes[] writeCalldata;
@@ -281,7 +312,17 @@ library UploaderGoldenData {{
     uint256 internal constant GAS_REGISTER_LONG_MIME = {g["registerLongMime"]};
     uint256 internal constant GAS_ATTEST_BASE = {g["attestBase"]};
     uint256 internal constant GAS_ATTEST_PER_CHUNK = {g["attestPerChunk"]};
+    uint256 internal constant GAS_LINK_BASE = {g["linkBase"]};
+    uint256 internal constant GAS_LINK_PER_PART = {g["linkPerPart"]};
+    uint256 internal constant GAS_LINK_PER_BYTE = {g["linkPerByte"]};
+    uint256 internal constant GAS_REGISTER_LIST_BASE = {g["registerListBase"]};
+    uint256 internal constant GAS_REGISTER_LIST_PER_LIST = {g["registerListPerList"]};
+    uint256 internal constant GAS_REGISTER_LIST_PER_CHUNK = {g["registerListPerChunk"]};
     uint256 internal constant TX_GAS_CAP = {g["txGasCap"]};
+    // The tooling's own choices: chunks per attestBase64 call, largest one-call manifest.
+    uint256 internal constant ATTEST_CHUNKS_PER_CALL = {g["attestChunksPerCall"]};
+    uint256 internal constant ONE_CALL_MAX_CHUNKS = {g["oneCallMaxChunks"]};
+    uint256 internal constant LIST_STRIDE = {GOLDEN_LIST_STRIDE};
 """
     parts = [
         header.rstrip(),
@@ -384,6 +425,10 @@ def _check_vector(spec: Spec, v: dict[str, Any], streams: dict[str, bytes]) -> l
         plan.chunk_hashes, plan.stored_length, int(plan.encoding), plan.mime_type, plan.media_sha256
     )
     expect("registerManifest calldata", hex0x(calldata), v["registerCalldata"])
+    expect(
+        "registerManifestList calldata", hex0x(_register_list_calldata(plan)),
+        v["registerListCalldata"],
+    )
     parse_hex(v["fileId"], "fileId", 32)
     return problems
 

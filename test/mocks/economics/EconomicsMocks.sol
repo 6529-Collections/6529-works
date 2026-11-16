@@ -416,7 +416,7 @@ contract Mock1271Account {
     receive() external payable { }
 }
 
-/// @dev A fake claim target. Mode 0 returns 77; 1 reverts with a custom error; 2 returns nothing;
+/// @dev A fake split ledger for a claim router built on it. Mode 0 returns 77; 1 reverts with a custom error; 2 returns nothing;
 ///      3 returns 31 bytes; 4 returns 64 bytes; 5 returns 64 KiB; 6 reverts with 64 KiB; 7 burns
 ///      all gas; 8 returns a canonical zero.
 contract ClaimWalletAdversary {
@@ -433,7 +433,8 @@ contract ClaimWalletAdversary {
 
     fallback() external {
         require(msg.sig == ISplitWallet.release.selector, "unexpected selector");
-        (lastAsset, lastPayee) = abi.decode(msg.data[4:], (address, uint256));
+        (,, lastAsset, lastPayee) =
+            abi.decode(msg.data[4:], (ISplitWallet.Payee[], bytes32, address, uint256));
         ++releaseCalls;
         uint8 m = mode;
         if (m == 1) revert WalletFailure(123);
@@ -474,8 +475,8 @@ contract GasHungryPayee {
     }
 }
 
-/// @dev A claim target whose `release` needs `burn` gas in its own frame before it returns 1, as a
-///      split wallet's first release does once its new slots cost Glamsterdam prices. Given less,
+/// @dev A fake split ledger whose `release` needs `burn` gas in its own frame before it returns 1,
+///      as a first release does once its new slots cost Glamsterdam prices. Given less,
 ///      the wallet frame itself runs out of gas. With `failure` set, it reverts with that data
 ///      after burning instead of returning.
 contract GasHungryWallet {
@@ -491,7 +492,10 @@ contract GasHungryWallet {
         failure = failure_;
     }
 
-    function release(address, uint256) external returns (uint256) {
+    function release(ISplitWallet.Payee[] calldata, bytes32, address, uint256)
+        external
+        returns (uint256)
+    {
         uint256 start = gasleft();
         while (start - gasleft() < burn) { }
         bytes memory f = failure;
@@ -525,8 +529,8 @@ contract ArmablePayee {
 /// @dev On receiving ETH, re-enters the router with a two-item continue-mode batch once.
 contract ClaimReentrantRecipient {
     IClaimRouter private immutable router;
-    address private first;
-    address private second;
+    ISplitWallet.Payee[] private firstPayees;
+    ISplitWallet.Payee[] private secondPayees;
     bool private entered;
     uint256 public nestedFirst;
     uint256 public nestedSecond;
@@ -535,17 +539,24 @@ contract ClaimReentrantRecipient {
         router = router_;
     }
 
-    function configure(address first_, address second_) external {
-        first = first_;
-        second = second_;
+    function configure(
+        ISplitWallet.Payee[] calldata firstPayees_,
+        ISplitWallet.Payee[] calldata secondPayees_
+    ) external {
+        for (uint256 i; i < firstPayees_.length; ++i) {
+            firstPayees.push(firstPayees_[i]);
+        }
+        for (uint256 i; i < secondPayees_.length; ++i) {
+            secondPayees.push(secondPayees_[i]);
+        }
     }
 
     receive() external payable {
         if (entered) return;
         entered = true;
         IClaimRouter.Claim[] memory claims = new IClaimRouter.Claim[](2);
-        claims[0] = IClaimRouter.Claim(first, address(0), 0);
-        claims[1] = IClaimRouter.Claim(second, address(0), 0);
+        claims[0] = IClaimRouter.Claim(firstPayees, bytes32(0), address(0), 0);
+        claims[1] = IClaimRouter.Claim(secondPayees, bytes32(0), address(0), 0);
         uint256[] memory amounts = router.claim(claims, true);
         nestedFirst = amounts[0];
         nestedSecond = amounts[1];
