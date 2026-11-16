@@ -60,17 +60,17 @@ contract AuctionCurrencyFreezeTest is SalesStackBase {
     // ------------------------------------------------------- ETH is never deprecated (F2)
 
     /// Regression: MONEY-M1 and G-2 in the rc.2 review
-    /// @dev One guardian (GUARDIAN, immediate) cannot deprecate ETH, so it cannot freeze a live
+    /// @dev The network (NETWORK, no delay) cannot deprecate ETH, so it cannot freeze a live
     ///      ETH 1/1 that has a winning bid and, 14 days later, end it unsold into the museum: the
     ///      sale settles to its winner and pays its seller, and every later ETH sale runs.
-    function test_DeprecateAsset_OneGuardianCannotFreezeEthSales() public {
+    function test_DeprecateAsset_TheNetworkCannotFreezeEthSales() public {
         (uint256 saleId, uint256 tokenId) = _start(root, _package(root), 2);
         address winner = makeAddr("ethWinner");
         _ethBid(saleId, winner, 5 ether);
         address seller = stream.primaryTerms(tokenId, "").seller;
         uint256 sellerBefore = seller.balance;
 
-        vm.prank(guardian1);
+        vm.prank(hotAdmin);
         vm.expectRevert(IAssetAllowlist.EthNotDeprecable.selector);
         allowlist.deprecateAsset(CURRENCY_ETH);
         assertTrue(allowlist.isActive(CURRENCY_ETH));
@@ -88,7 +88,7 @@ contract AuctionCurrencyFreezeTest is SalesStackBase {
     ///      the call, and the allowlist refuses it.
     function test_DeprecateAsset_EthIsRefusedThroughGovernance() public {
         bytes memory call = abi.encodeCall(allowlist.deprecateAsset, (CURRENCY_ETH));
-        vm.prank(guardian2);
+        vm.prank(hotAdmin);
         vm.expectRevert(IAssetAllowlist.EthNotDeprecable.selector);
         manager.execute(address(allowlist), call);
         (IAssetAllowlist.Status status,,) = allowlist.statusClock(CURRENCY_ETH);
@@ -277,7 +277,7 @@ contract AuctionCurrencyFreezeTest is SalesStackBase {
 
     /// Regression: MARKET-2 (docs/security/internal-review-2026-10.md); the review of #57
     /// @dev A re-admission scheduled before a deprecation, for its predictable revision, cannot
-    ///      undo it in the same block: re-admission waits 14 days from the deprecation.
+    ///      undo it in the same block: re-admission waits 3 days from the deprecation.
     function test_AdmitAsset_AReadmissionScheduledAheadCannotUndoADeprecation() public {
         (,, uint64 revision) = allowlist.assetConfig(address(usd));
         bytes memory admit =
@@ -295,8 +295,8 @@ contract AuctionCurrencyFreezeTest is SalesStackBase {
         );
         manager.execute(address(allowlist), admit);
         assertFalse(allowlist.isActive(address(usd)));
-        // The guardians veto it; a fresh re-admission lands 14 days after the deprecation.
-        vm.prank(guardian2);
+        // The network withdraws it; a fresh re-admission lands 3 days after the deprecation.
+        vm.prank(hotAdmin);
         manager.cancel(hotAdmin, address(allowlist), admit);
         _readmitUsd();
         assertTrue(allowlist.isActive(address(usd)));

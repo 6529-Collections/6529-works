@@ -204,12 +204,17 @@ contract FederationSecondPassTest is FederationBase {
         vm.stopPrank();
         assertTrue(fedRegistry.isActive(address(fed)), "running sales are served");
         _assertNothingMints(restart);
+        bytes memory restartData = _mintData(restart);
         vm.expectRevert(
             abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, address(auction))
         );
-        auction.start(address(fed), _mintData(restart));
+        auction.start(address(fed), restartData);
+        // The federated edition auction refuses first: it asks the registry's `canMint` itself
+        // (the sales lane's C26), before the edition is asked to bind it.
         vm.expectRevert(
-            abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, address(fea))
+            abi.encodeWithSelector(
+                ISaleAdapter.InvalidSaleTerms.selector, address(pairEditions), masterToken
+            )
         );
         fea.open(address(pairEditions), masterToken, abi.encode(master.item));
     }

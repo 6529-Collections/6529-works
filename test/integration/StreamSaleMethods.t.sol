@@ -58,7 +58,7 @@ contract StreamSaleMethodsTest is IntegrationBase {
         (bool immediate, uint32 delay) =
             manager.canCall(hotAdmin, address(stream), stream.setAdmittedMinter.selector);
         assertFalse(immediate);
-        assertEq(delay, 30 days, "the successor class");
+        assertEq(delay, 7 days, "the successor class");
     }
 
     /// @dev An unadmitted adapter is refused, even for an item that names its kind.

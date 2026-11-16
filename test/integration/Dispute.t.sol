@@ -175,17 +175,15 @@ contract DisputeFlowTest is IntegrationBase {
         auction.start(address(stream), again);
     }
 
-    /// @dev The cancel must execute while the pause is live (ADR 0003): one scheduled on day 6
-    ///      executes after the 7-day allowance, when the auction has resumed and run out.
+    /// @dev The cancel must land while the pause is live (C30): the network's cancel, with no
+    ///      delay of its own, is refused once the 3-day pause has lapsed and the auction has
+    ///      resumed and run out.
     function test_CancelIsRefusedOnceThePauseHasLapsed() public {
         (uint256 saleId, uint256 tokenId) = _pauseCopy();
         bytes32 outcome = _platformStatement(
             address(stream), tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://late-outcome"
         );
-        vm.warp(block.timestamp + 6 days);
-        bytes memory late = abi.encodeCall(auction.cancel, (saleId, outcome));
-        _schedule(hotAdmin, address(auction), late);
-        vm.warp(block.timestamp + 2 days);
+        vm.warp(block.timestamp + 3 days + AUCTION_DURATION + 1);
         vm.prank(hotAdmin);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -194,7 +192,7 @@ contract DisputeFlowTest is IntegrationBase {
                 IEnglishAuction.AuctionState.ENDED
             )
         );
-        manager.execute(address(auction), late);
+        auction.cancel(saleId, outcome);
     }
 
     /// @dev A rejected dispute (or none within 7 days): the high bidder may withdraw while
@@ -255,7 +253,7 @@ contract DisputeFlowTest is IntegrationBase {
         _govern(hotAdmin, address(auction), abi.encodeCall(auction.cancel, (saleId, outcome)));
     }
 
-    /// @dev PARAMETER_SETTER's governed release (48 hours, like the cancel) to the rightful artist.
+    /// @dev PARAMETER_SETTER's governed release (24 hours) to the rightful artist.
     function _release(uint256 tokenId) internal {
         _govern(
             hotAdmin,
@@ -316,7 +314,7 @@ contract DisputeFlowTest is IntegrationBase {
         }
         (, uint32 delay) =
             manager.canCall(hotAdmin, address(stream), stream.releaseContent.selector);
-        assertEq(delay, 48 hours, "the upheld-dispute class");
+        assertEq(delay, 24 hours, "the upheld-dispute class");
 
         // A release must name a registered artist: zero, or an ID nobody registered (here one
         // derived from an address the rightful artist never uses), is refused.
@@ -326,7 +324,7 @@ contract DisputeFlowTest is IntegrationBase {
             bytes memory unnamed =
                 abi.encodeCall(stream.releaseContent, (tokenId, contentHash, unregistered[i]));
             _schedule(hotAdmin, address(stream), unnamed);
-            vm.warp(block.timestamp + 48 hours);
+            vm.warp(block.timestamp + 24 hours);
             vm.prank(hotAdmin);
             vm.expectRevert(
                 abi.encodeWithSelector(IArtistRegistry.UnknownArtist.selector, unregistered[i])
@@ -337,7 +335,7 @@ contract DisputeFlowTest is IntegrationBase {
         bytes memory named =
             abi.encodeCall(stream.releaseContent, (tokenId, contentHash, rightfulId));
         _schedule(hotAdmin, address(stream), named);
-        vm.warp(block.timestamp + 48 hours);
+        vm.warp(block.timestamp + 24 hours);
         vm.expectEmit(true, true, true, true, address(stream));
         emit IStream.ContentReleased(tokenId, contentHash, rightfulId);
         vm.prank(hotAdmin);
@@ -347,7 +345,7 @@ contract DisputeFlowTest is IntegrationBase {
             stream.releaseContent, (tokenId, contentHash, artists.artistIdOf(copier))
         );
         _schedule(hotAdmin, address(stream), again);
-        vm.warp(block.timestamp + 48 hours);
+        vm.warp(block.timestamp + 24 hours);
         vm.prank(hotAdmin);
         vm.expectRevert(
             abi.encodeWithSelector(IStream.ClaimNotAllowed.selector, PRODUCT_STREAM, contentHash)
@@ -405,16 +403,16 @@ contract DisputeFlowTest is IntegrationBase {
         );
     }
 
-    /// @dev A guardian vetoes a mistaken release during its delay.
-    function test_AGuardianCancelsAPendingRelease() public {
+    /// @dev The network withdraws a mistaken release during its delay.
+    function test_TheNetworkCancelsAPendingRelease() public {
         uint256 tokenId = _upheldBurn();
         bytes memory wrong = abi.encodeCall(
             stream.releaseContent, (tokenId, contentHash, artists.artistIdOf(copier))
         );
         _schedule(hotAdmin, address(stream), wrong);
-        vm.prank(guardian1);
+        vm.prank(hotAdmin);
         manager.cancel(hotAdmin, address(stream), wrong);
-        vm.warp(block.timestamp + 48 hours);
+        vm.warp(block.timestamp + 24 hours);
         bytes32 operation = manager.hashOperation(hotAdmin, address(stream), wrong);
         vm.prank(hotAdmin);
         vm.expectRevert(
