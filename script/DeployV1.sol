@@ -248,9 +248,9 @@ library DeployV1 {
             "DependencyRegistry",
             "ConsolidationAdapter",
             "ArtistRegistry",
-            "SplitFactory",
             "FeeRecipientVault",
             "MuseumVault",
+            "SplitFactory",
             "ClaimRouter",
             "AssetAllowlist",
             "EconomicsResolver",
@@ -306,15 +306,15 @@ library DeployV1 {
                 _code(type(ArtistRegistry).creationCode, abi.encode(m, adapter, adapter.codehash));
         }
         if (n == keccak256("SplitFactory")) {
-            return _code(type(SplitLedger).creationCode, abi.encode(d.artistRegistry));
-        }
-        if (n == keccak256("FeeRecipientVault")) {
             return _code(
-                type(GovernedVault).creationCode, abi.encode(m, d.splitFactory, p.feeRecipient)
+                type(SplitLedger).creationCode, abi.encode(d.artistRegistry, d.feeRecipientVault)
             );
         }
+        if (n == keccak256("FeeRecipientVault")) {
+            return _code(type(GovernedVault).creationCode, abi.encode(m, p.feeRecipient));
+        }
         if (n == keccak256("MuseumVault")) {
-            return _code(type(GovernedVault).creationCode, abi.encode(m, d.splitFactory, p.museum));
+            return _code(type(GovernedVault).creationCode, abi.encode(m, p.museum));
         }
         if (n == keccak256("ClaimRouter")) {
             return _code(type(ClaimRouter).creationCode, abi.encode(d.splitFactory));

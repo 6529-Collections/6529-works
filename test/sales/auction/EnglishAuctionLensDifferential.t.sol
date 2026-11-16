@@ -362,9 +362,13 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
             address currency = a % 2 == 0 ? ETH : address(usd);
             uint256 next = (a >> 8) % 2 ether;
             if (lensPass) {
-                (,, uint64 revision) = allowlist.assetConfig(currency);
+                (, uint256 floor, uint64 revision) = allowlist.assetConfig(currency);
+                // R19 removed the allowlist's cap; the pre-lens build keeps 1,000 floors, so
+                // the lens pass skips the bids only that build refuses.
                 vm.prank(setter);
-                try allowlist.setOpeningBid(currency, revision, next) { } catch { }
+                if (next <= floor * 1_000) {
+                    try allowlist.setOpeningBid(currency, revision, next) { } catch { }
+                }
             } else {
                 uint256 current = auction.openingBid(currency);
                 vm.prank(setter);

@@ -625,15 +625,9 @@ contract EnglishAuctionDisputesTest is AuctionBase {
     ///      allowlist since ADR 0007 and compare-and-set on the asset's revision (ETH is at
     ///      revision 1 from its admission).
     function test_SetOpeningBid_MovesBothWaysWithinTheCeiling() public {
-        uint256 ceiling = ETH_FLOOR * allowlist.OPENING_BID_FLOORS();
-        assertEq(ceiling, ETH_FLOOR * auction.OPENING_BID_FLOORS(), "the lens answers the same");
+        // R19: the allowlist no longer caps the opening bid (only its 96-bit storage).
+        uint256 ceiling = ETH_FLOOR * auction.OPENING_BID_FLOORS();
         vm.startPrank(setter);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAssetAllowlist.OpeningBidAboveCeiling.selector, ceiling + 1, ceiling
-            )
-        );
-        allowlist.setOpeningBid(ETH, 1, ceiling + 1);
         vm.expectEmit(address(allowlist));
         emit IAssetAllowlist.OpeningBidSet(ETH, 0, 0.5 ether, 2);
         allowlist.setOpeningBid(ETH, 1, 0.5 ether);
@@ -660,7 +654,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
     }
 
     function testFuzz_SetOpeningBid_AnyValueUpToTheCeiling(uint256 first, uint256 next) public {
-        uint256 ceiling = ETH_FLOOR * allowlist.OPENING_BID_FLOORS();
+        uint256 ceiling = type(uint96).max;
         first = bound(first, 0, ceiling);
         _setOpeningBid(ETH, first);
         vm.prank(setter);
