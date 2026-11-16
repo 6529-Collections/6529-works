@@ -7,6 +7,7 @@ import { Dependency } from "src/libraries/Dependency.sol";
 import { FailingConsolidationSource } from "../mocks/identity/IdentityWorksMocks.sol";
 import { EveryoneEstablishedSource } from "../mocks/identity/PermanenceMocks.sol";
 import { IdentityFixture } from "./IdentityFixture.sol";
+import { Vm } from "forge-std/Vm.sol";
 
 /// @notice Review C, F2: the artist registry is permanent and the consolidation source is not, so
 ///         the source decides nothing for a live artist. A wallet the source names may sign a
@@ -143,6 +144,107 @@ contract ConsolidationTrustTest is IdentityFixture {
         cancellers = _cancellers();
         for (uint256 i; i < cancellers.length; ++i) {
             assertTrue(cancellers[i] != named, "gone after the swap and the grace");
+        }
+    }
+
+    /// @dev Review E, N-1: a captured wallet's cancel stops the change but records no activity,
+    ///      so it cannot keep a dormant artist live: a payout-only override (dormancy-gated) can
+    ///      still be staged right after it. Fails without the change: the cancel records
+    ///      activity and the override reverts with `NotDormant`.
+    function test_N1_ANamedWalletsCancelRecordsNoActivity() public {
+        vm.warp(block.timestamp + 365 days);
+        (, uint64 before) = registry.artist(artistId);
+        _stage(NAMED_KEY, _identity(artist, named), 0);
+        vm.warp(block.timestamp + 1 days);
+        vm.recordLogs();
+        vm.prank(named);
+        registry.cancelChange(artistId);
+        assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.NONE), "stopped");
+        _assertNoActivityLogged();
+        (, uint64 last) = registry.artist(artistId);
+        assertEq(last, before, "no activity recorded");
+        _stageOverride(ChangeKind.ESTATE, _identity(artist, payout), 0);
+        assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.ESTATE));
+    }
+
+    /// @dev Review E, N-1: a captured wallet's contest still sends a governed override to a vote
+    ///      but records no activity; the artist stays dormant once the contest ends. Fails
+    ///      without the change: the contest records activity and the next dormancy-gated override
+    ///      reverts with `NotDormant`.
+    function test_N1_ANamedWalletsContestRecordsNoActivity() public {
+        vm.warp(block.timestamp + 365 days);
+        (, uint64 before) = registry.artist(artistId);
+        _stageOverride(ChangeKind.LOST_KEY, _identity(newAuthority, newAuthority), newKey);
+        assertTrue(_isCanceller(named), "the named wallet is captured");
+        vm.recordLogs();
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.ChangeContested(artistId, named);
+        vm.prank(named);
+        registry.cancelChange(artistId);
+        _assertNoActivityLogged();
+        assertEq(registry.pendingChange(artistId).contestedAt, block.timestamp, "contested");
+        (, uint64 last) = registry.artist(artistId);
+        assertEq(last, before, "no activity recorded");
+        vm.prank(guardian);
+        registry.vetoChange(artistId);
+        _stageOverride(ChangeKind.ESTATE, _identity(artist, payout), 0);
+        assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.ESTATE));
+    }
+
+    /// @dev Review E, N-1: a change a named wallet signed that keeps the authority restarts no
+    ///      dormancy clock when it executes; only a new authority's acceptance does. Fails without
+    ///      the change: the execution records activity and the override reverts `NotDormant`.
+    function test_N1_AWalletChangeKeepingTheAuthorityRestartsNoClock() public {
+        vm.warp(block.timestamp + 365 days);
+        (, uint64 before) = registry.artist(artistId);
+        _stage(NAMED_KEY, _identity(artist, named), 0);
+        vm.warp(block.timestamp + 180 days);
+        vm.recordLogs();
+        registry.executeChange(artistId);
+        _assertNoActivityLogged();
+        (ArtistIdentity memory identity, uint64 last) = registry.artist(artistId);
+        assertEq(identity.payout, named, "executed");
+        assertEq(last, before, "no activity recorded");
+        _stageOverride(ChangeKind.LOST_KEY, _identity(newAuthority, newAuthority), newKey);
+        assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.LOST_KEY));
+    }
+
+    /// @dev Review E, N-1, the counterpart: the artist's own acts still record activity. The
+    ///      authority's cancel does, and so does the execution of a change that installs a new
+    ///      authority (its acceptance).
+    function test_N1_TheAuthoritysOwnActsStillRecordActivity() public {
+        vm.warp(block.timestamp + 365 days);
+        _stage(NAMED_KEY, _identity(artist, named), 0);
+        vm.warp(block.timestamp + 1 days);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.ActivityRecorded(artistId, uint64(block.timestamp));
+        vm.prank(artist);
+        registry.cancelChange(artistId);
+        (, uint64 last) = registry.artist(artistId);
+        assertEq(last, block.timestamp, "the authority's cancel");
+
+        _stage(artistKey, _identity(newAuthority, newAuthority), newKey);
+        vm.warp(block.timestamp + 7 days);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.ActivityRecorded(artistId, uint64(block.timestamp));
+        registry.executeChange(artistId);
+        (, last) = registry.artist(artistId);
+        assertEq(last, block.timestamp, "a new authority's execution");
+    }
+
+    function _isCanceller(address account) private view returns (bool found) {
+        address[] memory cancellers = _cancellers();
+        for (uint256 i; i < cancellers.length; ++i) {
+            found = found || cancellers[i] == account;
+        }
+    }
+
+    function _assertNoActivityLogged() private {
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            assertTrue(
+                logs[i].topics[0] != IArtistRegistry.ActivityRecorded.selector, "ActivityRecorded"
+            );
         }
     }
 }

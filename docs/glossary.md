@@ -808,8 +808,8 @@ See: [governance](spec/governance.md).
 
 ### heartbeat
 
-`ArtistRegistry.heartbeat`: recorded activity by the authority or an established wallet, which
-resets [dormancy](#dormancy).
+`ArtistRegistry.heartbeat`: recorded activity by the authority (never a consolidated wallet),
+which resets [dormancy](#dormancy).
 
 See: [identity and recovery](spec/identity-and-recovery.md).
 

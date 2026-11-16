@@ -414,21 +414,25 @@ contract ContestedOverridesTest is IdentityFixture {
         assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.NONE));
     }
 
-    function test_Contest_IsActivityOnlyForTheCapturedWallet() public {
+    /// @dev Review E, N-1: a captured wallet's contest works (the override waits for a vote) but
+    ///      is no activity, and a later no-op cancel records nothing either.
+    function test_Contest_IsNoActivity() public {
         _consolidate(artist, thiefWallet);
         vm.warp(block.timestamp + 31 days);
         registry.refreshStanding(artistId);
+        (, uint64 before) = registry.artist(artistId);
         _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, newAuthority), newKey);
         vm.warp(block.timestamp + 1 days);
         vm.prank(thiefWallet);
         registry.cancelChange(artistId);
-        (, uint64 contestedAt) = registry.artist(artistId);
-        assertEq(contestedAt, block.timestamp, "the captured wallet's contest counts");
+        assertEq(registry.pendingChange(artistId).contestedAt, block.timestamp, "contested");
+        (, uint64 last) = registry.artist(artistId);
+        assertEq(last, before, "the captured wallet's contest is no activity");
         vm.warp(block.timestamp + 1 days);
         vm.prank(wallet); // a no-op cancel records nothing
         registry.cancelChange(artistId);
-        (, uint64 last) = registry.artist(artistId);
-        assertEq(last, contestedAt);
+        (, last) = registry.artist(artistId);
+        assertEq(last, before);
     }
 
     function test_BindStatementLog_OneShotAndChecksTheResolver() public {

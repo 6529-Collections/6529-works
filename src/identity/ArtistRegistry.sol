@@ -110,10 +110,12 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      at every end of a change, so {activeAuthorityOf} reads the pending change (for a lapsed
 ///      contest) only while it is set.
 ///
-///      Dormancy counts the artist's own activity: registration, a change the authority signed,
-///      the authority's heartbeat, a cancel by the old key or a captured wallet, a nonce
-///      revocation, and an execution (which restarts the clock for the identity it installs).
-///      Overrides, vetoes and changes a consolidated wallet signed never do.
+///      Dormancy counts only acts of the artist's own authority: registration, a change the
+///      authority signed, the authority's heartbeat, its cancel or contest, a nonce revocation,
+///      and an execution that installs a new authority (its acceptance restarts the clock). A
+///      wallet the consolidation source names never moves it: its stagings, cancels and contests
+///      stop or propose changes but are no proof of life. Overrides, vetoes and executions that
+///      keep the authority never move it either.
 ///
 ///      Federation directory (ADR 0001 section 16): one entry per federated token, written by the
 ///      current federation registry except LEFT, which only the token writes. Nothing that decides
@@ -424,20 +426,23 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IArtistRegistry
-    /// @dev Records activity (the caller is the artist's old key or a captured wallet), except
-    ///      for the no-op cancel of an already contested override. A contest snapshots the
-    ///      artist's latest DISPUTE_OUTCOME, which can then not resolve it.
+    /// @dev Records activity only when the caller is the artist's own key (the previous
+    ///      authority): a captured wallet's cancel or contest stops the change but is no proof of
+    ///      life, since the replaceable consolidation source decides which wallets are captured.
+    ///      The no-op cancel of an already contested override records nothing. A contest
+    ///      snapshots the artist's latest DISPUTE_OUTCOME, which can then not resolve it.
     function cancelChange(uint256 artistId) external {
         PendingChange storage p = _pendingOf(artistId);
-        bool allowed = p.kind == ChangeKind.STANDARD && msg.sender == p.previousAuthority;
+        bool own = msg.sender == p.previousAuthority;
+        bool allowed = p.kind == ChangeKind.STANDARD && own;
         address[] storage cancellers = p.cancellers;
         for (uint256 i; !allowed && i < cancellers.length; ++i) {
             allowed = cancellers[i] == msg.sender;
         }
         if (!allowed) revert NotAuthorized(artistId, msg.sender);
         if (p.contestedAt != 0) return;
+        if (own) _recordActivity(artistId, _artists[artistId]);
         if (p.kind == ChangeKind.STANDARD) {
-            _recordActivity(artistId, _artists[artistId]);
             _clear(artistId, msg.sender, false);
             return;
         }
@@ -446,7 +451,6 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         if (block.timestamp >= p.executableAt) {
             revert ContestWindowClosed(artistId, p.executableAt);
         }
-        _recordActivity(artistId, _artists[artistId]);
         p.contestedAt = uint64(block.timestamp);
         p.priorOutcome = _latestOutcome(artistId);
         emit ChangeContested(artistId, msg.sender);
@@ -493,7 +497,8 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     ///      instead of reverting, so a stale change cannot freeze the payout. The authority
     ///      re-check is defence in depth: the staging reserved the new authority
     ///      ({reservedFor}), so nothing can take it meanwhile. Otherwise it applies the change,
-    ///      restarts the dormancy clock and refreshes standing for the new authority.
+    ///      restarts the dormancy clock if the authority changed, and refreshes standing for the
+    ///      (new) authority.
     function executeChange(uint256 artistId) external {
         PendingChange storage p = _pendingOf(artistId);
         if (p.contestedAt != 0) revert OverrideContested(artistId);
@@ -519,7 +524,9 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         (a.profileId, a.profileDocHash) = (next.profileId, next.profileDocHash);
         delete reservedFor[next.authority];
         delete _pending[artistId];
-        _recordActivity(artistId, a);
+        // Only a new authority's acceptance is that authority's own act: an execution that keeps
+        // the authority (a payout or profile change, whoever staged it) restarts no clock.
+        if (next.authority != previous.authority) _recordActivity(artistId, a);
         emit ChangeExecuted(artistId, previous, next);
         _refresh(artistId, next.authority, true);
         return true;

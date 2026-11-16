@@ -373,6 +373,7 @@ contract ArtistRegistryTest is IdentityFixture {
     function test_ExecuteChange_AppliesAfterSevenDays() public {
         ArtistIdentity memory next = _identity(artist, payout);
         _stage(artistKey, next, 0);
+        uint256 stagedAt = block.timestamp;
         vm.warp(block.timestamp + 7 days);
         (ArtistIdentity memory previous,) = registry.artist(artistId);
         vm.expectEmit(address(registry));
@@ -382,7 +383,9 @@ contract ArtistRegistryTest is IdentityFixture {
         assertEq(registry.payoutAddress(artistId), payout);
         (ArtistIdentity memory current, uint64 lastActivity) = registry.artist(artistId);
         assertEq(keccak256(abi.encode(current)), keccak256(abi.encode(next)));
-        assertEq(lastActivity, block.timestamp);
+        // The authority's signed staging was the activity; an execution that keeps the
+        // authority restarts no clock (review E, N-1).
+        assertEq(lastActivity, stagedAt);
         assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.NONE));
     }
 
@@ -980,14 +983,18 @@ contract ArtistRegistryTest is IdentityFixture {
         assertEq(now_, last);
     }
 
-    /// Regression: M2 (dormancy accounting) in the review of #16
+    /// Regression: M2 (dormancy accounting) in the review of #16, as narrowed by review E, N-1
+    /// @dev The authority's cancel and the execution of a change that installs a new authority
+    ///      count; a captured wallet's contest and an execution that keeps the authority do not.
     function test_Activity_CancelsAndExecutionsCount() public {
+        (, uint64 start) = registry.artist(artistId);
         vm.warp(block.timestamp + 1 days);
         _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, newAuthority), newKey);
         vm.warp(block.timestamp + 1 days);
         vm.prank(wallet);
         registry.cancelChange(artistId);
-        _assertActivityNow();
+        (, uint64 last) = registry.artist(artistId);
+        assertEq(last, start, "a captured wallet's contest is no activity");
         vm.prank(guardian);
         registry.vetoChange(artistId);
 
@@ -998,12 +1005,18 @@ contract ArtistRegistryTest is IdentityFixture {
         );
         vm.warp(block.timestamp + 180 days);
         registry.executeChange(artistId);
-        _assertActivityNow();
+        (, last) = registry.artist(artistId);
+        assertEq(last, start, "an execution that keeps the authority is no activity");
 
         _stage(artistKey, _identity(artist, artist), 0);
         vm.warp(block.timestamp + 1 days);
         vm.prank(artist);
         registry.cancelChange(artistId);
+        _assertActivityNow();
+
+        _stage(artistKey, _identity(newAuthority, artist), newKey);
+        vm.warp(block.timestamp + 7 days);
+        registry.executeChange(artistId);
         _assertActivityNow();
     }
 

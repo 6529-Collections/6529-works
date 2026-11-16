@@ -130,8 +130,10 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
         assertEq((word >> 160) & 0xff != 0, moving);
     }
 
-    /// @dev Dormancy counts only the artist's own activity and executions (never overrides,
-    ///      vetoes or refreshes), and the nonce moves only with stagings and revocations.
+    /// @dev Dormancy counts only the artist's own activity and executions that install a new
+    ///      authority (never overrides, vetoes, refreshes, captured wallets' cancels or contests,
+    ///      or executions that keep the authority), and the nonce moves only with stagings and
+    ///      revocations.
     function invariant_ActivityAndNonceMatchTheModel() public view {
         (, uint64 lastActivity) = registry.artist(artistId);
         assertEq(lastActivity, handler.ghostLastActivity());
@@ -141,9 +143,14 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
     /// @dev Review C, F2: the consolidation source, however hostile (the handler swaps in one
     ///      that names every wallet), never acts for a live artist: no wallet-signed change is
     ///      staged while the artist had signed activity within the dormancy period, and a pending
-    ///      wallet-signed change waits at least the override delay's floor (180 days).
+    ///      wallet-signed change waits at least the override delay's floor (180 days). Review E,
+    ///      N-1: a wallet the source names never changes the artist's last-activity time (not by
+    ///      a staging, cancel, contest, heartbeat or nonce revocation, nor by the execution of a
+    ///      change it signed that keeps the authority), so it can never keep a dormant artist
+    ///      live and block dormancy-gated recovery.
     function invariant_ASourceNeverActsForALiveArtist() public view {
         assertEq(handler.walletStagedWhileLive(), 0);
+        assertEq(handler.walletMovedActivity(), 0);
         PendingChange memory p = registry.pendingChange(artistId);
         if (p.kind == ChangeKind.STANDARD && handler.ghostWalletStaged()) {
             assertGe(p.executableAt - p.stagedAt, 180 days);
