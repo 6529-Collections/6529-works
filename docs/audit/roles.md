@@ -273,7 +273,7 @@ Source: [`src/federated/FederatedEditionAuction.sol`](../../src/federated/Federa
 
 | Function | Selector | Role | Class | Delay | Guardian cancel | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `pause()` | `0x8456cb59` | `PAUSER` | Immediate | immediate | No: executes at once | Stops `openSale` and `purchase`; closing a sale and claims still work. |
+| `pause()` | `0x8456cb59` | `PAUSER` | Immediate | immediate | No: executes at once | The shared edition-auction code: stops new `open` calls only; bids, raises, settlement and claims of open sales continue (a delisting, not the pause, closes a running sale). |
 | `unpause()` | `0x3f4ba83a` | `UNPAUSER` | Standard | 48 hours | Yes: any guardian, during the delay | Refused until 48 hours after the pause, whenever it was scheduled. |
 | `setConfig((…),(…))` | `0x3a59bb19` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay |  |
 | `setLimits(uint256,uint256)` | `0xc4590d3f` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay |  |

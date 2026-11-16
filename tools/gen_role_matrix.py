@@ -110,6 +110,9 @@ NOTES: dict[tuple[str, str], str] = {
     ("EnglishAuction", "pause()"): "Stops new starts only; live auctions continue.",
     ("UniformEditionAuction", "pause()"):
         "Stops new `open` calls only; bids, raises, settlement and claims of open sales continue.",
+    ("FederatedEditionAuction", "pause()"):
+        "The shared edition-auction code: stops new `open` calls only; bids, raises, settlement "
+        "and claims of open sales continue (a delisting, not the pause, closes a running sale).",
     ("*", "unpause()"): "Refused until 48 hours after the pause, whenever it was scheduled.",
     ("EnglishAuction", "pause(uint256,bytes32)"):
         "Dispute pause: one per auction, lasting at most 7 days (`MAX_PAUSE`).",
