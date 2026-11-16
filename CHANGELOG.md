@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+- Second pass (owner decisions of 16 November 2026; not yet reviewed as a whole):
+  - Identity: an artist or collaborator is a 6529 consolidated account and every wallet of it
+    acts (`IAccounts`, `isWallet`, `requireSigned`, `requireConsent`); an account signature is
+    `abi.encodePacked(wallet, signature)`. Fixed timers: an own change waits 2 days, a network
+    replacement gives 14 days' notice, a contest lapses after 90 days. The network freezes an
+    account for 14 days (`freeze`, `unfreeze`), withdraws its replacement
+    (`cancelReplacement`) and cancels an account's own pending change (`cancelOwnChange`), all
+    with no delay. Heartbeat, standing, timers, veto and override are removed. Curation:
+    `killSignerApprovals`, `isApprovedItem`.
+  - Governance: one network address holds every network role (`transferNetwork`,
+    `acceptNetwork`), with fixed classes of no delay, 24 hours, 3 days and 7 days and an optional
+    brake that can delay a scheduled action once by 7 days; guardians, seats, suspension and
+    recovery are removed; the network grants and revokes operational keys and unpauses with no
+    delay.
+  - Economics: every split-wallet release also pays the network fee vault its share (R11);
+    unclaimed marked shares and escrow credits go to the network after 180 days (R12); the
+    network moves its own escrow credits without consent (C19); no opening-bid price cap (R19);
+    `GovernedVault` takes no ledger and is deployed before the split ledger.
+  - Stream, work records, Editions: the network lowers a fee share, never raises it
+    (`lowerFeeShare`); a royalty rate may rise with every party's and the network's agreement;
+    the network alone repins a finalized work's renderer; renouncing the royalty or licence
+    power needs the network; anyone finalizes 14 days after a recorded notice once the primary
+    sale settled; the rescue delay is a fixed 14 days; the network retires a store and marks a
+    locator dead.
+  - Federation: a joined federated contract stays in the federation (no exit, no artist-owned
+    minters); any wallet of the artist's consolidated account acts for it; works may name
+    collaborators who consent on chain; VRF works take a seed the requester pays the VRF
+    provider for; the network share in force is the smaller of the deployed share and the artist
+    registry's record (lower only); the network can reinstate a revoked template.
+  - Conventions: the promise grade is removed (tool, schema, rules DCL-29 to DCL-31); the promise
+    card is now a neutral fact sheet (`fact-sheet.v1`, `python -m tools.conventions
+    fact-sheet`) with no residual-risk list; declarations no longer carry intended
+    renunciations. Budgets: 17,000 source lines; start-gas margin 3,000. Storage guide: the
+    network pays for the Arweave and IPFS copies.
+
 - Federation review fixes (reviews F and G; [ADR 0008](docs/adr/0008-federation.md) §1, §2, §8,
   §10, §12; FED-64 to FED-70, ID-41): a template version is its runtime code hash bound to an
   ownerless `FederatedDeployer` (new; `IFederatedDeployer` `0xf53f1196`), which holds the

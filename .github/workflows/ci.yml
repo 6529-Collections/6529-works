@@ -188,8 +188,8 @@ jobs:
         run: python -m unittest discover -s tools/content -t . -p "test_*.py"
 
       - name: Convention tooling tests
-        # tools/conventions (standard library only): the schemas, examples, floor check, promise
-        # card, grade, control proof and custody check. The example signatures are recovered with
+        # tools/conventions (standard library only): the schemas, examples, floor check, fact
+        # sheet, control proof and custody check. The example signatures are recovered with
         # `cast`, installed with Foundry above; CONVENTIONS_CAST_REQUIRE fails instead of skipping.
         env:
           CONVENTIONS_CAST_REQUIRE: "1"

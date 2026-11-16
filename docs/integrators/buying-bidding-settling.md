@@ -494,7 +494,7 @@ a new seller wallet creates its account, at the settler's cost.
 A sale settles normally during a restraint, with a bid to its winner and without one to the
 museum (`test_AuctionWithABidRunningAtStagingSettlesNormally` and
 `test_NoBidAuctionRunningAtStagingGoesToTheMuseumAtOnce` in
-[RecoveryRestraint.t.sol](../../test/integration/RecoveryRestraint.t.sol)). For the currency freeze
+[IdentityRecovery.t.sol](../../test/integration/IdentityRecovery.t.sol)). For the currency freeze
 (MARKET-2, AUC-25), read when the deprecation began from `AssetAllowlist.statusClock(currency)`,
 which returns `(status, since, inactiveTotal)`, on the auction's `allowlist()`; re-admission comes
 no earlier than 14 days after it (ECO-33).

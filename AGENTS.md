@@ -16,10 +16,10 @@ Instructions for automated coding agents working in this repository.
 ## Engineering rules
 
 **Budgets** (CI-enforced)
-- At most 16,500 non-comment lines of Solidity under `src/` (ADR 0001's 8–12K target, raised
+- At most 17,000 non-comment lines of Solidity under `src/` (ADR 0001's 8–12K target, raised
   to 13,000 on 1 November 2026, to 15,000 by [ADR 0007](docs/adr/0007-permanence.md), to
-  16,000 by [ADR 0008](docs/adr/0008-federation.md) and to 16,500 for the federation review's
-  fixes, also ADR 0008).
+  16,000 by [ADR 0008](docs/adr/0008-federation.md), to 16,500 for the federation review's
+  fixes, and to 17,000 by the owner on 16 November 2026).
 - At most 5 linked libraries.
 - No delegatecall and no proxies.
 - EIP-170 respected, measured on the explicit `--profile default` build, with at least 512
