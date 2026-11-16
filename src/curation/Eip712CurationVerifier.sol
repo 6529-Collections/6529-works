@@ -13,6 +13,10 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 
 /// @dev The grant counter the 6529 Works manager keeps (`WorksAccessManager.grantCount`).
 interface IGrantCount {
+    /// @notice How many grants made `account` a member of `roleId`.
+    /// @param roleId The role.
+    /// @param account The account.
+    /// @return The grant count.
     function grantCount(uint64 roleId, address account) external view returns (uint32);
 }
 
