@@ -751,7 +751,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         }
     }
 
-    /// @notice A governed 48-hour relicense with every party's consent. A CC0 work must stay
+    /// @notice A governed 3-day relicense with every party's consent. A CC0 work must stay
     ///         CC0 with the pinned text (both moves refused); another license moves to CC0 or
     ///         MIT, unless a party is restrained and so cannot consent.
     function relicense(uint256 seed, uint256 choice) external {
@@ -1102,7 +1102,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
                 restrainedParty = true;
                 signer = artists.authorityOf(id);
             }
-            sigs[i] = _sign(signer, digest);
+            sigs[i] = abi.encodePacked(signer, _sign(signer, digest));
         }
         call = abi.encodeCall(records.relicense, (tokenId, next, item, state, deadline, sigs));
     }
@@ -1189,8 +1189,10 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             }
         }
         if (power == 2) {
+            // Anyone may record a finalize notice once the primary sale settled (C9); acting as
+            // the artist means finalizing at once, so only that counts.
             try records.finalize(tokenId, state) {
-                return true;
+                return records.record(tokenId).finalized;
             } catch {
                 return false;
             }

@@ -856,16 +856,23 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         }
     }
 
-    /// @dev A cancelled 1/1 takes no more edition bids, and settling voids its edition auction.
+    /// @dev A cancelled 1/1 takes no more edition bids once the adapter reads its state (within
+    ///      the soft window of the close, `UniformEditionAuction._end`; earlier the adapter skips
+    ///      that read, and such a bid is refunded when the sale voids), and settling voids its
+    ///      edition auction.
     function _void(uint256 i) internal {
         Piece storage p = pieces[i];
-        uint256 cost = _price(i, 0);
-        vm.deal(bidders[0], bidders[0].balance + cost);
-        vm.prank(bidders[0]);
-        try ea.bid{ value: cost }(p.editionSaleId, 0, 1) {
-            _violation("a cancelled 1/1's edition auction took a bid");
-        } catch {
-            ++hits["cancelledBidRefused"];
+        if (block.timestamp + _terms(i).softWindow >= _endTime(i)) {
+            uint256 cost = _price(i, 0);
+            vm.deal(bidders[0], bidders[0].balance + cost);
+            vm.prank(bidders[0]);
+            try ea.bid{ value: cost }(p.editionSaleId, 0, 1) {
+                _violation("a cancelled 1/1's edition auction took a bid");
+            } catch {
+                ++hits["cancelledBidRefused"];
+            }
+        } else {
+            ++hits["cancelledBidUnread"];
         }
         ea.settle(p.editionSaleId, new uint256[](0));
         if (ea.auction(p.editionSaleId).status != IUniformEditionAuction.AuctionStatus.VOID) {
