@@ -593,3 +593,15 @@ revocation stop its sales (LIM-FED-2). The deployment cost falls on the artist (
   increase).
 - Budget: raised to 16,500 for the federation review's fixes (provenance, consent, the pair, the
   exit status, genesis scoping), 16 November 2026 (owner: the budget can increase).
+
+## Amendment note (16 November 2026, [ADR 0009](0009-second-permanence-pass.md))
+
+No exit (R1 to R5, C4): a joined contract stays joined, there are no artist-owned minters, and
+the LEFT and LEFT_DELISTED statuses are gone. Delisting is per artist account, at the 24-hour
+class. The share in force is the smaller of the deployed share and the artist registry's
+record, which the network can only lower (R8); the fee recipient is read at settlement. Works
+may name collaborators who consent on chain, and VRF works take a seed the requester pays the
+provider for (off until the network sets a wrapper). A revoked template can be reinstated
+(C26); a replacement registry inherits every listing (C3). The context's "the network adds no
+control whose only purpose is to restrict that" and "exit is one-way and clean" are history.
+Current rules: [Federation](../spec/federation.md#rules-and-invariants).

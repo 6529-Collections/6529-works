@@ -798,3 +798,14 @@ before each merge.
   end and state, so for such a master its `open` reverts with `NoOneOfOneAuction`. Adding a
   1/1 sale method therefore also means deploying and admitting a matching edition adapter;
   until then, that method's masters sell no editions by auction.
+
+## Amendment note (16 November 2026, [ADR 0009](0009-second-permanence-pass.md))
+
+Every edition sale closes exactly 15 minutes after its 1/1; the per-sale close offset and its
+bounds are removed. Bids are firm: no withdrawal, including during a dispute, and bids are
+returned only if the dispute is upheld. `abandon` opens 21 days after the close and creates the
+edition when the master's primary sale settled. The edition base-price cap is removed (only the
+96-bit storage bound remains). Opening a sale checks that the item's package is still approved
+(C23). The fee recipient is read at settlement; credits go to the network after 180 days. The
+keeper rule of decision 7 now runs through `SaleStarter`. Current rules:
+[Editions and sales](../spec/editions-and-sales.md#rules-and-invariants).

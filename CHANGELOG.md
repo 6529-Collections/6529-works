@@ -26,6 +26,16 @@
     power needs the network; anyone finalizes 14 days after a recorded notice once the primary
     sale settled; the rescue delay is a fixed 14 days; the network retires a store and marks a
     locator dead.
+  - Sales: every edition sale closes exactly 15 minutes after its 1/1 (no per-sale offset);
+    edition bids are firm (no `withdrawBid`); `abandon` opens 21 days after the close and creates
+    the edition when the master's sale settled; a dispute pause lasts at most 3 days and the
+    network resumes or cancels with no wait; the federated refusal exit opens 2 days after the
+    end; the currency-freeze exit and the delivery redirect wait 14 days; the network fee takes
+    the rounding and goes to the recipient read at settlement (R18); a credit unclaimed for
+    180 days may be sent to the network (`expireCredit`); EIP-2612 permit payments are refused;
+    no edition base-price cap (`StepLadder.BASE_PRICE_BOUND`, a storage bound); opening an
+    edition sale checks the item's package is still approved (C23); new stateless `SaleStarter`
+    starts a 1/1, deploys its vaults and opens its record in one transaction.
   - Federation: a joined federated contract stays in the federation (no exit, no artist-owned
     minters); any wallet of the artist's consolidated account acts for it; works may name
     collaborators who consent on chain; VRF works take a seed the requester pays the VRF
@@ -36,6 +46,11 @@
     fact-sheet`) with no residual-risk list; declarations no longer carry intended
     renunciations. Budgets: 17,000 source lines; start-gas margin 3,000. Storage guide: the
     network pays for the Arweave and IPFS copies.
+  - Documents: [ADR 0009](docs/adr/0009-second-permanence-pass.md) records the pass, with dated
+    amendment notes on ADRs 0001, 0002, 0005, 0006, 0007 and 0008; the specs, audit pages,
+    integrator pages, glossary, architecture and runbook describe the code as merged, with the
+    network's duties as current practice; the control-proof tool reads the consolidation
+    source's `isConsolidated`; `docs/facts.json` regenerated.
 
 - Federation review fixes (reviews F and G; [ADR 0008](docs/adr/0008-federation.md) §1, §2, §8,
   §10, §12; FED-64 to FED-70, ID-41): a template version is its runtime code hash bound to an

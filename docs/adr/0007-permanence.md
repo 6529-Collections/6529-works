@@ -553,3 +553,14 @@ ADRs stay as written; each amended record gets a dated amendment note pointing h
 - The federation: specified by [ADR 0008](0008-federation.md) and built on its own branch.
 - Two independent reviews (contracts; governance), then a Sepolia redeploy and a Glamsterdam
   measurement of every row.
+
+## Amendment note (16 November 2026, [ADR 0009](0009-second-permanence-pass.md))
+
+Rule 5 (no compiled durations) gives way: the second pass compiles its fixed values into the
+permanent contracts, each constant's NatSpec saying the number is the guarantee. Rule 1 gives
+way for one live read: an account's non-root wallets come from the replaceable consolidation
+source. The rescue delay is a fixed 14 days (no setter); a royalty rate can rise by agreement;
+the network lowers fee shares and repairs renderers; every split release pays the network, and
+unclaimed shares and credits go to it after 180 days. The governance machinery this record
+added (bounded veto, recovery, succession, seats) is removed; the artist registry's timers are
+compiled; leaving the federation is removed.

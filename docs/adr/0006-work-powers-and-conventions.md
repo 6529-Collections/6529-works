@@ -196,3 +196,15 @@ card's `renderer` row shows the renunciation, and the grade counts only the roya
 license powers. Current rules: WS-37, WS-38 in
 [Works and storage](../spec/works-and-storage.md#rules-and-invariants). `IWorkPowers`' ID is
 unchanged (`0xbd18229c`); `IWorkRecords`' ID is `0x2654eed1` (pre-launch reshaping).
+
+## Amendment note (16 November 2026, [ADR 0009](0009-second-permanence-pass.md))
+
+§1's lower-only royalty no longer holds: a rate can rise when every party and the network
+agree, up to 100,000. Renouncing `ROYALTY_RATE` or `RELICENSE` needs the network; the network
+repairs a finalized work's renderer alone unless `RENDERER_REPIN` was renounced (the repin no
+longer takes the artist's signature). Consents are wallet-prefixed proofs from any wallet of
+each party's account. The grade is removed; the promise card is now a neutral fact sheet
+(`fact-sheet.v1`) with no residual-risk list, and declarations carry no intended renunciations.
+Current rules: WS-13, WS-14, WS-37, WS-38 in
+[Works and storage](../spec/works-and-storage.md#rules-and-invariants) and DCL-26 to DCL-28 in
+[Declarations and conventions](../spec/declarations-and-conventions.md#fact-sheet).

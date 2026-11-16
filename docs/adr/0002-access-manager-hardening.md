@@ -124,7 +124,7 @@ not halt curation.
   are. Rule 2 bars a guardian only from cancelling its own revocation, and Rule 3
   of the addendum lets any other guardian cancel it, so each of two colluding
   guardians cancels the other's; the code is unchanged.
-  `test_Residual_ColludingGuardiansCanShieldEachOther` shows it with two guardians
+  test_Residual_ColludingGuardiansCanShieldEachOther shows it with two guardians
   of three. While both stay in office they can cancel every operation, so
   governance stops, but they cannot move funds: refunds and withdrawals keep
   working. See LIM-GV-4 in
@@ -232,3 +232,13 @@ seats and at least two votes). Taking its vote away would let a compromised admi
 dishonest guardian remove honest guardians at three or four seats; the comparison by seat
 count is in the governance specification's escalated-lane section, and the rule's wording there
 and in the manager's NatSpec now says so.
+
+## Amendment note (16 November 2026, [ADR 0009](0009-second-permanence-pass.md))
+
+Superseded in substance. The guardian cancel rules, the bounded veto, seats, suspension,
+dead-admin recovery and succession are removed. `WorksAccessManager` is the stock OpenZeppelin
+AccessManager plus one `network` address (ADMIN, NETWORK and the three setter roles, delays at
+once, 24 hours, 3 days and 7 days), a two-step handover and an optional brake that delays a
+scheduled action once by 7 days. Tests this record cites that the pass deleted are left as
+plain text. Current rules: GV-1 to GV-22 in
+[Governance](../spec/governance.md#rules-and-invariants).

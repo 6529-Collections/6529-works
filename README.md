@@ -12,7 +12,8 @@ without that vote, signer or party consent ([ADR 0008](docs/adr/0008-federation.
 Money moves by pull: proceeds and royalties collect in immutable split wallets that payees
 release from, with an escrow for payments that fail. Content is addressed by hash and stored on
 Arweave and IPFS, and anyone can put a work's files on-chain. One OpenZeppelin `AccessManager`
-governs every contract behind delays that guardians can veto.
+governs every contract: one network address acts at once or after fixed delays of 24 hours,
+3 days or 7 days, and an optional brake can delay a scheduled action once.
 
 > **Status: pre-audit.** Do not use this code to custody value. It has had an internal
 > adversarial review by AI agents, not an external audit. A rehearsal runs on Sepolia; there
@@ -80,22 +81,22 @@ products pay 75% to the artist's side and 25% to the network, and royalties are 
 
 | Contract | Purpose | nSLOC |
 | --- | --- | ---: |
-| [`Stream`](src/stream/README.md), [`StreamViews`](src/stream/README.md) | The permanent shared ERC-721: mints what the replaceable mint policy authorizes, locks terms, royalties, the edition link; informational views in a read-only extension | 793 + 79 |
-| [`WorkRecords`](src/stream/README.md), [`WorkDelivery`](src/stream/README.md) | Each work's permanent record, media, license, seed, finalize and renderer pin, on-chain completeness across an append-only store set; locators and preferences in a replaceable delivery contract | 732 + 183 |
-| [`Editions`](src/editions/README.md) | 6529 Stream Editions, the shared ERC-1155, linked to Stream masters; supply sealed at settlement, prices logged | 484 |
-| [`PackageRegistry`](src/curation/README.md) | Stream's replaceable mint policy: package roots, party consent, the move signature, consume-once items, content uniqueness | 402 |
-| [`Eip712CurationVerifier`](src/curation/README.md) | Accepts curation signers' EIP-712 approvals | 103 |
-| [`EnglishAuction`](src/sales/README.md), [`EnglishAuctionLens`](src/sales/README.md) | Stream's primary sale: anti-snipe clock, pull refunds, pending claims, dispute pause; its views answered by a lens | 898 + 342 |
-| [`UniformEditionAuction`](src/sales/README.md), [`UniformEditionAuctionLens`](src/sales/README.md) | The edition auction: firm ETH bids on a step ladder beside the 1/1, one clearing price, FIFO at a capped step, claims | 982 + 932 |
-| [`EconomicsResolver`](src/economics/README.md), [`AssetAllowlist`](src/economics/README.md) | Terms for new works, fee recipients, currencies and increment floors | 212 + 154 |
-| [`SplitLedger`](src/economics/README.md), [`SplitVault`](src/economics/README.md) | One permanent ledger for every split wallet (66-byte vaults at predicted addresses), its accounting and signed releases | 264 + 8 |
-| [`RevenueEscrow`](src/economics/README.md), [`ClaimRouter`](src/economics/README.md), [`GovernedVault`](src/economics/README.md) | Failed-payment escrow, batch claims, the fee recipient's and museum's governed vaults | 122 + 148 + 108 |
-| [`ArtistRegistry`](src/identity/README.md), [`ConsolidationAdapter`](src/identity/README.md) | Permanent artist identity and payouts, governed recovery timers, the federation directory; consolidations through the adapter | 746 + 133 |
+| [`Stream`](src/stream/README.md), [`StreamViews`](src/stream/README.md) | The permanent shared ERC-721: mints what the replaceable mint policy authorizes, locks terms, royalties, the edition link; informational views in a read-only extension | 789 + 79 |
+| [`WorkRecords`](src/stream/README.md), [`WorkDelivery`](src/stream/README.md) | Each work's permanent record, media, license, seed, finalize and renderer pin, on-chain completeness across an append-only store set; locators and preferences in a replaceable delivery contract | 735 + 203 |
+| [`Editions`](src/editions/README.md) | 6529 Stream Editions, the shared ERC-1155, linked to Stream masters; supply sealed at settlement, prices logged | 498 |
+| [`PackageRegistry`](src/curation/README.md) | Stream's replaceable mint policy: package roots, party consent, the move signature, consume-once items, content uniqueness | 434 |
+| [`Eip712CurationVerifier`](src/curation/README.md) | Accepts curation signers' EIP-712 approvals | 112 |
+| [`EnglishAuction`](src/sales/README.md), [`EnglishAuctionLens`](src/sales/README.md) | Stream's primary sale: anti-snipe clock, pull refunds, pending claims, dispute pause; its views answered by a lens | 873 + 345 |
+| [`UniformEditionAuction`](src/sales/README.md), [`UniformEditionAuctionLens`](src/sales/README.md) | The edition auction: firm ETH bids on a step ladder beside the 1/1, one clearing price, FIFO at a capped step, claims | 905 + 901 |
+| [`EconomicsResolver`](src/economics/README.md), [`AssetAllowlist`](src/economics/README.md) | Terms for new works, fee recipients, currencies and increment floors | 212 + 151 |
+| [`SplitLedger`](src/economics/README.md), [`SplitVault`](src/economics/README.md) | One permanent ledger for every split wallet (66-byte vaults at predicted addresses), its accounting and signed releases | 371 + 8 |
+| [`RevenueEscrow`](src/economics/README.md), [`ClaimRouter`](src/economics/README.md), [`GovernedVault`](src/economics/README.md) | Failed-payment escrow, batch claims, the fee recipient's and museum's governed vaults | 139 + 148 + 99 |
+| [`ArtistRegistry`](src/identity/README.md), [`ConsolidationAdapter`](src/identity/README.md) | Permanent artist accounts (consolidated wallets, fixed timers for changes and replacements, freezes) and payouts, the federation directory; consolidations through the adapter | 617 + 52 |
 | [`ContentStore`](src/content/README.md), [`DependencyRegistry`](src/content/README.md) | Content-addressed on-chain chunks and shared libraries | 436 + 66 |
 | [`Renderer`](src/content/README.md) | `tokenURI` and `fullTokenURI` for works and editions | 761 |
 | [`StatementLog`](src/records/README.md) | Append-only signed statements: dispute outcomes, curation evidence, manifests | 309 |
-| [`VrfEntropyModule`](src/entropy/README.md) | Optional Chainlink VRF seed per work, delivered before the start | 252 |
-| [`WorksAccessManager`](src/governance/README.md), [`GovernanceConfigurator`](src/governance/README.md) | One AccessManager for everything; guardians cancel and suspend, a bounded veto, dead-admin recovery and a successor handover | 471 + 51 |
+| [`VrfEntropyModule`](src/entropy/README.md) | Optional Chainlink VRF seed per work, delivered before the start; requester-paid seeds for federated works (off until a wrapper is set) | 317 |
+| [`WorksAccessManager`](src/governance/README.md), [`GovernanceConfigurator`](src/governance/README.md) | One AccessManager for everything: one network address, fixed delay classes, an optional brake and a two-step handover | 100 + 43 |
 
 nSLOC counts non-blank lines without comments. The [audit scope](docs/audit/scope.md) lists every
 file, its bytecode size and how the figures are measured; `tools/check_docs_facts.py` keeps
