@@ -71,8 +71,18 @@ contract ContentToTokenURIFlowTest is IntegrationBase {
         delivery.addLocator(tokenId, v.fileId, CA.ar("golden arweave"));
         vm.prank(platform);
         delivery.addLocator(tokenId, v.fileId, CA.ipfsLocator("golden ipfs"));
+        // C33: the network's preferred kind chooses among every live locator, the platform's
+        // included, so IPFS serves the platform's copy; the artist's Arweave copy serves under
+        // the Arweave preference.
         vm.prank(storageOperator);
         delivery.setPreferredKind(LocatorKind.IPFS);
+        assertTrue(
+            _contains(
+                stream.tokenURI(tokenId), string.concat('"image":"', CA.ipfs("golden ipfs"), '"')
+            )
+        );
+        vm.prank(storageOperator);
+        delivery.setPreferredKind(LocatorKind.ARWEAVE);
         assertTrue(
             _contains(
                 stream.tokenURI(tokenId),
