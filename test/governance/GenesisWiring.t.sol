@@ -206,14 +206,16 @@ contract GenesisWiringTest is GovernanceFixture {
         assertTrue(wired.isAdmittedMinter(address(peerA)));
         assertTrue(wired.isTarget(address(peerB)));
 
-        _settle();
+        _accept();
         configurator.verify(cfg);
     }
 
     function test_WiringRunsBeforeSelectorsAreMapped() public {
         // `setAdmittedMinter` maps to SUCCESSOR_SETTER, which the configurator never holds,
-        // yet the wiring call succeeds: it runs while every selector resolves to zero-delay ADMIN.
+        // yet the wiring call succeeds: it runs while every selector resolves to ADMIN, which
+        // the installer holds with no delay.
         configurator.configure(_wiredConfig(), MANIFEST, _genesisCalls());
+        _accept();
         assertEq(
             manager.getTargetFunctionRole(
                 address(wired), WiringTargetMock.setAdmittedMinter.selector
@@ -223,7 +225,7 @@ contract GenesisWiringTest is GovernanceFixture {
         (uint48 since,,,) = manager.getAccess(Roles.SUCCESSOR_SETTER, address(configurator));
         assertEq(since, 0);
 
-        // After genesis the same calls are 30-day, guardian-vetoable operations.
+        // After genesis the same calls are the network's, at 7 days.
         bytes4[2] memory selectors = [
             WiringTargetMock.setAdmittedMinter.selector, WiringTargetMock.bindWorkRecords.selector
         ];
@@ -231,7 +233,7 @@ contract GenesisWiringTest is GovernanceFixture {
             (bool immediate, uint32 delay) =
                 manager.canCall(adminSafe, address(wired), selectors[i]);
             assertFalse(immediate);
-            assertEq(delay, 30 days);
+            assertEq(delay, 7 days);
         }
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -286,15 +288,16 @@ contract GenesisWiringTest is GovernanceFixture {
             _call(address(log), abi.encodeCall(StatementLog.appendGovernanceManifest, (manifest)))
         );
         configurator.configure(cfg, MANIFEST, wiring);
+        _accept();
 
         (uint64 count, bytes32 head) = log.chainOf(address(manager), 0);
         assertEq(count, 1, "epoch-0 manifest recorded");
         assertTrue(head != bytes32(0));
-        // Later epochs go through the 30-day class.
+        // Later epochs go through the 7-day class.
         (bool immediate, uint32 delay) =
             manager.canCall(adminSafe, address(log), StatementLog.appendGovernanceManifest.selector);
         assertFalse(immediate);
-        assertEq(delay, 30 days);
+        assertEq(delay, 7 days);
     }
 
     // ------------------------------------------------------------------ failures abort all

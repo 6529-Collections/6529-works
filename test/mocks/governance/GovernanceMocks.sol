@@ -2,10 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
-import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { BoundedParameter } from "src/governance/BoundedParameter.sol";
-import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
-import { Roles } from "src/governance/Roles.sol";
 
 /// @notice Sample governed target showing the patterns every 6529 Works target follows:
 ///         `restricted` non-payable setters, one selector per delay class, separate pause and
@@ -47,41 +44,41 @@ contract GovernedTargetMock is AccessManaged {
         emit PausedSet(true);
     }
 
-    /// Standard class (UNPAUSER), so a guardian can cancel a hostile unpause.
+    /// The network at 24 hours (PARAMETER_SETTER).
     function unpause() external restricted {
         if (!paused) revert PauseUnchanged(false);
         paused = false;
         emit PausedSet(false);
     }
 
-    /// Standard class (PARAMETER_SETTER).
+    /// The network at 24 hours (PARAMETER_SETTER).
     function setFee(uint256 newFee) external restricted {
         emit FeeUpdated(fee, newFee);
         fee = newFee;
     }
 
-    /// Funds-and-recipients class (FUNDS_SETTER), compare-and-set.
+    /// The network at 3 days (FUNDS_SETTER), compare-and-set.
     function setRecipient(address expected, address newRecipient) external restricted {
         if (recipient != expected) revert StaleValue(expected, recipient);
         emit RecipientUpdated(recipient, newRecipient);
         recipient = newRecipient;
     }
 
-    /// Successor class (SUCCESSOR_SETTER), compare-and-set.
+    /// The network at 7 days (SUCCESSOR_SETTER), compare-and-set.
     function setVerifier(address expected, address newVerifier) external restricted {
         if (verifier != expected) revert StaleValue(expected, verifier);
         emit VerifierUpdated(verifier, newVerifier);
         verifier = newVerifier;
     }
 
-    /// Standard class (PARAMETER_SETTER); direction and step enforced here.
+    /// The network at 24 hours (PARAMETER_SETTER); direction and step enforced here.
     function raiseCallbackGas(uint256 newGas) external restricted {
         uint256 old = callbackGas;
         callbackGas = BoundedParameter.raise(old, newGas, GAS_CEILING);
         emit CallbackGasUpdated(old, newGas);
     }
 
-    /// Immediate guardian veto (GUARDIAN), such as a dispute pause.
+    /// The network at once (NETWORK), such as a dispute cancel.
     function veto(bytes32 id) external restricted {
         ++vetoes;
         emit Vetoed(id);
@@ -97,7 +94,7 @@ contract GovernedTargetMock is AccessManaged {
         ++curated;
     }
 
-    /// Deliberately unmapped: falls back to ADMIN and its 30-day execution delay.
+    /// Deliberately unmapped: falls back to ADMIN, the network at 7 days.
     function adminOnly() external restricted {
         ++adminCalls;
     }
@@ -112,31 +109,9 @@ contract PayableGovernedMock is AccessManaged {
     }
 }
 
-/// @notice A target whose own function shares `AccessManager.revokeRole`'s selector. Rule 2
-///         protects roles on the manager only, so guardians may cancel this like any call.
-contract SelectorCollisionMock is AccessManaged {
-    uint256 public calls;
-
-    constructor(address manager) AccessManaged(manager) { }
-
-    function revokeRole(uint64, address) external restricted {
-        ++calls;
-    }
-}
-
 /// @notice A contract with no `authority()`; the configurator must reject it as a target.
 contract UnmanagedMock {
     function ping() external pure returns (uint256) {
         return 1;
-    }
-}
-
-/// @notice Test-only: installs a configuration on any manager by calling the library directly,
-///         so tests can contrast a stock OpenZeppelin `AccessManager` with `WorksAccessManager`.
-///         Production goes through `GovernanceConfigurator`, which owns its manager.
-contract StockInstallHarness {
-    function install(IAccessManager manager, GovernanceConfig.Config calldata cfg) external {
-        GovernanceConfig.install(manager, cfg, new GovernanceConfig.Call[](0));
-        manager.renounceRole(Roles.ADMIN, address(this));
     }
 }
