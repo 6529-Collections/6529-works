@@ -393,7 +393,9 @@ Eleven lanes merged in two rounds. The integrator also:
 
 Four independent reviews of the integrated tree (Stream and sales; records and storage; money
 and identity; governance and deployment) reported 1 High, 4 Medium and the Low and Info findings
-below; every one was handled before this record's last revision. Fixed means the code now holds
+below, and a fifth (E) verified their fixes, confirming every High and Medium fixed and reporting
+2 Low and 3 Info findings of its own (N-1 to N-5); every one was handled before this record's
+last revision. Fixed means the code now holds
 the stated guarantee, with a test that fails without the change; documented means a known
 limitation row states the residual; owner means the owner decides.
 
@@ -429,6 +431,11 @@ limitation row states the residual; owner means the owner decides.
 | D | L-3 | Low | Fixed with review B's M1: added stores are the artist's choice. |
 | D | L-4 | Low | Documented: the English auction's 60-day freeze exit can fire before an escalated guardian removal; auctions end unsold, nothing is lost (LIM-SAL-15). |
 | D | I-1 to I-4 | Info | Per-target authority moves stay 30 days with a single-guardian veto (documented); a dead-admin recovery cannot seat a guardian (fixed); Verify checks recipients, the genesis manager state and that every governed contract is listed (fixed). |
+| E | N-1 | Low | Fixed: only acts of the artist's own authority record activity. A wallet the consolidation source names still cancels and contests, but never moves an artist's last activity, so it cannot keep a dormant artist live; an execution restarts the clock only when it installs a new authority (ID-19, ID-40, LIM-ID-18). |
+| E | N-2 | Low | Fixed: an edition sale's abandonment adds the rescue delay Stream locked when the English auction was removed (else the delay in force), at most a governed rescue cap (730 days at launch, 90 to 730), so bidders always have a bounded exit (EA-18, EA-19, LIM-EA-18). |
+| E | N-3 | Info | Fixed: the content store's walk passes over a file already complete in an added store whose bytes it lacks, and goes round again once the work is on-chain complete, so files spread across stores never stall completion and an upgrade stays possible (WS-43). |
+| E | N-4 | Info | Documented: a work complete only in an added store shows no media at all with the default renderer where the preferred kind is ONCHAIN (LIM-CNT-21); the promise card prints that row (DCL-29). |
+| E | N-5 | Info | Documented: the class-delay floor binds holders, not functions; a selector remap is a 30-day admin operation any guardian can cancel (GV-38). Fixed: each consumed override acceptance is logged (`OverrideAcceptanceConsumed`, ID-12), so the registry's logs rebuild it. The start gate's 20 gas and the English auction's 2 bytes of slack are unchanged. |
 
 The bounded veto, as fixed and measured, bites against a colluding pair from four guardian
 seats; the seat count remains the owner's decision.
