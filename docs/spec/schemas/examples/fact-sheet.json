@@ -116,16 +116,15 @@
         "EVERY_PARTY",
         "FUNDS_SETTER"
       ],
-      "delaySeconds": 1209600,
+      "delaySeconds": 259200,
       "until": "permanent"
     },
     {
       "what": "renderer",
       "who": [
-        "ARTIST",
         "SUCCESSOR_SETTER"
       ],
-      "delaySeconds": 2592000,
+      "delaySeconds": 604800,
       "until": "permanent"
     },
     {
@@ -150,7 +149,7 @@
       "who": [
         "ARTIST"
       ],
-      "delaySeconds": 604800,
+      "delaySeconds": 172800,
       "until": "permanent"
     },
     {
@@ -158,7 +157,7 @@
       "who": [
         "PARAMETER_SETTER"
       ],
-      "delaySeconds": 15724800,
+      "delaySeconds": 1296000,
       "until": "permanent"
     },
     {
@@ -166,7 +165,7 @@
       "who": [
         "SUCCESSOR_SETTER"
       ],
-      "delaySeconds": 2592000,
+      "delaySeconds": 604800,
       "until": "permanent"
     }
   ],

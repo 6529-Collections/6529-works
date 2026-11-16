@@ -107,7 +107,7 @@ challenges it issued and has not spent (`challenges`: control-proof.v1 challenge
 official token addresses of the chain, block `B` and the head, and the reads at `B`: the signer's
 code,
 `ownerOf` (or the edition balance, or the auction's pending-delivery buyer) and the
-consolidation source's `isEstablished` and `effectiveAt`. The command recovers ECDSA signatures
+consolidation source's `isConsolidated(holder, signer)`. The command recovers ECDSA signatures
 with `cast` and cannot make the ERC-1271 call a contract signer needs; a program that keeps state,
 or must accept contract signers, calls `control_proof.verify_response` with its own store of
 issued challenges and `erc1271` callable. The store has one operation, `claim(nonce)`, which must

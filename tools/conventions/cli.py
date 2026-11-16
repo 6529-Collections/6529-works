@@ -113,7 +113,6 @@ def cmd_control_verify(args: argparse.Namespace) -> int:
         consolidation=ctx.get("consolidation"),
         freshness_blocks=ctx.get("freshnessBlocks", control_proof.DEFAULT_FRESHNESS_BLOCKS),
         accept_pending_delivery=ctx.get("acceptPendingDelivery", False),
-        accept_young_consolidation=ctx.get("acceptYoungConsolidation", False),
     )  # fmt: skip
     _print(verdict.__dict__)
     return 0 if verdict.accepted else EXIT_NOT_OK

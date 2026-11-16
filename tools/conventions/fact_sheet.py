@@ -39,7 +39,7 @@ reads:
     chainOf:              {count, head}
     artistResolver:       address
   ArtistRegistry:
-    activeAuthorityOf: address              # zero while restrained
+    activeAuthorityOf: address              # zero while frozen or being replaced
     pendingChange:     {kind}
   UniformEditionAuction:
     clearing: {count, price}                # for a master that has an edition

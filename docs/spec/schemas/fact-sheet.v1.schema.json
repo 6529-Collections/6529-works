@@ -54,7 +54,7 @@
       "properties": {
         "activeAuthority": { "$ref": "urn:6529-works:schema:common:v1#/$defs/address" },
         "restrained": { "type": "boolean" },
-        "pendingChange": { "enum": ["NONE", "STANDARD", "CONTESTED", "ESTATE", "LOST_KEY"] },
+        "pendingChange": { "enum": ["NONE", "OWN", "REPLACEMENT"] },
         "resolver": {
           "description": "The statement log's artist resolver at the block.",
           "$ref": "urn:6529-works:schema:common:v1#/$defs/address"

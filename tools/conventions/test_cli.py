@@ -108,11 +108,11 @@ class CliTest(unittest.TestCase):
                "challenges": [{"v": 1, "message": testdata.example("control-proof.json")["message"]}],
                "officialTokens": {"0x02617dbdc0b0521124cb4c2a3ef602977e29bd91": "stream"},
                "block": {"number": 1, "timestamp": 1794787250}, "headBlock": 1,
-               "ownership": {"ownerOf": testdata.ANVIL_1}, "consolidation": {"isEstablished": False, "effectiveAt": 0}}
+               "ownership": {"ownerOf": testdata.ANVIL_1}, "consolidation": {"isConsolidated": False}}
         with mock.patch.object(eip712, "cast_ecdsa_verifier", return_value=True):
             code, out, _ = run("control-proof", "verify", str(EXAMPLES / "control-proof.json"), "--context", self.write("ctx.json", ctx))
         self.assertEqual((code, json.loads(out)["step"]), (1, "DCL-25"))  # no established consolidation
-        ctx["consolidation"]["isEstablished"] = True
+        ctx["consolidation"]["isConsolidated"] = True
         with mock.patch.object(eip712, "cast_ecdsa_verifier", return_value=True):
             code, out, _ = run("control-proof", "verify", str(EXAMPLES / "control-proof.json"), "--context", self.write("ctx.json", ctx))
         self.assertEqual((code, json.loads(out)["accepted"]), (0, True))

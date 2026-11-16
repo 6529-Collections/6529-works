@@ -225,9 +225,9 @@ class SaleAndDisputeTest(unittest.TestCase):
         self.assertEqual(disputed["dispute"]["scope"], "token")
 
     def test_restrained_artist(self) -> None:
-        c = build(lambda i: reads(i)["ArtistRegistry"].update(activeAuthorityOf=ZERO, pendingChange={"kind": "CONTESTED"}))
+        c = build(lambda i: reads(i)["ArtistRegistry"].update(activeAuthorityOf=ZERO, pendingChange={"kind": "REPLACEMENT"}))
         self.assertTrue(c["artist"]["restrained"])
-        self.assertEqual(c["artist"]["pendingChange"], "CONTESTED")
+        self.assertEqual(c["artist"]["pendingChange"], "REPLACEMENT")
 
 
 class PowersTest(unittest.TestCase):
