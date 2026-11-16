@@ -1049,8 +1049,8 @@
         }
       },
       {
-        "operation": "Deploy FederatedStream (whole transaction; 5,097,751 through its deployer, which records it; each deployment row measured in its own test)",
-        "pragueGas": 5416145,
+        "operation": "Deploy FederatedStream (whole transaction; 5,100,251 through its deployer, which records it; each deployment row measured in its own test)",
+        "pragueGas": 5418645,
         "pragueCeiling": {
           "gas": 5500000,
           "kind": "regression"
