@@ -160,6 +160,15 @@ class RecordStatesTest(unittest.TestCase):
         self.assertIn(("renderer", ("SUCCESSOR_SETTER",)), rows)
         self.assertNotIn(("renderer", ("ARTIST", "SUCCESSOR_SETTER")), rows)
 
+    def test_complete_only_in_an_added_store(self) -> None:
+        """DCL-29 (review E, N-4): an on-chain complete work with a media file not complete in
+        the content store prints LIM-CNT-21; with every file there it does not."""
+        self.assertNotIn("LIM-CNT-21", build()["residualRisks"])
+        f1 = "0x" + "11" * 32
+        c = build(lambda i: reads(i)["ContentStore"]["isComplete"].update({f1: False}))
+        self.assertTrue(c["storage"]["onChainComplete"])
+        self.assertIn("LIM-CNT-21", c["residualRisks"])
+
     def test_finalized_drops_record_license_and_burn_rows(self) -> None:
         """DCL-27: record until finalize; license never for CC0 (WS-12); burn until settlement."""
         whats = [r["what"] for r in build()["changeable"]]
@@ -434,17 +443,23 @@ class DisplayAndCustodyTest(unittest.TestCase):
 
 class ResidualRiskTest(unittest.TestCase):
     def test_conditions(self) -> None:
-        """DCL-29: the always list, LIM-CNT-1, LIM-CNT-10 and LIM-EA-14 on their conditions."""
+        """DCL-29: the always list, LIM-CNT-1, LIM-CNT-21, LIM-CNT-10 and LIM-EA-14 on their
+        conditions."""
         base = residual_risks(on_chain_complete=True, finalized=False, ea14=False)
         self.assertEqual(set(base), set(card_module.ALWAYS_RISKS))
         self.assertIn("LIM-CNT-1", residual_risks(on_chain_complete=False, finalized=False, ea14=False))
+        both = dict(finalized=False, ea14=False, added_store_only=True)
+        self.assertIn("LIM-CNT-21", residual_risks(on_chain_complete=True, **both))
+        self.assertNotIn("LIM-CNT-21", residual_risks(on_chain_complete=False, **both))
         self.assertIn("LIM-CNT-10", residual_risks(on_chain_complete=True, finalized=True, ea14=False))
         self.assertIn("LIM-EA-14", residual_risks(on_chain_complete=True, finalized=False, ea14=True))
 
     def test_every_printed_id_is_in_known_limitations(self) -> None:
         """DCL-29: each ID links to known limitations, which owns the text."""
         text = KNOWN_LIMITATIONS.read_text(encoding="utf-8")
-        for risk in residual_risks(on_chain_complete=False, finalized=True, ea14=True):
+        risks = residual_risks(on_chain_complete=False, finalized=True, ea14=True)
+        risks += residual_risks(on_chain_complete=True, finalized=True, ea14=True, added_store_only=True)
+        for risk in risks:
             with self.subTest(risk):
                 self.assertRegex(text, rf"{re.escape(risk)}(?![0-9])")
 
