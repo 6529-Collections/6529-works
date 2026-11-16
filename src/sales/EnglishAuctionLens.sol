@@ -435,8 +435,9 @@ contract EnglishAuctionLens {
                 creator := mload(add(data, 0x120))
             }
             // The struct starts at 0x20; its `params` length word sits `paramsOffset` bytes on,
-            // and the bytes follow it. Compared by subtraction, so nothing can wrap.
-            if (paramsOffset <= size - 0x40) {
+            // past the eight-word head, and the bytes follow it. Compared by subtraction, so
+            // nothing can wrap.
+            if (paramsOffset >= 0x100 && paramsOffset <= size - 0x40) {
                 assembly ("memory-safe") {
                     paramsLength := mload(add(add(data, 0x40), paramsOffset))
                 }
