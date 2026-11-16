@@ -512,9 +512,9 @@ or budget moved.
 | `release`, the artist's first ETH release | 93,147 | 96,000 (regression) | 2 | 0 | — |
 | `claimSigned`, the artist's first signed release | 137,632 | 145,000 (regression) | 3 | 0 | — |
 | `claimSigned`, a later signed release (next nonce) | 86,344 | 92,000 (regression) | 0 | 0 | — |
-| Edition auction `open`, steady state (binds the edition) | 290,416 | 296,000 (regression) | 6 | 0 | — |
-| Edition auction `open`, the adapter's first (one-time) | 336,153 | 342,000 (regression) | 8 | 0 | — |
-| Edition auction `open`, an artist's first sale (deploys both split wallets) | 429,732 | 443,000 (regression) | 8 | 2 | — |
+| Edition auction `open`, steady state (binds the edition) | 290,456 | 296,000 (regression) | 6 | 0 | — |
+| Edition auction `open`, the adapter's first (one-time) | 336,193 | 342,000 (regression) | 8 | 0 | — |
+| Edition auction `open`, an artist's first sale (deploys both split wallets) | 429,772 | 443,000 (regression) | 8 | 2 | — |
 | Edition `bid`, its 8-step word exists | 68,697 | 110,000 | 1 | 0 | — |
 | Edition `bid`, opens an 8-step word | 85,767 | 110,000 | 2 | 0 | — |
 | Edition `bid`, capped sale | 71,114 | 110,000 | 1 | 0 | — |
@@ -527,7 +527,7 @@ or budget moved.
 | Edition `settle`, capped, one departure swept | 163,353 | 174,000 (regression) | 1 | 0 | — |
 | Edition `settle`, every step used (512 steps, departures at the cut), each call | at most 243,174 of execution | 350,000 of execution | 0 to 2 (the call that clears and leaves its sweep unfinished writes the result and its settler's progress) | 0 | — |
 | Edition `settle`, a 96-departure chunk with departures scattered over the log's words (336 steps), each call; review PoC, not in CI | at most 307,070 of execution | 350,000 of execution | 0 to 2 | 0 | — |
-| Edition `claimBid`, a winner and new holder | 98,547 | 100,000 | 1 | 0 | — |
+| Edition `claimBid`, a winner and new holder | 98,588 | 100,000 | 1 | 0 | — |
 | Edition `claimBid`, refund only | 47,504 | 49,000 (regression) | 0 | 0 | — |
 | Edition `claimBidFor`, refund credited | 64,482 | 67,000 (regression) | 1 | 0 | — |
 | Federated `joinFederation`, creating the identity | 284,685 | 295,000 (regression) | 7 | 0 | ~0.91M [E] |
@@ -538,10 +538,10 @@ or budget moved.
 | Federated `settle`, sold | 176,220 | 182,000 (regression) | 2 | 0 | ~0.35M [E] |
 | Federated `settle`, unbid (to the template) | 150,850 | 156,000 (regression) | 2 | 0 | ~0.33M [E] |
 | Federated restart | 245,056 | 253,000 (regression) | 4 | 0 | ~0.60M [E] |
-| Federated edition `open` | 363,752 | 371,000 (regression) | 7 | 0 | ~0.99M [E] |
+| Federated edition `open` | 363,784 | 371,000 (regression) | 7 | 0 | ~0.99M [E] |
 | Federated `createEdition` | 86,758 | 90,000 (regression) | 1 | 0 | ~0.18M [E] |
 | Federated edition `settle` | 149,965 | 162,000 (regression) | 1 | 0 | ~0.24M [E] |
-| Deploy `FederatedStream` (whole transaction) | 5,214,822 | 5,370,000 (regression) | 11 | 1 | ~36.7M [E] ([ADR 0008](0008-federation.md) §9) |
+| Deploy `FederatedStream` (whole transaction) | 5,214,846 | 5,370,000 (regression) | 11 | 1 | ~36.7M [E] ([ADR 0008](0008-federation.md) §9) |
 | Deploy `FederatedEditions` (whole transaction) | 3,754,423 | 3,870,000 (regression) | 8 | 1 | ~26.4M [E] |
 
 r2's Sepolia column, as accepted (receipts on `400f96d`, before the review fixes

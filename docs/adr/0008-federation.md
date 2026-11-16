@@ -180,13 +180,19 @@ After ADR 0007's review fixes:
   partner `FederatedStream` (fixed code: `coreOf`'s item hash and `primarySaleSettled`), the
   split ledger (permanent) and its own storage, and is permissionless, so a settled master's
   edition can always be created.
-- **Abandonment.** The adapter now enforces its own time floor (L-3) and adds what 6529
-  Stream's rescue delay adds to its 90-day floor (L-4), because a canonical master may wait on a
-  rescue. The shared bases take that delay from a hook (`_rescueDelay`): the canonical
-  deployment and its lens read Stream's `rescueDelay` with all the gas; the federated ones
-  answer the 90-day floor, since a federated 1/1 has no rescue. A federated sale is therefore
-  abandonable at its end plus its locked delay, whatever Stream's rescue delay, and the floor
-  is still enforced by the adapter itself.
+- **Abandonment.** The adapter enforces its own time floor (L-3) and adds what 6529 Stream's
+  rescue delay for the English auction's works adds to its 90-day floor (L-4; review E's N-2:
+  the delay Stream locked when the English auction was removed, else the delay in force),
+  capped by the governed `rescueCapDays` limit (90 to 730 days, 730 at launch), because a
+  canonical master may wait on a rescue. The shared bases take the uncapped addition from a
+  hook (`_rescueLengthening`) and apply the cap from the shared limits word: the canonical
+  deployment and its lens read Stream (its `extsload` at `StreamLayout.minterSlot`, then
+  `rescueDelay`) with all the gas; the federated ones add nothing and read no 6529 Stream slot,
+  since a federated 1/1 has no rescue. A federated sale is therefore abandonable at its end plus
+  its locked delay, whatever Stream's rescue delay or the cap, and the floor is still enforced by
+  the adapter itself. The federated deployment is constructed with the same genesis limits
+  (`DeployV1.editionAuctionLimits`, `rescueCapDays` 730 included), governed by its own
+  `setLimits`.
 - **Wallets.** The lens always calls the ledger's idempotent `createWallet` for the seller and
   royalty vaults (F16) through the deployment's factory (for a federated token, the split
   ledger its terms name, which the registry checked); the template deployed both at the first
@@ -229,27 +235,27 @@ After ADR 0007's review fixes:
 
 Measured at the merged tip (16 November 2026).
 
-- **Source lines:** **15,925** non-comment lines under `src/` (the permanence tip has 14,334; the
+- **Source lines:** **15,972** non-comment lines under `src/` (the permanence tip has 14,382; the
   federation adds the templates, the registry, the federated edition auction and lens, three
   new interfaces and a reshaped `IFederationRegistry`, the shared edition-auction bases and
   their rescue hook, and the genesis wiring selectors). The budget is raised to **16,000** to
   admit federation (owner, 16 November 2026; see Amendments).
 - **EIP-170 (runtime bytes, margin):** `FederatedStream` 22,608 (1,968), `FederatedEditions`
-  16,194 (8,382), `FederationRegistry` 8,423 (16,153), `FederatedEditionAuction` 23,132
-  (1,444), its lens 23,751 (825). Canonical contracts this changes: `UniformEditionAuction`
-  23,300 to 23,322 (1,254), its lens 22,887 to 22,804 (1,772); `GovernanceConfigurator` 11,473
+  16,194 (8,382), `FederationRegistry` 8,423 (16,153), `FederatedEditionAuction` 23,279
+  (1,297), its lens 23,837 (739). Canonical contracts this changes: `UniformEditionAuction`
+  23,884 to 23,912 (664), its lens 23,129 to 23,062 (1,514); `GovernanceConfigurator` 11,473
   to 11,554 runtime, 37,079 to 37,160 initcode (the three genesis selectors). The English
   auction is unchanged at 24,062 (514), as are Stream, Editions, WorkRecords, the artist
   registry and the renderer. Every contract keeps 512, with no exemption.
 - **The artist pays the templates' deployment once.** Measured (Prague, whole transaction:
   21,000 + 32,000, calldata, the constructor and 200 per code byte): `FederatedStream`
-  **5,214,822** (22,608 bytes, 11 slots); `FederatedEditions` **3,754,423** (16,194 bytes, 8 slots);
-  a pair **8,969,245**. Glamsterdam estimate from ADR 0004's unit prices (code 1,542 per byte, a
+  **5,214,846** (22,608 bytes, 11 slots); `FederatedEditions` **3,754,423** (16,194 bytes, 8 slots);
+  a pair **8,969,269**. Glamsterdam estimate from ADR 0004's unit prices (code 1,542 per byte, a
   new slot about 111,000, an empty CREATE about 210,000), replacing the Prague components
   (code at 200 per byte, a slot at 22,100, and the 53,000 of the transaction and CREATE
   bases):
-  - 721: 5,214,822 - 22,608 x 200 + 22,608 x 1,542 - 11 x 22,100 + 11 x 111,000 - 53,000 +
-    210,000 = **36,689,658** (about 36.7M: the code term is 22,608 x 1,342 = 30,339,936, the slots 11 x 88,900 = 977,900);
+  - 721: 5,214,846 - 22,608 x 200 + 22,608 x 1,542 - 11 x 22,100 + 11 x 111,000 - 53,000 +
+    210,000 = **36,689,682** (about 36.7M: the code term is 22,608 x 1,342 = 30,339,936, the slots 11 x 88,900 = 977,900);
   - 1155: 3,754,423 - 16,194 x 200 + 16,194 x 1,542 - 8 x 22,100 + 8 x 111,000 - 53,000 +
     210,000 = **26,354,971** (about 26.4M);
   - a pair: about **63.0M**. Calldata repricing under Glamsterdam is not modelled [U]. At 1 /
@@ -257,11 +263,11 @@ Measured at the merged tip (16 November 2026).
     would cut this to about 1.5M per contract and remain a later template version, touching
     nothing permanent.
 - **Gas rows** (Prague; federated rows are their own, with ceilings in
-  `FederationGas.t.sol` and ADR 0004's table): join creating the identity 284,685 (7 slots); `approveItem` 59,334 (1); a first start deploying both vaults 666,394 (18 slots, 2 accounts); a steady start 403,304 (10); a first bid 189,476 (5); settle sold 176,220 (2); settle unbid 150,850 (2); restart 245,056 (4); federated edition `open` 363,752 (7); `createEdition` 86,758 (1); edition settle 149,965 (1). Glamsterdam, adding about 89,000 per new
+  `FederationGas.t.sol` and ADR 0004's table): join creating the identity 284,685 (7 slots); `approveItem` 59,334 (1); a first start deploying both vaults 666,394 (18 slots, 2 accounts); a steady start 403,304 (10); a first bid 189,476 (5); settle sold 176,220 (2); settle unbid 150,850 (2); restart 245,056 (4); federated edition `open` 363,784 (7); `createEdition` 86,758 (1); edition settle 149,965 (1). Glamsterdam, adding about 89,000 per new
   slot (and about 245,600 per vault created): steady start about 1.29M (403,304 + 10 x 89,000), first start about
   2.76M (666,394 + 18 x 89,000 + 2 x 245,600). A federated settlement executes about 95,000 gas, far inside the refusal gas less
   the auction's 2.43M (guarantee 1).
-- **Canonical rows:** no 1/1 row moved (the English auction is unchanged; the tightest start row is still 344,980, 5,020 under 350,000, so the 5,000 start margin holds). The edition auction's three `open` rows rose by 291 each (290,125 to 290,416; 335,862 to 336,153; 429,441 to 429,732; ceilings unchanged): the shared base's hooks, as the lane measured (+303 before the review fixes' `settle` decoding moved code). Its other rows moved by at most 16 gas either way (a bid near the close 78,018 to 78,002; settle, 40 steps, 150,391 to 150,375; the capped sweep settle 163,355 to 163,353; claiming a winner 98,539 to 98,547; a withdrawal during a 1/1 pause 87,980 to 87,964).
+- **Canonical rows:** no 1/1 row moved (the English auction is unchanged; the tightest start row is 344,968, as on the permanence tip, 5,032 under 350,000, so the 5,000 start margin holds). The edition auction's three `open` rows rose by 261 each over the permanence tip measured on the same day (290,195 to 290,456; 335,932 to 336,193; 429,511 to 429,772; ceilings unchanged; the tip's table still lists the values before review E's limits word, 70 lower): the shared base's hooks, within the +303 the lane first measured. Claiming a winner rose by 8 (98,580 to 98,588). Its other rows moved by at most 16 gas either way (a bid near the close 78,018 to 78,002; settle, 40 steps, 150,391 to 150,375; the capped sweep settle 163,355 to 163,353; claiming a winner 98,539 to 98,547; a withdrawal during a 1/1 pause 87,980 to 87,964).
 
 ### 10. Genesis wiring
 

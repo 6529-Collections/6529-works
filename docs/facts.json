@@ -696,7 +696,7 @@
       },
       {
         "operation": "Edition auction open, steady state (binds the edition)",
-        "pragueGas": 290416,
+        "pragueGas": 290456,
         "pragueCeiling": {
           "gas": 296000,
           "kind": "regression"
@@ -707,7 +707,7 @@
       },
       {
         "operation": "Edition auction open, the adapter's first (one-time)",
-        "pragueGas": 336153,
+        "pragueGas": 336193,
         "pragueCeiling": {
           "gas": 342000,
           "kind": "regression"
@@ -718,7 +718,7 @@
       },
       {
         "operation": "Edition auction open, an artist's first sale (deploys both split wallets)",
-        "pragueGas": 429732,
+        "pragueGas": 429772,
         "pragueCeiling": {
           "gas": 443000,
           "kind": "regression"
@@ -874,7 +874,7 @@
       },
       {
         "operation": "Edition claimBid, a winner and new holder",
-        "pragueGas": 98547,
+        "pragueGas": 98588,
         "pragueCeiling": {
           "gas": 100000,
           "kind": "budget"
@@ -1011,7 +1011,7 @@
       },
       {
         "operation": "Federated edition open",
-        "pragueGas": 363752,
+        "pragueGas": 363784,
         "pragueCeiling": {
           "gas": 371000,
           "kind": "regression"
@@ -1050,7 +1050,7 @@
       },
       {
         "operation": "Deploy FederatedStream (whole transaction)",
-        "pragueGas": 5214822,
+        "pragueGas": 5214846,
         "pragueCeiling": {
           "gas": 5370000,
           "kind": "regression"
