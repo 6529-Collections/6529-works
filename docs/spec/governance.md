@@ -333,7 +333,8 @@ everything except two protected actions, and bounds it there:
   registration, is no strike, so neither one compromised admin nor two can push an action into
   the escalated lane; the strike on a removal ends once the account holds neither role.
 - **Escalated lane.** Every later proposal of a struck action is scheduled at least
-  `ESCALATED_DELAY` (default 120 days) ahead (`OperationEscalated`). Its scheduler may withdraw
+  `ESCALATED_DELAY` (default 120 days) ahead (`OperationEscalated`), or the caller's own execution
+  delay when that is longer, as in the slow lane (GV-41). Its scheduler may withdraw
   it. Anyone else's `cancel` is a vote, accepted only from a guardian seated when it was
   scheduled (`NotAVoter`, `AlreadyVoted`), and it is cancelled once the votes reach a majority
   of the guardian seats counted when it was scheduled, never fewer than two guardians
@@ -409,6 +410,10 @@ freeze exit is one (LIM-SAL-15).
 Every number of the manager's own is a parameter, changed by `setParameter(which, expected,
 value)` (`ADMIN`, slow lane, compare-and-set, any guardian may cancel) within bounds compiled into
 the manager (GV-41). The lower bound is the guarantee; the default is only the starting value.
+A slow-lane or escalated operation is scheduled no earlier than the lane's delay or the caller's
+own execution delay, whichever is later: an earlier `when`, zero included, is raised to it, so an
+admin granted a delay above the lane's (allowed above the 30-day floor) can still schedule
+(`test_ALaneNeverSchedulesBeforeTheCallersOwnDelay`).
 
 | Parameter | Default | Bounds | Guarantee |
 | --- | --- | --- | --- |
@@ -444,7 +449,8 @@ stateDiagram-v2
   `consumeScheduledOp`, which records activity for the scheduling admin if still active. A direct
   immediate call never reaches the manager's state (it only asks `canCall`, a view), so it cannot
   count: admins act through `execute`, a delayed call, or heartbeat. A recovery is live only while it opened
-  after the last activity, so any admin action voids it and restarts the clock.
+  after the last activity, so any admin action voids it and restarts the clock. Each move of the
+  clock is logged (`AdminActivity(admin, at)`), so the logs alone show when a recovery was voided.
 - **Open.** Anyone, after `RECOVERY_SILENCE` (`AdminsNotSilent` before), for one candidate
   (`RecoveryOpened`); a candidate has at most one live recovery.
 - **Who decides.** The guardians, the only other body on chain, counted by seat as in the
@@ -459,6 +465,17 @@ stateDiagram-v2
   one of its own seats the only admin while it keeps its veto, the separation
   `GovernanceConfig` requires at genesis. A guardian that should become the admin leaves the
   guardian body first (`test_ARecoveryCannotSeatAGuardianAsAdmin`).
+- **What a recovery supersedes.** Completion first withdraws a successor proposal still pending
+  (`SuccessorProposed(0, 0)`): the former admins' proposal could otherwise be accepted at once,
+  while the new admin needs the slow lane to withdraw it; the new admin may propose it again
+  (`test_ARecoveryWithdrawsTheFormerAdminsPendingSuccessor`). Nothing else needs clearing: a
+  former admin's scheduled operations execute only for their scheduler, so the ADMIN ones die
+  with the revocation and any under another role the new admin cancels at once; the recovery
+  address acts only after the new admin is silent for `RECOVERY_SILENCE`, and the new admin can
+  replace it in the slow lane; strikes and suspensions are the guardians'. The other order: a
+  pending successor that accepts while a recovery is open wins, and the recovery can no longer
+  complete (`HandedOver`), since that proposal passed the slow lane and every guardian's veto
+  (`test_ASuccessorAcceptingFirstEndsTheOpenRecovery`).
 - **Not a shortcut.** It needs a year of total admin silence and 180 more public days (at least
   270 days at the floors), and a guardian majority or the admins' own choice of recovery address;
   compromising a live admin needs 30 days and is stopped by one guardian.
@@ -900,8 +917,8 @@ DEPS-4).
 | GV-38 | Every grant or re-grant of a role in `Roles` carries at least that role's class delay (30 days for `ADMIN`), whoever the role's admin is, except the configurator's constructor seat. It binds holders, not functions: remapping a selector to a faster role, a role outside `Roles` or `PUBLIC` is a 30-day `ADMIN` operation any guardian can cancel (GV-4). | `WorksAccessManager._grantRole` | [`SeatsAndParameters.t.sol`](../../test/governance/SeatsAndParameters.t.sol): `test_AnAdminDelayBelowThirtyDaysIsRefused`, `test_EveryDelayedRoleRefusesAGrantBelowItsClass`, `test_AReGrantCannotCutAHolderBelowItsClass`, `test_ARoleAdminChangeCannotGrantBelowTheClass`, `testFuzz_AGrantExecutesOnlyAtOrAboveItsClass`; `Hardening.t.sol`: `test_AdminCannotShortenItsOwnExecutionDelayWithoutWaiting`, `test_AFreshHolderCarriesTheClassDelayAndWaitsTheGrantDelay` |
 | GV-39 | The manager's own selectors cannot be remapped and the manager cannot be closed. | `WorksAccessManager._setTargetFunctionRole`, `_setTargetClosed` | `SeatsAndParameters.t.sol`: `test_TheManagersOwnSelectorsCannotBeRemapped`; `GovernanceConfigurator.t.sol`: `test_ReadbackDetectsTheManagerClosedAsATarget`; `BoundedVeto.t.sol`: `test_AWrappedRegistrationNeverExecutes` |
 | GV-40 | At most `ADMIN_SEATS` admin and `GUARDIAN_SEATS` guardian records, active or pending, the configurator's constructor seat not counted; a lower cap refuses new seats only; the seat lists match the records. | `WorksAccessManager._grantRole`, `_revokeRole`, `seatHolders`; `tools/check_genesis.py` (check 9) | `SeatsAndParameters.t.sol`: `test_SeatsAreCountedFromGenesis`, `test_GenesisNamesThreeFourOrFiveAdmins`, `test_AdminSeatsAreCappedAndAFreedSeatCanBeFilled`, `test_GuardianSeatsAreCappedAndPendingGrantsCount`, `test_ARegrantToAnExistingHolderTakesNoNewSeat`, `test_ALowerSeatCapRefusesNewSeatsOnly` |
-| GV-41 | Each manager parameter changes only by `setParameter`, `ADMIN` in the slow lane, compare-and-set, within its compiled bounds; `setRecoveryAddress` and `registerSuccessor` also wait `SLOW_DELAY`. | `WorksAccessManager.setParameter`, `parameterBounds`, `schedule` | `SeatsAndParameters.t.sol`: `test_DefaultsAndCompiledBounds`, `test_AParameterMovesThroughTheSlowLaneWithinItsBounds`, `test_AnyGuardianStopsAParameterChangeWithoutAStrike`, `test_TheRecoveryAddressIsSetInTheSlowLane` |
-| GV-42 | A recovery opens only after `RECOVERY_SILENCE` without admin activity, completes only `RECOVERY_DELAY` later with no admin activity since it opened, and then only with a guardian majority's approval or, for the recovery address, without a majority's objection; it revokes every admin and installs the candidate with the 30-day delay; a candidate holding or awaiting `GUARDIAN` or `PAUSER` is refused. | `WorksAccessManager.openRecovery`, `approveRecovery`, `objectToRecovery`, `completeRecovery`, `heartbeat`, `_touch` | [`DeadAdminRecovery.t.sol`](../../test/governance/DeadAdminRecovery.t.sol): every test, among them `test_AnAdminsImmediateExecuteCountsAndKeepsRecoveryClosed`, `test_ARecoveryCannotSeatAGuardianAsAdmin`, `test_AnyAdminActionDuringTheDelayVoidsTheRecovery`, `test_RecoveryIsNeverFasterThanCompromisingAnAdmin`, `test_AdminsAndGuardiansBothDead_OnlyTheRecoveryAddressRecovers` |
+| GV-41 | Each manager parameter changes only by `setParameter`, `ADMIN` in the slow lane, compare-and-set, within its compiled bounds; `setRecoveryAddress` and `registerSuccessor` also wait `SLOW_DELAY`. A slow-lane or escalated operation is scheduled no earlier than the later of the lane's delay and the caller's own execution delay. | `WorksAccessManager.setParameter`, `parameterBounds`, `schedule` | `SeatsAndParameters.t.sol`: `test_DefaultsAndCompiledBounds`, `test_AParameterMovesThroughTheSlowLaneWithinItsBounds`, `test_AnyGuardianStopsAParameterChangeWithoutAStrike`, `test_TheRecoveryAddressIsSetInTheSlowLane`; `BoundedVeto.t.sol`: `test_ALaneNeverSchedulesBeforeTheCallersOwnDelay` |
+| GV-42 | A recovery opens only after `RECOVERY_SILENCE` without admin activity, completes only `RECOVERY_DELAY` later with no admin activity since it opened, and then only with a guardian majority's approval or, for the recovery address, without a majority's objection; it withdraws a pending successor proposal, revokes every admin and installs the candidate with the 30-day delay; a candidate holding or awaiting `GUARDIAN` or `PAUSER` is refused. Every move of the activity clock emits `AdminActivity`. | `WorksAccessManager.openRecovery`, `approveRecovery`, `objectToRecovery`, `completeRecovery`, `heartbeat`, `_touch`, `_active` | [`DeadAdminRecovery.t.sol`](../../test/governance/DeadAdminRecovery.t.sol): every test, among them `test_ARecoveryWithdrawsTheFormerAdminsPendingSuccessor`, `test_ASuccessorAcceptingFirstEndsTheOpenRecovery`, `test_EveryMoveOfTheActivityClockIsLogged`, `test_AnAdminsImmediateExecuteCountsAndKeepsRecoveryClosed`, `test_ARecoveryCannotSeatAGuardianAsAdmin`, `test_AnyAdminActionDuringTheDelayVoidsTheRecovery`, `test_RecoveryIsNeverFasterThanCompromisingAnAdmin`, `test_AdminsAndGuardiansBothDead_OnlyTheRecoveryAddressRecovers` |
 | GV-43 | `registerSuccessor` needs a code-bearing authority that answers `canCall` and only proposes it (zero withdraws); the manager keeps every power until the pending successor itself re-points its probe to the manager and calls `acceptSuccession`; from then on the manager answers no `canCall` and no `hasRole`, so nothing can be scheduled, executed, suspended or recovered. | `WorksAccessManager.registerSuccessor`, `acceptSuccession`, `canCall`, `hasRole`; `SuccessionProbe` | [`Succession.t.sol`](../../test/governance/Succession.t.sol): `test_RegistrationWaitsTheSlowDelayAndOnlyProposes`, `test_AcceptanceEndsTheManagersPower`, `test_ASuccessorThatCannotCallNeverTakesOver`, `test_AnAdminCannotAcceptForTheSuccessor`, `test_AcceptanceNeedsTheProbeRepointed`, `test_AReplacedOrWithdrawnProposalCannotAccept`, `test_WhilePendingRecoveryAndGuardiansStillWork`, `test_ASuccessorMustHaveCodeAndAnswerCanCall`; [`GovernanceHandover.t.sol`](../../test/integration/GovernanceHandover.t.sol): `test_TheOldManagerKeepsNoPower`, `test_ASuccessorThatCannotCallNeverTakesOverTheStack` |
 | GV-44 | Every target the manager configures, at genesis or later, is on the managed list once; never the manager. Readback requires every configured target, and every deployed contract the manager governs, listed, and the manager not handed over. | `WorksAccessManager._setTargetAdminDelay`, `_setTargetFunctionRole`, `_manage`; `GovernanceConfigurator.verify`; `VerifyV1.check` | `Succession.t.sol`: `test_GenesisTargetsAndLaterTargetsAreManaged`; `GovernanceHandover.t.sol`: `test_EveryGovernedContractMovesInOneTransaction`, `test_AContractAddedAfterGenesisMovesToo`; [`VerifyGenesisState.t.sol`](../../test/deploy/VerifyGenesisState.t.sol): `test_AGovernedButUnmanagedContractFails` |
 | GV-45 | `migrate(from, to)` is open to anyone once handed over, moves every listed target in the range that still names the manager, forwards all gas, and reverts as a whole if any of them fails. Under the successor every managed contract keeps working. | `WorksAccessManager.migrate` | `Succession.t.sol`: `test_OneTransactionMovesEveryManagedTarget`, `test_TheSuccessorAcceptsAndMigratesInOneMulticall`, `test_PiecesAreIdempotentAndSkipTargetsThatLeftEarlier`, `test_ARefusingTargetBlocksOnlyThePiecesThatContainIt`, `test_Stress_ATargetThatBurnsMoreGasStillMoves`; `GovernanceHandover.t.sol`: `test_ImmediateDelayedAndCancelledCallsWorkUnderTheSuccessor`, `test_EveryManagedContractOperatesUnderTheSuccessor`, `test_RelayedStatementsAndTheLocatorCheckAskTheSuccessor`, `test_ACuratedSaleRunsUnderTheSuccessor`, `test_TheSuccessorCanMoveContractsOnAgain`, `test_TheSuccessorMovesEveryContractOnAgain` |

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
+import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
@@ -360,6 +361,101 @@ contract DeadAdminRecoveryTest is PermanenceFixture {
         _addGuardian(fresh);
         (bool member,) = manager.hasRole(Roles.GUARDIAN, fresh);
         assertTrue(member);
+    }
+
+    /// @dev Review round 4: completing a recovery withdraws the former admins' pending successor
+    ///      (`SuccessorProposed(0, 0)`), so it cannot accept before the new admin could withdraw
+    ///      it in the slow lane, even with its probe already re-pointed. The new admin may
+    ///      propose it again. Fails without the change: the successor accepts right after the
+    ///      recovery and the manager is handed over.
+    function test_ARecoveryWithdrawsTheFormerAdminsPendingSuccessor() public {
+        address nextAdmin = makeAddr("nextAdmin");
+        AccessManager next = new AccessManager(nextAdmin);
+        _scheduleAndExecute(adminSafe, address(manager), _register(address(next)));
+        address probe = manager.successionProbe();
+        vm.prank(nextAdmin);
+        next.execute(probe, abi.encodeCall(IAccessManaged.setAuthority, (address(manager))));
+        vm.warp(block.timestamp + SILENCE);
+        _open(newAdmin);
+        vm.prank(guardianA);
+        manager.approveRecovery(newAdmin);
+        vm.prank(guardianB);
+        manager.approveRecovery(newAdmin);
+        vm.warp(block.timestamp + RECOVERY);
+        vm.expectEmit(address(manager));
+        emit WorksAccessManager.SuccessorProposed(address(0), address(0));
+        vm.expectEmit(address(manager));
+        emit WorksAccessManager.AdminActivity(newAdmin, uint48(block.timestamp));
+        vm.expectEmit(address(manager));
+        emit WorksAccessManager.RecoveryCompleted(newAdmin);
+        manager.completeRecovery(newAdmin);
+        assertEq(manager.pendingSuccessor(), address(0));
+        assertEq(manager.successionProbe(), address(0));
+        vm.expectRevert(
+            abi.encodeWithSelector(WorksAccessManager.NotPendingSuccessor.selector, address(next))
+        );
+        vm.prank(nextAdmin);
+        next.execute(address(manager), abi.encodeCall(WorksAccessManager.acceptSuccession, ()));
+        assertEq(manager.successor(), address(0));
+        assertTrue(_isAdmin(newAdmin));
+        // The new admin decides: it may propose the same successor again, in the slow lane.
+        _scheduleAndExecute(newAdmin, address(manager), _register(address(next)));
+        assertEq(manager.pendingSuccessor(), address(next));
+    }
+
+    /// @dev Review round 4, the other order: a pending successor that accepts while a recovery
+    ///      is open wins, and the recovery can no longer complete (`HandedOver`); a successor
+    ///      the admins proposed in the slow lane, past every guardian's veto, stands until a
+    ///      recovery completes. A recovery with no pending successor withdraws nothing.
+    function test_ASuccessorAcceptingFirstEndsTheOpenRecovery() public {
+        address nextAdmin = makeAddr("nextAdmin");
+        AccessManager next = new AccessManager(nextAdmin);
+        _scheduleAndExecute(adminSafe, address(manager), _register(address(next)));
+        vm.warp(block.timestamp + SILENCE);
+        _open(newAdmin);
+        vm.prank(guardianA);
+        manager.approveRecovery(newAdmin);
+        vm.prank(guardianB);
+        manager.approveRecovery(newAdmin);
+        _accept(next, nextAdmin);
+        assertEq(manager.successor(), address(next));
+        vm.warp(block.timestamp + RECOVERY);
+        vm.expectRevert(WorksAccessManager.HandedOver.selector);
+        manager.completeRecovery(newAdmin);
+    }
+
+    /// @dev Review round 4: every move of the activity clock, which voids open recoveries, is in
+    ///      the logs (`AdminActivity`): a heartbeat, a schedule, an execute, a cancel and a
+    ///      completed recovery (above). A second activity at the same time moves nothing and
+    ///      logs nothing. Fails without the change: no event.
+    function test_EveryMoveOfTheActivityClockIsLogged() public {
+        vm.warp(block.timestamp + 10 days);
+        vm.expectEmit(address(manager));
+        emit WorksAccessManager.AdminActivity(adminSafe, uint48(block.timestamp));
+        vm.prank(adminSafe);
+        manager.heartbeat();
+        vm.recordLogs();
+        vm.prank(coldAdmin);
+        manager.heartbeat();
+        assertEq(vm.getRecordedLogs().length, 0, "the clock already reads now");
+        bytes memory op = abi.encodeCall(IAccessManager.labelRole, (Roles.KEEPER, "k"));
+        vm.warp(block.timestamp + 1 days);
+        vm.expectEmit(address(manager));
+        emit WorksAccessManager.AdminActivity(coldAdmin, uint48(block.timestamp));
+        _schedule(coldAdmin, address(manager), op);
+        vm.warp(block.timestamp + ADMIN_DELAY);
+        vm.expectEmit(address(manager));
+        emit WorksAccessManager.AdminActivity(coldAdmin, uint48(block.timestamp));
+        vm.prank(coldAdmin);
+        manager.execute(address(manager), op);
+        vm.warp(block.timestamp + 1 days);
+        _schedule(coldAdmin, address(manager), op);
+        vm.warp(block.timestamp + 1 days);
+        vm.expectEmit(address(manager));
+        emit WorksAccessManager.AdminActivity(adminSafe, uint48(block.timestamp));
+        vm.prank(adminSafe);
+        manager.cancel(coldAdmin, address(manager), op);
+        assertEq(manager.lastAdminActivity(), block.timestamp);
     }
 
     function test_NoRecoveryAfterAHandover() public {
