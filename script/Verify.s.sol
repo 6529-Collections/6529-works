@@ -264,7 +264,6 @@ contract Verify is ScriptIO {
             SafeCast.toUint32(_uint(record, "auctionDuration")),
             SafeCast.toUint32(_uint(record, "auctionExtensionWindow")),
             SafeCast.toUint32(_uint(record, "auctionIncrementShare")),
-            SafeCast.toUint32(_uint(record, "auctionRefusalDelay")),
             SafeCast.toUint32(_uint(record, "auctionRefusalGas"))
         );
         p.editionAuction = IUniformEditionAuction.AuctionConfig(
@@ -272,7 +271,6 @@ contract Verify is ScriptIO {
             SafeCast.toUint16(_uint(record, "editionStepsPerDecade")),
             SafeCast.toUint16(_uint(record, "editionStepCount")),
             SafeCast.toUint32(_uint(record, "editionMarginShare")),
-            SafeCast.toUint32(_uint(record, "editionCloseOffset")),
             SafeCast.toUint32(_uint(record, "editionSoftWindow")),
             SafeCast.toUint32(_uint(record, "editionMaxExtension"))
         );

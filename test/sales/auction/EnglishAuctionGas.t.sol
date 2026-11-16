@@ -114,7 +114,7 @@ contract EnglishAuctionGasTest is Test {
                     address(0),
                     lens_,
                     lens_.codehash,
-                    IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000, 7 days, 4_000_000),
+                    IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000, 4_000_000),
                     targets
                 )
             )
@@ -172,8 +172,7 @@ contract EnglishAuctionGasTest is Test {
         _startItem(0, 1, artistPk);
         _priorBid(_startItem(1, 2, otherArtistPk));
         auction.setConfig(
-            auction.config(),
-            IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 6_000, 7 days, 4_000_000)
+            auction.config(), IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 6_000, 4_000_000)
         );
         uint256 total = _measureStartWithBid("startWithBid after a config change, whole tx");
         assertLe(total, FIRST_AFTER_CHANGE_BOUND, "one-off cost after a config change");

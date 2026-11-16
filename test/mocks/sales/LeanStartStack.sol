@@ -178,6 +178,11 @@ contract LeanEconomicsResolver {
         (t.feeRecipient, t.feeShare, t.royaltyRate) = (feeRecipient, feeShare, royaltyRate);
         t.seller = factory.walletFor(payees, bytes32(0));
     }
+
+    /// @dev The network fee recipient the auction pays at settlement (R18).
+    function networkFeeRecipient(bytes32) external view returns (address) {
+        return feeRecipient;
+    }
 }
 
 /// @dev 6529 Stream's mint as decided: three work slots per token.

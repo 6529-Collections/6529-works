@@ -86,7 +86,7 @@ contract EnglishAuctionPreLens is
     event OpeningBidSet(address indexed currency, uint256 previous, uint256 next);
 
     /// @notice The longest a dispute pause lasts; one pause per auction (ADR 0001 section 12).
-    uint64 public constant MAX_PAUSE = 7 days;
+    uint64 public constant MAX_PAUSE = 3 days;
     /// @notice Bounds of the governed duration.
     uint32 internal constant MIN_DURATION = 1 hours;
     /// @notice Bounds of the governed duration.
@@ -122,8 +122,8 @@ contract EnglishAuctionPreLens is
     /// @dev How long a sale's currency must have been deprecated before anyone may end the
     ///      frozen sale unsold (MARKET-2): the standing bid is credited back and the work goes
     ///      where an unbid work goes (D140: the museum for 6529 Stream, else the artist).
-    uint256 private constant _FREEZE_EXIT = 60 days;
-    uint256 private constant _REDIRECT_DELAY = 30 days;
+    uint256 private constant _FREEZE_EXIT = 14 days;
+    uint256 private constant _REDIRECT_DELAY = 14 days;
 
     bytes4 private constant _SAFE_TRANSFER_FROM = 0x42842e0e;
     uint8 private constant _PAUSE_USED = 1;
@@ -300,6 +300,11 @@ contract EnglishAuctionPreLens is
     /// @inheritdoc IEnglishAuction
     /// @dev Also while the locked currency is deprecated (MARKET-2: the auction is frozen), so a
     ///      currency that never returns cannot hold the bid.
+    /// @dev Not in the pre-lens build; present so it compiles against today's interface.
+    function expireCredit(address, address) external pure returns (uint256) {
+        revert();
+    }
+
     function withdrawBid(uint256 saleId) external nonReentrant {
         Sale storage s = _sales[saleId];
         // MARKET-2: a live (or ended, unsettled) auction whose currency is deprecated is frozen.
@@ -407,7 +412,7 @@ contract EnglishAuctionPreLens is
     }
 
     /// @inheritdoc IEnglishAuction
-    /// @dev Reverts with `UnpauseTooEarly` before `pausedAt + Roles.DELAY_24H` (GOV-5).
+    /// @dev Reverts with `UnpauseTooEarly` before `pausedAt + Roles.STANDARD` (GOV-5).
     function resume(uint256 saleId) external restricted nonReentrant {
         Sale storage s = _require(saleId, AuctionState.PAUSED);
         uint256 pausedAt = s.pausedAt;
@@ -486,7 +491,7 @@ contract EnglishAuctionPreLens is
     }
 
     /// @inheritdoc ISaleAdapter
-    /// @dev Reverts with `UnpauseTooEarly` before `pausedAt + Roles.DELAY_24H` (GOV-5).
+    /// @dev Reverts with `UnpauseTooEarly` before `pausedAt + Roles.STANDARD` (GOV-5).
     function unpause() external restricted {
         uint256 pausedAt = _settings.pausedAt;
         if (pausedAt == 0) revert NotPaused();
@@ -1171,12 +1176,9 @@ contract EnglishAuctionPreLens is
         return Math.max(_settings.duration, _terms[s.termsId].extensionWindow);
     }
 
-    /// @dev GOV-5: a pause that began at `pausedAt` ends no earlier than `Roles.DELAY_24H` later.
-    function _requireUnpausable(uint256 pausedAt) private view {
-        uint256 allowedAt = pausedAt + Roles.DELAY_24H;
-        // forge-lint: disable-next-line(block-timestamp)
-        if (block.timestamp < allowedAt) revert UnpauseTooEarly(allowedAt);
-    }
+    /// @dev C30 (second pass): no wait after a pause; kept as a no-op so the legacy build's call
+    ///      sites stay as they were.
+    function _requireUnpausable(uint256 pausedAt) private pure { }
 
     /// @dev The token's recipient: the stored one, or the bidder when none is stored.
     function _recipientOf(Sale storage s) private view returns (address) {
@@ -1205,6 +1207,6 @@ contract EnglishAuctionPreLens is
 
     function _currentConfig() private view returns (AuctionConfig memory) {
         Settings storage st = _settings;
-        return AuctionConfig(st.duration, st.extensionWindow, st.incrementShare, 0, 0);
+        return AuctionConfig(st.duration, st.extensionWindow, st.incrementShare, 0);
     }
 }

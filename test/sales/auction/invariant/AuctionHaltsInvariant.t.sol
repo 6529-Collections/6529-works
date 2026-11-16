@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { console2 } from "forge-std/console2.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
 import { HostileActor } from "../../../mocks/sales/AuctionMocks.sol";
 import { AuctionBase } from "../AuctionBase.sol";
 import { AuctionHaltsHandler, SwitchToken } from "./AuctionHaltsHandler.sol";
@@ -18,6 +19,8 @@ abstract contract AuctionHaltsFixture is AuctionBase {
         HostileActor refusing = new HostileActor();
         refusing.configure(HostileActor.Behaviour.REVERT, HostileActor.Behaviour.REVERT);
         network = address(refusing);
+        // R18: settlement pays the resolver's recipient; it is this refusing wallet too.
+        resolver.set(PRODUCT_STREAM, network, FEE);
         address currency = _currency();
         stream.setTerms(_terms(currency));
         handler = new AuctionHaltsHandler(
@@ -176,7 +179,7 @@ contract AuctionHaltsCoverage is AuctionHaltsFixture {
     ///      run 61 days before settling (the freeze exit); every run ends with `drain`, which
     ///      re-admits the currency (the reopenings) and settles everything.
     function test_HaltPathsRun() public {
-        string[16] memory names = [
+        string[15] memory names = [
             "deprecate",
             "readmit",
             "readmitTooEarly",
@@ -186,7 +189,6 @@ contract AuctionHaltsCoverage is AuctionHaltsFixture {
             "frozenWithdraw",
             "withdraw",
             "earlySettleRefused",
-            "earlyCancelRefused",
             "payoutCredited",
             "claimFor",
             "broken",
@@ -194,7 +196,7 @@ contract AuctionHaltsCoverage is AuctionHaltsFixture {
             "cancel",
             "resume"
         ];
-        uint256[16] memory totals;
+        uint256[15] memory totals;
         for (uint256 r; r < 64; ++r) {
             uint256 snap = vm.snapshotState();
             for (uint256 d; d < 128; ++d) {
@@ -207,12 +209,12 @@ contract AuctionHaltsCoverage is AuctionHaltsFixture {
                 }
             }
             handler.drain();
-            for (uint256 i; i < 16; ++i) {
+            for (uint256 i; i < 15; ++i) {
                 totals[i] += handler.hits(bytes32(bytes(names[i])));
             }
             vm.revertToState(snap);
         }
-        for (uint256 i; i < 16; ++i) {
+        for (uint256 i; i < 15; ++i) {
             console2.log(names[i], totals[i]);
             assertGt(totals[i], 0, names[i]);
         }

@@ -136,9 +136,9 @@ contract EditionAuctionIntegrationTest is EditionAuctionStack {
         assertEq(ea.endTimes(saleId).endTime, extended + 15 minutes - 1 + 5 minutes);
     }
 
-    /// @dev Decision 12: a dispute pause opens withdrawals; an upheld dispute cancels the 1/1 and
-    ///      voids the edition sale with full refunds.
-    function test_Flow_DisputeWithdrawAndVoid() public {
+    /// @dev R21: edition bids are firm during a dispute pause; an upheld dispute cancels the 1/1
+    ///      and voids the edition sale with full refunds.
+    function test_Flow_DisputeFirmBidsAndVoid() public {
         (,, uint256 oneSaleId, uint256 tokenId, uint256 saleId) = _startMaster(artist, 0);
         address stayer = makeAddr("stayer");
         address leaver = makeAddr("leaver");
@@ -146,17 +146,15 @@ contract EditionAuctionIntegrationTest is EditionAuctionStack {
         _editionBid(saleId, leaver, 60, 3);
         _ethBid(oneSaleId, collector, 1 ether);
         vm.warp(block.timestamp + 2 hours);
-        vm.prank(leaver);
-        vm.expectRevert(
-            abi.encodeWithSelector(IUniformEditionAuction.WithdrawalsClosed.selector, saleId)
-        );
-        editionAuction.withdrawBid(saleId, 2, leaver);
         vm.prank(guardian1);
         auction.pause(oneSaleId, keccak256("dispute"));
-        assertTrue(ea.endTimes(saleId).withdrawalsOpen);
         vm.prank(leaver);
-        editionAuction.withdrawBid(saleId, 2, leaver);
-        assertEq(leaver.balance, 3 * ea.stepPrice(saleId, 60));
+        (bool ok,) = address(editionAuction)
+            .call(
+                abi.encodeWithSignature("withdrawBid(uint256,uint256,address)", saleId, 2, leaver)
+            );
+        assertFalse(ok, "edition bids are firm");
+        assertEq(leaver.balance, 0);
         // Bidding continues while paused.
         _editionBid(saleId, makeAddr("newcomer"), 55, 1);
         bytes32 outcome = _platformStatement(
@@ -172,6 +170,9 @@ contract EditionAuctionIntegrationTest is EditionAuctionStack {
         (uint256 won, uint256 refund) = editionAuction.claimBid(saleId, 1, stayer);
         assertEq(won, 0);
         assertEq(refund, 2 * ea.stepPrice(saleId, 50));
+        vm.prank(leaver);
+        (won, refund) = editionAuction.claimBid(saleId, 2, leaver);
+        assertEq(refund, 3 * ea.stepPrice(saleId, 60), "the firm bid comes back in full");
         (won, refund) = editionAuction.claimBidFor(saleId, 3);
         assertEq(won, 0);
         assertEq(address(editionAuction).balance, refund, "only the credited refund remains");
@@ -233,15 +234,6 @@ contract EditionAuctionIntegrationTest is EditionAuctionStack {
             ),
             "a settled 1/1 cannot be cancelled"
         );
-        vm.prank(makeAddr("low"));
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IUniformEditionAuction.InvalidAuctionState.selector,
-                saleId,
-                IUniformEditionAuction.AuctionStatus.SETTLING
-            )
-        );
-        editionAuction.withdrawBid(saleId, 1, makeAddr("low"));
         assertTrue(editionAuction.settle(saleId, new uint256[](0)), "the clearing call");
         (uint256 won,) = editionAuction.claimBidFor(saleId, 2);
         assertEq(won, 1);
@@ -302,7 +294,7 @@ contract EditionAuctionIntegrationTest is EditionAuctionStack {
                 ISaleAdapter.InvalidSaleTerms.selector, address(editions), tokenId
             )
         );
-        editionAuction.open(address(editions), tokenId, abi.encode(other.item));
-        editionAuction.open(address(editions), tokenId, abi.encode(w.item));
+        editionAuction.open(address(editions), tokenId, _openData(other));
+        editionAuction.open(address(editions), tokenId, _openData(w));
     }
 }

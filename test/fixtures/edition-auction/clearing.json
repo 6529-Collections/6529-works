@@ -1,5 +1,5 @@
 {
-  "description": "Golden vectors of the 6529 Stream Editions auction (ADR 0005). Each case replays its events (bid, raise, withdraw; bid IDs from 1 in order) on a fresh auction with `config` and `cap`, then expects the live clearing, the settlement order and every bid's outcome as if the auction closed now. Prices come from the ladder, or from `prices` (wei per step index) where given. Amounts are wei as decimal strings; `*Eth` fields are the same amounts in ETH, for reading. Network fee: 25,000 of 100,000. `cutoff` is the settlement sweep's X (rationed only); positions count entered units per step (capped auctions only).",
+  "description": "Golden vectors of the 6529 Stream Editions auction (ADR 0005). Each case replays its events (bid, raise; bid IDs from 1 in order) on a fresh auction with `config` and `cap`, then expects the live clearing, the settlement order and every bid's outcome as if the auction closed now. Prices come from the ladder, or from `prices` (wei per step index) where given. Amounts are wei as decimal strings; `*Eth` fields are the same amounts in ETH, for reading. Network fee: 25,000 of 100,000. `cutoff` is the settlement sweep's X (rationed only); positions count entered units per step (capped auctions only).",
   "model": "tools/edition_auction_ref.py",
   "denominator": 100000,
   "networkFeeShare": 25000,
@@ -7,7 +7,7 @@
     {
       "name": "d138-owner-example",
       "description": "The owner's D138 figures on their own prices (steps 0-4 = 0.01, 0.05, 0.1, 0.2 and 1.0 ETH): 80 editions at 0.05 ETH, 4 ETH raised, 1 ETH to the network.",
-      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "closeOffset": 900, "softWindow": 300, "maxExtension": 86400},
+      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "softWindow": 300, "maxExtension": 86400},
       "cap": 0,
       "events": [
         {"op": "bid", "bidder": "A", "step": 4, "quantity": 1},
@@ -40,7 +40,7 @@
     {
       "name": "d138-owner-example-margin-0",
       "description": "The same book with no breadth margin: the revenue maximum alone, 80 at 0.05.",
-      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 0, "closeOffset": 900, "softWindow": 300, "maxExtension": 86400},
+      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 0, "softWindow": 300, "maxExtension": 86400},
       "cap": 0,
       "events": [
         {"op": "bid", "bidder": "A", "step": 4, "quantity": 1},
@@ -73,7 +73,7 @@
     {
       "name": "d138-owner-example-margin-30",
       "description": "The same book with a 30% margin: 280 at 0.01 passes, since 2.8 >= 0.7 * 4.0.",
-      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 30000, "closeOffset": 900, "softWindow": 300, "maxExtension": 86400},
+      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 30000, "softWindow": 300, "maxExtension": 86400},
       "cap": 0,
       "events": [
         {"op": "bid", "bidder": "A", "step": 4, "quantity": 1},
@@ -106,7 +106,7 @@
     {
       "name": "trace-2-default-ladder",
       "description": "The owner's bids snapped to the default ladder: 80 at 0.0511 ETH, 4.088 ETH raised, 1.022 ETH to the network. A new bid of 1 gets in from 0.0464 (step 128) and moves everyone to 81 at 0.0464; at 0.0442 (step 127) it does not get in.",
-      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "closeOffset": 900, "softWindow": 300, "maxExtension": 86400},
+      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "softWindow": 300, "maxExtension": 86400},
       "cap": 0,
       "events": [
         {"op": "bid", "bidder": "A", "step": 192, "quantity": 1},
@@ -184,7 +184,7 @@
     {
       "name": "trace-2-breadth-tilt",
       "description": "Trace 2 plus one unit at 0.0464: 81 x 0.0464 = 3.7584 >= 0.9 x 4.088, so the result tilts to 81 at 0.0464 and revenue falls 8%.",
-      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "closeOffset": 900, "softWindow": 300, "maxExtension": 86400},
+      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "softWindow": 300, "maxExtension": 86400},
       "cap": 0,
       "events": [
         {"op": "bid", "bidder": "A", "step": 192, "quantity": 1},
@@ -212,7 +212,7 @@
     {
       "name": "trace-2-no-tilt",
       "description": "Trace 2 plus one unit at 0.0442: 81 x 0.0442 = 3.5802 < 3.6792, so the result stays 80 at 0.0511 and the new unit loses.",
-      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "closeOffset": 900, "softWindow": 300, "maxExtension": 86400},
+      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "softWindow": 300, "maxExtension": 86400},
       "cap": 0,
       "events": [
         {"op": "bid", "bidder": "A", "step": 192, "quantity": 1},
@@ -240,7 +240,7 @@
     {
       "name": "trace-2-margin-50",
       "description": "Trace 2 with the largest margin the bounds allow (50%): 280 at 0.0100 passes (2.8 >= 0.5 x 4.088).",
-      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 50000, "closeOffset": 900, "softWindow": 300, "maxExtension": 86400},
+      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 50000, "softWindow": 300, "maxExtension": 86400},
       "cap": 0,
       "events": [
         {"op": "bid", "bidder": "A", "step": 192, "quantity": 1},
@@ -266,7 +266,7 @@
     {
       "name": "trace-3-cap-60-fifo-hole",
       "description": "Trace 2's book under a cap of 60. 60 x 0.0511 = 3.066 is R*; step 130 is rationed (A = 30 of its 50 units). The sweep starts at X = 30, meets B2's hole at position 20 and ends at 45: B1 wins 20, B3 10, B4 0. Without the sweep B3 would get nothing and 10 editions would be lost. B2 wins 15 at 0.0511 above the cut and gets 0.7335 ETH back.",
-      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "closeOffset": 900, "softWindow": 300, "maxExtension": 86400},
+      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "softWindow": 300, "maxExtension": 86400},
       "cap": 60,
       "events": [
         {"op": "bid", "bidder": "A", "step": 192, "quantity": 1},
@@ -303,7 +303,7 @@
     {
       "name": "zero-bids",
       "description": "No bids: no editions, nothing paid.",
-      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "closeOffset": 900, "softWindow": 300, "maxExtension": 86400},
+      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "softWindow": 300, "maxExtension": 86400},
       "cap": 0,
       "events": [],
       "expected": {
@@ -317,7 +317,7 @@
     {
       "name": "one-bid",
       "description": "One bid of 3 at step 100: 3 editions at its step's price.",
-      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "closeOffset": 900, "softWindow": 300, "maxExtension": 86400},
+      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "softWindow": 300, "maxExtension": 86400},
       "cap": 0,
       "events": [
         {"op": "bid", "bidder": "A", "step": 100, "quantity": 3}
@@ -335,7 +335,7 @@
     {
       "name": "one-step-uncapped",
       "description": "Every bid on one step and no cap: all of them win, unsplit.",
-      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "closeOffset": 900, "softWindow": 300, "maxExtension": 86400},
+      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "softWindow": 300, "maxExtension": 86400},
       "cap": 0,
       "events": [
         {"op": "bid", "bidder": "A", "step": 120, "quantity": 5},
@@ -359,7 +359,7 @@
     {
       "name": "one-step-capped",
       "description": "The same bids under a cap of 20: the step is rationed and fills in arrival order; C (1 unit) is not rounded away, D is partly filled.",
-      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "closeOffset": 900, "softWindow": 300, "maxExtension": 86400},
+      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "softWindow": 300, "maxExtension": 86400},
       "cap": 20,
       "events": [
         {"op": "bid", "bidder": "A", "step": 120, "quantity": 5},
@@ -383,7 +383,7 @@
     {
       "name": "cap-1",
       "description": "A cap of 1: the single edition goes to the first unit entered at the highest step, at that step's price.",
-      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "closeOffset": 900, "softWindow": 300, "maxExtension": 86400},
+      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "softWindow": 300, "maxExtension": 86400},
       "cap": 1,
       "events": [
         {"op": "bid", "bidder": "A", "step": 90, "quantity": 2},
@@ -430,7 +430,7 @@
     {
       "name": "ladder-ends",
       "description": "Bids at the base step (0.0001 ETH) and the top step (953 ETH).",
-      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "closeOffset": 900, "softWindow": 300, "maxExtension": 86400},
+      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "softWindow": 300, "maxExtension": 86400},
       "cap": 0,
       "events": [
         {"op": "bid", "bidder": "A", "step": 0, "quantity": 1000},
@@ -449,8 +449,8 @@
     },
     {
       "name": "fifo-holes",
-      "description": "A capped auction (cap 30) whose cut step (200) logged four departures out of position order: Q2's raise (position 6), Q5's dispute withdrawal (21), Q7's raise (35) and Q1's raise (0). The settler's order sorts them by position. The sweep starts at A = 11 and takes the holes at 0, 6 and 21 (X = 30); the hole at 35 is above X. Q3 wins 7, Q4 3 and Q6 1 of 6.",
-      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "closeOffset": 900, "softWindow": 300, "maxExtension": 86400},
+      "description": "A capped auction (cap 30) whose cut step (200) logged three departures out of position order: Q2's raise (position 6), Q7's raise (35) and Q1's raise (0). The settler's order sorts them by position. The sweep starts at A = 11 and takes the holes at 0 and 6 (X = 22); the hole at 35 is above X. Q3 wins 7, Q4 3 and Q5 1 of 8.",
+      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "softWindow": 300, "maxExtension": 86400},
       "cap": 30,
       "events": [
         {"op": "bid", "bidder": "T", "step": 210, "quantity": 4},
@@ -463,18 +463,16 @@
         {"op": "bid", "bidder": "Q7", "step": 200, "quantity": 4},
         {"op": "bid", "bidder": "L", "step": 150, "quantity": 40},
         {"op": "raise", "bidId": 3, "toStep": 210},
-        {"op": "withdraw", "bidId": 6},
         {"op": "raise", "bidId": 8, "toStep": 205},
         {"op": "raise", "bidId": 2, "toStep": 205}
       ],
       "expected": {
-        "clearing": {"count": 30, "step": 200, "price": "1470000000000000000", "priceEth": "1.47", "revenue": "44100000000000000000", "revenueEth": "44.1", "networkFee": "11025000000000000000", "networkFeeEth": "11.025", "bestRevenue": "44100000000000000000", "rationed": true, "cutUnits": 11, "unitsAtStep": 16, "cutoff": 30},
-        "stepTotals": {"150": 40, "200": 16, "205": 10, "210": 9},
-        "settlementOrder": [3, 0, 1, 2],
+        "clearing": {"count": 30, "step": 200, "price": "1470000000000000000", "priceEth": "1.47", "revenue": "44100000000000000000", "revenueEth": "44.1", "networkFee": "11025000000000000000", "networkFeeEth": "11.025", "bestRevenue": "44100000000000000000", "rationed": true, "cutUnits": 11, "unitsAtStep": 24, "cutoff": 22},
+        "stepTotals": {"150": 40, "200": 24, "205": 10, "210": 9},
+        "settlementOrder": [2, 0, 1],
         "departures": {
           "200": [
             [6, 5],
-            [21, 8],
             [35, 4],
             [0, 6]
           ]
@@ -485,8 +483,8 @@
           {"bidId": 3, "bidder": "Q2", "active": true, "step": 210, "quantity": 5, "position": 4, "escrow": "11850000000000000000", "unitsWon": 5, "refund": "4500000000000000000", "unitsAhead": 4},
           {"bidId": 4, "bidder": "Q3", "active": true, "step": 200, "quantity": 7, "position": 11, "escrow": "10290000000000000000", "unitsWon": 7, "refund": "0", "unitsAhead": 0},
           {"bidId": 5, "bidder": "Q4", "active": true, "step": 200, "quantity": 3, "position": 18, "escrow": "4410000000000000000", "unitsWon": 3, "refund": "0", "unitsAhead": 7},
-          {"bidId": 6, "bidder": "Q5", "active": false, "step": 200, "quantity": 8, "position": 21, "escrow": "0", "unitsWon": 0, "refund": "0", "unitsAhead": 0},
-          {"bidId": 7, "bidder": "Q6", "active": true, "step": 200, "quantity": 6, "position": 29, "escrow": "8820000000000000000", "unitsWon": 1, "refund": "7350000000000000000", "unitsAhead": 10},
+          {"bidId": 6, "bidder": "Q5", "active": true, "step": 200, "quantity": 8, "position": 21, "escrow": "11760000000000000000", "unitsWon": 1, "refund": "10290000000000000000", "unitsAhead": 10},
+          {"bidId": 7, "bidder": "Q6", "active": true, "step": 200, "quantity": 6, "position": 29, "escrow": "8820000000000000000", "unitsWon": 0, "refund": "8820000000000000000", "unitsAhead": 18},
           {"bidId": 8, "bidder": "Q7", "active": true, "step": 205, "quantity": 4, "position": 0, "escrow": "7480000000000000000", "unitsWon": 4, "refund": "1600000000000000000", "unitsAhead": 0},
           {"bidId": 9, "bidder": "L", "active": true, "step": 150, "quantity": 40, "position": 0, "escrow": "5320000000000000000", "unitsWon": 0, "refund": "5320000000000000000", "unitsAhead": 0}
         ]
@@ -495,7 +493,7 @@
     {
       "name": "dense-book",
       "description": "All 336 steps used, 1 + (step % 7) units each: the settlement worst case.",
-      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "closeOffset": 900, "softWindow": 300, "maxExtension": 86400},
+      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "softWindow": 300, "maxExtension": 86400},
       "cap": 0,
       "events": [
         {"op": "bid", "bidder": "U0", "step": 0, "quantity": 1},
@@ -1183,7 +1181,7 @@
     {
       "name": "dense-book-capped",
       "description": "The dense book under a cap of 100: the scan stops once demand above reaches it.",
-      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "closeOffset": 900, "softWindow": 300, "maxExtension": 86400},
+      "config": {"basePrice": "100000000000000", "stepsPerDecade": 48, "stepCount": 336, "marginShare": 10000, "softWindow": 300, "maxExtension": 86400},
       "cap": 100,
       "events": [
         {"op": "bid", "bidder": "U0", "step": 0, "quantity": 1},

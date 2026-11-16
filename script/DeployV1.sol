@@ -564,8 +564,7 @@ library DeployV1 {
 
     /// @notice The edition auction's genesis parameters (ADR 0005 §4; D138, D140, D141, owner
     ///         decisions 3 to 5): 0.0001 ETH at step 0, 48 steps per decade over 336 steps (to
-    ///         about 953 ETH), a 10% breadth margin (10,000 of 100,000), a close 15 minutes after
-    ///         the 1/1's, a 5-minute soft close and a 24-hour extension backstop. Each is
+    ///         about 953 ETH), a 10% breadth margin (10,000 of 100,000), a 5-minute soft close and a 24-hour extension backstop. Each is
     ///         governed (`setConfig`, PARAMETER_SETTER) and locked into a sale when it opens.
     function editionAuctionDefaults()
         internal
@@ -577,22 +576,16 @@ library DeployV1 {
             stepsPerDecade: 48,
             stepCount: 336,
             marginShare: 10_000,
-            closeOffset: 15 minutes,
             softWindow: 5 minutes,
             maxExtension: 24 hours
         });
     }
 
-    /// @notice The edition auction's genesis limits (ADR 0005 §4, as amended 15 November 2026):
-    ///         an edition's terms may name a close offset of up to 30 days (owner to confirm the
-    ///         maximum), a sale whose master cannot be settled may be abandoned 150 days after its
-    ///         end, and each payout forwards 100,000 gas. Each is governed (`setLimits`,
-    ///         PARAMETER_SETTER); a sale locks its close offset and abandonment delay when it
-    ///         opens.
+    /// @notice The edition auction's genesis limit: each payout forwards 100,000 gas (governed,
+    ///         `setLimits`, PARAMETER_SETTER). The close offset (15 minutes) and the abandonment
+    ///         wait (21 days) are fixed in the adapter.
     function editionAuctionLimits() internal pure returns (IUniformEditionAuction.Limits memory) {
-        return IUniformEditionAuction.Limits({
-            maxCloseOffset: 30 days, voidDelayDays: 150, payoutGas: 100_000, rescueCapDays: 730
-        });
+        return IUniformEditionAuction.Limits({ payoutGas: 100_000 });
     }
 
     /// @notice Permit2 for the English auction, which takes zero where Permit2 has no code (a

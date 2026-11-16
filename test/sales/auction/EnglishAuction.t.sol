@@ -62,16 +62,18 @@ contract EnglishAuctionTest is AuctionBase {
         assertTrue(auction.supportsInterface(type(IERC721Receiver).interfaceId));
         assertFalse(auction.supportsInterface(0xffffffff));
         assertFalse(auction.supportsInterface(0x00000001));
-        // The opening-bid ceiling is a thousand currency floors (the specification's number).
-        assertEq(auction.OPENING_BID_FLOORS(), 1_000);
+        // The fixed windows (each number is the guarantee): a 3-day dispute pause (C30) and a
+        // 2-day refusal exit for federated sales.
+        assertEq(auction.MAX_PAUSE(), 3 days);
+        assertEq(auction.REFUSAL_DELAY(), 2 days);
     }
 
     /// @dev Each bound is inclusive: a window as long as the auction, and a 100% increment.
     function test_Constructor_AcceptsConfigAtTheBounds() public {
         address[] memory none = new address[](0);
         IEnglishAuction.AuctionConfig[2] memory edge = [
-            IEnglishAuction.AuctionConfig(2 hours, 2 hours, SHARE, REFUSAL_DELAY, REFUSAL_GAS),
-            IEnglishAuction.AuctionConfig(DURATION, WINDOW, 100_000, REFUSAL_DELAY, REFUSAL_GAS)
+            IEnglishAuction.AuctionConfig(2 hours, 2 hours, SHARE, REFUSAL_GAS),
+            IEnglishAuction.AuctionConfig(DURATION, WINDOW, 100_000, REFUSAL_GAS)
         ];
         for (uint256 i; i < edge.length; ++i) {
             EnglishAuction a = new EnglishAuction(
@@ -207,11 +209,11 @@ contract EnglishAuctionTest is AuctionBase {
     function test_Constructor_RejectsConfigOutOfBounds() public {
         address[] memory none = new address[](0);
         IEnglishAuction.AuctionConfig[5] memory bad = [
-            IEnglishAuction.AuctionConfig(59 minutes, WINDOW, SHARE, REFUSAL_DELAY, REFUSAL_GAS),
-            IEnglishAuction.AuctionConfig(7 days + 1, WINDOW, SHARE, REFUSAL_DELAY, REFUSAL_GAS),
-            IEnglishAuction.AuctionConfig(DURATION, 59, SHARE, REFUSAL_DELAY, REFUSAL_GAS),
-            IEnglishAuction.AuctionConfig(DURATION, WINDOW, 999, REFUSAL_DELAY, REFUSAL_GAS),
-            IEnglishAuction.AuctionConfig(2 hours, 3 hours, SHARE, REFUSAL_DELAY, REFUSAL_GAS)
+            IEnglishAuction.AuctionConfig(59 minutes, WINDOW, SHARE, REFUSAL_GAS),
+            IEnglishAuction.AuctionConfig(7 days + 1, WINDOW, SHARE, REFUSAL_GAS),
+            IEnglishAuction.AuctionConfig(DURATION, 59, SHARE, REFUSAL_GAS),
+            IEnglishAuction.AuctionConfig(DURATION, WINDOW, 999, REFUSAL_GAS),
+            IEnglishAuction.AuctionConfig(2 hours, 3 hours, SHARE, REFUSAL_GAS)
         ];
         for (uint256 i; i < bad.length; ++i) {
             vm.expectRevert(IEnglishAuction.InvalidConfig.selector);
@@ -416,8 +418,7 @@ contract EnglishAuctionTest is AuctionBase {
         uint256 saleId = _start();
         vm.startPrank(setter);
         auction.setConfig(
-            _config(),
-            IEnglishAuction.AuctionConfig(2 days, 1 hours, 50_000, REFUSAL_DELAY, REFUSAL_GAS)
+            _config(), IEnglishAuction.AuctionConfig(2 days, 1 hours, 50_000, REFUSAL_GAS)
         );
         vm.stopPrank();
         _setOpeningBid(ETH, 0.02 ether);
@@ -504,8 +505,7 @@ contract EnglishAuctionTest is AuctionBase {
     function test_Settle_ACurrencyBackExactlyAWindowBeforeTheEndDoesNotReopen() public {
         vm.prank(setter);
         auction.setConfig(
-            _config(),
-            IEnglishAuction.AuctionConfig(DURATION, DURATION, SHARE, REFUSAL_DELAY, REFUSAL_GAS)
+            _config(), IEnglishAuction.AuctionConfig(DURATION, DURATION, SHARE, REFUSAL_GAS)
         );
         allowlist.deprecateAsset(address(usd));
         vm.warp(block.timestamp + Roles.DELAY_3D);
@@ -746,38 +746,21 @@ contract EnglishAuctionTest is AuctionBase {
         vm.stopPrank();
     }
 
-    function test_Bid_Erc20WithEip2612Permit() public {
+    /// @dev EIP-2612 permit payments are dropped (second pass): a PERMIT payment is refused with
+    ///      `InvalidPayment`, a valid signature or not, and nothing moves. Fails without the
+    ///      change: the permit set the allowance and the bid was taken.
+    function test_Bid_Erc20Eip2612PermitIsRefused() public {
         uint256 saleId = _startUsd();
         usd.mint(alice, 10e18);
         Payment memory p = _permitPayment(alicePk, 10e18, block.timestamp + 1 hours);
-        vm.prank(alice);
-        auction.bid(saleId, address(0), p);
-        assertEq(usd.balanceOf(address(auction)), 10e18);
-        assertEq(usd.allowance(alice, address(auction)), 0);
-    }
-
-    function test_Bid_Erc20FrontRunPermitStillBids() public {
-        uint256 saleId = _startUsd();
-        usd.mint(alice, 10e18);
-        Payment memory p = _permitPayment(alicePk, 10e18, block.timestamp + 1 hours);
-        (uint8 v, bytes32 r, bytes32 s) = _split(p.signature);
-        usd.permit(alice, address(auction), 10e18, p.deadline, v, r, s);
-        vm.prank(alice);
-        auction.bid(saleId, address(0), p);
-        assertEq(auction.auction(saleId).bid, 10e18);
-    }
-
-    /// @dev A permit signature one byte longer or shorter is refused with `InvalidPayment`; a
-    ///      short one never reaches the signature's last byte (found by mutation testing).
-    function test_Bid_Erc20PermitNeedsA65ByteSignature() public {
-        uint256 saleId = _startUsd();
-        Payment memory p = _permitPayment(alicePk, 10e18, block.timestamp + 1 hours);
-        (, bytes32 r, bytes32 s) = _split(p.signature);
-        p.signature = bytes.concat(p.signature, hex"00");
         vm.prank(alice);
         vm.expectRevert(ISaleAdapter.InvalidPayment.selector);
         auction.bid(saleId, address(0), p);
-        p.signature = abi.encodePacked(r, s);
+        assertEq(usd.balanceOf(address(auction)), 0);
+        assertEq(usd.allowance(alice, address(auction)), 0, "the permit was never called");
+        // Even with the allowance already in place, the method is refused.
+        vm.prank(alice);
+        usd.approve(address(auction), 10e18);
         vm.prank(alice);
         vm.expectRevert(ISaleAdapter.InvalidPayment.selector);
         auction.bid(saleId, address(0), p);
@@ -843,13 +826,13 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(address(auction).balance, 1 ether);
     }
 
-    function test_StartWithBid_Erc20Permit() public {
+    function test_StartWithBid_Erc20PermitIsRefused() public {
         stream.setTerms(_terms(address(usd)));
         usd.mint(alice, 5e18);
         Payment memory p = _permitPayment(alicePk, 5e18, block.timestamp + 1 hours);
         vm.prank(alice);
-        uint256 saleId = auction.startWithBid(address(stream), "", address(0), p);
-        assertEq(auction.auction(saleId).bid, 5e18);
+        vm.expectRevert(ISaleAdapter.InvalidPayment.selector);
+        auction.startWithBid(address(stream), "", address(0), p);
     }
 
     /// @dev A relayed start-with-bid signs the token, the mint data hash, the recipient, the
@@ -921,14 +904,17 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(auction.auction(saleId).bidder, alice);
     }
 
-    /// @dev A permit is good through its deadline second (found by mutation testing).
-    function test_Bid_APermitPaysAtItsDeadlineSecond() public {
+    /// @dev A Permit2 payment is good through its deadline second (found by mutation testing).
+    function test_Bid_APermit2PaysAtItsDeadlineSecond() public {
         uint256 saleId = _startUsd();
-        usd.mint(alice, 10e18);
-        Payment memory p = _permitPayment(alicePk, 10e18, block.timestamp);
-        vm.prank(alice);
-        auction.bid(saleId, address(0), p);
-        assertEq(auction.auction(saleId).bidder, alice);
+        usd.mint(bob, 10e18);
+        vm.prank(bob);
+        usd.approve(address(permit2), type(uint256).max);
+        Payment memory p = _permit2Payment(bobPk, saleId, bob, 10e18, 1);
+        vm.warp(p.deadline);
+        vm.prank(relayer);
+        auction.bid(saleId, bob, p);
+        assertEq(auction.auction(saleId).bidder, bob);
     }
 
     /// Regression: the review of #21
@@ -1088,7 +1074,8 @@ contract EnglishAuctionTest is AuctionBase {
         _bidEth(saleId, alice, price);
         _end(saleId);
         auction.settle(saleId);
-        uint256 fee = price * feeShare / 100_000;
+        // R18: the seller's part rounds down; the network takes the rest.
+        uint256 fee = price - price * (100_000 - feeShare) / 100_000;
         assertEq(network.balance, fee);
         assertEq(seller.balance, price - fee);
         assertEq(address(auction).balance, 0);
@@ -1106,18 +1093,7 @@ contract EnglishAuctionTest is AuctionBase {
         _end(saleId);
         vm.expectEmit(address(auction));
         emit ISaleAdapter.SaleSettled(
-            saleId,
-            address(stream),
-            1,
-            alice,
-            alice,
-            1,
-            ETH,
-            1 ether,
-            seller,
-            1 ether,
-            address(0),
-            0
+            saleId, address(stream), 1, alice, alice, 1, ETH, 1 ether, seller, 1 ether, network, 0
         );
         auction.settle(saleId);
         assertEq(seller.balance, 1 ether);
@@ -1515,7 +1491,7 @@ contract EnglishAuctionTest is AuctionBase {
             );
             vm.prank(bob);
             auction.claimDelivery(saleId, bob);
-            // RFX-SAL-1: within 30 days of the end the recipient may claim only to itself;
+            // RFX-SAL-1: within 14 days of the end the recipient may claim only to itself;
             // the bidder names any address.
             vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, carol));
             winner.execute(
@@ -1693,15 +1669,15 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(auction.pendingDelivery(saleId), address(recipient));
     }
 
-    /// @dev The first second at which the recipient may claim to another address: 30 days after
+    /// @dev The first second at which the recipient may claim to another address: 14 days after
     ///      the sale's stored end.
     function _redirectOpensAt(uint256 saleId) internal view returns (uint256) {
-        return uint256(auction.auction(saleId).endTime) + 30 days;
+        return uint256(auction.auction(saleId).endTime) + 14 days;
     }
 
     /// Regression: RFX-SAL-1
     /// @dev A recipient contract that forwards any call does not let a third party route the
-    ///      claim through it to an address of its own while the bidder's 30 days run.
+    ///      claim through it to an address of its own while the bidder's 14 days run.
     function test_ClaimDelivery_AForwardingRecipientCannotSendTheTokenElsewhere() public {
         HostileActor forwarder = new HostileActor();
         uint256 saleId = _pendingFor(forwarder);
@@ -1714,7 +1690,7 @@ contract EnglishAuctionTest is AuctionBase {
         );
         assertEq(stream.ownerOf(_tokenIdOf(saleId)), address(auction), "still in custody");
         assertEq(auction.pendingDelivery(saleId), address(forwarder), "still pending");
-        // The stranger cannot claim directly either, before or after the 30 days.
+        // The stranger cannot claim directly either, before or after the 14 days.
         vm.prank(stranger);
         vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.NoPendingDelivery.selector, saleId));
         auction.claimDelivery(saleId, stranger);
@@ -1763,7 +1739,7 @@ contract EnglishAuctionTest is AuctionBase {
     }
 
     /// Regression: RFX-SAL-1
-    /// @dev The 30 days count from the stored end, which a dispute pause moves later.
+    /// @dev The 14 days count from the stored end, which a dispute pause moves later.
     function test_ClaimDelivery_TheRedirectDelayCountsFromTheTolledEnd() public {
         HostileActor recipient = new HostileActor();
         recipient.configure(HostileActor.Behaviour.ACCEPT, HostileActor.Behaviour.REVERT);
@@ -1773,7 +1749,7 @@ contract EnglishAuctionTest is AuctionBase {
         auction.bid{ value: 1 ether }(saleId, address(recipient), _direct(alice, 1 ether));
         uint256 originalEnd = auction.auction(saleId).endTime;
         _pause(saleId);
-        vm.warp(block.timestamp + 7 days + 1);
+        vm.warp(block.timestamp + 3 days + 1);
         uint256 tolledEnd = auction.auction(saleId).endTime;
         assertGt(tolledEnd, originalEnd, "the pause moved the end");
         vm.warp(tolledEnd);
@@ -1781,10 +1757,10 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(auction.auction(saleId).endTime, tolledEnd, "the stored end is the tolled one");
         address elsewhere = makeAddr("elsewhere");
         bytes memory claim = abi.encodeCall(auction.claimDelivery, (saleId, elsewhere));
-        vm.warp(originalEnd + 30 days);
+        vm.warp(originalEnd + 14 days);
         vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, elsewhere));
         recipient.execute(address(auction), 0, claim);
-        vm.warp(tolledEnd + 30 days);
+        vm.warp(tolledEnd + 14 days);
         recipient.execute(address(auction), 0, claim);
         assertEq(stream.ownerOf(_tokenIdOf(saleId)), elsewhere);
     }
@@ -1804,7 +1780,7 @@ contract EnglishAuctionTest is AuctionBase {
     }
 
     /// Regression: RFX-SAL-1
-    /// @dev With no bid the 30 days do not apply: another listed token's artist, the recorded
+    /// @dev With no bid the 14 days do not apply: another listed token's artist, the recorded
     ///      recipient, claims to any address at once.
     function test_ClaimDelivery_ANoBidArtistNamesAnyAddressAtOnce() public {
         HostileActor artistWallet = new HostileActor();
@@ -2010,19 +1986,10 @@ contract EnglishAuctionTest is AuctionBase {
         vm.prank(alice);
         auction.claim(ETH, alice);
         _pause(quiet);
-        // GOV-5: the start pause ends no earlier than 48 hours after it began.
-        vm.prank(unpauser);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                ISaleAdapter.UnpauseTooEarly.selector, block.timestamp + Roles.DELAY_24H
-            )
-        );
-        auction.unpause();
         _end(live);
         auction.settle(live);
         assertEq(stream.ownerOf(_tokenIdOf(live)), bob);
         assertEq(seller.balance, 1.5 ether);
-        vm.warp(block.timestamp + Roles.DELAY_24H);
         vm.prank(unpauser);
         auction.resume(quiet);
 

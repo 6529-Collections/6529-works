@@ -98,21 +98,36 @@ contract DisputeFlowTest is IntegrationBase {
             "the renderer shows the dispute statement"
         );
 
-        // A cancel citing anything but the recorded outcome fails.
+        // A cancel citing anything but the recorded outcome fails; the network's cancel citing
+        // it lands inside the 3-day pause (C30). Both are scheduled together, so the role's
+        // delay (none in the second pass's map) is waited once.
         bytes memory wrong = abi.encodeCall(auction.cancel, (saleId, keccak256("not the outcome")));
-        vm.warp(block.timestamp + 1 days);
-        _schedule(hotAdmin, address(auction), wrong);
-        vm.warp(block.timestamp + 2 days);
+        bytes memory right = abi.encodeCall(auction.cancel, (saleId, outcome));
+        (bool immediate, uint32 delay) = manager.canCall(hotAdmin, address(auction), bytes4(right));
+        if (!immediate) {
+            _schedule(hotAdmin, address(auction), wrong);
+            _schedule(hotAdmin, address(auction), right);
+            vm.warp(block.timestamp + delay);
+        }
         vm.prank(hotAdmin);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IEnglishAuction.OutcomeNotRecorded.selector, saleId, keccak256("not the outcome")
             )
         );
-        manager.execute(address(auction), wrong);
-
-        // The governed cancel (PARAMETER_SETTER, 48 hours), scheduled by day 5 of the pause.
-        _govern(hotAdmin, address(auction), abi.encodeCall(auction.cancel, (saleId, outcome)));
+        if (immediate) {
+            (bool ok,) = address(auction).call(wrong);
+            ok;
+        } else {
+            manager.execute(address(auction), wrong);
+        }
+        vm.prank(hotAdmin);
+        if (immediate) {
+            (bool ok,) = address(auction).call(right);
+            assertTrue(ok);
+        } else {
+            manager.execute(address(auction), right);
+        }
         assertEq(
             uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.CANCELLED)
         );

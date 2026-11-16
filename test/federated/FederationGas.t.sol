@@ -29,8 +29,8 @@ contract FederationGasTest is FederationBase {
     uint256 internal constant FIRST_START_CEILING = 700_000;
     uint256 internal constant STEADY_START_CEILING = 425_000;
     uint256 internal constant BID_CEILING = 196_000;
-    uint256 internal constant SETTLE_SOLD_CEILING = 182_000;
-    uint256 internal constant SETTLE_UNBID_CEILING = 156_000;
+    uint256 internal constant SETTLE_SOLD_CEILING = 187_000;
+    uint256 internal constant SETTLE_UNBID_CEILING = 162_000;
     uint256 internal constant RESTART_CEILING = 253_000;
     uint256 internal constant EDITION_OPEN_CEILING = 380_000;
     uint256 internal constant CREATE_EDITION_CEILING = 90_000;
@@ -248,7 +248,7 @@ contract FederationGasTest is FederationBase {
             0
         );
         _row("federated start, first work (two vaults deployed)", total, g);
-        assertEq(g.slots, 18);
+        assertEq(g.slots, 17, "no locked federated terms slot (R18)");
         assertEq(g.accounts, 2, "the seller and royalty vaults");
         assertLe(total, FIRST_START_CEILING);
     }
@@ -287,7 +287,7 @@ contract FederationGasTest is FederationBase {
             1 ether
         );
         _row("federated first bid", bidGas, gb);
-        assertEq(gb.slots, 5);
+        assertEq(gb.slots, 4);
         assertLe(bidGas, BID_CEILING);
     }
 
@@ -362,7 +362,7 @@ contract FederationGasTest is FederationBase {
             0
         );
         _row("federated edition open", openGas, go);
-        assertEq(go.slots, 7);
+        assertEq(go.slots, 5, "no fee recipient interning (R18)");
         assertLe(openGas, EDITION_OPEN_CEILING);
     }
 

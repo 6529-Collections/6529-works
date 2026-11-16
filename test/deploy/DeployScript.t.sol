@@ -179,7 +179,7 @@ contract DeployScriptTest is Test {
         p.cc0Text = cc0;
         p.ethIncrementFloor = 0.001 ether;
         p.permit2 = DeployV1.CANONICAL_PERMIT2;
-        p.auction = IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000, 7 days, 4_000_000);
+        p.auction = IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000, 4_000_000);
         p.editionAuction = DeployV1.editionAuctionDefaults();
     }
 

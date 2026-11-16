@@ -331,13 +331,13 @@ contract MuseumTest is IntegrationBase {
         (uint256 saleId, uint256 tokenId) = _startUsdItem();
         _usdBid(saleId, collector, 100e18);
         uint256 frozenAt = _deprecateUsd();
-        vm.warp(frozenAt + 60 days - 1);
+        vm.warp(frozenAt + 14 days - 1);
         vm.expectRevert(
             abi.encodeWithSelector(IAssetAllowlist.AssetNotActive.selector, address(usd))
         );
         auction.settle(saleId);
 
-        vm.warp(frozenAt + 60 days);
+        vm.warp(frozenAt + 14 days);
         vm.expectEmit(address(auction));
         emit ISaleAdapter.Credited(collector, address(usd), saleId, 100e18);
         vm.expectEmit(address(stream));

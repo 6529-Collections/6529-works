@@ -799,8 +799,8 @@
           "delay": 0
         },
         {
-          "signature": "setConfig((uint32,uint32,uint32,uint32,uint32),(uint32,uint32,uint32,uint32,uint32))",
-          "selector": "0x1b380907",
+          "signature": "setConfig((uint32,uint32,uint32,uint32),(uint32,uint32,uint32,uint32))",
+          "selector": "0xf9f86bee",
           "role": "PARAMETER_SETTER",
           "class": "24h",
           "delay": 86400
@@ -845,8 +845,8 @@
           "delay": 0
         },
         {
-          "signature": "setConfig((uint96,uint16,uint16,uint32,uint32,uint32,uint32),(uint96,uint16,uint16,uint32,uint32,uint32,uint32))",
-          "selector": "0x3a59bb19",
+          "signature": "setConfig((uint96,uint16,uint16,uint32,uint32,uint32),(uint96,uint16,uint16,uint32,uint32,uint32))",
+          "selector": "0x0b8c383f",
           "role": "PARAMETER_SETTER",
           "class": "24h",
           "delay": 86400
@@ -1164,8 +1164,8 @@
           "delay": 0
         },
         {
-          "signature": "setConfig((uint96,uint16,uint16,uint32,uint32,uint32,uint32),(uint96,uint16,uint16,uint32,uint32,uint32,uint32))",
-          "selector": "0x3a59bb19",
+          "signature": "setConfig((uint96,uint16,uint16,uint32,uint32,uint32),(uint96,uint16,uint16,uint32,uint32,uint32))",
+          "selector": "0x0b8c383f",
           "role": "PARAMETER_SETTER",
           "class": "24h",
           "delay": 86400

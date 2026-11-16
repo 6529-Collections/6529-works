@@ -32,8 +32,10 @@ library StepLadder {
     /// @notice The lowest base price governance may set, in wei: 0.000001 ETH. Every base
     ///         price is a power of ten (`isBasePrice`).
     uint256 internal constant MIN_BASE_PRICE = 1e12;
-    /// @notice The highest base price governance may set, in wei: 0.1 ETH.
-    uint256 internal constant MAX_BASE_PRICE = 1e17;
+    /// @notice The highest base price, in wei: 10^28, the largest power of ten that fits the
+    ///         96-bit field a configuration stores it in. A safety bound, not a price cap (R19):
+    ///         with it, every price, revenue and fee the auction computes fits 256 bits.
+    uint256 internal constant BASE_PRICE_BOUND = 1e28;
     /// @notice The fewest steps a ladder may have.
     uint256 internal constant MIN_STEP_COUNT = 64;
     /// @notice The most steps a ladder may have; it bounds the settlement scan.
@@ -76,13 +78,13 @@ library StepLadder {
             || stepsPerDecade == 192;
     }
 
-    /// @notice Whether `basePrice` is a power of ten from `MIN_BASE_PRICE` to `MAX_BASE_PRICE`
-    ///         (10^12 to 10^17 wei). With a power-of-ten base every price is a table mantissa
+    /// @notice Whether `basePrice` is a power of ten from `MIN_BASE_PRICE` to `BASE_PRICE_BOUND`
+    ///         (10^12 to 10^28 wei). With a power-of-ten base every price is a table mantissa
     ///         times a power of ten, so it reads as the table does (ADR 0005 decision 3, readable
     ///         prices from a fixed table). A base of 0.00015 ETH would price the next steps
     ///         at 0.0001575 and 0.000165 ETH instead of 0.000105 and 0.00011.
     function isBasePrice(uint256 basePrice) internal pure returns (bool) {
-        for (uint256 p = MIN_BASE_PRICE; p <= MAX_BASE_PRICE; p *= 10) {
+        for (uint256 p = MIN_BASE_PRICE; p <= BASE_PRICE_BOUND; p *= 10) {
             if (basePrice == p) return true;
         }
         return false;
@@ -90,7 +92,7 @@ library StepLadder {
 
     /// @notice Whether a ladder is within the bounds governance may set: a valid steps per
     ///         decade, a base price `isBasePrice` accepts (a power of ten from `MIN_BASE_PRICE`
-    ///         to `MAX_BASE_PRICE`), a step count in `[MIN_STEP_COUNT, MAX_STEP_COUNT]` and a
+    ///         to `BASE_PRICE_BOUND`), a step count in `[MIN_STEP_COUNT, MAX_STEP_COUNT]` and a
     ///         top step of at least `MIN_TOP_PRICE`.
     function isValid(uint256 basePrice, uint256 stepsPerDecade, uint256 stepCount)
         internal

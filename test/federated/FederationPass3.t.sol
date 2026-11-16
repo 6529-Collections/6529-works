@@ -118,7 +118,7 @@ contract FederationPass3Test is FederationBase {
 
     /// @dev A governance change of the federated fee recipient between start and settlement
     ///      does not redirect the running sale's fee: the recipient was locked at start.
-    function test_FeeRecipient_LockedAtStartWhateverGovernanceSetsLater() public {
+    function test_FeeRecipient_TheOneCurrentAtSettlement() public {
         (uint256 saleId,) = _startFed(_fedWork(fedArtist));
         _ethBid(saleId, collector, 1 ether);
         address next = makeAddr("nextFeeRecipient");
@@ -131,9 +131,9 @@ contract FederationPass3Test is FederationBase {
         assertEq(economics.networkFeeRecipient(PRODUCT_FEDERATED), next);
         uint256 before = networkFee.balance;
         auction.settle(saleId);
-        assertEq(networkFee.balance - before, 0.1 ether, "the recipient locked at start");
-        assertEq(next.balance, 0);
-        assertEq(auction.claimable(next, CURRENCY_ETH), 0);
+        // R18: the share is locked at start; the recipient is the resolver's at settlement.
+        assertEq(networkFee.balance, before, "not the recipient current at start");
+        assertEq(next.balance, 0.1 ether, "the recipient current at settlement");
     }
 
     // ------------------------------------------------------------------ batch bounds

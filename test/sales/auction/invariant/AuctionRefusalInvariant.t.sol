@@ -233,13 +233,12 @@ contract AuctionRefusalHandler is Test {
         }
     }
 
-    /// @dev Governance: a refusal-delay change and a refusal-gas raise (running federated sales
-    ///      keep their delay), or the federated fee recipient switched (running sales keep theirs).
+    /// @dev Governance: a refusal-gas raise (the refusal delay is a fixed 2 days), or the
+    ///      federated fee recipient switched (R18: settlement pays the one named then).
     function govern(uint256 seed) external {
         if (seed % 2 == 0) {
             IEnglishAuction.AuctionConfig memory c = auction.config();
             IEnglishAuction.AuctionConfig memory n = auction.config();
-            n.refusalDelay = uint32(1 days + (seed >> 8) % 29 days);
             uint256 raised = uint256(c.refusalGas) + (seed >> 40) % (uint256(c.refusalGas) + 1);
             if (raised <= 15_000_000) n.refusalGas = uint32(raised);
             vm.prank(setter);
@@ -434,14 +433,16 @@ abstract contract AuctionRefusalFixture is AuctionBase {
         );
     }
 
-    /// @dev The network receives its fee on every sold sale, from the terms the auction locked
-    ///      (for a federated sale the registry's share to the recipient locked at its start), and
-    ///      nothing on a sale that did not complete.
+    /// @dev The network receives its fee on every sold sale (the remainder after the seller's
+    ///      part rounds down, R18; for a federated sale the registry's share, paid to the
+    ///      federated recipient the resolver names at settlement), and nothing on a sale that did
+    ///      not complete.
     function invariant_TheNetworkIsPaidOnEverySoldSale() public view {
-        (uint256 listedFees, uint256 fed1, uint256 fed2) = _expectedFees();
+        (uint256 listedFees, uint256 fedFees) = _expectedFees();
         assertEq(_received(network), listedFees, "listed fees");
-        assertEq(_received(federatedNetwork), fed1, "federated fees, first recipient");
-        assertEq(_received(federatedNetwork2), fed2, "federated fees, second recipient");
+        assertEq(
+            _received(federatedNetwork) + _received(federatedNetwork2), fedFees, "federated fees"
+        );
     }
 
     /// @dev A bidder holds a sale's work only if that sale was sold to it: paid, with the
@@ -553,31 +554,19 @@ abstract contract AuctionRefusalFixture is AuctionBase {
     }
 
     /// @dev A SETTLED sale that kept its bidder was sold at its bid (a refused or rescued close,
-    ///      or an unsold end, clears the bidder). A federated sale's fee goes to the recipient
-    ///      locked in its terms record (`_federatedTerms`, slot 11, low 160 bits).
-    function _expectedFees() internal view returns (uint256 listed, uint256 fed1, uint256 fed2) {
+    ///      or an unsold end, clears the bidder).
+    function _expectedFees() internal view returns (uint256 listed, uint256 fed) {
         for (uint256 i; i < handler.salesCount(); ++i) {
             uint256 saleId = handler.sales(i);
             IEnglishAuction.Auction memory a = auction.auction(saleId);
             if (a.state != IEnglishAuction.AuctionState.SETTLED || a.bidder == address(0)) {
                 continue;
             }
-            if (handler.isStreamSale(saleId)) {
-                listed += uint256(a.bid) * FEE / 100_000;
-                continue;
-            }
-            uint256 fee = uint256(a.bid) * 10_000 / 100_000;
-            if (_lockedRecipient(saleId) == federatedNetwork) fed1 += fee;
-            else fed2 += fee;
+            uint256 share = handler.isStreamSale(saleId) ? FEE : 10_000;
+            uint256 fee = a.bid - a.bid * (100_000 - share) / 100_000;
+            if (handler.isStreamSale(saleId)) listed += fee;
+            else fed += fee;
         }
-    }
-
-    function _lockedRecipient(uint256 saleId) internal view returns (address) {
-        uint256 w0 = uint256(vm.load(address(auction), keccak256(abi.encode(saleId, uint256(8)))));
-        uint256 termsId = uint16(w0 >> 224);
-        // `_federatedTerms` is slot 10 since opening bids moved to the asset allowlist (ADR 0007).
-        bytes32 slot = keccak256(abi.encode(termsId, uint256(10)));
-        return address(uint160(uint256(vm.load(address(auction), slot))));
     }
 }
 

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IItemApprovals } from "src/interfaces/IItemApprovals.sol";
 import { Test } from "forge-std/Test.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
@@ -81,7 +82,7 @@ contract GenesisFlowsTest is Test {
         p.cc0Text = vm.readFileBinary("test/fixtures/cc0-legalcode.txt");
         p.ethIncrementFloor = 0.001 ether;
         p.permit2 = DeployV1.CANONICAL_PERMIT2;
-        p.auction = IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000, 7 days, 4_000_000);
+        p.auction = IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000, 4_000_000);
         p.editionAuction = DeployV1.editionAuctionDefaults();
         DeployV1.Deployment memory deployed = DeployV1.deploy(p);
         d = deployed;
@@ -249,14 +250,31 @@ contract GenesisFlowsTest is Test {
     function test_TheEditionAuctionOpensBesideItsMasterInTheGenesisBlock() public {
         _genesis(true);
         uint256 genesisTime = block.timestamp;
-        (bytes memory mintData, PackageItem memory item,) =
+        (bytes memory mintData, PackageItem memory item, bytes32 root) =
             _curatedWork(ItemKind.EDITION_MASTER, CURRENCY_ETH, _editionTerms());
         d.englishAuction.start(address(d.stream), mintData);
         uint256 workId = IStream(address(d.stream)).totalMinted();
         uint256 saleId = IUniformEditionAuctionLens(address(d.editionAuction))
             .saleIdOf(address(d.editions), workId);
+        // C23: the open carries the package root and the item's proof (a one-item package).
+        // Stub awaiting lane 1: until the package registry implements `IItemApprovals`, its
+        // answer is mocked true.
+        (bool answers,) = address(d.packageRegistry)
+            .staticcall(
+                abi.encodeCall(
+                    IItemApprovals.isApprovedItem, (bytes32(0), bytes32(0), new bytes32[](0))
+                )
+            );
+        if (!answers) {
+            vm.mockCall(
+                address(d.packageRegistry),
+                abi.encodeWithSelector(IItemApprovals.isApprovedItem.selector),
+                abi.encode(true)
+            );
+        }
+        bytes memory data = abi.encode(item, root, new bytes32[](0));
         vm.prank(makeAddr("anyone"));
-        assertEq(d.editionAuction.open(address(d.editions), workId, abi.encode(item)), saleId);
+        assertEq(d.editionAuction.open(address(d.editions), workId, data), saleId);
         IUniformEditionAuction.Auction memory a =
             IUniformEditionAuction(address(d.editionAuction)).auction(saleId);
         assertEq(uint8(a.status), uint8(IUniformEditionAuction.AuctionStatus.OPEN));

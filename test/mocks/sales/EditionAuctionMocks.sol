@@ -146,6 +146,26 @@ contract MockMasterStream {
         primarySaleSettled[id] = value;
     }
 
+    /// @dev The package registry's approval check (`IItemApprovals`), answered by this mock: every
+    ///      root is approved until the test revokes it.
+    mapping(bytes32 root => bool) public revoked;
+
+    function setRevoked(bytes32 root, bool value) external {
+        revoked[root] = value;
+    }
+
+    function packageRegistry() external view returns (address) {
+        return address(this);
+    }
+
+    function isApprovedItem(bytes32 root, bytes32, bytes32[] calldata)
+        external
+        view
+        returns (bool)
+    {
+        return !revoked[root];
+    }
+
     mapping(uint256 id => bytes32) internal _itemHashes;
     mapping(uint256 id => ItemKind) internal _kinds;
 
@@ -240,6 +260,23 @@ contract MockEditionToken is ERC1155 {
         return _locked[id];
     }
 
+    /// @dev Editions' `createEdition`, reduced to what the auction relies on: the master's sale
+    ///      settled in 6529 Stream, the item the one the master stored, and the edition not yet
+    ///      created; then it exists.
+    function createEdition(uint256 id, PackageItem calldata item) external returns (uint256) {
+        (bytes32 itemHash,,,,,) = MockMasterStream(stream).coreOf(id);
+        if (
+            exists[id] || !MockMasterStream(stream).primarySaleSettled(id)
+                || WorksHashing.itemHashCalldata(item) != itemHash
+        ) revert IEditions.NotEditionMaster(id);
+        exists[id] = true;
+        ++created;
+        return id;
+    }
+
+    /// @dev Counts `createEdition` calls.
+    uint256 public created;
+
     /// @dev The economics an edition recorded (as `createEdition` or a binding locked them).
     function setLocked(uint256 id, address seller, address feeRecipient, uint32 feeShare) external {
         _locked[id] = WorkTerms(seller, feeRecipient, feeShare, seller, 0);
@@ -330,6 +367,19 @@ contract MockWorkTermsResolver {
 
     function splitFactory() external view returns (address) {
         return address(this);
+    }
+
+    /// @dev The network fee recipient settlement reads (R18): the one the test set, else the
+    ///      terms' fee recipient.
+    address public currentFeeRecipient;
+    bool public currentFeeRecipientSet;
+
+    function setNetworkFeeRecipient(address recipient) external {
+        (currentFeeRecipient, currentFeeRecipientSet) = (recipient, true);
+    }
+
+    function networkFeeRecipient(bytes32) external view returns (address) {
+        return currentFeeRecipientSet ? currentFeeRecipient : _terms.feeRecipient;
     }
 
     function createWallet(ISplitWallet.Payee[] calldata payees, bytes32)

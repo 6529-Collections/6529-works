@@ -333,7 +333,9 @@ contract CuratedSaleFlowTest is IntegrationBase {
     function test_RefusedFeeGoesToTheEscrow() public {
         RefusingWallet safe = new RefusingWallet();
         safe.setRefuse(true);
-        // A sale running while the fee terms change keeps the terms its work locked at mint.
+        // A sale running while the fee terms change keeps the share its work locked at mint;
+        // the fee goes to the recipient the resolver names at settlement (R18), here the
+        // refusing one, so it is escrowed for it.
         (uint256 oldSale,) = _start(root, _package(root), 2);
         _ethBid(oldSale, bidder1, 1 ether);
         _govern(
@@ -342,17 +344,18 @@ contract CuratedSaleFlowTest is IntegrationBase {
             abi.encodeCall(economics.setFeeTerms, (PRODUCT_STREAM, 1, address(safe), 25_000))
         );
         auction.settle(oldSale);
-        assertEq(networkFee.balance, 0.25 ether, "locked at mint");
+        assertEq(networkFee.balance, 0, "not the recipient current at mint");
+        assertEq(IRevenueEscrow(address(escrow)).owed(address(safe), CURRENCY_ETH), 0.25 ether);
 
         Work[] memory works = _one(_collaboration(_work(artist, collectionId)));
         bytes32 newRoot = _publish(works);
         uint256 tokenId = _sell(newRoot, works, 0, bidder2, 2 ether);
         assertEq(stream.ownerOf(tokenId), bidder2, "settled despite the refusal");
-        assertEq(IRevenueEscrow(address(escrow)).owed(address(safe), CURRENCY_ETH), 0.5 ether);
+        assertEq(IRevenueEscrow(address(escrow)).owed(address(safe), CURRENCY_ETH), 0.75 ether);
         safe.setRefuse(false);
         vm.prank(keeper);
         IRevenueEscrow(address(escrow)).flush(address(safe), CURRENCY_ETH);
-        assertEq(address(safe).balance, 0.5 ether, "flushed by anyone");
+        assertEq(address(safe).balance, 0.75 ether, "flushed by anyone");
         (address receiver,) = stream.royaltyInfo(tokenId, 1 ether);
         assertEq(
             receiver, economics.newWorkTerms(PRODUCT_STREAM, works[0].item.payees).royaltyReceiver

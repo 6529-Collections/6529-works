@@ -97,7 +97,7 @@ contract EditionAuctionFixATest is EditionAuctionStack {
         Work memory w = _masterWork(artist, 0);
         bytes32 root = _publish(_one(w));
         (uint256 oneSaleId, uint256 tokenId) = _start(root, _one(w), 0);
-        uint256 saleId = successor.open(address(editions), tokenId, abi.encode(w.item));
+        uint256 saleId = successor.open(address(editions), tokenId, _openData(w));
         IUniformEditionAuction s = IUniformEditionAuction(address(successor));
         assertEq(s.auction(saleId).feeRecipient, newFee, "the successor pays the replacement");
         uint256 amount = 10 * s.stepPrice(saleId, 100);
@@ -121,53 +121,36 @@ contract EditionAuctionFixATest is EditionAuctionStack {
         assertEq(newFee.balance - before, fee, "the recorded recipient was paid");
     }
 
-    /// @dev Markets M-1: a dispute pause no longer lets a spoofer post demand and withdraw it. A
-    ///      bid placed during the pause is firm; a bid placed before it may still leave.
-    function test_F3_APauseSpoofIsFirm() public {
-        (bytes32 root, Work memory w, uint256 oneSaleId, uint256 tokenId, uint256 saleId) =
-            _startMaster(artist, 10);
-        address honest = makeAddr("honest");
+    /// @dev R21 on the real stack: every edition bid is firm during a dispute pause of its 1/1,
+    ///      placed before the pause or during it; the adapter has no withdrawal at all, and the
+    ///      bids stay in the book to settlement.
+    function test_R21_EditionBidsAreFirmDuringAPause() public {
+        (bytes32 root, Work memory w, uint256 oneSaleId,, uint256 saleId) = _startMaster(artist, 10);
         address early = makeAddr("early");
-        address spoofer = makeAddr("spoofer");
-        uint256 honestBid = _editionBid(saleId, honest, 140, 10);
+        address during = makeAddr("during");
         uint256 earlyBid = _editionBid(saleId, early, 120, 2);
         vm.warp(block.timestamp + 1 hours);
         vm.prank(guardian1);
         auction.pause(oneSaleId, keccak256("dispute"));
-        uint256 pausedAt = block.timestamp;
-        uint256 spoofBid = _editionBid(saleId, spoofer, 150, 10);
-        IUniformEditionAuctionLens l = IUniformEditionAuctionLens(address(editionAuction));
-        assertTrue(l.canWithdraw(saleId, earlyBid), "a bid from before the pause may leave");
-        assertFalse(l.canWithdraw(saleId, spoofBid), "a bid placed during the pause may not");
-        assertTrue(ea.endTimes(saleId).withdrawalsOpen);
-        // In the pause's last second, the spoof is still firm.
-        vm.warp(pausedAt + 7 days);
-        vm.prank(spoofer);
-        vm.expectRevert(
-            abi.encodeWithSelector(IUniformEditionAuction.WithdrawalsClosed.selector, saleId)
-        );
-        editionAuction.withdrawBid(saleId, spoofBid, spoofer);
-        // The early bidder leaves, as decision 12 intends.
-        vm.prank(early);
-        editionAuction.withdrawBid(saleId, earlyBid, early);
-        // A raise during the pause is new demand: firm too.
-        uint256 topUp = 10 * (ea.stepPrice(saleId, 151) - ea.stepPrice(saleId, 140));
-        vm.deal(honest, topUp);
-        vm.prank(honest);
-        editionAuction.raise{ value: topUp }(saleId, honestBid, 151);
-        assertFalse(l.canWithdraw(saleId, honestBid), "a raise restarts the placement");
-        vm.prank(honest);
-        vm.expectRevert(
-            abi.encodeWithSelector(IUniformEditionAuction.WithdrawalsClosed.selector, saleId)
-        );
-        editionAuction.withdrawBid(saleId, honestBid, honest);
-        // The spoof stayed in the book to the end: it was demand, with its escrow at risk.
-        vm.warp(pausedAt + 7 days + 1);
+        uint256 duringBid = _editionBid(saleId, during, 150, 10);
+        uint256[2] memory bids = [earlyBid, duringBid];
+        address[2] memory who = [early, during];
+        for (uint256 i; i < 2; ++i) {
+            vm.prank(who[i]);
+            (bool ok,) = address(editionAuction)
+                .call(
+                    abi.encodeWithSignature(
+                        "withdrawBid(uint256,uint256,address)", saleId, bids[i], who[i]
+                    )
+                );
+            assertFalse(ok, "no withdrawal");
+        }
+        // The pause runs out by itself after 3 days; the bids stayed in the book.
+        vm.warp(block.timestamp + 3 days + 1);
         _ethBid(oneSaleId, collector, 1 ether);
         _settleOneOfOneAndCreate(oneSaleId, root, w);
         _settleEditions(saleId);
         assertEq(ea.settlement(saleId).count, 10);
-        assertEq(ea.bidOf(saleId, spoofBid).quantity, 10, "the spoof was never withdrawn");
-        assertEq(editions.edition(tokenId).minter, address(editionAuction));
+        assertEq(ea.bidOf(saleId, earlyBid).quantity, 2, "the early bid was never withdrawn");
     }
 }

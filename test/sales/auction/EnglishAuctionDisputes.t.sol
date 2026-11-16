@@ -76,7 +76,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
 
     /// Regression: the review of #21 (inverted for the inclusive window)
     /// @dev Pause boundaries (the inclusive window): `cancel` at exactly
-    ///      `pausedAt + 7 days` lands; the pause cannot be reused on another sale.
+    ///      `pausedAt + 3 days` lands; the pause cannot be reused on another sale.
     function test_Pause_Boundaries() public {
         uint256 saleId = _start();
         _bidEth(saleId, alice, 1 ether);
@@ -85,12 +85,12 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         _pause(saleId);
         uint256 p = block.timestamp;
         bytes32 outcome = _recordOutcome(1);
-        vm.warp(p + 7 days);
+        vm.warp(p + 3 days);
         vm.prank(setter);
         auction.cancel(saleId, outcome);
         IEnglishAuction.Auction memory a = auction.auction(saleId);
         assertEq(uint8(a.state), uint8(IEnglishAuction.AuctionState.CANCELLED));
-        assertEq(a.pausedTotal, 7 days);
+        assertEq(a.pausedTotal, 3 days);
 
         uint256 other = _start();
         _pause(other);
@@ -241,13 +241,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, guardian)
         );
         auction.resume(saleId);
-        // GOV-5: not before 48 hours after the pause, whoever scheduled it when.
-        uint256 allowedAt = block.timestamp + Roles.DELAY_24H;
-        vm.warp(allowedAt - 1);
-        vm.prank(unpauser);
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.UnpauseTooEarly.selector, allowedAt));
-        auction.resume(saleId);
-        vm.warp(allowedAt);
+        // C30: no wait after the pause; the network resumes at any moment of it.
         vm.prank(unpauser);
         auction.resume(saleId);
     }
@@ -258,16 +252,16 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         vm.warp(end - 20 minutes);
         _pause(saleId);
         uint256 pausedAt = block.timestamp;
-        vm.warp(pausedAt + 7 days);
+        vm.warp(pausedAt + 3 days);
         assertEq(uint8(_state(saleId)), uint8(IEnglishAuction.AuctionState.PAUSED), "inclusive");
         assertEq(auction.auction(saleId).pausedAt, pausedAt, "the view still shows the pause");
-        vm.warp(pausedAt + 7 days + 1);
+        vm.warp(pausedAt + 3 days + 1);
         IEnglishAuction.Auction memory a = auction.auction(saleId);
-        uint256 resumedEnd = pausedAt + 7 days + DURATION;
+        uint256 resumedEnd = pausedAt + 3 days + DURATION;
         assertEq(uint8(a.state), uint8(IEnglishAuction.AuctionState.ACTIVE), "resumed, no call");
         assertEq(a.endTime, resumedEnd, "the duration, more than the remaining 20 minutes");
         assertEq(a.pausedAt, 0);
-        assertEq(a.pausedTotal, 7 days);
+        assertEq(a.pausedTotal, 3 days);
         vm.prank(unpauser);
         _expectState(saleId, IEnglishAuction.AuctionState.ACTIVE);
         auction.resume(saleId);
@@ -292,7 +286,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         _bidEth(saleId, alice, 1 ether);
         vm.warp(end - 1);
         _pause(saleId);
-        uint256 resumedEnd = block.timestamp + 7 days + DURATION;
+        uint256 resumedEnd = block.timestamp + 3 days + DURATION;
         assertEq(auction.auction(saleId).endTime, end, "frozen while paused");
         vm.warp(resumedEnd - 1);
         assertEq(uint8(_state(saleId)), uint8(IEnglishAuction.AuctionState.ACTIVE));
@@ -312,11 +306,11 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         _pause(saleId);
         vm.prank(alice);
         auction.withdrawBid(saleId);
-        vm.warp(block.timestamp + 7 days + 1);
+        vm.warp(block.timestamp + 3 days + 1);
         IEnglishAuction.Auction memory a = auction.auction(saleId);
         assertEq(uint8(a.state), uint8(IEnglishAuction.AuctionState.ACTIVE));
         // LIFECYCLE-1: the bid was withdrawn, so the full duration, not one second.
-        assertEq(a.endTime, end - 1 + 7 days + DURATION, "the duration, not one second");
+        assertEq(a.endTime, end - 1 + 3 days + DURATION, "the duration, not one second");
         _bidEth(saleId, alice, 10 ether);
         _end(saleId);
         auction.settle(saleId);
@@ -340,7 +334,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
     function test_Resume_ReopeningIsNeverShorterThanTheLockedWindow() public {
         IEnglishAuction.AuctionConfig memory c = auction.config();
         IEnglishAuction.AuctionConfig memory wide =
-            IEnglishAuction.AuctionConfig(7 days, 1 days, SHARE, REFUSAL_DELAY, REFUSAL_GAS);
+            IEnglishAuction.AuctionConfig(7 days, 1 days, SHARE, REFUSAL_GAS);
         vm.prank(setter);
         auction.setConfig(c, wide);
         uint256 withdrawn = _start();
@@ -355,8 +349,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         auction.withdrawBid(withdrawn);
         vm.prank(setter);
         auction.setConfig(
-            wide,
-            IEnglishAuction.AuctionConfig(1 hours, 1 minutes, SHARE, REFUSAL_DELAY, REFUSAL_GAS)
+            wide, IEnglishAuction.AuctionConfig(1 hours, 1 minutes, SHARE, REFUSAL_GAS)
         );
         vm.warp(pausedAt + auction.MAX_PAUSE() + 1);
         uint256 resumedAt = pausedAt + auction.MAX_PAUSE();
@@ -447,15 +440,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
     function test_Cancel_NeedsTheRecordedOutcome() public {
         uint256 saleId = _start();
         _pause(saleId);
-        // L4: like `resume`, `cancel` waits for the pause's 48-hour window.
-        vm.prank(setter);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                ISaleAdapter.UnpauseTooEarly.selector, block.timestamp + Roles.DELAY_24H
-            )
-        );
-        auction.cancel(saleId, bytes32(0));
-        vm.warp(block.timestamp + Roles.DELAY_24H);
+        // C30: like `resume`, `cancel` takes no wait after the pause.
         vm.startPrank(setter);
         vm.expectRevert(
             abi.encodeWithSelector(IEnglishAuction.OutcomeNotRecorded.selector, saleId, bytes32(0))
@@ -486,7 +471,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         _expectState(saleId, IEnglishAuction.AuctionState.ACTIVE);
         auction.cancel(saleId, outcome);
         _pause(saleId);
-        vm.warp(block.timestamp + 7 days + 1);
+        vm.warp(block.timestamp + 3 days + 1);
         vm.prank(setter);
         _expectState(saleId, IEnglishAuction.AuctionState.ACTIVE);
         auction.cancel(saleId, outcome);
@@ -497,7 +482,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         auction.cancel(saleId, outcome);
     }
 
-    /// @dev The pause window is inclusive: `cancel` lands at exactly `pausedAt + 7 days` and is
+    /// @dev The pause window is inclusive: `cancel` lands at exactly `pausedAt + 3 days` and is
     ///      refused one second later.
     function test_Cancel_PauseWindowBoundary() public {
         uint256 inside = _start();
@@ -507,18 +492,18 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         uint256 pausedAt = block.timestamp;
         bytes32 insideOutcome = _recordOutcome(_tokenIdOf(inside));
         bytes32 outsideOutcome = _recordOutcome(_tokenIdOf(outside));
-        vm.warp(pausedAt + 7 days);
+        vm.warp(pausedAt + 3 days);
         vm.prank(setter);
         auction.cancel(inside, insideOutcome);
         assertEq(uint8(_state(inside)), uint8(IEnglishAuction.AuctionState.CANCELLED));
-        vm.warp(pausedAt + 7 days + 1);
+        vm.warp(pausedAt + 3 days + 1);
         vm.prank(setter);
         _expectState(outside, IEnglishAuction.AuctionState.ACTIVE);
         auction.cancel(outside, outsideOutcome);
     }
 
-    /// @dev The upheld outcome is a 48-hour action. Scheduled exactly at day 5 of the pause it
-    ///      becomes executable at `pausedAt + 7 days`, which the inclusive window still accepts;
+    /// @dev The upheld outcome is a 48-hour action. Scheduled exactly at day 1 of the pause it
+    ///      becomes executable at `pausedAt + 3 days`, which the inclusive window still accepts;
     ///      scheduled one second later it lands after the pause and is refused.
     function test_Cancel_ThroughTheStandardDelay() public {
         address council = makeAddr("council");
@@ -533,19 +518,19 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         bytes memory late = abi.encodeCall(auction.cancel, (other, otherOutcome));
 
         uint256 pausedAt = block.timestamp;
-        vm.warp(pausedAt + 5 days);
+        vm.warp(pausedAt + 1 days);
         vm.prank(council);
         manager.schedule(address(auction), onTime, 0);
-        vm.warp(pausedAt + 5 days + 1);
+        vm.warp(pausedAt + 1 days + 1);
         vm.prank(council);
         manager.schedule(address(auction), late, 0);
 
-        vm.warp(pausedAt + 7 days);
+        vm.warp(pausedAt + 3 days);
         vm.prank(council);
         manager.execute(address(auction), onTime);
         assertEq(uint8(_state(saleId)), uint8(IEnglishAuction.AuctionState.CANCELLED));
 
-        vm.warp(pausedAt + 7 days + 1);
+        vm.warp(pausedAt + 3 days + 1);
         vm.prank(council);
         _expectState(other, IEnglishAuction.AuctionState.ACTIVE);
         manager.execute(address(auction), late);
@@ -577,7 +562,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         vm.warp(block.timestamp + 2 days);
         vm.prank(setter);
         auction.cancel(saleId, outcome);
-        vm.warp(block.timestamp + 7 days);
+        vm.warp(block.timestamp + 3 days);
         IEnglishAuction.Auction memory a = auction.auction(saleId);
         assertEq(uint8(a.state), uint8(IEnglishAuction.AuctionState.CANCELLED));
         assertEq(a.pausedTotal, 2 days);
@@ -589,7 +574,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
 
     function test_SetConfig_CompareAndSet() public {
         IEnglishAuction.AuctionConfig memory next =
-            IEnglishAuction.AuctionConfig(12 hours, 10 minutes, 10_000, REFUSAL_DELAY, REFUSAL_GAS);
+            IEnglishAuction.AuctionConfig(12 hours, 10 minutes, 10_000, REFUSAL_GAS);
         vm.prank(setter);
         vm.expectRevert(ISaleAdapter.ExpectedValueMismatch.selector);
         auction.setConfig(next, next);
@@ -621,13 +606,18 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         assertEq(a.endTime - block.timestamp, 12 hours, "new sales use the new config");
     }
 
-    /// @dev The opening bid is a two-way price within an absolute ceiling, held by the asset
+    /// @dev The opening bid is a two-way price up to its 96-bit storage bound (R19), held by the asset
     ///      allowlist since ADR 0007 and compare-and-set on the asset's revision (ETH is at
     ///      revision 1 from its admission).
     function test_SetOpeningBid_MovesBothWaysWithinTheCeiling() public {
-        // R19: the allowlist no longer caps the opening bid (only its 96-bit storage).
-        uint256 ceiling = ETH_FLOOR * auction.OPENING_BID_FLOORS();
+        uint256 ceiling = type(uint96).max; // R19: only the storage bound
         vm.startPrank(setter);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAssetAllowlist.OpeningBidAboveCeiling.selector, ceiling + 1, ceiling
+            )
+        );
+        allowlist.setOpeningBid(ETH, 1, ceiling + 1);
         vm.expectEmit(address(allowlist));
         emit IAssetAllowlist.OpeningBidSet(ETH, 0, 0.5 ether, 2);
         allowlist.setOpeningBid(ETH, 1, 0.5 ether);
@@ -654,7 +644,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
     }
 
     function testFuzz_SetOpeningBid_AnyValueUpToTheCeiling(uint256 first, uint256 next) public {
-        uint256 ceiling = type(uint96).max;
+        uint256 ceiling = type(uint96).max; // R19: only the storage bound
         first = bound(first, 0, ceiling);
         _setOpeningBid(ETH, first);
         vm.prank(setter);

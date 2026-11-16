@@ -831,15 +831,16 @@ contract Flows is Script {
         uint256 saleId = _editionSale(a, tokenId);
         require(_uea(a).saleIdOf(a.editions, tokenId) == saleId, "sale ID derivation");
         _info("saleId", saleId.toString());
+        Work[] memory works = _works(a);
+        bytes32[] memory leaves = _leaves(works);
+        // C23: the item, its package root and its proof.
+        bytes memory data = abi.encode(works[index].item, _root(leaves), _proof(leaves, index));
         _tx(
             string.concat("openEdition-", tokenId.toString()),
             "any",
             a.editionAuction,
             0,
-            abi.encodeCall(
-                IUniformEditionAuction.open,
-                (a.editions, tokenId, abi.encode(_works(a)[index].item))
-            )
+            abi.encodeCall(IUniformEditionAuction.open, (a.editions, tokenId, data))
         );
     }
 
@@ -881,27 +882,6 @@ contract Flows is Script {
             a.editionAuction,
             paid,
             abi.encodeCall(IUniformEditionAuction.raise, (saleId, bidId, newStep))
-        );
-    }
-
-    /// @notice `withdrawBid` of bid `bidId` on master `tokenId`'s edition sale, its escrow to
-    ///         the bidder (only while the 1/1 is paused, for a bid placed before the pause).
-    function editionWithdrawTx(uint256 tokenId, uint256 bidId) external view {
-        Addrs memory a = _addrs();
-        uint256 saleId = _editionSale(a, tokenId);
-        address bidder = _uea(a).bidOf(saleId, bidId).bidder;
-        _info(
-            "canWithdraw",
-            IUniformEditionAuctionLens(a.editionAuction).canWithdraw(saleId, bidId)
-                ? "true"
-                : "false"
-        );
-        _tx(
-            string.concat("editionWithdraw-", tokenId.toString()),
-            bidder.toHexString(),
-            a.editionAuction,
-            0,
-            abi.encodeCall(IUniformEditionAuction.withdrawBid, (saleId, bidId, bidder))
         );
     }
 
@@ -1017,7 +997,6 @@ contract Flows is Script {
         _info("backstop", uint256(e.backstop).toString());
         _info("oneOfOneState", uint256(e.oneOfOneState).toString());
         _info("biddingOpen", e.biddingOpen ? "true" : "false");
-        _info("withdrawalsOpen", e.withdrawalsOpen ? "true" : "false");
         if (s.status == IUniformEditionAuction.AuctionStatus.VOID) return;
         IUniformEditionAuction.Clearing memory c = uea.clearing(saleId);
         _info("count", c.count.toString());

@@ -17,9 +17,10 @@ import { FederatedEditionAuctionLens } from "./FederatedEditionAuctionLens.sol";
 /// @dev What differs from 6529 Stream Editions' deployment, with the federation logic in its lens
 ///      ({FederatedEditionAuctionLens}) so this contract keeps the shared code within EIP-170:
 ///      the edition contract is chosen per sale (recorded at open; it binds only adapters the
-///      registry admits); its master is that contract's partner; the network fee is the registry
-///      entry's share, paid to the economics resolver's federated recipient, both locked at
-///      open, never what the token reports; a sale of a contract the registry stops serving
+///      registry admits, and opens only while the registry lets this adapter mint it, so a
+///      suspended template opens no sale); its master is that contract's partner; the network fee
+///      is the registry entry's share, locked at open, never what the token reports, paid to the
+///      economics resolver's federated recipient read at settlement; a sale of a contract the registry stops serving
 ///      (delisted, its template revoked) reads its 1/1 as cancelled, so the sale voids with full
 ///      refunds, and every bid and raise checks it is still served (6529 Stream Editions' read
 ///      only near the close would leave a delisted sale taking bids until then), as does every
@@ -27,7 +28,7 @@ import { FederatedEditionAuctionLens } from "./FederatedEditionAuctionLens.sol";
 ///      best effort (a refusal leaves the edition unsealed: this adapter never mints a void
 ///      sale's copies).
 contract FederatedEditionAuction is UniformEditionAuctionBase {
-    /// @dev Storage slot 14 (the lens reads it): each sale's edition contract.
+    /// @dev Storage slot 12 (the lens reads it): each sale's edition contract.
     mapping(uint256 saleId => address) private _tokens;
 
     /// @param authority_ The AccessManager governing the setters and the pause.
@@ -36,7 +37,7 @@ contract FederatedEditionAuction is UniformEditionAuctionBase {
     /// @param lens_ The federated lens, deployed beforehand (code hash `lensCodeHash`).
     /// @param lensCodeHash The lens's reviewed code hash.
     /// @param config_ The initial governed parameters.
-    /// @param limits_ The initial governed limits.
+    /// @param limits_ The initial governed limit (the payout gas).
     constructor(
         address authority_,
         address escrow_,
@@ -109,15 +110,9 @@ contract FederatedEditionAuction is UniformEditionAuctionBase {
         return IFederatedEditions(_tokens[saleId]).stream();
     }
 
-    /// @dev The lens's `feeTerms`: the registry entry's share and the resolver's federated
-    ///      recipient, never the token's own answer.
-    function _feeTerms(address token, address, uint256)
-        internal
-        view
-        override
-        returns (address, uint256)
-    {
-        return FederatedEditionAuctionLens(lens).feeTerms(token, _escrow);
+    /// @dev The lens's `feeTerms`: the registry entry's share, never the token's own answer.
+    function _feeShare(address token, uint256) internal view override returns (uint256 share) {
+        (, share) = FederatedEditionAuctionLens(lens).feeTerms(token, _escrow);
     }
 
     /// @dev Best effort: all gas forwarded and no return data copied; a failure that left at most
@@ -140,12 +135,6 @@ contract FederatedEditionAuction is UniformEditionAuctionBase {
         if (!ok && gasleft() <= before / BoundedCall.SHORTFALL_DIVISOR) {
             revert BoundedCall.BoundedCallShortfall(token);
         }
-    }
-
-    /// @dev A federated 1/1 has no rescue (no museum path): nothing added, so `abandon` waits
-    ///      the locked delay alone; no 6529 Stream slot is read for a federated sale.
-    function _rescueLengthening(uint256) internal pure override returns (uint256) {
-        return 0;
     }
 
     /// @dev Reverts with `BiddingClosed` for a recorded sale whose contract the registry no
