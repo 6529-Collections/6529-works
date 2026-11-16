@@ -87,7 +87,7 @@ contract FederationGasTest is FederationBase {
 
     function _cooled() internal view override returns (address[] memory all) {
         address[] memory base = super._cooled();
-        all = new address[](base.length + 7);
+        all = new address[](base.length + 8);
         for (uint256 i; i < base.length; ++i) {
             all[i] = base[i];
         }
@@ -95,7 +95,8 @@ contract FederationGasTest is FederationBase {
         (address(fed), address(fedRegistry), address(fea));
         (all[base.length + 3], all[base.length + 4], all[base.length + 5]) =
         (address(feaLens), address(ps), address(pe));
-        all[base.length + 6] = address(deployment.federatedStreamDeployer);
+        (all[base.length + 6], all[base.length + 7]) =
+        (address(deployment.federatedStreamDeployer), address(deployment.federatedEditionsDeployer));
     }
 
     // ------------------------------------------------------------------ deployment
@@ -129,74 +130,67 @@ contract FederationGasTest is FederationBase {
         total = 21_000 + calldataGas + frame;
     }
 
-    function test_Gas_DeployTheTemplates() public {
-        (address s, uint256 total721, uint256 slots721, uint256 runtime721) = _deploy(
+    /// @dev Each deployment row is measured in its own test, before any state-diff recording:
+    ///      once a test has recorded, Foundry prices every later access warm, so a second row
+    ///      would come out low.
+    function test_Gas_DeployFederatedStream() public {
+        (, uint256 total, uint256 slots, uint256 runtime) = _deploy(
             abi.encodePacked(
                 type(FederatedStream).creationCode, abi.encode(_streamConfig(fedArtist))
             )
         );
-        emit log_named_uint("FederatedStream deploy (tx, Prague)", total721);
-        emit log_named_uint("FederatedStream runtime bytes", runtime721);
-        emit log_named_uint("FederatedStream constructor slots", slots721);
-        (, uint256 total1155, uint256 slots1155, uint256 runtime1155) = _deploy(
+        emit log_named_uint("FederatedStream deploy (tx, Prague)", total);
+        emit log_named_uint("FederatedStream runtime bytes", runtime);
+        emit log_named_uint("FederatedStream constructor slots", slots);
+        // Ten, plus the one collection's name at the `StreamLayout` slot the renderer reads.
+        assertEq(slots, 11);
+        assertLe(total, DEPLOY_721_CEILING);
+    }
+
+    function test_Gas_DeployFederatedEditions() public {
+        (, uint256 total, uint256 slots, uint256 runtime) = _deploy(
             abi.encodePacked(
                 type(FederatedEditions).creationCode,
-                abi.encode(
-                    IFederatedEditions.Config(
-                        "Artist Editions",
-                        "ARTE",
-                        address(artists),
-                        address(splitFactory),
-                        uint160(fedArtist),
-                        FED_SHARE,
-                        networkFee,
-                        s,
-                        fedArtist
-                    )
-                )
+                abi.encode(_editionsConfig(fedArtist, address(fed)))
             )
         );
-        emit log_named_uint("FederatedEditions deploy (tx, Prague)", total1155);
-        emit log_named_uint("FederatedEditions runtime bytes", runtime1155);
-        emit log_named_uint("FederatedEditions constructor slots", slots1155);
-        // Ten, plus the one collection's name at the `StreamLayout` slot the renderer reads.
-        assertEq(slots721, 11);
-        assertEq(slots1155, 8);
-        assertLe(total721, DEPLOY_721_CEILING);
-        assertLe(total1155, DEPLOY_1155_CEILING);
+        emit log_named_uint("FederatedEditions deploy (tx, Prague)", total);
+        emit log_named_uint("FederatedEditions runtime bytes", runtime);
+        emit log_named_uint("FederatedEditions constructor slots", slots);
+        assertEq(slots, 8);
+        assertLe(total, DEPLOY_1155_CEILING);
     }
 
     /// @dev Review G (G3): an artist deploys through the template's deployer, which reads the
     ///      creation code from its data contracts (no 25 KB of calldata), CREATE2s it and records
-    ///      the copy (one new slot) with an event. Measured against a plain CREATE of the same
-    ///      initcode, whose transaction carries the creation code as calldata.
-    function test_Gas_DeployThroughTheDeployer() public {
+    ///      the copy (one new slot) with an event. The deployer call is measured first, with
+    ///      nothing recorded; the plain CREATE of the same initcode follows it, so its
+    ///      constructor's accounts are already warm and its figure is a lower bound, which only
+    ///      makes the comparison stricter (its own row is `test_Gas_DeployFederatedStream`).
+    function test_Gas_DeployStreamThroughItsDeployer() public {
         bytes memory config = abi.encode(_streamConfig(fedArtist));
-        (, uint256 direct,,) = _deploy(abi.encodePacked(type(FederatedStream).creationCode, config));
         FederatedDeployer d = deployment.federatedStreamDeployer;
-        bytes memory data = abi.encodeCall(d.deploy, (bytes32(uint256(0x6529)), config));
-        uint256 before = gasleft();
-        (bool ok,) = address(d).call(data);
-        uint256 frame = before - gasleft();
-        assertTrue(ok);
-        uint256 total = _txGas(data, frame);
-        emit log_named_uint("FederatedStream deploy, plain CREATE (tx, Prague)", direct);
+        (uint256 total,) = _measure(
+            fedArtist, address(d), abi.encodeCall(d.deploy, (bytes32(uint256(0x6529)), config)), 0
+        );
         emit log_named_uint("FederatedStream deploy, through its deployer (tx, Prague)", total);
-        assertLt(total, direct, "the deployer path costs less than sending the code");
         assertLe(total, DEPLOY_721_CEILING);
-        bytes memory edConfig = abi.encode(_editionsConfig(fedArtist, address(fed)));
-        (, uint256 edDirect,,) =
-            _deploy(abi.encodePacked(type(FederatedEditions).creationCode, edConfig));
-        FederatedDeployer ed = deployment.federatedEditionsDeployer;
-        data = abi.encodeCall(ed.deploy, (bytes32(uint256(0x6529)), edConfig));
-        before = gasleft();
-        (ok,) = address(ed).call(data);
-        frame = before - gasleft();
-        assertTrue(ok);
-        total = _txGas(data, frame);
-        emit log_named_uint("FederatedEditions deploy, plain CREATE (tx, Prague)", edDirect);
+        (, uint256 direct,,) = _deploy(abi.encodePacked(type(FederatedStream).creationCode, config));
+        assertLt(total, direct, "the deployer path costs less than sending the code");
+    }
+
+    /// @dev As `test_Gas_DeployStreamThroughItsDeployer`, for the editions template.
+    function test_Gas_DeployEditionsThroughItsDeployer() public {
+        bytes memory config = abi.encode(_editionsConfig(fedArtist, address(fed)));
+        FederatedDeployer d = deployment.federatedEditionsDeployer;
+        (uint256 total,) = _measure(
+            fedArtist, address(d), abi.encodeCall(d.deploy, (bytes32(uint256(0x6529)), config)), 0
+        );
         emit log_named_uint("FederatedEditions deploy, through its deployer (tx, Prague)", total);
-        assertLt(total, edDirect);
+        assertLe(total, DEPLOY_1155_CEILING);
+        (, uint256 direct,,) =
+            _deploy(abi.encodePacked(type(FederatedEditions).creationCode, config));
+        assertLt(total, direct, "the deployer path costs less than sending the code");
     }
 
     // ------------------------------------------------------------------ the 1/1 path
