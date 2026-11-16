@@ -116,7 +116,7 @@ interface IUniformEditionAuction is ISaleAdapter {
     ///        730), locked at open.
     /// @param payoutGas Gas forwarded with each settlement payout; a wallet that refuses, or
     ///        needs more, is paid in the revenue escrow instead (100,000 at launch; bounds 30,000
-    ///        to 3,000,000).
+    ///        to 3,000,000; after construction it only rises, at most doubling per change).
     /// @param rescueCapDays The most whole days 6529 Stream's rescue lengthening adds to an
     ///        abandonment (730 at launch; bounds 90 to 730), read when a sale is abandoned. So a
     ///        sale's bidders can always leave by its end plus at most 730 + 730 days, however
@@ -596,10 +596,13 @@ interface IUniformEditionAuction is ISaleAdapter {
     ///         Bounds, fixed in code: a maximum close offset of 1 day to 3,650 days, and at least
     ///         the current default close offset; an abandonment delay of 120 to 730 days (at
     ///         least governance's 30-day replacement of a dependency of the master's settlement
-    ///         plus 6529 Stream's 90-day rescue floor); a payout gas of 30,000 to 3,000,000; a
-    ///         rescue cap of 90 to 730 days. Open sales keep the close offset and the abandonment
-    ///         delay they locked; the payout gas applies to every later payout and the rescue cap
-    ///         to every later abandonment.
+    ///         plus 6529 Stream's 90-day rescue floor); a payout gas of 30,000 to 3,000,000 that,
+    ///         after construction, only rises and at most doubles per change (from 100,000, at
+    ///         most 200,000; never lower), checked against the figure current when the change
+    ///         executes, so a change scheduled from a stale figure reverts; a rescue cap of 90 to
+    ///         730 days. Open sales keep the close offset and the abandonment delay they locked;
+    ///         the payout gas applies to every later payout and the rescue cap to every later
+    ///         abandonment.
     /// @param expected The limits the caller expects are current, packed as `Limits` documents;
     ///        a stale value reverts with `ExpectedValueMismatch`.
     /// @param next The new limits, packed, within the bounds above and with nothing past bit 96

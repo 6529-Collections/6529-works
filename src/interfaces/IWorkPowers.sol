@@ -60,7 +60,11 @@ interface IWorkPowers {
     ///         state hash and a deadline, as for the errata repin, so nobody acts as the artist
     ///         while the artist registry restrains the authority. Allowed before and after
     ///         finalize, except `RENDERER_REPIN`, which needs a finalized work (a work has no pin
-    ///         to repair before). Bits are only ever added: renouncing only bits already renounced
+    ///         to repair before), and `RELICENSE` while the work's license is one `finalize`
+    ///         could never accept (an identifier outside the mint rule, or a text unregistered,
+    ///         not SHA-256 or over 16 chunks: `IWorkRecords.InvalidLicense` or the store's
+    ///         refusal); missing chunks, which anyone may write, do not stop it. Bits are only
+    ///         ever added: renouncing only bits already renounced
     ///         (zero included) is a no-op that still requires an open record and known bits
     ///         but checks no state hash, deadline or signature; otherwise the version bumps, so
     ///         the signature can never apply again and every pending consent for the work

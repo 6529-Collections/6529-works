@@ -76,9 +76,10 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     /// @dev The chunk size of every content-store manifest, and the largest record file (one
     ///      chunk keeps the record checks O(1)).
     uint256 private constant CHUNK = SSTORE2.MAX_CHUNK_LENGTH;
-    /// @dev The most chunks of a license text that must be complete on-chain (finalize, and
-    ///      relicensing a finalized work): a safety bound against unbounded work, so the
-    ///      presence check is at most 16 chunk reads (about 393 KB of text) in one transaction.
+    /// @dev The most chunks of any license text a work selects (relicensing, before or after
+    ///      finalize, and renouncing RELICENSE; `finalize` checks the opened license): a safety
+    ///      bound against unbounded work, so the presence check at finalize is at most 16 chunk
+    ///      reads (about 393 KB of text) in one transaction.
     uint256 private constant MAX_LICENSE_TEXT_CHUNKS = 16;
     /// @dev The high nibble of every byte of a `RecordData.files` word: the added store each file
     ///      is complete in.
@@ -164,12 +165,13 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         if (
             !SpdxId.isValid(cc0.spdxId)
                 || WorksHashing.licenseKey(cc0.spdxId) != WorksHashing.CC0_LICENSE_KEY
-                || IContentStore(contentStore_).sha256Of(cc0.textFileId) == 0
         ) {
             revert InvalidLicense();
         }
         stream = stream_;
         contentStore = contentStore_;
+        // The rule every selected text meets, so a work on the default license can finalize.
+        _requireLicenseText(cc0.textFileId, false);
         cc0TextFileId = cc0.textFileId;
         _cc0SpdxId = cc0.spdxId;
         address first = address(new WorkDelivery(authority_, address(this), stream_, address(0)));
@@ -287,20 +289,23 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     ///      content store lacks, so nothing an added store does, and no order of files across
     ///      stores, can keep a file whose chunks are all in the content store from completing
     ///      there (review E, N-3). Once the work is on-chain complete, the content walk goes
-    ///      round again over the files still complete only in an added store (upgrades).
+    ///      round again over the files still complete only in an added store (upgrades); a call
+    ///      that reaches the end with budget left wraps once, up to the file it started from, so
+    ///      no file waits on a chunk missing from a later one. A call that verified no chunk in
+    ///      that full pass reverts (`NotOnChainComplete`), leaving the cursor as it was.
     function syncOnChain(uint256 tokenId, uint256 storeId, uint256 maxChunks) external {
         RecordData storage r = _open(tokenId);
         uint256 synced = r.syncedFiles;
         uint256 count = r.mediaCount;
         uint8 flags = r.flags;
         uint256 files = r.files;
-        if (maxChunks == 0 || (storeId != 0 && flags & ON_CHAIN != 0)) return;
-        // Every file reached: on-chain complete, so the walk restarts for the files still
-        // complete only in an added store, or has nothing left.
-        if (synced == count) {
-            if (files & ADDED_STORES == 0) return;
-            synced = 0;
-        }
+        // On-chain complete: only the content walk's upgrades remain, if any file is still
+        // complete only in an added store.
+        if (
+            maxChunks == 0 || (flags & ON_CHAIN != 0 && (storeId != 0 || files & ADDED_STORES == 0))
+        ) return;
+        // Every file reached (only once on-chain complete): the walk restarts.
+        if (synced == count) synced = 0;
         (address source, bool intact) = _storeOf(storeId);
         if (!intact) revert UnknownStore(storeId);
         // The chunk cursor is zero whenever every file was reached.
@@ -315,7 +320,14 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
                 (c.next, c.chunk) = (file, cursor & 0xffffff);
             }
         }
+        uint256 start = c.next;
         _advance(tokenId, storeId, source, c);
+        // An upgrade walk that reached the end with budget left goes round once more, up to
+        // where it started, so a file before the cursor never waits on one after it.
+        if (c.done && storeId == 0 && c.next == count && c.budget != 0 && start != 0) {
+            (c.next, c.chunk, c.count) = (0, 0, start);
+            _advance(tokenId, 0, source, c);
+        }
         if (c.budget == maxChunks) revert NotOnChainComplete(tokenId);
         if (storeId == 0) {
             // At most `Limits.MAX_MEDIA_FILES` (32), and below a manifest's chunk count, which
@@ -486,7 +498,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     }
 
     /// @inheritdoc IWorkRecords
-    /// @dev Lower-only (ADR 0006). The version bumps before the external calls; the core emits
+    /// @dev Lower-only (ADR 0006). The version bumps after the view calls that check state and
+    ///      consents and before the state-changing ones; the core emits
     ///      `RoyaltyRateChanged`, a linked edition's rate follows its master's.
     function setRoyaltyRate(
         uint256 tokenId,
@@ -569,8 +582,11 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         if (powers & WorkPowers.RENDERER_REPIN != 0 && r.flags & FINALIZED == 0) {
             revert WorkNotFinalized(tokenId);
         }
-        // A license that can no longer change must be one the renderer can show.
-        if (powers & WorkPowers.RELICENSE != 0) _frozenLicense(tokenId, r.flags);
+        // A license that can no longer change must be one the renderer can show, and one that
+        // `finalize` can accept: only its missing chunks, which anyone may write, may remain.
+        if (powers & WorkPowers.RELICENSE != 0) {
+            _requireLicenseText(_frozenLicense(tokenId, r.flags), false);
+        }
         bytes32 structHash = keccak256(
             abi.encode(
                 Typehashes.RENOUNCE_POWERS,
@@ -817,22 +833,17 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         _refresh(tokenId);
     }
 
-    /// @dev A license's text must be a registered content-store file with a SHA-256 digest, and
-    ///      complete on-chain, in at most `MAX_LICENSE_TEXT_CHUNKS` chunks, when `stored`. The
-    ///      digest kind is `_fileInfo`'s encoding above its low byte, zero only for SHA-256 (the
-    ///      unstored path's `sha256Of` refuses any other kind).
+    /// @dev A license's text must be a registered content-store file with a SHA-256 digest in at
+    ///      most `MAX_LICENSE_TEXT_CHUNKS` chunks, and complete on-chain when `stored`. The
+    ///      digest kind is `_fileInfo`'s encoding above its low byte, zero only for SHA-256. The
+    ///      chunk count and digest kind are fixed by the file ID, so a text that passes here
+    ///      can only lack chunks, which anyone may write.
     function _requireLicenseText(bytes32 textFileId, bool stored) private view {
-        IContentStore cs = IContentStore(contentStore);
-        if (stored) {
-            (,, uint256 chunks, uint256 encoding) = _fileInfo(textFileId, false);
-            if (
-                encoding >> 8 != 0 || chunks > MAX_LICENSE_TEXT_CHUNKS || !cs.isComplete(textFileId)
-            ) {
-                revert InvalidLicense();
-            }
-        } else if (cs.sha256Of(textFileId) == 0) {
-            revert InvalidLicense();
-        }
+        (,, uint256 chunks, uint256 encoding) = _fileInfo(textFileId, false);
+        if (
+            encoding >> 8 != 0 || chunks > MAX_LICENSE_TEXT_CHUNKS
+                || (stored && !IContentStore(contentStore).isComplete(textFileId))
+        ) revert InvalidLicense();
     }
 
     /// @dev The text file of the work's license, once a stored license's identifier passes the
