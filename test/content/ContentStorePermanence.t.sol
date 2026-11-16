@@ -6,6 +6,7 @@ import { ContentBase } from "./ContentBase.sol";
 import { ContentStore } from "src/content/ContentStore.sol";
 import { IChunkStore } from "src/interfaces/IChunkStore.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
+import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { SSTORE2 } from "src/libraries/SSTORE2.sol";
 
 /// @dev Helpers for linked chunks and list manifests.
@@ -118,6 +119,29 @@ contract ContentStoreLinkTest is PermanenceBase {
         assertEq(written, hash);
         assertTrue(pointer != address(0));
         assertEq(store.chunkData(hash), chunk);
+    }
+
+    /// @dev `maxParts`: zero while a chunk is missing, the largest part count of a linked chunk,
+    ///      and only falling: a link from fewer parts, then a whole write, lower it, whoever
+    ///      makes them; a link from more parts never raises it.
+    function test_MaxParts_TheLargestLinkAndOnlyFalling() public {
+        bytes memory file = _data(2 * CHUNK + 50, 9);
+        (bytes32 fileId, bytes[] memory chunks,) = _declare(file, IDENTITY, HTML);
+        store.writeChunk(chunks[0]);
+        assertEq(store.maxParts(fileId), 0, "incomplete");
+        store.linkChunk(_writeParts(chunks[1], 6200)); // 4 parts
+        store.linkChunk(_writeParts(chunks[2], 10)); // 5 parts
+        assertEq(store.maxParts(fileId), 5);
+        vm.prank(makeAddr("anyone"));
+        store.linkChunk(_writeParts(chunks[2], 25)); // 2 parts replace 5
+        assertEq(store.maxParts(fileId), 4);
+        store.linkChunk(_writeParts(chunks[1], 100)); // more parts: no change
+        assertEq(store.maxParts(fileId), 4);
+        vm.prank(makeAddr("anyone"));
+        store.writeChunk(chunks[1]);
+        store.writeChunk(chunks[2]);
+        assertEq(store.maxParts(fileId), 1, "every chunk whole");
+        assertTrue(store.isComplete(fileId));
     }
 
     /// @dev A link from fewer parts replaces a longer one (cheaper reads, same bytes); a link
@@ -380,6 +404,53 @@ contract ContentStoreListTest is PermanenceBase {
         store.registerManifestList(lists, 2, 5 * CHUNK, IDENTITY, "HTML", DIGEST, 0);
     }
 
+    /// @dev More list chunks than `MAX_CHUNKS` hashes could fill (every list but the last full,
+    ///      the last not empty) are refused before any is read or anything is allocated: here
+    ///      one valid 32-byte list chunk repeated 4,097 times with a stride of one.
+    function test_List_RefusesTooManyListsBeforeReadingThem() public {
+        uint256 max = store.MAX_CHUNKS();
+        bytes32[] memory hashes = _fakeHashes(1, 6);
+        (bytes32 one,) = store.writeChunk(_packed(hashes, 0, 1));
+        bytes32[] memory lists = new bytes32[](max + 1);
+        for (uint256 i; i < lists.length; ++i) {
+            lists[i] = one;
+        }
+        vm.expectRevert(abi.encodeWithSelector(IContentStore.ContentListInvalid.selector, 0));
+        store.registerManifestList(lists, 1, (max + 1) * CHUNK, IDENTITY, HTML, DIGEST, 0);
+        // At the bound the same lists register: 4,096 chunks of one hash each.
+        assembly ("memory-safe") {
+            mstore(lists, max)
+        }
+        bytes32 fileId =
+            store.registerManifestList(lists, 1, max * CHUNK, IDENTITY, HTML, DIGEST, 0);
+        assertEq(store.fileInfo(fileId).chunkCount, max);
+    }
+
+    /// @dev A partly filled last list chunk: hashes in it are read at their place, and the file
+    ///      reads whole, chunk by chunk (7 chunks with a stride of 3: lists of 3, 3 and 1).
+    function test_List_APartlyFilledLastListChunk() public {
+        bytes memory file = _data(6 * CHUNK + 5, 22);
+        (bytes[] memory chunks, bytes32[] memory hashes) = _split(file);
+        bytes32[] memory lists = _writeList(hashes, 3);
+        assertEq(lists.length, 3);
+        assertEq(SSTORE2.size(store.chunkPointer(lists[2])), 32, "one hash in the last list");
+        bytes32 fileId =
+            store.registerManifestList(lists, 3, file.length, IDENTITY, HTML, sha256(file), 0);
+        assertEq(fileId, store.manifestId(hashes, file.length, IDENTITY, HTML, sha256(file)));
+        _uploadAll(chunks);
+        for (uint256 i; i < 7; ++i) {
+            assertEq(store.chunkHash(fileId, i), hashes[i]);
+            assertEq(store.readChunk(fileId, i), chunks[i]);
+        }
+        vm.expectRevert(
+            abi.encodeWithSelector(IContentStore.ContentChunkIndexOutOfBounds.selector, fileId, 7)
+        );
+        store.readChunk(fileId, 7);
+        assertEq(
+            store.read(fileId, 5 * CHUNK + 3, CHUNK + 2), _slice(file, 5 * CHUNK + 3, CHUNK + 2)
+        );
+    }
+
     function test_List_RefusesMoreThanMaxChunksBeforeCopying() public {
         uint256 max = store.MAX_CHUNKS();
         bytes32[] memory hashes = _fakeHashes(max + 1, 4);
@@ -450,6 +521,11 @@ contract MockChunkStore is IChunkStore {
     mapping(bytes32 => bytes) internal _data;
     mapping(bytes32 => bool) internal _held;
     uint256 public burn;
+    bool public bomb;
+
+    function setBomb(bool on) external {
+        bomb = on;
+    }
 
     function put(bytes32 hash, bytes memory data) external {
         _data[hash] = data;
@@ -464,6 +540,11 @@ contract MockChunkStore is IChunkStore {
         uint256 x;
         for (uint256 i; i < burn; ++i) {
             x = uint256(keccak256(abi.encode(x, i)));
+        }
+        if (bomb) {
+            assembly ("memory-safe") {
+                return(0, 0x100000)
+            }
         }
         if (!_held[chunkHash]) revert IContentStore.ContentChunkUnknown(chunkHash);
         return _data[chunkHash];
@@ -489,13 +570,10 @@ contract ContentStoreSourceTest is PermanenceBase {
         }
         assertEq(store.firstMissing(fileId, 0, 4, address(other)), 4);
         assertFalse(store.isComplete(fileId), "this store still lacks them");
-        // A source that lacks a chunk makes the check revert with its own error.
+        // A source that refuses a chunk (here, one it lacks) does not serve it.
         ContentStore someChunks = new ContentStore();
         someChunks.writeChunk(chunks[0]);
-        vm.expectRevert(
-            abi.encodeWithSelector(IContentStore.ContentChunkUnknown.selector, hashes[1])
-        );
-        store.firstMissing(fileId, 0, 4, address(someChunks));
+        assertEq(store.firstMissing(fileId, 0, 4, address(someChunks)), 1);
         assertEq(store.firstMissing(fileId, 0, 1, address(someChunks)), 1);
     }
 
@@ -509,8 +587,22 @@ contract ContentStoreSourceTest is PermanenceBase {
         assertEq(store.firstMissing(fileId, 0, 4, address(mock)), 2);
         mock.put(hashes[2], _slice(chunks[2], 0, CHUNK - 1)); // a prefix
         assertEq(store.firstMissing(fileId, 0, 4, address(mock)), 2);
+        mock.put(hashes[2], bytes.concat(chunks[2], hex"00")); // one byte too many
+        assertEq(store.firstMissing(fileId, 0, 4, address(mock)), 2);
         mock.put(hashes[2], chunks[2]);
         assertEq(store.firstMissing(fileId, 2, 4, address(mock)), 4);
+    }
+
+    /// @dev The store copies at most one chunk's ABI encoding of a source's answer: a source
+    ///      that answers with a megabyte serves nothing, and the check costs the copy of no more
+    ///      than that bound (without the bound it would copy the whole answer).
+    function test_Source_AnOversizedAnswerIsNotServedAndNotCopied() public {
+        MockChunkStore mock = new MockChunkStore();
+        mock.setBomb(true);
+        uint256 before = gasleft();
+        assertEq(store.firstMissing(fileId, 0, 4, address(mock)), 0, "not served");
+        uint256 used = before - gasleft();
+        assertLt(used, 3_000_000, "the megabyte was never copied");
     }
 
     /// @dev Gas rule: the source gets all available gas. A source that burns 2x, 4x or 10x its
@@ -532,7 +624,11 @@ contract ContentStoreSourceTest is PermanenceBase {
             abi.encodeCall(store.firstMissing, (fileId, 0, 4, address(mock)))
         );
         assertFalse(ok, "a shortfall reverts");
-        assertEq(ret.length, 0, "out of gas, not an answer");
+        assertEq(
+            ret,
+            abi.encodeWithSelector(BoundedCall.BoundedCallShortfall.selector, address(mock)),
+            "a shortfall, not an answer"
+        );
     }
 }
 

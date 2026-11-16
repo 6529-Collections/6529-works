@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { IChunkStore } from "../interfaces/IChunkStore.sol";
 import { IContentStore } from "../interfaces/IContentStore.sol";
+import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { SSTORE2 } from "../libraries/SSTORE2.sol";
 import { Base64Validator } from "./Base64Validator.sol";
 
@@ -181,9 +182,19 @@ contract ContentStore is IContentStore {
     function isComplete(bytes32 fileId) external view returns (bool) {
         File storage f = _file(fileId);
         for (uint256 i; i < f.chunkCount; ++i) {
-            if (!_present(f, i)) return false;
+            if (_parts(f, i) == 0) return false;
         }
         return true;
+    }
+
+    /// @inheritdoc IContentStore
+    function maxParts(bytes32 fileId) external view returns (uint256 parts) {
+        File storage f = _file(fileId);
+        for (uint256 i; i < f.chunkCount; ++i) {
+            uint256 n = _parts(f, i);
+            if (n == 0) return 0;
+            if (n > parts) parts = n;
+        }
     }
 
     /// @inheritdoc IContentStore
@@ -195,7 +206,7 @@ contract ContentStore is IContentStore {
         File storage f = _file(fileId);
         if (to > f.chunkCount) to = f.chunkCount;
         for (uint256 i = from; i < to; ++i) {
-            if (source == address(this) ? !_present(f, i) : !_served(source, f, i)) return i;
+            if (source == address(this) ? _parts(f, i) == 0 : !_served(source, f, i)) return i;
         }
         return to;
     }
@@ -206,7 +217,7 @@ contract ContentStore is IContentStore {
         missing = new uint256[](f.chunkCount);
         uint256 found;
         for (uint256 i; i < missing.length; ++i) {
-            if (!_present(f, i)) missing[found++] = i;
+            if (_parts(f, i) == 0) missing[found++] = i;
         }
         assembly ("memory-safe") {
             mstore(missing, found)
@@ -354,7 +365,12 @@ contract ContentStore is IContentStore {
         returns (bytes32[] memory hashes, address[] memory pointers)
     {
         uint256 k = lists.length;
-        if (per == 0 || per > MAX_HASHES_PER_LIST || k == 0) revert ContentListInvalid(0);
+        // Every list but the last is full and the last holds at least one hash, so more than
+        // `(MAX_CHUNKS - 1) / per + 1` lists hold more than `MAX_CHUNKS` hashes: refused before
+        // anything is allocated or read.
+        if (per == 0 || per > MAX_HASHES_PER_LIST || k == 0 || k > (MAX_CHUNKS - 1) / per + 1) {
+            revert ContentListInvalid(0);
+        }
         pointers = new address[](k);
         uint256 bytesTotal;
         for (uint256 j; j < k; ++j) {
@@ -492,31 +508,50 @@ contract ContentStore is IContentStore {
         found = true;
     }
 
-    /// @dev Stored, whole or linked, with the length the layout rule requires. A whole chunk
-    ///      needs only its code size; a linked one its recorded length, checked when it was
-    ///      linked from immutable parts. A file chunk is never empty, so an absent link (length
-    ///      0) never matches.
-    function _present(File storage f, uint256 index) private view returns (bool) {
+    /// @dev The parts a read of chunk `index` copies when it is stored, whole (one) or linked
+    ///      (its part count), with the length the layout rule requires; zero when it is not. A
+    ///      whole chunk needs only its code size; a linked one its recorded length, checked when
+    ///      it was linked from immutable parts. A file chunk is never empty, so an absent link
+    ///      (length 0) never matches.
+    function _parts(File storage f, uint256 index) private view returns (uint256) {
         bytes32 hash = _hashAt(f, index);
         uint256 expected = _expectedLength(f, index);
         address pointer = chunkPointer[hash];
-        // The low 64 bits are the length.
+        if (pointer != address(0)) return SSTORE2.size(pointer) == expected ? 1 : 0;
+        uint256 linked = _linked[hash];
+        // The low 64 bits are the length, the bits above them the part count.
         // forge-lint: disable-next-line(unsafe-typecast)
-        if (pointer == address(0)) return uint64(_linked[hash]) == expected;
-        return SSTORE2.size(pointer) == expected;
+        return uint64(linked) == expected ? linked >> 64 : 0;
     }
 
-    /// @dev Whether `source` returns chunk `index` with the manifest's hash and length. The
-    ///      returned buffer is released afterwards, so a range check keeps memory at one chunk.
+    /// @dev Whether `source` returns chunk `index` with the manifest's hash and length. The read
+    ///      forwards all the gas it may and copies at most the ABI encoding of one chunk of the
+    ///      expected length (`BoundedCall.tryReadAll`): a refusal or any other answer is not
+    ///      served, and a shortfall reverts. The buffer is released afterwards, so a range check
+    ///      keeps memory at one chunk.
     function _served(address source, File storage f, uint256 index) private view returns (bool ok) {
         uint256 mark;
         assembly ("memory-safe") {
             mark := mload(0x40)
         }
         bytes32 hash = _hashAt(f, index);
-        bytes memory data = IChunkStore(source).chunkData(hash);
-        ok = data.length == _expectedLength(f, index) && keccak256(data) == hash;
+        uint256 expected = _expectedLength(f, index);
+        bytes memory data;
+        (ok, data) = BoundedCall.tryReadAll(
+            source,
+            abi.encodeCall(IChunkStore.chunkData, (hash)),
+            0x40 + ((expected + 31) & ~uint256(31))
+        );
+        // The answer must be `abi.encode(bytes)` of the expected length: offset 0x20, the
+        // length, then the bytes, which must hash to the chunk's hash.
+        ok = ok && data.length >= 0x40 + expected;
         assembly ("memory-safe") {
+            if ok {
+                ok := and(
+                    and(eq(mload(add(data, 0x20)), 0x20), eq(mload(add(data, 0x40)), expected)),
+                    eq(keccak256(add(data, 0x60), expected), hash)
+                )
+            }
             mstore(0x40, mark)
         }
     }

@@ -261,7 +261,7 @@ abstract contract WorksDeployment is Test {
         );
     }
 
-    function _writeChunks(bytes memory stored) internal returns (bytes32[] memory hashes) {
+    function _writeChunks(bytes memory stored) internal virtual returns (bytes32[] memory hashes) {
         uint256 size = store.CHUNK_SIZE();
         hashes = new bytes32[]((stored.length + size - 1) / size);
         for (uint256 i; i < hashes.length; ++i) {

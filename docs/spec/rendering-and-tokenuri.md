@@ -120,7 +120,7 @@ sequenceDiagram
     participant R as Renderer
     C->>S: tokenURI(tokenId)
     S->>S: rendererOf, the token must be live
-    S->>W: pinnedRenderer(tokenId), with exactly RECORDS_GAS
+    S->>W: pinnedRenderer(tokenId), with all the gas the call has
     Note over W: reverts DependencyCodeChanged if the pinned code changed, RecordNotOpen before openRecord
     opt no pin, or the record is not open
         S->>S: defaultRenderer, its codehash must match the installed hash
@@ -182,7 +182,8 @@ sequenceDiagram
   straight into the single output buffer.
 - **Gas.** At most 8M Prague gas for every work the protocol allows (RND-26;
   [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table), decision 1). With every
-  cap filled at once the highest figure found is 7,796,194. The budget proof is
+  cap filled at once the highest figure found is 7,974,892, with every chunk the renderer reads
+  linked from 4 parts, the most it reads from (7,696,856 with whole chunks). The budget proof is
   [`TokenUriBudget.t.sol`](../../test/integration/TokenUriBudget.t.sol) on the real stack; the
   record matrix and each limit on its own are in
   [`RendererGas.t.sol`](../../test/content/renderer/RendererGas.t.sol), which print their
@@ -396,7 +397,7 @@ costs about 30M gas, 512 KiB about 8.4M (`test_FullForm_1MiB` and `test_FullForm
 | RND-23 | The dispute status is `latestDisputeOutcome(stream, workId)`, shown as `Dispute statement` when nonzero; a renderer with no log shows none; a broken log reverts. | `Renderer._chainTraits` | `Renderer.t.sol` `test_Dispute_ShownWhenTheLogHasAnOutcome`, `test_Dispute_NoLogConfiguredMeansNone`, `test_Dispute_ABrokenLogFailsClosed` |
 | RND-24 | `license_url` is the SPDX page only for an SPDX identifier that is not `LicenseRef-`; otherwise the text file's locator, if listed among the media. | `Renderer._licenseUrl` | `Renderer.t.sol` `test_License_UrlIsTheSpdxPageInTheOriginalCase`, `test_License_NoUrlForALicenseRefInAnyCaseOrAnEmptyId`; `RendererRecords.t.sol` `test_License_TheUrlComesOnlyFromAnSpdxIdentifier` |
 | RND-25 | The threshold is between 1 and 1,048,576. | `Renderer` constructor | `Renderer.t.sol` `test_Constructor_RejectsBadThresholds` |
-| RND-26 | `tokenURI` and `Editions.uri` cost at most 8M Prague gas with every cap at once, and create no state. Media chunks are whole, or linked from at most 4 parts (each part of each chunk read costs about 6,000 gas: about 65,000 per extra part per chunk of a 256 KiB primary, against a worst row of 7.70M); more parts (up to 256) are the uploader's choice and are not covered. | the caps above, `Stream.createCollection` (no control characters, `<`, `"` or `\`), the renderer's preview bound (`PREVIEW_LIMIT`) | [`RendererPermanence.t.sol`](../../test/integration/RendererPermanence.t.sol) `test_Budget_LinkedChunks`; [`TokenUriBudget.t.sol`](../../test/integration/TokenUriBudget.t.sol) `test_Budget_*`, `test_CollectionName_RefusesBytesThatEscapeLong`; `RendererGas.t.sol` (`RendererGasBudgetTest`, `RendererGasAdversarialTest`) |
+| RND-26 | `tokenURI` and `Editions.uri` cost at most 8M Prague gas with every cap at once, and create no state, whatever the stored part counts. The renderer reads a file (inlines a primary or preview, shows a record) only when no chunk of it is linked from more than `MAX_PARTS_PER_CHUNK` (4) parts (`IContentStore.maxParts`; each part of each chunk read costs about 7,000 gas), and otherwise serves the file by locator or the record as `incomplete`, until anyone writes the chunk whole or links it from fewer parts (WS-50). The worst row, every chunk read linked from 4 parts, is measured. | the caps above, `Renderer._complete` (`MAX_PARTS_PER_CHUNK`), `Stream.createCollection` (no control characters, `<`, `"` or `\`), the renderer's preview bound (`PREVIEW_LIMIT`) | [`RendererPermanence.t.sol`](../../test/integration/RendererPermanence.t.sol) `test_Budget_LinkedChunks`, `test_Budget_AHeavilyLinkedFileIsServedByLocatorUntilCompacted`; [`TokenUriBudget.t.sol`](../../test/integration/TokenUriBudget.t.sol) `test_Budget_*` (`test_Budget_LinkedAtTheBound_SpacedBefore_Zeros_Base64Preview`, `test_Budget_PastTheBoundNothingIsRead`), `test_CollectionName_RefusesBytesThatEscapeLong`; `RendererGas.t.sol` (`RendererGasBudgetTest`, `RendererGasAdversarialTest`) |
 | RND-27 | Every visible change to a work's metadata made through `WorkRecords` or Stream emits ERC-4906 on Stream and, for a master with an edition, on Editions (exceptions under [Events](#events)). | `WorkRecords._refresh`, `_refreshAll`, `Stream.setDefaultRenderer` | `WorkRecords.t.sol` `test_preferenceSetters_eventsAndRefresh`, `test_preferenceSetters_notifyAllEditions`; [`Editions.t.sol`](../../test/editions/Editions.t.sol) `test_NotifyMasterUpdated_EmitsForEditionsOnly`; `Stream.t.sol` `test_emitMetadataUpdate_fromRecords` |
 | RND-28 | Renderer selection fails closed (AUC-42, ADR 0007): `rendererOf` reads the work's pin from the records satellite with all the gas the call has; only "no pin" (zero) and `RecordNotOpen` serve the default renderer; any other revert is passed on, a malformed answer reverts with `RendererPinUnreadable`, and a shortfall reverts with `BoundedCallShortfall`. The records satellite can make `tokenURI` revert, never show another renderer. | `Stream.rendererOf` | [`Stream.t.sol`](../../test/stream/Stream.t.sol) `test_rendererOf_failsClosedOnARecordsFault`, `test_GasRule_rendererOf` |
 
@@ -424,6 +425,7 @@ changed makes `tokenURI` revert, also without an event.
 | The record is refused | Core-only, `invalid` | Before finalize, the artist calls `setRecord`. After finalize only an errata repin to a renderer that accepts it changes the output |
 | A broken media list or edition hash (RND-16), or a string that is not UTF-8 | `RendererRecordInvalid`, `RendererInvalidUtf8` | Not reachable through the deployed contracts, which enforce both |
 | The primary is not inlineable | `tokenURI` serves the preferred locator, and a preview | Anyone uploads the missing chunks and calls `syncOnChain` or attests a `Base64` file; the artist (before finalize) or PLATFORM adds a locator |
+| A chunk of the primary, preview or record is linked from more than 4 parts | The file is served by locator, the record shown as `incomplete` (RND-26) | Anyone writes the chunk whole or links it from 4 parts or fewer (WS-50) |
 | The primary is over the threshold and has no ARWEAVE or IPFS locator | No `image`, `animation_url` or `media_url` for the primary | `fullTokenURI` up to 1 MiB, or the content store's chunked reads; PLATFORM registers a locator |
 | `fullTokenURI` cannot inline the work | `RendererNotInlineable(token, id)` | Use `tokenURI` and the locator, or read the content store |
 
@@ -438,6 +440,7 @@ changed makes `tokenURI` revert, also without an event.
 | `fullTokenURI` limit | 1,048,576 cost-weighted bytes | `MAX_INLINE_BYTES` (internal) |
 | Preview limit, renderer | 16,384 cost-weighted bytes (`Limits.MAX_PREVIEW_BYTES`) | `PREVIEW_LIMIT` (internal) |
 | Script page size, `tokenURI` | 8,192 stored bytes | `SCRIPT_LIMIT` (internal) |
+| Parts per chunk read | at most 4 (`IContentStore.maxParts`) for any file the renderer reads | `MAX_PARTS_PER_CHUNK` (internal) |
 | `<` in a wrapped script | at most 1,024 | `MAX_SCRIPT_LT` (internal) |
 | `window.works` version | 1 | `SHELL_HEAD` |
 | Artists per record | 16 | `Limits.MAX_ARTISTS` |

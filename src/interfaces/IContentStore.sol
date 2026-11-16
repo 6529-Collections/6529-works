@@ -275,13 +275,26 @@ interface IContentStore is IChunkStore {
     /// @return True when the whole file can be read.
     function isComplete(bytes32 fileId) external view returns (bool);
 
+    /// @notice The most stored parts any one chunk of the file is read from, or zero when the
+    ///         file is not complete ({isComplete}): one when every chunk is stored whole, else
+    ///         the largest part count of a chunk held only as a link. Each part costs a reader
+    ///         one storage read and one code copy, so a reader with a budget bounds it. It never
+    ///         rises: a whole write of a chunk, or a link from fewer parts, replaces a link
+    ///         (anyone may write either), and nothing replaces a whole chunk.
+    /// @param fileId A registered file ID (`ContentFileUnknown` otherwise).
+    /// @return parts The largest part count of a chunk, or zero for an incomplete file.
+    function maxParts(bytes32 fileId) external view returns (uint256 parts);
+
     /// @notice The first chunk index in `[from, to)` that `source` does not serve, or `to` when
     ///         it serves all of them (`to` is capped at the chunk count). With `source` this
     ///         store, a chunk counts when it is stored whole or linked at the length the layout
     ///         requires. With any other `source`, each chunk is fetched by
-    ///         {IChunkStore.chunkData} and counts only when its keccak256 hash and length are
-    ///         the manifest's; a source that reverts makes this call revert. The caller picks
-    ///         the range, so a check of any file fits any budget.
+    ///         {IChunkStore.chunkData} with all the gas the call may forward and at most one
+    ///         chunk's ABI encoding of return data copied, and counts only when its keccak256
+    ///         hash and length are the manifest's; a source that refuses (reverts, or answers
+    ///         more or other than that encoding) does not serve the chunk, and a read that left
+    ///         at most 1/8 of the gas reverts with `BoundedCall.BoundedCallShortfall`. The
+    ///         caller picks the range, so a check of any file fits any budget.
     /// @param fileId A registered file ID (`ContentFileUnknown` otherwise).
     /// @param from The first chunk index to check.
     /// @param to One past the last chunk index to check.
