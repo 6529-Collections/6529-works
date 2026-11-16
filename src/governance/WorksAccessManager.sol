@@ -606,7 +606,11 @@ contract WorksAccessManager is AccessManager {
     }
 
     /// @inheritdoc AccessManager
-    /// @dev Counts as admin activity of `caller`.
+    /// @dev Counts as admin activity of `caller`: a direct DELAYED `restricted` call on a managed
+    ///      contract makes that contract call this, naming the scheduling admin, so it counts
+    ///      like {execute} of the same operation. A direct IMMEDIATE call on a managed contract
+    ///      never reaches this manager's state (it only asks `canCall`, a view), so it cannot
+    ///      count.
     function consumeScheduledOp(address caller, bytes calldata data) public override {
         super.consumeScheduledOp(caller, data);
         _touch(caller);
@@ -615,9 +619,12 @@ contract WorksAccessManager is AccessManager {
     /// @inheritdoc AccessManager
     /// @dev Counts as admin activity of the sender: a direct call of a delayed manager function
     ///      (an admin's always is: its class delay is at least 30 days) consumes its schedule here.
-    ///      A direct `restricted` call on a managed contract never reaches the manager's state (it
-    ///      only asks `canCall`, a view), so it cannot count; admins act through {execute}, which
-    ///      counts, or {heartbeat}.
+    ///      Here `_msgSender()` is the caller of a manager function; when a managed contract
+    ///      consumes a schedule through {consumeScheduledOp}, the sender is that contract and
+    ///      this touch is a no-op, the counting being done there for the scheduling admin. A
+    ///      direct immediate `restricted` call on a managed contract never reaches the manager's
+    ///      state (it only asks `canCall`, a view), so it cannot count; admins act through
+    ///      {execute}, a direct delayed call, or {heartbeat}.
     function _consumeScheduledOp(bytes32 operationId) internal override returns (uint32) {
         _touch(_msgSender());
         return super._consumeScheduledOp(operationId);
