@@ -89,9 +89,8 @@ A schema value is `keccak256` of the schema's `$id` (DCL-1). Documents that are 
 have schemas too: the declarations document
 ([`declarations.v1`](schemas/declarations.v1.schema.json), an AUXILIARY media file), the artist
 catalogue ([`catalogue.v1`](schemas/catalogue.v1.schema.json)), the control proof
-([`control-proof.v1`](schemas/control-proof.v1.schema.json)), the promise card
-([`promise-card.v1`](schemas/promise-card.v1.schema.json)) and its grade
-([`promise-grade.v1`](schemas/promise-grade.v1.schema.json)), and the published floor result
+([`control-proof.v1`](schemas/control-proof.v1.schema.json)), a work's fact sheet
+([`fact-sheet.v1`](schemas/fact-sheet.v1.schema.json)), and the published floor result
 ([`floor-result.v1`](schemas/floor-result.v1.schema.json), a member of the curation evidence).
 
 ### The Statement struct
@@ -129,12 +128,13 @@ role check on both paths, including for statements it signed earlier, since the 
 relay time.
 
 **ARTIST authority** is no stronger than the resolver's code, `setArtistResolver`
-(`SUCCESSOR_SETTER`, 30 days, so the guardians can cancel a hostile swap), and the
+(`SUCCESSOR_SETTER`, 30 days), and the
 AccessManager behind it ([trust assumptions](../audit/trust-assumptions.md#resolvers-and-renderer-pins);
 LIM-GV-10); no governance role has a direct path to an ARTIST or OWNER entry (DSP-6). The
 install is checked (DSP-8). Each ARTIST entry records its resolver, so a reader can discard
-the entries of a resolver it does not trust. A resolver must be immutable or never make an
-answer true faster than the 30-day class; the restraint is the one allowed exception.
+the entries of a resolver it does not trust. Today's resolver is the artist registry, which
+makes an answer true no faster than its own identity delays; the restraint is the one case where
+it withholds an answer.
 
 ### Dispute outcome
 

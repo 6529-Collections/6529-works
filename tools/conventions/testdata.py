@@ -30,9 +30,8 @@ EXAMPLE_SCHEMAS = {
     "declarations.json": "declarations",
     "declarations-generative.json": "declarations",
     "declarations-time-capsule.json": "declarations",
+    "fact-sheet.json": "fact-sheet",
     "floor-result.json": "floor-result",
-    "promise-card.json": "promise-card",
-    "promise-grade.json": "promise-grade",
 }
 
 ANVIL_0 = "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266"  # public Anvil test account 0
@@ -173,39 +172,37 @@ def time_capsule_floor_input() -> dict:
     ])  # fmt: skip
 
 
-def example_card_inputs() -> dict:
-    """Reads and documents that reproduce the example promise card (see test_card)."""
+def example_sheet_inputs() -> dict:
+    """Reads and documents that reproduce the example fact sheet (see test_fact_sheet)."""
     decl = canonical(example("declarations.json"))
     custody_doc = example("custody-attestation.json")
-    card = example("promise-card.json")
+    sheet = example("fact-sheet.json")
     f1, f2 = "0x" + "11" * 32, "0x" + "22" * 32
     still = example("declarations.json")["conservation"]["storage"]["files"]
     locs = {f["fileId"]: [{"kind": "ARWEAVE" if r["network"] == "arweave" else "IPFS", "uri": r["uri"]}
                           for r in f["receipts"]] for f in still}  # fmt: skip
-    roles = copy.deepcopy(card["changeable"])
+    roles = copy.deepcopy(sheet["changeable"])
     for row in roles:
         del row["until"]
         if row["what"] == "renderer":
             row["phase"] = "afterFinalize"
     roles += [
-        {"what": "record", "who": ["ARTIST"], "delaySeconds": 0, "guardianCancel": False},
-        {"what": "license", "who": ["EVERY_PARTY", "PARAMETER_SETTER"], "delaySeconds": 172800,
-         "guardianCancel": True},
+        {"what": "record", "who": ["ARTIST"], "delaySeconds": 0},
+        {"what": "license", "who": ["EVERY_PARTY", "PARAMETER_SETTER"], "delaySeconds": 172800},
         {"what": "renderer", "who": ["SUCCESSOR_SETTER"], "delaySeconds": 2592000,
-         "guardianCancel": True, "phase": "beforeFinalize"},
-        {"what": "burn_and_release", "who": ["PLATFORM", "PARAMETER_SETTER"], "delaySeconds": 172800,
-         "guardianCancel": True},
+         "phase": "beforeFinalize"},
+        {"what": "burn_and_release", "who": ["PLATFORM", "PARAMETER_SETTER"], "delaySeconds": 172800},
     ]  # fmt: skip
     return {
-        "generator": card["generator"],
+        "generator": sheet["generator"],
         "reads": {
-            "at": card["at"],
-            "token": card["work"]["token"],
+            "at": sheet["at"],
+            "token": sheet["work"]["token"],
             "tokenId": "42",
-            "WorkMinted": {"contentHash": card["work"]["contentHash"]},
+            "WorkMinted": {"contentHash": sheet["work"]["contentHash"]},
             "Stream": {
-                "ownerOf": card["work"]["owner"],
-                "coreOf": {"itemHash": card["work"]["itemHash"], "artistId": card["work"]["artistId"],
+                "ownerOf": sheet["work"]["owner"],
+                "coreOf": {"itemHash": sheet["work"]["itemHash"], "artistId": sheet["work"]["artistId"],
                            "collectionId": "1", "kind": "ORIGINAL", "seedPolicy": "NONE"},
                 "primarySale": {"outcome": "SOLD", "currency": ZERO, "price": "1250000000000000000"},
                 "editionOf": {"editionsContract": ZERO, "editionId": "0"},
@@ -220,12 +217,11 @@ def example_card_inputs() -> dict:
                     {"fileId": DECL_FILE, "sha256Hash": sha(decl), "role": "AUXILIARY"},
                 ],
                 "licenseOf": {"spdxId": "CC0-1.0", "textFileId": LICENSE_TEXT},
-                "workStateHash": card["record"]["stateHash"],
+                "workStateHash": sheet["record"]["stateHash"],
                 "pinnedRenderer": RENDERER,
                 "locators": {f1: locs[f1], f2: locs[f2], DECL_FILE: []},
                 "preferredLocator": {f1: {"kind": "ONCHAIN", "uri": ""}, f2: {"kind": "ONCHAIN", "uri": ""},
                                      DECL_FILE: {"kind": "ONCHAIN", "uri": ""}},
-                "RecordOpened": {"timestamp": 1794182400 - 30 * 86400},
             },
             "ContentStore": {
                 "fileInfo": {
@@ -242,14 +238,14 @@ def example_card_inputs() -> dict:
             "StatementLog": {
                 "latestDisputeOutcome": ZERO32,
                 "disputeOutcomeOf": {"entryHash": ZERO32, "index": 0},
-                "chainOf": card["statements"],
-                "artistResolver": card["artist"]["resolver"],
+                "chainOf": sheet["statements"],
+                "artistResolver": sheet["artist"]["resolver"],
             },
-            "ArtistRegistry": {"activeAuthorityOf": card["artist"]["activeAuthority"],
+            "ArtistRegistry": {"activeAuthorityOf": sheet["artist"]["activeAuthority"],
                                "pendingChange": {"kind": "NONE"}},
         },
         "floor": example("floor-result.json"),  # the published result (DCL-33)
         "attestations": [{"document": custody_doc, "recordedAt": 1794700900, "posterRole": "OWNER",
-                          "poster": card["work"]["owner"], "signatureValid": True}],
+                          "poster": sheet["work"]["owner"], "signatureValid": True}],
         "roles": roles,
     }  # fmt: skip

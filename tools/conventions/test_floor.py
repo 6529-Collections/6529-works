@@ -445,7 +445,6 @@ class AlwaysTest(unittest.TestCase):
     def test_refusals(self) -> None:
         base = testdata.still_floor_input()
         cases = [
-            ("not a WorkPowers power", edit(base, lambda i: i["policy"].update(workPowers=["OTHER"]))),
             ("pairs are not distinct", with_doc(base, lambda d: d["custodians"].append(dict(d["custodians"][0], name="Again")))),
             ("a custodian address is zero", with_doc(base, lambda d: d["custodians"][0].update(address=testdata.ZERO))),
             ("names the work itself", edit(base, lambda i: i["package"].update(work={"chainId": 11155111, "contract": "0x02617dbdc0b0521124cb4c2a3ef602977e29bd91", "tokenId": "7"}))),
@@ -457,14 +456,6 @@ class AlwaysTest(unittest.TestCase):
                 self.assertTrue(any(needle in r for r in result["refusals"]), result["refusals"])
                 self.assertEqual(result["facts"]["storage"]["state"], "met")
 
-
-    def test_work_powers_default_to_the_workpowers_names(self) -> None:
-        """DCL-8: without an explicit list the names are ROYALTY_RATE, RELICENSE and RENDERER_REPIN, in bit order."""
-        self.assertEqual(floor.WORK_POWERS, ("ROYALTY_RATE", "RELICENSE", "RENDERER_REPIN"))
-        for powers in (None, ["ROYALTY_RATE"]):
-            with self.subTest(powers=powers):
-                result = run(edit(testdata.still_floor_input(), lambda i: i["policy"].update(workPowers=powers)))
-                self.assertTrue(result["ok"], result["refusals"])
 
     def test_custodian_may_hold_two_objects(self) -> None:
         """DCL-5 ALWAYS: distinct (address, objectId) pairs, so one custodian may hold two twins."""

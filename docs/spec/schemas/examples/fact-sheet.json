@@ -1,7 +1,7 @@
 {
   "v": 1,
   "generator": {
-    "name": "example card generator",
+    "name": "example fact-sheet generator",
     "version": "0.0.0"
   },
   "at": {
@@ -57,7 +57,7 @@
       {
         "fileId": "0x6666666666666666666666666666666666666666666666666666666666666666",
         "role": "AUXILIARY",
-        "sha256": "0x193b2e847cd4032f89cc232f36050b69b03756215a3308d11863ea5d84e9fea2",
+        "sha256": "0x1d232db5cf1959dac10af8d71b808bacd58df08023c6cc43743d425cfe204610",
         "mimeType": "application/vnd.6529-works.declarations+json",
         "complete": true,
         "locators": 0,
@@ -87,14 +87,7 @@
     "status": "valid",
     "fileId": "0x6666666666666666666666666666666666666666666666666666666666666666",
     "timeCapsule": false,
-    "livingWork": false,
-    "intendedRenunciations": [
-      {
-        "power": "ROYALTY_RATE",
-        "dueAt": 1794182400,
-        "state": "unknown"
-      }
-    ]
+    "livingWork": false
   },
   "conservationFloor": {
     "storage": "met",
@@ -124,7 +117,6 @@
         "FUNDS_SETTER"
       ],
       "delaySeconds": 1209600,
-      "guardianCancel": true,
       "until": "permanent"
     },
     {
@@ -134,7 +126,6 @@
         "SUCCESSOR_SETTER"
       ],
       "delaySeconds": 2592000,
-      "guardianCancel": true,
       "until": "permanent"
     },
     {
@@ -144,7 +135,6 @@
         "STORAGE_OPERATOR"
       ],
       "delaySeconds": 0,
-      "guardianCancel": false,
       "until": "permanent"
     },
     {
@@ -153,7 +143,6 @@
         "PLATFORM"
       ],
       "delaySeconds": 0,
-      "guardianCancel": false,
       "until": "permanent"
     },
     {
@@ -162,7 +151,6 @@
         "ARTIST"
       ],
       "delaySeconds": 604800,
-      "guardianCancel": true,
       "until": "permanent"
     },
     {
@@ -171,7 +159,6 @@
         "PARAMETER_SETTER"
       ],
       "delaySeconds": 15724800,
-      "guardianCancel": true,
       "until": "permanent"
     },
     {
@@ -180,24 +167,8 @@
         "SUCCESSOR_SETTER"
       ],
       "delaySeconds": 2592000,
-      "guardianCancel": true,
       "until": "permanent"
     }
-  ],
-  "residualRisks": [
-    "LIM-CNT-2",
-    "LIM-CNT-3",
-    "LIM-CNT-10",
-    "LIM-CNT-12",
-    "LIM-CNT-13",
-    "LIM-GV-1",
-    "LIM-GV-2",
-    "LIM-GV-9",
-    "LIM-GV-10",
-    "LIM-GV-11",
-    "LIM-ID-11",
-    "LIM-ID-13",
-    "LIM-SAL-8"
   ],
   "statements": {
     "count": 4,

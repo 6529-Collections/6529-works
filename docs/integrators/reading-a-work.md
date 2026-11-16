@@ -24,7 +24,7 @@ interface IDs are in [ABIs and interface IDs](abis-and-interface-ids.md).
 | The edition of a master, and back | `editionOf(tokenId)`; `masterOf(editionId)` | 6529 Stream; 6529 Stream Editions |
 | When to refresh | `MetadataUpdate`, `BatchMetadataUpdate` (ERC-4906) | both tokens |
 | The primary sale price | `primarySale(tokenId)`; for an edition, `clearing(saleIdOf(editions, id))` | 6529 Stream; UniformEditionAuction |
-| The work's declarations, statements and promise card | `mediaOf(tokenId)`, then the statement log's events | WorkRecords; StatementLog ([below](#declarations-statements-and-the-promise-card)) |
+| The work's declarations, statements and fact sheet | `mediaOf(tokenId)`, then the statement log's events | WorkRecords; StatementLog ([below](#declarations-statements-and-the-fact-sheet)) |
 
 ## Fetching the metadata
 
@@ -386,7 +386,7 @@ outcome document restates the earlier disputes it keeps in force. For an edition
 master: `(stream, editionId)`. The log refuses an outcome about an ERC-1155 subject, so none is
 ever recorded against the edition itself ([DSP-11][dsp]).
 
-## Declarations, statements and the promise card
+## Declarations, statements and the fact sheet
 
 Beyond the metadata, a work can carry promises and records that no contract checks. They are
 conventions, specified with their JSON Schemas in
@@ -397,8 +397,8 @@ who made them.
   `application/vnd.6529-works.declarations+json`, fixed from approval: read `mediaOf(tokenId)`,
   then `ContentStore.fileInfo(fileId)` for each AUXILIARY entry, then `ContentStore.read`, or
   fetch a locator's copy and check its SHA-256 against the media entry ([DCL-3][dcl]). It holds
-  the conservation floor, named custodians of a physical twin, citations at birth, the powers the
-  artist promised to renounce, and a living-work note. A living work changes with no ERC-4906
+  the conservation floor, named custodians of a physical twin, citations at birth, and a
+  living-work note. A living work changes with no ERC-4906
   event ([DCL-9][dcl]).
 - **Convention statements.** Index `StatementAppended` for the work's subject and read each kind
   only under the role the [kind registry](../spec/disputes-and-statements.md#statement-kind-registry)
@@ -410,9 +410,9 @@ who made them.
 - **Proving control at a venue.** A gallery or app checks that a visitor controls the holding
   wallet with an off-chain EIP-712 challenge, no transaction, including a cold wallet through a
   consolidated one ([DCL-24, DCL-25][dcl]).
-- **The promise card.** Generated from the reads in [DCL-26][dcl] at one block: what is fixed,
-  who can still change what and after what delay, and the residual risks. A grade, if you show
-  one, is the published rubric applied to the card, with its version ([DCL-30][dcl]).
+- **The fact sheet.** Generated from the reads in [DCL-26][dcl] at one block: what is recorded
+  about the work, and who can change what after what delay ([DCL-27][dcl]). It states facts
+  only.
 
 ## Other reads
 

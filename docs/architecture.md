@@ -489,4 +489,4 @@ setters for funds, recipients, verifiers and renderers are compare-and-set.
   in mind. On Sepolia, state-creation gas above the cap was accepted (ADR 0004).
 - **Contract size.** Stream core stays within EIP-170 because records, licenses and
   finalize live in `IWorkRecords`, and locators in its replaceable delivery contract.
-- **Lines.** Interfaces and shared types count toward the 16,500-line budget (ADR 0007, raised by ADR 0008).
+- **Lines.** Interfaces and shared types count toward the 17,000-line budget (ADR 0007, raised by ADR 0008 and by the owner on 16 November 2026).

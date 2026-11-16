@@ -1,7 +1,7 @@
 """RFC 8785 (JSON Canonicalization Scheme) in pure Python, and a strict JSON parser.
 
-Convention documents are UTF-8 JSON in RFC 8785 canonical form (DCL-1), and the promise grade
-names the SHA-256 of the card's canonical JSON (DCL-30). The rules implemented here:
+Convention documents are UTF-8 JSON in RFC 8785 canonical form (DCL-1). The rules implemented
+here:
 
 - object members sorted by their names as UTF-16 code units, no whitespace anywhere;
 - strings as ECMAScript `JSON.stringify` writes them: `"` and `\\` escaped, `\\b \\t \\n \\f \\r`

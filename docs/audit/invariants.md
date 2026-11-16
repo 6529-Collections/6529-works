@@ -79,11 +79,11 @@ or re-enters Stream's writes, next to honest mints.
 | INV-STR-15 | MP-1 ([AUC-38](../spec/stream-and-auctions.md#rules-and-invariants)): whatever the mint policy answers, no existing token's views change, and each stays held by the adapter that minted it. | `invariant_MP1_ExistingTokensNeverChange` | honest mints and every hostile policy mode |
 | INV-STR-16 | No content mints twice ([AUC-44](../spec/stream-and-auctions.md#rules-and-invariants)): whatever the mint policy answers, Stream's content record (`consumedItemOf`) names the item of the one token that minted each content hash, and no second mint of a content hash succeeds. | `invariant_MP1_ExistingTokensNeverChange` (with `test_MP1_AnAlreadyMintedContentIsRefused`, `test_MP1_ABlankPolicyCannotReMintExistingContent`) | honest mints and every hostile policy mode |
 
-### Work records under hostile governance
+### Work records under replaced delivery contracts and stores
 
 [`WorkRecordsGovernanceInvariant.t.sol`](../../test/stream/WorkRecordsGovernanceInvariant.t.sol).
-Real `WorkRecords` and `Renderer`; the handler installs a chain of hostile delivery contracts
-(`setDelivery`), adds hostile stores (`addStore`), syncs, sets preferences and swaps the default
+Real `WorkRecords` and `Renderer`; the handler installs a chain of misbehaving delivery contracts
+(`setDelivery`), adds misbehaving stores (`addStore`), syncs, sets preferences and swaps the default
 renderer, around a complete, finalized work ([WS-39 to WS-43](../spec/works-and-storage.md#rules-and-invariants)).
 
 | ID | Invariant | Test | Handler actions |

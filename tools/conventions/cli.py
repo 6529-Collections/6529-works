@@ -13,8 +13,7 @@ from typing import Any, Sequence
 
 from tools.content.errors import ToolError
 
-from . import card as card_module
-from . import control_proof, custody, eip712, floor, grade, jcs
+from . import control_proof, custody, eip712, fact_sheet, floor, jcs
 from .schema import validate
 
 EXIT_NOT_OK = 1
@@ -86,14 +85,9 @@ def cmd_floor(args: argparse.Namespace) -> int:
     return 0 if result["ok"] else EXIT_NOT_OK
 
 
-def cmd_card(args: argparse.Namespace) -> int:
-    result = card_module.build_card(_load(args.input))
-    _print({"card": result.card, "notes": result.notes} if args.notes else result.card)
-    return 0
-
-
-def cmd_grade(args: argparse.Namespace) -> int:
-    _print(grade.grade(_load(args.card)))
+def cmd_fact_sheet(args: argparse.Namespace) -> int:
+    result = fact_sheet.build_fact_sheet(_load(args.input))
+    _print({"sheet": result.sheet, "notes": result.notes} if args.notes else result.sheet)
     return 0
 
 
@@ -160,7 +154,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("validate", help="validate a document against a convention schema")
-    p.add_argument("schema", help="schema short name, e.g. declarations or promise-card")
+    p.add_argument("schema", help="schema short name, e.g. declarations or fact-sheet")
     p.add_argument("file")
     p.add_argument("--canonical", action="store_true", help="also require RFC 8785 canonical bytes")
     p.set_defaults(func=cmd_validate)
@@ -173,14 +167,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("input", help="JSON: package, policy, contents, observed")
     p.set_defaults(func=cmd_floor)
 
-    p = sub.add_parser("card", help="build a promise card from reads at one block (DCL-26 to DCL-29)")
+    p = sub.add_parser("fact-sheet", help="build a work's fact sheet from reads at one block (DCL-26 to DCL-28)")
     p.add_argument("input", help="JSON: reads and documents (see tools/conventions/README.md)")
     p.add_argument("--notes", action="store_true", help="also print why states were chosen")
-    p.set_defaults(func=cmd_card)
-
-    p = sub.add_parser("grade", help="grade a promise card under rubric 1 (DCL-30)")
-    p.add_argument("card")
-    p.set_defaults(func=cmd_grade)
+    p.set_defaults(func=cmd_fact_sheet)
 
     p = sub.add_parser("control-proof", help="control-proof digest and verifier (DCL-23 to DCL-25)")
     cp = p.add_subparsers(dest="action", required=True)

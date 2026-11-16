@@ -382,8 +382,10 @@ differ from Sepolia's; re-measure there. The full figures are in the
 - **The collector is the designated payer for the on-chain upgrade** of the media
   ([ADR 0001 §8](../adr/0001-v1-scope.md#8-works-content-and-storage)): any collector can finish
   what the artist or platform started, with `calls --only-missing`.
-- **The off-chain copies** (Arweave transactions, IPFS pins) are paid by whoever publishes them;
-  the network pins with at least two independent providers plus a 6529 node (ADR 0001 §8).
+- **The off-chain copies** (Arweave transactions, IPFS pins) are paid for by the network
+  ([ADR 0001 §7](../adr/0001-v1-scope.md#7-economics)). Its current practice is to pin with at
+  least two independent providers plus a 6529 node. Anyone else may also publish and pay for
+  further copies.
 
 On-chain bytes are permanent. Nothing in the protocol deletes a chunk or a manifest.
 
