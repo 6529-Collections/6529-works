@@ -975,6 +975,61 @@ contract WorkRecordsTest is RecordsFixture {
         assertTrue(store.isComplete(records.licenseOf(tokenId).textFileId));
     }
 
+    /// @dev The same one chunk registered with digest kind 1 (not SHA-256), stored.
+    function _otherDigestKind(bytes memory data, string memory mime) internal returns (bytes32) {
+        store.writeChunk(data);
+        bytes32[] memory hashes = new bytes32[](1);
+        hashes[0] = keccak256(data);
+        (bytes32 list,) = store.writeChunk(abi.encodePacked(hashes[0]));
+        bytes32[] memory lists = new bytes32[](1);
+        lists[0] = list;
+        return store.registerManifestList(
+            lists, 1, data.length, uint8(IContentStore.Encoding.Identity), mime, keccak256(data), 1
+        );
+    }
+
+    /// @dev Every file WorkRecords takes needs a SHA-256 digest, now that the store records any
+    ///      digest kind: a license text on the stored path (a finalized work's relicense; it
+    ///      used to pass, the kind discarded) and the unstored one, a record file and a media
+    ///      file, each refused with a complete one-chunk manifest of digest kind 1.
+    function test_digestKind_everyFileNeedsSha256() public {
+        // Unstored path: before finalize, the store's `sha256Of` refuses the kind.
+        MediaFile[] memory files = _single(41, true);
+        PackageItem memory item = _recordsItem(41, files);
+        item.license = License("CC-BY-4.0", _registerText("CC-BY-4.0 legal code"));
+        uint256 tokenId = _mint(item);
+        records.openRecord(tokenId, item, files);
+        bytes32 other = _otherDigestKind("kind one text", "text/plain");
+        assertTrue(store.isComplete(other));
+        License memory next = License("CC-BY-SA-4.0", other);
+        vm.expectRevert(
+            abi.encodeWithSelector(IContentStore.ContentDigestNotSha256.selector, other, 1)
+        );
+        this.relicenseAs(tokenId, item, next);
+        // Stored path: the same work, finalized.
+        records.syncOnChain(tokenId, 0, type(uint256).max);
+        bytes32 state = records.workStateHash(tokenId);
+        vm.prank(artist);
+        records.finalize(tokenId, state);
+        vm.expectRevert(IWorkRecords.InvalidLicense.selector);
+        this.relicenseAs(tokenId, item, next);
+        // A record file.
+        _expectBadRecord(43, _otherDigestKind('{"name":"kind one"}', "application/json"));
+        // A media file.
+        bytes memory data = _mediaBytes(44);
+        MediaFile[] memory media = new MediaFile[](1);
+        media[0] =
+            MediaFile(_otherDigestKind(data, "image/png"), sha256(data), uint8(FileRole.PRIMARY));
+        PackageItem memory mediaItem = _recordsItem(44, media);
+        uint256 minted = _mint(mediaItem);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IContentStore.ContentDigestNotSha256.selector, media[0].fileId, 1
+            )
+        );
+        records.openRecord(minted, mediaItem, media);
+    }
+
     /// @dev Before finalize a license text needs only to be registered: a relicense to a text
     ///      that is not stored yet goes through (found by mutation testing).
     function test_relicense_beforeFinalizeNeedsOnlyARegisteredText() public {
