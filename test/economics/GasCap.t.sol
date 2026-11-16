@@ -143,6 +143,74 @@ contract GasCapTest is EconomicsBase {
         _assertFits("continue signed batch at its estimate", input, estimate);
     }
 
+    /// @dev Continue mode at the signature bound: eight worst-case signed items carrying
+    ///      `MAX_CONTINUE_SIGNATURE_BYTES` of nonzero signature bytes in all (item 0's the largest
+    ///      a signature may be, 65,536), and item 0's signer burning all the gas it is given. At
+    ///      a transaction gas limit of 2^24 (intrinsic and calldata gas paid first) item 0 is
+    ///      still offered `SHORTFALL_REVERT_CEILING`, so it is skipped (`ClaimFailed`) and every
+    ///      other item is paid: a gas-burning party with a long signature cannot revert the
+    ///      batch at every includable gas limit.
+    function test_ContinueSignedBatchAtTheSignatureBoundSkipsABurningSigner() public {
+        uint256 n = router.MAX_CONTINUE_CLAIMS();
+        uint256 total = router.MAX_CONTINUE_SIGNATURE_BYTES();
+        IClaimRouter.SignedClaim[] memory claims = _worstSigned();
+        assembly ("memory-safe") {
+            mstore(claims, n)
+        }
+        uint256 rest = total - 65_536;
+        for (uint256 i; i < n; ++i) {
+            uint256 size =
+                i == 0 ? 65_536 : i + 1 < n ? rest / (n - 1) : rest - (n - 2) * (rest / (n - 1));
+            claims[i].signature = _ones(size);
+        }
+        Mock1271Account(payable(resolver.payout(2000))).setBurn(type(uint256).max);
+        bytes memory input = abi.encodeCall(IClaimRouter.claimSigned, (claims, true));
+        uint256 execution = TX_GAS_CAP - _intrinsic(input);
+        emit log_named_uint("execution gas left at the cap", execution);
+        uint256 snap = vm.snapshotState();
+        _cool();
+        vm.expectEmit(false, false, false, false, address(router));
+        emit IClaimRouter.ClaimFailed(address(0), address(0), 0, 0, 0, "");
+        (bool ok, bytes memory output) = address(router).call{ gas: execution }(input);
+        assertTrue(ok, "the batch completes at the cap");
+        uint256[] memory amounts = abi.decode(output, (uint256[]));
+        assertEq(amounts[0], 0, "the burning signer is skipped");
+        for (uint256 i = 1; i < n; ++i) {
+            assertGt(amounts[i], 0, "every other item is paid");
+        }
+        vm.revertToState(snap);
+    }
+
+    /// @dev One signature byte past the bound in continue mode is refused before any item runs;
+    ///      atomic mode has no such bound (every item must succeed there anyway).
+    function test_ContinueSignedBatchPastTheSignatureBoundIsRefused() public {
+        uint256 total = router.MAX_CONTINUE_SIGNATURE_BYTES();
+        IClaimRouter.SignedClaim[] memory claims = _worstSigned();
+        assembly ("memory-safe") {
+            mstore(claims, 3)
+        }
+        claims[0].signature = _ones(65_536);
+        claims[1].signature = _ones(65_536);
+        claims[2].signature = _ones(total + 1 - 2 * 65_536);
+        vm.expectRevert(abi.encodeWithSelector(IClaimRouter.SignaturesTooLong.selector, total + 1));
+        router.claimSigned(claims, true);
+    }
+
+    function _ones(uint256 size) internal pure returns (bytes memory b) {
+        b = new bytes(size);
+        for (uint256 i; i < size; ++i) {
+            b[i] = 0xff;
+        }
+    }
+
+    /// @dev Intrinsic 21,000 plus EIP-2028 calldata gas.
+    function _intrinsic(bytes memory data) internal pure returns (uint256 gas) {
+        gas = 21_000;
+        for (uint256 i; i < data.length; ++i) {
+            gas += data[i] == 0 ? 4 : 16;
+        }
+    }
+
     function test_MaximumWalletDeploymentFitsTheCap() public {
         ISplitWallet.Payee[] memory payees = maxPayees;
         vm.cool(address(factory));

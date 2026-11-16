@@ -330,11 +330,16 @@ contract RendererPermanenceTest is IntegrationBase {
         );
     }
 
-    /// @dev Review B I4: the `tokenURI` budget with the inlined primary at the renderer's 256 KiB
+    /// @dev Review B I4: the `tokenURI` budget with the primary at the renderer's 256 KiB
     ///      threshold stored as linked chunks. Each part costs one storage read and one code
-    ///      copy per chunk read; the 8M promise holds for linked chunks of up to 16 parts each
-    ///      (measured below; a whole chunk is one part), the supported bound (ADR 0004, WS-50).
+    ///      copy per chunk read; the renderer reads a file only when no chunk has more than
+    ///      `MAX_PARTS_PER_CHUNK` (4) parts (RND-26, WS-50), so a file of more is served by its
+    ///      locator. Returns the call and the token.
     function _linkedRow(uint256 parts) internal returns (bytes memory call) {
+        (call,) = _linkedWork(parts);
+    }
+
+    function _linkedWork(uint256 parts) internal returns (bytes memory call, uint256 tokenId) {
         bytes memory png = _bytes(262_144 / 4 * 3, 900 + parts);
         bytes32 sha = sha256(png);
         Work memory w;
@@ -345,12 +350,16 @@ contract RendererPermanenceTest is IntegrationBase {
         w.item = _item(artist, collectionId, sha, w.media, _record("Linked"));
         Work[] memory works = _one(w);
         bytes32 root = _publish(works);
-        (, uint256 tokenId) = _start(root, works, 0);
+        (, tokenId) = _start(root, works, 0);
         records.openRecord(tokenId, w.item, w.media);
         _attestAll(w.media[0].fileId);
         records.syncOnChain(tokenId, 0, type(uint256).max);
         call = abi.encodeCall(stream.tokenURI, (tokenId));
-        assertTrue(_contains(stream.tokenURI(tokenId), '"image":"data:image/png;base64,'));
+        assertEq(
+            _contains(stream.tokenURI(tokenId), '"image":"data:image/png;base64,'),
+            parts <= 4,
+            "inlined exactly up to the part bound"
+        );
     }
 
     /// @dev Cold gas of `call`, as `TokenUriBudget` measures it (after every `_measure`).
@@ -359,24 +368,43 @@ contract RendererPermanenceTest is IntegrationBase {
             * _growth(collector, address(stream), call, 0).coldAccounts.length;
     }
 
-    /// @dev Whole chunks against 16 parts per chunk: each part of each chunk read costs about
-    ///      6,000 gas (one storage read and one code copy), about 65,000 per extra part per chunk
-    ///      of a 256 KiB primary (11 chunks). With every other cap at once (`TokenUriBudget`,
-    ///      worst row 7.70M) the 8M promise holds for linked chunks of at most 4 parts;
-    ///      more parts are the uploader's choice (no third party can raise a chunk's part count)
-    ///      and are not covered (ADR 0004 table note, WS-50).
+    /// @dev Whole chunks against 4 parts per chunk, the most the renderer reads from: each part
+    ///      of each chunk read costs about 7,000 gas (one storage read and one code copy, and
+    ///      the link's own word), about 78,000 per extra part per chunk of a 256 KiB primary (11
+    ///      chunks). With every other
+    ///      cap at once the bound holds 8M (`TokenUriBudget`'s linked row; WS-50, RND-26).
     function test_Budget_LinkedChunks() public {
         bytes memory a = _linkedRow(1);
-        bytes memory b = _linkedRow(16);
+        bytes memory b = _linkedRow(4);
         (, uint256 whole) = _measure(collector, address(stream), a, 0);
         (, uint256 linked) = _measure(collector, address(stream), b, 0);
         whole = _coldUsed(a, whole);
         linked = _coldUsed(b, linked);
         console2.log("tokenURI, 256 KiB primary, whole chunks:", whole);
-        console2.log("tokenURI, 256 KiB primary, 16 parts per chunk:", linked);
+        console2.log("tokenURI, 256 KiB primary, 4 parts per chunk:", linked);
         assertLt(linked, TOKEN_URI_BUDGET, "a light record within the 8M budget");
-        uint256 perPart = (linked - whole) / (15 * 11);
+        uint256 perPart = (linked - whole) / (3 * 11);
         console2.log("gas per part per chunk read:", perPart);
-        assertLt(perPart, 7_000, "the per-part cost the stated bound assumes");
+        assertLt(perPart, 8_000, "the per-part cost the stated bound assumes");
+    }
+
+    /// @dev Anyone can link a chunk from up to 256 parts, before the artist writes it or
+    ///      instead: a file with a chunk of more than 4 parts is served by its locator, so
+    ///      `tokenURI` stays within its budget, and once anyone writes that chunk whole (or links
+    ///      it from 4 parts or fewer) the file is inlined again: the part count only falls.
+    function test_Budget_AHeavilyLinkedFileIsServedByLocatorUntilCompacted() public {
+        (bytes memory call, uint256 tokenId) = _linkedWork(256);
+        (, uint256 used) = _measure(collector, address(stream), call, 0);
+        assertLt(_coldUsed(call, used), TOKEN_URI_BUDGET, "within the budget past the bound");
+        bytes32 fileId = records.mediaOf(tokenId)[0].fileId;
+        assertEq(store.maxParts(fileId), 256);
+        uint256 count = store.fileInfo(fileId).chunkCount;
+        uint256 size = store.CHUNK_SIZE();
+        uint256 length = store.fileInfo(fileId).length;
+        for (uint256 i; i < count; ++i) {
+            store.writeChunk(store.read(fileId, i * size, i + 1 < count ? size : length - i * size));
+        }
+        assertEq(store.maxParts(fileId), 1, "whole now");
+        assertTrue(_contains(stream.tokenURI(tokenId), '"image":"data:image/png;base64,'));
     }
 }

@@ -347,6 +347,47 @@ contract UniformEditionAuctionAbandonTest is EditionAuctionBase {
         _abandonAndRefund();
     }
 
+    /// @dev Review E, N-2 (automated review, 16 November 2026): Stream rescues a removed
+    ///      adapter's works from its removal time plus the locked delay, so a removal after the
+    ///      sale's end moves the floor with it: removed 100 days after the end with the 90-day
+    ///      floor locked, the master can be rescued at the end plus 190 days, and the sale is not
+    ///      voided before the end plus 250 days (the rescue plus the delay's 60 days past the
+    ///      floor). Fails without the change: the floor stays at the end plus 150 days, before the
+    ///      rescue opens.
+    function test_N2_ARemovalAfterTheEndMovesTheFloorWithIt() public {
+        _setOneOfOne(IEnglishAuction.AuctionState.ENDED);
+        uint256 deadline = _deadline();
+        uint256 end = ua.endTimes(saleId).endTime;
+        vm.warp(end + 100 days);
+        stream.setRemoval(address(english), uint40(block.timestamp), 90 days);
+        (bool ok, uint256 at) = ua.abandonable(saleId);
+        assertFalse(ok);
+        assertEq(at, deadline + 100 days, "from the removal");
+        address l = IUniformEditionAuctionStorage(address(auction)).lens();
+        vm.mockCall(l, abi.encodeWithSelector(IUniformEditionAuctionLens.checkAbandon.selector), "");
+        vm.warp(deadline);
+        _expectNotAbandonable();
+        vm.warp(deadline + 100 days - 1);
+        _expectNotAbandonable();
+        vm.clearMockedCalls();
+        vm.warp(deadline + 100 days);
+        _abandonAndRefund();
+    }
+
+    /// @dev The cap takes precedence over a late removal: removed 1,000 days after the end, the
+    ///      floor is the end plus the delay plus the governed cap (730 days), so the bidders'
+    ///      exit stays bounded however late governance acts.
+    function test_N2_ALateRemovalAddsAtMostTheCap() public {
+        _setOneOfOne(IEnglishAuction.AuctionState.ENDED);
+        uint256 deadline = _deadline();
+        vm.warp(ua.endTimes(saleId).endTime + 1000 days);
+        stream.setRemoval(address(english), uint40(block.timestamp), 90 days);
+        (bool ok, uint256 at) = ua.abandonable(saleId);
+        assertEq(at, deadline + 730 days, "capped");
+        assertTrue(ok, "already past the capped floor");
+        _abandonAndRefund();
+    }
+
     function test_Abandon_UnknownSale() public {
         vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.UnknownAuction.selector, 99));
         auction.abandon(99);

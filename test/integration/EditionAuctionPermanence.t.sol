@@ -239,10 +239,13 @@ contract EditionAuctionPermanenceTest is EditionAuctionStack {
             address(stream),
             abi.encodeCall(stream.setAdmittedMinter, (address(auction), false))
         );
+        // Governance removed it after the end: Stream rescues from the removal, so the floor
+        // moves with it (the automated review of 16 November 2026).
+        uint256 late = block.timestamp - end;
         _govern(hotAdmin, address(stream), abi.encodeCall(stream.setRescueDelay, (360 days)));
         _govern(hotAdmin, address(stream), abi.encodeCall(stream.setRescueDelay, (720 days)));
         (, uint256 at) = l.abandonable(saleId);
-        assertEq(at, end + 150 days + 90 days, "the 180 days locked at the removal");
+        assertEq(at, end + 150 days + 90 days + late, "the 180 days locked at the removal");
         _govern(
             hotAdmin,
             address(stream),

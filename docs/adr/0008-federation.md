@@ -81,11 +81,11 @@ with refunds; neither delisting nor exit ever touches tokens, ownership, records
   storage equally (keccak256 preimage resistance); (b) adds no new logic contract, keeps "no
   factory with power" literally (the proxy has no owner, upgrade, fee or role, and the registry
   has no power over a copy), and leaves the artist's deployment bytes unchanged. (b) was built.
-  The artist's deployment through the proxy measures **5,352,882** Prague gas for
-  `FederatedStream` against **5,312,463** for a plain CREATE of the same initcode (+40,419,
+  The artist's deployment through the proxy measures **5,352,858** Prague gas for
+  `FederatedStream` against **5,312,439** for a plain CREATE of the same initcode (+40,419,
   0.8%: the proxy's call, its copy of the initcode and CREATE2's hashing); the bytes deployed
   are the same, so the Glamsterdam estimate (§9) changes only by this. Joining pays for reading
-  the creation code: the join row rises from 284,685 to 338,395 (reading and hashing about
+  the creation code: the join row rises from 284,685 to 338,371 (reading and hashing about
   25 KB, the arguments in calldata and in `Registered`, and the consent signature).
 
 ### 2. Joining: initiated and confirmed by the token
@@ -110,8 +110,8 @@ with refunds; neither delisting nor exit ever touches tokens, ownership, records
   A listing happens once per token, so the signature needs no nonce. No federation registry,
   however hostile, can list a contract under an artist who did not sign for that exact contract.
   A new artist signs twice in one join (the registration and the consent); an existing one
-  once. The signature costs the artist about 7,000 gas in the join and the artist registry 431
-  bytes (margin 1,176).
+  once. The check costs the artist one signature recovery (about 3,000 gas with ECDSA) and its
+  calldata in the join, and the artist registry 431 bytes (margin 1,125 at the merged tip).
 - The token then requires that it was not listed before and is listed now, under its own artist,
   ACTIVE, and emits `FederationJoined` with its own facts in the same transaction. **This closes
   the residual ADR 0007 recorded:** a registry that lists a genuine token first, with wrong
@@ -323,22 +323,28 @@ After ADR 0007's review fixes:
 
 Measured at the merged tip (16 November 2026).
 
-- **Source lines:** **15,972** non-comment lines under `src/` (the permanence tip has 14,382; the
-  federation adds the templates, the registry, the federated edition auction and lens, three
-  new interfaces and a reshaped `IFederationRegistry`, the shared edition-auction bases and
-  their rescue hook, and the genesis wiring selectors). The budget is raised to **16,000** to
-  admit federation (owner, 16 November 2026; see Amendments).
-- **EIP-170 (runtime bytes, margin):** `FederatedStream` 22,608 (1,968), `FederatedEditions`
-  16,194 (8,382), `FederationRegistry` 8,423 (16,153), `FederatedEditionAuction` 23,279
-  (1,297), its lens 23,837 (739). Canonical contracts this changes: `UniformEditionAuction`
-  23,884 to 23,912 (664), its lens 23,129 to 23,062 (1,514); `GovernanceConfigurator` 11,473
-  to 11,554 runtime, 37,079 to 37,160 initcode (the three genesis selectors). The English
-  auction is unchanged at 24,062 (514), as are Stream, Editions, WorkRecords, the artist
-  registry and the renderer. Every contract keeps 512, with no exemption.
+- **Source lines:** **16,203** non-comment lines under `src/` at the tip that merges the
+  permanence branch's later review fixes (15,972 before review F; review F's fixes add 141:
+  provenance, consent, the pair, the exit status and genesis scoping). The budget was raised to
+  **16,000** to admit federation and to **16,500** for review F (owner, 16 November 2026; see
+  Amendments).
+- **EIP-170 (runtime bytes, margin), after review F:** `FederatedStream` 23,051 (1,525),
+  `FederatedEditions` 16,492 (8,084), `FederationRegistry` 11,634 (12,942),
+  `FederatedEditionAuction` 23,297 (1,279), its lens 23,837 (739). Canonical contracts the
+  federation changes: `UniformEditionAuction` 23,969 (607), its lens 23,168 (1,408);
+  `GovernanceConfigurator` 11,813 runtime, 37,419 initcode (the genesis selectors and their
+  interface scoping); the artist registry 23,451 (1,125; review F's listing consent and exit
+  status, 431 bytes and the typehash). The English auction is unchanged at 24,062 (514). Every
+  contract keeps 512, with no exemption.
 - **The artist pays the templates' deployment once.** Measured (Prague, whole transaction:
   21,000 + 32,000, calldata, the constructor and 200 per code byte): `FederatedStream`
-  **5,214,846** (22,608 bytes, 11 slots); `FederatedEditions` **3,754,423** (16,194 bytes, 8 slots);
-  a pair **8,969,269**. Glamsterdam estimate from ADR 0004's unit prices (code 1,542 per byte, a
+  **5,312,439** as a plain CREATE, **5,352,858** through the deterministic deployment proxy (§1)
+  (23,051 bytes, 11 slots); `FederatedEditions` **3,818,893** (16,492 bytes, 8 slots); a pair
+  about **9.2M**. The Glamsterdam figures below are the first build's; review F's
+  re-measurement with the same unit prices is `FederatedStream` about **37.4M** (adding the
+  proxy's 40,000), `FederatedEditions` about **26.8M**, a pair about **64.2M**: the bytes
+  deployed are the same through the proxy, and reading the creation code at joining is in the
+  join row. Glamsterdam estimate from ADR 0004's unit prices (code 1,542 per byte, a
   new slot about 111,000, an empty CREATE about 210,000), replacing the Prague components
   (code at 200 per byte, a slot at 22,100, and the 53,000 of the transaction and CREATE
   bases):
@@ -351,11 +357,12 @@ Measured at the merged tip (16 November 2026).
     would cut this to about 1.5M per contract and remain a later template version, touching
     nothing permanent.
 - **Gas rows** (Prague; federated rows are their own, with ceilings in
-  `FederationGas.t.sol` and ADR 0004's table): join creating the identity 284,685 (7 slots); `approveItem` 59,334 (1); a first start deploying both vaults 666,394 (18 slots, 2 accounts); a steady start 403,304 (10); a first bid 189,476 (5); settle sold 176,220 (2); settle unbid 150,850 (2); restart 245,056 (4); federated edition `open` 363,784 (7); `createEdition` 86,758 (1); edition settle 149,965 (1). Glamsterdam, adding about 89,000 per new
+  `FederationGas.t.sol` and ADR 0004's table; after review F, which reads the artist registry's
+  pointer on every registry read and checks provenance and consent at joining): join creating the identity 338,371 (7 slots); `approveItem` 59,357 (1); a first start deploying both vaults 669,957 (18 slots, 2 accounts); a steady start 406,867 (10); a first bid 192,589 (5); settle sold 179,274 (2); settle unbid 153,926 (2); restart 248,619 (4); federated edition `open` 373,385 (7); `createEdition` 86,803 (1); edition settle 151,134 (1). Before review F: join 284,685, steady start 403,304, edition `open` 363,784. Glamsterdam, adding about 89,000 per new
   slot (and about 245,600 per vault created): steady start about 1.29M (403,304 + 10 x 89,000), first start about
   2.76M (666,394 + 18 x 89,000 + 2 x 245,600). A federated settlement executes about 95,000 gas, far inside the refusal gas less
   the auction's 2.43M (guarantee 1).
-- **Canonical rows:** no 1/1 row moved (the English auction is unchanged; the tightest start row is 344,968, as on the permanence tip, 5,032 under 350,000, so the 5,000 start margin holds). The edition auction's three `open` rows rose by 261 each over the permanence tip measured on the same day (290,195 to 290,456; 335,932 to 336,193; 429,511 to 429,772; ceilings unchanged; the tip's table still lists the values before review E's limits word, 70 lower): the shared base's hooks, within the +303 the lane first measured. Claiming a winner rose by 8 (98,580 to 98,588). Its other rows moved by at most 16 gas either way (a bid near the close 78,018 to 78,002; settle, 40 steps, 150,391 to 150,375; the capped sweep settle 163,355 to 163,353; claiming a winner 98,539 to 98,547; a withdrawal during a 1/1 pause 87,980 to 87,964).
+- **Canonical rows:** no 1/1 row moved (the English auction is unchanged; the tightest start row is 344,968, as on the permanence tip, 5,032 under 350,000, so the 5,000 start margin holds). The edition auction's three `open` rows rose by 261 each over the permanence tip measured on the same day (290,195 to 290,456; 335,932 to 336,193; 429,511 to 429,772; ceilings unchanged; the tip's table still lists the values before review E's limits word, 70 lower): the shared base's hooks, within the +303 the lane first measured. Claiming a winner rose by 8 (98,580 to 98,588). Its other rows moved by at most 16 gas either way (a bid near the close 78,018 to 78,002; settle, 40 steps, 150,391 to 150,375; the capped sweep settle 163,355 to 163,353; claiming a winner 98,539 to 98,547; a withdrawal during a 1/1 pause 87,980 to 87,964). After review F, merged over the permanence branch's later fixes: the tightest start row is 344,960 (5,040 under 350,000; the permanence tip's is 344,980), and the start rows that read the artist registry moved by at most 44 gas either way (its selector table); the edition auction's `open` rows are 290,597, 336,334 and 429,913 (+472 each over that tip's 290,125, 335,862 and 429,441).
 
 ### 10. Genesis wiring
 

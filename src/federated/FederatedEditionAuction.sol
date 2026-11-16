@@ -103,7 +103,7 @@ contract FederatedEditionAuction is UniformEditionAuctionBase {
 
     /// @dev A federated 1/1 has no rescue (no museum path): nothing added, so `abandon` waits
     ///      the locked delay alone; no 6529 Stream slot is read for a federated sale.
-    function _rescueLengthening() internal pure override returns (uint256) {
+    function _rescueLengthening(uint256) internal pure override returns (uint256) {
         return 0;
     }
 

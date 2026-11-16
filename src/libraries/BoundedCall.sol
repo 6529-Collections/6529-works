@@ -46,9 +46,10 @@ pragma solidity ^0.8.24;
 ///
 ///         FIXED-GAS (`tryRead`, `read`, `readWord`, `readString`, `hasSufficientGas`): a
 ///         `staticcall` that caps both the gas it forwards and the return data it copies. Kept
-///         for replaceable contracts that bound a hostile target's cost (the renderer, the
-///         consolidation adapter, sale adapters); permanent contracts use the forward-all
-///         family.
+///         for replaceable contracts that bound a hostile target's cost (the consolidation
+///         adapter, sale adapters); permanent contracts, and the renderer that finalized works
+///         pin, use the forward-all family (ADR 0007's gas rule). Both families copy at most
+///         `maxReturn` bytes: the gas rule removes the gas cap, never the return-data bound.
 /// @dev Fixed-gas family: before calling, the caller must hold
 ///      `gasLimit + ceil(gasLimit / 63) + reserve`, so the callee always receives its full
 ///      `gasLimit` under EIP-150 and a failure is never caused by the caller's own gas supply.

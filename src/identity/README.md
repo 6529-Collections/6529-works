@@ -52,10 +52,14 @@ restraint withholds are in the [stolen-key flow](../../docs/spec/identity-and-re
   move the last activity: a captured wallet's cancel or contest records none, and an execution
   records it only when it installs a new authority (review E, N-1). What a hostile source can still
   do is listed in the spec ([what the source decides](../../docs/spec/identity-and-recovery.md#what-the-consolidation-source-decides)).
-- **Refreshes are best-effort except `refreshStanding`.** Any source failure skips the refresh
-  (`StandingRefreshSkipped`); a shortfall (a failed read that left at most 1/8 of the gas, or a
-  source revert with `BoundedCallInsufficientGas` or `BoundedCallShortfall`, the
-  `IConsolidationSource` convention) reverts. Source times are clamped to 48 bits, and every
+- **Refreshes are best-effort except `refreshStanding`.** A source that reverts, or answers
+  lists too long or of unequal lengths, skips the refresh (`StandingRefreshSkipped`); a
+  shortfall (a failed read that left at most 1/8 of the gas, or a source revert with
+  `BoundedCallInsufficientGas` or `BoundedCallShortfall`, the `IConsolidationSource`
+  convention) reverts. A successful answer must decode as `(address[], uint64[])`: one that
+  does not reverts the refresh (and the heartbeat or staging that ran it), as a shortfall does,
+  never skips it; the pinned `ConsolidationAdapter` never gives one (`DelegationReadFailed`
+  converts its bad reads into reverts). Source times are clamped to 48 bits, and every
   change of an entry's `effectiveAt` emits `StandingAdded`.
 - **One-read active authority.** `Artist` keeps a `restrained` flag beside the authority: every
   staging sets it, every end of a change (execution, veto, cancel, a voided or lapsed contest, a

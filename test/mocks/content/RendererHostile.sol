@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 
-/// @dev A content store that answers `fileInfo`, `isComplete` and `readChunk` for a work record
+/// @dev A content store that answers `fileInfo`, `maxParts` and `readChunk` for a work record
 ///      (`RECORD`, always honest) and for one base64 file of `'A'` bytes (every other ID), and
 ///      misbehaves for that file in the way `mode` says.
 contract HostileStore {
@@ -79,18 +79,21 @@ contract HostileStore {
         return true;
     }
 
-    function isComplete(bytes32 id) external view returns (bool) {
-        if (id == RECORD) return true;
+    /// @dev Every chunk is whole (one part), unless the mode says the answer is broken: two
+    ///      words, more than the renderer copies.
+    function maxParts(bytes32 id) external view returns (uint256) {
+        if (id == RECORD) return 1;
         if (mode == Mode.NonBoolComplete) {
             assembly ("memory-safe") {
-                mstore(0, 2)
-                return(0, 32)
+                mstore(0, 1)
+                mstore(0x20, 1)
+                return(0, 64)
             }
         }
         if (mode == Mode.BurnComplete) {
             for (;;) { }
         }
-        return true;
+        return 1;
     }
 
     function readChunk(bytes32 id, uint256 index) external view returns (bytes memory) {

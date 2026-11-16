@@ -110,6 +110,11 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     ///      `limit` are `uint40`s. A safety bound (about 1.1 trillion copies, far past any sale's
     ///      count; the edition auction counts in 32 bits), not a policy number.
     uint256 private constant UNCAPPED = type(uint40).max;
+    /// @dev The most return data `_read` and `_call` copy, answer or reason: their longest answer
+    ///      is a license (a 64-byte identifier and a file ID, under 256 bytes encoded), so 4 KiB
+    ///      leaves room for any reason a dependency gives. A safety bound on a copy, not a policy
+    ///      number.
+    uint256 private constant _MAX_ANSWER = 4_096;
 
     /// @dev What `createEdition` reads of its master from `IStream.coreOf`.
     struct Master {
@@ -523,7 +528,10 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     ///         and content-store bytes. Reverts with `UnknownEdition`.
     /// @dev Both calls forward all gas. The renderer is 6529 Stream's answer
     ///      (`IStream.rendererOf`), which fails closed: a shortfall there or here reverts
-    ///      (`BoundedCallShortfall`), never falling back to another renderer.
+    ///      (`BoundedCallShortfall`), never falling back to another renderer. The renderer's
+    ///      answer is this view's own result, passed on whole as 6529 Stream's `tokenURI` passes
+    ///      it: its size is what the caller asked for, and a bound would only cut a pinned
+    ///      renderer's valid metadata short.
     /// @param id The edition ID.
     /// @return The renderer's compact metadata URI (`IRenderer.tokenURI`) for this contract and
     ///        `id`.
@@ -532,7 +540,10 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         address renderer =
             abi.decode(_read(stream, abi.encodeCall(IStream.rendererOf, (id))), (address));
         return abi.decode(
-            _read(renderer, abi.encodeCall(IRenderer.tokenURI, (address(this), id))), (string)
+            _readUpTo(
+                renderer, abi.encodeCall(IRenderer.tokenURI, (address(this), id)), type(uint256).max
+            ),
+            (string)
         );
     }
 
@@ -633,17 +644,28 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         return abi.decode(_read(stream, abi.encodeWithSelector(selector)), (address));
     }
 
-    /// @dev A STATICCALL forwarding all the gas EIP-150 allows (`BoundedCall.tryReadAll`): a
+    /// @dev A STATICCALL forwarding all the gas EIP-150 allows (`BoundedCall.tryReadAll`), copying
+    ///      at most `_MAX_ANSWER` bytes: every answer read through it is a few fixed words or a
+    ///      short struct, and a longer answer or reason is refused (`BoundedCallFailed`). A
     ///      shortfall reverts with `BoundedCallShortfall`, a refusal with the callee's reason.
-    function _read(address target, bytes memory input) private view returns (bytes memory answer) {
+    function _read(address target, bytes memory input) private view returns (bytes memory) {
+        return _readUpTo(target, input, _MAX_ANSWER);
+    }
+
+    /// @dev `_read` with its own return bound.
+    function _readUpTo(address target, bytes memory input, uint256 maxReturn)
+        private
+        view
+        returns (bytes memory answer)
+    {
         bool ok;
-        (ok, answer) = BoundedCall.tryReadAll(target, input, type(uint256).max);
+        (ok, answer) = BoundedCall.tryReadAll(target, input, maxReturn);
         if (!ok) _refused(target, answer);
     }
 
     /// @dev A CALL forwarding all the gas EIP-150 allows (`BoundedCall.tryCallAll`), as `_read`.
     function _call(address target, bytes memory input) private {
-        (bool ok, bytes memory answer) = BoundedCall.tryCallAll(target, 0, input, type(uint256).max);
+        (bool ok, bytes memory answer) = BoundedCall.tryCallAll(target, 0, input, _MAX_ANSWER);
         if (!ok) _refused(target, answer);
     }
 

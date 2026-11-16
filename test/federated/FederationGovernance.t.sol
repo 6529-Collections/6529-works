@@ -100,7 +100,11 @@ contract FederationGovernanceTest is FederationBase {
         tokens[0] = address(fed);
         vm.expectEmit(address(artists));
         emit IArtistRegistry.FederatedContractStatus(
-            address(fed), uint160(fedArtist), IArtistRegistry.FederationStatus.DELISTED, streamHash
+            address(fed),
+            uint160(fedArtist),
+            IArtistRegistry.FederationStatus.ACTIVE,
+            IArtistRegistry.FederationStatus.DELISTED,
+            streamHash
         );
         fedRegistry.propagateRevocation(tokens);
         fedRegistry.propagateRevocation(tokens); // a no-op the second time
@@ -225,7 +229,11 @@ contract FederationGovernanceTest is FederationBase {
         _ethBid(saleId, collector, 1 ether);
         vm.expectEmit(address(artists));
         emit IArtistRegistry.FederatedContractStatus(
-            address(fed), uint160(fedArtist), IArtistRegistry.FederationStatus.LEFT, bytes32(0)
+            address(fed),
+            uint160(fedArtist),
+            IArtistRegistry.FederationStatus.ACTIVE,
+            IArtistRegistry.FederationStatus.LEFT,
+            bytes32(0)
         );
         vm.prank(fedArtist);
         fed.leaveFederation();

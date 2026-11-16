@@ -392,6 +392,44 @@ contract StreamPolicySafetyTest is StreamFixture {
     }
 
     /// @dev AUC-44: a policy answering a content hash already minted is refused by Stream.
+    /// @dev What the core enforces (AUC-44, IMintPolicy): content uniqueness, keyed by the
+    ///      content hash, never item-identifier uniqueness across policies. A tombstoned item
+    ///      cannot mint its released content again (`ContentUsed`), and that content stays
+    ///      reserved for the artist the release named; but a policy whose item hash does not
+    ///      commit to the content can name the tombstoned item hash with fresh content, and the
+    ///      core mints it, since the tombstone is read only on a released content's claim (no
+    ///      cold read on every start). The genesis registry's item hash covers the content hash,
+    ///      so under it the case cannot arise; a successor policy must keep that property.
+    function test_MP1_TheCoreHoldsContentNotItemIdentifiers() public {
+        address rightful = makeAddr("rightfulArtist");
+        artists.register(rightful);
+        IMintPolicy.MintRecord memory r = _record(11);
+        hostile.setRecord(r);
+        (uint256 copyId,) = auction.start(stream, _request(_item(91)));
+        auction.burn(stream, copyId, 1);
+        vm.prank(governor);
+        stream.releaseContent(copyId, r.contentHash, uint160(rightful));
+        assertTrue(stream.isReleased(r.itemHash));
+        // The tombstoned item with its released content: refused, even for the rightful artist.
+        r.artistId = uint160(rightful);
+        hostile.setRecord(r);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IStream.ContentUsed.selector, PRODUCT_STREAM, r.contentHash, r.itemHash
+            )
+        );
+        auction.start(stream, _request(_item(90)));
+        // The same tombstoned item hash with fresh content: the core mints it (the policy's
+        // obligation, not the core's), and the released content is still reserved.
+        bytes32 released = r.contentHash;
+        r.contentHash = keccak256("fresh content under a reused item hash");
+        hostile.setRecord(r);
+        (uint256 reusedId,) = auction.start(stream, _request(_item(89)));
+        assertEq(stream.consumedItemOf(r.contentHash), r.itemHash);
+        assertEq(stream.releasedTo(released), uint160(rightful), "still reserved");
+        assertEq(stream.ownerOf(reusedId), address(auction));
+    }
+
     function test_MP1_AnAlreadyMintedContentIsRefused() public {
         IMintPolicy.MintRecord memory r = _record(5);
         r.contentHash = keccak256(abi.encode("content", 1)); // existing[0]'s content

@@ -34,14 +34,14 @@ contract RegistryTimersTest is IdentityFixture {
         uint48[5] memory floors = [uint48(7 days), 180 days, 365 days, 365 days, 30 days];
         for (uint256 i; i < 5; ++i) {
             vm.expectEmit(true, true, true, true);
-            emit IArtistRegistry.TimerSet(IArtistRegistry.Timer(i), floors[i]);
+            emit IArtistRegistry.TimerSet(IArtistRegistry.Timer(i), 0, floors[i]);
         }
         new ArtistRegistry(address(manager), adapter, address(adapter).codehash);
     }
 
     function test_SetTimer_WithinBounds() public {
         vm.expectEmit(address(registry));
-        emit IArtistRegistry.TimerSet(CHANGE, 14 days);
+        emit IArtistRegistry.TimerSet(CHANGE, 7 days, 14 days);
         _set(CHANGE, 14 days);
         assertEq(registry.timer(CHANGE), 14 days);
         _set(CHANGE, 7 days);

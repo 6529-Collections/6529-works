@@ -106,18 +106,24 @@ IdentityChange(uint256 artistId,address authority,address payout,bytes32 profile
 OverrideAcceptance(uint256 artistId,uint8 kind,address authority,address payout,bytes32 profileId,bytes32 profileDocHash,bytes32 evidenceHash,uint64 deadline)
 
 ArtistRegistration(address account,bytes32 profileId,bytes32 profileDocHash,uint64 deadline)
+
+FederatedListing(uint256 artistId,address token,uint64 deadline)
 ```
 
 | Typehash | Value | Digest helper |
 | --- | --- | --- |
 | `Typehashes.IDENTITY_CHANGE` | `0xa474bd174aa5ecb19efe75995251c1fb8289b62bca04bc6c19e869f254e190f0` | `ArtistRegistry.changeDigest(artistId, next, nonce, deadline)` |
 | `Typehashes.OVERRIDE_ACCEPTANCE` | `0xe94c9e2e1a4e3c2652a414f70c177a61fc880d94ede3aaaf03a976666431f9a3` | `ArtistRegistry.overrideDigest(artistId, kind, next, evidenceHash, deadline)` |
-| `ArtistRegistration` (private to `ArtistRegistry`) | `0x251edc52a2bb08ba54c8c256d514ddd287d55597cda1692026fb5fcbf0f8a8d9` | `ArtistRegistry.registrationDigest(account, profileId, profileDocHash, deadline)` |
+| `Typehashes.ARTIST_REGISTRATION` | `0x251edc52a2bb08ba54c8c256d514ddd287d55597cda1692026fb5fcbf0f8a8d9` | `ArtistRegistry.registrationDigest(account, profileId, profileDocHash, deadline)` |
+| `Typehashes.FEDERATED_LISTING` | `0xf9cab868b3854d5fed4ded502ac6de9ba93e83e47f06b037a21153b15c83e004` | `ArtistRegistry.listingDigest(artistId, token, deadline)` |
 
 `test_Golden_TypehashesAndSelectors` and `test_Golden_DigestsAreStandardEip712` pin the first two
 ([`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol)) and
 `test_RegistrationDigest_IsStandardEip712` the third
-([`FederationDirectory.t.sol`](../../test/identity/FederationDirectory.t.sol)). `kind` is 2 for
+([`FederationDirectory.t.sol`](../../test/identity/FederationDirectory.t.sol)); the golden
+typehash test in [`Typehashes.t.sol`](../../test/interfaces/Typehashes.t.sol) pins the last two,
+and the listing digest is checked against an EIP-712 digest computed without the helper by
+every `FederationDirectory.t.sol` listing (`_ok`). `kind` is 2 for
 `CONTESTED`, 3 for `ESTATE` and 4 for `LOST_KEY`.
 
 - **`IdentityChange`** binds the artist's `changeNonce`, which every staging consumes and

@@ -157,7 +157,7 @@ contract FederatedEditionAuctionLens is UniformEditionAuctionLensBase {
 
     /// @dev A federated 1/1 has no rescue (no museum path): nothing added, so the wait is the
     ///      locked delay alone, as the adapter enforces; no 6529 Stream slot is read.
-    function _rescueLengthening() internal pure override returns (uint256) {
+    function _rescueLengthening(uint256) internal pure override returns (uint256) {
         return 0;
     }
 

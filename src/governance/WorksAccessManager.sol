@@ -564,7 +564,12 @@ contract WorksAccessManager is AccessManager {
 
     /// @inheritdoc AccessManager
     /// @dev On a live escalated operation, a call by anyone but its scheduler is a guardian's
-    ///      vote, and cancels only once the votes decide ({_decided}). A guardian's cancellation
+    ///      vote, and cancels only once the votes decide ({_decided}). There Rule 2 gives way to
+    ///      the majority: a guardian whose removal it is votes with its seat like every other
+    ///      seated guardian, but never decides alone (a decision needs a majority of the seats
+    ///      and two votes). Without that vote a compromised admin with one dishonest guardian
+    ///      could remove honest guardians at three or four seats; with it, a colluding pair is
+    ///      a majority only at three (governance spec, the escalated lane). A guardian's cancellation
     ///      of a protected action ({actionOf}) it did not schedule strikes the action. Counts
     ///      as admin activity.
     function cancel(address caller, address target, bytes calldata data)
@@ -679,7 +684,9 @@ contract WorksAccessManager is AccessManager {
     }
 
     /// @inheritdoc AccessManager
-    /// @dev Rules 1 to 3; a live escalated operation only by its scheduler or once decided.
+    /// @dev Rules 1 to 3 outside the escalated lane; a live escalated operation only by its
+    ///      scheduler or once a guardian majority decided, a majority in which the guardian a
+    ///      removal names has its vote ({cancel}).
     function _canCancel(address caller, address target, bytes calldata data)
         internal
         view

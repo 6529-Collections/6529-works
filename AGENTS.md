@@ -54,6 +54,12 @@ custom errors.
 - Use `abi.encode` for structured hashing.
 - Use pull payments, with exact balance-delta checks on token transfers.
 - Fail closed: no soft-failing reads that return plausible defaults.
+- External calls follow [ADR 0007's gas rule](docs/adr/0007-permanence.md#2-the-gas-rule-replaces-the-first-plans-bounded-gas-rule):
+  permanent contracts, and the renderer that finalized works pin, compile no gas number and
+  forward all the gas a call may take (`BoundedCall`'s forward-all family); a failed call that
+  left at most 1/8 of the gas reverts as a shortfall (`BoundedCallShortfall`), never reads as a
+  refusal or a default. Replaceable contracts may cap gas (the fixed-gas family). Either way,
+  a call to code the caller does not control bounds the return data it copies.
 - No `tx.origin`, and no unbounded loops over user-controlled data.
 
 **Tests:**

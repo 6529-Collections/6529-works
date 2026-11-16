@@ -224,3 +224,11 @@ itself (GV-37 to GV-47 in the
 admin Safe. Rules 1 to 3 and suspension are unchanged outside the escalated lane. With three
 guardian seats any two are a majority, so the bounded veto bites against a colluding pair only
 from four seats (LIM-GV-4).
+
+Amendment note (16 November 2026): Rule 2 holds outside the escalated lane. In that lane a
+cancellation is a guardian-majority vote in which the guardian a struck removal names votes
+with its seat like every other seated guardian (it never decides alone: a majority of the
+seats and at least two votes). Taking its vote away would let a compromised admin with one
+dishonest guardian remove honest guardians at three or four seats; the comparison by seat
+count is in the governance specification's escalated-lane section, and the rule's wording there
+and in the manager's NatSpec now says so.

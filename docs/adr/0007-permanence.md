@@ -395,7 +395,9 @@ Four independent reviews of the integrated tree (Stream and sales; records and s
 and identity; governance and deployment) reported 1 High, 4 Medium and the Low and Info findings
 below, and a fifth (E) verified their fixes, confirming every High and Medium fixed and reporting
 2 Low and 3 Info findings of its own (N-1 to N-5); every one was handled before this record's
-last revision. Fixed means the code now holds
+last revision. The automated reviews of the contract sources (CodeRabbit and 6529bot, 16
+November 2026) are in the rows that follow them; their severities are the bots' own, and
+findings that ask for gas caps are judged under the gas rule (§2). Fixed means the code now holds
 the stated guarantee, with a test that fails without the change; documented means a known
 limitation row states the residual; owner means the owner decides.
 
@@ -436,6 +438,17 @@ limitation row states the residual; owner means the owner decides.
 | E | N-3 | Info | Fixed: the content store's walk passes over a file already complete in an added store whose bytes it lacks, and goes round again once the work is on-chain complete, so files spread across stores never stall completion and an upgrade stays possible (WS-43). |
 | E | N-4 | Info | Documented: a work complete only in an added store shows no media at all with the default renderer where the preferred kind is ONCHAIN (LIM-CNT-21); the promise card prints that row (DCL-29). |
 | E | N-5 | Info | Documented: the class-delay floor binds holders, not functions; a selector remap is a 30-day admin operation any guardian can cancel (GV-38). Fixed: each consumed override acceptance is logged (`OverrideAcceptanceConsumed`, ID-12), so the registry's logs rebuild it. The start gate's 20 gas and the English auction's 2 bytes of slack are unchanged. |
+| Automated review (CodeRabbit, 6529bot), 16 November 2026 | Linked chunks in `tokenURI` | Medium | Fixed: anyone may link a chunk from up to 256 parts (before or instead of a whole write; a whole write or a fewer-part link always replaces it), so the renderer reads no file with a chunk of more than 4 parts (`IContentStore.maxParts`), serving it by locator or the record as `incomplete`; the worst row, every chunk read linked from 4 parts, fits 8M (RND-26, WS-50, LIM-CNT-22). |
+| Automated review (CodeRabbit, 6529bot), 16 November 2026 | Gas caps (renderer `_read`, `BoundedCall`, `GovernedVault`, Stream `fallback` and `_authorize`) | Medium to Minor | Not changed: the gas rule (§2) forbids gas numbers in permanent contracts and the renderer. Taken from them: bounded return data in `ContentStore._served` (one chunk's encoding) and Editions (4 KiB; the renderer's `uri` answer, the view's own result, whole); the repository's rule texts now state the gas rule. Stream's policy answer and view passthrough, and the vault's token calls, are all-or-nothing calls whose callee can already refuse or burn its gas, so a bound adds nothing. |
+| Automated review (CodeRabbit, 6529bot), 16 November 2026 | `abandon` floor after a late removal | Major | Fixed: the floor adds however long after the end the English auction was removed (Stream rescues from the removal), within the rescue cap, which takes precedence (EA-19). |
+| Automated review (CodeRabbit, 6529bot), 16 November 2026 | Economics resolver replacement | Major | Fixed: `setDependency("ECONOMICS")` refuses a resolver naming another split factory (AUC-39); the edition lens reads Stream's factory. |
+| Automated review (CodeRabbit, 6529bot), 16 November 2026 | Guardian vote in its own escalated removal | Major | Kept, wording fixed: excluding the vote is better in neither threat direction at any seat count (governance spec); Rule 2 is stated as holding outside the escalated lane (spec, NatSpec, ADR 0002 note). |
+| Automated review (CodeRabbit, 6529bot), 16 November 2026 | Refused close and `pendingDelivery` | Minor | Fixed in the lens (the auction is unchanged): a pending delivery with no recipient or bidder names the creator. |
+| Automated review (CodeRabbit, 6529bot), 16 November 2026 | Continue mode and long signatures | Minor | Fixed: a continue-mode signed batch carries at most 131,072 signature bytes; item 0 still reaches the ceiling at 2^24 (ECO-30). |
+| Automated review (CodeRabbit, 6529bot), 16 November 2026 | SplitVault return copy | Minor | Documented, not changed: an oversized return fails only that recipient's or token's release, as a revert would; the vault's bytes are its address derivation; golden test added (LIM-ECO-9). |
+| Automated review (CodeRabbit, 6529bot), 16 November 2026 | `registerManifestList` bound; `ClaimFailed.wallet`; `_stillNamed`; tombstone | Minor | Fixed: too many list chunks refused before any read; NatSpec notes. The tombstone stays off the start path (a cold read on every start, above the margin): item hashes must commit to content, a successor-policy obligation (IMintPolicy, AUC-44). |
+| Automated review (CodeRabbit, 6529bot), 16 November 2026 | Events and typehash | Minor | Fixed: `TimerSet` and `FederatedContractStatus` carry the previous value; `ARTIST_REGISTRATION` is in `Typehashes`. Other governed setters already carry it, or are replaceable adapters' (the English auction has no bytes to spare). |
+| Automated review (CodeRabbit, 6529bot), 16 November 2026 | Budget, `extsload`, READMEs, tests | Info | Line budget: 15,000 (§4). `extsload` is a view its caller pays for: not changed. READMEs corrected. Tests added for a partly filled last list chunk; a fee-on-transfer release test already existed. |
 
 The bounded veto, as fixed and measured, bites against a colluding pair from four guardian
 seats; the seat count remains the owner's decision.

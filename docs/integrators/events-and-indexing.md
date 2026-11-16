@@ -343,9 +343,9 @@ version of this page lists them.
 | `StandingRemoved(uint256 indexed artistId, address indexed wallet)` | `0xe79c9b80…` | A standing refresh | The wallet lost standing ([ID-21][id], [ID-22][id]). |
 | `StandingRefreshSkipped(uint256 indexed artistId)` | `0x103bc6dd…` | Every standing refresh except `refreshStanding` (registration, `registerFederated`, staging, overrides, `heartbeat`, execution), when the consolidation source failed (a revert, an oversize answer, or a code-hash mismatch) | Nobody lost standing; a later `refreshStanding` catches up. A source that ran short of gas, or reported `BoundedCallInsufficientGas` or `BoundedCallShortfall`, reverts the call instead ([ID-38][id]). |
 | `FederatedContractListed(uint256 indexed artistId, address indexed token, bytes32 codeHash, uint8 form, address partner, uint32 feeShare, address feeRecipient)` | `0x6b2a1b3a…` | `listFederatedContract`, callable only by the federation registry, with the artist's own `FederatedListing` consent verified by the artist registry ([ID-41][id]) | A federated token joined the permanent directory, ACTIVE, once per token ([ID-33][id]). `codeHash` is the token's code hash, read by the artist registry itself; `form` is recorded, not interpreted (0 ERC-721, 1 ERC-1155 under `IFederationRegistry.Form`); `partner` is the other half of a linked pair, or zero; `feeShare` and `feeRecipient` are the network's terms locked in the token. Federated contracts earn no TDH. A listing is the token's own only when its `FederationJoined` and the registry's `Registered` follow in the same transaction with the same facts, and `Registered`'s salt and arguments recompute the token's address ([Federation](../spec/federation.md#what-a-logs-only-reader-should-show)). |
-| `FederatedContractStatus(address indexed token, uint256 indexed artistId, FederationStatus status, bytes32 ref)` | `0x41609ec9…` | `setFederatedStatus` (the federation registry: ACTIVE and DELISTED only) and `recordFederationExit` (the token itself: LEFT from ACTIVE, LEFT_DELISTED from DELISTED, both terminal) | The entry's status changed; `ref` is the registry's reference for a decision, zero for an exit ([ID-34][id]). LEFT_DELISTED is served by nothing. Never touches tokens, ownership or owed funds. |
+| `FederatedContractStatus(address indexed token, uint256 indexed artistId, FederationStatus previous, FederationStatus status, bytes32 ref)` | `0x34ddebd7…` | `setFederatedStatus` (the federation registry: ACTIVE and DELISTED only) and `recordFederationExit` (the token itself: LEFT from ACTIVE, LEFT_DELISTED from DELISTED, both terminal) | The entry's status changed from `previous` (the same status when set again); `ref` is the registry's reference for a decision, zero for an exit ([ID-34][id]). LEFT_DELISTED is served by nothing. Never touches tokens, ownership or owed funds. |
 | `FederationRegistrySet(address previous, address next)` | `0xb6b3a87c…` | `setFederationRegistry` (SUCCESSOR_SETTER, 30 days, compare-and-set) | The federation registry was replaced; the genesis bind emits `Bound("FEDERATION_REGISTRY")` instead. Not the sale adapters' event of the same signature. |
-| `TimerSet(Timer indexed timer, uint48 value)` | `0x47e1ae3f…` | The constructor (all five, at their floors) and `setTimer` (SUCCESSOR_SETTER, 30 days) | A governed wait in seconds, for changes staged and refreshes made from then on; each stays between its floor (its genesis value) and its ceiling (`timerBounds`) ([ID-35][id]). |
+| `TimerSet(Timer indexed timer, uint48 previous, uint48 value)` | `0xf67b0661…` | The constructor (all five, at their floors, `previous` zero) and `setTimer` (SUCCESSOR_SETTER, 30 days) | A governed wait in seconds (and its value before), for changes staged and refreshes made from then on; each stays between its floor (its genesis value) and its ceiling (`timerBounds`) ([ID-35][id]). |
 | `ConsolidationSourceSet(address previous, address next, bytes32 codeHash)` | `0x8d645963…` | The constructor and `setConsolidationSource` (SUCCESSOR_SETTER, 30 days) | `codeHash` is the pinned `consolidationSourceCodeHash`. |
 | `PackageRegistrySet(address previous, address next)` | `0xf602f9bc…` | `setPackageRegistry` (SUCCESSOR_SETTER, 30 days, compare-and-set) | The only `register` caller changed to Stream's successor package registry (owner decision 16); `packageRegistry()` reads it. The genesis bind emits `Bound` instead. |
 | `Bound(bytes32 indexed name, address target)` | `0xd18d9295…` | `bindPackageRegistry` (`"PACKAGE_REGISTRY"`), `bindStream` (`"STREAM"`), `bindFederationRegistry` (`"FEDERATION_REGISTRY"`), `bindSplitFactory` (`"SPLIT_FACTORY"`), `bindStatementLog` (`"STATEMENT_LOG"`) | Once per name. |
@@ -415,7 +415,7 @@ by payee list and salt.
 
 | Event | topic0 | Emitted by | Meaning and indexing notes |
 | --- | --- | --- | --- |
-| `ClaimFailed(address indexed wallet, address indexed asset, uint256 indexed payee, uint256 index, uint256 size, bytes reason)` | `0xdaabf7a5…` | `ClaimRouter.claim` and `claimSigned`, in continue mode, for an item that failed | `wallet` is the address the item's payee list and salt name; `index` is the item's position in the batch; `reason` is at most the first 256 bytes of the ledger's revert data: decode it against the ledger and the shared library errors (a bad signature reverts with `SignatureVerifier.InvalidSignature`, an expired one with `SignatureVerifier.SignatureExpired`, a dependency that ran short with `BoundedCall.BoundedCallShortfall`). Successful items appear only as the ledger's `Released`. |
+| `ClaimFailed(address indexed wallet, address indexed asset, uint256 indexed payee, uint256 index, uint256 size, bytes reason)` | `0xdaabf7a5…` | `ClaimRouter.claim` and `claimSigned`, in continue mode, for an item that failed | `wallet` is the address the item's payee list and salt name for a plain item, and for a signed item the wallet its authorization declares, not checked by the router (an authorization whose wallet differs from the list and salt fails with the ledger's `WrongWallet`), so index by it only for plain items; `index` is the item's position in the batch; `reason` is at most the first 256 bytes of the ledger's revert data: decode it against the ledger and the shared library errors (a bad signature reverts with `SignatureVerifier.InvalidSignature`, an expired one with `SignatureVerifier.SignatureExpired`, a dependency that ran short with `BoundedCall.BoundedCallShortfall`). Successful items appear only as the ledger's `Released`. |
 
 ### RevenueEscrow
 
@@ -955,7 +955,7 @@ structs expanded to tuples: 163 signatures.
 | `EIP712DomainChanged()` | `0x0a6387c9ea3628b88a633bb4f3b151770f70085117a15f9bf3787cda53f13d31` | ArtistRegistry, SplitLedger, Eip712CurationVerifier, PackageRegistry, StatementLog, WorkRecords |
 | `ExcessSwept(address,address,uint256)` | `0xb3c71476dfd272eb50cc448234b60ee937ab332f54e7eaab71159ca6eb677440` | RevenueEscrow |
 | `FederatedContractListed(uint256,address,bytes32,uint8,address,uint32,address)` | `0x6b2a1b3a8725954154a06c0e100d75e409c0ff5593e919df78a8de1b952bd40b` | ArtistRegistry |
-| `FederatedContractStatus(address,uint256,uint8,bytes32)` | `0x41609ec9ac29867231916a6dd28703d5fcb31529b7f17fd8db069039ad7cbbd6` | ArtistRegistry |
+| `FederatedContractStatus(address,uint256,uint8,uint8,bytes32)` | `0x34ddebd723a6fae844a0667301c47c47f0b958a848e80ac6a6d9f98937629a7b` | ArtistRegistry |
 | `FederationRegistrySet(address,address)` | `0xb6b3a87c0596650c0cf0eb6eca374c8ddc3de178190eabdc7b67d09f2f3a431e` | ArtistRegistry, EnglishAuction |
 | `FeeRecipientRegistered(uint24,address)` | `0x69bdf78741820f5caa14a7ef4d189d7fde519f3edc06e5473d43b02efd2948a2` | Stream |
 | `FilePreferenceSet(uint256,bytes32,uint256,uint256)` | `0x700a41d4664d4e095541038a6ae434f80ea7c64a803f26a15c0731a550f59855` | WorkDelivery |
@@ -1037,7 +1037,7 @@ structs expanded to tuples: 163 signatures.
 | `TargetManaged(address)` | `0xdc955f50823c0939c2c3c5b34a0da9bbc57523475c5c629217ba5151b11d820f` | WorksAccessManager |
 | `TargetSet(address,bool)` | `0xd79dab7c1ad9be25388690df227462ca1accba2033dbdbd3011ff0eb30c25088` | EnglishAuction, UniformEditionAuction |
 | `TermsInterned(uint24,uint32,uint32,uint24,uint24)` | `0x30c73bd08c42aadc4ff9cd4e7dd70df7221810db3b2b6852de3c5f05f99c3304` | Stream |
-| `TimerSet(uint8,uint48)` | `0x47e1ae3f276d60d260b5ff076d6a8c60e1c560ad394d20920af78b34b51c9322` | ArtistRegistry |
+| `TimerSet(uint8,uint48,uint48)` | `0xf67b0661d38c46a74c9edc1f14bc8ec16944840f8fc4752053237fd7ee4ad915` | ArtistRegistry |
 | `TokenForwarded(address,uint256,address,uint256)` | `0x6d58ff684d44243032dd67f713e8663a4a1b0233564136db7cea1a16f19aac5e` | GovernedVault |
 | `Transfer(address,address,uint256)` | `0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef` | Stream |
 | `TransferBatch(address,address,address,uint256[],uint256[])` | `0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb` | Editions |
@@ -1055,8 +1055,9 @@ Federation ([ADR 0008](../adr/0008-federation.md)):
 
 | Event (canonical signature) | topic0 | Emitted by |
 | --- | --- | --- |
-| `Registered(address,uint256,bytes32)` | `0xc6476ad25e6b88c86a2d635b17ae88c2518237bad32f8a8fec2f5d58d4bf1075` | FederationRegistry |
-| `TemplateSet(bytes32,uint32,uint8,uint8)` | `0x5bd5883cc5cd0e38c06e66beacd59e5cc742929f158e4720ae1e8544c68410e8` | FederationRegistry |
+| `Registered(address,uint256,bytes32,bytes32,bytes)` | `0x32eacfe3ad3cbf943ae0afc172004f56da8ab5d2704c351b8120b606a871964c` | FederationRegistry |
+| `TemplateSet(bytes32,bytes32,uint32,uint8,uint8)` | `0xedb00c5f4f03dd285db46b91216df2357ea78be7dcaf8b6dd415906f739b12b8` | FederationRegistry |
+| `CodePublished(bytes32,address[])` | `0x3a8b47f99f73531abc41b7e6a69a9523c7a9d7e07875c9fbd8cbf5fead8a8b71` | FederationRegistry |
 | `AdapterSet(address,bool)` | `0x85ff5d10aa202e69f691155a2050fed648b2d67f85e35d1279510cc434023736` | FederationRegistry |
 | `FederationTermsLocked(uint256,address,address,uint32,address,address)` | `0x115d346f3ae2f700541f0a7cf487777af98bd5f35fec1493e3e1612b3e1a3297` | FederatedStream, FederatedEditions |
 | `FederationJoined(uint256,address,uint32,address,address)` | `0x7945de9e6b3bfc41d7a00797b8d683df9b599f9e4e4c14c7a7bac3ffd62195f6` | FederatedStream, FederatedEditions |
@@ -1071,6 +1072,7 @@ Federation ([ADR 0008](../adr/0008-federation.md)):
 | `Finalized(uint256,address,bytes32)` | `0xa12f71545ab74bea1bf2f3110b66eeed4554d8a25a7578e822653351a67b9d32` | FederatedStream |
 | `LocatorSet(uint256,uint256,uint8,string)` | `0xfdbab0fd1476201ece313bb879bf335ed4f6541b9732e39bbb7aa6fccb83a72a` | FederatedStream |
 | `OnChainComplete(uint256)` | `0x7037a4aeb33e1d3522b38b07a7e93607e33a6220198f1d324dd2563f5c6f0bf2` | FederatedStream |
+| `ContentStoreSet(address)` | `0x58071c7e6eae6f3e4a9567e1cbfe3dcf2bad5390fbb21977381d23a4c6cf5a87` | FederatedStream |
 | `DefaultRendererSet(address,bytes32)` | `0x985bae47ab1d6cc0f9507c06c737ae3e10f5cab92643d97e310e1f234ab85fce` | FederatedStream |
 | `EditionsLinked(address)` | `0x37934395c201e084f1b8f0c740fb15fe287937e0d37694d2c2c30b26fa4334a9` | FederatedStream |
 | `EditionTermsLocked(uint256,address,address,address,uint32)` | `0x3fffee5fab320ece21d2c9c1e04d7aa93c11def52468c07b1d0abcf407fa9cf1` | FederatedEditions |

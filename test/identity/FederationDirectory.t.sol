@@ -316,12 +316,20 @@ contract FederationDirectoryTest is IdentityFixture {
         vm.startPrank(federation);
         vm.expectEmit(address(registry));
         emit IArtistRegistry.FederatedContractStatus(
-            token, artistId, IArtistRegistry.FederationStatus.DELISTED, "vote 1"
+            token,
+            artistId,
+            IArtistRegistry.FederationStatus.ACTIVE,
+            IArtistRegistry.FederationStatus.DELISTED,
+            "vote 1"
         );
         registry.setFederatedStatus(token, IArtistRegistry.FederationStatus.DELISTED, "vote 1");
         vm.expectEmit(address(registry));
         emit IArtistRegistry.FederatedContractStatus(
-            token, artistId, IArtistRegistry.FederationStatus.ACTIVE, "vote 2"
+            token,
+            artistId,
+            IArtistRegistry.FederationStatus.DELISTED,
+            IArtistRegistry.FederationStatus.ACTIVE,
+            "vote 2"
         );
         registry.setFederatedStatus(token, IArtistRegistry.FederationStatus.ACTIVE, "vote 2");
         vm.stopPrank();
@@ -359,7 +367,11 @@ contract FederationDirectoryTest is IdentityFixture {
         // Left while delisted: LEFT_DELISTED, never more served than DELISTED.
         vm.expectEmit(address(registry));
         emit IArtistRegistry.FederatedContractStatus(
-            token, artistId, IArtistRegistry.FederationStatus.LEFT_DELISTED, bytes32(0)
+            token,
+            artistId,
+            IArtistRegistry.FederationStatus.DELISTED,
+            IArtistRegistry.FederationStatus.LEFT_DELISTED,
+            bytes32(0)
         );
         vm.prank(token);
         registry.recordFederationExit();
@@ -386,7 +398,11 @@ contract FederationDirectoryTest is IdentityFixture {
         _list();
         vm.expectEmit(address(registry));
         emit IArtistRegistry.FederatedContractStatus(
-            token, artistId, IArtistRegistry.FederationStatus.LEFT, bytes32(0)
+            token,
+            artistId,
+            IArtistRegistry.FederationStatus.ACTIVE,
+            IArtistRegistry.FederationStatus.LEFT,
+            bytes32(0)
         );
         vm.prank(token);
         registry.recordFederationExit();

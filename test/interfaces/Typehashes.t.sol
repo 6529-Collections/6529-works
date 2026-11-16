@@ -56,6 +56,14 @@ contract TypehashesTest is Test {
             Typehashes.OVERRIDE_ACCEPTANCE,
             0xe94c9e2e1a4e3c2652a414f70c177a61fc880d94ede3aaaf03a976666431f9a3
         );
+        assertEq(
+            Typehashes.ARTIST_REGISTRATION,
+            0x251edc52a2bb08ba54c8c256d514ddd287d55597cda1692026fb5fcbf0f8a8d9
+        );
+        assertEq(
+            Typehashes.FEDERATED_LISTING,
+            0xf9cab868b3854d5fed4ded502ac6de9ba93e83e47f06b037a21153b15c83e004
+        );
     }
 
     function test_witnessTypehashes() public pure {

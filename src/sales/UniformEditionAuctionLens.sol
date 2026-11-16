@@ -230,11 +230,12 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
     ///      its sale's end is then the one the adapter last read. A shortfall in any read reverts
     ///      with `BoundedCallShortfall`. A SETTLING sale qualifies only while its scan is in
     ///      progress (nothing paid): its clearing call can only have failed for want of the
-    ///      edition. The time is the sale's end plus its locked delay plus what 6529 Stream's
-    ///      rescue delay for the master's works adds to its 90-day floor (L-4): the delay Stream
-    ///      locked for the English auction's works when governance removed it, else the delay
-    ///      in force, at most the governed rescue cap, so no lengthening holds bids for longer
-    ///      than the cap (review E, N-2).
+    ///      edition. The time is the sale's end plus its locked delay plus how much later than
+    ///      the end plus 6529 Stream's 90-day floor the master can be rescued (L-4): once
+    ///      governance removed the English auction, the delay Stream locked then plus however
+    ///      long after the end the removal came; before, the delay in force. At most the
+    ///      governed rescue cap, which takes precedence, so nothing holds bids for longer than
+    ///      the cap (review E, N-2). A failed read of Stream reverts with `StreamReadFailed`.
     function abandonable(uint256 saleId) public view returns (bool ok, uint256 abandonAt) {
         IStorage.SaleWord memory a = _opened(saleId);
         if (
@@ -268,10 +269,10 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
         }
         IUniformEditionAuction.EndTimes memory e;
         _clocks(e, a, _config(a.termsId), oneEnd);
-        // Plus however much the master's rescue delay exceeds 6529 Stream's permanent 90-day
-        // floor, which the delay's 120-day minimum assumed (`_rescueLengthening`, the
+        // Plus how much later than the end and 6529 Stream's permanent 90-day floor, which the
+        // delay's 120-day minimum assumed, the master may be rescued (`_rescueLengthening`, the
         // deployment's), at most the governed cap: the adapter enforces the same floor.
-        uint256 added = _rescueLengthening();
+        uint256 added = _rescueLengthening(e.endTime);
         uint256 cap = ((_word(IStorage.Space.SETTINGS, 0, 0) >> 192) & type(uint16).max) * 1 days;
         if (added > cap) added = cap;
         abandonAt = uint256(e.endTime) + uint256(p.voidDelayDays) * 1 days + added;
@@ -1143,11 +1144,12 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
     /// @dev Whether `token`'s edition `id` exists, for the abandonment check.
     function _editionExists(address token, uint256 id) internal view virtual returns (bool);
 
-    /// @dev What a master of this deployment's rescue delay adds to 6529 Stream's 90-day floor,
-    ///      uncapped: for 6529 Stream Editions, what Stream's delay for the English auction's works
-    ///      adds; zero where the master has no rescue (a federated 1/1), so no canonical Stream
-    ///      slot is ever read for a federated sale.
-    function _rescueLengthening() internal view virtual returns (uint256);
+    /// @dev How much later than `end` plus 6529 Stream's 90-day floor a master of this
+    ///      deployment may be rescued, uncapped: for 6529 Stream Editions, what Stream's delay for
+    ///      the English auction's works adds, from its removal; zero where the master has no
+    ///      rescue (a federated 1/1), so no canonical Stream slot is ever read for a federated
+    ///      sale.
+    function _rescueLengthening(uint256 end) internal view virtual returns (uint256);
 }
 
 /// @title UniformEditionAuctionLens
@@ -1215,6 +1217,8 @@ contract UniformEditionAuctionLens is UniformEditionAuctionLensBase {
             .newWorkTerms(PRODUCT_EDITIONS, payees);
     }
 
+    /// @dev The resolver's factory is 6529 Stream's own: Stream refuses a replacement resolver
+    ///      that names another.
     function _factory(address) internal view override returns (address) {
         return IEconomicsResolver(IStream(_stream).economics()).splitFactory();
     }
@@ -1223,30 +1227,37 @@ contract UniformEditionAuctionLens is UniformEditionAuctionLensBase {
         return IEditions(token).exists(id);
     }
 
-    /// @dev The delay 6529 Stream locked for the English auction's works when governance removed
-    ///      it (read natively through `IStream.extsload` at `StreamLayout.minterSlot`), else the
-    ///      delay in force, less the 90-day floor. Both reads forward all gas and revert on any
-    ///      failure, a shortfall with `BoundedCallShortfall`.
-    function _rescueLengthening() internal view override returns (uint256 added) {
+    /// @dev Stream rescues a work at its adapter's removal time plus the delay it locked then
+    ///      (read natively through `IStream.extsload` at `StreamLayout.minterSlot`), else the
+    ///      delay in force, as if removed at `end`; less the 90-day floor, plus a removal's
+    ///      lateness after `end` (review N-2's horizon, from the removal, not the end). Both reads
+    ///      forward all gas and revert on any failure, a shortfall with `BoundedCallShortfall`.
+    function _rescueLengthening(uint256 end) internal view override returns (uint256 added) {
         (bool read, bytes memory data) = BoundedCall.tryReadAll(
             _stream,
             abi.encodeCall(IStream.extsload, (StreamLayout.minterSlot(_englishAuction), 1)),
             0x60
         );
-        if (!read || data.length != 0x60) revert();
+        if (!read || data.length != 0x60) {
+            revert IUniformEditionAuction.StreamReadFailed(IStream.extsload.selector);
+        }
         assembly ("memory-safe") {
             added := mload(add(data, 0x60))
         }
         // The removal time and the locked delay, field by field (`StreamLayout`).
-        if ((added >> 32) & type(uint40).max != 0) {
+        uint256 removedAt = (added >> 32) & type(uint40).max;
+        if (removedAt != 0) {
             added = (added >> 72) & type(uint32).max;
         } else {
             bytes32 delay;
             (read, delay) =
                 BoundedCall.tryReadWordAll(_stream, abi.encodeCall(IStream.rescueDelay, ()));
-            if (!read) revert();
+            if (!read) {
+                revert IUniformEditionAuction.StreamReadFailed(IStream.rescueDelay.selector);
+            }
             added = uint256(delay);
         }
         added -= 90 days;
+        if (removedAt > end) added += removedAt - end;
     }
 }

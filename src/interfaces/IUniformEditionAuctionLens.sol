@@ -69,7 +69,8 @@ interface IUniformEditionAuctionLens {
     ///         `InvalidSaleTerms` or `NoOneOfOneAuction` otherwise (a 1/1 auction that runs out
     ///         of gas answering reverts with `BoundedCallShortfall`). Then deploys the seller's
     ///         and, when it differs, the royalty receiver's split wallet, each only if it has no
-    ///         code, through the resolver's split factory, and requires each deployed address to
+    ///         code, through the resolver's split factory (6529 Stream's own, which Stream requires of
+    ///         every resolver it installs), and requires each deployed address to
     ///         be the one the terms name (`InvalidSaleTerms`).
     /// @param token The edition contract.
     /// @param id The edition ID.
@@ -83,8 +84,11 @@ interface IUniformEditionAuctionLens {
     ///         (`IUniformEditionAuction.abandonable`): OPEN, its 1/1 neither in progress nor
     ///         settled with its master settled in 6529 Stream (a 1/1 auction that refuses to
     ///         answer counts as stuck, with the end last read), and its end plus its locked
-    ///         abandonment delay plus its capped rescue lengthening passed. Reverts with
-    ///         `UnknownAuction`.
+    ///         abandonment delay plus its capped rescue addition passed: how much later than the
+    ///         end plus Stream's 90-day floor the master can be rescued (the English auction's
+    ///         removal time, once removed, plus the delay Stream locked then), at most the
+    ///         governed rescue cap. Reverts with `UnknownAuction`, or `StreamReadFailed` when a
+    ///         read of 6529 Stream fails.
     /// @param saleId The sale ID.
     /// @return ok Whether it can be abandoned now.
     /// @return abandonAt The earliest time, or zero when it cannot be from what is known now.

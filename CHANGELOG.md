@@ -39,6 +39,26 @@
 - Permanence ([ADR 0007](docs/adr/0007-permanence.md); owner instruction of 14 and 15 November
   2026), two integration rounds and the fixes of four independent reviews. Pre-launch interface
   reshaping:
+  - **Automated review fixes** (CodeRabbit and 6529bot, 16 November 2026; ADR 0007's review
+    table):
+    - Renderer and content store: `tokenURI` reads no file with a chunk linked from more than
+      4 parts (`IContentStore.maxParts`, new; `IContentStore` `0x943307d5`), serving it by
+      locator until anyone writes the chunk whole, so the 8M budget holds whatever the part
+      count; `firstMissing` copies at most one chunk's ABI encoding from another store and
+      counts a refusal as not served; `registerManifestList` refuses too many list chunks
+      before reading them.
+    - Stream: a replacement economics resolver must name Stream's split factory. Edition
+      auction: the abandonment floor follows Stream's rescue horizon from the English
+      auction's removal, within the rescue cap; the lens reverts with `StreamReadFailed` on a
+      failed Stream read. English auction lens: `pendingDelivery` names the creator after a
+      refused close. Editions copies at most 4 KiB from a dependency (the renderer's `uri`
+      answer whole). ClaimRouter: a continue-mode signed batch carries at most 131,072
+      signature bytes (`SignaturesTooLong`).
+    - Events: `TimerSet(Timer indexed, uint48 previous, uint48 value)` (`0xf67b0661…`) and
+      `FederatedContractStatus(token, artistId, previous, status, ref)` (`0x34ddebd7…`) carry
+      the previous value. `Typehashes.ARTIST_REGISTRATION` moves to the shared typehashes.
+    - Rule texts follow ADR 0007's gas rule (AGENTS.md, CONTRIBUTING.md, `.coderabbit.yaml`):
+      no gas number in permanent contracts or the renderer, return data always bounded.
   - **Review fixes** (ADR 0007, "Independent review"):
     - Stream: the fallback forwards only `work`, `collection` and `totalSupply`; `owner()`,
       `contractURI()` and `extension()` are native; `StreamLayout` fixes the storage slots a

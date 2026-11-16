@@ -61,6 +61,9 @@ contract TokenUriBudgetTest is IntegrationBase {
     address internal artist;
     address internal reader = makeAddr("budgetReader");
     uint256 internal salt;
+    /// @dev When above 1, every chunk uploaded is stored as a link of this many parts, never
+    ///      whole (`_writeChunks`).
+    uint256 internal linkParts;
 
     function setUp() public override {
         super.setUp();
@@ -153,6 +156,27 @@ contract TokenUriBudgetTest is IntegrationBase {
         bytes memory attributes =
             where == BEFORE ? _spacedBefore(n, free / n) : _spacedInside(n, free / (17 * n));
         return _record(hex"6161c3a9", shape, attributes, ATTR_UNITS * n);
+    }
+
+    // ------------------------------------------------------------------ linked chunks
+
+    /// @dev Stores each chunk whole, or, with `linkParts` above 1, as a link of `linkParts`
+    ///      parts (fewer only for a chunk shorter than that many bytes).
+    function _writeChunks(bytes memory stored) internal override returns (bytes32[] memory hashes) {
+        if (linkParts < 2) return super._writeChunks(stored);
+        uint256 size = store.CHUNK_SIZE();
+        hashes = new bytes32[]((stored.length + size - 1) / size);
+        for (uint256 i; i < hashes.length; ++i) {
+            bytes memory chunk = _slice(stored, i * size, size);
+            hashes[i] = keccak256(chunk);
+            if (store.chunkPointer(hashes[i]) != address(0)) continue;
+            uint256 step = (chunk.length + linkParts - 1) / linkParts;
+            bytes32[] memory parts = new bytes32[]((chunk.length + step - 1) / step);
+            for (uint256 j; j < parts.length; ++j) {
+                (parts[j],) = store.writeChunk(_slice(chunk, j * step, step));
+            }
+            if (parts.length > 1) assertEq(store.linkChunk(parts), hashes[i], "linked");
+        }
     }
 
     // ------------------------------------------------------------------ the work
@@ -324,6 +348,31 @@ contract TokenUriBudgetTest is IntegrationBase {
             _worstRecord(BEFORE, ZEROS),
             true
         );
+    }
+
+    /// @dev The dearest row with every chunk the renderer reads (the record, the primary's 11
+    ///      and the preview's) linked from `MAX_PARTS_PER_CHUNK` (4) parts, the most it reads
+    ///      from: each part costs one more storage read and code copy, and the row still fits
+    ///      8M. Every other row stores whole chunks; this one is their upper bound.
+    function test_Budget_LinkedAtTheBound_SpacedBefore_Zeros_Base64Preview() public {
+        linkParts = 4;
+        _row(
+            "every chunk linked from 4 parts, white space before each attribute, zeros, Base64 preview:",
+            _worstRecord(BEFORE, ZEROS),
+            true
+        );
+    }
+
+    /// @dev One part more than the bound in every chunk: the renderer neither reads the record
+    ///      nor inlines a file (`maxParts` above 4), so the work renders its core facts.
+    function test_Budget_PastTheBoundNothingIsRead() public {
+        linkParts = 5;
+        Built memory b = _build(_worstRecord(BEFORE, ZEROS), true, false);
+        string memory uri = stream.tokenURI(b.tokenId);
+        assertTrue(_contains(uri, '"record_status":"incomplete"'), "record not read");
+        assertFalse(_contains(uri, ";base64,"), "nothing inlined");
+        uint256 used = _cold(address(stream), abi.encodeCall(stream.tokenURI, (b.tokenId)));
+        assertLt(used, TOKEN_URI_BUDGET);
     }
 
     /// @dev An edition renders its master: `Editions.uri` adds the master link and one trait.

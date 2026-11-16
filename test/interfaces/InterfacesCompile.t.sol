@@ -62,7 +62,7 @@ contract InterfacesCompileTest is Test {
             type(ICurationSignerVerifier).interfaceId, bytes4(0x9f12d97a), "ICurationSignerVerifier"
         );
         assertEq(type(IPackageRegistry).interfaceId, bytes4(0x91325cdf), "IPackageRegistry");
-        assertEq(type(IContentStore).interfaceId, bytes4(0xca09e241), "IContentStore");
+        assertEq(type(IContentStore).interfaceId, bytes4(0x943307d5), "IContentStore");
         assertEq(type(IDependencyRegistry).interfaceId, bytes4(0xe5338d57), "IDependencyRegistry");
         assertEq(type(IRenderer).interfaceId, bytes4(0xa772216d), "IRenderer");
         assertEq(type(IEconomicsResolver).interfaceId, bytes4(0x9ba8ecb3), "IEconomicsResolver");

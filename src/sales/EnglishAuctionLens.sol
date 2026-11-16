@@ -256,16 +256,23 @@ contract EnglishAuctionLens {
     /// @notice The recipient the sale's delivery is pending for
     ///         (`IEnglishAuction.pendingDelivery`): it may claim the token to itself (to any
     ///         address from 30 days after the end), and the winning bidder to any address.
+    ///         A pending delivery with neither a stored recipient nor a bidder (a federated sale
+    ///         closed as refused, whose standing bid was credited back) is the no-bid path: the
+    ///         token's current creator may claim it, as `claimDelivery` checks, so that creator
+    ///         is returned (read from the token's `primaryTerms`, as the auction reads it).
     /// @param saleId The sale ID.
-    /// @return The pending recipient, or zero when no delivery is pending.
-    function pendingDelivery(uint256 saleId) external view returns (address) {
+    /// @return recipient The pending recipient, or zero when no delivery is pending.
+    function pendingDelivery(uint256 saleId) external view returns (address recipient) {
         uint256 base = _saleBase(saleId);
-        // forge-lint: disable-next-line(unsafe-typecast)
-        uint8 flags = uint8(uint256(_read1(bytes32(base))) >> 248);
-        if (flags & _DELIVERY_PENDING == 0) return address(0);
-        // The recipient when one is stored, else the bidder: one more word, as in the auction.
-        bytes32 slot = bytes32(flags & _RECIPIENT_SET != 0 ? base + 2 : base + 1);
-        return address(uint160(uint256(_read1(slot))));
+        Sale memory s = _decodeSale(uint256(_read1(bytes32(base))), 0, 0);
+        if (s.flags & _DELIVERY_PENDING == 0) return address(0);
+        // The recipient when one is stored, else the bidder: one more word, as in the auction;
+        // else the creator, whom `claimDelivery` admits when no bid stands.
+        bytes32 slot = bytes32(s.flags & _RECIPIENT_SET != 0 ? base + 2 : base + 1);
+        recipient = address(uint160(uint256(_read1(slot))));
+        if (recipient == address(0)) {
+            recipient = IMintTarget(s.token).primaryTerms(s.tokenId, "").creator;
+        }
     }
 
     /// @notice The governed auction parameters (`IEnglishAuction.config`).

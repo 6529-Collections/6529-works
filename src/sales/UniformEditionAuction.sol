@@ -531,23 +531,27 @@ abstract contract UniformEditionAuctionBase is
             status != IUniformEditionAuction.AuctionStatus.OPEN
                 && (status != IUniformEditionAuction.AuctionStatus.SETTLING || _scans[saleId] == 0)
         ) revert IUniformEditionAuction.InvalidAuctionState(saleId, status);
-        // L-3 and L-4: the time floor from this adapter's own words, whatever the lens answers.
-        // The stored close (`closeAt`; the 1/1's end only moves later, so the stored one is
-        // never late, and a soft end is at most `maxExtension`, 7 days, past it) plus the locked
-        // abandonment delay (at least 120 days), plus however much 6529 Stream's rescue delay
-        // for the master's works exceeds its permanent 90-day floor, which that minimum assumed
-        // (at most the rescue cap): a sale is never voided while it takes bids, and never voided,
-        // nor its edition sealed at zero, before a master waiting on a rescue could be rescued,
-        // unless that rescue waits longer than the cap; and its bidders always have an exit.
+        // L-3, L-4 and review N-2: the time floor from this adapter's own words, whatever the
+        // lens answers. The stored close (`closeAt`; the 1/1's end only moves later, so the
+        // stored one is never late, and a soft end is at most `maxExtension`, 7 days, past it)
+        // plus the locked abandonment delay (at least 120 days), plus the rescue addition
+        // ({_rescueAddition}): how much later than the close plus the 90-day floor 6529 Stream
+        // lets the master be rescued, at most the rescue cap. So a sale is never voided while it
+        // takes bids, and never voided, nor its edition sealed at zero, before a master waiting
+        // on a rescue could be rescued, with the delay's 30 days or more past that to do it;
+        // the cap takes precedence, so its bidders always have an exit at most the cap later.
         PayoutWord storage p = _payouts[saleId];
-        uint256 end;
-        // Safe: two 32-bit times and a 16-bit count of days cannot overflow.
+        uint256 close;
+        // Safe: a 32-bit time and a 32-bit offset cannot overflow.
         unchecked {
-            end = uint256(a.oneOfOneEnd) + _terms[a.termsId].closeOffset + uint256(p.voidDelayDays)
-                * 1 days;
+            close = uint256(a.oneOfOneEnd) + _terms[a.termsId].closeOffset;
         }
-        // forge-lint: disable-next-line(block-timestamp)
-        if (block.timestamp < end + _rescueAddition(_settings.rescueCapDays)) {
+        if (
+            // forge-lint: disable-next-line(block-timestamp)
+            block.timestamp
+                < close + uint256(p.voidDelayDays) * 1 days
+                    + _rescueAddition(close, _settings.rescueCapDays)
+        ) {
             revert IUniformEditionAuction.NotAbandonable(saleId);
         }
         _void(saleId, a);
@@ -1194,10 +1198,11 @@ abstract contract UniformEditionAuctionBase is
         _terms[id] = t;
     }
 
-    /// @dev What the master's rescue delay adds to the 90-day floor the abandonment delay's
-    ///      minimum assumes (`_rescueLengthening`, the deployment's), at most `capDays` days.
-    function _rescueAddition(uint256 capDays) private view returns (uint256 added) {
-        added = _rescueLengthening();
+    /// @dev How much later than `close` plus the 90-day floor (which the abandonment delay's
+    ///      minimum assumes) the master may be rescued (`_rescueLengthening`, the deployment's),
+    ///      at most `capDays` days.
+    function _rescueAddition(uint256 close, uint256 capDays) private view returns (uint256 added) {
+        added = _rescueLengthening(close);
         if (added > capDays * 1 days) added = capDays * 1 days;
     }
 
@@ -1273,11 +1278,11 @@ abstract contract UniformEditionAuctionBase is
     /// @dev Seals an abandoned sale's edition at zero (`IEditions.sealSupply`).
     function _sealVoid(uint256 saleId, uint256 id) internal virtual;
 
-    /// @dev What a master of this deployment's rescue delay adds to `_RESCUE_FLOOR` (uncapped):
-    ///      for 6529 Stream Editions, what 6529 Stream's delay for the English auction's works
-    ///      adds; zero where the master has no rescue (a federated 1/1), so no canonical Stream
-    ///      slot is ever read for a federated sale.
-    function _rescueLengthening() internal view virtual returns (uint256);
+    /// @dev How much later than `close` plus `_RESCUE_FLOOR` a master of this deployment may be
+    ///      rescued (uncapped): for 6529 Stream Editions, what 6529 Stream's delay for the English
+    ///      auction's works adds, from its removal; zero where the master has no rescue (a
+    ///      federated 1/1), so no canonical Stream slot is ever read for a federated sale.
+    function _rescueLengthening(uint256 close) internal view virtual returns (uint256);
 
     /// @dev Step `step`'s price under `t`: `basePrice × M[(step mod N)·192/N] × 10^(step div N) /
     ///      100`, `StepLadder.price` from {_MANTISSAS}.
@@ -1525,18 +1530,22 @@ contract UniformEditionAuction is UniformEditionAuctionBase {
         IEditions(_editions).sealSupply(id, 0);
     }
 
-    /// @dev The delay 6529 Stream locked for the English auction's works when governance
-    ///      removed it (read natively through `IStream.extsload` at `StreamLayout.minterSlot`; a
-    ///      later lengthening never reaches them), else the delay in force, less the 90-day floor.
-    ///      Both reads forward all gas and revert on any failure (Stream's permanent views never
-    ///      refuse).
-    function _rescueLengthening() internal view override returns (uint256 added) {
+    /// @dev Stream rescues a work at its adapter's removal time plus the delay it locked then
+    ///      (read natively through `IStream.extsload` at `StreamLayout.minterSlot`; a later
+    ///      lengthening never reaches them): so, once governance removed the English auction,
+    ///      the locked delay's excess over the floor plus however long after `close` the removal
+    ///      came; before, the delay in force, as if it were removed at the close. Both reads
+    ///      forward all gas and revert on any failure (Stream's permanent views never refuse).
+    function _rescueLengthening(uint256 close) internal view override returns (uint256 added) {
         uint256 word =
             uint256(IStream(_stream).extsload(StreamLayout.minterSlot(_englishAuction), 1)[0]);
         // Safe: the removal time and the locked delay, field by field (`StreamLayout`).
-        // forge-lint: disable-next-line(unsafe-typecast)
-        added = uint40(word >> 32) != 0 ? uint32(word >> 72) : IStream(_stream).rescueDelay();
+        // forge-lint: disable-start(unsafe-typecast)
+        uint256 removedAt = uint40(word >> 32);
+        added = removedAt != 0 ? uint32(word >> 72) : IStream(_stream).rescueDelay();
+        // forge-lint: disable-end(unsafe-typecast)
         // Stream's delay never goes below its floor; checked arithmetic refuses anything else.
         added -= _RESCUE_FLOOR;
+        if (removedAt > close) added += removedAt - close;
     }
 }
