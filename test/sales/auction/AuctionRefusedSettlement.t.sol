@@ -889,6 +889,45 @@ contract AuctionRefusedSettlementTest is AuctionBase {
         _artistClaims(hostile, saleId);
     }
 
+    /// @dev Review round 4: on the refused-close path the lens reads the creator with the shared
+    ///      forward-all helper and copies at most 4 KiB. A refusal or an answer over the bound
+    ///      reverts with `BoundedCallFailed`, a malformed one with `BoundedCallMalformedReturn`,
+    ///      a burn with `BoundedCallShortfall`; an answer at the bound still names the artist.
+    ///      The auction's own `claimDelivery` is unchanged. Fails without the change: the plain
+    ///      call bubbles the token's revert, decodes a 32-byte answer with no reason, and copies
+    ///      any answer whole.
+    function test_PendingDeliveryReadsTheCreatorWithBoundedReturnData() public {
+        uint256 saleId = _endedSale(hostile, true);
+        hostile.fail(HostileMintTarget.Call.SETTLE, HostileMintTarget.Fault.REVERT);
+        _refusable(saleId);
+        _settleOrRefund(saleId);
+        hostile.clear(HostileMintTarget.Call.SETTLE);
+        assertEq(auction.pendingDelivery(saleId), artist);
+        address token = address(hostile);
+        hostile.fail(HostileMintTarget.Call.TERMS, HostileMintTarget.Fault.REVERT);
+        vm.expectRevert(abi.encodeWithSelector(BoundedCall.BoundedCallFailed.selector, token));
+        auction.pendingDelivery(saleId);
+        hostile.fail(HostileMintTarget.Call.TERMS, HostileMintTarget.Fault.MALFORMED);
+        vm.expectRevert(
+            abi.encodeWithSelector(BoundedCall.BoundedCallMalformedReturn.selector, token)
+        );
+        auction.pendingDelivery(saleId);
+        hostile.fail(HostileMintTarget.Call.TERMS, HostileMintTarget.Fault.BURN_GAS);
+        vm.expectRevert(abi.encodeWithSelector(BoundedCall.BoundedCallShortfall.selector, token));
+        auction.pendingDelivery{ gas: 1_000_000 }(saleId);
+        hostile.clear(HostileMintTarget.Call.TERMS);
+        // 3,776 bytes of params make a 4,096-byte answer, the bound; 32 more are refused.
+        PrimaryTerms memory t = hostile.primaryTerms(0, "");
+        t.params = new bytes(3_776);
+        hostile.setTerms(t);
+        assertEq(auction.pendingDelivery(saleId), artist, "at the bound");
+        t.params = new bytes(3_777);
+        hostile.setTerms(t);
+        vm.expectRevert(abi.encodeWithSelector(BoundedCall.BoundedCallFailed.selector, token));
+        auction.pendingDelivery(saleId);
+        _artistClaims(hostile, saleId);
+    }
+
     /// @dev A token whose `ownerOf` lies on the unbid path reports the work moved: the sale
     ///      settles unsold to the holder it names and the work stays in custody, out of anyone's
     ///      reach. Only the token's own work is affected; no funds are at stake.
