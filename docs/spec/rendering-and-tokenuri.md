@@ -77,7 +77,7 @@ stateDiagram-v2
 | Mint, core-only `not_open` | the English auction adapter at start | immediate | `Stream.mint` (through `IMintTarget`) |
 | Open the record | anyone | immediate | `WorkRecords.openRecord` |
 | Complete the record file | anyone | immediate | `ContentStore.registerManifest`, `writeChunk` (no ERC-4906 event) |
-| Replace the record, before finalize | the artist (active authority of the lead artist ID) | immediate | `WorkRecords.setRecord` |
+| Replace the record, before finalize | the artist (any wallet of the lead artist's account) | immediate | `WorkRecords.setRecord` |
 | Inline the primary | anyone | immediate | `WorkRecords.syncOnChain`; `ContentStore.attestBase64` for a `Base64` file (no ERC-4906 event) |
 | Finalize: the record is fixed | the artist | immediate | `WorkRecords.finalize` |
 
@@ -101,9 +101,9 @@ stateDiagram-v2
 
 | Transition | Caller (role) | Delay | Function |
 | --- | --- | --- | --- |
-| New default renderer | hot admin Safe (SUCCESSOR_SETTER) | successor, 30 days | `Stream.setDefaultRenderer` |
+| New default renderer | the network (SUCCESSOR_SETTER) | 7 days | `Stream.setDefaultRenderer` |
 | Finalize pins the default | the artist | immediate | `WorkRecords.finalize` |
-| Errata repin | hot admin Safe (SUCCESSOR_SETTER) with the artist's `RENDERER_REPIN` signature | successor, 30 days | `WorkRecords.repinRenderer` |
+| Errata repin, until `RENDERER_REPIN` is renounced | the network alone (SUCCESSOR_SETTER, C8) | 7 days | `WorkRecords.repinRenderer` |
 | Code changes at a renderer address | nobody intended (say, a CREATE2 redeploy) | n/a | detected by `Stream.rendererOf` and `WorkRecords.pinnedRenderer` (DEPS-6) |
 
 Role holders and delays are in [Governance](governance.md) and [roles.md](../audit/roles.md).
@@ -218,13 +218,13 @@ support for `IERC1155` (RND-22).
 
 ```mermaid
 sequenceDiagram
-    participant A as Hot admin Safe
+    participant A as Network Safe
     participant M as AccessManager
     participant S as Stream
     participant E as Editions
-    A->>M: schedule setDefaultRenderer (SUCCESSOR_SETTER, 30 days)
-    Note over M: guardians can cancel during the delay
-    A->>M: execute after 30 days
+    A->>M: schedule setDefaultRenderer (SUCCESSOR_SETTER, 7 days)
+    Note over M: the brake may delay it once
+    A->>M: execute after 7 days
     M->>S: setDefaultRenderer(expected, next, nextCodeHash)
     S->>S: expected must equal the current default
     S->>S: next has code, is not delegated, supports IRenderer, codehash matches
@@ -375,8 +375,8 @@ costs about 30M gas, 512 KiB about 8.4M (`test_FullForm_1MiB` and `test_FullForm
 | RND-1 | A token is served by its pinned renderer once finalized, else by the default renderer; never by any other. | `Stream.rendererOf` | [`Stream.t.sol`](../../test/stream/Stream.t.sol) `test_setDefaultRenderer`; [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_finalize_pinsDefaultRenderer` |
 | RND-2 | A renderer whose code is no longer the code hash it was installed or pinned with is refused at every use; `tokenURI` and `uri` revert instead of falling back (DEPS-6). | `Stream.rendererOf`, `WorkRecords.pinnedRenderer` | [`RendererCodePin.t.sol`](../../test/integration/RendererCodePin.t.sol) `test_DefaultRendererWithChangedCodeIsRefused`, `test_PinnedRendererWithChangedCodeIsRefused` |
 | RND-3 | Finalize pins the default only while its code is unchanged; an address is pinned with one code hash for good. | `WorkRecords.finalize`, `_pinCode` | `RendererCodePin.t.sol` `test_FinalizeRefusesADefaultRendererWhoseCodeChanged`, `test_RepinRefusesARendererWhoseCodeChangedSincePinned` |
-| RND-4 | A new default renderer must have code, not be an EIP-7702 delegated account, support `IRenderer` by ERC-165 and match the given code hash; the setter is compare-and-set and SUCCESSOR_SETTER (30 days). | `Stream.setDefaultRenderer`, `Dependency.checkPinned` | `Stream.t.sol` `test_setDefaultRenderer_reverts` |
-| RND-5 | The errata repin needs a finalized work, the same renderer checks, the current state hash, an unexpired deadline and the artist's signature by the active authority, plus SUCCESSOR_SETTER (30 days). | `WorkRecords.repinRenderer` | `WorkRecords.t.sol` `test_repinRenderer_errataPath`, `test_repinRenderer_reverts` |
+| RND-4 | A new default renderer must have code, not be an EIP-7702 delegated account, support `IRenderer` by ERC-165 and match the given code hash; the setter is compare-and-set and SUCCESSOR_SETTER (7 days). | `Stream.setDefaultRenderer`, `Dependency.checkPinned` | `Stream.t.sol` `test_setDefaultRenderer_reverts` |
+| RND-5 | The errata repin needs a finalized work whose `RENDERER_REPIN` is not renounced, the same renderer checks and the current state hash; it is the network's alone (SUCCESSOR_SETTER, 7 days, C8), with no artist signature. | `WorkRecords.repinRenderer` | `WorkRecords.t.sol` `test_repinRenderer_errataPath`, `test_repinRenderer_reverts` |
 | RND-6 | Every external read forwards all the gas it may with its own return cap (`BoundedCall.tryReadAll`, the gas rule of ADR 0007); a read that fails, answers nothing or answers too much reverts with `RendererReadFailed`. | `Renderer._read`, `_copyFile`, `BoundedCall` | [`RendererHostile.t.sol`](../../test/content/renderer/RendererHostile.t.sol) `test_Token_ReturnDataBombsAndGasBurnersFailClosed`, `test_Store_ARevertingOrOversizedChunkReadFailsClosed`; [`Renderer.t.sol`](../../test/content/renderer/Renderer.t.sol) `test_FailsClosed_EveryReadOfTheStreamAndRecords` |
 | RND-7 | A read that runs short of gas (too little supplied, or a dependency that burns all it is given) reverts with `BoundedCallShortfall`; it is never reported as a failed or empty read, and an answer is always the full answer. | `BoundedCall.tryReadAll` | `RendererHostile.t.sol` `test_NotEnoughGasRevertsInsteadOfMisreporting`, `test_Store_AChunkThatBurnsGasIsAShortfall`, `test_Records_TheMediaReadHasNoGasCap` |
 | RND-8 | A store chunk must have the length the layout rule gives, or the call reverts. | `Renderer._copyFile` | `RendererHostile.t.sol` `test_Store_ChunksOfTheWrongLengthRevert` |
@@ -416,8 +416,8 @@ changed makes `tokenURI` revert, also without an event.
 
 | Failure | Effect | Recovery |
 | --- | --- | --- |
-| The default renderer's code changed | Every unfinalized work and its edition reverts with `DependencyCodeChanged(renderer)`; so does `finalize` | SUCCESSOR_SETTER installs a new default (`setDefaultRenderer`, 30 days) |
-| A finalized work's pinned renderer's code changed | That work's `tokenURI` and its edition's `uri` revert with `DependencyCodeChanged(renderer)` | Errata repin (artist signature plus SUCCESSOR_SETTER, 30 days); a lost artist key is recovered first through the artist registry |
+| The default renderer's code changed | Every unfinalized work and its edition reverts with `DependencyCodeChanged(renderer)`; so does `finalize` | SUCCESSOR_SETTER installs a new default (`setDefaultRenderer`, 7 days) |
+| A finalized work's pinned renderer's code changed | That work's `tokenURI` and its edition's `uri` revert with `DependencyCodeChanged(renderer)` | The network's errata repin (SUCCESSOR_SETTER, 7 days), unless `RENDERER_REPIN` was renounced |
 | A dependency read fails (no code, revert, empty or too much return data) | `RendererReadFailed(target, selector)` | The renderer's content store and statement log are fixed at construction: a broken one needs a new renderer (a new default, or an errata repin) |
 | A read ran short of gas (too little supplied, or a dependency that burns all it is given) | `BoundedCallShortfall(target)` | Supply more gas; a dependency that burns everything blocks the call until it is replaced (see [Inside the renderer](#inside-the-renderer)) |
 | The record is not open | Core-only, `not_open` | Anyone calls `openRecord` |

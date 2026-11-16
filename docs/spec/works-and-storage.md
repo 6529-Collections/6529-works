@@ -125,7 +125,8 @@ on-chain and readable by any other renderer off-chain.
 the URI grammar) is a replaceable contract behind `WorkRecords.delivery` (WS-39): "Final fixes
 the content and output format, not the URL" (ADR 0001 §10). The delivery contract can never
 change a fact: media, hashes, records, licenses, rates, powers, pins or completeness. Every
-successor names its predecessor and must keep serving its locators (`IWorkDelivery`).
+successor names its predecessor (`IWorkDelivery`); whether it keeps serving its predecessor's
+locators is decided when it is written.
 
 **Stores.** Store 0 is the content store; governance may add stores (adapters serving chunk
 bytes by their keccak256) for good, so a future medium can count as on-chain complete (WS-41 to
@@ -207,27 +208,28 @@ stateDiagram-v2
 ```
 
 Delays are the [governance](governance.md) classes (selectors in [roles.md](../audit/roles.md));
-any GUARDIAN may cancel a scheduled call.
+the network or the scheduler may cancel a scheduled call, and the brake may delay it once.
 
 | Transition | Caller (role) | Delay | Function |
 | --- | --- | --- | --- |
 | Not open to Open | Anyone | None | `WorkRecords.openRecord` |
 | Open: new record file | The artist | None | `WorkRecords.setRecord` |
 | Open to Finalized | The artist | None | `WorkRecords.finalize` |
-| Open or Finalized: new license | PARAMETER_SETTER, plus every party's `Relicense` signature | Standard, 48 hours | `WorkRecords.relicense` |
-| Open or Finalized: lower royalty rate | FUNDS_SETTER, plus every party's `RoyaltyRateChange` signature | Funds, 14 days | `WorkRecords.setRoyaltyRate` |
-| Open or Finalized: powers renounced (one-way) | Anyone, with the artist's `RenouncePowers` signature | None | `WorkRecords.renounce` |
-| Finalized: new renderer pin (errata), until `RENDERER_REPIN` is renounced | SUCCESSOR_SETTER, plus the artist's `RendererRepin` signature | Successor, 30 days | `WorkRecords.repinRenderer` |
-| New delivery contract (no state change of any work) | SUCCESSOR_SETTER | Successor, 30 days | `WorkRecords.setDelivery` |
-| New store (no state change of any work) | SUCCESSOR_SETTER | Successor, 30 days | `WorkRecords.addStore` |
+| Open or Finalized: new license | FUNDS_SETTER, plus every party's `Relicense` signature | 3 days | `WorkRecords.relicense` |
+| Open or Finalized: new royalty rate, up or down (R10) | FUNDS_SETTER, plus every party's `RoyaltyRateChange` signature | 3 days | `WorkRecords.setRoyaltyRate` |
+| Open or Finalized: powers renounced (one-way) | Anyone, with the artist's `RenouncePowers` signature; renouncing `ROYALTY_RATE` or `RELICENSE` also needs the network (the role mapped to `renounce`, PARAMETER_SETTER) (C7) | None for `RENDERER_REPIN` alone; else 24 hours | `WorkRecords.renounce` |
+| Finalized: new renderer pin (errata), until `RENDERER_REPIN` is renounced | SUCCESSOR_SETTER alone (C8) | 7 days | `WorkRecords.repinRenderer` |
+| New delivery contract (no state change of any work) | SUCCESSOR_SETTER | 7 days | `WorkRecords.setDelivery` |
+| New store (no state change of any work) | SUCCESSOR_SETTER | 7 days |
+| Store retired (counts nothing new; works it completed stay complete) | PARAMETER_SETTER | 24 hours | `WorkRecords.retireStore` | `WorkRecords.addStore` |
 | Not synced to Partly synced or On-chain complete | Anyone | None | `WorkRecords.syncOnChain` |
 | Locator appended (no state change) | The artist before finalize; PLATFORM at any time | Immediate | `WorkDelivery.addLocator` |
 | Preference changed (no state change) | STORAGE_OPERATOR | Immediate | `WorkDelivery.setPreferredKind`, `setCollectionPreferredKind`, `setFilePreference` |
 | File: Not registered to Registered | Anyone | None | `ContentStore.registerManifest`, or `registerManifestList` after `writeChunk` of its list chunks |
 | File: to Complete | Anyone | None | `ContentStore.writeChunk`, `linkChunk` |
 | File: Not attested to Attested | Anyone | None | `ContentStore.attestBase64` |
-| Dependency: to Registered | PARAMETER_SETTER | Standard, 48 hours | `DependencyRegistry.register` |
-| Dependency: Registered to Deprecated | GUARDIAN | Immediate | `DependencyRegistry.deprecate` |
+| Dependency: to Registered | PARAMETER_SETTER | 24 hours | `DependencyRegistry.register` |
+| Dependency: Registered to Deprecated | NETWORK | Immediate | `DependencyRegistry.deprecate` |
 
 ## Flows
 
@@ -324,7 +326,7 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant Ar as Artist (active authority)
+    participant Ar as Artist (a wallet of the account)
     participant WR as WorkRecords
     participant CS as ContentStore
     participant S as Stream
@@ -382,8 +384,9 @@ sequenceDiagram
   platform's alike, in registration order (C33). It may also mark a locator that stopped serving
   dead (`markLocatorDead`, C21): a dead locator is never served again, by any tier, and stays
   listed. The dead set is a bit per index beside the quota counts (no extra storage slot).
-- **Suspension.** A [suspended](governance.md#suspension-of-operational-keys) PLATFORM or
-  STORAGE_OPERATOR key reverts with `AccessManagedUnauthorized` at once; the artist's own
+- **Revocation.** A PLATFORM or STORAGE_OPERATOR key the network
+  [revokes](governance.md#suspension-of-operational-keys) reverts with `AccessManagedUnauthorized`
+  at once; the artist's own
   `addLocator` before finalize and existing preferences are unaffected.
 - **The IPFS profile.** ADR 0001 §8's fixed profile is pinned as CIDv1, sha2-256, raw leaves, a
   262,144-byte fixed chunker and the balanced UnixFS layout of at most 174 links per node
@@ -398,7 +401,7 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant Pa as Signers (active authority)
+    participant Pa as Signers (a wallet of each party's account)
     participant G as Role holder
     participant M as WorksAccessManager
     participant WR as WorkRecords
@@ -406,7 +409,7 @@ sequenceDiagram
     participant E as Editions
     Pa->>G: typed-data signatures over the state hash and a deadline
     G->>M: schedule(WorkRecords, calldata)
-    Note over M: 48 hours, 14 days or 30 days. Any guardian may cancel.
+    Note over M: 3 days (relicense, rate) or 7 days (repin). The network or the scheduler may cancel; the brake may delay once.
     G->>M: execute(WorkRecords, calldata)
     M->>WR: relicense, setRoyaltyRate or repinRenderer
     Note over WR: state hash, deadline, signatures, then the amendment's own checks
@@ -436,7 +439,7 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant Ar as Artist (active authority)
+    participant Ar as Artist (a wallet of the account)
     participant R as Relayer (anyone)
     participant WR as WorkRecords
     participant AR as ArtistRegistry
@@ -502,7 +505,7 @@ the 16,777,216-gas transaction cap in Prague gas
 ### Replace the delivery contract, add a store
 
 SUCCESSOR_SETTER schedules `setDelivery(expected, next)` or `addStore(store, codeHash)`; after
-30 days, unless a guardian cancelled, it executes. `setDelivery` refreshes every token's
+7 days (and any brake delay), unless cancelled, it executes. `setDelivery` refreshes every token's
 metadata. A store, once added, is never removed; a work verified against it stays complete. Its
 review must establish that it keeps serving what it served (`IChunkStore`): nothing on-chain can.
 
@@ -587,16 +590,16 @@ completion in the content store has no event: derive it from `ManifestRegistered
 | A manifest breaks the layout rule or lists an impossible chunk | Accepted but never completes or reads (WS-27); its work never becomes on-chain complete. | None for that file ID; served by locator. Tooling refuses such manifests. |
 | A `Base64` file is not yet attested | Never inlined; served by locator. | Anyone calls `attestBase64` until it returns true. |
 | Base64 text breaks the strict alphabet | `attestBase64` reverts with `ContentBase64Invalid(fileId, index)` forever. | None for that file ID. Tooling refuses such text before upload. |
-| A pinned renderer's code no longer matches its pinned hash | `pinnedRenderer` reverts with `DependencyCodeChanged`, so `tokenURI` fails closed. | The errata repin (30 days), unless `RENDERER_REPIN` was renounced: then none, for good. An unfinalized work's changed default renderer is replaced by `Stream.setDefaultRenderer` (30 days). |
-| The delivery contract reverts or answers malformed data | `preferredLocator` serves the work's own answer (ONCHAIN for a synced work, else none), WS-40. | SUCCESSOR_SETTER replaces it (30 days); the successor must keep its predecessor's locators. |
-| The delivery contract burns all the gas it is given | `preferredLocator` reverts (shortfall), and so does `tokenURI` for works served by locator; inlined works are unaffected. | Replace it (30 days). |
-| An added store stops serving bytes | Works it completed stay complete (the flag and the file's store are permanent); readers that inline from it fail. | None on-chain for those files; that persistence is the trust governance accepted when adding the store. |
-| The artist's key is lost | No `setRecord`, `finalize`, repin or artist consent; locators by PLATFORM, preferences and `syncOnChain` still work. | Recover the authority through the artist registry ([Identity and recovery](identity-and-recovery.md)), then sign. |
-| A power was renounced in error, or by an authority later found to be the wrong one | The power's function reverts for that work for good (WS-38); the work keeps its current rate and license. | None on-chain, by design: renunciation is permanent. The errata repin stays available unless `RENDERER_REPIN` itself was renounced. |
+| A pinned renderer's code no longer matches its pinned hash | `pinnedRenderer` reverts with `DependencyCodeChanged`, so `tokenURI` fails closed. | The network's errata repin (7 days), unless `RENDERER_REPIN` was renounced: then none, for good. An unfinalized work's changed default renderer is replaced by `Stream.setDefaultRenderer` (7 days). |
+| The delivery contract reverts or answers malformed data | `preferredLocator` serves the work's own answer (ONCHAIN for a synced work, else none), WS-40. | SUCCESSOR_SETTER replaces it (7 days). |
+| The delivery contract burns all the gas it is given | `preferredLocator` reverts (shortfall), and so does `tokenURI` for works served by locator; inlined works are unaffected. | Replace it (7 days). |
+| An added store stops serving bytes | Works it completed stay complete (the flag and the file's store are permanent); readers that inline from it fail. | None on-chain for those files; the network can retire the store (`retireStore`, 24 hours) so it counts nothing new. |
+| Every wallet of the artist's account is lost | No `setRecord`, `finalize` by the artist or artist consent; locators by PLATFORM, preferences and `syncOnChain` still work, and anyone finalizes 14 days after a recorded notice once the sale settled. | Another wallet of the account signs; or the network replaces the account's root through the artist registry ([Identity and recovery](identity-and-recovery.md)), then sign. |
+| A power was renounced in error | The power's function reverts for that work for good (WS-38); the work keeps its current rate and license. | None on-chain, by design: renunciation is permanent. The errata repin stays available unless `RENDERER_REPIN` itself was renounced. |
 | The state changed between signing and execution, or a consent expired or lost its authority | `StateHashMismatch`, `SignatureExpired(deadline)` or `InvalidConsent(tokenId, partyIndex)` at execution. | Read the new state hash, collect new signatures with a deadline past the delay, schedule again. |
 | A locator names the wrong content or goes dark | Not detected on-chain; `tokenURI` may serve it. | STORAGE_OPERATOR at once prefers another registered copy; the off-chain monitor re-pins or re-uploads. |
-| The PLATFORM or STORAGE_OPERATOR key is compromised | Junk locators (up to its quota), which no fallback serves (WS-21), or preferences pointing at a bad copy. | A guardian suspends the key; governance replaces it (30 days, then the 48-hour grant delay); the new operator restores the preferences. |
-| A wrong file was registered as a dependency version | The entry can never change. | GUARDIAN deprecates it at once; PARAMETER_SETTER registers a new version label (48 hours). |
+| The PLATFORM or STORAGE_OPERATOR key is compromised | Junk locators (up to its quota), which no fallback serves (WS-21), or preferences pointing at a bad copy. | The network revokes the key at once and grants a new one (no delay); the new operator restores the preferences. |
+| A wrong file was registered as a dependency version | The entry can never change. | The network deprecates it at once; PARAMETER_SETTER registers a new version label (24 hours). |
 
 ## Parameters and limits
 
@@ -653,8 +656,8 @@ See the [register](README.md#differences-from-the-adrs).
   [ADR 0003, token model and storage](../adr/0003-build-time-decisions.md#token-model-and-storage-amends-adr-0001-4-and-8)
   and [decisions from integration](../adr/0003-build-time-decisions.md#decisions-from-integration-11-october-2026-later);
   [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table) for gas;
-  [ADR 0006](../adr/0006-work-powers-and-conventions.md) for lower-only royalty changes and
-  renounceable powers.
+  [ADR 0006](../adr/0006-work-powers-and-conventions.md) for renounceable powers (its lower-only
+  royalty rule was superseded by [ADR 0009](../adr/0009-second-permanence-pass.md): R10);
 - **Tests:** [`test/stream/`](../../test/stream), [`test/content/`](../../test/content) and
   [`test/integration/`](../../test/integration), as cited per rule.
 - **Deployment evidence:** [`deployments/11155111/flows.md`](../../deployments/11155111/flows.md).

@@ -46,7 +46,7 @@ These facts, read from the code, decide what can be a convention.
 | Fact | Where the code says so | Consequence for conventions |
 | --- | --- | --- |
 | A statement kind is any non-zero `bytes32`; only `DISPUTE_OUTCOME`, `CURATION_EVIDENCE` and `GOVERNANCE_MANIFEST` are reserved. | `StatementLog._validate`, `_append` ([DSP-2, DSP-4](disputes-and-statements.md#rules-and-invariants)) | A new kind needs no deployment, and the log accepts every convention kind under every role (`test_Kinds_ConventionKindsAreAcceptedUnderEveryRole`). Readers enforce each kind's writer. |
-| ARTIST is the lead artist's active authority, and only for a 6529 Stream work or an edition (through its master). | `ArtistRegistry.isArtist` ([ID-28](identity-and-recovery.md#rules-and-invariants)) | No ARTIST statement about an item before its mint (LIM-ID-11) or about the artist subject `(ArtistRegistry, artistId)`. Co-artists other than the lead have no ARTIST lane. |
+| ARTIST is any wallet of the lead artist's account, and only for a 6529 Stream work or an edition (through its master). | `ArtistRegistry.isArtist` ([ID-11](identity-and-recovery.md#rules-and-invariants)) | No ARTIST statement about an item before its mint (LIM-ID-11) or about the artist subject `(ArtistRegistry, artistId)`. Co-artists other than the lead have no ARTIST lane. |
 | OWNER is the ERC-721 `ownerOf`, else any ERC-1155 holder, read when the entry is appended (for a relayed entry, when it is relayed). | `StatementLog._owns` ([who may write](disputes-and-statements.md#who-may-write)) | The log proves the signer owned the token at the entry's block. An edition has many OWNER writers. A work in auction custody is owned by the adapter. |
 | CURATOR and PLATFORM may write about any subject; there are no other roles. | `StatementLog._isAuthorized`, `IStatementLog.Role` | A custodian, a venue or a collaborator has no lane of its own: its words reach the log only inside a document someone with a role posts. |
 | A statement carries a hash and one locator: a URI of at most 2,048 bytes, or a content-store file ID. The log never reads the document. | `StatementLog._validate` (`MAX_URI_BYTES`) | The document's size is bounded only by where it is stored: a content-store file holds up to 512 chunks ([WS-26](works-and-storage.md#rules-and-invariants)). DCL-1 sets a convention limit. |
@@ -54,7 +54,7 @@ These facts, read from the code, decide what can be a convention.
 | The renderer uses only the PRIMARY file, the first PREVIEW image, and the locator of a license text listed among the media; no other AUXILIARY file reaches the metadata. | `Renderer._media`, `_preview`, `_licenseUrl` | A declarations file changes nothing a marketplace sees through `tokenURI`. |
 | The ordered media list, each entry's file ID, declared SHA-256 and role, is committed by the item's media hash, which the curation signer attests; `openRecord` opens only that exact list, and nothing changes it afterwards. A file ID commits to the chunk hashes, length, encoding, MIME type and declared SHA-256. | `WorksHashing.mediaHash`, `WorkRecords.openRecord` ([WS-2, WS-6, WS-25](works-and-storage.md#rules-and-invariants)) | An AUXILIARY file's bytes are fixed from approval. The declared SHA-256 is never recomputed on chain (WS-30, LIM-CNT-3), so the signer checks it; the chunk hashes bind the bytes at every read (WS-28). |
 | `mediaOf` reverts until the record opens; `openRecord` reverts while a listed manifest is unregistered; `syncOnChain` needs every listed file complete. | `WorkRecords.openRecord`, `mediaOf`, `syncOnChain` ([WS-1, WS-17](works-and-storage.md#rules-and-invariants)) | A declarations file must be registered before the record can open, and uploaded in full before the work can become on-chain complete. Before the open, a reader finds it only in the package data. |
-| The artist's profile document hash is set at the first package acceptance and changes only by a staged identity change. | `ArtistRegistry.register`, `stageChange` ([change kinds](identity-and-recovery.md#change-kinds)) | An artist-wide document can be named from the profile document, at the pace of identity changes (DCL-17). |
+| The artist's profile document hash is set at the first package acceptance and changes only by a staged identity change (the account's own, 2 days, or the network's replacement, 14 days). | `ArtistRegistry.register`, `stageChange` ([change kinds](identity-and-recovery.md#change-kinds)) | An artist-wide document can be named from the profile document, at the pace of identity changes (DCL-17). |
 
 ### Document format
 
@@ -398,7 +398,7 @@ would not be the artist's. The catalogue is therefore a
 that the artist's profile document names by hash, in a member
 `"catalogue": {"sha256": "0x…", "locators": ["ar://…"]}`. The profile document's hash is the one
 `ArtistRegistry.artist(artistId)` returns; it changes only through a staged identity change, with
-its delay and cancellers ([change kinds](identity-and-recovery.md#change-kinds)), and it is an
+its delay ([change kinds](identity-and-recovery.md#change-kinds)), and it is an
 unverified claim (LIM-ID-13). The catalogue can list works on any chain and works off chain; for
 a 6529 Stream work its `entry` names the CATALOGUE_ENTRY entry hash, and where the two differ the
 statement wins, being newer and per work.
@@ -522,16 +522,12 @@ Anvil test account 0, digest
 **DCL-25. A cold wallet through a consolidated wallet.** A collector keeps the work in a cold
 `holder` and signs with a hot `signer` consolidated with it in the 6529 delegation contract (use
 case 999, all collections). The verifier reads the consolidation source the artist registry
-uses, `ArtistRegistry.consolidationSource()`, at `B`: `isEstablished(holder, signer)` is true
-when both have registered the consolidation of the other for at least 30 days and neither has
-expired ([the consolidation adapter](identity-and-recovery.md#the-consolidation-adapter)), and
-`effectiveAt(holder, signer)` gives the time it is or becomes established (zero when there is no
-two-way consolidation). A venue accepts an established pair, and may accept a live, younger pair
-at lower trust: one whose `effectiveAt(holder, signer)` at `B` is non-zero and later than `B`'s
-timestamp, so each side holds a live registration of the other but the later of the two is less
-than 30 days old (`isEstablished` is false). A pair whose `effectiveAt` is zero has no live
-two-way consolidation and is refused. A consolidation can be added by whoever holds the cold key
-or a use-case-998 sub-delegate (LIM-ID-4), so a high-value venue asks the holder itself to sign.
+uses, `ArtistRegistry.consolidationSource()`, at `B`: `isConsolidated(holder, signer)` is true
+when each has a live registration of the other, with no minimum age
+([the consolidation adapter](identity-and-recovery.md#the-consolidation-adapter)); the same rule
+decides which wallets act for an artist's account. A venue accepts such a pair and refuses any
+other. A consolidation can be added by whoever holds the cold key or a use-case-998 sub-delegate,
+so a high-value venue asks the holder itself to sign.
 
 ```mermaid
 sequenceDiagram
@@ -545,7 +541,7 @@ sequenceDiagram
     V->>N: code of signer; ERC-1271 isValidSignature if a contract
     V->>N: Stream.ownerOf(tokenId)
     opt holder is not the signer
-        V->>N: consolidationSource().isEstablished(holder, signer)
+        V->>N: consolidationSource().isConsolidated(holder, signer)
     end
     V->>V: accept or refuse (the nonce is already used)
 ```
@@ -566,7 +562,7 @@ off chain, from reads at one block, and carries no warnings, ratings or scores.
 | `renouncedPowers` | WorkRecords, as `IWorkPowers` (ERC-165) | Renounced and retained powers (DCL-8) |
 | `fileInfo`, `isComplete`, `read` | ContentStore | Each media file's MIME type and completeness; whether the license text is on chain; the declarations bytes |
 | `latestDisputeOutcome`, `disputeOutcomeOf`, `chainOf`, `artistResolver` | StatementLog | Dispute status and its scope (token or item); the chain's count and head; the resolver |
-| `activeAuthorityOf`, `pendingChange` | ArtistRegistry | The artist's active wallet and whether the account is restrained; a pending identity change |
+| `activeAuthorityOf`, `artist`, `pendingChange` | ArtistRegistry | The account's root while it can act (zero while frozen or while a replacement is pending), the freeze end, and a pending identity change |
 | `saleIdOf`, `clearing` | UniformEditionAuction | The edition's copies and price per copy, for a master with an edition |
 | Documents | The declarations document; the published floor result (DCL-33); custody attestations; the winning display change (DCL-12) | Declarations, floor, custody, display change |
 
@@ -588,7 +584,7 @@ phase:
 | `renderer` | Before finalize `Stream.setDefaultRenderer` ([roles](../audit/roles.md#stream)); after, `WorkRecords.repinRenderer` ([roles](../audit/roles.md#workrecords)) | permanent |
 | `served_copy` | The delivery contract (`WorkDelivery.addLocator`, the artist before finalize; `setFilePreference`, `setCollectionPreferredKind`, `setPreferredKind`), and `WorkRecords.setDelivery`, which replaces it ([roles](../audit/roles.md#workrecords)) | permanent |
 | `dispute_statement` | `StatementLog.appendPlatform` ([roles](../audit/roles.md#statementlog)) | permanent |
-| `artist_authority` | `ArtistRegistry.stageChange` (the artist), `stageOverride` ([roles](../audit/roles.md#artistregistry); [change kinds](identity-and-recovery.md#change-kinds)) | permanent |
+| `artist_authority` | `ArtistRegistry.stageChange` (a wallet of the account), `stageReplacement` ([roles](../audit/roles.md#artistregistry); [change kinds](identity-and-recovery.md#change-kinds)) | permanent |
 | `artist_resolver` | `StatementLog.setArtistResolver` ([roles](../audit/roles.md#statementlog)) | permanent |
 | `burn_and_release` | `EnglishAuction.cancel` and `Stream.releaseContent` after an upheld dispute ([roles](../audit/roles.md#englishauction)) | settlement ([DSP-20, DSP-22](disputes-and-statements.md#rules-and-invariants)) |
 
@@ -644,24 +640,24 @@ applies it; "Supported on chain by" names the contract rule it builds on.
 | DCL-7 | A time capsule is unenforced, its ciphertext is an AUXILIARY media file, and it is outside the v1 curation policy until the owner approves it. | Curation signer; readers | WS-6 |
 | DCL-8 | The work powers are `ROYALTY_RATE`, `RELICENSE` and `RENDERER_REPIN`, in bit order; which are renounced comes from `IWorkPowers.renouncedPowers`. | Readers | WS-37, WS-38 |
 | DCL-9 | A living work's change emits no refresh event; readers re-render or date their cache. | Readers | none |
-| DCL-10 | A proposal counts only as ARTIST about a 6529 Stream token. | Readers | ID-28, DSP-7 |
+| DCL-10 | A proposal counts only as ARTIST about a 6529 Stream token. | Readers | ID-11, DSP-7 |
 | DCL-11 | An acceptance counts only as OWNER about the same token, citing an earlier valid proposal. | Readers | DSP-6 |
 | DCL-12 | The latest valid acceptance decides the display; withdrawal undoes it; `tokenURI` never changes. | Readers | WS-6 |
 | DCL-13 | An acceptance survives a transfer, labelled by who accepted it. | Readers | none |
 | DCL-14 | Burns and dispute outcomes prevail over the display. | Readers | DSP-12 |
 | DCL-15 | Editions never take a content change; proposed bytes minted as another work are flagged. | Readers | DSP-11 subject rules; `consumedItemOf` |
-| DCL-16 | A catalogue entry counts only as ARTIST; the latest per work wins; duplicate numbers within one artist's works are flagged. | Readers | ID-28 |
-| DCL-17 | The artist-wide catalogue is named from the profile document. | Artists; readers | ID-5, ID-8, ID-28 |
-| DCL-18 | A citation counts only as ARTIST about the citing work, only when well formed (schema-valid, non-zero chain ID, not the work itself), and is shown as the citing artist's claim. | Readers | ID-28 |
+| DCL-16 | A catalogue entry counts only as ARTIST; the latest per work wins; duplicate numbers within one artist's works are flagged. | Readers | ID-11 |
+| DCL-17 | The artist-wide catalogue is named from the profile document. | Artists; readers | ID-5, ID-6, ID-11 |
+| DCL-18 | A citation counts only as ARTIST about the citing work, only when well formed (schema-valid, non-zero chain ID, not the work itself), and is shown as the citing artist's claim. | Readers | ID-11 |
 | DCL-19 | Custody attestations are the typed data above. | Custodians' tooling | none |
 | DCL-20 | A custody attestation counts as posted by OWNER, ARTIST or PLATFORM, only with a valid custodian signature, and only for the work it names. | Readers | DSP-3, DSP-6 |
 | DCL-21 | The latest `asOf` counts, the later entry on a tie; future-dated is discarded; older than the allowed age is stale; a named custodian with no attestation is `NONE`. | Readers | none |
 | DCL-22 | Only a named custodian, or the successor in a recognized custodian's latest attestation when it is RELEASED, is recognized. | Readers | WS-6 |
 | DCL-23 | Control proofs are the typed data above, in the domain of the token's chain. | Venues; wallets | none |
 | DCL-24 | The verifier first claims the issued challenge atomically, spending the nonce; the response must equal it; the verifier builds the digest with its own chain ID and checks the time window, the signature and ownership at a recent block. | Venues | none |
-| DCL-25 | A consolidated signer proves a cold holder only through the registry's consolidation source; a live, younger pair (non-zero `effectiveAt` after `B`) only at lower trust. | Venues | ID-24, ID-27 |
+| DCL-25 | A consolidated signer proves a cold holder only through the registry's consolidation source (`isConsolidated`: a live two-way consolidation, no minimum age). | Venues | ID-2, ID-4 |
 | DCL-26 | A fact sheet reads everything at one block; the content hash comes from `WorkMinted`. | Sheet generators | none |
-| DCL-27 | Roles and delays on a fact sheet come from the role matrix and the deployment's events; the generator applies the six row rules. | Sheet generators | GV-10, GV-17 |
+| DCL-27 | Roles and delays on a fact sheet come from the role matrix and the deployment's events; the generator applies the six row rules. | Sheet generators | GV-2, GV-15 |
 | DCL-28 | The fact sheet distinguishes the states listed, including a record not yet open. | Sheet generators | none |
 | DCL-32 | Primary prices come from the reads and events listed. | Readers | AUC-8, EA-11 |
 | DCL-33 | When it runs the check, the signer publishes each item's floor result as `floor-result.v1` in the curation evidence; a fact sheet uses it only when it matches the work and its declarations, and otherwise shows every fact `unmet`. | Curation signer; sheet generators | DSP-4 |
@@ -681,7 +677,7 @@ event: a reader that shows a display change, a catalogue entry or custody refres
 | The declarations file is not registered | `openRecord` reverts | Anyone registers the committed manifest. |
 | The declarations file is not complete on chain (possible only under a wave that does not check the floor: DCL-3, DCL-5) | The work cannot become on-chain complete; readers fetch the document by locator | Anyone uploads the missing chunks. |
 | A storage receipt goes dark after approval | The floor stays `met` (it is about approval) | `STORAGE_COPY` and `FIXITY_CHECK` statements; new locators. |
-| An artist's key is lost or restrained | No ARTIST statements | [Identity and recovery](identity-and-recovery.md); earlier entries keep their resolver. |
+| Every wallet of an artist's account is lost, or the account is frozen or being replaced | No ARTIST statements | [Identity and recovery](identity-and-recovery.md); earlier entries keep their resolver. |
 | A wrong convention statement | It stays in the log | A superseding entry of the same kind and role; readers apply DCL-2. |
 | A custodian's key is lost | No new attestations; the last goes stale | A RELEASED attestation signed earlier, or a statement explaining the change; readers show the custodian as unrecognized. |
 | No floor result is published for the item, or it does not match the work | Every floor fact `unmet` on the fact sheet (DCL-33) | The CURATOR can publish a corrected `CURATION_EVIDENCE` statement that supersedes the earlier one. |

@@ -146,7 +146,7 @@ change the default", with no contract change.
 A payee is `ISplitWallet.Payee { uint256 artistId; address account; uint32 share; }`: a
 [fixed payee](../glossary.md#fixed-payee) (`artistId == 0`, paid at `account`) or an
 [artist-resolved payee](../glossary.md#artist-resolved-payee) (`account == address(0)`, paid at the
-artist registry's payout address at release time, so a recovery also redirects accrued balances). `Splits.validate` accepts only a
+artist registry's payout address at release time, so a replacement of the account's root also redirects accrued balances). `Splits.validate` accepts only a
 [canonical payee list](../glossary.md#canonical-payee-list) of at most 64 payees, a bound that
 keeps deployment inside the transaction gas cap (ECO-8). It also refuses payees that could
 never be paid: an artist ID of 2^160 or more (IDs are the `uint160` of an account, so it can
@@ -278,7 +278,7 @@ with nothing releasable, or a signed release of amount 0 (`NothingToRelease`); a
 nothing credited (`NothingToClaim`).
 
 **Token strictness.** `TokenTransfer` moves every ERC-20 that a payout, escrow deposit, flush,
-release, direct or EIP-2612 pull, or adapter claim handles. It counts a token call only if it
+release, direct pull, or adapter claim handles. It counts a token call only if it
 returns exactly one 32-byte word holding `true`, and requires both balances to move by exactly the
 amount (`TokenCallFailed`, `TokenBalanceMismatch`). There are two exceptions, and both still
 require the exact deltas. The auction's Permit2 pull (`EnglishAuction._collect`): Permit2 makes
@@ -336,7 +336,7 @@ stateDiagram-v2
     NotAdmitted --> Active : admitAsset (FUNDS_SETTER, 3 days)
     Active --> Active : setIncrementFloor (PARAMETER_SETTER, 24 hours)
     Active --> Deprecated : deprecateAsset (NETWORK, no delay), an ERC-20, never ETH
-    Deprecated --> Active : admitAsset, no earlier than one Roles.FUNDS delay after deprecation
+    Deprecated --> Active : admitAsset, no earlier than one Roles.DELAY_3D delay (3 days) after deprecation
     note right of Deprecated
         Withdrawals are unaffected.
         Running sales in it halt.
@@ -380,7 +380,7 @@ stateDiagram-v2
 
 | Transition | Caller (role) | Delay | Function |
 | --- | --- | --- | --- |
-| Asset: none or deprecated to active | FUNDS_SETTER | 3 days; a re-admission also at least one `Roles.FUNDS` delay after the deprecation | `AssetAllowlist.admitAsset` |
+| Asset: none or deprecated to active | FUNDS_SETTER | 3 days; a re-admission also at least one `Roles.DELAY_3D` (3 days) delay after the deprecation | `AssetAllowlist.admitAsset` |
 | Asset: new floor | PARAMETER_SETTER | 24 hours | `AssetAllowlist.setIncrementFloor` |
 | Asset: new opening bid | PARAMETER_SETTER | 24 hours; zero for ETH's in the genesis wiring | `AssetAllowlist.setOpeningBid` |
 | Asset: active to deprecated | NETWORK | None | `AssetAllowlist.deprecateAsset` |
@@ -401,7 +401,7 @@ stateDiagram-v2
 | Balance: marked; forfeited to the network | Anyone | Forfeit 180 days after the mark | `SplitLedger.mark`, `forfeit` |
 | Balance: frozen | A pending identity change that moves the payout; or the token, for an ERC-20 below its mark | Until the outcome, or until receipts recover | `ArtistRegistry.payoutAddress` returns zero; `SplitLedger._due` |
 
-A re-admission waits one `Roles.FUNDS` delay from the deprecation, not from its scheduling, so one scheduled
+A re-admission waits one `Roles.DELAY_3D` (3 days) delay from the deprecation, not from its scheduling, so one scheduled
 ahead cannot undo a deprecation in its own block (MARKET-2, ECO-33). Every governed setter except
 `deprecateAsset` and `recover` compares a revision counter that each
 change to the same setting bumps, so a queued operation runs only against the exact state it was
@@ -528,7 +528,7 @@ sequenceDiagram
 - **Effects.** `amount` is released exactly, or everything releasable for `type(uint256).max`.
   No nonce can be consumed without executing its release. A failed release consumes
   nothing, and amounts are bounds, so the same signature works once enough has accrued (ECO-22).
-  A recovery that moves the payout voids the old key's unused authorizations. A push can pre-empt
+  A change that moves the payout voids the old key's unused authorizations. A push can pre-empt
   a fixed payee's exact-amount signed release (LIM-ECO-3), and a payout that returns to an earlier
   key revives that key's unexpired authorizations (LIM-ECO-2).
 - **The router** has no storage, owner, approvals, `receive` or `fallback`, and calls only its
@@ -573,7 +573,7 @@ sequenceDiagram
 sequenceDiagram
     participant Anyone as Anyone
     participant Ledger as SplitLedger
-    participant Admin as Hot admin Safe
+    participant Admin as Network Safe
     participant Manager as AccessManager
     participant Escrow as RevenueEscrow
     participant New as Replacement wallet
@@ -651,9 +651,9 @@ sequenceDiagram
 | ECO-15 | Anyone may release a fixed payee, but only to its own account; a payee that can neither receive nor call blocks only its own share. | `SplitLedger.release` | [`SplitWallet.t.sol`](../../test/economics/SplitWallet.t.sol) `test_AnyoneMayReleaseAFixedPayeeButOnlyToItsAccount`, `test_MutePayeeBlocksOnlyItsOwnShare`; [`SplitLedgerStress.t.sol`](../../test/economics/SplitLedgerStress.t.sol) `test_HostilePayeesBlockOnlyTheirOwnShares` |
 | ECO-16 | Only an artist's current payout address, directly or by signature, releases an artist-resolved payee; nobody can push to a lost key. | `SplitLedger.release`, `releaseTo`, `releaseWithAuthorization` | [`SplitWallet.t.sol`](../../test/economics/SplitWallet.t.sol) `test_ArtistPayeeIsPullOnly`, `test_LostArtistKeyCannotBePushedBeforeRecovery`, `test_ArtistPayeeFollowsResolverAtReleaseTime`; [`ClaimRouter.t.sol`](../../test/economics/ClaimRouter.t.sol) `test_PlainArtistItemsFailAndContinueModeSkipsThem` |
 | ECO-17 | `releaseTo` is callable only by the payee's current payout address, and no release pays zero, the wallet itself or the ledger. | `SplitLedger.releaseTo`, `_release` | [`SplitWallet.t.sol`](../../test/economics/SplitWallet.t.sol) `test_ReleaseToRequiresTheCurrentPayoutAddress`, `test_RejectsZeroAndSelfRecipients` |
-| ECO-18 | While the payout is unresolved (frozen, or the resolver refuses or answers a non-address), only the artist-resolved payees stop; fixed payees release. | `SplitLedger._payout`; `ArtistRegistry.payoutAddress` | [`SplitWallet.t.sol`](../../test/economics/SplitWallet.t.sol) `test_UnresolvedOrFailingResolverBlocksOnlyTheArtistPayee`; [`SplitLedgerStress.t.sol`](../../test/economics/SplitLedgerStress.t.sol) `test_ResolverAnsweringANonAddressIsUnresolved`; [`IdentityRecovery.t.sol`](../../test/integration/IdentityRecovery.t.sol) `test_LostKeyOverrideFreezesThePayoutThenRecovers` |
+| ECO-18 | While the payout is unresolved (frozen, or the resolver refuses or answers a non-address), only the artist-resolved payees stop; fixed payees release. | `SplitLedger._payout`; `ArtistRegistry.payoutAddress` | [`SplitWallet.t.sol`](../../test/economics/SplitWallet.t.sol) `test_UnresolvedOrFailingResolverBlocksOnlyTheArtistPayee`; [`SplitLedgerStress.t.sol`](../../test/economics/SplitLedgerStress.t.sol) `test_ResolverAnsweringANonAddressIsUnresolved`; [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) `test_Freeze_HoldsPendingChangesAndPayouts` |
 | ECO-19 | A deployed split wallet, and the protocol contracts that cannot pull, never become an artist's payout address. | `ArtistRegistry._payoutAllowed` | [`RecipientValidation.t.sol`](../../test/integration/RecipientValidation.t.sol) `test_PayoutRefusesProtocolContractsThatCannotPull`, `test_PredictedWalletIsCaughtOnlyOnceDeployed`; [`SplitWallet.t.sol`](../../test/economics/SplitWallet.t.sol) `test_NestedWalletCannotBeAnArtistPayoutAddress` |
-| ECO-20 | A signed release works once per `(account, nonce)`, only in the wallet (and so only with the payee list and salt) and on the chain and ledger it names, before its deadline, and only while its signer is the payee's payout address. | `SplitLedger.releaseWithAuthorization` | [`ReleaseVerifier.t.sol`](../../test/economics/ReleaseVerifier.t.sol) `test_ReplayAndRevokedNoncesRevert`, `test_OnlyTheNamedWalletConsumesAnAuthorization`, `test_SignatureDoesNotReplayOnAnotherChainOrVerifier`, `test_ExpiredAuthorizationReverts`; [`IdentityRecovery.t.sol`](../../test/integration/IdentityRecovery.t.sol) `test_SignedReleaseIsVoidedByRecovery` |
+| ECO-20 | A signed release works once per `(account, nonce)`, only in the wallet (and so only with the payee list and salt) and on the chain and ledger it names, before its deadline, and only while its signer is the payee's payout address. | `SplitLedger.releaseWithAuthorization` | [`ReleaseVerifier.t.sol`](../../test/economics/ReleaseVerifier.t.sol) `test_ReplayAndRevokedNoncesRevert`, `test_OnlyTheNamedWalletConsumesAnAuthorization`, `test_SignatureDoesNotReplayOnAnotherChainOrVerifier`, `test_ExpiredAuthorizationReverts` |
 | ECO-21 | Replay protection is keyed on the nonce, not the signature bytes; nonces in one bitmap word stay independent; one revocation covers every wallet. | `SplitLedger._useNonce`, `revokeNonce` | [`ReleaseVerifier.t.sol`](../../test/economics/ReleaseVerifier.t.sol) `test_ReplayIsKeyedOnTheNonceNotTheSignatureBytes`, `test_NonceBitmapNoAliasingWithinAWord`, `test_OneRevocationCoversEveryWallet` |
 | ECO-22 | A signed release that fails does not consume its nonce. | `SplitLedger.releaseWithAuthorization` (atomic revert) | [`ReleaseVerifier.t.sol`](../../test/economics/ReleaseVerifier.t.sol) `test_AmountAboveReleasableRevertsWithoutConsumingNonce`, `test_FailedPaymentRollsBackNonce`, `test_PushCanPreemptAFixedPayeesSignedRelease`, `test_SignedReleaseFromAnUndeployedWalletRevertsWithoutConsumingNonce` |
 | ECO-23 | Every ERC-20 move, the Permit2 pulls included, changes both balances by exactly the amount. Moves through `TokenTransfer` also require exactly one `true` word, except a split-wallet release, which also accepts no return data; the Permit2 pulls check balances only. Fee-on-transfer and rounding tokens therefore revert on every path; a token that returns nothing is released from a split wallet and can pass a Permit2 pull, and fails every other path: admitting only standard ERC-20s is the guard. | `TokenTransfer._moveExact`, `transferExactAllowingNoReturn`, `_call`; `SplitLedger._transferToken`; `EnglishAuction._collect`; governance at `AssetAllowlist.admitAsset` | [`HostileTokens.t.sol`](../../test/economics/HostileTokens.t.sol) `test_FeeOnTransfer_PaymentRevertsAtomically`, `test_NoReturn_PaymentRevertsAtomically`, `test_NoReturn_ReleasePaysEachPayeeInFull`, `test_NoReturn_ReleaseThatMovesNothingReverts`, `test_NoReturn_FeeOrRoundingReleaseStillReverts`, `test_ReturnsFalse_PaymentTriesEscrowThenRevertsAtomically`, `test_ReturnsFalse_ReleaseReverts`, `test_OddReturnShapes_FailClosed`, `test_NonCanonicalTrue_FailsClosedOnEveryPath`, `test_Rebasing_RoundingPaymentRevertsAtomically` |
@@ -666,12 +666,12 @@ sequenceDiagram
 | ECO-30 | Batches are bounded (50 plain, 20 signed, 8 of either in continue mode, a continue-mode signed batch to 131,072 signature bytes in all, and every claim to `Splits.MAX_PAYEES` (64) payees, `TooManyPayees`, so the first item can reach the ceiling within 2^24 gas); continue mode gives each item at least its minimum and reverts on a shortfall below the ceiling. | `ClaimRouter.claim`, `claimSigned`, `_call` | [`GasCap.t.sol`](../../test/economics/GasCap.t.sol) `test_ContinueSignedBatchAtTheSignatureBoundSkipsABurningSigner`, `test_ContinueSignedBatchPastTheSignatureBoundIsRefused`, `test_AClaimWithMorePayeesThanAnyWalletIsRefused`; [`ClaimRouter.t.sol`](../../test/economics/ClaimRouter.t.sol) `test_ContinueModeBoundKeepsTheCeilingWithinTheTransactionCap`, `test_BatchesUpToMaxClaimsAndRejectsMore`, `test_SignedBatchesAreCappedAndNeedTheirMinimumGas`, `test_ShortfallRevertsOnlyBelowTheCeiling`, `test_ArmedCoPayeeIsSkippedOnceItsItemGetsTheCeiling`, `test_ERC1271ShortfallRevertsBelowTheCeiling` |
 | ECO-31 | The worst-case batches (every item carrying a 64-payee list) and the 64-payee wallet deployment fit within 75% of the EIP-7825 cap, in Prague gas. | `Splits.MAX_PAYEES`; `ClaimRouter` bounds | [`GasCap.t.sol`](../../test/economics/GasCap.t.sol) `test_WorstCaseAtomicClaimBatchFitsTheCap`, `test_WorstCaseAtomicSignedBatchFitsTheCap`, `test_MaximumWalletDeploymentFitsTheCap` |
 | ECO-32 | Admission refuses accounts without code, EIP-7702 delegated accounts, unreadable or inconsistent tokens, zero floors and already-active assets. | `AssetAllowlist.admitAsset`, `_admit` | [`AssetAllowlist.t.sol`](../../test/economics/AssetAllowlist.t.sol) `test_AdmitRejectsNonTokens`, `test_AdmitRejectsABalanceAboveTotalSupply`, `test_AdmitRejectsZeroFloorAndActiveAssets` |
-| ECO-33 | A deprecated asset returns only by re-admission, no earlier than one `Roles.FUNDS` delay after the deprecation, even if scheduled before it. The opening bid has no price cap, only its 96-bit storage bound (R19). | `AssetAllowlist.admitAsset` | [`AssetAllowlist.t.sol`](../../test/economics/AssetAllowlist.t.sol) `test_DeprecateThenReadmit`, `testFuzz_OpeningBid_NoPriceCap`; [`AuctionCurrencyFreeze.t.sol`](../../test/sales/auction/AuctionCurrencyFreeze.t.sol) `test_AdmitAsset_AReadmissionScheduledAheadCannotUndoADeprecation` |
+| ECO-33 | A deprecated asset returns only by re-admission, no earlier than one `Roles.DELAY_3D` (3 days) delay after the deprecation, even if scheduled before it. The opening bid has no price cap, only its 96-bit storage bound (R19). | `AssetAllowlist.admitAsset` | [`AssetAllowlist.t.sol`](../../test/economics/AssetAllowlist.t.sol) `test_DeprecateThenReadmit`, `testFuzz_OpeningBid_NoPriceCap`; [`AuctionCurrencyFreeze.t.sol`](../../test/sales/auction/AuctionCurrencyFreeze.t.sol) `test_AdmitAsset_AReadmissionScheduledAheadCannotUndoADeprecation` |
 | ECO-34 | The default currency and `resolveCurrency` fail closed: an unconfigured or inactive currency reverts. | `AssetAllowlist.defaultCurrency`; `EconomicsResolver.resolveCurrency` | [`AssetAllowlist.t.sol`](../../test/economics/AssetAllowlist.t.sol) `test_DefaultCurrencyFailsClosed`; [`EconomicsResolver.t.sol`](../../test/economics/EconomicsResolver.t.sol) `test_ResolveCurrencyThroughTheAllowlist` |
 | ECO-35 | A CC0 default license names the CC0 text the resolver was deployed with. | `EconomicsResolver.setDefaultLicense` | [`EconomicsResolver.t.sol`](../../test/economics/EconomicsResolver.t.sol) `test_ACc0DefaultLicenseNamesThePinnedText` |
 | ECO-36 | An ERC-20 settlement payout that fails even through the escrow does not hold up the work; the credit pays only its own account. | `EnglishAuction._pay`, `settlePayout`, `claimFor` | [`AuctionPayoutFailures.t.sol`](../../test/sales/auction/AuctionPayoutFailures.t.sol) `test_Settle_ATokenThatBlocksTheAuctionDoesNotHoldTheWork`, `test_Settle_ABlockedWalletIsStillPaidThroughTheEscrow`, `test_ClaimFor_PaysOnlyTheAccountItself` |
 | ECO-37 | The museum is set at deployment and is never zero, the resolver or one of its dependencies, or a recognised protocol contract; `setMuseum` is FUNDS_SETTER (3 days), compare-and-set on the museum's revision, and emits the old and new museum and the revision. | `EconomicsResolver._setMuseum`, `setMuseum`; `ProtocolContracts.isProtocolContract` | [`EconomicsResolver.t.sol`](../../test/economics/EconomicsResolver.t.sol) `test_Museum_SetAtDeployment`, `test_SetMuseum_IsCompareAndSet`, `test_SetMuseum_RefusesZeroAndTheFeeRecipientRule`, `test_SetMuseum_IsInTheFundsClass`; [`Museum.t.sol`](../../test/integration/Museum.t.sol) `test_GenesisWiresTheMuseumInTheFundsClass`, `test_SetMuseum_GovernedChangeWaitsFourteenDays`, `test_SetMuseum_RefusesZeroAndSystemContracts` |
-| ECO-38 | ETH, the native currency, is never deprecated: `deprecateAsset` refuses it for every caller, so nobody can freeze an ETH sale (the rc.2 review's MONEY-M1 and G-2). | `AssetAllowlist.deprecateAsset` | [`AssetAllowlist.t.sol`](../../test/economics/AssetAllowlist.t.sol): `test_DeprecateAsset_RefusesEth`; [`AuctionCurrencyFreeze.t.sol`](../../test/sales/auction/AuctionCurrencyFreeze.t.sol): `test_DeprecateAsset_OneGuardianCannotFreezeEthSales`, `test_DeprecateAsset_EthIsRefusedThroughGovernance` |
+| ECO-38 | ETH, the native currency, is never deprecated: `deprecateAsset` refuses it for every caller, so nobody can freeze an ETH sale (the rc.2 review's MONEY-M1 and G-2). | `AssetAllowlist.deprecateAsset` | [`AssetAllowlist.t.sol`](../../test/economics/AssetAllowlist.t.sol): `test_DeprecateAsset_RefusesEth`; [`AuctionCurrencyFreeze.t.sol`](../../test/sales/auction/AuctionCurrencyFreeze.t.sol): `test_DeprecateAsset_TheNetworkCannotFreezeEthSales`, `test_DeprecateAsset_EthIsRefusedThroughGovernance` |
 
 | ECO-39 | A split wallet is the 66-byte vault: it executes only its ledger's instructions, accepts plain ETH from anyone within a 2,300-gas stipend, refuses any other call with calldata, and its code is the documented bytes. | `SplitVault`; `SplitLedger._instruct` | [`SplitVault.t.sol`](../../test/economics/SplitVault.t.sol) `test_RuntimeIsTheDocumentedSixtySixBytes`, `test_AcceptsPlainETHFromAnyoneWithinTheStipend`, `test_CallsWithCalldataFromAnyoneButTheLedgerRevert`, `test_OnlyTheLedgersInstructionMovesFunds`, `test_VaultCodeDeployedElsewhereIsNeverAWallet` |
 | ECO-40 | `sweepExcess` moves only `balance - totalOwed[asset]` of the asset it names, and it is FUNDS_SETTER (3 days): for an asset whose balance is its own (ETH, a single-address non-rebasing token) no credit is reduced and the escrow stays solvent. A token with two addresses over one balance, or that rebases, is outside the guarantee (LIM-ECO-8). | `RevenueEscrow.sweepExcess` | [`EconomicsInvariant.t.sol`](../../test/economics/invariant/EconomicsInvariant.t.sol) `invariant_EscrowExcessIsExactlyTheUnowed`, `invariant_EscrowIsSolventAndMatchesTheModel`; [`RevenueEscrow.t.sol`](../../test/economics/RevenueEscrow.t.sol) `test_SweepExcess_TakesOnlyWhatNobodyIsOwed`, `test_SweepExcess_ADoubleEntryTokensAliasIsADocumentedLimit`, `testFuzz_SweepExcess_NeverTouchesCredits`, `test_SweepExcess_IsGovernedInTheFundsClass` |
@@ -721,7 +721,7 @@ Accepted risks are listed once, with their IDs, in
 | A non-standard token is admitted by mistake (LIM-SAL-7) | Fee-on-transfer and rounding tokens revert on every path. A token that returns `false` fails on every `TokenTransfer` path; one that returns nothing fails on every path but a split wallet's release, and passes a Permit2 pull; in the auction its payouts and refunds then fail and stay as credits. | Deprecate it (NETWORK, no delay). Prevention is governance vetting before `admitAsset`. |
 | A wallet is paid in a token that moves a wei less or more than asked (LIM-ECO-6) | That asset's releases revert with `TokenBalanceMismatch`; the wallet's other assets are unaffected. | None: a wallet has no rescue path, and the funds stay in it. |
 | An ERC-20's balance in a wallet falls (negative rebase) (LIM-ECO-6) | That asset's releases revert with `ObservedDecreased`; nothing is lost. | Releases resume when receipts reach the recorded mark again; nothing else moves them. |
-| An artist's key is lost or stolen | A thief holding it can pull until an override that moves the payout is staged; nobody can push to it. | Identity recovery redirects the payout, accrued balances included ([Identity and recovery](identity-and-recovery.md)). |
+| An artist's key is lost or stolen | A thief holding it can pull until the network freezes the account (at once, for 14 days: payouts read zero) or a replacement is staged; nobody can push to it. | The network replaces the account's root, which redirects the payout, accrued balances included ([Identity and recovery](identity-and-recovery.md)). |
 | A payee's key is lost, or a payee never claims | Its share stays in the wallet. | Anyone marks it; 180 days later anyone sends the unclaimed rest to the network (`forfeit`). |
 | A credit in the escrow is never claimed | It stays owed. | 180 days after it was last added to, anyone moves it to the network (`expire`). |
 | Funds force-sent or transferred to the escrow without a deposit | Owed to nobody. | `sweepExcess` (FUNDS_SETTER, 3 days) to a recipient governance names. |
@@ -747,7 +747,7 @@ Accepted risks are listed once, with their IDs, in
 | SPDX ID length | 1 to 64 bytes | `Limits.MAX_LICENSE_ID_BYTES` |
 | ETH increment floor at launch | 0.001 ETH (deploy default) | `ETH_INCREMENT_FLOOR` in [`script/Deploy.s.sol`](../../script/Deploy.s.sol) |
 | Default currency at genesis | ETH for all three products | [`config/genesis.example.json`](../../config/genesis.example.json) |
-| Re-admission wait | One `Roles.FUNDS` delay after the deprecation | `Roles.FUNDS` in `AssetAllowlist.admitAsset` |
+| Re-admission wait | One `Roles.DELAY_3D` (3 days) delay after the deprecation | `Roles.DELAY_3D` (3 days) in `AssetAllowlist.admitAsset` |
 | Opening bid bound | `type(uint96).max` (storage, not a price cap) | `AssetAllowlist.setOpeningBid` |
 | Unclaimed share or credit goes to the network | 180 days after the mark, or after the credit was last added to (the guarantee) | `SplitLedger.UNCLAIMED_PERIOD`, `RevenueEscrow.UNCLAIMED_PERIOD` |
 | ETH payout gas; reserve on top | 100,000; 40,000 | `EnglishAuction.PAYOUT_GAS`, `UniformEditionAuction.PAYOUT_GAS`; `RevenuePayment.ETH_CALL_RESERVE` |

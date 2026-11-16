@@ -6,7 +6,7 @@ signed log in which artists, owners, curators and the platform publish statement
 subject. A dispute is decided off-chain by a TDH vote and recorded there as a dispute outcome.
 During a 6529 Stream auction, an upheld dispute ends in a governed cancel that burns the work
 and releases its content to the rightful artist; after a sale it produces only a statement,
-shown in the work's and its edition's metadata. Contested identity overrides cite the same
+shown in the work's and its edition's metadata. Contested identity replacements cite the same
 outcomes.
 
 > Pre-audit. See the [project status](../../README.md#status).
@@ -33,8 +33,8 @@ The [glossary](../glossary.md) defines [statement](../glossary.md#statement),
 [content release](../glossary.md#content-release) and [tombstone](../glossary.md#tombstone).
 Disputes are filed with evidence in a 6529 disputes [wave](../glossary.md#wave) and decided by
 TDH vote, off-chain ([ADR 0001 §12](../adr/0001-v1-scope.md#12-disputes)); until the 6529
-chain exists, the admin Safe is trusted to execute the vote's result through delayed governed
-actions that any guardian can cancel (LIM-GV-9 in
+chain exists, the network Safe is trusted to execute the vote's result, through governed actions
+with the delays of the role map (LIM-GV-9 in
 [known limitations](../audit/known-limitations.md#trust-and-governance)).
 
 ### Subjects and kinds
@@ -113,27 +113,27 @@ never passes.
 
 | Role | Entry points | Who qualifies |
 | --- | --- | --- |
-| ARTIST | `append(Role.ARTIST, s)`, `appendSigned` | `isArtist(token, id, signer)` on the installed resolver, its code hash checked at every use. In v1 the resolver is `ArtistRegistry`: for a Stream work, the lead artist's active authority; for an edition, the same through its master; every other subject answers false. A zero resolver disables ARTIST statements. |
+| ARTIST | `append(Role.ARTIST, s)`, `appendSigned` | `isArtist(token, id, signer)` on the installed resolver, its code hash checked at every use. In v1 the resolver is `ArtistRegistry`: for a Stream work, any wallet of the lead artist's account (`isWallet`); for an edition, the same through its master; every other subject answers false. A zero resolver disables ARTIST statements. |
 | OWNER | `append(Role.OWNER, s)`, `appendSigned` | ERC-721 `ownerOf(id) == signer`, otherwise ERC-1155 `balanceOf(signer, id) > 0` (any edition holder). Each read forwards all the gas EIP-150 allows and copies at most 32 bytes; a read that runs short reverts with `BoundedCallShortfall` (DSP-26), and any other failure means "not the owner". |
 | CURATOR | `appendCurator(s)` (restricted), `appendSigned` | A holder of the role mapped to `appendCurator` (`CURATOR` at genesis, zero delay). |
 | PLATFORM | `appendPlatform(s)` (restricted), `appendSigned` | A holder of the role mapped to `appendPlatform` (`PLATFORM` at genesis, zero delay). |
-| PLATFORM, signed by the AccessManager | `appendGovernanceManifest(s)` (restricted) | A scheduled operation of `SUCCESSOR_SETTER` (30 days); subject `(authority(), 0)` and kind `GOVERNANCE_MANIFEST` only. |
+| PLATFORM, signed by the AccessManager | `appendGovernanceManifest(s)` (restricted) | A scheduled operation of `SUCCESSOR_SETTER` (7 days); subject `(authority(), 0)` and kind `GOVERNANCE_MANIFEST` only. |
 
 `append` accepts only ARTIST and OWNER (`InvalidRole`). Every path but
 `appendGovernanceManifest` reverts with `AuthorityCannotSign` when the signer is `authority()`,
 so a scheduled call run through `AccessManager.execute` writes nothing, and a CURATOR or
-PLATFORM holder with an execution delay cannot write at once (DSP-3). A
-[suspended](governance.md#suspension-of-operational-keys) CURATOR or PLATFORM key fails the
-role check on both paths, including for statements it signed earlier, since the check runs at
+PLATFORM holder with an execution delay cannot write at once (DSP-3). A CURATOR or PLATFORM key
+the network has [revoked](governance.md#suspension-of-operational-keys) fails the role check on
+both paths, including for statements it signed earlier, since the check runs at
 relay time.
 
 **ARTIST authority** is no stronger than the resolver's code, `setArtistResolver`
-(`SUCCESSOR_SETTER`, 30 days), and the
+(`SUCCESSOR_SETTER`, 7 days), and the
 AccessManager behind it ([trust assumptions](../audit/trust-assumptions.md#resolvers-and-renderer-pins);
 LIM-GV-10); no governance role has a direct path to an ARTIST or OWNER entry (DSP-6). The
 install is checked (DSP-8). Each ARTIST entry records its resolver, so a reader can discard
 the entries of a resolver it does not trust. Today's resolver is the artist registry, which
-makes an answer true no faster than its own identity delays; the restraint is the one case where
+makes an answer true no faster than its own identity delays; a freeze or a pending replacement is the one case where
 it withholds an answer.
 
 ### Dispute outcome
@@ -158,12 +158,12 @@ stateDiagram-v2
     state "Ended" as Ended
     state "Settled" as Settled
     [*] --> Live : start
-    Live --> Paused : pause by GUARDIAN
+    Live --> Paused : pause by PAUSER
     Live --> Ended : end time passes
     Paused --> Paused : withdrawBid by the high bidder
-    Paused --> Resumed : resume by UNPAUSER
-    Paused --> Lapsed : 7 days pass with no call
-    Paused --> Cancelled : cancel by PARAMETER_SETTER
+    Paused --> Resumed : resume by the network
+    Paused --> Lapsed : 3 days pass with no call
+    Paused --> Cancelled : cancel by the network
     Resumed --> Ended : new end time passes
     Lapsed --> Ended : new end time passes
     Ended --> Settled : settle by anyone
@@ -171,7 +171,7 @@ stateDiagram-v2
     Cancelled --> [*]
     note right of Paused
         No bids and no settlement.
-        Resume and cancel wait 48 hours from the pause.
+        Resume and cancel take no wait (C30).
     end note
 ```
 
@@ -180,11 +180,11 @@ stateDiagram-v2
 
 | Transition | Caller (role) | Delay | Function |
 | --- | --- | --- | --- |
-| Live to Paused | Guardian Safe (`GUARDIAN`) | immediate | `pause(saleId, disputeRef)`: requires `ACTIVE` and an unused pause (`PauseExhausted`); records `pausedAt` and the chain position a later outcome must reach (`outcomeFrom`). |
+| Live to Paused | A pauser key (`PAUSER`) | none | `pause(saleId, disputeRef)`: requires `ACTIVE` and an unused pause (`PauseExhausted`); records `pausedAt` and the chain position a later outcome must reach (`outcomeFrom`). |
 | Paused to Paused | the high bidder | none | `withdrawBid`: the bid is credited and stays as the reserve. |
-| Paused to Resumed | Hot admin Safe (`UNPAUSER`) | standard, 48 hours, and no earlier than `pausedAt + 48 hours` | `resume`: new end `now + L`. |
-| Paused to Lapsed | nobody | after `pausedAt + 7 days` | none: the first mutating call writes it down and emits `AuctionResumed`; new end `pausedAt + 7 days + L`. |
-| Paused to Cancelled | Hot admin Safe (`PARAMETER_SETTER`) | standard, 48 hours; within `[pausedAt + 48 hours, pausedAt + 7 days]` | `cancel(saleId, outcomeRef)`: credits the high bid and burns the token. |
+| Paused to Resumed | The network (`NETWORK`) | none, at any moment of the pause | `resume`: new end `now + L`. |
+| Paused to Lapsed | nobody | after `pausedAt + 3 days` | none: the first mutating call writes it down and emits `AuctionResumed`; new end `pausedAt + 3 days + L`. |
+| Paused to Cancelled | The network (`NETWORK`) | none; through `pausedAt + 3 days` inclusive | `cancel(saleId, outcomeRef)`: credits the high bid and burns the token. |
 | Ended to Settled | anyone | none | `settle` ([Stream and auctions](stream-and-auctions.md)). |
 
 `L` is `max(endTime - pausedAt, current governed duration, the sale's anti-snipe window)`
@@ -241,13 +241,12 @@ subject the entry count, chain head and latest outcome; two views read it:
 
 | When | Action | Who (role, delay) | What the code enforces |
 | --- | --- | --- | --- |
-| `T` | Pause the auction. | Guardian Safe (`GUARDIAN`, immediate) | The auction is `ACTIVE` and its pause unused. |
-| `T` to `T + 7 days` | The high bidder may withdraw. | High bidder | Only while `PAUSED`. |
+| `T` | Pause the auction. | A pauser key (`PAUSER`, no delay) | The auction is `ACTIVE` and its pause unused. |
+| `T` to `T + 3 days` | The high bidder may withdraw. | High bidder | Only while `PAUSED`. |
 | After `T` | Record the upheld outcome about the token. | Platform key (`PLATFORM`, zero delay) | The token exists; the outcome's chain index is at least `outcomeFrom`. |
-| By `T + 5 days` | Schedule `cancel(saleId, outcomeRef)` and `releaseContent(tokenId, contentHash, beneficiary)`. | Hot admin Safe (`PARAMETER_SETTER`, 48 hours each) | A cancel scheduled later matures after the pause and is refused. |
-| During the 48 hours | Review both; revoke every other approved root listing the copier's items. | Guardian Safes (`GUARDIAN`, immediate) | Any guardian may cancel either operation (LIM-GV-3 for revocation). |
-| `T + 48 hours` to `T + 7 days` inclusive | Execute the cancel. | Hot admin Safe | DSP-16, DSP-18, DSP-19. |
-| After the cancel | Execute the release, once the beneficiary has an artist ID. | Hot admin Safe | DSP-21; the operation expires 7 days after it matures. |
+| By `T + 3 days` inclusive | Cancel the sale (`cancel(saleId, outcomeRef)`). | The network (`NETWORK`, no delay) | DSP-16, DSP-18, DSP-19. |
+| Any time | Revoke every other approved root listing the copier's items. | The network (`NETWORK`, no delay) | `revokePackage`, per root (LIM-GV-3). |
+| After the cancel | Schedule and execute `releaseContent(tokenId, contentHash, beneficiary)`, once the beneficiary has an artist ID. | The network (`PARAMETER_SETTER`, 24 hours) | DSP-21; the operation expires 14 days after it matures. |
 
 **Part 1: pause and vote.**
 
@@ -255,13 +254,13 @@ subject the entry count, chain head and latest outcome; two views read it:
 sequenceDiagram
     participant D as Disputant
     participant W as Disputes wave
-    participant G as Guardian Safe
+    participant G as Pauser key
     participant A as EnglishAuction
     participant L as StatementLog
     participant B as High bidder
     participant P as Platform key
     D->>W: file the dispute with evidence
-    G->>A: pause(saleId, disputeRef) (GUARDIAN, immediate)
+    G->>A: pause(saleId, disputeRef) (PAUSER, no delay)
     A->>L: disputeOutcomeOf(stream, tokenId)
     Note over A: stores pausedAt and outcomeFrom, emits AuctionPaused
     opt the bidder leaves
@@ -273,23 +272,17 @@ sequenceDiagram
     L-->>P: entryHash, used as outcomeRef
 ```
 
-**Part 2: the governed cancel.**
+**Part 2: the network's cancel.**
 
 ```mermaid
 sequenceDiagram
-    participant S as Hot admin Safe
-    participant M as WorksAccessManager
-    participant G as Guardian Safes
+    participant S as Network Safe
     participant R as PackageRegistry
     participant A as EnglishAuction
     participant L as StatementLog
     participant T as Stream
-    S->>M: schedule cancel(saleId, outcomeRef) (PARAMETER_SETTER, 48 hours, by day 5)
-    S->>M: schedule releaseContent(tokenId, contentHash, beneficiary) (PARAMETER_SETTER, 48 hours)
-    G->>R: revokePackage(root, reasonHash) for each other root with the copier items (GUARDIAN)
-    Note over G,M: any guardian may cancel either scheduled operation
-    S->>M: execute the cancel between day 2 and day 7 of the pause
-    M->>A: cancel(saleId, outcomeRef)
+    S->>R: revokePackage(root, reasonHash) for each other root with the copier items (NETWORK, no delay)
+    S->>A: cancel(saleId, outcomeRef) (NETWORK, no delay, within 3 days of the pause)
     A->>L: disputeOutcomeOf(stream, tokenId)
     Note over A: outcomeRef must be that entry, at index at least outcomeFrom
     A->>A: credit the high bid, status CANCELLED
@@ -301,11 +294,11 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant S as Hot admin Safe
+    participant S as Network Safe
     participant M as WorksAccessManager
     participant T as Stream
     participant AR as ArtistRegistry
-    S->>M: execute releaseContent after the cancel
+    S->>M: schedule releaseContent (PARAMETER_SETTER, 24 hours), then execute it after the cancel
     M->>T: releaseContent(tokenId, contentHash, beneficiary)
     Note over T: token must be burned, else NotBurned
     Note over T: the burned token must hold contentHash, else ClaimNotAllowed
@@ -321,8 +314,8 @@ sequenceDiagram
 - **`releaseContent`** (DSP-21) is 6529 Stream's alone, since Stream holds content uniqueness
   (AUC-44; the package registry keeps no content record). It reserves the content for the beneficiary's items
   (`ContentReserved` for anyone else) and tombstones the burned item (`ContentUsed`). The
-  beneficiary comes from the outcome document, unchecked on chain, so the guardians check it
-  during the delay. A VRF item of the rightful artist joins the content's delivered seed
+  beneficiary comes from the outcome document, unchecked on chain, so the network checks it
+  during the delay and can cancel the operation. A VRF item of the rightful artist joins the content's delivered seed
   ([Entropy](entropy.md)). Roots are revoked one by one
   ([architecture](../architecture.md#dispute-pause)).
 - `test_UpheldDisputeCancelsBurnsReleasesAndTheRightfulArtistMints` in
@@ -333,22 +326,18 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant G as Guardian Safe
+    participant G as Pauser key
     participant A as EnglishAuction
     participant P as Platform key
     participant L as StatementLog
-    participant U as Hot admin Safe
-    participant M as WorksAccessManager
-    G->>A: pause(saleId, disputeRef) (GUARDIAN, immediate)
+    participant U as Network Safe
+    G->>A: pause(saleId, disputeRef) (PAUSER, no delay)
     P->>L: appendPlatform(DISPUTE_OUTCOME, rejected) (PLATFORM, optional for resume)
-    alt UNPAUSER resumes
-        U->>M: schedule resume(saleId) (UNPAUSER, 48 hours)
-        Note over G,M: any guardian may cancel the scheduled resume
-        U->>M: execute, no earlier than pausedAt plus 48 hours
-        M->>A: resume(saleId)
+    alt the network resumes
+        U->>A: resume(saleId) (NETWORK, no delay)
         Note over A: new end set, emits AuctionResumed
-    else no call within 7 days
-        Note over A: lapses after pausedAt plus 7 days
+    else no call within 3 days
+        Note over A: lapses after pausedAt plus 3 days
         Note over A: first mutating call emits AuctionResumed
     end
 ```
@@ -399,7 +388,7 @@ sequenceDiagram
     L->>L: check the resolver code hash
     L->>AR: isArtist(stream, tokenId, signer)
     AR->>T: artistOf(tokenId)
-    AR-->>L: true if signer is the active authority of the lead artist
+    AR-->>L: true if signer is a wallet of the lead artist's account
     Note over L: emits StatementAppended, then StatementRelayed
 ```
 
@@ -451,31 +440,33 @@ head' = keccak256(abi.encode(HEAD_DOMAIN, head, entryHash));   // the first head
 
 ### Identity contest decided by a recorded vote
 
-If a captured consolidated wallet cancels a 180-day override during its notice, the override is
-contested and a TDH vote decides it; the log is how the vote reaches the chain
-([Identity and recovery](identity-and-recovery.md#contest-and-vote)).
+If any wallet of an account contests the network's replacement of its root during the 14-day
+notice (`cancelChange` on a pending replacement), a TDH vote decides it; the log is how the vote
+reaches the chain ([Identity and recovery](identity-and-recovery.md)). A contest nobody resolves
+within 90 days lapses (`expireContest`).
 
 ```mermaid
 sequenceDiagram
-    participant C as Captured wallet
+    participant C as A wallet of the account
     participant AR as ArtistRegistry
     participant L as StatementLog
     participant P as Platform key
-    participant S as Hot admin Safe
+    participant S as Network Safe
     participant M as WorksAccessManager
     C->>AR: cancelChange(artistId) during the notice
     AR->>L: latestDisputeOutcome(registry, artistId)
     Note over AR: contested, the current outcome kept as priorOutcome
     P->>L: appendPlatform(DISPUTE_OUTCOME about registry, artistId) (PLATFORM)
-    S->>M: schedule resolveContested(artistId, uphold, outcomeRef) (SUCCESSOR_SETTER, 30 days)
+    S->>M: schedule resolveContested(artistId, uphold, outcomeRef) (PARAMETER_SETTER, 24 hours)
     M->>AR: resolveContested(artistId, uphold, outcomeRef)
     AR->>L: latestDisputeOutcome(registry, artistId)
     Note over AR: must equal outcomeRef and differ from priorOutcome
 ```
 
 Errors: `OutcomeNotRecorded`, `OutcomePredatesContest` (DSP-25); a later outcome invalidates a
-scheduled resolution. Tested end to end by `test_ContestedOverrideUpheldByARecordedVote` in
-[`IdentityRecovery.t.sol`](../../test/integration/IdentityRecovery.t.sol).
+scheduled resolution. Tested by `test_Contest_UpheldByAVoteRecordedAfterIt` and
+`test_Contest_LapsesAfterNinetyDays` in
+[`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol).
 
 ## Rules and invariants
 
@@ -499,19 +490,19 @@ Test files: `SL` is [`StatementLog.t.sol`](../../test/records/StatementLog.t.sol
 | DSP-10 | Type hashes, the domain, the entry hash and the head follow the formulas on this page. | `StatementLog._statementHash`, `_authorizationHash`, `_write` | [`StatementLogGolden.t.sol`](../../test/records/StatementLogGolden.t.sol) `test_Golden_TypeHashesAndDomainTags`, `test_Golden_DigestMatchesForgeTypedDataEncoder`, `test_Golden_EntryHashAndHead` |
 | DSP-11 | A `DISPUTE_OUTCOME` about an ERC-721 token needs the token to exist; any ERC-1155 subject is refused. | `StatementLog._checkDisputeSubject` | SLP `test_DisputeOutcome_SubjectRules`; DI `test_ADisputeOutcomeNamesAnExistingToken` |
 | DSP-12 | `latestDisputeOutcome` returns the subject's own latest outcome, else, only for a token that declares `IStream`, its item's (a token that does not declare it reads zero, whatever its `coreOf` answers); a failed item read of a token that declares `IStream` reverts, except its `UnknownWork`, and a read that runs short reverts with `BoundedCallShortfall` (DSP-26); `disputeOutcomeOf` returns the own latest outcome and its index, with no fallback. | `StatementLog.latestDisputeOutcome`, `disputeOutcomeOf` | SLP `test_LatestDisputeOutcome_TracksOnlyDisputeEntries`, `test_DisputeOutcomeOf_IsTheOwnLatestOutcomeAndItsPosition`, `test_LatestDisputeOutcome_AStreamWhoseCoreReadFailsReverts`, `test_LatestDisputeOutcome_ANonStreamTokenStillReadsZero`, `test_LatestDisputeOutcome_AnUndeclaredTokensAnswerNamesNoItem`, `test_LatestDisputeOutcome_FollowsOnlyAFullCoreOfAnswer`; DI `test_APreMintOutcomeShowsOnTheWorkAndItsEdition`; SLI `invariant_LatestDisputeOutcomeMatchesEvents` |
-| DSP-13 | Only a guardian pauses, only a live auction, and only once. | `EnglishAuction.pause` | EAD `test_Pause_OnlyTheGuardian`, `test_Pause_OnlyALiveAuctionOnce` |
-| DSP-14 | A pause is live through `pausedAt + 7 days` inclusive and then ends by itself. | `EnglishAuction._state`, `_require`, `_endPause` | EAD `test_Pause_EndsByItselfAfterSevenDays`, `test_Pause_ExpiredPauseSettlesWithoutAResumeCall` |
+| DSP-13 | Only a pauser key pauses, only a live auction, and only once. | `EnglishAuction.pause` | EAD `test_Pause_OnlyTheGuardian`, `test_Pause_OnlyALiveAuctionOnce` |
+| DSP-14 | A pause is live through `pausedAt + 3 days` inclusive and then ends by itself (`MAX_PAUSE`, compiled; C30). | `EnglishAuction._state`, `_require`, `_endPause` | EAD `test_Pause_EndsByItselfAfterSevenDays`, `test_Pause_ExpiredPauseSettlesWithoutAResumeCall`; `AuctionSecondPass.t.sol` `test_C30_APauseEndsByItselfAtThreeDays` |
 | DSP-15 | While paused, nobody bids or settles; only the high bidder may withdraw, and the withdrawn amount stays as the reserve the next bid must reach. | `EnglishAuction._bid`, `settle`, `withdrawBid`, `_minimumBid`, `_refundHighBid` | EAD `test_Pause_FreezesTheAuction`, `test_WithdrawBid_WhilePaused`; [`AuctionDisputePause.t.sol`](../../test/sales/auction/AuctionDisputePause.t.sol) `test_WithdrawBid_StaysAsTheReserveThroughALapse` |
-| DSP-16 | Neither `resume` nor `cancel` takes effect before `pausedAt + 48 hours`, whenever it was scheduled. | `EnglishAuction._requireUnpausable` | EAD `test_Resume_OnlyTheUnpauserAndOnlyWhilePaused`, `test_Cancel_NeedsTheRecordedOutcome` |
+| DSP-16 | `resume` and `cancel` are the network's, with no wait of their own: either may land at any moment of the live pause (C30). | `EnglishAuction.resume`, `cancel` | EAD `test_Resume_OnlyTheUnpauserAndOnlyWhilePaused`, `test_Cancel_NeedsTheRecordedOutcome`; [`AuctionSecondPass.t.sol`](../../test/sales/auction/AuctionSecondPass.t.sol) `test_C30_TheNetworkCancelsInsideThePauseWithNoWait`, `test_C30_TheNetworkResumesWithNoWait` |
 | DSP-17 | A resumed or lapsed auction runs for at least the longer of the governed duration and its anti-snipe window, or its remaining time if longer. | `EnglishAuction._resumedEnd`, `_reopening` | EAD `test_Resume_GivesAtLeastTheDuration`, `test_Resume_LeavesAtLeastTheWindow`; `AuctionDisputePause.t.sol` `test_Resume_ARejectedDisputeResumesWithTheReserveAndTheDuration`, `test_Pause_WithAStandingBidAlsoReopensForTheDuration` |
 | DSP-18 | `cancel` cites the token's own latest outcome, recorded after the pause; an earlier outcome, a superseded one or an item outcome cannot cancel. | `EnglishAuction.pause` (`outcomeFrom`), `cancel`, `_ownOutcome` | EAD `test_Cancel_NeedsTheRecordedOutcome`; [`AuctionDisputeCancel.t.sol`](../../test/sales/auction/AuctionDisputeCancel.t.sol) `test_Cancel_RefusesAnOutcomeRecordedBeforeThePause`, `test_Cancel_RefusesAnItemOutcomeRecordedBeforeTheMint`, `test_Cancel_OnlyTheLatestOutcomeCancels` |
 | DSP-19 | `cancel` runs only while the pause is live, credits the high bid and burns the token. | `EnglishAuction.cancel`, `Stream.burn` | EAD `test_Cancel_UpheldDisputeRefundsAndBurns`, `test_Cancel_WithNoBids`, `test_Cancel_OnlyWhileThePauseIsLive`, `test_Cancel_PauseWindowBoundary`, `test_Cancel_ThroughTheStandardDelay`; DI `test_CancelIsRefusedOnceThePauseHasLapsed` |
 | DSP-20 | Only the adapter that minted a token burns it, while holding it and before its primary sale settled, even after the adapter's removal. | `Stream.burn` | [`Stream.t.sol`](../../test/stream/Stream.t.sol) `test_burn_onlyByMintingAdapter`, `test_burn_byRemovedMintingAdapter`, `test_burn_neverAfterSettlement`, `test_burn_refusedAfterSettlement` |
-| DSP-21 | `releaseContent` is governed, needs a burned token, the item that held the content and a registered beneficiary, happens once per burned item, reserves the content for the beneficiary's items and tombstones the burned item. | `Stream.releaseContent`, `Stream._claimContent` (6529 Stream holds content uniqueness and releases, AUC-44) | DI `test_ReleaseIsGovernedNamesAnArtistAndHappensOnce`, `test_ReleasedContentIsReservedForTheNamedArtist`, `test_AGuardianCancelsAPendingRelease`; `Stream.t.sol` `test_releaseContent_afterBurnLetsTheRealArtistMint`, `test_releaseContent_reverts` |
+| DSP-21 | `releaseContent` is governed, needs a burned token, the item that held the content and a registered beneficiary, happens once per burned item, reserves the content for the beneficiary's items and tombstones the burned item. | `Stream.releaseContent`, `Stream._claimContent` (6529 Stream holds content uniqueness and releases, AUC-44) | DI `test_ReleaseIsGovernedNamesAnArtistAndHappensOnce`, `test_ReleasedContentIsReservedForTheNamedArtist`, `test_TheNetworkCancelsAPendingRelease`; `Stream.t.sol` `test_releaseContent_afterBurnLetsTheRealArtistMint`, `test_releaseContent_reverts` |
 | DSP-22 | After a sale, a dispute moves nothing: no path burns or transfers a settled work. | `Stream.burn` (`SaleAlreadySettled`) | DI `test_DisputeAfterASaleIsAStatementOnly`; `Stream.t.sol` `test_burn_neverAfterSettlement` |
 | DSP-23 | Through pauses, withdrawals, resumptions and cancels, the auction's balance covers every live bid and credit, value is conserved, and custody is exact. | `EnglishAuction` | [`AuctionHaltsInvariant.t.sol`](../../test/sales/auction/invariant/AuctionHaltsInvariant.t.sol) `invariant_BalanceCoversOwed`, `invariant_ValueIsConserved`, `invariant_ExactCustody` |
 | DSP-24 | Metadata shows the display rule's answer for a work, and the master's for an edition, and fails closed when the log cannot be read. | `Renderer._chainTraits` | [`Renderer.t.sol`](../../test/content/renderer/Renderer.t.sol) `test_Dispute_ShownWhenTheLogHasAnOutcome`, `test_Dispute_ReadsTheMastersSubjectForAnEdition`, `test_Dispute_ABrokenLogFailsClosed` |
-| DSP-25 | A contest resolves only with the artist's latest outcome, recorded after the contest began. | `ArtistRegistry.resolveContested`, `cancelChange` | [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) `test_Resolve_RevertsForAMismatchedOrZeroOutcome`, `test_Resolve_RefusesAnOutcomeRecordedBeforeTheContest`, `test_Resolve_RefusesAStaleOutcomeFromAnEarlierContest` |
+| DSP-25 | A contest resolves only with the artist's latest outcome, recorded after the contest began. | `ArtistRegistry.resolveContested`, `cancelChange` | [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) `test_Contest_UpheldByAVoteRecordedAfterIt`, `test_Contest_VoidedByAVote` |
 | DSP-26 | The log compiles in no gas number. Every call out (the ERC-165 probes, `ownerOf`, `balanceOf`, `coreOf` and the ERC-1271 check) forwards all the gas EIP-150 allows, and one that fails while leaving at most 1/8 of the gas held before it reverts with `BoundedCallShortfall(target)`: running short never yields "no outcome", an unchecked dispute subject, "not the owner" or "invalid signature". The answer does not depend on what a dependency costs. | `StatementLog.latestDisputeOutcome`, `_checkDisputeSubject`, `_owns`; `BoundedCall` forward-all family; `SignatureVerifier.isValidERC1271` | [`StatementLogGasRule.t.sol`](../../test/records/StatementLogGasRule.t.sol) `test_GasRule_LatestDisputeOutcome_ItemOutcomeAtEveryCostNeverZeroWhenShort`, `test_GasRule_LatestDisputeOutcome_UnknownWorkAtEveryCost`, `test_GasRule_DisputeSubject_NonexistentTokenRefusedAtEveryCostNeverAccepted`, `test_GasRule_Owner_Erc721OwnerAuthorisedAtEveryCostNeverRefusedWhenShort`, `test_GasRule_Owner_Erc1155HolderAuthorisedAtEveryCostNeverRefusedWhenShort`, `test_GasRule_Relay_Erc1271SignerAcceptedAtEveryCostNeverInvalidWhenShort`; SL `test_Owner_HostileTokensRevertWithTheShortfallError` |
 
 ## Events
@@ -528,18 +519,17 @@ outcome emits no ERC-4906 event, so an indexer refreshes a work's metadata on
 
 | Failure | Effect | Recovery |
 | --- | --- | --- |
-| The cancel is scheduled after day 5 of the pause, or executed after `pausedAt + 7 days`. | `InvalidAuctionState`; the auction continues and may sell. | None; the after-sale path. |
-| The cancel or resume executes before `pausedAt + 48 hours`. | `UnpauseTooEarly(allowedAt)`. | Execute at or after `allowedAt`. |
-| The cited outcome predates the pause, is about the item, or is no longer the latest. | `OutcomeNotRecorded(saleId, outcomeRef)`. | Record an outcome about the token and schedule a new cancel citing it, if it still fits before day 7. |
+| The cancel lands after `pausedAt + 3 days`. | `InvalidAuctionState`; the auction continues and may sell. | None; the after-sale path. |
+| The cited outcome predates the pause, is about the item, or is no longer the latest. | `OutcomeNotRecorded(saleId, outcomeRef)`. | Record an outcome about the token and cancel again citing it, within the pause. |
 | A second dispute after a resume or lapse, or one after the end. | `PauseExhausted(saleId)`, or `InvalidAuctionState(ENDED)`. | The after-sale path. |
 | The beneficiary has no artist ID when the release executes. | `UnknownArtist(beneficiary)`. | Wait for the artist's first package acceptance, then reschedule. |
 | The release executes before the cancel, or names the wrong content hash, or runs twice. | `NotBurned(tokenId)`, or `ClaimNotAllowed(PRODUCT_STREAM, contentHash)`. | Execute after the cancel, with the burned item's content hash (public in `WorkMinted`). A release is final. |
-| A release scheduled with the wrong beneficiary. | It executes after 48 hours. | A guardian cancels it (`test_AGuardianCancelsAPendingRelease`). |
+| A release scheduled with the wrong beneficiary. | It executes after 24 hours. | The network cancels it during the delay (`test_TheNetworkCancelsAPendingRelease`). |
 | An outcome aimed at an unminted or burned token, or at an edition. | `UnknownDisputeSubject(token, id)`. | Before the mint, record it on the item subject; for an edition, on the master. |
-| A wrong or unauthorized statement is appended. | It stays in the log forever. | Append a correction whose `supersedes` cites it; a guardian suspends a misused CURATOR or PLATFORM key. |
-| The PLATFORM key is suspended during a dispute pause. | With the genesis policy's single platform key, no outcome can be recorded, so no upheld `cancel`; a replacement takes longer than the pause. | Let the pause lapse (after-sale path); suspend the key during a pause only if it is compromised. |
-| The resolver's code changes after install. | Every ARTIST append reverts with `DependencyCodeChanged`. | `setArtistResolver` to a reviewed resolver (30 days). |
-| The lead artist is restrained. | ARTIST appends revert with `NotAuthorized`. | Wait for the override's outcome ([Identity and recovery](identity-and-recovery.md)). |
+| A wrong or unauthorized statement is appended. | It stays in the log forever. | Append a correction whose `supersedes` cites it; the network revokes a misused CURATOR or PLATFORM key at once. |
+| The PLATFORM key is revoked during a dispute pause. | With the genesis policy's single platform key, no outcome can be recorded until the network grants a new key (no delay). | The network grants a new PLATFORM key within the pause, or lets the pause lapse (after-sale path). |
+| The resolver's code changes after install. | Every ARTIST append reverts with `DependencyCodeChanged`. | `setArtistResolver` to a reviewed resolver (7 days). |
+| The lead artist's account is frozen or its root is being replaced. | ARTIST appends revert with `NotAuthorized`. | Wait until the freeze or the replacement ends ([Identity and recovery](identity-and-recovery.md)). |
 | The statement log cannot be read during rendering. | `tokenURI` reverts with `RendererReadFailed`. | A new default renderer or the errata repin. |
 | A token read or an ERC-1271 check runs short of gas (the sender's gas limit, or a dependency that costs more after a repricing). | `BoundedCallShortfall(target)`; nothing is written and no answer is given. | Resend with a higher gas limit; there is no cap to outgrow. |
 
@@ -547,8 +537,8 @@ outcome emits no ERC-4906 event, so an indexer refreshes a work's metadata on
 
 | Parameter | Value | Source |
 | --- | --- | --- |
-| Dispute pause | at most 7 days, one per auction, live through `pausedAt + 7 days` inclusive | `EnglishAuction.MAX_PAUSE`; `_PAUSE_USED` |
-| Earliest `resume` or `cancel`; latest scheduling of the cancel | `pausedAt + 48 hours`; `pausedAt + 5 days` | `Roles.STANDARD`, `_requireUnpausable`; `test_Cancel_ThroughTheStandardDelay` |
+| Dispute pause | at most 3 days (compiled, C30), one per auction, live through `pausedAt + 3 days` inclusive | `EnglishAuction.MAX_PAUSE`; `_PAUSE_USED` |
+| Earliest and latest `resume` or `cancel` | any moment of the live pause, through `pausedAt + 3 days` | Role map (NETWORK, no delay); `test_C30_TheNetworkCancelsInsideThePauseWithNoWait` |
 | URI length | 8,192 bytes, a safety bound on the UTF-8 check and the event (a longer document goes in the content store) | `StatementLog.MAX_URI_BYTES` |
 | Owner, dispute-subject and item-fallback reads | all the gas EIP-150 allows; a shortfall is a failure leaving at most 1/8 of the gas held before the call; at most 32 bytes copied (ERC-165, `ownerOf`, `balanceOf`) or 192 (`coreOf`) | `BoundedCall.SHORTFALL_DIVISOR`, `StatementLog.latestDisputeOutcome`, `_checkDisputeSubject`, `_owns` |
 | Relay nonces | one bitmap per signer, 256 nonces per word | `StatementLog._spendNonce`, `_bit` |

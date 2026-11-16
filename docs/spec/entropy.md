@@ -17,7 +17,7 @@ subscription.
 | --- | --- | --- | --- |
 | `VrfEntropyModule` | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol) | [`IEntropyModule`](../../src/interfaces/IEntropyModule.sol) | Gated seed requests, item links, deliveries, `isDelivered`, `seedOf`, `requestOf`; governed configuration and coordinator. |
 | `IVRFCoordinatorV2Plus` | [`src/entropy/IVRFCoordinatorV2Plus.sol`](../../src/entropy/IVRFCoordinatorV2Plus.sol) | none | The one coordinator function the module calls (`requestRandomWords`), declared locally: the repository has no Chainlink dependency. |
-| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | [`IStream`](../../src/interfaces/IStream.sol) | Holds the module's address (`entropyModule`), replaceable by governance in the 30-day class (`setDependency`, owner decision 16), and answers the module each work minted under (`entropyModuleOf`); `mint` refuses a VRF item without a delivered seed. |
+| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | [`IStream`](../../src/interfaces/IStream.sol) | Holds the module's address (`entropyModule`), replaceable by governance in the 7-day class (`setDependency`, owner decision 16), and answers the module each work minted under (`entropyModuleOf`); `mint` refuses a VRF item without a delivered seed. |
 | `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | [`IWorkRecords`](../../src/interfaces/IWorkRecords.sol) | `seedOf(tokenId)` returns the work's seed, stored when its record opens: the item's ARTIST seed, or by item hash the seed of the module the work minted under (`IStream.entropyModuleOf`), so a replacement of the module never changes a work's seed. |
 | `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | [`IPackageRegistry`](../../src/interfaces/IPackageRegistry.sol) | Answers the request gate: is the root approved, is the content consumed. See [curation.md](curation.md). |
 
@@ -66,7 +66,7 @@ a seed. Anyone may call it; there is no role and no fee. Every failure is
 
 1. `item.seedPolicy` is `VRF` and `item.contentHash` is nonzero. The module hashes the whole item
    itself, so a policy flipped to `VRF` is a different, unapproved item.
-2. `packageRegistry.packageOf(packageRoot)` is `APPROVED`, so a guardian's `revokePackage` stops
+2. `packageRegistry.packageOf(packageRoot)` is `APPROVED`, so the network's `revokePackage` stops
    requests at once.
 3. The proof has at most 32 hashes and places the item's leaf under the root.
 4. `packageRegistry.consumedItemOf(item.contentHash)` is zero: no item has consumed the content.
@@ -108,7 +108,7 @@ requests to that tenure's coordinator, and fewer before that (one per doubling s
 3-day base, `m = 4`: the repeats fall on days 3, 9, 21 and 45, then every 30 days, so a year
 undelivered allows at most 15 requests (1 + 4 + floor(320 / 30)), against 122 with a fixed 3-day
 delay ([LIM-ENT-1](../audit/known-limitations.md#entropy)). Only governance starts a tenure, in
-the 30-day class. A coordinator restored after another (A to B to A) starts a new tenure while
+the 7-day class. A coordinator restored after another (A to B to A) starts a new tenure while
 its requests from the earlier one are still recorded and may deliver (ENT-8), so its outstanding
 requests for a content are then those of both tenures, each within its own bound.
 
@@ -221,13 +221,14 @@ continue to work (`test_Gate_ConsumptionAfterDeliveryBlocksNothingRead`).
 | Repeat request | Anyone, once the content's backoff wait has passed since the latest request | the k-th repeat `retryDelay * 2^(k-1)`, at most 30 days; none for the first request after a coordinator change | `VrfEntropyModule.requestSeed` |
 | Seed delivered | The current coordinator only | none | `VrfEntropyModule.rawFulfillRandomWords` |
 | Work started | Anyone, through the auction | none | `EnglishAuction.start`, `Stream.mint` |
-| Request parameters changed; gas limit raised | `PARAMETER_SETTER` | standard, 48 hours | `VrfEntropyModule.setConfig` |
-| Gas limit lowered | `SUCCESSOR_SETTER` | successor, 30 days | `VrfEntropyModule.lowerCallbackGasLimit` |
-| Coordinator replaced | `SUCCESSOR_SETTER` | successor, 30 days | `VrfEntropyModule.setCoordinator` |
+| Request parameters changed; gas limit raised | `PARAMETER_SETTER` | 24 hours | `VrfEntropyModule.setConfig` |
+| Gas limit lowered | `SUCCESSOR_SETTER` | 7 days | `VrfEntropyModule.lowerCallbackGasLimit` |
+| Coordinator replaced | `SUCCESSOR_SETTER` | 7 days |
+| Wrapper for federated requests set or turned off | `SUCCESSOR_SETTER` | 7 days | `VrfEntropyModule.setWrapper` | `VrfEntropyModule.setCoordinator` |
 
 Role mappings are from [`config/genesis.example.json`](../../config/genesis.example.json); the
-selector matrix is [roles.md](../audit/roles.md). Guardians may cancel any scheduled operation
-during its delay.
+selector matrix is [roles.md](../audit/roles.md). The network or the scheduler may cancel a
+scheduled operation during its delay, and the brake may delay it once.
 
 ## Flows
 
@@ -307,14 +308,14 @@ together.
 sequenceDiagram
     participant Ops as Operator
     participant NewCoord as New coordinator
-    participant Setter as Hot admin Safe
+    participant Setter as Network Safe
     participant Manager as WorksAccessManager
     participant Module as VrfEntropyModule
     Ops->>NewCoord: create and fund a subscription, add the module
-    Setter->>Manager: schedule setCoordinator(old, new, codeHash) (SUCCESSOR_SETTER, 30 days)
-    Note over Setter,Manager: 28 days later
-    Setter->>Manager: schedule setConfig(current, next) (PARAMETER_SETTER, 48 hours)
-    Note over Manager: any guardian may cancel either operation
+    Setter->>Manager: schedule setCoordinator(old, new, codeHash) (SUCCESSOR_SETTER, 7 days)
+    Note over Setter,Manager: 6 days later
+    Setter->>Manager: schedule setConfig(current, next) (PARAMETER_SETTER, 24 hours)
+    Note over Manager: the network may cancel either operation; the brake may delay it once
     Setter->>Manager: execute setCoordinator, then setConfig, in one batch
     Manager->>Module: setCoordinator(old, new, codeHash)
     Manager->>Module: setConfig(current, next with new subscription and key hash)
@@ -322,8 +323,8 @@ sequenceDiagram
 ```
 
 - **Why one batch.** Between the two, a request would go to a coordinator that does not know the
-  configured subscription, and revert. In the example genesis the hot admin Safe holds both
-  setter roles, so one Safe transaction executes both.
+  configured subscription, and revert. The network holds both setter roles, so one Safe
+  transaction executes both.
 - **`setCoordinator`.** `expected` is the current coordinator (`ExpectedValueMismatch`); `next`
   differs from it, has code, is not EIP-7702 delegated, and has
   `nextCodeHash` (`InvalidDependency`). The coordinator has no ERC-165. Unlike the curation
@@ -337,16 +338,15 @@ sequenceDiagram
   is already visible on the old coordinator, is orphaned, and the content is drawn again
   through the new one. Execute the change only when every request has its delivery, or publish
   the redraw ([LIM-ENT-7](../audit/known-limitations.md#entropy)); the same holds for a
-  replacement of the module itself, whose successor must honour the seeds its predecessor
-  delivered for content not yet minted
+  replacement of the module itself, since today's module reads no predecessor's seeds
   ([runbook](../../script/README.md#replacing-one-of-streams-dependencies)).
 
 ### Lowering the callback gas limit
 
 A limit above the coordinator's maximum makes every request revert at the coordinator, ending
 VRF works for the deployment, since 6529 Stream pins the module (DEPS-5). `setConfig` only raises
-the limit, so a 48-hour setter cannot starve the callback; `lowerCallbackGasLimit` lowers it in
-the 30-day class (ENT-11; `InvalidConfig`).
+the limit, so a 24-hour change cannot starve the callback; `lowerCallbackGasLimit` lowers it in
+the 7-day class (ENT-11; `InvalidConfig`).
 
 ## Rules and invariants
 
@@ -360,9 +360,9 @@ the 30-day class (ENT-11; `InvalidConfig`).
 | ENT-6 | Only the current coordinator, or the current wrapper for a federated request, delivers, only a request it issued to this module, with exactly one word. | `VrfEntropyModule.rawFulfillRandomWords` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Fulfill_OnlyTheCoordinatorMay`, `test_Fulfill_AnUnissuedRequestIdReverts`, `test_Fulfill_ExactlyOneWordIsRequired`, `test_Fulfill_AMalformedDeliveryRevertsAndTheItemStaysUndelivered`; [`VrfEntropyFuzz.t.sol`](../../test/entropy/VrfEntropyFuzz.t.sol): `testFuzz_OnlyTheCoordinatorMayFulfill`, `testFuzz_RequestIdsRouteToTheirOwnItems` |
 | ENT-7 | The coordinator's pinned code hash is checked at install, at every request and at every delivery. | `Dependency.checkPinned`, `checkUnchanged` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Constructor_PinsTheCoordinatorCodeHash`, `test_Pin_ACoordinatorWhoseCodeChangedIsRefused`; [`VrfEntropyGovernance.t.sol`](../../test/entropy/VrfEntropyGovernance.t.sol): `test_SetCoordinator_PinsTheCodeHash` |
 | ENT-8 | Request IDs are scoped to their coordinator: a swap orphans the old coordinator's requests, the new one cannot deliver them, and delivered seeds survive. | `VrfEntropyModule._requests`, `rawFulfillRandomWords` | [`VrfEntropyGovernance.t.sol`](../../test/entropy/VrfEntropyGovernance.t.sol): `test_SetCoordinator_OldCoordinatorCanNoLongerDeliver`, `test_SetCoordinator_OrphanedRequestIsRerequestedThroughTheNewOne`, `test_SetCoordinator_RequestIdsAreScopedToTheirCoordinator`, `test_SetCoordinator_DeliveredSeedsSurviveTheSwap`; [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Repeat_RequestIdsDoNotMixAcrossCoordinators` |
-| ENT-9 | `setCoordinator` is `SUCCESSOR_SETTER` (30 days), compare-and-set, never a no-op, and refuses a codeless or delegated coordinator. | `VrfEntropyModule.setCoordinator`; genesis role map | [`VrfEntropyGovernance.t.sol`](../../test/entropy/VrfEntropyGovernance.t.sol): `test_SetCoordinator_NeedsTheSuccessorClassRole`, `test_SetCoordinator_RejectsStaleAndCodelessValues`, `test_SetCoordinator_ASwapToTheCurrentCoordinatorIsRefused`; [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_SetCoordinatorIsInTheSuccessorClass`, `test_AGuardianCancelsAPendingCoordinatorSwap` |
-| ENT-10 | `setConfig` is `PARAMETER_SETTER` (48 hours), compare-and-set on the whole configuration, within bounds; the callback gas limit only rises, at most doubling per step, never above 2,500,000. | `VrfEntropyModule.setConfig`, `_validate`; `BoundedParameter.raise` | [`VrfEntropyGovernance.t.sol`](../../test/entropy/VrfEntropyGovernance.t.sol): `test_SetConfig_NeedsTheStandardClassRole`, `test_SetConfig_StaleExpectedValueReverts`, `test_SetConfig_GasLimitCanOnlyBeRaised`, `test_SetConfig_GasLimitAtMostDoublesPerStep`, `testFuzz_SetConfig_GasLimitRule`, `test_SetConfig_ScheduledThroughTheManagerAndStaleOperationsRevert`; [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_SetConfigIsInTheStandardClass` |
-| ENT-11 | `lowerCallbackGasLimit` is `SUCCESSOR_SETTER` (30 days), compare-and-set, strictly lower, never below 100,000. | `VrfEntropyModule.lowerCallbackGasLimit` | [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_ALoweredCoordinatorMaximumIsFollowedInTheSuccessorClass`, `test_ALoweringStaysAboveTheFloorAndBelowTheCurrentLimit`, `test_OnlyTheSettersCanCallTheGovernedFunctions` |
+| ENT-9 | `setCoordinator` is `SUCCESSOR_SETTER` (7 days), compare-and-set, never a no-op, and refuses a codeless or delegated coordinator. | `VrfEntropyModule.setCoordinator`; genesis role map | [`VrfEntropyGovernance.t.sol`](../../test/entropy/VrfEntropyGovernance.t.sol): `test_SetCoordinator_NeedsTheSuccessorClassRole`, `test_SetCoordinator_RejectsStaleAndCodelessValues`, `test_SetCoordinator_ASwapToTheCurrentCoordinatorIsRefused`; [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_SetCoordinatorIsInTheSuccessorClass`, `test_TheNetworkCancelsAPendingCoordinatorSwap` |
+| ENT-10 | `setConfig` is `PARAMETER_SETTER` (24 hours), compare-and-set on the whole configuration, within bounds; the callback gas limit only rises, at most doubling per step, never above 2,500,000. | `VrfEntropyModule.setConfig`, `_validate`; `BoundedParameter.raise` | [`VrfEntropyGovernance.t.sol`](../../test/entropy/VrfEntropyGovernance.t.sol): `test_SetConfig_NeedsTheStandardClassRole`, `test_SetConfig_StaleExpectedValueReverts`, `test_SetConfig_GasLimitCanOnlyBeRaised`, `test_SetConfig_GasLimitAtMostDoublesPerStep`, `testFuzz_SetConfig_GasLimitRule`, `test_SetConfig_ScheduledThroughTheManagerAndStaleOperationsRevert`; [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_SetConfigIsInTheStandardClass` |
+| ENT-11 | `lowerCallbackGasLimit` is `SUCCESSOR_SETTER` (7 days), compare-and-set, strictly lower, never below 100,000. | `VrfEntropyModule.lowerCallbackGasLimit` | [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_ALoweredCoordinatorMaximumIsFollowedInTheSuccessorClass`, `test_ALoweringStaysAboveTheFloorAndBelowTheCurrentLimit`, `test_OnlyTheSettersCanCallTheGovernedFunctions` |
 | ENT-12 | A `VRF` work starts only once the seed of its item's content is delivered (`isDeliveredContent(item.contentHash)`, one word: a seed belongs to its content and a content hash is consumed by one item only, CUR-12), and only while Stream has an entropy module (deployed with one, or installed later by `setDependency`). | `Stream.mint`, `Stream._checkItem` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_mint_vrfNeedsDeliveredSeed`, `test_mint_vrfRejectedWithoutEntropyModule`; [`VrfWork.t.sol`](../../test/integration/VrfWork.t.sol): `test_SeedRequestedDeliveredThenStartedAndRendered`; [`StreamDependencies.t.sol`](../../test/integration/StreamDependencies.t.sol): `test_AVrfStartChecksTheItemsContentAndContentIsMintedOnce`; [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_ContentReads_AnswerOnlyTheSeededContent` |
 | ENT-13 | The callback creates no storage slot and its cost stays at most half the 100,000 floor under Glamsterdam pricing. | `VrfEntropyModule.rawFulfillRandomWords` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Callback_CreatesNoStorageSlot`, `test_Callback_UsesUnderHalfTheFloorUnderGlamsterdam`, `test_Callback_GasStaysUnderTheConfiguredLimit` |
 | ENT-14 | A reentrant call during a request cannot deliver the new request or overwrite a seed delivered meanwhile. | `VrfEntropyModule.requestSeed` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Request_ReentrancyFromTheCoordinatorFindsNothingToUse`, `test_Repeat_AnEarlierRequestDeliveredDuringTheRepeatIsNotOverwritten` |
@@ -387,13 +387,13 @@ keyed by content hash, not item hash: map items to it through `SeedLinked`.
 | --- | --- | --- |
 | The oracle does not deliver (outage, unfunded subscription). | The work cannot start. Nothing is in custody. | Fund the subscription; anyone repeats the request once the backoff wait has passed (at most 30 days). |
 | A delivery is malformed (not exactly one word). | It reverts and the coordinator absorbs the failure. | A repeat once the backoff wait has passed. |
-| Code at the coordinator's address no longer has the pinned hash. | Requests and deliveries revert with `DependencyCodeChanged`. | `setCoordinator` to a reviewed coordinator (30 days). |
-| Chainlink lowers the coordinator's maximum callback gas below the module's limit. | Every request reverts at the coordinator. | `lowerCallbackGasLimit` (30 days), never below 100,000. |
+| Code at the coordinator's address no longer has the pinned hash. | Requests and deliveries revert with `DependencyCodeChanged`. | `setCoordinator` to a reviewed coordinator (7 days). |
+| Chainlink lowers the coordinator's maximum callback gas below the module's limit. | Every request reverts at the coordinator. | `lowerCallbackGasLimit` (7 days), never below 100,000. |
 | Chainlink retires the coordinator. | No new requests; pending ones may never deliver. | The coordinator change above; orphaned contents are requested from the new coordinator at once. |
 | A request was made before its root was revoked. | It still delivers. | None needed: the item can no longer mint. |
 | A media revision of a VRF work is approved. | It has a new content hash and draws a new seed. | The curation runbook revokes the old root before approving such a revision ([curation.md](curation.md)). |
 | Several deliveries for one content are outstanding. | Whoever withholds or orders them chooses which of their random words becomes the seed. | Accepted risk [LIM-ENT-1](../audit/known-limitations.md#entropy); the backoff bounds the count ([first delivery wins](#first-delivery-wins): at most 15 in a year at the 3-day base, per coordinator tenure). |
-| A hostile approved package requests many VRF draws. | It spends one draw per content, plus repeats, until a guardian revokes it. | Accepted risk [LIM-ENT-2](../audit/known-limitations.md#entropy); a dedicated subscription with a modest, topped-up balance bounds the loss. |
+| A hostile approved package requests many VRF draws. | It spends one draw per content, plus repeats, until the network revokes it. | Accepted risk [LIM-ENT-2](../audit/known-limitations.md#entropy); a dedicated subscription with a modest, topped-up balance bounds the loss. |
 
 **Subscription operations** ([LIM-ENT-3](../audit/known-limitations.md#entropy)): use a
 dedicated subscription with this module as its only consumer, added before the first request
