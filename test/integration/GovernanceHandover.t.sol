@@ -471,30 +471,21 @@ contract GovernanceHandoverTest is IntegrationBase {
         assertFalse(verifier.isDisabled(signer2));
         ++operated;
 
-        // ArtistRegistry (permanent): a guardian's veto of a staged change; a timer, delayed.
+        // ArtistRegistry (permanent): the account's own change, staged and cancelled by it.
+        // (Identity lane local patch: guardian veto and governed timers no longer exist.)
         {
             uint256 artistId = uint160(artist);
-            address newKey = _actor("handover new key");
             ArtistIdentity memory id =
-                ArtistIdentity(newKey, newKey, _profileId(artist), _profileDoc(artist));
+                ArtistIdentity(artist, artist, _profileId(artist), _profileDoc(artist));
             uint64 deadline = uint64(block.timestamp + 1 days);
             bytes32 digest =
                 artists.changeDigest(artistId, id, artists.changeNonce(artistId), deadline);
             artists.stageChange(
-                artistId, id, artist, deadline, _sign(artist, digest), _sign(newKey, digest)
+                artistId, id, deadline, abi.encodePacked(artist, _sign(artist, digest))
             );
-            _immediate(guardian1, address(artists), abi.encodeCall(artists.vetoChange, (artistId)));
+            vm.prank(artist);
+            artists.cancelChange(artistId);
             assertEq(uint8(artists.pendingChange(artistId).kind), uint8(ChangeKind.NONE));
-            IArtistRegistry.Timer which = IArtistRegistry.Timer.CHANGE_DELAY;
-            uint48 current = artists.timer(which);
-            (, uint48 ceiling) = artists.timerBounds(which);
-            uint48 value = current < ceiling ? current + 1 : current - 1;
-            _delayedAndCancelled(
-                address(artists),
-                abi.encodeCall(artists.setTimer, (which, value)),
-                abi.encodeCall(artists.setTimer, (IArtistRegistry.Timer.DORMANCY, 0))
-            );
-            assertEq(artists.timer(which), value);
         }
         ++operated;
     }

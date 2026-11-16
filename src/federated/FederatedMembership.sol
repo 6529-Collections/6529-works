@@ -101,7 +101,6 @@ abstract contract FederatedMembership is IFederatedToken {
         if (state & LEFT != 0) revert FederationStateInvalid();
         _state = state | LEFT;
         emit FederationLeft();
-        if (state & JOINED != 0) IArtistRegistry(_artistRegistry).recordFederationExit();
     }
 
     /// @notice After the exit, the artist admits or removes a minter (`MinterSet`); before it

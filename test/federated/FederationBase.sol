@@ -219,7 +219,8 @@ abstract contract FederationBase is IntegrationBase {
                 artists.registrationDigest(artist, j.profileId, j.profileDocHash, j.deadline)
             );
         }
-        j.consent = _sign(artist, _listingDigest(_listing(token, j.deadline)));
+        j.consent =
+            abi.encodePacked(artist, _sign(artist, _listingDigest(_listing(token, j.deadline))));
     }
 
     /// @dev The EIP-712 digest of a listing consent, computed as a wallet does from the artist

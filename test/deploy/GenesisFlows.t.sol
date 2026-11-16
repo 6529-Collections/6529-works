@@ -162,7 +162,10 @@ contract GenesisFlowsTest is Test {
         MoveAuthorization memory move = MoveAuthorization(
             nonce,
             deadline,
-            _sign(artistKey, d.packageRegistry.moveDigest(root, itemHash, nonce, deadline))
+            abi.encodePacked(
+                vm.addr(artistKey),
+                _sign(artistKey, d.packageRegistry.moveDigest(root, itemHash, nonce, deadline))
+            )
         );
         mintData = abi.encode(StreamMintRequest(root, item, new bytes32[](0), move));
     }
@@ -206,7 +209,10 @@ contract GenesisFlowsTest is Test {
             .acceptPackage(
                 root,
                 acceptance,
-                _sign(artistKey, d.packageRegistry.acceptanceDigest(root, acceptance))
+                abi.encodePacked(
+                    vm.addr(artistKey),
+                    _sign(artistKey, d.packageRegistry.acceptanceDigest(root, acceptance))
+                )
             );
     }
 

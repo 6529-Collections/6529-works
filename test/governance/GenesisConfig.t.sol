@@ -246,13 +246,13 @@ contract GenesisConfigTest is Test {
         if (_eq(name, "ArtistRegistry")) {
             bytes4[] memory ten = _s10(
                 [
-                    IArtistRegistry.vetoChange.selector,
-                    IArtistRegistry.stageOverride.selector,
+                    IArtistRegistry.cancelReplacement.selector,
+                    IArtistRegistry.stageReplacement.selector,
                     IArtistRegistry.setConsolidationSource.selector,
                     IArtistRegistry.setPackageRegistry.selector,
                     IArtistRegistry.resolveContested.selector,
                     IArtistRegistry.setFederationRegistry.selector,
-                    IArtistRegistry.setTimer.selector,
+                    IArtistRegistry.freeze.selector,
                     IArtistRegistry.bindPackageRegistry.selector,
                     IArtistRegistry.bindStream.selector,
                     IArtistRegistry.bindSplitFactory.selector

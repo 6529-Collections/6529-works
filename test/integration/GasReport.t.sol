@@ -95,13 +95,11 @@ contract IntegrationGasReport is IntegrationBase {
     /// @dev Moved down from 275,000: Editions no longer proves the item under a package root nor
     ///      claims its content in the mint policy (review A, M-1). Measured 213,166, plus 2%.
     uint256 internal constant CREATE_EDITION_CEILING = 218_000;
-    uint256 internal constant REFRESH_FIRST_CEILING = 131_000;
     /// @dev Moved from 192,000 (permanence integration, 15 November 2026): an admin's governed
     ///      `execute` also updates the manager's admin-liveness clock and checks its hand-over
     ///      flag (GV-42, GV-43; one cold ADMIN-membership read, one shared-slot read and a
     ///      write). Measured 198,314, plus about 2%, rounded up.
     uint256 internal constant RERATE_CEILING = 203_000;
-    uint256 internal constant REFRESH_FURTHER_CEILING = 161_000;
     uint256 internal constant CREATE_WALLET_CEILING = 100_000;
     uint256 internal constant RELEASE_FIRST_CEILING = 96_000;
     uint256 internal constant SIGNED_FIRST_CEILING = 145_000;
@@ -965,37 +963,6 @@ contract IntegrationGasReport is IntegrationBase {
         );
     }
 
-    function _refreshData() internal view returns (bytes memory) {
-        return abi.encodeCall(artists.refreshStanding, (artists.artistIdOf(artistA)));
-    }
-
-    /// @dev The artist's first consolidated wallet is recorded (as pending) by a refresh the
-    ///      artist pays for (ADR 0003).
-    function _rowRefreshFirst() internal returns (Row memory r) {
-        _consolidate(artistA, makeAddr("gasWallet1"));
-        r = _row(
-            "refreshStanding, records a first wallet", artistA, address(artists), _refreshData(), 0
-        );
-        _gasAtMost(r, REFRESH_FIRST_CEILING, "regression ceiling");
-        _growthIs(r, 2, 0);
-    }
-
-    /// @dev A further wallet joins a snapshot that already has one, as on Sepolia r2.
-    function _rowRefreshFurther() internal returns (Row memory r) {
-        _consolidate(artistA, makeAddr("gasWallet1"));
-        artists.refreshStanding(artists.artistIdOf(artistA));
-        _consolidate(artistA, makeAddr("gasWallet2"));
-        r = _row(
-            "refreshStanding, records a further wallet",
-            artistA,
-            address(artists),
-            _refreshData(),
-            0
-        );
-        _gasAtMost(r, REFRESH_FURTHER_CEILING, "regression ceiling");
-        _growthIs(r, 1, 0);
-    }
-
     // ------------------------------------------------------------------ split wallets
 
     /// @dev Artist A's single-payee list: the seller wallet of every work in this report.
@@ -1236,14 +1203,6 @@ contract IntegrationGasReport is IntegrationBase {
         _rowReRate();
     }
 
-    function test_Gas_RefreshStanding_FirstWallet() public {
-        _rowRefreshFirst();
-    }
-
-    function test_Gas_RefreshStanding_FurtherWallet() public {
-        _rowRefreshFurther();
-    }
-
     function test_Gas_RoyaltyInfo() public {
         _rowRoyaltyInfo();
     }
@@ -1275,7 +1234,7 @@ contract IntegrationGasReport is IntegrationBase {
     ///      row before any recording, then once for its growth and cold accounts, which add the
     ///      cold-account surcharge.
     function test_Gas_Table() public {
-        function() internal returns (Row memory)[35] memory rows = [
+        function() internal returns (Row memory)[33] memory rows = [
             _rowStart,
             _rowStartWithBid,
             _rowStartTwoParty,
@@ -1304,15 +1263,13 @@ contract IntegrationGasReport is IntegrationBase {
             _rowConsume,
             _rowCreateEdition,
             _rowReRate,
-            _rowRefreshFirst,
-            _rowRefreshFurther,
             _rowRoyaltyInfo,
             _rowCreateWallet,
             _rowReleaseFirst,
             _rowSignedFirst,
             _rowSignedLater
         ];
-        Row[35] memory measured;
+        Row[33] memory measured;
         for (uint256 i; i < rows.length; ++i) {
             measured[i] = _runRow(rows[i], Pass.GAS);
         }
