@@ -908,8 +908,8 @@ contract IntegrationGasReport is IntegrationBase {
 
     // ------------------------------------------------------------------ re-rate
 
-    /// @dev A work re-rated to 5% (every party's consent plus FUNDS_SETTER's governed action;
-    ///      rates are lower-only, ADR 0006),
+    /// @dev A work re-rated to 5% (every party's consent, each a wallet-prefixed proof, plus
+    ///      FUNDS_SETTER's governed action),
     ///      executed through the manager: Stream moves the token to the terms with its new rate,
     ///      which no work has yet, so it writes that terms word (QUALITY-6); before, it overwrote
     ///      the token's own word.
@@ -921,12 +921,15 @@ contract IntegrationGasReport is IntegrationBase {
         uint64 deadline = uint64(block.timestamp + 30 days);
         bytes32 state = records.workStateHash(tokenId);
         bytes[] memory sigs = new bytes[](1);
-        sigs[0] = _sign(
+        sigs[0] = abi.encodePacked(
             artistA,
-            _typedDigest(
-                address(records),
-                keccak256(
-                    abi.encode(Typehashes.ROYALTY_RATE_CHANGE, tokenId, rate, state, deadline)
+            _sign(
+                artistA,
+                _typedDigest(
+                    address(records),
+                    keccak256(
+                        abi.encode(Typehashes.ROYALTY_RATE_CHANGE, tokenId, rate, state, deadline)
+                    )
                 )
             )
         );
