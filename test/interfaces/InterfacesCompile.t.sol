@@ -73,7 +73,7 @@ contract InterfacesCompileTest is Test {
         assertEq(
             type(IArtistPayoutResolver).interfaceId, bytes4(0x9b2c1793), "IArtistPayoutResolver"
         );
-        assertEq(type(IArtistRegistry).interfaceId, bytes4(0x82ef420e), "IArtistRegistry");
+        assertEq(type(IArtistRegistry).interfaceId, bytes4(0xe379ec77), "IArtistRegistry");
         assertEq(type(IAccounts).interfaceId, bytes4(0x9f87c239), "IAccounts");
         assertEq(type(IItemApprovals).interfaceId, bytes4(0x881b19aa), "IItemApprovals");
         assertEq(type(IConsolidationSource).interfaceId, bytes4(0x42129132), "IConsolidationSource");

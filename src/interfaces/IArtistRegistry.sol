@@ -37,7 +37,8 @@ interface IConsolidationSource is IERC165 {
 ///
 ///      Changes. One change may be pending per account:
 ///      - OWN: any wallet of the account signs `Typehashes.IDENTITY_CHANGE` (relayed by anyone).
-///        It waits 2 days and any wallet of the account may cancel it. A new root must already
+///        It waits 2 days; any wallet of the account, or the network (`cancelOwnChange`), may
+///        cancel it. A new root must already
 ///        be a wallet of the account.
 ///      - REPLACEMENT: the network replaces the root (and with it payout and profile), with 14
 ///        days' public notice and the new root's signed acceptance. It replaces a pending OWN
@@ -359,6 +360,10 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver, IAccoun
     ///         action with no delay.
     /// @param artistId The account whose replacement is withdrawn.
     function cancelReplacement(uint256 artistId) external;
+    /// @notice The network cancels an account's own pending change. A network action with no
+    ///         delay; the account may stage a new one.
+    /// @param artistId The account whose own change is cancelled.
+    function cancelOwnChange(uint256 artistId) external;
     /// @notice Applies a vote on a contested replacement: upholding executes it (once its notice
     ///         passed), voiding deletes it. `outcomeRef` must be
     ///         `IStatementLog.latestDisputeOutcome(address(this), artistId)` and differ from the

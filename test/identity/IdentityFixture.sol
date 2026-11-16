@@ -72,7 +72,7 @@ abstract contract IdentityFixture is Test {
     }
 
     function _configureRoles(address target) internal {
-        bytes4[] memory s = new bytes4[](10);
+        bytes4[] memory s = new bytes4[](11);
         s[0] = ArtistRegistry.stageReplacement.selector;
         s[1] = ArtistRegistry.cancelReplacement.selector;
         s[2] = ArtistRegistry.resolveContested.selector;
@@ -83,6 +83,7 @@ abstract contract IdentityFixture is Test {
         s[7] = ArtistRegistry.setConsolidationSource.selector;
         s[8] = ArtistRegistry.setPackageRegistry.selector;
         s[9] = ArtistRegistry.setFederationRegistry.selector;
+        s[10] = ArtistRegistry.cancelOwnChange.selector;
         vm.startPrank(admin);
         manager.setTargetFunctionRole(target, s, NETWORK);
         manager.grantRole(NETWORK, network, 0);

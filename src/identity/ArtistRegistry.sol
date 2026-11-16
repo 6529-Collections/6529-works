@@ -298,6 +298,12 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IArtistRegistry
+    function cancelOwnChange(uint256 artistId) external restricted {
+        if (_pending[artistId].kind != ChangeKind.OWN) revert NoPendingChange(artistId);
+        _clear(artistId, msg.sender, true);
+    }
+
+    /// @inheritdoc IArtistRegistry
     function resolveContested(uint256 artistId, bool uphold, bytes32 outcomeRef)
         external
         restricted

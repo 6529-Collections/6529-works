@@ -59,7 +59,7 @@ and asks `requireSigned` for any other wallet.
 
 | Kind | Who | Wait | Who stops it | Notes |
 | --- | --- | --- | --- | --- |
-| Own change (`stageChange`) | Anyone relays a wallet's `IdentityChange` signature at the current nonce | 2 days | Any wallet (`cancelChange`) | A new root must already be a wallet of the account, and still be one at execution. |
+| Own change (`stageChange`) | Anyone relays a wallet's `IdentityChange` signature at the current nonce | 2 days | Any wallet (`cancelChange`); the network (`cancelOwnChange`, no delay) | A new root must already be a wallet of the account, and still be one at execution. |
 | Replacement (`stageReplacement`) | The network (24-hour class), with the new root's `ReplacementAcceptance` and an evidence hash | 14 days' notice | The network (`cancelReplacement`, no delay); any wallet contests during the notice | The root must change. A contested replacement runs only if the network upholds it (`resolveContested`, citing a DISPUTE_OUTCOME recorded after the contest) within 90 days of the contest; otherwise it lapses (`expireContest`). It replaces a pending own change. |
 
 One change is pending at a time. `executeChange` is permissionless once due, and refused while
@@ -160,7 +160,7 @@ A freeze overlays any state: nobody acts and nothing executes until it ends.
 
 | Function | Caller | Class |
 | --- | --- | --- |
-| `freeze`, `unfreeze`, `cancelReplacement` | The network | No delay |
+| `freeze`, `unfreeze`, `cancelReplacement`, `cancelOwnChange` | The network | No delay |
 | `stageReplacement`, `resolveContested`, `setFederationDelisted`, `lowerFederatedFeeShare` | The network | 24 hours |
 | `setConsolidationSource`, `setPackageRegistry`, `setFederationRegistry` | The network | 7 days |
 | `stageChange`, `executeChange`, `expireContest` | Anyone | None |
@@ -184,7 +184,7 @@ Test files: [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) (
 | ID-2 | A wallet acts for an account exactly when it is the root, or the consolidation source says it has a live two-way consolidation with the root; never while the account is frozen or a replacement is pending and unlapsed. | `isWallet`, `_blocked`, `_consolidated` | AR `test_IsWallet_*`; INV `invariant_RequireSignedPassesExactlyForTheAccountsWallets` |
 | ID-3 | `requireSigned` passes only for a wallet of the account that signed the digest; `requireConsent` only for the asking contract. | `requireSigned`, `requireConsent` | AR `test_RequireSigned_*`, `test_RequireConsent_BindsTheCaller`; INV |
 | ID-4 | The root never reads the consolidation source; a failing, malformed or changed source is "no" for every other wallet. | `isWallet`, `_consolidated` | AR `test_Accounts_RootNeverDependsOnTheSource`, `test_SetConsolidationSource_SwapsTheSourceWithItsPin`; GR `test_GasRule_TheRootNeverReadsTheSource` |
-| ID-5 | An own change is signed by any wallet, waits 2 days, is cancelled by any wallet, uses a nonce once, and moves the root only to a wallet of the account (re-checked at execution). | `stageChange`, `cancelChange`, `_apply` | AR `test_OwnChange_*`, `test_RevokeNonce_AnyWallet` |
+| ID-5 | An own change is signed by any wallet, waits 2 days, is cancelled by any wallet or by the network at once, uses a nonce once, and moves the root only to a wallet of the account (re-checked at execution). | `stageChange`, `cancelChange`, `cancelOwnChange`, `_apply` | AR `test_OwnChange_*`, `test_CancelOwnChange_ByTheNetwork`, `test_RevokeNonce_AnyWallet` |
 | ID-6 | A replacement is staged only by the network with the new root's acceptance (used once), changes the root, waits 14 days, replaces an own change, and the network may withdraw it at once. | `stageReplacement`, `cancelReplacement` | AR `test_Replacement_*`, `test_CancelReplacement_ByTheNetwork` |
 | ID-7 | A wallet may contest a replacement only during its notice; a contested replacement runs only if upheld by a vote recorded after the contest, within 90 days; otherwise it lapses and holds nothing. | `cancelChange`, `resolveContested`, `expireContest`, `_lapsed` | AR `test_Contest_*` |
 | ID-8 | A freeze lasts 14 days, stops every wallet, zeroes the payout and holds pending changes; it cannot be extended while it runs. | `freeze`, `unfreeze`, `_blocked`, `payoutAddress`, `executeChange` | AR `test_Freeze_*`; IR `test_AFrozenAccountCannotStart` |

@@ -347,6 +347,36 @@ contract ArtistRegistryTest is IdentityFixture {
         registry.cancelReplacement(artistId);
     }
 
+    /// @dev Integrator ruling 17: the network cancels an account's own pending change at once;
+    ///      nobody else can through this path, and it never removes a replacement (fails on
+    ///      the lane-1 registry, where only staging a replacement removed an own change).
+    function test_CancelOwnChange_ByTheNetwork() public {
+        _stage(artistKey, _identity(artist, payout));
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, artist)
+        );
+        vm.prank(artist);
+        registry.cancelOwnChange(artistId);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.ChangeCancelled(artistId, network, true);
+        vm.prank(network);
+        registry.cancelOwnChange(artistId);
+        assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.NONE));
+        vm.prank(network);
+        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.NoPendingChange.selector, artistId));
+        registry.cancelOwnChange(artistId);
+        // A replacement is not an own change.
+        _stageReplacement(_identity(newRoot, newRoot), newKey);
+        vm.prank(network);
+        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.NoPendingChange.selector, artistId));
+        registry.cancelOwnChange(artistId);
+        // The account stages a new own change afterwards.
+        vm.prank(network);
+        registry.cancelReplacement(artistId);
+        _stage(artistKey, _identity(artist, payout));
+        assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.OWN));
+    }
+
     /// @dev C13: a contested replacement runs only if the network upholds it within 90 days.
     function test_Contest_LapsesAfterNinetyDays() public {
         _stageReplacement(_identity(newRoot, newRoot), newKey);
