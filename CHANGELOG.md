@@ -19,6 +19,10 @@
   (`contentStore()`, `ContentStoreSet`); a replaced registry answers as the current one; each
   genesis setter reaches only targets declaring its interface (`GovernanceConfig.genesisInterface`).
   The `FederationRegistry` constructor takes the content store. The source-line budget is 16,500.
+  Pass 3: a federated license text must be a registered SHA-256 file of at most 16 chunks at the
+  first mint and complete to finalize (`IFederatedStream.InvalidLicenseText`); the federated
+  edition lens refuses a non-canonical split ledger; `setStatus` and `propagateRevocation` take
+  at most `MAX_BATCH` (256) contracts (`BatchTooLarge`).
 - Federation ([ADR 0008](docs/adr/0008-federation.md); [Federation](docs/spec/federation.md),
   FED-1 to FED-63): Federated Stream and Federated Stream Editions templates (full copies, no
   immutables, joined by the token itself and listed in the artist registry's directory; works

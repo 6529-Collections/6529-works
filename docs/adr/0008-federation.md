@@ -464,6 +464,37 @@ alone:
 5. The artist's consent to those facts was verified by the permanent artist registry at listing
    (no log is needed: no listing exists without it).
 
+### 13. Pass 3 (16 November 2026)
+
+- **License text.** A federated work's license never changes, so its text meets, at the first
+  mint, the rule 6529 Stream's records apply to a frozen license: a registered SHA-256 content
+  store file of at most 16 chunks (`InvalidLicenseText`); finalize also needs it complete in
+  the content store. Only missing chunks, which anyone may write, can stand in the way, so no
+  work is stuck. Re-checked for other stuck states: every artist power waits only on the
+  artist's authority (a recovery override restrains it until it resolves), every presence check
+  (media, license text) can be completed by anyone writing chunks, a changed renderer is
+  replaced by the artist before finalize, and a left contract admits its own minters; the two
+  dead ends that remain are the documented ones (§8, F10).
+- **Fees locked when a sale starts.** The English auction locks the federated fee recipient at
+  start and the federated edition auction at open; tests pin that a governance change of
+  `networkFeeRecipient(PRODUCT_FEDERATED)` before settlement redirects nothing. No path re-reads
+  the live recipient.
+- **A voided edition stays dead.** If a federated edition sale voids while its best-effort seal
+  is refused (only a faulty token refuses it), the edition stays bound to that adapter's void
+  sale: the adapter never reopens a sale ID (`AuctionExists`), another adapter cannot bind it
+  (`MinterMismatch`), and no minter, the artist's own included, can mint it.
+- **Canonical ledger in the lens.** The federated edition lens refuses a token whose reported
+  split ledger is not the economics resolver's split factory before it deploys any wallet.
+- **Bounded batches.** `setStatus` and `propagateRevocation` take at most `MAX_BATCH` (256)
+  contracts. The worst element (a cold listed contract written DELISTED) measures about 11,800
+  gas after the first (about 16,600 cold), under the 20,000 the bound assumes: 256 x 20,000 =
+  5.12M, a third of EIP-7825's 2^24 cap.
+- **No guard in the editions template.** `FederatedEditions.mint` updates its count and logs
+  before the ERC-1155 acceptance call, so a mint re-entered from it (only the bound adapter can
+  mint) sees the raised count and the maximum holds; a guard would add a permanent slot write to
+  every mint for no property the template does not already keep. The order of an adapter's own
+  claims is the adapter's (the edition auction's are `nonReentrant`).
+
 ## Decisions the study left open, as built
 
 Each is the delivery owner's choice where study H left the question open; **the owner may
