@@ -74,6 +74,21 @@ contract WorkRecordsTest is RecordsFixture {
         new WorkRecords(
             address(manager), address(stream), address(store), License("cc0-1.0", unknown)
         );
+        // ... and one a work on the default license can finalize with: at most 16 chunks.
+        // Fails without the constructor's text check: the deployment succeeds.
+        bytes32[] memory hashes = new bytes32[](17);
+        for (uint256 i; i < hashes.length; ++i) {
+            hashes[i] = keccak256(abi.encode("cc0 chunk", i));
+        }
+        bytes32 long = store.registerManifest(
+            hashes,
+            16 * store.CHUNK_SIZE() + 1,
+            uint8(IContentStore.Encoding.Identity),
+            "text/plain",
+            keccak256("long cc0 text")
+        );
+        vm.expectRevert(IWorkRecords.InvalidLicense.selector);
+        new WorkRecords(address(manager), address(stream), address(store), License("cc0-1.0", long));
     }
 
     /// @dev SPDX IDs keep their original case; only the license key is lowercased.
@@ -993,7 +1008,7 @@ contract WorkRecordsTest is RecordsFixture {
     ///      used to pass, the kind discarded) and the unstored one, a record file and a media
     ///      file, each refused with a complete one-chunk manifest of digest kind 1.
     function test_digestKind_everyFileNeedsSha256() public {
-        // Unstored path: before finalize, the store's `sha256Of` refuses the kind.
+        // Unstored path: before finalize, the same digest-kind check as after it.
         MediaFile[] memory files = _single(41, true);
         PackageItem memory item = _recordsItem(41, files);
         item.license = License("CC-BY-4.0", _registerText("CC-BY-4.0 legal code"));
@@ -1002,9 +1017,7 @@ contract WorkRecordsTest is RecordsFixture {
         bytes32 other = _otherDigestKind("kind one text", "text/plain");
         assertTrue(store.isComplete(other));
         License memory next = License("CC-BY-SA-4.0", other);
-        vm.expectRevert(
-            abi.encodeWithSelector(IContentStore.ContentDigestNotSha256.selector, other, 1)
-        );
+        vm.expectRevert(IWorkRecords.InvalidLicense.selector);
         this.relicenseAs(tokenId, item, next);
         // Stored path: the same work, finalized.
         records.syncOnChain(tokenId, 0, type(uint256).max);

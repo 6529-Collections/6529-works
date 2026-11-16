@@ -152,6 +152,53 @@ contract WorkRecordsFreezeTest is RecordsFixture {
         );
     }
 
+    /// @dev Review round 4: no license can freeze that `finalize` could never accept. Before
+    ///      finalize a relicense takes no text of more than 16 chunks (or another digest kind),
+    ///      and RELICENSE cannot be renounced while the work's text has more than 16 chunks or
+    ///      is unregistered, since only a relicense could then repair it. A registered text of
+    ///      at most 16 chunks may still lack chunks: anyone can write them, and the work then
+    ///      finalizes. Fails without the change: the renunciation of the 17-chunk text goes
+    ///      through and the relicense reaches the consent check (`InvalidRecordData`).
+    function test_aLicenseFinalizeCouldNeverAcceptNeverFreezes() public {
+        bytes32 longText = _bigText(10, 17, false);
+        uint256 tooLong = _workWithLicense(310, License("LicenseRef-Long", longText));
+        (bytes32 s, uint64 d, bytes memory sig) = _renounceSig(tooLong, WorkPowers.RELICENSE);
+        vm.expectRevert(IWorkRecords.InvalidLicense.selector);
+        records.renounce(tooLong, WorkPowers.RELICENSE, s, d, sig);
+        // Before finalize, a relicense to a 17-chunk text is refused before the consents.
+        PackageItem memory item;
+        bytes32 longer = _bigText(11, 17, false);
+        vm.prank(governor);
+        vm.expectRevert(IWorkRecords.InvalidLicense.selector);
+        records.relicense(
+            tooLong, License("LicenseRef-Longer", longer), item, bytes32(0), 0, new bytes[](0)
+        );
+        // An unregistered text cannot freeze either: the store's refusal propagates.
+        bytes32 unknown = keccak256("unregistered text");
+        uint256 unregistered = _workWithLicense(311, License("LicenseRef-Unknown", unknown));
+        (s, d, sig) = _renounceSig(unregistered, WorkPowers.RELICENSE);
+        vm.expectRevert(abi.encodeWithSelector(IContentStore.ContentFileUnknown.selector, unknown));
+        records.renounce(unregistered, WorkPowers.RELICENSE, s, d, sig);
+        // Other powers still renounce.
+        (s, d, sig) = _renounceSig(tooLong, WorkPowers.ROYALTY_RATE);
+        records.renounce(tooLong, WorkPowers.ROYALTY_RATE, s, d, sig);
+
+        // A registered 16-chunk text with no chunk written yet freezes, then finalizes once
+        // anyone writes its chunks.
+        uint256 bounded =
+            _workWithLicense(312, License("LicenseRef-Bounded", _bigText(12, 16, false)));
+        (s, d, sig) = _renounceSig(bounded, WorkPowers.RELICENSE);
+        records.renounce(bounded, WorkPowers.RELICENSE, s, d, sig);
+        bytes32 state = records.workStateHash(bounded);
+        vm.prank(artist);
+        vm.expectRevert(IWorkRecords.InvalidLicense.selector);
+        records.finalize(bounded, state);
+        _bigText(12, 16, true);
+        vm.prank(artist);
+        records.finalize(bounded, state);
+        assertTrue(records.record(bounded).finalized);
+    }
+
     // ------------------------------------------------------------------ L1: media roles
 
     /// @dev Media roles are stored in four bits: role 15 opens, role 16 never does.

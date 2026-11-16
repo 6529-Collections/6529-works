@@ -465,6 +465,102 @@ contract WorkStoresTest is RecordsFixture, GasRuleAssertions {
         assertEq(vm.getRecordedLogs().length, 0, "nothing left: no-ops");
     }
 
+    /// @dev Review round 4: the upgrade walk wraps. File 0 (one chunk) completes in an added
+    ///      store while the content walk's cursor rests in file 1 (two chunks, only the first in
+    ///      the content store); file 1 then completes in the added store, and file 0's bytes
+    ///      reach the content store. The next content walk starts in file 1, passes over it (its
+    ///      second chunk is missing), reaches the end with budget left, wraps, and upgrades file
+    ///      0. Fails without the change: that call verifies nothing before the end and reverts
+    ///      (`NotOnChainComplete`), so file 0 waits on file 1's unrelated chunk.
+    function test_syncOnChain_theUpgradeWalkWrapsToAnEarlierFile() public {
+        uint256 id = _addStore(address(source));
+        (bytes32 a, bytes[] memory ca) = _bigFile(60, 1);
+        (bytes32 b, bytes[] memory cb) = _bigFile(61, 2);
+        source.put(ca[0]);
+        store.writeChunk(cb[0]);
+        bytes32[] memory files = new bytes32[](2);
+        (files[0], files[1]) = (a, b);
+        uint256 tokenId = _workOf(60, files);
+        vm.expectEmit(address(records));
+        emit IWorkRecords.MediaFileComplete(tokenId, 0, id);
+        _syncAs(artist, tokenId, id, 10);
+        // The content walk passes over file 0 and rests in file 1, at its missing chunk.
+        vm.expectEmit(address(records));
+        emit IWorkRecords.OnChainSyncProgress(tokenId, 1, 1, 0);
+        _syncAs(outsider, tokenId, 0, 10);
+        source.put(cb[0]);
+        source.put(cb[1]);
+        vm.expectEmit(address(records));
+        emit IWorkRecords.WorkOnChainComplete(tokenId);
+        _syncAs(artist, tokenId, id, 10);
+        store.writeChunk(ca[0]);
+        vm.expectEmit(address(records));
+        emit IWorkRecords.MediaFileComplete(tokenId, 0, 0);
+        vm.expectEmit(address(records));
+        emit IWorkRecords.OnChainSyncProgress(tokenId, 1, 0, 0);
+        _syncAs(outsider, tokenId, 0, 10);
+        (uint256 s0, bool c0) = records.mediaStore(tokenId, 0);
+        assertEq(s0, 0, "file 0 upgraded");
+        assertTrue(c0);
+        (uint256 s1,) = records.mediaStore(tokenId, 1);
+        assertEq(s1, id, "file 1 still in the added store");
+        // File 1 upgrades once its second chunk is there; then nothing is left to walk.
+        store.writeChunk(cb[1]);
+        vm.expectEmit(address(records));
+        emit IWorkRecords.MediaFileComplete(tokenId, 1, 0);
+        _syncAs(outsider, tokenId, 0, 10);
+        vm.recordLogs();
+        _syncAs(outsider, tokenId, 0, type(uint256).max);
+        assertEq(vm.getRecordedLogs().length, 0, "nothing left: a no-op");
+    }
+
+    /// @dev Review round 4: the shared upgrade cursor keeps every caller's progress and each call
+    ///      makes at most one pass. Two callers with a budget of one chunk each advance through
+    ///      file 1 in turn (neither restarts it); a third completes it, wraps, passes over file
+    ///      0 (no chunk of it in the content store) and stops where it started. A call that then
+    ///      verifies nothing in a whole pass, even with an unlimited budget, reverts and moves
+    ///      nothing. It guards the wrap against resetting progress or looping; without the wrap
+    ///      the third call stops at the end instead of where it started.
+    function test_syncOnChain_theUpgradeCursorKeepsProgressAndMakesOnePass() public {
+        uint256 id = _addStore(address(source));
+        (bytes32 g, bytes[] memory cg) = _bigFile(70, 2);
+        (bytes32 f, bytes[] memory cf) = _bigFile(71, 3);
+        for (uint256 j; j < 2; ++j) {
+            source.put(cg[j]);
+        }
+        for (uint256 j; j < 3; ++j) {
+            source.put(cf[j]);
+            store.writeChunk(cf[j]);
+        }
+        bytes32[] memory files = new bytes32[](2);
+        (files[0], files[1]) = (g, f);
+        uint256 tokenId = _workOf(70, files);
+        _syncAs(artist, tokenId, id, 10);
+        assertTrue(records.record(tokenId).onChainComplete);
+        vm.expectEmit(address(records));
+        emit IWorkRecords.OnChainSyncProgress(tokenId, 1, 1, 0);
+        _syncAs(outsider, tokenId, 0, 1);
+        vm.expectEmit(address(records));
+        emit IWorkRecords.OnChainSyncProgress(tokenId, 1, 2, 0);
+        _syncAs(makeAddr("second caller"), tokenId, 0, 1);
+        vm.expectEmit(address(records));
+        emit IWorkRecords.MediaFileComplete(tokenId, 1, 0);
+        vm.expectEmit(address(records));
+        emit IWorkRecords.OnChainSyncProgress(tokenId, 1, 0, 0);
+        _syncAs(makeAddr("third caller"), tokenId, 0, 10);
+        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.NotOnChainComplete.selector, tokenId));
+        _syncAs(outsider, tokenId, 0, type(uint256).max);
+        // File 0's bytes arrive: the next call upgrades it, and nothing is left.
+        store.writeChunk(cg[0]);
+        store.writeChunk(cg[1]);
+        vm.expectEmit(address(records));
+        emit IWorkRecords.MediaFileComplete(tokenId, 0, 0);
+        _syncAs(outsider, tokenId, 0, 10);
+        vm.recordLogs();
+        _syncAs(outsider, tokenId, 0, 10);
+        assertEq(vm.getRecordedLogs().length, 0, "nothing left: a no-op");
+    }
+
     /// @dev The ERC-4906 `MetadataUpdate` events Stream emitted since `vm.recordLogs`.
     function _metadataUpdates() internal returns (uint256 n) {
         Vm.Log[] memory logs = vm.getRecordedLogs();

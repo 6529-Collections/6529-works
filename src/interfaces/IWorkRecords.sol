@@ -243,7 +243,8 @@ interface IWorkRecords {
     ///           complete in an added store when the content store lacks a chunk of it, so no
     ///           order of files across stores holds back the others. Once the work is on-chain
     ///           complete the walk goes round again over the files still complete only in an
-    ///           added store. No added store is called on this walk.
+    ///           added store; a call that reaches the end with budget left wraps once, up to the
+    ///           file it started from. No added store is called on this walk.
     ///         - An added store: only the work's artist (`NotWorkArtist`), until the work is
     ///           on-chain complete; one walk at a time, resumed on the same store and restarted at
     ///           the content walk's cursor when the artist names another; it skips files already
@@ -315,7 +316,8 @@ interface IWorkRecords {
     /// @notice Changes a work's license. PARAMETER_SETTER role plus an EIP-712
     ///         `Typehashes.RELICENSE` signature from every party of `item`, in order, each by
     ///         its active authority. Leaving CC0 reverts (`LicenseIrrevocable`); a CC0 license
-    ///         names the deployment's CC0 text; the new text must be registered, and complete
+    ///         names the deployment's CC0 text; the new text must be registered with a SHA-256
+    ///         digest in at most 16 chunks, before finalize too (`InvalidLicense`), and complete
     ///         for a finalized work. Reverts with `PowerRenounced` once relicensing is renounced.
     /// @param tokenId A live work with an open record.
     /// @param next The new license.
