@@ -21,7 +21,7 @@ import { FederationBase } from "./FederationBase.sol";
 ///         Glamsterdam figures are estimates from ADR 0004's unit prices (the ADR shows the
 ///         arithmetic); Foundry cannot measure them.
 contract FederationGasTest is FederationBase {
-    uint256 internal constant DEPLOY_721_CEILING = 5_200_000;
+    uint256 internal constant DEPLOY_721_CEILING = 5_370_000;
     uint256 internal constant DEPLOY_1155_CEILING = 3_870_000;
     uint256 internal constant JOIN_CEILING = 295_000;
     uint256 internal constant APPROVE_CEILING = 61_000;
@@ -155,7 +155,8 @@ contract FederationGasTest is FederationBase {
         emit log_named_uint("FederatedEditions deploy (tx, Prague)", total1155);
         emit log_named_uint("FederatedEditions runtime bytes", runtime1155);
         emit log_named_uint("FederatedEditions constructor slots", slots1155);
-        assertEq(slots721, 10);
+        // Ten, plus the one collection's name at the `StreamLayout` slot the renderer reads.
+        assertEq(slots721, 11);
         assertEq(slots1155, 8);
         assertLe(total721, DEPLOY_721_CEILING);
         assertLe(total1155, DEPLOY_1155_CEILING);

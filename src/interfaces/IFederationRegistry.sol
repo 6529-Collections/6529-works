@@ -31,10 +31,11 @@ interface IFederationRegistry is IERC165 {
     }
 
     /// @notice A contract's status as the adapters see it. A contract that left the federation
-    ///         (`IArtistRegistry.FederationStatus.LEFT`, the token's own one-way exit) is reported
-    ///         ACTIVE here, because a sale started before the exit finishes; the artist
-    ///         registry's `federatedListing` tells the two apart, and a left contract mints no
-    ///         new work through a network adapter (`canMint`).
+    ///         (`IArtistRegistry.FederationStatus.LEFT`, the token's own one-way exit) has no
+    ///         entry (`entry` answers NONE), so no shared adapter can start a new sale of it
+    ///         (each locks its fee from the entry), while `isActive` still serves the sales it
+    ///         started before the exit, which finish; the artist registry's `federatedListing`
+    ///         records the exit.
     enum Status {
         NONE,
         ACTIVE,
@@ -50,7 +51,7 @@ interface IFederationRegistry is IERC165 {
     /// @param codeHash The contract's runtime code hash.
     /// @param feeShare The network's share of primary sales and royalties, out of 100,000, as
     ///        locked in the contract at deployment.
-    /// @param status Its status (LEFT reported as ACTIVE).
+    /// @param status Its status.
     struct Entry {
         Form form;
         address partner;
@@ -90,15 +91,18 @@ interface IFederationRegistry is IERC165 {
         bytes calldata signature
     ) external;
 
-    /// @notice A contract's entry; all zero (`status` NONE) for a contract that is not listed or
-    ///         whose code hash this registry does not know.
+    /// @notice A contract's entry; all zero (`status` NONE) for a contract that is not listed,
+    ///         whose code hash this registry does not know, or that left the federation. Every
+    ///         shared adapter locks a new sale's fee from this answer and requires its code hash
+    ///         to be the token's, so a contract without an entry starts no sale there.
     /// @param token The federated contract.
     /// @return The entry.
     function entry(address token) external view returns (Entry memory);
 
-    /// @notice Whether the shared adapters serve `token`: listed ACTIVE or LEFT (a sale started
-    ///         before an exit finishes), and its template version not revoked. A delisted
-    ///         contract's running sales end unsold with refunds.
+    /// @notice Whether the shared adapters serve `token`'s sales: listed ACTIVE or LEFT (a sale
+    ///         started before an exit finishes; a new one also needs an `entry`, which a left
+    ///         contract has not), and its template version not revoked. A delisted contract's
+    ///         running sales end unsold with refunds.
     /// @param token The federated contract.
     /// @return True while it is served.
     function isActive(address token) external view returns (bool);

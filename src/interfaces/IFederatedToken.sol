@@ -48,8 +48,10 @@ interface IFederatedToken is IMintTarget {
         address feeRecipient,
         address partner
     );
-    /// @notice The contract left the federation, for good: no network adapter mints for it any
-    ///         more, and the artist admits its own minters. Works minted before keep their terms.
+    /// @notice The contract left the federation, for good: no network adapter starts a sale of it
+    ///         any more (the federation registry answers no entry for it, so even a network
+    ///         adapter the artist admits as its own minter refuses), its running sales finish, and
+    ///         the artist admits its own minters. Works minted before keep their terms.
     event FederationLeft();
     /// @notice After its exit, the artist admitted or removed a minter.
     /// @param adapter The minter.

@@ -220,14 +220,21 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
     // ------------------------------------------------------------------ reads
 
     /// @inheritdoc IFederationRegistry
+    /// @dev A contract that left answers no entry: the English auction (`_lockTerms`) and the
+    ///      federated edition auction's lens (`feeTerms`) refuse a new sale whose entry's code
+    ///      hash is not the token's, so a left contract that admits a shared adapter as its own
+    ///      minter still starts no sale there, at the network's fee or any other, while
+    ///      `isActive` lets the sales it started before the exit finish.
     function entry(address token) external view returns (Entry memory e) {
         (uint256 artistId, IArtistRegistry.FederationStatus status) =
             artistRegistry.federatedListing(token);
         bytes32 codeHash = token.codehash;
         Template memory t = _templates[codeHash];
-        if (status == IArtistRegistry.FederationStatus.NONE || t.status == TemplateStatus.NONE) {
-            return e;
-        }
+        if (
+            status == IArtistRegistry.FederationStatus.NONE
+                || status == IArtistRegistry.FederationStatus.LEFT
+                || t.status == TemplateStatus.NONE
+        ) return e;
         (,,, uint32 feeShare,, address partner) = IFederatedToken(token).federationTerms();
         e = Entry(
             t.form,

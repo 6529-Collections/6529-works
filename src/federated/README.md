@@ -3,7 +3,7 @@
 6529 Stream Federated: artist-run token contracts built from the network's templates, listed
 in the network's directory without curation, sold through the network's shared adapters at the
 network's locked 10% share, and earning no TDH
-([ADR 0008](../../docs/adr/0008-federation.md); rules FED-1 to FED-58 in
+([ADR 0008](../../docs/adr/0008-federation.md); rules FED-1 to FED-63 in
 [Federation](../../docs/spec/federation.md)).
 
 ## Files
@@ -42,7 +42,9 @@ artist registry's (`IArtistRegistry.federatedListing` and its events).
 - **Govern.** `approveTemplate`, `revokeTemplate`, `setAdapter` (SUCCESSOR_SETTER, 30 days);
   `suspendTemplate` (GUARDIAN, immediate); `resumeTemplate`, `setStatus` (PARAMETER_SETTER,
   48 hours); `propagateRevocation` (anyone) (FED-44 to FED-50).
-- **Leave.** `leaveFederation` (artist), one-way; then `setAdmittedMinter` (FED-8, FED-9).
+- **Leave.** `leaveFederation` (artist), one-way; then `setAdmittedMinter` (FED-8, FED-9). A
+  contract that left has no registry entry, so no shared adapter starts a new sale of it, even
+  one the artist admits as its own minter; its running sales finish (FED-59).
 
 ## Developer notes
 
@@ -53,26 +55,36 @@ artist registry's (`IArtistRegistry.federatedListing` and its events).
   guarantees, [stream-and-auctions](../../docs/spec/stream-and-auctions.md#what-a-federated-template-must-guarantee));
   keep it so. Every other call out is a plain call that forwards all gas and reverts on any
   failure (the gas rule, `FederationGasRule.t.sol`).
+- **The renderer's native path (FED-61).** The shared renderer reads `coreOf` and, with
+  `extsload`, slots 17 (the one collection, its name two slots in) and 18 (the token words:
+  the minting adapter in bits 0-159, the work ID in 160-191), the slots `StreamLayout`
+  publishes for 6529 Stream. Do not reorder `FederatedStream`'s storage above `_tokens`; a
+  test pins both slots (`test_Layout_TheTemplateAnswersTheRenderersNativeReads`).
+- **What an item may say (FED-13, FED-27, FED-60).** Parties and artist-resolved payees name
+  only the artist; the license ID follows `SpdxId`; locators are printable ASCII without `"`
+  or `\`, at most `Limits.MAX_URI_BYTES`, so a work's own data never breaks its metadata.
 - **Token IDs are not work IDs.** A sale adapter keys a sale by token and ID, so a restart
   burns the unsold token and mints the next ID for the same work (`liveTokenOf`). An edition
   master whose edition sale began never restarts (its edition is keyed by that token ID).
 - **Edition auction.** The two deployments share `UniformEditionAuctionBase` and
   `UniformEditionAuctionLensBase` (src/sales); the federated adapter's extra slot (14: each
   sale's edition contract) is read by its lens. The federation logic lives in the lens to keep
-  the adapter inside EIP-170.
+  the adapter inside EIP-170. Its abandonment waits the locked delay alone (a federated 1/1
+  has no rescue; `_rescueDelay` answers the 90-day floor, FED-62).
 - **Sizes** are in [audit scope](../../docs/audit/scope.md); deployment gas, Prague and the
   Glamsterdam estimate, in ADR 0008.
 - **Tests:** `test/federated/` (sales, pair, refusal exit, governance and exit, invariants, gas
   rows, gas rule).
 
-## Before installing a registry
+## Genesis
 
-Set the economics resolver's `PRODUCT_FEDERATED` fee recipient to the governed fee vault first:
-the English auction refuses a federated start with a nonzero fee share while it is zero, and
-locks it for the sale at start (AUC-48; LIM-SAL-4 in
-[known limitations](../../docs/audit/known-limitations.md#sales-and-auctions)); joining checks
-that a template locked the same recipient and share. Approve the template code hashes and admit
-the English auction and the federated edition auction before any artist joins.
+Genesis deploys the registry, the federated edition auction's lens and the federated edition
+auction, binds the registry in the artist registry, points the English auction at it, admits
+both shared adapters and approves the two v1 template code hashes, computed by
+`DeployV1.templateCodeHash` from the build (FED-63); `VerifyV1.checkFederation` reads them
+back. The economics resolver's `PRODUCT_FEDERATED` fee recipient is the governed fee vault
+from construction, with a 10% share: joining checks that a template locked the same recipient
+and share, and the English auction locks them for each sale at start (AUC-48).
 
 ## See also
 

@@ -14,12 +14,15 @@ import { PRODUCT_FEDERATED, ProductEconomics } from "src/interfaces/types/Econom
 import { EditionTerms, ItemKind, PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { DeployV1 } from "script/DeployV1.sol";
 import { IntegrationBase } from "../integration/IntegrationBase.sol";
 
-/// @notice The real genesis stack plus a governed federation registry, wired as ADR 0008
-///         describes: the artist registry and the English auction point at it, the two v1
-///         template code hashes are approved, the English auction is admitted for new federated
-///         works. Helpers deploy an artist's templates, join, approve items and start sales.
+/// @notice The real genesis stack, whose genesis wiring sets up the federation as ADR 0008
+///         describes: the artist registry is bound to the federation registry and the English
+///         auction points at it, the two v1 template code hashes (computed by
+///         `DeployV1.templateCodeHash`) are approved, and the English auction and the federated
+///         edition auction are admitted for new federated works. Helpers deploy an artist's
+///         templates, join, approve items and start sales.
 abstract contract FederationBase is IntegrationBase {
     uint32 internal constant FED_SHARE = 10_000;
     uint32 internal constant RATE = 7_500;
@@ -33,32 +36,18 @@ abstract contract FederationBase is IntegrationBase {
     function setUp() public virtual override {
         super.setUp();
         fedArtist = _actor("federatedArtist");
-        fedRegistry = new FederationRegistry(address(manager), address(artists), address(economics));
-        _mapRegistryRoles(address(fedRegistry));
-        _govern(
-            hotAdmin,
-            address(artists),
-            abi.encodeCall(artists.bindFederationRegistry, (address(fedRegistry)))
-        );
-        _govern(
-            hotAdmin,
-            address(auction),
-            abi.encodeCall(auction.setFederationRegistry, (address(0), address(fedRegistry)))
-        );
+        fedRegistry = deployment.federationRegistry;
         fed = _deployStream(fedArtist);
         streamHash = address(fed).codehash;
         editionsHash = address(_deployEditions(fedArtist, address(fed))).codehash;
-        _approveTemplates(fedRegistry);
-        _govern(
-            hotAdmin,
-            address(fedRegistry),
-            abi.encodeCall(fedRegistry.setAdapter, (address(auction), true))
-        );
+        // Genesis approved exactly these: every copy runs the compiled runtime code.
+        assertEq(streamHash, DeployV1.templateCodeHash("FederatedStream"));
+        assertEq(editionsHash, DeployV1.templateCodeHash("FederatedEditions"));
     }
 
     // ------------------------------------------------------------------ governance
 
-    /// @dev Maps a federation registry's selectors to their genesis roles.
+    /// @dev Maps a replacement federation registry's selectors to their genesis roles.
     function _mapRegistryRoles(address reg) internal {
         bytes4[] memory successor = new bytes4[](3);
         successor[0] = FederationRegistry.approveTemplate.selector;

@@ -155,6 +155,9 @@ interface IFederatedStream is IFederatedToken {
     /// @notice No live token, or no such file, collection or index.
     /// @param tokenId The token (or collection) asked for.
     error UnknownWork(uint256 tokenId);
+    /// @notice A locator URI longer than `Limits.MAX_URI_BYTES` or with a byte outside printable
+    ///         ASCII (`0x21` to `0x7e`), `"` or `\` (the rule of 6529 Stream's served URIs).
+    error InvalidLocator();
 
     /// @notice The artist approves `itemHash` for one mint, with the royalty rate a new work of
     ///         it gets (no floor; at most 100,000), or re-approves a consumed item to restart its
@@ -182,7 +185,8 @@ interface IFederatedStream is IFederatedToken {
     /// @param tokenId A live token of the work.
     /// @param rate The new rate, below the current one.
     function setRoyaltyRate(uint256 tokenId, uint32 rate) external;
-    /// @notice The artist sets media file `index`'s locator (kind zero clears it).
+    /// @notice The artist sets media file `index`'s locator (kind zero clears it): at most
+    ///         `Limits.MAX_URI_BYTES` of printable ASCII without `"` or `\` (`InvalidLocator`).
     /// @param tokenId A live token of the work.
     /// @param index The media file's index.
     /// @param kind The locator kind.
@@ -250,6 +254,12 @@ interface IFederatedStream is IFederatedToken {
     /// @param tokenId A live token.
     /// @return The renderer.
     function rendererOf(uint256 tokenId) external view returns (address);
+    /// @notice `n` consecutive storage words from `slot`, as 6529 Stream's `extsload`: the
+    ///         renderer reads a work's serial and collection name at `StreamLayout`'s slots.
+    /// @param slot The first storage slot.
+    /// @param n The number of consecutive slots.
+    /// @return words The `n` words.
+    function extsload(bytes32 slot, uint256 n) external view returns (bytes32[] memory words);
     /// @notice The record satellite the renderer reads: this contract.
     /// @return This contract.
     function workRecords() external view returns (address);

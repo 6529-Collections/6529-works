@@ -19,10 +19,11 @@ import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
 import { MediaFile } from "../interfaces/types/ContentTypes.sol";
 import { CURRENCY_ETH } from "../interfaces/types/EconomicsTypes.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
-import { License, PackageItem } from "../interfaces/types/PackageTypes.sol";
+import { License, PackageItem, Party } from "../interfaces/types/PackageTypes.sol";
 import { PrimaryOutcome, PrimarySettlement, PrimaryTerms } from "../interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
 import { Dependency } from "../libraries/Dependency.sol";
+import { SpdxId } from "../stream/SpdxId.sol";
 import { FederatedMembership } from "./FederatedMembership.sol";
 
 /// @title FederatedStream
@@ -34,7 +35,12 @@ import { FederatedMembership } from "./FederatedMembership.sol";
 ///      this contract's own custody and the work can be offered again, so a work leaves this
 ///      contract only through a sale. Settlement makes no external call and reads no identity
 ///      state (the nine template guarantees of `stream-and-auctions.md`). The record the shared
-///      renderer reads is held here; this contract is its own `workRecords()`.
+///      renderer reads is held here; this contract is its own `workRecords()`. The renderer reads
+///      a work's facts as it reads 6529 Stream's, through `coreOf` and `extsload` at the slots
+///      `StreamLayout` publishes: slot 17 holds the one collection (its name two slots into the
+///      entry) and slot 18 the token words (the minting adapter in the low 160 bits, the work ID,
+///      shown as the serial, in the next 32). A test pins both to the compiler's layout; a
+///      template version's code, and so its layout, never changes.
 contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
     /// @dev Token states.
     uint8 private constant IN_SALE = 1;
@@ -53,6 +59,9 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
     uint256 private constant APPROVED = 1;
     /// @dev The one collection: this contract, named by the token name.
     uint256 private constant COLLECTION = 1;
+    /// @dev The bytes a locator URI may hold, as a bit set (WorkRecords' `URI_BYTES`): printable
+    ///      ASCII `0x21` to `0x7e` but `"` and `\`.
+    uint256 private constant URI_BYTES = 0x7fffffffeffffffffffffffa00000000;
 
     /// @dev A work. Slot 0 packs the seller vault, rate, kind, seed policy, flags, live token and
     ///      record version. `files` holds the media count (top byte) and each file's role (byte
@@ -75,8 +84,19 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
         bytes32[32] media;
     }
 
+    /// @dev The one collection's entry, shaped as 6529 Stream's (`StreamLayout.collectionSlot`):
+    ///      only the name is written (at construction, the ERC-721 name), so the renderer's
+    ///      native read finds it two slots into the entry.
+    struct CollectionEntry {
+        uint256 counts;
+        bytes32 metadataHash;
+        string name;
+    }
+
     /// @dev A token: its minting adapter, work, sale state and whether its sale terms carry the
-    ///      network's fee (minted before the exit).
+    ///      network's fee (minted before the exit). Packed from the least significant bit as 6529
+    ///      Stream's token word is up to the serial (`StreamLayout.tokenSlot`): the adapter in the
+    ///      seller's 160 bits, the work ID in the serial's 32.
     struct Token {
         address adapter;
         uint32 workId;
@@ -87,11 +107,14 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
     address private _contentStore;
     address private _defaultRenderer;
     bytes32 private _defaultRendererCodeHash;
+    /// @dev Slot 17 (`StreamLayout.COLLECTIONS_SLOT`): the one collection.
+    mapping(uint256 collectionId => CollectionEntry) private _collections;
+    /// @dev Slot 18 (`StreamLayout.TOKENS_SLOT`): the token words.
+    mapping(uint256 tokenId => Token) private _tokens;
     uint32 private _workCount;
     uint32 private _tokenCount;
     mapping(bytes32 itemHash => uint256) private _items;
     mapping(uint256 workId => Work) private _works;
-    mapping(uint256 tokenId => Token) private _tokens;
     /// @dev A sold token's currency (low 160 bits) and price (high 96, saturated).
     mapping(uint256 tokenId => uint256) private _sales;
     mapping(uint256 workId => mapping(uint256 index => IWorkDelivery.Location)) private _locators;
@@ -111,6 +134,7 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
     {
         Dependency.check(c.contentStore);
         _contentStore = c.contentStore;
+        _collections[COLLECTION].name = c.name;
         _setRenderer(c.renderer, c.rendererCodeHash);
     }
 
@@ -320,6 +344,7 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
         _onlyArtist();
         (uint256 workId, Work storage w) = _work(tokenId);
         if (index >= w.files >> 248) revert UnknownWork(tokenId);
+        if (!_isUri(uri)) revert InvalidLocator();
         _locators[workId][index] = IWorkDelivery.Location(kind, uri);
         emit LocatorSet(workId, index, kind, uri);
         emit MetadataUpdate(tokenId);
@@ -458,6 +483,17 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
     }
 
     /// @inheritdoc IFederatedStream
+    function extsload(bytes32 slot, uint256 n) external view returns (bytes32[] memory words) {
+        words = new bytes32[](n);
+        assembly ("memory-safe") {
+            let out := add(words, 0x20)
+            for { let i := 0 } lt(i, n) { i := add(i, 1) } {
+                mstore(add(out, shl(5, i)), sload(add(slot, i)))
+            }
+        }
+    }
+
+    /// @inheritdoc IFederatedStream
     function workRecords() external view returns (address) {
         return address(this);
     }
@@ -554,7 +590,11 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
     // ------------------------------------------------------------------ internal
 
     /// @dev Creates the work of a newly minted item: checks the media against the item and the
-    ///      content store, deploys the payout vaults and writes the record.
+    ///      content store, deploys the payout vaults and writes the record. The item may name no
+    ///      one but this contract's artist: every party's account and every artist-resolved
+    ///      payee must be the artist (its ID's account and its ID), since no other party consents
+    ///      on chain; fixed payees are accounts the artist pays. The license ID follows the mint
+    ///      rule (`SpdxId`), so the renderer can always show it.
     function _open(
         PackageItem memory item,
         MediaFile[] memory media,
@@ -568,6 +608,7 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
                 || WorksHashing.mediaHash(media) != item.mediaHash || item.kind > EDITION_MASTER
                 || item.seedPolicy > SEED_ARTIST
                 || (item.kind == EDITION_MASTER && _partner == address(0))
+                || !SpdxId.isValid(item.license.spdxId) || !_namesOnlyTheArtist(item)
         ) revert InvalidMintRequest();
         workId = ++_workCount;
         Work storage w = _works[workId];
@@ -644,6 +685,39 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
             media[i] = MediaFile(
                 fileId, IContentStore(_contentStore).sha256Of(fileId), uint8(files >> (8 * i))
             );
+        }
+    }
+
+    /// @dev Whether every party of `item` is the artist's account and every artist-resolved payee
+    ///      the artist's ID.
+    function _namesOnlyTheArtist(PackageItem memory item) private view returns (bool) {
+        uint256 id = _artistId;
+        Party[] memory parties = item.parties;
+        for (uint256 i; i < parties.length; ++i) {
+            if (uint160(parties[i].account) != id) return false;
+        }
+        for (uint256 i; i < item.payees.length; ++i) {
+            uint256 payee = item.payees[i].artistId;
+            if (payee != 0 && payee != id) return false;
+        }
+        return true;
+    }
+
+    /// @dev Whether `uri` is a locator the renderer can always serve: at most
+    ///      `Limits.MAX_URI_BYTES` of printable ASCII (`0x21` to `0x7e`) other than `"` and `\`,
+    ///      the rule 6529 Stream's records satellite applies to every served URI (WS-40), so a
+    ///      work's own locator can never break its metadata.
+    function _isUri(string calldata uri) private pure returns (bool ok) {
+        uint256 n = bytes(uri).length;
+        if (n > Limits.MAX_URI_BYTES) return false;
+        ok = true;
+        assembly ("memory-safe") {
+            for {
+                let p := uri.offset
+                let end := add(p, n)
+            } lt(p, end) { p := add(p, 1) } {
+                ok := and(ok, shr(byte(0, calldataload(p)), URI_BYTES))
+            }
         }
     }
 
