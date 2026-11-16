@@ -798,16 +798,14 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             ArtistIdentity memory identity =
                 ArtistIdentity(next, next, _profileId(account), _profileDoc(account));
             bytes32 evidence = keccak256(abi.encode("lifecycle recovery evidence", recoveries));
-            uint64 deadline = uint64(block.timestamp + 7 days);
-            bytes memory acceptance = _sign(
-                next, artists.overrideDigest(id, ChangeKind.CONTESTED, identity, evidence, deadline)
-            );
+            uint64 deadline = uint64(block.timestamp + 60 days);
+            bytes memory acceptance =
+                _sign(next, artists.replacementDigest(id, identity, evidence, deadline));
             _govern(
                 hotAdmin,
                 address(artists),
                 abi.encodeCall(
-                    artists.stageOverride,
-                    (id, ChangeKind.CONTESTED, identity, evidence, deadline, acceptance)
+                    artists.stageReplacement, (id, identity, evidence, deadline, acceptance)
                 )
             );
             reservedKey[id] = next;
@@ -824,8 +822,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             uint256 id = uint160(_party((seed % (ARTISTS + 1) + k) % (ARTISTS + 1)));
             if (reservedKey[id] == address(0)) continue;
             if (mode % 2 == 0) {
-                vm.prank(guardian2);
-                artists.vetoChange(id);
+                _govern(hotAdmin, address(artists), abi.encodeCall(artists.cancelReplacement, (id)));
                 ++hits["veto"];
             } else {
                 PendingChange memory p = artists.pendingChange(id);
@@ -953,7 +950,8 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         PoolItem storage it = pool[p];
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes32 digest = registry.moveDigest(it.root, it.itemHash, nonce, deadline);
-        MoveAuthorization memory move = MoveAuthorization(nonce, deadline, _sign(signer, digest));
+        MoveAuthorization memory move =
+            MoveAuthorization(nonce, deadline, abi.encodePacked(signer, _sign(signer, digest)));
         return abi.encode(
             StreamMintRequest(it.root, abi.decode(it.item, (PackageItem)), it.proof, move)
         );
@@ -1113,7 +1111,8 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         PartyAcceptance memory a = PartyAcceptance(
             account, _profileId(account), _profileDoc(account), uint64(block.timestamp + 1 days)
         );
-        bytes memory signature = _sign(signer, registry.acceptanceDigest(root, a));
+        bytes memory signature =
+            abi.encodePacked(signer, _sign(signer, registry.acceptanceDigest(root, a)));
         try registry.acceptPackage(root, a, signature) {
             _violation("a restrained artist accepted a package");
         } catch {
@@ -1149,7 +1148,9 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
                     _profileDoc(lcArtists[lead]),
                     uint64(block.timestamp + 1 days)
                 );
-                bytes memory signature = _sign(actor, registry.acceptanceDigest(packageOf[lead], a));
+                bytes memory signature = abi.encodePacked(
+                    actor, _sign(actor, registry.acceptanceDigest(packageOf[lead], a))
+                );
                 try registry.acceptPackage(packageOf[lead], a, signature) {
                     return true;
                 } catch {
@@ -1378,7 +1379,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             uint256 id = uint160(_party(i));
             if (reservedKey[id] == address(0)) continue;
             PendingChange memory p = artists.pendingChange(id);
-            assertTrue(p.kind == ChangeKind.CONTESTED, "the recovery is pending");
+            assertTrue(p.kind == ChangeKind.REPLACEMENT, "the recovery is pending");
             assertEq(artists.activeAuthorityOf(id), address(0), "a recovering artist is restrained");
         }
     }

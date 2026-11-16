@@ -193,7 +193,7 @@ contract FederationProvenanceTest is FederationBase {
             SignatureVerifier.InvalidSignature.selector, curated
         );
         vm.expectRevert(refused);
-        hostile.listUnder(curatedId, scam, deadline, "");
+        hostile.listUnder(curatedId, scam, deadline, abi.encodePacked(curated));
         bytes memory forged = _consent(fedArtist, curatedId, scam, deadline);
         vm.expectRevert(refused);
         hostile.listUnder(curatedId, scam, deadline, forged);
@@ -201,11 +201,14 @@ contract FederationProvenanceTest is FederationBase {
         vm.expectRevert(refused);
         hostile.listUnder(curatedId, scam, deadline, elsewhere);
         // A consent to this token with other facts (a fee share) is not consent to these.
-        bytes memory otherFacts = _sign(
+        bytes memory otherFacts = abi.encodePacked(
             curated,
-            _listingDigest(
-                IArtistRegistry.FederatedListing(
-                    curatedId, scam, 0, address(0), 10_000, address(0), deadline
+            _sign(
+                curated,
+                _listingDigest(
+                    IArtistRegistry.FederatedListing(
+                        curatedId, scam, 0, address(0), 10_000, address(0), deadline
+                    )
                 )
             )
         );
@@ -224,11 +227,15 @@ contract FederationProvenanceTest is FederationBase {
         view
         returns (bytes memory)
     {
-        return _sign(
-            signer,
-            _listingDigest(
-                IArtistRegistry.FederatedListing(
-                    artistId, token, 0, address(0), 0, address(0), deadline
+        // The proof names the artist's root (its ID's address); `signer` signs.
+        return abi.encodePacked(
+            address(uint160(artistId)),
+            _sign(
+                signer,
+                _listingDigest(
+                    IArtistRegistry.FederatedListing(
+                        artistId, token, 0, address(0), 0, address(0), deadline
+                    )
                 )
             )
         );
@@ -252,7 +259,7 @@ contract FederationProvenanceTest is FederationBase {
         vm.prank(fedArtist);
         fed.leaveFederation();
         (, IArtistRegistry.FederationStatus status) = artists.federatedListing(address(fed));
-        assertEq(uint8(status), uint8(IArtistRegistry.FederationStatus.LEFT_DELISTED));
+        assertEq(uint8(status), uint8(IArtistRegistry.FederationStatus.DELISTED));
         assertFalse(fedRegistry.isActive(address(fed)), "not served");
         assertFalse(auction.isTarget(address(fed)), "no bid or settlement as sold");
         assertEq(uint8(fedRegistry.entry(address(fed)).status), 0, "no entry");
@@ -330,7 +337,7 @@ contract FederationProvenanceTest is FederationBase {
         vm.warp(block.timestamp + delay);
         vm.prank(hotAdmin);
         manager.execute(address(fedRegistry), call);
-        _assertStatus(address(fed), IArtistRegistry.FederationStatus.LEFT_DELISTED);
+        _assertStatus(address(fed), IArtistRegistry.FederationStatus.DELISTED);
         assertFalse(auction.isTarget(address(fed)));
         _settleAtEnd(saleId);
         assertEq(auction.claimable(collector, CURRENCY_ETH), 1 ether, "refunded");
@@ -357,7 +364,7 @@ contract FederationProvenanceTest is FederationBase {
             )
         );
         _assertStatus(address(fed), IArtistRegistry.FederationStatus.DELISTED);
-        _assertStatus(address(other), IArtistRegistry.FederationStatus.LEFT_DELISTED);
+        _assertStatus(address(other), IArtistRegistry.FederationStatus.DELISTED);
         _assertStatus(address(unlisted), IArtistRegistry.FederationStatus.NONE);
         _govern(
             hotAdmin,
@@ -365,7 +372,7 @@ contract FederationProvenanceTest is FederationBase {
             abi.encodeCall(fedRegistry.setStatus, (tokens, IFederationRegistry.Status.ACTIVE, "r"))
         );
         _assertStatus(address(fed), IArtistRegistry.FederationStatus.ACTIVE);
-        _assertStatus(address(other), IArtistRegistry.FederationStatus.LEFT_DELISTED);
+        _assertStatus(address(other), IArtistRegistry.FederationStatus.DELISTED);
         assertFalse(fedRegistry.isActive(address(other)), "an exit is never relisted");
     }
 

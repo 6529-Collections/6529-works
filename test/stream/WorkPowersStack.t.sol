@@ -61,16 +61,14 @@ contract WorkPowersStackTest is IntegrationBase {
         ArtistIdentity memory next =
             ArtistIdentity(newKey, newKey, _profileId(artist), _profileDoc(artist));
         bytes32 evidence = keccak256("recovery evidence, public notice");
-        uint64 deadline = uint64(block.timestamp + 7 days);
-        bytes memory acceptance = _sign(
-            newKey, artists.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, deadline)
-        );
+        uint64 deadline = uint64(block.timestamp + 60 days);
+        bytes memory acceptance =
+            _sign(newKey, artists.replacementDigest(artistId, next, evidence, deadline));
         _govern(
             hotAdmin,
             address(artists),
             abi.encodeCall(
-                artists.stageOverride,
-                (artistId, ChangeKind.CONTESTED, next, evidence, deadline, acceptance)
+                artists.stageReplacement, (artistId, next, evidence, deadline, acceptance)
             )
         );
         p = artists.pendingChange(artistId);

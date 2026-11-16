@@ -203,8 +203,6 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
             if (
                 current == IArtistRegistry.FederationStatus.ACTIVE
                     || current == IArtistRegistry.FederationStatus.DELISTED
-                    || (current == IArtistRegistry.FederationStatus.LEFT
-                        && status == Status.DELISTED)
             ) artistRegistry.setFederatedStatus(tokens[i], next, voteRef);
         }
     }
@@ -303,8 +301,7 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
         if (_forwards(current)) return current.isActive(token);
         (, IArtistRegistry.FederationStatus status) = artistRegistry.federatedListing(token);
         TemplateStatus t = _templates[token.codehash].status;
-        return (status == IArtistRegistry.FederationStatus.ACTIVE
-                || status == IArtistRegistry.FederationStatus.LEFT)
+        return status == IArtistRegistry.FederationStatus.ACTIVE
             && (t == TemplateStatus.APPROVED || t == TemplateStatus.SUSPENDED);
     }
 

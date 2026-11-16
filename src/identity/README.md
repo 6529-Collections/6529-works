@@ -1,82 +1,54 @@
 # identity
 
-The artist registry and its consolidation adapter: who an artist is (an artist ID, an
-authority key, a payout address and profile claims), how the key or payout changes (a STANDARD
-change, or an override for contested, estate and lost-key cases, with governed waits that never
-go below their genesis values), who may cancel or contest a change (a sticky snapshot of
-consolidated wallets), the payout freeze and the restraint that keep a stolen key from acting
-while recovery is pending, and the permanent directory of federated contracts. The rules are in
-[Identity and recovery](../../docs/spec/identity-and-recovery.md) (`ID-*`); the contest vote is
-also in [Disputes and statements](../../docs/spec/disputes-and-statements.md#identity-contest-decided-by-a-recorded-vote).
+The artist registry and its consolidation adapter: who an artist or collaborator is (a 6529
+consolidated account: a root wallet and every wallet consolidated with it, all equal), where the
+account's money goes, how the account changes its root, payout or profile (2 days), how the
+network replaces a root (14 days' notice, contestable) or freezes an account at once (14 days),
+and the permanent directory of federated contracts. The rules are in
+[Identity and recovery](../../docs/spec/identity-and-recovery.md) (`ID-*`).
 
 ## Files
 
 | File | What it is |
 | --- | --- |
-| `ArtistRegistry.sol` | [`IArtistRegistry`](../interfaces/IArtistRegistry.sol), which is also the statement log's [`IArtistRoleResolver`](../interfaces/IArtistRoleResolver.sol) (`isArtist`) and the split wallets' [`IArtistPayoutResolver`](../economics/interfaces/IArtistPayoutResolver.sol) (`payoutAddress`): identities, changes, overrides, contests, the standing snapshot, the restraint. |
-| `ConsolidationAdapter.sol` | `IConsolidationSource` (declared in `IArtistRegistry.sol`) over the 6529 delegation contract: whether two wallets have a live, two-way, all-collections, use-case-999 consolidation at least 30 days old, read from the contract's public getters with bounded, fail-closed walks. |
+| `ArtistRegistry.sol` | [`IArtistRegistry`](../interfaces/IArtistRegistry.sol), which is also [`IAccounts`](../interfaces/IAccounts.sol) (who may act for an account; every consumer asks it), the statement log's [`IArtistRoleResolver`](../interfaces/IArtistRoleResolver.sol) (`isArtist`) and the split wallets' [`IArtistPayoutResolver`](../economics/interfaces/IArtistPayoutResolver.sol) (`payoutAddress`). |
+| `ConsolidationAdapter.sol` | `IConsolidationSource` (declared in `IArtistRegistry.sol`) over the 6529 delegation contract: `isConsolidated(root, wallet)`, a live two-way all-collections use-case-999 consolidation, no minimum age. |
 
 ## Entry points
 
 | Caller | Calls | Rules |
 | --- | --- | --- |
-| The bound package registry | `register` on an account's first package acceptance | ID-1, ID-2 |
-| The bound federation registry | `registerFederated` (with the account's own signature); `listFederatedContract` (with the artist's own `FederatedListing` consent, verified here), `setFederatedStatus` | ID-32 to ID-34, ID-41 |
-| A listed federated token | `recordFederationExit` (LEFT, or LEFT_DELISTED from DELISTED; terminal) | ID-34 |
-| Anyone, relaying the authority's signature, or, only for a dormant artist, an established wallet's (never a previous authority's; the change then waits the override delay) | `stageChange` (STANDARD) | ID-3 to ID-6, ID-40 |
-| The authority | `revokeNonce`; `heartbeat` (the authority only) | ID-5, ID-7, ID-19, ID-40 |
-| The previous authority or a captured wallet | `cancelChange`: cancels a STANDARD change, contests an override during its notice | ID-9, ID-13 |
-| Anyone | `executeChange` once due; `refreshStanding`; `expireContest` once the locked contest timeout has passed | ID-8, ID-15, ID-20 to ID-23 |
-| Governance | `stageOverride` (with the new authority's acceptance), `resolveContested` citing a recorded vote, `vetoChange`, `setConsolidationSource`, `setPackageRegistry` (Stream's successor package registry, owner decision 16), `setFederationRegistry`, `setTimer`; the genesis binds | ID-10 to ID-14, ID-27, ID-29 to ID-31, ID-35, ID-36; [role matrix](../../docs/audit/roles.md#artistregistry) |
-| The statement log; split wallets; every creator power | `isArtist`; `payoutAddress`; `activeAuthorityOf` (zero while restrained) | ID-16, ID-18, ID-28 |
+| Any contract checking an account | `isWallet`, `requireSigned`, `requireConsent`, `consentDigest`, `frozenUntil`, `isFederationDelisted`, `federatedFeeShare` | ID-2 to ID-4 |
+| The bound package registry | `register` on an account's first package acceptance | ID-1 |
+| The bound federation registry | `registerFederated` (with the wallet's own signature); `listFederatedContract` (with a wallet's consent); `setFederatedStatus` | ID-1, ID-12 |
+| Anyone, relaying a wallet's signature | `stageChange`; `executeChange` once due; `expireContest` once lapsed | ID-5, ID-7 |
+| A wallet of the account | `cancelChange` (cancel an own change, contest a replacement); `revokeNonce` | ID-5, ID-7 |
+| The network | `freeze`, `unfreeze`, `cancelReplacement` (no delay); `stageReplacement`, `resolveContested`, `setFederationDelisted`, `lowerFederatedFeeShare` (24 hours); `setConsolidationSource`, `setPackageRegistry`, `setFederationRegistry` (7 days) | ID-6 to ID-8, ID-13 to ID-15 |
+| The statement log; split wallets; sale creators | `isArtist`; `payoutAddress`; `activeAuthorityOf` | ID-10, ID-11 |
 
-Genesis wires `bindPackageRegistry`, `bindStream`, `bindSplitFactory` and `bindStatementLog`.
-The flows (lost key, stolen key and restraint, contest and vote, estate, refreshing standing,
-guardian veto) are under [Flows](../../docs/spec/identity-and-recovery.md#flows); the powers the
-restraint withholds are in the [stolen-key flow](../../docs/spec/identity-and-recovery.md#stolen-key-override-and-restraint).
+Genesis wires `bindPackageRegistry`, `bindStream`, `bindSplitFactory`, `bindStatementLog` and
+`bindFederationRegistry`.
 
 ## Developer notes
 
-- **The registry is permanent.** Split wallets and Stream pin it immutably, so it is never
-  redeployed; the identity source and the federation registry are swapped inside it
-  (`setConsolidationSource`, `setFederationRegistry`, compare-and-set).
-- **Storage.** `_artists` (the identity fields, last activity and nonce), `_pending` (one change
-  with its captured cancellers), `_standing` (at most 16 entries), `artistIdOf` for every past
-  and present authority, `reservedFor` for a staged new authority, and `_acceptanceUsed` for
-  override acceptances consumed by digest.
-- **Timers are one packed word** (`_timerWord`, 48 bits per `IArtistRegistry.Timer`), between the
-  packed `FLOORS` and `CEILINGS` constants. A staging locks its delay into `executableAt` and the
-  contest timeout into `PendingChange.contestTimeout` (free: it shares `kind`'s slot).
-- **Federation directory.** `_listings[token]` is one slot (`uint160` artist ID and status); the
-  fixed fields live only in `FederatedContractListed`. No identity path reads it.
-- **The `restrained` flag.** `activeAuthorityOf` reads the pending change only while
-  `Artist.restrained` is set, so every new way a change can end must clear the flag;
-  [`RestrainedFlag.t.sol`](../../test/identity/RestrainedFlag.t.sol) and the identity invariants
-  check it. It sits on the auction start and settle paths, so its cost shows up in the
-  [ADR 0004 table](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table).
-- **Bounded walks.** Raising `Limits.MAX_CANCELLERS` or the adapter's scan bounds means
-  re-measuring the worst cases against the spec's
-  [parameters](../../docs/spec/identity-and-recovery.md#parameters-and-limits).
-- **Behavior is owned by the spec:** what the consolidation source decides (ID-40,
-  [what the source decides](../../docs/spec/identity-and-recovery.md#what-the-consolidation-source-decides)),
-  refresh skips and shortfalls ([Refreshing standing](../../docs/spec/identity-and-recovery.md#refreshing-standing),
-  ID-38), and the adapter's fail-closed reads during an outage (ID-25, ID-26, LIM-ID-9).
-- **Delegation contract.** A constructor argument: mainnet's 6529 delegation contract, and on
-  Sepolia the official deployment with identical runtime bytecode
-  ([deployments](../../deployments/11155111/README.md)); on mainnet the deploy and Verify pin
-  the address and code hash (GV-31).
-- **Bytecode:** comfortable margin; figures in the
-  [audit scope](../../docs/audit/scope.md#curation-identity-and-records).
-- **Tests:** `forge test --match-path 'test/identity/**'`. End to end: `IdentityRecovery.t.sol`
-  and `RecoveryRestraint.t.sol` in [`test/integration/`](../../test/integration/). Coverage and
-  mutation testing: [Testing](../../docs/testing/README.md).
+- **The registry is permanent.** Split wallets and Stream pin it, so it is never redeployed;
+  the consolidation source and the federation registry are swapped inside it.
+- **Storage.** `_artists[id]`: slot 0 holds the root, the end of a freeze, the replacing flag
+  and the federation delisting flag, so `isWallet` for the root reads one word; then the payout
+  with the nonce, and the profile. `_pending` (one change), `artistIdOf` for every past and
+  present root, `reservedFor` for a staged new root, `_acceptanceUsed` for replacement
+  acceptances, `_listings[token]` (artist ID, status and fee share in one slot).
+- **The live read.** A non-root wallet costs one call to the consolidation source, forwarding
+  all gas (`BoundedCall.tryReadWordAll`): a shortfall reverts, anything else but `true` is "no".
+- **Fixed values.** `OWN_CHANGE_DELAY` 2 days, `REPLACEMENT_NOTICE` 14 days, `CONTEST_LAPSE` 90
+  days, `FREEZE_PERIOD` 14 days: compiled constants, each the guarantee.
+- **Delegation contract.** A constructor argument of the adapter: mainnet's 6529 delegation
+  contract, and on Sepolia the official deployment with identical runtime bytecode.
+- **Tests:** `forge test --match-path 'test/identity/**'`. End to end:
+  [`IdentityRecovery.t.sol`](../../test/integration/IdentityRecovery.t.sol).
 
 ## See also
 
-[ADR 0001 §11](../../docs/adr/0001-v1-scope.md#11-artist-identity-and-recovery) (with its
-"Hardening" decisions), [ADR 0003, identity](../../docs/adr/0003-build-time-decisions.md#identity-and-recovery-amends-adr-0001-11)
-and its [owner decisions](../../docs/adr/0003-build-time-decisions.md#owner-decisions-11-october-2026)
-(1 contested overrides, 4 artists pay for refreshes, 6 the restraint);
-[known limitations](../../docs/audit/known-limitations.md#identity-and-recovery) LIM-ID-1 to
-LIM-ID-14; [trust assumptions](../../docs/audit/trust-assumptions.md);
-[runbook, standing refresh](../../script/README.md#12-standing-refresh-refreshstanding).
+[ADR 0001 §11](../../docs/adr/0001-v1-scope.md#11-artist-identity-and-recovery);
+[known limitations](../../docs/audit/known-limitations.md#identity-and-recovery);
+[trust assumptions](../../docs/audit/trust-assumptions.md).

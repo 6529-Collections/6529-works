@@ -97,11 +97,14 @@ contract FederatedSaleTest is FederationBase {
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes memory sig =
             _sign(other, artists.registrationDigest(other, bytes32(0), bytes32(0), deadline));
-        bytes memory consent = _sign(
+        bytes memory consent = abi.encodePacked(
             other,
-            _listingDigest(
-                IArtistRegistry.FederatedListing(
-                    uint160(other), address(fed), 0, address(0), 0, address(0), deadline
+            _sign(
+                other,
+                _listingDigest(
+                    IArtistRegistry.FederatedListing(
+                        uint160(other), address(fed), 0, address(0), 0, address(0), deadline
+                    )
                 )
             )
         );

@@ -4,7 +4,9 @@ pragma solidity ^0.8.24;
 import { Test } from "forge-std/Test.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IArtistPayoutResolver } from "../../src/economics/interfaces/IArtistPayoutResolver.sol";
+import { IAccounts } from "../../src/interfaces/IAccounts.sol";
 import { IArtistRegistry, IConsolidationSource } from "../../src/interfaces/IArtistRegistry.sol";
+import { IItemApprovals } from "../../src/interfaces/IItemApprovals.sol";
 import { IArtistRoleResolver } from "../../src/interfaces/IArtistRoleResolver.sol";
 import { IContentStore } from "../../src/interfaces/IContentStore.sol";
 import {
@@ -61,7 +63,7 @@ contract InterfacesCompileTest is Test {
         assertEq(
             type(ICurationSignerVerifier).interfaceId, bytes4(0x9f12d97a), "ICurationSignerVerifier"
         );
-        assertEq(type(IPackageRegistry).interfaceId, bytes4(0x91325cdf), "IPackageRegistry");
+        assertEq(type(IPackageRegistry).interfaceId, bytes4(0x7bdc9b1d), "IPackageRegistry");
         assertEq(type(IContentStore).interfaceId, bytes4(0x943307d5), "IContentStore");
         assertEq(type(IDependencyRegistry).interfaceId, bytes4(0xe5338d57), "IDependencyRegistry");
         assertEq(type(IRenderer).interfaceId, bytes4(0xa772216d), "IRenderer");
@@ -71,8 +73,10 @@ contract InterfacesCompileTest is Test {
         assertEq(
             type(IArtistPayoutResolver).interfaceId, bytes4(0x9b2c1793), "IArtistPayoutResolver"
         );
-        assertEq(type(IArtistRegistry).interfaceId, bytes4(0x8efc5e8c), "IArtistRegistry");
-        assertEq(type(IConsolidationSource).interfaceId, bytes4(0x88836e34), "IConsolidationSource");
+        assertEq(type(IArtistRegistry).interfaceId, bytes4(0x82ef420e), "IArtistRegistry");
+        assertEq(type(IAccounts).interfaceId, bytes4(0x9f87c239), "IAccounts");
+        assertEq(type(IItemApprovals).interfaceId, bytes4(0x881b19aa), "IItemApprovals");
+        assertEq(type(IConsolidationSource).interfaceId, bytes4(0x42129132), "IConsolidationSource");
         assertEq(type(IEntropyModule).interfaceId, bytes4(0x14c06eb4), "IEntropyModule");
         assertEq(type(IFederationRegistry).interfaceId, bytes4(0xc32f19cd), "IFederationRegistry");
     }

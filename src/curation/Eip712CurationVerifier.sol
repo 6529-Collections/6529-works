@@ -14,8 +14,8 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 /// @notice The v1 curation verifier: a `Typehashes.PACKAGE_APPROVAL` attestation by an active
 ///         curation signer (ADR 0001 sections 3 and 13).
 /// @dev Signers are the AccessManager's `Roles.CURATION_SIGNER` members with no execution delay,
-///      so the 30-day grant delay governs who becomes a signer. The deploy configuration grants
-///      the role to at least two keys, so the guardian can cut one off with `disableSigner` and
+///      so the role grant governs who becomes a signer. The deploy configuration may grant
+///      the role to two keys, so the network can cut one off with `disableSigner` and
 ///      curation continues on the other. Replay needs no tracking here: the registry stores each
 ///      package root once. The approval digest binds this contract and the chain ID, so an
 ///      attestation is valid for one verifier deployment only.
@@ -28,7 +28,7 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      start, because that epoch's salt comes from the re-enable's block. The signer re-signs
 ///      what it still approves. Approvals still never expire with time (ADR 0001 section 3).
 ///
-///      Stopping a signer. `disableSigner` (GUARDIAN, immediate) is the way to stop a signer,
+///      Stopping a signer. `disableSigner` (the network, immediate) is the way to stop a signer,
 ///      and only it, or revoking the role and granting it again, ends an epoch. An ADMIN change
 ///      of the signer's execution delay makes the signer inactive while the delay is nonzero,
 ///      but keeps its epoch: approvals made before or during that change count again once the
@@ -70,7 +70,7 @@ contract Eip712CurationVerifier is ICurationSignerVerifier, AccessManaged, EIP71
     }
 
     /// @inheritdoc ICurationSignerVerifier
-    /// @dev Governed: map to GUARDIAN with no delay. Any address may be disabled in advance.
+    /// @dev A network action with no delay. Any address may be disabled in advance.
     ///      Ends the signer's epoch, so no approval it signed so far counts again.
     function disableSigner(address signer) external restricted {
         SignerState storage s = _signers[signer];
@@ -81,7 +81,7 @@ contract Eip712CurationVerifier is ICurationSignerVerifier, AccessManaged, EIP71
     }
 
     /// @inheritdoc ICurationSignerVerifier
-    /// @dev Governed: map to SUCCESSOR_SETTER (30 days). The signer starts a new epoch, salted
+    /// @dev A network action (7-day class). The signer starts a new epoch, salted
     ///      from this block, so nothing signed while it was disabled counts.
     function enableSigner(address signer) external restricted {
         SignerState storage s = _signers[signer];

@@ -242,7 +242,7 @@ contract FederationGovernanceTest is FederationBase {
             address(fed),
             uint160(fedArtist),
             IArtistRegistry.FederationStatus.ACTIVE,
-            IArtistRegistry.FederationStatus.LEFT,
+            IArtistRegistry.FederationStatus.ACTIVE,
             bytes32(0)
         );
         vm.prank(fedArtist);
@@ -265,7 +265,7 @@ contract FederationGovernanceTest is FederationBase {
             abi.encodeCall(fedRegistry.setStatus, (tokens, IFederationRegistry.Status.ACTIVE, ""))
         );
         (, IArtistRegistry.FederationStatus status) = artists.federatedListing(address(fed));
-        assertEq(uint8(status), uint8(IArtistRegistry.FederationStatus.LEFT));
+        assertEq(uint8(status), uint8(IArtistRegistry.FederationStatus.ACTIVE));
     }
 
     function test_Exit_TheArtistAdmitsItsOwnMintersAndNewWorksPayNoFee() public {
