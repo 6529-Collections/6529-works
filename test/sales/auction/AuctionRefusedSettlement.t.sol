@@ -928,6 +928,96 @@ contract AuctionRefusedSettlementTest is AuctionBase {
         _artistClaims(hostile, saleId);
     }
 
+    /// @dev A hand-built `PrimaryTerms` answer: head offset, eight struct words with `params` at
+    ///      `paramsOffset` and the artist as creator, then the length word and `body`.
+    function _rawTerms(uint256 paramsOffset, uint256 paramsLength, bytes memory body)
+        internal
+        view
+        returns (bytes memory)
+    {
+        return abi.encodePacked(
+            uint256(0x20),
+            bytes32(0),
+            uint256(uint160(ETH)),
+            uint256(0),
+            paramsOffset,
+            uint256(uint160(seller)),
+            uint256(uint160(network)),
+            uint256(FEE),
+            uint256(uint160(artist)),
+            paramsLength,
+            body
+        );
+    }
+
+    /// @dev A refused-close sale of `hostile` whose delivery is pending for the artist.
+    function _refusedSale() internal returns (uint256 saleId) {
+        saleId = _endedSale(hostile, true);
+        hostile.fail(HostileMintTarget.Call.SETTLE, HostileMintTarget.Fault.REVERT);
+        _refusable(saleId);
+        _settleOrRefund(saleId);
+        hostile.clear(HostileMintTarget.Call.SETTLE);
+    }
+
+    function _malformed() internal view returns (bytes memory) {
+        return
+            abi.encodeWithSelector(
+                BoundedCall.BoundedCallMalformedReturn.selector, address(hostile)
+            );
+    }
+
+    /// @dev Review round 5: the creator helper checks the whole `PrimaryTerms` shape. A
+    ///      well-formed hand-built answer names the artist, with and without `params` bytes.
+    function test_PendingDeliveryAcceptsAWellFormedTermsAnswer() public {
+        uint256 saleId = _refusedSale();
+        hostile.setRawTerms(_rawTerms(0x100, 64, new bytes(64)));
+        assertEq(auction.pendingDelivery(saleId), artist, "64 bytes of params");
+        hostile.setRawTerms(_rawTerms(0x100, 0, ""));
+        assertEq(auction.pendingDelivery(saleId), artist, "empty params");
+    }
+
+    /// @dev A `params` offset outside the answer, or one that would wrap under addition, is
+    ///      refused with `BoundedCallMalformedReturn`. Fails without the `params` check: both
+    ///      answers decode to the artist.
+    function test_PendingDeliveryRejectsAParamsOffsetOutsideTheData() public {
+        uint256 saleId = _refusedSale();
+        hostile.setRawTerms(_rawTerms(0x1000, 0, ""));
+        vm.expectRevert(_malformed());
+        auction.pendingDelivery(saleId);
+        hostile.setRawTerms(_rawTerms(type(uint256).max - 0x1f, 0, ""));
+        vm.expectRevert(_malformed());
+        auction.pendingDelivery(saleId);
+    }
+
+    /// @dev A `params` offset that points into the struct's own head (zero, or any word before
+    ///      the head ends) is not a canonical encoding and is refused. Fails without the lower
+    ///      bound: the head word it lands on reads as a small length and the creator is returned.
+    function test_PendingDeliveryRejectsAParamsOffsetInsideTheHead() public {
+        uint256 saleId = _refusedSale();
+        hostile.setRawTerms(_rawTerms(0, 0, ""));
+        vm.expectRevert(_malformed());
+        auction.pendingDelivery(saleId);
+        hostile.setRawTerms(_rawTerms(0xe0, 0, ""));
+        vm.expectRevert(_malformed());
+        auction.pendingDelivery(saleId);
+    }
+
+    /// @dev A `params` length that overruns the answer (one byte over, the maximum, and one that
+    ///      would wrap under addition) is refused with `BoundedCallMalformedReturn`. Fails
+    ///      without the `params` check: all three decode to the artist.
+    function test_PendingDeliveryRejectsAParamsLengthThatOverrunsTheData() public {
+        uint256 saleId = _refusedSale();
+        hostile.setRawTerms(_rawTerms(0x100, 65, new bytes(64)));
+        vm.expectRevert(_malformed());
+        auction.pendingDelivery(saleId);
+        hostile.setRawTerms(_rawTerms(0x100, type(uint256).max, new bytes(64)));
+        vm.expectRevert(_malformed());
+        auction.pendingDelivery(saleId);
+        hostile.setRawTerms(_rawTerms(0x100, type(uint256).max - 0x3f, new bytes(64)));
+        vm.expectRevert(_malformed());
+        auction.pendingDelivery(saleId);
+    }
+
     /// @dev A token whose `ownerOf` lies on the unbid path reports the work moved: the sale
     ///      settles unsold to the holder it names and the work stays in custody, out of anyone's
     ///      reach. Only the token's own work is affected; no funds are at stake.

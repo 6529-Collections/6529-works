@@ -77,7 +77,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     ///      chunk keeps the record checks O(1)).
     uint256 private constant CHUNK = SSTORE2.MAX_CHUNK_LENGTH;
     /// @dev The most chunks of any license text a work selects (relicensing, before or after
-    ///      finalize, and renouncing RELICENSE; `finalize` checks the opened license): a safety
+    ///      finalize, and renouncing RELICENSE; `finalize` checks the opened license, which
+    ///      `openRecord` does not): a safety
     ///      bound against unbounded work, so the presence check at finalize is at most 16 chunk
     ///      reads (about 393 KB of text) in one transaction.
     uint256 private constant MAX_LICENSE_TEXT_CHUNKS = 16;
@@ -185,6 +186,11 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     /// @dev The approved record file and license are stored as they are, so neither can freeze a
     ///      minted work: `finalize` enforces both. One license rule is checked here: a CC0
     ///      license names the deployment's CC0 text, since CC0 can never be left or corrected.
+    ///      Nothing else about a stored license is checked at open: not its identifier, nor
+    ///      whether its text is registered, has a SHA-256 digest, has at most 16 chunks or is
+    ///      complete. A text accepted here is checked when the work is finalized (all of that,
+    ///      completeness included) or RELICENSE is renounced (all but completeness), and when
+    ///      the license is replaced (`relicense`).
     function openRecord(uint256 tokenId, PackageItem calldata item, MediaFile[] calldata media)
         external
     {

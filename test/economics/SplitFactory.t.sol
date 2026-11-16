@@ -348,7 +348,7 @@ contract SplitFactoryTest is EconomicsBase {
         address a = address(uint160(bound(x, 1, type(uint160).max)));
         address b = address(uint160(bound(y, 1, type(uint160).max)));
         vm.assume(a != b);
-        // The ledger refuses itself as a payee (review C, F9).
+        // The ledger refuses itself as a fixed payee: a share it could never pay out.
         vm.assume(a != address(factory) && b != address(factory));
         ISplitWallet.Payee[] memory payees = _list(_fixed(a, share), _fixed(b, D - share));
         address predicted = factory.walletFor(payees, salt);
