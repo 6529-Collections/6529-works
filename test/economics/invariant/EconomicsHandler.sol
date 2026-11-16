@@ -31,6 +31,11 @@ import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 ///         fee-on-transfer token whose fee is toggled, a rebasing token whose index moves, and a
 ///         token whose `transfer` returns nothing (wallets only: it is never a sale currency, so
 ///         payments, deposits and flushes do not use it).
+///         The network (R11, R12, C19): some wallets name the network fee vault as a payee, and
+///         every release from them also pushes the vault its due share, which the model predicts
+///         (paid, refused by the token, or reverting the whole release). Marks, forfeits after
+///         180 days, escrow expiry after 180 days and the network's recovery of its own credits
+///         are modelled the same way; `warp` moves the clock.
 ///         `fail_on_revert` is on, so any unpredicted revert or mismatch fails the campaign.
 contract EconomicsHandler is Test {
     address internal constant ETH = address(0);
@@ -110,6 +115,22 @@ contract EconomicsHandler is Test {
     mapping(address wallet => ISplitWallet.Payee[]) internal _payees;
     mapping(address wallet => bytes32) public saltOf;
 
+    /// @notice The network fee vault the ledger names.
+    address public network;
+    /// @notice Whether a wallet names the network as a payee.
+    mapping(address wallet => bool) public isNetworkWallet;
+    /// @notice The model's marks: the released level to reach and when it was placed.
+    mapping(address wallet => mapping(address asset => mapping(uint256 index => uint256))) public
+        markTarget;
+    mapping(address wallet => mapping(address asset => mapping(uint256 index => uint256))) public
+        markAt;
+    /// @notice What the network vault received other than from wallets (payments, flushes).
+    mapping(address asset => uint256) public networkOther;
+    /// @notice The model's escrow clock: when each credit was last added to.
+    mapping(address target => mapping(address asset => uint256)) public ghostCreditedAt;
+
+    uint256 internal constant UNCLAIMED = 180 days;
+
     uint256 internal nonce;
     IReleaseVerifier.Authorization internal lastAuth;
     bytes internal lastSig;
@@ -117,10 +138,12 @@ contract EconomicsHandler is Test {
 
     constructor(Setup memory s) {
         wallets = s.wallets;
+        network = s.ledger.network();
         for (uint256 i; i < s.wallets.length; ++i) {
             saltOf[s.wallets[i]] = s.salts[i];
             for (uint256 j; j < s.payeeLists[i].length; ++j) {
                 _payees[s.wallets[i]].push(s.payeeLists[i][j]);
+                if (s.payeeLists[i][j].account == network) isNetworkWallet[s.wallets[i]] = true;
             }
         }
         toggle = s.toggle;
@@ -199,7 +222,11 @@ contract EconomicsHandler is Test {
         (address payout,) = _payoutOf(w, a.payee);
         bytes memory expected = a.account != payout
             ? abi.encodeWithSelector(ISplitWallet.NotPayoutAddress.selector, a.account, payout)
-            : abi.encodeWithSelector(IReleaseVerifier.NonceAlreadyUsed.selector, a.account, a.nonce);
+            : block.timestamp > a.deadline
+                ? abi.encodeWithSelector(SignatureVerifier.SignatureExpired.selector, a.deadline)
+                : abi.encodeWithSelector(
+                    IReleaseVerifier.NonceAlreadyUsed.selector, a.account, a.nonce
+                );
         (bool ok, bytes memory ret) = address(ledger)
             .call(
                 abi.encodeCall(
@@ -217,6 +244,9 @@ contract EconomicsHandler is Test {
         uint256[] memory predicted = new uint256[](n);
         for (uint256 k; k < n; ++k) {
             uint256 r = uint256(keccak256(abi.encode(seed, k)));
+            // Batches use wallets without the network: the router is unchanged, and the network
+            // push is modelled on the single-release paths.
+            if (isNetworkWallet[_wallet(r)]) r -= r % wallets.length;
             items[k] = _attemptFor(r, r >> 16, (r >> 32) % 2 == 0 ? ETH : address(usdc), 2);
             items[k].caller = address(router);
             if (signed) {
@@ -286,9 +316,11 @@ contract EconomicsHandler is Test {
         if (amount == 0) return;
         if (expectEscrow) {
             ghostOwed[target][asset] += amount;
+            ghostCreditedAt[target][asset] = block.timestamp;
             ++outcomes["pay.escrow"];
         } else {
-            if (target != address(toggle)) received[target][asset] += amount;
+            if (target == network) networkOther[asset] += amount;
+            else if (target != address(toggle)) received[target][asset] += amount;
             ++outcomes["pay.direct"];
         }
     }
@@ -332,6 +364,7 @@ contract EconomicsHandler is Test {
         }
         assertTrue(ok, "deposit reverted");
         ghostOwed[target][asset] += amount;
+        ghostCreditedAt[target][asset] = block.timestamp;
         ++outcomes["deposit.ok"];
     }
 
@@ -363,7 +396,8 @@ contract EconomicsHandler is Test {
         assertTrue(ok, "flush reverted");
         assertEq(abi.decode(ret, (uint256)), owed);
         ghostOwed[target][asset] = 0;
-        if (target != address(toggle)) received[target][asset] += owed;
+        if (target == network) networkOther[asset] += owed;
+        else if (target != address(toggle)) received[target][asset] += owed;
         ++outcomes["flush.ok"];
     }
 
@@ -386,7 +420,8 @@ contract EconomicsHandler is Test {
     }
 
     /// @notice Governed recovery between any two targets. A wallet's credit may move only to
-    ///         its equivalent replacement (same payees, another salt); the non-wallet target's
+    ///         its equivalent replacement (same payees, another salt); the network's own credit
+    ///         anywhere but zero or itself, without consent (C19); the other non-wallet target's
     ///         only to the replacement it consented to.
     function recover(uint256 fromSeed, uint256 toSeed, uint256 assetSeed) external {
         address from = _target(fromSeed);
@@ -400,7 +435,12 @@ contract EconomicsHandler is Test {
                 expected =
                     abi.encodeWithSelector(IRevenueEscrow.RecoveryNotConsented.selector, from, to);
             }
-        } else if (to == address(toggle) || to == from || _equivalent(from) != to) {
+        } else if (from == network) {
+            if (to == address(0) || to == from) {
+                expected = abi.encodeWithSelector(IRevenueEscrow.InvalidWallet.selector, to);
+            }
+        } else if (to == address(toggle) || to == network || to == from || _equivalent(from) != to)
+        {
             expected = abi.encodeWithSelector(IRevenueEscrow.NotEquivalentWallet.selector, from, to);
         }
         if (expected.length == 0 && ghostOwed[from][asset] == 0) {
@@ -417,11 +457,164 @@ contract EconomicsHandler is Test {
         assertTrue(ok, "recover reverted");
         ghostOwed[to][asset] += ghostOwed[from][asset];
         ghostOwed[from][asset] = 0;
+        ghostCreditedAt[to][asset] = block.timestamp;
         if (from == address(toggle)) {
             toggleConsent = address(0); // single use
             assertEq(escrow.recoveryConsent(from), address(0));
         }
-        ++outcomes[from == address(toggle) ? bytes32("recover.consented") : bytes32("recover.ok")];
+        ++outcomes[
+            from == address(toggle)
+                ? bytes32("recover.consented")
+                : from == network ? bytes32("recover.network") : bytes32("recover.ok")
+        ];
+    }
+
+    /// @notice Anyone moves a credit nobody claimed for 180 days to the network (R12). Refused
+    ///         for the network's own credit and before the 180 days.
+    function expire(uint256 targetSeed, uint256 assetSeed) external {
+        address target = _target(targetSeed);
+        address asset = assets[assetSeed % 3];
+        uint256 dueAt = ghostCreditedAt[target][asset] + UNCLAIMED;
+        uint256 owed = ghostOwed[target][asset];
+        bytes memory expected;
+        if (target == network) {
+            expected = abi.encodeWithSelector(IRevenueEscrow.InvalidWallet.selector, target);
+        } else if (block.timestamp < dueAt) {
+            expected = abi.encodeWithSelector(
+                IRevenueEscrow.CreditNotExpired.selector, target, asset, dueAt
+            );
+        } else if (owed == 0) {
+            expected = abi.encodeWithSelector(IRevenueEscrow.NothingOwed.selector, target, asset);
+        }
+        (bool ok, bytes memory ret) =
+            address(escrow).call(abi.encodeCall(IRevenueEscrow.expire, (target, asset)));
+        if (expected.length != 0) {
+            assertFalse(ok, "expire should revert");
+            assertEq(ret, expected, "expire error");
+            ++outcomes[keccak256(abi.encode(bytes32("expire"), bytes4(expected)))];
+            return;
+        }
+        assertTrue(ok, "expire reverted");
+        assertEq(abi.decode(ret, (uint256)), owed, "expire amount");
+        ghostOwed[network][asset] += owed;
+        ghostOwed[target][asset] = 0;
+        ghostCreditedAt[network][asset] = block.timestamp;
+        ++outcomes["expire.ok"];
+    }
+
+    // ------------------------------------------------------------------ unclaimed shares
+
+    /// @notice Anyone marks a payee's releasable share; a running mark cannot be replaced.
+    function mark(uint256 walletSeed, uint256 payeeSeed, uint256 assetSeed) external {
+        address w = _wallet(walletSeed);
+        uint256 i = payeeSeed % _payees[w].length;
+        address asset = assets[assetSeed % 5];
+        uint256 current = _observed(w, asset);
+        uint256 rel = ghostReleased[w][asset][i];
+        uint256 due;
+        bytes memory expected;
+        if (current < modelHigh[w][asset]) {
+            expected = abi.encodeWithSelector(
+                ISplitWallet.ObservedDecreased.selector, asset, modelHigh[w][asset], current
+            );
+        } else {
+            due = current * _payees[w][i].share / D - rel;
+            if (due == 0) {
+                expected = abi.encodeWithSelector(ISplitWallet.NothingToRelease.selector, asset, i);
+            } else if (markAt[w][asset][i] != 0 && rel < markTarget[w][asset][i]) {
+                expected = abi.encodeWithSelector(ISplitLedger.MarkPending.selector, w, asset, i);
+            }
+        }
+        (bool ok, bytes memory ret) = address(ledger)
+            .call(abi.encodeCall(ISplitLedger.mark, (_payees[w], saltOf[w], asset, i)));
+        if (expected.length != 0) {
+            assertFalse(ok, "mark should revert");
+            assertEq(ret, expected, "mark error");
+            ++outcomes[keccak256(abi.encode(bytes32("mark"), bytes4(expected)))];
+            return;
+        }
+        assertTrue(ok, "mark reverted");
+        markTarget[w][asset][i] = rel + due;
+        markAt[w][asset][i] = block.timestamp;
+        (uint256 target, uint256 at) = ledger.markOf(w, asset, i);
+        assertEq(target, rel + due, "mark target");
+        assertEq(at, block.timestamp, "mark time");
+        ++outcomes["mark.ok"];
+    }
+
+    /// @notice Anyone sends a matured mark's unreleased rest to the network: never more than was
+    ///         due at the mark and is still unreleased, never money that arrived after it.
+    function forfeit(uint256 walletSeed, uint256 payeeSeed, uint256 assetSeed) external {
+        address w = _wallet(walletSeed);
+        uint256 i = payeeSeed % _payees[w].length;
+        address asset = assets[assetSeed % 5];
+        (bytes memory expected, uint256 amount, uint256 push) = _expectForfeit(w, i, asset);
+        uint256 current = _observed(w, asset);
+        uint256 walletBefore = _bal(asset, w);
+        uint256 networkBefore = _bal(asset, network);
+        (bool ok, bytes memory ret) = address(ledger)
+            .call(abi.encodeCall(ISplitLedger.forfeit, (_payees[w], saltOf[w], asset, i)));
+        if (expected.length != 0) {
+            assertFalse(ok, "forfeit should revert");
+            assertEq(ret, expected, "forfeit error");
+            assertEq(_bal(asset, w), walletBefore, "residue: wallet");
+            ++outcomes[keccak256(abi.encode(bytes32("forfeit"), bytes4(expected)))];
+            return;
+        }
+        assertTrue(ok, "forfeit reverted");
+        assertEq(abi.decode(ret, (uint256)), amount, "forfeit amount");
+        assertEq(_bal(asset, network) - networkBefore, amount + push, "network delta");
+        assertEq(walletBefore - _bal(asset, w), amount + push, "wallet delta");
+        ghostReleased[w][asset][i] += amount;
+        ghostTotal[w][asset] += amount;
+        paidOut[asset] += amount;
+        _recordPush(w, asset, push);
+        modelHigh[w][asset] = current;
+        delete markTarget[w][asset][i];
+        delete markAt[w][asset][i];
+        (uint256 target,) = ledger.markOf(w, asset, i);
+        assertEq(target, 0, "mark cleared");
+        ++outcomes["forfeit.ok"];
+    }
+
+    function _expectForfeit(address w, uint256 i, address asset)
+        internal
+        view
+        returns (bytes memory err, uint256 amount, uint256 push)
+    {
+        uint256 at = markAt[w][asset][i];
+        uint256 dueAt = at == 0 ? 0 : at + UNCLAIMED;
+        if (at == 0 || block.timestamp < dueAt) {
+            return
+                (abi.encodeWithSelector(ISplitLedger.MarkNotDue.selector, w, asset, i, dueAt), 0, 0);
+        }
+        uint256 current = _observed(w, asset);
+        if (current < modelHigh[w][asset]) {
+            return (
+                abi.encodeWithSelector(
+                    ISplitWallet.ObservedDecreased.selector, asset, modelHigh[w][asset], current
+                ),
+                0,
+                0
+            );
+        }
+        uint256 rel = ghostReleased[w][asset][i];
+        uint256 target = markTarget[w][asset][i];
+        uint256 due = current * _payees[w][i].share / D - rel;
+        amount = rel < target ? target - rel : 0;
+        if (amount > due) amount = due;
+        if (amount == 0) {
+            return (abi.encodeWithSelector(ISplitWallet.NothingToRelease.selector, asset, i), 0, 0);
+        }
+        err = _transferError(asset, w, network, amount, 0, 0);
+        if (err.length != 0) return (err, 0, 0);
+        (err, push) = _expectPush(w, asset, i, amount, network);
+        if (err.length != 0) return (err, 0, 0);
+    }
+
+    /// @notice Moves the clock forward, so marks and escrow credits can mature.
+    function warp(uint256 seed) external {
+        vm.warp(block.timestamp + bound(seed, 1 hours, 200 days));
     }
 
     // ------------------------------------------------------------------ escrow excess
@@ -479,13 +672,15 @@ contract EconomicsHandler is Test {
         }
     }
 
-    /// @dev Every target's credit in `asset`, wallets first, the non-wallet target last.
+    /// @dev Every target's credit in `asset`, wallets first, then the non-wallet target and the
+    ///      network.
     function _credits(address asset) internal view returns (uint256[] memory owed) {
-        owed = new uint256[](wallets.length + 1);
+        owed = new uint256[](wallets.length + 2);
         for (uint256 i; i < wallets.length; ++i) {
             owed[i] = escrow.owed(wallets[i], asset);
         }
         owed[wallets.length] = escrow.owed(address(toggle), asset);
+        owed[wallets.length + 1] = escrow.owed(network, asset);
     }
 
     // ------------------------------------------------------------------ environment
@@ -498,12 +693,12 @@ contract EconomicsHandler is Test {
     }
 
     function toggleBlocked(uint256 seed) external {
-        uint256 pick = seed % (wallets.length + actors.length + 1);
+        uint256 pick = seed % (wallets.length + actors.length + 2);
         address target = pick < wallets.length
             ? address(wallets[pick])
             : pick < wallets.length + actors.length
                 ? actors[pick - wallets.length]
-                : address(toggle);
+                : pick == wallets.length + actors.length ? address(toggle) : network;
         usdc.setBlocked(target, !usdc.blocked(target));
     }
 
@@ -555,20 +750,26 @@ contract EconomicsHandler is Test {
         t.recipient = payout;
         t.requested = type(uint256).max;
         t.mode = mode;
-        t.signer = payout;
+        // The network vault holds no key: an actor signs for it, which the ledger refuses.
+        t.signer = keyOf[payout] == 0 ? actors[0] : payout;
     }
 
-    /// @dev Predicts an attempt: the exact revert data, or empty and the amount it pays.
-    function _expect(Attempt memory t) internal view returns (bytes memory err, uint256 amount) {
+    /// @dev Predicts an attempt: the exact revert data, or empty, the amount it pays and the
+    ///      network's push that follows it.
+    function _expect(Attempt memory t)
+        internal
+        view
+        returns (bytes memory err, uint256 amount, uint256 push)
+    {
         (address payout, bool artist) = _payoutOf(t.w, t.index);
         bool notPayout = (t.mode == 0 && artist) || t.mode == 1;
         if (notPayout && t.caller != payout) {
             err = abi.encodeWithSelector(ISplitWallet.NotPayoutAddress.selector, t.caller, payout);
-            return (err, 0);
+            return (err, 0, 0);
         }
         if (t.mode == 2 && t.signer != payout) {
             err = abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, payout);
-            return (err, 0);
+            return (err, 0, 0);
         }
         uint256 current = _observed(t.w, t.asset);
         uint256 high = modelHigh[address(t.w)][t.asset];
@@ -576,29 +777,79 @@ contract EconomicsHandler is Test {
             err = abi.encodeWithSelector(
                 ISplitWallet.ObservedDecreased.selector, t.asset, high, current
             );
-            return (err, 0);
+            return (err, 0, 0);
         }
         uint256 share = _payees[t.w][t.index].share;
         uint256 due = current * share / D - ghostReleased[address(t.w)][t.asset][t.index];
         amount = t.requested == type(uint256).max ? due : t.requested;
         if (amount == 0) {
             err = abi.encodeWithSelector(ISplitWallet.NothingToRelease.selector, t.asset, t.index);
-            return (err, 0);
+            return (err, 0, 0);
         }
         if (amount > due) {
             err = abi.encodeWithSelector(ISplitWallet.AmountExceedsReleasable.selector, amount, due);
-            return (err, 0);
+            return (err, 0, 0);
         }
-        err = _transferError(t.asset, address(t.w), t.recipient, amount);
-        if (err.length != 0) amount = 0;
+        err = _transferError(t.asset, address(t.w), t.recipient, amount, 0, 0);
+        if (err.length != 0) return (err, 0, 0);
+        (err, push) = _expectPush(t.w, t.asset, t.index, amount, t.recipient);
+        if (err.length != 0) return (err, 0, 0);
     }
 
-    /// @dev The token-level outcome of moving `amount` from `from` to `to` under each token's rules.
-    function _transferError(address asset, address from, address to, uint256 amount)
+    /// @dev R11: after payee `paid` of `w` was paid `amount` (to `recipient`), what the ledger
+    ///      pushes to the network: its due share, zero when the network is not another payee of
+    ///      `w`, is owed nothing, or the token refuses it; or the error that reverts the release.
+    function _expectPush(address w, address asset, uint256 paid, uint256 amount, address recipient)
         internal
         view
-        returns (bytes memory)
+        returns (bytes memory err, uint256 push)
     {
+        uint256 j = _networkIndex(w);
+        if (j == type(uint256).max || j == paid) return ("", 0);
+        push = _observed(w, asset) * _payees[w][j].share / D - ghostReleased[w][asset][j];
+        if (push == 0) return ("", 0);
+        // The rebasing token after the first move: the wallet holds fewer shares, and the
+        // network more when it was the first move's recipient.
+        uint256 moved = asset == address(rebase) ? amount * 1e18 / rebase.index() : 0;
+        err = _transferError(asset, w, network, push, moved, recipient == network ? moved : 0);
+        // A token that refuses the network leaves its share due; any other failure reverts.
+        if (err.length != 0 && bytes4(err) == TokenTransfer.TokenCallFailed.selector) {
+            return ("", 0);
+        }
+        if (err.length != 0) push = 0;
+    }
+
+    function _networkIndex(address w) internal view returns (uint256) {
+        for (uint256 j; j < _payees[w].length; ++j) {
+            if (_payees[w][j].account == network) return j;
+        }
+        return type(uint256).max;
+    }
+
+    /// @dev Records a push the network received from `w`.
+    function _recordPush(address w, address asset, uint256 push) internal {
+        if (push == 0) {
+            if (isNetworkWallet[w]) ++outcomes["push.none"];
+            return;
+        }
+        uint256 j = _networkIndex(w);
+        ghostReleased[w][asset][j] += push;
+        ghostTotal[w][asset] += push;
+        paidOut[asset] += push;
+        ++outcomes["push.ok"];
+    }
+
+    /// @dev The token-level outcome of moving `amount` from `from` to `to` under each token's
+    ///      rules. For the rebasing token, `fromLess` shares are taken from `from` and `toMore`
+    ///      added to `to` first (a move earlier in the same call).
+    function _transferError(
+        address asset,
+        address from,
+        address to,
+        uint256 amount,
+        uint256 fromLess,
+        uint256 toMore
+    ) internal view returns (bytes memory) {
         if (asset == address(usdc) && (usdc.blocked(from) || usdc.blocked(to))) {
             return abi.encodeWithSelector(
                 TokenTransfer.TokenCallFailed.selector, asset, usdc.transfer.selector
@@ -610,8 +861,8 @@ contract EconomicsHandler is Test {
         if (asset == address(rebase)) {
             uint256 idx = rebase.index();
             uint256 shares = amount * 1e18 / idx;
-            uint256 sf = rebase.sharesOf(from);
-            uint256 st = rebase.sharesOf(to);
+            uint256 sf = rebase.sharesOf(from) - fromLess;
+            uint256 st = rebase.sharesOf(to) + toMore;
             if (
                 sf * idx / 1e18 - (sf - shares) * idx / 1e18 != amount
                     || (st + shares) * idx / 1e18 - st * idx / 1e18 != amount
@@ -621,7 +872,7 @@ contract EconomicsHandler is Test {
     }
 
     function _run(Attempt memory t) internal {
-        (bytes memory expected, uint256 amount) = _expect(t);
+        (bytes memory expected, uint256 amount, uint256 push) = _expect(t);
         uint256 current = _observed(t.w, t.asset);
         uint256 walletBefore = _bal(t.asset, address(t.w));
         uint256 recipientBefore = _bal(t.asset, t.recipient);
@@ -641,11 +892,12 @@ contract EconomicsHandler is Test {
         assertTrue(ok, "release reverted");
         assertEq(abi.decode(ret, (uint256)), amount, "release amount");
         uint256 paid = _bal(t.asset, t.recipient) - recipientBefore;
-        assertEq(paid, amount, "recipient delta");
-        assertEq(walletBefore - _bal(t.asset, address(t.w)), amount, "wallet delta");
-        ghostReleased[address(t.w)][t.asset][t.index] += paid;
-        ghostTotal[address(t.w)][t.asset] += paid;
-        paidOut[t.asset] += paid;
+        assertEq(paid, t.recipient == network ? amount + push : amount, "recipient delta");
+        assertEq(walletBefore - _bal(t.asset, address(t.w)), amount + push, "wallet delta");
+        ghostReleased[address(t.w)][t.asset][t.index] += amount;
+        ghostTotal[address(t.w)][t.asset] += amount;
+        paidOut[t.asset] += amount;
+        _recordPush(t.w, t.asset, push);
         modelHigh[address(t.w)][t.asset] = current;
         ++outcomes[keccak256(abi.encode(kind, "ok"))];
         if (t.asset == address(silent)) ++outcomes["release.noReturn"];
@@ -775,7 +1027,8 @@ contract EconomicsHandler is Test {
     }
 
     function _target(uint256 seed) internal view returns (address) {
-        uint256 pick = seed % (wallets.length + 1);
+        uint256 pick = seed % (wallets.length + 2);
+        if (pick == wallets.length + 1) return network;
         return pick == wallets.length ? address(toggle) : address(wallets[pick]);
     }
 

@@ -72,7 +72,7 @@ abstract contract StreamFixture is Test {
         artists = new MockArtistRegistry();
         registry.setArtistRegistry(address(artists));
         renderer = new MockRenderer("default");
-        splitFactory = new SplitLedger(IArtistPayoutResolver(address(artists)));
+        splitFactory = new SplitLedger(IArtistPayoutResolver(address(artists)), address(manager));
         seller = _sellerOf(_item(0).payees);
         econ = new MockEconomics(_defaultTerms(), address(splitFactory));
         entropy = new MockEntropy();

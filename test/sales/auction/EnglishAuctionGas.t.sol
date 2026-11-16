@@ -84,7 +84,7 @@ contract EnglishAuctionGasTest is Test {
     function setUp() public {
         manager = new AccessManager(address(this));
         allowlist = new AssetAllowlist(address(manager), 0.001 ether);
-        factory = new SplitLedger(new MockArtistResolver());
+        factory = new SplitLedger(new MockArtistResolver(), address(manager));
         artists = new LeanArtistRegistry();
         registry = new LeanPackageRegistry(artists);
         resolver = new LeanEconomicsResolver(factory, network);

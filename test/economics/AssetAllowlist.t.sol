@@ -234,17 +234,15 @@ contract AssetAllowlistTest is EconomicsBase {
     }
 
     /// @dev The English auction's opening bid lives in the asset's status word (ADR 0007): set
-    ///      compare-and-set on the revision within `OPENING_BID_FLOORS` floors and the 96-bit
-    ///      bid cap; read with the status (`activeOpeningBid`, `defaultCurrencyOpeningBid`), which
-    ///      refuse an inactive asset; a deprecation keeps the value for a re-admission.
+    ///      compare-and-set on the revision up to the 96-bit storage bound (no price cap, R19);
+    ///      read with the status (`activeOpeningBid`, `defaultCurrencyOpeningBid`), which refuse
+    ///      an inactive asset; a deprecation keeps the value for a re-admission.
     function test_OpeningBid_LivesInTheStatusWord() public {
-        uint256 ceiling = ETH_FLOOR * allowlist.OPENING_BID_FLOORS();
+        uint256 cap = type(uint96).max;
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IAssetAllowlist.OpeningBidAboveCeiling.selector, ceiling + 1, ceiling
-            )
+            abi.encodeWithSelector(IAssetAllowlist.OpeningBidAboveCeiling.selector, cap + 1, cap)
         );
-        allowlist.setOpeningBid(ETH, 1, ceiling + 1);
+        allowlist.setOpeningBid(ETH, 1, cap + 1);
         vm.expectEmit(true, false, false, true, address(allowlist));
         emit IAssetAllowlist.OpeningBidSet(ETH, 0, 0.05 ether, 2);
         allowlist.setOpeningBid(ETH, 1, 0.05 ether);
@@ -476,5 +474,16 @@ contract AssetAllowlistTest is EconomicsBase {
         floor = bound(floor, 1, type(uint256).max);
         allowlist.admitAsset(address(usdc), 0, floor);
         assertEq(allowlist.incrementFloor(address(usdc)), floor);
+    }
+
+    /// @dev R19: no price cap. Any opening bid that fits its 96-bit storage is accepted whatever
+    ///      the increment floor, including far above the former 1,000-floor cap (1 ETH at the
+    ///      0.001 ETH floor); only a bid above `type(uint96).max` is refused.
+    function testFuzz_OpeningBid_NoPriceCap(uint256 bid) public {
+        bid = bound(bid, ETH_FLOOR * 1_000 + 1, type(uint96).max);
+        vm.expectEmit(address(allowlist));
+        emit IAssetAllowlist.OpeningBidSet(ETH, 0, bid, 2);
+        allowlist.setOpeningBid(ETH, 1, bid);
+        assertEq(allowlist.activeOpeningBid(ETH), bid);
     }
 }

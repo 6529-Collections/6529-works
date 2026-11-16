@@ -202,10 +202,11 @@ contract CuratedSaleFlowTest is IntegrationBase {
         assertEq(splitFactory.createWallet(royaltyPayees, bytes32(0)), receiver);
         uint256 feeBefore = networkFee.balance;
         uint256 sellerBefore = terms.seller.balance;
-        for (uint256 i; i < 2; ++i) {
-            vm.prank(keeper);
-            splitFactory.release(royaltyPayees, bytes32(0), CURRENCY_ETH, i);
-        }
+        // The seller's release also pays the network its share (R11).
+        vm.prank(keeper);
+        splitFactory.release(
+            royaltyPayees, bytes32(0), CURRENCY_ETH, royaltyPayees[0].account == networkFee ? 1 : 0
+        );
         assertEq(networkFee.balance - feeBefore, amount / 4, "25% of royalties to the network");
         assertEq(terms.seller.balance - sellerBefore, amount - amount / 4, "75% to the seller");
         payees; // the seller wallet's own payees are unchanged by royalties

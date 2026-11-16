@@ -5,6 +5,7 @@ import { Test } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { AssetAllowlist } from "src/economics/AssetAllowlist.sol";
 import { ClaimRouter } from "src/economics/ClaimRouter.sol";
+import { GovernedVault } from "src/economics/GovernedVault.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
 import { RevenuePayment } from "src/economics/RevenuePayment.sol";
 import { SplitLedger } from "src/economics/SplitLedger.sol";
@@ -48,6 +49,9 @@ abstract contract EconomicsBase is Test {
     SplitLedger internal factory;
     SplitLedger internal verifier;
     RevenueEscrow internal escrow;
+    /// @dev The network fee vault the ledger names (`SplitLedger.network`), paying `feeSafe`.
+    GovernedVault internal feeVault;
+    address internal feeSafe = makeAddr("feeSafe");
     ClaimRouter internal router;
     PaymentHarness internal payer;
     MockERC20 internal token;
@@ -67,7 +71,8 @@ abstract contract EconomicsBase is Test {
         allowlist = new AssetAllowlist(address(manager), ETH_FLOOR);
         resolver = new MockArtistResolver();
         resolver.set(ARTIST, artistPayout);
-        ledger = new SplitLedger(resolver);
+        feeVault = new GovernedVault(address(manager), feeSafe);
+        ledger = new SplitLedger(resolver, address(feeVault));
         factory = ledger;
         verifier = ledger;
         escrow = new RevenueEscrow(address(manager), ledger);

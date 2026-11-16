@@ -12,10 +12,10 @@ the governed vault for the network's own accounts. The rules are in
 | --- | --- |
 | `EconomicsResolver.sol` | Governed per-product economics for new works (fee share and recipient, royalty rate, default license), `newWorkTerms` and `resolveCurrency`; and the 6529 Network Museum (`museum`, `setMuseum`), where an unbid canonical work goes (ECO-37). |
 | `AssetAllowlist.sol` | Replaceable (no permanent contract references it; withdrawals never read it). Governed currencies: status, increment floor, the English auction's opening bid (`setOpeningBid`, in the status word) and `statusClock` per asset, and a default currency per product, each compare-and-set on its own revision. |
-| `SplitLedger.sol` | Permanent, permissionless, unowned. `walletFor` predicts and `createWallet` deploys a split wallet (a `SplitVault`) at its CREATE2 address; keeps every wallet's accounting; executes `release`, `releaseTo` and signed `releaseWithAuthorization` (EIP-712, per-account nonce bitmaps shared across wallets, `revokeNonce`). Fixed payees by account, artist-resolved payees by artist ID through the artist registry's `payoutAddress`. |
+| `SplitLedger.sol` | Permanent, permissionless, unowned. `walletFor` predicts and `createWallet` deploys a split wallet (a `SplitVault`) at its CREATE2 address; keeps every wallet's accounting; executes `release`, `releaseTo` and signed `releaseWithAuthorization` (EIP-712, per-account nonce bitmaps shared across wallets, `revokeNonce`). Fixed payees by account, artist-resolved payees by artist ID through the artist registry's `payoutAddress`. Every release also pays the network fee vault (`network`, a constructor argument) its due share when it is a payee (ECO-43); `mark` and, 180 days later, `forfeit` send an unclaimed share to the network (ECO-44). |
 | `SplitVault.sol` | The wallet's 66 bytes of raw EVM code (documented byte by byte): holds ETH and ERC-20s, accepts plain ETH from anyone, moves funds only on its ledger's instruction. |
-| `GovernedVault.sol` | The network fee recipient and the museum as contracts: receive ETH, ERC-20s, ERC-721s and ERC-1155s; forward only to a destination governance sets (FUNDS_SETTER, 14 days). |
-| `RevenueEscrow.sol` | Credits a wallet whose payment failed; anyone flushes; governed `recover` with the consent rules; `consentToRecovery`; governed `sweepExcess` of what nobody is owed. |
+| `GovernedVault.sol` | The network fee recipient and the museum as contracts: receive ETH, ERC-20s, ERC-721s and ERC-1155s; forward only to a destination the network sets (3 days for the fee vault, 7 days for the museum's). Deployed before the ledger, which names the fee vault. |
+| `RevenueEscrow.sol` | Credits a wallet whose payment failed; anyone flushes; governed `recover` (identical wallets; the network's own credits without consent; anyone else's with its `consentToRecovery`); `expire` of a credit unclaimed for 180 days to the network (ECO-45); governed `sweepExcess` of what nobody is owed. |
 | `ClaimRouter.sol` | Stateless batch claims through the ledger: up to 50 plain items (fixed payees) or 20 signed items. |
 | `RevenuePayment.sol` | Internal library for payers: pay the wallet with a fixed gas allowance, else credit the escrow. |
 | `TokenTransfer.sol`, `Splits.sol` | Internal libraries: exact-delta ERC-20 moves; payee-list validation, royalty payees and share maths. |
@@ -27,9 +27,9 @@ the governed vault for the network's own accounts. The rules are in
 | --- | --- | --- |
 | Stream at mint; Editions at `createEdition` | Stream reads `economics` and derives the seller with `walletFor(payees, 0)`; Editions calls `newWorkTerms(PRODUCT_EDITIONS, payees)`. Either way the terms are locked into the work. | ECO-6, ECO-7 |
 | Sale adapters | `defaultCurrency`, `isActive`, `statusClock` and `incrementFloor` on the allowlist (the English auction locks the currency at start and the increment floor at the first bid); `newWorkTerms(PRODUCT_EDITIONS, payees)` when an edition sale opens; `RevenuePayment` to the seller and fee recipient | ECO-26, ECO-34, AUC-15, EA-2, EA-12 |
-| Anyone | `createWallet`, `release` for a fixed payee, `flush`, `claim`; a governed vault's `forward`, `releaseToDestination`, `consentToRecovery` | ECO-9 to ECO-15, ECO-27, ECO-29, ECO-30, ECO-41 |
+| Anyone | `createWallet`, `release` for a fixed payee, `mark`, `forfeit`, `flush`, `expire`, `claim`; a governed vault's `forward`, `releaseToDestination` | ECO-9 to ECO-15, ECO-27, ECO-29, ECO-30, ECO-41, ECO-43 to ECO-45 |
 | An artist's current payout address | `release`, `releaseTo`, or a signature submitted with `releaseWithAuthorization` / `claimSigned`; `revokeNonce` | ECO-16, ECO-17, ECO-20 to ECO-22 |
-| A non-wallet account with escrow credits (the fee-recipient Safe) | `consentToRecovery(replacement)` | ECO-28 |
+| A non-wallet account with escrow credits that is not the network's | `consentToRecovery(replacement)` | ECO-28 |
 | Governance | resolver and allowlist setters, `deprecateAsset`, `recover`, `sweepExcess`, `GovernedVault.setDestination` | ECO-2 to ECO-5, ECO-32, ECO-33; [role matrix](../../docs/audit/roles.md#economicsresolver) |
 
 Payment, release and recovery sequences are under
@@ -47,6 +47,11 @@ Payment, release and recovery sequences are under
 - **Payee checks read no state.** A `Splits.validate` check that read another contract could
   flip after a wallet's address was paid and leave it undeployable.
 - **Keep the allowlist out of the wallet and escrow** (ECO-25).
+- **Deployment order.** The fee vault (`GovernedVault`) first, then the ledger with it as
+  `network`; the ledger checks only that it has code, so the deploy script must pass the right
+  vault.
+- **The network push looks up a sorted list.** `_payNetwork` binary-searches the canonical payee
+  list; it runs only after the main release succeeded, which proves the list is the wallet's.
 - **Token strictness.** Only a wallet release, the escrow sweep and a governed vault's forward
   accept a no-return token (ECO-23); every path that takes a sale currency in stays on
   `transferExact` / `pullExact`.
