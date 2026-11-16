@@ -334,12 +334,13 @@ selectors.
 | `IStatementLog` | [`IStatementLog.sol`](../../src/interfaces/IStatementLog.sol) | `0xbb5574c7` | `0x276fbc56` | None: StatementLog does not implement ERC-165 |
 | `IArtistRoleResolver` | [`IArtistRoleResolver.sol`](../../src/interfaces/IArtistRoleResolver.sol) | `0x3074ca00` | `0x3074ca00` | ArtistRegistry |
 | `IArtistPayoutResolver` | [`IArtistPayoutResolver.sol`](../../src/economics/interfaces/IArtistPayoutResolver.sol) | `0x9b2c1793` | `0x9b2c1793` | ArtistRegistry |
-| `IArtistRegistry` | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) | `0x836f1b67` | `0x3e70f8a1` | ArtistRegistry |
+| `IArtistRegistry` | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) | `0x8efc5e8c` | `0x3e70f8a1` | ArtistRegistry |
 | `IConsolidationSource` | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) | `0x88836e34` | `0x88836e34` | ConsolidationAdapter |
 | `IEntropyModule` | [`IEntropyModule.sol`](../../src/interfaces/IEntropyModule.sol) | `0x14c06eb4` | `0x3a410101` | VrfEntropyModule |
-| `IFederationRegistry` | [`IFederationRegistry.sol`](../../src/interfaces/IFederationRegistry.sol) | `0xbdbe4b76` | `0xeefee933` | FederationRegistry ([ADR 0008](../adr/0008-federation.md)) |
-| `IFederatedToken` | [`IFederatedToken.sol`](../../src/interfaces/IFederatedToken.sol) | `0x8ad6508e` | none | FederatedStream, FederatedEditions |
+| `IFederationRegistry` | [`IFederationRegistry.sol`](../../src/interfaces/IFederationRegistry.sol) | `0xc32f19cd` | `0xeefee933` | FederationRegistry ([ADR 0008](../adr/0008-federation.md)) |
+| `IFederatedToken` | [`IFederatedToken.sol`](../../src/interfaces/IFederatedToken.sol) | `0xc6c898cc` | none | FederatedStream, FederatedEditions |
 | `IFederatedStream` | [`IFederatedStream.sol`](../../src/interfaces/IFederatedStream.sol) | `0xfdc4a364` | none | FederatedStream |
+| `IFederatedDeployer` | [`IFederatedDeployer.sol`](../../src/interfaces/IFederatedDeployer.sol) | `0xf53f1196` (computed) | none | None: FederatedDeployer implements no ERC-165 |
 | `IFederatedEditions` | [`IFederatedEditions.sol`](../../src/interfaces/IFederatedEditions.sol) | `0x5c20a834` | none | FederatedEditions |
 | `IClaimRouter` | [`IClaimRouter.sol`](../../src/economics/interfaces/IClaimRouter.sol) | `0x5a97db73` (computed) | not answered on r2 | ClaimRouter |
 | `IRevenueEscrow` | [`IRevenueEscrow.sol`](../../src/economics/interfaces/IRevenueEscrow.sol) | `0xac48ee84` (computed) | not answered on r2 | RevenueEscrow |

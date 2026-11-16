@@ -38,14 +38,14 @@ restricts that. Exit is one-way and leaves tokens, ownership and funds owed unto
 ### A genuine template, without a factory with power
 
 Templates carry no immutables: every deployment of a version has the same runtime code hash. A
-code hash does not fix the storage a constructor leaves, so a copy joins only as the
-deterministic deployment proxy's CREATE2 deployment
-(`0x4e59b44847b379578588920cA78FbF26c0B4956C`, keyless and ownerless) of the version's approved
-creation code followed by the constructor arguments it presents (FED-64): the registry reads the
-creation code from data contracts published at genesis and recomputes the address. The token
-itself initiates its listing (`joinFederation`) and confirms it in the same transaction
-(`FederationJoined`), so a listing made by anyone else first is never its own; and the permanent
-artist registry lists nothing without the artist's own signature for that contract (FED-65).
+code hash does not fix the storage a constructor leaves, so a copy joins only if its version's
+deployer recorded it (FED-64): one ownerless `FederatedDeployer` per version, which holds that
+version's creation code in data contracts written at genesis, CREATE2s it with the constructor
+arguments any caller gives (under a caller-bound salt) and records every address it created. A
+contract deployed any other way, at any address, is never recorded. The token itself initiates
+its listing (`joinFederation`) and confirms it in the same transaction (`FederationJoined`), so
+a listing made by anyone else first is never its own; and the permanent artist registry lists
+nothing without the artist's own signature for that contract and its facts (FED-65).
 
 ### Entries composed on read
 
@@ -85,12 +85,11 @@ Compared with a canonical 6529 Stream work it lacks:
 A federated contract is the artist's only when the directory's `FederatedContractListed` is
 followed in the same transaction by the token's own `FederationJoined` with the same artist, fee
 share, fee recipient and partner, and by the registry's `Registered(token, artistId, codeHash,
-salt, config)`, from a registry the artist registry named then, whose `TemplateSet` approved
-that code hash with a creation code hash; with that creation code (its `CodePublished` data
-contracts, or the published build), the reader checks that the deterministic deployment proxy's
-CREATE2 address of `salt` and `keccak256(creationCode ++ config)` is the token, which proves its
-starting storage (ADR 0008 §12). The artist's consent needs no log: the artist registry lists
-nothing without it. A `FederationTermsLocked` from a contract never so listed attributes nothing
+deployer)`, from a registry the artist registry named then, whose `TemplateSet` approved that
+code hash with that deployer; the deployer's `Deployed(token, caller, salt, config)` and
+`CreationCodeStored` show the token was created from the approved creation code with `config`,
+which proves its starting storage (ADR 0008 §12). The artist's consent to those facts needs no
+log: the artist registry lists nothing without it. A `FederationTermsLocked` from a contract never so listed attributes nothing
 to anyone; a status LEFT or LEFT_DELISTED ends the listing. A federated work's `WorkOpened` names the whole item: its parties
 can only be the contract's artist (its ID's account) and its artist-resolved payees only the
 artist's ID (FED-60), so a reader credits the work to that artist alone. A fixed payee is a
@@ -113,6 +112,7 @@ stateDiagram-v2
     Delisted --> Active : vote
     Active --> Left : leaveFederation (token writes LEFT)
     Delisted --> LeftDelisted : leaveFederation (token writes LEFT_DELISTED; nothing served)
+    Left --> LeftDelisted : vote delists after the exit (lands; nothing served)
     Left --> [*]
     LeftDelisted --> [*]
 ```
@@ -135,7 +135,7 @@ stateDiagram-v2
 
 | ID | Rule | Enforced in | Tested by |
 | --- | --- | --- | --- |
-| FED-1 | A template carries no immutable; every deployment of a version has one runtime code hash, its compiled runtime code's; a version is that hash bound to its creation code (FED-64) | templates | `test_Template_EveryCopyRunsTheCompiledRuntimeCode` |
+| FED-1 | A template carries no immutable; every deployment of a version has one runtime code hash, its compiled runtime code's; a version is that hash bound to its deployer (FED-64) | templates | `test_Template_EveryCopyRunsTheCompiledRuntimeCode` |
 | FED-2 | The artist registry, split ledger, artist, fee share and fee recipient are fixed at construction (`FederationTermsLocked`); no setter | `FederatedMembership` | `test_Join_RefusesAnUnapprovedCopyAndWrongFeeTerms` |
 | FED-3 | Every artist power is checked against the artist registry's active authority of the locked artist (nobody while restrained); before the artist has an identity, the account whose address is the artist ID acts | `_onlyArtist` | `test_Join_OnlyTheArtist`, `test_GasRule_ArtistActionsReadTheArtistRegistryWithAllGas` |
 | FED-4 | No restricted function exists on a deployed template. Two governed powers still reach it: the artist registry's governed recovery override (PARAMETER_SETTER, 48 hours, contestable) decides who holds the artist's powers, and the replaceable registry decides which adapters may mint new works while it is listed (`canMint`) | templates | (no restricted function exists); `test_Adapters_RemovalStopsNewWorksButTheAdapterStillSettles` |
@@ -152,7 +152,7 @@ stateDiagram-v2
 | FED-15 | The terms a sale gets are fixed at mint: seller vault, the locked fee terms (zero after the exit), the template as creator, ETH | `mint`, `settlePrimary`, `primaryTerms` | `test_Sold_TheNetworkGetsItsLockedTenPercentAndTheSellerTheRest` |
 | FED-16 | Only the minting adapter settles a token, once; SOLD needs a buyer; settlement makes no external call and reads no identity state | `settlePrimary` | `test_SettlePrimary_OnlyTheMintingAdapterOnce`, `test_RealTemplate_SettlementFitsTheRefusalGasBudget` |
 | FED-17 | UNBID and FROZEN_OUT move the token into the template's own custody (no receiver call), never to a person | `settlePrimary` | `test_Unbid_StaysInTheTemplatesCustodyAndRestarts`, `test_Revocation_EndsRunningSalesUnsoldAndTheWorkStaysHome` |
-| FED-18 | A restart needs a fresh approval, burns the unsold token held by the template and mints the next token ID for the same work; refused for a sold work, for a dispute-cancelled work (no live token: the upheld dispute is final) and for an edition master whose edition sale began (a refused master whose edition sale bound is never settled, so its edition is never created; that sale voids with refunds) | `_restart` | `test_Unbid_StaysInTheTemplatesCustodyAndRestarts`, `test_Restart_RefusedForASoldWork`, `test_Pair_AMasterWhoseEditionSaleBeganNeverRestarts` |
+| FED-18 | A restart needs a fresh approval, burns the unsold token held by the template and mints the next token ID for the same work; refused for a sold work, for a dispute-cancelled work (no live token: the upheld dispute is final), for an edition master whose edition sale began (a refused master whose edition sale bound is never settled, so its edition is never created; that sale voids with refunds), and for an edition master while its editions are not listed ACTIVE and the contract has not left (FED-67) | `_restart` | `test_Unbid_StaysInTheTemplatesCustodyAndRestarts`, `test_Restart_RefusedForASoldWork`, `test_Pair_AMasterWhoseEditionSaleBeganNeverRestarts`, `test_Pair_AMasterRestartsOnlyWhileItsEditionsAreListed` |
 | FED-19 | A refused settlement's work is claimable only by the template (`reclaim`), back into its custody (`WorkReturned`) | `reclaim`, `onERC721Received` | `test_FaultyTemplate_RefusedSaleCreditsTheBidAndTheWorkComesHome`, `test_Reclaim_OnlyAnUnsettledTokenHeldByItsAdapter` |
 | FED-20 | The template accepts no ERC-721 safe transfer but its own token's return from its minting adapter | `onERC721Received` | `test_OnERC721Received_RefusesEverythingButItsOwnReturn` |
 | FED-21 | `primarySale` answers NONE until the minting adapter settles (guarantee 2) | `primarySale` | `test_FaultyTemplate_RefusedSaleCreditsTheBidAndTheWorkComesHome` |
@@ -173,12 +173,12 @@ stateDiagram-v2
 | FED-36 | `uri` is the master's renderer's | `uri` | `test_Pair_EditionSalePaysTheLockedShareAndMintsWithinTheSeal` |
 | FED-41 | The registry stores no entry; `entry`, `isActive`, `canMint` are composed from the directory, the token's locked storage and the template table | `FederationRegistry` | `test_Replacement_InheritsEveryListingWithNothingToMigrate` |
 | FED-42 | `isActive`: listed ACTIVE or LEFT, template approved or suspended (never LEFT_DELISTED). `canMint`: admitted adapter, listed ACTIVE, template approved, and for an editions contract its partner listed ACTIVE. `entry`: none (all zero) for a contract not listed, of an unknown code hash, or that left | `FederationRegistry` | `test_Suspension_IsImmediateAndStopsOnlyNewWorks`, `test_Revocation_EndsRunningSalesUnsoldAndTheWorkStaysHome`, `test_Exit_ALeftContractStartsNoSaleThroughTheSharedAuction` |
-| FED-43 | `register` (called by the token): approved unsuspended code hash, the provenance of FED-64, canonical artist registry, ledger and (1/1) content store, the resolver's federated fee share and recipient now, a consistent pair whose 1/1 half joins after its editions; creates the identity from the artist's signature if needed; lists the token with the artist's consent (FED-65); logs `Registered` with the salt and constructor arguments | `register` | `test_Join_*`, `test_Provenance_*` |
-| FED-44 | A template code hash is approved once, bound to a creation code hash (SUCCESSOR_SETTER, 30 days); suspension and revocation act on the code hash, so on every copy of that creation code | `approveTemplate` | `test_Templates_ApprovedOnceAndOnlyByGovernance` |
+| FED-43 | `register` (called by the token): approved unsuspended code hash, the provenance of FED-64, canonical artist registry, ledger and (1/1) content store, the resolver's federated fee share and recipient now, a consistent pair whose 1/1 half joins after its editions; creates the identity from the artist's signature if needed; lists the token with the artist's consent to its facts (FED-65); logs `Registered` with the deployer | `register` | `test_Join_*`, `test_Provenance_*` |
+| FED-44 | A template code hash is approved once, bound to its deployer (SUCCESSOR_SETTER, 30 days); suspension and revocation act on the code hash, so on every copy its deployer recorded | `approveTemplate` | `test_Templates_ApprovedOnceAndOnlyByGovernance` |
 | FED-45 | Suspension (GUARDIAN, immediate) stops new joins and works; running sales finish; lifted by PARAMETER_SETTER (48 hours) | `suspendTemplate`, `resumeTemplate` | `test_Suspension_IsImmediateAndStopsOnlyNewWorks` |
 | FED-46 | Revocation (SUCCESSOR_SETTER, 30 days) is terminal: the contracts are no longer served; running sales end unsold with refunds | `revokeTemplate` | `test_Revocation_EndsRunningSalesUnsoldAndTheWorkStaysHome` |
 | FED-47 | `propagateRevocation` writes a revoked template's ACTIVE listings DELISTED (reference: the code hash); permissionless, batched, idempotent | `propagateRevocation` | `test_Revocation_EndsRunningSalesUnsoldAndTheWorkStaysHome` |
-| FED-48 | Delisting and relisting by vote (PARAMETER_SETTER, 48 hours), batched; never out of LEFT or LEFT_DELISTED | `setStatus` | `test_Delisting_ByVoteStopsSalesAndRelistingRestores`, `test_Exit_IsOneWayRunningSalesFinishAndOldWorksKeepTheirSplit` |
+| FED-48 | Delisting and relisting by vote (PARAMETER_SETTER, 48 hours), batched; a batch skips what it cannot change (an unlisted contract, or one that left asked to be ACTIVE) instead of reverting; a delisting of a contract that left lands as LEFT_DELISTED; nothing reverses an exit | `setStatus`, `setFederatedStatus` | `test_Delisting_ByVoteStopsSalesAndRelistingRestores`, `test_Exit_IsOneWayRunningSalesFinishAndOldWorksKeepTheirSplit`, `test_Delisting_ABatchSkipsWhatItCannotChange` |
 | FED-49 | Adapter admission (SUCCESSOR_SETTER, 30 days), ERC-165 `ISaleAdapter`; removal stops new works only | `setAdapter` | `test_Adapters_*` |
 | FED-50 | A delisting or revocation never touches tokens, ownership, records, vaults or credits | (by construction) | `test_Delisting_ByVoteStopsSalesAndRelistingRestores` |
 | FED-51 | Federation never changes 6529 Stream, a curated artist's identity or canonical state | (by construction) | `invariant_FederationNeverTouchesCanonicalState` |
@@ -193,11 +193,11 @@ stateDiagram-v2
 | FED-60 | An item names no one but the contract's artist: every party's account is the artist's ID as an address, every artist-resolved payee is the artist's ID (`InvalidMintRequest`); fixed payees are accounts the artist pays. No other artist's payout, standing or directory entry is touched by a federated work | `_open` | `test_Mint_TheItemNamesOnlyTheArtist` |
 | FED-61 | The shared renderer reads a federated work through the native path it uses for 6529 Stream, never through a replaceable contract: `coreOf`, and `extsload` at `StreamLayout`'s slots, where the template keeps its token words (slot 18: the minting adapter in bits 0-159, the work ID, shown as the serial, in 160-191) and its one collection (slot 17: the ERC-721 name two slots into the entry, written at construction). A template version's code, and so this layout, never changes | `FederatedStream` storage | `test_Layout_TheTemplateAnswersTheRenderersNativeReads` |
 | FED-62 | The edition auction's abandonment floor adds what the master's rescue delay adds to 6529 Stream's 90-day floor, capped by `rescueCapDays` (EA-18, EA-19); a federated 1/1 has no rescue, so a federated sale waits its end plus its locked delay alone, in the lens and the adapter, whatever Stream's rescue delay, and no 6529 Stream slot is read for it | `_rescueLengthening` | `test_Abandon_AFederatedSaleWaitsOnlyItsLockedDelay` |
-| FED-63 | Genesis wires the federation: the artist registry's one-shot bind, the English auction's registry (code hash pinned), both shared adapters admitted, and the two v1 template versions approved, each runtime code hash with its creation code hash, computed from the build (`DeployV1.templateCodeHash`), never held as literals; the deploy writes and publishes both creation codes; `VerifyV1.checkFederation` reads each back and `checkTemplate` rehashes the published creation code, so a rebuilt artifact fails | `DeployV1`, `VerifyV1`, `GovernanceConfig.isGenesisSelector` | `test_GenesisWiresTheFederation`, `test_CheckTemplate_RefusesARebuiltArtifact` |
-| FED-64 | A copy joins only as the deterministic deployment proxy's CREATE2 deployment, with the salt it presents, of its version's published creation code followed by the constructor arguments it presents: its starting storage is the constructor's from those arguments. Creation code is published permissionlessly, rehashed from its data contracts (`publishCode`); approval names its hash; until published, nothing of the version joins | `register`, `_deployedFrom`, `publishCode` | `test_Provenance_ACopyNotDeployedFromTheApprovedCodeNeverJoins`, `test_Provenance_TheSaltAndArgumentsMustBeTheDeployments`, `test_Provenance_UnpublishedCodeJoinsNothing`, `test_Gas_DeployThroughTheDeploymentProxy` |
-| FED-65 | The artist registry lists a contract only with the artist's active authority's `FederatedListing(artistId, token, deadline)` signature, verified there (ECDSA, EIP-7702 or ERC-1271), so no federation registry, however hostile, lists a contract under an artist who did not sign for it | `ArtistRegistry.listFederatedContract` | `test_Directory_NoRegistryListsUnderAnArtistWhoDidNotSign`; FD `test_List_*` |
-| FED-66 | An exit from DELISTED is LEFT_DELISTED in the directory, terminal and served by nothing: an exit never revives a sale a delisting stopped, on either shared adapter or lens | `ArtistRegistry.recordFederationExit`, `isActive` | `test_Exit_AfterADelistingRevivesNoSale`, `test_Pair_EditionsLeavingWhileDelistedReviveNoEditionSale`, FD `test_Exit_ByTheTokenIsTerminal` |
-| FED-67 | The pair as one: the 1/1 half joins only after its editions are listed ACTIVE under the same artist; an editions contract mints through the registry only while its partner is listed ACTIVE; a 1/1 contract mints an EDITION_MASTER only while its editions are listed ACTIVE (or after its own exit); an editions contract's own minters mint only once its partner is unlisted, LEFT or LEFT_DELISTED | `register`, `canMint`, `_open`, `_ownMinters` | `test_Pair_The1of1JoinsOnlyAfterItsEditions`, `test_Pair_EditionsThatLeaveFirstSellNothingWithoutTheFee` |
+| FED-63 | Genesis wires the federation: the artist registry's one-shot bind, the English auction's registry (code hash pinned), both shared adapters admitted, and the two v1 template versions approved, each code hash computed from the build (`DeployV1.templateCodeHash`, never a literal) bound to its deployer, which genesis deploys with the build's creation code; `VerifyV1.checkFederation` reads each back and `checkTemplate` checks the deployer's code is the build's `FederatedDeployer` and rehashes its creation code, so a rebuilt artifact or another deployer fails | `DeployV1`, `VerifyV1`, `GovernanceConfig.isGenesisSelector` | `test_GenesisWiresTheFederation`, `test_CheckTemplate_RefusesARebuiltArtifact` |
+| FED-64 | A copy joins only if its version's approved deployer recorded it: the deployer, ownerless and immutable (no owner, role, fee, upgrade, delegatecall or selfdestruct), holds one creation code in data contracts it wrote at construction, deploys it for anyone with the caller's constructor arguments under the salt `keccak256(caller, salt)`, records each address and emits `Deployed`; so a listed copy's starting storage is its constructor's, whatever any other initcode wrote at any address (immune to CREATE2 address collisions) | `FederatedDeployer`, `register` | `test_Provenance_ACopyNotRecordedByTheApprovedDeployerNeverJoins`, `test_Provenance_OnlyTheApprovedDeployersRecordCounts`, `test_Deployer_DeploysOnlyItsCodeAndRecordsEveryCopy`, `test_Provenance_ACopyAnyoneDeploysIsInertUntilItsArtistJoins`, `test_Gas_DeployThroughTheDeployer` |
+| FED-65 | The artist registry lists a contract only with the artist's active authority's `FederatedListing(artistId, token, form, partner, feeShare, feeRecipient, deadline)` signature, verified there (ECDSA, EIP-7702 or ERC-1271), so no federation registry, however hostile, lists a contract under an artist who did not sign for it, nor with facts the artist did not sign | `ArtistRegistry.listFederatedContract` | `test_Directory_NoRegistryListsUnderAnArtistWhoDidNotSign`; FD `test_List_TheConsentCoversTheFacts`, `test_List_*` |
+| FED-66 | An exit from DELISTED, or a delisting after an exit, is LEFT_DELISTED in the directory, terminal and served by nothing: neither an exit nor its timing revives a sale a delisting stopped, on either shared adapter or lens | `ArtistRegistry.recordFederationExit`, `setFederatedStatus`, `isActive` | `test_Exit_AfterADelistingRevivesNoSale`, `test_Delisting_ScheduledBeforeAnExitStillLands`, `test_Pair_EditionsLeavingWhileDelistedReviveNoEditionSale`, FD `test_Exit_ByTheTokenIsTerminal`, `test_Status_ADelistingOfALeftEntryLandsAsLeftDelisted` |
+| FED-67 | The pair as one: the 1/1 half joins only after its editions are listed ACTIVE under the same artist; an editions contract mints through the registry only while its partner is listed ACTIVE; a 1/1 contract mints or restarts an EDITION_MASTER only while its editions are listed ACTIVE (or after its own exit); an editions contract's own minters mint only once its partner is unlisted, LEFT or LEFT_DELISTED. So an edition sells only while both halves are ACTIVE (always on fee-bearing terms) or after both are out | `register`, `canMint`, `_open`, `_restart`, `_ownMinters` | `test_Pair_The1of1JoinsOnlyAfterItsEditions`, `test_Pair_EditionsThatLeaveFirstSellNothingWithoutTheFee`, `test_Pair_AMasterRestartsOnlyWhileItsEditionsAreListed`, `test_Pair_EditionsWithoutAListed1of1MintNothing` |
 | FED-68 | A 1/1 template names its content store at construction (`ContentStoreSet`, `contentStore()`); the registry lists only one naming the canonical store | `FederatedStream`, `register` | `test_Join_RefusesAContentStoreOtherThanTheCanonicalOne` |
 | FED-69 | Once replaced in the artist registry, a registry answers `entry`, `isActive` and `canMint` as the current one does (unless the current one asks), so the English auction's own pointer never disagrees with the templates' | `FederationRegistry._forwards` | `test_Replacement_TheEnglishAuctionAnswersAsTheCurrentRegistry`, `test_GasRule_MintReadsTheRegistryWithAllGas` |
 | FED-70 | Each genesis setter reaches only a target declaring its interface (ERC-165): the sale adapters' `setFederationRegistry` and `setTarget` need `ISaleAdapter`, the registry's `setAdapter` and `approveTemplate` `IFederationRegistry`, `setAdmittedMinter` `IMintTarget`; the artist registry's `setFederationRegistry` is never wired | `GovernanceConfig.genesisInterface`, `validateWiring` | `test_GenesisSelectorsReachOnlyTheirTargets` |
@@ -212,9 +212,10 @@ the logs-only record of every federated contract. A listing is the token's own w
 `RecordChanged`, `Finalized`, `RoyaltyRateChanged`, `LocatorSet`, `OnChainComplete`,
 `DefaultRendererSet`, `EditionsLinked`, `ContentStoreSet`, `FederationLeft`, `MinterSet`, the ERC-721/1155
 transfers; the editions template `EditionCreated`, `EditionTermsLocked`, `EditionMinterBound`,
-`EditionPrimaryMint`, `EditionSupplySealed`. The registry logs `TemplateSet` (with the creation
-code hash), `CodePublished`, `AdapterSet`, `Registered` (with the salt and constructor
-arguments). Payout vaults are logged by the split ledger. Federated contracts earn no TDH.
+`EditionPrimaryMint`, `EditionSupplySealed`. The registry logs `TemplateSet` (with the deployer
+and its creation code hash), `AdapterSet`, `Registered` (with the deployer); each deployer logs
+`CreationCodeStored` once and `Deployed` (with the caller, salt and constructor arguments) for
+every copy. Payout vaults are logged by the split ledger. Federated contracts earn no TDH.
 
 ## The nine template guarantees, as met
 
@@ -230,7 +231,7 @@ The v1 templates meet each:
 | 4 | No buyer or recipient code | `settlePrimary`, `ownerOf` and `primaryTerms` call nothing; an unsold token moves into the template's custody with no receiver call | `test_Unbid_StaysInTheTemplatesCustodyAndRestarts` |
 | 5 | No identity dependency for a sale | Settlement reads no identity state; even an unsold one names the template, not the artist, as creator | `test_SettlePrimary_OnlyTheMintingAdapterOnce` |
 | 6 | Locked payees | The seller vault, the fee flag and the creator are written at mint; the fee terms are fixed at construction; the seller is a split-ledger vault address, never zero, the escrow or the auction | `test_Sold_TheNetworkGetsItsLockedTenPercentAndTheSellerTheRest` |
-| 7 | An honest ledger | OpenZeppelin's ERC-721 `ownerOf` and `safeTransferFrom`, unmodified, starting from the constructor's storage only (FED-64: no hidden approval or pre-seeded token) | `test_FaultyTemplate_RefusedSaleCreditsTheBidAndTheWorkComesHome`, `test_Provenance_ACopyNotDeployedFromTheApprovedCodeNeverJoins` |
+| 7 | An honest ledger | OpenZeppelin's ERC-721 `ownerOf` and `safeTransferFrom`, unmodified, starting from the constructor's storage only (FED-64: no hidden approval or pre-seeded token) | `test_FaultyTemplate_RefusedSaleCreditsTheBidAndTheWorkComesHome`, `test_Provenance_ACopyNotRecordedByTheApprovedDeployerNeverJoins` |
 | 8 | One settlement, by its adapter | Only the minting adapter, once (`NotMintingAdapter`, `SaleAlreadySettled`); SOLD returns `holder` zero; UNBID and FROZEN_OUT return the template, which the adapter records as taken | `test_SettlePrimary_OnlyTheMintingAdapterOnce` |
 | 9 | Fixed code | No proxy, no delegatecall, no immutables: the code hash the registry approved is the code that runs, deployed from the approved creation code | `test_Template_EveryCopyRunsTheCompiledRuntimeCode` |
 
@@ -240,9 +241,9 @@ The v1 templates meet each:
 | --- | --- | --- |
 | A template version is found buggy | Its deployed copies keep the bug (code never changes) | GUARDIAN suspends at once (new works stop); revocation in 30 days ends its sales unsold; the artist leaves and redeploys a fixed version |
 | A token whose settlement fails (a faulty version) | The bid is held until the refusal delay | `settleOrRefund` closes it with the bid credited; `reclaim` returns the work |
-| The registry is replaced or disappears | Nothing listed is lost (entries are composed) | A new registry approves the hashes and adapters; with none, the artist leaves and admits its own minters |
+| The registry is replaced or disappears | Nothing listed is lost (entries are composed) | A new registry approves every template version (with its deployer) and admits the adapters **before** the artist registry's pointer moves, or running sales freeze out with refunds; with none, the artist leaves and admits its own minters |
 | A registry lists a genuine token first, wrongly | The token can never confirm it, so never sells under it; it needs the artist's own consent signature for that token | The artist leaves and redeploys |
-| A delisted contract leaves | LEFT_DELISTED: its running sales end unsold with refunds | None needed |
+| A delisted contract leaves, or leaves while a delisting waits | LEFT_DELISTED: its running sales end unsold with refunds | None needed |
 | A delisted pair's edition sale is running | It voids with full refunds | Relist, open a new sale |
 | A contract left while sales ran | They finish and pay the share they locked; no new sale starts on a shared adapter | The artist sells through minters it admits |
 
@@ -266,9 +267,8 @@ and [ADR 0008](../adr/0008-federation.md).
 
 ## Differences from the ADRs
 
-- ADR 0001 §16 "only the factory can add entries": there is no factory with power; a contract
-  deployed by the keyless deterministic deployment proxy from an approved version's creation code
-  joins itself, with its artist's consent.
+- ADR 0001 §16 "only the factory can add entries": there is no factory with power; a contract its
+  version's ownerless deployer recorded joins itself, with its artist's consent.
 - ADR 0005 decision 9: an unbid federated work stays in the template's custody and restarts.
 - Study H's federated registry entries are not stored; they are composed on read.
 - ADR 0007's genesis wiring list (`GovernanceConfig.isGenesisSelector`) also admits the

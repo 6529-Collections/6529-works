@@ -9,7 +9,8 @@ ADR 0007's package P6, which that record left "in v1, specified by a later ADR".
 The behaviour is specified in [Federation](../spec/federation.md) (rules FED-1 to FED-71); this
 record is how it was decided. It is true at the tip that merges ADR 0007's review fixes
 (16 November 2026): §4, §7, §8 and §10 record what that merge changed underneath the federation.
-§1, §2, §8, §10 and §12 record the fixes of the independent federation review (review F).
+§1, §2, §8, §10 and §12 record the fixes of the independent federation review (review F) and of
+its verification (review G).
 
 ## Context
 
@@ -52,48 +53,53 @@ with refunds; neither delisting nor exit ever touches tokens, ownership, records
   can be added later as a new template version, touching nothing permanent.
 - **No immutables.** Every value a constructor takes is written to storage, so every deployment
   of a version has one runtime code hash.
-- **A genuine copy is bound to how it was deployed (review F, F1).** As first built, a genuine
-  copy was one `EXTCODEHASH` check. A code hash fixes the runtime code, not the storage the
-  constructor leaves: any initcode that returns the approved runtime can first write storage the
-  constructor never writes (an operator approval, pre-seeded works or edition records), and such
-  a copy would have joined, defeating the template guarantees and the fee bargain, with state no
-  event announces. A template version is now its runtime code hash **bound to the creation code
-  that deploys it**, and a copy joins only as the **deterministic deployment proxy's** CREATE2
-  deployment (`0x4e59b44847b379578588920cA78FbF26c0B4956C`: keyless, ownerless, permissionless,
-  on every chain the deploy uses) of exactly that creation code followed by the ABI-encoded
-  constructor arguments it presents at joining. `register` reads the creation code from data
-  contracts (`SSTORE2`, two for `FederatedStream`'s 25,177 bytes, one for `FederatedEditions`),
-  hashes it with the presented arguments and requires
-  `address(keccak256(0xff ++ proxy ++ salt ++ keccak256(creationCode ++ args)))` to be the
-  caller. Its starting storage is therefore exactly what the constructor writes from those
-  arguments. The constructor arguments, never `msg.sender`, decide the artist; a copy anyone
-  deploys naming an artist is inert until that artist's authority joins it (§2), and the same
-  salt and arguments always give the same contract, so deploying one "for" an artist cannot harm
-  them. The creation code is published once, permissionlessly (`publishCode` rehashes the data
-  contracts, so a record is always true; genesis writes and publishes both), and approval names
-  it (`approveTemplate(codeHash, creationHash, version, form)`).
-- **Why no deployer contract.** Two designs were evaluated. (a) One ownerless deployer per
-  template version holding the creation code in data contracts, deploying copies with CREATE2 and
-  recording them: it saves the artist about 330,000 gas of calldata (the creation code is read
-  from the data contracts instead of sent), but adds a permanent logic contract per version.
-  (b) No deployer state: the registry recomputes the CREATE2 address from the deterministic
-  deployment proxy, the salt and the creation code stored at genesis. Both bind the starting
-  storage equally (keccak256 preimage resistance); (b) adds no new logic contract, keeps "no
-  factory with power" literally (the proxy has no owner, upgrade, fee or role, and the registry
-  has no power over a copy), and leaves the artist's deployment bytes unchanged. (b) was built.
-  The artist's deployment through the proxy measures **5,352,858** Prague gas for
-  `FederatedStream` against **5,312,439** for a plain CREATE of the same initcode (+40,419,
-  0.8%: the proxy's call, its copy of the initcode and CREATE2's hashing); the bytes deployed
-  are the same, so the Glamsterdam estimate (§9) changes only by this. Joining pays for reading
-  the creation code: the join row rises from 284,685 to 338,371 (reading and hashing about
-  25 KB, the arguments in calldata and in `Registered`, and the consent signature).
+- **A genuine copy is bound to how it was deployed (review F, F1; review G, G3).** As first
+  built, a genuine copy was one `EXTCODEHASH` check. A code hash fixes the runtime code, not the
+  storage the constructor leaves: any initcode that returns the approved runtime can first write
+  storage the constructor never writes (an operator approval, pre-seeded works or edition
+  records), and such a copy would have joined, defeating the template guarantees and the fee
+  bargain, with state no event announces. A template version is now its runtime code hash
+  **bound to its deployer**: one `FederatedDeployer` per version, ownerless and immutable (no
+  owner, role, fee, upgrade, delegatecall or selfdestruct). Its constructor writes the version's
+  creation code to data contracts it creates itself (`SSTORE2`: two for `FederatedStream`'s
+  25,170 bytes, one for `FederatedEditions`) and records their keccak256 (`creationHash`,
+  `CreationCodeStored`). Its one function, `deploy(salt, config)`, open to anyone, CREATE2s that
+  creation code followed by the ABI-encoded constructor arguments, under the salt
+  `keccak256(abi.encode(msg.sender, salt))`, records the address (`deployed`) and emits
+  `Deployed(token, caller, salt, config)`. It can deploy nothing else. `register` lists a copy
+  only if the version's approved deployer recorded it, so its starting storage is exactly what
+  the constructor writes from `config`. The constructor arguments, never the caller, decide the
+  artist; a copy anyone deploys naming an artist is inert until that artist's authority joins it
+  (§2), and the caller-bound salt means nobody can take an artist's chosen address.
+  Approval names the deployer (`approveTemplate(codeHash, deployer, version, form)`; `TemplateSet`
+  carries the deployer and its creation code hash).
+- **Why a recording deployer (review G, G3).** Review F first built the alternative with no
+  deployer state: the registry recomputed the CREATE2 address of the deterministic deployment
+  proxy from a presented salt and the creation code. That does not rest on preimage resistance,
+  as this record first said, but on 160-bit collision resistance: an attacker's own factory and
+  hostile initcode can be ground against the proxy's address space with a birthday search of
+  about 2^80 hashes, far out of reach today and not over the lifetime these contracts aim at. A
+  recording deployer is immune: CREATE2 fails at an occupied address, and a contract deployed at
+  a colliding address by anyone else is never recorded. The same 2^80 bound applies to the split
+  ledger's counterfactual vault addresses that are paid before they are deployed (the permanence
+  branch's split-ledger limitation, LIM-ID-12 and MONEY-4); the ledger is not changed here. The
+  deterministic deployment proxy is no longer a federation dependency (the genesis deploy still
+  uses Foundry's CREATE2 factory, as before), and with it the permissionless `publishCode`, its
+  first-writer-wins record and the griefing review G found there (G2) are gone.
+- **The artist's cost.** Deploying through the deployer costs **4,957,166** Prague gas for
+  `FederatedStream` against **5,310,975** for a plain CREATE of the same initcode (-353,809: no
+  25 KB of calldata, plus the code read and one record slot, 22,100), and **3,559,820** for
+  `FederatedEditions` against 3,805,277 (-245,457). The bytes deployed are the same; under
+  Glamsterdam the record slot costs about 111,000 and the estimate (§9) is about **37.1M** and
+  **26.6M**. Joining costs **303,122** (284,685 as first built; the consent signature, the
+  deployer's record read and the pair and content-store checks).
 
 ### 2. Joining: initiated and confirmed by the token
 
 - The artist calls `joinFederation(Join)` on its own token; the token calls the artist
   registry's current federation registry (`register`), which checks the token's code hash is an
-  approved, unsuspended version and its provenance (§1: the salt and constructor arguments in
-  `Join`), that it names the canonical artist registry, split ledger and (the 1/1 template)
+  approved, unsuspended version and its provenance (§1: the version's deployer recorded it),
+  that it names the canonical artist registry, split ledger and (the 1/1 template)
   content store, and that its locked fee share and fee recipient equal the economics resolver's
   `PRODUCT_FEDERATED` values now; for a pair, that the partner is the other approved form and
   names it back, with the same artist and terms, and, for the 1/1 half, that its editions are
@@ -103,15 +109,19 @@ with refunds; neither delisting nor exit ever touches tokens, ownership, records
   itself).
 - **The artist's consent is verified by the permanent registry (review F, F4).** A replaced
   federation registry could once write a directory entry for any non-canonical contract under
-  any artist ID, permanently. `listFederatedContract` now requires the artist's active
-  authority's EIP-712 `FederatedListing(artistId, token, deadline)` signature, verified by the
-  artist registry itself with the shared `SignatureVerifier` (ECDSA, EIP-7702, or ERC-1271 for a
-  contract authority; zero, so never valid, while a recovery override restrains the authority).
-  A listing happens once per token, so the signature needs no nonce. No federation registry,
-  however hostile, can list a contract under an artist who did not sign for that exact contract.
-  A new artist signs twice in one join (the registration and the consent); an existing one
-  once. The check costs the artist one signature recovery (about 3,000 gas with ECDSA) and its
-  calldata in the join, and the artist registry 431 bytes (margin 1,125 at the merged tip).
+  any artist ID, permanently. `listFederatedContract(FederatedListing, consent)` now requires the
+  artist's active authority's EIP-712 `FederatedListing(artistId, token, form, partner, feeShare,
+  feeRecipient, deadline)` signature, verified by the artist registry itself with the shared
+  `SignatureVerifier` (ECDSA, EIP-7702, or ERC-1271 for a contract authority; zero, so never
+  valid, while a recovery override restrains the authority). Since review G (I3) the consent
+  covers the entry's facts too, so a registry holding a consent cannot list even that token
+  with facts the artist did not sign; the typed data freezes at launch. A listing happens once
+  per token, so the signature needs no nonce. No federation registry, however hostile, can list
+  a contract under an artist who did not sign for that exact contract and those facts. A new
+  artist signs twice in one join (the registration and the consent); an existing one once. The
+  digest is computed off chain from the registry's EIP-712 domain (`eip712Domain`) and
+  `Typehashes.FEDERATED_LISTING`; the registry hashes the struct's seven calldata words directly
+  (a non-canonical word only fails the check), keeping its EIP-170 margin at 1,091.
 - The token then requires that it was not listed before and is listed now, under its own artist,
   ACTIVE, and emits `FederationJoined` with its own facts in the same transaction. **This closes
   the residual ADR 0007 recorded:** a registry that lists a genuine token first, with wrong
@@ -269,13 +279,28 @@ After ADR 0007's review fixes:
   and LEFT), it has no entry, and no status write leaves it, so both shared adapters and both
   lenses, which read `isActive` and `entry`, treat it as delisted for good. A replacement
   registry inherits it with nothing to carry over.
+- **An exit cannot outrun a vote (review G, G1).** As first fixed, a delisting scheduled for
+  48 hours could be pre-empted: the artist left, the artist registry refused the delisting of a
+  LEFT entry, the operation reverted at execution and LEFT kept serving the running sales; one
+  such member also reverted a whole batch. Now the permanent directory records a delisting of a
+  LEFT entry as **LEFT_DELISTED** (previous LEFT in the event), so a delisting always lands and
+  the running sales end unsold with refunds. LEFT_DELISTED is terminal: a relisting cannot
+  reverse it, because the contract left (its exit already ended new sales; nothing remains to
+  restore). The registry's batch `setStatus` skips what it cannot change (an unlisted contract,
+  or one that left asked to be ACTIVE) instead of reverting. Every ordering of leave, delist,
+  relist, suspend and revoke was walked: leave then delist and delist then leave both end
+  LEFT_DELISTED; a relist after a leave stays LEFT (finishing only what ran before the exit) or
+  LEFT_DELISTED; suspension is a template status that never changes the directory; revocation
+  unserves every copy of its version whatever the directory says. No status is more served than
+  the decision intended; delisting still touches no token, ownership or fund owed, and sales that
+  were running and not delisted still finish.
 - **The pair is listed and leaves as one (review F, F3).** As first built, the two halves of a
   pair joined and left independently, so editions of masters sold at the network's fee could be
   sold through the artist's own minters while the 1/1 contract stayed listed. Now: the 1/1 half
   joins only once its editions are listed ACTIVE under the same artist (`register`); the
   registry lets an editions contract mint (`canMint`) only while its partner is listed ACTIVE;
-  `FederatedStream` mints an EDITION_MASTER only while its editions are listed ACTIVE (or after
-  its own exit, when its masters pay no fee); and `FederatedEditions` admits its own minters
+  `FederatedStream` mints or restarts an EDITION_MASTER only while its editions are listed
+  ACTIVE (or after its own exit, when its masters pay no fee; review G, G4 added the restart); and `FederatedEditions` admits its own minters
   only once its partner is out of the federation too (unlisted, LEFT or LEFT_DELISTED). An exit
   of either half is still the artist's alone and one-way; the other half's rules follow it.
 - **One registry pointer in effect (review F, F7).** The English auction pins its own
@@ -285,7 +310,11 @@ After ADR 0007's review fixes:
   `FederationRegistry` read (`entry`, `isActive`, `canMint`) now answers as the registry the
   artist registry currently names, unless that registry is itself the caller (so a registry that
   consults its predecessor gets the predecessor's own answer and forwarding never loops). The
-  replacement procedure still swaps both pointers in one batch.
+  replacement procedure still swaps both pointers in one batch, and a successor must approve
+  every template version (each bound to its deployer) and admit the adapters **before** the
+  artist registry's pointer moves: a successor without them serves nothing, so running sales
+  freeze out with refunds (pinned by `test_Replacement_SwappedBeforeItsApprovalsFreezesRunningSales`;
+  the procedure is in the script README).
 - **A contract that left starts no sale through a network adapter.** As first built, the
   registry reported a LEFT contract ACTIVE everywhere (the English auction had no bytes for a
   third status). That allowed a left contract whose artist admitted the English auction (or the
@@ -321,62 +350,67 @@ After ADR 0007's review fixes:
 
 ### 9. Budgets, sizes and the artist's deployment cost
 
-Measured at the merged tip (16 November 2026).
+Measured at the tip that merges the permanence branch at 4dbf9dcb, after reviews F and G
+(16 November 2026).
 
-- **Source lines:** **16,203** non-comment lines under `src/` at the tip that merges the
-  permanence branch's later review fixes (15,972 before review F; review F's fixes add 141:
-  provenance, consent, the pair, the exit status and genesis scoping). The budget was raised to
-  **16,000** to admit federation and to **16,500** for review F (owner, 16 November 2026; see
-  Amendments).
-- **EIP-170 (runtime bytes, margin), after review F:** `FederatedStream` 23,051 (1,525),
-  `FederatedEditions` 16,492 (8,084), `FederationRegistry` 11,634 (12,942),
-  `FederatedEditionAuction` 23,297 (1,279), its lens 23,837 (739). Canonical contracts the
-  federation changes: `UniformEditionAuction` 23,969 (607), its lens 23,168 (1,408);
-  `GovernanceConfigurator` 11,813 runtime, 37,419 initcode (the genesis selectors and their
-  interface scoping); the artist registry 23,451 (1,125; review F's listing consent and exit
-  status, 431 bytes and the typehash). The English auction is unchanged at 24,062 (514). Every
-  contract keeps 512, with no exemption.
-- **The artist pays the templates' deployment once.** Measured (Prague, whole transaction:
-  21,000 + 32,000, calldata, the constructor and 200 per code byte): `FederatedStream`
-  **5,312,439** as a plain CREATE, **5,352,858** through the deterministic deployment proxy (§1)
-  (23,051 bytes, 11 slots); `FederatedEditions` **3,818,893** (16,492 bytes, 8 slots); a pair
-  about **9.2M**. The Glamsterdam figures below are the first build's; review F's
-  re-measurement with the same unit prices is `FederatedStream` about **37.4M** (adding the
-  proxy's 40,000), `FederatedEditions` about **26.8M**, a pair about **64.2M**: the bytes
-  deployed are the same through the proxy, and reading the creation code at joining is in the
-  join row. Glamsterdam estimate from ADR 0004's unit prices (code 1,542 per byte, a
-  new slot about 111,000, an empty CREATE about 210,000), replacing the Prague components
-  (code at 200 per byte, a slot at 22,100, and the 53,000 of the transaction and CREATE
-  bases):
-  - 721: 5,214,846 - 22,608 x 200 + 22,608 x 1,542 - 11 x 22,100 + 11 x 111,000 - 53,000 +
-    210,000 = **36,689,682** (about 36.7M: the code term is 22,608 x 1,342 = 30,339,936, the slots 11 x 88,900 = 977,900);
-  - 1155: 3,754,423 - 16,194 x 200 + 16,194 x 1,542 - 8 x 22,100 + 8 x 111,000 - 53,000 +
-    210,000 = **26,354,971** (about 26.4M);
-  - a pair: about **63.0M**. Calldata repricing under Glamsterdam is not modelled [U]. At 1 /
-    5 / 10 gwei that is about 0.037 / 0.18 / 0.37 ETH for a 721 alone. Clones (study H §4)
-    would cut this to about 1.5M per contract and remain a later template version, touching
-    nothing permanent.
-- **Gas rows** (Prague; federated rows are their own, with ceilings in
-  `FederationGas.t.sol` and ADR 0004's table; after review F, which reads the artist registry's
-  pointer on every registry read and checks provenance and consent at joining): join creating the identity 338,371 (7 slots); `approveItem` 59,357 (1); a first start deploying both vaults 669,957 (18 slots, 2 accounts); a steady start 406,867 (10); a first bid 192,589 (5); settle sold 179,274 (2); settle unbid 153,926 (2); restart 248,619 (4); federated edition `open` 373,385 (7); `createEdition` 86,803 (1); edition settle 151,134 (1). Before review F: join 284,685, steady start 403,304, edition `open` 363,784. Glamsterdam, adding about 89,000 per new
-  slot (and about 245,600 per vault created): steady start about 1.29M (403,304 + 10 x 89,000), first start about
-  2.76M (666,394 + 18 x 89,000 + 2 x 245,600). A federated settlement executes about 95,000 gas, far inside the refusal gas less
-  the auction's 2.43M (guarantee 1).
-- **Canonical rows:** no 1/1 row moved (the English auction is unchanged; the tightest start row is 344,968, as on the permanence tip, 5,032 under 350,000, so the 5,000 start margin holds). The edition auction's three `open` rows rose by 261 each over the permanence tip measured on the same day (290,195 to 290,456; 335,932 to 336,193; 429,511 to 429,772; ceilings unchanged; the tip's table still lists the values before review E's limits word, 70 lower): the shared base's hooks, within the +303 the lane first measured. Claiming a winner rose by 8 (98,580 to 98,588). Its other rows moved by at most 16 gas either way (a bid near the close 78,018 to 78,002; settle, 40 steps, 150,391 to 150,375; the capped sweep settle 163,355 to 163,353; claiming a winner 98,539 to 98,547; a withdrawal during a 1/1 pause 87,980 to 87,964). After review F, merged over the permanence branch's later fixes: the tightest start row is 344,960 (5,040 under 350,000; the permanence tip's is 344,980), and the start rows that read the artist registry moved by at most 44 gas either way (its selector table); the edition auction's `open` rows are 290,597, 336,334 and 429,913 (+472 each over that tip's 290,125, 335,862 and 429,441).
+- **Source lines:** **16,253** non-comment lines under `src/` (15,972 as first built; reviews F
+  and G add the provenance, the deployer, the consent, the pair rules, the exit statuses and the
+  genesis scoping; the rest is the permanence branch's later fixes). The budget was raised to
+  **16,000** to admit federation and to **16,500** for the reviews' fixes (owner, 16 November
+  2026; see Amendments).
+- **EIP-170 (runtime bytes, margin):** `FederatedStream` 23,044 (1,532), `FederatedEditions`
+  16,429 (8,147), `FederatedDeployer` 1,425 (23,151; initcode 2,398 plus the template's
+  creation code as its argument), `FederationRegistry` 10,706 (13,870), `FederatedEditionAuction`
+  23,389 (1,187), its lens 23,837 (739). Canonical contracts the federation changes:
+  `UniformEditionAuction` 24,061 (515, with the permanence branch's payout-gas rule), its lens
+  23,168 (1,408); `GovernanceConfigurator` 11,813 runtime, 37,443 initcode (the genesis
+  selectors and their interface scoping); the artist registry 23,485 (1,091: the listing
+  consent over the entry's facts and the exit transitions). The English auction is unchanged at
+  24,062 (514). Every contract keeps 512, with no exemption.
+- **The artist pays the templates' deployment once**, through each template's deployer (§1).
+  Measured (Prague, whole transaction): `FederatedStream` **4,957,166** through its deployer
+  (5,310,975 as a plain CREATE of the same initcode: the deployer saves the 25 KB of calldata,
+  reads the code from its data contracts and writes one record slot); `FederatedEditions`
+  **3,559,820** (3,805,277 plain); a pair about **8.5M**. Glamsterdam estimate from ADR 0004's
+  unit prices (code 1,542 per byte, a new slot about 111,000, an empty CREATE about 210,000),
+  replacing the Prague components (code at 200 per byte, a slot at 22,100, the 53,000 of the
+  transaction and CREATE bases):
+  - 721: 4,957,166 + 23,044 x 1,342 (30,925,048) + 12 x 88,900 (11 constructor slots and the
+    record: 1,066,800) + 157,000 = **37,106,014** (about 37.1M);
+  - 1155: 3,559,820 + 16,429 x 1,342 (22,047,718) + 9 x 88,900 (800,100) + 157,000 =
+    **26,564,638** (about 26.6M);
+  - a pair: about **63.7M**. Calldata repricing under Glamsterdam is not modelled [U]; it would
+    favour the deployer path, which sends no creation code. At 1 / 5 / 10 gwei that is about
+    0.037 / 0.19 / 0.37 ETH for a 721 alone. Clones (study H §4) would cut this to about 1.5M per
+    contract and remain a later template version, touching nothing permanent.
+- **Gas rows** (Prague; federated rows are their own, with ceilings in `FederationGas.t.sol`
+  and ADR 0004's table): join creating the identity 303,122 (7 slots; 284,685 as first built);
+  `approveItem` 59,357 (1); a first start deploying both vaults 669,685 (18 slots, 2 accounts);
+  a steady start 406,595 (10); a first bid 192,512 (5); settle sold 179,241 (2); settle unbid
+  153,871 (2); restart 248,347 (4); federated edition `open` 373,134 (7); `createEdition` 86,758
+  (1); edition settle 151,045 (1). The steady rows read the artist registry's pointer on each
+  registry read (F7). Glamsterdam, adding about 89,000 per new slot (and about 245,600 per vault
+  created): steady start about 1.30M, first start about 2.76M. A federated settlement executes
+  about 95,000 gas, far inside the refusal gas less the auction's 2.43M (guarantee 1).
+- **Canonical rows:** the tightest start row is 344,968 (5,032 under 350,000; the 345,000 gate
+  holds); start rows moved by at most 32 gas either way over the permanence tip (code hashes and
+  the artist registry's code; no start-path logic changed). The edition auction's three `open`
+  rows are 290,597, 336,334 and 429,883 (+472, +472 and +442 over the permanence tip: the shared
+  bases' hooks).
 
 ### 10. Genesis wiring
 
-Genesis deploys the federation registry (naming the canonical content store), the federated
-edition auction's lens and the federated edition auction (`DeployV1.order`); right after the
-registry it writes both templates' creation code to data contracts and publishes them
-(`DeployV1.publishTemplateCode`, `publishCode`). It wires, as zero-delay installer calls before
+Genesis deploys the federation registry (naming the canonical content store), the two
+templates' deployers (`FederatedStreamDeployer`, `FederatedEditionsDeployer`, each constructed
+with the build's creation code, which it writes to its own data contracts), the federated
+edition auction's lens and the federated edition auction (`DeployV1.order`). It wires, as zero-delay installer calls before
 any selector is mapped: the artist registry's one-shot `bindFederationRegistry`, the English
 auction's `setFederationRegistry` (which pins the registry's code hash), `setAdapter` for the
 English auction and the federated edition auction, and `approveTemplate` for `FederatedStream`
-and `FederatedEditions`, version 1, each with its runtime code hash and creation code hash. Both
-hashes are computed by the deploy script from the build (`DeployV1.templateCodeHash`:
-`keccak256(type(T).runtimeCode)` and, for "T.creationCode", `keccak256(type(T).creationCode)`),
-never held as literals in the configuration. `GovernanceConfig.isGenesisSelector` admits exactly
+and `FederatedEditions`, version 1, each with its runtime code hash and its deployer. The code
+hash is computed by the deploy script from the build (`DeployV1.templateCodeHash`:
+`keccak256(type(T).runtimeCode)`) and the deployer named in the configuration, never held as
+literals. `GovernanceConfig.isGenesisSelector` admits exactly
 these three new selectors besides the bind, and since review F (F5) each genesis setter reaches
 only a target that declares its interface through ERC-165 (`genesisInterface`: the sale
 adapters' `setFederationRegistry` and `setTarget` need `ISaleAdapter`, so the artist registry's
@@ -385,14 +419,14 @@ adapters' `setFederationRegistry` and `setTarget` need `ISaleAdapter`, so the ar
 `IMintTarget`). Every later change waits its class; `validateWiring` runs only inside
 `install`, so nothing changes after genesis. `VerifyV1.checkFederation` reads the binding, the
 English auction's registry and pinned code hash, both admitted adapters, the registry's content
-store, both approved templates (version, form, and the creation code hash bound to the runtime
-code hash, its data contracts read back and rehashed: `checkTemplate`), the federated edition
-auction's lens and the federated product's economics (10% to the fee vault).
+store, both approved templates (`checkTemplate`: version, form, the recorded deployer; the
+deployer's runtime code is the build's `FederatedDeployer`, which has no privileged path; its
+creation code, read back from its data contracts and rehashed, is the build's), the federated
+edition auction's lens and the federated product's economics (10% to the fee vault).
 **Which build (review F, F8).** With `bytecode_hash = "ipfs"`, any edit to a source a template
 imports changes both hashes, so `checkFederation` run from a later commit fails by design
-(`test_CheckTemplate_RefusesARebuiltArtifact`). The creation code artists must deploy is the
-genesis build's, stored on chain in the published data contracts (`codeOf(creationHash)`), not a
-rebuild. The registry's roles are SUCCESSOR_SETTER (approve, revoke, adapters;
+(`test_CheckTemplate_RefusesARebuiltArtifact`). Artists never handle the creation code: the
+deployer holds the genesis build's, stored on chain (`codeOf`). The registry's roles are SUCCESSOR_SETTER (approve, revoke, adapters;
 30 days), GUARDIAN (suspend; immediate) and PARAMETER_SETTER (resume, delist and relist;
 48 hours); the federated edition auction's are 6529 Stream Editions' auction's, without
 `setTarget` (the registry decides what it sells).
@@ -410,26 +444,25 @@ OpenZeppelin's, unmodified; only the minting adapter settles, once, with `holder
 and the template for an unsold work; and the code is fixed (no proxy, no delegatecall, no
 immutables), so the approved code hash is the code that runs.
 
-### 12. What a logs-only reader checks (review F)
+### 12. What a logs-only reader checks (reviews F and G)
 
 A federated contract is a listed template copy of an artist when all of these hold, from logs
 alone:
 
-1. The artist registry's `FederatedContractListed(artistId, token, codeHash, ...)`, and no later
-   `FederatedContractStatus` other than ACTIVE or DELISTED for it (LEFT and LEFT_DELISTED end it).
+1. The artist registry's `FederatedContractListed(artistId, token, codeHash, form, partner,
+   feeShare, feeRecipient)`, and no later `FederatedContractStatus` to LEFT or LEFT_DELISTED (an
+   exit, or a delisting after one, ends it; ACTIVE and DELISTED are the vote's).
 2. In the same transaction, the token's own `FederationJoined` with the same artist, fee terms
-   and partner (and its constructor's `FederationTermsLocked`, `ContentStoreSet`).
-3. In the same transaction, the registry's `Registered(token, artistId, codeHash, salt, config)`,
-   emitted by a registry the artist registry named then (`FederationRegistrySet`, or the genesis
-   bind).
-4. That registry's `TemplateSet(codeHash, creationHash, ...)` approving that version, and its
-   `CodePublished(creationHash, pointers)`; the reader holds (or reads once from the pointers) the
-   creation code whose keccak256 is `creationHash`, and checks that
-   `keccak256(0xff ++ 0x4e59b44847b379578588920cA78FbF26c0B4956C ++ salt ++
-   keccak256(creationCode ++ config))` ends in the token's address. This proves the starting
-   storage without trusting the registry's code.
-5. The artist's consent was verified by the permanent artist registry at listing (no log is
-   needed: no listing exists without it).
+   and partner, and the registry's `Registered(token, artistId, codeHash, deployer)`, from a
+   registry the artist registry named then (`FederationRegistrySet`, or the genesis bind).
+3. That registry's `TemplateSet(codeHash, deployer, creationHash, ...)` approving that version.
+4. The deployer's `Deployed(token, caller, salt, config)`, and its `CreationCodeStored
+   (creationHash, pointers)`: the token is a contract that deployer created from that creation
+   code with `config` (the constructor arguments, which fix the starting storage). The reader
+   trusts the deployer's code once (the build's `FederatedDeployer`, ownerless), not a hash
+   formula.
+5. The artist's consent to those facts was verified by the permanent artist registry at listing
+   (no log is needed: no listing exists without it).
 
 ## Decisions the study left open, as built
 
@@ -469,12 +502,13 @@ revisit any of them**.
     rather than waiting 30 days after it. (Owner may revisit.)
 13. The edition auction's `open` rows keep the +303 the shared base's hooks cost rather than a
     duplicated base (about +1,800 lines). (Owner may revisit.)
-14. Provenance through the deterministic deployment proxy and creation code stored at genesis,
-    with no deployer contract (§1, option (b)); the artist sends the creation code as calldata.
-    (Owner may revisit: option (a)'s per-version deployer saves the artist about 330,000 gas.)
+14. Provenance through one ownerless recording deployer per template version (§1, review G),
+    immune to CREATE2 address collisions, rather than a recomputed address. (Owner may revisit.)
 15. The listing consent is a signature verified by the artist registry, not a direct call
-    (cheaper in bytes and gas, one transaction, works for contract authorities). (Owner may
-    revisit.)
+    (cheaper in bytes and gas, one transaction, works for contract authorities), and it covers
+    the entry's facts. (Owner may revisit before launch: the typed data freezes then.)
+16. LEFT_DELISTED is terminal: a relisting does not reverse a delisting that landed after an
+    exit. (Owner may revisit before launch: the directory's transitions are permanent.)
 
 ## Not fixable (documented)
 

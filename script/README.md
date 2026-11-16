@@ -927,6 +927,27 @@ genesis artist registry is permanent for Stream's payouts. A replacement package
 onboard new artists: the artist registry's one `register` caller is replaced with it, in the
 same batch (`ArtistRegistry.setPackageRegistry`).
 
+### Replacing the federation registry
+
+The federation registry is replaceable ([ADR 0008](../docs/adr/0008-federation.md) §8);
+nothing migrates, because entries are composed from the permanent directory. The successor MUST
+serve the predecessor's set before the switch, or every running federated sale freezes out
+(refunds) the moment the artist registry's pointer moves
+(`test_Replacement_SwappedBeforeItsApprovalsFreezesRunningSales`):
+
+1. Deploy the successor (the artist registry, the economics resolver and the canonical content
+   store as constructor arguments) and onboard it ([above](#onboarding-a-target-after-genesis)).
+2. On the successor, approve every template version the predecessor approves, each bound to
+   the same deployer (`approveTemplate(codeHash, deployer, version, form)`), carrying over any
+   SUSPENDED or REVOKED status, and admit the same adapters (`setAdapter`). These wait their
+   class (30 days), so schedule them first.
+3. Before scheduling the switch, check the successor answers as the predecessor: for each
+   approved code hash, `templateOf` matches (`VerifyV1.checkTemplate` against the successor
+   reproduces genesis's template check), and `isAdmittedAdapter` matches for each adapter.
+4. Then, in one batch, `ArtistRegistry.setFederationRegistry(old, successor)` and
+   `EnglishAuction.setFederationRegistry(old, successor)`. The predecessor answers as the
+   successor from then on (FED-69), so the order inside the batch does not matter.
+
 ### Publishing a configuration epoch
 
 Schedule `StatementLog.appendGovernanceManifest` (SUCCESSOR_SETTER, 30 days) with the epoch's

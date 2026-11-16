@@ -260,7 +260,7 @@ Source: [`src/federated/FederationRegistry.sol`](../../src/federated/FederationR
 
 | Function | Selector | Role | Class | Delay | Guardian cancel | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `approveTemplate(bytes32,bytes32,uint32,uint8)` | `0xc97d99e7` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay |  |
+| `approveTemplate(bytes32,address,uint32,uint8)` | `0x62c03b8e` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay |  |
 | `revokeTemplate(bytes32)` | `0x3d4e7cc8` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay |  |
 | `setAdapter(address,bool)` | `0x332f6465` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay |  |
 | `suspendTemplate(bytes32)` | `0xbb294eed` | `GUARDIAN` | Immediate | immediate | No: executes at once |  |
@@ -326,8 +326,8 @@ and renounces ADMIN. `GovernanceConfig.isGenesisSelector` admits nothing else.
 | 18 | EnglishAuction | `setFederationRegistry(address,address)` | `address(0)` (ETH), FederationRegistry (The English auction serves the contracts the registry lists, its code hash pinned at this call) |
 | 19 | FederationRegistry | `setAdapter(address,bool)` | EnglishAuction, `true` |
 | 20 | FederationRegistry | `setAdapter(address,bool)` | FederatedEditionAuction, `true` |
-| 21 | FederationRegistry | `approveTemplate(bytes32,bytes32,uint32,uint8)` | FederatedStream, FederatedStream.creationCode, 1, 0 (Federated Stream v1 (ERC721). Both hashes are computed by DeployV1.templateCodeHash from this build (keccak256 of the template's runtime code and of its creation code, which the deploy publishes in data contracts), never held here; the calldata's first two words are placeholders) |
-| 22 | FederationRegistry | `approveTemplate(bytes32,bytes32,uint32,uint8)` | FederatedEditions, FederatedEditions.creationCode, 1, 1 (Federated Stream Editions v1 (ERC1155), as above) |
+| 21 | FederationRegistry | `approveTemplate(bytes32,address,uint32,uint8)` | FederatedStream, FederatedStreamDeployer, 1, 0 (Federated Stream v1 (ERC721). The code hash is computed by DeployV1.templateCodeHash from this build (keccak256 of the template's runtime code), never held here; the deployer is the template's FederatedDeployer, deployed by DeployV1 from the build's creation code; the calldata's first two words are placeholders) |
+| 22 | FederationRegistry | `approveTemplate(bytes32,address,uint32,uint8)` | FederatedEditions, FederatedEditionsDeployer, 1, 1 (Federated Stream Editions v1 (ERC1155), as above) |
 | 23 | StatementLog | `appendGovernanceManifest((…))` | the epoch-0 `GOVERNANCE_MANIFEST` statement about the manager |
 
 ## The AccessManager's own functions
