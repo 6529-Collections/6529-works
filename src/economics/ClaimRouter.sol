@@ -114,10 +114,12 @@ contract ClaimRouter is IClaimRouter {
         if (count > (continueOnFailure ? MAX_CONTINUE_CLAIMS : MAX_CLAIMS)) {
             revert TooManyClaims(count);
         }
+        for (uint256 i; i < count; ++i) {
+            _checkPayees(i, claims[i].payees.length);
+        }
         amounts = new uint256[](count);
         for (uint256 i; i < count; ++i) {
             Claim calldata c = claims[i];
-            _checkPayees(i, c.payees.length);
             amounts[i] = _call(
                 Item(
                     _walletOf(c.payees, c.salt),
@@ -142,17 +144,17 @@ contract ClaimRouter is IClaimRouter {
         if (count > (continueOnFailure ? MAX_CONTINUE_CLAIMS : MAX_SIGNED_CLAIMS)) {
             revert TooManyClaims(count);
         }
-        if (continueOnFailure) {
-            uint256 total = 0;
-            for (uint256 i; i < count; ++i) {
-                total += claims[i].signature.length;
-            }
-            if (total > MAX_CONTINUE_SIGNATURE_BYTES) revert SignaturesTooLong(total);
+        uint256 total = 0;
+        for (uint256 i; i < count; ++i) {
+            _checkPayees(i, claims[i].payees.length);
+            total += claims[i].signature.length;
+        }
+        if (continueOnFailure && total > MAX_CONTINUE_SIGNATURE_BYTES) {
+            revert SignaturesTooLong(total);
         }
         amounts = new uint256[](count);
         for (uint256 i; i < count; ++i) {
             IReleaseVerifier.Authorization calldata a = claims[i].authorization;
-            _checkPayees(i, claims[i].payees.length);
             amounts[i] = _call(
                 Item(
                     a.wallet, a.asset, a.payee, i, count - i, MIN_SIGNED_ITEM_GAS, continueOnFailure
@@ -174,7 +176,9 @@ contract ClaimRouter is IClaimRouter {
 
     /// @dev Item `index` names at most `Splits.MAX_PAYEES` payees, as many as any wallet has: a
     ///      longer list can never be paid, and its calldata alone could leave item 0 of a
-    ///      continue-mode batch short of {SHORTFALL_REVERT_CEILING} at the transaction cap.
+    ///      continue-mode batch short of {SHORTFALL_REVERT_CEILING} at the transaction cap. Every
+    ///      item's list is checked before the first item runs, so an oversized list in a later
+    ///      item is refused ahead of any gas-based outcome for an earlier one.
     function _checkPayees(uint256 index, uint256 payees) private pure {
         if (payees > Splits.MAX_PAYEES) revert TooManyPayees(index, payees);
     }

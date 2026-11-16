@@ -219,6 +219,28 @@ contract GasCapTest is EconomicsBase {
         }
     }
 
+    /// @dev The payee-list bound is checked for every item before the first runs. Item 0's signer
+    ///      burns all its gas and the gas limit leaves it less than `SHORTFALL_REVERT_CEILING`, so
+    ///      running it first would revert the batch with `ClaimInsufficientGas`; the oversized list
+    ///      in item 1 must be refused with `TooManyPayees` instead.
+    function test_AnOversizedListInALaterItemIsRefusedBeforeABurningFirstItem() public {
+        IClaimRouter.SignedClaim[] memory signed = _worstSigned();
+        assembly ("memory-safe") {
+            mstore(signed, 2)
+        }
+        signed[1].payees = new ISplitWallet.Payee[](65);
+        Mock1271Account(payable(resolver.payout(2000))).setBurn(type(uint256).max);
+        bytes memory input = abi.encodeCall(IClaimRouter.claimSigned, (signed, true));
+        _cool();
+        (bool ok, bytes memory output) = address(router).call{ gas: 3_000_000 }(input);
+        assertFalse(ok, "the batch is refused");
+        assertEq(
+            output,
+            abi.encodeWithSelector(IClaimRouter.TooManyPayees.selector, 1, 65),
+            "refused for the oversized list, not for gas"
+        );
+    }
+
     function _ones(uint256 size) internal pure returns (bytes memory b) {
         b = new bytes(size);
         for (uint256 i; i < size; ++i) {

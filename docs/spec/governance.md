@@ -440,8 +440,10 @@ stateDiagram-v2
 - **Activity.** `lastAdminActivity` moves whenever an active `ADMIN` holder schedules, executes
   (an immediate call as well as a scheduled one), consumes or cancels an operation, or calls
   `heartbeat`; a failed call moves nothing (it reverts). A direct `restricted` call on a managed
-  contract never reaches the manager's state (it only asks `canCall`), so it cannot count:
-  admins act through `execute`, or heartbeat. A recovery is live only while it opened
+  contract counts only on the delayed path: the contract then calls the manager's
+  `consumeScheduledOp`, which records activity for the scheduling admin if still active. A direct
+  immediate call never reaches the manager's state (it only asks `canCall`, a view), so it cannot
+  count: admins act through `execute`, a delayed call, or heartbeat. A recovery is live only while it opened
   after the last activity, so any admin action voids it and restarts the clock.
 - **Open.** Anyone, after `RECOVERY_SILENCE` (`AdminsNotSilent` before), for one candidate
   (`RecoveryOpened`); a candidate has at most one live recovery.
