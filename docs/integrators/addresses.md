@@ -34,6 +34,11 @@ Sourcify, where every r4 contract is verified with an exact match (links in the
 with every transaction and its gas, are in
 [flows.md](../../deployments/11155111/flows.md#r4-the-rc2-candidate-1-november-2026).
 
+**r4 predates the second permanence pass** (16 November 2026): its manager still has guardians,
+seats and the earlier delay classes, its artist registry has the single-authority identity model,
+and its auctions have the earlier timers. The other pages describe `main`; read r4 against its
+own source.
+
 **r4's 1/1 auctions run 1 hour, not 24** (the governed minimum, a testnet setting); every
 other parameter is the mainnet default ([below](#settings-at-deployment)).
 
@@ -164,9 +169,10 @@ has no Rule 3 and no `suspend`. Build ABIs for r2 from `400f96d`
   ([script README](../../script/README.md)).
 - **Governance.** The genesis policy each instance installed is committed under
   [`config/sepolia-r4/`](../../config/sepolia-r4/genesis.json) (and `config/sepolia-r1/` to
-  `sepolia-r3/` for the earlier instances), and its role map is the
-  [role and permission matrix](../audit/roles.md) with the placeholder holders replaced.
-- **Live Verify.** The manager's 5-day `minSetback` delays the first full readback; the
+  `sepolia-r3/` for the earlier instances). The [role and permission matrix](../audit/roles.md)
+  is generated from `main`'s genesis policy, which a later deployment will install; it no longer
+  describes r4.
+- **Live Verify.** r4's manager's 5-day `minSetback` delays its first full readback; the
   [Sepolia README](../../deployments/11155111/README.md#sepolia-r4-1-november-2026-current)
   records when it is due and its result.
 
