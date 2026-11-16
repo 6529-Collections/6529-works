@@ -54,6 +54,39 @@ contract BoundedVetoTest is PermanenceFixture {
         assertEq(manager.getEscalation(id).nonce, 0, "not escalated");
     }
 
+    // ------------------------------------------------------------------ the lanes' delays
+
+    /// @dev Review round 4: in the slow and escalated lanes `when` becomes the later of the
+    ///      lane's delay and the caller's own execution delay, which `_grantRole` lets exceed the
+    ///      class floor. Fails without the change: `schedule` set `when` to the lane's delay,
+    ///      which OpenZeppelin refuses as earlier than the caller's minimum
+    ///      (`AccessManagerUnauthorizedCall`).
+    function test_ALaneNeverSchedulesBeforeTheCallersOwnDelay() public {
+        uint32 own = 150 days; // above SLOW (60 days) and ESCALATED (120 days)
+        _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, adminSafe, own)));
+        (, uint32 delay) = manager.hasRole(Roles.ADMIN, adminSafe);
+        assertEq(delay, own);
+        // Slow lane, `when` zero.
+        bytes memory param =
+            _setParameter(WorksAccessManager.Parameter.SLOW_DELAY, SLOW, SLOW + 1 days);
+        bytes32 id = _schedule(adminSafe, address(manager), param);
+        assertEq(manager.getSchedule(id), block.timestamp + own, "slow lane, when zero");
+        // Slow lane, a `when` at the lane's delay but before the caller's.
+        bytes memory register = _register(successorA);
+        vm.prank(adminSafe);
+        (id,) = manager.schedule(address(manager), register, uint48(block.timestamp + SLOW));
+        assertEq(manager.getSchedule(id), block.timestamp + own, "slow lane, an early when");
+        // Escalated lane: a struck guardian removal.
+        bytes memory removeA = _revoke(Roles.GUARDIAN, guardianA);
+        _strike(adminSafe, removeA, guardianB);
+        id = _schedule(adminSafe, address(manager), removeA);
+        assertEq(manager.getSchedule(id), block.timestamp + own, "escalated lane");
+        assertEq(manager.getEscalation(id).nonce, 2, "still escalated");
+        // An admin at the class delay still waits the lane's.
+        id = _schedule(coldAdmin, address(manager), removeA);
+        assertEq(manager.getSchedule(id), block.timestamp + ESCALATED, "the lane's own delay");
+    }
+
     // ------------------------------------------------------------------ the escalated lane
 
     function test_AReProposalEntersTheEscalatedLane() public {

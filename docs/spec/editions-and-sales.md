@@ -502,7 +502,10 @@ stateDiagram-v2
   packed word `maxCloseOffset | voidDelayDays << 32 | payoutGas << 48 | rescueCapDays << 80`)
   sets the close offset's maximum, the abandonment delay, the payout gas and the rescue cap
   (`LimitsSet`); the payout gas only rises, at most doubling per change, up to its 3,000,000
-  ceiling (a lower figure would send open sales' payees who need more to the escrow); open
+  ceiling (a lower figure would send open sales' payees who need more to the escrow): each
+  change must lie between the figure current when it executes and twice that figure, so
+  governance schedules a step from the current figure (100,000 to at most 200,000, then from
+  there) and two changes scheduled together each double from the figure the earlier one left; open
   sales keep the offset and delay they locked, and the payout gas and the
   rescue cap apply when used (EA-18).
 
@@ -863,7 +866,7 @@ abandonment delay when it opens (EA-17, EA-18). Genesis deploys `DeployV1.editio
 | --- | --- | --- | --- |
 | Longest close offset an edition may name (`maxCloseOffset`) | 30 days (owner to confirm) | 1 day to 3,650 days, and at least the default | `_MIN_MAX_CLOSE_OFFSET`, `_MAX_MAX_CLOSE_OFFSET` |
 | Abandonment delay after the end (`voidDelayDays`) | 150 days | 120 to 730 days | `_MIN_VOID_DELAY_DAYS`, `_MAX_VOID_DELAY_DAYS` |
-| Gas forwarded with each payout (`payoutGas`) | 100,000; a refusal, or a payee needing more, is escrowed | 30,000 to 3,000,000 | `_MIN_PAYOUT_GAS`, `_MAX_PAYOUT_GAS` |
+| Gas forwarded with each payout (`payoutGas`) | 100,000; a refusal, or a payee needing more, is escrowed | 30,000 to 3,000,000; after construction only up, at most doubling per change | `_MIN_PAYOUT_GAS`, `_MAX_PAYOUT_GAS` |
 | Most days Stream's rescue lengthening adds to an abandonment (`rescueCapDays`) | 730 days | 90 to 730 days; the ceiling bounds how long a governance lever can hold bids | `_MIN_RESCUE_CAP_DAYS`, `_MAX_RESCUE_CAP_DAYS` |
 
 Fixed in code, and changed only by a new adapter: the clearing rule, firm bids, ETH, FIFO at

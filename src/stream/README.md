@@ -13,7 +13,7 @@ selection in [Rendering and tokenURI](../../docs/spec/rendering-and-tokenuri.md#
 | File | What it is |
 | --- | --- |
 | `Stream.sol` | The permanent core ([`IStream`](../interfaces/IStream.sol), one flat ERC-165 id; [`IMintTarget`](../interfaces/IMintTarget.sol)): mints what its mint policy ([`IMintPolicy`](../interfaces/IMintPolicy.sol), the package registry) admits into an admitted adapter's custody, collections and serials, the terms locked at mint, `royaltyInfo`, settle, burn, rescue and museum routing, the edition link, `rendererOf` and `tokenURI`, contract URI and marketplace owner. |
-| `StreamViews.sol` | The genesis read-only extension ([`IStreamExtension`](../interfaces/IStreamExtension.sol), [`IStreamViews`](../interfaces/IStreamViews.sol)), deployed by Stream's constructor and reached only by STATICCALL from its fallback, which forwards only its three views: `work`, `collection`, `totalSupply`, and the collection-name rule. Informational: nothing permanent or pinned reads it (AUC-49). |
+| `StreamViews.sol` | The genesis read-only extension ([`IStreamExtension`](../interfaces/IStreamExtension.sol), [`IStreamViews`](../interfaces/IStreamViews.sol)), deployed by Stream's constructor and reached only by STATICCALL: the fallback forwards only its three views (`work`, `collection`, `totalSupply`), and `createCollection` calls its collection-name rule (`isValidCollectionName`) directly. Nothing permanent or pinned reads it (AUC-49); a broken one can only refuse new collections until replaced (LIM-GV-25). |
 | `StreamLayout.sol` | The permanent storage slots of Stream that `extsload` readers (a pinned renderer, the extension) use: the token words, a collection's words and name, the counters, the owner and the contract URI (AUC-49). |
 | `WorkRecords.sol` | The permanent records satellite ([`IWorkRecords`](../interfaces/IWorkRecords.sol), [`IWorkPowers`](../interfaces/IWorkPowers.sol)): opening a work's record, the record file, media list, license and seed, the state hash, finalize and renderer pins, amendments (the royalty rate only down), the lead artist's renounced powers, on-chain completeness and each file's store, and the governed pointers to the delivery contract and the store set. |
 | `WorkDelivery.sol` | The first, replaceable delivery contract ([`IWorkDelivery`, `IWorkLocators`](../interfaces/IWorkDelivery.sol)), deployed by `WorkRecords`' constructor: locators, kinds, preferences and the URI grammar. |
@@ -52,7 +52,8 @@ Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
 - **Frozen interface ids** `0x2654eed1` (`IWorkRecords`) and `0xbd18229c` (`IWorkPowers`), in
   Stream's and Editions' bind checks, pinned by `StreamInterfaceIds.t.sol`.
 - **`royaltyInfo` makes one view call.** Do not add reads to it.
-- **Amendments and `renounce` bump the version before external calls.**
+- **Amendments and `renounce` read state and check consents through view calls, then bump the
+  version before any later state-changing call.**
 - **Behavior is owned by the spec:** fail-closed renderer reads (AUC-42, DEPS-6), content
   uniqueness (AUC-44), the rescue delay (AUC-41), renunciation (WS-37, WS-38), delivery
   forwarding (WS-40) and the sync walks (WS-42, WS-43).

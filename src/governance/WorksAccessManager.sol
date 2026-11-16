@@ -162,6 +162,13 @@ contract WorksAccessManager is AccessManager {
     /// @notice A recovery completed: every former admin was revoked and `candidate` is the admin.
     /// @param candidate The new admin.
     event RecoveryCompleted(address indexed candidate);
+    /// @notice {lastAdminActivity} moved to `at`: `admin` scheduled, executed, consumed or
+    ///         cancelled an operation, sent a {heartbeat}, or became the admin by recovery. Every
+    ///         recovery opened before `at` is void from now on. Not emitted when the clock already
+    ///         reads `at`; the clock starts at deployment.
+    /// @param admin The active `ADMIN` holder.
+    /// @param at The new {lastAdminActivity}, the block time.
+    event AdminActivity(address indexed admin, uint48 at);
     /// @notice `next` was proposed as the successor (or, when zero, the proposal withdrawn).
     ///         This manager keeps all its power until `next` accepts.
     /// @param next The proposed successor, or zero.
@@ -349,12 +356,12 @@ contract WorksAccessManager is AccessManager {
     // ------------------------------------------------------------------ dead-admin recovery
 
     /// @notice Proves an admin is alive: resets the inactivity clock, which voids every open
-    ///         recovery. Any active `ADMIN` holder, at once.
+    ///         recovery (`AdminActivity`). Any active `ADMIN` holder, at once.
     function heartbeat() external {
         address sender = _msgSender();
         (bool isAdmin,) = hasRole(Roles.ADMIN, sender);
         if (!isAdmin) revert AccessManagerUnauthorizedAccount(sender, Roles.ADMIN);
-        lastAdminActivity = Time.timestamp();
+        _active(sender);
     }
 
     /// @notice Opens a recovery that would make `candidate` the only admin. Anyone, once no
@@ -393,10 +400,16 @@ contract WorksAccessManager is AccessManager {
         _recoveryVote(candidate, true);
     }
 
-    /// @notice Completes a ready recovery: revokes every `ADMIN` record and grants `candidate`
-    ///         `ADMIN` with the 30-day delay, active at once. Anyone. Refused while `candidate`
-    ///         holds or awaits `GUARDIAN` or `PAUSER`: the veto stays separate from the action
-    ///         (`InvalidCandidate`).
+    /// @notice Completes a ready recovery: withdraws a successor proposal still pending, revokes
+    ///         every `ADMIN` record and grants `candidate` `ADMIN` with the 30-day delay, active
+    ///         at once. Anyone. Refused while `candidate` holds or awaits `GUARDIAN` or `PAUSER`:
+    ///         the veto stays separate from the action (`InvalidCandidate`).
+    /// @dev Recovery supersedes what only the former admins could undo and the new admin could
+    ///      not undo in time: their pending successor could otherwise accept at once, while a
+    ///      withdrawal takes the slow lane. Their scheduled operations need no clearing (each
+    ///      executes only for its scheduler, and one under another role the new admin can cancel
+    ///      at once), nor does their recovery address (it acts only after the new admin is silent
+    ///      for `RECOVERY_SILENCE`, and the new admin can replace it in the slow lane).
     /// @param candidate The candidate.
     function completeRecovery(address candidate) external {
         Recovery memory r = _liveRecovery(candidate);
@@ -406,12 +419,17 @@ contract WorksAccessManager is AccessManager {
         if (Time.timestamp() < r.readyAt) revert RecoveryNotReady(candidate, r.readyAt);
         if (_decided(r.votes, r.seats) == r.registered) revert RecoveryRefused(candidate);
         delete _recoveries[candidate];
+        if (pendingSuccessor != address(0)) {
+            delete pendingSuccessor;
+            delete successionProbe;
+            emit SuccessorProposed(address(0), address(0));
+        }
         address[] memory admins = _seats[Roles.ADMIN].values();
         for (uint256 i = 0; i < admins.length; ++i) {
             _revokeRole(Roles.ADMIN, admins[i]);
         }
         _grantRole(Roles.ADMIN, candidate, 0, Roles.SUCCESSOR);
-        lastAdminActivity = Time.timestamp();
+        _active(candidate);
         emit RecoveryCompleted(candidate);
     }
 
@@ -529,7 +547,9 @@ contract WorksAccessManager is AccessManager {
     /// @inheritdoc AccessManager
     /// @dev Adds `SLOW_DELAY` to {setParameter}, {setRecoveryAddress} and {registerSuccessor},
     ///      and `ESCALATED_DELAY` to a struck action ({actionOf}), whose operation is then
-    ///      recorded for a guardian majority. Counts as admin activity.
+    ///      recorded for a guardian majority. In either lane an earlier `when`, zero included,
+    ///      becomes the later of the lane's delay and the caller's own execution delay. Counts
+    ///      as admin activity.
     function schedule(address target, bytes calldata data, uint48 when)
         public
         override
@@ -550,10 +570,23 @@ contract WorksAccessManager is AccessManager {
         if (escalate && _params[uint8(Parameter.ESCALATED_DELAY)] > extra) {
             extra = _params[uint8(Parameter.ESCALATED_DELAY)];
         }
-        uint256 earliest = Time.timestamp() + extra;
-        // Casting to uint48 is safe: a uint48 timestamp plus a uint32 delay fits until year 8.9M.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        if (extra != 0 && when < earliest) when = uint48(earliest);
+        if (extra != 0) {
+            // Never earlier than the caller's own delay, which OpenZeppelin requires of a nonzero
+            // `when`: an admin's (the role of every slow-lane function, as this manager's
+            // selectors cannot be remapped), or the role admin's for an escalated revocation.
+            uint64 role = Roles.ADMIN;
+            if (bytes4(data[:4]) == this.revokeRole.selector) {
+                // The role word was checked clean by `actionOf` (GUARDIAN or PAUSER).
+                // forge-lint: disable-next-line(unsafe-typecast)
+                role = getRoleAdmin(uint64(uint256(bytes32(data[4:0x24]))));
+            }
+            (, uint32 own) = hasRole(role, _msgSender());
+            if (own > extra) extra = own;
+            uint256 earliest = Time.timestamp() + extra;
+            // Safe: a uint48 timestamp plus a uint32 delay fits uint48 until year 8.9M.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            if (when < earliest) when = uint48(earliest);
+        }
         (operationId, nonce) = super.schedule(target, data, when);
         if (escalate) {
             uint16 seats = uint16(_seats[Roles.GUARDIAN].length());
@@ -769,7 +802,15 @@ contract WorksAccessManager is AccessManager {
 
     function _touch(address account) private {
         (bool isAdmin,) = hasRole(Roles.ADMIN, account);
-        if (isAdmin) lastAdminActivity = Time.timestamp();
+        if (isAdmin) _active(account);
+    }
+
+    /// @dev Moves the activity clock to now for `admin` (`AdminActivity`), once per timestamp.
+    function _active(address admin) private {
+        uint48 now_ = Time.timestamp();
+        if (lastAdminActivity == now_) return;
+        lastAdminActivity = now_;
+        emit AdminActivity(admin, now_);
     }
 
     function _manage(address target) private {

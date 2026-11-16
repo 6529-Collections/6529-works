@@ -13,6 +13,7 @@ import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
 import { LockedTerms, PrimaryTerms } from "../interfaces/types/SaleTypes.sol";
+import { BoundedCall } from "../libraries/BoundedCall.sol";
 
 /// @title IEnglishAuctionStorage
 /// @notice The raw storage reader `EnglishAuction` exposes for its lens.
@@ -68,6 +69,11 @@ contract EnglishAuctionLens {
     uint256 private constant _CREDITS_SLOT = 9;
     uint256 private constant _FEDERATED_TERMS_SLOT = 10;
     uint256 private constant _REFUSAL_SLOT = 11;
+
+    /// @dev The most bytes of a `primaryTerms` answer `pendingDelivery` copies: the ten-word
+    ///      head of a `PrimaryTerms` with up to 3,776 bytes of params (4 KiB in all), a bound
+    ///      against unbounded copying.
+    uint256 private constant _TERMS_RETURN = 4096;
 
     /// @dev The auction's sale flags.
     uint8 private constant _PAUSE_USED = 1;
@@ -259,7 +265,8 @@ contract EnglishAuctionLens {
     ///         A pending delivery with neither a stored recipient nor a bidder (a federated sale
     ///         closed as refused, whose standing bid was credited back) is the no-bid path: the
     ///         token's current creator may claim it, as `claimDelivery` checks, so that creator
-    ///         is returned (read from the token's `primaryTerms`, as the auction reads it).
+    ///         is returned (read from the token's `primaryTerms`, as the auction reads it, with
+    ///         at most 4 KiB copied; a refused, oversized or malformed answer reverts).
     /// @param saleId The sale ID.
     /// @return recipient The pending recipient, or zero when no delivery is pending.
     function pendingDelivery(uint256 saleId) external view returns (address recipient) {
@@ -270,9 +277,7 @@ contract EnglishAuctionLens {
         // else the creator, whom `claimDelivery` admits when no bid stands.
         bytes32 slot = bytes32(s.flags & _RECIPIENT_SET != 0 ? base + 2 : base + 1);
         recipient = address(uint160(uint256(_read1(slot))));
-        if (recipient == address(0)) {
-            recipient = IMintTarget(s.token).primaryTerms(s.tokenId, "").creator;
-        }
+        if (recipient == address(0)) recipient = _creatorOf(s.token, s.tokenId);
     }
 
     /// @notice The governed auction parameters (`IEnglishAuction.config`).
@@ -404,6 +409,31 @@ contract EnglishAuctionLens {
         bytes32[] memory slots = new bytes32[](3);
         (slots[0], slots[1], slots[2]) = (a, b, c);
         return _read(slots);
+    }
+
+    /// @dev The creator in `token`'s `primaryTerms(tokenId, "")`, read forward-all with at most
+    ///      `_TERMS_RETURN` bytes copied and decoded by hand: a refusal or an oversized answer
+    ///      reverts with `BoundedCallFailed`, an answer that is not a canonical `PrimaryTerms`
+    ///      head (offset `0x20`, nine words, a clean creator word) with
+    ///      `BoundedCallMalformedReturn`, and a shortfall with `BoundedCallShortfall`. No gas
+    ///      cap: a view helper whose caller pays for its own request.
+    function _creatorOf(address token, uint256 tokenId) private view returns (address) {
+        (bool ok, bytes memory data) = BoundedCall.tryReadAll(
+            token, abi.encodeCall(IMintTarget.primaryTerms, (tokenId, "")), _TERMS_RETURN
+        );
+        if (!ok) revert BoundedCall.BoundedCallFailed(token);
+        uint256 head;
+        uint256 creator = type(uint256).max;
+        if (data.length >= 0x140) {
+            assembly ("memory-safe") {
+                head := mload(add(data, 0x20))
+                creator := mload(add(data, 0x120))
+            }
+        }
+        if (head != 0x20 || creator >> 160 != 0) {
+            revert BoundedCall.BoundedCallMalformedReturn(token);
+        }
+        return address(uint160(creator));
     }
 
     /// @dev The first slot of a sale in `EnglishAuction._sales`.

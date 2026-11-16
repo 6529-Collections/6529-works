@@ -499,7 +499,8 @@ parameters ([GV-37 to GV-47][gv]). Role IDs are in
 | `ParameterSet(Parameter indexed which, uint32 previous, uint32 value)` | `0xbede1f19…` | `setParameter` (ADMIN, slow lane, compare-and-set) | A governed parameter changed within its compiled bounds ([GV-41][gv]). |
 | `RecoveryAddressSet(address indexed previous, address indexed next)` | `0xe2e82f73…` | `setRecoveryAddress` (ADMIN, slow lane, compare-and-set) | The pre-registered recovery address ([GV-42][gv]). |
 | `RecoveryOpened(address indexed candidate, uint48 readyAt, bool registered, uint256 seats)` | `0xeb8006be…` | `openRecovery` (anyone, after `RECOVERY_SILENCE` without admin activity) | A dead-admin recovery for `candidate`, completable from `readyAt`; for the recovery address (`registered`) guardian votes object, otherwise they approve. Any admin activity voids it. |
-| `RecoveryCompleted(address indexed candidate)` | `0x46f50089…` | `completeRecovery` (anyone, once ready and allowed) | Every former ADMIN record was revoked (their `RoleRevoked` events precede it) and `candidate` is the only admin. |
+| `RecoveryCompleted(address indexed candidate)` | `0x46f50089…` | `completeRecovery` (anyone, once ready and allowed) | Every former ADMIN record was revoked (their `RoleRevoked` events precede it) and `candidate` is the only admin. A successor proposal still pending was withdrawn first (`SuccessorProposed` with zero), and `AdminActivity` names `candidate` ([GV-42][gv]). |
+| `AdminActivity(address indexed admin, uint48 at)` | `0xdc84c09e…` | An active ADMIN holder's `schedule`, `execute`, `consumeScheduledOp` (through a managed target), `cancel` or `heartbeat`; `completeRecovery` | `lastAdminActivity` moved to `at`; every recovery opened before it is void. Not emitted when the clock already read `at`; the clock starts at deployment, so the last event (or the deployment block) gives its value ([GV-42][gv]). |
 | `SuccessorProposed(address indexed next, address probe)` | `0x685e741d…` | `registerSuccessor` (ADMIN, slow lane; escalated after a guardian's cancellation) | `next` is proposed (zero: the proposal is withdrawn) with the `SuccessionProbe` it must re-point to the manager; the manager keeps every power until `next` accepts ([GV-43][gv]). |
 | `SuccessorAccepted(address indexed next)` | `0x68c11551…` | `acceptSuccession` (only the pending successor, once its probe names the manager) | The manager is handed over: from this block it grants no permission. `migrate` (anyone) then re-points every managed target to `next`, each emitting its own `AuthorityUpdated` ([GV-43, GV-45][gv]). |
 
@@ -783,7 +784,8 @@ and a head. Also:
 - **Escalation.** `ActionStruck` marks an action whose next proposal is escalated;
   `OperationEscalated` such an operation, and `GuardianVoted` the votes against it.
 - **Recovery and succession.** `RecoveryOpened`, the guardians' `GuardianVoted`, then
-  `RecoveryCompleted` (or nothing, if an admin acts in the meantime); `SuccessorProposed`
+  `RecoveryCompleted` (or nothing, if an admin acts in the meantime: an `AdminActivity` voids
+  every recovery opened before it, and `SuccessorAccepted` every open one); `SuccessorProposed`
   names a candidate successor (the manager keeps its power), `SuccessorAccepted` ends the
   manager's power, and each target's `AuthorityUpdated` records its `migrate`. Alert on all
   five.
@@ -880,7 +882,7 @@ and its `Transfer` to zero is the signal.
 ## Appendix: full topic0 values
 
 Every distinct event signature in the compiled ABIs of the deployed contracts on this tree, with
-structs expanded to tuples: 163 signatures.
+structs expanded to tuples: 164 signatures.
 
 <details>
 <summary>All topic0 values</summary>
@@ -889,6 +891,7 @@ structs expanded to tuples: 163 signatures.
 | --- | --- | --- |
 | `ActionStruck(bytes32,bytes32)` | `0xd3e3beb626b464e6089f4efba6c506d85bf6ce5dcc1802272a6165f7bdb04bd1` | WorksAccessManager |
 | `ActivityRecorded(uint256,uint64)` | `0xb54d675a5c19358e8f54f81f0cac7fd6943dfd2d92b364e3b26d42636a051b84` | ArtistRegistry |
+| `AdminActivity(address,uint48)` | `0xdc84c09e4f5eaf4b1f2d2a45d8185c3e24032a860d00b29dee4b76cf82e30a02` | WorksAccessManager |
 | `AdmittedMinterSet(address,uint24,bool,bytes32)` | `0xa70d819c10500da6d19e930cca70fe20dbc8af527c2ceb3f1568fc006b4bbf28` | Stream, Editions |
 | `Approval(address,address,uint256)` | `0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925` | Stream |
 | `ApprovalForAll(address,address,bool)` | `0x17307eab39ab6107e8899845ad3d59bd9653f200f220920489ca2b5937696c31` | Stream, Editions |

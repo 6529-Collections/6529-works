@@ -249,7 +249,9 @@ post-quantum schemes). Spec: DSP-26, AUC-42, ED-28, ID-38, ECO-42.
   a majority of guardian seats, at least two, can stop.
 - **Dead-admin recovery:** after a year without admin activity and a 180-day public delay any
   live admin can void, a guardian majority (or, unless a majority objects, a pre-registered
-  recovery address) installs a new sole admin.
+  recovery address) installs a new sole admin. Completion withdraws a successor proposal still
+  pending, which only the former admins could have withdrawn in time; a successor that accepts
+  first ends the recovery (fourth automated review round).
 - **Successor and `migrate`:** two steps. A successor proposed through the slow lane takes
   over only when it calls `acceptSuccession` itself, after re-pointing a probe contract it
   governs to the manager (a stock `setAuthority`, the call every permanent contract needs to
@@ -456,6 +458,12 @@ limitation row states the residual; owner means the owner decides.
 | Automated review (CodeRabbit, 6529bot), 16 November 2026 | WorkRecords digest kinds | Minor | Fixed: a stored license text must have a SHA-256 digest, as the unstored path, the record file and media already did (WS-9). |
 | Automated review (CodeRabbit, 6529bot), 16 November 2026 | Module READMEs over their size | Trivial | Fixed: the stream, identity, content, economics, governance and libraries READMEs trimmed to code maps with links to the owning rules. |
 | Automated review (CodeRabbit, 6529bot), 16 November 2026 | Renderer part bound margin (follow-up) | Info | Changed: `MAX_PARTS_PER_CHUNK` is 3, not 4; the worst row is 7,902,021 (4 parts left 25K under 8M); the uploader refuses a part size needing more than 3 parts. |
+| Automated review (CodeRabbit, 6529bot), 16 November 2026, fourth round | Recovery and a pending successor | Major | Fixed: completing a recovery withdraws a successor proposal still pending (`SuccessorProposed(0, 0)`), which the former admins made and the new admin could only withdraw in the slow lane; nothing else they left needs clearing (their scheduled operations execute only for them; the recovery address waits on the new admin's silence). A successor that accepts while a recovery is open wins: its proposal passed the slow lane and every guardian's veto (GV-42). |
+| Automated review (CodeRabbit, 6529bot), 16 November 2026, fourth round | Renouncing RELICENSE before finalize | Major | Fixed: every license text a work selects, before finalize too, has at most 16 chunks and a SHA-256 digest, and RELICENSE cannot be renounced while the work's text fails that or is unregistered, so no renunciation leaves a work that cannot finalize; the CC0 text is checked the same way at deployment. Swept: the record file stays the artist's to replace before finalize (no power), RENDERER_REPIN renounces only after finalize, and sync depends on no power (WS-9, WS-37). |
+| Automated review (CodeRabbit, 6529bot), 16 November 2026, fourth round | Upgrade walk across stores | Minor | Fixed: once a work is on-chain complete, a content-store walk that reaches the end with budget left wraps once, up to where it started, so a file before the cursor never waits on a chunk missing from a later one; a call that verified nothing in that pass still reverts, and a file being verified keeps its progress between callers (WS-43). |
+| Automated review (CodeRabbit, 6529bot), 16 November 2026, fourth round | Slow and escalated lanes with a longer admin delay; activity events | Minor | Fixed: `schedule` raises `when` to the later of the lane's delay and the caller's own delay, which OpenZeppelin requires; every move of the admin-activity clock, which voids recoveries, emits `AdminActivity` (GV-41, GV-42). |
+| Automated review (CodeRabbit, 6529bot), 16 November 2026, fourth round | `pendingDelivery` creator read | Minor | Gas cap not added (the lens is a view helper; §2). Taken from it: the read goes through the shared forward-all helper, copies at most 4 KiB and reverts cleanly on a refused, oversized or malformed answer. |
+| Automated review (CodeRabbit, 6529bot), 16 November 2026, fourth round | Payout-gas rule, collection names, renounce ordering, editions README | Minor, Trivial | Fixed: the raise-only, at-most-doubling payout-gas rule is in `IUniformEditionAuction` and EA-18; `createCollection`'s direct call to the view extension is documented, with what a broken extension can do (refuse new collections only, LIM-GV-25); the renounce ordering is stated exactly; the editions README is a code map. |
 
 The bounded veto, as fixed and measured, bites against a colluding pair from four guardian
 seats; the seat count remains the owner's decision.

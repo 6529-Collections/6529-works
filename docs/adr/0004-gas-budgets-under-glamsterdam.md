@@ -491,34 +491,43 @@ it measured 7,974,892, too close to 8M to keep). No ceiling, count or budget mov
 | With a VRF seed | 343,779 | 6,221 |
 | VRF seed, edition master with 64 bytes of params (the tightest) | 344,968 | 5,032 |
 
-(Note, 16 November 2026, the federation reviews' fixes (F and G) merged over these.) The artist
-registry's listing consent and exit transitions change its code, and the federation's template
-and registry changes some code hashes, so rows moved by at most 32 gas either way; no logic on
-the start path changed. The tightest is **344,968, 5,032 under 350K**. The edition auction's
-three `open` rows are the shared bases' (ADR 0008 §7): 290,567, 336,304 and 429,883 (+442 each
-over the permanence tip, within their ceilings). The federated rows below are after
-review G (the recording deployer).
+(Note, 16 November 2026, the fourth automated review round.) Re-measured on the final tree.
+Against the tree before the round (which already measured several rows above their earlier
+figures: the tightest start row 344,960, `claimSigned` 138,578, the edition auction's `open`
+290,306, 336,043 and 429,622, `claimBid` 98,580, the bound `createEdition` 115,541), only the
+manager moved anything: its bytecode grew (the recovery, lane and activity-event fixes), which
+moves its dispatch for the `canCall` every start asks by 20 gas or less (the tightest row
+344,980, 5,020 under 350K, 20 gas inside the suite's 5,000 margin; `authorize` +20; a later
+`claimSigned` +24; the wallet-deploying `open` −30), and the re-rate rose by 1,588 (the
+`AdminActivity` event of the executing admin). No start-path logic changed; no ceiling, count
+or budget moved.
+
+| Start row | Gas | Under 350K |
+| --- | --- | --- |
+| The binding row | 338,127 | 11,873 |
+| With a VRF seed | 343,823 | 6,177 |
+| VRF seed, edition master with 64 bytes of params (the tightest) | 344,980 | 5,020 |
 
 | Operation | Prague gas | Prague ceiling | New slots | New accounts | Sepolia gas |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `start`, steady state | 265,325 | 350,000 | **5** | 0 | 735,859 |
-| `startWithBid`, steady state | 307,377 | 350,000 | **6** | 0 | 871,980 |
-| `start`, two-party work | 273,580 | 350,000 | **5** | 0 | — |
-| `startWithBid`, two-party work | 315,619 | 350,000 | **6** | 0 | — |
-| `start`, VRF work | 271,035 | 350,000 | **5** | 0 | 852,868 (r2) |
-| `start`, edition master | 265,387 | 350,000 | **5** | 0 | 736,477 |
-| `start`, edition master with 64 bytes of params (the bound) | 266,503 | 350,000 | **5** | 0 | — |
-| `start`, an artist's first work | 287,842 | 350,000 | **6** | 0 | — |
-| `startWithBid`, an artist's first work | 329,894 | 350,000 | **7** | 0 | — |
+| `start`, steady state | 265,349 | 350,000 | **5** | 0 | 735,859 |
+| `startWithBid`, steady state | 307,401 | 350,000 | **6** | 0 | 871,980 |
+| `start`, two-party work | 273,600 | 350,000 | **5** | 0 | — |
+| `startWithBid`, two-party work | 315,639 | 350,000 | **6** | 0 | — |
+| `start`, VRF work | 271,027 | 350,000 | **5** | 0 | 852,868 (r2) |
+| `start`, edition master | 265,399 | 350,000 | **5** | 0 | 736,477 |
+| `start`, edition master with 64 bytes of params (the bound) | 266,523 | 350,000 | **5** | 0 | — |
+| `start`, an artist's first work | 287,862 | 350,000 | **6** | 0 | — |
+| `startWithBid`, an artist's first work | 329,914 | 350,000 | **7** | 0 | — |
 | `startWithBid`, an artist's first work, two-party | 338,127 | 350,000 | **7** | 0 | — |
-| `startWithBid`, an artist's first work, two-party, VRF | 343,803 | 350,000 | **7** | 0 | — |
-| `startWithBid`, an artist's first work, two-party, VRF, edition master with 64 bytes of params (the bound) | 344,968 | 350,000 | **7** | 0 | — |
-| `startWithBid`, an artist's first work, two-party, the three mint-path dependencies replaced | 344,511 | 352,000 (regression; LIM-GAS-11) | 7 | 0 | — |
+| `startWithBid`, an artist's first work, two-party, VRF | 343,823 | 350,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party, VRF, edition master with 64 bytes of params (the bound) | 344,980 | 350,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party, the three mint-path dependencies replaced | 344,531 | 352,000 (regression; LIM-GAS-11) | 7 | 0 | — |
 | `startWithBid`, an artist's first work, two-party, VRF, the three mint-path dependencies replaced | 350,207 | 358,000 (regression; LIM-GAS-11) | 7 | 0 | — |
-| `startWithBid`, ERC-20 by relayed Permit2 | 352,475 | 365,000 (regression) | 6 | 0 | — |
-| `start`, first work in a new collection | 265,328 | 400,000 | 5 | 0 | 846,977 (r2) |
+| `startWithBid`, ERC-20 by relayed Permit2 | 352,455 | 365,000 (regression) | 6 | 0 | — |
+| `start`, first work in a new collection | 265,372 | 400,000 | 5 | 0 | 846,977 (r2) |
 | `start`, first work ever (one-time) | 438,394 | 449,000 (regression) | 13 | 0 | 1,601,871 |
-| `startWithBid`, first bid under new sale terms (one-time) | 377,549 | 390,000 (regression) | 9 | 0 | 1,213,250 |
+| `startWithBid`, first bid under new sale terms (one-time) | 377,569 | 390,000 (regression) | 9 | 0 | 1,213,250 |
 | `bid` that outbids | 73,518 | 75,000 (regression) | 1 | 0 | 169,060 |
 | `settle`, first payout to a seller wallet | 183,832 | 400,000 | 2 | 1 | 449,934 (sim.) |
 | `settle`, with a bid | 158,832 | 400,000 | 2 | 0 | 257,763 (r2) |
@@ -526,21 +535,21 @@ review G (the recording deployer).
 | `auction` (view, cold, answered by the auction's lens) | 39,294 | 41,000 (regression) | 0 | 0 | — |
 | `minimumBid` (view, cold, answered by the auction's lens) | 38,168 | 39,000 (regression) | 0 | 0 | — |
 | `auctionClock` (view, cold, answered by the auction itself) | 24,260 | 25,000 (regression) | 0 | 0 | — |
-| `authorize`, the mint policy's share of a start, as a call (was `consume`) | 91,348 | 94,000 (regression) | 0 | 0 | part of `start` |
+| `authorize`, the mint policy's share of a start, as a call (was `consume`) | 91,368 | 94,000 (regression) | 0 | 0 | part of `start` |
 | `createEdition` | 213,632 | 218,000 (regression) | 5 | 0 | 887,954 (sim.) |
-| `createEdition`, an edition its sale bound at open | 115,395 | 118,000 (regression) | 1 | 0 | — |
-| re-rate a work (governed `execute`) | 199,548 | 203,000 (regression) | 1 | 0 | — |
+| `createEdition`, an edition its sale bound at open | 115,541 | 118,000 (regression) | 1 | 0 | — |
+| re-rate a work (governed `execute`) | 201,148 | 203,000 (regression) | 1 | 0 | — |
 | `refreshStanding`, a first wallet | 129,834 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
 | `refreshStanding`, a further wallet | 159,137 | 161,000 (regression) | 1 | 0 | 247,970 (r2) |
 | `royaltyInfo` (view; `RoyaltyInfoGas.t.sol` caps its gas) | 41,380 | 50,000 of execution | 0 | 0 | 36,426 |
 | `tokenURI` (view, the size matrix) | at most 2,698,572 | 8,000,000 | 0 | 0 | unchanged |
 | `createWallet`, a seller wallet (one artist payee) | 96,032 | 100,000 (regression) | 1 | 1 | — |
-| `release`, the artist's first ETH release | 93,192 | 96,000 (regression) | 2 | 0 | — |
-| `claimSigned`, the artist's first signed release | 138,623 | 145,000 (regression) | 3 | 0 | — |
-| `claimSigned`, a later signed release (next nonce) | 87,335 | 92,000 (regression) | 0 | 0 | — |
-| Edition auction `open`, steady state (binds the edition) | 290,567 | 296,000 (regression) | 6 | 0 | — |
-| Edition auction `open`, the adapter's first (one-time) | 336,304 | 342,000 (regression) | 8 | 0 | — |
-| Edition auction `open`, an artist's first sale (deploys both split wallets) | 429,883 | 443,000 (regression) | 8 | 2 | — |
+| `release`, the artist's first ETH release | 93,147 | 96,000 (regression) | 2 | 0 | — |
+| `claimSigned`, the artist's first signed release | 138,578 | 145,000 (regression) | 3 | 0 | — |
+| `claimSigned`, a later signed release (next nonce) | 87,310 | 92,000 (regression) | 0 | 0 | — |
+| Edition auction `open`, steady state (binds the edition) | 290,306 | 296,000 (regression) | 6 | 0 | — |
+| Edition auction `open`, the adapter's first (one-time) | 336,043 | 342,000 (regression) | 8 | 0 | — |
+| Edition auction `open`, an artist's first sale (deploys both split wallets) | 429,592 | 443,000 (regression) | 8 | 2 | — |
 | Edition `bid`, its 8-step word exists | 68,697 | 110,000 | 1 | 0 | — |
 | Edition `bid`, opens an 8-step word | 85,767 | 110,000 | 2 | 0 | — |
 | Edition `bid`, capped sale | 71,114 | 110,000 | 1 | 0 | — |
@@ -553,7 +562,7 @@ review G (the recording deployer).
 | Edition `settle`, capped, one departure swept | 163,353 | 174,000 (regression) | 1 | 0 | — |
 | Edition `settle`, every step used (512 steps, departures at the cut), each call | at most 243,174 of execution | 350,000 of execution | 0 to 2 (the call that clears and leaves its sweep unfinished writes the result and its settler's progress) | 0 | — |
 | Edition `settle`, a 96-departure chunk with departures scattered over the log's words (336 steps), each call; review PoC, not in CI | at most 307,070 of execution | 350,000 of execution | 0 to 2 | 0 | — |
-| Edition `claimBid`, a winner and new holder | 98,588 | 100,000 | 1 | 0 | — |
+| Edition `claimBid`, a winner and new holder | 98,580 | 100,000 | 1 | 0 | — |
 | Edition `claimBid`, refund only | 47,504 | 49,000 (regression) | 0 | 0 | — |
 | Edition `claimBidFor`, refund credited | 64,482 | 67,000 (regression) | 1 | 0 | — |
 | Federated `joinFederation`, creating the identity (provenance and consent checked) | 303,102 | 345,000 (regression) | 7 | 0 | ~0.96M [E] |

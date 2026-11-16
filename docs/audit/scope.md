@@ -35,7 +35,7 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 | --- | --- | ---: | ---: | ---: | ---: |
 | `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 793 | 22,863 | 29,055 | **1,713** |
 | `StreamViews` (created by `Stream`'s constructor) | [`src/stream/StreamViews.sol`](../../src/stream/StreamViews.sol) | 79 | 4,110 | 4,138 | 20,466 |
-| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 732 | 23,180 | 35,125 | 1,396 |
+| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 732 | 23,139 | 35,598 | 1,437 |
 | `WorkDelivery` (created by `WorkRecords`' constructor; replaceable) | [`src/stream/WorkDelivery.sol`](../../src/stream/WorkDelivery.sol) | 183 | 8,673 | 9,084 | 15,903 |
 | `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 484 | 19,025 | 20,854 | 5,551 |
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 898 | 24,062 | 27,384 | 514 |

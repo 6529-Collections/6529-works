@@ -244,6 +244,37 @@ contract HostileExtension is IStreamExtension {
     }
 }
 
+/// @notice An extension Stream accepts (its ERC-165 answers) whose collection-name rule refuses
+///         (mode 0), reverts (1), burns every gas unit it gets (2) or answers a malformed word
+///         (3).
+contract RefusingNameExtension {
+    uint256 public immutable mode;
+
+    constructor(uint256 mode_) {
+        mode = mode_;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IStreamExtension).interfaceId
+            || interfaceId == type(IStreamViews).interfaceId
+            || interfaceId == type(IERC165).interfaceId;
+    }
+
+    function isValidCollectionName(string calldata) external view returns (bool) {
+        if (mode == 1) revert("refused");
+        if (mode == 2) {
+            while (true) { }
+        }
+        if (mode == 3) {
+            assembly ("memory-safe") {
+                mstore(0, 2)
+                return(0, 32)
+            }
+        }
+        return false;
+    }
+}
+
 /// @notice Owner decision 16 on the real genesis deployment: Stream's package registry, artist
 ///         registry, economics resolver and entropy module are replaceable by governance in the
 ///         30-day class, and 6529 Stream Editions and the work-records satellite follow at once.
@@ -583,6 +614,32 @@ contract StreamDependenciesTest is IntegrationBase {
         assertEq(stream.owner(), marketOwner, "native owner");
         assertEq(stream.contractURI(), "", "native contract URI");
         assertEq(IStreamViews(address(stream)).totalSupply(), 0, "a view is forwarded");
+    }
+
+    /// @dev Review round 4 (LIM-GV-25): `createCollection` asks the view extension's name rule
+    ///      directly. An extension whose rule refuses, reverts, burns its gas or answers a
+    ///      malformed word only stops NEW collections, until governance replaces it: the existing
+    ///      collection, every work's permanent facts and metadata stay byte for byte the same,
+    ///      and the next extension creates collections again.
+    function test_createCollection_aRefusingExtensionBlocksOnlyNewCollections() public {
+        bytes32 core = _coreSnapshot();
+        bytes32 before = _snapshot();
+        uint256 count = stream.collectionCount();
+        address genesisExtension = stream.extension();
+        for (uint256 mode; mode < 4; ++mode) {
+            _replace("EXTENSION", address(new RefusingNameExtension(mode)));
+            vm.prank(platform);
+            if (mode == 0) vm.expectRevert(IStream.InvalidCollectionName.selector);
+            else vm.expectRevert();
+            stream.createCollection{ gas: 2_000_000 }("Refused", keccak256("refused"));
+            assertEq(stream.collectionCount(), count, "no new collection");
+            assertEq(_coreSnapshot(), core, "permanent facts are unaffected");
+            assertEq(_snapshot(), before, "metadata is unaffected");
+        }
+        _replace("EXTENSION", genesisExtension);
+        vm.prank(platform);
+        stream.createCollection("After the replacement", keccak256("after"));
+        assertEq(stream.collectionCount(), count + 1);
     }
 
     /// @dev `supportsInterface(IStreamViews)` is true of every extension Stream accepts: the
