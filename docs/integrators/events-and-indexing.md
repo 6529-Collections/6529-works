@@ -548,7 +548,7 @@ edition auction's events (above), and `FederatedEditions` shares 6529 Stream Edi
 | `RoyaltyRateChanged(uint256 indexed workId, uint32 previous, uint32 next)` | `0x2114cdf5…` | `setRoyaltyRate` (the artist; lower only) | |
 | `LocatorSet(uint256 indexed workId, uint256 index, uint8 kind, string uri)` | `0xfdbab0fd…` | `setLocator` (the artist) | The URI is printable ASCII without `"` or `\` ([FED-27][fed]). |
 | `OnChainComplete(uint256 indexed workId)` | `0x7037a4ae…` | `syncOnChain` (anyone) | Every media file is complete in the content store. |
-| `DefaultRendererSet(address renderer, bytes32 codeHash)` | `0x985bae47…` | The constructor, `setDefaultRenderer` (the artist) | |
+| `DefaultRendererSet(address previous, address next, bytes32 codeHash)` | `0xe2fab5e9…` | The constructor (`previous` zero), `setDefaultRenderer` (the artist, compare-and-set) | The same event as 6529 Stream's. |
 | `ContentStoreSet(address contentStore)` | `0x58071c7e…` | The 1/1 template's constructor | The content store that checks every work's media; a listed copy names the canonical one ([FED-68][fed]). |
 | `EditionsLinked(address editions)` | `0x37934395…` | `linkEditions` (the artist, once, before joining) | |
 | `EditionTermsLocked(uint256 indexed editionId, address seller, address royaltyReceiver, address feeRecipient, uint32 feeShare)` | `0x3fffee5f…` | `FederatedEditions`, when an edition's terms lock (first bind or create) | |
@@ -940,7 +940,7 @@ structs expanded to tuples: 164 signatures.
 | `Credited(address,address,uint256,uint256)` | `0xdd0ef63b44a932361273bab95d6e9bfcea5c7850c43844f540314e89899b970c` | EnglishAuction, UniformEditionAuction |
 | `DefaultCurrencyChanged(bytes32,address,address,uint64)` | `0x067a63345dbae6001939bc0d94813caee97a817779e5a2f7b1f80f88a1d12b98` | AssetAllowlist |
 | `DefaultLicenseSet(bytes32,(string,bytes32),(string,bytes32),uint64)` | `0x45967214951395edfaed913e180d66f46dc20f884611341e05657335090698b1` | EconomicsResolver |
-| `DefaultRendererSet(address,address,bytes32)` | `0xe2fab5e93f4326fb3c630fb4727e23f53f515c7850a15793f49130e5c0bcd320` | Stream |
+| `DefaultRendererSet(address,address,bytes32)` | `0xe2fab5e93f4326fb3c630fb4727e23f53f515c7850a15793f49130e5c0bcd320` | Stream, FederatedStream |
 | `DeliveryClaimed(uint256,address,address)` | `0x97b1d318557d1873c3d7a8a9ef7fb4b4c83f2bb976bb53525208ed7712543748` | EnglishAuction |
 | `DeliveryPending(uint256,address)` | `0x96b5b68e86af123b788e4434fa8a32249a60a4f022f6bb2451d03055a8dfcb26` | EnglishAuction |
 | `DeliverySet(address,address)` | `0x113e2022127f41af1670206bb33d2c69486d7f4f382e9284c2c974fea2fbd666` | WorkRecords |
@@ -1078,7 +1078,6 @@ Federation ([ADR 0008](../adr/0008-federation.md)):
 | `LocatorSet(uint256,uint256,uint8,string)` | `0xfdbab0fd1476201ece313bb879bf335ed4f6541b9732e39bbb7aa6fccb83a72a` | FederatedStream |
 | `OnChainComplete(uint256)` | `0x7037a4aeb33e1d3522b38b07a7e93607e33a6220198f1d324dd2563f5c6f0bf2` | FederatedStream |
 | `ContentStoreSet(address)` | `0x58071c7e6eae6f3e4a9567e1cbfe3dcf2bad5390fbb21977381d23a4c6cf5a87` | FederatedStream |
-| `DefaultRendererSet(address,bytes32)` | `0x985bae47ab1d6cc0f9507c06c737ae3e10f5cab92643d97e310e1f234ab85fce` | FederatedStream |
 | `EditionsLinked(address)` | `0x37934395c201e084f1b8f0c740fb15fe287937e0d37694d2c2c30b26fa4334a9` | FederatedStream |
 | `EditionTermsLocked(uint256,address,address,address,uint32)` | `0x3fffee5fab320ece21d2c9c1e04d7aa93c11def52468c07b1d0abcf407fa9cf1` | FederatedEditions |
 

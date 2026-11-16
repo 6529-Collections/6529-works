@@ -126,10 +126,12 @@ interface IFederatedStream is IFederatedToken {
     /// @notice Every media file of a work is complete in the content store.
     /// @param workId The work.
     event OnChainComplete(uint256 indexed workId);
-    /// @notice The artist set the default renderer.
-    /// @param renderer The renderer.
+    /// @notice The default renderer was set (at construction, `previous` zero), as 6529
+    ///         Stream's event.
+    /// @param previous The renderer replaced.
+    /// @param next The renderer.
     /// @param codeHash Its code hash.
-    event DefaultRendererSet(address renderer, bytes32 codeHash);
+    event DefaultRendererSet(address previous, address next, bytes32 codeHash);
     /// @notice The artist linked the pair's editions contract.
     /// @param editions The editions contract.
     event EditionsLinked(address editions);
@@ -138,6 +140,8 @@ interface IFederatedStream is IFederatedToken {
     /// @param contentStore The content store.
     event ContentStoreSet(address contentStore);
 
+    /// @notice The current value is not the one the call expected.
+    error ExpectedValueMismatch();
     /// @notice A license text that is not a registered SHA-256 file of at most 16 chunks (at
     ///         mint), or not complete in the content store (at finalize).
     /// @param textFileId The license text's file ID.
@@ -204,10 +208,12 @@ interface IFederatedStream is IFederatedToken {
     ///         store. Permissionless.
     /// @param tokenId A live token of the work.
     function syncOnChain(uint256 tokenId) external;
-    /// @notice The artist sets the default renderer (ERC-165 `IRenderer`, code hash pinned).
+    /// @notice The artist sets the default renderer (ERC-165 `IRenderer`, code hash pinned),
+    ///         compare-and-set.
+    /// @param expected The current default renderer (`ExpectedValueMismatch` otherwise).
     /// @param renderer The renderer.
     /// @param codeHash Its code hash.
-    function setDefaultRenderer(address renderer, bytes32 codeHash) external;
+    function setDefaultRenderer(address expected, address renderer, bytes32 codeHash) external;
     /// @notice The artist links the pair's editions contract, once, before joining.
     /// @param editions The editions contract.
     function linkEditions(address editions) external;

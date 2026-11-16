@@ -68,8 +68,10 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
     uint256 private constant URI_BYTES = 0x7fffffffeffffffffffffffa00000000;
 
     /// @dev A work. Slot 0 packs the seller vault, rate, kind, seed policy, flags, live token and
-    ///      record version. `files` holds the media count (top byte) and each file's role (byte
-    ///      `i`); `media` the file IDs (their SHA-256 is the content store's, checked at mint).
+    ///      record version. `files` holds the media count (top byte) and each file's role (bits
+    ///      `4i` to `4i + 3`, roles being 0 to 15, so 32 roles fill bits 0 to 127 and never reach
+    ///      the count); `media` the file IDs (their SHA-256 is the content store's, checked at
+    ///      mint).
     struct Work {
         address seller;
         uint24 royaltyRate;
@@ -373,8 +375,11 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
     }
 
     /// @inheritdoc IFederatedStream
-    function setDefaultRenderer(address renderer, bytes32 codeHash) external {
+    /// @dev Compare-and-set, as 6529 Stream's: a call prepared against an earlier renderer
+    ///      cannot replace one installed after it.
+    function setDefaultRenderer(address expected, address renderer, bytes32 codeHash) external {
         _onlyArtist();
+        if (expected != _defaultRenderer) revert ExpectedValueMismatch();
         _setRenderer(renderer, codeHash);
         uint256 minted = _tokenCount;
         if (minted != 0) emit BatchMetadataUpdate(1, minted);
@@ -637,7 +642,7 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
                     || (f.role == 0) != (i == 0)
             ) revert InvalidMintRequest();
             w.media[i] = f.fileId;
-            files |= uint256(f.role) << (8 * i);
+            files |= uint256(f.role) << (4 * i);
         }
         w.files = files;
         // The license is fixed from the first mint (no relicensing), so its text meets the rule
@@ -705,7 +710,9 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
         for (uint256 i; i < media.length; ++i) {
             bytes32 fileId = w.media[i];
             media[i] = MediaFile(
-                fileId, IContentStore(_contentStore).sha256Of(fileId), uint8(files >> (8 * i))
+                fileId,
+                IContentStore(_contentStore).sha256Of(fileId),
+                uint8((files >> (4 * i)) & 0xf)
             );
         }
     }
@@ -768,10 +775,11 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
         ) revert InvalidLicenseText(textFileId);
     }
 
-    /// @dev Installs the default renderer: ERC-165 `IRenderer` and the pinned code hash.
+    /// @dev Installs the default renderer: ERC-165 `IRenderer` and the pinned code hash; the
+    ///      event names the renderer it replaces (zero at construction).
     function _setRenderer(address renderer, bytes32 codeHash) private {
         Dependency.checkPinned(renderer, type(IRenderer).interfaceId, codeHash);
+        emit DefaultRendererSet(_defaultRenderer, renderer, codeHash);
         (_defaultRenderer, _defaultRendererCodeHash) = (renderer, codeHash);
-        emit DefaultRendererSet(renderer, codeHash);
     }
 }

@@ -6,8 +6,12 @@ import { FederationRegistry } from "src/federated/FederationRegistry.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IFederatedStream } from "src/interfaces/IFederatedStream.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
+import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { CURRENCY_ETH, PRODUCT_FEDERATED } from "src/interfaces/types/EconomicsTypes.sol";
+import { Limits } from "src/interfaces/types/Limits.sol";
 import { License } from "src/interfaces/types/PackageTypes.sol";
+import { PrimaryOutcome } from "src/interfaces/types/SaleTypes.sol";
+import { Burner } from "../helpers/GasRule.sol";
 import { FederationBase } from "./FederationBase.sol";
 
 /// @notice A federated work's license text meets 6529 Stream's frozen-license rule; a federated
@@ -207,5 +211,103 @@ contract FederationPass3Test is FederationBase {
         emit log_named_uint("propagateRevocation, per further cold element (gas)", perElement);
         assertLt(perElement, 20_000);
         assertLt(fedRegistry.MAX_BATCH() * 20_000 + single, uint256(1 << 24) / 3);
+    }
+
+    // ------------------------------------------------------------------ packed words
+
+    /// @dev A work of `Limits.MAX_MEDIA_FILES` files, the last with role 15: every role is kept
+    ///      in its own four bits below the count, so the count stays 32 and each file reads back
+    ///      with its role.
+    function test_Roles_ThirtyTwoFilesKeepEveryRoleAndTheCount() public {
+        uint256 n = Limits.MAX_MEDIA_FILES;
+        Work memory w = _fedWork(fedArtist);
+        MediaFile[] memory media = new MediaFile[](n);
+        media[0] = w.media[0];
+        for (uint256 i = 1; i < n; ++i) {
+            bytes memory data = abi.encodePacked("federated role file ", vm.toString(i));
+            bytes32 sha = sha256(data);
+            bytes32 fileId =
+                _registerOnly(data, IContentStore.Encoding.Identity, "image/png", sha);
+            media[i] = MediaFile(fileId, sha, uint8(1 + i % 15));
+        }
+        media[n - 1].role = 15;
+        w.media = media;
+        w.item = _item(fedArtist, 0, w.item.contentHash, media, w.item.recordFileId);
+        (, uint256 tokenId) = _startFed(w);
+        MediaFile[] memory read = fed.mediaOf(tokenId);
+        assertEq(read.length, n, "the count");
+        for (uint256 i; i < n; ++i) {
+            assertEq(read[i].fileId, media[i].fileId);
+            assertEq(read[i].role, media[i].role);
+        }
+        vm.prank(fedArtist);
+        fed.setLocator(tokenId, n - 1, 1, "ar://last");
+        (, uint256 index) = fed.preferredLocator(tokenId, media[n - 1].fileId);
+        assertEq(index, n - 1);
+        vm.prank(fedArtist);
+        vm.expectRevert(abi.encodeWithSelector(IFederatedStream.UnknownWork.selector, tokenId));
+        fed.setLocator(tokenId, n, 1, "ar://none");
+    }
+
+    /// @dev The approval word (status byte, 24-bit rate, work ID above bit 32) at its bounds: the
+    ///      highest rate is kept beside the work ID through a restart, and one above it refuses.
+    function test_Packed_TheApprovalWordKeepsTheHighestRateBesideTheWork() public {
+        uint32 top = 100_000;
+        Work memory w = _fedWork(fedArtist);
+        bytes32 h = _itemHash(w);
+        vm.prank(fedArtist);
+        vm.expectRevert(abi.encodeWithSelector(IFederatedStream.InvalidRoyaltyRate.selector, top + 1));
+        fed.approveItem(h, top + 1);
+        (uint256 saleId, uint256 tokenId) = _startFed(fed, fedArtist, w, top);
+        (,,,,, uint32 rate) = fed.coreOf(tokenId);
+        assertEq(rate, top);
+        (, uint256 amount) = fed.royaltyInfo(tokenId, 1 ether);
+        assertEq(amount, 1 ether);
+        _settleAtEnd(saleId);
+        vm.prank(fedArtist);
+        fed.approveItem(h, top);
+        uint256 again = auction.start(address(fed), _mintData(w));
+        uint256 next = auction.auction(again).tokenId;
+        assertEq(fed.liveTokenOf(1), next, "the same work");
+        (,,,,, rate) = fed.coreOf(next);
+        assertEq(rate, top);
+    }
+
+    /// @dev The sale word (currency in bits 0 to 159, price above) at its bounds: an all-ones
+    ///      currency and a price one below the 96-bit cap read back exactly; a larger price
+    ///      saturates at the cap and never touches the currency.
+    function test_Packed_TheSaleWordKeepsCurrencyAndPriceApart() public {
+        address currency = address(type(uint160).max);
+        (, uint256 first) = _startFed(_fedWork(fedArtist));
+        vm.prank(address(auction));
+        fed.settlePrimary(first, PrimaryOutcome.SOLD, collector, currency, type(uint96).max - 1);
+        (, address c, uint256 price) = fed.primarySale(first);
+        assertEq(c, currency);
+        assertEq(price, type(uint96).max - 1);
+        (, uint256 second) = _startFed(_fedWork(fedArtist));
+        vm.prank(address(auction));
+        fed.settlePrimary(second, PrimaryOutcome.SOLD, collector, currency, type(uint256).max);
+        (, c, price) = fed.primarySale(second);
+        assertEq(c, currency);
+        assertEq(price, type(uint96).max);
+    }
+
+    // ------------------------------------------------------------------ the default renderer
+
+    /// @dev The default renderer is compare-and-set and its event names the renderer replaced: a
+    ///      call prepared against the earlier renderer cannot replace the one installed after it.
+    function test_Renderer_CompareAndSetNamingThePrevious() public {
+        (, uint256 tokenId) = _startFed(_fedWork(fedArtist));
+        Burner next = new Burner(address(renderer), 0);
+        vm.expectEmit(address(fed));
+        emit IFederatedStream.DefaultRendererSet(address(renderer), address(next), address(next).codehash);
+        vm.prank(fedArtist);
+        fed.setDefaultRenderer(address(renderer), address(next), address(next).codehash);
+        assertEq(fed.rendererOf(tokenId), address(next));
+        bytes32 rendererHash = address(renderer).codehash;
+        vm.prank(fedArtist);
+        vm.expectRevert(IFederatedStream.ExpectedValueMismatch.selector);
+        fed.setDefaultRenderer(address(renderer), address(renderer), rendererHash);
+        assertEq(fed.rendererOf(tokenId), address(next), "the stale call changed nothing");
     }
 }

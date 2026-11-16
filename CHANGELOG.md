@@ -10,7 +10,7 @@
   deployer recorded it (`approveTemplate(bytes32 codeHash, address deployer, uint32 version,
   uint8 form)`, `TemplateSet` and `Registered` name the deployer;
   `IFederatedToken.joinFederation(IFederationRegistry.Join)`; `IFederationRegistry` `0xc32f19cd`,
-  `IFederatedToken` `0xc6c898cc`, `IFederatedStream` `0xfdc4a364`); the artist registry lists a
+  `IFederatedToken` `0xc6c898cc`, `IFederatedStream` `0x5b4e5ccb`); the artist registry lists a
   contract only with its artist's `FederatedListing` signature over the entry's facts
   (`listFederatedContract(FederatedListing, bytes consent)`; `IArtistRegistry` `0x8efc5e8c`); an
   exit from DELISTED, or a delisting after an exit, is `LEFT_DELISTED`, served by nothing; a batch

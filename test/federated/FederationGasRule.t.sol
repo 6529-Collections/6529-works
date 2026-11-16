@@ -100,7 +100,7 @@ contract FederationGasRuleTest is FederationBase, GasRuleAssertions {
         (, uint256 tokenId) = _startFed(_fedWork(fedArtist));
         Burner burner = new Burner(address(renderer), 50_000);
         vm.prank(fedArtist);
-        fed.setDefaultRenderer(address(burner), address(burner).codehash);
+        fed.setDefaultRenderer(address(renderer), address(burner), address(burner).codehash);
         bytes memory call = abi.encodeCall(fed.tokenURI, (tokenId));
         Outcome memory o = _assertSameAtEveryMultiple(burner, address(this), address(fed), call);
         assertTrue(o.ok, "metadata at every multiple");
