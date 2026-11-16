@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IItemApprovals } from "src/interfaces/IItemApprovals.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
 import { CURRENCY_ETH, PRODUCT_EDITIONS } from "src/interfaces/types/EconomicsTypes.sol";
@@ -26,22 +25,6 @@ abstract contract EditionAuctionStack is IntegrationBase {
             keccak256(abi.encode(_editionConfig())),
             "the genesis parameters"
         );
-        // Stub awaiting lane 1: until the package registry implements `IItemApprovals`, its
-        // approval check answers true here, so the edition open's C23 check passes on the real
-        // stack. Once implemented, the real answer is used (a registered, unrevoked package).
-        (bool answers,) = stream.packageRegistry()
-            .staticcall(
-                abi.encodeCall(
-                    IItemApprovals.isApprovedItem, (bytes32(0), bytes32(0), new bytes32[](0))
-                )
-            );
-        if (!answers) {
-            vm.mockCall(
-                stream.packageRegistry(),
-                abi.encodeWithSelector(IItemApprovals.isApprovedItem.selector),
-                abi.encode(true)
-            );
-        }
     }
 
     /// @dev 6529 Stream Editions' open data (C23): item `index` of the package `works` under

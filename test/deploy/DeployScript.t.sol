@@ -66,6 +66,8 @@ contract DeployScriptTest is Test {
     function setUp() public {
         deployer = new DeployHarness();
         verifier = new VerifyHarness();
+        // The network accepts in the same run (the genesis network is a key the test holds).
+        deployer.setEnv("ACCEPT_NETWORK", "1");
         example = vm.readFile(EXAMPLE);
         cc0 = vm.readFileBinary(CC0_FIXTURE);
     }
@@ -86,17 +88,13 @@ contract DeployScriptTest is Test {
         deployer.setEnv("GENESIS_CONFIG", GENESIS);
     }
 
-    /// @dev Every input an off-anvil run needs, all valid: Safes behind the admins and
-    ///      guardians, a delegation contract, Permit2 code, the pinned CC0 text, an explicit
+    /// @dev Every input an off-anvil run needs, all valid: a Safe behind the network, a
+    ///      delegation contract, Permit2 code, the pinned CC0 text, an explicit
     ///      NO_VRF, the manifest file and URI.
     function _sepolia() internal returns (DelegationManagementMock delegation) {
         vm.chainId(SEPOLIA);
         _allowTestSingleton();
-        bytes memory safe = address(new MockSafe()).code;
-        string[6] memory safes = ["01", "02", "04", "11", "12", "13"];
-        for (uint256 i; i < safes.length; ++i) {
-            _etchSafe(_account(safes[i]), safe);
-        }
+        _etchSafe(_account("01"), address(new MockSafe()).code); // the network
         _genesisFile(_filled());
         vm.deal(makeAddr("fee"), 1); // an existing account
         deployer.setEnv("NETWORK_FEE_RECIPIENT", vm.toString(makeAddr("fee")));
@@ -211,7 +209,7 @@ contract DeployScriptTest is Test {
         (uint256 targets, uint256 calls, uint256 holders) = verifier.verify(record);
         assertEq(targets, 18);
         assertEq(calls, 24);
-        assertEq(holders, 18);
+        assertEq(holders, 8);
     }
 
     function test_VerifyRunReadsTheRecordFile() public {
@@ -290,7 +288,7 @@ contract DeployScriptTest is Test {
         (uint256 targets, uint256 calls, uint256 holders) = verifier.verify(record);
         assertEq(targets, 18);
         assertEq(calls, 24);
-        assertEq(holders, 18);
+        assertEq(holders, 8);
         // Against another pin it does not verify.
         verifier.setCc0Digest(keccak256("another text"));
         vm.expectRevert(
@@ -406,7 +404,7 @@ contract DeployScriptTest is Test {
         _genesisFile(vm.replace(example, "Example genesis configuration", "Sepolia genesis"));
         vm.expectRevert(
             abi.encodeWithSelector(
-                DeployGuards.PlaceholderHolder.selector, "ADMIN", address(0xB001)
+                DeployGuards.PlaceholderHolder.selector, "NETWORK", address(0xB001)
             )
         );
         deployer.prepare();
@@ -427,41 +425,48 @@ contract DeployScriptTest is Test {
     }
 
     /// Regression: M-1 (a proof of concept, inverted) in the review of #31
-    /// @dev Holders with no code (an undeployed Safe, a typo) used to pass, and genesis
-    ///      renounced the configurator's ADMIN to them.
-    function test_OffAnvilCodelessAdminsAndGuardiansAreRefused() public {
+    /// @dev A network with no code (an undeployed Safe, a typo) used to pass for the admins, and
+    ///      genesis proposed it the network roles. The single network address must be a Safe.
+    function test_OffAnvilACodelessNetworkIsRefused() public {
         _sepolia();
         vm.etch(_account("01"), "");
         vm.expectRevert(
-            abi.encodeWithSelector(DeployGuards.HolderNotASafe.selector, "ADMIN", _account("01"))
-        );
-        deployer.prepare();
-        vm.etch(_account("01"), address(new MockSafe()).code);
-        vm.etch(_account("12"), "");
-        vm.expectRevert(
-            abi.encodeWithSelector(DeployGuards.HolderNotASafe.selector, "GUARDIAN", _account("12"))
+            abi.encodeWithSelector(DeployGuards.HolderNotASafe.selector, "NETWORK", _account("01"))
         );
         deployer.prepare();
     }
 
-    function test_OffAnvilAdminsAndGuardiansMustBeSafesWithAThreshold() public {
+    function test_OffAnvilTheNetworkMustBeASafeWithAThreshold() public {
         _sepolia();
-        vm.etch(_account("02"), address(new MockZeroThresholdSafe()).code);
+        vm.etch(_account("01"), address(new MockZeroThresholdSafe()).code);
         vm.expectRevert(
-            abi.encodeWithSelector(DeployGuards.HolderNotASafe.selector, "ADMIN", _account("02"))
+            abi.encodeWithSelector(DeployGuards.HolderNotASafe.selector, "NETWORK", _account("01"))
         );
         deployer.prepare();
-        vm.etch(_account("02"), address(new MockSafe()).code);
         // An EIP-7702 delegated EOA has code, and even answers through its delegate.
-        vm.etch(_account("11"), abi.encodePacked(hex"ef0100", address(new MockSafe())));
+        vm.etch(_account("01"), abi.encodePacked(hex"ef0100", address(new MockSafe())));
         vm.expectRevert(
-            abi.encodeWithSelector(DeployGuards.HolderNotASafe.selector, "GUARDIAN", _account("11"))
+            abi.encodeWithSelector(DeployGuards.HolderNotASafe.selector, "NETWORK", _account("01"))
         );
         deployer.prepare();
         // A contract without getThreshold().
-        vm.etch(_account("11"), address(new DelegationManagementMock()).code);
+        vm.etch(_account("01"), address(new DelegationManagementMock()).code);
         vm.expectRevert(
-            abi.encodeWithSelector(DeployGuards.HolderNotASafe.selector, "GUARDIAN", _account("11"))
+            abi.encodeWithSelector(DeployGuards.HolderNotASafe.selector, "NETWORK", _account("01"))
+        );
+        deployer.prepare();
+        // One key behind the network Safe is below the threshold floor.
+        _etchSafe(_account("01"), address(new MockOneKeySafe()).code);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.ThresholdTooLow.selector, "NETWORK", _account("01"), 1
+            )
+        );
+        deployer.prepare();
+        // A Safe must list its owners.
+        _etchSafe(_account("01"), address(new MockSafeWithoutOwners()).code);
+        vm.expectRevert(
+            abi.encodeWithSelector(DeployGuards.HolderNotASafe.selector, "NETWORK", _account("01"))
         );
         deployer.prepare();
     }
@@ -486,19 +491,48 @@ contract DeployScriptTest is Test {
         }
     }
 
-    /// Owner decision 2, and the third admin seat (ADR 0007): a hot, a cold and a third admin
-    /// Safe, at least.
-    function test_OffAnvilNeedsThreeAdminSafes() public {
+    /// @dev The network roles are `network()`'s alone: a genesis holder naming one is refused
+    ///      before anything is deployed (the configurator would refuse the grant too).
+    function test_OffAnvilNoHolderNamesANetworkRole() public {
         _sepolia();
-        string memory cold = string.concat(FILLED_PREFIX, "02");
+        string memory platform = string.concat(FILLED_PREFIX, "51");
         _genesisFile(
             vm.replace(
                 _filled(),
-                string.concat('"role": "ADMIN",\n      "account": "', cold),
-                string.concat('"role": "KEEPER",\n      "account": "', cold)
+                string.concat('"role": "PLATFORM",\n      "account": "', platform),
+                string.concat('"role": "PARAMETER_SETTER",\n      "account": "', platform)
             )
         );
-        vm.expectRevert(abi.encodeWithSelector(DeployGuards.TooFewAdmins.selector, 2));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.NetworkRoleHolder.selector, "PARAMETER_SETTER", _account("51")
+            )
+        );
+        deployer.prepare();
+    }
+
+    /// @dev A brake named at genesis (none at launch) must be a reachable account; zero is none.
+    function test_OffAnvilABrakeIsOptionalButReachable() public {
+        _sepolia();
+        string memory withBrake = vm.replace(
+            _filled(),
+            '"network": "0x100000000000000000000000000000000000b001",',
+            '"network": "0x100000000000000000000000000000000000b001",\n  "brake": "0x0000000000000000000000000000000000000000",'
+        );
+        _genesisFile(withBrake);
+        deployer.prepare();
+        _genesisFile(
+            vm.replace(
+                withBrake,
+                '"brake": "0x0000000000000000000000000000000000000000"',
+                '"brake": "0x000000000000000000000000000000000000b0b0"'
+            )
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.PlaceholderHolder.selector, "BRAKE", address(0xB0B0)
+            )
+        );
         deployer.prepare();
     }
 
@@ -515,29 +549,29 @@ contract DeployScriptTest is Test {
         );
     }
 
-    /// Owner decision 18: at mainnet genesis the community council, the security council and
-    /// the curation signers are held by distinct accounts, and the deployer holds none of them.
-    /// The same files pass on Sepolia, where a rehearsal may reuse accounts.
+    /// Owner decision 18: at mainnet genesis the network address, the pausers and the curation
+    /// signers are distinct accounts, and the deployer is none of them. The same files pass on
+    /// Sepolia, where a rehearsal may reuse accounts.
     function test_MainnetSeparatesTheRoleGroupsFromEachOtherAndTheDeployer() public {
         _sepolia();
-        address hot = _account("01");
-        address guardian1 = _account("11");
+        address network = _account("01");
+        address pauser1 = _account("11");
         // A curation signer that is the deployer (this test calls `prepare`).
         string memory deployerSigns = _moveHolder(_filled(), "CURATION_SIGNER", "21", address(this));
-        // The security council's Safe also holding a community council role.
-        string memory securityFunds = _moveHolder(_filled(), "FUNDS_SETTER", "01", guardian1);
-        // The community council's Safe also signing curation results.
-        string memory councilSigns = _moveHolder(_filled(), "CURATION_SIGNER", "21", hot);
-        string[3] memory files = [deployerSigns, securityFunds, councilSigns];
+        // A pauser that also signs curation results.
+        string memory pauserSigns = _moveHolder(_filled(), "CURATION_SIGNER", "21", pauser1);
+        // The network also holding an operational key.
+        string memory networkPlatform = _moveHolder(_filled(), "PLATFORM", "51", network);
+        string[3] memory files = [deployerSigns, pauserSigns, networkPlatform];
         bytes[3] memory reasons = [
             abi.encodeWithSelector(
                 DeployGuards.HolderIsTheDeployer.selector, "CURATION_SIGNER", address(this)
             ),
             abi.encodeWithSelector(
-                DeployGuards.RoleGroupsShareAHolder.selector, guardian1, "GUARDIAN", "FUNDS_SETTER"
+                DeployGuards.RoleGroupsShareAHolder.selector, pauser1, "PAUSER", "CURATION_SIGNER"
             ),
             abi.encodeWithSelector(
-                DeployGuards.RoleGroupsShareAHolder.selector, hot, "ADMIN", "CURATION_SIGNER"
+                DeployGuards.RoleGroupsShareAHolder.selector, network, "NETWORK", "PLATFORM"
             )
         ];
         for (uint256 i; i < files.length; ++i) {
@@ -557,18 +591,29 @@ contract DeployScriptTest is Test {
             )
         );
         deployer.prepare();
-        // The committed example's groups pass the mainnet check.
+        // The committed example's groups pass the mainnet check, and the deployer is not the
+        // network.
         DeployGuards.checkRoleGroups(_filled(), address(this));
-        // An operational role belongs to no group, so a council account may also hold one.
-        DeployGuards.checkRoleGroups(_moveHolder(_filled(), "PLATFORM", "51", hot), address(this));
+        vm.expectRevert(
+            abi.encodeWithSelector(DeployGuards.HolderIsTheDeployer.selector, "NETWORK", network)
+        );
+        this.checkRoleGroupsExternal(_filled(), network);
+        // An operational role belongs to no group, so a pauser may also hold one.
+        DeployGuards.checkRoleGroups(
+            _moveHolder(_filled(), "PLATFORM", "51", pauser1), address(this)
+        );
+    }
+
+    function checkRoleGroupsExternal(string memory json, address deployer_) external view {
+        DeployGuards.checkRoleGroups(json, deployer_);
     }
 
     /// Owner decision 18: Verify repeats the role-group guard on mainnet. Its canonical
     /// dependency checks run first and need mainnet's code, so the harness drives check 5.
     function test_VerifyRepeatsTheRoleGroupGuardOnMainnet() public {
         _sepolia();
-        address hot = _account("01");
-        string memory shared = _moveHolder(_filled(), "CURATION_SIGNER", "21", hot);
+        address pauser1 = _account("11");
+        string memory shared = _moveHolder(_filled(), "CURATION_SIGNER", "21", pauser1);
         _genesisFile(shared);
         deployer.run();
         string memory record = deployer.lastRecord();
@@ -578,7 +623,7 @@ contract DeployScriptTest is Test {
         vm.chainId(1);
         vm.expectRevert(
             abi.encodeWithSelector(
-                DeployGuards.RoleGroupsShareAHolder.selector, hot, "ADMIN", "CURATION_SIGNER"
+                DeployGuards.RoleGroupsShareAHolder.selector, pauser1, "PAUSER", "CURATION_SIGNER"
             )
         );
         verifier.checkGuardsExternal(record, shared);
@@ -592,16 +637,15 @@ contract DeployScriptTest is Test {
         verifier.checkGuardsExternal(record, deployerSigns);
     }
 
-    /// Owner decision 18: the groups are ADMIN and the delayed setters, GUARDIAN and PAUSER,
-    /// and CURATION_SIGNER; the operational roles belong to none.
+    /// Owner decision 18: the groups are the network roles, PAUSER and CURATION_SIGNER; the
+    /// other operational roles belong to none.
     function test_RoleGroupsAreTheDecidedOnes() public pure {
-        string[5] memory community =
-            ["ADMIN", "UNPAUSER", "PARAMETER_SETTER", "FUNDS_SETTER", "SUCCESSOR_SETTER"];
-        for (uint256 i; i < community.length; ++i) {
-            assertEq(DeployGuards.roleGroup(community[i]), DeployGuards.COMMUNITY_COUNCIL);
+        string[5] memory network =
+            ["ADMIN", "NETWORK", "PARAMETER_SETTER", "FUNDS_SETTER", "SUCCESSOR_SETTER"];
+        for (uint256 i; i < network.length; ++i) {
+            assertEq(DeployGuards.roleGroup(network[i]), DeployGuards.NETWORK_GROUP);
         }
-        assertEq(DeployGuards.roleGroup("GUARDIAN"), DeployGuards.SECURITY_COUNCIL);
-        assertEq(DeployGuards.roleGroup("PAUSER"), DeployGuards.SECURITY_COUNCIL);
+        assertEq(DeployGuards.roleGroup("PAUSER"), DeployGuards.PAUSERS);
         assertEq(DeployGuards.roleGroup("CURATION_SIGNER"), DeployGuards.CURATION_SIGNERS);
         string[5] memory operational =
             ["STORAGE_OPERATOR", "MINTER", "KEEPER", "PLATFORM", "CURATOR"];
@@ -610,95 +654,13 @@ contract DeployScriptTest is Test {
         }
     }
 
-    /// Owner decision 2: the cold admin's signers differ from the hot admin's and the
-    /// guardians'.
-    function test_OffAnvilAdminSafesShareNoSigner() public {
-        _sepolia();
-        bytes memory shared = address(new MockSharedSignerSafe()).code;
-        address signer = MockSharedSignerSafe(address(new MockSharedSignerSafe())).SHARED();
-        // The hot and the cold admin share a signer.
-        vm.etch(_account("01"), shared);
-        vm.etch(_account("02"), shared);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                DeployGuards.SharedSigner.selector, _account("01"), _account("02"), signer
-            )
-        );
-        deployer.prepare();
-        // The cold admin and a guardian share a signer.
-        vm.etch(_account("01"), address(new MockSafe()).code);
-        vm.etch(_account("12"), shared);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                DeployGuards.SharedSigner.selector, _account("02"), _account("12"), signer
-            )
-        );
-        deployer.prepare();
-        // GOV-4: guardian Safes share no signer with each other either.
-        vm.etch(_account("02"), address(new MockSafe()).code);
-        vm.etch(_account("11"), shared);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                DeployGuards.SharedSigner.selector, _account("11"), _account("12"), signer
-            )
-        );
-        deployer.prepare();
-        vm.etch(_account("12"), address(new MockSafe()).code);
-        deployer.prepare();
-        // A Safe must list its owners.
-        vm.etch(_account("02"), address(new MockSafeWithoutOwners()).code);
-        vm.expectRevert(
-            abi.encodeWithSelector(DeployGuards.HolderNotASafe.selector, "ADMIN", _account("02"))
-        );
-        deployer.prepare();
-    }
-
     /// Regression: GOV-4 (docs/security/internal-review-2026-10.md)
-    /// @dev One key behind every guardian Safe is refused: a 1-of-1 Safe is below the
-    ///      threshold floor, and 2-of-2 Safes of the same two keys share signers.
-    function test_OneKeyBehindEveryGuardianSafeIsRefused() public {
-        _sepolia();
-        bytes memory oneKey = address(new MockOneKeySafe()).code;
-        vm.etch(_account("11"), oneKey);
-        vm.etch(_account("12"), oneKey);
-        vm.etch(_account("13"), oneKey);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                DeployGuards.ThresholdTooLow.selector, "GUARDIAN", _account("11"), 1
-            )
-        );
-        deployer.prepare();
-        bytes memory twoKeys = address(new MockTwoKeySafe()).code;
-        vm.etch(_account("11"), twoKeys);
-        vm.etch(_account("12"), twoKeys);
-        vm.etch(_account("13"), twoKeys);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                DeployGuards.SharedSigner.selector,
-                _account("11"),
-                _account("12"),
-                MockTwoKeySafe(_account("11")).KEY_A()
-            )
-        );
-        deployer.prepare();
-        // The admins need the floor too.
-        _sepolia();
-        vm.etch(_account("01"), oneKey);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                DeployGuards.ThresholdTooLow.selector, "ADMIN", _account("01"), 1
-            )
-        );
-        deployer.prepare();
-    }
-
-    /// Regression: GOV-4 (docs/security/internal-review-2026-10.md)
-    /// @dev An owner with code (a nested Safe, any contract or an EIP-7702 delegated EOA) is
-    ///      refused, so it cannot hide a signer shared with another Safe.
+    /// @dev An owner of the network Safe with code (a nested Safe, any contract or an EIP-7702
+    ///      delegated EOA) is refused.
     function test_ANestedSafeOwnerIsRefused() public {
         _sepolia();
         address inner = MockNestedOwnerSafe(address(new MockNestedOwnerSafe())).INNER();
-        vm.etch(_account("01"), address(new MockNestedOwnerSafe()).code);
+        _etchSafe(_account("01"), address(new MockNestedOwnerSafe()).code);
         vm.etch(inner, address(new MockSafe()).code);
         vm.expectRevert(
             abi.encodeWithSelector(DeployGuards.NestedOwner.selector, _account("01"), inner)
@@ -714,17 +676,15 @@ contract DeployScriptTest is Test {
         deployer.prepare();
     }
 
-    /// L1 (review of #52): a Safe with an enabled module is refused; a module acts without the
-    ///     owners' signatures. (The reviewer's PoC, inverted.)
+    /// L1 (review of #52): a network Safe with an enabled module is refused; a module acts
+    ///     without the owners' signatures. (The reviewer's PoC, inverted.)
     function test_ASafeWithAModuleIsRefused() public {
         _sepolia();
-        bytes memory moduled = address(new MockModuleSafe()).code;
-        _etchSafe(_account("01"), moduled); // hot admin
-        _etchSafe(_account("11"), moduled); // a guardian
+        _etchSafe(_account("01"), address(new MockModuleSafe()).code);
         vm.expectRevert(
             abi.encodeWithSelector(
                 DeployGuards.SafeHasModules.selector,
-                "ADMIN",
+                "NETWORK",
                 _account("01"),
                 MockModuleSafe(_account("01")).MODULE()
             )
@@ -732,36 +692,37 @@ contract DeployScriptTest is Test {
         deployer.prepare();
     }
 
-    /// L1: a Safe with a transaction guard is refused.
+    /// L1: a network Safe with a transaction guard is refused.
     function test_ASafeWithAGuardIsRefused() public {
         _sepolia();
         address guard = makeAddr("safeGuard");
-        vm.store(_account("12"), DeployGuards.SAFE_GUARD_SLOT, bytes32(uint256(uint160(guard))));
+        vm.store(_account("01"), DeployGuards.SAFE_GUARD_SLOT, bytes32(uint256(uint160(guard))));
         vm.expectRevert(
             abi.encodeWithSelector(
-                DeployGuards.SafeHasGuard.selector, "GUARDIAN", _account("12"), guard
+                DeployGuards.SafeHasGuard.selector, "NETWORK", _account("01"), guard
             )
         );
         deployer.prepare();
     }
 
-    /// L1: a Safe proxy must run a canonical singleton, at its address and with its code.
+    /// L1: the network Safe's proxy must run a canonical singleton, at its address and with its
+    ///     code.
     function test_ASafeOnAnotherSingletonIsRefused() public {
         _sepolia();
         address other = address(new MockSafeSingleton()); // same code, another address
-        vm.store(_account("02"), bytes32(0), bytes32(uint256(uint160(other))));
+        vm.store(_account("01"), bytes32(0), bytes32(uint256(uint160(other))));
         vm.expectRevert(
             abi.encodeWithSelector(
-                DeployGuards.NotACanonicalSafe.selector, "ADMIN", _account("02"), other
+                DeployGuards.NotACanonicalSafe.selector, "NETWORK", _account("01"), other
             )
         );
         deployer.prepare();
         // The allowed address with other code.
-        vm.store(_account("02"), bytes32(0), bytes32(uint256(uint160(testSingleton))));
+        vm.store(_account("01"), bytes32(0), bytes32(uint256(uint160(testSingleton))));
         vm.etch(testSingleton, address(new MockSafe()).code);
         vm.expectRevert(
             abi.encodeWithSelector(
-                DeployGuards.NotACanonicalSafe.selector, "ADMIN", _account("01"), testSingleton
+                DeployGuards.NotACanonicalSafe.selector, "NETWORK", _account("01"), testSingleton
             )
         );
         deployer.prepare();
@@ -792,39 +753,30 @@ contract DeployScriptTest is Test {
         DeployHarness(address(plain)).setFile(GENESIS, bytes(_filled()));
         vm.expectRevert(
             abi.encodeWithSelector(
-                DeployGuards.NotACanonicalSafe.selector, "ADMIN", _account("01"), testSingleton
+                DeployGuards.NotACanonicalSafe.selector, "NETWORK", _account("01"), testSingleton
             )
         );
         plain.prepare();
     }
 
-    /// L1: Verify repeats it. A module enabled after genesis fails the readback.
+    /// L1: Verify repeats it. A module enabled on the network Safe after genesis fails the
+    ///     readback.
     function test_VerifyRefusesAModuleEnabledAfterGenesis() public {
         (string memory record,) = _offAnvilRecord();
-        _etchSafe(_account("13"), address(new MockModuleSafe()).code);
+        _etchSafe(_account("01"), address(new MockModuleSafe()).code);
         vm.expectRevert(
             abi.encodeWithSelector(
                 DeployGuards.SafeHasModules.selector,
-                "GUARDIAN",
-                _account("13"),
-                MockModuleSafe(_account("13")).MODULE()
+                "NETWORK",
+                _account("01"),
+                MockModuleSafe(_account("01")).MODULE()
             )
         );
         verifier.verify(record);
     }
 
-    function test_OffAnvilNeedsThreeGuardiansAndTwoCurationSigners() public {
+    function test_OffAnvilNeedsTwoCurationSigners() public {
         _sepolia();
-        string memory guardian3 = string.concat(FILLED_PREFIX, "13");
-        _genesisFile(
-            vm.replace(
-                _filled(),
-                string.concat('"role": "GUARDIAN",\n      "account": "', guardian3),
-                string.concat('"role": "KEEPER",\n      "account": "', guardian3)
-            )
-        );
-        vm.expectRevert(abi.encodeWithSelector(DeployGuards.TooFewGuardians.selector, 2));
-        deployer.prepare();
         string memory signer2 = string.concat(FILLED_PREFIX, "22");
         _genesisFile(
             vm.replace(
@@ -837,7 +789,6 @@ contract DeployScriptTest is Test {
         deployer.prepare();
     }
 
-    /// The 6529 delegation contract: the canonical code, and the official Sepolia deployment.
     function test_TheCanonicalDelegationIsPinned() public {
         assertEq(DeployGuards.CANONICAL_DELEGATION, 0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d);
         assertEq(
@@ -1438,7 +1389,7 @@ contract DeployScriptTest is Test {
             _filled(),
             string.concat(
                 '"selector": "0xa82ed63a",\n          "role": "SUCCESSOR_SETTER",\n',
-                '          "class": "successor",\n          "delay": 2592000'
+                '          "class": "7d",\n          "delay": 604800'
             ),
             string.concat(
                 '"selector": "0xa82ed63a",\n          "role": "PLATFORM",\n',
@@ -1751,27 +1702,21 @@ contract DeployScriptTest is Test {
     }
 
     /// Regression: GOV-3 (docs/security/internal-review-2026-10.md)
-    /// @dev Verify repeats the deploy's holder guards against the chain. After genesis the cold
-    ///      admin Safe takes one of the hot admin's signers (an ordinary owner swap), which the
-    ///      deploy refuses; the readback now refuses it too.
+    /// @dev Verify repeats the deploy's guards against the chain. After genesis the network
+    ///      Safe drops to one signature, which the deploy refuses; the readback now refuses it
+    ///      too, and a network Safe that lost its code (or was never a Safe) as well.
     function test_VerifyRepeatsTheHolderGuards() public {
         (string memory record,) = _offAnvilRecord();
-        bytes memory shared = address(new MockSharedSignerSafe()).code;
-        vm.etch(_account("01"), shared);
-        vm.etch(_account("02"), shared);
-        address signer = MockSharedSignerSafe(_account("01")).SHARED();
+        _etchSafe(_account("01"), address(new MockOneKeySafe()).code);
         vm.expectRevert(
             abi.encodeWithSelector(
-                DeployGuards.SharedSigner.selector, _account("01"), _account("02"), signer
+                DeployGuards.ThresholdTooLow.selector, "NETWORK", _account("01"), 1
             )
         );
         verifier.verify(record);
-        // A guardian Safe that lost its code (or was never a Safe) is refused as well.
-        vm.etch(_account("01"), address(new MockSafe()).code);
-        vm.etch(_account("02"), address(new MockSafe()).code);
-        vm.etch(_account("13"), "");
+        vm.etch(_account("01"), "");
         vm.expectRevert(
-            abi.encodeWithSelector(DeployGuards.HolderNotASafe.selector, "GUARDIAN", _account("13"))
+            abi.encodeWithSelector(DeployGuards.HolderNotASafe.selector, "NETWORK", _account("01"))
         );
         verifier.verify(record);
     }
@@ -1794,101 +1739,60 @@ contract DeployScriptTest is Test {
 
     // ------------------------------------------------------------------ re-verify after a change
 
-    /// @dev The cold admin (…b002) replaces the hot admin (…b001) with …b003, by the runbook:
-    ///      the revocations first, the grants once they have executed. Records the logs.
-    function _recoverHotAdmin(DeployV1.Deployment memory d) internal returns (address newHot) {
-        address hot = _account("01");
-        address cold = _account("02");
-        newHot = _account("03");
-        _etchSafe(newHot, address(new MockSharedSignerSafe()).code);
-        uint64[5] memory roles = [
-            Roles.ADMIN,
-            uint64(3), // the former unpause role ID (removed from Roles)
-            Roles.PARAMETER_SETTER,
-            Roles.FUNDS_SETTER,
-            Roles.SUCCESSOR_SETTER
-        ];
+    /// @dev The network (…b001) hands over to …b003: `transferNetwork` (7 days), then the new
+    ///      address accepts. Records the logs.
+    function _handOverNetwork(DeployV1.Deployment memory d) internal returns (address next) {
+        address network = _account("01");
+        next = _account("03");
+        _etchSafe(next, address(new MockSafe()).code);
+        bytes memory transfer = abi.encodeCall(d.manager.transferNetwork, (next));
         vm.recordLogs();
-        vm.startPrank(cold);
-        for (uint256 i; i < 5; ++i) {
-            d.manager
-                .schedule(
-                    address(d.manager),
-                    abi.encodeCall(IAccessManager.revokeRole, (roles[i], hot)),
-                    0
-                );
-        }
-        vm.warp(block.timestamp + 30 days);
-        for (uint256 i; i < 5; ++i) {
-            d.manager
-                .execute(
-                    address(d.manager), abi.encodeCall(IAccessManager.revokeRole, (roles[i], hot))
-                );
-            d.manager
-                .schedule(
-                    address(d.manager),
-                    abi.encodeCall(
-                        IAccessManager.grantRole, (roles[i], newHot, Roles.executionDelay(roles[i]))
-                    ),
-                    0
-                );
-        }
-        vm.warp(block.timestamp + 30 days);
-        for (uint256 i; i < 5; ++i) {
-            d.manager
-                .execute(
-                    address(d.manager),
-                    abi.encodeCall(
-                        IAccessManager.grantRole, (roles[i], newHot, Roles.executionDelay(roles[i]))
-                    )
-                );
-        }
-        vm.stopPrank();
+        vm.prank(network);
+        d.manager.schedule(address(d.manager), transfer, 0);
+        vm.warp(block.timestamp + 7 days);
+        vm.prank(network);
+        d.manager.execute(address(d.manager), transfer);
+        vm.prank(next);
+        d.manager.acceptNetwork();
         verifier.addLogs(vm.getRecordedLogs());
-        vm.warp(block.timestamp + 30 days); // every grant delay has passed
     }
 
-    /// @dev The genesis copy with the hot admin's entries moved to …b003.
+    /// @dev The genesis copy naming …b003 as the network.
     function _epochFile() internal view returns (string memory updated) {
-        updated = vm.replace(
+        updated = _tamper(
             _filled(),
-            string.concat(
-                '"account": "', FILLED_PREFIX, "01", '",\n      "label": "Hot admin Safe"'
-            ),
-            string.concat(
-                    '"account": "', FILLED_PREFIX, "03", '",\n      "label": "Hot admin Safe"'
-                )
+            string.concat('"network": "', FILLED_PREFIX, "01", '"'),
+            string.concat('"network": "', FILLED_PREFIX, "03", '"')
         );
-        assertTrue(keccak256(bytes(updated)) != keccak256(bytes(_filled())), "edited");
     }
 
-    /// Improvement (runbook): after an admin recovery, Verify passes in epoch mode against a
-    /// copy of the genesis file with the new holders, while the genesis event checks keep the
+    /// Improvement (runbook): after a network handover, Verify passes in epoch mode against a
+    /// copy of the genesis file naming the new network, while the genesis event checks keep the
     /// recorded genesis file.
-    function test_ReverifyAfterAdminRecoveryPassesInEpochMode() public {
+    function test_ReverifyAfterANetworkHandoverPassesInEpochMode() public {
         (string memory record, DeployV1.Deployment memory d) = _offAnvilRecord();
-        address newHot = _recoverHotAdmin(d);
-        // Against the genesis file alone the readback fails: the old holder is gone.
+        address next = _handOverNetwork(d);
+        // Against the genesis file alone the readback fails: the network moved.
         vm.expectRevert(
-            abi.encodeWithSelector(
-                GovernanceConfig.HolderMismatch.selector, Roles.ADMIN, _account("01")
-            )
+            abi.encodeWithSelector(GovernanceConfig.NetworkMismatch.selector, next, address(0))
         );
         verifier.verify(record);
         // Epoch mode.
         verifier.setFile("config/epoch-1.json", bytes(_epochFile()));
         verifier.setEnv("GOVERNANCE_CONFIG", "config/epoch-1.json");
         (,, uint256 holders) = verifier.verify(record);
-        assertEq(holders, 18);
-        (bool admin,) = d.manager.hasRole(Roles.ADMIN, newHot);
+        assertEq(holders, 8);
+        (bool admin,) = d.manager.hasRole(Roles.ADMIN, next);
         assertTrue(admin);
+        (admin,) = d.manager.hasRole(Roles.ADMIN, _account("01"));
+        assertFalse(admin, "the old network holds nothing");
     }
 
     /// Epoch mode with the epoch's manifest: it must be recorded on the manager's statement
     /// chain and name the epoch file by its SHA-256.
     function test_EpochModeBindsTheEpochManifest() public {
         (string memory record, DeployV1.Deployment memory d) = _offAnvilRecord();
-        address newHot = _recoverHotAdmin(d);
+        address newHot = _handOverNetwork(d);
         bytes memory epoch = bytes(_epochFile());
         bytes memory manifestFile = abi.encodePacked(
             '{"schema":"6529-works/governance-manifest/1","epoch":1,"governanceConfig":{"sha256":"',
@@ -1904,7 +1808,7 @@ contract DeployScriptTest is Test {
             abi.encodeWithSelector(Verify.ManifestNotRecorded.selector, sha256(manifestFile))
         );
         verifier.verify(record);
-        // The new hot admin publishes it (SUCCESSOR_SETTER, 30 days).
+        // The new network publishes it (SUCCESSOR_SETTER, 7 days).
         bytes memory publish = abi.encodeCall(
             d.statementLog.appendGovernanceManifest,
             (DeployV1.manifestStatement(d, DeployV1.Manifest(sha256(manifestFile), "ar://epoch-1")))
@@ -1912,7 +1816,7 @@ contract DeployScriptTest is Test {
         vm.recordLogs();
         vm.prank(newHot);
         d.manager.schedule(address(d.statementLog), publish, 0);
-        vm.warp(block.timestamp + 30 days);
+        vm.warp(block.timestamp + 7 days);
         vm.prank(newHot);
         d.manager.execute(address(d.statementLog), publish);
         verifier.addLogs(vm.getRecordedLogs());
@@ -1935,16 +1839,11 @@ contract DeployScriptTest is Test {
         address hot = _account("01");
         address oldCurator = _account("61");
         address newCurator = makeAddr("newCurator");
-        bytes memory grant =
-            abi.encodeCall(IAccessManager.grantRole, (Roles.CURATOR, newCurator, 0));
+        // The network grants and revokes operational keys at once (integrator ruling 14).
         vm.recordLogs();
         vm.prank(hot);
-        d.manager.schedule(address(d.manager), grant, 0);
-        vm.warp(block.timestamp + 30 days);
-        vm.prank(hot);
-        d.manager.execute(address(d.manager), grant);
+        d.manager.grantRole(Roles.CURATOR, newCurator, 0);
         verifier.addLogs(vm.getRecordedLogs());
-        vm.warp(block.timestamp + 30 days);
         string memory epoch =
             _tamper(_filled(), vm.toLowercase(vm.toString(oldCurator)), vm.toString(newCurator));
         verifier.setFile("config/epoch-1.json", bytes(epoch));
@@ -1954,12 +1853,8 @@ contract DeployScriptTest is Test {
         );
         verifier.verify(record);
         // Once the old key is revoked, the epoch verifies.
-        bytes memory revoke = abi.encodeCall(IAccessManager.revokeRole, (Roles.CURATOR, oldCurator));
         vm.prank(hot);
-        d.manager.schedule(address(d.manager), revoke, 0);
-        vm.warp(block.timestamp + 30 days);
-        vm.prank(hot);
-        d.manager.execute(address(d.manager), revoke);
+        d.manager.revokeRole(Roles.CURATOR, oldCurator);
         verifier.verify(record);
     }
 
@@ -1967,8 +1862,7 @@ contract DeployScriptTest is Test {
     function test_VerifyReportsPendingOperations() public {
         (string memory record, DeployV1.Deployment memory d) = _anvilRecord();
         address hot = address(0xB001);
-        bytes memory data =
-            abi.encodeCall(IAccessManager.revokeRole, (Roles.NETWORK, address(0xB011)));
+        bytes memory data = abi.encodeCall(d.manager.setBrake, (makeAddr("brake")));
         vm.recordLogs();
         vm.prank(hot);
         (bytes32 id,) = d.manager.schedule(address(d.manager), data, 0);
@@ -1980,7 +1874,7 @@ contract DeployScriptTest is Test {
                 id,
                 hot,
                 address(d.manager),
-                IAccessManager.revokeRole.selector,
+                d.manager.setBrake.selector,
                 readyAt
             )
         );
@@ -1990,7 +1884,7 @@ contract DeployScriptTest is Test {
         verifier.verify(record);
         verifier.setEnv("ALLOW_PENDING_OPERATIONS", "");
         // A cancelled operation is no longer pending.
-        vm.prank(address(0xB012));
+        vm.prank(hot);
         d.manager.cancel(hot, address(d.manager), data);
         verifier.verify(record);
     }
@@ -2126,7 +2020,7 @@ contract DeployScriptTest is Test {
         for (uint256 i; i < calls.length; ++i) {
             d.manager.schedule(address(d.manager), calls[i], 0);
         }
-        vm.warp(block.timestamp + 30 days);
+        vm.warp(block.timestamp + 7 days);
         for (uint256 i; i < calls.length; ++i) {
             d.manager.execute(address(d.manager), calls[i]);
         }
@@ -2292,7 +2186,7 @@ contract DeployScriptTest is Test {
     ///      accepts a past grant since revoked; one still in force fails in epoch mode too.
     function test_EpochModeAcceptsARestoredRemapOnly() public {
         (string memory record, DeployV1.Deployment memory d) = _offAnvilRecord();
-        address newHot = _recoverHotAdmin(d);
+        address newHot = _handOverNetwork(d);
         bytes4 bind = IStream.bindWorkRecords.selector;
         address stream = address(d.stream);
         _adminExecutes(
@@ -2325,8 +2219,8 @@ contract DeployScriptTest is Test {
             '          "signature": "setContractURI(string)",\n',
             '          "selector": "0x938e3d7b",\n',
             '          "role": "PARAMETER_SETTER",\n',
-            '          "class": "standard",\n',
-            '          "delay": 172800\n',
+            '          "class": "24h",\n',
+            '          "delay": 86400\n',
             "        },\n"
         );
         string memory epoch = _tamper(_filled(), entry, "");
@@ -2366,6 +2260,7 @@ contract DeployScriptTest is Test {
     function _reset() internal returns (string memory record, DeployV1.Deployment memory d) {
         deployer = new DeployHarness();
         verifier = new VerifyHarness();
+        deployer.setEnv("ACCEPT_NETWORK", "1");
         deployer.setEnv("DEPLOY_NAMESPACE", vm.toString(keccak256("6529-works/second")));
         (record, d) = _anvilRecord();
     }

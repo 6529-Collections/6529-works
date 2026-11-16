@@ -36,10 +36,15 @@ import { ScriptIO } from "./ScriptIO.sol";
 ///      - on mainnet the VRF coordinator must be the canonical one with its pinned code hash;
 ///      - on mainnet the deployer may not be the museum, the marketplace owner or the network
 ///        fee recipient (`DeployGuards.checkRecipients`), and the VRF subscription must already
-///        be owned by the hot admin Safe and list the module this run deploys as its only
+///        be owned by the network Safe and list the module this run deploys as its only
 ///        consumer (`DeployGuards.checkSubscription`, as Verify reads it);
 ///      - the entropy module is required unless declined with `NO_VRF=1`;
 ///      - nothing the genesis names may be left out.
+///      `configure` proposes the genesis file's `network` and installs no brake unless the file
+///      names one. The network then accepts with `acceptNetwork()` from its own account (the
+///      6529 Safe, in its own transaction); with `ACCEPT_NETWORK=1` this script broadcasts that
+///      call from the network address itself, for a network account the operator holds (anvil, a
+///      test network). Verify.s.sol runs only after the acceptance.
 ///      On anvil, when the delegation contract has no code, a `DelegationManagementMock` is
 ///      deployed first. The record (`deployments/<chainId>/<timestamp>.json`) is written from
 ///      the simulation, before the transactions are confirmed, and says so; `Verify.s.sol`
@@ -117,6 +122,10 @@ contract Deploy is ScriptIO {
         vm.startBroadcast(msg.sender);
         DeployV1.install(d, cfg, r.manifest, calls);
         vm.stopBroadcast();
+        if (_envUint("ACCEPT_NETWORK", 0) == 1) {
+            vm.broadcast(cfg.network);
+            d.manager.acceptNetwork();
+        }
 
         console2.log("manager      ", address(d.manager));
         console2.log("configurator ", address(d.configurator));
@@ -159,7 +168,7 @@ contract Deploy is ScriptIO {
 
     /// @notice Off-anvil checks against the deployed contracts, before `configure`: nothing the
     ///         genesis names is left out, the policy is the committed one, and no holder is a
-    ///         contract of the deployment. On mainnet, the VRF subscription is the hot admin
+    ///         contract of the deployment. On mainnet, the VRF subscription is the network
     ///         Safe's and lists the deployed module as its only consumer. These run in the
     ///         simulation, so a failure aborts the run with nothing broadcast.
     function checkDeployment(

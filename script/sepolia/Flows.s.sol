@@ -55,25 +55,12 @@ interface IDigests {
         returns (bytes32);
 }
 
-/// @dev The OpenZeppelin AccessManager calls a delayed role holder makes (`WorksAccessManager`).
-interface IManagerOps {
-    function schedule(address target, bytes calldata data, uint48 when)
-        external
-        returns (bytes32 operationId, uint32 nonce);
-    function execute(address target, bytes calldata data) external payable returns (uint32);
-    function hashOperation(address caller, address target, bytes calldata data)
-        external
-        view
-        returns (bytes32);
-    function getSchedule(bytes32 id) external view returns (uint48);
-}
-
 /// @title Flows
 /// @notice Encodes the v1 flows run on a Sepolia rehearsal deployment (r4 by default, `RECORD`;
 ///         set `FLOWS_RECORD` for another record): the content uploads, one curated package of
 ///         ten works, its approval and acceptance, the 1/1 starts and bids, the edition auctions
 ///         that run beside the edition masters' 1/1s (open, bids, raises, settlement with the
-///         per-settler departure sweep, claims), a guardian's dispute pause and the hot admin's
+///         per-settler departure sweep, claims), a pauser's dispute pause and the network's
 ///         scheduled cancel that voids an edition sale, record opening, the VRF request, and the
 ///         linked edition.
 /// @dev It holds no key. Only `broadcastB64Chunk` broadcasts, from the script's sender; every
@@ -120,7 +107,7 @@ contract Flows is Script {
     uint256 internal constant ITEM_NEW_COLLECTION = 7;
     /// @dev An edition master whose creator caps the edition (`EDITION_CAP`): the cut step.
     uint256 internal constant ITEM_CAPPED_MASTER = 8;
-    /// @dev An uncapped edition master whose 1/1 a guardian pauses for a dispute.
+    /// @dev An uncapped edition master whose 1/1 a pauser pauses for a dispute.
     uint256 internal constant ITEM_DISPUTE_MASTER = 9;
 
     struct Addrs {
@@ -634,7 +621,8 @@ contract Flows is Script {
     }
 
     /// @notice The artist's `acceptPackage` (relayed: anyone sends it). The first acceptance
-    ///         registers the artist.
+    ///         registers the artist. `signature` is the artist's raw signature; the proof the
+    ///         registry reads is `abi.encodePacked(wallet, signature)` (IAccounts).
     function acceptTx(uint64 deadline, bytes calldata signature) external view {
         Addrs memory a = _addrs();
         bytes32 root = _root(_leaves(_works(a)));
@@ -644,7 +632,8 @@ contract Flows is Script {
             a.registry,
             0,
             abi.encodeCall(
-                IPackageRegistry.acceptPackage, (root, _acceptance(_artist(), deadline), signature)
+                IPackageRegistry.acceptPackage,
+                (root, _acceptance(_artist(), deadline), abi.encodePacked(_artist(), signature))
             )
         );
     }
@@ -675,12 +664,15 @@ contract Flows is Script {
     ) internal view returns (bytes memory) {
         Work[] memory works = _works(a);
         bytes32[] memory leaves = _leaves(works);
+        // The move proof names the signing wallet, the account's root (IAccounts).
+        IArtistRegistry artists = IArtistRegistry(a.artists);
+        address root = artists.authorityOf(artists.artistIdOf(_artist()));
         return abi.encode(
             StreamMintRequest(
                 _root(leaves),
                 works[index].item,
                 _proof(leaves, index),
-                MoveAuthorization(nonce, deadline, signature)
+                MoveAuthorization(nonce, deadline, abi.encodePacked(root, signature))
             )
         );
     }
@@ -1032,8 +1024,8 @@ contract Flows is Script {
         return uint256(keccak256(abi.encode(a.stream, tokenId)));
     }
 
-    /// @notice A guardian Safe pauses master `tokenId`'s 1/1 for a dispute (GUARDIAN,
-    ///         immediate). `guardian` is the Safe.
+    /// @notice A pauser key pauses master `tokenId`'s 1/1 for a dispute (PAUSER, no delay; the
+    ///         pause ends by itself after 3 days). `guardian` is the pauser's account.
     function pauseTx(uint256 tokenId, address guardian) external view {
         Addrs memory a = _addrs();
         _tx(
@@ -1096,36 +1088,16 @@ contract Flows is Script {
         return abi.encodeCall(IEnglishAuction.cancel, (_oneOfOneSale(a, tokenId), outcome));
     }
 
-    /// @notice The hot admin Safe schedules the cancel of `tokenId`'s paused 1/1 on the manager
-    ///         (PARAMETER_SETTER: a 48-hour execution delay). `admin` is the Safe.
-    function scheduleCancelTx(uint256 tokenId, address admin) external view {
+    /// @notice The network cancels `tokenId`'s paused 1/1 (NETWORK: no delay, at any moment of
+    ///         the pause, C30). `network` is the network Safe.
+    function cancelTx(uint256 tokenId, address network) external view {
         Addrs memory a = _addrs();
-        bytes memory data = _cancelData(a, tokenId);
-        _info(
-            "operationId", vm.toString(IManagerOps(a.manager).hashOperation(admin, a.auction, data))
-        );
         _tx(
-            string.concat("scheduleCancel-", tokenId.toString()),
-            string.concat("safe:", admin.toHexString()),
-            a.manager,
+            string.concat("cancel-", tokenId.toString()),
+            string.concat("safe:", network.toHexString()),
+            a.auction,
             0,
-            abi.encodeCall(IManagerOps.schedule, (a.auction, data, uint48(0)))
-        );
-    }
-
-    /// @notice The hot admin Safe executes the scheduled cancel once it is ready.
-    function executeCancelTx(uint256 tokenId, address admin) external view {
-        Addrs memory a = _addrs();
-        bytes memory data = _cancelData(a, tokenId);
-        bytes32 id = IManagerOps(a.manager).hashOperation(admin, a.auction, data);
-        _info("operationId", vm.toString(id));
-        _info("readyAt", uint256(IManagerOps(a.manager).getSchedule(id)).toString());
-        _tx(
-            string.concat("executeCancel-", tokenId.toString()),
-            string.concat("safe:", admin.toHexString()),
-            a.manager,
-            0,
-            abi.encodeCall(IManagerOps.execute, (a.auction, data))
+            _cancelData(a, tokenId)
         );
     }
 }

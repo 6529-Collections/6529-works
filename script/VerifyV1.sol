@@ -52,24 +52,14 @@ library VerifyV1 {
     error AddressMismatch(string name, address predicted, address recorded);
     /// @notice The default license text is inconsistent: `what` names the failing check.
     error Cc0Mismatch(string what);
-    /// @notice A guardian suspended this configured holder (`WorksAccessManager.suspend`).
-    error HolderSuspended(uint64 role, address account);
     /// @notice The economics resolver's museum is not the recorded one.
     error MuseumMismatch(address recorded, address actual);
-    /// @notice The manager has a registered successor: it is handed over (GV-43).
-    error ManagerHandedOver(address successor);
-    /// @notice A configured target, or any deployed contract governed by the manager, is not on
-    ///         the manager's managed list, so a handover's `migrate` would not move it (GV-44).
-    error TargetNotManaged(address target);
     /// @notice A recipient the deployment record names is not where the chain sends the money
     ///         or the marketplace role: `what` names the check.
     error RecipientMismatch(string what, address expected, address actual);
-    /// @notice The manager has a pending successor proposal (GV-43).
-    error SuccessionPending(address next);
-    /// @notice Genesis readback: a manager parameter is not its compiled default.
-    error ManagerParameterMismatch(uint8 which, uint32 expected, uint32 actual);
-    /// @notice Genesis readback: the manager has a recovery address; genesis registers none.
-    error UnexpectedRecoveryAddress(address recovery);
+    /// @notice The configured network has not accepted yet (`acceptNetwork`): the manager has no
+    ///         network, and `pending` is the proposed one.
+    error NetworkNotAccepted(address pending);
     /// @notice Genesis readback: the manager's governance chain does not hold exactly the
     ///         epoch-0 manifest.
     error ManifestChainMismatch(uint64 count);
@@ -122,7 +112,7 @@ library VerifyV1 {
     ///         canonical works go to, and that vault forwards to `museum`, the recorded 6529
     ///         Network Museum (D140); the resolver's fee recipient is the fee recipient's vault.
     ///         Genesis readback: a later governed change (the resolver's museum, FUNDS_SETTER,
-    ///         14 days; the vault's destination, SUCCESSOR_SETTER, 30 days) fails it by design.
+    ///         3 days; the vault's destination, SUCCESSOR_SETTER, 7 days) fails it by design.
     function checkMuseum(DeployV1.Deployment memory d, address museum) internal view {
         address actual = d.economicsResolver.museum();
         if (actual != address(d.museumVault)) {
@@ -163,12 +153,10 @@ library VerifyV1 {
         }
     }
 
-    /// @notice Genesis readback of the governance state `check` does not read: every manager
-    ///         parameter is its compiled default, no recovery address is registered, no successor
-    ///         is pending, the manager's governance chain holds exactly the epoch-0 manifest, and
-    ///         both sales run the recorded configuration (`p.auction`, `p.editionAuction`). A
-    ///         later slow-lane or 48-hour change fails it by design; `Verify.s.sol` skips it in
-    ///         epoch mode.
+    /// @notice Genesis readback of the state `check` does not read: the manager's governance
+    ///         chain holds exactly the epoch-0 manifest, and both sales run the recorded
+    ///         configuration (`p.auction`, `p.editionAuction`). A later governed change fails it
+    ///         by design; `Verify.s.sol` skips it in epoch mode.
     function checkGenesisState(DeployV1.Deployment memory d, DeployV1.Params memory p)
         internal
         view
@@ -226,7 +214,11 @@ library VerifyV1 {
             }
         }
         checkLens(d);
-        // Roles, delays, holders and selectors; the configurator renounced ADMIN.
+        if (d.manager.network() == address(0)) {
+            revert NetworkNotAccepted(d.manager.pendingNetwork());
+        }
+        // The network and brake, roles, delays, holders and selectors; the configurator
+        // renounced its installer record.
         d.configurator.verify(cfg);
         // ...and holds no other role (`verify` checks only ADMIN for it).
         for (uint64 role; role < Roles.COUNT; ++role) {
@@ -490,13 +482,6 @@ library VerifyV1 {
         (bool immediate,) =
             AuthorityUtils.canCallWithDelay(address(d.manager), platform, target, selector);
         if (!immediate) revert PlatformPathClosed(target, selector);
-    }
-
-    function _requireManaged(address[] memory managed, address target) private pure {
-        for (uint256 j; j < managed.length; ++j) {
-            if (managed[j] == target) return;
-        }
-        revert TargetNotManaged(target);
     }
 
     /// @dev Fails closed: a getter that reverts or returns anything but one word is an error,

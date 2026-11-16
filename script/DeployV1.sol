@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { Vm } from "forge-std/Vm.sol";
 import { ContentStore } from "src/content/ContentStore.sol";
 import { Renderer } from "src/content/Renderer.sol";
+import { SaleStarter } from "src/sales/SaleStarter.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { DependencyRegistry } from "src/content/DependencyRegistry.sol";
 import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol";
@@ -174,6 +175,9 @@ library DeployV1 {
         /// its template's creation code and records every copy it deploys.
         FederatedDeployer federatedStreamDeployer;
         FederatedDeployer federatedEditionsDeployer;
+        /// The keeper's stateless helper: starts a 1/1, deploys its vaults and opens its record
+        /// in one transaction (no constructor argument, no role, holds nothing).
+        SaleStarter saleStarter;
     }
 
     /// @notice The epoch-0 governance manifest: the SHA-256 of the signed manifest JSON and
@@ -242,7 +246,7 @@ library DeployV1 {
     ///         Each lens is its own entry, just before its auction, so no deployment carries two
     ///         contracts' code (F8, the rc.2 review's GAS M-2).
     function order(Params memory p) internal pure returns (string[] memory list) {
-        string[28] memory all = [
+        string[29] memory all = [
             "GovernanceConfigurator",
             "ContentStore",
             "DependencyRegistry",
@@ -270,7 +274,8 @@ library DeployV1 {
             "FederatedStreamDeployer",
             "FederatedEditionsDeployer",
             "FederatedEditionAuctionLens",
-            "FederatedEditionAuction"
+            "FederatedEditionAuction",
+            "SaleStarter"
         ];
         bool vrf = p.vrfCoordinator != address(0);
         list = new string[](all.length + (vrf ? 1 : 0));
@@ -535,6 +540,7 @@ library DeployV1 {
                 )
             );
         }
+        if (n == keccak256("SaleStarter")) return type(SaleStarter).creationCode;
         revert UnknownContract(name);
     }
 
@@ -685,6 +691,7 @@ library DeployV1 {
         if (n == keccak256("FederatedEditionsDeployer")) {
             return address(d.federatedEditionsDeployer);
         }
+        if (n == keccak256("SaleStarter")) return address(d.saleStarter);
         revert UnknownContract(name);
     }
 
@@ -754,6 +761,8 @@ library DeployV1 {
             d.federatedStreamDeployer = FederatedDeployer(a);
         } else if (n == keccak256("FederatedEditionsDeployer")) {
             d.federatedEditionsDeployer = FederatedDeployer(a);
+        } else if (n == keccak256("SaleStarter")) {
+            d.saleStarter = SaleStarter(a);
         } else {
             revert UnknownContract(name);
         }
@@ -761,7 +770,7 @@ library DeployV1 {
 
     /// @notice Every contract name `addressOf` knows, for records and readback.
     function names() internal pure returns (string[] memory list) {
-        string[31] memory all = [
+        string[32] memory all = [
             "GovernanceConfigurator",
             "WorksAccessManager",
             "ContentStore",
@@ -792,7 +801,8 @@ library DeployV1 {
             "FederatedEditionAuctionLens",
             "FederatedEditionAuction",
             "FederatedStreamDeployer",
-            "FederatedEditionsDeployer"
+            "FederatedEditionsDeployer",
+            "SaleStarter"
         ];
         list = new string[](all.length);
         for (uint256 i; i < all.length; ++i) {

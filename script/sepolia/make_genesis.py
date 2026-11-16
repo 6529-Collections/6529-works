@@ -5,8 +5,10 @@ Usage: python script/sepolia/make_genesis.py <new instance> <holders from instan
 
 Reads config/genesis.example.json (the committed policy) and config/sepolia-<from>/genesis.json,
 maps every placeholder holder of the policy, by role and position within the role, to the earlier
-instance's holder and label, and writes config/sepolia-<new>/genesis.json. Only the holders and
-the description change, which is what `tools/check_genesis.py --config` and the deploy script's
+instance's holder and label, names the earlier instance's network (its `network`, or, for an
+instance from before the single network address, its first ADMIN holder, the hot admin Safe), and
+writes config/sepolia-<new>/genesis.json. Only the holders, the network and the description
+change, which is what `tools/check_genesis.py --config` and the deploy script's
 `DeployGuards.checkPolicy` allow. Run `tools/check_genesis.py --config` on the result.
 """
 import json
@@ -29,7 +31,7 @@ def main(new, old):
     example = json.loads((REPO / "config/genesis.example.json").read_text(encoding="utf-8"))
     prev = json.loads((REPO / f"config/sepolia-{old}/genesis.json").read_text(encoding="utf-8"))
     ex_roles, prev_roles = by_role(example["holders"]), by_role(prev["holders"])
-    assert set(ex_roles) == set(prev_roles), set(ex_roles) ^ set(prev_roles)
+    assert set(ex_roles) <= set(prev_roles), set(ex_roles) - set(prev_roles)
     mapping = {}
     for role, hs in ex_roles.items():
         assert len(hs) == len(prev_roles[role]), role
@@ -39,6 +41,7 @@ def main(new, old):
             mapping[e["account"]] = (h["account"], h["label"])
     for h in example["holders"]:
         h["account"], h["label"] = mapping[h["account"]]
+    example["network"] = prev.get("network") or prev_roles["ADMIN"][0]["account"]
     example["description"] = re.sub(r"rehearsal r\d+", f"rehearsal {new}", prev["description"], count=1)
     assert f"rehearsal {new}" in example["description"]
     text = json.dumps(example, indent=2, ensure_ascii=False) + "\n"

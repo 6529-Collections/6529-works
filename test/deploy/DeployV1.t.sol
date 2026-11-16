@@ -93,6 +93,9 @@ contract DeployV1Test is Test {
         cfg = DeployV1.config(d, json);
         calls = DeployV1.wiring(d, json, manifest);
         DeployV1.install(d, cfg, manifest, calls);
+        // The genesis network accepts in its own transaction.
+        vm.prank(cfg.network);
+        d.manager.acceptNetwork();
     }
 
     /// @dev External entry points, so tests can expect the libraries' reverts.
@@ -171,7 +174,9 @@ contract DeployV1Test is Test {
         // Every v1 contract with a governance map; the optional entropy module is not
         // deployed here.
         assertEq(cfg.targets.length, 18, "governed targets");
-        assertEq(cfg.grants.length, 18, "holders");
+        assertEq(cfg.grants.length, 8, "holders (operational keys only)");
+        assertEq(d.manager.network(), cfg.network, "the network accepted");
+        assertEq(d.manager.brake(), address(0), "no brake at launch");
         // Every wiring call in the genesis JSON: ten binds (the federation registry's among
         // them), two admitted minters (the 1/1 auction on Stream, the edition auction on
         // Editions), their two sale targets, the ETH opening bid, three default currencies, the
@@ -408,17 +413,20 @@ contract DeployV1Test is Test {
         assertTrue(found);
     }
 
-    function test_AGuardianCancelsAHostileAdminOperationOnTheLiveSystem() public {
+    /// @dev On the live system nobody can be granted a network role, and a handover the network
+    ///      scheduled waits 7 days and can be cancelled by the network.
+    function test_TheNetworkRolesStayWithTheNetworkOnTheLiveSystem() public {
         (DeployV1.Deployment memory d,,) = _genesis(_params());
-        _settle(d);
         IAccessManager manager = IAccessManager(address(d.manager));
-        bytes memory hostile =
-            abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, makeAddr("attacker"), 0));
         vm.prank(HOT_ADMIN);
-        (bytes32 id,) = manager.schedule(address(manager), hostile, 0);
-        assertEq(manager.getSchedule(id), block.timestamp + 30 days);
-        vm.prank(GUARDIAN);
-        manager.cancel(HOT_ADMIN, address(manager), hostile);
+        vm.expectRevert();
+        manager.grantRole(Roles.ADMIN, makeAddr("attacker"), 0);
+        bytes memory handover = abi.encodeCall(d.manager.transferNetwork, (makeAddr("next")));
+        vm.prank(HOT_ADMIN);
+        (bytes32 id,) = manager.schedule(address(manager), handover, 0);
+        assertEq(manager.getSchedule(id), block.timestamp + 7 days);
+        vm.prank(HOT_ADMIN);
+        manager.cancel(HOT_ADMIN, address(manager), handover);
         assertEq(manager.getSchedule(id), 0);
     }
 
@@ -493,11 +501,11 @@ contract DeployV1Test is Test {
 
     function test_TheRolesTableMustBeRolesSol() public {
         DeployV1.Deployment memory d = DeployV1.deploy(_params());
-        // FUNDS_SETTER's 14 days shortened to 48 hours in the published table.
+        // FUNDS_SETTER's 3 days shortened to 24 hours in the published table.
         string memory edited = vm.replace(
             json,
-            '"name": "FUNDS_SETTER",\n      "id": 10,\n      "executionClass": "funds",\n      "executionDelay": 1209600',
-            '"name": "FUNDS_SETTER",\n      "id": 10,\n      "executionClass": "funds",\n      "executionDelay": 172800'
+            '"name": "FUNDS_SETTER",\n      "id": 10,\n      "executionClass": "3d",\n      "executionDelay": 259200',
+            '"name": "FUNDS_SETTER",\n      "id": 10,\n      "executionClass": "3d",\n      "executionDelay": 86400'
         );
         assertTrue(keccak256(bytes(edited)) != keccak256(bytes(json)), "edited");
         vm.expectRevert(abi.encodeWithSelector(DeployV1.RoleTableMismatch.selector, "FUNDS_SETTER"));
@@ -510,8 +518,8 @@ contract DeployV1Test is Test {
         string memory curator = string.concat(
             "    },\n    {\n      \"name\": \"CURATOR\",\n      \"id\": 12,\n",
             "      \"executionClass\": \"immediate\",\n      \"executionDelay\": 0,\n",
-            "      \"grantClass\": \"successor\",\n      \"grantDelay\": 2592000,\n",
-            "      \"suspendable\": true\n    }\n  ],"
+            "      \"grantDelay\": 0,\n",
+            "      \"network\": false\n    }\n  ],"
         );
         string memory missing = vm.replace(json, curator, "    }\n  ],");
         assertTrue(keccak256(bytes(missing)) != keccak256(bytes(json)), "edited");
@@ -663,12 +671,9 @@ contract DeployV1Test is Test {
             GovernanceConfig.Config memory cfg,
             GovernanceConfig.Call[] memory calls
         ) = _genesis(_params());
-        // The hot admin grants the configurator a role (30-day ADMIN delay, not vetoed).
-        _adminExecutes(
-            d,
-            address(d.manager),
-            abi.encodeCall(IAccessManager.grantRole, (Roles.KEEPER, address(d.configurator), 0))
-        );
+        // The network grants the configurator an operational role (no delay, ruling 14).
+        vm.prank(HOT_ADMIN);
+        d.manager.grantRole(Roles.KEEPER, address(d.configurator), 0);
         vm.expectRevert(
             abi.encodeWithSelector(VerifyV1.ConfiguratorHoldsRole.selector, Roles.KEEPER)
         );
@@ -758,22 +763,30 @@ contract DeployV1Test is Test {
         }
     }
 
-    /// @dev The hot admin schedules `data` on `target`, waits the 30-day ADMIN delay unvetoed
-    ///      and executes it.
+    /// @dev The network schedules `data` on `target`, waits the 7-day ADMIN delay and executes
+    ///      it.
     function _adminExecutes(DeployV1.Deployment memory d, address target, bytes memory data)
         internal
     {
         vm.prank(HOT_ADMIN);
         d.manager.schedule(target, data, 0);
-        vm.warp(block.timestamp + 30 days);
+        vm.warp(block.timestamp + 7 days);
         vm.prank(HOT_ADMIN);
         d.manager.execute(target, data);
     }
 
-    function test_ReadbackFailsBeforeTheDelaysSettle() public {
-        (DeployV1.Deployment memory d, GovernanceConfig.Config memory cfg,) = _genesis(_params());
-        vm.expectRevert(abi.encodeWithSelector(GovernanceConfig.RoleMismatch.selector, Roles.ADMIN));
-        d.configurator.verify(cfg);
+    /// @dev Until the genesis network accepts, the manager has no network and the readback
+    ///      says so.
+    function test_ReadbackFailsBeforeTheNetworkAccepts() public {
+        DeployV1.Deployment memory d = DeployV1.deploy(_params());
+        GovernanceConfig.Config memory cfg = DeployV1.config(d, json);
+        GovernanceConfig.Call[] memory calls = DeployV1.wiring(d, json, manifest);
+        DeployV1.install(d, cfg, manifest, calls);
+        vm.expectRevert(abi.encodeWithSelector(VerifyV1.NetworkNotAccepted.selector, cfg.network));
+        this.checkExternal(d, cfg, calls);
+        vm.prank(cfg.network);
+        d.manager.acceptNetwork();
+        this.checkExternal(d, cfg, calls);
     }
 }
 

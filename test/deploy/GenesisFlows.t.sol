@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IItemApprovals } from "src/interfaces/IItemApprovals.sol";
 import { Test } from "forge-std/Test.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
@@ -256,22 +255,8 @@ contract GenesisFlowsTest is Test {
         uint256 workId = IStream(address(d.stream)).totalMinted();
         uint256 saleId = IUniformEditionAuctionLens(address(d.editionAuction))
             .saleIdOf(address(d.editions), workId);
-        // C23: the open carries the package root and the item's proof (a one-item package).
-        // Stub awaiting lane 1: until the package registry implements `IItemApprovals`, its
-        // answer is mocked true.
-        (bool answers,) = address(d.packageRegistry)
-            .staticcall(
-                abi.encodeCall(
-                    IItemApprovals.isApprovedItem, (bytes32(0), bytes32(0), new bytes32[](0))
-                )
-            );
-        if (!answers) {
-            vm.mockCall(
-                address(d.packageRegistry),
-                abi.encodeWithSelector(IItemApprovals.isApprovedItem.selector),
-                abi.encode(true)
-            );
-        }
+        // C23: the open carries the package root and the item's proof (a one-item package);
+        // the real package registry answers `isApprovedItem`.
         bytes memory data = abi.encode(item, root, new bytes32[](0));
         vm.prank(makeAddr("anyone"));
         assertEq(d.editionAuction.open(address(d.editions), workId, data), saleId);
