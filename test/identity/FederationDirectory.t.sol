@@ -5,6 +5,7 @@ import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { ArtistIdentity, ChangeKind } from "src/interfaces/types/IdentityTypes.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
+import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import {
     DisputeOutcomeLogMock,
     EditionsMastersMock,
@@ -214,6 +215,15 @@ contract FederationDirectoryTest is IdentityFixture {
         assertEq(listedArtist, artistId);
         assertEq(uint8(status), uint8(IArtistRegistry.FederationStatus.ACTIVE));
         assertTrue(token.codehash != bytes32(0) && token.codehash != keccak256(""));
+    }
+
+    /// @dev Review G (I3): the consent covers the entry's facts; a consent to the token with
+    ///      other facts lists nothing.
+    function test_List_TheConsentCoversTheFacts() public {
+        bytes memory consent = _ok(_l(artistId, token, 0, address(0), 0, address(0)));
+        vm.expectRevert(abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, artist));
+        vm.prank(federation);
+        registry.listFederatedContract(_l(artistId, token, 0, partner, 10_000, feeVault), consent);
     }
 
     /// Regression: the 64-entry append-only list (study H): an artist lists any number.
