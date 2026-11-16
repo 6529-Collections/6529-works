@@ -10,6 +10,7 @@ import { IReleaseVerifier } from "./interfaces/IReleaseVerifier.sol";
 import { ISplitLedger } from "./interfaces/ISplitLedger.sol";
 import { ISplitWallet } from "./interfaces/ISplitWallet.sol";
 import { SplitVault } from "./SplitVault.sol";
+import { Splits } from "./Splits.sol";
 
 /// @title ClaimRouter
 /// @notice Permissionless, stateless batch claims across split wallets (ADR 0001 section 7). Plain
@@ -116,6 +117,7 @@ contract ClaimRouter is IClaimRouter {
         amounts = new uint256[](count);
         for (uint256 i; i < count; ++i) {
             Claim calldata c = claims[i];
+            _checkPayees(i, c.payees.length);
             amounts[i] = _call(
                 Item(
                     _walletOf(c.payees, c.salt),
@@ -150,6 +152,7 @@ contract ClaimRouter is IClaimRouter {
         amounts = new uint256[](count);
         for (uint256 i; i < count; ++i) {
             IReleaseVerifier.Authorization calldata a = claims[i].authorization;
+            _checkPayees(i, claims[i].payees.length);
             amounts[i] = _call(
                 Item(
                     a.wallet, a.asset, a.payee, i, count - i, MIN_SIGNED_ITEM_GAS, continueOnFailure
@@ -167,6 +170,13 @@ contract ClaimRouter is IClaimRouter {
         return
             interfaceId == type(IClaimRouter).interfaceId
                 || interfaceId == type(IERC165).interfaceId;
+    }
+
+    /// @dev Item `index` names at most `Splits.MAX_PAYEES` payees, as many as any wallet has: a
+    ///      longer list can never be paid, and its calldata alone could leave item 0 of a
+    ///      continue-mode batch short of {SHORTFALL_REVERT_CEILING} at the transaction cap.
+    function _checkPayees(uint256 index, uint256 payees) private pure {
+        if (payees > Splits.MAX_PAYEES) revert TooManyPayees(index, payees);
     }
 
     /// @dev The documented wallet derivation (`ISplitFactory`), for the failure events only.

@@ -225,7 +225,8 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
 
     /// @inheritdoc IStatementLog
     /// @dev The item fallback reads `coreOf(id)` on a token that declares `IStream` by ERC-165,
-    ///      checked first; both reads forward all the gas EIP-150 allows. A token that does not
+    ///      checked first in full (with the `0xffffffff` probe, so a contract that answers every
+    ///      call with a true word declares nothing); both reads forward all the gas EIP-150 allows. A token that does not
     ///      declare it is never asked for `coreOf`, so whatever it would answer, it keeps its own
     ///      result, zero; so does a Stream's burned or unminted token (`IStream.UnknownWork`).
     ///      Either read running short reverts with `BoundedCall.BoundedCallShortfall`, and any
@@ -239,7 +240,7 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
         entryHash = _latestDispute[subjectKey(token, id)];
         if (entryHash != 0 || token == address(0) || token.code.length == 0) return entryHash;
         // RFX-REC-2: only a declared Stream's answer can name an item.
-        if (!BoundedCall.supportsInterfaceUnchecked(token, type(IStream).interfaceId)) return 0;
+        if (!BoundedCall.supportsInterface(token, type(IStream).interfaceId)) return 0;
         // `coreOf` answers six static words, the item hash first; `UnknownWork` reverts with 36.
         (bool ok, bytes memory answer) =
             BoundedCall.tryReadAll(token, abi.encodeCall(IStream.coreOf, (id)), 192);

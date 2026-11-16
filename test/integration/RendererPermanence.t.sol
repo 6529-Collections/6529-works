@@ -333,7 +333,7 @@ contract RendererPermanenceTest is IntegrationBase {
     /// @dev Review B I4: the `tokenURI` budget with the primary at the renderer's 256 KiB
     ///      threshold stored as linked chunks. Each part costs one storage read and one code
     ///      copy per chunk read; the renderer reads a file only when no chunk has more than
-    ///      `MAX_PARTS_PER_CHUNK` (4) parts (RND-26, WS-50), so a file of more is served by its
+    ///      `MAX_PARTS_PER_CHUNK` (3) parts (RND-26, WS-50), so a file of more is served by its
     ///      locator. Returns the call and the token.
     function _linkedRow(uint256 parts) internal returns (bytes memory call) {
         (call,) = _linkedWork(parts);
@@ -357,7 +357,7 @@ contract RendererPermanenceTest is IntegrationBase {
         call = abi.encodeCall(stream.tokenURI, (tokenId));
         assertEq(
             _contains(stream.tokenURI(tokenId), '"image":"data:image/png;base64,'),
-            parts <= 4,
+            parts <= 3,
             "inlined exactly up to the part bound"
         );
     }
@@ -368,30 +368,36 @@ contract RendererPermanenceTest is IntegrationBase {
             * _growth(collector, address(stream), call, 0).coldAccounts.length;
     }
 
-    /// @dev Whole chunks against 4 parts per chunk, the most the renderer reads from: each part
-    ///      of each chunk read costs about 7,000 gas (one storage read and one code copy, and
-    ///      the link's own word), about 78,000 per extra part per chunk of a 256 KiB primary (11
+    /// @dev Whole chunks against 3 parts per chunk, the most the renderer reads from: each part
+    ///      of each chunk read costs about 8,000 gas (one storage read and one code copy, and
+    ///      the link's own word), about 86,000 per extra part per chunk of a 256 KiB primary (11
     ///      chunks). With every other
     ///      cap at once the bound holds 8M (`TokenUriBudget`'s linked row; WS-50, RND-26).
     function test_Budget_LinkedChunks() public {
         bytes memory a = _linkedRow(1);
-        bytes memory b = _linkedRow(4);
+        bytes memory b = _linkedRow(3);
         (, uint256 whole) = _measure(collector, address(stream), a, 0);
         (, uint256 linked) = _measure(collector, address(stream), b, 0);
         whole = _coldUsed(a, whole);
         linked = _coldUsed(b, linked);
         console2.log("tokenURI, 256 KiB primary, whole chunks:", whole);
-        console2.log("tokenURI, 256 KiB primary, 4 parts per chunk:", linked);
+        console2.log("tokenURI, 256 KiB primary, 3 parts per chunk:", linked);
         assertLt(linked, TOKEN_URI_BUDGET, "a light record within the 8M budget");
-        uint256 perPart = (linked - whole) / (3 * 11);
+        uint256 perPart = (linked - whole) / (2 * 11);
         console2.log("gas per part per chunk read:", perPart);
         assertLt(perPart, 8_000, "the per-part cost the stated bound assumes");
     }
 
     /// @dev Anyone can link a chunk from up to 256 parts, before the artist writes it or
-    ///      instead: a file with a chunk of more than 4 parts is served by its locator, so
+    ///      instead: a file with a chunk of more than 3 parts is served by its locator, so
     ///      `tokenURI` stays within its budget, and once anyone writes that chunk whole (or links
-    ///      it from 4 parts or fewer) the file is inlined again: the part count only falls.
+    ///      it from 3 parts or fewer) the file is inlined again: the part count only falls.
+    /// @dev Exactly at the bound and one above it: 3 parts per chunk are inlined, 4 are not.
+    function test_Budget_ThePartBoundIsThree() public {
+        _linkedRow(3);
+        _linkedRow(4);
+    }
+
     function test_Budget_AHeavilyLinkedFileIsServedByLocatorUntilCompacted() public {
         (bytes memory call, uint256 tokenId) = _linkedWork(256);
         (, uint256 used) = _measure(collector, address(stream), call, 0);

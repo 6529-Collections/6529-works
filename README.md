@@ -79,7 +79,7 @@ products pay 75% to the artist's side and 25% to the network, and royalties are 
 | Contract | Purpose | nSLOC |
 | --- | --- | ---: |
 | [`Stream`](src/stream/README.md), [`StreamViews`](src/stream/README.md) | The permanent shared ERC-721: mints what the replaceable mint policy authorizes, locks terms, royalties, the edition link; informational views in a read-only extension | 793 + 79 |
-| [`WorkRecords`](src/stream/README.md), [`WorkDelivery`](src/stream/README.md) | Each work's permanent record, media, license, seed, finalize and renderer pin, on-chain completeness across an append-only store set; locators and preferences in a replaceable delivery contract | 730 + 183 |
+| [`WorkRecords`](src/stream/README.md), [`WorkDelivery`](src/stream/README.md) | Each work's permanent record, media, license, seed, finalize and renderer pin, on-chain completeness across an append-only store set; locators and preferences in a replaceable delivery contract | 732 + 183 |
 | [`Editions`](src/editions/README.md) | 6529 Stream Editions, the shared ERC-1155, linked to Stream masters; supply sealed at settlement, prices logged | 484 |
 | [`PackageRegistry`](src/curation/README.md) | Stream's replaceable mint policy: package roots, party consent, the move signature, consume-once items, content uniqueness | 402 |
 | [`Eip712CurationVerifier`](src/curation/README.md) | Accepts curation signers' EIP-712 approvals | 103 |
@@ -93,7 +93,7 @@ products pay 75% to the artist's side and 25% to the network, and royalties are 
 | [`Renderer`](src/content/README.md) | `tokenURI` and `fullTokenURI` for works and editions | 761 |
 | [`StatementLog`](src/records/README.md) | Append-only signed statements: dispute outcomes, curation evidence, manifests | 309 |
 | [`VrfEntropyModule`](src/entropy/README.md) | Optional Chainlink VRF seed per work, delivered before the start | 252 |
-| [`WorksAccessManager`](src/governance/README.md), [`GovernanceConfigurator`](src/governance/README.md) | One AccessManager for everything; guardians cancel and suspend, a bounded veto, dead-admin recovery and a successor handover | 447 + 51 |
+| [`WorksAccessManager`](src/governance/README.md), [`GovernanceConfigurator`](src/governance/README.md) | One AccessManager for everything; guardians cancel and suspend, a bounded veto, dead-admin recovery and a successor handover | 451 + 51 |
 
 nSLOC counts non-blank lines without comments. The [audit scope](docs/audit/scope.md) lists every
 file, its bytecode size and how the figures are measured; `tools/check_docs_facts.py` keeps

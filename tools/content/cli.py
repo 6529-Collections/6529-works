@@ -18,8 +18,10 @@ from .errors import ToolError
 from .plan import (
     ATTEST_CHUNKS_PER_CALL,
     CHUNK_SIZE,
+    DEFAULT_PART_SIZE,
     MAX_CHUNKS,
     PER_LIST,
+    check_part_size,
     chunk_hash,
     hex0x,
     list_chunks,
@@ -200,9 +202,8 @@ def _part_size(text: str) -> int:
         value = int(text.replace(",", "").replace("_", ""))
     except ValueError:
         raise argparse.ArgumentTypeError(f"not a whole number of bytes: {text!r}") from None
-    if not 1 <= value <= CHUNK_SIZE:
-        raise argparse.ArgumentTypeError(f"a part is 1 to {CHUNK_SIZE:,} bytes")
     try:
+        check_part_size(value)
         split_parts(bytes(CHUNK_SIZE), value)
     except ToolError as exc:
         raise argparse.ArgumentTypeError(str(exc)) from None
@@ -503,8 +504,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="FILE is already the encoded stream (for example fetched from Arweave)",
     )
     p.add_argument(
-        "--part-size", type=_part_size, metavar="BYTES",
-        help="also quote writing each chunk as parts of BYTES joined by linkChunk",
+        "--part-size", type=_part_size, metavar="BYTES", nargs="?", const=DEFAULT_PART_SIZE,
+        help="also quote writing each chunk as parts of BYTES (8,192 to 24,575; 8,192, three "
+        "parts a chunk, when no value is given) joined by linkChunk",
     )
     p.add_argument("--force", action="store_true", help="overwrite existing output files")
     _add_gwei(p)
@@ -524,8 +526,9 @@ def build_parser() -> argparse.ArgumentParser:
         "the default: one call up to 16 chunks)",
     )
     p.add_argument(
-        "--part-size", type=_part_size, metavar="BYTES",
-        help="write each chunk longer than BYTES as parts of BYTES joined by linkChunk",
+        "--part-size", type=_part_size, metavar="BYTES", nargs="?", const=DEFAULT_PART_SIZE,
+        help="write each chunk longer than BYTES as parts of BYTES (8,192 to 24,575; 8,192, "
+        "three parts a chunk, when no value is given) joined by linkChunk",
     )
     p.add_argument(
         "--attest-chunks", type=_attest_chunks, default=ATTEST_CHUNKS_PER_CALL, metavar="N",

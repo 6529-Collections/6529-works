@@ -42,7 +42,7 @@
   - **Automated review fixes** (CodeRabbit and 6529bot, 16 November 2026; ADR 0007's review
     table):
     - Renderer and content store: `tokenURI` reads no file with a chunk linked from more than
-      4 parts (`IContentStore.maxParts`, new; `IContentStore` `0x943307d5`), serving it by
+      3 parts (`IContentStore.maxParts`, new; `IContentStore` `0x943307d5`), serving it by
       locator until anyone writes the chunk whole, so the 8M budget holds whatever the part
       count; `firstMissing` copies at most one chunk's ABI encoding from another store and
       counts a refusal as not served; `registerManifestList` refuses too many list chunks
@@ -59,6 +59,11 @@
       the previous value. `Typehashes.ARTIST_REGISTRATION` moves to the shared typehashes.
     - Rule texts follow ADR 0007's gas rule (AGENTS.md, CONTRIBUTING.md, `.coderabbit.yaml`):
       no gas number in permanent contracts or the renderer, return data always bounded.
+    - Later rounds: the manager's `execute` counts an active admin's immediate calls as
+      activity; the statement log's Stream check is the full ERC-165 check; every claim names
+      at most 64 payees (`TooManyPayees`); the edition auction's payout gas only rises, at most
+      doubling per change; WorkRecords requires a SHA-256 digest of a stored license text; the
+      renderer reads at most 3 parts per chunk.
   - **Review fixes** (ADR 0007, "Independent review"):
     - Stream: the fallback forwards only `work`, `collection` and `totalSupply`; `owner()`,
       `contractURI()` and `extension()` are native; `StreamLayout` fixes the storage slots a
@@ -181,7 +186,7 @@
     auction's limits; `tools/size-margins.json` holds no exemption.
   - **Budgets.** The source-line budget rises from 13,000 to 15,000 (owner decision, 15
     November 2026; `tools/check_budgets.py`). ADR 0004's table is re-measured: the tightest
-    start row is 344,980 and the suite's start margin stays 5,000; the re-rate (203,000), the
+    start row is 344,968 and the suite's start margin stays 5,000; the re-rate (203,000), the
     bound `createEdition` (158,000), `authorize` (94,000, 0 new slots), the edition auction's
     `open` (290,000 and 337,000) and capped-sweep `settle` (174,000) regression ceilings move
     with stated reasons, and a new row measures an edition `open` that deploys both wallets

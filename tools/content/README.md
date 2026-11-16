@@ -84,7 +84,9 @@ Emits the ordered transactions, **without broadcasting anything**:
 - one `writeChunk` per **distinct** chunk (a file that repeats a chunk needs it
   stored once), or, with `--part-size BYTES`, each chunk longer than BYTES as
   parts of that size (`writePart`, ordinary `writeChunk` calls) and one
-  `linkChunk`, which stores the same chunk with the same hash. Parts keep every
+  `linkChunk`, which stores the same chunk with the same hash. BYTES is 8,192 to
+  24,575 (8,192 when `--part-size` has no value), so a full chunk is at most 3
+  parts: the default renderer reads no file with a chunk of more (RND-26). Parts keep every
   transaction small if code deposits are ever repriced or capped per transaction;
   today they cost about 6% more under Prague and about 3% more under Glamsterdam
   for 8,192-byte parts;
@@ -220,6 +222,7 @@ carry the golden CIDs into Foundry, where `CidGolden.t.sol` adds each as a locat
 | Chunk size | `CHUNK_SIZE = SSTORE2.MAX_CHUNK_LENGTH = 24_575` | `plan.CHUNK_SIZE` |
 | Chunk count | 1 to `MAX_CHUNKS = 4096` | `plan.check_stored_length` |
 | Parts of a linked chunk | 1 to `MAX_PARTS = 256`, any sizes | `plan.split_parts` |
+| Parts the renderer reads | at most 3 a chunk (`Renderer.MAX_PARTS_PER_CHUNK`, RND-26), so a part is 8,192 to 24,575 bytes; `--part-size` alone means 8,192 | `plan.check_part_size`, `RENDERED_MAX_PARTS`, `DEFAULT_PART_SIZE` |
 | Hashes per list chunk | 767 (`CHUNK_SIZE // 32`) | `plan.list_chunks` |
 | Layout | every chunk but the last is full | `plan.split_chunks` |
 | Chunk hash | `keccak256(chunk)` | `keccak.keccak256` (pure Python, not `hashlib.sha3_256`) |

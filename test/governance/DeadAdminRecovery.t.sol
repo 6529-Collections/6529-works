@@ -93,6 +93,37 @@ contract DeadAdminRecoveryTest is PermanenceFixture {
         assertEq(manager.lastAdminActivity(), block.timestamp);
     }
 
+    /// @dev An admin acting only through immediate calls (`execute` of a zero-delay role, with
+    ///      nothing scheduled) is active: each call moves the clock, so no recovery opens against
+    ///      it. A non-admin's `execute` and a failed call move nothing. Fails without the
+    ///      `execute` override: immediate calls never reach `_consumeScheduledOp`.
+    function test_AnAdminsImmediateExecuteCountsAndKeepsRecoveryClosed() public {
+        _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.KEEPER, adminSafe, 0)));
+        uint48 granted = manager.lastAdminActivity();
+        bytes memory keep = abi.encodeCall(target.keep, ());
+        // A keeper that is no admin: its immediate call moves nothing.
+        vm.warp(granted + SILENCE - 1 days);
+        vm.prank(keeper);
+        manager.execute(address(target), keep);
+        assertEq(manager.lastAdminActivity(), granted, "a non-admin's execute");
+        // A failed call (a delayed function with nothing scheduled) reverts with its update.
+        vm.prank(adminSafe);
+        vm.expectRevert();
+        manager.execute(address(target), abi.encodeCall(target.setFee, (7)));
+        assertEq(manager.lastAdminActivity(), granted, "a failed call");
+        // The admin's own immediate call counts.
+        vm.prank(adminSafe);
+        manager.execute(address(target), keep);
+        assertEq(manager.lastAdminActivity(), block.timestamp, "an admin's immediate execute");
+        vm.warp(granted + SILENCE);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WorksAccessManager.AdminsNotSilent.selector, manager.lastAdminActivity()
+            )
+        );
+        _open(newAdmin);
+    }
+
     function test_OpeningRefusesBadCandidatesADuplicateAndAHandedOverManager() public {
         vm.warp(block.timestamp + SILENCE);
         vm.expectRevert(

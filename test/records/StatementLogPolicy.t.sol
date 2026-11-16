@@ -464,6 +464,15 @@ contract StatementLogPolicyTest is StatementLogFixture {
         assertEq(stmtLog.latestDisputeOutcome(address(0xC0DE), 1), bytes32(0), "no code");
     }
 
+    /// @dev A contract that answers every call with a true word declares nothing: the full
+    ///      ERC-165 check (its `0xffffffff` probe) refuses it, so it reads zero instead of being
+    ///      asked for `coreOf` and reverting. Fails with the one-probe check: `BoundedCallFailed`.
+    function test_LatestDisputeOutcome_AnAlwaysTrueFallbackIsNoStream() public {
+        ReturnDataMock token = new ReturnDataMock();
+        token.configure(abi.encode(uint256(1)), false);
+        assertEq(stmtLog.latestDisputeOutcome(address(token), 1), bytes32(0));
+    }
+
     // ----------------------------------------------------- relayed nonce event
 
     function test_Relay_EmitsTheNonceAndDirectEntriesDoNot() public {

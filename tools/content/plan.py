@@ -46,6 +46,11 @@ from .keccak import keccak256
 CHUNK_SIZE = 24_575  # SSTORE2.MAX_CHUNK_LENGTH: EIP-170's 24,576 minus the STOP byte
 MAX_CHUNKS = 4096  # IContentStore.MAX_CHUNKS
 MAX_PARTS = 256  # IContentStore.MAX_PARTS: the most parts one linked chunk may have
+# Renderer.MAX_PARTS_PER_CHUNK: the default renderer reads no file with a chunk linked from more
+# parts (RND-26), so the uploader writes at most this many parts per chunk.
+RENDERED_MAX_PARTS = 3
+MIN_PART_SIZE = -(-CHUNK_SIZE // RENDERED_MAX_PARTS)  # 8,192: three parts make a full chunk
+DEFAULT_PART_SIZE = MIN_PART_SIZE  # `--part-size` given without a value
 MAX_MIME_LENGTH = 64  # ContentStore.MAX_MIME_LENGTH
 PER_LIST = CHUNK_SIZE // 32  # 767: the most chunk hashes in one list chunk
 # The chunk count this tool asks each `attestBase64` call to check (the caller's choice; 48 keeps
@@ -119,6 +124,17 @@ def attest_call_count(chunks: int, per_call: int = ATTEST_CHUNKS_PER_CALL) -> in
     if per_call < 1:
         raise ToolError("an attestBase64 call must check at least one chunk")
     return -(-chunks // per_call)
+
+
+def check_part_size(part_size: int) -> None:
+    """Refuses a part size that splits a full chunk into more than `RENDERED_MAX_PARTS` parts:
+    the store would link it, but the default renderer would not read the file (RND-26)."""
+    if not MIN_PART_SIZE <= part_size <= CHUNK_SIZE:
+        raise ToolError(
+            f"a part is {MIN_PART_SIZE:,} to {CHUNK_SIZE:,} bytes: a smaller part splits a full "
+            f"chunk into more than {RENDERED_MAX_PARTS} parts, and tokenURI reads no file with "
+            "such a chunk (RND-26)"
+        )
 
 
 def split_parts(chunk: bytes, part_size: int) -> list[bytes]:

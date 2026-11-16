@@ -220,6 +220,24 @@ class PiecewiseCallsTest(unittest.TestCase):
         with self.assertRaises(ToolError):
             self.build(counter_bytes(71, 1000), part_size=95)
 
+    def test_part_size_keeps_the_renderer_part_bound(self) -> None:
+        """Three parts is the most the renderer reads from a chunk (RND-26): 8,192 bytes is the
+        smallest part the uploader writes, and a full chunk then takes exactly 3 parts."""
+        self.assertEqual(pl.RENDERED_MAX_PARTS, 3)
+        self.assertEqual(pl.MIN_PART_SIZE, 8192)
+        self.assertEqual(pl.DEFAULT_PART_SIZE, 8192)
+        self.assertEqual(len(pl.split_parts(bytes(pl.CHUNK_SIZE), pl.DEFAULT_PART_SIZE)), 3)
+        for size in (pl.MIN_PART_SIZE, 10_000, 12_288, pl.CHUNK_SIZE):
+            pl.check_part_size(size)
+            self.assertLessEqual(len(pl.split_parts(bytes(pl.CHUNK_SIZE), size)), 3)
+        for size in (pl.MIN_PART_SIZE - 1, 6_144, 96, 0, pl.CHUNK_SIZE + 1):
+            with self.assertRaisesRegex(ToolError, "RND-26"):
+                pl.check_part_size(size)
+        with self.assertRaisesRegex(ToolError, "RND-26"):
+            self.build(counter_bytes(73, pl.CHUNK_SIZE), part_size=8191)
+        _, built = self.build(counter_bytes(74, pl.CHUNK_SIZE), part_size=pl.DEFAULT_PART_SIZE)
+        self.assertEqual([c.name for c in built].count("writePart"), 3)
+
     def test_present_parts_and_links_are_skipped(self) -> None:
         plan, full = self.build(counter_bytes(72, pl.CHUNK_SIZE), part_size=10_000)
         parts = [c for c in full if c.name == "writePart"]

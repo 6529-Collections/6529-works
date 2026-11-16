@@ -129,6 +129,8 @@ contract UniformEditionAuctionGasRuleTest is EditionAuctionBase, GasRuleAssertio
         uint256 sellerPart = revenue - revenue * FEE_SHARE / 100_000;
         _settle(first);
         assertEq(escrow.owed(address(payee), address(0)), sellerPart, "100,000: escrowed");
+        // Raise-only, at most doubling per change: two steps.
+        _setLimits(IUniformEditionAuction.Limits(30 days, 150, 200_000, 730));
         _setLimits(IUniformEditionAuction.Limits(30 days, 150, 400_000, 730));
         english.set(
             address(stream),
@@ -156,7 +158,10 @@ contract UniformEditionAuctionGasRuleTest is EditionAuctionBase, GasRuleAssertio
     function test_PayoutGas_ABurnerIsEscrowedAtAnyFigure() public {
         GasBurnerWallet burner = new GasBurnerWallet();
         economics.set(address(burner), networkFee, FEE_SHARE);
-        _setLimits(IUniformEditionAuction.Limits(30 days, 150, 3_000_000, 730));
+        uint32[5] memory steps = [uint32(200_000), 400_000, 800_000, 1_600_000, 3_000_000];
+        for (uint256 i; i < steps.length; ++i) {
+            _setLimits(IUniformEditionAuction.Limits(30 days, 150, steps[i], 730));
+        }
         uint256 saleId = _open(0);
         _bid(saleId, alice, 100, 1);
         _settle(saleId);

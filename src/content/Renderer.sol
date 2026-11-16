@@ -118,12 +118,14 @@ contract Renderer is IRenderer {
     /// @notice The most `%` and `#` a record may hold (each costs about 200 gas to escape).
     uint256 internal constant MAX_ESCAPES = 512;
     /// @notice The most stored parts any one chunk of a file may be read from: a linked chunk
-    ///         costs one storage read and one code copy per part (about 7,000 gas), so a file
+    ///         costs one storage read and one code copy per part (about 8,000 gas), so a file
     ///         with a chunk over it is not inlined (a record with one is not shown) until that
     ///         chunk is written whole or linked from fewer parts, which anyone may do. A bound on
     ///         the work of a read, chosen with the others so that every cap at once stays within
-    ///         the 8M budget (`TokenUriBudget.t.sol`), not a gas figure.
-    uint256 internal constant MAX_PARTS_PER_CHUNK = 4;
+    ///         the 8M budget (`TokenUriBudget.t.sol`), not a gas figure. Three parts of 8,192
+    ///         bytes make a full 24,575-byte chunk, so a chunk can still be built from parts a
+    ///         third of a chunk long.
+    uint256 internal constant MAX_PARTS_PER_CHUNK = 3;
 
     /// @notice The content store the media and records are read from (immutable).
     IContentStore public immutable contentStore;

@@ -37,68 +37,36 @@ Integrators start at [Reading a work](../../docs/integrators/reading-a-work.md) 
 
 ## Developer notes
 
-- **The file ID is permanent and chain-independent.** It commits to the whole manifest (chunk
-  hashes, stored length, encoding, MIME type, declared SHA-256 of the decoded file), so a package
-  can name it before deployment. Changing the formula, `CHUNK_SIZE` or the layout rule breaks
-  every package and the uploader's golden vectors (WS-33).
-- **Every write is piecewise (WS-50, WS-51).** A full chunk can be linked from parts of any
-  size, so no write needs one large contract creation; a manifest of up to `MAX_CHUNKS` (4,096)
-  is registered from list chunks by one small call; attestation takes a caller-chosen count;
-  completeness is checked by range (`firstMissing`). `registerManifest` (one call, one slot per
-  hash) remains for small files. Storage layout: a file's `entries` are its chunk hashes
-  (`hashesPerList` 0) or its list chunks' pointers; a link is one `(length, count)` word and one
-  pointer per part.
-- **Links are the same chunks (WS-50).** A link is keyed by the keccak256 of what it concatenates,
-  re-checked on every read; parts are whole chunks only; a link from fewer parts may replace a
-  longer one, never the bytes, and a whole write replaces any link, so a chunk's part count only
-  falls. `chunkPointer` is zero for a linked chunk: read it with `chunkData` or `readChunk`.
-  `maxParts(fileId)` is the largest part count of a complete file's chunks: the renderer reads
-  no file with a chunk of more than 4 (RND-26, LIM-CNT-22), and uploaders write whole chunks
-  while the chain allows it.
-- **Source answers are bounded (WS-52).** `firstMissing` reads another `IChunkStore` with all
-  the gas it may and copies at most one chunk's ABI encoding; a refusal or a larger answer is a
-  chunk not served, a shortfall reverts.
-- **Open ids (WS-54).** Encodings and digest kinds are `uint8` ids the store records; it
-  interprets only encodings 2 and 3 (attestation) and digest kind 0 (`sha256Of`). The enum
-  `IContentStore.Encoding` names the four defined ids.
-- **Writes trust CREATE2's result (WS-24).** `SSTORE2.write` keeps the address the chain
-  returns and checks the code size; no read or write recomputes an address, and the store
-  deduplicates by `chunkPointer` before writing (a repeat CREATE2 would collide).
-- **Reads verify whole chunks.** Every touched chunk is read in full and checked against its
-  keccak256, and Solidity memory makes large reads superlinear: one `read` of 1 MiB costs about
-  9.7M Prague gas. On-chain callers read chunk by chunk or in ranges of a few hundred KiB.
-- **A bad record degrades, a broken dependency reverts.** A record that is not open, not
-  complete or not acceptable gives core-only metadata with a `record_status` (RND-9); a failed
-  read, too little gas, or a state the deployed contracts make impossible (RND-16) reverts.
-  Every external read forwards all the gas it may with a return-size cap
-  (`BoundedCall.tryReadAll`, the gas rule of ADR 0007): no gas figure is compiled in, since a
-  finalized work pins its renderer, possibly for good; a read that runs short reverts with
-  `BoundedCallShortfall`.
-- **The 8M budget is a joint bound.** The record caps (size, units, attributes, `%` and `#`,
-  number length, nesting) were chosen together with the inline limits and the renderer's
-  preview bound (`PREVIEW_LIMIT`, `Limits.MAX_PREVIEW_BYTES`; `WorkRecords` holds none), so
-  that a record at every cap beside the dearest media stays under 8M Prague
-  gas. The dearest inputs are white space inside `attributes` (walked twice), `%` and `#`, and
-  JSON units. Raising any cap, or changing `JsonScan`, `JsonEscape`, `Utf8`, `HtmlScript` or the
-  read path, means rerunning [`RendererGas.t.sol`](../../test/content/renderer/RendererGas.t.sol)
-  and [`TokenUriBudget.t.sol`](../../test/integration/TokenUriBudget.t.sol); the margin is
-  small (RND-26).
-- **Native reads only.** A work's facts come from Stream's `coreOf` and `extsload` (slots 17
-  and 18, in `_native`), never its fallback, which reaches the replaceable view extension: a
-  finalized work pins this renderer, so nothing replaceable may decide what it shows (RND-22).
-  Locators come from `WorkRecords.preferredLocator`, which serves only printable-ASCII URIs without `"` or `\`, and the
-  PREVIEW is read only when used, so an inlined image primary never asks the delivery contract.
+- **The file ID is permanent and chain-independent.** Changing its formula, `CHUNK_SIZE` or the
+  layout rule breaks every package and the uploader's golden vectors (WS-33).
+- **Storage layout.** A file's `entries` are its chunk hashes (`hashesPerList` 0) or its list
+  chunks' pointers; a link is one `(length, count)` word and one pointer per part.
+  `chunkPointer` is zero for a linked chunk: read it with `chunkData` or `readChunk` (WS-50).
+- **Writes trust CREATE2's result (WS-24).** No read or write recomputes an address, and the
+  store deduplicates by `chunkPointer` before writing (a repeat CREATE2 would collide).
+- **Large reads are superlinear.** Every touched chunk is read in full and checked against its
+  keccak256; on-chain callers read chunk by chunk or in ranges of a few hundred KiB.
+- **Renderer reads.** Every external read uses `BoundedCall.tryReadAll` with no compiled gas
+  figure, since a finalized work pins its renderer, possibly for good. A work's facts come only
+  from Stream's native views and `extsload` (in `_native`), never its fallback (RND-22).
+- **The 8M budget is a joint bound** (RND-26). Raising any record cap or the preview bound
+  (`PREVIEW_LIMIT`, `Limits.MAX_PREVIEW_BYTES`), or changing `JsonScan`, `JsonEscape`, `Utf8`,
+  `HtmlScript` or the read path, means rerunning
+  [`RendererGas.t.sol`](../../test/content/renderer/RendererGas.t.sol) and
+  [`TokenUriBudget.t.sol`](../../test/integration/TokenUriBudget.t.sol); the margin is small.
 - **`window.works` is a public API.** Finalized works pin their renderer, so version 1's fields
   never change meaning; a change needs a new `v` and a new renderer.
+- **Behavior is owned by the spec:** piecewise writes and links (WS-50, WS-51), bounded source
+  answers (WS-52), open encoding ids (WS-54), degraded versus reverting metadata (RND-9,
+  RND-16), and the part-count limit (RND-26, LIM-CNT-22).
 - **Bytecode: `Renderer` is the second-tightest contract**, barely under EIP-170 (current
   margin in the [audit scope](../../docs/audit/scope.md#content-and-rendering)). New features
   belong in a later renderer, which works pin per work.
-- **Tests:** `forge test --match-path 'test/content/**'`: the store (unit, attestation,
-  invariant, links, list manifests, sources and their gas in `ContentStorePermanence.t.sol`), the dependency registry, the renderer (media, hostile inputs, oracles against
-  independent mirrors, gas) and the uploader's golden and CID vectors. Halmos proofs of
-  `Base64Validator`, `DataUri` and `HtmlScript` are in `test/symbolic/` ([Testing](../../docs/testing/README.md)). End to end:
-  `ContentToTokenURI.t.sol`, `TokenUriBudget.t.sol` and `SyncOnChainResume.t.sol` in
-  [`test/integration/`](../../test/integration/).
+- **Tests:** `forge test --match-path 'test/content/**'`: the store, the dependency registry,
+  the renderer and the uploader's golden and CID vectors. Halmos proofs of `Base64Validator`,
+  `DataUri` and `HtmlScript` are in `test/symbolic/` ([Testing](../../docs/testing/README.md)).
+  End to end: `ContentToTokenURI.t.sol`, `TokenUriBudget.t.sol` and `SyncOnChainResume.t.sol`
+  in [`test/integration/`](../../test/integration/).
 
 ## Known gaps in v1
 

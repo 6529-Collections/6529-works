@@ -60,7 +60,9 @@ custom errors.
   left at most 1/8 of the gas reverts as a shortfall (`BoundedCallShortfall`), never reads as a
   refusal or a default. Replaceable contracts may cap gas (the fixed-gas family). Either way,
   a call to code the caller does not control bounds the return data it copies.
-- No `tx.origin`, and no unbounded loops over user-controlled data.
+- No `tx.origin`, and no unbounded loops over user-controlled data. A view whose size its caller
+  chooses and pays for, writing nothing (such as Stream's `extsload(slot, n)`), is not such a
+  loop: an oversized request only runs its own caller out of gas.
 
 **Tests:**
 - forge-std assertions, and `vm.expectRevert` with specific selectors.

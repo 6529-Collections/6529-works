@@ -196,6 +196,29 @@ contract GasCapTest is EconomicsBase {
         router.claimSigned(claims, true);
     }
 
+    /// @dev A claim naming more payees than any wallet has (`Splits.MAX_PAYEES`, 64) is refused
+    ///      before any item runs, in both kinds and both modes: its calldata alone could keep
+    ///      item 0 of a continue-mode batch from reaching the ceiling at the cap.
+    function test_AClaimWithMorePayeesThanAnyWalletIsRefused() public {
+        ISplitWallet.Payee[] memory long = new ISplitWallet.Payee[](65);
+        IClaimRouter.Claim[] memory plain = _worstClaims();
+        assembly ("memory-safe") {
+            mstore(plain, 2)
+        }
+        plain[1].payees = long;
+        IClaimRouter.SignedClaim[] memory signed = _worstSigned();
+        assembly ("memory-safe") {
+            mstore(signed, 2)
+        }
+        signed[1].payees = long;
+        for (uint256 m; m < 2; ++m) {
+            vm.expectRevert(abi.encodeWithSelector(IClaimRouter.TooManyPayees.selector, 1, 65));
+            router.claim(plain, m == 1);
+            vm.expectRevert(abi.encodeWithSelector(IClaimRouter.TooManyPayees.selector, 1, 65));
+            router.claimSigned(signed, m == 1);
+        }
+    }
+
     function _ones(uint256 size) internal pure returns (bytes memory b) {
         b = new bytes(size);
         for (uint256 i; i < size; ++i) {

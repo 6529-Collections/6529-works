@@ -25,30 +25,23 @@ in the [specification](../../docs/spec/README.md); the users of each library are
 
 - **Replay is the caller's job.** `SignatureVerifier` accepts a signature and its ERC-2098 form,
   so callers key replay protection on a nonce or a digest, never on signature bytes.
-- **Fail closed on gas.** `BoundedCall` reverts rather than report a starved call as a failed or
-  empty one. The forward-all family is the rule for permanent contracts (the
-  [specification's conventions](../../docs/spec/README.md#conventions), DSP-26): no cap to
-  outgrow, and `BoundedCallShortfall` means "resend with more gas". The renderer, which finalized
-  works pin, follows the same rule (RND-6, RND-7 in
-  [Rendering and tokenURI](../../docs/spec/rendering-and-tokenuri.md#rules-and-invariants)). The
-  fixed-gas family serves replaceable callers that size their own caps.
+- **Fail closed on gas.** `BoundedCall` reverts rather than report a starved call as failed or
+  empty. Forward-all is for permanent contracts and the renderer, fixed-gas for replaceable
+  callers: the [specification's conventions](../../docs/spec/README.md#conventions) (DSP-26) and
+  RND-6, RND-7 in [Rendering and tokenURI](../../docs/spec/rendering-and-tokenuri.md#rules-and-invariants).
 - **Bounded return data, always.** The gas rule removes the gas cap, not the return-data bound:
   every call to code the caller does not control passes a `maxReturn` sized to the answer it
   accepts, so a callee cannot make its caller copy an unbounded answer.
-- **Why 1/8, and the residuals.** In `BoundedCall`'s NatSpec: an out-of-gas up to eight nested
-  frames deep is always a shortfall; a refusal that itself burns more than about 7/8 of what it
-  was given reads as one too, until the caller supplies more gas.
+- **Why 1/8, and the residuals:** `BoundedCall`'s NatSpec.
 - **Stress harness.** [`test/helpers/GasRule.sol`](../../test/helpers/GasRule.sol): wrap any
   dependency in a `Burner` (each call costs a multiple of a base) and assert, with
   `GasRuleAssertions`, the same answer at 1x to 100x and a shortfall that never answers. Tests
   that use it are named `test_GasRule_*`.
-- **What `ProtocolContracts` cannot see.** An address without code (including a split wallet's
-  predicted address before deployment) and contracts that declare none of the listed interfaces
-  (content store, statement log, AccessManager, renderer, curation verifier, entropy module)
-  are not recognised; see LIM-ECO-4 and LIM-ID-12 in
+- **What `ProtocolContracts` cannot see** (codeless addresses, contracts declaring none of the
+  listed interfaces): LIM-ECO-4 and LIM-ID-12 in
   [known limitations](../../docs/audit/known-limitations.md).
-- **Hot paths.** `Utf8`, `JsonEscape` and `SSTORE2` sit inside `tokenURI`, whose 8M Prague gas
-  budget is proven by `test/integration/TokenUriBudget.t.sol`; rerun it after any change here.
+- **Hot paths.** `Utf8`, `JsonEscape` and `SSTORE2` sit inside `tokenURI`; rerun
+  `test/integration/TokenUriBudget.t.sol` after any change here.
 - **Tests:** `forge test --match-path 'test/libraries/**'` (unit and fuzz tests per library;
   `BoundedCallForwardAll.t.sol` for the forward-all family, `GasRuleLibraries.t.sol` for the
   stress of its library users).

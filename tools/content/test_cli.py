@@ -107,6 +107,22 @@ class PlanCommandTest(TempDirCase):
         code, _, err = run("plan", str(source), "--mime", "a/b", "--encoding", "gzip")
         self.assertEqual(code, 0, err)
 
+    def test_part_size_keeps_the_renderer_part_bound(self) -> None:
+        """`--part-size` is 8,192 bytes or more (three parts a full chunk, the most `tokenURI`
+        reads, RND-26); given without a value it is 8,192."""
+        source = self.media_file()
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as raised:
+            main(["plan", str(source), "--mime", "a/b", "--encoding", "identity",
+                  "--part-size", "8191"])
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("RND-26", err.getvalue())
+        code, out, err2 = run(
+            "plan", str(source), "--mime", "a/b", "--encoding", "identity", "--part-size"
+        )
+        self.assertEqual(code, 0, err2)
+        self.assertIn("with parts    of 8,192 bytes", out)
+
     def test_a_refusal_leaves_no_partial_output(self) -> None:
         source = self.media_file()
         manifest = self.dir / "m.json"

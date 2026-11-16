@@ -1215,7 +1215,10 @@ abstract contract UniformEditionAuctionBase is
     }
 
     /// @dev Validates and stores packed limits (`setLimits`): nothing past bit 96, every bound,
-    ///      and a maximum close offset of at least the current default.
+    ///      a maximum close offset of at least the current default, and, after construction
+    ///      (when it is still zero), a payout gas that only rises, at most doubling per change:
+    ///      the figure applies to open sales' payouts, and a lower one would send payees who
+    ///      needed more to the escrow.
     function _setLimits(uint256 next) private {
         Settings storage st = _settings;
         // Safe: each field is masked to its width.
@@ -1231,6 +1234,8 @@ abstract contract UniformEditionAuctionBase is
                 || maxCloseOffset < _terms[st.termsId].closeOffset
                 || voidDelayDays < _MIN_VOID_DELAY_DAYS || voidDelayDays > _MAX_VOID_DELAY_DAYS
                 || payoutGas < _MIN_PAYOUT_GAS || payoutGas > _MAX_PAYOUT_GAS
+                || (st.payoutGas != 0
+                    && (payoutGas < st.payoutGas || payoutGas > 2 * uint256(st.payoutGas)))
                 || rescueCapDays < _MIN_RESCUE_CAP_DAYS || rescueCapDays > _MAX_RESCUE_CAP_DAYS
         ) revert IUniformEditionAuction.InvalidConfig();
         emit IUniformEditionAuction.LimitsSet(_limits(), next);

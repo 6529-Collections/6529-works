@@ -67,7 +67,9 @@ cast call $STORE "readChunk(bytes32,uint256)(bytes)" $FILE_ID 0
    call.
 3. Read chunks `0` to `chunkCount − 1` with `readChunk(fileId, i)` and concatenate them. Every
    chunk but the last is exactly 24,575 bytes (`CHUNK_SIZE`). A chunk may be stored whole or
-   linked from smaller parts; both read the same. `chunkPointer(hash)` is zero for a linked
+   linked from smaller parts; both read the same. The default renderer reads no file with a chunk
+   linked from more than 3 parts (it serves such a file by locator until the chunk is written
+   whole or linked from fewer; RND-26), and `IContentStore.maxParts(fileId)` tells. `chunkPointer(hash)` is zero for a linked
    chunk, so reading code directly (`eth_getCode`) needs the parts from its `ChunkLinked` event,
    or use `chunkData(hash)`.
 4. For a byte range, `read(fileId, offset, length)` works too, but every chunk it touches is read
@@ -279,7 +281,8 @@ the repository root.
    to 16 chunks, otherwise the hash list as list chunks and one `registerManifestList`), one
    `writeChunk` per distinct chunk, and, for a base64 file, `ceil(chunks / 48)` `attestBase64`
    calls last, plus `calls.json` and `send.sh`. `--part-size BYTES` writes each chunk as parts
-   joined by `linkChunk` (the same chunk; smaller transactions), `--attest-chunks N` sets the
+   joined by `linkChunk` (the same chunk; smaller transactions; at least 8,192 bytes, so a full
+   chunk is at most 3 parts, the most the renderer reads from), `--attest-chunks N` sets the
    chunks per attest call. Use `--schedule glamsterdam` on Sepolia; Prague gas limits run out
    of gas there.
 4. **Send them with your own signer:**
@@ -355,7 +358,9 @@ contract code: about 1,548 gas per stored byte on Sepolia, so about 1.65 ETH per
   with the file ([uploader](../../tools/content/README.md#gas-schedules-the-cap-and-quotes)).
 - **Parts.** A full chunk written as three 8,192-byte parts and one `linkChunk` costs about 6%
   more under Prague and 3% more under Glamsterdam, in transactions a third the size; it keeps
-  on-chain storage possible if code deposits are ever repriced or capped per transaction.
+  on-chain storage possible if code deposits are ever repriced or capped per transaction. Three
+  parts is the most `tokenURI` reads from a chunk (RND-26), so the uploader refuses a smaller
+  part size.
 
 `plan` and `calls` print a quote for any file under both schedules
 ([cost quotes](../../tools/content/README.md#cost-quotes)). Mainnet's Glamsterdam parameters may
