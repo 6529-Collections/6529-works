@@ -68,11 +68,14 @@ The deploy script follows one rule:
   - the federation's first configuration ([ADR 0008](../docs/adr/0008-federation.md)): the
     English auction's `setFederationRegistry`, and the federation registry's `setAdapter` (the
     English auction and the federated edition auction) and `approveTemplate` (the two v1
-    templates, named in the arguments; `DeployV1.templateCodeHash` computes each code hash from
-    the build, so the file holds no literal and the calldata's first word is a placeholder);
+    templates, named in the arguments: "T" for the runtime code hash and "T.creationCode" for
+    the creation code hash; `DeployV1.templateCodeHash` computes both from the build, so the
+    file holds no literal and the calldata's first two words are placeholders; the deploy
+    writes and publishes the creation code right after the registry);
   - the epoch-0 governance manifest (`appendGovernanceManifest` on the statement log).
 
-  Nothing else can be wired: `GovernanceConfig.isGenesisSelector` is an allow-list.
+  Nothing else can be wired: `GovernanceConfig.isGenesisSelector` is an allow-list, and each
+  setter reaches only targets declaring its interface (`GovernanceConfig.genesisInterface`).
 
   `configure` executes them as zero-delay admin before mapping selectors.
 - **Grants:** curation signers become active when they are granted `CURATION_SIGNER` in

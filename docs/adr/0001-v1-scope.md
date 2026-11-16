@@ -763,7 +763,8 @@ AccessManager governs all of them. The VRF module is optional.
 **Engineering budgets, enforced as CI gates:**
 - **Size:** 8–12K non-comment lines of production Solidity. (Amended 1 November 2026: the
   gate is 13,000 lines; amended 15 November 2026: 15,000 lines; 16 November 2026: 16,000 lines,
-  [ADR 0008](0008-federation.md); see [Amendments](#amendments).)
+  then 16,500 for the federation review's fixes, [ADR 0008](0008-federation.md); see
+  [Amendments](#amendments).)
 - **Structure:** at most 5 linked libraries; no delegatecall; no proxies.
 - **Contract size:** EIP-170 enforced in every Foundry profile.
 - **CI time:** full build and test in under 15 minutes.

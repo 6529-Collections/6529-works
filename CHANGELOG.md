@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Federation review fixes ([ADR 0008](docs/adr/0008-federation.md) §1, §2, §8, §10, §12;
+  FED-64 to FED-70, ID-41): a template version is its runtime code hash bound to its creation
+  code (`approveTemplate(bytes32 codeHash, bytes32 creationHash, uint32 version, uint8 form)`,
+  `TemplateSet` gains `creationHash`), published permissionlessly in data contracts
+  (`publishCode`, `codeOf`, `CodePublished`), and a copy joins only as the deterministic
+  deployment proxy's CREATE2 deployment of it with the arguments it presents
+  (`IFederatedToken.joinFederation(IFederationRegistry.Join)`, `IFederationRegistry.register(Join)`,
+  `Registered` gains `salt` and `config`; `IFederationRegistry` `0xbdbe4b76`, `IFederatedToken`
+  `0x8ad6508e`, `IFederatedStream` `0xfdc4a364`); the artist registry lists a contract only with its
+  artist's `FederatedListing` signature (`listFederatedContract(..., uint64 deadline, bytes
+  consent)`, `listingDigest`; `IArtistRegistry` `0x836f1b67`); an exit from DELISTED is
+  `LEFT_DELISTED`, served by nothing; a pair joins editions first and each half's minting follows
+  the other's listing; a 1/1 template names the canonical content store (`contentStore()`,
+  `ContentStoreSet`); a replaced registry answers as the current one; each genesis setter
+  reaches only targets declaring its interface (`GovernanceConfig.genesisInterface`). The
+  `FederationRegistry` constructor takes the content store. The source-line budget is 16,500.
 - Federation ([ADR 0008](docs/adr/0008-federation.md); [Federation](docs/spec/federation.md),
   FED-1 to FED-63): Federated Stream and Federated Stream Editions templates (full copies, no
   immutables, joined by the token itself and listed in the artist registry's directory; works
