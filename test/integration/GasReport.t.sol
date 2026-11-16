@@ -68,15 +68,17 @@ contract IntegrationGasReport is IntegrationBase {
     ///      budget (the review of #81): the largest round value the measured rows support. The
     ///      mint policy and the locked-terms events took it to 2,500 during the permanence
     ///      integration; moving the opening bid into the asset allowlist's status word (one read
-    ///      fewer per start) restored it: the tightest row is 344,817, 5,183 under the budget.
+    ///      fewer per start) restored it: the tightest row is 344,980, 5,020 under the budget.
     uint256 internal constant START_MARGIN = 5000;
     /// @dev After governance replaced Stream's three mint-path dependencies (the mint policy,
     ///      the economics resolver and the entropy module; owner decision 16), a mint reads each
     ///      it uses from storage: about 2,100 more per dependency. The binding rows are then
     ///      measured against these regression ceilings, not the 350K budget (LIM-GAS-11,
-    ///      ADR 0004): measured 347,376 and 353,072, plus about 2%, rounded up to the thousand.
-    uint256 internal constant REPLACED_BINDING_CEILING = 355_000;
-    uint256 internal constant REPLACED_BINDING_VRF_CEILING = 361_000;
+    ///      ADR 0004): measured 344,367 and 350,023 (review A, I-2: the earlier 355,000 and
+    ///      361,000 came from an interim lane measurement), plus about 2%, rounded up to the
+    ///      thousand.
+    uint256 internal constant REPLACED_BINDING_CEILING = 352_000;
+    uint256 internal constant REPLACED_BINDING_VRF_CEILING = 358_000;
     /// @dev `createCollection` writes a new collection's counter word, so the first start in it
     ///      costs what any steady-state start costs; this ceiling only tracks it.
     uint256 internal constant FIRST_IN_COLLECTION_CEILING = 400_000;
@@ -90,7 +92,9 @@ contract IntegrationGasReport is IntegrationBase {
     /// @dev The mint policy's `authorize` (consent, item rules, consume, terms quote): measured
     ///      91,180; it writes no slot since Stream holds content uniqueness (AUC-44). 2% up.
     uint256 internal constant CONSUME_CEILING = 94_000;
-    uint256 internal constant CREATE_EDITION_CEILING = 275_000;
+    /// @dev Moved down from 275,000: Editions no longer proves the item under a package root nor
+    ///      claims its content in the mint policy (review A, M-1). Measured 213,166, plus 2%.
+    uint256 internal constant CREATE_EDITION_CEILING = 218_000;
     uint256 internal constant REFRESH_FIRST_CEILING = 131_000;
     /// @dev Moved from 192,000 (permanence integration, 15 November 2026): an admin's governed
     ///      `execute` also updates the manager's admin-liveness clock and checks its hand-over
@@ -896,13 +900,11 @@ contract IntegrationGasReport is IntegrationBase {
     }
 
     function _rowCreateEdition() internal returns (Row memory r) {
-        (uint256 workId, bytes32 masterRoot, Work[] memory works) = _settledMaster();
-        bytes memory data = abi.encodeCall(
-            editions.createEdition, (workId, works[0].item, masterRoot, _proofOf(works, 0))
-        );
+        (uint256 workId,, Work[] memory works) = _settledMaster();
+        bytes memory data = abi.encodeCall(editions.createEdition, (workId, works[0].item));
         r = _row("createEdition", starter, address(editions), data, 0);
         _gasAtMost(r, CREATE_EDITION_CEILING, "regression ceiling");
-        _growthIs(r, 6, 0);
+        _growthIs(r, 5, 0);
     }
 
     // ------------------------------------------------------------------ re-rate

@@ -57,10 +57,6 @@ interface IPackageRegistry is IERC165 {
     event PackageAccepted(
         bytes32 indexed packageRoot, uint256 indexed artistId, address indexed account
     );
-    /// @notice 6529 Stream Editions claimed a master's content hash under `PRODUCT_EDITIONS`.
-    /// @param contentHash The master's content hash.
-    /// @param itemHash The master item, which consumed `contentHash` on 6529 Stream.
-    event ContentClaimed(bytes32 indexed contentHash, bytes32 indexed itemHash);
     /// @notice An artist revoked an unused move nonce.
     /// @param artistId The artist whose nonce was revoked.
     /// @param nonce The revoked move nonce.
@@ -85,9 +81,6 @@ interface IPackageRegistry is IERC165 {
     error ItemNotInPackage(bytes32 packageRoot, bytes32 itemHash);
     /// @notice The content hash is already claimed in `product`, by `claimedBy`.
     error ContentUsed(bytes32 product, bytes32 contentHash, bytes32 claimedBy);
-    /// @notice The claim is not allowed: an edition may only claim the content hash its master
-    ///         item consumed on 6529 Stream.
-    error ClaimNotAllowed(bytes32 product, bytes32 contentHash);
     /// @notice A released content hash is reserved for the item of artist `beneficiary`.
     error ContentReserved(bytes32 contentHash, uint256 beneficiary);
     /// @notice A listed party has not accepted the package root.
@@ -113,8 +106,9 @@ interface IPackageRegistry is IERC165 {
     ///         EIP-7702 delegated account). ADMIN role.
     /// @param target The 6529 Stream contract.
     function bindStream(address target) external;
-    /// @notice Binds 6529 Stream Editions, the only `claimContent` caller, once (ERC-165 for
-    ///         `IEditions`, not an EIP-7702 delegated account). ADMIN role.
+    /// @notice Binds 6529 Stream Editions, once (ERC-165 for `IEditions`, not an EIP-7702
+    ///         delegated account). ADMIN role. Informational since Editions stopped reading the
+    ///         mint policy (it claims no content here: Stream's record decides an edition).
     /// @param target The 6529 Stream Editions contract.
     function bindEditions(address target) external;
     /// @notice Registers an approved package root. Permissionless; the verifier decides.
@@ -145,11 +139,6 @@ interface IPackageRegistry is IERC165 {
         PartyAcceptance calldata acceptance,
         bytes calldata signature
     ) external returns (uint256 artistId);
-    /// @notice Claims a master's content hash under `PRODUCT_EDITIONS`; `consumedItemOf` must
-    ///         already record `itemHash` for it. Bound 6529 Stream Editions only.
-    /// @param contentHash The master's content hash.
-    /// @param itemHash The master item.
-    function claimContent(bytes32 contentHash, bytes32 itemHash) external;
     /// @notice Revokes one of the caller's unused move nonces. The caller must be the active
     ///         authority of `artistId` (`IArtistRegistry.activeAuthorityOf`).
     /// @param artistId The artist whose move nonce is revoked.
@@ -203,10 +192,6 @@ interface IPackageRegistry is IERC165 {
     /// @param contentHash The content hash.
     /// @return artistId The beneficiary's artist ID, or zero.
     function releasedTo(bytes32 contentHash) external view returns (uint256 artistId);
-    /// @notice The master item whose content hash 6529 Stream Editions claimed, or zero.
-    /// @param contentHash The content hash.
-    /// @return itemHash The master item's hash, or zero.
-    function editionClaimOf(bytes32 contentHash) external view returns (bytes32 itemHash);
     /// @notice Whether an artist's move nonce is used or revoked.
     /// @param artistId The artist ID.
     /// @param nonce The move nonce.

@@ -359,4 +359,40 @@ contract AuctionCurrencyFreezeTest is SalesStackBase {
         _settleAtEnd(saleId);
         assertEq(stream.ownerOf(tokenId), bob, "sold once the market reopened");
     }
+
+    /// Regression: L-4 of review D (accepted, LIM-SAL-15)
+    /// @dev The documented limit of the 60-day exit: one guardian deprecates the currency and
+    ///      vetoes its re-admission, and a second cancels the first one's removal, which strikes
+    ///      it, so the re-proposal waits the escalated lane. That lands after day 60, when anyone
+    ///      may end the sale unsold. The outcome is safe: the bid is credited back in full and the
+    ///      work goes to the museum; nothing is paid or lost. (ETH, the launch currency, can never
+    ///      be deprecated, and genesis admits no ERC-20.)
+    function test_Settle_AnEscalatedGuardianRemovalLandsAfterTheExitAndNothingIsLost() public {
+        (uint256 saleId, uint256 tokenId) = _startUsd(0);
+        _usdBid(saleId, alice, 10e18);
+        uint256 frozenAt = _deprecateUsd();
+        (,, uint64 revision) = allowlist.assetConfig(address(usd));
+        bytes memory admit =
+            abi.encodeCall(allowlist.admitAsset, (address(usd), revision, USD_FLOOR));
+        _schedule(hotAdmin, address(allowlist), admit);
+        vm.prank(guardian1);
+        manager.cancel(hotAdmin, address(allowlist), admit);
+
+        bytes memory removal =
+            abi.encodeCall(IAccessManager.revokeRole, (Roles.GUARDIAN, guardian1));
+        _schedule(hotAdmin, address(manager), removal);
+        vm.prank(guardian2);
+        manager.cancel(hotAdmin, address(manager), removal);
+        bytes32 escalated = _schedule(hotAdmin, address(manager), removal);
+        assertGt(
+            manager.getSchedule(escalated), frozenAt + 60 days, "the removal lands after the exit"
+        );
+
+        vm.warp(frozenAt + 60 days);
+        vm.expectEmit(address(auction));
+        emit ISaleAdapter.Credited(alice, address(usd), saleId, 10e18);
+        auction.settle(saleId);
+        assertEq(stream.ownerOf(tokenId), museum, "the work goes to the museum");
+        assertEq(auction.claimable(alice, address(usd)), 10e18, "the bid is credited back");
+    }
 }

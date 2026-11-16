@@ -46,8 +46,8 @@ Docs).
 | `KEEPER` | 7 | immediate | 48 hours | none (unused in v1) | 0 | No |
 | `PLATFORM` | 8 | immediate | 48 hours | Platform key | 3 | Yes |
 | `PARAMETER_SETTER` | 9 | 48 hours | 48 hours | Hot admin Safe | 15 | No |
-| `FUNDS_SETTER` | 10 | 14 days | 14 days | Hot admin Safe | 11 | No |
-| `SUCCESSOR_SETTER` | 11 | 30 days | 30 days | Hot admin Safe | 23 | No |
+| `FUNDS_SETTER` | 10 | 14 days | 14 days | Hot admin Safe | 10 | No |
+| `SUCCESSOR_SETTER` | 11 | 30 days | 30 days | Hot admin Safe | 24 | No |
 | `CURATOR` | 12 | immediate | 30 days | Curator key | 1 | Yes |
 
 Every role's admin is ADMIN, and every role except ADMIN has GUARDIAN as its guardian
@@ -62,8 +62,8 @@ Every role's admin is ADMIN, and every role except ADMIN has GUARDIAN as its gua
 | --- | --- | ---: |
 | Immediate | immediate | 15 |
 | Standard | 48 hours | 18 |
-| Funds and recipients | 14 days | 11 |
-| Verifier and successor | 30 days | 23 |
+| Funds and recipients | 14 days | 10 |
+| Verifier and successor | 30 days | 24 |
 | **Total** | | **67** |
 
 ## Matrix by contract
@@ -225,7 +225,7 @@ Source: [`src/economics/GovernedVault.sol`](../../src/economics/GovernedVault.so
 
 | Function | Selector | Role | Class | Delay | Guardian cancel | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `setDestination(uint64,address)` | `0x765b2cf1` | `FUNDS_SETTER` | Funds and recipients | 14 days | Yes: any guardian, during the delay |  |
+| `setDestination(uint64,address)` | `0x765b2cf1` | `FUNDS_SETTER` | Funds and recipients | 14 days | Yes: any guardian, during the delay | Where every held and future network fee goes; compare-and-set on the vault's revision. |
 
 ### MuseumVault
 
@@ -233,7 +233,7 @@ Source: [`src/economics/GovernedVault.sol`](../../src/economics/GovernedVault.so
 
 | Function | Selector | Role | Class | Delay | Guardian cancel | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `setDestination(uint64,address)` | `0x765b2cf1` | `FUNDS_SETTER` | Funds and recipients | 14 days | Yes: any guardian, during the delay |  |
+| `setDestination(uint64,address)` | `0x765b2cf1` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Where every museum-held work and payout goes: authority over existing tokens, so the 30-day class, not the fee vault's 14 days; compare-and-set on the vault's revision. |
 
 ### DependencyRegistry
 
@@ -316,7 +316,7 @@ delay applies if it is longer. Every target's admin delay is the successor class
 
 | Function | Selector | Caller | Delay | Guardian cancel | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `grantRole(uint64,address,uint32)` | `0x25c471a0` | The role's admin (ADMIN for every role) | 30 days | Yes: any guardian, during the delay | The grant then waits the role's grant delay. |
+| `grantRole(uint64,address,uint32)` | `0x25c471a0` | The role's admin (ADMIN for every role) | 30 days | Yes: any guardian, during the delay | The grant then waits the role's grant delay. Refused below the role's class delay (`DelayBelowClass`), whoever the role's admin is. |
 | `revokeRole(uint64,address)` | `0xb7d2b162` | The role's admin (ADMIN for every role) | 30 days | Yes, except by the account being revoked | Only a guardian or its scheduler can cancel it, and the account it revokes only if it scheduled it. |
 | `renounceRole(uint64,address)` | `0xfe0776f5` | The holder itself | immediate | No: executes at once | Immediate; the second argument must be the caller. |
 | `labelRole(uint64,string)` | `0x853551b8` | ADMIN | 30 days | Yes: any guardian, during the delay |  |
@@ -326,18 +326,19 @@ delay applies if it is longer. Every target's admin delay is the successor class
 | `setTargetAdminDelay(address,uint32)` | `0xd22b5989` | ADMIN | 30 days | Yes: any guardian, during the delay | A reduction takes effect after its length, and never sooner than `minSetback()`. |
 | `setTargetFunctionRole(address,bytes4[],uint64)` | `0x08d6122d` | ADMIN | 30 days (or the target's admin delay) | Yes: any guardian, during the delay |  |
 | `setTargetClosed(address,bool)` | `0x167bd395` | ADMIN | 30 days (or the target's admin delay) | Yes: any guardian, during the delay |  |
-| `updateAuthority(address,address)` | `0x18ff183c` | ADMIN | 30 days (or the target's admin delay) | Yes: any guardian, during the delay |  |
+| `updateAuthority(address,address)` | `0x18ff183c` | ADMIN | 30 days (or the target's admin delay) | Yes: any guardian, during the delay | Moves one target to another authority: no slow lane and no bounded veto, so any one guardian can stop it, every time; it checks nothing about the new authority. |
 | `setAuthority(address)` | `0x7a9e5e4b` | ADMIN, scheduled on the target itself | 30 days (or the target's admin delay) | Yes: any guardian, during the delay | Stock OpenZeppelin lets only ADMIN cancel this; the guardians can too. |
 | `suspend(uint64,address)` | `0x64bf6e5d` | `GUARDIAN` | immediate | No: executes at once | Suspends a holder of a suspendable role at once. Lifted by an ADMIN `grantRole` or `revokeRole` of that role to that account (30 days), or by the holder's own `renounceRole`; no guardian can lift it. |
 | `setParameter(uint8,uint32,uint32)` | `0x5c2b54bd` | `ADMIN` | 30 days | Yes: any guardian, during the delay | Slow lane: scheduled at least SLOW_DELAY (default 60 days) ahead, ADMIN's 30 days included; compare-and-set within compiled bounds (GV-41) |
 | `setRecoveryAddress(address,address)` | `0x81163a33` | `ADMIN` | 30 days | Yes: any guardian, during the delay | Slow lane: scheduled at least SLOW_DELAY (default 60 days) ahead, ADMIN's 30 days included; compare-and-set (GV-42) |
-| `registerSuccessor(address)` | `0xa488b91d` | `ADMIN` | 30 days | Yes: any guardian, during the delay | Slow lane: scheduled at least SLOW_DELAY (default 60 days) ahead, ADMIN's 30 days included; ESCALATED_DELAY (default 120 days) and a guardian majority after a guardian's cancellation (GV-37, GV-43) |
+| `registerSuccessor(address)` | `0xa488b91d` | `ADMIN` | 30 days | Yes: any guardian, during the delay | Slow lane: scheduled at least SLOW_DELAY (default 60 days) ahead, ADMIN's 30 days included; ESCALATED_DELAY (default 120 days) and a guardian majority after a guardian's cancellation (GV-37, GV-43). Only proposes (zero withdraws); nothing is handed over until the successor accepts |
 | `approveRecovery(address)` | `0xcbc3b3c2` | `GUARDIAN` | immediate | No: executes at once | Vote approving a live recovery of an unregistered candidate (GV-42) |
 | `objectToRecovery(address)` | `0x1886f8bc` | `GUARDIAN` | immediate | No: executes at once | Vote objecting to a live recovery of the recovery address (GV-42) |
 | `heartbeat()` | `0x3defb962` | No role (checked in the function) | immediate | No: executes at once | Any active ADMIN holder, at once: resets the inactivity clock (GV-42) |
 | `openRecovery(address)` | `0x24d48fe5` | No role (checked in the function) | immediate | No: executes at once | Anyone, after RECOVERY_SILENCE without admin activity (GV-42) |
 | `completeRecovery(address)` | `0xf480dd7e` | No role (checked in the function) | immediate | No: executes at once | Anyone, after RECOVERY_DELAY, if the guardian decision allows it (GV-42) |
-| `migrate(uint256,uint256)` | `0x3e54bacb` | No role (checked in the function) | immediate | No: executes at once | Anyone, once a successor is registered (GV-45) |
+| `acceptSuccession()` | `0x922fbae1` | No role (checked in the function) | immediate | No: executes at once | Only the pending successor itself, once it has re-pointed successionProbe() to the manager: completes the handover (GV-43) |
+| `migrate(uint256,uint256)` | `0x3e54bacb` | No role (checked in the function) | immediate | No: executes at once | Anyone, once a successor has accepted (GV-45) |
 
 `schedule`, `execute` and `cancel` are open to anyone and check the caller's permission
 for the call they carry.

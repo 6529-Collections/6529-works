@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IGovernedVault } from "src/economics/interfaces/IGovernedVault.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { Splits } from "src/economics/Splits.sol";
@@ -66,17 +67,24 @@ contract EscrowRecoveryTest is IntegrationBase {
     }
 
     /// Regression: MONEY-2 (docs/security/internal-review-2026-10.md)
-    /// @dev MONEY-2 regression: with the Safe's consent, the governed `recover` moves the
-    ///      network's escrowed fee to the new Safe, and anyone flushes it there.
+    /// @dev MONEY-2 regression: the fee recipient is the governed vault, so its consent names its
+    ///      destination. Governance points the vault at the new Safe, anyone records the vault's
+    ///      consent, the governed `recover` moves the network's escrowed fee there, and anyone
+    ///      flushes it. A consent the vault gave for an earlier destination would be refused.
     function test_BlockedFeeRecipientCreditMovesWithItsConsent() public {
         _soldWhileBlocked();
         vm.expectRevert();
         escrow.flush(networkFee, address(usdc));
 
+        IGovernedVault vault = IGovernedVault(networkFee);
+        _govern(
+            hotAdmin,
+            networkFee,
+            abi.encodeCall(IGovernedVault.setDestination, (vault.destinationRevision(), newFeeSafe))
+        );
         vm.expectEmit(address(escrow));
         emit IRevenueEscrow.RecoveryConsentSet(networkFee, newFeeSafe);
-        vm.prank(networkFee);
-        escrow.consentToRecovery(newFeeSafe);
+        vault.consentToRecovery(escrow);
         assertEq(escrow.recoveryConsent(networkFee), newFeeSafe);
 
         _schedule(hotAdmin, address(escrow), _recoverCall());

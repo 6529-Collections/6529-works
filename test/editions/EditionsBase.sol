@@ -148,8 +148,7 @@ abstract contract EditionsBase is Test {
     /// @dev `createEdition` with the item's package (salt 0). Makes no external call before it,
     ///      so a preceding `vm.prank` or `vm.expectRevert` applies to `createEdition` itself.
     function _createEdition(uint256 id, PackageItem memory item) internal returns (uint256) {
-        (bytes32 root, bytes32[] memory proof) = EditionsPackages.packageOf(item, 0);
-        return editions.createEdition(id, item, root, proof);
+        return editions.createEdition(id, item);
     }
 
     function _create(PackageItem memory item) internal virtual returns (uint256 id) {

@@ -211,12 +211,14 @@ abstract contract DelegationForkTests is WorksForkBase {
 
         ArtistIdentity memory identity =
             ArtistIdentity(next, next, _profileId(artist), _profileDoc(artist));
+        // A wallet signs only for a dormant artist, and its change waits the override delay.
+        vm.warp(block.timestamp + artists.timer(IArtistRegistry.Timer.DORMANCY));
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes32 digest = artists.changeDigest(id, identity, artists.changeNonce(id), deadline);
         artists.stageChange(
             id, identity, wallet, deadline, _sign(wallet, digest), _sign(next, digest)
         );
-        vm.warp(block.timestamp + artists.timer(IArtistRegistry.Timer.CHANGE_DELAY));
+        vm.warp(block.timestamp + artists.timer(IArtistRegistry.Timer.OVERRIDE_DELAY));
         artists.executeChange(id);
         assertEq(artists.authorityOf(id), next, "recovered through the consolidated wallet");
     }

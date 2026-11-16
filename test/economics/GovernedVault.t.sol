@@ -269,4 +269,57 @@ contract GovernedVaultTest is EconomicsBase {
         escrow.flush(safe, address(usdc));
         assertEq(usdc.balanceOf(safe), 50);
     }
+
+    /// @dev Review C F14: a recovery consent the vault gave for its old destination does not
+    ///      survive a destination change: the escrow refuses it, and a fresh consent names the
+    ///      new destination. Fails without the change: `recover` moves the credit to the retired
+    ///      destination.
+    function test_StaleEscrowConsentDoesNotSurviveADestinationChange() public {
+        BlocklistToken usdc = new BlocklistToken();
+        usdc.mint(address(this), 50);
+        usdc.approve(address(escrow), 50);
+        escrow.depositERC20(address(vault), address(usdc), 50);
+        vault.consentToRecovery(escrow);
+        address next = makeAddr("nextSafe");
+        vault.setDestination(1, next);
+        assertEq(escrow.recoveryConsent(address(vault)), safe, "the stored consent is stale");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IRevenueEscrow.RecoveryNotConsented.selector, address(vault), safe
+            )
+        );
+        escrow.recover(address(vault), safe, address(usdc));
+        vault.consentToRecovery(escrow);
+        escrow.recover(address(vault), next, address(usdc));
+        assertEq(escrow.owed(next, address(usdc)), 50);
+    }
+
+    /// @dev Review C F4: a work moves only to a destination that accepts ERC-721s. A split vault
+    ///      or a plain contract refuses it and the work stays in the vault; an account works.
+    ///      Fails without the change: `transferFrom` strands the work in the contract.
+    function test_ForwardERC721RefusesADestinationThatCannotHoldWorks() public {
+        VaultTest721 works = new VaultTest721();
+        works.mint(address(vault), 9);
+        address splitVault = _wallet(_list(_fixed(alice, 50_000), _fixed(bob, 50_000)));
+        address[2] memory refusing = [splitVault, address(new ProtocolProbe())];
+        for (uint256 i; i < 2; ++i) {
+            GovernedVault v = new GovernedVault(address(manager), ledger, refusing[i]);
+            works.mint(address(v), 10 + i);
+            vm.expectRevert();
+            vm.prank(stranger);
+            v.forwardERC721(address(works), 10 + i);
+            assertEq(works.ownerOf(10 + i), address(v), "the work stays in the vault");
+        }
+        VaultTest1155 editions = new VaultTest1155();
+        GovernedVault toSplit = new GovernedVault(address(manager), ledger, splitVault);
+        editions.mint(address(toSplit), 1, 2);
+        vm.expectRevert();
+        toSplit.forwardERC1155(address(editions), 1, 2);
+        assertEq(editions.balanceOf(address(toSplit), 1), 2);
+        // A destination that accepts works (another governed vault) receives it.
+        GovernedVault successor = new GovernedVault(address(manager), ledger, safe);
+        vault.setDestination(1, address(successor));
+        vault.forwardERC721(address(works), 9);
+        assertEq(works.ownerOf(9), address(successor));
+    }
 }

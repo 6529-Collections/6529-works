@@ -53,7 +53,9 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @param artistId The lead artist's ID (indexed: works by artist).
     /// @param itemHash The hash of the consumed package item (`WorksHashing.itemHash`).
     /// @param serial The work's serial in its collection, from 1.
-    /// @param kind 0 ORIGINAL, 1 EDITION_MASTER (`ItemKind`); a later policy may define more.
+    /// @param flags The item kind (bits 0-1: 0 ORIGINAL, 1 EDITION_MASTER, `ItemKind`; a later
+    ///        policy may define more) and the seed policy (bits 2-3: 0 NONE, 1 ARTIST, 2 VRF,
+    ///        `SeedPolicy`), as `coreOf` returns them.
     /// @param packageRoot The approved package root the item was proved against.
     /// @param contentHash The decoded SHA-256 of the primary media (`PackageItem.contentHash`).
     /// @param mediaHash The commitment to the work's media list (`PackageItem.mediaHash`).
@@ -67,7 +69,7 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
         uint256 indexed artistId,
         bytes32 itemHash,
         uint64 serial,
-        uint8 kind,
+        uint8 flags,
         bytes32 packageRoot,
         bytes32 contentHash,
         bytes32 mediaHash,
@@ -152,7 +154,7 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @param next The URI after the change.
     event ContractURISet(string previous, string next);
     /// @notice Governance replaced a dependency (owner decision 16).
-    /// @param kind `"PACKAGE_REGISTRY"`, `"ARTIST_REGISTRY"`, `"ECONOMICS"` or `"ENTROPY_MODULE"`.
+    /// @param kind `"PACKAGE_REGISTRY"`, `"ECONOMICS"`, `"ENTROPY_MODULE"` or `"EXTENSION"`.
     /// @param previous The address before.
     /// @param next The address after.
     event DependencySet(bytes32 indexed kind, address previous, address next);
@@ -313,6 +315,11 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     ///         `setDependency`).
     /// @return The entropy module, or zero.
     function entropyModule() external view returns (address);
+    /// @notice The read-only view extension (`IStreamExtension`) the fallback forwards the three
+    ///         `IStreamViews` selectors to, and `createCollection` asks about names (governed,
+    ///         `setDependency("EXTENSION")`). Nothing permanent or pinned reads it.
+    /// @return The view extension.
+    function extension() external view returns (address);
     /// @notice The entropy module that was current when `tokenId` minted, which held its VRF
     ///         seed (`mint` checked the delivery there): `WorkRecords.openRecord` stores the seed
     ///         from it, and the renderer reads it before the record opens, so replacing the
@@ -363,7 +370,14 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @param next The new delay, in seconds.
     function setRescueDelay(uint256 next) external;
     /// @notice Raw storage words of this contract, from `slot` on: the read port the view
-    ///         extension (and anyone) reads Stream's state through.
+    ///         extension, a pinned renderer and anyone read Stream's state through. Stream's
+    ///         storage layout is part of its permanent interface: Stream is never redeployed and
+    ///         has no proxy, so no slot ever moves. `StreamLayout` names the slots and their
+    ///         packing: a work's token word at `keccak256(abi.encode(tokenId, 18))` (seller,
+    ///         serial at bits 160-191, collection ID, flags, terms ID) with its item hash in the
+    ///         next slot; a collection at `keccak256(abi.encode(collectionId, 17))` (exists,
+    ///         minted), its metadata hash at `+ 1` and its name, a storage string, at `+ 2`; the
+    ///         counters at slot 11, the marketplace owner at 12 and the contract URI at 13.
     /// @param slot The first storage slot.
     /// @param n The number of consecutive slots.
     /// @return words The `n` words.
@@ -412,8 +426,10 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     ///         for that artist's items, never by the burned item (tombstoned). Stream holds the
     ///         record; the mint policy plays no part. PARAMETER_SETTER role (48 hours); reverts
     ///         with `NotBurned` for a live or unminted token, `ClaimNotAllowed` for another
-    ///         content or a second release, `IArtistRegistry.UnknownArtist` for an unregistered
-    ///         beneficiary.
+    ///         content or a second release of the same burn, `IArtistRegistry.UnknownArtist` for
+    ///         an unregistered beneficiary. A content released, minted again and burned again
+    ///         after a later upheld dispute can be released again: only the released bit and the
+    ///         token that holds the content are compared.
     /// @param tokenId A burned token ID.
     /// @param contentHash The burned work's content hash (public in `WorkMinted`).
     /// @param beneficiary The artist ID of the rightful artist.
@@ -519,6 +535,15 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
 
     // ----- marketplace metadata -----
 
+    /// @notice ERC-7572 contract-level metadata URI, native: exactly what `setContractURI` last
+    ///         set (`ContractURISet`), whatever view extension is installed.
+    /// @return The URI, empty until set.
+    function contractURI() external view returns (string memory);
+    /// @notice The marketplace owner (held by 6529), native: exactly what `setOwner` last set
+    ///         (`OwnershipTransferred`), whatever view extension is installed, because
+    ///         marketplaces let it configure the collection. It has no on-chain powers.
+    /// @return The marketplace owner.
+    function owner() external view returns (address);
     /// @notice Sets the contract URI (`ContractURISet`, `ContractURIUpdated`). PARAMETER_SETTER
     ///         role.
     /// @param uri The new contract URI.

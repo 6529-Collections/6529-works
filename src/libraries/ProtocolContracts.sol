@@ -18,11 +18,12 @@ import { BoundedCall } from "./BoundedCall.sol";
 ///         artist payout or a network fee recipient set to one by mistake is refused before any
 ///         money is routed there.
 /// @dev Internal functions only, so nothing here is a linked library. An address without code is
-///      never one. That includes a split wallet's predicted CREATE2 address before deployment,
-///      which no on-chain check can tell apart from an empty account; callers that care check
-///      deployed split wallets through the factory. Contracts that declare none of these
-///      interfaces (the release verifier, the content store, the statement log, the
-///      AccessManager, the renderer and the other dependencies) are not recognised here;
+///      never one. That includes a split vault's predicted address before deployment, which no
+///      on-chain check can tell apart from an empty account; callers that care ask the split
+///      ledger that derives it. Contracts that declare none of these interfaces (the split
+///      ledger and release verifier, the split vaults and governed vaults, the content store,
+///      the statement log, the AccessManager, the renderer and the other dependencies) are not
+///      recognised here;
 ///      callers that know one compare its address, and the runbook covers the rest.
 ///      Each ERC-165 probe forwards all the gas EIP-150 allows (`BoundedCall`), and a probe that
 ///      runs short reverts with `BoundedCall.BoundedCallShortfall`: running short never reads as

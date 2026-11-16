@@ -382,6 +382,15 @@ Entropy is not part of Core's mint path. Copies never get their own seeds
 
 ### 11. Artist identity and recovery
 
+(Amendment note, 15 November 2026, [ADR 0007](0007-permanence.md) and review C finding F2;
+**owner to confirm**: the registry is permanent and the consolidation source replaceable, so
+the source decides nothing for a live artist. A consolidated wallet signs a STANDARD change only
+after a year without signed activity (dormancy), the change then waits the override delay (180
+days at genesis) and records no activity, and heartbeats are the authority's alone. "Every
+change waits 7 days" below now holds for changes the authority signs, and "activity from
+established consolidated wallets" counts only as a captured wallet's cancel or contest. The
+alternative the owner may choose instead is dormancy plus 7 days.)
+
 **Registry**
 - A slim artist registry holds:
   - `artistId`;

@@ -60,7 +60,13 @@ Payment, release and recovery sequences are under
   documented bytes, not of a compiler version or metadata. Never add constructor arguments.
 - **No rescue in wallets.** Every unit in a wallet is some payee's (cumulative entitlements,
   dust below the payee count); a mute fixed payee blocks only its own share. The escrow's
-  `sweepExcess` is the one sweep, and it reaches only `balance - totalOwed`.
+  `sweepExcess` is the one sweep, and it reaches only `balance - totalOwed` of the token address
+  it names (a two-address token or a rebasing one is outside that bound, LIM-ECO-8).
+- **Payee checks read no state.** `Splits.validate` refuses an artist ID of 2^160 or more and the
+  ledger as a fixed payee; any check that read another contract could flip after a wallet's
+  address was paid and leave it undeployable, so none is added there.
+- **Governed vaults move NFTs by safe transfer** (a destination that cannot hold them refuses),
+  and the escrow refuses a vault's recovery consent once its destination has changed (ECO-41).
 - **Withdrawals never read the allowlist**, so a deprecated or never-admitted asset stays
   withdrawable (ECO-25); keep the allowlist out of the wallet and escrow.
 - **Only a wallet release (and the escrow sweep and a governed vault's forward) accepts a

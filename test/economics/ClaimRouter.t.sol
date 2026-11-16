@@ -270,7 +270,7 @@ contract ClaimRouterTest is EconomicsBase {
         for (uint256 i; i < 20; ++i) {
             token.mint(wallets[i], (i + 1) * D);
         }
-        uint256[] memory amounts = router.claim{ gas: 16_000_000 }(claims, true);
+        uint256[] memory amounts = router.claim{ gas: 16_000_000 }(claims, false);
         uint256 total;
         for (uint256 i; i < 20; ++i) {
             assertEq(amounts[i], (i + 1) * (D - 1));
@@ -308,6 +308,52 @@ contract ClaimRouterTest is EconomicsBase {
         IClaimRouter.Claim[] memory tooMany = new IClaimRouter.Claim[](max + 1);
         vm.expectRevert(abi.encodeWithSelector(IClaimRouter.TooManyClaims.selector, max + 1));
         router.claim(tooMany, true);
+    }
+
+    /// @dev Review C F5: continue mode carries at most 8 items, so the first item can be offered
+    ///      the ceiling within the EIP-7825 cap. Nine are refused; with eight, a gas-burning
+    ///      co-payee in the first item is skipped at a 2^24 transaction gas limit (intrinsic and
+    ///      calldata gas taken off) and the seven other releases are paid. Fails without the
+    ///      change: nine items are accepted, and from eleven no includable limit lets the first
+    ///      item reach the ceiling.
+    function test_ContinueModeBoundKeepsTheCeilingWithinTheTransactionCap() public {
+        assertEq(router.MAX_CONTINUE_CLAIMS(), 8);
+        assertLe((router.MAX_CONTINUE_CLAIMS() + 1) * router.SHORTFALL_REVERT_CEILING(), 16_777_216);
+        ArmablePayee payee = new ArmablePayee();
+        payee.arm(true);
+        IClaimRouter.Claim[] memory claims = new IClaimRouter.Claim[](9);
+        address shared = _wallet(_list(_fixed(address(payee), 50_000), _fixed(bob, 50_000)));
+        vm.deal(address(shared), 1 ether);
+        claims[0] = _claim(shared, ETH, _indexOf(shared, address(payee)));
+        for (uint256 i = 1; i < 9; ++i) {
+            address s = _wallet(_list(_fixed(alice, D)), bytes32(i));
+            vm.deal(address(s), 1 ether);
+            claims[i] = _claim(s, ETH, 0);
+        }
+        vm.expectRevert(abi.encodeWithSelector(IClaimRouter.TooManyClaims.selector, 9));
+        router.claim(claims, true);
+        IReleaseVerifier.Authorization memory a;
+        IClaimRouter.SignedClaim[] memory signed = new IClaimRouter.SignedClaim[](9);
+        for (uint256 i; i < 9; ++i) {
+            signed[i] = IClaimRouter.SignedClaim(a, "", claims[i].payees, claims[i].salt);
+        }
+        vm.expectRevert(abi.encodeWithSelector(IClaimRouter.TooManyClaims.selector, 9));
+        router.claimSigned(signed, true);
+
+        assembly ("memory-safe") {
+            mstore(claims, 8)
+        }
+        bytes memory input = abi.encodeCall(IClaimRouter.claim, (claims, true));
+        uint256 intrinsic = 21_000;
+        for (uint256 i; i < input.length; ++i) {
+            intrinsic += input[i] == 0 ? 4 : 16;
+        }
+        uint256[] memory amounts = router.claim{ gas: 16_777_216 - intrinsic }(claims, true);
+        assertEq(amounts[0], 0, "the burner is skipped");
+        for (uint256 i = 1; i < 8; ++i) {
+            assertEq(amounts[i], 1 ether);
+        }
+        assertEq(alice.balance, 7 ether);
     }
 
     /// @dev Pins the per-item gas floors: a signed item adds the verifier's capped ERC-1271 check
@@ -716,26 +762,26 @@ contract ClaimRouterTest is EconomicsBase {
 
     /// @dev Review L-1 regression (the reviewer's PoC): a fixed co-payee arms a gas-burning
     ///      `receive` after the keeper estimated. Offered at least the ceiling, its item is
-    ///      skipped and the ten unrelated releases in the batch are paid; the batch's own
+    ///      skipped and the seven unrelated releases in the batch are paid; the batch's own
     ///      estimate does the same. Below the ceiling it still reverts the batch: the documented
     ///      residual that keepers handle by simulating privately and splitting batches.
     function test_ArmedCoPayeeIsSkippedOnceItsItemGetsTheCeiling() public {
         ArmablePayee payee = new ArmablePayee();
-        IClaimRouter.Claim[] memory claims = new IClaimRouter.Claim[](11);
-        for (uint256 i; i < 10; ++i) {
+        IClaimRouter.Claim[] memory claims = new IClaimRouter.Claim[](8);
+        for (uint256 i; i < 7; ++i) {
             address s = _wallet(_list(_fixed(alice, D)), bytes32(i + 1));
             vm.deal(address(s), 1 ether);
             claims[i] = _claim(s, ETH, 0);
         }
         address shared = _wallet(_list(_fixed(address(payee), 50_000), _fixed(bob, 50_000)));
         vm.deal(address(shared), 1 ether);
-        claims[10] = _claim(shared, ETH, _indexOf(shared, address(payee)));
+        claims[7] = _claim(shared, ETH, _indexOf(shared, address(payee)));
         bytes memory input = abi.encodeCall(IClaimRouter.claim, (claims, true));
 
         // Unarmed, the keeper's estimate pays every item.
         uint256 snap = vm.snapshotState();
         (uint256 unarmedEstimate, bytes memory output) = _estimate(input);
-        assertEq(abi.decode(output, (uint256[]))[10], 0.5 ether);
+        assertEq(abi.decode(output, (uint256[]))[7], 0.5 ether);
         vm.revertToStateAndDelete(snap);
 
         payee.arm(true);
@@ -749,16 +795,16 @@ contract ClaimRouterTest is EconomicsBase {
         // With 5M, the armed item is offered more than the ceiling: skipped, the rest paid.
         snap = vm.snapshotState();
         uint256[] memory amounts = router.claim{ gas: 5_000_000 }(claims, true);
-        assertEq(amounts[10], 0);
-        assertEq(alice.balance, 10 ether, "ten unrelated releases paid");
+        assertEq(amounts[7], 0);
+        assertEq(alice.balance, 7 ether, "seven unrelated releases paid");
         assertEq(address(payee).balance, 0);
         vm.revertToStateAndDelete(snap);
 
         // Re-estimated with the item armed, the batch settles where the item is skipped.
         (, output) = _estimate(input);
         amounts = abi.decode(output, (uint256[]));
-        assertEq(amounts[10], 0);
-        assertEq(alice.balance, 10 ether);
+        assertEq(amounts[7], 0);
+        assertEq(alice.balance, 7 ether);
     }
 
     /// @dev An item that fails after spending most of its gas, but not all but the 1/64

@@ -14,6 +14,13 @@ import { Limits } from "src/interfaces/types/Limits.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { License, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 
+/// @dev An entropy module that has not delivered a seed: `seedOf` reverts.
+contract SeedNotDeliveredMock {
+    function seedOf(bytes32) external pure returns (bytes32) {
+        revert("seed not delivered");
+    }
+}
+
 /// @dev Metadata, record handling, escaping and failure behaviour of the renderer; the media
 ///      rules are in `RendererMedia.t.sol`.
 contract RendererTest is RendererBase {
@@ -167,6 +174,26 @@ contract RendererTest is RendererBase {
         stream.setWork(ID, core);
         records.setSeed(ID, SeedPolicy.VRF, bytes32(uint256(0xdef)));
         assertEq(_attr(_out(), "Seed"), vm.toString(bytes32(uint256(0xdef))));
+    }
+
+    /// @dev Review B L4: a VRF work whose seed is not delivered yet (the entropy module refuses)
+    ///      gets core-only metadata without a seed, never a revert; once delivered, the seed shows.
+    function test_CoreOnly_AVrfWorkAwaitingItsSeed() public {
+        bytes32 file = _file(png, IDENTITY, "image/png");
+        _install(file);
+        IStreamViews.WorkCore memory core = _core();
+        core.seedPolicy = uint8(SeedPolicy.VRF);
+        stream.setWork(ID, core);
+        SeedNotDeliveredMock pending = new SeedNotDeliveredMock();
+        stream.setEntropyModule(address(pending));
+        _setOpen(false);
+        string memory j = _out();
+        assertEq(_str(j, ".record_status"), "not_open");
+        assertFalse(_hasAttr(j, "Seed"));
+        RendererEntropyMock entropy = new RendererEntropyMock();
+        entropy.set(core.itemHash, bytes32(uint256(0xfeed)));
+        stream.setEntropyModule(address(entropy));
+        assertEq(_attr(_out(), "Seed"), vm.toString(bytes32(uint256(0xfeed))));
     }
 
     /// @dev Decision E9: until `openRecord` has run every view of the satellite reverts, and the
@@ -356,8 +383,8 @@ contract RendererTest is RendererBase {
         core.collectionId = 1;
         stream.setWork(ID, core);
         stream.setCollection(1, IStreamViews.Collection(bad, bytes32(0), 1));
-        vm.expectRevert(IRenderer.RendererInvalidUtf8.selector);
-        renderer.tokenURI(address(stream), ID);
+        // A collection name is read from Stream's storage; one that is not UTF-8 is no name.
+        assertEq(_attr(_out(), "Collection"), "");
 
         // A locator is read only when the file is not inlined.
         bytes32 big = _file(_data(THRESHOLD + 1, 1), IDENTITY, "image/png");
@@ -655,7 +682,7 @@ contract RendererTest is RendererBase {
         records.setSeed(ID, SeedPolicy.ARTIST, bytes32(uint256(1)));
         renderer.tokenURI(address(stream), ID); // the baseline works
 
-        bytes4[2] memory onStream = [IStreamViews.work.selector, IStreamViews.collection.selector];
+        bytes4[2] memory onStream = [IStream.coreOf.selector, IStream.extsload.selector];
         for (uint256 i; i < onStream.length; ++i) {
             stream.fail(onStream[i], true);
             vm.expectRevert(
@@ -688,17 +715,17 @@ contract RendererTest is RendererBase {
     function test_FailsClosed_NotAToken() public {
         vm.expectRevert(
             abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector, address(0xdead), IStreamViews.work.selector
+                IRenderer.RendererReadFailed.selector, address(0xdead), IStream.coreOf.selector
             )
         );
         renderer.tokenURI(address(0xdead), 1);
     }
 
     function test_FailsClosed_ABurnedOrUnknownToken() public {
-        stream.fail(IStreamViews.work.selector, true); // `UnknownWork` in the real Stream
+        stream.fail(IStream.coreOf.selector, true); // `UnknownWork` in the real Stream
         vm.expectRevert(
             abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector, address(stream), IStreamViews.work.selector
+                IRenderer.RendererReadFailed.selector, address(stream), IStream.coreOf.selector
             )
         );
         renderer.tokenURI(address(stream), ID);

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
-import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
+import { IArtistRegistry, IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
 import {
     ArtistIdentity,
     ChangeKind,
@@ -22,6 +22,7 @@ import {
     FederationRegistryStub,
     SplitFactoryWalletsMock
 } from "../mocks/identity/IdentityWorksMocks.sol";
+import { EveryoneEstablishedSource } from "../mocks/identity/PermanenceMocks.sol";
 import { StreamMock } from "../mocks/stream/StreamMock.sol";
 
 /// @notice Stateful invariants for the artist registry (ADR 0001 section 11). The handler stages,
@@ -63,6 +64,11 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
             canonical: [false, false, true, true, true, true, false, false],
             installable: [true, true, true, true, true, true, false, false]
         });
+        address[] memory named = new address[](4);
+        (named[0], named[1], named[2], named[3]) =
+        (vm.addr(artistKey), vm.addr(walletKey), vm.addr(newKey), vm.addr(thiefKey));
+        IConsolidationSource hostile =
+            IConsolidationSource(address(new EveryoneEstablishedSource(named)));
         handler = new ArtistRegistryHandler(
             IdentityActors({
                 registry: registry,
@@ -70,6 +76,7 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
                 delegation: delegation,
                 factory: factory,
                 outcomes: outcomes,
+                hostile: hostile,
                 artistId: artistId,
                 guardian: guardian,
                 governor: governor,
@@ -131,6 +138,18 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
         assertEq(registry.changeNonce(artistId), handler.ghostNonce());
     }
 
+    /// @dev Review C, F2: the consolidation source, however hostile (the handler swaps in one
+    ///      that names every wallet), never acts for a live artist: no wallet-signed change is
+    ///      staged while the artist had signed activity within the dormancy period, and a pending
+    ///      wallet-signed change waits at least the override delay's floor (180 days).
+    function invariant_ASourceNeverActsForALiveArtist() public view {
+        assertEq(handler.walletStagedWhileLive(), 0);
+        PendingChange memory p = registry.pendingChange(artistId);
+        if (p.kind == ChangeKind.STANDARD && handler.ghostWalletStaged()) {
+            assertGe(p.executableAt - p.stagedAt, 180 days);
+        }
+    }
+
     /// @dev A pending change is well formed, and its captured cancellers never change.
     function invariant_PendingChangeIsWellFormed() public view {
         PendingChange memory p = registry.pendingChange(artistId);
@@ -167,6 +186,23 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
         assertEq(handler.contested(), 2);
         assertEq(handler.resolved(), 1);
         assertEq(handler.lapsed(), 1);
+    }
+
+    /// @dev The handler's hostile-source path works end to end: with a source that names every
+    ///      wallet, the thief's key cannot stage for the live artist, then stages once the artist
+    ///      is dormant, and its change waits the override delay.
+    function test_HandlerReachesAWalletStagingUnderTheHostileSource() public {
+        handler.toggleSource();
+        handler.stageStandard(3, 3, 0); // live: refused with NotDormant, as predicted
+        assertEq(handler.walletStagings(), 0);
+        handler.warp(200 days);
+        handler.warp(200 days);
+        handler.stageStandard(3, 3, 0);
+        assertEq(handler.walletStagings(), 1);
+        PendingChange memory p = registry.pendingChange(artistId);
+        assertEq(p.executableAt - p.stagedAt, 180 days);
+        handler.toggleSource();
+        assertFalse(handler.hostileInstalled());
     }
 
     /// Regression: IDENTITY-2 (docs/security/internal-review-2026-10.md)

@@ -16,10 +16,22 @@ import { ArtistIdentity, ChangeKind, PendingChange, Standing } from "./types/Ide
 ///      payout. A 6529-chain source replaces it through a 30-day governed swap. A source must
 ///      fail closed: when it cannot read its data, it reverts with {DelegationReadFailed}
 ///      instead of answering "not consolidated", which would strip recorded standing.
+///
+///      Gas convention: a source that was given too little gas by its caller must say so,
+///      by running out of gas itself or by reverting with `BoundedCall.BoundedCallInsufficientGas`
+///      or `BoundedCall.BoundedCallShortfall`. The artist registry rethrows those two errors on
+///      every refresh, best-effort or not, so a submitter's gas limit can never turn a refresh
+///      into a skip. Any other revert is the source failing, which a best-effort refresh skips.
+///
+///      Trust: the source decides which wallets gain standing (cancellers of later changes,
+///      contestants of overrides) and which wallets may sign a STANDARD change for a dormant
+///      artist. It decides nothing for a live artist: only the authority signs a live artist's
+///      changes and heartbeats.
 interface IConsolidationSource is IERC165 {
     /// @notice A read of the underlying data failed for a reason other than its end (out of
-    ///         gas, a revert with data, or oversized return data). The artist registry skips a
-    ///         registration's or an execution's standing refresh on it, and reverts elsewhere.
+    ///         gas within its own stipend, a revert with data, or oversized return data). A
+    ///         best-effort refresh of the artist registry skips on it; `refreshStanding` and a
+    ///         consolidated wallet's signer check revert.
     error DelegationReadFailed(address delegation);
 
     /// @notice `account`'s established consolidated wallets, at most `Limits.MAX_CANCELLERS`.
@@ -71,10 +83,13 @@ interface IConsolidationSource is IERC165 {
 ///      authority for the artist (`reservedFor`) until the change executes or ends, so neither
 ///      `register` (a package acceptance) nor another artist's change can take it meanwhile
 ///      (`AccountTaken`):
-///      - STANDARD changes are staged by the authority or an established consolidated wallet,
-///        wait the change delay (7 days at genesis), and may be cancelled by the previous
-///        authority or any consolidated wallet captured at staging, or vetoed by the guardian
-///        (which blocks but never redirects);
+///      - STANDARD changes are signed by the authority and wait the change delay (7 days at
+///        genesis); or, only for a dormant artist (no signed activity for the dormancy period),
+///        by an established consolidated wallet, and then wait the override delay (180 days at
+///        genesis) and record no activity. Either may be cancelled by the previous authority or
+///        any consolidated wallet captured at staging, or vetoed by the guardian (which blocks
+///        but never redirects). The consolidation source is replaceable, so it never decides
+///        anything for a live artist;
 ///      - overrides (CONTESTED, ESTATE, LOST_KEY) are staged by a governed network action with
 ///        a public notice (180 days at genesis); ESTATE and LOST_KEY, and any override that moves
 ///        the payout but keeps the authority, need the dormancy period (a year at genesis)
@@ -109,9 +124,9 @@ interface IConsolidationSource is IERC165 {
 ///      one refresh any time after consolidating suffices (a consolidation revoked before its 30
 ///      days never had standing to strip).
 ///      Dormancy counts the artist's own activity only: registration (the first package
-///      acceptance), a staged change, a heartbeat, a cancellation by the old key or a captured
-///      wallet, a nonce revocation, and a change's execution. Governed overrides and guardian
-///      vetoes never count.
+///      acceptance), a change the authority signed, the authority's heartbeat, a cancellation by
+///      the old key or a captured wallet, a nonce revocation, and a change's execution. Governed
+///      overrides, guardian vetoes and changes signed by a consolidated wallet never count.
 ///
 ///      `isArtist(token, id, account)` is true when `account` is the active authority
 ///      (`activeAuthorityOf`) of the lead artist of 6529 Stream work `id`, or of the master of
@@ -197,7 +212,8 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @notice The consolidation source changed.
     /// @param previous The source before the change (zero at deployment).
     /// @param next The source after the change.
-    event ConsolidationSourceSet(address previous, address next);
+    /// @param codeHash The reviewed code hash pinned for `next` (`consolidationSourceCodeHash`).
+    event ConsolidationSourceSet(address previous, address next, bytes32 codeHash);
     /// @notice Governance replaced the package registry, the only `register` caller
     ///         (`setPackageRegistry`), with Stream's (owner decision 16).
     /// @param previous The package registry before.
@@ -263,8 +279,10 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @param timer The wait.
     /// @param value Its value in seconds, for changes staged and refreshes made from now on.
     event TimerSet(Timer indexed timer, uint48 value);
-    /// @notice A consolidated wallet was recorded (or found consolidated again); it has standing
-    ///         from `effectiveAt`.
+    /// @notice A consolidated wallet was recorded, found consolidated again, or its
+    ///         `effectiveAt` changed (a pending entry following its live clock, an established
+    ///         one moving earlier); it has standing from `effectiveAt`. The latest event for a
+    ///         wallet gives its entry, until `StandingMissing` or `StandingRemoved`.
     /// @param artistId The artist whose standing snapshot changed.
     /// @param wallet The consolidated wallet.
     /// @param effectiveAt The Unix time in seconds from which the wallet has standing.
@@ -406,9 +424,12 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
         uint64 deadline,
         bytes calldata signature
     ) external returns (uint256 artistId);
-    /// @notice Stages a STANDARD change signed by `signer` (the current authority or an
-    ///         established consolidated wallet that was never an authority of this artist) as
-    ///         `Typehashes.IDENTITY_CHANGE`.
+    /// @notice Stages a STANDARD change signed by `signer` as `Typehashes.IDENTITY_CHANGE`.
+    ///         `signer` is the current authority (the change records activity and waits the
+    ///         change delay), or, only while the artist is dormant (`NotDormant` otherwise, checked
+    ///         before the consolidation source is read), an established consolidated wallet that
+    ///         was never an authority of this artist (the change records no activity and waits
+    ///         the override delay; `NotAuthorized` if the source does not name it).
     ///         `authorityAcceptance` is the new authority's signature over the same payload when
     ///         the authority changes, empty otherwise. Captures the cancellers.
     /// @param artistId The artist to change.
@@ -490,8 +511,8 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     ///         is skipped (`StandingRefreshSkipped`).
     /// @param artistId The artist whose due change is applied.
     function executeChange(uint256 artistId) external;
-    /// @notice Records signed activity. Callable by the authority or an established consolidated
-    ///         wallet that was never an authority of this artist. Never on the auction-start path.
+    /// @notice Records signed activity. The current authority only (`NotAuthorized`). Never on
+    ///         the auction-start path.
     /// @param artistId The artist whose activity is recorded; its standing is refreshed too.
     function heartbeat(uint256 artistId) external;
     /// @notice The authority burns its current change nonce, so a change it pre-signed can never
@@ -594,9 +615,9 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @return The source the registry reads consolidations from.
     function consolidationSource() external view returns (IConsolidationSource);
     /// @notice The code hash pinned when the consolidation source was installed, re-checked at
-    ///         every use. On a mismatch, staging, heartbeats and `refreshStanding` revert with
-    ///         `Dependency.DependencyCodeChanged`; registration and execution skip their standing
-    ///         refresh (`StandingRefreshSkipped`), trusting nothing from the changed source.
+    ///         every use. On a mismatch, `refreshStanding` and a consolidated wallet's signer
+    ///         check revert with `Dependency.DependencyCodeChanged`; every other refresh skips
+    ///         (`StandingRefreshSkipped`), trusting nothing from the changed source.
     /// @return The pinned code hash.
     function consolidationSourceCodeHash() external view returns (bytes32);
     /// @notice A token's federation directory entry: its artist and status (NONE if never

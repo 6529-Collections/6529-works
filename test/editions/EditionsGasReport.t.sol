@@ -18,7 +18,9 @@ import { IntegrationBase } from "../integration/IntegrationBase.sol";
 ///      edition to the auction, in the word it already writes.
 contract EditionsGasReport is IntegrationBase {
     /// @dev Regression ceilings, with headroom over the measured values.
-    uint256 internal constant CREATE_CEILING = 273_000;
+    /// @dev From 273,000: no package proof or mint-policy claim since review A, M-1 (measured
+    ///      213,156, plus 2%).
+    uint256 internal constant CREATE_CEILING = 218_000;
     uint256 internal constant MINT_CEILING = 74_000;
     uint256 internal constant SEAL_CEILING = 40_000;
 
@@ -43,17 +45,14 @@ contract EditionsGasReport is IntegrationBase {
             (uint256 saleId, uint256 tokenId) = _start(root, works, i);
             _ethBid(saleId, makeAddr(string.concat("gasCollector", vm.toString(i))), 1 ether);
             _settleAtEnd(saleId);
-            if (i == 0) editions.createEdition(tokenId, works[i].item, root, _proofOf(works, i));
+            if (i == 0) editions.createEdition(tokenId, works[i].item);
             else workId = tokenId;
         }
     }
 
     function _createData() internal view returns (bytes memory) {
         Work[] memory works = _package(root);
-        return
-            abi.encodeCall(
-                editions.createEdition, (workId, works[1].item, root, _proofOf(works, 1))
-            );
+        return abi.encodeCall(editions.createEdition, (workId, works[1].item));
     }
 
     function _mintData(address to) internal view returns (bytes memory) {
@@ -72,7 +71,7 @@ contract EditionsGasReport is IntegrationBase {
 
     function test_Gas_MintFirstAndLaterCopy() public {
         Work[] memory works = _package(root);
-        editions.createEdition(workId, works[1].item, root, _proofOf(works, 1));
+        editions.createEdition(workId, works[1].item);
         (uint256 total, uint256 execution) =
             _measure(address(editionAuction), address(editions), _mintData(makeAddr("buyer1")), 0);
         _row("mint, first copy of the edition (new holder)", total, execution);
@@ -88,7 +87,7 @@ contract EditionsGasReport is IntegrationBase {
     ///      words, both written already, so no new slot.
     function test_Gas_SealSupply() public {
         Work[] memory works = _package(root);
-        editions.createEdition(workId, works[1].item, root, _proofOf(works, 1));
+        editions.createEdition(workId, works[1].item);
         _measure(address(editionAuction), address(editions), _mintData(makeAddr("buyer1")), 0);
         (uint256 total, uint256 execution) = _measure(
             address(editionAuction),

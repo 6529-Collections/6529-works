@@ -10,7 +10,7 @@ at the auction start, and how 6529 Stream Editions claims a master's content. Th
 
 | File | What it is |
 | --- | --- |
-| `PackageRegistry.sol` | Package roots and their status, party acceptances (and identity creation), move signatures and nonces, consume-once and content uniqueness for Stream, the Editions content claim, the post-dispute content release, the verifier swap. Implements [`IPackageRegistry`](../interfaces/IPackageRegistry.sol) and, as 6529 Stream's v1 mint policy, [`IMintPolicy`](../interfaces/IMintPolicy.sol): the Stream item rules, the VRF delivery check and the terms quote run here too. |
+| `PackageRegistry.sol` | Package roots and their status, party acceptances (and identity creation), move signatures and nonces, consume-once checks for Stream (Stream holds content uniqueness and releases), the verifier swap. Implements [`IPackageRegistry`](../interfaces/IPackageRegistry.sol) and, as 6529 Stream's v1 mint policy, [`IMintPolicy`](../interfaces/IMintPolicy.sol): the Stream item rules, the VRF delivery check and the terms quote run here too. |
 | `Eip712CurationVerifier.sol` | The v1 [`ICurationVerifier`](../interfaces/ICurationVerifier.sol): an EIP-712 `PackageApproval` by an active `CURATION_SIGNER` over its current signer epoch; the guardian's one-way `disableSigner` and the governed `enableSigner`. |
 
 Item hashes and leaves come from [`WorksHashing`](../interfaces/types/WorksHashing.sol), type
@@ -25,11 +25,10 @@ strings from [`Typehashes`](../interfaces/types/Typehashes.sol), edition-terms v
 | Anyone, relaying a party's signature | `acceptPackage(root, acceptance, signature)`; the first acceptance of an account calls `ArtistRegistry.register` | CUR-7, CUR-19 |
 | The artist's active authority | `revokeMove(artistId, nonce)` | CUR-11 |
 | The bound Stream, inside `mint` | `authorize(context, request)` at the auction start (item rules, the private `_consume`, the quote; AUC-38) | CUR-1, CUR-6, CUR-8 to CUR-10, CUR-12, CUR-14 |
-| The bound Editions | `claimContent(contentHash, itemHash)` | CUR-13 |
 | The entropy module (views) | `packageOf`, `consumedItemOf` for its request gate | ENT-1 in [Entropy](../../docs/spec/entropy.md#rules-and-invariants) |
 | Governance | `revokePackage`, `setVerifier`, `disableSigner`, `enableSigner`; the genesis binds `bindStream`, `bindEditions` | CUR-15 to CUR-18; [role matrix](../../docs/audit/roles.md#packageregistry) |
 
-The call sequences (approve and register, acceptance, move and start, content claim, release)
+The call sequences (approve and register, acceptance, move and start, release)
 are under [Flows](../../docs/spec/curation.md#flows).
 
 ## Developer notes
@@ -40,8 +39,9 @@ are under [Flows](../../docs/spec/curation.md#flows).
   permanent contracts decode any value; this policy refuses, for a new item, any kind, seed
   policy or party role it does not know (`InvalidItem`, `InvalidSeedPolicy`; CUR-9). A successor
   policy may accept new values.
-  Editions claims live here (`_editionItems`), checked against Stream's record, so the linked
-  pair is the one cross-product reuse of a content hash.
+- **No edition record.** Editions decides an edition from Stream's permanent record alone
+  (ED-1, ED-3; review A, M-1), so a replacement policy can never strand a settled master's
+  edition; `bindEditions` is kept for the genesis wiring and is informational.
 - **Start-path budget.** `authorize` runs inside every auction start, so it is held to its
   [ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table) row (one new slot,
   a regression ceiling). Its external calls are the lead artist's `activeAuthorityOf`, the

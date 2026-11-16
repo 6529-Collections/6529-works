@@ -24,6 +24,7 @@ contract SplitsSymbolicTest is Test {
         view
     {
         vm.assume(seller != address(0) && feeRecipient != address(0) && seller != feeRecipient);
+        vm.assume(seller != address(this) && feeRecipient != address(this));
         vm.assume(feeShare != 0 && feeShare < D);
         ISplitWallet.Payee[] memory payees = Splits.royaltyPayees(seller, feeRecipient, feeShare);
         try this.validate(payees) { }
@@ -40,7 +41,7 @@ contract SplitsSymbolicTest is Test {
     }
 
     /// @dev External so a revert in `validate` can be caught and turned into a failure.
-    function validate(ISplitWallet.Payee[] calldata payees) external pure {
+    function validate(ISplitWallet.Payee[] calldata payees) external view {
         Splits.validate(payees);
     }
 
@@ -53,12 +54,14 @@ contract SplitsSymbolicTest is Test {
     }
 
     /// @dev The rule as written in `Splits.validate`'s NatSpec, payee by payee.
-    function _canonical(ISplitWallet.Payee[] memory p) internal pure returns (bool) {
+    function _canonical(ISplitWallet.Payee[] memory p) internal view returns (bool) {
         uint256 total;
         for (uint256 i; i < p.length; ++i) {
             bool artist = p[i].artistId != 0;
             bool fixedPayee = p[i].account != address(0);
             if (artist == fixedPayee || p[i].share == 0) return false;
+            // Never payable: an ID no account can have, or the calling contract itself.
+            if (p[i].artistId >> 160 != 0 || p[i].account == address(this)) return false;
             if (i != 0) {
                 (uint256 a0, address x0) = (p[i - 1].artistId, p[i - 1].account);
                 (uint256 a1, address x1) = (p[i].artistId, p[i].account);
@@ -72,7 +75,8 @@ contract SplitsSymbolicTest is Test {
     /// @notice `validate` accepts a list of one, two or three payees exactly when it is
     ///         canonical: each payee fixed or artist-resolved (never both, never neither) with a
     ///         non-zero share, strictly ascending by `(artistId, account)`, shares summing to the
-    ///         denominator. Every field of every payee is symbolic; longer lists are fuzzed.
+    ///         denominator, no artist ID of 2^160 or more and no fixed payee equal to the calling
+    ///         contract. Every field of every payee is symbolic; longer lists are fuzzed.
     function check_validate_acceptsExactlyTheCanonicalLists(
         ISplitWallet.Payee memory a,
         ISplitWallet.Payee memory b,

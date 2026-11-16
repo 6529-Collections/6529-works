@@ -97,7 +97,7 @@ abstract contract EditionAuctionStack is IntegrationBase {
     function _settleOneOfOneAndCreate(uint256 oneSaleId, bytes32 root, Work memory w) internal {
         _settleAtEnd(oneSaleId);
         uint256 tokenId = auction.auction(oneSaleId).tokenId;
-        editions.createEdition(tokenId, w.item, root, _proofOf(_one(w), 0));
+        editions.createEdition(tokenId, w.item);
     }
 
     /// @dev Warps to the edition close and settles with the lens's order.

@@ -41,8 +41,16 @@ import { VerifyV1 } from "./VerifyV1.sol";
 ///            off anvil that digest must be the pinned canonical one.
 ///         4. The manifest file (`MANIFEST_PATH`, by default the recorded path) hashes to the
 ///            recorded manifest digest; required off anvil. The economics resolver's museum is
-///            the recorded one (`VerifyV1.checkMuseum`; genesis readback, so a later 14-day
-///            FUNDS_SETTER change fails it, as a later default-currency change fails check 6).
+///            the recorded one (`VerifyV1.checkMuseum`), every product's network fee recipient
+///            is the fee vault, which forwards to the recorded fee recipient, and both tokens'
+///            marketplace owner is the recorded one (`VerifyV1.checkRecipients`). Genesis
+///            readback, so a later governed change fails them, as a later default-currency
+///            change fails check 6. Whether the recorded recipients are the intended ones is
+///            for a human to confirm against the signed manifest; no check here can.
+///            Outside epoch mode, the manager's parameters are their compiled defaults, no
+///            recovery address and no successor is registered, its governance chain holds only
+///            the epoch-0 manifest, and both sales run the recorded configuration
+///            (`VerifyV1.checkGenesisState`).
 ///         5. Off anvil, the genesis file still matches the committed policy and names nothing
 ///            the deployment lacks, and its holders pass the deploy's holder guards against the
 ///            chain as it is now: Safes, signer separation, no deployment contract
@@ -156,6 +164,12 @@ contract Verify is ScriptIO {
         _checkCc0(d, record, local);
         DeployV1.Manifest memory manifest = _checkManifest(record, local);
         VerifyV1.checkMuseum(d, _address(record, "museum"));
+        VerifyV1.checkRecipients(
+            d, _address(record, "networkFeeRecipient"), _address(record, "marketOwner")
+        );
+        if (bytes(_env("GOVERNANCE_CONFIG")).length == 0) {
+            VerifyV1.checkGenesisState(d, paramsOf(record));
+        }
 
         string memory genesis = _read(vm.parseJsonString(record, ".genesisConfig"));
         GovernanceConfig.Config memory cfg = DeployV1.config(d, _currentConfig(genesis));

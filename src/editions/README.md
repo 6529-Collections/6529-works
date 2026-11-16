@@ -21,7 +21,7 @@ auction).
 
 | Caller | Calls | Rules |
 | --- | --- | --- |
-| Anyone | `createEdition(workId, item, packageRoot, proof)`: proves the master's exact item under a registered root, locks the `PRODUCT_EDITIONS` economics, claims the content hash and links both sides | ED-1 to ED-4, ED-7 |
+| Anyone | `createEdition(workId, item)`: checks the master's exact stored item and Stream's content record (permanent facts only, never the mint policy), locks the `PRODUCT_EDITIONS` economics and links both sides | ED-1 to ED-4, ED-7 |
 | Admitted sale adapters | `bindMinter` when a sale opens (before the edition exists if need be), `mint` with `abi.encode(currency, unitPrice)`, `sealSupply` when the sale settles (the bound adapter, even if removed), `burn`, `settlePrimary` (a no-op); `primaryTerms` (view) when opening a sale | ED-5, ED-6, ED-8, ED-25, ED-26 |
 | The bound `WorkRecords` | `setRoyaltyRate` (with the master's re-rate), `notifyMasterUpdated`; `notifyAllUpdated` (also from Stream) | ED-7 |
 | Governance | `setAdmittedMinter`, `setContractURI`, `setOwner`; the genesis bind `bindWorkRecords` | [Role matrix: Editions](../../docs/audit/roles.md#editions) |
@@ -68,7 +68,7 @@ The create flow, with every check in order, is under
   they name `CURRENCY_DEFAULT`; the price is the adapter's report (a governed, slow-path
   admission), which Editions cannot check. With `EditionTermsLocked` at creation (ED-27), the
   logs alone rebuild terms, supply, holders and price history.
-- **Gas rule (ED-28).** Every call out (Stream, the package registry, the economics resolver,
+- **Gas rule (ED-28).** Every call out (Stream, the economics resolver,
   the artist registry, the work-records satellite, the renderer, an adapter's `saleKind`, a
   recipient's ERC-1155 hook) goes through `BoundedCall`'s forward-all family: a shortfall reverts
   with `BoundedCallShortfall`, a refusal with the callee's reason. The artist registry, which
@@ -84,10 +84,11 @@ The create flow, with every check in order, is under
   that `createEdition` then keeps (`_lockTerms`), so the edition reports the split its sale
   paid.
 - **Wiring.** Stream is immutable here: the constructor checks it (code, no EIP-7702
-  delegation, ERC-165 `IStream`, the reviewed code hash). The package registry, economics
-  resolver and artist registry are read from Stream on every use (`packageRegistry()`,
-  `economics()`, `artistRegistry()`), so a governed replacement there (owner decision 16)
-  reaches Editions at once. No edition exists before genesis binds `WorkRecords`
+  delegation, ERC-165 `IStream`, the reviewed code hash). The economics resolver is read from
+  Stream on every use (`economics()`), so a governed replacement there (owner decision 16)
+  reaches Editions at once; the artist registry, which Stream sets once, is read at
+  deployment. The mint policy is never read (M-1): creating an edition uses Stream's permanent
+  record only. No edition exists before genesis binds `WorkRecords`
   (`WorkRecordsUnbound`).
 - **Bytecode:** well inside EIP-170; current figures in the
   [audit scope](../../docs/audit/scope.md#products-and-sales).

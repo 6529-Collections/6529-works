@@ -63,14 +63,11 @@ contract CurationHandler is CurationHelpers {
     mapping(bytes32 itemHash => uint256) public consumeCount;
     mapping(bytes32 itemHash => bool) public released;
     mapping(bytes32 sha => bytes32) public streamItemOf;
-    mapping(bytes32 sha => bytes32) public editionItemOf;
     /// @dev The artist the latest release of each content hash named (its first account's ID).
     mapping(bytes32 sha => uint256) public releasedTo;
     bool public unexpectedSuccess;
     bool public unexpectedFailure;
-    bool public pairViolation;
     uint256 public consumed;
-    uint256 public claimed;
     uint256 public releases;
 
     constructor(
@@ -205,26 +202,6 @@ contract CurationHandler is CurationHelpers {
         }
         vm.prank(caller);
         return registry.authorize(c, request);
-    }
-
-    /// @param honest Name the item Stream consumed for the hash, rather than any item.
-    function claimEdition(uint256 shaSeed, uint256 itemSeed, bool honest, uint8 callerSeed)
-        external
-    {
-        bytes32 sha = shas[bound(shaSeed, 0, MEDIA - 1)];
-        bytes32 itemHash = honest ? streamItemOf[sha] : itemHashes[bound(itemSeed, 0, ITEMS - 1)];
-        address caller = callerSeed % 4 == 1 ? stream : editions;
-        bool expected = caller == editions && itemHash != 0 && streamItemOf[sha] == itemHash
-            && editionItemOf[sha] == 0;
-        vm.prank(caller);
-        try registry.claimContent(sha, itemHash) {
-            if (!expected) unexpectedSuccess = true;
-            if (streamItemOf[sha] != itemHash) pairViolation = true;
-            editionItemOf[sha] = itemHash;
-            ++claimed;
-        } catch {
-            if (expected) unexpectedFailure = true;
-        }
     }
 
     /// @dev Stream's dispute-burn path, honest or not, or a caller that is not Stream. The
@@ -376,16 +353,15 @@ contract PackageRegistryInvariantTest is CurationBase {
         handler = new CurationHandler(
             registry, verifier, signerKey1, artists, [stream, editions, guardian, admin]
         );
-        bytes4[] memory selectors = new bytes4[](9);
+        bytes4[] memory selectors = new bytes4[](8);
         selectors[0] = CurationHandler.consume.selector;
-        selectors[1] = CurationHandler.claimEdition.selector;
-        selectors[2] = CurationHandler.release.selector;
-        selectors[3] = CurationHandler.revokeMove.selector;
-        selectors[4] = CurationHandler.rotate.selector;
-        selectors[5] = CurationHandler.revokePackage.selector;
-        selectors[6] = CurationHandler.registerLate.selector;
-        selectors[7] = CurationHandler.acceptLate.selector;
-        selectors[8] = CurationHandler.rebind.selector;
+        selectors[1] = CurationHandler.release.selector;
+        selectors[2] = CurationHandler.revokeMove.selector;
+        selectors[3] = CurationHandler.rotate.selector;
+        selectors[4] = CurationHandler.revokePackage.selector;
+        selectors[5] = CurationHandler.registerLate.selector;
+        selectors[6] = CurationHandler.acceptLate.selector;
+        selectors[7] = CurationHandler.rebind.selector;
         targetSelector(FuzzSelector({ addr: address(handler), selectors: selectors }));
         targetContract(address(handler));
     }
@@ -417,15 +393,7 @@ contract PackageRegistryInvariantTest is CurationBase {
         for (uint256 m; m < 8; ++m) {
             bytes32 sha = handler.shas(m);
             assertEq(registry.consumedItemOf(sha), handler.streamItemOf(sha));
-            assertEq(registry.editionClaimOf(sha), handler.editionItemOf(sha));
         }
-    }
-
-    /// @dev The only cross-product reuse is the linked pair: an edition claims only a content
-    ///      hash 6529 Stream consumed, naming the item that consumed it.
-    function invariant_editionsReuseOnlyTheirMaster() public view {
-        assertFalse(handler.pairViolation());
-        assertLe(handler.claimed(), handler.consumed());
     }
 
     /// @dev Move nonces and root statuses match the model exactly.

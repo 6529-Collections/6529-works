@@ -101,6 +101,12 @@ contract FederatedEditionAuction is UniformEditionAuctionBase {
         }
     }
 
+    /// @dev A federated 1/1 has no rescue (no museum path): the floor, so `abandon` waits the
+    ///      locked delay alone.
+    function _rescueDelay() internal pure override returns (uint256) {
+        return _RESCUE_FLOOR;
+    }
+
     /// @dev The lens's `clock`: the 1/1's, or cancelled once the registry stops serving the
     ///      sale's contract.
     function _oneOfOneClock(uint256 saleId)

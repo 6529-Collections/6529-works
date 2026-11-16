@@ -297,10 +297,13 @@ the repository root.
    python -m tools.content verify --rpc "$ETH_RPC_URL" --store $STORE $FILE_ID --require-attested
    ```
 
-6. **Mark the work on-chain complete** once every media file of the work is complete. Anyone may
-   call it, naming the store to verify against (0 is the content store) and how many chunks to
-   verify in this call; each call resumes from the cursor the last one left
-   (`OnChainSyncProgress`), so a file of any size syncs in pieces (WS-41 to WS-43):
+6. **Mark the work on-chain complete** once every media file of the work is complete. There are
+   two walks, each with its own cursor (`OnChainSyncProgress`), so neither moves the other's:
+   the content store's (store 0), which anyone may call, and an added store's, which only the
+   work's artist may call and choose. Each call names the store and how many chunks to verify,
+   and resumes from that walk's cursor, so a file of any size syncs in pieces; each file's
+   completion is logged with its store (`MediaFileComplete`, the latest per file wins), and a
+   file complete in an added store can later complete in the content store (WS-41 to WS-43):
 
    ```bash
    cast send $RECORDS "syncOnChain(uint256,uint256,uint256)" $TOKEN_ID 0 256 $SIGNER
@@ -363,7 +366,8 @@ differ from Sepolia's; re-measure there. The full figures are in the
 ## 8. Who pays, and when
 
 - **Anyone can pay, at any time, in any order.** `writeChunk`, `linkChunk`, `registerManifest`,
-  `registerManifestList`, `attestBase64` and `syncOnChain` are permissionless, and the mint never waits for them. The
+  `registerManifestList`, `attestBase64` and `syncOnChain` against the content store are
+  permissionless (an added store's walk is the artist's), and the mint never waits for them. The
   store has no payable function: gas is the only cost (WS-17, WS-29).
 - **The artist, the platform or a collector** may pay for any part. The approved record file
   should be complete before the work is shown (until then it renders core-only metadata marked

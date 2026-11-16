@@ -18,6 +18,7 @@ import { FileRole, Locator, LocatorKind, MediaFile } from "../interfaces/types/C
 import { Limits } from "../interfaces/types/Limits.sol";
 import { License, SeedPolicy } from "../interfaces/types/PackageTypes.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
+import { StreamLayout } from "../stream/StreamLayout.sol";
 import { JsonEscape } from "../libraries/JsonEscape.sol";
 import { SSTORE2 } from "../libraries/SSTORE2.sol";
 import { Utf8 } from "../libraries/Utf8.sol";
@@ -268,18 +269,67 @@ contract Renderer is IRenderer {
             c.stream = c.token;
             c.workId = c.id;
         }
-        c.core = abi.decode(
-            _word(c.stream, IStreamViews.work.selector, c.workId, 288), (IStreamViews.WorkCore)
-        );
+        _native(c);
         c.records =
             abi.decode(_read(c.stream, abi.encodeCall(IStream.workRecords, ()), 32), (address));
-        if (c.core.collectionId != 0) {
-            c.collection =
-            abi.decode(
-                _word(c.stream, IStreamViews.collection.selector, c.core.collectionId, TEXT_RETURN),
-                (IStreamViews.Collection)
-            )
-            .name;
+    }
+
+    /// @dev The work's facts, read only from 6529 Stream's own code and storage, never through
+    ///      its fallback (the replaceable view extension), so no replacement there changes or
+    ///      breaks the metadata of an existing work: `coreOf` (item hash, lead artist,
+    ///      collection, seed policy), then with `extsload` the serial (the token word: seller in
+    ///      the low 160 bits, serial in the next 32) and the collection's name (the string two
+    ///      slots into its entry), at the slots `StreamLayout` publishes. Every native read of
+    ///      Stream is here.
+    function _native(Ctx memory c) private view {
+        IStreamViews.WorkCore memory w = c.core;
+        // `coreOf`: item hash, lead artist, collection, kind, seed policy, royalty rate.
+        bytes memory core = _word(c.stream, IStream.coreOf.selector, c.workId, 192);
+        if (core.length != 192) revert RendererReadFailed(c.stream, IStream.coreOf.selector);
+        bytes memory word = _slots(c, uint256(StreamLayout.tokenSlot(c.workId)), 1);
+        uint256 head;
+        assembly ("memory-safe") {
+            mstore(w, mload(add(core, 0x20)))
+            mstore(add(w, 0x20), mload(add(core, 0x40)))
+            mstore(add(w, 0x40), mload(add(core, 0x60)))
+            mstore(add(w, 0xa0), and(mload(add(core, 0xa0)), 0xff))
+            head := mload(add(word, 0x20))
+        }
+        // forge-lint: disable-next-line(unsafe-typecast)
+        w.serial = uint32(head >> 160);
+        if (w.collectionId == 0) return;
+        // Solidity's storage string: a short one in place, its length doubled in the low byte;
+        // a long one as `2 * length + 1`, its bytes from `keccak256(slot)`.
+        uint256 slot = uint256(StreamLayout.collectionSlot(w.collectionId)) + 2;
+        bytes memory name = _slots(c, slot, 1);
+        assembly ("memory-safe") {
+            head := mload(add(name, 0x20))
+        }
+        uint256 size = (head & 0xff) >> 1;
+        if (head & 1 != 0) {
+            size = head >> 1;
+            // A name over the text cap is no name.
+            if (size > TEXT_RETURN) size = 0;
+            name = _slots(c, uint256(keccak256(abi.encode(slot))), (size + 31) >> 5);
+        }
+        assembly ("memory-safe") {
+            if iszero(and(head, 1)) { mstore(add(name, 0x20), and(head, not(0xff))) }
+            mstore(name, size)
+        }
+        // A name that is not UTF-8 is no name either: the work still renders.
+        if (Utf8.isValid(name)) c.collection = string(name);
+    }
+
+    /// @dev `n` consecutive storage words of 6529 Stream from `slot` (`IStream.extsload`), as
+    ///      the `32n` bytes they hold: the answer's words, in place after its offset and count.
+    function _slots(Ctx memory c, uint256 slot, uint256 n) private view returns (bytes memory b) {
+        b = _read(c.stream, abi.encodeCall(IStream.extsload, (bytes32(slot), n)), 64 + 32 * n);
+        if (b.length != 64 + 32 * n) {
+            revert RendererReadFailed(c.stream, IStream.extsload.selector);
+        }
+        assembly ("memory-safe") {
+            b := add(b, 0x40)
+            mstore(b, shl(5, n))
         }
     }
 
@@ -526,15 +576,19 @@ contract Renderer is IRenderer {
     ///        inlined and the work has a preview, which then is the `image`;
     ///      - any other primary is the `animation_url` (inline or its locator), and the
     ///        `image` is the preview (on-chain, else its locator).
+    ///      The preview is read only when it is used, so an inlined image primary never asks
+    ///      the delivery contract for anything.
     function _media(Ctx memory c) private view returns (Media[3] memory m) {
         Media memory p = _primary(c);
-        Media memory v = _preview(c);
         if (p.mode == Mode.Locator) m[2] = p;
-        if (_isImage(c.primary.mimeType)) {
-            m[0] = p.mode >= Mode.Data || v.mode == Mode.None ? p : v;
-        } else {
-            (m[0], m[1]) = (v, p);
+        bool image = _isImage(c.primary.mimeType);
+        if (image && p.mode >= Mode.Data) {
+            m[0] = p;
+            return m;
         }
+        Media memory v = _preview(c);
+        if (image) m[0] = v.mode == Mode.None ? p : v;
+        else (m[0], m[1]) = (v, p);
     }
 
     function _primary(Ctx memory c) private view returns (Media memory m) {
@@ -621,7 +675,10 @@ contract Renderer is IRenderer {
 
     /// @dev The preferred locator of a file: its URL, or none for a file without one (the
     ///      satellite answers kind NONE) and for the implicit on-chain locator, which has no URL.
-    ///      A failed read reverts: no media is better than media that depends on a gas cap.
+    ///      The records satellite (permanent) serves a delivery contract's URI only in printable
+    ///      ASCII without `"` or `\` (WS-40), so none can make `_str` revert here, and `_str`
+    ///      escapes for JSON regardless. A failed read reverts: no media is better than media
+    ///      that depends on a gas cap.
     function _locator(Ctx memory c, bytes32 id) private view returns (Media memory m) {
         (IWorkDelivery.Location memory l,) = abi.decode(
             _read(
@@ -868,7 +925,8 @@ contract Renderer is IRenderer {
     /// @dev The seed of a seeded work, zero for none. Once the record is open the satellite has
     ///      it; before, only a VRF seed can be read, by item hash from the entropy module that
     ///      was current at the work's mint (`IStream.entropyModuleOf`; an ARTIST seed is stored
-    ///      when the record opens).
+    ///      when the record opens). That module refusing (a seed not delivered yet) is no seed,
+    ///      so core-only metadata never reverts for it; running short of gas still reverts.
     function _seed(Ctx memory c) private view returns (bytes32 seed) {
         if (c.core.seedPolicy == uint8(SeedPolicy.NONE)) return 0;
         if (c.open) {
@@ -879,10 +937,10 @@ contract Renderer is IRenderer {
             address entropy = abi.decode(
                 _word(c.stream, IStream.entropyModuleOf.selector, c.workId, 32), (address)
             );
-            seed = abi.decode(
-                _word(entropy, IEntropyModule.seedOf.selector, uint256(c.core.itemHash), 32),
-                (bytes32)
+            (bool ok, bytes memory ret) = BoundedCall.tryReadAll(
+                entropy, abi.encodeCall(IEntropyModule.seedOf, (c.core.itemHash)), 32
             );
+            if (ok && ret.length == 32) seed = bytes32(ret);
         }
     }
 

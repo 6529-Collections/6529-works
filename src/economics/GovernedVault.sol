@@ -85,7 +85,7 @@ contract GovernedVault is IGovernedVault, IERC721Receiver, IERC1155Receiver, Acc
     function forwardERC721(address token, uint256 tokenId) external {
         address to = _destination;
         emit TokenForwarded(token, tokenId, to, 1);
-        IERC721(token).transferFrom(address(this), to, tokenId);
+        IERC721(token).safeTransferFrom(address(this), to, tokenId);
     }
 
     /// @inheritdoc IGovernedVault

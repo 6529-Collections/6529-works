@@ -329,11 +329,6 @@ abstract contract CurationBase is CurationHelpers {
         return target.authorize(c, abi.encode(StreamMintRequest(root, item, proof, move)));
     }
 
-    function _claim(bytes32 contentHash, bytes32 itemHash) internal {
-        vm.prank(editions);
-        registry.claimContent(contentHash, itemHash);
-    }
-
     /// @dev Stream's dispute-burn release (held by Stream since AUC-44), on the stand-in.
     function _release(bytes32 contentHash, bytes32 itemHash, uint256 beneficiary) internal {
         StreamContentMock(stream).release(contentHash, itemHash, beneficiary, address(artists));

@@ -90,14 +90,12 @@ contract EditionsTest is EditionsBase {
     /// @dev rc.1's fixed-price label: a sale method an adapter added later may claim again.
     bytes32 internal constant FIXED_PRICE = keccak256("FIXED_PRICE");
 
-    event ContentClaimed(bytes32 indexed contentHash, bytes32 indexed itemHash);
     event EditionLinked(uint256 indexed tokenId, address indexed editions, uint256 editionId);
 
     // ------------------------------------------------------------------ deployment
 
     function test_Constructor_WiresFromStream() public view {
         assertEq(editions.stream(), address(stream));
-        assertEq(address(editions.packageRegistry()), address(registry));
         assertEq(address(editions.economics()), address(economics));
         assertEq(address(editions.artistRegistry()), address(artists));
         assertEq(editions.workRecords(), address(workRecordsMock));
@@ -169,8 +167,6 @@ contract EditionsTest is EditionsBase {
         );
         vm.expectEmit(false, false, false, true, address(editions));
         emit IEditions.MetadataUpdate(id);
-        vm.expectEmit(true, true, false, true, address(registry));
-        emit ContentClaimed(item.contentHash, itemHash);
         vm.expectEmit(true, true, false, true, address(stream));
         emit EditionLinked(id, address(editions), id);
         vm.prank(outsider); // permissionless
@@ -200,9 +196,8 @@ contract EditionsTest is EditionsBase {
         assertEq(ed.royaltyRate, 6_529);
         assertEq(ed.maxSupply, 50, "the creator's cap until the seal");
         assertFalse(ed.supplySealed);
-        // Uniqueness: Stream consumed the hash for the master, Editions claimed it for the edition.
-        assertEq(registry.consumedItemOf(item.contentHash), itemHash);
-        assertEq(registry.editionClaimOf(item.contentHash), itemHash);
+        // Uniqueness: Stream records the master's item as the one that consumed the content.
+        assertEq(stream.consumedItemOf(item.contentHash), itemHash);
     }
 
     function test_CreateEdition_RefusesOriginalItem() public {
@@ -246,17 +241,18 @@ contract EditionsTest is EditionsBase {
         _createEdition(id, item);
     }
 
-    /// @dev The registry accepts a claim only for the item Stream consumed for that content hash.
+    /// @dev M-1: an edition is created only for the item 6529 Stream records as the one that
+    ///      consumed its content (`IStream.consumedItemOf`), a permanent fact, not the mint
+    ///      policy's record. Here Stream's record names another item.
     function test_CreateEdition_RefusesHashConsumedByAnotherItem() public {
         PackageItem memory item = _item(10);
         uint256 id = _master(item);
         registry.setConsumedItem(item.contentHash, keccak256("another item"));
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IPackageRegistry.ClaimNotAllowed.selector, PRODUCT_EDITIONS, item.contentHash
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(IEditions.NotEditionMaster.selector, id));
         _createEdition(id, item);
+        registry.setConsumedItem(item.contentHash, WorksHashing.itemHash(item));
+        _createEdition(id, item);
+        assertTrue(editions.exists(id));
     }
 
     /// @dev L-1: no edition before the work-records satellite is bound, since an edition's
@@ -268,13 +264,12 @@ contract EditionsTest is EditionsBase {
         registry.bindCallers(address(stream), address(fresh));
         PackageItem memory item = _item(10);
         uint256 id = _master(item);
-        (bytes32 root, bytes32[] memory proof) = EditionsPackages.packageOf(item, 0);
         vm.expectRevert(IEditions.WorkRecordsUnbound.selector);
-        fresh.createEdition(id, item, root, proof);
+        fresh.createEdition(id, item);
         assertEq(fresh.workRecords(), address(0));
         vm.prank(admin);
         fresh.bindWorkRecords(address(workRecordsMock));
-        fresh.createEdition(id, item, root, proof);
+        fresh.createEdition(id, item);
         assertTrue(fresh.exists(id));
     }
 
@@ -312,81 +307,19 @@ contract EditionsTest is EditionsBase {
         assertTrue(editions.exists(soldId));
     }
 
-    /// Regression: SIGS-4 (docs/security/internal-review-2026-10.md)
-    /// @dev The caller proves the item in a package root the registry registered. SIGS-4: a
-    ///      revocation after the master sold no longer blocks its edition (it stops unconsumed
-    ///      items only); a root never registered, or revoked before registration, proves nothing.
-    function test_CreateEdition_RequiresARegisteredPackageProof() public {
+    /// Regression: SIGS-4 (docs/security/internal-review-2026-10.md); M-1 of review A
+    /// @dev No package proof and no registry read: the item hash Stream stored at mint, after
+    ///      the mint policy of the day proved the item, authenticates it. A root revoked after
+    ///      the master sold, or never known to today's registry, cannot block its edition.
+    function test_CreateEdition_NeedsNoPackageProofOrRegistry() public {
         PackageItem memory item = _item(10);
         uint256 id = _master(item);
-        (bytes32 root, bytes32[] memory proof) = EditionsPackages.packageOf(item, 0);
-        bytes memory notMaster = abi.encodeWithSelector(IEditions.NotEditionMaster.selector, id);
-
-        vm.expectRevert(notMaster);
-        editions.createEdition(id, item, root, new bytes32[](0)); // no proof
-        bytes32[] memory deep = new bytes32[](Limits.MAX_PROOF_DEPTH + 1);
-        vm.expectRevert(notMaster);
-        editions.createEdition(id, item, root, deep); // deeper than any package
-        (bytes32 unknownRoot, bytes32[] memory unknownProof) = EditionsPackages.packageOf(item, 7);
-        vm.expectRevert(notMaster);
-        editions.createEdition(id, item, unknownRoot, unknownProof); // never approved
-        registry.revoke(unknownRoot);
-        vm.expectRevert(notMaster);
-        editions.createEdition(id, item, unknownRoot, unknownProof); // revoked unregistered
-
+        (bytes32 root,) = EditionsPackages.packageOf(item, 0);
         registry.revoke(root);
-        editions.createEdition(id, item, root, proof);
+        (IPackageRegistry.PackageStatus status,,) = registry.packageOf(root);
+        assertEq(uint8(status), uint8(IPackageRegistry.PackageStatus.REVOKED));
+        editions.createEdition(id, item);
         assertTrue(editions.exists(id), "revoked after the master sold: still its edition");
-    }
-
-    /// @dev A chain-shaped package puts the item `depth` levels deep, so its proof has `depth`
-    ///      nodes. At `Limits.MAX_PROOF_DEPTH` it is accepted; one level deeper it is refused even
-    ///      though the proof verifies against an approved root.
-    function test_CreateEdition_ProofDepthBounded() public {
-        uint256 max = Limits.MAX_PROOF_DEPTH;
-        PackageItem memory item = _item(5);
-        uint256 id = _master(item);
-        (bytes32 deepRoot, bytes32[] memory deepProof) = _chain(item, max + 1);
-        registry.approve(deepRoot);
-        assertTrue(
-            MerkleProof.verify(deepProof, deepRoot, WorksHashing.leaf(WorksHashing.itemHash(item))),
-            "the over-deep proof itself verifies"
-        );
-        vm.expectRevert(abi.encodeWithSelector(IEditions.NotEditionMaster.selector, id));
-        editions.createEdition(id, item, deepRoot, deepProof);
-
-        (bytes32 root, bytes32[] memory proof) = _chain(item, max);
-        registry.approve(root);
-        editions.createEdition(id, item, root, proof);
-        assertTrue(editions.exists(id));
-    }
-
-    function _chain(PackageItem memory item, uint256 depth)
-        internal
-        pure
-        returns (bytes32 node, bytes32[] memory proof)
-    {
-        node = WorksHashing.leaf(WorksHashing.itemHash(item));
-        proof = new bytes32[](depth);
-        for (uint256 i; i < depth; ++i) {
-            bytes32 sibling = keccak256(abi.encode("chain", i));
-            proof[i] = sibling;
-            node = node < sibling
-                ? keccak256(abi.encode(node, sibling))
-                : keccak256(abi.encode(sibling, node));
-        }
-    }
-
-    /// @dev An item listed in two packages passes through either registered root.
-    function test_CreateEdition_SecondApprovedPackageAdmits() public {
-        PackageItem memory item = _item(10);
-        uint256 id = _master(item);
-        (bytes32 rootA,) = EditionsPackages.packageOf(item, 0);
-        registry.revoke(rootA);
-        (bytes32 rootB, bytes32[] memory proofB) = EditionsPackages.packageOf(item, 1);
-        registry.approve(rootB);
-        editions.createEdition(id, item, rootB, proofB);
-        assertTrue(editions.exists(id));
     }
 
     function test_CreateEdition_RefusesSecondCreate() public {
@@ -474,39 +407,22 @@ contract EditionsTest is EditionsBase {
         assertEq(editions.edition(open).terms.maxCount, 0);
     }
 
-    /// @dev The one permitted reuse: the edition carries its master's hash, which Stream consumed
-    ///      under PRODUCT_STREAM. A hash an edition already claimed is refused, here for a twin
-    ///      master the mock let through Stream's own check.
+    /// @dev One edition per content: Stream mints a content once, and Editions creates an
+    ///      edition only for the item Stream records for it. A twin master the mock lets through
+    ///      Stream's own check (the real Stream refuses it, `ContentUsed`) takes Stream's record,
+    ///      so the first master's edition is refused and only the recorded item's is created.
     function test_CreateEdition_ContentHashUniqueAmongEditions() public {
         PackageItem memory first = _item(10);
-        _create(first);
-
+        uint256 firstId = _master(first);
         registry.setSkipStreamUniqueness(true);
         PackageItem memory twin = _item(10);
         twin.contentHash = first.contentHash;
         uint256 twinId = _master(twin);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IPackageRegistry.ContentUsed.selector,
-                PRODUCT_EDITIONS,
-                first.contentHash,
-                WorksHashing.itemHash(first)
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(IEditions.NotEditionMaster.selector, firstId));
+        _createEdition(firstId, first);
         _createEdition(twinId, twin);
-    }
-
-    function test_CreateEdition_RefusesHashClaimedInEditions() public {
-        PackageItem memory item = _item(10);
-        uint256 id = _master(item);
-        bytes32 claimedBy = keccak256("earlier claim");
-        registry.preclaim(item.contentHash, claimedBy);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IPackageRegistry.ContentUsed.selector, PRODUCT_EDITIONS, item.contentHash, claimedBy
-            )
-        );
-        _createEdition(id, item);
+        assertTrue(editions.exists(twinId));
+        assertFalse(editions.exists(firstId));
     }
 
     function test_CreateEdition_FailsClosedWhenStreamDoesNotLink() public {
@@ -567,11 +483,10 @@ contract EditionsTest is EditionsBase {
         item.payees[n - 1].share += uint32(100_000 % n);
         item.license.spdxId = "LicenseRef-6529-Works-Custom-License-With-A-Long-Identifier";
         uint256 id = _master(item);
-        (bytes32 root, bytes32[] memory proof) = EditionsPackages.packageOf(item, 0);
         // Calldata cost: a nonzero selector stand-in plus the ABI-encoded arguments.
-        bytes memory callData = bytes.concat(bytes4(0xffffffff), abi.encode(id, item, root, proof));
+        bytes memory callData = bytes.concat(bytes4(0xffffffff), abi.encode(id, item));
         uint256 g = gasleft();
-        editions.createEdition(id, item, root, proof);
+        editions.createEdition(id, item);
         uint256 execution = g - gasleft();
         uint256 txGas = 21_000 + _calldataGas(callData) + execution;
         console2.log("createEdition worst case: execution", execution);

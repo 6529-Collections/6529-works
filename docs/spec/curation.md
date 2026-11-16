@@ -191,8 +191,9 @@ stateDiagram-v2
 `consumedItemOf(contentHash)` reads the item holding the content, or zero when free or
 released. `releasedTo(contentHash)` reads the beneficiary of the latest release; it binds only
 while the content is released. `isReleased(itemHash)` reads the tombstone. All three are
-Stream's views; the registry's views of the same names answer from Stream. `editionClaimOf`
-(the registry's own) reads the [edition claim](#edition-content-claim).
+Stream's views; the registry's views of the same names answer from Stream. The registry keeps
+no edition record: an edition's content is decided from Stream's (see
+[edition content](#edition-content)).
 
 ### Curation signer
 
@@ -221,7 +222,6 @@ stateDiagram-v2
 | Party consent recorded | Anyone, relaying the party's signature | none | `PackageRegistry.acceptPackage` |
 | Move nonce revoked | The lead artist's active authority | none | `PackageRegistry.revokeMove` |
 | Item consumed, content used | Bound 6529 Stream, inside `IStream.mint` at the auction start | none | `PackageRegistry.authorize` (its private `_consume`) |
-| Edition claims the content | Bound 6529 Stream Editions, inside `createEdition` | none | `PackageRegistry.claimContent` |
 | Content released, item tombstoned | `PARAMETER_SETTER` | standard, 48 hours | `Stream.releaseContent` (AUC-10, AUC-44) |
 | Signer becomes active | ADMIN grants `CURATION_SIGNER` | 30-day ADMIN operation, then the 30-day grant delay (`Roles.grantDelay`) | `AccessManager.grantRole` |
 | Signer disabled | `GUARDIAN` | immediate | `Eip712CurationVerifier.disableSigner` |
@@ -355,8 +355,7 @@ package root, item hash, lead artist and content hash ([AUC-43](stream-and-aucti
   no copy of Stream's dependencies.
 - **Uniqueness belongs to Stream.** The registry writes no content record: Stream checks and
   sets it after the policy answers, so no replacement policy, blank or hostile, can mint a
-  content hash a second time ([AUC-44](stream-and-auctions.md#rules-and-invariants)). The
-  registry still keeps the Editions claim (`editionClaimOf`).
+  content hash a second time ([AUC-44](stream-and-auctions.md#rules-and-invariants)).
 - **Restraint.** No move verifies, from the old key or the reserved new key, and `revokeMove`
   reverts with `NotAuthority`. After execution the new key signs.
 - **Rotated keys.** Unused moves signed by a rotated-away key stay void, unless the new authority
@@ -364,19 +363,15 @@ package root, item hash, lead artist and content hash ([AUC-43](stream-and-aucti
 - **Gas.** `authorize`'s Prague gas, new slots and regression ceiling are in the
   [ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table).
 
-### Edition content claim
+### Edition content
 
-After a master's primary sale settles, `Editions.createEdition` checks the item against the
-master's stored item hash and the proof against a registered root (nonzero evidence hash), then
-calls `claimContent(contentHash, itemHash)`.
-
-- **Preconditions.** The caller is the bound Editions (`UnboundCaller`); `itemHash` consumed
-  `contentHash` on Stream (`ClaimNotAllowed`, also for released content); no edition claimed it
-  (`ContentUsed`).
-- **Effects.** `editionClaimOf(contentHash) = itemHash`: the one permitted cross-product reuse.
-- **Revocation does not block it.** Editions needs a registered root, not an approved one, and
-  `EditionRules` is the same rule at both ends, so a master that minted can always get its
-  edition ([editions-and-sales.md](editions-and-sales.md)).
+The mint policy plays no part in an edition (review A, M-1). After a master's primary sale
+settles, `Editions.createEdition` checks the item against the master's stored item hash and
+Stream's record that the item consumed its content (`IStream.consumedItemOf`), both permanent
+([ED-1, ED-3](editions-and-sales.md#rules-and-invariants)). The item was proved in an approved
+package when the master minted, so neither a revoked root nor a replaced mint policy can block
+a settled master's edition. The registry's Editions binding (`bindEditions`, `editions()`) is
+kept for the genesis wiring and is informational.
 
 ### Guardian revocation
 
@@ -444,10 +439,11 @@ since AUC-44; the registry plays no part:
 
 - **Preconditions.** The token is burned (`NotBurned`); its own work minted `contentHash` and it
   was not released yet (`ClaimNotAllowed(PRODUCT_STREAM, contentHash)`), so a release happens
-  once per burned item. The beneficiary must be a registered artist (`UnknownArtist`).
+  once per burned item; only the released bit and the token field are compared, so a content
+  minted again after a release and burned again can be released again. The beneficiary must be a registered artist (`UnknownArtist`).
 - **Effects.** The content hash is reserved for items whose lead artist is the beneficiary; the
-  burned item is tombstoned; Stream emits `ContentReleased`. The Editions claim is untouched: a
-  burned work never settled, so it has no edition.
+  burned item is tombstoned; Stream emits `ContentReleased`. No edition is affected: a burned
+  work never settled, so it has no edition.
 
 ## Rules and invariants
 
@@ -465,9 +461,9 @@ since AUC-44; the registry plays no part:
 | CUR-10 | A move is signed by the lead's active authority over this registry's `MoveToStream` digest for this item, unexpired, on an unused nonce; the nonce is spent whatever the signature encoding. | `PackageRegistry._useMove`, `_spendMoveNonce` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_move_revertsExpired`, `test_move_revertsWrongSigner`, `test_move_revertsWrongChain`, `test_move_bindsItem`, `test_move_signedByCurrentAuthorityAfterRecovery`, `test_move_nonceSpentWhateverTheSignatureForm` |
 | CUR-11 | Only the artist's active authority revokes its unused move nonces; a used or revoked nonce reverts; nonces are isolated per artist and bit. | `PackageRegistry.revokeMove` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_revokeMove_beforeUse`, `test_revokeMove_onlyCurrentAuthority`, `test_revokeMove_revertsWhenUsedOrRevoked`, `testFuzz_revokeMove_bitmapIsolation`; [`CuratedSale.t.sol`](../../test/integration/CuratedSale.t.sol): `test_MoveSignatureIsRevocable` |
 | CUR-12 | A content hash is held by at most one item on 6529 Stream, so an item is consumed at most once, through any root: Stream holds the record (AUC-44). | `Stream._claimContent` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_consume_revertsDoubleConsume`, `test_consume_itemIsSingleUseAcrossPackages`, `test_consume_contentUniquenessKeysOnContentHash`; [`PackageRegistryInvariant.t.sol`](../../test/curation/PackageRegistryInvariant.t.sol): `invariant_itemConsumedAtMostOnce`, `invariant_contentRecordsMatch` |
-| CUR-13 | 6529 Stream Editions claims only the content hash its master item consumed on Stream, once. | `PackageRegistry.claimContent` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_claimContent_linkedPairException`, `test_claimContent_mustNameTheMasterItem`, `test_claimContent_editionNeedsStreamMaster`; [`PackageRegistryInvariant.t.sol`](../../test/curation/PackageRegistryInvariant.t.sol): `invariant_editionsReuseOnlyTheirMaster` |
+| CUR-13 | Retired: the registry no longer records edition claims; an edition's content is decided from Stream's permanent record (ED-1, ED-3; review A, M-1). The ID is not reused. | none | none |
 | CUR-14 | A release happens once per burned item, names a registered artist, reserves the content for items led by that artist, and tombstones the burned item everywhere. It is governed (48 hours) and held by Stream (AUC-44). | `Stream.releaseContent`, `_claimContent` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_releaseContent_afterBurnLetsTheRealArtistMint`, `test_releaseContent_reverts`; [`Dispute.t.sol`](../../test/integration/Dispute.t.sol): `test_UpheldDisputeCancelsBurnsReleasesAndTheRightfulArtistMints`, `test_ReleaseIsGovernedNamesAnArtistAndHappensOnce`, `test_AGuardianCancelsAPendingRelease` |
-| CUR-15 | Only the bound Stream calls `authorize`; only the bound Editions calls `claimContent`; each is bound once, to a contract answering ERC-165 for its interface and not delegated. | `PackageRegistry.authorize`, `claimContent`, `bindStream`, `bindEditions` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_consume_onlyBoundStream`, `test_claimContent_onlyBoundEditions`, `test_bindStream_once`, `test_bindEditions_onceAndLater`, `test_unboundRegistryRefusesEveryone` |
+| CUR-15 | Only the bound Stream calls `authorize`; Stream and Editions are each bound once, to a contract answering ERC-165 for its interface and not delegated (the Editions binding is informational). | `PackageRegistry.authorize`, `bindStream`, `bindEditions` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_consume_onlyBoundStream`, `test_bindStream_once`, `test_bindEditions_onceAndLater`, `test_unboundRegistryRefusesEveryone` |
 | CUR-16 | Revocation is GUARDIAN-only, immediate, final and per root. | `PackageRegistry.revokePackage`; genesis role map | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_revokePackage_onlyGuardian`, `test_revokePackage_isPerRoot`; [`CuratedSale.t.sol`](../../test/integration/CuratedSale.t.sol): `test_GuardianRevokesAPackageAndDisablesASigner` |
 | CUR-17 | Disabling a signer is GUARDIAN-only, immediate, one-way, possible in advance, and stops only future registrations; re-enabling is 30 days. | `Eip712CurationVerifier.disableSigner`, `enableSigner` | [`Eip712CurationVerifier.t.sol`](../../test/curation/Eip712CurationVerifier.t.sol): `test_disableSigner_immediateAndOneWay`, `test_disableSigner_inAdvance`, `test_disableSigner_survivesRoleRegrant`, `test_enableSigner_thirtyDayClass`; [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_registerPackage_revertsAfterSignerDisabled`, `test_disabledSigner_registeredRootsStayUsable` |
 | CUR-18 | A verifier swap is compare-and-set, pins the code hash, never installs the current or a retired verifier, and leaves registered approvals intact. | `PackageRegistry.setVerifier`, `_setVerifier` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_setVerifier`, `test_setVerifier_compareAndSet`, `test_setVerifier_refusesARetiredVerifier`, `test_setVerifier_keepsRegisteredApprovals`, `test_setVerifier_onlySuccessorSetter` |

@@ -70,7 +70,7 @@ contract RecoveryRestraintTest is IntegrationBase {
         root = _publish(works);
         _keep(root, works);
         masterId = _sell(root, works, 0, collector, 1 ether);
-        editions.createEdition(masterId, works[0].item, root, _proofOf(works, 0));
+        editions.createEdition(masterId, works[0].item);
     }
 
     function _consolidate(address a, address b) internal {
@@ -392,7 +392,7 @@ contract RecoveryRestraintTest is IntegrationBase {
         bytes32 digest =
             artists.changeDigest(artistId, next, artists.changeNonce(artistId), deadline);
         artists.stageChange(
-            artistId, next, wallet, deadline, _sign(wallet, digest), _sign(newKey, digest)
+            artistId, next, artist, deadline, _sign(artist, digest), _sign(newKey, digest)
         );
         assertEq(artists.activeAuthorityOf(artistId), artist);
         (, uint256 tokenId) = _start(root, _package(root), 1);
