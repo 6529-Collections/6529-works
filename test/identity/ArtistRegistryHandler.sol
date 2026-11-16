@@ -533,7 +533,7 @@ contract ArtistRegistryHandler is Test {
         bool ok = value >= floor && value <= ceiling && t[3] >= uint256(t[1]) + 185 days;
         if (ok) {
             vm.expectEmit(address(registry));
-            emit IArtistRegistry.TimerSet(which, value);
+            emit IArtistRegistry.TimerSet(which, ghostTimers[uint256(which)], value);
         } else {
             _expect(_sel(IArtistRegistry.InvalidTimers.selector));
         }
@@ -592,7 +592,7 @@ contract ArtistRegistryHandler is Test {
         if (ok) {
             vm.expectEmit(address(registry));
             emit IArtistRegistry.FederatedContractStatus(
-                token, artistId, status, bytes32(statusSeed)
+                token, artistId, current, status, bytes32(statusSeed)
             );
         } else {
             _expect(
@@ -624,7 +624,7 @@ contract ArtistRegistryHandler is Test {
         } else if (current != IArtistRegistry.FederationStatus.LEFT) {
             vm.expectEmit(address(registry));
             emit IArtistRegistry.FederatedContractStatus(
-                token, artistId, IArtistRegistry.FederationStatus.LEFT, bytes32(0)
+                token, artistId, current, IArtistRegistry.FederationStatus.LEFT, bytes32(0)
             );
         }
         vm.prank(token);
