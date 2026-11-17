@@ -335,7 +335,11 @@ contract AuctionRefusalHandler is Test {
         address recipient;
         for (uint256 k; k < sales.length && recipient == address(0); ++k) {
             saleId = sales[(seed % sales.length + k) % sales.length];
-            recipient = auction.pendingDelivery(saleId);
+            // The lens reads an unbid work's claimant from its token, and refuses a hostile
+            // token's malformed answer (BoundedCall): such a sale is skipped here.
+            try auction.pendingDelivery(saleId) returns (address r) {
+                recipient = r;
+            } catch { }
         }
         if (recipient == address(0)) {
             // None pending: the artist's claim of a random sale must be refused.
