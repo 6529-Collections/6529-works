@@ -30,3 +30,7 @@ cache-lite/
 lcov.info
 coverage/
 mutation/
+
+# The local walkthrough's generated genesis file and local deployment records (script/local/README.md)
+config/local/
+deployments/31337/
