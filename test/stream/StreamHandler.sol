@@ -190,6 +190,8 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         if (!ok) return;
         uint32 current = ghostFeeShare[tokenId];
         share = uint32(bound(share, 0, 100_000));
+        // A lowering needs its royalty wallet deployed first (anyone may deploy it).
+        if (share != 0 && share < current) _deployReceiver(ghostSeller[tokenId], share);
         vm.prank(governor);
         try stream.lowerFeeShare(tokenId, share) {
             if (share >= current) ++violations;
@@ -403,6 +405,16 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
     }
 
     /// @dev The seller with no fee, else the salt-zero wallet for the canonical payee list.
+    function _deployReceiver(address sellerWallet, uint32 feeShare) internal {
+        address wallet = _expectedReceiver(sellerWallet, _feeRecipient, feeShare);
+        if (wallet.code.length != 0) return;
+        ISplitWallet.Payee[] memory payees = new ISplitWallet.Payee[](2);
+        ISplitWallet.Payee memory a = ISplitWallet.Payee(0, _feeRecipient, feeShare);
+        ISplitWallet.Payee memory b = ISplitWallet.Payee(0, sellerWallet, 100_000 - feeShare);
+        (payees[0], payees[1]) = _feeRecipient < sellerWallet ? (a, b) : (b, a);
+        _factory.createWallet(payees, bytes32(0));
+    }
+
     function _expectedReceiver(address sellerWallet, address fee, uint32 feeShare)
         internal
         view

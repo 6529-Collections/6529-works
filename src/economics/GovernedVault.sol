@@ -10,6 +10,7 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 import { IGovernedVault } from "./interfaces/IGovernedVault.sol";
 import { ISplitLedger } from "./interfaces/ISplitLedger.sol";
 import { ISplitWallet } from "./interfaces/ISplitWallet.sol";
+import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { TokenTransfer } from "./TokenTransfer.sol";
 
 /// @title GovernedVault
@@ -24,6 +25,9 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///      out of a token a marketplace chose. Every external call forwards all available gas and
 ///      reverts on failure.
 contract GovernedVault is IGovernedVault, IERC721Receiver, IERC1155Receiver, AccessManaged {
+    /// @dev The most return or revert data copied from a ledger `releaseToDestination` names.
+    uint256 private constant _MAX_ANSWER = 1024;
+
     /// @dev The destination and its revision share one slot.
     address private _destination;
     uint64 private _revision;
@@ -95,7 +99,22 @@ contract GovernedVault is IGovernedVault, IERC721Receiver, IERC1155Receiver, Acc
         address asset,
         uint256 index
     ) external returns (uint256) {
-        return ledger.releaseTo(payees, salt, asset, index, _destination);
+        // The caller picks the ledger: all gas is forwarded, at most `_MAX_ANSWER` bytes of its
+        // answer are copied, and a shortfall reverts (`BoundedCall`).
+        (bool ok, bytes memory answer) = BoundedCall.tryCallAll(
+            address(ledger),
+            0,
+            abi.encodeCall(ISplitWallet.releaseTo, (payees, salt, asset, index, _destination)),
+            _MAX_ANSWER
+        );
+        if (!ok) {
+            if (answer.length == 0) revert BoundedCall.BoundedCallFailed(address(ledger));
+            assembly ("memory-safe") {
+                revert(add(answer, 0x20), mload(answer))
+            }
+        }
+        if (answer.length != 32) revert BoundedCall.BoundedCallMalformedReturn(address(ledger));
+        return uint256(bytes32(answer));
     }
 
     /// @inheritdoc IERC721Receiver

@@ -43,12 +43,16 @@ interface IRevenueEscrow is IERC165 {
     /// @param asset The asset of the credit (ETH is `address(0)`).
     /// @param amount The amount moved: the wallet's whole credit in the asset.
     /// @param owed The replacement's whole credit in the asset after the move.
+    /// @param consentUsed Whether the move used (and so cleared) the wallet's recovery consent
+    ///        (`recoveryConsent` is zero after it); false for an equivalent split wallet or the
+    ///        network's own credit.
     event Recovered(
         address indexed wallet,
         address indexed replacement,
         address indexed asset,
         uint256 amount,
-        uint256 owed
+        uint256 owed,
+        bool consentUsed
     );
 
     /// @notice `amount` of `asset` that the escrow held beyond every credit (`totalOwed`) was

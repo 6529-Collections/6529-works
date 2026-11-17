@@ -43,8 +43,9 @@ import { LockedTerms, Payment } from "./types/SaleTypes.sol";
 ///
 ///      Money: the seller receives `floor(price * (100,000 - share) / 100,000)` and the network
 ///      the rest, paid to the recipient the economics resolver names at settlement (or the
-///      token's when it names none). A credit not claimed within 180 days of when it was last
-///      added to may be sent to the network's fee recipient by anyone (`expireCredit`).
+///      token's when it names none). A credit not claimed within 180 days of when its balance
+///      went from zero may be sent to the network's fee recipient by anyone (`expireCredit`);
+///      later additions do not move that clock.
 ///      `saleKind()` is `SaleKind.ENGLISH_AUCTION`. Payments are DIRECT or PERMIT2 (an EIP-2612
 ///      PERMIT payment is refused); PERMIT2 bids use the `Typehashes.BID_WITNESS` and
 ///      `Typehashes.START_BID_WITNESS` witnesses.

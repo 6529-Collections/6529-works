@@ -180,6 +180,29 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         assertEq(address(deployed), next);
     }
 
+    /// @dev Rule 6: each genesis dependency is in Stream's own logs from construction, so
+    ///      `packageRegistry()`, `economics()`, `entropyModule()` and `extension()` are known
+    ///      without a call. Fails without the change: no `DependencySet` until a replacement.
+    function test_constructor_logsEveryGenesisDependency() public {
+        address next = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
+        address views = vm.computeCreateAddress(next, 1);
+        vm.expectEmit(next);
+        emit IStream.DependencySet("PACKAGE_REGISTRY", address(0), address(registry));
+        vm.expectEmit(next);
+        emit IStream.DependencySet("ECONOMICS", address(0), address(econ));
+        vm.expectEmit(next);
+        emit IStream.DependencySet("ENTROPY_MODULE", address(0), address(entropy));
+        vm.expectEmit(next);
+        emit IStream.DependencySet("EXTENSION", address(0), views);
+        Stream deployed = _deploy(
+            address(registry), address(artists), address(econ), address(entropy), address(renderer)
+        );
+        assertEq(deployed.extension(), views);
+        assertEq(deployed.packageRegistry(), address(registry));
+        assertEq(deployed.economics(), address(econ));
+        assertEq(deployed.entropyModule(), address(entropy));
+    }
+
     // ------------------------------------------------------------------------ admitted minters
 
     function test_setAdmittedMinter() public {
@@ -607,6 +630,12 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         uint256 tokenId = _mint(1);
         (address before,) = stream.royaltyInfo(tokenId, 1 ether);
         assertEq(before, _royaltyWallet(seller, feeRecipient, 25_000));
+        // Royalties never point at an undeployed wallet: the lowering waits for it.
+        address lowered = _royaltyWallet(seller, feeRecipient, 10_000);
+        vm.prank(governor);
+        vm.expectRevert(abi.encodeWithSelector(ISplitWallet.WalletNotDeployed.selector, lowered));
+        stream.lowerFeeShare(tokenId, 10_000);
+        _deployRoyaltyWallet(seller, feeRecipient, 10_000);
         vm.expectEmit(address(stream));
         emit IStream.FeeShareLowered(tokenId, 25_000, 10_000);
         vm.prank(governor);
@@ -653,6 +682,9 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         uint256 tokenId = _mint(1);
         uint32 current = 25_000;
         for (uint256 i; i < shares.length; ++i) {
+            if (shares[i] != 0 && shares[i] < current) {
+                _deployRoyaltyWallet(seller, feeRecipient, shares[i]);
+            }
             vm.prank(governor);
             (bool ok,) =
                 address(stream).call(abi.encodeCall(stream.lowerFeeShare, (tokenId, shares[i])));

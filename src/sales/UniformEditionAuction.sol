@@ -21,6 +21,7 @@ import { IUniformEditionAuctionStorage } from "../interfaces/IUniformEditionAuct
 import { CURRENCY_ETH } from "../interfaces/types/EconomicsTypes.sol";
 import { SaleKind } from "../interfaces/types/SaleTypes.sol";
 import { StepLadder } from "../interfaces/types/StepLadder.sol";
+import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 import { UniformClearing } from "./UniformClearing.sol";
 
@@ -88,6 +89,8 @@ abstract contract UniformEditionAuctionBase is
     /// @notice How long after its close a sale may be abandoned (R16). Longer than the soft
     ///         close's longest extension (7 days), so no sale taking bids can be abandoned.
     uint256 internal constant ABANDON_DELAY = 21 days;
+    /// @dev The most revert data `_callWithItem` copies from a failed edition call.
+    uint256 private constant _MAX_REVERT = 1024;
     /// @notice How long after it went from zero a credit may be sent to the network (R12).
     uint256 internal constant CREDIT_EXPIRY = 180 days;
     /// @dev A credit word: the amount in the low 208 bits, the time it went from zero above.
@@ -1325,7 +1328,11 @@ abstract contract UniformEditionAuctionBase is
         // Invariants: a `data` shorter than a word, or whose offset lies past its end, reverts,
         // so `n` does not wrap. The call is built in memory from the free memory pointer on
         // without moving it: temporary memory nothing else reads. A failed call's returndata is
-        // copied over the same memory and the frame ends in `revert`.
+        // copied over the same memory, only when it is at most `_MAX_REVERT` bytes, and the
+        // frame ends in `revert`; a longer one reverts with `BoundedCallFailed(target)`. All gas
+        // is forwarded either way.
+        bool ok;
+        uint256 size;
         assembly ("memory-safe") {
             let off := calldataload(data.offset)
             if or(lt(data.length, 0x20), gt(off, data.length)) { revert(0, 0) }
@@ -1335,10 +1342,15 @@ abstract contract UniformEditionAuctionBase is
             mstore(add(p, 0x04), id)
             mstore(add(p, 0x24), 0x40)
             calldatacopy(add(p, 0x44), add(data.offset, off), n)
-            if iszero(call(gas(), target, 0, p, add(n, 0x44), 0, 0)) {
-                returndatacopy(p, 0, returndatasize())
-                revert(p, returndatasize())
-            }
+            ok := call(gas(), target, 0, p, add(n, 0x44), 0, 0)
+            size := returndatasize()
+        }
+        if (ok) return;
+        if (size > _MAX_REVERT) revert BoundedCall.BoundedCallFailed(target);
+        assembly ("memory-safe") {
+            let p := mload(0x40)
+            returndatacopy(p, 0, size)
+            revert(p, size)
         }
     }
 

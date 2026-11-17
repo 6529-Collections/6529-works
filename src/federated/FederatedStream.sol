@@ -726,7 +726,8 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
 
     /// @dev Reverts (`InvalidMintRequest`) unless the first party is this contract's artist (its
     ///      ID as an address), there are at most `Limits.MAX_PARTIES` parties and one consent per
-    ///      later party. Each later party's consent to `itemHash` must then be good for this
+    ///      later party, and at most `Splits.MAX_PAYEES` payees (checked before any loop). Each
+    ///      later party's consent to `itemHash` must then be good for this
     ///      contract (`IAccounts.requireConsent` reverts otherwise): signed by a wallet of that
     ///      party's account, so consent is unanimous and counted by account. Every
     ///      artist-resolved payee must be a party's ID with a payout address now; fixed payees
@@ -739,7 +740,7 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
         uint256 n = parties.length;
         if (
             n == 0 || n > Limits.MAX_PARTIES || uint160(parties[0].account) != _artistId
-                || consents.length != n - 1
+                || consents.length != n - 1 || item.payees.length > Splits.MAX_PAYEES
         ) revert InvalidMintRequest();
         address registry = _artistRegistry;
         for (uint256 i = 1; i < n; ++i) {

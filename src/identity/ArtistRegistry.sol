@@ -419,8 +419,9 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         external
         restricted
     {
-        _artist(artistId).delisted = delisted;
-        emit FederationDelistedSet(artistId, delisted, ref);
+        Artist storage a = _artist(artistId);
+        emit FederationDelistedSet(artistId, a.delisted, delisted, ref);
+        a.delisted = delisted;
     }
 
     /// @inheritdoc IArtistRegistry
@@ -676,19 +677,9 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     // ----- internals -----
 
     /// @dev The EIP-712 digest of a listing consent: `Typehashes.FEDERATED_LISTING` over the
-    ///      struct's seven words, in this registry's domain. The struct is static, so its seven
-    ///      calldata words are hashed as they are: words that are not canonically encoded only
-    ///      fail the signature check.
+    ///      struct's fields (`abi.encode`), in this registry's domain.
     function _listingDigest(FederatedListing calldata listing) private view returns (bytes32) {
-        bytes32 typehash = Typehashes.FEDERATED_LISTING;
-        bytes32 structHash;
-        assembly ("memory-safe") {
-            let ptr := mload(0x40)
-            mstore(ptr, typehash)
-            calldatacopy(add(ptr, 0x20), listing, 0xe0)
-            structHash := keccak256(ptr, 0x100)
-        }
-        return _hashTypedDataV4(structHash);
+        return _hashTypedDataV4(keccak256(abi.encode(Typehashes.FEDERATED_LISTING, listing)));
     }
 
     /// @dev The account `accountId` names: an artist ID, or an address that is or was a root.

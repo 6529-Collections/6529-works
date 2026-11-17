@@ -104,6 +104,7 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
         nonReentrant
     {
         bytes32 config = factory.configOf(wallet);
+        bool consentUsed;
         if (config != bytes32(0)) {
             if (replacement == wallet || factory.configOf(replacement) != config) {
                 revert NotEquivalentWallet(wallet, replacement);
@@ -120,9 +121,12 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
             }
             // Single use: one consent covers one recovery of one asset.
             delete recoveryConsent[wallet];
+            consentUsed = true;
         }
         uint256 amount = _take(wallet, asset);
-        emit Recovered(wallet, replacement, asset, amount, _add(replacement, asset, amount));
+        emit Recovered(
+            wallet, replacement, asset, amount, _add(replacement, asset, amount), consentUsed
+        );
     }
 
     /// @inheritdoc IRevenueEscrow

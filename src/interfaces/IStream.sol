@@ -153,7 +153,9 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @param previous The URI before the change.
     /// @param next The URI after the change.
     event ContractURISet(string previous, string next);
-    /// @notice Governance replaced a dependency (owner decision 16).
+    /// @notice Governance replaced a dependency (owner decision 16). The constructor emits it
+    ///         once per kind with `previous` zero, naming the genesis dependency (the entropy
+    ///         module may be zero).
     /// @param kind `"PACKAGE_REGISTRY"`, `"ECONOMICS"`, `"ENTROPY_MODULE"` or `"EXTENSION"`.
     /// @param previous The address before.
     /// @param next The address after.
@@ -365,6 +367,9 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @notice Lowers the network's fee share of an existing work; never raises it (R9).
     ///         PARAMETER_SETTER role (the network, 24 hours). The royalty receiver and the share
     ///         a later settlement reports follow the new share; the fee recipient does not change.
+    ///         For a nonzero share the new royalty wallet must already be deployed
+    ///         (`ISplitFactory.createWallet`, permissionless), or it reverts with
+    ///         `ISplitWallet.WalletNotDeployed`, so royalties never point at an undeployed wallet.
     /// @param tokenId A live token ID.
     /// @param share The new share, out of 100,000: below the current one (`InvalidFeeShare`).
     function lowerFeeShare(uint256 tokenId, uint32 share) external;

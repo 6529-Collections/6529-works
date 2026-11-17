@@ -159,6 +159,14 @@ abstract contract StreamFixture is Test {
         return splitFactory.walletFor(payees, bytes32(0));
     }
 
+    /// @dev Deploys the royalty wallet `_royaltyWallet` names (permissionless), when it is not
+    ///      deployed yet.
+    function _deployRoyaltyWallet(address sellerWallet, address fee, uint32 feeShare) internal {
+        address wallet = _royaltyWallet(sellerWallet, fee, feeShare);
+        if (wallet.code.length != 0) return;
+        splitFactory.createWallet(Splits.royaltyPayees(sellerWallet, fee, feeShare), bytes32(0));
+    }
+
     /// @dev The seller wallet Stream derives for `payees`: the salt-zero split wallet.
     function _sellerOf(ISplitWallet.Payee[] memory payees) internal view returns (address) {
         return splitFactory.walletFor(payees, bytes32(0));

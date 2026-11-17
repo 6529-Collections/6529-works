@@ -444,7 +444,7 @@ contract NetworkShareTest is EconomicsBase, GasRuleAssertions {
         escrow.depositETH{ value: 1 ether }(address(feeVault));
         address next = makeAddr("nextSafe");
         vm.expectEmit(address(escrow));
-        emit IRevenueEscrow.Recovered(address(feeVault), next, ETH, 1 ether, 1 ether);
+        emit IRevenueEscrow.Recovered(address(feeVault), next, ETH, 1 ether, 1 ether, false);
         escrow.recover(address(feeVault), next, ETH);
         assertEq(escrow.owed(next, ETH), 1 ether);
         assertEq(escrow.creditedAt(next, ETH), block.timestamp);

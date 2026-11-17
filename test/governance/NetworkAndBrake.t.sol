@@ -488,6 +488,44 @@ contract NetworkAndBrakeTest is GovernanceFixture {
         manager.execute(address(target), data);
     }
 
+    /// @dev GV-7 at the edges of the window. The mark is always the ready time plus 7 days and
+    ///      expiry the ready time plus 14, so a braked operation keeps exactly a week to run
+    ///      whenever the brake acts: just before ready, or just before expiry (when the mark has
+    ///      already passed, so that brake delays nothing). It never outlives its expiry.
+    function test_ABrakeNearTheEndOfTheWindowKeepsTheWeekAndTheExpiry() public {
+        bytes memory data = abi.encodeCall(GovernedTargetMock.setFee, (6));
+        bytes32 id = _schedule(adminSafe, address(target), data);
+        uint48 ready = manager.getSchedule(id);
+        vm.warp(ready - 1);
+        vm.prank(brakeSafe);
+        manager.brakeOnce(id);
+        assertEq(manager.notBefore(id), ready + 7 days);
+        vm.warp(ready + 14 days - 1);
+        vm.prank(adminSafe);
+        manager.execute(address(target), data);
+        assertEq(target.fee(), 6);
+
+        data = abi.encodeCall(GovernedTargetMock.setFee, (8));
+        id = _schedule(adminSafe, address(target), data);
+        ready = manager.getSchedule(id);
+        vm.warp(ready + 14 days - 1);
+        vm.prank(brakeSafe);
+        manager.brakeOnce(id);
+        assertEq(manager.notBefore(id), ready + 7 days, "the mark is already past");
+        vm.prank(adminSafe);
+        manager.execute(address(target), data);
+        assertEq(target.fee(), 8);
+
+        id = _schedule(adminSafe, address(target), data);
+        ready = manager.getSchedule(id);
+        vm.prank(brakeSafe);
+        manager.brakeOnce(id);
+        vm.warp(ready + 14 days);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManager.AccessManagerExpired.selector, id));
+        vm.prank(adminSafe);
+        manager.execute(address(target), data);
+    }
+
     /// @dev The brake can delay the network's own administration too, its own removal
     ///      included, once.
     function test_TheBrakeCanDelayItsOwnRemovalOnce() public {

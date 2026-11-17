@@ -89,7 +89,10 @@ interface IGovernedVault {
     /// @notice Releases this vault's share as fixed payee `index` of the wallet for `payees` and
     ///         `salt` of split ledger `ledger` straight to the destination (the ledger's
     ///         `releaseTo`), for an asset that cannot be paid to the vault itself. Anyone may
-    ///         call; the vault only ever names its destination.
+    ///         call; the vault only ever names its destination. A ledger that refuses makes it
+    ///         revert with the ledger's reason, or `BoundedCall.BoundedCallFailed` when that
+    ///         reason is empty or longer than 1,024 bytes; an answer that is not one word reverts
+    ///         with `BoundedCall.BoundedCallMalformedReturn`.
     /// @param ledger The split ledger that keeps the wallet.
     /// @param payees The wallet's payee list; entry `index` must be this vault.
     /// @param salt The wallet's salt.

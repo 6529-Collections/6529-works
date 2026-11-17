@@ -93,8 +93,11 @@ interface IWorkRecords {
     /// @param tokenId The work's token ID.
     /// @param renderer The pinned renderer: 6529 Stream's default renderer at finalize, pinned
     ///        with the code hash 6529 Stream installed it with.
+    /// @param codeHash The renderer code hash pinned with it (`pinnedRenderer`'s code).
     /// @param stateHash The work's state hash after finalize.
-    event WorkFinalized(uint256 indexed tokenId, address renderer, bytes32 stateHash);
+    event WorkFinalized(
+        uint256 indexed tokenId, address renderer, bytes32 codeHash, bytes32 stateHash
+    );
     /// @notice Every media file of the work is complete in some store (the content store or an
     ///         added store, per file: `MediaFileComplete`); one-way.
     /// @param tokenId The work's token ID.

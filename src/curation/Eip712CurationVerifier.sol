@@ -126,16 +126,24 @@ contract Eip712CurationVerifier is ICurationSignerVerifier, AccessManaged, EIP71
     /// @dev `grants << 176 | since << 128 | salt << 64 | changes`: `since` is when the signer's
     ///      CURATION_SIGNER grant takes or took effect (zero without a grant), and `grants` the
     ///      manager's count of grants that made it a member (`grantCount`), so a revocation and a
-    ///      new grant change the epoch even within one second. A manager without the counter
-    ///      answers zero (a shortfall reverts, `BoundedCall`). `changes` counts `disableSigner`
-    ///      and `enableSigner` calls, and `salt` is drawn at the latest of them.
+    ///      new grant change the epoch even within one second. A manager without the counter (a
+    ///      stock OpenZeppelin AccessManager, which reverts on the call) counts zero. An answer
+    ///      of up to two words that is not one word holding a `uint32` reverts with
+    ///      `BoundedCall.BoundedCallMalformedReturn` instead of being truncated (a longer one is
+    ///      not copied and counts as no counter); a shortfall reverts (`BoundedCall`). `changes` counts `disableSigner` and `enableSigner` calls, and
+    ///      `salt` is drawn at the latest of them.
     function signerEpoch(address signer) public view returns (uint256) {
         address manager = authority();
         (uint48 since,,,) = IAccessManager(manager).getAccess(Roles.CURATION_SIGNER, signer);
-        (bool ok, bytes32 word) = BoundedCall.tryReadWordAll(
-            manager, abi.encodeCall(IGrantCount.grantCount, (Roles.CURATION_SIGNER, signer))
+        (bool ok, bytes memory answer) = BoundedCall.tryReadAll(
+            manager, abi.encodeCall(IGrantCount.grantCount, (Roles.CURATION_SIGNER, signer)), 64
         );
-        uint256 grants = ok ? uint256(uint32(uint256(word))) : 0;
+        uint256 grants;
+        if (ok) {
+            if (answer.length != 32) revert BoundedCall.BoundedCallMalformedReturn(manager);
+            grants = uint256(bytes32(answer));
+            if (grants > type(uint32).max) revert BoundedCall.BoundedCallMalformedReturn(manager);
+        }
         SignerState storage s = _signers[signer];
         return grants << 176 | uint256(since) << 128 | uint256(s.salt) << 64 | s.changes;
     }

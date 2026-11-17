@@ -19,6 +19,9 @@ import {
     NoReturnToken,
     RejectingRecipient
 } from "../mocks/economics/EconomicsMocks.sol";
+import { ISplitLedger } from "src/economics/interfaces/ISplitLedger.sol";
+import { BoundedCall } from "src/libraries/BoundedCall.sol";
+import { ReturnDataMock } from "test/mocks/libraries/AdversarialTargets.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 
 contract VaultTest721 is ERC721("Work", "WRK") {
@@ -254,7 +257,7 @@ contract GovernedVaultTest is EconomicsBase {
         address elsewhere = makeAddr("elsewhere");
         assertEq(escrow.recoveryConsent(address(vault)), address(0), "no consent recorded");
         vm.expectEmit(address(escrow));
-        emit IRevenueEscrow.Recovered(address(vault), elsewhere, address(usdc), 50, 50);
+        emit IRevenueEscrow.Recovered(address(vault), elsewhere, address(usdc), 50, 50, false);
         escrow.recover(address(vault), elsewhere, address(usdc));
         escrow.flush(elsewhere, address(usdc));
         assertEq(usdc.balanceOf(elsewhere), 50);
@@ -287,5 +290,41 @@ contract GovernedVaultTest is EconomicsBase {
         vault.setDestination(1, address(successor));
         vault.forwardERC721(address(works), 9);
         assertEq(works.ownerOf(9), address(successor));
+    }
+
+    /// @dev The caller picks the ledger, so its answer is copied only up to 1,024 bytes: a
+    ///      longer refusal reverts with `BoundedCallFailed(ledger)`, a short one keeps its
+    ///      reason, and an answer that is not one word is malformed. Fails without the change:
+    ///      the typed call re-raises the whole 4,096-byte payload.
+    function test_ReleaseToDestinationBoundsTheLedgersAnswer() public {
+        ReturnDataMock fake = new ReturnDataMock();
+        ISplitWallet.Payee[] memory payees = _list(_fixed(address(vault), 100_000));
+        ISplitLedger ledger_ = ISplitLedger(address(fake));
+
+        fake.configure(new bytes(4096), true);
+        vm.expectRevert(
+            abi.encodeWithSelector(BoundedCall.BoundedCallFailed.selector, address(fake))
+        );
+        vault.releaseToDestination(ledger_, payees, bytes32(0), ETH, 0);
+
+        bytes memory reason = abi.encodeWithSignature("Refused(uint256)", 7);
+        fake.configure(reason, true);
+        vm.expectRevert(reason);
+        vault.releaseToDestination(ledger_, payees, bytes32(0), ETH, 0);
+
+        fake.configure(abi.encode(uint256(1), uint256(2)), false);
+        vm.expectRevert(
+            abi.encodeWithSelector(BoundedCall.BoundedCallMalformedReturn.selector, address(fake))
+        );
+        vault.releaseToDestination(ledger_, payees, bytes32(0), ETH, 0);
+
+        fake.configure(abi.encode(uint256(5)), false);
+        assertEq(vault.releaseToDestination(ledger_, payees, bytes32(0), ETH, 0), 5);
+
+        address codeless = makeAddr("codelessLedger");
+        vm.expectRevert(
+            abi.encodeWithSelector(BoundedCall.BoundedCallMalformedReturn.selector, codeless)
+        );
+        vault.releaseToDestination(ISplitLedger(codeless), payees, bytes32(0), ETH, 0);
     }
 }

@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { Splits } from "src/economics/Splits.sol";
+import { IVRFV2PlusWrapper } from "src/entropy/IVRFV2PlusWrapper.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { FederatedEditionAuction } from "src/federated/FederatedEditionAuction.sol";
 import { FederatedEditionAuctionLens } from "src/federated/FederatedEditionAuctionLens.sol";
@@ -19,6 +20,7 @@ import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { Party, PartyRole, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
+import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { MockVrfWrapper } from "../mocks/entropy/EntropyMocks.sol";
@@ -353,6 +355,25 @@ contract FederationSecondPassTest is FederationBase {
         auction.start(address(fed), data);
     }
 
+    /// @dev More than `Splits.MAX_PAYEES` payees is refused before any loop over them. Fails
+    ///      without the change: the payee loop runs over all 65 and the request fails later,
+    ///      at the split ledger's count check, with another error.
+    function test_Collaborators_MoreThanMaxPayeesIsRefusedFirst() public {
+        Work memory w = _fedWork(fedArtist);
+        uint256 n = Splits.MAX_PAYEES + 1;
+        ISplitWallet.Payee[] memory payees = new ISplitWallet.Payee[](n);
+        uint32 each = uint32(Splits.DENOMINATOR / n);
+        for (uint256 i; i < n; ++i) {
+            payees[i] = ISplitWallet.Payee(0, address(uint160(0x1000 + i)), each);
+        }
+        payees[n - 1].share += uint32(Splits.DENOMINATOR - each * n);
+        w.item.payees = payees;
+        vm.prank(fedArtist);
+        fed.approveItem(_itemHash(w), RATE);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        auction.start(address(fed), _mintData(w));
+    }
+
     // ------------------------------------------------------------------ the artist's wallets
 
     /// @dev Every artist power asks the artist registry: another wallet of the account acts, and
@@ -534,6 +555,45 @@ contract FederationSecondPassTest is FederationBase {
         vm.prank(fedArtist);
         vm.expectRevert(abi.encodeWithSelector(IEntropyModule.NotRequestable.selector, h));
         entropy.requestFederatedSeed{ value: price }(address(fed), w.item);
+    }
+
+    /// @dev The wrapper's answers are copied through `BoundedCall` with a 1,024-byte bound: a
+    ///      longer refusal reverts with `BoundedCallFailed(wrapper)`, a short one keeps its
+    ///      reason, and a quote or request ID that is not one word is malformed. Fails without
+    ///      the change: the typed calls re-raise the whole 4,096-byte payload and decode a
+    ///      two-word quote.
+    function test_Vrf_TheWrappersAnswersAreBounded() public {
+        Work memory w = _vrfWork();
+        _setWrapper();
+        uint256 price = wrapper.price();
+        vm.deal(fedArtist, 10 * price);
+        address wr = address(wrapper);
+        bytes4 request = IVRFV2PlusWrapper.requestRandomWordsInNative.selector;
+        bytes4 quote = IVRFV2PlusWrapper.calculateRequestPriceNative.selector;
+
+        vm.mockCallRevert(wr, abi.encodePacked(request), new bytes(4096));
+        vm.prank(fedArtist);
+        vm.expectRevert(abi.encodeWithSelector(BoundedCall.BoundedCallFailed.selector, wr));
+        entropy.requestFederatedSeed{ value: price }(address(fed), w.item);
+
+        vm.clearMockedCalls();
+        vm.mockCall(wr, abi.encodePacked(quote), abi.encode(price, uint256(1)));
+        vm.prank(fedArtist);
+        vm.expectRevert(abi.encodeWithSelector(BoundedCall.BoundedCallMalformedReturn.selector, wr));
+        entropy.requestFederatedSeed{ value: price }(address(fed), w.item);
+
+        vm.clearMockedCalls();
+        vm.mockCallRevert(
+            wr,
+            abi.encodePacked(request),
+            abi.encodeWithSelector(MockVrfWrapper.NotNativePayment.selector)
+        );
+        vm.prank(fedArtist);
+        vm.expectRevert(MockVrfWrapper.NotNativePayment.selector);
+        entropy.requestFederatedSeed{ value: price }(address(fed), w.item);
+
+        vm.clearMockedCalls();
+        _paidRequest(w);
     }
 
     /// @dev Only the wrapper delivers a federated request, and the coordinator cannot deliver

@@ -5,6 +5,7 @@ import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol";
+import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
@@ -170,6 +171,34 @@ contract Eip712CurationVerifierTest is CurationBase {
         vm.stopPrank();
         assertEq(verifier.signerEpoch(signer1), uint256(block.timestamp) << 128 | uint128(enabled));
         assertEq(verifier.signerEpoch(makeAddr("never a signer")), 0);
+    }
+
+    /// @dev The manager's grant counter (`grantCount`) is packed above bit 176. A stock manager
+    ///      reverts on the call and counts zero (the tests above); a counter answer above
+    ///      `uint32`, or one that is not exactly one word, reverts instead of being truncated or
+    ///      read as zero. Fails without the change: 2^32 truncated to zero and a two-word
+    ///      answer read as "no counter".
+    function test_signerEpoch_failsClosedOnAMalformedGrantCount() public {
+        bytes memory call_ =
+            abi.encodeWithSignature("grantCount(uint64,address)", Roles.CURATION_SIGNER, signer1);
+        (uint48 since,,,) = manager.getAccess(Roles.CURATION_SIGNER, signer1);
+        vm.mockCall(address(manager), call_, abi.encode(uint256(7)));
+        assertEq(verifier.signerEpoch(signer1), uint256(7) << 176 | uint256(since) << 128);
+        vm.mockCall(address(manager), call_, abi.encode(uint256(type(uint32).max)));
+        assertEq(verifier.signerEpoch(signer1) >> 176, type(uint32).max);
+
+        bytes memory malformed = abi.encodeWithSelector(
+            BoundedCall.BoundedCallMalformedReturn.selector, address(manager)
+        );
+        vm.mockCall(address(manager), call_, abi.encode(uint256(1) << 32));
+        vm.expectRevert(malformed);
+        verifier.signerEpoch(signer1);
+        vm.mockCall(address(manager), call_, abi.encode(uint256(1), uint256(2)));
+        vm.expectRevert(malformed);
+        verifier.signerEpoch(signer1);
+        vm.mockCall(address(manager), call_, hex"01");
+        vm.expectRevert(malformed);
+        verifier.signerEpoch(signer1);
     }
 
     /// Regression: SIGS-2 (docs/security/internal-review-2026-10.md)

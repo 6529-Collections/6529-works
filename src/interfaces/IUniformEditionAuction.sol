@@ -554,8 +554,9 @@ interface IUniformEditionAuction is ISaleAdapter {
     function setLimits(uint256 expected, uint256 next) external;
 
     /// @notice Finishes a sale whose 1/1 has settled but whose edition sale cannot complete on
-    ///         its own (R16). Permissionless, from 21 days after the sale's close (a fixed value:
-    ///         the number is the guarantee to bidders), while the sale has paid nothing (OPEN, or
+    ///         its own (R16). Permissionless, from 21 days after the sale's scheduled close (its
+    ///         1/1's final end plus the fixed 15 minutes; a soft-close extension of the edition
+    ///         sale does not move it. A fixed value: the number is the guarantee to bidders), while the sale has paid nothing (OPEN, or
     ///         SETTLING with its scan in progress), once its 1/1 auction is no longer ACTIVE,
     ///         PAUSED or ENDED (a 1/1 auction that does not answer counts as finished). Then:
     ///         - the master's primary sale is settled in its token and the edition does not exist
@@ -576,8 +577,9 @@ interface IUniformEditionAuction is ISaleAdapter {
     ///         lens). Reverts with `UnknownAuction`.
     /// @param saleId The sale ID.
     /// @return ok Whether the sale can be abandoned now.
-    /// @return abandonAt The earliest time it can be, from what is known now: its end plus 21
-    ///         days; zero while its 1/1 is unsettled, when its edition exists with its master
+    /// @return abandonAt The earliest time it can be, from what is known now: its scheduled
+    ///         close (its 1/1's final end plus 15 minutes, not moved by a soft-close extension)
+    ///         plus 21 days; zero while its 1/1 is unsettled, when its edition exists with its master
     ///         settled, or when the sale is not OPEN.
     function abandonable(uint256 saleId) external view returns (bool ok, uint256 abandonAt);
 

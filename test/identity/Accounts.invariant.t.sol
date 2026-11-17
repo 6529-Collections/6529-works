@@ -127,6 +127,22 @@ contract AccountsInvariantTest is IdentityFixture {
         assertFalse(_passes(outsiderKey, digest), "an outsider never passes");
     }
 
+    /// @notice `PackageRegistry._useMove` takes a fast path when the proof's wallet is
+    ///         `activeAuthorityOf` (it then checks the signature against it), and otherwise calls
+    ///         `requireSigned` with the same proof. The two agree when every wallet the fast path
+    ///         accepts also passes `requireSigned`, as the same wallet: the active authority is
+    ///         always a wallet of the account, and zero whenever no wallet may act.
+    function invariant_TheMoveFastPathAgreesWithRequireSigned() public view {
+        bytes32 digest = keccak256(abi.encode("move", block.timestamp));
+        address active = registry.activeAuthorityOf(artistId);
+        for (uint256 i; i < pool.length; ++i) {
+            if (vm.addr(pool[i]) != active) continue;
+            assertTrue(_passes(pool[i], digest), "the fast path's wallet passes requireSigned");
+        }
+        if (active != address(0)) assertTrue(registry.isWallet(artistId, active));
+        if (registry.frozenUntil(artistId) > block.timestamp) assertEq(active, address(0));
+    }
+
     function _passes(uint256 key, bytes32 digest) internal view returns (bool) {
         try registry.requireSigned(artistId, digest, _proof(key, digest)) returns (address w) {
             return w == vm.addr(key);

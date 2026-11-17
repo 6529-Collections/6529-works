@@ -306,11 +306,12 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         address renderer = IStream(stream).rendererOf(tokenId);
         _checkRecordFile(r.recordFileId);
         _requireLicenseText(_frozenLicense(tokenId, flags), true);
-        _pinCode(renderer, renderer.codehash);
+        bytes32 codeHash = renderer.codehash;
+        _pinCode(renderer, codeHash);
         r.renderer = renderer;
         r.flags = flags | FINALIZED;
         ++r.version;
-        emit WorkFinalized(tokenId, renderer, workStateHash(tokenId));
+        emit WorkFinalized(tokenId, renderer, codeHash, workStateHash(tokenId));
         _refresh(tokenId);
     }
 
