@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { StatementLogFixture } from "./StatementLogFixture.sol";
 import { StatementLogHandler, Actors } from "./StatementLogHandler.sol";
+import { HandlerReach } from "../helpers/HandlerReach.sol";
 
 /// @notice Stateful invariants for the statement log (ADR 0001 section 12). A handler appends
 ///         through every path, revokes and replays nonces and attempts unauthorised writes, while
@@ -102,5 +103,44 @@ contract StatementLogInvariantTest is StatementLogFixture {
         for (uint256 i; i < handler.revokedLength(); ++i) {
             assertTrue(stmtLog.nonceUsed(handler.revokedBy(i), handler.revokedNonce(i)));
         }
+    }
+
+    /// @notice Handler self-test: every append path, the resolver swap, the nonce revocation and
+    ///         the governance manifest write the log; every replay, tampered or expired relay,
+    ///         unauthorised writer, reserved-kind misuse and governance misuse reaches the log
+    ///         and is refused there. Then every invariant holds.
+    function test_HandlerPathsReachState() public {
+        uint8 w = HandlerReach.WRITES;
+        uint8 r = HandlerReach.REFUSED;
+        HandlerReach.Expect[] memory e = new HandlerReach.Expect[](15);
+        e[0] = HandlerReach.Expect(StatementLogHandler.appendArtist.selector, w);
+        e[1] = HandlerReach.Expect(StatementLogHandler.appendOwner.selector, w);
+        e[2] = HandlerReach.Expect(StatementLogHandler.appendCurator.selector, w);
+        e[3] = HandlerReach.Expect(StatementLogHandler.appendPlatform.selector, w);
+        e[4] = HandlerReach.Expect(StatementLogHandler.appendRelayed.selector, w);
+        e[5] = HandlerReach.Expect(StatementLogHandler.appendRelayedByWallet.selector, w);
+        e[6] = HandlerReach.Expect(StatementLogHandler.swapResolver.selector, w);
+        e[7] = HandlerReach.Expect(StatementLogHandler.revokeNonce.selector, w);
+        e[8] = HandlerReach.Expect(StatementLogHandler.replay.selector, r);
+        e[9] = HandlerReach.Expect(StatementLogHandler.tamperedRelay.selector, r);
+        e[10] = HandlerReach.Expect(StatementLogHandler.expiredRelay.selector, r);
+        e[11] = HandlerReach.Expect(StatementLogHandler.unauthorized.selector, r);
+        e[12] = HandlerReach.Expect(StatementLogHandler.reservedKindMisuse.selector, r);
+        e[13] = HandlerReach.Expect(
+            StatementLogHandler.appendGovernanceManifest.selector, w | HandlerReach.CLOCK
+        );
+        e[14] = HandlerReach.Expect(StatementLogHandler.governanceMisuse.selector, r);
+        address[] memory sut = new address[](1);
+        sut[0] = address(stmtLog);
+        HandlerReach.check(e, HandlerReach.drive(address(handler), e, sut, 24, 1));
+        assertGt(handler.resolverSwaps(), 0);
+        assertGt(handler.refusedAttempts(), 0);
+        invariant_CountAndHeadMatchEmittedEvents();
+        invariant_LatestDisputeOutcomeMatchesEvents();
+        invariant_NoMalformedEventsReplaysOrUnauthorisedWrites();
+        invariant_RolesAreSpokenOnlyByTheirHoldersAndReservedKindsStayReserved();
+        invariant_ArtistEntriesBindTheActiveResolver();
+        invariant_RelayedEntriesCarryTheirNonce();
+        invariant_SpentNoncesStaySpent();
     }
 }

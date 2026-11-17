@@ -10,6 +10,7 @@ import { PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { Stream } from "src/stream/Stream.sol";
 import { StreamFixture } from "./StreamFixture.sol";
 import { MockEconomics, MockSaleAdapter, MockWorkRecords } from "../mocks/stream/StreamMocks.sol";
+import { HandlerReach } from "../helpers/HandlerReach.sol";
 
 /// @dev Real collisions of Stream's 23-bit terms position (QUALITY-6), found offline from the
 ///      key `keccak256(abi.encode(uint160 artistId, uint32 rate, uint32 feeShare, uint16
@@ -346,6 +347,28 @@ contract StreamTermsInvariantTest is StreamFixture {
             uint256 tokenId = handler.tokens(handler.tokenCount() - 1);
             assertEq(handler.termsIdOf(tokenId), ids[i], "found again");
         }
+        invariant_EveryViewMatchesTheLockedTerms();
+    }
+
+    /// @notice Handler self-test: mint and re-rate write Stream's terms, settle both settles and
+    ///         is refused for the wrong adapter, and the squatter's foreign words (written with
+    ///         `vm.store`, which a state diff does not show) push later terms into the overflow
+    ///         range; then the invariant holds on the state the drive left.
+    function test_HandlerPathsReachState() public {
+        HandlerReach.Expect[] memory e = new HandlerReach.Expect[](4);
+        e[0] = HandlerReach.Expect(TermsHandler.mint.selector, HandlerReach.WRITES);
+        e[1] = HandlerReach.Expect(TermsHandler.reRate.selector, HandlerReach.WRITES);
+        e[2] = HandlerReach.Expect(TermsHandler.squat.selector, 0);
+        e[3] = HandlerReach.Expect(
+            TermsHandler.settle.selector, HandlerReach.WRITES | HandlerReach.REFUSED
+        );
+        HandlerReach.covers(targetSelectors()[0].selectors, e);
+        address[] memory sut = new address[](1);
+        sut[0] = address(stream);
+        HandlerReach.check(e, HandlerReach.drive(address(handler), e, sut, 60, 1));
+        assertGt(handler.squats(), 0);
+        assertGt(handler.reRates(), 0);
+        assertGt(handler.overflowHits(), 0);
         invariant_EveryViewMatchesTheLockedTerms();
     }
 }
