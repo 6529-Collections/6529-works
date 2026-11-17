@@ -1,0 +1,39 @@
+{
+  "repository": "https://github.com/6529-Collections/6529networkmuseum",
+  "commit": "3926d78faacf67a62b8d9b48e15d26c43b52eae9",
+  "license": "Museum-authored records: CC0-1.0 (RIGHTS.md). The image is not copied: only its digests are kept.",
+  "records": {
+    "work": {
+      "path": "records/entities/6529NM-W-0029.json",
+      "file": "6529NM-W-0029.json",
+      "blob": "a83ff7e3db5af7d0a3e99f6fd48946f908aa91be"
+    },
+    "object": {
+      "path": "records/accessions/6529NM.2026.003/objects/6529NM.2026.003.01.json",
+      "file": "6529NM.2026.003.01.json",
+      "blob": "0158cff1b318fa87f3aed40998f90173fa7e4990"
+    },
+    "artist1": {
+      "path": "records/entities/6529NM-ART-0022.json",
+      "file": "6529NM-ART-0022.json",
+      "blob": "10bec8566898a2554cdccd25a1fbb0f81c7320f0"
+    },
+    "artist2": {
+      "path": "records/entities/6529NM-ART-0023.json",
+      "file": "6529NM-ART-0023.json",
+      "blob": "b7115cbac56b712a4e30d9ac96ad2b05abf9be3e"
+    }
+  },
+  "media": {
+    "path": "media/accessions/6529NM.2026.003/6529NM-W-0029/c1b6541832f2a237555adffae2f4870143a976549e591e2dbaa4d3d87f75d166/webp-v2-q82-m6-fixed-icc/2400.webp",
+    "blob": "f4a84a2aca35d4ce76f293f3e6be46d39285aa91",
+    "length": 48920,
+    "sha256": "0x0ec810b0e62cdc9c4cfaf2a24553b4feaf57e49a877d519f7dda5300c78dc436",
+    "chunkHashes": [
+      "0x404c7c7b9537ab7e7a85354b12eb67e7095e73999574bd8517d462f37232b825",
+      "0x6a97c5bcd006ef06507eb7eae98aedaa1f1ded72ab1106c57c5c95b07391704d"
+    ],
+    "width": 2400,
+    "height": 2400
+  }
+}
