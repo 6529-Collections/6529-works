@@ -24,8 +24,10 @@ CONTRACTS = [
     "artistRegistry", "splitFactory", "feeRecipientVault", "museumVault", "claimRouter",
     "assetAllowlist", "economicsResolver", "revenueEscrow", "curationVerifier", "packageRegistry",
     "statementLog",
-    "entropyModule", "renderer", "stream", "workRecords", "editions", "englishAuctionLens",
-    "englishAuction", "editionAuctionLens", "editionAuction",
+    "entropyModule", "renderer", "stream", "workRecords", "workDelivery", "editions",
+    "englishAuctionLens", "englishAuction", "editionAuctionLens", "editionAuction",
+    "federationRegistry", "federatedEditionAuctionLens", "federatedEditionAuction",
+    "federatedStreamDeployer", "federatedEditionsDeployer", "saleStarter",
 ]
 
 
