@@ -87,7 +87,7 @@ To deploy by hand instead, step by step, follow the runbook's
 | To | Read |
 | --- | --- |
 | Learn how the protocol works | The [specification](spec/README.md), the [architecture overview](architecture.md) and the [glossary](glossary.md) |
-| Integrate a marketplace, wallet, indexer or front end | The [integrator guide](integrators/README.md) |
+| Integrate a marketplace, wallet, indexer or front end | The [integrator guide](integrators/README.md), the exported ABIs in [`abi/`](../abi/), runnable examples in [`examples/`](../examples/README.md), and a reference keeper in [`keeper/`](../keeper/README.md) (reference code, not production software) |
 | Deploy to a testnet | The [runbook](../script/README.md#sepolia-runbook) |
 | Contribute | [CONTRIBUTING.md](../CONTRIBUTING.md) |
 | Review security | The [auditor pack](audit/README.md) |

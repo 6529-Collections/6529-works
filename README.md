@@ -53,7 +53,7 @@ The [quickstart](docs/quickstart.md) explains each step, what to expect (the lin
 | You want to | Start with |
 | --- | --- |
 | Understand the protocol | The [architecture overview](docs/architecture.md), the [specification](docs/spec/README.md) and the [glossary](docs/glossary.md) |
-| Integrate a marketplace, wallet, indexer or front end | The [integrator guide](docs/integrators/README.md) |
+| Integrate a marketplace, wallet, indexer or front end | The [integrator guide](docs/integrators/README.md), the exported ABIs in [`abi/`](abi/), runnable examples in [`examples/`](examples/README.md), and a reference keeper in [`keeper/`](keeper/README.md) (reference code, not production software) |
 | Run, read or extend the tests | [Testing](docs/testing/README.md) and the [test map](test/README.md) |
 | Deploy or operate | The [deploy runbook](script/README.md) and the [genesis configuration](config/README.md) |
 | Audit or review security | The [auditor pack](docs/audit/README.md): scope and sizes, trust, roles, threat model, invariants, limitations |

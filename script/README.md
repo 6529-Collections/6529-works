@@ -701,6 +701,8 @@ Before the mainnet broadcast, besides the [Sepolia runbook](#sepolia-runbook) st
 ## Operating procedures
 
 The contracts do not enforce these procedures; they describe the network's current practice.
+A reference implementation of the keeper steps below, tested on a local anvil chain, is in
+[`keeper/`](../keeper/README.md).
 The rules themselves are in the [governance spec](../docs/spec/governance.md).
 
 ### Scheduled network actions
