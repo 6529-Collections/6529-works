@@ -487,9 +487,9 @@
         {
           "signature": "killSignerApprovals(address)",
           "selector": "0x532178aa",
-          "role": "PARAMETER_SETTER",
-          "class": "24h",
-          "delay": 86400
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0
         }
       ],
       "genesisOnly": [

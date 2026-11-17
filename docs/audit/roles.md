@@ -42,14 +42,14 @@ network sets one (none at launch), may delay any scheduled operation once by 7 d
 | Role | ID | Execution delay | Held by | Holders at genesis | Mapped selectors |
 | --- | ---: | --- | --- | --- | ---: |
 | `ADMIN` | 0 | 7 days | `network()` only | the network | 0 |
-| `NETWORK` | 1 | immediate | `network()` only | the network | 13 |
+| `NETWORK` | 1 | immediate | `network()` only | the network | 14 |
 | `PAUSER` | 2 | immediate | operational keys | Pauser key 1, Pauser key 2, Pauser key 3 | 4 |
 | `CURATION_SIGNER` | 4 | immediate | operational keys | Curation signer key 1, Curation signer key 2 | 0 |
 | `STORAGE_OPERATOR` | 5 | immediate | operational keys | Storage operator key | 5 |
 | `MINTER` | 6 | immediate | operational keys | none (unused in v1) | 0 |
 | `KEEPER` | 7 | immediate | operational keys | none (unused in v1) | 0 |
 | `PLATFORM` | 8 | immediate | operational keys | Platform key | 3 |
-| `PARAMETER_SETTER` | 9 | 24 hours | `network()` only | the network | 30 |
+| `PARAMETER_SETTER` | 9 | 24 hours | `network()` only | the network | 29 |
 | `FUNDS_SETTER` | 10 | 3 days | `network()` only | the network | 11 |
 | `SUCCESSOR_SETTER` | 11 | 7 days | `network()` only | the network | 22 |
 | `CURATOR` | 12 | immediate | operational keys | Curator key | 1 |
@@ -65,8 +65,8 @@ once; the network roles answer for `network()` only ([`Roles.sol`](../../src/gov
 
 | Class | Delay | Mapped selectors |
 | --- | --- | ---: |
-| No delay | immediate | 26 |
-| 24 hours | 24 hours | 30 |
+| No delay | immediate | 27 |
+| 24 hours | 24 hours | 29 |
 | 3 days | 3 days | 11 |
 | 7 days | 7 days | 22 |
 | **Total** | | **89** |
@@ -135,7 +135,7 @@ Source: [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.
 | --- | --- | --- | --- | --- | --- | --- |
 | `revokePackage(bytes32,bytes32)` | `0x6ce7e2f6` | `NETWORK` | No delay | immediate | No: executes at once | Also revokes a root before it is registered. |
 | `setVerifier(address,address,bytes32)` | `0xef65fbd2` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once | Compare-and-set; never back to a retired verifier. |
-| `killSignerApprovals(address)` | `0x532178aa` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once | Every unminted approval the signer gave stops counting (C32). |
+| `killSignerApprovals(address)` | `0x532178aa` | `NETWORK` | No delay | immediate | No: executes at once | Every unminted approval the signer gave stops counting (C32). |
 
 ### CurationVerifier
 

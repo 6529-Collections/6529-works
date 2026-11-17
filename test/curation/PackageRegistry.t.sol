@@ -1176,6 +1176,24 @@ contract PackageRegistryTest is CurationBase {
         _expectValid(item, _keys(leadKey, collabKey));
     }
 
+    /// @dev C15: the lead is paid only through its account (artist-resolved), so a freeze of
+    ///      the lead's account holds its payout; a fixed payee naming the lead is refused, alone
+    ///      or beside its artist-resolved payee. Collaborators keep fixed payees. Fails without
+    ///      the change: both items were valid.
+    function test_invalidItem_leadPaidAsAFixedPayee() public {
+        PackageItem memory item = _masterItem(SHA_A);
+        item.payees = new ISplitWallet.Payee[](2);
+        item.payees[0] = ISplitWallet.Payee(0, collab, 20_000);
+        item.payees[1] = ISplitWallet.Payee(0, lead, 80_000);
+        if (lead < collab) (item.payees[0], item.payees[1]) = (item.payees[1], item.payees[0]);
+        _expectInvalid(item, _keys(leadKey, collabKey));
+        item = _masterItem(SHA_A);
+        item.payees = new ISplitWallet.Payee[](2);
+        item.payees[0] = ISplitWallet.Payee(0, lead, 20_000);
+        item.payees[1] = ISplitWallet.Payee(_id(lead), address(0), 80_000);
+        _expectInvalid(item, _keys(leadKey, collabKey));
+    }
+
     function test_validItem_partyPaidBothWays() public {
         // A party may be both a fixed and an artist-resolved payee: distinct canonical keys.
         PackageItem memory item = _masterItem(SHA_A);

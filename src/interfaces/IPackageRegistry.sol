@@ -163,7 +163,9 @@ interface IPackageRegistry is IERC165 {
     /// @notice Stops every package `signer` approved and that is registered now: their items
     ///         not yet minted can no longer mint, and an edition sale can no longer open on them
     ///         (`IItemApprovals.isApprovedItem`). Packages the signer approves later are not
-    ///         affected (disable the signer in the verifier for that). A network action.
+    ///         affected, nor attestations signed before and registered after: disable the
+    ///         signer in the verifier for those, in the same batch (C32). A network action with
+    ///         no delay.
     /// @param signer The curation signer whose registered approvals stop.
     function killSignerApprovals(address signer) external;
 
