@@ -27,14 +27,17 @@ actions still checks its own effects.
   every call of every run) unless its Test cell says **handler check** (an assertion inside a
   handler action, failing the campaign through `fail_on_revert`) or **after-campaign** (an
   `afterInvariant` hook, checked at the end of every run).
-- **Non-vacuity.** `test_HandlerReachesEveryPath` (economics),
-  `AuctionHandlerCoverage.test_EveryPathRuns`, `AuctionHaltsCoverage.test_HaltPathsRun`,
-  `EditionAuctionInvariantTest.test_EveryActionRuns`,
-  `StreamLifecycleInvariantTest.test_EveryActionRuns`,
-  `StreamStatesInvariantTest.test_EveryTransitionIsReached` and
-  `ContentStoreInvariantTest.test_EveryActionRuns` replay campaign-shaped sequences and assert
-  that every path the invariants rely on executes. The other campaigns have no such test yet
-  ([Gaps](#gaps)).
+- **Non-vacuity.** Every campaign has a handler self-test. `test_HandlerReachesEveryPath`
+  (economics), `AuctionHandlerCoverage.test_EveryPathRuns`, `AuctionHaltsCoverage.test_HaltPathsRun`,
+  `EditionAuctionInvariantTest.test_EveryActionRuns` and the stream lifecycle (`test_EveryActionRuns`), stream states
+  (`test_EveryTransitionIsReached`) and content store (`test_EveryActionRuns`) tests replay campaign-shaped sequences and assert that every path the invariants
+  rely on executes. The other seventeen campaigns (the mint policy's included) have
+  `test_HandlerPathsReachState`,
+  built on [`HandlerReach`](../../test/helpers/HandlerReach.sol): it calls every targeted handler
+  action with mixed-width arguments and reads each call's state diff, and fails unless every
+  action changed a contract under test, was refused by one, or moved the clock, as its
+  expectation names; it then checks every invariant on the state the drive left. Each was shown
+  to fail when one handler action is made to return at once.
 - **Traceability.** Every row's Test cell must name a function that exists under `test/`;
   [`tools/check_rules.py`](../../tools/check_rules.py) checks it in CI.
 - **Running them.** `forge test --match-contract Invariant`; commands and CI jobs are on
@@ -95,6 +98,76 @@ renderer, around a complete, finalized work ([WS-39 to WS-43](../spec/works-and-
 | --- | --- | --- | --- |
 | INV-STR-17 | A complete, finalized work's `tokenURI` never changes. | `invariant_tokenUriOfACompleteWorkNeverChanges` | `setDelivery`, `addStore`, sync, preferences, `setDefaultRenderer` |
 | INV-STR-18 | A complete work's facts (record, media, license, rate, powers, pin, completeness and each file's store) never change. | `invariant_aCompleteWorksFactsNeverChange` | as above |
+
+### Delivery contracts
+
+[`WorkDeliveryInvariant.t.sol`](../../test/stream/WorkDeliveryInvariant.t.sol), handler
+[`WorkDeliveryHandler`](../../test/stream/WorkDeliveryHandler.sol). Real `Stream`,
+`WorkRecords`, `WorkDelivery` and `ContentStore`; three open works of two media files in three
+collections. The artist, the platform, the storage operator, governance and a stranger add
+locators (fresh, duplicate, malformed, past the quota, after finalize), mark them dead, set
+file, collection and global preferences, finalize, sync on chain, and replace the delivery
+contract by a new real one, by a scripted hostile one (`ScriptedDelivery`: a revert, a bare word,
+an ONCHAIN claim, a URI with a space, a well-formed answer, kind NONE with a URI), or with a
+stale `expected` value. A replaced delivery contract refuses every change (`NotDelivery`). The
+three state invariants are checked after every fourth call (every call under `deep`).
+
+| ID | Invariant | Test | Handler actions |
+| --- | --- | --- | --- |
+| INV-WD-1 | In every real delivery contract ever installed, each file's locators are exactly those appended, in order, at most 16; the artist added at most 8 and only before finalize, the platform at most 8 before finalize and at most the artist's unused slots more after; counts, artist mask and dead mask match the model; a dead mark never clears ([WS-19, WS-20](../spec/works-and-storage.md#rules-and-invariants)). | `invariant_LocatorsAppendOnlyAndBounded` | `addLocator`, `markDead`, `finalize` |
+| INV-WD-2 | Every real delivery contract ever installed resolves each file's preferred locator in WS-21's order: the live file index, the collection kind, the global kind, the first live locator, the implicit ONCHAIN copy of a synced work, else none; a dead locator is never served ([WS-21, WS-22](../spec/works-and-storage.md#rules-and-invariants)). | `invariant_PreferenceResolutionOrder` | `setFilePreference`, `setCollectionKind`, `setGlobalKind`, `markDead`, `sync` |
+| INV-WD-3 | `WorkRecords.delivery` is the contract installed last, each installed contract names its predecessor, and `preferredLocator` serves the current contract's answer only when well formed: a real successor's own resolution, a hostile one's well-formed answer, else the work's own (ONCHAIN when synced, else none) ([WS-39, WS-40](../spec/works-and-storage.md#rules-and-invariants)). | `invariant_RecordsServeOnlyWellFormedAnswers` | `replaceDelivery`, `sync` |
+| INV-WD-4 | Every action has the predicted outcome: strangers, the artist after finalize, duplicate and malformed URIs, a full quota, a dead or missing index, an unknown collection, a stale compare-and-set value and a stranger's replacement are refused; all else succeeds. | `invariant_EveryCallHadThePredictedOutcome` | all |
+
+## The governed vault
+
+[`GovernedVaultInvariant.t.sol`](../../test/economics/GovernedVaultInvariant.t.sol), handler
+`GovernedVaultHandler` in the same file. The real network fee vault (`GovernedVault`, the
+`SplitLedger`'s network and a fixed 25% payee of a royalty wallet), with ETH, a plain ERC-20, a
+no-return token, a blocklist token, a fee-on-transfer token, ERC-721 works and ERC-1155 copies;
+destinations include a contract that refuses ETH when closed and `ReenteringDestination`, which
+on every ETH payment tries to make itself the destination and to pull the rest.
+
+| ID | Invariant | Test | Handler actions |
+| --- | --- | --- | --- |
+| INV-ECO-15 | The vault holds what reached it less what it forwarded; every account that could receive anything holds exactly what it received while it was the destination, through `forward` or `releaseToDestination`; every work and copy is with the vault or the destination it was forwarded to ([ECO-41](../spec/economics-and-payouts.md#rules-and-invariants)). | `invariant_HoldingsLeaveOnlyToTheDestination` | `fund`, `forward`, `forwardWork`, `forwardCopies`, `pushShare`, `releaseToDestination` |
+| INV-ECO-16 | The destination is the one the network last set with the current revision, never zero or the vault; the revision counts the changes; stale and future revisions, a stranger, and the re-entering destination never change it (ECO-41). | `invariant_DestinationIsCompareAndSetByTheNetwork` | `setDestination`, `forward` |
+| INV-ECO-17 | Every forward and destination change has the predicted outcome (nothing to forward, more than held, a refusing or blocked party, a token delivering less than sent, a destination that cannot hold works, a stale revision, a stranger are refused), with exactly the predicted amount. | `invariant_EveryCallHadThePredictedOutcome` | all |
+
+## Federated template state
+
+[`FederatedStateInvariant.t.sol`](../../test/federated/FederatedStateInvariant.t.sol), handler
+[`FederatedStateHandler`](../../test/federated/FederatedStateHandler.sol). The real genesis stack
+(`FederationBase`): one artist's joined `FederatedStream` and `FederatedEditions` pair, a copy
+that never joined, and three adapter stand-ins (`FedAdapterMock`: an admitted English-auction
+one, an admitted edition-auction one, one never admitted). Twelve approved works, every third an
+edition master. Mints and restarts, settlements by the minting adapter and by others, royalty
+changes, re-approvals, edition binding, creation, copies and seals, delistings and adapter
+removals by governance.
+
+| ID | Invariant | Test | Handler actions |
+| --- | --- | --- | --- |
+| INV-FED-1 | Every token's minting adapter, state, outcome and `primarySaleSettled` are the model's: settled once, by the minting adapter, SOLD only with a buyer ([FED-16](../spec/federation.md#rules-and-invariants)). | `invariant_SettledOnceByTheMintingAdapter` | `mint`, `settle` |
+| INV-FED-2 | An unbid or frozen-out token not restarted is held by the template itself, a sold one by its buyer, one in sale by its adapter, a restarted one by no one (FED-17). | `invariant_UnsoldWorksStayInTheTemplatesCustody` | `settle`, `mint` (restart) |
+| INV-FED-3 | Each work's royalty rate is the model's and never rises (FED-24). | `invariant_RoyaltyRateOnlyFalls` | `setRoyaltyRate` |
+| INV-FED-4 | The copy that never joined holds no token and admits no adapter; no mint, restart or binding succeeds while the contract or its partner is delisted or the adapter not admitted (FED-5, FED-7, FED-13). | `invariant_NoMintBeforeJoiningOrWhileDelisted` | `mint`, `bind`, `toggleListing`, `toggleAdapter` |
+| INV-FED-5 | Every edition's minted count is within its maximum; a sealed edition's maximum is its sealed count and never moves; buyers' copies add up to the copies minted (FED-33). | `invariant_SealedEditionSupply` | `bind`, `create`, `mintCopies`, `seal` |
+| INV-FED-6 | 6529 Stream's supply and the artist's identity never change (FED-51). | `invariant_FederationNeverTouchesStreamOrIdentity` | all |
+
+## Curation signers
+
+[`CurationSignerInvariant.t.sol`](../../test/curation/CurationSignerInvariant.t.sol), handler
+`CurationSignerHandler` in the same file. Real `PackageRegistry`, `Eip712CurationVerifier` and
+`WorksAccessManager` (its grant counter matters: a revoke and re-grant in one block must not
+revive an epoch); three signer keys, 24 roots. Signers sign at their current epoch, also while
+disabled or without the role; anyone submits (some tampered); the network disables, re-enables,
+swaps keys, kills approvals and revokes roots; a stranger tries the network's actions.
+
+| ID | Invariant | Test | Handler actions |
+| --- | --- | --- | --- |
+| INV-CUR-7 | A root registers only from an approval made at the signer's current epoch while active; none signed before a disable, a revocation or a swap, or while disabled or without the role, ever registers; each epoch value is new at every disable, enable, revocation and grant. | `invariant_RegistrationsFollowTheSignersEpoch` | `sign`, `register`, `disable`, `enable`, `swap` |
+| INV-CUR-8 | The registry's view of every root is the model's: unregistered, live with its signer, or revoked (a killed signer's root reads as revoked from the kill on). | `invariant_RootsMatchTheModel` | `register`, `kill`, `revokeRoot` |
+| INV-CUR-9 | The verifier's view of each signer (disabled, active, epoch) is the model's. | `invariant_SignersMatchTheModel` | `disable`, `enable`, `swap` |
 
 ## 6529 Stream Editions
 
@@ -347,25 +420,24 @@ outcome at once.
 
 Non-vacuity: `ContentStoreInvariantTest.test_EveryActionRuns`.
 
-## Federation
+## Federated sales
 
 [`FederationInvariant.t.sol`](../../test/federated/FederationInvariant.t.sol), handler
 `FederationHandler` in the same file, on the wired stack (`FederationBase`). A joined federated
 template and a faulty one, 24 approved items; the handler starts sales, bids, settles, refuses
 closes and reclaims, switches the fault on and off, and delists and relists. One curated 6529
-Stream sale is sold before the campaign. The campaign covers federated sales and money only:
-the federated contracts' own state (FED-16, FED-24, FED-33 and the rest) has unit tests and no
-campaign ([Gaps](#gaps)).
+Stream sale is sold before the campaign. The campaign covers federated sales and money; the
+federated contracts' own state has its own campaign ([Federated template state](#federated-template-state)).
 
 | ID | Invariant | Test | Handler actions |
 | --- | --- | --- | --- |
-| INV-FED-1 | The auction's ETH balance equals every bidder's claimable credit plus the high bid of every unsettled sale. | `invariant_TheAuctionHoldsExactlyCreditsAndLiveBids` | all |
-| INV-FED-2 | The network fee recipient receives exactly its locked share on every sold federated sale, and nothing otherwise. | `invariant_TheNetworkIsPaidItsShareExactlyOnSoldSales` | `settle`, `refuse` |
-| INV-FED-3 | A person holds a federated work only if its sale is SOLD, and then it is the bidder who paid. | `invariant_ABuyerHoldsAFederatedWorkOnlyIfItPaid` | `bid`, `settle`, `refuse` |
-| INV-FED-4 | Federation never touches 6529 Stream (its supply and the curated token's owner) or a curated artist's identity. | `invariant_FederationNeverTouchesCanonicalState` | all |
-| INV-FED-5 | Every sale ends: after each is refused, the auction owes only credits, and INV-FED-1 and INV-FED-2 still hold. | after-campaign: `FederationInvariantTest.afterInvariant` | `refuse` |
+| INV-FSA-1 | The auction's ETH balance equals every bidder's claimable credit plus the high bid of every unsettled sale. | `invariant_TheAuctionHoldsExactlyCreditsAndLiveBids` | all |
+| INV-FSA-2 | The network fee recipient receives exactly its locked share on every sold federated sale, and nothing otherwise. | `invariant_TheNetworkIsPaidItsShareExactlyOnSoldSales` | `settle`, `refuse` |
+| INV-FSA-3 | A person holds a federated work only if its sale is SOLD, and then it is the bidder who paid. | `invariant_ABuyerHoldsAFederatedWorkOnlyIfItPaid` | `bid`, `settle`, `refuse` |
+| INV-FSA-4 | Federation never touches 6529 Stream (its supply and the curated token's owner) or a curated artist's identity. | `invariant_FederationNeverTouchesCanonicalState` | all |
+| INV-FSA-5 | Every sale ends: after each is refused, the auction owes only credits, and INV-FSA-1 and INV-FSA-2 still hold. | after-campaign: `FederationInvariantTest.afterInvariant` | `refuse` |
 
-The campaign has no handler self-test yet, so its non-vacuity is not asserted.
+Non-vacuity: `FederationInvariantTest.test_HandlerPathsReachState`.
 
 ## Invariants removed or changed in the second permanence pass
 
@@ -451,17 +523,14 @@ Figures: [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table). Rul
 What no stateful campaign covers yet, as of the second permanence pass. Coverage, mutation
 testing and Halmos proofs are in [Testing](../testing/README.md).
 
-- **No campaign for `WorkDelivery`, `GovernedVault`, or the federated contracts' own state.**
-  `WorkDelivery`'s locators and preferences, a governed vault's destination rule (ECO-41), and
-  `FederatedStream` and `FederatedEditions` state (settlement once by the minting adapter,
-  custody, the royalty rate only falling, no mint before joining or after delisting, sealed
-  supply; FED-5, FED-7, FED-16, FED-17, FED-24, FED-33) have unit tests only. The federation
-  campaign (INV-FED-1 to INV-FED-5) checks sales and money.
-- **Campaigns without a handler self-test.** Only the seven listed under Non-vacuity above
-  assert that their handler's paths run. The Stream, Stream terms, work powers, work-records
-  governance, Editions, package registry, accounts, statement log, VRF entropy, governance,
-  federation and auction refusal campaigns and the mint policy campaign do not, so a handler
-  action that always returns early would go unnoticed.
+- **Pending deliveries in the refusal campaign.** About one run in ninety reaches a pending
+  delivery, so `claimDelivery` is shown only to reach the auction there; the base auction
+  campaign claims deliveries.
+- **Execution-delay changes of a curation signer** (inactive but keeping its epoch) are unit
+  tests only.
+- **Delivery successors carrying a predecessor's locators.** A fresh successor starts empty in
+  the delivery campaign; WS-39 leaves the carry-over to the successor.
+- **Work-records governance** runs at its own 128 x 64, below the default campaign size.
 - **`stageChange` against the transaction cap.** No test measures the worst-case
   `ArtistRegistry.stageChange` against the 16,777,216 gas cap (PROP-GAS-7 covers the other
   worst cases).
@@ -474,11 +543,10 @@ testing and Halmos proofs are in [Testing](../testing/README.md).
   `repinRenderer`, `syncOnChain` or the preferred-location settings, and the work powers
   campaign (INV-STR-12 to INV-STR-14), which drives `renounce`, `setRoyaltyRate` and
   `relicense` (and, since the records lane, `finalize` and `repinRenderer`); the governance
-  campaign (INV-STR-17, INV-STR-18) drives delivery, stores and sync around one complete work.
+  campaign (INV-STR-17, INV-STR-18) drives delivery, stores and sync around one complete work;
+  delivery contracts: INV-WD-1 to INV-WD-4.
 - **`DependencyRegistry` and `Renderer`**: fuzz and unit tests only (PROP-RND-1). The content
   store has its campaign (INV-CNT-1 to INV-CNT-4) besides PROP-CNT-1 and PROP-CNT-2.
-- **Curation signer changes**: the campaign never disables, re-enables or swaps an
-  `Eip712CurationVerifier` signer.
 - **`ConsolidationAdapter`** runs only over a mock delegation contract, in the accounts
   campaign (INV-ID-1) and its unit tests.
 - **The brake** is campaigned only on a mock target; its once-per-operation rule and the
@@ -486,7 +554,8 @@ testing and Halmos proofs are in [Testing](../testing/README.md).
 - **Deployment and readback guards** (`DeployGuards`, `Verify.s.sol`): unit tests only, in
   [`DeployScript.t.sol`](../../test/deploy/DeployScript.t.sol).
 - **The fully wired system.** Most campaigns mock their neighbours. The Stream lifecycle,
-  Stream states, edition auction and federation campaigns run on the wired stack; other
+  Stream states, edition auction, federated sales and federated template state campaigns run
+  on the wired stack; other
   properties that span contracts (an atomic `start`, value conservation through a real Editions
   mint) are covered by the scenario tests in
   [`test/integration/`](../../test/integration/README.md).

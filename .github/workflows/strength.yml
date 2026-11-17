@@ -119,9 +119,12 @@ jobs:
     name: Symbolic (${{ matrix.contract }})
     needs: symbolic-contracts
     runs-on: ubuntu-latest
-    # One test contract per job: a solver crash names its contract, the other contracts still
-    # report, and a long stateful proof gets its own hour.
-    timeout-minutes: 60
+    # One test contract per job: a solver crash names its contract and the other contracts
+    # still report. Locally the longest contract took under 2.5 minutes with its build
+    # (TextSymbolic 147 s, UniformClearing 91 s, StreamSymbolic 49 s; all 67 proofs in about 8
+    # minutes), so 30 minutes leaves room for a slower runner without hiding a proof that
+    # stopped converging.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:

@@ -30,8 +30,11 @@ jobs:
         include:
           - name: economics
             filter: --match-contract ^EconomicsInvariant
+          # The four campaigns of the November 2026 testing build: about 68 minutes locally.
+          - name: testing build
+            filter: --match-contract ^(WorkDelivery|GovernedVault|FederatedState|CurationSigner)Invariant
           - name: others
-            filter: --no-match-contract ^EconomicsInvariant
+            filter: --no-match-contract ^(Economics|WorkDelivery|GovernedVault|FederatedState|CurationSigner)Invariant
 
     steps:
       - name: Checkout
@@ -156,7 +159,7 @@ jobs:
     needs: medusa-harnesses
     if: ${{ needs.medusa-harnesses.outputs.harnesses != '[]' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -227,12 +230,17 @@ jobs:
           restore-keys: medusa-corpus-${{ matrix.harness }}-
 
       - name: Fuzz for 30 minutes
-        # medusa.json holds the settings (property_ prefix, no cheatcodes); this job narrows
-        # the targets to one harness and gives it its own corpus.
+        # medusa.json holds the settings (property_ prefix, no cheatcodes); this job compiles
+        # only the harness's file (about 30 s, against 8 minutes for the whole project), into
+        # its own build directories, narrows the targets to the harness and gives it its own
+        # corpus.
         env:
           HARNESS: ${{ matrix.harness }}
+          FOUNDRY_OUT: out-medusa
+          FOUNDRY_CACHE_PATH: cache-medusa
         run: >-
           medusa fuzz --config medusa.json --timeout 1800
+          --compilation-target "test/medusa/$HARNESS.sol"
           --target-contracts "$HARNESS" --corpus-dir "medusa-corpus/$HARNESS"
 
   deep-differential:

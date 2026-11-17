@@ -160,6 +160,14 @@ jobs:
       - name: Snapshot checker unit tests
         run: python -m tools.test_check_snapshots
 
+      - name: Real-data vectors and event topics
+        # test/fixtures/real/ must be what tools/make_vectors.py writes from the pinned Museum
+        # records and the compiled ABIs (the replay suites require every listed event).
+        run: python tools/make_vectors.py --check
+
+      - name: Vector generator unit tests
+        run: python -m unittest tools.test_make_vectors
+
       - name: Budget gates
         # The measured profile is explicit: adding a Foundry profile must not silently
         # change which bytecode the EIP-170 gate measures.
@@ -217,9 +225,10 @@ jobs:
     runs-on: ubuntu-latest
     # ADR 0001 budget: every CI job finishes in under 15 minutes.
     timeout-minutes: 15
-    # `forge test` in three parallel parts that together run every test exactly once:
-    # everything but the invariant tests, the economics invariants (the longest suite), and
-    # the other invariants. Each part builds incrementally from the cached compiler output.
+    # `forge test` in four parallel parts that together run every test exactly once:
+    # everything but the invariant tests, the economics invariants (the longest suite), the
+    # four campaigns of the November 2026 testing build, and the other invariants (the Medusa
+    # harnesses' Forge runners among them). Each part builds incrementally from the cached compiler output.
     strategy:
       fail-fast: false
       matrix:
@@ -228,8 +237,10 @@ jobs:
             filter: --no-match-test ^invariant
           - name: economics invariants
             filter: --match-test ^invariant --match-contract ^EconomicsInvariant
+          - name: testing-build invariants
+            filter: --match-test ^invariant --match-contract ^(WorkDelivery|GovernedVault|FederatedState|CurationSigner)Invariant
           - name: other invariants
-            filter: --match-test ^invariant --no-match-contract ^EconomicsInvariant
+            filter: --match-test ^invariant --no-match-contract ^(Economics|WorkDelivery|GovernedVault|FederatedState|CurationSigner)Invariant
 
     steps:
       - name: Checkout

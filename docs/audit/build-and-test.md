@@ -52,7 +52,7 @@ forge test
 | One file | `forge test --match-path test/curation/PackageRegistry.t.sol` |
 | One contract | `forge test --match-contract AuctionInvariantEth` |
 | One test, with traces | `forge test --match-test test_consume_revertsDoubleConsume -vvvv` |
-| Every stateful campaign (14 contracts) | `forge test --match-contract Invariant` |
+| Every stateful campaign | `forge test --match-contract Invariant` |
 | A deeper campaign than CI's (the nightly run's) | `FOUNDRY_PROFILE=deep forge test --match-test invariant_`: 2,000 runs of depth 256 |
 | More fuzz runs (the nightly run's) | `FOUNDRY_PROFILE=deep forge test --no-match-test "^invariant" --no-match-path "test/fork/*"`: every fuzz test 10,000 times |
 | The ABI and storage snapshots, after `forge build` | `python tools/check_snapshots.py` (`--update` rewrites them) |
@@ -77,29 +77,30 @@ forge test
 ## CI
 
 [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs these jobs, in parallel, on
-every pull request and every push to `main`. `forge test` is split in three parts whose
+every pull request and every push to `main`. `forge test` is split in four parts whose
 filters together select every test exactly once; the required check **Contracts** is green
-only when Build and checks and all three parts are.
+only when Build and checks and all four parts are.
 
 | Job | Timeout | Steps, in order |
 | --- | --- | --- |
 | **Docs** | 5 minutes | `python -m tools.test_check_markdown_links`; `python tools/check_markdown_links.py`; `python -m tools.test_gen_role_matrix`; `python tools/gen_role_matrix.py --check`; `python -m tools.test_check_docs_facts`; `python tools/check_docs_facts.py`; `python -m tools.test_gen_facts`; `python tools/gen_facts.py --check`; `python -m tools.test_check_rules`; `python tools/check_rules.py --uncovered` |
-| **Build and checks** | 15 minutes | checkout with submodules; Python 3.12.13; Foundry v1.7.1; restore the compiler cache (keyed on Foundry 1.7.1, solc 0.8.37 and a digest of the staged `foundry.toml`, `foundry.lock`, `.gitmodules`, `src`, `test`, `script` and `lib` entries); `forge fmt --check`; `forge build`; save the cache; `python tools/check_docs_facts.py --artifacts out`; `python tools/check_snapshots.py`; `python -m tools.test_check_snapshots`; `python tools/check_budgets.py --profile default`; `python -m tools.test_check_budgets`; `python tools/check_genesis.py`; `python -m tools.test_check_genesis`; `python tools/check_natspec.py`; `python -m tools.test_check_natspec`; `python -m tools.test_edition_auction_ref` (the edition auction's reference model and golden vectors); `python -m tools.test_check_coverage`; `python -m tools.test_mutation`; the content tooling tests |
+| **Build and checks** | 15 minutes | checkout with submodules; Python 3.12.13; Foundry v1.7.1; restore the compiler cache (keyed on Foundry 1.7.1, solc 0.8.37 and a digest of the staged `foundry.toml`, `foundry.lock`, `.gitmodules`, `src`, `test`, `script` and `lib` entries); `forge fmt --check`; `forge build`; save the cache; `python tools/check_docs_facts.py --artifacts out`; `python tools/check_snapshots.py`; `python -m tools.test_check_snapshots`; `python tools/make_vectors.py --check`; `python -m unittest tools.test_make_vectors`; `python tools/check_budgets.py --profile default`; `python -m tools.test_check_budgets`; `python tools/check_genesis.py`; `python -m tools.test_check_genesis`; `python tools/check_natspec.py`; `python -m tools.test_check_natspec`; `python -m tools.test_edition_auction_ref` (the edition auction's reference model and golden vectors); `python -m tools.test_check_coverage`; `python -m tools.test_mutation`; the content tooling tests |
 | **Tests** (unit, fuzz and integration) | 15 minutes | the same setup and cache; `forge test --no-match-test ^invariant` |
 | **Tests** (economics invariants) | 15 minutes | the same; `forge test --match-test ^invariant --match-contract ^EconomicsInvariant` |
-| **Tests** (other invariants) | 15 minutes | the same; `forge test --match-test ^invariant --no-match-contract ^EconomicsInvariant` |
-| **Contracts** | 5 minutes | fails unless Build and checks and the three Tests jobs succeeded |
+| **Tests** (testing-build invariants) | 15 minutes | the same; `forge test --match-test ^invariant --match-contract ^(WorkDelivery\|GovernedVault\|FederatedState\|CurationSigner)Invariant` |
+| **Tests** (other invariants) | 15 minutes | the same; `forge test --match-test ^invariant --no-match-contract ^(Economics\|WorkDelivery\|GovernedVault\|FederatedState\|CurationSigner)Invariant` (the Medusa harnesses' Forge runners among them) |
+| **Contracts** | 5 minutes | fails unless Build and checks and the four Tests jobs succeeded |
 | **Static analysis** | 15 minutes | checkout with submodules; Python 3.12.13; Foundry v1.7.1; install Slither from the hash lock; `python -m tools.test_check_slither`; `python tools/check_slither.py` |
 Three more workflows run what a pull request leaves out, to keep the organisation's shared
 runners for the checks above:
 [`strength.yml`](../../.github/workflows/strength.yml) after every merge to `main`, nightly and
 on demand (**Coverage**: `forge coverage` under the `lite` profile and
 `python tools/check_coverage.py --uncovered`, uploading `lcov.info`; **Symbolic (Halmos)**:
-`halmos` under the `symbolic` profile, one job per test contract with a 60-minute limit, every
+`halmos` under the `symbolic` profile, one job per test contract with a 30-minute limit, every
 declared proof required to pass), [`nightly.yml`](../../.github/workflows/nightly.yml) (the
 invariant campaigns and every fuzz test under the `deep` profile, one 30-minute Medusa campaign
-per harness in `test/medusa` when there is one, and the fork tests in `test/fork` against
-public mainnet and Sepolia endpoints) and [`mutation.yml`](../../.github/workflows/mutation.yml) (every
+per harness in `test/medusa`, and the fork tests in `test/fork`, the Safe suites included,
+against public mainnet and Sepolia endpoints) and [`mutation.yml`](../../.github/workflows/mutation.yml) (every
 mutation shard, weekly). [Testing](../testing/README.md) describes them and the figures.
 
 ### The gates

@@ -2,18 +2,29 @@
 
 ## Unreleased
 
-- Testing gates (the "all frameworks" testing build, first part; no contract change):
-  `tools/check_snapshots.py` compares every `src/` contract's ABI (selectors, topics, errors)
-  and storage layout with committed snapshots in `test/snapshots/` (`foundry.toml` adds
-  `extra_output = ["storageLayout"]`; every artifact's bytecode is unchanged);
-  `tools/check_rules.py` requires every spec rule to name a test that exists and every invariant
-  to name its function, with the rules that have none listed in `tools/rules-uncovered.txt`;
-  both run on every pull request with their unit tests. The `deep` profile runs every fuzz test
-  10,000 times, nightly; the nightly workflow gains a Medusa job per harness (skipped while there
-  is none), and the Halmos job becomes one job per test contract. The invariants page catalogues
-  the content store and federation campaigns (INV-CNT-1 to INV-CNT-4, INV-FED-1 to INV-FED-5)
-  and its gaps are brought up to date; seven rule and property rows that cited only a file or
-  nothing now name their tests, and a citation that matched no test was removed.
+- Testing build ("all frameworks", November 2026; tests, tools, CI and docs only, no contract
+  change; [Testing](docs/testing/README.md)):
+  - 36 Halmos proofs of the permanent contracts' state rules (ledger, escrow and governed vault,
+    statement log, Stream and work records, Editions, the federated template), beside the 31
+    library proofs; the Halmos job runs one test contract per job.
+  - A second fuzzer: three Medusa harnesses (`test/medusa/`, `medusa.json`) with their own models
+    of the rules, run by Forge on every pull request and by Medusa nightly.
+  - Safe v1.4.1 fork tests: the network, an artist wallet, holders, the museum and the fee
+    destination as real Safes (`test/fork/Safe*`).
+  - Log replay of eight permanent contracts from their logs alone (`test/replay/`), and real-data
+    vectors from a 6529 Network Museum record (`tools/make_vectors.py`, `test/fixtures/real/`).
+  - A handler self-test in every invariant campaign, four fixed handlers that had not reached
+    what they were written for, and four new campaigns (delivery contracts, the governed vault,
+    federated template state, curation signers), run in a fourth CI partition.
+  - `tools/check_snapshots.py`: every `src/` contract's ABI and storage layout against committed
+    snapshots (`foundry.toml` adds `extra_output = ["storageLayout"]`; every `src/` contract's
+    bytecode is unchanged). `tools/check_rules.py`: every spec rule and invariant names a test
+    that exists, with the rules that have none listed in `tools/rules-uncovered.txt`.
+  - The `deep` profile runs every fuzz test 10,000 times, nightly.
+  - Docs: the invariants page catalogues every campaign (new INV-CNT, INV-FSA, INV-WD,
+    INV-FED, INV-ECO-15 to 17 and INV-CUR-7 to 9 rows), the spec's test cells name the new
+    proofs and tests, WS-1 excepts `finalizeNoticeAt`, and the economics rule table renders
+    whole again.
 - Second pass (owner decisions of 16 November 2026; not yet reviewed as a whole):
   - Identity: an artist or collaborator is a 6529 consolidated account and every wallet of it
     acts (`IAccounts`, `isWallet`, `requireSigned`, `requireConsent`); an account signature is
