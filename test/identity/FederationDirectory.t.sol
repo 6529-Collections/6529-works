@@ -218,6 +218,34 @@ contract FederationDirectoryTest is IdentityFixture {
         assertTrue(token.codehash != bytes32(0) && token.codehash != keccak256(""));
     }
 
+    /// @dev The listing digest is the EIP-712 struct hash of the typehash and the seven fields
+    ///      as plain words (what the earlier calldata copy hashed): a consent signed over that
+    ///      digest lists. Pins that moving the struct hash to `abi.encode` changed no hash.
+    function test_List_TheDigestIsTheTypehashAndTheSevenWords() public {
+        IArtistRegistry.FederatedListing memory l =
+            _l(artistId, token, 0, partner, 10_000, feeVault);
+        bytes32 structHash = keccak256(
+            abi.encodePacked(
+                LISTING,
+                bytes32(l.artistId),
+                bytes32(uint256(uint160(l.token))),
+                bytes32(uint256(l.form)),
+                bytes32(uint256(uint160(l.partner))),
+                bytes32(uint256(l.feeShare)),
+                bytes32(uint256(uint160(l.feeRecipient))),
+                bytes32(uint256(l.deadline))
+            )
+        );
+        bytes32 digest = _digest(l);
+        assertEq(
+            digest, keccak256(abi.encodePacked(hex"1901", _domain(), structHash)), "same digest"
+        );
+        vm.prank(federation);
+        registry.listFederatedContract(l, abi.encodePacked(artist, _sign(artistKey, digest)));
+        (uint256 listedArtist,) = registry.federatedListing(token);
+        assertEq(listedArtist, artistId);
+    }
+
     /// @dev Review G (I3): the consent covers the entry's facts; a consent to the token with
     ///      other facts lists nothing.
     function test_List_TheConsentCoversTheFacts() public {
@@ -423,7 +451,7 @@ contract FederationDirectoryTest is IdentityFixture {
         );
         registry.setFederationDelisted(artistId, true, "vote");
         vm.expectEmit(address(registry));
-        emit IArtistRegistry.FederationDelistedSet(artistId, true, "vote");
+        emit IArtistRegistry.FederationDelistedSet(artistId, false, true, "vote");
         vm.prank(network);
         registry.setFederationDelisted(artistId, true, "vote");
         assertTrue(registry.isFederationDelisted(artistId));
@@ -440,6 +468,8 @@ contract FederationDirectoryTest is IdentityFixture {
         // Federation only: the account still acts and is paid.
         assertTrue(registry.isWallet(artistId, wallet));
         assertEq(registry.payoutAddress(artistId), artist);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.FederationDelistedSet(artistId, true, false, "vote 2");
         vm.prank(network);
         registry.setFederationDelisted(artistId, false, "vote 2");
         (, status) = registry.federatedListing(token);
@@ -550,7 +580,11 @@ contract FederationDirectoryTest is IdentityFixture {
     }
 
     function _digest(IArtistRegistry.FederatedListing memory l) internal view returns (bytes32) {
-        bytes32 domain = keccak256(
+        return keccak256(abi.encodePacked(hex"1901", _domain(), keccak256(abi.encode(LISTING, l))));
+    }
+
+    function _domain() internal view returns (bytes32) {
+        return keccak256(
             abi.encode(
                 keccak256(
                     "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
@@ -561,7 +595,6 @@ contract FederationDirectoryTest is IdentityFixture {
                 address(registry)
             )
         );
-        return keccak256(abi.encodePacked(hex"1901", domain, keccak256(abi.encode(LISTING, l))));
     }
 
     function _list() internal {

@@ -19,6 +19,7 @@ import { IStreamViews } from "../interfaces/IStreamViews.sol";
 import { IStreamExtension } from "../interfaces/IStreamExtension.sol";
 import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
 import { ISplitFactory } from "../economics/interfaces/ISplitFactory.sol";
+import { ISplitWallet } from "../economics/interfaces/ISplitWallet.sol";
 import { Splits } from "../economics/Splits.sol";
 import { PRODUCT_STREAM } from "../interfaces/types/EconomicsTypes.sol";
 import { PrimaryOutcome, PrimarySettlement, PrimaryTerms } from "../interfaces/types/SaleTypes.sol";
@@ -242,11 +243,17 @@ contract Stream is ERC721, AccessManaged, IStream {
         artistRegistry = artistRegistry_;
         _genesisEconomics = economics_;
         _genesisEntropyModule = entropyModule_;
-        _genesisExtension = address(new StreamViews());
+        address extension_ = address(new StreamViews());
+        _genesisExtension = extension_;
         splitFactory = factory;
         defaultRenderer = renderer_;
         _defaultRendererCodeHash = rendererCodeHash;
         _owner = owner_;
+        // The genesis dependencies, so every one is known from Stream's own logs (rule 6).
+        emit DependencySet(PACKAGE_REGISTRY, address(0), policy_);
+        emit DependencySet(ECONOMICS, address(0), economics_);
+        emit DependencySet(ENTROPY_MODULE, address(0), entropyModule_);
+        emit DependencySet(EXTENSION, address(0), extension_);
         emit DefaultRendererSet(address(0), renderer_, rendererCodeHash);
         emit OwnershipTransferred(address(0), owner_);
     }
@@ -768,6 +775,12 @@ contract Stream is ERC721, AccessManaged, IStream {
         // Below the previous share, which fits 24 bits.
         // forge-lint: disable-next-line(unsafe-typecast)
         shared.feeShare = uint24(share);
+        if (share != 0) {
+            // Royalties never point at an undeployed wallet: the network deploys it first
+            // (`ISplitFactory.createWallet`, permissionless), in the same batch.
+            address wallet = _royaltyReceiver(t.seller, shared);
+            if (wallet.code.length == 0) revert ISplitWallet.WalletNotDeployed(wallet);
+        }
         t.termsId = _termsId(shared);
         emit FeeShareLowered(tokenId, previous, share);
     }

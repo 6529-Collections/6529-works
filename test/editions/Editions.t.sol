@@ -162,8 +162,10 @@ contract EditionsTest is EditionsBase {
         bytes32 itemHash = WorksHashing.itemHash(item);
         WorkTerms memory w = economics.newWorkTerms(PRODUCT_EDITIONS, item.payees);
 
+        (, uint256 artistId,,,,) = stream.coreOf(id);
+        assertTrue(artistId != 0);
         vm.expectEmit(true, true, false, true, address(editions));
-        emit IEditions.EditionCreated(id, item.contentHash, item.edition);
+        emit IEditions.EditionCreated(id, item.contentHash, artistId, item.edition);
         vm.expectEmit(true, false, false, true, address(editions));
         emit IEditions.EditionTermsLocked(
             id, w.seller, w.royaltyReceiver, 6_529, feeRecipient, 25_000
@@ -1305,6 +1307,14 @@ contract EditionsTest is EditionsBase {
         uint256 id = _create(_item(5));
         IEditions.Edition memory before = editions.edition(id);
         assertEq(before.feeShare, 25_000);
+        // Royalties never point at an undeployed wallet: the lowering waits for it.
+        ISplitWallet.Payee[] memory lowered =
+            Splits.royaltyPayees(before.seller, before.feeRecipient, 10_000);
+        address wallet = factory.walletFor(lowered, bytes32(0));
+        vm.prank(governor);
+        vm.expectRevert(abi.encodeWithSelector(ISplitWallet.WalletNotDeployed.selector, wallet));
+        editions.lowerFeeShare(id, 10_000);
+        factory.createWallet(lowered, bytes32(0));
         vm.expectEmit(address(editions));
         emit IEditions.EditionFeeShareLowered(id, 25_000, 10_000);
         vm.prank(governor);

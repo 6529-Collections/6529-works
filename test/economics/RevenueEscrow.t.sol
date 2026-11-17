@@ -293,7 +293,9 @@ contract RevenueEscrowTest is EconomicsBase {
 
         address replacement = _wallet(payees, bytes32(uint256(1)));
         vm.expectEmit(true, true, true, true, address(escrow));
-        emit IRevenueEscrow.Recovered(address(wallet), replacement, address(usdc), 1000, 1000);
+        emit IRevenueEscrow.Recovered(
+            address(wallet), replacement, address(usdc), 1000, 1000, false
+        );
         escrow.recover(address(wallet), replacement, address(usdc));
         assertEq(escrow.owed(address(wallet), address(usdc)), 0);
         assertEq(escrow.owed(replacement, address(usdc)), 1000);
@@ -382,7 +384,7 @@ contract RevenueEscrowTest is EconomicsBase {
         vm.prank(alice);
         escrow.consentToRecovery(bob);
         vm.expectEmit(true, true, true, true, address(escrow));
-        emit IRevenueEscrow.Recovered(alice, bob, address(usdc), 1000, 1000);
+        emit IRevenueEscrow.Recovered(alice, bob, address(usdc), 1000, 1000, true);
         escrow.recover(alice, bob, address(usdc));
         // Single use: the recovery consumed the consent, so the next asset needs a new one.
         assertEq(escrow.recoveryConsent(alice), address(0));
@@ -393,7 +395,7 @@ contract RevenueEscrowTest is EconomicsBase {
         vm.prank(alice);
         escrow.consentToRecovery(bob);
         vm.expectEmit(true, true, true, true, address(escrow));
-        emit IRevenueEscrow.Recovered(alice, bob, ETH, 1 ether, 3 ether);
+        emit IRevenueEscrow.Recovered(alice, bob, ETH, 1 ether, 3 ether, true);
         escrow.recover(alice, bob, ETH);
         assertEq(escrow.recoveryConsent(alice), address(0));
 
@@ -513,7 +515,7 @@ contract RevenueEscrowTest is EconomicsBase {
         escrow.depositETH{ value: 2 ether }(replacement);
         vm.stopPrank();
         vm.expectEmit(true, true, true, true, address(escrow));
-        emit IRevenueEscrow.Recovered(address(wallet), replacement, ETH, 1 ether, 3 ether);
+        emit IRevenueEscrow.Recovered(address(wallet), replacement, ETH, 1 ether, 3 ether, false);
         escrow.recover(address(wallet), replacement, ETH);
         assertEq(escrow.owed(replacement, ETH), 3 ether);
         assertEq(escrow.owed(address(wallet), ETH), 0);

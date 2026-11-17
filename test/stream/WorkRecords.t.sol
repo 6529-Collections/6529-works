@@ -869,8 +869,10 @@ contract WorkRecordsTest is RecordsFixture {
                     && logs[i].topics[0] == IWorkRecords.WorkFinalized.selector
             ) {
                 assertEq(logs[i].topics[1], bytes32(tokenId));
-                (address r, bytes32 h) = abi.decode(logs[i].data, (address, bytes32));
+                (address r, bytes32 codeHash, bytes32 h) =
+                    abi.decode(logs[i].data, (address, bytes32, bytes32));
                 assertEq(r, address(renderer));
+                assertEq(codeHash, address(renderer).codehash, "the pinned code hash is logged");
                 assertEq(h, records.workStateHash(tokenId));
                 found = true;
             }
@@ -972,7 +974,7 @@ contract WorkRecordsTest is RecordsFixture {
         records.finalize(tokenId, state);
         vm.warp(noticedAt + 14 days);
         vm.expectEmit(true, false, false, false, address(records));
-        emit IWorkRecords.WorkFinalized(tokenId, address(renderer), bytes32(0));
+        emit IWorkRecords.WorkFinalized(tokenId, address(renderer), bytes32(0), bytes32(0));
         vm.prank(platform);
         records.finalize(tokenId, state);
         assertTrue(records.record(tokenId).finalized);

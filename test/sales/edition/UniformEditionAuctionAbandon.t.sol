@@ -182,6 +182,25 @@ contract UniformEditionAuctionAbandonTest is EditionAuctionBase {
         auction.abandon(saleId, hex"00");
     }
 
+    /// @dev The edition contract's revert data is copied only up to 1,024 bytes: a longer one
+    ///      reverts with `BoundedCallFailed(editions)`, a short one keeps its reason (above).
+    ///      Fails without the change: the whole 4,096-byte payload is re-raised.
+    function test_Abandon_ALongRefusalFromTheEditionContractIsNotCopied() public {
+        _setOneOfOne(IEnglishAuction.AuctionState.SETTLED);
+        stream.setSettled(ID, true);
+        vm.warp(_deadline());
+        vm.mockCallRevert(
+            address(editions), abi.encodePacked(IEditions.createEdition.selector), new bytes(4096)
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(BoundedCall.BoundedCallFailed.selector, address(editions))
+        );
+        auction.abandon(saleId, master);
+        vm.clearMockedCalls();
+        _abandon();
+        assertTrue(editions.exists(ID));
+    }
+
     /// @dev A broken English auction (its clock refuses): it counts as finished with the end
     ///      last read, so the master decides. A clock that runs out of gas reverts, never
     ///      refuses.

@@ -82,7 +82,7 @@ contract EscrowRecoveryTest is IntegrationBase {
         _schedule(hotAdmin, address(escrow), _recoverCall());
         vm.warp(block.timestamp + Roles.DELAY_3D);
         vm.expectEmit(address(escrow));
-        emit IRevenueEscrow.Recovered(networkFee, newFeeSafe, address(usdc), 250e6, 250e6);
+        emit IRevenueEscrow.Recovered(networkFee, newFeeSafe, address(usdc), 250e6, 250e6, false);
         vm.prank(hotAdmin);
         manager.execute(address(escrow), _recoverCall());
 

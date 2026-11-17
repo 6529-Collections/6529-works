@@ -13,6 +13,7 @@ import { IEntropyModule } from "../interfaces/IEntropyModule.sol";
 import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
 import { PackageItem, SeedPolicy } from "../interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
+import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 import { IVRFCoordinatorV2Plus } from "./IVRFCoordinatorV2Plus.sol";
 import { IVRFV2PlusWrapper } from "./IVRFV2PlusWrapper.sol";
@@ -145,6 +146,8 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
 
     /// @dev `bytes4(keccak256("VRF ExtraArgsV1"))`, the tag of the v2.5 request options.
     bytes4 private constant EXTRA_ARGS_V1_TAG = 0x92fd1338;
+    /// @dev The most return or revert data copied from a wrapper call.
+    uint256 private constant _MAX_WRAPPER_ANSWER = 1024;
 
     /// @inheritdoc IEntropyModule
     uint64 public immutable retryDelay;
@@ -326,11 +329,28 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         _stamp(seed, itemHash, false, _wrapperEpoch);
         Dependency.checkUnchanged(w, _wrapperCodeHash);
         VrfConfig memory c = _config;
-        uint256 price = IVRFV2PlusWrapper(w).calculateRequestPriceNative(c.callbackGasLimit, 1);
-        if (msg.value < price) revert InsufficientPayment(price);
-        requestId = IVRFV2PlusWrapper(w).requestRandomWordsInNative{ value: msg.value }(
-            c.callbackGasLimit, c.confirmations, 1, abi.encodeWithSelector(EXTRA_ARGS_V1_TAG, true)
+        (bool ok, bytes memory answer) = BoundedCall.tryReadAll(
+            w,
+            abi.encodeCall(IVRFV2PlusWrapper.calculateRequestPriceNative, (c.callbackGasLimit, 1)),
+            _MAX_WRAPPER_ANSWER
         );
+        uint256 price = _wrapperWord(w, ok, answer);
+        if (msg.value < price) revert InsufficientPayment(price);
+        (ok, answer) = BoundedCall.tryCallAll(
+            w,
+            msg.value,
+            abi.encodeCall(
+                IVRFV2PlusWrapper.requestRandomWordsInNative,
+                (
+                    c.callbackGasLimit,
+                    c.confirmations,
+                    1,
+                    abi.encodeWithSelector(EXTRA_ARGS_V1_TAG, true)
+                )
+            ),
+            _MAX_WRAPPER_ANSWER
+        );
+        requestId = _wrapperWord(w, ok, answer);
         if (requestId == 0 || _requests[w][requestId] != 0) revert InvalidRequestId(requestId);
         _requests[w][requestId] = key;
         if (!seed.delivered) {
@@ -593,5 +613,20 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
             c.subscriptionId == 0 || c.keyHash == 0 || c.callbackGasLimit < MIN_CALLBACK_GAS
                 || c.confirmations < MIN_CONFIRMATIONS || c.confirmations > MAX_CONFIRMATIONS
         ) revert InvalidConfig();
+    }
+
+    /// @dev The one-word answer of a wrapper call made through `BoundedCall` (all gas forwarded,
+    ///      at most `_MAX_WRAPPER_ANSWER` bytes copied, a shortfall reverts): a refusal reverts
+    ///      with its reason, or `BoundedCallFailed` when that is empty or too long; an answer that
+    ///      is not one word reverts with `BoundedCallMalformedReturn`.
+    function _wrapperWord(address w, bool ok, bytes memory answer) private pure returns (uint256) {
+        if (!ok) {
+            if (answer.length == 0) revert BoundedCall.BoundedCallFailed(w);
+            assembly ("memory-safe") {
+                revert(add(answer, 0x20), mload(answer))
+            }
+        }
+        if (answer.length != 32) revert BoundedCall.BoundedCallMalformedReturn(w);
+        return uint256(bytes32(answer));
     }
 }

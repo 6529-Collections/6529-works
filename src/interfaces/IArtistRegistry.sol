@@ -51,7 +51,9 @@ interface IConsolidationSource is IERC165 {
 ///
 ///      Freeze. The network may freeze an account at once for 14 days (`freeze`), and end a
 ///      freeze early (`unfreeze`). While frozen the account has no acting wallet, its payout
-///      reads zero (split wallets hold its money) and no pending change executes. A freeze
+///      reads zero (split wallets hold its money) and no pending change executes, with one
+///      exception: the network's own `resolveContested` may uphold a contested replacement
+///      while the account is frozen (the freeze then still runs for the new identity). A freeze
 ///      cannot be extended while it runs; it can be placed again once it ended.
 ///
 ///      The 2-day, 14-day, 90-day and 14-day numbers are compiled constants: each is the
@@ -190,9 +192,12 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver, IAccoun
     );
     /// @notice The network delisted a whole account from the federation, or ended that.
     /// @param artistId The account.
+    /// @param previous Whether the account was delisted before the call.
     /// @param delisted Whether the account is now delisted.
     /// @param ref The network's reference for the decision.
-    event FederationDelistedSet(uint256 indexed artistId, bool delisted, bytes32 ref);
+    event FederationDelistedSet(
+        uint256 indexed artistId, bool previous, bool delisted, bytes32 ref
+    );
     /// @notice The network lowered a listed contract's recorded fee share.
     /// @param token The federated token contract.
     /// @param previous The share before, out of 100,000.
@@ -370,6 +375,8 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver, IAccoun
     ///         passed), voiding deletes it. `outcomeRef` must be
     ///         `IStatementLog.latestDisputeOutcome(address(this), artistId)` and differ from the
     ///         outcome that was latest when the contest began. A network action (24 hours).
+    ///         It is not held by a freeze: upholding executes during one, and the freeze keeps
+    ///         running for the new identity.
     /// @param artistId The account whose contested replacement is resolved.
     /// @param uphold True to uphold (execute) it, false to void (delete) it.
     /// @param outcomeRef The entry hash of the DISPUTE_OUTCOME statement recording the vote.

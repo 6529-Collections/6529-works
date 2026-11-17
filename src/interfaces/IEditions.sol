@@ -73,9 +73,10 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     /// @notice An edition was created and linked to its master.
     /// @param editionId The new edition's ID, equal to its master's 6529 Stream token ID.
     /// @param contentHash The master's content hash.
+    /// @param artistId The master's artist ID, stored with the edition.
     /// @param terms The edition terms from the approved package item.
     event EditionCreated(
-        uint256 indexed editionId, bytes32 indexed contentHash, EditionTerms terms
+        uint256 indexed editionId, bytes32 indexed contentHash, uint256 artistId, EditionTerms terms
     );
     /// @notice The economics edition `editionId` was created with, locked when its sale was bound
     ///         (`bindMinter`) or else at creation, and never changed except the royalty rate,
@@ -299,6 +300,9 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     /// @notice Lowers the network's fee share of an edition whose economics are locked; never
     ///         raises it (R9). PARAMETER_SETTER role (the network, 24 hours). The royalty
     ///         receiver is derived again for the new share; the fee recipient does not change.
+    ///         For a nonzero share that wallet must already be deployed
+    ///         (`ISplitFactory.createWallet`, permissionless), or it reverts with
+    ///         `ISplitWallet.WalletNotDeployed`.
     /// @param editionId The edition ID (`UnknownEdition` while its economics are not locked).
     /// @param share The new share, out of 100,000: below the current one (`InvalidFeeShare`).
     function lowerFeeShare(uint256 editionId, uint32 share) external;

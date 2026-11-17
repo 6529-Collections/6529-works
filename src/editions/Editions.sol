@@ -9,6 +9,7 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { Splits } from "../economics/Splits.sol";
 import { ISplitFactory } from "../economics/interfaces/ISplitFactory.sol";
+import { ISplitWallet } from "../economics/interfaces/ISplitWallet.sol";
 import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IEditions } from "../interfaces/IEditions.sol";
@@ -250,7 +251,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         if (terms.saleKind != SaleKind.UNIFORM_AUCTION) r.saleKind = terms.saleKind;
         if (terms.currency != CURRENCY_ETH) r.currency = terms.currency;
         if (terms.params.length != 0) r.params = terms.params;
-        emit EditionCreated(workId, item.contentHash, terms);
+        emit EditionCreated(workId, item.contentHash, master.artistId, terms);
         emit EditionTermsLocked(
             workId, r.seller, r.royaltyReceiver, master.royaltyRate, r.feeRecipient, r.feeShare
         );
@@ -350,10 +351,14 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         uint32 previous = r.feeShare;
         if (share >= previous) revert InvalidFeeShare(share);
         r.feeShare = share;
-        r.royaltyReceiver = share == 0
-            ? seller
-            : ISplitFactory(_address(IStream.splitFactory.selector))
+        address receiver = seller;
+        if (share != 0) {
+            receiver = ISplitFactory(_address(IStream.splitFactory.selector))
                 .walletFor(Splits.royaltyPayees(seller, r.feeRecipient, share), bytes32(0));
+            // Royalties never point at an undeployed wallet: the network deploys it first.
+            if (receiver.code.length == 0) revert ISplitWallet.WalletNotDeployed(receiver);
+        }
+        r.royaltyReceiver = receiver;
         emit EditionFeeShareLowered(editionId, previous, share);
     }
 

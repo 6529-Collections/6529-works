@@ -41,7 +41,9 @@ interface IUniformEditionAuctionLens {
     ///         value (R20).
     /// @return 900.
     function CLOSE_OFFSET() external view returns (uint32);
-    /// @notice How long after its close a sale may be abandoned (R16): 21 days, a fixed value.
+    /// @notice How long after its scheduled close (its 1/1's final end plus {CLOSE_OFFSET}; a
+    ///         soft-close extension does not move it) a sale may be abandoned (R16): 21 days, a
+    ///         fixed value.
     /// @return 1,814,400.
     function ABANDON_DELAY() external view returns (uint32);
 
@@ -86,8 +88,9 @@ interface IUniformEditionAuctionLens {
     ///         (`IUniformEditionAuction.abandonable`): OPEN (or SETTLING with its scan in
     ///         progress), its 1/1 auction no longer ACTIVE, PAUSED or ENDED (one that refuses to
     ///         answer counts as finished, with the end last read), not both its master settled
-    ///         and its edition existing, and its end plus 21 days passed. A shortfall in any read
-    ///         reverts with `BoundedCallShortfall`.
+    ///         and its edition existing, and its scheduled close (its 1/1's final end plus 15
+    ///         minutes, not moved by a soft-close extension) plus 21 days passed. A shortfall in
+    ///         any read reverts with `BoundedCallShortfall`.
     /// @param saleId The sale ID.
     /// @return ok Whether it can be abandoned now.
     /// @return abandonAt The earliest time, or zero when it cannot be from what is known now.

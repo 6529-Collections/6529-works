@@ -113,12 +113,18 @@ interface ISplitWallet {
     /// @param asset The asset to look up (ETH is `address(0)`).
     /// @param index The payee's index.
     /// @return The cumulative amount released for the payee, in the asset's base units.
+    /// @dev A raw counter. Inside a release (a token's or recipient's callback during the move)
+    ///      it may not yet agree with the wallet's balance; {observed} and {releasable} revert
+    ///      while a release of the wallet is in progress, so read those for derived amounts.
     function released(address wallet, address asset, uint256 index) external view returns (uint256);
 
     /// @notice The amount of `asset` released from `wallet` for all payees.
     /// @param wallet The split wallet.
     /// @param asset The asset to look up (ETH is `address(0)`).
     /// @return The cumulative amount released, in the asset's base units.
+    /// @dev A raw counter. Inside a release (a token's or recipient's callback during the move)
+    ///      it may not yet agree with the wallet's balance; {observed} and {releasable} revert
+    ///      while a release of the wallet is in progress, so read those for derived amounts.
     function totalReleased(address wallet, address asset) external view returns (uint256);
 
     /// @notice The amount of `asset` payee `index` of the wallet for `payees` and `salt` can

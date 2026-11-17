@@ -338,7 +338,7 @@ sequenceDiagram
     WR->>CS: record file bounds, license text isComplete
     WR->>S: rendererOf(tokenId)
     Note over WR: pin the default renderer with its code hash
-    WR-->>Ar: WorkFinalized(tokenId, renderer, state hash)
+    WR-->>Ar: WorkFinalized(tokenId, renderer, code hash, state hash)
 ```
 
 - **`setRecord`.** WS-7 and WS-8 (`UnknownRecordFile` for a bad file). Pointing at the current

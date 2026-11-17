@@ -551,6 +551,30 @@ contract ArtistRegistryTest is IdentityFixture {
         payee.release();
     }
 
+    /// @dev The one exception to "a freeze holds pending changes": the network's own
+    ///      `resolveContested` upholds a contested replacement during a freeze, and the freeze
+    ///      keeps running for the new identity (accepted ruling; the NatSpec and spec say so).
+    function test_Freeze_AnUpheldContestedReplacementStillExecutes() public {
+        DisputeOutcomeLogMock outcomes = _wireOutcomes();
+        _stageReplacement(_identity(newRoot, newRoot), newKey);
+        vm.prank(wallet);
+        registry.cancelChange(artistId);
+        vm.warp(block.timestamp + 14 days);
+        vm.prank(network);
+        registry.freeze(artistId);
+        uint48 until = registry.frozenUntil(artistId);
+        outcomes.setOutcome(address(registry), artistId, VOTE);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.ContestResolved(artistId, true, true, VOTE);
+        vm.prank(network);
+        registry.resolveContested(artistId, true, VOTE);
+        assertEq(registry.authorityOf(artistId), newRoot);
+        assertEq(registry.frozenUntil(artistId), until, "the freeze keeps running");
+        assertEq(registry.activeAuthorityOf(artistId), address(0));
+        assertFalse(registry.isWallet(artistId, newRoot));
+        assertEq(registry.payoutAddress(artistId), address(0));
+    }
+
     function test_Freeze_NetworkOnlyAndKnownAccounts() public {
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, wallet)
