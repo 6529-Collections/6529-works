@@ -197,7 +197,7 @@ Test files: [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) (
 | ID-13 | An account delisting covers every contract of the account and blocks new listings; identity and payout are untouched. | `setFederationDelisted`, `federatedListing` | FD `test_AccountDelisting_CoversEveryContractOfTheAccount` |
 | ID-14 | A listing's recorded fee share only lowers. | `lowerFederatedFeeShare` | FD `test_FeeShare_LowersAndNeverRises` |
 | ID-15 | Bindings are set once; the package registry, the federation registry and the consolidation source are swapped only by the network, compare-and-set, to checked targets. | `bind*`, `set*` | AR `test_Bindings_AreOneShotAndChecked`, `test_SetConsolidationSource_SwapsTheSourceWithItsPin`; FD `test_SetFederationRegistry_*` |
-| ID-16 | A wallet can be any account `SignatureVerifier` verifies, including one that pre-approves digests (ERC-1271, EIP-7702). | `SignatureVerifier` | SA |
+| ID-16 | A wallet can be any account `SignatureVerifier` verifies, including one that pre-approves digests (ERC-1271, EIP-7702). | `SignatureVerifier` | [`SignatureAgility.t.sol`](../../test/identity/SignatureAgility.t.sol) `test_ContractRoot_StagesByPreApproval`, `test_ContractRoot_AcceptsAReplacementByPreApproval`, `test_7702Account_PreApprovalAndECDSABothWork` |
 
 ## Events
 
