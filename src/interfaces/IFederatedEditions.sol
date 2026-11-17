@@ -100,7 +100,9 @@ interface IFederatedEditions is IFederatedToken {
     error MinterMismatch(uint256 editionId, address minter);
 
     /// @notice Creates edition `editionId` from its master's item once the master's primary sale
-    ///         settled. Permissionless.
+    ///         settled SOLD, or settled with any outcome when an edition sale is already bound
+    ///         to it (the abandon path, R16). Permissionless. An unsold master with no bound
+    ///         sale gets no edition, so it stays free to restart (`NotEditionMaster`).
     /// @param editionId The master's token ID.
     /// @param item The master's EDITION_MASTER item.
     function createEdition(uint256 editionId, PackageItem calldata item) external;

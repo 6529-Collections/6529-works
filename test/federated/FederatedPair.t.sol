@@ -259,6 +259,51 @@ contract FederatedPairTest is FederationBase {
         auction.start(address(pairStream), _mintData(w));
     }
 
+    /// @dev D-1: an unsold master with no bound edition sale gets no edition from anyone, so the
+    ///      artist's restart stays possible. Fails without the change: an outsider's
+    ///      `createEdition` binds the master and the restart reverts `WorkNotRestartable`.
+    function test_Pair_AnUnsoldUnboundMasterGetsNoEditionAndRestarts() public {
+        Work memory w = _fedMaster(fedArtist, 0);
+        (uint256 oneSaleId, uint256 tokenId) = _startFed(pairStream, fedArtist, w, RATE);
+        _settleAtEnd(oneSaleId);
+        vm.prank(makeAddr("outsider"));
+        vm.expectRevert(
+            abi.encodeWithSelector(IFederatedEditions.NotEditionMaster.selector, tokenId)
+        );
+        pairEditions.createEdition(tokenId, w.item);
+        assertFalse(pairEditions.isBound(tokenId));
+        vm.prank(fedArtist);
+        pairStream.approveItem(_itemHash(w), RATE);
+        uint256 again = auction.start(address(pairStream), _mintData(w));
+        assertEq(auction.auction(again).tokenId, tokenId + 1, "restarted");
+    }
+
+    /// @dev R16 keeps working: with an edition sale bound, the edition is created after an
+    ///      unsold master settles (here through `createEdition` itself, as `abandon` calls it).
+    function test_Pair_ABoundSaleStillGetsItsEditionAfterAnUnsoldMaster() public {
+        (Work memory w, uint256 oneSaleId, uint256 tokenId,) = _openPair(0);
+        _settleAtEnd(oneSaleId);
+        pairEditions.createEdition(tokenId, w.item);
+        assertTrue(pairEditions.exists(tokenId));
+    }
+
+    /// @dev D-2: suspending only the 1/1 template also stops new edition sales of its pair.
+    ///      Fails without the change: `canMint` ignored the partner's template and `open`
+    ///      returned a sale ID.
+    function test_Pair_ASuspended1of1TemplateOpensNoEditionSale() public {
+        Work memory w = _fedMaster(fedArtist, 0);
+        (, uint256 tokenId) = _startFed(pairStream, fedArtist, w, RATE);
+        assertTrue(fedRegistry.canMint(address(pairEditions), address(fea)));
+        _govern(
+            hotAdmin,
+            address(fedRegistry),
+            abi.encodeCall(fedRegistry.suspendTemplate, (streamHash))
+        );
+        assertFalse(fedRegistry.canMint(address(pairEditions), address(fea)));
+        vm.expectRevert();
+        fea.open(address(pairEditions), tokenId, abi.encode(w.item));
+    }
+
     /// @dev Editions joined beside a 1/1 half that never joins, or that is delisted, mint
     ///      nothing through the network.
     function test_Pair_EditionsWithoutAListed1of1MintNothing() public {

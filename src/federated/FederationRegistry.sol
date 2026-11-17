@@ -81,7 +81,7 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
     /// @notice A batch longer than `MAX_BATCH`.
     error BatchTooLarge(uint256 length);
 
-    /// @notice The most contracts one `setStatus` or `propagateRevocation` call takes: a safety
+    /// @notice The most contracts one `setStatus` call takes: a safety
     ///         bound against unbounded work, not a policy number. The worst element (a cold
     ///         listed contract written to DELISTED) measures under 20,000 gas
     ///         (`FederationBatch.t.sol`), so 256 of them stay under 5.2M, a third of EIP-7825's
@@ -173,8 +173,8 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
     }
 
     /// @inheritdoc IFederationRegistry
-    /// @dev REVOKED to APPROVED. Listings `propagateRevocation` wrote DELISTED stay so until the
-    ///      network relists them (`setStatus`).
+    /// @dev REVOKED to APPROVED. A revocation writes no listing, so every contract of the
+    ///      template is served again as its listing stands.
     function reinstateTemplate(bytes32 codeHash) external restricted {
         _move(codeHash, TemplateStatus.REVOKED, TemplateStatus.APPROVED);
     }
@@ -208,28 +208,6 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
                 artistRegistry.federatedListing(tokens[i]);
             if (current != IArtistRegistry.FederationStatus.NONE) {
                 artistRegistry.setFederatedStatus(tokens[i], next, voteRef);
-            }
-        }
-    }
-
-    /// @notice Records in the artist registry's directory that contracts of a revoked template
-    ///         are delisted (reference: the code hash). Permissionless, in batches of the
-    ///         caller's size; skips every contract that is not ACTIVE or not of a revoked
-    ///         template.
-    /// @param tokens The federated contracts.
-    function propagateRevocation(address[] calldata tokens) external {
-        if (tokens.length > MAX_BATCH) revert BatchTooLarge(tokens.length);
-        for (uint256 i; i < tokens.length; ++i) {
-            address token = tokens[i];
-            bytes32 codeHash = token.codehash;
-            (, IArtistRegistry.FederationStatus status) = artistRegistry.federatedListing(token);
-            if (
-                _templates[codeHash].status == TemplateStatus.REVOKED
-                    && status == IArtistRegistry.FederationStatus.ACTIVE
-            ) {
-                artistRegistry.setFederatedStatus(
-                    token, IArtistRegistry.FederationStatus.DELISTED, codeHash
-                );
             }
         }
     }
@@ -308,7 +286,9 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
     }
 
     /// @inheritdoc IFederationRegistry
-    /// @dev An editions contract mints only while its partner is listed ACTIVE too.
+    /// @dev An editions contract mints only while its partner is listed ACTIVE too and the
+    ///      partner's template is APPROVED, so suspending or revoking the 1/1 template also stops
+    ///      new edition sales of its contracts (C26).
     function canMint(address token, address adapter) external view returns (bool) {
         IFederationRegistry current = _current();
         if (_forwards(current)) return current.canMint(token, adapter);
@@ -318,7 +298,8 @@ contract FederationRegistry is IFederationRegistry, AccessManaged {
         }
         if (t.form != Form.ERC1155) return true;
         (,,,,, address partner) = IFederatedToken(token).federationTerms();
-        return _listedActive(partner);
+        return
+            _listedActive(partner) && _templates[partner.codehash].status == TemplateStatus.APPROVED;
     }
 
     /// @inheritdoc IFederationRegistry

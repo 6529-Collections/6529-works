@@ -423,6 +423,54 @@ contract FederationSecondPassTest is FederationBase {
         assertFalse(other, "keyed by contract");
     }
 
+    /// @dev A curated VRF item with `contentHash`, approved and accepted.
+    function _curatedVrf(bytes32 contentHash, string memory name)
+        internal
+        returns (bytes32 root, Work[] memory works)
+    {
+        works = _one(_work(_actor(name), collectionId));
+        works[0].item.seedPolicy = uint8(SeedPolicy.VRF);
+        works[0].item.contentHash = contentHash;
+        root = _publish(works);
+    }
+
+    /// @dev D-4: curated and federated draws are kept apart: a curated item whose content hash
+    ///      equals a federated key is drawn on the subscription, and the federated seed stays
+    ///      undelivered. Fails without the change: the curated delivery fills the federated slot
+    ///      and `federatedSeedOf` reads it as delivered.
+    function test_Vrf_ACuratedDrawNeverFillsAFederatedSeed() public {
+        Work memory w = _vrfWork();
+        bytes32 key = keccak256(abi.encode(address(fed), w.item.contentHash));
+        (bytes32 root, Work[] memory works) = _curatedVrf(key, "curatedKeyArtist");
+        uint256 id = entropy.requestSeed(works[0].item, root, _proofOf(works, 0));
+        coordinator.fulfill(id, 0xC0FFEE);
+        assertTrue(entropy.isDeliveredContent(key), "the curated draw");
+        (bool delivered,) = entropy.federatedSeedOf(address(fed), w.item.contentHash);
+        assertFalse(delivered, "not the federated one");
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        auction.start(address(fed), _mintData(w));
+    }
+
+    /// @dev D-3: setting the federated wrapper does not restart curated draws' backoff. Fails
+    ///      without the change: the wrapper swap opened a new tenure for curated draws, and the
+    ///      second repeat went through three days after the first.
+    function test_Vrf_SetWrapperLeavesTheCuratedBackoff() public {
+        (bytes32 root, Work[] memory works) =
+            _curatedVrf(keccak256("a curated content"), "curatedBackoffArtist");
+        bytes32 itemHash = _itemHash(works[0]);
+        bytes32[] memory proof = _proofOf(works, 0);
+        entropy.requestSeed(works[0].item, root, proof);
+        _setWrapper(); // the governed delay passes the first wait
+        entropy.requestSeed(works[0].item, root, proof); // the first repeat
+        (, uint64 at) = entropy.requestOf(itemHash);
+        uint256 retryAt = at + 2 * uint256(entropy.retryDelay());
+        vm.warp(at + entropy.retryDelay());
+        vm.expectRevert(
+            abi.encodeWithSelector(IEntropyModule.RequestPending.selector, itemHash, retryAt)
+        );
+        entropy.requestSeed(works[0].item, root, proof);
+    }
+
     /// @dev The artist requests and pays the provider's quote; no network subscription is used;
     ///      the work mints only once the seed is delivered and keeps it.
     function test_Vrf_AWorkMintsOnlyAfterDeliveryAndKeepsItsSeed() public {
@@ -542,6 +590,29 @@ contract FederationSecondPassTest is FederationBase {
         assertEq(networkFee.balance - before, uint256(1 ether) * expected / Splits.DENOMINATOR);
     }
 
+    /// @dev C-5 (as built): a federated 1/1 sale pays the registry share it locked at start; the
+    ///      network lowering the share during the sale applies to later sales.
+    function test_FeeShare_ALoweringDuringASaleAppliesToLaterSales() public {
+        (uint256 saleId,) = _startFed(_fedWork(fedArtist));
+        _ethBid(saleId, collector, 1 ether);
+        _govern(
+            hotAdmin,
+            address(artists),
+            abi.encodeCall(artists.lowerFederatedFeeShare, (address(fed), 5000))
+        );
+        assertEq(fedRegistry.entry(address(fed)).feeShare, 5000, "lowered");
+        uint256 end = auction.auction(saleId).endTime;
+        if (block.timestamp < end) vm.warp(end);
+        uint256 before = networkFee.balance;
+        auction.settle(saleId);
+        assertEq(networkFee.balance - before, uint256(1 ether) * FED_SHARE / Splits.DENOMINATOR);
+        (uint256 next,) = _startFed(_fedWork(fedArtist));
+        _ethBid(next, collector, 1 ether);
+        before = networkFee.balance;
+        _settleAtEnd(next);
+        assertEq(networkFee.balance - before, uint256(1 ether) * 5000 / Splits.DENOMINATOR);
+    }
+
     function test_FeeShare_TheLoweredShareIsUsed() public {
         _assertShareInForce(5000, 5000);
     }
@@ -566,9 +637,12 @@ contract FederationSecondPassTest is FederationBase {
         _govern(
             hotAdmin, address(fedRegistry), abi.encodeCall(fedRegistry.revokeTemplate, (streamHash))
         );
+        // Nobody can turn the revocation into a delisting: the registry has no such call.
         address[] memory tokens = new address[](1);
         tokens[0] = address(fed);
-        fedRegistry.propagateRevocation(tokens);
+        (bool called,) = address(fedRegistry)
+            .call(abi.encodeWithSignature("propagateRevocation(address[])", tokens));
+        assertFalse(called, "no propagation call");
         Work memory w = _fedWork(fedArtist);
         vm.prank(fedArtist);
         fed.approveItem(_itemHash(w), RATE);
@@ -597,11 +671,7 @@ contract FederationSecondPassTest is FederationBase {
             uint8(fedRegistry.templateOf(streamHash).status),
             uint8(FederationRegistry.TemplateStatus.APPROVED)
         );
-        vm.expectRevert(
-            abi.encodeWithSelector(ISaleAdapter.TargetNotAllowed.selector, address(fed))
-        );
-        auction.start(address(fed), _mintData(w));
-        _setListing(address(fed), IFederationRegistry.Status.ACTIVE);
+        // Served again at once, as listed: no relisting needed.
         uint256 saleId = auction.start(address(fed), _mintData(w));
         assertGt(saleId, 0);
     }

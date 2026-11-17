@@ -110,19 +110,9 @@ contract FederationGovernanceTest is FederationBase {
         assertEq(fed.ownerOf(tokenId), address(fed), "never confiscated, never to a person");
         (PrimaryOutcome outcome,,) = fed.primarySale(tokenId);
         assertEq(uint8(outcome), uint8(PrimaryOutcome.FROZEN_OUT));
-        // The directory learns it permissionlessly.
-        address[] memory tokens = new address[](1);
-        tokens[0] = address(fed);
-        vm.expectEmit(address(artists));
-        emit IArtistRegistry.FederatedContractStatus(
-            address(fed),
-            uint160(fedArtist),
-            IArtistRegistry.FederationStatus.ACTIVE,
-            IArtistRegistry.FederationStatus.DELISTED,
-            streamHash
-        );
-        fedRegistry.propagateRevocation(tokens);
-        fedRegistry.propagateRevocation(tokens); // a no-op the second time
+        // The revocation acts through the registry's reads; the directory is not written.
+        (, IArtistRegistry.FederationStatus status) = artists.federatedListing(address(fed));
+        assertEq(uint8(status), uint8(IArtistRegistry.FederationStatus.ACTIVE));
     }
 
     // ------------------------------------------------------------------ delisting

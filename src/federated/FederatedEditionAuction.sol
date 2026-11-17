@@ -18,7 +18,7 @@ import { FederatedEditionAuctionLens } from "./FederatedEditionAuctionLens.sol";
 ///      ({FederatedEditionAuctionLens}) so this contract keeps the shared code within EIP-170:
 ///      the edition contract is chosen per sale (recorded at open; it binds only adapters the
 ///      registry admits, and opens only while the registry lets this adapter mint it, so a
-///      suspended template opens no sale); its master is that contract's partner; the network fee
+///      suspended template, of the editions or of their 1/1 partner, opens no sale); its master is that contract's partner; the network fee
 ///      is the registry entry's share, locked at open, never what the token reports, paid to the
 ///      economics resolver's federated recipient read at settlement; a sale of a contract the registry stops serving
 ///      (delisted, its template revoked) reads its 1/1 as cancelled, so the sale voids with full
