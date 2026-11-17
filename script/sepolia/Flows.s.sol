@@ -546,12 +546,10 @@ contract Flows is Script {
         (IPackageRegistry.PackageStatus status,,) = IPackageRegistry(a.registry).packageOf(root);
         _info("status", uint256(status).toString());
         _signApproval(a, root);
-        address lead = _artist();
-        uint256 artistId = IArtistRegistry(a.artists).artistIdOf(lead);
         _sign(
             "acceptance",
-            artistId == 0 ? lead : IArtistRegistry(a.artists).authorityOf(artistId),
-            IDigests(a.registry).acceptanceDigest(root, _acceptance(lead, acceptDeadline))
+            _acceptanceSigner(a),
+            IDigests(a.registry).acceptanceDigest(root, _acceptance(_artist(), acceptDeadline))
         );
     }
 
@@ -633,9 +631,21 @@ contract Flows is Script {
             0,
             abi.encodeCall(
                 IPackageRegistry.acceptPackage,
-                (root, _acceptance(_artist(), deadline), abi.encodePacked(_artist(), signature))
+                (
+                    root,
+                    _acceptance(_artist(), deadline),
+                    abi.encodePacked(_acceptanceSigner(a), signature)
+                )
             )
         );
+    }
+
+    /// @dev The wallet that signs the acceptance, as `package()` resolves it: the artist key
+    ///      before it registers, then its account's current root (which a root change moves).
+    function _acceptanceSigner(Addrs memory a) internal view returns (address) {
+        address lead = _artist();
+        uint256 artistId = IArtistRegistry(a.artists).artistIdOf(lead);
+        return artistId == 0 ? lead : IArtistRegistry(a.artists).authorityOf(artistId);
     }
 
     // ------------------------------------------------------------------ 3. the auction
@@ -1025,12 +1035,16 @@ contract Flows is Script {
     }
 
     /// @notice A pauser key pauses master `tokenId`'s 1/1 for a dispute (PAUSER, no delay; the
-    ///         pause ends by itself after 3 days). `guardian` is the pauser's account.
+    ///         pause ends by itself after 3 days). `guardian` is the pauser's account: a key sends
+    ///         it directly, a Safe (an account with code) through its owners.
     function pauseTx(uint256 tokenId, address guardian) external view {
         Addrs memory a = _addrs();
+        string memory from = guardian.code.length == 0
+            ? guardian.toHexString()
+            : string.concat("safe:", guardian.toHexString());
         _tx(
             string.concat("pause-", tokenId.toString()),
-            string.concat("safe:", guardian.toHexString()),
+            from,
             a.auction,
             0,
             abi.encodeCall(

@@ -838,22 +838,29 @@ library DeployV1 {
         }
     }
 
-    /// @notice Reverts unless the JSON's `roles` table is exactly `Roles.sol`: every role once,
-    ///         with its ID, execution delay and grant delay. `configure` takes the delays from
+    /// @notice Reverts unless the JSON's `roles` table is exactly `Roles.sol`: every role once
+    ///         (as many entries as `Roles.isKnown` IDs, none repeated), with its ID, execution
+    ///         delay and grant delay. `configure` takes the delays from
     ///         `Roles.sol`; this keeps the published table honest.
     function checkRoles(string memory json) internal view {
         uint256 n = _count(json, ".roles");
-        if (n != Roles.COUNT - 1) revert RoleTableMismatch("count"); // ID 3 is unused
+        uint256 known;
+        for (uint64 id; id < Roles.COUNT; ++id) {
+            if (Roles.isKnown(id)) ++known;
+        }
+        if (n != known) revert RoleTableMismatch("count");
+        uint256 seen;
         for (uint256 i; i < n; ++i) {
             string memory r = _at(".roles", i);
             string memory name = vm.parseJsonString(json, string.concat(r, ".name"));
             uint64 id = _roleId(name);
             if (
-                vm.parseJsonUint(json, string.concat(r, ".id")) != id
+                seen & (1 << id) != 0 || vm.parseJsonUint(json, string.concat(r, ".id")) != id
                     || vm.parseJsonUint(json, string.concat(r, ".executionDelay"))
                         != Roles.executionDelay(id)
                     || vm.parseJsonUint(json, string.concat(r, ".grantDelay")) != 0
             ) revert RoleTableMismatch(name);
+            seen |= 1 << id;
         }
     }
 

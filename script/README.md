@@ -66,6 +66,7 @@ forge script script/Deploy.s.sol --rpc-url http://127.0.0.1:8545 --broadcast --s
   --unlocked --sender 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
 # The example genesis names the placeholder network 0x...b001: impersonate it to accept.
 cast rpc anvil_impersonateAccount 0x000000000000000000000000000000000000b001 --rpc-url http://127.0.0.1:8545
+cast rpc anvil_setBalance 0x000000000000000000000000000000000000b001 0xDE0B6B3A7640000 --rpc-url http://127.0.0.1:8545   # 1 ETH for gas
 cast send --unlocked --from 0x000000000000000000000000000000000000b001 <WorksAccessManager> \
   "acceptNetwork()" --rpc-url http://127.0.0.1:8545
 cast rpc evm_increaseTime 432000 --rpc-url http://127.0.0.1:8545   # minSetback: 5 days
@@ -693,7 +694,9 @@ The rules themselves are in the [governance spec](../docs/spec/governance.md).
   `SubscriptionCanceled`, `SubscriptionConsumerRemoved` and `SubscriptionOwnerTransferRequested`
   for the subscription ID ([step 7](#7-chainlink-vrf-the-entropy-module)).
 - **Operation expiry.** An operation must execute within `expiration()` of becoming ready: 14
-  days (one week plus the brake delay, so a braked operation keeps a week to run). After that
+  days (one week plus the brake delay, so a braked operation keeps a week to run: the brake
+  always moves it to its ready time plus 7 days, whenever it acts, so a brake placed after
+  that point delays nothing). After that
   `execute` reverts with `AccessManagerExpired`, and the operation must be scheduled again with
   the full delay.
 
@@ -735,9 +738,13 @@ The rules themselves are in the [governance spec](../docs/spec/governance.md).
 
 1. The network schedules `transferNetwork(next)` (ADMIN, 7 days; the brake can delay it once)
    and executes it: `next` is now pending (`pendingNetwork`). Zero withdraws a proposal.
-2. `next` calls `acceptNetwork()`. From then on the old address holds nothing, and its
+2. `next` calls `acceptNetwork()`. From then on the old address holds no network role, and its
    scheduled operations can no longer run
    ([handing the network over](../docs/spec/governance.md#handing-the-network-over)).
+   Acceptance does not touch operational roles: if the old address was granted any (PLATFORM,
+   for example, under the contested-replacement procedure above), the new network revokes each
+   with `revokeRole(role, old)` at once (the network administers operational roles with no
+   delay). Check `RoleGranted` and `RoleRevoked` for the old address before step 4.
 3. On mainnet, move the VRF subscription to the new network
    ([step 7](#7-chainlink-vrf-the-entropy-module)).
 4. Re-run Verify in epoch mode with `GOVERNANCE_CONFIG` naming the new network

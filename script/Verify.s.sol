@@ -569,6 +569,8 @@ contract Verify is ScriptIO {
         Vm.EthGetLogs[] memory grants =
             _logs(fromBlock, m, keccak256("RoleGrantDelayChanged(uint64,uint32,uint48)"));
         for (uint256 i; i < grants.length; ++i) {
+            // Only the latest change of a role is its pending state; a later one supersedes it.
+            if (_superseded(grants, i)) continue;
             uint64 role = uint64(uint256(grants[i].topics[1]));
             (uint32 delay, uint48 effect) = abi.decode(grants[i].data, (uint32, uint48));
             // Only "is the change still pending" matters here; seconds of skew are irrelevant.
@@ -580,6 +582,7 @@ contract Verify is ScriptIO {
         Vm.EthGetLogs[] memory targets =
             _logs(fromBlock, m, keccak256("TargetAdminDelayUpdated(address,uint32,uint48)"));
         for (uint256 i; i < targets.length; ++i) {
+            if (_superseded(targets, i)) continue;
             address target = address(uint160(uint256(targets[i].topics[1])));
             (uint32 delay, uint48 effect) = abi.decode(targets[i].data, (uint32, uint48));
             // forge-lint: disable-next-line(block-timestamp)
@@ -587,6 +590,14 @@ contract Verify is ScriptIO {
                 revert PendingTargetAdminDelayChange(target, delay, effect);
             }
         }
+    }
+
+    /// @dev Whether a later log in `logs` (in log order) has the same first indexed topic.
+    function _superseded(Vm.EthGetLogs[] memory logs, uint256 i) internal pure returns (bool) {
+        for (uint256 j = i + 1; j < logs.length; ++j) {
+            if (logs[j].topics[1] == logs[i].topics[1]) return true;
+        }
+        return false;
     }
 
     /// @dev Every `RoleGranted` since genesis is a holder of the genesis or the current

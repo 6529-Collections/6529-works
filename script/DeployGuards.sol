@@ -396,20 +396,27 @@ library DeployGuards {
         GovernanceConfig.Config memory cfg
     ) internal pure {
         string[] memory names = DeployV1.names();
-        for (uint256 i; i <= cfg.grants.length; ++i) {
-            bool isNetwork = i == cfg.grants.length;
-            address account = isNetwork ? cfg.network : cfg.grants[i].account;
-            bool forbidden =
-                account == p.delegation || account == p.permit2 || account == p.vrfCoordinator;
-            for (uint256 j; j < names.length && !forbidden; ++j) {
-                forbidden = account == DeployV1.addressOf(d, names[j]);
-            }
-            if (forbidden) {
-                revert HolderIsADeploymentContract(
-                    isNetwork ? Roles.NETWORK : cfg.grants[i].role, account
-                );
-            }
+        _notADeploymentContract(d, p, names, Roles.NETWORK, cfg.network);
+        for (uint256 i; i < cfg.grants.length; ++i) {
+            _notADeploymentContract(d, p, names, cfg.grants[i].role, cfg.grants[i].account);
         }
+    }
+
+    /// @dev Reverts (`HolderIsADeploymentContract`) when `account`, holding `role`, is a
+    ///      contract of `d` (`names`) or a dependency it was deployed with.
+    function _notADeploymentContract(
+        DeployV1.Deployment memory d,
+        DeployV1.Params memory p,
+        string[] memory names,
+        uint64 role,
+        address account
+    ) private pure {
+        bool forbidden = account == p.delegation || account == p.permit2
+            || account == p.vrfCoordinator;
+        for (uint256 j; j < names.length && !forbidden; ++j) {
+            forbidden = account == DeployV1.addressOf(d, names[j]);
+        }
+        if (forbidden) revert HolderIsADeploymentContract(role, account);
     }
 
     /// @notice The genesis file's policy is the committed one (M-2): for the same deployment and
