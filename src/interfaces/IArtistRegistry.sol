@@ -119,7 +119,9 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver, IAccoun
     /// @notice A wallet of the account contested a pending replacement.
     /// @param artistId The account whose replacement is contested.
     /// @param by The contesting wallet.
-    event ChangeContested(uint256 indexed artistId, address indexed by);
+    /// @param priorOutcome The account's latest dispute outcome at the contest (zero if none),
+    ///        which `resolveContested` refuses: only a later outcome resolves the contest.
+    event ChangeContested(uint256 indexed artistId, address indexed by, bytes32 priorOutcome);
     /// @notice The network applied a vote on a contested replacement.
     /// @param artistId The account whose contested replacement was resolved.
     /// @param upheld True if the vote upheld it, false if it voided it.

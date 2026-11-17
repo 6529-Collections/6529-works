@@ -386,7 +386,7 @@ contract ArtistRegistryTest is IdentityFixture {
         );
         registry.cancelChange(artistId);
         vm.expectEmit(address(registry));
-        emit IArtistRegistry.ChangeContested(artistId, wallet);
+        emit IArtistRegistry.ChangeContested(artistId, wallet, bytes32(0));
         vm.prank(wallet);
         registry.cancelChange(artistId);
         uint256 contested = block.timestamp;
@@ -427,6 +427,9 @@ contract ArtistRegistryTest is IdentityFixture {
         DisputeOutcomeLogMock outcomes = _wireOutcomes();
         outcomes.setOutcome(address(registry), artistId, keccak256("earlier"));
         _stageReplacement(_identity(newRoot, newRoot), newKey);
+        // The contest logs the outcome it must be resolved after.
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.ChangeContested(artistId, wallet, keccak256("earlier"));
         vm.prank(wallet);
         registry.cancelChange(artistId);
         vm.prank(network);
@@ -722,6 +725,25 @@ contract ArtistRegistryTest is IdentityFixture {
                 "ReplacementAcceptance(uint256 artistId,address root,address payout,bytes32 profileId,bytes32 profileDocHash,bytes32 evidenceHash,uint64 deadline)"
             )
         );
+    }
+
+    /// @dev The statement log binds only as an installable dependency: an address without code
+    ///      and an EIP-7702 delegated account (here delegated to a log that names this registry)
+    ///      are refused with `InvalidDependency` before anything is read. Fails without the
+    ///      check: the codeless address reverts `InvalidBinding` instead, and the delegated
+    ///      account binds.
+    function test_BindStatementLog_RefusesAnAccountThatIsNotAnInstallableContract() public {
+        address codeless = makeAddr("codelessLog");
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, codeless));
+        registry.bindStatementLog(codeless);
+        DisputeOutcomeLogMock answering = new DisputeOutcomeLogMock(address(registry));
+        address delegated = makeAddr("delegatedLog");
+        vm.etch(delegated, abi.encodePacked(hex"ef0100", address(answering)));
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, delegated));
+        registry.bindStatementLog(delegated);
+        assertEq(registry.statementLog(), address(0), "nothing bound");
     }
 
     // ----------------------------------------------------------------- helpers

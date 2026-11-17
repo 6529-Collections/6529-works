@@ -287,8 +287,9 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
             revert ContestWindowClosed(artistId, p.executableAt);
         }
         p.contestedAt = _now();
-        p.priorOutcome = _latestOutcome(artistId);
-        emit ChangeContested(artistId, msg.sender);
+        bytes32 prior = _latestOutcome(artistId);
+        p.priorOutcome = prior;
+        emit ChangeContested(artistId, msg.sender, prior);
     }
 
     /// @inheritdoc IArtistRegistry
