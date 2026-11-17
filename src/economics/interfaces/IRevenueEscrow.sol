@@ -10,8 +10,8 @@ import { ISplitFactory } from "./ISplitFactory.sol";
 ///         split wallet's credit only to an equivalent replacement wallet (same factory,
 ///         identical payees), its own credits (the fee and museum vaults') anywhere, and any
 ///         other account's credit only to the replacement that account itself named (its
-///         consent). A credit nobody claims for 180 days after it was last added to moves to the
-///         network fee vault ({expire}).
+///         consent). A credit nobody claims for 180 days after it went from zero moves to the
+///         network fee vault ({expire}); later additions do not move that clock.
 /// @dev Declares itself through ERC-165, so the artist registry and the economics resolver can
 ///      refuse the escrow as a payout or fee recipient (`ProtocolContracts`).
 interface IRevenueEscrow is IERC165 {
@@ -58,8 +58,8 @@ interface IRevenueEscrow is IERC165 {
     /// @param amount The amount swept: the whole excess.
     event ExcessSwept(address indexed asset, address indexed recipient, uint256 amount);
 
-    /// @notice `amount` of `asset` owed to `wallet`, unclaimed for 180 days since it was last
-    ///         added to, moved to the network fee vault `network`, which is now owed `owed`.
+    /// @notice `amount` of `asset` owed to `wallet`, unclaimed for 180 days since it went from
+    ///         zero, moved to the network fee vault `network`, which is now owed `owed`.
     /// @param wallet The account whose credit moved.
     /// @param asset The asset of the credit (ETH is `address(0)`).
     /// @param network The network fee vault credited.
@@ -122,16 +122,16 @@ interface IRevenueEscrow is IERC165 {
     /// @return The replacement it named, or zero.
     function recoveryConsent(address account) external view returns (address);
 
-    /// @notice When `wallet`'s credit in `asset` was last added to (a deposit or a recovery to
-    ///         it); zero if never.
+    /// @notice When `wallet`'s credit in `asset` last went from zero to nonzero (a deposit or a
+    ///         recovery to it); later additions leave it unchanged; zero if never.
     /// @param wallet The credited account.
     /// @param asset The asset to look up (ETH is `address(0)`).
     /// @return The time, in seconds.
     function creditedAt(address wallet, address asset) external view returns (uint48);
 
     /// @notice Moves everything owed to `wallet` in `asset` to the network fee vault
-    ///         (`factory().network()`) as a credit, once 180 days have passed since it was last
-    ///         added to. Anyone may call; anyone may then {flush} it to the vault.
+    ///         (`factory().network()`) as a credit, once 180 days have passed since it went
+    ///         from zero. Anyone may call; anyone may then {flush} it to the vault.
     /// @dev Reverts with {CreditNotExpired} before then, {NothingOwed} when nothing is owed and
     ///      {InvalidWallet} for the network itself.
     /// @param wallet The credited account.

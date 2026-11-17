@@ -123,10 +123,10 @@ contract EnglishAuction is
     /// @dev How long after a federated sale's end a refused settlement may close it with refunds
     ///      (AUC-46). A fixed value: the number is the guarantee to the sale's bidders.
     uint256 private constant _REFUSAL_DELAY = 2 days;
-    /// @dev How long after it was last added to a credit may be sent to the network's fee
+    /// @dev How long after it went from zero a credit may be sent to the network's fee
     ///      recipient by anyone (R12). A fixed value: the number is the guarantee.
     uint256 private constant _CREDIT_EXPIRY = 180 days;
-    /// @dev A credit word: the amount in the low 208 bits, the time it was last added to above.
+    /// @dev A credit word: the amount in the low 208 bits, the time it went from zero above.
     uint256 private constant _CREDIT_AMOUNT = type(uint208).max;
     /// @dev The least refusal gas (AUC-47). The auction's own worst case in one settlement, both
     ///      ERC-20 payout frames spending their whole 1,000,000 (credits written instead) and the
@@ -220,7 +220,7 @@ contract EnglishAuction is
     mapping(bytes32 key => uint16) private _termsIds;
     mapping(uint16 termsId => Terms) private _terms;
     mapping(uint256 saleId => Sale) private _sales;
-    /// @dev Each credit: the amount (low 208 bits) and when it was last added to (above).
+    /// @dev Each credit: the amount (low 208 bits) and when it went from zero (above).
     mapping(address account => mapping(address currency => uint256)) private _credits;
 
     /// @param authority The AccessManager governing this adapter.
@@ -654,7 +654,7 @@ contract EnglishAuction is
 
     /// @notice Sends `account`'s credits in `currency` to the network's fee recipient (the
     ///         economics resolver's 6529 Stream recipient, read now), once 180 days have passed
-    ///         since the credit was last added to (R12). Permissionless. Emits `Claimed` with that
+    ///         since the credit went from zero (R12). Permissionless. Emits `Claimed` with that
     ///         recipient as `to`.
     /// @param account The credited account.
     /// @param currency The currency, zero for ETH.
@@ -974,8 +974,9 @@ contract EnglishAuction is
     /// @dev The sale's terms: the locked currency, the token's seller and fee terms (for a
     ///      federated token, the registry fee share locked at start, never the share the token
     ///      reports: MARKET-3, AUC-48), and the network fee recipient the economics resolver
-    ///      names now for the sale's product, or the token's when the resolver names none or the
-    ///      escrow (R18, B3).
+    ///      names now for the sale's product, or the token's recorded one when the resolver names
+    ///      none or the escrow (R18, B3). 6529 Stream records the network's; a federated
+    ///      template records none, so a federated settlement then fails into the refusal path.
     function _lock(Sale storage s, address seller, address feeRecipient, uint32 feeShare)
         private
         view
@@ -1286,11 +1287,13 @@ contract EnglishAuction is
         }
     }
 
-    /// @dev Adds to a credit and restarts its 180-day clock (R12). The amount stays far below
-    ///      2^208: every credit is a sum of 96-bit bids and payouts.
+    /// @dev Adds to a credit; its 180-day clock starts only when it goes from zero (a claimed
+    ///      credit's word is zero), so an addition never postpones expiry (R12). The amount
+    ///      stays far below 2^208 (a sum of 96-bit bids and payouts): it never reaches the time.
     function _credit(address account, address currency, uint256 saleId, uint256 amount) private {
         mapping(address => uint256) storage credits = _credits[account];
-        credits[currency] = ((credits[currency] & _CREDIT_AMOUNT) + amount) | block.timestamp << 208;
+        uint256 w = credits[currency];
+        credits[currency] = w == 0 ? amount | block.timestamp << 208 : w + amount;
         emit ISaleAdapter.Credited(account, currency, saleId, amount);
     }
 

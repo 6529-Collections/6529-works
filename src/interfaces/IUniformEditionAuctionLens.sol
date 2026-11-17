@@ -112,7 +112,7 @@ interface IUniformEditionAuctionLens {
     function feeRecipient(address token, uint256 id) external view returns (address);
 
     /// @notice When `account`'s credit may be sent to the network's fee recipient
-    ///         (`expireCredit`): 180 days after it was last added to; zero with no credit.
+    ///         (`expireCredit`): 180 days after it went from zero; zero with no credit.
     /// @param account The credited account.
     /// @return The first second `expireCredit` succeeds, or zero.
     function creditExpiresAt(address account) external view returns (uint256);

@@ -1343,6 +1343,45 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         _assertConserved();
     }
 
+    /// @dev R12: while the network recipient is zero, an expired credit is not sent anywhere
+    ///      (`InvalidRecipient(0)`) and stays claimable by its account.
+    function test_ExpireCredit_RevertsWhileTheNetworkRecipientIsZero() public {
+        uint256 saleId = _open(0);
+        _bid(saleId, alice, 100, 1);
+        _bid(saleId, bob, 0, 1);
+        _settle(saleId);
+        auction.claimBidFor(saleId, 2);
+        uint256 credit = ua.claimable(bob, CURRENCY_ETH);
+        vm.warp(block.timestamp + 180 days);
+        economics.setNetworkFeeRecipient(address(0));
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
+        auction.expireCredit(bob, CURRENCY_ETH);
+        assertEq(ua.claimable(bob, CURRENCY_ETH), credit, "still the account's");
+    }
+
+    /// @dev R12: a later refund credited by anyone (`claimBidFor`) does not move a credit's
+    ///      clock: it expires 180 days after it went from zero. Fails without the change: the
+    ///      second claim postpones the expiry by 10 days.
+    function test_ExpireCredit_ALaterRefundDoesNotMoveTheClock() public {
+        uint256 saleId = _open(0);
+        _bid(saleId, alice, 100, 1);
+        _bid(saleId, bob, 0, 1);
+        _bid(saleId, bob, 0, 1);
+        _settle(saleId);
+        auction.claimBidFor(saleId, 2);
+        uint256 expiresAt = block.timestamp + 180 days;
+        vm.warp(block.timestamp + 10 days);
+        vm.prank(carol);
+        auction.claimBidFor(saleId, 3);
+        assertEq(lens.creditExpiresAt(bob), expiresAt, "clock unchanged");
+        vm.warp(expiresAt);
+        uint256 credit = ua.claimable(bob, CURRENCY_ETH);
+        assertGt(credit, 0);
+        assertEq(auction.expireCredit(bob, CURRENCY_ETH), credit);
+        refundsOut += credit;
+        _assertConserved();
+    }
+
     function test_Settle_CapWithFifoAndHoles_ChunkedSweep() public {
         // PLAN appendix C, trace 3: a cap of 60 on trace 2's book.
         uint256 saleId = _open(60);

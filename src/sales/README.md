@@ -29,7 +29,7 @@ Edition bids are ETH; only the English auction calls Permit2
 
 | Caller | Calls | Rules |
 | --- | --- | --- |
-| Anyone | `start`, `startWithBid`, `bid`, `settle`, `settleOrRefund`, `claimFor`, `expireCredit` (180 days after a credit was last added to) | AUC-14 to AUC-25, AUC-29, AUC-45 to AUC-48 |
+| Anyone | `start`, `startWithBid`, `bid`, `settle`, `settleOrRefund`, `claimFor`, `expireCredit` (180 days after a credit went from zero) | AUC-14 to AUC-25, AUC-29, AUC-45 to AUC-48 |
 | A bidder | `claim` of its credits; `withdrawBid` (the high bidder, while paused or frozen); `claimDelivery` (the winning bidder to any address; the recipient it named to itself, or anywhere from 14 days after the end) | AUC-18, AUC-21, DSP-15 |
 | The pauser and the network | The dispute `pause(saleId, …)` (the pauser, at most 3 days), `resume`, `cancel` (the network, no wait); `pause()`, `unpause()`; `setConfig`, `setTarget`, `setFederationRegistry` (the opening bid is the asset allowlist's `setOpeningBid`) | AUC-13, AUC-26, AUC-30, DSP-13 to DSP-19; [role matrix](../../docs/audit/roles.md#englishauction) |
 | Anyone (edition auction) | `open`, `bid`, `settle`, `claimBidFor`, `abandon`, `expireCredit`, every view | EA-1, EA-4, EA-8 to EA-13, EA-17, EA-19, EA-20 |
@@ -58,7 +58,7 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
   so a change to the adapter's state variables must change the lens too
   (`test_StorageWord_TheLensFollowsTheAdaptersLayout`). Every sale locks the current terms
   record (24-bit IDs); the payout gas shares the settings word; a credit word packs the amount
-  (208 bits) with the time it was last added to. Stored times are 32 bits, checked (EA-18).
+  (208 bits) with the time it went from zero. Stored times are 32 bits, checked (EA-18).
 - **English auction storage.** A steady-state start writes one `Sale` word and shares a terms
   record per distinct combination; seller and fee terms come back from the token at settlement,
   from the call that reports the outcome (`IMintTarget.settlePrimary`, owner decision 17).
@@ -73,7 +73,7 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
 - **Money (R18, R12).** At settlement the seller gets `floor(price × (100,000 − share) /
   100,000)` and the network the rest, paid to the recipient the economics resolver names then
   (`networkFeeRecipient(product)`), or the token's when it names none or the escrow. A credit
-  word packs the amount with the time it was last added to; 180 days later anyone may send it to
+  word packs the amount with the time it went from zero; 180 days later anyone may send it to
   the resolver's 6529 Stream recipient (`expireCredit`). Payments are DIRECT or PERMIT2; an
   EIP-2612 PERMIT payment is refused.
 - **The no-bid recipient (D140, owner decision 17).** `settle` reports SOLD, UNBID or

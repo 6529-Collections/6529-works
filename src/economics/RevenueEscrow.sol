@@ -26,14 +26,15 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///      the network's own credits (an account whose `authority()` is this escrow's, such as the
 ///      fee and museum vaults) wherever the network names (C19), and any other account's credit
 ///      only to the replacement that account named itself with {consentToRecovery}, each consent
-///      covering one recovery. A credit nobody flushed for {UNCLAIMED_PERIOD} after it was last
-///      added to moves to the network ({expire}, R12).
+///      covering one recovery. A credit nobody flushed for {UNCLAIMED_PERIOD} after it last
+///      went from zero to nonzero moves to the network ({expire}, R12); later additions do not
+///      move its clock.
 ///      Funds force-sent or transferred here without a deposit are owed to nobody; only
 ///      {sweepExcess} moves them, and it can reach nothing beyond `balance - totalOwed` of the
 ///      asset it names. That bound is per token address: for a token with two addresses over one
 ///      balance, or one that rebases, see {IRevenueEscrow.sweepExcess}.
 contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransient {
-    /// @notice How long a credit stays its account's after it was last added to: 180 days. The
+    /// @notice How long a credit stays its account's after it went from zero: 180 days. The
     ///         number is the guarantee (an unclaimed credit is its owner's for at least this
     ///         long), so it is compiled in and nothing changes it.
     uint256 public constant UNCLAIMED_PERIOD = 180 days;
@@ -173,11 +174,12 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
         emit Credited(wallet, asset, msg.sender, amount, _add(wallet, asset, amount));
     }
 
-    /// @dev Adds `amount` to `wallet`'s credit, restarts its clock and returns the new credit.
+    /// @dev Adds `amount` to `wallet`'s credit and returns the new credit. The clock starts only
+    ///      when the credit goes from zero, so an addition never postpones its expiry.
     function _add(address wallet, address asset, uint256 amount) private returns (uint256 balance) {
         balance = owed[wallet][asset] + amount;
         owed[wallet][asset] = balance;
-        creditedAt[wallet][asset] = uint48(block.timestamp);
+        if (balance == amount) creditedAt[wallet][asset] = uint48(block.timestamp);
     }
 
     /// @dev Zeroes `wallet`'s credit in `asset` and returns it; reverts when there is none.
