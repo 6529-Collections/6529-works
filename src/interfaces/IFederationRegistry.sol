@@ -121,14 +121,14 @@ interface IFederationRegistry is IERC165 {
 
     /// @notice Whether `adapter` may mint a new work into `token` now: an admitted adapter, a
     ///         contract listed ACTIVE, and a template version approved and not suspended; for an
-    ///         editions contract, its partner listed ACTIVE too.
+    ///         editions contract, its partner listed ACTIVE too and on an APPROVED template.
     /// @param token The federated contract (the caller, when a template asks).
     /// @param adapter The sale adapter asking to mint.
     /// @return True when the mint may proceed.
     function canMint(address token, address adapter) external view returns (bool);
 
-    /// @notice Reverses a template revocation: REVOKED to APPROVED. The network. Contracts that
-    ///         `propagateRevocation` delisted stay delisted until the network relists them.
+    /// @notice Reverses a template revocation: REVOKED to APPROVED. The network. A revocation
+    ///         writes no listing, so the template's contracts are served again as listed.
     /// @param codeHash The template code hash.
     function reinstateTemplate(bytes32 codeHash) external;
 

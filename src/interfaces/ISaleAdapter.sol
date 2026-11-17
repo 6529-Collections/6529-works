@@ -125,7 +125,7 @@ interface ISaleAdapter is IERC165 {
     /// @notice `unpause` was called while the adapter is not paused.
     error NotPaused();
     /// @notice A credit may be sent to the network's fee recipient only from `expiresAt`, 180
-    ///         days after it was last added to (R12).
+    ///         days after it went from zero (R12).
     error CreditNotExpired(address account, uint256 expiresAt);
     /// @notice The address cannot receive the token or the credit (for `claim`, zero).
     error InvalidRecipient(address recipient);

@@ -198,8 +198,8 @@ library VerifyV1 {
     }
 
     /// @notice Reverts on the first difference between the deployment and `cfg` / `calls`.
-    /// @dev Run at least `minSetback()` after genesis, when grant and target-admin delays are
-    ///      effective (`GovernanceConfigurator.verify`).
+    /// @dev Run once the network has accepted. Genesis sets no grant or target-admin delay, so
+    ///      nothing here waits on the manager's setback (`GovernanceConfigurator.verify`).
     function check(
         DeployV1.Deployment memory d,
         GovernanceConfig.Config memory cfg,
@@ -338,7 +338,7 @@ library VerifyV1 {
     ///         every template code hash in `codeHashes` (`templateOf`: version, form, status and
     ///         deployer) and every adapter in `adapters` (`isAdmittedAdapter`). The switch's
     ///         setters check only the expected pointer and ERC-165, so a revocation, suspension
-    ///         or adapter change on the predecessor during the 30-day delay is caught only here
+    ///         or adapter change on the predecessor during the 7-day delay is caught only here
     ///         (`FederationMismatch("templateOf")` or `("isAdmittedAdapter")`). Read before the
     ///         switch: `templateOf` and `isAdmittedAdapter` are each registry's own tables.
     /// @param predecessor The federation registry the artist registry names now.

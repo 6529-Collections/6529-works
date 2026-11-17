@@ -250,7 +250,8 @@ interface IWorkRecords {
     ///         at any time (C9). Anyone else may once 6529 Stream reports the primary sale
     ///         settled (`NotWorkArtist` before): the first such call records a notice
     ///         (`FinalizeNoticeRecorded`) and changes nothing else; from 14 days after the notice
-    ///         (`FinalizeNotDue` before), a call finalizes the record as it then stands. The record
+    ///         (`FinalizeNotDue` before), a call finalizes the record as it then stands, whatever
+    ///         state hash it passes (only the artist's own call checks it). The record
     ///         file must meet the structural bounds (one chunk; see the contract notes), the
     ///         license text (the deployment's CC0 text for a work with no stored license) must
     ///         be registered, with a SHA-256 digest, in at most 16 chunks and complete on-chain,
@@ -258,7 +259,8 @@ interface IWorkRecords {
     ///         none of this for a stored license (`InvalidLicense`). Renouncing RELICENSE
     ///         checks the same ID and text except completeness.
     /// @param tokenId A work with an open record, not finalized.
-    /// @param expectedStateHash The work's current state hash (`StateHashMismatch` otherwise).
+    /// @param expectedStateHash For the artist's call, the work's current state hash
+    ///        (`StateHashMismatch` otherwise); ignored for anyone else's.
     function finalize(uint256 tokenId, bytes32 expectedStateHash) external;
     /// @notice Marks media on-chain, in pieces of the caller's choosing; never changes the state
     ///         hash. Each call verifies at most `maxChunks` chunks, in media order, through

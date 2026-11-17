@@ -525,7 +525,7 @@ interface IUniformEditionAuction is ISaleAdapter {
         returns (uint256 unitsWon, uint256 refund);
 
     /// @notice Sends `account`'s claimable ETH to the network's fee recipient (the economics
-    ///         resolver's, read now) once 180 days have passed since it was last added to (R12;
+    ///         resolver's, read now) once 180 days have passed since it went from zero (R12;
     ///         `CreditNotExpired` before). Permissionless; an unclaimed bid becomes a credit
     ///         through `claimBidFor`. Emits `Claimed` with that recipient as `to`.
     /// @param account The credited account.

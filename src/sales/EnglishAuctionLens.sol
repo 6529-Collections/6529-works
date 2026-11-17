@@ -310,7 +310,7 @@ contract EnglishAuctionLens {
     }
 
     /// @notice When `account`'s credit in `currency` may be sent to the network's fee recipient
-    ///         (`expireCredit`): 180 days after it was last added to; zero with no credit.
+    ///         (`expireCredit`): 180 days after it went from zero; zero with no credit.
     /// @param account The credited account.
     /// @param currency The currency.
     /// @return The first second `expireCredit` succeeds, or zero.
@@ -466,7 +466,7 @@ contract EnglishAuctionLens {
     }
 
     /// @dev A credit word (`EnglishAuction._credits`): the amount in the low 208 bits, the time
-    ///      it was last added to above.
+    ///      it went from zero above.
     function _creditWord(address account, address currency) private view returns (uint256) {
         bytes32 inner = _mapSlot(bytes32(uint256(uint160(account))), _CREDITS_SLOT);
         return uint256(_read1(_mapSlot(bytes32(uint256(uint160(currency))), uint256(inner))));

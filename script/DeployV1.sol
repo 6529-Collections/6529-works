@@ -98,8 +98,8 @@ library DeployV1 {
         address feeRecipient;
         /// The 6529 Network Museum (D140): the first destination of the museum's governed vault,
         /// where an unbid canonical 6529 Stream work goes. An existing Safe or EOA;
-        /// SUCCESSOR_SETTER (30 days) can change the vault's destination (`setDestination`),
-        /// FUNDS_SETTER (14 days) the resolver's museum.
+        /// SUCCESSOR_SETTER (7 days) can change the vault's destination (`setDestination`),
+        /// FUNDS_SETTER (3 days) the resolver's museum.
         address museum;
         /// The marketplace `owner()` of 6529 Stream (and 6529 Stream Editions): collection admin
         /// on marketplaces, no protocol power. FUNDS_SETTER can change it.

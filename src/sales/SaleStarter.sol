@@ -28,6 +28,8 @@ contract SaleStarter {
     /// @notice A vault the factory deployed is not the one the work's terms name.
     /// @param wallet The address the factory returned.
     error VaultMismatch(address wallet);
+    /// @notice A first bid names this helper as its payer: it could never claim a refund.
+    error HelperAsPayer();
 
     /// @notice Starts the auction of the work `mintData` mints, deploys its vaults and opens its
     ///         record; all or nothing.
@@ -49,8 +51,9 @@ contract SaleStarter {
 
     /// @notice As `start`, with a first bid (`IEnglishAuction.startWithBid`). The auction records
     ///         `payment.payer` as the bidder and requires it to be the caller of the auction for a
-    ///         DIRECT payment, so through this helper only a PERMIT2 payment, signed by its
-    ///         payer, can succeed. `msg.value` is forwarded in full.
+    ///         DIRECT payment, which here is this helper; a payment naming this helper as payer
+    ///         reverts (`HelperAsPayer`), since it could never claim a refund. So only a PERMIT2
+    ///         payment, signed by its payer, can succeed. `msg.value` is forwarded in full.
     /// @param auction The English auction.
     /// @param stream 6529 Stream.
     /// @param mintData `abi.encode(StreamMintRequest)`.
@@ -66,6 +69,7 @@ contract SaleStarter {
         address recipient,
         Payment calldata payment
     ) external payable returns (uint256 saleId) {
+        if (payment.payer == address(this)) revert HelperAsPayer();
         saleId = auction.startWithBid{ value: msg.value }(stream, mintData, recipient, payment);
         _finish(auction, stream, saleId, mintData, media);
     }

@@ -94,6 +94,28 @@ contract EditionAuctionPermanenceTest is EditionAuctionStack {
         assertEq(won, 2, "copies minted");
     }
 
+    /// @dev R16 (C-3 reading, as built) on the real contracts: a 1/1 that drew no bids goes to
+    ///      the museum and settles UNBID; 21 days after the close anyone abandons the edition
+    ///      sale, which creates the edition, and the sale then settles with its copies minted.
+    function test_Abandon_AnUnbidMasterGetsItsEditionAndTheSaleCompletes() public {
+        (, Work memory w, uint256 oneSaleId, uint256 tokenId, uint256 saleId) =
+            _startMaster(_actor("unbidArtist"), 0);
+        _editionBid(saleId, fan, 40, 2);
+        vm.warp(auction.auction(oneSaleId).endTime);
+        auction.settle(oneSaleId);
+        assertTrue(stream.primarySaleSettled(tokenId));
+        assertEq(stream.ownerOf(tokenId), museum, "the unbid work went to the museum");
+        uint256 close = ea.endTimes(saleId).closeAt;
+        vm.warp(close + 21 days);
+        vm.prank(other);
+        editionAuction.abandon(saleId, abi.encode(w.item));
+        assertTrue(editions.exists(tokenId), "the edition was created");
+        _settleEditions(saleId);
+        vm.prank(fan);
+        (uint256 won,) = editionAuction.claimBid(saleId, 1, fan);
+        assertEq(won, 2, "copies minted");
+    }
+
     /// @dev R16: an upheld dispute burns the master (its sale never completes); 21 days after
     ///      the close anyone abandons the edition sale: every bid refunded in full, the edition
     ///      sealed at zero.

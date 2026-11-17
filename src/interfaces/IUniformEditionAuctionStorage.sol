@@ -115,8 +115,8 @@ interface IUniformEditionAuctionStorage {
     ///      ID (`IUniformEditionAuction.AuctionConfig`).
     ///      SWEEP: `key` a settler's address; its own departure sweep in progress, `swept |
     ///      nextPosition << 32 | cutoff << 64`, zero when it has none (never swept, or
-    ///      finished). CREDIT: `key` an account; its claimable ETH (bits 0-207) and when it was
-    ///      last added to (208-255). SETTINGS: `saleId` and `key` ignored; `termsId` (the
+    ///      finished). CREDIT: `key` an account; its claimable ETH (bits 0-207) and when it went
+    ///      from zero (208-255). SETTINGS: `saleId` and `key` ignored; `termsId` (the
     ///      current configuration's ID, bits 0-23), `termsCount` (24-47), `pausedAt` (48-87,
     ///      zero while not paused), `listed` (88-95), then `payoutGas` (96-127).
     enum Space {

@@ -22,8 +22,9 @@ import { VerifyV1 } from "./VerifyV1.sol";
 
 /// @title Verify
 /// @notice Confirms a recorded deployment against the chain. Run it against the chain the
-///         deployment is on, after the network has accepted (`acceptNetwork`) and at least
-///         `minSetback()` (5 days) after genesis:
+///         deployment is on, after the network has accepted (`acceptNetwork`). Genesis sets no
+///         grant or target-admin delay, so no setback wait applies (a later pending delay
+///         change fails the run, `PendingGrantDelayChange`):
 ///
 ///         DEPLOYMENT=deployments/<chainId>/<timestamp>.json \
 ///           forge script script/Verify.s.sol --rpc-url <rpc>
@@ -56,7 +57,8 @@ import { VerifyV1 } from "./VerifyV1.sol";
 ///         5. Off anvil, the genesis file still matches the committed policy and names nothing
 ///            the deployment lacks, and its network and holders pass the deploy's guards
 ///            against the chain as it is now: the network a bare canonical Safe, no deployment
-///            contract (`DeployGuards.checkHolders`, `checkHoldersAgainst`); on mainnet, the role groups
+///            contract (`DeployGuards.checkHolders`, `checkHoldersAgainst`), and the genesis
+///            file names no brake (`checkNoBrake`, ruling 1); on mainnet, the role groups
 ///            and no deployer as a holder, museum, marketplace owner or fee recipient
 ///            (`checkRoleGroups`, `checkRecipients`).
 ///         6. `VerifyV1.check`: the network accepted and is the configured one, the brake is
@@ -231,7 +233,10 @@ contract Verify is ScriptIO {
         string memory genesis = _read(vm.parseJsonString(record, ".genesisConfig"));
         GovernanceConfig.Config memory cfg = DeployV1.config(d, _currentConfig(genesis));
         GovernanceConfig.Call[] memory wired = DeployV1.wiring(d, genesis, manifest);
-        if (!local) _checkGuards(record, d, _currentConfig(genesis), cfg, manifest);
+        if (!local) {
+            DeployGuards.checkNoBrake(genesis);
+            _checkGuards(record, d, _currentConfig(genesis), cfg, manifest);
+        }
         VerifyV1.check(d, cfg, wired);
         if (!local) _checkSubscription(d, cfg, block.chainid == DeployGuards.MAINNET_CHAIN_ID);
         _checkHistory(d, genesis, cfg, wired, manifest, record);

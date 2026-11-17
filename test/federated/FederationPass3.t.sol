@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { FederatedStream } from "src/federated/FederatedStream.sol";
 import { FederationRegistry } from "src/federated/FederationRegistry.sol";
+import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IFederatedStream } from "src/interfaces/IFederatedStream.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
@@ -145,16 +146,11 @@ contract FederationPass3Test is FederationBase {
         }
     }
 
-    /// @dev Both batches take at most `MAX_BATCH` contracts: at the bound they run, above it
-    ///      they refuse.
+    /// @dev A status batch takes at most `MAX_BATCH` contracts: at the bound it runs, above it
+    ///      it refuses.
     function test_Batch_BoundedAtMaxBatch() public {
         uint256 bound = fedRegistry.MAX_BATCH();
         assertEq(bound, 256);
-        fedRegistry.propagateRevocation(_addresses(bound));
-        vm.expectRevert(
-            abi.encodeWithSelector(FederationRegistry.BatchTooLarge.selector, bound + 1)
-        );
-        fedRegistry.propagateRevocation(_addresses(bound + 1));
         _govern(
             hotAdmin,
             address(fedRegistry),
@@ -176,8 +172,9 @@ contract FederationPass3Test is FederationBase {
         manager.execute(address(fedRegistry), tooMany);
     }
 
-    /// @dev The bound's arithmetic: the worst element (a cold listed contract written DELISTED)
-    ///      costs under 20,000 gas, so `MAX_BATCH` of them fit well inside EIP-7825's 2^24 cap.
+    /// @dev The bound's arithmetic: the worst element of a `setStatus` batch (a cold listed
+    ///      contract read and written DELISTED in the directory) costs under 20,000 gas, so
+    ///      `MAX_BATCH` of them fit well inside EIP-7825's 2^24 cap.
     function test_Batch_TheWorstElementFitsTheBound() public {
         uint256 n = 4;
         address[] memory tokens = new address[](n);
@@ -187,28 +184,25 @@ contract FederationPass3Test is FederationBase {
             _join(address(t), a);
             tokens[i] = address(t);
         }
-        _govern(
-            hotAdmin, address(fedRegistry), abi.encodeCall(fedRegistry.revokeTemplate, (streamHash))
-        );
-        address[] memory one = new address[](1);
-        one[0] = tokens[0];
-        address[] memory rest = new address[](n - 1);
-        for (uint256 i = 1; i < n; ++i) {
-            rest[i - 1] = tokens[i];
-        }
         _coolAll();
         for (uint256 i; i < n; ++i) {
             vm.cool(tokens[i]);
         }
-        vm.cool(address(fedRegistry));
-        uint256 g0 = gasleft();
-        fedRegistry.propagateRevocation(one);
-        uint256 single = g0 - gasleft();
-        uint256 g1 = gasleft();
-        fedRegistry.propagateRevocation(rest);
-        uint256 perElement = (g1 - gasleft()) / (n - 1);
-        emit log_named_uint("propagateRevocation, one cold element (gas)", single);
-        emit log_named_uint("propagateRevocation, per further cold element (gas)", perElement);
+        vm.cool(address(artists));
+        uint256 single;
+        uint256 rest;
+        vm.startPrank(address(fedRegistry));
+        for (uint256 i; i < n; ++i) {
+            uint256 g = gasleft();
+            artists.federatedListing(tokens[i]);
+            artists.setFederatedStatus(tokens[i], IArtistRegistry.FederationStatus.DELISTED, "");
+            if (i == 0) single = g - gasleft();
+            else rest += g - gasleft();
+        }
+        vm.stopPrank();
+        uint256 perElement = rest / (n - 1);
+        emit log_named_uint("setStatus, one cold element (gas)", single);
+        emit log_named_uint("setStatus, per further cold element (gas)", perElement);
         assertLt(perElement, 20_000);
         assertLt(fedRegistry.MAX_BATCH() * 20_000 + single, uint256(1 << 24) / 3);
     }

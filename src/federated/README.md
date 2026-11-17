@@ -46,11 +46,12 @@ artist registry's (`IArtistRegistry.federatedListing` and its events).
   goes to the template's own custody (FED-17), `reclaim` brings back a refused one (FED-19),
   and a fresh approval restarts it under the next token ID (FED-18).
 - **Sell editions.** `FederatedEditionAuction.open(editions, masterTokenId, abi.encode(item))`
-  beside the master's 1/1; `FederatedEditions.createEdition` once the master settled
-  (FED-31 to FED-38, FED-53 to FED-58).
+  beside the master's 1/1; `FederatedEditions.createEdition` once the master SOLD, or once it
+  settled when an edition sale is bound (FED-31 to FED-38, FED-53 to FED-58).
 - **Govern.** All the network's: `approveTemplate`, `suspendTemplate`, `resumeTemplate`,
-  `revokeTemplate`, `reinstateTemplate`, `setStatus` (24 hours), `setAdapter`;
-  `propagateRevocation` (anyone) (FED-44 to FED-50, FED-74). In the artist registry: delisting
+  `revokeTemplate`, `reinstateTemplate`, `setStatus` (24 hours), `setAdapter`
+  (FED-44 to FED-50, FED-74). A revocation acts through `isActive` and `canMint` and writes no
+  listing, so a reinstatement serves the contracts again as listed. In the artist registry: delisting
   an account (FED-75) and lowering a contract's share (FED-73).
 - **No exit.** A joined contract stays in the federation (FED-8); `setAdmittedMinter` always
   reverts (FED-5). Delisted, or on a suspended or revoked template, it mints nothing and opens

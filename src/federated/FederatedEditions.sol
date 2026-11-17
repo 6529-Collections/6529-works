@@ -33,8 +33,8 @@ import { FederatedMembership } from "./FederatedMembership.sol";
 /// @dev Deployed as a full copy per artist after its partner `FederatedStream`, which the
 ///      artist then links back (`linkEditions`). An edition is anchored by an EDITION_MASTER work
 ///      of the partner and has its token ID; it is bound to the adapter whose sale opens it,
-///      sealed by that adapter at its sale's count, and created by anyone once the master's sale
-///      settled. Its payees are the master's (same seller vault), its network share the one in
+///      sealed by that adapter at its sale's count, and created by anyone once the master SOLD,
+///      or once its sale settled when an edition sale is bound (R16). Its payees are the master's (same seller vault), its network share the one in
 ///      force (`_feeTerms`), its royalty rate the master's current one. No immutables.
 contract FederatedEditions is ERC1155, FederatedMembership, IFederatedEditions {
     /// @dev `ItemKind.EDITION_MASTER`.
@@ -84,6 +84,12 @@ contract FederatedEditions is ERC1155, FederatedMembership, IFederatedEditions {
         Record storage r = _records[editionId];
         if (r.contentHash != 0) revert EditionExists(editionId);
         _checkMaster(editionId, item, true);
+        // Unbound, only a SOLD master gets its edition: an unsold, unbound master stays free to
+        // restart (`IFederatedStream`), so no one else can tie it to a dead edition.
+        if (r.minter == address(0)) {
+            (PrimaryOutcome outcome,,) = IFederatedStream(_partner).primarySale(editionId);
+            if (outcome != PrimaryOutcome.SOLD) revert NotEditionMaster(editionId);
+        }
         if (r.seller == address(0)) _lock(r, editionId, item);
         uint32 maxCount = item.edition.maxCount;
         (r.contentHash, r.maxCount) = (item.contentHash, maxCount);

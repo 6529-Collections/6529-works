@@ -11,7 +11,7 @@ pragma solidity ^0.8.24;
 ///        with that role's fixed delay. Nobody can be granted one.
 ///      - Operational roles (`PAUSER`, `CURATION_SIGNER`, `STORAGE_OPERATOR`, `MINTER`,
 ///        `KEEPER`, `PLATFORM`, `CURATOR`) are ordinary keys the network grants and revokes at
-///        the 24-hour class. They carry no delay.
+///        once: genesis makes `NETWORK` their admin (no delay). They carry no delay.
 ///      Every delay here is a compiled constant, not a setting: the number is the guarantee.
 ///      ID 3 is unused (it was a separate unpause role).
 library Roles {

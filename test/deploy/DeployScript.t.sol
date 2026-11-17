@@ -194,7 +194,6 @@ contract DeployScriptTest is Test {
         );
         assertEq(vm.parseJsonString(record, ".entropy"), "none");
         assertEq(vm.parseJsonStringArray(record, ".standIns").length, 0, "no stand-ins");
-        assertEq(vm.parseJsonStringArray(record, ".pendingLanes").length, 0, "no pending lanes");
         assertEq(vm.parseJsonAddress(record, ".params.factory"), DeployGuards.CREATE2_FACTORY);
         assertEq(vm.parseJsonAddress(record, ".params.deployer"), address(this));
         assertEq(vm.parseJsonBytes32(record, ".cc0TextFileId"), d.cc0TextFileId);
@@ -289,6 +288,25 @@ contract DeployScriptTest is Test {
         assertEq(targets, 18);
         assertEq(calls, 24);
         assertEq(holders, 8);
+        // A genesis file that names a brake does not verify off anvil (ruling 1).
+        address brake = makeAddr("brakeSafe");
+        verifier.setFile(
+            GENESIS,
+            bytes(
+                vm.replace(
+                    _filled(),
+                    '"network": "0x100000000000000000000000000000000000b001",',
+                    string.concat(
+                        '"network": "0x100000000000000000000000000000000000b001",\n  "brake": "',
+                        vm.toString(brake),
+                        '",'
+                    )
+                )
+            )
+        );
+        vm.expectRevert(abi.encodeWithSelector(DeployGuards.BrakeAtLaunch.selector, brake));
+        verifier.verify(record);
+        verifier.setFile(GENESIS, bytes(_filled()));
         // Against another pin it does not verify.
         verifier.setCc0Digest(keccak256("another text"));
         vm.expectRevert(
@@ -512,7 +530,10 @@ contract DeployScriptTest is Test {
     }
 
     /// @dev A brake named at genesis (none at launch) must be a reachable account; zero is none.
-    function test_OffAnvilABrakeIsOptionalButReachable() public {
+    /// @dev Ruling 1: no brake at launch. Off anvil a zero brake passes, a placeholder fails the
+    ///      holder guard, and any other nonzero brake is refused (`BrakeAtLaunch`). Fails
+    ///      without the change: a reachable brake passed every guard.
+    function test_OffAnvilNoBrakeAtLaunch() public {
         _sepolia();
         string memory withBrake = vm.replace(
             _filled(),
@@ -533,6 +554,16 @@ contract DeployScriptTest is Test {
                 DeployGuards.PlaceholderHolder.selector, "BRAKE", address(0xB0B0)
             )
         );
+        deployer.prepare();
+        address brake = makeAddr("brakeSafe");
+        _genesisFile(
+            vm.replace(
+                withBrake,
+                '"brake": "0x0000000000000000000000000000000000000000"',
+                string.concat('"brake": "', vm.toString(brake), '"')
+            )
+        );
+        vm.expectRevert(abi.encodeWithSelector(DeployGuards.BrakeAtLaunch.selector, brake));
         deployer.prepare();
     }
 

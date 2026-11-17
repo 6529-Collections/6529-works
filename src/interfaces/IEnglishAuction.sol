@@ -243,7 +243,7 @@ interface IEnglishAuction is ISaleAdapter {
     function claimFor(address account, address currency) external returns (uint256 amount);
     /// @notice Sends `account`'s credits in `currency` to the network's fee recipient (the
     ///         economics resolver's 6529 Stream recipient, read now) once 180 days have passed
-    ///         since the credit was last added to (R12; `CreditNotExpired` before).
+    ///         since the credit went from zero (R12; `CreditNotExpired` before).
     ///         Permissionless. Emits `Claimed` with that recipient as `to`.
     /// @param account The credited account.
     /// @param currency The currency, zero for ETH.

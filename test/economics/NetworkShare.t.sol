@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { GovernedVault } from "src/economics/GovernedVault.sol";
 import { SplitLedger } from "src/economics/SplitLedger.sol";
+import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
 import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { ISplitLedger } from "src/economics/interfaces/ISplitLedger.sol";
@@ -75,6 +76,34 @@ contract NetworkShareTest is EconomicsBase, GasRuleAssertions {
         assertEq(address(feeVault).balance, 1 ether, "the network is paid in the same call");
         assertEq(ledger.released(wallet, ETH, feeIndex), 1 ether);
         assertEq(wallet.balance, 0);
+    }
+
+    /// @dev The claim router over a royalty wallet that pays the network: the seller's item also
+    ///      pays the network its share, so a batch that leaves out the network's index pays
+    ///      both; an atomic batch that also names it fails on that item (nothing left to
+    ///      release), and continue mode reports it and releases zero (B L-2).
+    function test_ClaimRouterWithAWalletThatPaysTheNetwork() public {
+        address wallet = _royalty();
+        uint256 sellerIndex = _indexOf(wallet, seller);
+        uint256 feeIndex = _indexOf(wallet, address(feeVault));
+        ISplitWallet.Payee[] memory payees = _payeesOf(wallet);
+        IClaimRouter.Claim[] memory one = new IClaimRouter.Claim[](1);
+        one[0] = IClaimRouter.Claim(payees, _salts[wallet], ETH, sellerIndex);
+        vm.deal(wallet, 4 ether);
+        uint256[] memory amounts = router.claim(one, false);
+        assertEq(amounts[0], 3 ether);
+        assertEq(address(feeVault).balance, 1 ether, "the network paid in the same item");
+
+        vm.deal(wallet, 4 ether);
+        IClaimRouter.Claim[] memory both = new IClaimRouter.Claim[](2);
+        both[0] = one[0];
+        both[1] = IClaimRouter.Claim(payees, _salts[wallet], ETH, feeIndex);
+        vm.expectRevert();
+        router.claim(both, false);
+        amounts = router.claim(both, true);
+        assertEq(amounts[0], 3 ether);
+        assertEq(amounts[1], 0, "nothing left for the network's own item");
+        assertEq(address(feeVault).balance, 2 ether);
     }
 
     /// @dev Every release path (the artist's pull, `releaseTo`, a signed release) pays the
@@ -372,17 +401,28 @@ contract NetworkShareTest is EconomicsBase, GasRuleAssertions {
         assertEq(address(feeVault).balance, 1 ether);
     }
 
-    function test_ANewCreditRestartsTheClock() public {
-        vm.deal(address(this), 2 ether);
+    /// @dev Later additions, by anyone, never move a credit's clock: it expires 180 days after it
+    ///      went from zero; once emptied, the next credit starts a new clock.
+    function test_LaterCreditsDoNotMoveTheClock() public {
+        uint256 start = block.timestamp;
+        vm.deal(address(this), 1 ether);
         escrow.depositETH{ value: 1 ether }(alice);
-        vm.warp(block.timestamp + PERIOD - 1);
-        escrow.depositETH{ value: 1 ether }(alice);
-        uint256 dueAt = block.timestamp + PERIOD;
-        vm.warp(block.timestamp + 1);
-        vm.expectRevert(
-            abi.encodeWithSelector(IRevenueEscrow.CreditNotExpired.selector, alice, ETH, dueAt)
-        );
-        escrow.expire(alice, ETH);
+        address other = makeAddr("depositor");
+        vm.deal(other, 5);
+        for (uint256 i; i < 5; ++i) {
+            vm.warp(block.timestamp + 30 days);
+            vm.prank(other);
+            escrow.depositETH{ value: 1 }(alice);
+        }
+        assertEq(escrow.creditedAt(alice, ETH), start, "clock unchanged");
+        vm.warp(start + PERIOD);
+        vm.expectEmit(address(escrow));
+        emit IRevenueEscrow.Expired(alice, ETH, address(feeVault), 1 ether + 5, 1 ether + 5);
+        assertEq(escrow.expire(alice, ETH), 1 ether + 5);
+        // Emptied: the next credit starts a new clock.
+        vm.deal(address(this), 1);
+        escrow.depositETH{ value: 1 }(alice);
+        assertEq(escrow.creditedAt(alice, ETH), block.timestamp, "new clock");
     }
 
     function test_ExpireRefusals() public {

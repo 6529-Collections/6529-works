@@ -114,20 +114,20 @@ contract AuctionSecondPassTest is AuctionBase {
         assertEq(network.balance, 0.5 ether);
     }
 
-    /// @dev R12: a credit not claimed 180 days after it was last added to goes to the network's
-    ///      fee recipient, sent by anyone, and not a second earlier; a new credit restarts the
-    ///      clock. Fails without the change: credits never expire.
+    /// @dev R12: a credit not claimed 180 days after it went from zero goes to the network's
+    ///      fee recipient, sent by anyone, and not a second earlier; a later addition (here an
+    ///      outbid refund another bidder causes) does not move the clock. Fails without the
+    ///      change: credits never expire, or the later refund postpones the expiry.
     function test_R12_ACreditGoesToTheNetworkAfter180Days() public {
         uint256 saleId = _start();
         _bidEth(saleId, alice, 1 ether);
         _bidEth(saleId, bob, 2 ether);
         uint256 expiresAt = block.timestamp + 180 days;
         assertEq(auction.creditExpiresAt(alice, ETH), expiresAt);
-        // A new credit restarts the clock.
+        // A later credit leaves the clock where it is.
         vm.warp(block.timestamp + 1 hours);
         _bidEth(saleId, alice, 3 ether);
         _bidEth(saleId, carol, 4 ether);
-        expiresAt = block.timestamp + 180 days;
         assertEq(auction.creditExpiresAt(alice, ETH), expiresAt);
         assertEq(auction.claimable(alice, ETH), 4 ether);
         vm.warp(expiresAt - 1);
@@ -145,5 +145,22 @@ contract AuctionSecondPassTest is AuctionBase {
         assertEq(auction.creditExpiresAt(alice, ETH), 0);
         vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NothingToClaim.selector, alice, ETH));
         auction.expireCredit(alice, ETH);
+    }
+
+    /// @dev R12: while the resolver names no network recipient, an expired credit is not sent
+    ///      anywhere (`InvalidRecipient(0)`), and stays claimable; once a recipient is named it
+    ///      goes there.
+    function test_R12_ExpireCreditRevertsWhileTheNetworkRecipientIsZero() public {
+        uint256 saleId = _start();
+        _bidEth(saleId, alice, 1 ether);
+        _bidEth(saleId, bob, 2 ether);
+        vm.warp(block.timestamp + 180 days);
+        resolver.set(PRODUCT_STREAM, address(0), FEE);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
+        auction.expireCredit(alice, ETH);
+        assertEq(auction.claimable(alice, ETH), 1 ether, "still the account's");
+        resolver.set(PRODUCT_STREAM, network, FEE);
+        assertEq(auction.expireCredit(alice, ETH), 1 ether);
+        assertEq(network.balance, 1 ether);
     }
 }

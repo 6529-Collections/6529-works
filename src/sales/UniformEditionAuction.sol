@@ -44,7 +44,7 @@ import { UniformClearing } from "./UniformClearing.sol";
 ///      one record per change, and a sale stores its record's 24-bit ID. The payout gas shares
 ///      the settings word. Fixed values (each number is the guarantee): every sale closes
 ///      {CLOSE_OFFSET} after its 1/1 (R20), may be abandoned {ABANDON_DELAY} after that (R16),
-///      and a credit may be sent to the network {CREDIT_EXPIRY} after it was last added to (R12).
+///      and a credit may be sent to the network {CREDIT_EXPIRY} after it went from zero (R12).
 ///
 ///      The 1/1's end only ever moves later, so the sale caches it and reads it live
 ///      (`IEnglishAuctionClock.auctionClock`, the state, end and pause start the English
@@ -88,9 +88,9 @@ abstract contract UniformEditionAuctionBase is
     /// @notice How long after its close a sale may be abandoned (R16). Longer than the soft
     ///         close's longest extension (7 days), so no sale taking bids can be abandoned.
     uint256 internal constant ABANDON_DELAY = 21 days;
-    /// @notice How long after it was last added to a credit may be sent to the network (R12).
+    /// @notice How long after it went from zero a credit may be sent to the network (R12).
     uint256 internal constant CREDIT_EXPIRY = 180 days;
-    /// @dev A credit word: the amount in the low 208 bits, the time it was last added to above.
+    /// @dev A credit word: the amount in the low 208 bits, the time it went from zero above.
     uint256 private constant _CREDIT_AMOUNT = type(uint208).max;
     /// @dev `setConfig` bounds besides the ladder's (`StepLadder`; ADR 0005 section 4).
     uint256 private constant _MAX_MARGIN_SHARE = 50_000;
@@ -163,7 +163,7 @@ abstract contract UniformEditionAuctionBase is
     mapping(uint256 saleId => mapping(uint256 bidId => BidWord)) private _bids;
     mapping(uint256 saleId => mapping(uint256 word => uint256)) private _live;
     mapping(uint256 saleId => mapping(uint256 key => uint256)) private _departures;
-    /// @dev Each account's claimable ETH (low 208 bits) and when it was last added to (above).
+    /// @dev Each account's claimable ETH (low 208 bits) and when it went from zero (above).
     mapping(address account => uint256) private _credits;
     /// @dev Each settler's own sweep in progress (`Space.SWEEP`), packed `swept | nextPosition
     ///      << 32 | cutoff << 64`: written only by a call that sweeps without finishing, deleted
@@ -436,9 +436,11 @@ abstract contract UniformEditionAuctionBase is
         BidWord memory b = _bidOf(saleId, bidId);
         (unitsWon, refund) = _claim(saleId, bidId, b, b.bidder);
         if (refund != 0) {
-            // R12: the credit's 180-day clock restarts. The amount stays far below 2^208.
+            // R12: the 180-day clock starts only when the credit goes from zero (a claimed
+            // credit's word is zero). The amount stays far below 2^208, so the sum never
+            // reaches the time bits.
             uint256 w = _credits[b.bidder];
-            _credits[b.bidder] = ((w & _CREDIT_AMOUNT) + refund) | block.timestamp << 208;
+            _credits[b.bidder] = w == 0 ? refund | block.timestamp << 208 : w + refund;
             emit ISaleAdapter.Credited(b.bidder, CURRENCY_ETH, saleId, refund);
         }
     }
@@ -452,8 +454,8 @@ abstract contract UniformEditionAuctionBase is
         return _payCredit(msg.sender, currency, to);
     }
 
-    /// @notice Sends `account`'s credits to the network's fee recipient 180 days after they were
-    ///         last added to (`IUniformEditionAuction.expireCredit`, R12).
+    /// @notice Sends `account`'s credits to the network's fee recipient 180 days after they went
+    ///         from zero (`IUniformEditionAuction.expireCredit`, R12).
     /// @param account The credited account.
     /// @param currency The currency; only `CURRENCY_ETH` has credits.
     /// @return The amount sent.

@@ -71,7 +71,8 @@ import { IVRFV2PlusWrapper } from "./IVRFV2PlusWrapper.sol";
 ///      least (2^m - 1) * retryDelay, at most 1 + m + floor((T - (2^m - 1) * retryDelay) /
 ///      MAX_RETRY_DELAY) requests to that coordinator, where m is the number of repeats whose
 ///      wait is below the cap (for a 3-day `retryDelay`, m = 4: at most 15 requests in a year).
-///      Only governance's {setCoordinator} starts a tenure, so no caller can restart the count.
+///      Only governance's {setCoordinator} starts a curated tenure (and {setWrapper} a federated
+///      one, counted apart), so no caller can restart the count.
 ///      A coordinator restored after another (A to B to A) starts a new tenure, and the requests
 ///      of its earlier tenure are still recorded and may deliver again: its outstanding requests
 ///      are then those of both tenures, each within its own bound.
@@ -90,9 +91,11 @@ import { IVRFV2PlusWrapper } from "./IVRFV2PlusWrapper.sol";
 ///      artist requests a seed for the contract and a content hash, and pays the provider's
 ///      quoted price with the call: the request goes to Chainlink's VRF v2.5 wrapper (direct
 ///      funding), never to the network's subscription. The draw is keyed by
-///      `keccak256(abi.encode(token, contentHash))` and kept, repeated and delivered exactly as a
-///      curated draw is; the wrapper's deliveries come through the same callback. With no
-///      wrapper set ({setWrapper}, governed) federated requests are refused.
+///      `keccak256(abi.encode(token, contentHash))` in a map of its own, apart from curated
+///      draws, so no curated request can fill a federated draw or the reverse; it is kept,
+///      repeated and delivered as a curated draw is, with its tenure counted per wrapper; the
+///      wrapper's deliveries come through the same callback. With no wrapper set
+///      ({setWrapper}, governed) federated requests are refused.
 contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     /// @notice The request parameters.
     /// @param subscriptionId The funded VRF v2.5 subscription; this module must be its consumer.
@@ -151,16 +154,16 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     /// @inheritdoc IEntropyModule
     /// @dev With the wrapper, the only caller of {rawFulfillRandomWords}.
     address public coordinator;
-    /// @dev How many times {setCoordinator} or {setWrapper} has replaced a provider: the tenure,
-    ///      which a content's repeat count belongs to. Packed with `coordinator`, which every
-    ///      request already reads.
+    /// @dev How many times {setCoordinator} has replaced the coordinator: the tenure a curated
+    ///      draw's repeat count belongs to. Packed with `coordinator`, which every request
+    ///      already reads.
     uint32 private _coordinatorEpoch;
     /// @dev The coordinator's pinned code hash, checked again at every use, not only at
     ///      install.
     bytes32 private _coordinatorCodeHash;
 
     VrfConfig private _config;
-    /// @dev The draw of each content hash (and of each federated key).
+    /// @dev The curated draw of each content hash.
     mapping(bytes32 contentHash => Seed) private _seeds;
     /// @dev The content hash each item linked through {requestSeed}; zero if never linked.
     mapping(bytes32 itemHash => bytes32 contentHash) private _contentOf;
@@ -172,8 +175,13 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     /// @notice The VRF v2.5 wrapper that takes paid federated requests and may deliver them; zero
     ///         while federated requests are off.
     address public wrapper;
+    /// @dev How many times {setWrapper} has changed the wrapper: the tenure a federated draw's
+    ///      repeat count belongs to. Packed with `wrapper`.
+    uint32 private _wrapperEpoch;
     /// @dev The wrapper's pinned code hash, checked again at every use.
     bytes32 private _wrapperCodeHash;
+    /// @dev The federated draw of each `keccak256(abi.encode(token, contentHash))`.
+    mapping(bytes32 key => Seed) private _federatedSeeds;
 
     /// @notice The request parameters changed.
     /// @param previous The parameters before the change (all zero at deployment).
@@ -264,7 +272,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
             if (joined) return 0;
             revert SeedAlreadyDelivered(itemHash);
         }
-        if (!_stamp(seed, itemHash, joined)) return 0;
+        if (!_stamp(seed, itemHash, joined, _coordinatorEpoch)) return 0;
 
         VrfConfig memory c = _config;
         address coord = coordinator;
@@ -313,9 +321,9 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
                 || !IAccounts(ar).isWallet(artistId, msg.sender)
         ) revert NotRequestable(itemHash);
         bytes32 key = keccak256(abi.encode(token, item.contentHash));
-        Seed storage seed = _seeds[key];
+        Seed storage seed = _federatedSeeds[key];
         if (seed.delivered) revert SeedAlreadyDelivered(itemHash);
-        _stamp(seed, itemHash, false);
+        _stamp(seed, itemHash, false, _wrapperEpoch);
         Dependency.checkUnchanged(w, _wrapperCodeHash);
         VrfConfig memory c = _config;
         uint256 price = IVRFV2PlusWrapper(w).calculateRequestPriceNative(c.callbackGasLimit, 1);
@@ -343,7 +351,8 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     /// @param requestId The coordinator's request ID.
     /// @param randomWords The delivered words: exactly one.
     function rawFulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) external {
-        if (msg.sender == coordinator) {
+        bool curated = msg.sender == coordinator;
+        if (curated) {
             Dependency.checkUnchanged(msg.sender, _coordinatorCodeHash);
         } else if (msg.sender == wrapper && msg.sender != address(0)) {
             Dependency.checkUnchanged(msg.sender, _wrapperCodeHash);
@@ -352,7 +361,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         }
         bytes32 contentHash = _requests[msg.sender][requestId];
         if (contentHash == 0) revert UnknownRequest(requestId);
-        Seed storage seed = _seeds[contentHash];
+        Seed storage seed = curated ? _seeds[contentHash] : _federatedSeeds[contentHash];
         if (seed.delivered) return;
         if (randomWords.length != 1) revert InvalidRandomWords(requestId);
         bytes32 word = bytes32(randomWords[0]);
@@ -411,14 +420,15 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     ///      an undelivered content may be requested from `next` at once, and its repeat count
     ///      restarts. If an earlier coordinator is restored later, its own earlier requests may
     ///      deliver again. Delivered seeds are unaffected. `next` must differ from the current coordinator, have code, not be an
-    ///      EIP-7702 delegated account, and have the pinned code hash. Switching coordinators
+    ///      EIP-7702 delegated account, be the wrapper, and have the pinned code hash. Switching
+    ///      coordinators
     ///      also needs a new subscription: see the README's runbook.
     function setCoordinator(address expected, address next, bytes32 nextCodeHash)
         external
         restricted
     {
         if (expected != coordinator) revert ExpectedValueMismatch();
-        if (next == expected) revert Dependency.InvalidDependency(next);
+        if (next == expected || next == wrapper) revert Dependency.InvalidDependency(next);
         Dependency.checkPinned(next, nextCodeHash);
         emit CoordinatorSet(expected, next, nextCodeHash);
         coordinator = next;
@@ -428,19 +438,20 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
 
     /// @notice Sets the VRF v2.5 wrapper that takes paid federated requests, or zero to turn
     ///         them off. Governed (the dependency class), compare-and-set; a nonzero `next` must
-    ///         have code, not be an EIP-7702 delegated account, and have the pinned code hash.
-    ///         Like a coordinator swap it starts a new tenure: requests of the old wrapper can no
-    ///         longer deliver, and each undelivered draw may be requested again at once.
+    ///         have code, not be an EIP-7702 delegated account, not be the coordinator, and have
+    ///         the pinned code hash. It starts a new federated tenure: requests of the old wrapper
+    ///         can no longer deliver, and each undelivered federated draw may be requested again
+    ///         at once. Curated draws keep their tenure and backoff.
     /// @param expected The current wrapper.
     /// @param next The new wrapper, or zero.
     /// @param nextCodeHash The reviewed code hash `next` must have now and at every later use.
     function setWrapper(address expected, address next, bytes32 nextCodeHash) external restricted {
         if (expected != wrapper) revert ExpectedValueMismatch();
-        if (next == expected) revert Dependency.InvalidDependency(next);
+        if (next == expected || next == coordinator) revert Dependency.InvalidDependency(next);
         if (next != address(0)) Dependency.checkPinned(next, nextCodeHash);
         emit WrapperSet(expected, next, nextCodeHash);
         wrapper = next;
-        ++_coordinatorEpoch;
+        ++_wrapperEpoch;
         _wrapperCodeHash = nextCodeHash;
     }
 
@@ -450,7 +461,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         view
         returns (bool delivered, bytes32 seed)
     {
-        Seed storage s = _seeds[keccak256(abi.encode(token, contentHash))];
+        Seed storage s = _federatedSeeds[keccak256(abi.encode(token, contentHash))];
         delivered = s.delivered;
         if (delivered) seed = bytes32(s.value);
     }
@@ -541,11 +552,14 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
 
     /// @dev Stamps a new request of an undelivered draw: the request time, the repeat count and
     ///      the tenure, in one word, before the provider is called. RFX-ENT-2: the count and the
-    ///      wait belong to the tenure of the draw's latest request; the first request in a new
-    ///      tenure is not a repeat. While the draw's wait runs it returns false when `joined`
-    ///      (the caller only linked) and reverts `RequestPending` otherwise.
-    function _stamp(Seed storage seed, bytes32 itemHash, bool joined) private returns (bool) {
-        uint32 epoch = _coordinatorEpoch;
+    ///      wait belong to the tenure (`epoch`, of the provider the draw uses) of the draw's latest
+    ///      request; the first request in a new tenure is not a repeat. While the draw's wait
+    ///      runs it returns false when `joined` (the caller only linked) and reverts
+    ///      `RequestPending` otherwise.
+    function _stamp(Seed storage seed, bytes32 itemHash, bool joined, uint32 epoch)
+        private
+        returns (bool)
+    {
         uint8 repeats = 0;
         if (seed.requestedAt != 0 && seed.epoch == epoch) {
             repeats = seed.repeats;

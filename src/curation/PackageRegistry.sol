@@ -545,8 +545,10 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
     /// @dev Every party accepted the root and is a distinct artist; the lead is an ARTIST; the
     ///      payee list is canonical (strictly increasing `(artistId, account)`, exactly one of the
     ///      two set, nonzero shares summing to `Splits.DENOMINATOR`, no more payees than parties)
-    ///      and every payee is a party by account or by artist ID. One party may be paid both as
-    ///      a fixed and as an artist-resolved payee: the two are distinct canonical keys.
+    ///      and every payee is a party by account or by artist ID. The lead is paid only through
+    ///      its account (artist-resolved), never as a fixed payee, so a freeze of the lead's
+    ///      account holds its payout (C15); a collaborator may be paid both ways: the two are
+    ///      distinct canonical keys.
     /// @return leadId The lead artist's ID.
     function _checkParties(bytes32 packageRoot, PackageItem calldata item, bytes32 itemHash)
         private
@@ -572,13 +574,14 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
             ids[i] = id;
         }
         uint256 sum = 0;
+        address lead = parties[0].account;
         for (uint256 i; i < payees.length; ++i) {
             ISplitWallet.Payee calldata p = payees[i];
             bool ordered = i == 0 || p.artistId > payees[i - 1].artistId
                 || (p.artistId == payees[i - 1].artistId && p.account > payees[i - 1].account);
             if (
                 !ordered || (p.artistId == 0) == (p.account == address(0)) || p.share == 0
-                    || !_isParty(parties, ids, p)
+                    || p.account == lead || !_isParty(parties, ids, p)
             ) revert InvalidItem(itemHash);
             sum += p.share;
         }

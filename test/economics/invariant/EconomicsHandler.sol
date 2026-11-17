@@ -126,7 +126,7 @@ contract EconomicsHandler is Test {
         markAt;
     /// @notice What the network vault received other than from wallets (payments, flushes).
     mapping(address asset => uint256) public networkOther;
-    /// @notice The model's escrow clock: when each credit was last added to.
+    /// @notice The model's escrow clock: when each credit last went from zero to nonzero.
     mapping(address target => mapping(address asset => uint256)) public ghostCreditedAt;
 
     uint256 internal constant UNCLAIMED = 180 days;
@@ -315,8 +315,8 @@ contract EconomicsHandler is Test {
         assertEq(abi.decode(ret, (bool)), expectEscrow, "payment route");
         if (amount == 0) return;
         if (expectEscrow) {
+            if (ghostOwed[target][asset] == 0) ghostCreditedAt[target][asset] = block.timestamp;
             ghostOwed[target][asset] += amount;
-            ghostCreditedAt[target][asset] = block.timestamp;
             ++outcomes["pay.escrow"];
         } else {
             if (target == network) networkOther[asset] += amount;
@@ -363,8 +363,8 @@ contract EconomicsHandler is Test {
             return;
         }
         assertTrue(ok, "deposit reverted");
+        if (ghostOwed[target][asset] == 0) ghostCreditedAt[target][asset] = block.timestamp;
         ghostOwed[target][asset] += amount;
-        ghostCreditedAt[target][asset] = block.timestamp;
         ++outcomes["deposit.ok"];
     }
 
@@ -455,9 +455,9 @@ contract EconomicsHandler is Test {
             return;
         }
         assertTrue(ok, "recover reverted");
+        if (ghostOwed[to][asset] == 0) ghostCreditedAt[to][asset] = block.timestamp;
         ghostOwed[to][asset] += ghostOwed[from][asset];
         ghostOwed[from][asset] = 0;
-        ghostCreditedAt[to][asset] = block.timestamp;
         if (from == address(toggle)) {
             toggleConsent = address(0); // single use
             assertEq(escrow.recoveryConsent(from), address(0));
@@ -496,9 +496,9 @@ contract EconomicsHandler is Test {
         }
         assertTrue(ok, "expire reverted");
         assertEq(abi.decode(ret, (uint256)), owed, "expire amount");
+        if (ghostOwed[network][asset] == 0) ghostCreditedAt[network][asset] = block.timestamp;
         ghostOwed[network][asset] += owed;
         ghostOwed[target][asset] = 0;
-        ghostCreditedAt[network][asset] = block.timestamp;
         ++outcomes["expire.ok"];
     }
 

@@ -307,8 +307,8 @@ contract Stream is ERC721, AccessManaged, IStream {
 
     /// @inheritdoc IMintTarget
     /// @dev For a minted token, only the sale kind (the minting adapter's), seller, fee terms
-    ///      and the creator (the lead artist's active authority, resolved now: zero while a
-    ///      recovery override is pending). For `id` 0, the mint policy's preview of `data`.
+    ///      and the creator (the lead artist's active authority, resolved now: zero while the
+    ///      account is frozen or a replacement of its root is pending). For `id` 0, the mint policy's preview of `data`.
     function primaryTerms(uint256 id, bytes calldata data)
         external
         view
