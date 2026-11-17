@@ -826,6 +826,53 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(address(auction).balance, 1 ether);
     }
 
+    /// @dev `startWithBid` hands the first bid the terms record `_start` locked instead of
+    ///      reading it back from storage: the sale must end exactly as `start` then `bid` leaves
+    ///      it, with the same terms record (the one carrying the floor the first bid read), the
+    ///      same floor, minimum bid and end, in ETH and in an ERC-20.
+    function test_StartWithBid_LocksWhatAStartThenABidLock() public {
+        _setFloor(ETH, 0.5 ether);
+        uint256 viaBid = _start();
+        _bidEth(viaBid, alice, 1 ether);
+        vm.deal(bob, 1 ether);
+        vm.prank(bob);
+        uint256 together = auction.startWithBid{ value: 1 ether }(
+            address(stream), "", address(0), _direct(bob, 1 ether)
+        );
+        _assertSameSale(viaBid, together);
+        assertEq(auction.auction(together).incrementFloor, 0.5 ether, "the floor read now");
+
+        stream.setTerms(_terms(address(usd)));
+        uint256 usdViaBid = auction.start(address(stream), "");
+        _bidUsd(usdViaBid, alice, 10e18);
+        usd.mint(bob, 10e18);
+        vm.startPrank(bob);
+        usd.approve(address(auction), 10e18);
+        uint256 usdTogether =
+            auction.startWithBid(address(stream), "", address(0), _direct(bob, 10e18));
+        vm.stopPrank();
+        _assertSameSale(usdViaBid, usdTogether);
+        assertEq(auction.auction(usdTogether).incrementFloor, USD_FLOOR, "the ERC-20 floor");
+    }
+
+    /// @dev Two sales started and first bid in the same block hold the same terms record,
+    ///      currency, floor, bid, end, state and minimum bid.
+    function _assertSameSale(uint256 a, uint256 b) internal view {
+        // The terms ID: bits 224-239 of the sale's first word (`_sales`, storage slot 8).
+        uint256 termsA = uint256(vm.load(address(auction), keccak256(abi.encode(a, 8)))) >> 224;
+        uint256 termsB = uint256(vm.load(address(auction), keccak256(abi.encode(b, 8)))) >> 224;
+        assertEq(uint16(termsA), uint16(termsB), "the same terms record");
+        assertGt(uint16(termsA), 0, "a terms record");
+        IEnglishAuction.Auction memory x = auction.auction(a);
+        IEnglishAuction.Auction memory y = auction.auction(b);
+        assertEq(x.currency, y.currency, "currency");
+        assertEq(x.incrementFloor, y.incrementFloor, "increment floor");
+        assertEq(x.bid, y.bid, "bid");
+        assertEq(x.endTime, y.endTime, "end");
+        assertEq(uint8(x.state), uint8(y.state), "state");
+        assertEq(auction.minimumBid(a), auction.minimumBid(b), "minimum bid");
+    }
+
     function test_StartWithBid_Erc20PermitIsRefused() public {
         stream.setTerms(_terms(address(usd)));
         usd.mint(alice, 5e18);

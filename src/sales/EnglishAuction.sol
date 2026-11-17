@@ -288,7 +288,8 @@ contract EnglishAuction is
         nonReentrant
         returns (uint256 saleId)
     {
-        saleId = _start(token, mintData);
+        Terms memory t;
+        saleId = _start(token, mintData, t);
     }
 
     /// @notice `start` plus a first bid in one transaction. The bid is at most
@@ -308,7 +309,8 @@ contract EnglishAuction is
         address recipient,
         Payment calldata payment
     ) external payable nonReentrant returns (uint256 saleId) {
-        saleId = _start(token, mintData);
+        Terms memory t;
+        saleId = _start(token, mintData, t);
         if (recipient == address(0)) recipient = payment.payer;
         bytes32 witness = payment.method != PaymentMethod.PERMIT2
             ? bytes32(0)
@@ -322,7 +324,7 @@ contract EnglishAuction is
                     payment.deadline
                 )
             );
-        _bid(saleId, recipient, payment, witness, true);
+        _bid(saleId, t, recipient, payment, witness, true);
     }
 
     // ----------------------------------------------------------------------------- bidding
@@ -348,7 +350,7 @@ contract EnglishAuction is
                     Typehashes.BID_WITNESS, saleId, recipient, payment.amount, payment.deadline
                 )
             );
-        _bid(saleId, recipient, payment, witness, false);
+        _bid(saleId, _terms[_sales[saleId].termsId], recipient, payment, witness, false);
     }
 
     /// @notice The high bidder withdraws its bid while the auction is paused, or while its
@@ -865,7 +867,12 @@ contract EnglishAuction is
             && IFederationRegistry(registry).isActive(token);
     }
 
-    function _start(address token, bytes calldata mintData) private returns (uint256 saleId) {
+    /// @dev Fills `t`, which the caller passes zeroed, with the sale's terms record as locked
+    ///      (`_terms[termsId]`), so a first bid in the same transaction need not read it back.
+    function _start(address token, bytes calldata mintData, Terms memory t)
+        private
+        returns (uint256 saleId)
+    {
         Settings memory c = _settings;
         if (c.pausedAt != 0) revert ISaleAdapter.SalePaused();
         bool listed = _listed[token];
@@ -875,7 +882,7 @@ contract EnglishAuction is
         if (terms.saleKind != SaleKind.ENGLISH_AUCTION) {
             revert IMintTarget.SaleKindMismatch(SaleKind.ENGLISH_AUCTION, terms.saleKind);
         }
-        Terms memory t = _lockTerms(token, tokenId, listed, terms.currency, c);
+        _lockTerms(t, token, tokenId, listed, terms.currency, c);
         // CALLS-1: the escrow refuses to be paid as a wallet, so a work whose seller or fee
         // recipient is the escrow could never settle; it is refused while nothing is at stake.
         // A federated token's own fee recipient is paid only if the resolver names none (R18).
@@ -926,12 +933,13 @@ contract EnglishAuction is
     ///      the governed parameters, and a federated token's fee share from its registry entry,
     ///      whose code hash must match the token's (MARKET-3, AUC-48).
     function _lockTerms(
+        Terms memory t,
         address token,
         uint256 tokenId,
         bool listed,
         address currency,
         Settings memory c
-    ) private view returns (Terms memory t) {
+    ) private view {
         // The currency's status and opening bid come from one allowlist word.
         uint256 bid;
         if (currency == CURRENCY_DEFAULT) {
@@ -1002,9 +1010,12 @@ contract EnglishAuction is
     }
 
     /// @dev Records the bid, then takes its payment: the whole bid reverts if the payment does
-    ///      not arrive. `recipient` is already resolved.
+    ///      not arrive. `recipient` is already resolved. `t` is a copy of the sale's terms
+    ///      record, `_terms[termsId]`: `bid` reads it from storage, `startWithBid` passes the
+    ///      record `_start` just locked, which saves reading its two cold slots back.
     function _bid(
         uint256 saleId,
+        Terms memory t,
         address recipient,
         Payment calldata payment,
         bytes32 witness,
@@ -1012,21 +1023,20 @@ contract EnglishAuction is
     ) private {
         Sale storage s = _require(saleId, IEnglishAuction.AuctionState.ACTIVE);
         // MARKET-5: a federated contract delisted since the start takes no more bids.
-        if (_delisted(s)) revert ISaleAdapter.TargetNotAllowed(s.token);
-        Terms storage t = _terms[s.termsId];
+        if (t.federated && !_isTarget(s.token)) revert ISaleAdapter.TargetNotAllowed(s.token);
         address currency = t.currency;
         if (t.incrementFloor == 0) {
-            Terms memory locked = t;
             // A floor at or above the 96-bit bid cap (7.9e28 base units) is stored as the cap:
             // no later bid can then outbid, but an absurd allowlist value does not revert the
             // first bid. The floor is at least 1 (the allowlist refuses zero), so this branch
             // runs once per sale, on its first bid.
             // forge-lint: disable-next-line(unsafe-typecast)
-            locked.incrementFloor =
+            t.incrementFloor =
                 uint96(Math.min(_allowlist.incrementFloor(currency), type(uint96).max));
-            // `t` keeps pointing at the start record: the two differ only in the floor, which
-            // the first bid does not use, and rereading the new record would cost a cold slot.
-            s.termsId = _termsId(locked);
+            s.termsId = _termsId(t);
+            // `t` goes back to the start record (floor zero), which the rest of the first bid
+            // uses: the two differ only in the floor, which the first bid does not read.
+            t.incrementFloor = 0;
         } else if (!_allowlist.isActive(currency)) {
             revert IAssetAllowlist.AssetNotActive(currency);
         }
@@ -1120,7 +1130,7 @@ contract EnglishAuction is
     ///      `max(incrementShare of the high bid, rounded up; the increment floor locked by the
     ///      first bid)`. With no bidder after a withdrawal, the withdrawn bid is a reserve: a bid
     ///      must reach it (LIFECYCLE-1).
-    function _minimumBid(Sale storage s, Terms storage t) private view returns (uint256) {
+    function _minimumBid(Sale storage s, Terms memory t) private view returns (uint256) {
         if (s.bidder == address(0)) return Math.max(Math.max(t.openingBid, s.bid), 1);
         uint256 high = s.bid;
         // Rounded up, exactly: the high bid fits 96 bits and the share 17.
