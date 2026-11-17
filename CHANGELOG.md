@@ -53,7 +53,9 @@
     bound sale; `canMint` checks the partner template; `propagateRevocation` is removed; VRF
     curated and federated draws have separate seed maps and tenures; Deploy and Verify refuse a
     genesis brake off anvil; `SaleStarter` refuses itself as payer; the deployment record no
-    longer has `pendingLanes`. Owner, 17 November 2026: an edition is created for any completed
+    longer has `pendingLanes`. Gas: `startWithBid` hands its first bid the terms record the
+    start locked instead of reading it back (about 5,300 gas less; tightest start row 341,582).
+    Owner, 17 November 2026: an edition is created for any completed
     1/1, unbid included; collaborator consent has no expiry; declarations carry no intended
     renunciations.
   - Documents: [ADR 0009](docs/adr/0009-second-permanence-pass.md) records the pass, with dated

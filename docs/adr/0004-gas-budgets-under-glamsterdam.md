@@ -513,33 +513,36 @@ or budget moved.
 second permanence pass and its review fixes: the 1/1 and edition-auction rows are
 `test_Gas_Table` and `EditionAuctionGasReport.t.sol` at the merge of the review fixes; the
 start-row margin gate is 3,000 under 350K (rows at or under 347,000), and the tightest row is
-346,923. A start whose move a consolidated (non-root) wallet signed has its own regression
+346,923. A later gas pass passes the terms record `_start` locks to the first bid of
+`startWithBid`, which no longer reads its two cold slots back: every `startWithBid` row falls by
+about 5,300 (the tightest to 341,582, 8,418 under 350K), a `bid` by 219, and a `start` without a
+bid rises by 21; the start, bid and settle rows below are measured after it. A start whose move a consolidated (non-root) wallet signed has its own regression
 ceiling (LIM-ID-21). The `refreshStanding` rows and the edition `withdrawBid` row left with
 their functions. The federated rows keep their earlier figures with the current ceilings; CI
 enforces those ceilings (`FederationGas.t.sol`).
 
 | Operation | Prague gas | Prague ceiling | New slots | New accounts | Sepolia gas |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `start`, steady state | 267,026 | 350,000 | **5** | 0 | 735,859 |
-| `startWithBid`, steady state | 309,100 | 350,000 | **6** | 0 | 871,980 |
-| `start`, steady state, move signed by a consolidated (non-root) wallet | 314,199 | 321,000 (regression; LIM-ID-21) | 5 | 0 | — |
-| `start`, two-party work | 275,521 | 350,000 | **5** | 0 | — |
-| `startWithBid`, two-party work | 317,582 | 350,000 | **6** | 0 | — |
-| `start`, VRF work | 272,724 | 350,000 | **5** | 0 | 852,868 (r2) |
-| `start`, edition master | 267,116 | 350,000 | **5** | 0 | 736,477 |
-| `start`, edition master with 64 bytes of params (the bound) | 268,207 | 350,000 | **5** | 0 | — |
-| `start`, an artist's first work | 289,559 | 350,000 | **6** | 0 | — |
-| `startWithBid`, an artist's first work | 331,633 | 350,000 | **7** | 0 | — |
-| `startWithBid`, an artist's first work, two-party | 340,090 | 350,000 | **7** | 0 | — |
-| `startWithBid`, an artist's first work, two-party, VRF | 345,746 | 350,000 | **7** | 0 | — |
-| `startWithBid`, an artist's first work, two-party, VRF, edition master with 64 bytes of params (the bound) | 346,923 | 350,000 | **7** | 0 | — |
-| `startWithBid`, an artist's first work, two-party, the three mint-path dependencies replaced | 346,474 | 352,000 (regression; LIM-GAS-11) | 7 | 0 | — |
-| `startWithBid`, an artist's first work, two-party, VRF, the three mint-path dependencies replaced | 352,130 | 358,000 (regression; LIM-GAS-11) | 7 | 0 | — |
-| `startWithBid`, ERC-20 by relayed Permit2 | 354,205 | 365,000 (regression) | 6 | 0 | — |
-| `start`, first work in a new collection | 267,037 | 400,000 | 5 | 0 | 846,977 (r2) |
-| `start`, first work ever (one-time) | 440,092 | 449,000 (regression) | 13 | 0 | 1,601,871 |
-| `startWithBid`, first bid under new sale terms (one-time) | 379,249 | 390,000 (regression) | 9 | 0 | 1,213,250 |
-| `bid` that outbids | 73,539 | 75,000 (regression) | 1 | 0 | 169,060 |
+| `start`, steady state | 267,047 | 350,000 | **5** | 0 | 735,859 |
+| `startWithBid`, steady state | 303,745 | 350,000 | **6** | 0 | 871,980 |
+| `start`, steady state, move signed by a consolidated (non-root) wallet | 314,220 | 321,000 (regression; LIM-ID-21) | 5 | 0 | — |
+| `start`, two-party work | 275,543 | 350,000 | **5** | 0 | — |
+| `startWithBid`, two-party work | 312,241 | 350,000 | **6** | 0 | — |
+| `start`, VRF work | 272,745 | 350,000 | **5** | 0 | 852,868 (r2) |
+| `start`, edition master | 267,137 | 350,000 | **5** | 0 | 736,477 |
+| `start`, edition master with 64 bytes of params (the bound) | 268,229 | 350,000 | **5** | 0 | — |
+| `start`, an artist's first work | 289,580 | 350,000 | **6** | 0 | — |
+| `startWithBid`, an artist's first work | 326,278 | 350,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party | 334,749 | 350,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party, VRF | 340,405 | 350,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party, VRF, edition master with 64 bytes of params (the bound) | 341,582 | 350,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party, the three mint-path dependencies replaced | 341,133 | 352,000 (regression; LIM-GAS-11) | 7 | 0 | — |
+| `startWithBid`, an artist's first work, two-party, VRF, the three mint-path dependencies replaced | 346,789 | 358,000 (regression; LIM-GAS-11) | 7 | 0 | — |
+| `startWithBid`, ERC-20 by relayed Permit2 | 348,817 | 365,000 (regression) | 6 | 0 | — |
+| `start`, first work in a new collection | 267,058 | 400,000 | 5 | 0 | 846,977 (r2) |
+| `start`, first work ever (one-time) | 440,113 | 449,000 (regression) | 13 | 0 | 1,601,871 |
+| `startWithBid`, first bid under new sale terms (one-time) | 373,894 | 390,000 (regression) | 9 | 0 | 1,213,250 |
+| `bid` that outbids | 73,308 | 75,000 (regression) | 1 | 0 | 169,060 |
 | `settle`, first payout to a seller wallet | 191,931 | 400,000 | 2 | 1 | 449,934 (sim.) |
 | `settle`, with a bid | 166,931 | 400,000 | 2 | 0 | 257,763 (r2) |
 | `settle`, no bid (to the museum, D140) | 129,700 | 400,000 | 1 | 0 | — |

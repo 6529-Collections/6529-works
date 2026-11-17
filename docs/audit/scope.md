@@ -17,7 +17,7 @@ an audit.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 15,957 non-blank, non-comment lines in 114 files under `src/` (budget: 17,000; ADR 0001, amended 1 November 2026, ADR 0007 and ADR 0008, as amended for the federation review's fixes, and the owner's direction of 16 November 2026) |
+| Source lines | 15,963 non-blank, non-comment lines in 114 files under `src/` (budget: 17,000; ADR 0001, amended 1 November 2026, ADR 0007 and ADR 0008, as amended for the federation review's fixes, and the owner's direction of 16 November 2026) |
 | Deployed contracts | 31 per deployment without the optional VRF entropy module and 32 with it: the 28 (or 29) that `DeployV1.order` lists, the three auctions' lenses among them (each deployed in its own transaction and pinned by its auction), the two governed vaults (`FeeRecipientVault`, `MuseumVault`, after the split ledger) and the two federated template deployers (`FederatedStreamDeployer`, `FederatedEditionsDeployer`, each a `FederatedDeployer`), plus the AccessManager the governance configurator creates, `StreamViews`, the read-only extension `Stream`'s constructor creates, and `WorkDelivery`, the first delivery contract `WorkRecords`' constructor creates (replaceable by `setDelivery`). Not counted as contracts: the three `SSTORE2` data contracts the two deployers' constructors create to hold the templates' creation code (two for `FederatedStream`'s, one for `FederatedEditions'`; code bytes behind a `STOP`, never called); one 66-byte `SplitVault` per payee configuration, deployed on demand by the split ledger; and, outside genesis, each federated artist's own template copies, created by the version's deployer ([ADR 0008](../adr/0008-federation.md)) |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
@@ -38,7 +38,7 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 | `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 736 | 22,926 | 36,023 | 1,650 |
 | `WorkDelivery` (created by `WorkRecords`' constructor; replaceable) | [`src/stream/WorkDelivery.sol`](../../src/stream/WorkDelivery.sol) | 203 | 9,283 | 9,708 | 15,293 |
 | `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 498 | 19,899 | 21,728 | 4,677 |
-| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 874 | 23,721 | 26,924 | 855 |
+| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 880 | 23,799 | 27,002 | 777 |
 | `EnglishAuctionLens` | [`src/sales/EnglishAuctionLens.sol`](../../src/sales/EnglishAuctionLens.sol) | 345 | 7,787 | 8,094 | 16,789 |
 | `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 905 | 21,696 | 26,002 | 2,880 |
 | `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 901 | 23,003 | 23,369 | 1,573 |
