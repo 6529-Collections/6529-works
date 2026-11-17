@@ -32,8 +32,11 @@ description of the contract.
   ```
 
 - **For a rule of the specification:** every rule row in [`docs/spec/`](../docs/spec/README.md)
-  (`AUC-3`, `WS-17`, ...) cites the tests that pin it, and `tools/check_docs_facts.py` checks that
-  each cited test exists.
+  (`AUC-3`, `WS-17`, ...) cites the tests that pin it. `tools/check_rules.py` requires every
+  rule to cite at least one test that exists (a rule without one must be listed in
+  `tools/rules-uncovered.txt`), and every invariant in
+  [`docs/audit/invariants.md`](../docs/audit/invariants.md) to name its function;
+  `tools/check_docs_facts.py` checks every test name any page cites.
 - **For an end-to-end flow:** [`test/integration/`](integration/README.md) lists the flows on the
   real, wired stack; [`test/fork/`](fork/README.md) runs them against the real external systems.
 
@@ -56,7 +59,10 @@ description of the contract.
 | `records/StatementLog.sol` | [`records/`](records/): `StatementLog`, `StatementLogPolicy`, `StatementLogGolden`, `StatementLogOwnerRead`, `StatementLogGasRule` (every call out at 1x to 100x its cost and short of gas), `StatementLog.invariant` |
 | `content/ContentStore.sol`, `DependencyRegistry.sol`, `Base64Validator.sol` | [`content/`](content/): `ContentStore`, `ContentStoreInvariant`, `DependencyRegistry`, `Base64Attest` |
 | `content/Renderer.sol`, `JsonScan.sol`, `DataUri.sol`, `HtmlScript.sol` | [`content/renderer/`](content/renderer/): `Renderer` (metadata, escaping, license, disputes, editions, failing closed), `RendererRecords` (what a record may hold), `RendererMedia`, `RendererHostile`, `RendererGas`, `RendererOracles`, `JsonScan`, `TextHelpers` |
-| `economics/*` | [`economics/`](economics/): one suite per contract (`AssetAllowlist`, `ClaimRouter`, `EconomicsResolver`, `ReleaseVerifier`, `RevenueEscrow`, `RevenuePayment`, `SplitFactory`, `SplitWallet`), `SplitMath` (`Splits`), `HostileTokens` (`TokenTransfer` and hostile ERC-20s), `GasCap`, `invariant/` |
+| `economics/SplitLedger.sol`, `SplitVault.sol` | [`economics/`](economics/): the ledger by side, under the suite names of the interfaces it implements: `SplitFactory` (`ISplitFactory`: prediction, deployment, the payee-list rules), `SplitWallet` (`ISplitWallet`: receipts and releases), `ReleaseVerifier` (`IReleaseVerifier`: signed releases and nonces); `NetworkShare` (the network's share, marks and forfeits), `SplitLedgerStress` (the gas rule), `LedgerEdgeCases`; `SplitVault` (the 66-byte wallet code) |
+| `economics/*` (the rest) | [`economics/`](economics/): one suite per contract (`AssetAllowlist`, `ClaimRouter`, `EconomicsResolver`, `GovernedVault`, `RevenueEscrow`, `RevenuePayment`), `SplitMath` (`Splits`), `HostileTokens` (`TokenTransfer` and hostile ERC-20s), `GasCap`, `invariant/` |
+| `federated/*` | [`federated/`](federated/): on the wired stack through `FederationBase`: `FederatedPair`, `FederatedRecord`, `FederatedSale`, `FederatedRefusal`, `FederatedPermanence`, `FederationGovernance`, `FederationProvenance`, `FederationSecondPass`, `FederationPass3`, `FederationGas`, `FederationGasRule`, `FederationInvariant` |
+| ABI and storage layout of every `src/` contract | [`snapshots/`](snapshots/): committed snapshots that `tools/check_snapshots.py` compares with the build ([Testing](../docs/testing/README.md#abi-and-storage-snapshots)) |
 | `entropy/VrfEntropyModule.sol` | [`entropy/`](entropy/): `VrfEntropyModule`, `VrfEntropyFuzz`, `VrfEntropyGovernance`, `VrfEntropyManaged`, `VrfEntropyInvariant` |
 | `governance/*` | [`governance/`](governance/): `NetworkAndBrake` and `GovernanceInvariant` (`WorksAccessManager`), `GovernanceConfigurator`, `GenesisConfig`, `GenesisWiring` (`GovernanceConfig`), `BoundedParameter`, `Roles`; on the real stack `integration/Genesis.t.sol` |
 | `libraries/*` | [`libraries/`](libraries/): one suite per library; the proofs in `symbolic/` |
@@ -79,6 +85,7 @@ description of the contract.
 | `helpers/` | Shared fixtures (`GovernanceFixture`), oracles (`TextOracles`, the frozen RC1 code in `Pr744Utf8` and `Pr744Escape`, and `UniformClearingReference`, the edition auction's brute-force clearing and FIFO fill, with its own test), the state-growth meter (`StateGrowth`, with its own test), the gas-rule stress harness (`GasRule`: a `Burner` that makes a dependency cost a multiple of a base, and `GasRuleAssertions`), revert data (`SignatureReverts`) and locator builders (`ContentAddresses`) | support |
 | `mocks/` | Stand-ins and adversaries, by module ([below](#mocks)) | support |
 | `fixtures/` | Byte-exact data: the CC0 legal code, Permit2's mainnet runtime code, and the oracle vectors from `tools/content/oracles.py` | support |
+| `snapshots/` | Generated JSON, not Solidity: `abi/<Contract>.json` (every function, event and error with its selector or topic) for every `src/` contract and library, and `storage/<Contract>.json` (every state variable and stored struct member) for every contract; rewritten only by `python tools/check_snapshots.py --update` | interface |
 
 A file may hold more than one test contract when tests of one subject need different fixtures:
 `Stream.t.sol` has `StreamTest` and `StreamWithRecordsTest`, `PauseWindow.t.sol` has

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Testing gates (the "all frameworks" testing build, first part; no contract change):
+  `tools/check_snapshots.py` compares every `src/` contract's ABI (selectors, topics, errors)
+  and storage layout with committed snapshots in `test/snapshots/` (`foundry.toml` adds
+  `extra_output = ["storageLayout"]`; every artifact's bytecode is unchanged);
+  `tools/check_rules.py` requires every spec rule to name a test that exists and every invariant
+  to name its function, with the rules that have none listed in `tools/rules-uncovered.txt`;
+  both run on every pull request with their unit tests. The `deep` profile runs every fuzz test
+  10,000 times, nightly; the nightly workflow gains a Medusa job per harness (skipped while there
+  is none), and the Halmos job becomes one job per test contract. The invariants page catalogues
+  the content store and federation campaigns (INV-CNT-1 to INV-CNT-4, INV-FED-1 to INV-FED-5)
+  and its gaps are brought up to date; seven rule and property rows that cited only a file or
+  nothing now name their tests, and a citation that matched no test was removed.
 - Second pass (owner decisions of 16 November 2026; not yet reviewed as a whole):
   - Identity: an artist or collaborator is a 6529 consolidated account and every wallet of it
     acts (`IAccounts`, `isWallet`, `requireSigned`, `requireConsent`); an account signature is

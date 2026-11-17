@@ -54,7 +54,9 @@ forge test
 | One test, with traces | `forge test --match-test test_consume_revertsDoubleConsume -vvvv` |
 | Every stateful campaign (14 contracts) | `forge test --match-contract Invariant` |
 | A deeper campaign than CI's (the nightly run's) | `FOUNDRY_PROFILE=deep forge test --match-test invariant_`: 2,000 runs of depth 256 |
-| More fuzz runs | `FOUNDRY_FUZZ_RUNS=10000 forge test --match-test testFuzz_` |
+| More fuzz runs (the nightly run's) | `FOUNDRY_PROFILE=deep forge test --no-match-test "^invariant" --no-match-path "test/fork/*"`: every fuzz test 10,000 times |
+| The ABI and storage snapshots, after `forge build` | `python tools/check_snapshots.py` (`--update` rewrites them) |
+| Rule traceability | `python tools/check_rules.py --uncovered` |
 | The integration flows on the real, wired contracts | `forge test --match-path "test/integration/*"` |
 | Governance: the single network, the handover and the brake | `forge test --match-path "test/governance/*"` |
 | The deploy guards and the readback (`Deploy.s.sol`, `DeployGuards`, `Verify.s.sol`) | `forge test --match-path test/deploy/DeployScript.t.sol` |
@@ -81,8 +83,8 @@ only when Build and checks and all three parts are.
 
 | Job | Timeout | Steps, in order |
 | --- | --- | --- |
-| **Docs** | 5 minutes | `python -m tools.test_check_markdown_links`; `python tools/check_markdown_links.py`; `python -m tools.test_gen_role_matrix`; `python tools/gen_role_matrix.py --check`; `python -m tools.test_check_docs_facts`; `python tools/check_docs_facts.py` |
-| **Build and checks** | 15 minutes | checkout with submodules; Python 3.12.13; Foundry v1.7.1; restore the compiler cache (keyed on Foundry 1.7.1, solc 0.8.37 and a digest of the staged `foundry.toml`, `foundry.lock`, `.gitmodules`, `src`, `test`, `script` and `lib` entries); `forge fmt --check`; `forge build`; save the cache; `python tools/check_docs_facts.py --artifacts out`; `python tools/check_budgets.py --profile default`; `python -m tools.test_check_budgets`; `python tools/check_genesis.py`; `python -m tools.test_check_genesis`; `python tools/check_natspec.py`; `python -m tools.test_check_natspec`; `python -m tools.test_edition_auction_ref` (the edition auction's reference model and golden vectors); `python -m tools.test_check_coverage`; `python -m tools.test_mutation`; the content tooling tests |
+| **Docs** | 5 minutes | `python -m tools.test_check_markdown_links`; `python tools/check_markdown_links.py`; `python -m tools.test_gen_role_matrix`; `python tools/gen_role_matrix.py --check`; `python -m tools.test_check_docs_facts`; `python tools/check_docs_facts.py`; `python -m tools.test_gen_facts`; `python tools/gen_facts.py --check`; `python -m tools.test_check_rules`; `python tools/check_rules.py --uncovered` |
+| **Build and checks** | 15 minutes | checkout with submodules; Python 3.12.13; Foundry v1.7.1; restore the compiler cache (keyed on Foundry 1.7.1, solc 0.8.37 and a digest of the staged `foundry.toml`, `foundry.lock`, `.gitmodules`, `src`, `test`, `script` and `lib` entries); `forge fmt --check`; `forge build`; save the cache; `python tools/check_docs_facts.py --artifacts out`; `python tools/check_snapshots.py`; `python -m tools.test_check_snapshots`; `python tools/check_budgets.py --profile default`; `python -m tools.test_check_budgets`; `python tools/check_genesis.py`; `python -m tools.test_check_genesis`; `python tools/check_natspec.py`; `python -m tools.test_check_natspec`; `python -m tools.test_edition_auction_ref` (the edition auction's reference model and golden vectors); `python -m tools.test_check_coverage`; `python -m tools.test_mutation`; the content tooling tests |
 | **Tests** (unit, fuzz and integration) | 15 minutes | the same setup and cache; `forge test --no-match-test ^invariant` |
 | **Tests** (economics invariants) | 15 minutes | the same; `forge test --match-test ^invariant --match-contract ^EconomicsInvariant` |
 | **Tests** (other invariants) | 15 minutes | the same; `forge test --match-test ^invariant --no-match-contract ^EconomicsInvariant` |
@@ -93,10 +95,11 @@ runners for the checks above:
 [`strength.yml`](../../.github/workflows/strength.yml) after every merge to `main`, nightly and
 on demand (**Coverage**: `forge coverage` under the `lite` profile and
 `python tools/check_coverage.py --uncovered`, uploading `lcov.info`; **Symbolic (Halmos)**:
-`halmos` under the `symbolic` profile, one test contract at a time, every declared proof
-required to pass), [`nightly.yml`](../../.github/workflows/nightly.yml) (the invariant
-campaigns under the `deep` profile, and the fork tests in `test/fork` against public mainnet
-and Sepolia endpoints) and [`mutation.yml`](../../.github/workflows/mutation.yml) (every
+`halmos` under the `symbolic` profile, one job per test contract with a 60-minute limit, every
+declared proof required to pass), [`nightly.yml`](../../.github/workflows/nightly.yml) (the
+invariant campaigns and every fuzz test under the `deep` profile, one 30-minute Medusa campaign
+per harness in `test/medusa` when there is one, and the fork tests in `test/fork` against
+public mainnet and Sepolia endpoints) and [`mutation.yml`](../../.github/workflows/mutation.yml) (every
 mutation shard, weekly). [Testing](../testing/README.md) describes them and the figures.
 
 ### The gates
@@ -113,6 +116,8 @@ mutation shard, weekly). [Testing](../testing/README.md) describes them and the 
 | Edition auction reference model | A failing check of [`tools/edition_auction_ref.py`](../../tools/edition_auction_ref.py) (ADR 0005): the mantissa table and ladder, the clearing rule against brute force, the FIFO sweep, monotone winning in the step, or golden vectors in `test/fixtures/edition-auction/` that differ from what the model generates | `python -m tools.test_edition_auction_ref` |
 | Slither | A High or Medium finding in a file outside `lib/`, `test/` and `script/` with no row in [`docs/security/slither-triage.md`](../security/slither-triage.md); any `src/**/*.sol` file Slither did not analyze; an unreadable report. Low, Informational and Optimization findings are counted, not gated | [`tools/check_slither.py`](../../tools/check_slither.py) |
 | Markdown links | A relative link or `#anchor` in a tracked `*.md` file (outside `lib/`) that does not resolve, with exact letter case. External links are not fetched | [`tools/check_markdown_links.py`](../../tools/check_markdown_links.py) |
+| ABI and storage snapshots | A function, event or error of a `src/` contract or library (name, parameter names and types, mutability, indexed flags, selector or topic) or a contract's storage layout (a state variable's or stored struct member's slot, offset, type or declaring contract) that differs from [`test/snapshots/`](../../test/snapshots); a contract without a snapshot, or a snapshot whose contract is gone | [`tools/check_snapshots.py`](../../tools/check_snapshots.py) |
+| Rule traceability | A rule row in `docs/spec/` or a property in [Invariants](invariants.md) that names no test function or invariant ID that resolves, unless listed in [`tools/rules-uncovered.txt`](../../tools/rules-uncovered.txt); a named test, test file, contract or ID that does not exist; an invariant whose Test cell names no existing function; a listed rule that names a test now, or that the spec does not define | [`tools/check_rules.py`](../../tools/check_rules.py) |
 | Role matrix | [`docs/audit/roles.md`](roles.md) differs from what the generator renders from `config/genesis.example.json`, or the configuration fails the generator's own checks (selector hashes, roles, delays) | `tools/gen_role_matrix.py --check` |
 | Coverage (on `main`, not pull requests) | A src/ contract below its line or branch floor in [`tools/coverage-floors.json`](../../tools/coverage-floors.json), a src/ file without an entry below 95% of lines or 85% of branches, or an entry for a file that no longer reports | [`tools/check_coverage.py`](../../tools/check_coverage.py) in `strength.yml` |
 | Symbolic proofs (on `main`, not pull requests) | A `check_*` in `test/symbolic` with a counterexample, an error or a timeout, or one that did not run | `halmos` with [`halmos.toml`](../../halmos.toml) in `strength.yml` |
