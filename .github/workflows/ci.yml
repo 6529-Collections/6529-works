@@ -58,6 +58,15 @@ jobs:
         # docs/facts.json, which the 6529.io site syncs, must be generated from the repository.
         run: python tools/gen_facts.py --check
 
+      - name: Rule traceability checker unit tests
+        run: python -m tools.test_check_rules
+
+      - name: Rule traceability
+        # Every rule row in docs/spec/ and every property and invariant in
+        # docs/audit/invariants.md names a test that exists; a rule without one must be listed
+        # in tools/rules-uncovered.txt, which can only shrink.
+        run: python tools/check_rules.py --uncovered
+
   checks:
     name: Build and checks
     runs-on: ubuntu-latest
@@ -142,6 +151,14 @@ jobs:
       - name: Docs facts against the build
         # The audit scope's bytecode sizes, computed interface IDs and ABI event signatures.
         run: python tools/check_docs_facts.py --artifacts out
+
+      - name: ABI and storage snapshots
+        # Every src/ contract's ABI (selectors, topics, errors) and storage layout against
+        # test/snapshots/; an agreed change is committed with `check_snapshots.py --update`.
+        run: python tools/check_snapshots.py
+
+      - name: Snapshot checker unit tests
+        run: python -m tools.test_check_snapshots
 
       - name: Budget gates
         # The measured profile is explicit: adding a Foundry profile must not silently
@@ -277,7 +294,9 @@ jobs:
         env:
           FILTER: ${{ matrix.filter }}
         # FILTER is fixed in this file (word splitting is intended).
-        run: forge test $FILTER
+        run: |
+          # shellcheck disable=SC2086
+          forge test $FILTER
 
   contracts:
     # The required check: green only when the build, the checks and every test part are.

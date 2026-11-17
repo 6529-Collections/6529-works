@@ -1,8 +1,9 @@
 name: Nightly
 
 # The long runs a pull request cannot afford (docs/testing/README.md): the invariant suites at
-# the deep profile's depth, and the fork tests against the real external dependencies. Nightly
-# and on demand; never on pull requests.
+# the deep profile's depth, every fuzz test at 10,000 runs, the Medusa campaigns, and the fork
+# tests against the real external dependencies (the Safe suites among them). Nightly and on
+# demand; never on pull requests.
 
 on:
   schedule:
@@ -69,7 +70,170 @@ jobs:
           FOUNDRY_PROFILE: deep
           FILTER: ${{ matrix.filter }}
         # FILTER is fixed in this file (word splitting is intended).
-        run: forge test --match-test "^invariant" $FILTER
+        run: |
+          # shellcheck disable=SC2086
+          forge test --match-test "^invariant" $FILTER
+
+  deep-fuzz:
+    name: Deep fuzz (10,000 runs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Install Foundry
+        id: foundry_setup
+        continue-on-error: true
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09
+        with:
+          version: v1.7.1
+
+      - name: Retry Foundry installation
+        if: ${{ steps.foundry_setup.outcome == 'failure' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export FOUNDRY_DIR="$HOME/.foundry"
+          foundryup="$FOUNDRY_DIR/bin/foundryup"
+          test -x "$foundryup"
+          for attempt in 1 2 3; do
+            sleep "$((attempt * 15))"
+            if "$foundryup" --install 1.7.1; then
+              echo "$FOUNDRY_DIR/bin" >> "$GITHUB_PATH"
+              exit 0
+            fi
+          done
+          exit 1
+
+      - name: Deep fuzz
+        # [profile.deep.fuzz] in foundry.toml: every fuzz test at 10,000 runs (unit tests run
+        # once, as on pull requests). The invariant suites have their own job above; the fork
+        # suites skip without an RPC URL and have theirs below.
+        env:
+          FOUNDRY_PROFILE: deep
+        run: forge test --no-match-test "^invariant" --no-match-path "test/fork/*"
+
+  medusa-harnesses:
+    name: Medusa (list the harnesses)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      harnesses: ${{ steps.list.outputs.harnesses }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: List the harnesses
+        id: list
+        # Every *Medusa contract in test/medusa (not the Forge runners, *.t.sol), one matrix job
+        # each below. Without medusa.json or a harness the list is empty and the campaign job
+        # is skipped, so this workflow passes before the harnesses exist.
+        shell: bash
+        run: |
+          set -euo pipefail
+          harnesses=""
+          if [ -f medusa.json ] && [ -d test/medusa ]; then
+            files=$(find test/medusa -name '*.sol' ! -name '*.t.sol' | sort)
+            if [ -n "$files" ]; then
+              # shellcheck disable=SC2086
+              harnesses=$(grep -ho '^contract [A-Za-z0-9_]*Medusa\b' $files | cut -d' ' -f2 | sort -u || true)
+            fi
+          fi
+          echo "Harnesses: ${harnesses:-none}"
+          json=$(echo "$harnesses" | python3 -c 'import json, sys; print(json.dumps(sys.stdin.read().split()))')
+          echo "harnesses=$json" >> "$GITHUB_OUTPUT"
+
+  medusa:
+    name: Medusa (${{ matrix.harness }})
+    needs: medusa-harnesses
+    if: ${{ needs.medusa-harnesses.outputs.harnesses != '[]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        harness: ${{ fromJSON(needs.medusa-harnesses.outputs.harnesses) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12.13"
+
+      # Medusa compiles through crytic-compile, which runs `forge build`.
+      - name: Install Foundry
+        id: foundry_setup
+        continue-on-error: true
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09
+        with:
+          version: v1.7.1
+
+      - name: Retry Foundry installation
+        if: ${{ steps.foundry_setup.outcome == 'failure' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export FOUNDRY_DIR="$HOME/.foundry"
+          foundryup="$FOUNDRY_DIR/bin/foundryup"
+          test -x "$foundryup"
+          for attempt in 1 2 3; do
+            sleep "$((attempt * 15))"
+            if "$foundryup" --install 1.7.1; then
+              echo "$FOUNDRY_DIR/bin" >> "$GITHUB_PATH"
+              exit 0
+            fi
+          done
+          exit 1
+
+      - name: Install crytic-compile
+        # From the hash-checked lock (crytic-compile is a Slither dependency); wheels only.
+        run: >-
+          python -m pip install --disable-pip-version-check --require-hashes
+          --only-binary=:all: --no-deps -r requirements-tools.lock
+
+      - name: Install Medusa
+        # The release asset is checked against its build provenance attestation before use.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MEDUSA_VERSION: v1.5.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release download "$MEDUSA_VERSION" --repo crytic/medusa --pattern medusa-linux-x64.tar.gz
+          gh attestation verify medusa-linux-x64.tar.gz --repo crytic/medusa
+          tar -xzf medusa-linux-x64.tar.gz
+          sudo install medusa /usr/local/bin/medusa
+          medusa --version
+
+      - name: Restore the corpus
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: medusa-corpus/${{ matrix.harness }}
+          key: medusa-corpus-${{ matrix.harness }}-${{ github.run_id }}
+          restore-keys: medusa-corpus-${{ matrix.harness }}-
+
+      - name: Fuzz for 30 minutes
+        # medusa.json holds the settings (property_ prefix, no cheatcodes); this job narrows
+        # the targets to one harness and gives it its own corpus.
+        env:
+          HARNESS: ${{ matrix.harness }}
+        run: >-
+          medusa fuzz --config medusa.json --timeout 1800
+          --target-contracts "$HARNESS" --corpus-dir "medusa-corpus/$HARNESS"
 
   deep-differential:
     name: Deep differential fuzz (edition auction settlement)
@@ -151,7 +315,8 @@ jobs:
           exit 1
 
       - name: Fork tests
-        # test/fork skips itself unless these are set. Public endpoints, no credentials.
+        # test/fork skips itself unless these are set. Public endpoints, no credentials. The
+        # match covers every suite in test/fork, the Safe suites (test/fork/Safe*) included.
         env:
           FORK_MAINNET_RPC: https://ethereum-rpc.publicnode.com
           FORK_SEPOLIA_RPC: https://ethereum-sepolia-rpc.publicnode.com
