@@ -17,8 +17,42 @@ restructuring ([ADR 0007](../adr/0007-permanence.md)) changed many interfaces af
 
 ## Where ABIs come from
 
-ABIs are build outputs, not committed (`out/` is in [`.gitignore`](../../.gitignore)). Build
-them from the commit the target deployment was built from:
+### The exported ABIs
+
+[`abi/`](../../abi/) holds the ABIs of the code on this commit, exported from the default-profile
+build by [`tools/export_abis.py`](../../tools/export_abis.py), whose `--check` fails when they
+differ from the build. They are the ABIs of `main`, not of a deployment: for a deployed instance, check its
+commit in [Addresses](addresses.md) and build that commit as below.
+
+| File | What it is |
+| --- | --- |
+| `abi/<Name>.json` | The ABI of each deployable contract declared in `src/` and each public interface (`src/interfaces/`, `src/economics/interfaces/`): a plain JSON array, entries sorted by kind, name and signature, with no bytecode or compiler metadata |
+| `abi/full/<Name>.json` | For `Stream`, `EnglishAuction` and `UniformEditionAuction`, the contract's ABI merged with what it forwards ([below](#calling-through-a-lens-or-extension)): the ABI to call the deployed address with |
+| `abi/manifest.json` | One entry per file: the name, `kind` (`contract` or `interface`), source path, ERC-165 `interfaceId` (interfaces only: the XOR of the selectors the interface itself declares, as `type(I).interfaceId`; which contract answers it is in the [table below](#erc-165-interface-ids)), the counts of functions, events and errors, the solc version, and the SHA-256 of the file's bytes |
+
+Load them as they are, for example with viem:
+
+```ts
+import streamAbi from "./abi/full/Stream.json";            // Stream with its IStreamViews reads
+import auctionAbi from "./abi/full/EnglishAuction.json";    // writes and lens views together
+const owner = await client.readContract({ address: STREAM, abi: streamAbi, functionName: "ownerOf", args: [1n] });
+```
+
+or with `cast` (`cast call` takes signatures, which the files list) and `jq`:
+
+```bash
+jq -r '.[] | select(.type=="function") | .name' abi/full/EnglishAuction.json
+jq '.contracts[] | select(.kind=="interface") | {name, interfaceId}' abi/manifest.json
+```
+
+The manifest's `sha256` changes exactly when a file's bytes change, so a client can pin it.
+After a source change, `forge build` then `python tools/export_abis.py` rewrites the files;
+`python tools/export_abis.py --check` reports any difference without writing. Runnable examples
+of the common calls, compiled against these interfaces, are in [`examples/`](../../examples/README.md).
+
+### Building them from a deployment's commit
+
+Build the ABIs from the commit the target deployment was built from:
 
 ```bash
 git clone --recurse-submodules https://github.com/6529-Collections/6529-works.git
@@ -42,6 +76,8 @@ Decode a deployed address with the **contract** artifact, not the interface's: s
 declare events and errors their interfaces do not (the entropy module's `ConfigSet`, and the
 errors of the libraries they use, such as `Dependency` and `SignatureVerifier`). A revert can
 come from a contract further down the call, so decode it against every contract on the path.
+
+### Calling through a lens or extension
 
 **6529 Stream answers its informational views through an extension.** `work`, `collection`,
 `totalSupply`, `contractURI` and `owner` (`IStreamViews`) are served by `StreamViews`, a

@@ -1,0 +1,480 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "deployer_",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "network",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "brake",
+            "type": "address"
+          },
+          {
+            "components": [
+              {
+                "internalType": "uint64",
+                "name": "role",
+                "type": "uint64"
+              },
+              {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+              }
+            ],
+            "internalType": "struct GovernanceConfig.Grant[]",
+            "name": "grants",
+            "type": "tuple[]"
+          },
+          {
+            "components": [
+              {
+                "internalType": "address",
+                "name": "target",
+                "type": "address"
+              },
+              {
+                "components": [
+                  {
+                    "internalType": "bytes4",
+                    "name": "selector",
+                    "type": "bytes4"
+                  },
+                  {
+                    "internalType": "uint64",
+                    "name": "role",
+                    "type": "uint64"
+                  }
+                ],
+                "internalType": "struct GovernanceConfig.FunctionRole[]",
+                "name": "functions",
+                "type": "tuple[]"
+              }
+            ],
+            "internalType": "struct GovernanceConfig.Target[]",
+            "name": "targets",
+            "type": "tuple[]"
+          }
+        ],
+        "internalType": "struct GovernanceConfig.Config",
+        "name": "cfg",
+        "type": "tuple"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "manifestHash",
+        "type": "bytes32"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "target",
+            "type": "address"
+          },
+          {
+            "internalType": "bytes",
+            "name": "data",
+            "type": "bytes"
+          }
+        ],
+        "internalType": "struct GovernanceConfig.Call[]",
+        "name": "wiring",
+        "type": "tuple[]"
+      }
+    ],
+    "name": "configure",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "deployer",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "network",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "brake",
+            "type": "address"
+          },
+          {
+            "components": [
+              {
+                "internalType": "uint64",
+                "name": "role",
+                "type": "uint64"
+              },
+              {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+              }
+            ],
+            "internalType": "struct GovernanceConfig.Grant[]",
+            "name": "grants",
+            "type": "tuple[]"
+          },
+          {
+            "components": [
+              {
+                "internalType": "address",
+                "name": "target",
+                "type": "address"
+              },
+              {
+                "components": [
+                  {
+                    "internalType": "bytes4",
+                    "name": "selector",
+                    "type": "bytes4"
+                  },
+                  {
+                    "internalType": "uint64",
+                    "name": "role",
+                    "type": "uint64"
+                  }
+                ],
+                "internalType": "struct GovernanceConfig.FunctionRole[]",
+                "name": "functions",
+                "type": "tuple[]"
+              }
+            ],
+            "internalType": "struct GovernanceConfig.Target[]",
+            "name": "targets",
+            "type": "tuple[]"
+          }
+        ],
+        "internalType": "struct GovernanceConfig.Config",
+        "name": "cfg",
+        "type": "tuple"
+      }
+    ],
+    "name": "verify",
+    "outputs": [],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "worksManager",
+    "outputs": [
+      {
+        "internalType": "contract WorksAccessManager",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "manager",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "configHash",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "manifestHash",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "wiringHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "GovernanceConfigured",
+    "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "ConfiguratorStillAdmin",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "role",
+        "type": "uint64"
+      },
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "DuplicateGrant",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes4",
+        "name": "selector",
+        "type": "bytes4"
+      }
+    ],
+    "name": "DuplicateSelector",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes4",
+        "name": "selector",
+        "type": "bytes4"
+      },
+      {
+        "internalType": "uint64",
+        "name": "actual",
+        "type": "uint64"
+      }
+    ],
+    "name": "FunctionRoleMismatch",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "role",
+        "type": "uint64"
+      },
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "HolderMismatch",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidDeployer",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes4",
+        "name": "selector",
+        "type": "bytes4"
+      },
+      {
+        "internalType": "uint64",
+        "name": "role",
+        "type": "uint64"
+      }
+    ],
+    "name": "InvalidFunctionRole",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "role",
+        "type": "uint64"
+      },
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "InvalidGrant",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      }
+    ],
+    "name": "InvalidTarget",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes4",
+        "name": "selector",
+        "type": "bytes4"
+      }
+    ],
+    "name": "InvalidWiringCall",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "MissingNetwork",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "network",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "brake",
+        "type": "address"
+      }
+    ],
+    "name": "NetworkMismatch",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      }
+    ],
+    "name": "NotDeployer",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "role",
+        "type": "uint64"
+      }
+    ],
+    "name": "RoleMismatch",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      }
+    ],
+    "name": "TargetMismatch",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "count",
+        "type": "uint256"
+      }
+    ],
+    "name": "TooManyWiringCalls",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "role",
+        "type": "uint64"
+      }
+    ],
+    "name": "UnknownRole",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "WiringCallFailed",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes4",
+        "name": "selector",
+        "type": "bytes4"
+      }
+    ],
+    "name": "WiringSelectorNotAllowed",
+    "type": "error"
+  }
+]

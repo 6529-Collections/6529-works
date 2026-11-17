@@ -1,0 +1,599 @@
+[
+  {
+    "inputs": [],
+    "name": "assetAllowlist",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "product",
+        "type": "bytes32"
+      }
+    ],
+    "name": "defaultLicense",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "string",
+            "name": "spdxId",
+            "type": "string"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "textFileId",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct License",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "product",
+        "type": "bytes32"
+      }
+    ],
+    "name": "economics",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "feeRecipient",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "feeShare",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "royaltyRate",
+            "type": "uint32"
+          }
+        ],
+        "internalType": "struct ProductEconomics",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "museum",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "museumRevision",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "product",
+        "type": "bytes32"
+      }
+    ],
+    "name": "networkFeeRecipient",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "product",
+        "type": "bytes32"
+      },
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "artistId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "account",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "share",
+            "type": "uint32"
+          }
+        ],
+        "internalType": "struct ISplitWallet.Payee[]",
+        "name": "payees",
+        "type": "tuple[]"
+      }
+    ],
+    "name": "newWorkTerms",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "seller",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "feeRecipient",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "feeShare",
+            "type": "uint32"
+          },
+          {
+            "internalType": "address",
+            "name": "royaltyReceiver",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "royaltyRate",
+            "type": "uint32"
+          }
+        ],
+        "internalType": "struct WorkTerms",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "product",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "requested",
+        "type": "address"
+      }
+    ],
+    "name": "resolveCurrency",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "product",
+        "type": "bytes32"
+      }
+    ],
+    "name": "revisions",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "feeTerms",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "royaltyRate",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "license",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "product",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint64",
+        "name": "expectedRevision",
+        "type": "uint64"
+      },
+      {
+        "components": [
+          {
+            "internalType": "string",
+            "name": "spdxId",
+            "type": "string"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "textFileId",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct License",
+        "name": "next",
+        "type": "tuple"
+      }
+    ],
+    "name": "setDefaultLicense",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "product",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint64",
+        "name": "expectedRevision",
+        "type": "uint64"
+      },
+      {
+        "internalType": "address",
+        "name": "feeRecipient",
+        "type": "address"
+      },
+      {
+        "internalType": "uint32",
+        "name": "feeShare",
+        "type": "uint32"
+      }
+    ],
+    "name": "setFeeTerms",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "expectedRevision",
+        "type": "uint64"
+      },
+      {
+        "internalType": "address",
+        "name": "next",
+        "type": "address"
+      }
+    ],
+    "name": "setMuseum",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "product",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint64",
+        "name": "expectedRevision",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint32",
+        "name": "royaltyRate",
+        "type": "uint32"
+      }
+    ],
+    "name": "setRoyaltyRate",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "splitFactory",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes4",
+        "name": "interfaceId",
+        "type": "bytes4"
+      }
+    ],
+    "name": "supportsInterface",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "product",
+        "type": "bytes32"
+      },
+      {
+        "components": [
+          {
+            "internalType": "string",
+            "name": "spdxId",
+            "type": "string"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "textFileId",
+            "type": "bytes32"
+          }
+        ],
+        "indexed": false,
+        "internalType": "struct License",
+        "name": "previous",
+        "type": "tuple"
+      },
+      {
+        "components": [
+          {
+            "internalType": "string",
+            "name": "spdxId",
+            "type": "string"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "textFileId",
+            "type": "bytes32"
+          }
+        ],
+        "indexed": false,
+        "internalType": "struct License",
+        "name": "next",
+        "type": "tuple"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "revision",
+        "type": "uint64"
+      }
+    ],
+    "name": "DefaultLicenseSet",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "product",
+        "type": "bytes32"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "feeRecipient",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "feeShare",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "royaltyRate",
+            "type": "uint32"
+          }
+        ],
+        "indexed": false,
+        "internalType": "struct ProductEconomics",
+        "name": "previous",
+        "type": "tuple"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "feeRecipient",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "feeShare",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "royaltyRate",
+            "type": "uint32"
+          }
+        ],
+        "indexed": false,
+        "internalType": "struct ProductEconomics",
+        "name": "next",
+        "type": "tuple"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "revision",
+        "type": "uint64"
+      }
+    ],
+    "name": "EconomicsSet",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "previous",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "next",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "revision",
+        "type": "uint64"
+      }
+    ],
+    "name": "MuseumSet",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "currency",
+        "type": "address"
+      }
+    ],
+    "name": "CurrencyNotAllowed",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidEconomics",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "recipient",
+        "type": "address"
+      }
+    ],
+    "name": "InvalidFeeRecipient",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidLicense",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "museum",
+        "type": "address"
+      }
+    ],
+    "name": "InvalidMuseum",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "expected",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "actual",
+        "type": "uint64"
+      }
+    ],
+    "name": "RevisionMismatch",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "product",
+        "type": "bytes32"
+      }
+    ],
+    "name": "UnknownProduct",
+    "type": "error"
+  }
+]
