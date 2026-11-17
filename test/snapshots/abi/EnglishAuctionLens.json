@@ -1,0 +1,658 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "escrow_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "statementLog_",
+        "type": "address"
+      },
+      {
+        "internalType": "contract IAssetAllowlist",
+        "name": "allowlist_",
+        "type": "address"
+      },
+      {
+        "internalType": "contract IEconomicsResolver",
+        "name": "economicsResolver_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "permit2_",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "id": "0x8d6f91fb",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      }
+    ],
+    "name": "BoundedCallFailed",
+    "signature": "BoundedCallFailed(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x74920c38",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      }
+    ],
+    "name": "BoundedCallMalformedReturn",
+    "signature": "BoundedCallMalformedReturn(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x5b20679f",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      }
+    ],
+    "name": "BoundedCallShortfall",
+    "signature": "BoundedCallShortfall(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x2bf76211",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      }
+    ],
+    "name": "InvalidSaleTerms",
+    "signature": "InvalidSaleTerms(address,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x8c4dea3b",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "SaleNotRefusable",
+    "signature": "SaleNotRefusable(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xcec17e3d",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "UnknownSale",
+    "signature": "UnknownSale(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x999d55fb",
+    "inputs": [],
+    "name": "MAX_PAUSE",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      }
+    ],
+    "signature": "MAX_PAUSE()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x9a44da83",
+    "inputs": [],
+    "name": "PAYOUT_GAS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "PAYOUT_GAS()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x48db7084",
+    "inputs": [],
+    "name": "REFUSAL_DELAY",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "REFUSAL_DELAY()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x2b47da52",
+    "inputs": [],
+    "name": "allowlist",
+    "outputs": [
+      {
+        "internalType": "contract IAssetAllowlist",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "allowlist()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x1200617f",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "auction",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "token",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "tokenId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "currency",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "incrementFloor",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "bidder",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "recipient",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "bid",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint64",
+            "name": "endTime",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "pausedAt",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "pausedTotal",
+            "type": "uint64"
+          },
+          {
+            "internalType": "enum IEnglishAuction.AuctionState",
+            "name": "state",
+            "type": "uint8"
+          }
+        ],
+        "internalType": "struct IEnglishAuction.Auction",
+        "name": "a",
+        "type": "tuple"
+      }
+    ],
+    "signature": "auction(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xd4570c1c",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "currency",
+        "type": "address"
+      }
+    ],
+    "name": "claimable",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "claimable(address,address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x79502c55",
+    "inputs": [],
+    "name": "config",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint32",
+            "name": "duration",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "extensionWindow",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "incrementShare",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "refusalGas",
+            "type": "uint32"
+          }
+        ],
+        "internalType": "struct IEnglishAuction.AuctionConfig",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "signature": "config()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x1cc721a5",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "currency",
+        "type": "address"
+      }
+    ],
+    "name": "creditExpiresAt",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "creditExpiresAt(address,address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xd4cdb254",
+    "inputs": [],
+    "name": "economicsResolver",
+    "outputs": [
+      {
+        "internalType": "contract IEconomicsResolver",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "economicsResolver()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xe2fdcc17",
+    "inputs": [],
+    "name": "escrow",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "escrow()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xadb08ded",
+    "inputs": [],
+    "name": "federationRegistry",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "federationRegistry()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x3869daac",
+    "inputs": [],
+    "name": "federationRegistryCodeHash",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "federationRegistryCodeHash()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xaa642274",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
+    "name": "isTarget",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "isTarget(address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xd7bb5600",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "lockedTerms",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "token",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "id",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "currency",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "price",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "seller",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "feeRecipient",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "feeShare",
+            "type": "uint32"
+          }
+        ],
+        "internalType": "struct LockedTerms",
+        "name": "lt",
+        "type": "tuple"
+      }
+    ],
+    "signature": "lockedTerms(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xfea32600",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "minimumBid",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "minimumBid(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xf74cfda0",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "currency",
+        "type": "address"
+      }
+    ],
+    "name": "openingBid",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "openingBid(address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x5c975abb",
+    "inputs": [],
+    "name": "paused",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "paused()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x2170e0ed",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "pendingDelivery",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "recipient",
+        "type": "address"
+      }
+    ],
+    "signature": "pendingDelivery(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x12261ee7",
+    "inputs": [],
+    "name": "permit2",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "permit2()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xf257ed9c",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "refusableAt",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "refusableAt(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x26a43283",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      }
+    ],
+    "name": "saleIdOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "saleIdOf(address,uint256)",
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "id": "0xe726ef63",
+    "inputs": [],
+    "name": "statementLog",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "statementLog()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x01ffc9a7",
+    "inputs": [
+      {
+        "internalType": "bytes4",
+        "name": "interfaceId",
+        "type": "bytes4"
+      }
+    ],
+    "name": "supportsInterface",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "supportsInterface(bytes4)",
+    "stateMutability": "pure",
+    "type": "function"
+  }
+]

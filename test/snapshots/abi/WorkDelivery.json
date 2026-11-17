@@ -1,0 +1,723 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "authority_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "records_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "stream_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "predecessor_",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "id": "0xc2f31e5e",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "authority",
+        "type": "address"
+      }
+    ],
+    "name": "AccessManagedInvalidAuthority",
+    "signature": "AccessManagedInvalidAuthority(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xaf77169d",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      },
+      {
+        "internalType": "uint32",
+        "name": "delay",
+        "type": "uint32"
+      }
+    ],
+    "name": "AccessManagedRequiredDelay",
+    "signature": "AccessManagedRequiredDelay(address,uint32)",
+    "type": "error"
+  },
+  {
+    "id": "0x068ca9d8",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      }
+    ],
+    "name": "AccessManagedUnauthorized",
+    "signature": "AccessManagedUnauthorized(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x9bbe2e1a",
+    "inputs": [],
+    "name": "InvalidLocator",
+    "signature": "InvalidLocator()",
+    "type": "error"
+  },
+  {
+    "id": "0xfe056f71",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      }
+    ],
+    "name": "RecordNotOpen",
+    "signature": "RecordNotOpen(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xc81ebc28",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "collectionId",
+        "type": "uint256"
+      }
+    ],
+    "name": "UnknownCollection",
+    "signature": "UnknownCollection(uint256)",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "id": "0x2f658b440c35314f52658ea8a740e05b284cdc84dc9ae01e891f21b8933e7cad",
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "authority",
+        "type": "address"
+      }
+    ],
+    "name": "AuthorityUpdated",
+    "signature": "AuthorityUpdated(address)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x57ab57edc511e68ceac9b1e49b80959a2aa7279eb6fa0a548dabba84f3f42d33",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "collectionId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum LocatorKind",
+        "name": "previous",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum LocatorKind",
+        "name": "next",
+        "type": "uint8"
+      }
+    ],
+    "name": "CollectionPreferredKindSet",
+    "signature": "CollectionPreferredKindSet(uint256,uint8,uint8)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x700a41d4664d4e095541038a6ae434f80ea7c64a803f26a15c0731a550f59855",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "previous",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "next",
+        "type": "uint256"
+      }
+    ],
+    "name": "FilePreferenceSet",
+    "signature": "FilePreferenceSet(uint256,bytes32,uint256,uint256)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0xae55b5f8169727474b9a0919153dd994347738359264f23322588476f32ed939",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      },
+      {
+        "components": [
+          {
+            "internalType": "enum LocatorKind",
+            "name": "kind",
+            "type": "uint8"
+          },
+          {
+            "internalType": "string",
+            "name": "uri",
+            "type": "string"
+          }
+        ],
+        "indexed": false,
+        "internalType": "struct Locator",
+        "name": "locator",
+        "type": "tuple"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "addedBy",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "byArtist",
+        "type": "bool"
+      }
+    ],
+    "name": "LocatorAdded",
+    "signature": "LocatorAdded(uint256,bytes32,uint256,(uint8,string),address,bool)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0xcd8a61573511056d5317f3c22545079ac7a90a155278ae43daeba085895a61d0",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "LocatorDead",
+    "signature": "LocatorDead(uint256,bytes32,uint256)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x0c7addff33115506eceb32af47e39cfa360f77cd274f7a61785628f220a420e8",
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "enum LocatorKind",
+        "name": "previous",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum LocatorKind",
+        "name": "next",
+        "type": "uint8"
+      }
+    ],
+    "name": "PreferredKindSet",
+    "signature": "PreferredKindSet(uint8,uint8)",
+    "type": "event"
+  },
+  {
+    "id": "0xf3326c0f",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      },
+      {
+        "components": [
+          {
+            "internalType": "enum LocatorKind",
+            "name": "kind",
+            "type": "uint8"
+          },
+          {
+            "internalType": "string",
+            "name": "uri",
+            "type": "string"
+          }
+        ],
+        "internalType": "struct Locator",
+        "name": "locator",
+        "type": "tuple"
+      }
+    ],
+    "name": "addLocator",
+    "outputs": [],
+    "signature": "addLocator(uint256,bytes32,(uint8,string))",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xbf7e214f",
+    "inputs": [],
+    "name": "authority",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "authority()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x96ae08d7",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "collectionId",
+        "type": "uint256"
+      }
+    ],
+    "name": "collectionPreferredKind",
+    "outputs": [
+      {
+        "internalType": "enum LocatorKind",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "signature": "collectionPreferredKind(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x804cd0ad",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "deadLocators",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "deadLocators(uint256,bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x8a2b4936",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "filePreference",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "filePreference(uint256,bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x8fb36037",
+    "inputs": [],
+    "name": "isConsumingScheduledOp",
+    "outputs": [
+      {
+        "internalType": "bytes4",
+        "name": "",
+        "type": "bytes4"
+      }
+    ],
+    "signature": "isConsumingScheduledOp()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xe3fbd309",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "locatorCounts",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "artist",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "platform",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "byArtist",
+        "type": "uint256"
+      }
+    ],
+    "signature": "locatorCounts(uint256,bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x368445dd",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "locators",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "enum LocatorKind",
+            "name": "kind",
+            "type": "uint8"
+          },
+          {
+            "internalType": "string",
+            "name": "uri",
+            "type": "string"
+          }
+        ],
+        "internalType": "struct Locator[]",
+        "name": "",
+        "type": "tuple[]"
+      }
+    ],
+    "signature": "locators(uint256,bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x9a3a206a",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "markLocatorDead",
+    "outputs": [],
+    "signature": "markLocatorDead(uint256,bytes32,uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xb719d032",
+    "inputs": [],
+    "name": "predecessor",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "predecessor()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x6ac8d535",
+    "inputs": [],
+    "name": "preferredKind",
+    "outputs": [
+      {
+        "internalType": "enum LocatorKind",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "signature": "preferredKind()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x253e787c",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "preferredLocator",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint8",
+            "name": "kind",
+            "type": "uint8"
+          },
+          {
+            "internalType": "string",
+            "name": "uri",
+            "type": "string"
+          }
+        ],
+        "internalType": "struct IWorkDelivery.Location",
+        "name": "location",
+        "type": "tuple"
+      },
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "signature": "preferredLocator(uint256,bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x95a3be99",
+    "inputs": [],
+    "name": "records",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "records()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x7a9e5e4b",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "newAuthority",
+        "type": "address"
+      }
+    ],
+    "name": "setAuthority",
+    "outputs": [],
+    "signature": "setAuthority(address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x4ddc92d1",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "collectionId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "enum LocatorKind",
+        "name": "kind",
+        "type": "uint8"
+      }
+    ],
+    "name": "setCollectionPreferredKind",
+    "outputs": [],
+    "signature": "setCollectionPreferredKind(uint256,uint8)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x65a48a4e",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "setFilePreference",
+    "outputs": [],
+    "signature": "setFilePreference(uint256,bytes32,uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x40ff5d7f",
+    "inputs": [
+      {
+        "internalType": "enum LocatorKind",
+        "name": "kind",
+        "type": "uint8"
+      }
+    ],
+    "name": "setPreferredKind",
+    "outputs": [],
+    "signature": "setPreferredKind(uint8)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x6f2a6791",
+    "inputs": [],
+    "name": "stream",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "stream()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x01ffc9a7",
+    "inputs": [
+      {
+        "internalType": "bytes4",
+        "name": "interfaceId",
+        "type": "bytes4"
+      }
+    ],
+    "name": "supportsInterface",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "supportsInterface(bytes4)",
+    "stateMutability": "view",
+    "type": "function"
+  }
+]

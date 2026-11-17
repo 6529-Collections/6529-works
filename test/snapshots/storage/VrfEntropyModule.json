@@ -1,0 +1,161 @@
+{
+  "structs": {
+    "struct VrfEntropyModule.Seed": [
+      {
+        "label": "value",
+        "offset": 0,
+        "slot": 0,
+        "type": "uint256"
+      },
+      {
+        "label": "requestedAt",
+        "offset": 0,
+        "slot": 1,
+        "type": "uint64"
+      },
+      {
+        "label": "delivered",
+        "offset": 8,
+        "slot": 1,
+        "type": "bool"
+      },
+      {
+        "label": "repeats",
+        "offset": 9,
+        "slot": 1,
+        "type": "uint8"
+      },
+      {
+        "label": "epoch",
+        "offset": 10,
+        "slot": 1,
+        "type": "uint32"
+      }
+    ],
+    "struct VrfEntropyModule.VrfConfig": [
+      {
+        "label": "subscriptionId",
+        "offset": 0,
+        "slot": 0,
+        "type": "uint256"
+      },
+      {
+        "label": "keyHash",
+        "offset": 0,
+        "slot": 1,
+        "type": "bytes32"
+      },
+      {
+        "label": "callbackGasLimit",
+        "offset": 0,
+        "slot": 2,
+        "type": "uint32"
+      },
+      {
+        "label": "confirmations",
+        "offset": 4,
+        "slot": 2,
+        "type": "uint16"
+      },
+      {
+        "label": "nativePayment",
+        "offset": 6,
+        "slot": 2,
+        "type": "bool"
+      }
+    ]
+  },
+  "variables": [
+    {
+      "contract": "VrfEntropyModule",
+      "label": "_authority",
+      "offset": 0,
+      "slot": 0,
+      "type": "address"
+    },
+    {
+      "contract": "VrfEntropyModule",
+      "label": "_consumingSchedule",
+      "offset": 20,
+      "slot": 0,
+      "type": "bool"
+    },
+    {
+      "contract": "VrfEntropyModule",
+      "label": "coordinator",
+      "offset": 0,
+      "slot": 1,
+      "type": "address"
+    },
+    {
+      "contract": "VrfEntropyModule",
+      "label": "_coordinatorEpoch",
+      "offset": 20,
+      "slot": 1,
+      "type": "uint32"
+    },
+    {
+      "contract": "VrfEntropyModule",
+      "label": "_coordinatorCodeHash",
+      "offset": 0,
+      "slot": 2,
+      "type": "bytes32"
+    },
+    {
+      "contract": "VrfEntropyModule",
+      "label": "_config",
+      "offset": 0,
+      "slot": 3,
+      "type": "struct VrfEntropyModule.VrfConfig"
+    },
+    {
+      "contract": "VrfEntropyModule",
+      "label": "_seeds",
+      "offset": 0,
+      "slot": 6,
+      "type": "mapping(bytes32 => struct VrfEntropyModule.Seed)"
+    },
+    {
+      "contract": "VrfEntropyModule",
+      "label": "_contentOf",
+      "offset": 0,
+      "slot": 7,
+      "type": "mapping(bytes32 => bytes32)"
+    },
+    {
+      "contract": "VrfEntropyModule",
+      "label": "_requests",
+      "offset": 0,
+      "slot": 8,
+      "type": "mapping(address => mapping(uint256 => bytes32))"
+    },
+    {
+      "contract": "VrfEntropyModule",
+      "label": "wrapper",
+      "offset": 0,
+      "slot": 9,
+      "type": "address"
+    },
+    {
+      "contract": "VrfEntropyModule",
+      "label": "_wrapperEpoch",
+      "offset": 20,
+      "slot": 9,
+      "type": "uint32"
+    },
+    {
+      "contract": "VrfEntropyModule",
+      "label": "_wrapperCodeHash",
+      "offset": 0,
+      "slot": 10,
+      "type": "bytes32"
+    },
+    {
+      "contract": "VrfEntropyModule",
+      "label": "_federatedSeeds",
+      "offset": 0,
+      "slot": 11,
+      "type": "mapping(bytes32 => struct VrfEntropyModule.Seed)"
+    }
+  ]
+}

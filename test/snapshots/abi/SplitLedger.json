@@ -1,0 +1,1542 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "contract IArtistPayoutResolver",
+        "name": "resolver_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "network_",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "id": "0xf20c8bfc",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "releasable",
+        "type": "uint256"
+      }
+    ],
+    "name": "AmountExceedsReleasable",
+    "signature": "AmountExceedsReleasable(uint256,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x5b20679f",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      }
+    ],
+    "name": "BoundedCallShortfall",
+    "signature": "BoundedCallShortfall(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x5e0a829b",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "recipient",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "ETHTransferFailed",
+    "signature": "ETHTransferFailed(address,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xf7293a48",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "dependency",
+        "type": "address"
+      }
+    ],
+    "name": "InvalidDependency",
+    "signature": "InvalidDependency(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x85438ddd",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "InvalidPayee",
+    "signature": "InvalidPayee(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x17858bbe",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "recipient",
+        "type": "address"
+      }
+    ],
+    "name": "InvalidRecipient",
+    "signature": "InvalidRecipient(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xb3512b0c",
+    "inputs": [],
+    "name": "InvalidShortString",
+    "signature": "InvalidShortString()",
+    "type": "error"
+  },
+  {
+    "id": "0xd855c4f4",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "signer",
+        "type": "address"
+      }
+    ],
+    "name": "InvalidSignature",
+    "signature": "InvalidSignature(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xf1208dcc",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "payee",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "dueAt",
+        "type": "uint256"
+      }
+    ],
+    "name": "MarkNotDue",
+    "signature": "MarkNotDue(address,address,uint256,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xd09ebb46",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "payee",
+        "type": "uint256"
+      }
+    ],
+    "name": "MarkPending",
+    "signature": "MarkPending(address,address,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xe90aded4",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "nonce",
+        "type": "uint256"
+      }
+    ],
+    "name": "NonceAlreadyUsed",
+    "signature": "NonceAlreadyUsed(address,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xfbd08b73",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "payoutAddress",
+        "type": "address"
+      }
+    ],
+    "name": "NotPayoutAddress",
+    "signature": "NotPayoutAddress(address,address)",
+    "type": "error"
+  },
+  {
+    "id": "0x699b3a82",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "payee",
+        "type": "uint256"
+      }
+    ],
+    "name": "NothingToRelease",
+    "signature": "NothingToRelease(address,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x51262c8a",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "recorded",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "current",
+        "type": "uint256"
+      }
+    ],
+    "name": "ObservedDecreased",
+    "signature": "ObservedDecreased(address,uint256,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xbae2307c",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "count",
+        "type": "uint256"
+      }
+    ],
+    "name": "PayeeCountOutOfRange",
+    "signature": "PayeeCountOutOfRange(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x6c0a90e3",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "PayeesNotCanonical",
+    "signature": "PayeesNotCanonical(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x6b3aa35d",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "PayoutUnresolved",
+    "signature": "PayoutUnresolved(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x3ee5aeb5",
+    "inputs": [],
+    "name": "ReentrancyGuardReentrantCall",
+    "signature": "ReentrancyGuardReentrantCall()",
+    "type": "error"
+  },
+  {
+    "id": "0x6dfcc650",
+    "inputs": [
+      {
+        "internalType": "uint8",
+        "name": "bits",
+        "type": "uint8"
+      },
+      {
+        "internalType": "uint256",
+        "name": "value",
+        "type": "uint256"
+      }
+    ],
+    "name": "SafeCastOverflowedUintDowncast",
+    "signature": "SafeCastOverflowedUintDowncast(uint8,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xf3595d61",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "total",
+        "type": "uint256"
+      }
+    ],
+    "name": "SharesDoNotSum",
+    "signature": "SharesDoNotSum(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xcd21db4f",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "deadline",
+        "type": "uint256"
+      }
+    ],
+    "name": "SignatureExpired",
+    "signature": "SignatureExpired(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x305a27a9",
+    "inputs": [
+      {
+        "internalType": "string",
+        "name": "str",
+        "type": "string"
+      }
+    ],
+    "name": "StringTooLong",
+    "signature": "StringTooLong(string)",
+    "type": "error"
+  },
+  {
+    "id": "0xd2e7f335",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      }
+    ],
+    "name": "TokenBalanceMismatch",
+    "signature": "TokenBalanceMismatch(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xdd6e753a",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes4",
+        "name": "selector",
+        "type": "bytes4"
+      }
+    ],
+    "name": "TokenCallFailed",
+    "signature": "TokenCallFailed(address,bytes4)",
+    "type": "error"
+  },
+  {
+    "id": "0x1373f626",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      }
+    ],
+    "name": "TokenReadFailed",
+    "signature": "TokenReadFailed(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x9256625d",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "payee",
+        "type": "uint256"
+      }
+    ],
+    "name": "UnknownPayee",
+    "signature": "UnknownPayee(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xc5cd73c0",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "predicted",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "deployed",
+        "type": "address"
+      }
+    ],
+    "name": "WalletAddressMismatch",
+    "signature": "WalletAddressMismatch(address,address)",
+    "type": "error"
+  },
+  {
+    "id": "0xaedb273b",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      }
+    ],
+    "name": "WalletNotDeployed",
+    "signature": "WalletNotDeployed(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xb9137cf5",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "named",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      }
+    ],
+    "name": "WrongWallet",
+    "signature": "WrongWallet(address,address)",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "id": "0x0a6387c9ea3628b88a633bb4f3b151770f70085117a15f9bf3787cda53f13d31",
+    "inputs": [],
+    "name": "EIP712DomainChanged",
+    "signature": "EIP712DomainChanged()",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x0442f04792766e07062ce8326d55602839c8446474241c3142c422143d63b877",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "payee",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "Forfeited",
+    "signature": "Forfeited(address,address,uint256,uint256)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x1b7ef417e104a7de7d3eada7ae1d9dd6aaf812a0f7490141c66d7ae502b50614",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "payee",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "target",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "markedAt",
+        "type": "uint256"
+      }
+    ],
+    "name": "Marked",
+    "signature": "Marked(address,address,uint256,uint256,uint256)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x4efdf80e1ee210a464536b94135bd8ee19bc4cfe4f456dee6baa71426721a82b",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "nonce",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "revoked",
+        "type": "bool"
+      }
+    ],
+    "name": "NonceUsed",
+    "signature": "NonceUsed(address,uint256,bool)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x6f6357cde2444cd0595d716c6d2f41683d4bcbc3792451a714a1f8e6e7dcabd1",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "recipient",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "payee",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "observed",
+        "type": "uint256"
+      }
+    ],
+    "name": "Released",
+    "signature": "Released(address,address,address,uint256,address,uint256,uint256)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x140f5f9969cb7742e82b483caead38e16ee71968d0c0147939e24b8cc251372f",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "configHash",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "salt",
+        "type": "bytes32"
+      },
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "artistId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "account",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "share",
+            "type": "uint32"
+          }
+        ],
+        "indexed": false,
+        "internalType": "struct ISplitWallet.Payee[]",
+        "name": "payees",
+        "type": "tuple[]"
+      }
+    ],
+    "name": "WalletCreated",
+    "signature": "WalletCreated(address,bytes32,bytes32,(uint256,address,uint32)[])",
+    "type": "event"
+  },
+  {
+    "id": "0x0902df91",
+    "inputs": [],
+    "name": "RELEASE_TYPEHASH",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "RELEASE_TYPEHASH()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x44b90c03",
+    "inputs": [],
+    "name": "UNCLAIMED_PERIOD",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "UNCLAIMED_PERIOD()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x19091452",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      }
+    ],
+    "name": "configOf",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "configOf(address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x9656deb7",
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "artistId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "account",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "share",
+            "type": "uint32"
+          }
+        ],
+        "internalType": "struct ISplitWallet.Payee[]",
+        "name": "payees",
+        "type": "tuple[]"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "salt",
+        "type": "bytes32"
+      }
+    ],
+    "name": "createWallet",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      }
+    ],
+    "signature": "createWallet((uint256,address,uint32)[],bytes32)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xf698da25",
+    "inputs": [],
+    "name": "domainSeparator",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "domainSeparator()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x84b0196e",
+    "inputs": [],
+    "name": "eip712Domain",
+    "outputs": [
+      {
+        "internalType": "bytes1",
+        "name": "fields",
+        "type": "bytes1"
+      },
+      {
+        "internalType": "string",
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "internalType": "string",
+        "name": "version",
+        "type": "string"
+      },
+      {
+        "internalType": "uint256",
+        "name": "chainId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "verifyingContract",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "salt",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "extensions",
+        "type": "uint256[]"
+      }
+    ],
+    "signature": "eip712Domain()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xf2f72e79",
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "artistId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "account",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "share",
+            "type": "uint32"
+          }
+        ],
+        "internalType": "struct ISplitWallet.Payee[]",
+        "name": "payees",
+        "type": "tuple[]"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "salt",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "forfeit",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "signature": "forfeit((uint256,address,uint32)[],bytes32,address,uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xce5570ec",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      }
+    ],
+    "name": "isWallet",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "isWallet(address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x77099b02",
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "artistId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "account",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "share",
+            "type": "uint32"
+          }
+        ],
+        "internalType": "struct ISplitWallet.Payee[]",
+        "name": "payees",
+        "type": "tuple[]"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "salt",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "mark",
+    "outputs": [],
+    "signature": "mark((uint256,address,uint32)[],bytes32,address,uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x43350bf1",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "markOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "target",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "markedAt",
+        "type": "uint256"
+      }
+    ],
+    "signature": "markOf(address,address,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x6739afca",
+    "inputs": [],
+    "name": "network",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "network()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x1647795e",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "nonce",
+        "type": "uint256"
+      }
+    ],
+    "name": "nonceUsed",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "nonceUsed(address,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xe37d1ff4",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      }
+    ],
+    "name": "observed",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "observed(address,address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x152a6650",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      }
+    ],
+    "name": "recordedObserved",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "recordedObserved(address,address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x122d9ba3",
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "artistId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "account",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "share",
+            "type": "uint32"
+          }
+        ],
+        "internalType": "struct ISplitWallet.Payee[]",
+        "name": "payees",
+        "type": "tuple[]"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "salt",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "releasable",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "releasable((uint256,address,uint32)[],bytes32,address,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x31216eb8",
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "artistId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "account",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "share",
+            "type": "uint32"
+          }
+        ],
+        "internalType": "struct ISplitWallet.Payee[]",
+        "name": "payees",
+        "type": "tuple[]"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "salt",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "release",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "signature": "release((uint256,address,uint32)[],bytes32,address,uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x3ed49389",
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "wallet",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "asset",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "payee",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "account",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "recipient",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "amount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "nonce",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "deadline",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct IReleaseVerifier.Authorization",
+        "name": "authorization",
+        "type": "tuple"
+      }
+    ],
+    "name": "releaseDigest",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "releaseDigest((address,address,uint256,address,address,uint256,uint256,uint256))",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x5e1e3868",
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "artistId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "account",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "share",
+            "type": "uint32"
+          }
+        ],
+        "internalType": "struct ISplitWallet.Payee[]",
+        "name": "payees",
+        "type": "tuple[]"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "salt",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "recipient",
+        "type": "address"
+      }
+    ],
+    "name": "releaseTo",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "signature": "releaseTo((uint256,address,uint32)[],bytes32,address,uint256,address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x00324607",
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "artistId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "account",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "share",
+            "type": "uint32"
+          }
+        ],
+        "internalType": "struct ISplitWallet.Payee[]",
+        "name": "payees",
+        "type": "tuple[]"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "salt",
+        "type": "bytes32"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "wallet",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "asset",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "payee",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "account",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "recipient",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "amount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "nonce",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "deadline",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct IReleaseVerifier.Authorization",
+        "name": "authorization",
+        "type": "tuple"
+      },
+      {
+        "internalType": "bytes",
+        "name": "signature",
+        "type": "bytes"
+      }
+    ],
+    "name": "releaseWithAuthorization",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "signature": "releaseWithAuthorization((uint256,address,uint32)[],bytes32,(address,address,uint256,address,address,uint256,uint256,uint256),bytes)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xe534df52",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "released",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "released(address,address,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x04f3bcec",
+    "inputs": [],
+    "name": "resolver",
+    "outputs": [
+      {
+        "internalType": "contract IArtistPayoutResolver",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "resolver()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x05c1ee20",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "nonce",
+        "type": "uint256"
+      }
+    ],
+    "name": "revokeNonce",
+    "outputs": [],
+    "signature": "revokeNonce(uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x08e9648f",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      }
+    ],
+    "name": "totalReleased",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "totalReleased(address,address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x636cb6b3",
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "artistId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "account",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "share",
+            "type": "uint32"
+          }
+        ],
+        "internalType": "struct ISplitWallet.Payee[]",
+        "name": "payees",
+        "type": "tuple[]"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "salt",
+        "type": "bytes32"
+      }
+    ],
+    "name": "walletFor",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "walletFor((uint256,address,uint32)[],bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x30cdfa52",
+    "inputs": [],
+    "name": "walletInitCodeHash",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "walletInitCodeHash()",
+    "stateMutability": "view",
+    "type": "function"
+  }
+]

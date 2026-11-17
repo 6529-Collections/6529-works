@@ -1,0 +1,15 @@
+[
+  {
+    "id": "0xb5fba74b",
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "role",
+        "type": "uint64"
+      }
+    ],
+    "name": "UnknownRole",
+    "signature": "UnknownRole(uint64)",
+    "type": "error"
+  }
+]

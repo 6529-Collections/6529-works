@@ -1,0 +1,130 @@
+{
+  "structs": {
+    "struct PackageRegistry.Package": [
+      {
+        "label": "status",
+        "offset": 0,
+        "slot": 0,
+        "type": "enum IPackageRegistry.PackageStatus"
+      },
+      {
+        "label": "signer",
+        "offset": 1,
+        "slot": 0,
+        "type": "address"
+      },
+      {
+        "label": "epoch",
+        "offset": 21,
+        "slot": 0,
+        "type": "uint64"
+      },
+      {
+        "label": "evidenceHash",
+        "offset": 0,
+        "slot": 1,
+        "type": "bytes32"
+      }
+    ]
+  },
+  "variables": [
+    {
+      "contract": "PackageRegistry",
+      "label": "_authority",
+      "offset": 0,
+      "slot": 0,
+      "type": "address"
+    },
+    {
+      "contract": "PackageRegistry",
+      "label": "_consumingSchedule",
+      "offset": 20,
+      "slot": 0,
+      "type": "bool"
+    },
+    {
+      "contract": "PackageRegistry",
+      "label": "_nameFallback",
+      "offset": 0,
+      "slot": 1,
+      "type": "string"
+    },
+    {
+      "contract": "PackageRegistry",
+      "label": "_versionFallback",
+      "offset": 0,
+      "slot": 2,
+      "type": "string"
+    },
+    {
+      "contract": "PackageRegistry",
+      "label": "verifier",
+      "offset": 0,
+      "slot": 3,
+      "type": "contract ICurationVerifier"
+    },
+    {
+      "contract": "PackageRegistry",
+      "label": "stream",
+      "offset": 0,
+      "slot": 4,
+      "type": "address"
+    },
+    {
+      "contract": "PackageRegistry",
+      "label": "_killEpoch",
+      "offset": 20,
+      "slot": 4,
+      "type": "uint64"
+    },
+    {
+      "contract": "PackageRegistry",
+      "label": "editions",
+      "offset": 0,
+      "slot": 5,
+      "type": "address"
+    },
+    {
+      "contract": "PackageRegistry",
+      "label": "_verifierCodeHash",
+      "offset": 0,
+      "slot": 6,
+      "type": "bytes32"
+    },
+    {
+      "contract": "PackageRegistry",
+      "label": "_packages",
+      "offset": 0,
+      "slot": 7,
+      "type": "mapping(bytes32 => struct PackageRegistry.Package)"
+    },
+    {
+      "contract": "PackageRegistry",
+      "label": "_acceptedAs",
+      "offset": 0,
+      "slot": 8,
+      "type": "mapping(bytes32 => mapping(address => uint256))"
+    },
+    {
+      "contract": "PackageRegistry",
+      "label": "_moveNonces",
+      "offset": 0,
+      "slot": 9,
+      "type": "mapping(uint256 => mapping(uint256 => uint256))"
+    },
+    {
+      "contract": "PackageRegistry",
+      "label": "_retired",
+      "offset": 0,
+      "slot": 10,
+      "type": "mapping(address => bool)"
+    },
+    {
+      "contract": "PackageRegistry",
+      "label": "_killedAt",
+      "offset": 0,
+      "slot": 11,
+      "type": "mapping(address => uint64)"
+    }
+  ]
+}

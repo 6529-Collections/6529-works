@@ -1,0 +1,59 @@
+[
+  {
+    "id": "0xd2e7f335",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      }
+    ],
+    "name": "TokenBalanceMismatch",
+    "signature": "TokenBalanceMismatch(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xdd6e753a",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes4",
+        "name": "selector",
+        "type": "bytes4"
+      }
+    ],
+    "name": "TokenCallFailed",
+    "signature": "TokenCallFailed(address,bytes4)",
+    "type": "error"
+  },
+  {
+    "id": "0x00609487",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "gasLimit",
+        "type": "uint256"
+      }
+    ],
+    "name": "TokenInsufficientGas",
+    "signature": "TokenInsufficientGas(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x1373f626",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      }
+    ],
+    "name": "TokenReadFailed",
+    "signature": "TokenReadFailed(address)",
+    "type": "error"
+  }
+]

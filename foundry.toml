@@ -22,6 +22,9 @@ via_ir = false
 # ADR 0001: CBOR metadata with an IPFS hash so Sourcify/Etherscan report exact matches.
 bytecode_hash = "ipfs"
 cbor_metadata = true
+# The storage layout goes into each artifact for tools/check_snapshots.py. It is an extra
+# compiler output only: the bytecode and the metadata hash are unchanged.
+extra_output = ["storageLayout"]
 # Read-only access to the committed deployment configuration (config/) and test fixtures
 # (test/fixtures/: the CC0 legal code the deploy stores), and read-write access to deployment
 # records only (deployments/, written by script/Deploy.s.sol).
@@ -45,9 +48,14 @@ depth = 128
 fail_on_revert = true
 show_metrics = true
 
-# Nightly: every stateful invariant suite, longer and deeper than CI runs it:
-#   FOUNDRY_PROFILE=deep forge test --match-test "invariant_"
-# Only the campaign changes; the compiler settings are the default profile's.
+# Nightly (nightly.yml): every stateful invariant suite, longer and deeper than CI runs it,
+# and every fuzz test at 10,000 runs:
+#   FOUNDRY_PROFILE=deep forge test --match-test "^invariant"
+#   FOUNDRY_PROFILE=deep forge test --no-match-test "^invariant" --no-match-path "test/fork/*"
+# Only the campaigns change; the compiler settings are the default profile's.
+[profile.deep.fuzz]
+runs = 10000
+
 [profile.deep.invariant]
 runs = 2000
 depth = 256
