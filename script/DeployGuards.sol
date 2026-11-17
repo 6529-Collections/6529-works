@@ -78,6 +78,8 @@ library DeployGuards {
 
     /// @notice The genesis file is the committed example, whose holders are all placeholders.
     error ExampleGenesisOffAnvil();
+    /// @notice Off anvil, the genesis file names a brake: none is installed at launch.
+    error BrakeAtLaunch(address brake);
     error PlaceholderHolder(string role, address account);
     /// @notice A holder is a system contract, a precompile-range address, the CREATE2 deployer,
     ///         Permit2 or the delegation contract: no key can act for it.
@@ -143,6 +145,15 @@ library DeployGuards {
 
     // ------------------------------------------------------------------ the genesis file
 
+    /// @notice Off anvil, the genesis file names no brake, or the zero address: no brake is
+    ///         installed at launch (the network may install one later, at its 7-day class).
+    ///         Checked on the genesis file only, never on a later epoch's file.
+    function checkNoBrake(string memory json) internal view {
+        if (!vm.keyExistsJson(json, ".brake")) return;
+        address brake = vm.parseJsonAddress(json, ".brake");
+        if (brake != address(0)) revert BrakeAtLaunch(brake);
+    }
+
     /// @notice Off-anvil checks of the genesis file alone: not the example itself, and every
     ///         account reachable (M-1).
     ///         - The network address (the single authority; until the TDH bridge exists, one
@@ -150,8 +161,8 @@ library DeployGuards {
     ///           `getThreshold()` of at least `MIN_THRESHOLD`, a `getOwners()` list of keys
     ///           without code, a proxy pointing to one of `singletons` (a canonical Safe
     ///           singleton, with its code hash), no enabled module and no transaction guard.
-    ///         - The brake, when one is named (none at launch), and every holder may not be a
-    ///           placeholder or a system address; no holder names a network role.
+    ///         - Every holder may not be a placeholder or a system address; no holder names a
+    ///           network role. (The genesis brake is refused by `checkNoBrake`.)
     ///         - At least `MIN_CURATION_SIGNERS` curation signers. `GovernanceConfig` rejects
     ///           duplicate grants, so the count is of distinct accounts.
     function checkHolders(

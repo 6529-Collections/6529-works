@@ -154,6 +154,7 @@ contract Deploy is ScriptIO {
         if (!r.local) {
             (address[] memory singletons, bytes32[] memory codehashes) = safeSingletons();
             DeployGuards.checkHolders(r.json, _read(EXAMPLE_GENESIS), singletons, codehashes);
+            DeployGuards.checkNoBrake(r.json);
         }
         if (block.chainid == DeployGuards.MAINNET_CHAIN_ID) {
             DeployGuards.checkRoleGroups(r.json, msg.sender);
@@ -397,7 +398,6 @@ contract Deploy is ScriptIO {
         vm.serializeString(root, "manifestPath", r.manifestPath);
         vm.serializeBytes32(root, "cc0TextFileId", d.cc0TextFileId);
         vm.serializeBytes32(root, "cc0TextSha256", sha256(r.p.cc0Text));
-        vm.serializeString(root, "pendingLanes", _pending());
         vm.serializeString(root, "standIns", _standIns(r.local));
         vm.serializeBool(root, "placeholders", r.local);
         // A mock is anything without the canonical code: the official Sepolia deployment is not.
@@ -454,11 +454,6 @@ contract Deploy is ScriptIO {
                 contracts, names[i], vm.serializeBytes32(names[i], "codehash", a.codehash)
             );
         }
-    }
-
-    /// @dev Lanes not deployed yet: none since Editions (#14) merged.
-    function _pending() internal pure returns (string[] memory pending) {
-        pending = new string[](0);
     }
 
     /// @dev Protocol contracts replaced by stand-ins: none since the renderer (#20) merged.
