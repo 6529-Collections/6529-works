@@ -20,10 +20,12 @@ A change to a role, a delay class or a wiring call is a change to this file, mad
 
 | Key | Contents |
 | --- | --- |
-| `roles` | Every role in `Roles.sol`, with its ID, execution delay and grant delay, and whether a guardian may suspend its holders (`suspendable`, `Roles.isSuspendable`). |
-| `holders` | `cfg.grants`: hot and cold admin Safes (the cold one ADMIN only, 3-of-5 recommended, with signers distinct from the hot admin's and the guardians'), three guardian Safes (`GUARDIAN` and `PAUSER` only, 2-of-3 each), two curation signers, and one key each for storage, platform and curator. Off anvil the deploy script requires at least two admin Safes and three guardian Safes, each with a threshold of at least 2, owners that are plain keys, a canonical Safe 1.3.0 or 1.4.1 singleton, no module and no guard, and no signer shared between any two of the admin and guardian Safes. |
+| `network` | The single authority (owner, 16 Nov): until the TDH bridge exists, one 6529 Safe. Every network role (`network: true` in `roles`, `Roles.isNetworkRole`) answers for this address alone; the configurator proposes it and it calls `acceptNetwork()`. Off anvil the deploy script requires a deployed Safe with a threshold of at least 2, owners that are plain keys, a canonical Safe 1.3.0 or 1.4.1 singleton, no module and no guard. |
+| `brake` | Optional, and zero or absent at genesis: off anvil the deploy script refuses a genesis brake (`BrakeAtLaunch`). The network may set one later (`setBrake`, 7 days). |
+| `roles` | Every role in `Roles.sol`, with its ID, execution class and delay, grant delay, and `network` (true for the roles only the `network` address holds). |
+| `holders` | `cfg.grants`: operational keys only, three pauser keys, two curation signers, and one key each for storage, platform and curator. Nobody can be granted a network role. Off anvil the deploy script refuses placeholder and system addresses, a holder of a network role and fewer than two curation signers; on mainnet also the deployer as network or holder, and one account in two of the groups network, pausers and curation signers. |
 | `peers` | Ungoverned addresses that wiring passes as arguments, including the manager itself, the epoch-0 manifest's subject. |
-| `manager` | The manager's own functions beyond its OpenZeppelin base, which check the caller's role themselves: the guardians' `suspend`, and the `isSuspended` view. `tools/check_genesis.py` requires every added function to be listed. |
+| `manager` | The manager's own functions beyond its OpenZeppelin base, which check the caller themselves: `transferNetwork` and `setBrake` (ADMIN, the network at 7 days), and the open `acceptNetwork` (the pending network) and `brakeOnce` (the brake). `tools/check_genesis.py` requires every added function to be listed. |
 | `contracts` | `cfg.targets`, per contract. `artifact` is the compiled ABI the entries are checked against. `implementation` is the contract on `main`, or null while its lane is pending. `functions` lists the governed selectors, each with its role, delay class and delay. `genesisOnly` lists one-shot binds that stay unmapped (`ADMIN`) and are wired. `deferred` lists restricted functions that are neither mapped nor wired in v1. |
 | `wiring` | The genesis calls `configure` executes as zero-delay admin before mapping any selector: the one-shot binds, the admitted minters, the sale targets and the epoch-0 governance manifest. |
 | `initialInstalls` | Which initial settings are constructor arguments and which are wiring (below). |
@@ -60,10 +62,10 @@ The deploy script follows one rule:
   - the sale adapters' targets (`setTarget`);
   - each product's first default currency (`setDefaultCurrency`, ETH for `PRODUCT_STREAM`,
     `PRODUCT_EDITIONS` and `PRODUCT_FEDERATED`): `EnglishAuction.start` reads it, and the
-    setter is otherwise a 14-day FUNDS_SETTER action;
+    setter is otherwise a 3-day FUNDS_SETTER action;
   - the ETH opening bid of 0.05 ETH that the English auction locks at start
     (`AssetAllowlist.setOpeningBid(ETH, 1, 0.05 ether)`, owner decision 19; ETH is at revision 1
-    from its admission at deployment), later a 48-hour PARAMETER_SETTER action;
+    from its admission at deployment), later a 24-hour PARAMETER_SETTER action;
   - the federation's first configuration ([ADR 0008](../docs/adr/0008-federation.md)): the
     English auction's `setFederationRegistry`, and the federation registry's `setAdapter` (the
     English auction and the federated edition auction) and `approveTemplate` (the two v1
@@ -82,7 +84,7 @@ The deploy script follows one rule:
 
 `ArtistRegistry.bindFederationRegistry` is `genesisOnly`: genesis wires the one-shot bind to
 the deployment's `FederationRegistry` ([ADR 0008](../docs/adr/0008-federation.md)). Replacing
-the registry afterwards is `setFederationRegistry` (SUCCESSOR_SETTER, 30 days), following the
+the registry afterwards is `setFederationRegistry` (SUCCESSOR_SETTER, 7 days), following the
 [replacement procedure](../script/README.md#replacing-the-federation-registry).
 
 ## Checks
@@ -96,7 +98,7 @@ this file (Foundry has read-only access to `./config`) and checks:
   role's class.
 - **Wiring:** every call uses a genesis selector, every genesis-only bind is wired, and no
   deferred entry is.
-- **Guardians:** they hold only `GUARDIAN` and `PAUSER`.
+- **Holders:** they hold operational roles only; network roles answer for `network` alone.
 - **Installation:** the whole configuration, wiring included, installs on a fresh manager
   and reads back with `verify`.
 - **Gas:** the configuration plus the maximum wiring stays under 60% of the EIP-7825 cap.
@@ -122,8 +124,8 @@ not typed by hand. When a lane merges, add its contract's `implementation` and i
 implementation-only setters; the checker fails until they are listed.
 
 **[`tools/gen_role_matrix.py`](../tools/gen_role_matrix.py)** renders this file as the
-[role and permission matrix](../docs/audit/roles.md): every mapped selector with its role, delay
-class and whether a guardian can cancel it. After any change here, run
+[role and permission matrix](../docs/audit/roles.md): every mapped selector with its role and
+delay class. After any change here, run
 `python tools/gen_role_matrix.py` and commit the result; CI's Docs job runs it with `--check`
 and fails if the matrix is stale. It also checks that every selector is the keccak-256 of its
 signature and that every delay matches its role.
