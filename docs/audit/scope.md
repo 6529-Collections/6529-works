@@ -35,24 +35,24 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 | --- | --- | ---: | ---: | ---: | ---: |
 | `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 789 | 22,722 | 28,914 | **1,854** |
 | `StreamViews` (created by `Stream`'s constructor) | [`src/stream/StreamViews.sol`](../../src/stream/StreamViews.sol) | 79 | 4,110 | 4,138 | 20,466 |
-| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 735 | 22,921 | 36,018 | 1,655 |
+| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 736 | 22,926 | 36,023 | 1,650 |
 | `WorkDelivery` (created by `WorkRecords`' constructor; replaceable) | [`src/stream/WorkDelivery.sol`](../../src/stream/WorkDelivery.sol) | 203 | 9,283 | 9,708 | 15,293 |
 | `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 498 | 19,899 | 21,728 | 4,677 |
-| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 873 | 23,711 | 26,914 | 865 |
+| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 874 | 23,721 | 26,924 | 855 |
 | `EnglishAuctionLens` | [`src/sales/EnglishAuctionLens.sol`](../../src/sales/EnglishAuctionLens.sol) | 345 | 7,787 | 8,094 | 16,789 |
-| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 905 | 21,699 | 26,005 | 2,877 |
+| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 905 | 21,696 | 26,002 | 2,880 |
 | `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 901 | 23,003 | 23,369 | 1,573 |
-| `SaleStarter` (stateless helper for the network's keeper) | [`src/sales/SaleStarter.sol`](../../src/sales/SaleStarter.sol) | 55 | 5,872 | 5,900 | 18,704 |
+| `SaleStarter` (stateless helper for the network's keeper) | [`src/sales/SaleStarter.sol`](../../src/sales/SaleStarter.sol) | 57 | 5,956 | 5,984 | 18,620 |
 
 ### Federation
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
 | `FederatedStream` (a template: each artist deploys a full copy) | [`src/federated/FederatedStream.sol`](../../src/federated/FederatedStream.sol) | 579 | 23,949 | 26,094 | 627 |
-| `FederatedEditions` (a template: the pair's ERC-1155) | [`src/federated/FederatedEditions.sol`](../../src/federated/FederatedEditions.sol) | 226 | 15,705 | 17,310 | 8,871 |
+| `FederatedEditions` (a template: the pair's ERC-1155) | [`src/federated/FederatedEditions.sol`](../../src/federated/FederatedEditions.sol) | 230 | 15,965 | 17,570 | 8,611 |
 | `FederatedDeployer` (one per template version, ownerless; genesis deploys two, which hold the creation code in `SSTORE2` data contracts and record every copy they create) | [`src/federated/FederatedDeployer.sol`](../../src/federated/FederatedDeployer.sol) | 49 | 1,425 | 2,398 | 23,151 |
-| `FederationRegistry` (replaceable) | [`src/federated/FederationRegistry.sol`](../../src/federated/FederationRegistry.sol) | 270 | 11,042 | 12,076 | 13,534 |
-| `FederatedEditionAuction` (replaceable) | [`src/federated/FederatedEditionAuction.sol`](../../src/federated/FederatedEditionAuction.sol) | 94 | 22,235 | 26,039 | 2,341 |
+| `FederationRegistry` (replaceable) | [`src/federated/FederationRegistry.sol`](../../src/federated/FederationRegistry.sol) | 255 | 10,536 | 11,556 | 14,040 |
+| `FederatedEditionAuction` (replaceable) | [`src/federated/FederatedEditionAuction.sol`](../../src/federated/FederatedEditionAuction.sol) | 94 | 22,232 | 26,036 | 2,344 |
 | `FederatedEditionAuctionLens` | [`src/federated/FederatedEditionAuctionLens.sol`](../../src/federated/FederatedEditionAuctionLens.sol) | 119 | 23,700 | 24,015 | 876 |
 
 `FederatedMembership` (abstract, both templates' shared source) and the interfaces
@@ -63,12 +63,12 @@ toward the line budget with the other interfaces.
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | 434 | 16,806 | 18,201 | 7,770 |
+| `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | 435 | 16,891 | 18,286 | 7,685 |
 | `Eip712CurationVerifier` | [`src/curation/Eip712CurationVerifier.sol`](../../src/curation/Eip712CurationVerifier.sol) | 112 | 5,511 | 6,202 | 19,065 |
-| `ArtistRegistry` | [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol) | 617 | 18,823 | 20,063 | 5,753 |
+| `ArtistRegistry` | [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol) | 618 | 18,827 | 20,067 | 5,749 |
 | `ConsolidationAdapter` | [`src/identity/ConsolidationAdapter.sol`](../../src/identity/ConsolidationAdapter.sol) | 52 | 1,335 | 1,646 | 23,241 |
 | `StatementLog` | [`src/records/StatementLog.sol`](../../src/records/StatementLog.sol) | 309 | 11,125 | 12,386 | 13,451 |
-| `VrfEntropyModule` (optional) | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol) | 317 | 11,434 | 13,351 | 13,142 |
+| `VrfEntropyModule` (optional) | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol) | 322 | 11,534 | 13,451 | 13,042 |
 
 ### Economics
 
@@ -78,7 +78,7 @@ toward the line budget with the other interfaces.
 | `AssetAllowlist` | [`src/economics/AssetAllowlist.sol`](../../src/economics/AssetAllowlist.sol) | 151 | 5,137 | 6,153 | 19,439 |
 | `SplitLedger` (deployed under the name `SplitFactory`; also the release verifier) | [`src/economics/SplitLedger.sol`](../../src/economics/SplitLedger.sol) | 371 | 11,069 | 12,067 | 13,507 |
 | `SplitVault` (the 66-byte wallet, one per payee configuration; raw bytecode constants, not a compiled contract) | [`src/economics/SplitVault.sol`](../../src/economics/SplitVault.sol) | 8 | 85 | 135 | 24,491 |
-| `RevenueEscrow` | [`src/economics/RevenueEscrow.sol`](../../src/economics/RevenueEscrow.sol) | 139 | 7,054 | 7,506 | 17,522 |
+| `RevenueEscrow` | [`src/economics/RevenueEscrow.sol`](../../src/economics/RevenueEscrow.sol) | 139 | 7,069 | 7,521 | 17,507 |
 | `ClaimRouter` | [`src/economics/ClaimRouter.sol`](../../src/economics/ClaimRouter.sol) | 148 | 4,102 | 4,421 | 20,474 |
 | `GovernedVault` (deployed twice: `FeeRecipientVault`, `MuseumVault`) | [`src/economics/GovernedVault.sol`](../../src/economics/GovernedVault.sol) | 99 | 5,075 | 5,623 | 19,501 |
 
@@ -164,7 +164,7 @@ are outside this scope, but their use (overrides, hooks, assumptions) is in scop
   reviewers should read them, but they are not deployed.
 - **`script/`:** the deploy library, deploy and verify scripts. They are not deployed, but
   [`DeployGuards.sol`](../../script/DeployGuards.sol) enforces deployment preconditions
-  (the network a bare canonical Safe, a reachable brake if one is named, operational holders
+  (the network a bare canonical Safe, no brake at launch, operational holders
   only, at least two curation signers, committed policy, canonical dependencies on mainnet) that the trust model relies on, and
   [`Verify.s.sol`](../../script/Verify.s.sol) repeats them at readback, so a review of
   the deployment path should include them. [SECURITY.md](../../SECURITY.md) accepts

@@ -21,7 +21,7 @@ attacker's view is the [threat model](threat-model.md); accepted risks are in
 - **One authority, one brake.** One address, `network()`, holds every network role: ADMIN,
   NETWORK, PARAMETER_SETTER, FUNDS_SETTER and SUCCESSOR_SETTER. Nobody can be granted one
   ([GV-1][gv]). An optional brake address can delay a scheduled operation once, by 7 days after
-  its ready time ([GV-5, GV-6][gv]); no brake is installed at launch. Only the scheduler or the
+  its ready time ([GV-5, GV-6][gv]); no brake is installed at launch (Deploy and Verify refuse one in the genesis file off anvil). Only the scheduler or the
   network can cancel an operation ([GV-8][gv]).
 - **Holders.** [`config/genesis.example.json`](../../config/genesis.example.json) is the committed
   policy: it names the network and the operational keys; a deployment may change only the

@@ -194,7 +194,7 @@ returns the digest to sign.
   A frozen account, or one under a pending replacement, cannot sign.
 - **Proof.** `move.signature` is `abi.encodePacked(wallet, signature)`: the signing wallet, then
   its signature. A move the root signs is the cheapest; one a non-root wallet signs reads the
-  delegation contract and costs tens of thousands of gas more (LIM-ID-21).
+  delegation contract and costs about 47,000 gas more (LIM-ID-21).
 - **Signature forms.** 65-byte ECDSA, 64-byte ERC-2098, ERC-1271 (at most 65,536 bytes) and
   EIP-7702 accounts ([SignatureVerifier.sol](../../src/libraries/SignatureVerifier.sol)).
 - **Nonce.** Any unused `uint256`, single use per artist ID. Use them in order from 0: the first
@@ -340,7 +340,9 @@ function startWithBid(
 vault (`createWallet(item.payees, 0)`, checked against the seller the work's terms name) and,
 with a nonzero fee share, its royalty vault, and opens the record (`WorkRecords.openRecord`), all
 in one transaction: if any step fails, nothing happens. It is stateless, holds nothing and has no
-role; `startWithBid` takes `PERMIT2` payments only. The network's keeper starts every 1/1 this
+role; `startWithBid` takes `PERMIT2` payments only and refuses the helper itself as the payer
+(`HelperAsPayer`). A direct start with the same mint data makes `SaleStarter.start` revert; the
+vaults and the record are then created by the permissionless calls. The network's keeper starts every 1/1 this
 way. It is the keeper's rule, not the chain's: `EnglishAuction.start` stays permissionless, and a
 direct start leaves the vaults and the record to later permissionless calls (LIM-CNT-19,
 LIM-ECO-7).
@@ -921,6 +923,9 @@ redirects funds (ECO-29). Plain items pay fixed payees only; a plain item for an
 payee fails. A batch holds at most 50 plain items (`MAX_CLAIMS`) or 20 signed ones
 (`MAX_SIGNED_CLAIMS`), and more revert with `TooManyClaims(count)`
 ([ClaimRouter.sol](../../src/economics/ClaimRouter.sol), ECO-30).
+In a batch, leave out the network's own index for any wallet and asset whose payee is also
+released in the batch: the R11 push already paid the network, so that item releases zero and
+fails (atomic mode reverts the batch; `test_ClaimRouterWithAWalletThatPaysTheNetwork`).
 
 - **Atomic mode** (`continueOnFailure == false`): any failed item reverts the batch with
   `ClaimCallFailed(index, wallet, size, reason)`.

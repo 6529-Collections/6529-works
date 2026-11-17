@@ -51,7 +51,9 @@ where `proof` is `abi.encodePacked(wallet, signature)`. The wallet must act for 
 and must have signed (`SignatureVerifier.InvalidSignature(wallet)` otherwise).
 `requireConsent(accountId, what, proof)` checks a signature of
 `consentDigest(msg.sender, what)`: the EIP-712 `Consent(address subject,bytes32 what)` in this
-registry's domain, good only for the contract that asks. Replay protection is the caller's.
+registry's domain, good only for the contract that asks. A consent has no deadline and no nonce
+(owner, 17 November 2026): it holds until used or until its signing wallet leaves the account
+(LIM-ID-24). Replay protection is the caller's.
 The package registry checks a move signed by the root itself locally (same answer, less gas)
 and asks `requireSigned` for any other wallet.
 
@@ -87,7 +89,7 @@ A payout is never zero, this registry, the package registry, Stream or its Editi
 factory or one of its wallets, or a protocol contract that cannot pull (ERC-165 through
 `ProtocolContracts`). It is checked at registration, staging and execution; a predicted split
 wallet with no code yet passes (LIM-ID-12). While a pending change would move the payout, or
-the account is frozen, `payoutAddress` is zero.
+the account is frozen, `payoutAddress` is zero. On a curated work the lead artist is paid only through its account (artist-resolved payee), so a freeze holds its payout. Collaborators may be fixed payees, and a freeze does not hold those. On federated works the freeze holds artist-resolved payees only; fixed payees chosen by the artist are paid as named.
 
 ### What the consolidation source decides
 

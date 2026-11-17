@@ -146,10 +146,15 @@ Chainlink VRF v2.5 wrapper quotes (`calculateRequestPriceNative`, at the transac
 and forwards the whole payment with the request (`requestRandomWordsInNative`); the network's
 subscription is never used. The draw is keyed by `keccak256(abi.encode(token, contentHash))`, so
 two contracts never share a seed, and is kept, repeated and delivered exactly as a curated draw
-(one outstanding request, the same backoff, the first delivery final). The wrapper delivers
+(one outstanding request, the same backoff rule, the first delivery final). The wrapper delivers
 through the same callback. The network sets the wrapper (`setWrapper`, compare-and-set, code
 hash pinned); with none set, federated requests are refused. `federatedSeedOf(token,
 contentHash)` answers whether the seed is delivered and the seed.
+
+Curated draws and federated draws are kept in separate maps with separate tenures:
+`setCoordinator` restarts only curated backoff, `setWrapper` only federated. A curated item can
+never fill a federated seed, and each setter refuses the other provider's address
+(`test_Vrf_ACuratedDrawNeverFillsAFederatedSeed`, `test_Vrf_SetWrapperLeavesTheCuratedBackoff`).
 
 ### How the seed is read
 

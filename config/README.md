@@ -27,7 +27,6 @@ A change to a role, a delay class or a wiring call is a change to this file, mad
 | `contracts` | `cfg.targets`, per contract. `artifact` is the compiled ABI the entries are checked against. `implementation` is the contract on `main`, or null while its lane is pending. `functions` lists the governed selectors, each with its role, delay class and delay. `genesisOnly` lists one-shot binds that stay unmapped (`ADMIN`) and are wired. `deferred` lists restricted functions that are neither mapped nor wired in v1. |
 | `wiring` | The genesis calls `configure` executes as zero-delay admin before mapping any selector: the one-shot binds, the admitted minters, the sale targets and the epoch-0 governance manifest. |
 | `initialInstalls` | Which initial settings are constructor arguments and which are wiring (below). |
-| `pendingLanes` | Contracts whose implementations are not yet on `main`. |
 | `unusedRoles` | Roles with no v1 selector: `MINTER` (adapters are admitted per token instead) and `KEEPER`. |
 
 ## Sources
@@ -116,7 +115,7 @@ falls back to `ADMIN`. With `--config`, it also checks that copy against this co
   repository yet is reported as pending and passes. It is mapped ahead from its lane's
   branch, so its merge never turns `main` red, and it is checked in full once its source
   lands. Every configured contract is on `main` today, so none is pending. (The JSON's
-  `status` and `pendingLanes` fields are descriptive only; the checker ignores them.)
+  `status` field is descriptive only; the checker ignores it.)
 
 Selectors and wiring calldata are generated from the build artifacts and `cast calldata`,
 not typed by hand. When a lane merges, add its contract's `implementation` and its

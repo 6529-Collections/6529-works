@@ -110,7 +110,7 @@ reviewed a 61-item list of those choices item by item and gave four general dire
 27. The grade tool is removed (O1). The promise card becomes a neutral fact sheet per work with
     no warnings (O2). Documents describe the network's duties as current practice (O3), carry no
     rules that bind future governance (O4), use neutral wording (O5) and match the code (O6).
-    Declarations no longer carry intended renunciations.
+    Declarations no longer carry intended renunciations (confirmed by the owner, 17 November 2026).
 
 ### Fixed values (compiled constants)
 
@@ -145,8 +145,8 @@ the replaceable consolidation source (LIM-ID-20).
   revoked by the network at once; there is no separate suspension.
 - Any class can be shortened by a 7-day remap (stock AccessManager); the 7 days, the brake and
   public logs are what bound it.
-- A start whose move a non-root wallet signed reads the delegation contract and costs more than
-  the start budget; it has its own regression ceiling (LIM-ID-21).
+- A start whose move a non-root wallet signed reads the delegation contract and costs about
+  47,000 gas more (314,199 at steady state); it has its own regression ceiling (LIM-ID-21).
 - Lowering a share moves the royalty receiver to a vault that may not be deployed yet; the
   network deploys it in the same batch.
 
@@ -173,6 +173,32 @@ residual-risk and intended-renunciation tests and the grade schema cases (lane 7
 `VerifyGenesisState` and `DeployV1` checks of seats, recovery and succession (lane 2). The
 invariants these covered are listed in [Invariants](../audit/invariants.md).
 
+## Review fixes (17 November 2026)
+
+An independent review of the pass led to these changes before release:
+
+- Escrow and sale credits start their 180-day clock only when they go from zero; later credits,
+  by anyone, do not move it.
+- A due finalize by someone other than the artist finalizes the record exactly as it stands.
+- `ChangeContested` carries `priorOutcome`; `resolveContested` accepts only a later outcome.
+- `killSignerApprovals` is a network action with no delay; stopping a signer is
+  `disableSigner` and `killSignerApprovals` in one batch.
+- On a curated work the lead artist's account is never a fixed payee, so a freeze holds its
+  payout.
+- `FederatedEditions.createEdition` needs a SOLD master or a bound edition sale; an editions
+  contract mints only while its partner's template is approved.
+- `propagateRevocation` is removed: a revocation acts through `isActive` and `canMint`.
+- Curated and federated VRF draws have separate seed maps and tenures.
+- Deploy and Verify refuse a brake in the genesis file off anvil; `SaleStarter` refuses itself
+  as payer; the deployment record no longer has `pendingLanes`.
+- Documented, not built: a wallet of a frozen or delisted account can open a new account
+  (LIM-ID-23); a newer dispute outcome can void a scheduled resolution (LIM-GV-29); the English
+  auction reads its own economics resolver (LIM-SAL-21).
+
+Decided by the owner on 17 November 2026: an edition is created for any completed 1/1,
+including one that ended with no bid (R16, through the edition sale's `abandon`); collaborator
+consent has no expiry (LIM-ID-24); declarations carry no intended renunciations.
+
 ## Alternatives considered
 
 - Keeping guardians as a brake with seats: rejected by the owner ("once we go to network TDH
@@ -182,6 +208,5 @@ invariants these covered are listed in [Invariants](../audit/invariants.md).
 
 ## Open items
 
-- The R16 reading (the edition is created when the master's sale settled) and whether `abandon`
-  should also settle, for the owner to confirm.
+- Whether `abandon` should also settle in the same call.
 - The interim authority against D67/D98, for the owner.

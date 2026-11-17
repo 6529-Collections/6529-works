@@ -418,7 +418,7 @@ See: [curation](spec/curation.md).
 ### curation signer
 
 A `Roles.CURATION_SIGNER` key whose package approvals the curation verifier accepts. It only
-signs; the network's `disableSigner` (at once) and `killSignerApprovals` (24 hours) stop it.
+signs; the network's `disableSigner` (at once) and `killSignerApprovals` (at once, in the same batch) stop it.
 
 See: [curation](spec/curation.md).
 

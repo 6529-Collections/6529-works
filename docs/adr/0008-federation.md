@@ -272,8 +272,8 @@ After ADR 0007's review fixes:
   48 hours, guardian-vetoable, the vote reference recorded in the artist registry's event.
 - Suspension stops new joins and new works; running sales finish. Revocation and delisting stop
   new sales and end running sales unsold with refunds (the work stays with the template);
-  `propagateRevocation` writes a revoked template's listings DELISTED in the directory, anyone
-  may call it. Nothing touches tokens, ownership, records, vaults or credits.
+  a permissionless call wrote a revoked template's listings DELISTED in the directory (removed
+  by the second pass's review fixes, 17 November 2026: a revocation now writes no listing). Nothing touches tokens, ownership, records, vaults or credits.
 - Exit (`leaveFederation`, the artist, one-way) writes LEFT through the token itself; running
   sales finish (`isActive` serves LEFT); works minted before keep the 90/10 vault; new works pay
   no network share; the artist then admits its own minters.
@@ -494,7 +494,7 @@ alone:
   (`MinterMismatch`), and no minter, the artist's own included, can mint it.
 - **Canonical ledger in the lens.** The federated edition lens refuses a token whose reported
   split ledger is not the economics resolver's split factory before it deploys any wallet.
-- **Bounded batches.** `setStatus` and `propagateRevocation` take at most `MAX_BATCH` (256)
+- **Bounded batches.** `setStatus` (and, until 17 November 2026, the revocation propagation) take at most `MAX_BATCH` (256)
   contracts. The worst element (a cold listed contract written DELISTED) measures about 11,800
   gas after the first (about 16,600 cold), under the 20,000 the bound assumes: 256 x 20,000 =
   5.12M, a third of EIP-7825's 2^24 cap.

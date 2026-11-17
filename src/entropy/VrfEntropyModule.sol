@@ -420,7 +420,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     ///      an undelivered content may be requested from `next` at once, and its repeat count
     ///      restarts. If an earlier coordinator is restored later, its own earlier requests may
     ///      deliver again. Delivered seeds are unaffected. `next` must differ from the current coordinator, have code, not be an
-    ///      EIP-7702 delegated account, be the wrapper, and have the pinned code hash. Switching
+    ///      EIP-7702 delegated account, not be the wrapper, and have the pinned code hash. Switching
     ///      coordinators
     ///      also needs a new subscription: see the README's runbook.
     function setCoordinator(address expected, address next, bytes32 nextCodeHash)

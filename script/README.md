@@ -78,7 +78,7 @@ DEPLOYMENT=deployments/31337/<timestamp>.json \
   recipient and the marketplace owner. The CC0 text is the real one, the committed fixture.
   A `DelegationManagementMock` is deployed first, because the canonical delegation address has
   no code. The record says `"placeholders": true` and marks the mock (`"delegationMock": true`).
-  Its `standIns` and `pendingLanes` are empty.
+  Its `standIns` list is empty.
 - **The network accepts.** `configure` only proposes the genesis file's `network`; nothing is
   governed until that address calls `acceptNetwork()`. With `ACCEPT_NETWORK=1`, `Deploy.s.sol`
   broadcasts the acceptance from the network address itself, for a network account the operator
@@ -217,9 +217,10 @@ anvil the script refuses the genesis file's `network` in these cases:
   the owners' signatures. Disable both before the run, and keep them disabled: Verify
   repeats every check.
 
-The brake, if the file names one, and every holder must be reachable (not a placeholder or a
-system address), and no holder may name a network role (`NetworkRoleHolder`): those are the
-network's alone.
+Off anvil the recorded genesis file names no brake (`BrakeAtLaunch`, checked by
+`DeployGuards.checkNoBrake` in `Deploy.prepare` and again in Verify; a later epoch file may name
+one). Every holder must be reachable (not a placeholder or a system address), and no holder may
+name a network role (`NetworkRoleHolder`): those are the network's alone.
 
 The script cannot check that the owners are the right people, so check the network Safe before
 the run:
@@ -659,8 +660,8 @@ Before the mainnet broadcast, besides the [Sepolia runbook](#sepolia-runbook) st
 
 1. The network Safe exists with the intended signers and threshold; check its owners by hand
    ([Safe pre-flight](#2-safe-pre-flight)).
-2. The genesis configuration names it as `network`, names no brake unless one was decided, and
-   gives only operational roles to holders.
+2. The genesis configuration names it as `network`, names no brake (refused off anvil:
+   `BrakeAtLaunch`), and gives only operational roles to holders.
 3. The curation signer keys are dedicated to signing the published TDH-vote result.
 4. The owner has decided who holds the operational keys (the open item above), and the genesis
    configuration names them.
@@ -716,12 +717,19 @@ The rules themselves are in the [governance spec](../docs/spec/governance.md).
   also the marketplace owner, schedule `setOwner` on Stream and Editions as well (FUNDS_SETTER,
   3 days).
 - **A compromised curation signer.** The network calls the curation verifier's one-way
-  `disableSigner(key)`, at once, and `PackageRegistry.killSignerApprovals(key)` (24 hours), which
-  stops the key's approvals not yet minted (C32). Re-enabling a signer is a 7-day
+  `disableSigner(key)` and `PackageRegistry.killSignerApprovals(key)` in one Safe batch, both at
+  once; the kill stops the key's approvals not yet minted (C32). A kill alone leaves attestations
+  signed before it registrable, and a disable alone leaves registered packages live. Re-enabling a signer is a 7-day
   SUCCESSOR_SETTER action and starts a new curation signer epoch, and so does every new grant
   of the role (`grantCount`), so no earlier approval counts again.
 - **An artist account.** The network can freeze an account at once for 14 days (`freeze`,
   `unfreeze`, C17); while frozen, no wallet acts for it and its payouts are held.
+  The network's monitor watches `ArtistRegistered` for wallets consolidated with a frozen or
+  delisted root and freezes (at once) or delists (24 hours) such a new account (LIM-ID-23).
+- **A contested replacement.** The network holds PLATFORM itself and sends the
+  `DISPUTE_OUTCOME` write and the execution of the scheduled `resolveContested` in one batch: a
+  newer outcome appended in between makes the resolution revert (`OutcomeNotRecorded`,
+  LIM-GV-29).
 
 ### Handing the network over
 
@@ -764,6 +772,14 @@ English auction directly:
 - This is the keeper's rule, not the chain's: `EnglishAuction.start` stays permissionless, and
   anyone holding the artist's signed move can still start a sale directly, leaving the vaults
   and the record to later permissionless calls (LIM-CNT-19, LIM-ECO-7).
+- A direct `EnglishAuction.start` with the same mint data makes `SaleStarter.start` revert. The
+  keeper then calls `createWallet` (seller, and royalty when the share is above zero) and
+  `openRecord` itself; both are permissionless and fully determined.
+- `startWithBid` refuses the helper itself as the payer (`HelperAsPayer`): the bid is paid by
+  the keeper or another account through Permit2.
+- **Claims through the `ClaimRouter`.** In a batch, leave out the network's own index for any
+  wallet and asset whose payee is also released in the batch: the R11 push already paid the
+  network, so that item releases zero and fails (atomic mode reverts the batch).
 
 ### The edition auction keeper
 
@@ -781,7 +797,8 @@ calls ([ADR 0005](../docs/adr/0005-stream-editions-auction.md)):
    by this adapter (LIM-EA-11); a later admitted adapter of the edition's kind still can.
 2. **Create the edition once the 1/1 settles:** `Editions.createEdition(tokenId, item)`. A sale
    with winners settles only once the edition exists (`EditionNotCreated`; LIM-EA-12). If it was
-   missed, `abandon(saleId, abi.encode(item))` creates it from 21 days after the sale's close.
+   missed, `abandon(saleId, abi.encode(item))` creates it from 21 days after the sale's close,
+   for any completed 1/1, including one that ended with no bid (R16; owner, 17 November 2026).
 3. **Settle after the edition close:** call `settle(saleId, order)` until it returns `true`,
    with `order` the keeper's own rest, `settlementOrderFor(saleId, keeper)` (on the adapter or
    its lens), cut to one chunk (16 entries in the call that clears, 96 after) to keep calldata
@@ -800,9 +817,9 @@ calls ([ADR 0005](../docs/adr/0005-stream-editions-auction.md)):
 4. **Optionally push claims** with `claimBidFor(saleId, bidId)`: copies go to the bidder and the
    refund is credited to it.
 5. **Sweep stale credits to the network:** a credit (an outbid refund, a pushed claim's refund, a
-   payout credited after a failed ERC-20 push) not claimed within 180 days of when it was last
-   added to may be sent to the network's fee recipient with `expireCredit(account, currency)` on
-   either auction (`creditExpiresAt` tells when). Push unclaimed edition bids with
+   payout credited after a failed ERC-20 push) not claimed within 180 days of when it last went
+   from zero (later credits do not move that clock) may be sent to the network's fee recipient
+   with `expireCredit(account, currency)` on either auction (`creditExpiresAt` tells when). Push unclaimed edition bids with
    `claimBidFor` first: their refunds then become credits.
 
 ### Replacing one of Stream's dependencies
