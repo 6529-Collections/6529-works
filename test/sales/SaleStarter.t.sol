@@ -6,6 +6,7 @@ import { IStream } from "src/interfaces/IStream.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { PRODUCT_STREAM, WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
+import { Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
 import { SaleStarter } from "src/sales/SaleStarter.sol";
 import { IntegrationBase } from "../integration/IntegrationBase.sol";
 
@@ -53,5 +54,28 @@ contract SaleStarterTest is IntegrationBase {
         starter.start(IEnglishAuction(address(auction)), address(stream), mintData, none);
         assertEq(IStream(address(stream)).totalMinted(), before, "no token was minted");
         assertFalse(splitFactory.isWallet(w.seller), "no vault was deployed");
+    }
+
+    /// @dev C-1: a first bid whose payer is the helper itself is refused: the helper could never
+    ///      claim its refund. Fails without the change: the auction accepts the DIRECT bid with
+    ///      the helper recorded as bidder.
+    function test_StartWithBidRefusesTheHelperAsPayer() public {
+        Work[] memory works = _one(_work(_actor("helperPayerArtist"), collectionId));
+        bytes32 root = _publish(works);
+        bytes memory mintData = _mintData(root, works, 0);
+        uint256 amount = 1 ether;
+        vm.deal(address(this), amount);
+        Payment memory payment = Payment(PaymentMethod.DIRECT, address(starter), amount, 0, 0, "");
+        uint256 before = IStream(address(stream)).totalMinted();
+        vm.expectRevert(SaleStarter.HelperAsPayer.selector);
+        starter.startWithBid{ value: amount }(
+            IEnglishAuction(address(auction)),
+            address(stream),
+            mintData,
+            works[0].media,
+            address(0),
+            payment
+        );
+        assertEq(IStream(address(stream)).totalMinted(), before, "nothing started");
     }
 }
