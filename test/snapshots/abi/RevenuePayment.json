@@ -1,0 +1,28 @@
+[
+  {
+    "id": "0x6faf3090",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      }
+    ],
+    "name": "EscrowAllowanceLeft",
+    "signature": "EscrowAllowanceLeft(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x9700e103",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "gasLimit",
+        "type": "uint256"
+      }
+    ],
+    "name": "PaymentInsufficientGas",
+    "signature": "PaymentInsufficientGas(uint256)",
+    "type": "error"
+  }
+]

@@ -1,0 +1,60 @@
+{
+  "structs": {
+    "struct FederationRegistry.Template": [
+      {
+        "label": "version",
+        "offset": 0,
+        "slot": 0,
+        "type": "uint32"
+      },
+      {
+        "label": "form",
+        "offset": 4,
+        "slot": 0,
+        "type": "enum IFederationRegistry.Form"
+      },
+      {
+        "label": "status",
+        "offset": 5,
+        "slot": 0,
+        "type": "enum FederationRegistry.TemplateStatus"
+      },
+      {
+        "label": "deployer",
+        "offset": 6,
+        "slot": 0,
+        "type": "address"
+      }
+    ]
+  },
+  "variables": [
+    {
+      "contract": "FederationRegistry",
+      "label": "_authority",
+      "offset": 0,
+      "slot": 0,
+      "type": "address"
+    },
+    {
+      "contract": "FederationRegistry",
+      "label": "_consumingSchedule",
+      "offset": 20,
+      "slot": 0,
+      "type": "bool"
+    },
+    {
+      "contract": "FederationRegistry",
+      "label": "_templates",
+      "offset": 0,
+      "slot": 1,
+      "type": "mapping(bytes32 => struct FederationRegistry.Template)"
+    },
+    {
+      "contract": "FederationRegistry",
+      "label": "_adapters",
+      "offset": 0,
+      "slot": 2,
+      "type": "mapping(address => bool)"
+    }
+  ]
+}

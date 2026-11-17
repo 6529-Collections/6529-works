@@ -11,9 +11,49 @@ the behaviour someone thought of. Fuzz and invariant tests find the inputs and c
 sequences nobody thought of. Integration tests catch two correct modules that disagree.
 Oracles catch a fast implementation that drifts from a simple one. Symbolic proofs close
 the input space where it is small enough. Coverage shows what no test reaches, and mutation
-testing shows what the tests reach but do not check.
+testing shows what the tests reach but do not check. [What is not tested](#what-is-not-tested)
+says, plainly, where the layers stop.
+
+> This page is being rewritten for the "all frameworks" testing build of November 2026 (a
+> second fuzzer, Safe fork tests, log replay, real-data vectors, ABI and storage snapshots,
+> rule traceability, stateful proofs). Rows marked *pending* name a layer whose files are not
+> on this branch yet; they are completed, with measured timings, when those parts land.
+
+## Run it
+
+```bash
+forge build
+forge test                                            # every test, invariants at 256 x 128
+forge test --no-match-test "^invariant"               # without the invariant campaigns
+python tools/check_snapshots.py                       # ABI and storage layout, after forge build
+python tools/check_rules.py --uncovered               # every rule names a test that exists
+```
+
+Longer campaigns, as the nightly workflow runs them (10,000 fuzz runs; 2,000 invariant runs of
+256 calls):
+
+```bash
+FOUNDRY_PROFILE=deep forge test --no-match-test "^invariant" --no-match-path "test/fork/*"
+FOUNDRY_PROFILE=deep forge test --match-test "^invariant"
+```
 
 ## Layers
+
+| Layer | Files | What it proves | Run it | Runs |
+| --- | --- | --- | --- | --- |
+| Unit | `test/<module>/*.t.sol` | Every rule of the [specification](../spec/README.md) cites the tests that pin it; every revert by its exact error and arguments; a regression test for every review finding | `forge test --match-path "test/stream/**"` | PR |
+| Property fuzz | `testFuzz_*` beside the unit tests | The same properties over random inputs, 256 runs; 10,000 in the `deep` profile | `forge test --match-test testFuzz` | PR; deep nightly |
+| Stateful invariants | `*Invariant*.t.sol`, `*.invariant.t.sol`, `test/*/invariant/`, with their handlers | The INV rows of [Invariants](../audit/invariants.md) over random call sequences, 256 runs of 128 calls, `fail_on_revert`; 2,000 of 256 in `deep` | `forge test --match-test "^invariant"` | PR; deep nightly |
+| Symbolic | [`test/symbolic/`](../../test/symbolic) | Halmos proofs (`check_*`) of the pure libraries ([below](#symbolic-proofs-halmos)); proofs over the stateful permanent contracts are *pending* | `FOUNDRY_PROFILE=symbolic halmos` | after merge and daily, one job per test contract |
+| Second fuzzer | `test/medusa/` and `medusa.json` (*pending*) | Harnesses with their own model of the rules, run by Medusa and by Forge | *pending* | Forge runner on PR; Medusa nightly |
+| Safe | `test/fork/Safe*.t.sol` (*pending*) | The network, an artist wallet, a payee and a bidder as a real Safe v1.4.1 on a mainnet fork | *pending* | nightly fork job |
+| Log replay | `test/replay/` (*pending*); today the statement log's handler rebuilds its chain from events (INV-DSP-1 to INV-DSP-3) | Every permanent contract's state rebuilt from its logs alone | *pending* | PR |
+| Real data | `test/fixtures/real/`, `tools/make_vectors.py` (*pending*) | Real public records through upload, mint and `tokenURI` | *pending* | PR |
+| ABI and storage snapshots | [`test/snapshots/`](../../test/snapshots), [`tools/check_snapshots.py`](../../tools/check_snapshots.py) | Every `src/` contract's ABI (selectors, topics, errors) and storage layout against committed snapshots ([below](#abi-and-storage-snapshots)) | `python tools/check_snapshots.py` | PR (Build and checks) |
+| Rule traceability | [`tools/check_rules.py`](../../tools/check_rules.py), [`tools/rules-uncovered.txt`](../../tools/rules-uncovered.txt) | Every spec rule names a test that exists, every invariant names its function ([below](#rule-traceability)) | `python tools/check_rules.py --uncovered` | PR (Docs) |
+| Tool self-tests | `tools/test_*.py` | Each checker reports the fault it exists to find | `python -m tools.test_check_rules`, and the same for each `tools/test_*.py` | PR |
+
+The layers that existed before this build, in more detail:
 
 | Layer | Where | What it gives | Run it |
 | --- | --- | --- | --- |
@@ -46,15 +86,15 @@ pins, with the finding's ID in a `/// Regression:` NatSpec line
 | Job | When | What | Time | Required |
 | --- | --- | --- | --- | --- |
 | Contracts | every pull request and push to `main` | the summary of the four jobs below, green only when all four are | seconds, after the last of them | yes |
-| Build and checks | every pull request and push | `forge fmt --check`, `forge build` (from the cached compiler output), the docs facts against the build, the budget gate, the genesis check, the content tooling tests, and the coverage and mutation tools' unit tests | about 3.5 min | through Contracts |
+| Build and checks | every pull request and push | `forge fmt --check`, `forge build` (from the cached compiler output), the docs facts against the build, the ABI and storage snapshots, the budget gate, the genesis check, the content tooling tests, and the snapshot, coverage and mutation tools' unit tests | about 3.5 min (the snapshot check adds about a second) | through Contracts |
 | Tests (unit, fuzz and integration) | every pull request and push | `forge test --no-match-test ^invariant` | about 1 min | through Contracts |
 | Tests (economics invariants) | every pull request and push | the economics invariant suite: 256 runs of depth 128 | about 2 min | through Contracts |
 | Tests (other invariants) | every pull request and push | every other invariant suite: 256 runs of depth 128 | about 7 min | through Contracts |
 | Static analysis | every pull request and push | Slither 0.11.6: no untriaged High or Medium finding | about 1 min | yes |
-| Docs | every pull request and push | relative links and anchors in Markdown, the generated role matrix, and the facts the docs quote from the code | under 1 min | no |
+| Docs | every pull request and push | relative links and anchors in Markdown, the generated role matrix, the facts the docs quote from the code, and rule traceability (`check_rules.py`, which lists the known uncovered rules) | under 1 min | no |
 | Coverage (`.github/workflows/strength.yml`) | every push to `main`, every day at 04:30 UTC, and on demand | `forge coverage` under the lite profile; the per-contract table in the job summary; fails when a contract drops below its floor; uploads `lcov.info` | about 4 min | no (not on pull requests) |
-| Symbolic (Halmos) (`strength.yml`) | as Coverage | every `check_*` in `test/symbolic`, one test contract at a time; fails unless every declared proof passes | about 7 min (31 proofs) | no (not on pull requests) |
-| Nightly (`.github/workflows/nightly.yml`) | every day at 03:30 UTC, and on demand | the invariant suites under the `deep` profile (2,000 runs of depth 256), economics and the others in two jobs of up to 3 hours; the fork tests in `test/fork` against public mainnet and Sepolia endpoints | about an hour | no (scheduled) |
+| Symbolic (Halmos) (`strength.yml`) | as Coverage | one job per `*SymbolicTest` contract in `test/symbolic` (a listing job finds them and fails if a `check_*` sits outside one), each with a 60-minute limit; a job fails unless every proof its contract declares passed | about 7 min in total for the 31 library proofs | no (not on pull requests) |
+| Nightly (`.github/workflows/nightly.yml`) | every day at 03:30 UTC, and on demand | the invariant suites under the `deep` profile (2,000 runs of depth 256), economics and the others in two jobs of up to 3 hours; every fuzz test at 10,000 runs (`deep`, one job of up to 3 hours); one Medusa job of 30 minutes per harness in `test/medusa`, skipped while there is none; the fork tests in `test/fork` (the Safe suites included) against public mainnet and Sepolia endpoints | about an hour for the existing jobs; the deep fuzz run took 10.5 minutes locally on 48 threads shared with other jobs (2,892 tests, 5.9 CPU hours, so roughly an hour and a half on a 4-core runner) and is not yet measured on one; Medusa not yet measured | no (scheduled) |
 | Mutation (`.github/workflows/mutation.yml`) | weekly, Sunday 02:00 UTC, and on demand; one small shard when a push to `main` changes the workflow or the tool | every shard of `tools/mutation.py`, eight jobs at a time, each stopped at a 335-minute budget; the merged report in the run summary, with a row for every planned file; fails, naming the shard or contract, when a planned shard left no results or ran out of its budget, a contract has no floor, or a contract's kill rate drops below its floor | several hours | no (scheduled) |
 
 `forge test` runs in three parts whose filters together select every test exactly once (2,670
@@ -69,6 +109,59 @@ Coverage and the Halmos proofs run after a merge rather than on the pull request
 shared runners for the required checks. A change that may lower coverage or touch a proven
 library should run them locally first (the commands are below); a regression otherwise shows
 on `main`'s next run.
+
+## ABI and storage snapshots
+
+```bash
+forge build
+python tools/check_snapshots.py            # compare
+python tools/check_snapshots.py --update   # rewrite, after an agreed change
+```
+
+Every contract and library declared in `src/` (interfaces and abstract contracts excepted) has
+`test/snapshots/abi/<Name>.json`: each function, event and error with its full ABI entry
+(parameter names, internal types, mutability, indexed flags), its canonical signature, and its
+selector or topic0. Every contract also has `test/snapshots/storage/<Name>.json`: the slot,
+offset, type and declaring contract of each state variable, and of each member of each struct
+stored anywhere in its storage, keyed by the struct's qualified name, with no compiler AST IDs.
+The tool reads the artifacts in `out/`; `extra_output = ["storageLayout"]` in `foundry.toml`
+puts the layout there and changes no bytecode (every artifact's creation and runtime code was
+compared byte for byte before and after the line was added). It fails on any difference, on a
+contract without a snapshot, and on a snapshot whose contract is gone, and it runs in about a
+second. Storage the code addresses itself at fixed slots in assembly is not in the compiler's
+layout: [`StreamLayout.t.sol`](../../test/stream/StreamLayout.t.sol) pins the slots the
+renderer reads. The tool's unit tests plant a renamed parameter, a changed event, a new error, a
+moved slot, a retyped and a shifted struct member, a missing and a stale snapshot, and show each
+fails; on the real tree a parameter renamed in `GovernedVault` and a state variable inserted
+before its destination failed both of its snapshots, and the edit was reverted.
+
+## Rule traceability
+
+```bash
+python tools/check_rules.py --uncovered
+```
+
+Every rule row of `docs/spec/*.md` and every property (`PROP-*`) of
+[Invariants](../audit/invariants.md) must name in its tests cell at least one test function
+(`test_*`, `testFuzz_*`, `invariant_*`, `check_*`, `property_*`; a `*` matches any characters
+and must match at least one) or an invariant or property ID that resolves. A test file alone is
+not a test, and a named test that does not exist fails whatever else the cell names. Every
+invariant (`INV-*`) must name in its Test cell a function that exists: an `invariant_*`
+function, a handler action, or an `afterInvariant` hook. A rule with no test today is listed in
+[`tools/rules-uncovered.txt`](../../tools/rules-uncovered.txt) as `removed` (the row only says
+the rule was removed), `declaration` (an off-chain convention) or `uncovered`, and is reported
+as known uncovered. The list can only shrink: an entry for a rule that now names a test, or for
+an ID the spec does not define, fails the check.
+
+Today 458 rules and 91 invariants resolve (82 before the content store and federation
+campaigns were catalogued as INV-CNT and INV-FED); known uncovered are 6 removed rows,
+the 30 declaration rows (`DCL-*`, whose conventions the Python tests in `tools/conventions/`
+exercise) and 4 live rules: FED-57, FED-58, GV-18 and GV-20. Writing the checker found five rules
+that cited only a test file or an abbreviation (GV-12, GV-15, GV-19, GV-21, ID-16), one property
+that cited only a file (PROP-GAS-5), one invariant whose Test cell named no function (INV-ECO-8),
+and one property citing `test_WorstCase_*` in `ArtistRegistry.t.sol`, which matches no test
+(PROP-GAS-7); the first seven now name the tests that pin them, and the stale citation was
+removed.
 
 ## Coverage
 
@@ -382,3 +475,30 @@ survivors, and only a lying mock of a trusted contract the defensive ones.
 
 1. Coverage and Symbolic report on `main`, after the merge. If the runner queue allows, run
    them on pull requests again and make them required checks.
+
+## What is not tested
+
+To be completed when the other parts of the November 2026 testing build land; each item below
+is true of this branch's base.
+
+- **No external audit.** The project is pre-audit ([SECURITY.md](../../SECURITY.md)).
+- **No stateful proof.** Every Halmos proof is over a pure library, and many are bounded (the
+  scope column above). No proof covers a permanent contract's state, an unbounded history, or
+  256-bit division, and no other prover (Certora, SMTChecker) has been run.
+- **No second fuzzer.** There is no Medusa or Echidna harness. The nightly Medusa job is in
+  place and skips while `test/medusa` holds no harness; Medusa has not run on this repository.
+- **No Safe.** The network's address is a Safe, but no test puts a real Safe in any role (the
+  network, an artist wallet, a payee or a bidder).
+- **Log replay for one contract only.** The statement log's handler rebuilds its chain from
+  events; no other contract's state is rebuilt from its logs.
+- **No real work end to end.** No real public record goes through upload, mint, record and
+  `tokenURI`.
+- **Unmeasured code.** Fourteen implementation files have no mutation floor and nineteen no
+  coverage floor, among them `SplitLedger`, `SplitVault`, `GovernedVault`, `WorkDelivery`,
+  `StreamViews`, `StreamLayout`, `SaleStarter` and the seven federated contracts ([coverage](#coverage), [mutation testing](#mutation-testing)).
+- **Campaign gaps.** Stateful campaigns that do not exist or do not assert that their handler
+  runs are listed in [Invariants: Gaps](../audit/invariants.md#gaps).
+- **Rules without a test.** Four live rules name no test (FED-57, FED-58, GV-18, GV-20); the
+  declaration rules are off-chain conventions ([rule traceability](#rule-traceability)).
+- **Not yet run on a runner.** The deep fuzz job, the Medusa job and the per-contract Halmos
+  matrix are new workflow jobs; each is first proven on its first scheduled or dispatched run.

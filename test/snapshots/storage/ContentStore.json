@@ -1,0 +1,111 @@
+{
+  "structs": {
+    "struct ContentStore.Attestation": [
+      {
+        "label": "validated",
+        "offset": 0,
+        "slot": 0,
+        "type": "uint64"
+      },
+      {
+        "label": "done",
+        "offset": 8,
+        "slot": 0,
+        "type": "bool"
+      }
+    ],
+    "struct ContentStore.File": [
+      {
+        "label": "sha256",
+        "offset": 0,
+        "slot": 0,
+        "type": "bytes32"
+      },
+      {
+        "label": "length",
+        "offset": 0,
+        "slot": 1,
+        "type": "uint64"
+      },
+      {
+        "label": "chunkCount",
+        "offset": 8,
+        "slot": 1,
+        "type": "uint32"
+      },
+      {
+        "label": "hashesPerList",
+        "offset": 12,
+        "slot": 1,
+        "type": "uint16"
+      },
+      {
+        "label": "encoding",
+        "offset": 14,
+        "slot": 1,
+        "type": "uint8"
+      },
+      {
+        "label": "digestKind",
+        "offset": 15,
+        "slot": 1,
+        "type": "uint8"
+      },
+      {
+        "label": "mimeType",
+        "offset": 0,
+        "slot": 2,
+        "type": "string"
+      },
+      {
+        "label": "entries",
+        "offset": 0,
+        "slot": 3,
+        "type": "bytes32[]"
+      },
+      {
+        "label": "otherDigest",
+        "offset": 0,
+        "slot": 4,
+        "type": "bytes32"
+      }
+    ]
+  },
+  "variables": [
+    {
+      "contract": "ContentStore",
+      "label": "_files",
+      "offset": 0,
+      "slot": 0,
+      "type": "mapping(bytes32 => struct ContentStore.File)"
+    },
+    {
+      "contract": "ContentStore",
+      "label": "_attestation",
+      "offset": 0,
+      "slot": 1,
+      "type": "mapping(bytes32 => struct ContentStore.Attestation)"
+    },
+    {
+      "contract": "ContentStore",
+      "label": "chunkPointer",
+      "offset": 0,
+      "slot": 2,
+      "type": "mapping(bytes32 => address)"
+    },
+    {
+      "contract": "ContentStore",
+      "label": "_linked",
+      "offset": 0,
+      "slot": 3,
+      "type": "mapping(bytes32 => uint256)"
+    },
+    {
+      "contract": "ContentStore",
+      "label": "_partAt",
+      "offset": 0,
+      "slot": 4,
+      "type": "mapping(bytes32 => mapping(uint256 => address))"
+    }
+  ]
+}

@@ -1,0 +1,143 @@
+{
+  "structs": {
+    "struct AccessManager.Access": [
+      {
+        "label": "since",
+        "offset": 0,
+        "slot": 0,
+        "type": "uint48"
+      },
+      {
+        "label": "delay",
+        "offset": 6,
+        "slot": 0,
+        "type": "Time.Delay"
+      }
+    ],
+    "struct AccessManager.Role": [
+      {
+        "label": "members",
+        "offset": 0,
+        "slot": 0,
+        "type": "mapping(address => struct AccessManager.Access)"
+      },
+      {
+        "label": "admin",
+        "offset": 0,
+        "slot": 1,
+        "type": "uint64"
+      },
+      {
+        "label": "guardian",
+        "offset": 8,
+        "slot": 1,
+        "type": "uint64"
+      },
+      {
+        "label": "grantDelay",
+        "offset": 16,
+        "slot": 1,
+        "type": "Time.Delay"
+      }
+    ],
+    "struct AccessManager.Schedule": [
+      {
+        "label": "timepoint",
+        "offset": 0,
+        "slot": 0,
+        "type": "uint48"
+      },
+      {
+        "label": "nonce",
+        "offset": 6,
+        "slot": 0,
+        "type": "uint32"
+      }
+    ],
+    "struct AccessManager.TargetConfig": [
+      {
+        "label": "allowedRoles",
+        "offset": 0,
+        "slot": 0,
+        "type": "mapping(bytes4 => uint64)"
+      },
+      {
+        "label": "adminDelay",
+        "offset": 0,
+        "slot": 1,
+        "type": "Time.Delay"
+      },
+      {
+        "label": "closed",
+        "offset": 14,
+        "slot": 1,
+        "type": "bool"
+      }
+    ]
+  },
+  "variables": [
+    {
+      "contract": "WorksAccessManager",
+      "label": "_targets",
+      "offset": 0,
+      "slot": 0,
+      "type": "mapping(address => struct AccessManager.TargetConfig)"
+    },
+    {
+      "contract": "WorksAccessManager",
+      "label": "_roles",
+      "offset": 0,
+      "slot": 1,
+      "type": "mapping(uint64 => struct AccessManager.Role)"
+    },
+    {
+      "contract": "WorksAccessManager",
+      "label": "_schedules",
+      "offset": 0,
+      "slot": 2,
+      "type": "mapping(bytes32 => struct AccessManager.Schedule)"
+    },
+    {
+      "contract": "WorksAccessManager",
+      "label": "_executionId",
+      "offset": 0,
+      "slot": 3,
+      "type": "bytes32"
+    },
+    {
+      "contract": "WorksAccessManager",
+      "label": "network",
+      "offset": 0,
+      "slot": 4,
+      "type": "address"
+    },
+    {
+      "contract": "WorksAccessManager",
+      "label": "pendingNetwork",
+      "offset": 0,
+      "slot": 5,
+      "type": "address"
+    },
+    {
+      "contract": "WorksAccessManager",
+      "label": "brake",
+      "offset": 0,
+      "slot": 6,
+      "type": "address"
+    },
+    {
+      "contract": "WorksAccessManager",
+      "label": "_notBefore",
+      "offset": 0,
+      "slot": 7,
+      "type": "mapping(bytes32 => uint48)"
+    },
+    {
+      "contract": "WorksAccessManager",
+      "label": "_grants",
+      "offset": 0,
+      "slot": 8,
+      "type": "mapping(uint64 => mapping(address => uint32))"
+    }
+  ]
+}

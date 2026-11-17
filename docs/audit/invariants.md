@@ -29,8 +29,14 @@ actions still checks its own effects.
   `afterInvariant` hook, checked at the end of every run).
 - **Non-vacuity.** `test_HandlerReachesEveryPath` (economics),
   `AuctionHandlerCoverage.test_EveryPathRuns`, `AuctionHaltsCoverage.test_HaltPathsRun`,
-  `EditionAuctionInvariantTest.test_EveryActionRuns` replay campaign-shaped sequences and assert
-  that every path the invariants rely on executes.
+  `EditionAuctionInvariantTest.test_EveryActionRuns`,
+  `StreamLifecycleInvariantTest.test_EveryActionRuns`,
+  `StreamStatesInvariantTest.test_EveryTransitionIsReached` and
+  `ContentStoreInvariantTest.test_EveryActionRuns` replay campaign-shaped sequences and assert
+  that every path the invariants rely on executes. The other campaigns have no such test yet
+  ([Gaps](#gaps)).
+- **Traceability.** Every row's Test cell must name a function that exists under `test/`;
+  [`tools/check_rules.py`](../../tools/check_rules.py) checks it in CI.
 - **Running them.** `forge test --match-contract Invariant`; commands and CI jobs are on
   [Build, test and budgets](build-and-test.md).
 
@@ -149,7 +155,7 @@ state, never `releasable`, and measures releases by balance deltas.
 | INV-ECO-5 | Unreleasable dust per wallet and asset (ETH, the blocklist and fee tokens) is at most the payee count minus one. | `invariant_DustIsBounded` | all |
 | INV-ECO-6 | Every escrow credit equals the model, credits sum to `totalOwed` per asset, and the escrow's balance is at least `totalOwed`. | `invariant_EscrowIsSolventAndMatchesTheModel` | `pay`, `deposit`, `flush`, `recover`, `consentToggle`, `expire` |
 | INV-ECO-7 | The claim router holds nothing, and the payer holds no ETH, no allowance to the escrow, and only the tokens of payments the model expected to revert. | `invariant_IntermediariesHoldNothing` | `claimBatch`, `pay` |
-| INV-ECO-8 | Every release, signed release, batch item, payment, deposit, flush and recovery reverts with exactly the predicted error data or moves exactly the predicted amount. | handler check: every action | all |
+| INV-ECO-8 | Every release, signed release, batch item, payment, deposit, flush and recovery reverts with exactly the predicted error data or moves exactly the predicted amount. | handler check: every action (`release`, `releaseTo`, `releaseSigned`, `claimBatch`, `pay`, `deposit`, `flush`, `recover`) | all |
 | INV-ECO-9 | A replayed signed release fails with `NonceAlreadyUsed`, or with `NotPayoutAddress` once the artist's payout changed. | handler check: `replaySigned` | `releaseSigned`, `revokeNonce`, `setArtistPayout` |
 | INV-ECO-10 | Governed recovery moves a split wallet's credit only to its equivalent replacement (same payees, another salt), another account's only to the replacement that account consented to, consuming the consent, and the network's own credits without consent (C19). | handler check: `recover`, `consentToggle` | as named |
 | INV-ECO-11 | A claim batch pays each item its predicted amount, and the recipients' balances rise by exactly the batch total. | handler check: `claimBatch` | as named |
@@ -322,6 +328,45 @@ operations, and renounce roles; refused calls are caught.
 | --- | --- | --- | --- |
 | INV-GV-1 | Exactly one address holds the network roles (`ADMIN`, `NETWORK`, `PARAMETER_SETTER`, `FUNDS_SETTER`, `SUCCESSOR_SETTER`); it is `network()`, it carries each class's delay, and the configurator holds none ([GV-14](../spec/governance.md#rules-and-invariants)). | `invariant_ExactlyOneAddressHoldsTheNetworkRoles` | `transfer`, `accept`, `grantNetworkRole`, `grantOperational`, `brakeAndRun`, `renounce` |
 
+## Content store
+
+[`ContentStoreInvariant.t.sol`](../../test/content/ContentStoreInvariant.t.sol): the test
+contract is its own handler. Real `ContentStore`; seven chunks (two full, three tails, one that
+fits only last) and seven files over them, written again and in any order, registered again,
+with another MIME type over the same chunks, over chunks that break the layout rule, and
+malformed; reads over random ranges. One function asserts the invariants after every fourth
+call (`check_interval = 4`; every call in the `deep` profile); every action checks its own
+outcome at once.
+
+| ID | Invariant | Test | Handler actions |
+| --- | --- | --- | --- |
+| INV-CNT-1 | A chunk's pointer is set by its first write and never changes, and its code is exactly the chunk. | `invariant_contentStore` | `writeChunk` |
+| INV-CNT-2 | A file's ID is the hash of its whole manifest, and its declared length, chunk list, encoding, MIME type and SHA-256 never change. | `invariant_contentStore` | `registerManifest`, `registerMalformed` |
+| INV-CNT-3 | A file is complete exactly when every chunk it names is stored with the length the layout rule gives it, and `missingChunks` lists exactly the others, in order. | `invariant_contentStore` | `writeChunk`, `registerManifest` |
+| INV-CNT-4 | A read returns exactly the bytes written over any range whose chunks are all stored with their layout lengths, and a range that touches a missing or mis-sized chunk never reads. | handler check: `readBack` (`violations`, asserted by `invariant_contentStore`) | `readBack` |
+
+Non-vacuity: `ContentStoreInvariantTest.test_EveryActionRuns`.
+
+## Federation
+
+[`FederationInvariant.t.sol`](../../test/federated/FederationInvariant.t.sol), handler
+`FederationHandler` in the same file, on the wired stack (`FederationBase`). A joined federated
+template and a faulty one, 24 approved items; the handler starts sales, bids, settles, refuses
+closes and reclaims, switches the fault on and off, and delists and relists. One curated 6529
+Stream sale is sold before the campaign. The campaign covers federated sales and money only:
+the federated contracts' own state (FED-16, FED-24, FED-33 and the rest) has unit tests and no
+campaign ([Gaps](#gaps)).
+
+| ID | Invariant | Test | Handler actions |
+| --- | --- | --- | --- |
+| INV-FED-1 | The auction's ETH balance equals every bidder's claimable credit plus the high bid of every unsettled sale. | `invariant_TheAuctionHoldsExactlyCreditsAndLiveBids` | all |
+| INV-FED-2 | The network fee recipient receives exactly its locked share on every sold federated sale, and nothing otherwise. | `invariant_TheNetworkIsPaidItsShareExactlyOnSoldSales` | `settle`, `refuse` |
+| INV-FED-3 | A person holds a federated work only if its sale is SOLD, and then it is the bidder who paid. | `invariant_ABuyerHoldsAFederatedWorkOnlyIfItPaid` | `bid`, `settle`, `refuse` |
+| INV-FED-4 | Federation never touches 6529 Stream (its supply and the curated token's owner) or a curated artist's identity. | `invariant_FederationNeverTouchesCanonicalState` | all |
+| INV-FED-5 | Every sale ends: after each is refused, the auction owes only credits, and INV-FED-1 and INV-FED-2 still hold. | after-campaign: `FederationInvariantTest.afterInvariant` | `refuse` |
+
+The campaign has no handler self-test yet, so its non-vacuity is not asserted.
+
 ## Invariants removed or changed in the second permanence pass
 
 The behaviour these checked was removed or changed by the owner's decisions of 16 November 2026
@@ -396,16 +441,30 @@ Figures: [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table). Rul
 | PROP-GAS-2 | Every measured operation creates exactly its stated number of new storage slots and accounts, at most 6 slots for a steady-state `start` and 7 for `startWithBid` (`START_MAX_SLOTS`, `START_WITH_BID_MAX_SLOTS`), the same for an artist's first start; on a collision of its terms' hashed position, a first start writes one slot more (LIM-GAS-10). | every `test_Gas_*` in `GasReport.t.sol`; [`StreamTermsGrind.t.sol`](../../test/stream/StreamTermsGrind.t.sol) `test_GroundCollisionAddsOneSlotToTheFirstStart` |
 | PROP-GAS-3 | Every other measured operation stays under its Prague test ceiling or regression ceiling. | every `test_Gas_*` in `GasReport.t.sol` |
 | PROP-GAS-4 | The harness's cold-account correction is exact (a `start` from a fully cold state equals the corrected figure after warming every account), adds nothing for accounts already cold, and refuses storage it does not cool. | [`GasHarness.t.sol`](../../test/integration/GasHarness.t.sol) `test_TheColdAccountCorrectionIsExact`, `test_NothingIsAddedForAccountsAlreadyCold`, `test_RequireCooledRefusesStorageItDoesNotCool` |
-| PROP-GAS-5 | The state-growth counter counts a slot once, ignores overwrites, zero-to-zero, reverted writes, out-of-gas and `INVALID` frames and transient storage, and counts `CREATE` and ETH sent to a fresh account or an empty precompile as new accounts. | [`StateGrowth.t.sol`](../../test/helpers/StateGrowth.t.sol) (24 tests) |
+| PROP-GAS-5 | The state-growth counter counts a slot once, ignores overwrites, zero-to-zero, reverted writes, out-of-gas and `INVALID` frames and transient storage, and counts `CREATE` and ETH sent to a fresh account or an empty precompile as new accounts. | [`StateGrowth.t.sol`](../../test/helpers/StateGrowth.t.sol) (24 tests, among them `test_OneNewSlot`, `test_ZeroToZeroIsNotNew`, `test_WriteInARevertedCallIsNotNew`, `test_WriteInAFrameThatRanOutOfGasIsNotNew`, `test_WriteInAFrameThatHitInvalidIsNotNew`, `test_TransientStorageIsNeverASlot`, `test_CreateIsANewAccountWithItsSlots`, `test_EthToAnEmptyPrecompileIsANewAccount`) |
 | PROP-GAS-6 | With every record, media and locator cap filled on the real stack, Stream's `tokenURI` and Editions' `uri` cost at most 8M Prague gas (`TOKEN_URI_BUDGET`) and create no state. | [`TokenUriBudget.t.sol`](../../test/integration/TokenUriBudget.t.sol) `test_Budget_*`; `GasReport.t.sol` `test_Gas_TokenURIBySize`; [`RendererGas.t.sol`](../../test/content/renderer/RendererGas.t.sol) `RendererGasTest`, `RendererGasBudgetTest` |
-| PROP-GAS-7 | Worst-case bounded inputs fit the EIP-7825 cap of 16,777,216 gas in Prague gas, intrinsic and calldata included: claim batches and the largest payee list; mint, `openRecord`, relicense with 16 consents, the longest locator, the preferred-locator scan and `syncOnChain`; `consume` and `registerPackage`; `createEdition`; every `settle` call of the edition auction's worst cases (every step of the widest ladder used, the cap binding at step 0, the longest departure sweep); settlement with every fallback; `stageChange`, `stageOverride` and `refreshStanding` (under half the cap); manifest registration and attestation at `MAX_CHUNKS`; genesis `configure`. | [`GasCap.t.sol`](../../test/economics/GasCap.t.sol), [`StreamTxCap.t.sol`](../../test/stream/StreamTxCap.t.sol), [`PackageRegistryGas.t.sol`](../../test/curation/PackageRegistryGas.t.sol), `Editions.t.sol` `test_Gas_CreateEditionWorstCaseFitsTxCap`, [`EditionAuctionGasReport.t.sol`](../../test/integration/EditionAuctionGasReport.t.sol) `test_Gas_EditionAuction_SettleWorstCase`, `test_Gas_EditionAuction_SettleWorstCase512`, `test_Gas_EditionAuction_SweepChunkWorstCase`, [`EnglishAuctionGas.t.sol`](../../test/sales/auction/EnglishAuctionGas.t.sol) `test_SettleGas_FitsTheTransactionCap`, [`EnglishAuctionHostile.t.sol`](../../test/sales/auction/EnglishAuctionHostile.t.sol) `test_SettleWorstCaseFitsTheFusakaCap`, [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) `test_WorstCase_*`, `ContentStore.t.sol` `test_RegisterManifest_OneCallOf512FitsTheTransactionGasCap`, `Base64Attest.t.sol` `test_Attest_AtMaxChunksEveryCallFitsTheTransactionGasCap`, [`Genesis.t.sol`](../../test/integration/Genesis.t.sol) `test_GenesisConfigureFitsTheTransactionCap`, [`GenesisConfig.t.sol`](../../test/governance/GenesisConfig.t.sol) `test_MaximumWiringFitsTheTransactionGasCap` |
+| PROP-GAS-7 | Worst-case bounded inputs fit the EIP-7825 cap of 16,777,216 gas in Prague gas, intrinsic and calldata included: claim batches and the largest payee list; mint, `openRecord`, relicense with 16 consents, the longest locator, the preferred-locator scan and `syncOnChain`; `consume` and `registerPackage`; `createEdition`; every `settle` call of the edition auction's worst cases (every step of the widest ladder used, the cap binding at step 0, the longest departure sweep); settlement with every fallback; manifest registration and attestation at `MAX_CHUNKS`; genesis `configure`. | [`GasCap.t.sol`](../../test/economics/GasCap.t.sol), [`StreamTxCap.t.sol`](../../test/stream/StreamTxCap.t.sol), [`PackageRegistryGas.t.sol`](../../test/curation/PackageRegistryGas.t.sol), `Editions.t.sol` `test_Gas_CreateEditionWorstCaseFitsTxCap`, [`EditionAuctionGasReport.t.sol`](../../test/integration/EditionAuctionGasReport.t.sol) `test_Gas_EditionAuction_SettleWorstCase`, `test_Gas_EditionAuction_SettleWorstCase512`, `test_Gas_EditionAuction_SweepChunkWorstCase`, [`EnglishAuctionGas.t.sol`](../../test/sales/auction/EnglishAuctionGas.t.sol) `test_SettleGas_FitsTheTransactionCap`, [`EnglishAuctionHostile.t.sol`](../../test/sales/auction/EnglishAuctionHostile.t.sol) `test_SettleWorstCaseFitsTheFusakaCap`, `ContentStore.t.sol` `test_RegisterManifest_OneCallOf512FitsTheTransactionGasCap`, `Base64Attest.t.sol` `test_Attest_AtMaxChunksEveryCallFitsTheTransactionGasCap`, [`Genesis.t.sol`](../../test/integration/Genesis.t.sol) `test_GenesisConfigureFitsTheTransactionCap`, [`GenesisConfig.t.sol`](../../test/governance/GenesisConfig.t.sol) `test_MaximumWiringFitsTheTransactionGasCap` |
 | PROP-GAS-8 | The VRF callback creates no storage slot and, repriced as ADR 0004 models Glamsterdam, uses at most half of `MIN_CALLBACK_GAS` (100,000). | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol) `test_Callback_UsesUnderHalfTheFloorUnderGlamsterdam` |
 
 ## Gaps
 
-What no stateful campaign covers yet. Suites on the real, wired stack are being added in
-[PR #62](https://github.com/6529-Collections/6529-works/pull/62); coverage, mutation testing
-and Halmos proofs are in [Testing](../testing/README.md).
+What no stateful campaign covers yet, as of the second permanence pass. Coverage, mutation
+testing and Halmos proofs are in [Testing](../testing/README.md).
+
+- **No campaign for `WorkDelivery`, `GovernedVault`, or the federated contracts' own state.**
+  `WorkDelivery`'s locators and preferences, a governed vault's destination rule (ECO-41), and
+  `FederatedStream` and `FederatedEditions` state (settlement once by the minting adapter,
+  custody, the royalty rate only falling, no mint before joining or after delisting, sealed
+  supply; FED-5, FED-7, FED-16, FED-17, FED-24, FED-33) have unit tests only. The federation
+  campaign (INV-FED-1 to INV-FED-5) checks sales and money.
+- **Campaigns without a handler self-test.** Only the seven listed under Non-vacuity above
+  assert that their handler's paths run. The Stream, Stream terms, work powers, work-records
+  governance, Editions, package registry, accounts, statement log, VRF entropy, governance,
+  federation and auction refusal campaigns and the mint policy campaign do not, so a handler
+  action that always returns early would go unnoticed.
+- **`stageChange` against the transaction cap.** No test measures the worst-case
+  `ArtistRegistry.stageChange` against the 16,777,216 gas cap (PROP-GAS-7 covers the other
+  worst cases).
 
 - **Refusing payees under the edition auction.** Its campaign pays an ordinary network fee
   recipient and seller wallet; refused payouts through the escrow are unit tests.
@@ -416,8 +475,8 @@ and Halmos proofs are in [Testing](../testing/README.md).
   campaign (INV-STR-12 to INV-STR-14), which drives `renounce`, `setRoyaltyRate` and
   `relicense` (and, since the records lane, `finalize` and `repinRenderer`); the governance
   campaign (INV-STR-17, INV-STR-18) drives delivery, stores and sync around one complete work.
-- **`ContentStore`, `DependencyRegistry` and `Renderer`**: fuzz and unit tests only
-  (PROP-CNT-1, PROP-CNT-2, PROP-RND-1).
+- **`DependencyRegistry` and `Renderer`**: fuzz and unit tests only (PROP-RND-1). The content
+  store has its campaign (INV-CNT-1 to INV-CNT-4) besides PROP-CNT-1 and PROP-CNT-2.
 - **Curation signer changes**: the campaign never disables, re-enables or swaps an
   `Eip712CurationVerifier` signer.
 - **`ConsolidationAdapter`** runs only over a mock delegation contract, in the accounts
@@ -426,9 +485,10 @@ and Halmos proofs are in [Testing](../testing/README.md).
   cancel-and-reschedule case are unit tests (`NetworkAndBrake.t.sol`).
 - **Deployment and readback guards** (`DeployGuards`, `Verify.s.sol`): unit tests only, in
   [`DeployScript.t.sol`](../../test/deploy/DeployScript.t.sol).
-- **The fully wired system.** Every campaign mocks its neighbors; properties that span
-  contracts (an atomic `start`, value conservation through a real Editions mint) are covered
-  by the scenario tests in
+- **The fully wired system.** Most campaigns mock their neighbours. The Stream lifecycle,
+  Stream states, edition auction and federation campaigns run on the wired stack; other
+  properties that span contracts (an atomic `start`, value conservation through a real Editions
+  mint) are covered by the scenario tests in
   [`test/integration/`](../../test/integration/README.md).
 
 ## Differences from the ADRs

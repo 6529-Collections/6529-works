@@ -1,0 +1,261 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "contract IContentStore",
+        "name": "store",
+        "type": "address"
+      },
+      {
+        "internalType": "contract IStatementLog",
+        "name": "log",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "threshold",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "id": "0x5b20679f",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      }
+    ],
+    "name": "BoundedCallShortfall",
+    "signature": "BoundedCallShortfall(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xdc6e43eb",
+    "inputs": [],
+    "name": "RendererInvalidUtf8",
+    "signature": "RendererInvalidUtf8()",
+    "type": "error"
+  },
+  {
+    "id": "0x433e9dcb",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      }
+    ],
+    "name": "RendererNotInlineable",
+    "signature": "RendererNotInlineable(address,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xf1e2abc9",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes4",
+        "name": "selector",
+        "type": "bytes4"
+      }
+    ],
+    "name": "RendererReadFailed",
+    "signature": "RendererReadFailed(address,bytes4)",
+    "type": "error"
+  },
+  {
+    "id": "0xc22443b6",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      }
+    ],
+    "name": "RendererRecordInvalid",
+    "signature": "RendererRecordInvalid(address,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x02461e95",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "threshold",
+        "type": "uint256"
+      }
+    ],
+    "name": "RendererThresholdInvalid",
+    "signature": "RendererThresholdInvalid(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xe22e27eb",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "value",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "length",
+        "type": "uint256"
+      }
+    ],
+    "name": "StringsInsufficientHexLength",
+    "signature": "StringsInsufficientHexLength(uint256,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xc14151f9",
+    "inputs": [],
+    "name": "DEFAULT_INLINE_THRESHOLD",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "DEFAULT_INLINE_THRESHOLD()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x3a6e674c",
+    "inputs": [],
+    "name": "contentStore",
+    "outputs": [
+      {
+        "internalType": "contract IContentStore",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "contentStore()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xd908810d",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      }
+    ],
+    "name": "fullTokenURI",
+    "outputs": [
+      {
+        "internalType": "string",
+        "name": "",
+        "type": "string"
+      }
+    ],
+    "signature": "fullTokenURI(address,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x97a6c315",
+    "inputs": [],
+    "name": "inlineThreshold",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "inlineThreshold()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xe726ef63",
+    "inputs": [],
+    "name": "statementLog",
+    "outputs": [
+      {
+        "internalType": "contract IStatementLog",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "statementLog()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x01ffc9a7",
+    "inputs": [
+      {
+        "internalType": "bytes4",
+        "name": "id",
+        "type": "bytes4"
+      }
+    ],
+    "name": "supportsInterface",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "supportsInterface(bytes4)",
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "id": "0xe9dc6375",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      }
+    ],
+    "name": "tokenURI",
+    "outputs": [
+      {
+        "internalType": "string",
+        "name": "",
+        "type": "string"
+      }
+    ],
+    "signature": "tokenURI(address,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  }
+]
