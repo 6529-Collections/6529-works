@@ -46,7 +46,7 @@ interface IPackageRegistry is IERC165 {
         address indexed verifier,
         address indexed signer
     );
-    /// @notice The guardian revoked an approval; unconsumed items can no longer mint.
+    /// @notice The network revoked an approval; unconsumed items can no longer mint.
     /// @param packageRoot The revoked package root, registered or not.
     /// @param reasonHash The hash of the reason, as the caller passed it.
     event PackageRevoked(bytes32 indexed packageRoot, bytes32 reasonHash);
@@ -66,6 +66,11 @@ interface IPackageRegistry is IERC165 {
     /// @param next The verifier after the change.
     /// @param codeHash The reviewed code hash `next` was pinned to.
     event VerifierSet(address previous, address next, bytes32 codeHash);
+    /// @notice The network stopped every package `signer` approved that was registered before
+    ///         now: their unminted items can no longer mint or open an edition sale.
+    /// @param signer The curation signer.
+    /// @param epoch The kill epoch of this kill: the count of kills so far, this one included.
+    event SignerApprovalsKilled(address indexed signer, uint64 epoch);
     /// @notice A contract was bound under `name` (STREAM or EDITIONS), once.
     /// @param name The binding's name as a `bytes32` string.
     /// @param target The contract bound.
@@ -87,7 +92,7 @@ interface IPackageRegistry is IERC165 {
     error PartyNotAccepted(bytes32 packageRoot, address account);
     /// @notice The parties, payees, kind, seed or edition fields are inconsistent.
     error InvalidItem(bytes32 itemHash);
-    /// @notice The caller is not the active authority of `artistId`.
+    /// @notice The caller is not a wallet of `artistId`'s account now.
     error NotAuthority(uint256 artistId, address caller);
     /// @notice The move nonce was used or revoked.
     error MoveNonceUsed(uint256 artistId, uint256 nonce);
@@ -121,8 +126,7 @@ interface IPackageRegistry is IERC165 {
         external;
     /// @notice Revokes an approval; items not yet consumed can no longer mint. Also pre-revokes
     ///         a root not yet registered (`NONE` to `REVOKED`), which can then never be
-    ///         registered. GUARDIAN role (immediate: a tightening action, for a compromised
-    ///         curation signer).
+    ///         registered. A network action.
     /// @param packageRoot The package root to revoke; an already revoked root reverts with
     ///        `PackageNotApproved`.
     /// @param reasonHash The hash of the public reason, emitted unchecked.
@@ -131,29 +135,39 @@ interface IPackageRegistry is IERC165 {
     ///         party's `Typehashes.PACKAGE_ACCEPTANCE` signature.
     /// @param packageRoot The approved package root to accept.
     /// @param acceptance The party's account, profile fields and signature deadline.
-    /// @param signature The EIP-712 signature of the acceptance: by `acceptance.account` when it
-    ///        has no artist ID yet, otherwise by its artist's active authority.
+    /// @param proof `abi.encodePacked(wallet, signature)`, checked by the artist registry
+    ///        (`IAccounts.requireSigned`): `wallet` is `acceptance.account` when it has no artist
+    ///        ID yet, otherwise any wallet of its account.
     /// @return artistId The party's artist ID (created if new).
     function acceptPackage(
         bytes32 packageRoot,
         PartyAcceptance calldata acceptance,
-        bytes calldata signature
+        bytes calldata proof
     ) external returns (uint256 artistId);
-    /// @notice Revokes one of the caller's unused move nonces. The caller must be the active
-    ///         authority of `artistId` (`IArtistRegistry.activeAuthorityOf`).
+    /// @notice Revokes one of the account's unused move nonces. The caller must be a wallet of
+    ///         `artistId`'s account (`IAccounts.isWallet`).
     /// @param artistId The artist whose move nonce is revoked.
     /// @param nonce The move nonce; a used or revoked one reverts with `MoveNonceUsed`.
     function revokeMove(uint256 artistId, uint256 nonce) external;
     /// @notice Swaps the curation verifier: it must support `ICurationVerifier` (ERC-165), have
     ///         code hash `nextCodeHash`, not be an EIP-7702 delegated account, and never have
     ///         been installed before (a replaced verifier is retired for good).
-    ///         SUCCESSOR_SETTER role, compare-and-set. Registered approvals are unaffected.
+    ///         A network action (7-day class), compare-and-set. Registered approvals stay.
     /// @param expected The verifier the proposer saw; a stale value reverts with
     ///        `ExpectedValueMismatch`.
     /// @param next The new curation verifier.
     /// @param nextCodeHash The reviewed code hash `next` must have.
     function setVerifier(ICurationVerifier expected, ICurationVerifier next, bytes32 nextCodeHash)
         external;
+
+    /// @notice Stops every package `signer` approved and that is registered now: their items
+    ///         not yet minted can no longer mint, and an edition sale can no longer open on them
+    ///         (`IItemApprovals.isApprovedItem`). Packages the signer approves later are not
+    ///         affected, nor attestations signed before and registered after: disable the
+    ///         signer in the verifier for those, in the same batch (C32). A network action with
+    ///         no delay.
+    /// @param signer The curation signer whose registered approvals stop.
+    function killSignerApprovals(address signer) external;
 
     /// @notice The current curation verifier.
     /// @return The verifier `registerPackage` asks.
@@ -169,7 +183,8 @@ interface IPackageRegistry is IERC165 {
     function editions() external view returns (address);
     /// @notice A package root's status, evidence hash and attesting signer.
     /// @param packageRoot The package root.
-    /// @return status NONE, APPROVED or REVOKED.
+    /// @return status NONE, APPROVED or REVOKED (also when its signer's approvals were killed
+    ///         after it was registered).
     /// @return evidenceHash The evidence hash it was registered with, or zero if never registered.
     /// @return signer The curation signer that attested it, or zero if never registered.
     function packageOf(bytes32 packageRoot)
@@ -192,6 +207,11 @@ interface IPackageRegistry is IERC165 {
     /// @param contentHash The content hash.
     /// @return artistId The beneficiary's artist ID, or zero.
     function releasedTo(bytes32 contentHash) external view returns (uint256 artistId);
+    /// @notice The kill epoch of a curation signer's latest kill (`killSignerApprovals`): its
+    ///         packages registered before that epoch no longer authorize.
+    /// @param signer The curation signer.
+    /// @return The epoch, zero if the signer was never killed.
+    function signerKilledAt(address signer) external view returns (uint64);
     /// @notice Whether an artist's move nonce is used or revoked.
     /// @param artistId The artist ID.
     /// @param nonce The move nonce.

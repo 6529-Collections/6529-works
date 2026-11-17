@@ -74,7 +74,7 @@ abstract contract FederationBase is IntegrationBase {
         guardian[0] = FederationRegistry.suspendTemplate.selector;
         _mapRole(reg, successor, Roles.SUCCESSOR_SETTER);
         _mapRole(reg, parameter, Roles.PARAMETER_SETTER);
-        _mapRole(reg, guardian, Roles.GUARDIAN);
+        _mapRole(reg, guardian, Roles.NETWORK);
     }
 
     function _mapRole(address reg, bytes4[] memory selectors, uint64 role) internal {
@@ -122,6 +122,17 @@ abstract contract FederationBase is IntegrationBase {
             d = new FederatedDeployer(creationCode);
             deployerOf[keccak256(creationCode)] = d;
         }
+    }
+
+    /// @dev The network sets one listed contract ACTIVE or DELISTED.
+    function _setListing(address token, IFederationRegistry.Status status) internal {
+        address[] memory tokens = new address[](1);
+        tokens[0] = token;
+        _govern(
+            hotAdmin,
+            address(fedRegistry),
+            abi.encodeCall(fedRegistry.setStatus, (tokens, status, "decision"))
+        );
     }
 
     // ------------------------------------------------------------------ templates
@@ -219,7 +230,8 @@ abstract contract FederationBase is IntegrationBase {
                 artists.registrationDigest(artist, j.profileId, j.profileDocHash, j.deadline)
             );
         }
-        j.consent = _sign(artist, _listingDigest(_listing(token, j.deadline)));
+        j.consent =
+            abi.encodePacked(artist, _sign(artist, _listingDigest(_listing(token, j.deadline))));
     }
 
     /// @dev The EIP-712 digest of a listing consent, computed as a wallet does from the artist
@@ -276,9 +288,19 @@ abstract contract FederationBase is IntegrationBase {
         w.item.edition = EditionTerms(maxCount, address(0), SaleKind.UNIFORM_AUCTION, "");
     }
 
-    /// @dev The mint request an adapter forwards: `abi.encode(FederatedMint(item, media))`.
+    /// @dev The mint request an adapter forwards, for an item naming only the artist:
+    ///      `abi.encode(FederatedMint(item, media, no consents))`.
     function _mintData(Work memory w) internal pure returns (bytes memory) {
-        return abi.encode(IFederatedStream.FederatedMint(w.item, w.media));
+        return _mintData(w, new bytes[](0));
+    }
+
+    /// @dev The mint request with one consent per party after the first.
+    function _mintData(Work memory w, bytes[] memory consents)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encode(IFederatedStream.FederatedMint(w.item, w.media, consents));
     }
 
     function _itemHash(Work memory w) internal pure returns (bytes32) {

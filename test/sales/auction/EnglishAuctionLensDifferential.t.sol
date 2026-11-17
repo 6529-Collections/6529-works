@@ -267,7 +267,6 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
         n = _record(n, abi.encodeCall(IEnglishAuctionFull.economicsResolver, ()));
         n = _record(n, abi.encodeCall(IEnglishAuctionFull.permit2, ()));
         n = _record(n, abi.encodeCall(IEnglishAuctionFull.MAX_PAUSE, ()));
-        n = _record(n, abi.encodeCall(IEnglishAuctionFull.OPENING_BID_FLOORS, ()));
         n = _record(n, abi.encodeCall(IEnglishAuctionFull.PAYOUT_GAS, ()));
         address[4] memory currencies = [ETH, address(usd), address(0xC0FFEE), address(stream)];
         for (uint256 i; i < currencies.length; ++i) {
@@ -351,7 +350,6 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
                 uint32(1 hours + a % 3 days),
                 uint32(1 minutes + (a >> 32) % 1 hours),
                 1_000 + uint32((a >> 64) % 99_000),
-                REFUSAL_DELAY,
                 REFUSAL_GAS
             );
             // forge-lint: disable-end(unsafe-typecast)
@@ -362,9 +360,13 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
             address currency = a % 2 == 0 ? ETH : address(usd);
             uint256 next = (a >> 8) % 2 ether;
             if (lensPass) {
-                (,, uint64 revision) = allowlist.assetConfig(currency);
+                (, uint256 floor, uint64 revision) = allowlist.assetConfig(currency);
+                // R19 removed the allowlist's cap; the pre-lens build keeps 1,000 floors, so
+                // the lens pass skips the bids only that build refuses.
                 vm.prank(setter);
-                try allowlist.setOpeningBid(currency, revision, next) { } catch { }
+                if (next <= floor * 1_000) {
+                    try allowlist.setOpeningBid(currency, revision, next) { } catch { }
+                }
             } else {
                 uint256 current = auction.openingBid(currency);
                 vm.prank(setter);

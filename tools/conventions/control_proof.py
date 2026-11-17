@@ -98,7 +98,7 @@ def issue_challenge(
 @dataclass(frozen=True)
 class Verdict:
     accepted: bool
-    trust: str | None  # "full", "low" (a live, younger consolidation the venue accepts) or None
+    trust: str | None  # "full" when accepted, else None
     step: str  # the DCL-24/25 step that decided
     reason: str
     digest: str | None = None
@@ -120,7 +120,6 @@ def verify_response(
     consolidation: Mapping[str, Any] | None = None,
     freshness_blocks: int = DEFAULT_FRESHNESS_BLOCKS,
     accept_pending_delivery: bool = False,
-    accept_young_consolidation: bool = False,
     ecdsa: eip712.EcdsaVerifier | None = None,
     erc1271: eip712.Erc1271Verifier | None = None,
 ) -> Verdict:
@@ -133,7 +132,8 @@ def verify_response(
     - `ownership` at `B`: for Stream, `{"ownerOf": addr}` and, for the pending-delivery path,
       `{"englishAuction": addr, "pendingDelivery": addr}`; for Editions, `{"balanceOf": int}`.
     - `consolidation` at `B`, from `ArtistRegistry.consolidationSource()`:
-      `{"isEstablished": bool, "effectiveAt": int}`; needed only when holder != signer.
+      `{"isConsolidated": bool}`, the answer of `isConsolidated(holder, signer)`; needed only
+      when holder != signer.
     - `store`: the issued challenges. The challenge is claimed first, in one atomic operation
       that marks the nonce used whatever the outcome (steps 2 and 6), so of two concurrent
       responses with one nonce at most one is checked further; the response's message must then
@@ -147,8 +147,7 @@ def verify_response(
         official_tokens={k.lower(): v for k, v in official_tokens.items()}, block=block,
         head_block=head_block, signer_code=signer_code, ownership=ownership,
         consolidation=consolidation, freshness_blocks=freshness_blocks,
-        accept_pending_delivery=accept_pending_delivery,
-        accept_young_consolidation=accept_young_consolidation, ecdsa=ecdsa, erc1271=erc1271,
+        accept_pending_delivery=accept_pending_delivery, ecdsa=ecdsa, erc1271=erc1271,
     )  # fmt: skip
 
 
@@ -158,7 +157,7 @@ def _refuse(step: str, reason: str, digest: bytes | None = None, path: str | Non
 
 def _verify(document, *, issued, venue, chain_id, now, official_tokens, block, head_block,
             signer_code, ownership, consolidation, freshness_blocks, accept_pending_delivery,
-            accept_young_consolidation, ecdsa, erc1271) -> Verdict:  # fmt: skip
+            ecdsa, erc1271) -> Verdict:  # fmt: skip
     errors = validate(document, "control-proof")
     if errors:
         return _refuse("DCL-23", "not a valid control-proof.v1 document: " + errors[0])
@@ -212,11 +211,6 @@ def _verify(document, *, issued, venue, chain_id, now, official_tokens, block, h
         return Verdict(True, "full", "DCL-24.5", "the holder signed", "0x" + digest.hex(), check.path)
     if consolidation is None:
         return _refuse("DCL-25", "holder is not the signer and no consolidation read was supplied", digest, check.path)
-    if consolidation.get("isEstablished") is True:
-        return Verdict(True, "full", "DCL-25", "established consolidation", "0x" + digest.hex(), check.path)
-    effective_at = consolidation.get("effectiveAt") or 0
-    if effective_at > block["timestamp"]:
-        if accept_young_consolidation:
-            return Verdict(True, "low", "DCL-25", "live, younger consolidation", "0x" + digest.hex(), check.path)
-        return _refuse("DCL-25", "the consolidation is live but not yet established", digest, check.path)
-    return _refuse("DCL-25", "no established two-way consolidation of holder and signer", digest, check.path)
+    if consolidation.get("isConsolidated") is True:
+        return Verdict(True, "full", "DCL-25", "live two-way consolidation", "0x" + digest.hex(), check.path)
+    return _refuse("DCL-25", "no live two-way consolidation of holder and signer", digest, check.path)

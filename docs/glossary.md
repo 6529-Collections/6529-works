@@ -44,7 +44,8 @@ See: [editions and sales](spec/editions-and-sales.md).
 Artist-run token contracts, full copies of the network's templates (Federated Stream, the
 ERC-721; Federated Stream Editions, the pair's ERC-1155), listed in the artist registry's
 directory without curation, selling through the shared [sale adapters](#sale-adapter) at a
-locked 10% network share, earning no TDH ([Federation](spec/federation.md),
+10% network share that the network may only lower, earning no TDH. A listed contract stays
+listed; the network can delist an artist's account ([Federation](spec/federation.md),
 [ADR 0008](adr/0008-federation.md)).
 
 See: [federated README](../src/federated/README.md).
@@ -53,17 +54,18 @@ See: [federated README](../src/federated/README.md).
 
 ### abandonment
 
-The edition auction's exit for a sale that paid nothing and whose master cannot settle or whose
-edition was never created: after its end plus its locked abandonment delay (150 days at launch),
-anyone calls `abandon`, every bid is refunded and the edition sealed at zero (EA-19).
+The edition auction's exit for a sale that cannot settle: from 21 days after its close
+(`ABANDON_DELAY`), anyone calls `abandon`. If the master's primary sale settled, it creates the
+edition and the sale settles as usual; otherwise every bid is refunded and the edition sealed at
+zero (EA-19, R16).
 
 See: [editions and sales](spec/editions-and-sales.md).
 
 ### acceptance
 
-A party's EIP-712 `PackageAcceptance` signature over a package root. An account with no
-[artist ID](#artist-id) signs it itself, creating the identity; otherwise its artist's
-[active authority](#active-authority) signs.
+A party's EIP-712 `PackageAcceptance` signature over a package root, given as a
+[wallet proof](#wallet-proof) by any wallet of its [account](#account). An address with no
+[artist ID](#artist-id) signs it itself, creating the account.
 
 See: [curation](spec/curation.md).
 
@@ -74,18 +76,26 @@ OpenZeppelin's `AccessManager`, the one governance contract: each `restricted` s
 
 See: [governance](spec/governance.md).
 
+### account
+
+A 6529 consolidated account: an artist or a collaborator. Its wallets are its [root](#root)
+and every wallet with a live two-way [consolidation](#consolidation) with the root; all are
+equal, and any of them signs, cancels or contests (`isWallet`).
+
+See: [identity and recovery](spec/identity-and-recovery.md).
+
 ### active authority
 
-The address that may act as an artist now (`activeAuthorityOf`): the [authority](#authority),
-or zero during a [restraint](#restraint).
+The address that acts as an artist where one address is needed, such as a sale's creator
+(`activeAuthorityOf`): the account's [root](#root), or zero while the account is
+[frozen](#freeze) or a [replacement](#replacement) is pending.
 
 See: [identity and recovery](spec/identity-and-recovery.md).
 
 ### admin
 
-A holder of `Roles.ADMIN`, with a 30-day delay: the hot or the cold admin Safe. An executed
-ADMIN grant or revocation lifts a [suspension](#suspension), as does the holder's own
-`renounceRole`.
+`Roles.ADMIN`, held by the [network](#network) alone, with a 7-day delay: the manager's own
+settings (selector maps, `transferNetwork`, `setBrake`) and the genesis bindings.
 
 See: [governance](spec/governance.md).
 
@@ -112,16 +122,16 @@ See: [stream and auctions](spec/stream-and-auctions.md).
 
 ### artist
 
-A [party](#party) with `PartyRole.ARTIST` in a package item, or an identity in the artist
-registry: an [artist ID](#artist-id), [authority](#authority),
+A [party](#party) with `PartyRole.ARTIST` in a package item, or an [account](#account) in the
+artist registry: an [artist ID](#artist-id), [root](#root),
 [payout address](#payout-address) and [profile](#profile).
 
 See: [identity and recovery](spec/identity-and-recovery.md).
 
 ### artist ID
 
-The permanent number of an artist identity, `uint256(uint160(first authority))`. It never
-changes when the authority does.
+The permanent number of an [account](#account), `uint256(uint160(first root))`. It never
+changes when the root does.
 
 See: [identity and recovery](spec/identity-and-recovery.md).
 
@@ -141,8 +151,9 @@ See: [economics and payouts](spec/economics-and-payouts.md).
 
 ### asset allowlist
 
-The governed list of payment currencies (`AssetAllowlist`). A deprecation (GUARDIAN, immediate)
-halts sales and freezes auctions in that currency.
+The governed list of payment currencies (`AssetAllowlist`). A deprecation (the network, at
+once) halts sales and freezes auctions in that currency. An opening bid is bounded only by its
+96-bit field.
 
 See: [economics and payouts](spec/economics-and-payouts.md).
 
@@ -153,8 +164,8 @@ Either a [curation attestation](#curation-attestation) or a
 
 ### authority
 
-The address that signs for an artist identity (`authorityOf`). It is never zero, and a past
-authority maps to its artist forever.
+The registry's name for an account's [root](#root) (`authorityOf`). It is never zero, and a
+past root maps to its artist forever.
 
 See: [identity and recovery](spec/identity-and-recovery.md).
 
@@ -171,6 +182,14 @@ See: [works and storage](spec/works-and-storage.md).
 
 A one-shot contract-to-contract caller link set at genesis, such as `Stream.bindWorkRecords`.
 Bound calls use no [role](#role).
+
+See: [governance](spec/governance.md).
+
+### brake
+
+An optional address that can delay one scheduled network action by 7 days, once
+(`brakeOnce`, `BRAKE_DELAY`). None is installed at launch; the network sets it (`setBrake`,
+7 days).
 
 See: [governance](spec/governance.md).
 
@@ -196,14 +215,6 @@ A split wallet's payee list in its one valid order: 1 to 64 payees (`Splits.MAX_
 shares sum to 100,000, strictly ascending.
 
 See: [economics and payouts](spec/economics-and-payouts.md).
-
-### captured wallet
-
-A [standing](#standing) wallet captured as a canceller when an identity change is staged, at
-most 16 (`Limits.MAX_CANCELLERS`). Its cancel of an [override](#override) is a
-[contest](#contest).
-
-See: [identity and recovery](spec/identity-and-recovery.md).
 
 ### CC0 text
 
@@ -277,8 +288,9 @@ See: [governance](spec/governance.md).
 
 ### consent
 
-An account's signed agreement: an [acceptance](#acceptance), an [amendment](#amendment)
-consent, an identity-change acceptance or an escrow recovery consent.
+An account's signed agreement, given as a [wallet proof](#wallet-proof): an
+[acceptance](#acceptance), an [amendment](#amendment) consent, a collaborator's consent to a
+federated work, or a replacement acceptance.
 
 See: [`Typehashes.sol`](../src/interfaces/types/Typehashes.sol).
 
@@ -293,9 +305,10 @@ See: [declarations and conventions](spec/declarations-and-conventions.md#the-con
 
 ### consolidation
 
-A two-way link between two wallets in the 6529 [delegation contract](#delegation-contract).
-Once at least 30 days old in each direction (`ConsolidationAdapter.MIN_AGE`), it makes an
-[established wallet](#established-wallet).
+A two-way link between two wallets in the 6529 [delegation contract](#delegation-contract)
+(use case 999, all collections). A wallet with a live two-way consolidation with an
+[account](#account)'s [root](#root) acts for the account, with no minimum age
+(`ConsolidationAdapter.isConsolidated`).
 
 See: [identity and recovery](spec/identity-and-recovery.md).
 
@@ -337,9 +350,9 @@ See: [works and storage](spec/works-and-storage.md).
 
 ### contest
 
-A [captured wallet](#captured-wallet)'s cancel of a pending [override](#override), which then
-waits for a TDH vote or lapses after `CONTEST_TIMEOUT` (365 days at genesis, governed within
-compiled bounds and locked at staging; `ArtistRegistry.timer`).
+A wallet's cancel of a pending [replacement](#replacement) during its notice. The replacement
+then runs only if the network upholds it (`resolveContested`, citing a DISPUTE_OUTCOME recorded
+after the contest) within 90 days (`CONTEST_LAPSE`); otherwise it lapses.
 
 See: [identity and recovery](spec/identity-and-recovery.md).
 
@@ -383,7 +396,8 @@ See: [stream and auctions](spec/stream-and-auctions.md).
 ### credit
 
 An amount owed and claimable by pull: refunds and failed payouts on an adapter (`claimable`), or
-failed payments in the [escrow](#escrow) (`owed`).
+failed payments in the [escrow](#escrow) (`owed`). An adapter credit unclaimed for 180 days may
+be sent to the network (`expireCredit`).
 
 See: [buying, bidding and settling](integrators/buying-bidding-settling.md).
 
@@ -404,14 +418,14 @@ See: [curation](spec/curation.md).
 ### curation signer
 
 A `Roles.CURATION_SIGNER` key whose package approvals the curation verifier accepts. It only
-signs; the guardian's `disableSigner` is its kill switch.
+signs; the network's `disableSigner` (at once) and `killSignerApprovals` (at once, in the same batch) stop it.
 
 See: [curation](spec/curation.md).
 
 ### curator
 
 The holder of `Roles.CURATOR`, a zero-delay key that appends curator statements. It does not
-approve packages, and a guardian can [suspend](#suspension) it.
+approve packages; the network grants and revokes it at once.
 
 See: [disputes and statements](spec/disputes-and-statements.md).
 
@@ -424,7 +438,7 @@ See: [economics and payouts](spec/economics-and-payouts.md).
 
 ### currency freeze
 
-An English auction whose locked currency is deprecated: nothing settles, bids revert and the high bidder may withdraw; after 60 days anyone may end it unsold.
+An English auction whose locked currency is deprecated: nothing settles, bids revert and the high bidder may withdraw; after 14 days anyone may end it unsold.
 
 See: [stream and auctions](spec/stream-and-auctions.md#rules-and-invariants) (AUC-25).
 
@@ -446,25 +460,26 @@ See: [editions and sales](spec/editions-and-sales.md#the-cut-step).
 
 ### declarations document
 
-A work's statement of promises the contracts do not record (its conservation floor, custodians,
-citations, intended renunciations), carried as one AUXILIARY media file, so the approved media
-hash fixes it.
+A work's statements that the contracts do not record (its conservation floor, custodians,
+citations, a time capsule, a living-work note), carried as one AUXILIARY media file, so the
+approved media hash fixes it.
 
 See: [declarations and conventions](spec/declarations-and-conventions.md#the-declarations-document).
 
 ### delay class
 
-How long a governed action waits: immediate, standard (48 hours), funds (14 days) or successor
-(30 days) (`Roles.STANDARD`, `FUNDS`, `SUCCESSOR`).
+How long a network action waits: at once (NETWORK), 24 hours (PARAMETER_SETTER), 3 days
+(FUNDS_SETTER) or 7 days (ADMIN, SUCCESSOR_SETTER) (`Roles.DELAY_24H`, `DELAY_3D`, `DELAY_7D`).
+The [brake](#brake), when set, can add 7 days once to a scheduled action.
 
 See: [governance](spec/governance.md).
 
 ### delivery contract
 
-The replaceable contract behind `WorkRecords.delivery()` that holds locators, kinds, preferences
-and the URI grammar (`WorkDelivery` at genesis; replaced by `setDelivery`, SUCCESSOR_SETTER, 30
-days). `WorkRecords` forwards `preferredLocator` to it and serves only a well-formed answer; it can
-change no fact.
+The replaceable contract behind `WorkRecords.delivery()` that holds locators, kinds, preferences,
+dead marks and the URI grammar (`WorkDelivery` at genesis; replaced by `setDelivery`,
+SUCCESSOR_SETTER, 7 days). `WorkRecords` forwards `preferredLocator` to it and serves only a
+well-formed answer; it can change no fact.
 
 See: [works and storage](spec/works-and-storage.md).
 
@@ -520,18 +535,11 @@ See: [disputes and statements](spec/disputes-and-statements.md).
 
 ### dispute pause
 
-The guardian's one pause of a live English auction, at most 7 days (`EnglishAuction.MAX_PAUSE`),
-during which the high bidder may withdraw.
+A pauser's one pause of a live English auction, at most 3 days (`EnglishAuction.MAX_PAUSE`),
+during which the high bidder may withdraw. The network resumes or cancels at any moment of it,
+with no wait.
 
 See: [stream and auctions](spec/stream-and-auctions.md).
-
-### dormancy
-
-`DORMANCY` (365 days at genesis, governed) without the artist's own signed activity, required
-before an ESTATE or LOST_KEY [override](#override), and before any override that moves the payout
-but keeps the authority (`ArtistRegistry.timer`).
-
-See: [identity and recovery](spec/identity-and-recovery.md).
 
 ## E
 
@@ -553,7 +561,8 @@ See: [editions and sales](spec/editions-and-sales.md).
 
 The uniform-price auction that sells an edition's copies (`UniformEditionAuction`): public,
 firm bids of a quantity at a [step](#step-ladder), one [clearing price](#clearing-price), and
-exactly as many copies as it sells. It runs beside the master's 1/1 and closes after it.
+exactly as many copies as it sells. It runs beside the master's 1/1 and closes exactly 15 minutes
+after it (`CLOSE_OFFSET`), or later under its [soft close](#soft-close).
 
 See: [editions and sales](spec/editions-and-sales.md).
 
@@ -579,7 +588,8 @@ See: [ABIs and interface IDs](integrators/abis-and-interface-ids.md).
 
 ### EIP-2612
 
-ERC-20 `permit`, an approval signed off-chain, accepted as a payment method.
+ERC-20 `permit`, an approval signed off-chain. The auctions refuse it as a payment method
+(`InvalidPayment`); ERC-20 bids use DIRECT or [Permit2](#permit2).
 
 See: [buying, bidding and settling](integrators/buying-bidding-settling.md).
 
@@ -684,8 +694,8 @@ See: [reading a work](integrators/reading-a-work.md).
 
 ### errata repin
 
-The only way to change a finalized work's renderer (`WorkRecords.repinRenderer`, 30 days), with
-the lead artist's signature, until the lead artist renounces it (`RENDERER_REPIN`).
+The only way to change a finalized work's renderer (`WorkRecords.repinRenderer`, the network,
+7 days), until the lead artist renounces it (`RENDERER_REPIN`).
 
 See: [rendering and tokenURI](spec/rendering-and-tokenuri.md).
 
@@ -693,32 +703,33 @@ See: [rendering and tokenURI](spec/rendering-and-tokenuri.md).
 
 The revenue escrow (`RevenueEscrow`), which credits a wallet whose payment failed; anyone may
 flush the credit to it. Governed recovery moves a credit only to an equivalent or consented
-replacement.
+replacement (the network's own credits need no consent); a credit unclaimed for 180 days
+becomes the network's (`expire`).
 
 See: [economics and payouts](spec/economics-and-payouts.md).
-
-### established wallet
-
-A wallet consolidated with an account in both directions for at least 30 days. It gains
-[standing](#standing), and, only for a dormant artist (no signed activity for DORMANCY), may stage
-a [standard change](#standard-change), which then waits the override delay.
-
-See: [identity and recovery](spec/identity-and-recovery.md).
 
 ### evidence hash
 
 The hash a curation signer signs with a package root, committing to the published vote and
-rules. An [override](#override) carries one too.
+rules. A [replacement](#replacement) carries one too.
 
 See: [curation](spec/curation.md).
 
 ### execution delay
 
-The delay an AccessManager role holder waits between scheduling a governed call and executing it; every holder of a role carries its class delay.
+The delay the network waits between scheduling a governed call and executing it: its role's
+[delay class](#delay-class).
 
 See: [role and permission matrix](audit/roles.md).
 
 ## F
+
+### fact sheet
+
+A client-generated statement of the facts about one work at one block: what is recorded, and who
+can change what after what delay. Never written on chain; it carries no warnings or ratings.
+
+See: [declarations and conventions](spec/declarations-and-conventions.md#fact-sheet).
 
 ### file ID
 
@@ -736,8 +747,9 @@ See: [works and storage](spec/works-and-storage.md).
 
 ### finalize
 
-The lead artist's `WorkRecords.finalize`, which makes the record immutable and [pins](#pin) the
-current default renderer.
+`WorkRecords.finalize`, which makes the record immutable and [pins](#pin) the current default
+renderer: by the lead artist at any time, or by anyone from 14 days after a finalize notice
+recorded once the primary sale settled (`FINALIZE_NOTICE`).
 
 See: [works and storage](spec/works-and-storage.md).
 
@@ -752,6 +764,13 @@ See: [known limitations](audit/known-limitations.md).
 A split-wallet payee named by `account`. Anyone may release its share to that account.
 
 See: [economics and payouts](spec/economics-and-payouts.md).
+
+### freeze
+
+The network's immediate 14-day stop of an [account](#account) (`freeze`, `FREEZE_PERIOD`): no
+wallet acts and its payouts are held. `unfreeze` ends it early.
+
+See: [identity and recovery](spec/identity-and-recovery.md).
 
 ### fullTokenURI
 
@@ -786,33 +805,20 @@ See: [governance](spec/governance.md).
 ### governed vault
 
 A small governed contract (`GovernedVault`) holding what is paid to it and forwarding it only to a
-destination FUNDS_SETTER sets (14 days, compare-and-set). Genesis deploys two: the network fee
-recipient (`FeeRecipientVault`) and the [6529 Network Museum](#6529-network-museum)
-(`MuseumVault`).
+destination the network sets (compare-and-set). Genesis deploys two: the network fee recipient
+(`FeeRecipientVault`, FUNDS_SETTER, 3 days) and the [6529 Network Museum](#6529-network-museum)
+(`MuseumVault`, SUCCESSOR_SETTER, 7 days).
 
 See: [economics and payouts](spec/economics-and-payouts.md).
 
 ### grant delay
 
-How long a newly granted role takes to become active, never shorter than the role's execution delay.
+How long a newly granted role takes to become active. Every grant is at zero delay: the network
+roles are the network's alone, and the network grants operational keys at once.
 
 See: [role and permission matrix](audit/roles.md).
 
-### guardian
-
-A holder of `Roles.GUARDIAN`, an independent Safe that cancels, pauses, vetoes and
-[suspends](#suspension) at once. Guardians block, never redirect, and cannot lift a suspension.
-
-See: [governance](spec/governance.md).
-
 ## H
-
-### heartbeat
-
-`ArtistRegistry.heartbeat`: recorded activity by the authority (never a consolidated wallet),
-which resets [dormancy](#dormancy).
-
-See: [identity and recovery](spec/identity-and-recovery.md).
 
 ## I
 
@@ -856,8 +862,8 @@ See: [curation](spec/curation.md).
 
 ### keeper
 
-An automated account calling permissionless upkeep such as escrow `flush`. No v1 selector maps
-to `Roles.KEEPER`.
+An automated account calling permissionless upkeep: the network's keeper starts sales through
+[SaleStarter](#salestarter) and runs the edition steps. No v1 selector maps to `Roles.KEEPER`.
 
 See: [roles](audit/roles.md).
 
@@ -865,8 +871,9 @@ See: [roles](audit/roles.md).
 
 ### lead artist
 
-The first party of every item. Its [active authority](#active-authority) signs the
-[move](#move), edits the record and acts as [creator](#creator).
+The first party of every item. Any wallet of its [account](#account) signs the
+[move](#move) and edits the record; its [active authority](#active-authority) is the
+[creator](#creator).
 
 See: [curation](spec/curation.md).
 
@@ -896,13 +903,6 @@ See: [storage](integrators/storage.md).
 The terms the English auction locks for one sale: token, ID, currency, price, seller and fee terms.
 
 See: [stream and auctions](spec/stream-and-auctions.md).
-
-### lower-only
-
-Of a work's royalty rate: `setRoyaltyRate` may lower it but never raise it, even with every
-party's consent (ADR 0006). The rate new works mint with stays governed.
-
-See: [works and storage](spec/works-and-storage.md#rules-and-invariants).
 
 ## M
 
@@ -940,7 +940,7 @@ See: [works and storage](spec/works-and-storage.md).
 ### minSetback
 
 OpenZeppelin AccessManager's 5-day minimum wait (`minSetback()`) before a delay change takes
-effect.
+effect; Verify runs at least this long after genesis.
 
 See: [governance](spec/governance.md).
 
@@ -954,17 +954,27 @@ See: [Stream and auctions](spec/stream-and-auctions.md).
 
 ### move
 
-The lead artist's revocable EIP-712 `MoveToStream` signature authorizing a Stream mint, checked
-at [consume](#consume).
+A revocable EIP-712 `MoveToStream` signature by a wallet of the lead artist's account,
+authorizing a Stream mint, checked at [consume](#consume).
 
 See: [curation](spec/curation.md).
 
 ## N
 
+### network
+
+The one address that holds every network role (`WorksAccessManager.network`): until the TDH
+bridge exists, one 6529 Safe. It hands over with `transferNetwork` (7 days) and the next
+address's `acceptNetwork`, after which the old one holds nothing.
+
+See: [governance](spec/governance.md).
+
 ### network fee
 
-The network's share of a primary sale or royalty, locked per work at mint; 25,000 at launch for
-6529 Stream and 6529 Stream Editions (`EconomicsResolver.DEFAULT_FEE_SHARE`).
+The network's share of a primary sale or royalty; 25,000 at launch for 6529 Stream and 6529
+Stream Editions (`EconomicsResolver.DEFAULT_FEE_SHARE`). The network may lower a work's share,
+never raise it (`lowerFeeShare`); a sale pays it to the recipient the economics resolver names at
+settlement, leftover wei included.
 
 See: [economics and payouts](spec/economics-and-payouts.md).
 
@@ -1002,14 +1012,15 @@ See: [works and storage](spec/works-and-storage.md).
 
 A currency's governed minimum first bid in the English auction, held by the
 [asset allowlist](#asset-allowlist) in the asset's status word (`AssetAllowlist.setOpeningBid`,
-PARAMETER_SETTER) and locked by each auction at its start (`openingBid`).
+PARAMETER_SETTER), bounded only by its 96-bit field, and locked by each auction at its start
+(`openingBid`).
 
 See: [stream and auctions](spec/stream-and-auctions.md).
 
-### override
+### own change
 
-A governed identity change with 180 days' notice (`ArtistRegistry.OVERRIDE_DELAY`). The old key
-cannot cancel it; a captured wallet [contests](#contest) it.
+An identity change an [account](#account)'s wallet signs (`stageChange`): it waits 2 days
+(`OWN_CHANGE_DELAY`), and any wallet, or the network, can cancel it.
 
 See: [identity and recovery](spec/identity-and-recovery.md).
 
@@ -1038,21 +1049,21 @@ See: [curation](spec/curation.md).
 ### pause
 
 A [dispute pause](#dispute-pause) of one auction, or an adapter pause (PAUSER) of new sales,
-which `unpause` cannot end within 48 hours.
+which the network's `unpause` ends at once.
 
 See: [stream and auctions](spec/stream-and-auctions.md).
 
 ### payout address
 
 Where an artist's [artist-resolved](#artist-resolved-payee) payments go (`payoutAddress`),
-changed only by a staged change or override.
+changed only by an own change or a [replacement](#replacement).
 
 See: [identity and recovery](spec/identity-and-recovery.md).
 
 ### payout freeze
 
-`payoutAddress` returning zero while a pending change would move it, so split wallets hold the
-artist's balance.
+`payoutAddress` returning zero while a pending change would move it, or while the account is
+[frozen](#freeze), so split wallets hold the artist's balance.
 
 See: [identity and recovery](spec/identity-and-recovery.md).
 
@@ -1098,8 +1109,8 @@ See: [trust assumptions](audit/trust-assumptions.md).
 ### platform
 
 The holder of `Roles.PLATFORM`, 6529's zero-delay key. It creates collections, adds locators
-and appends platform statements, as the only writer of DISPUTE_OUTCOME; a guardian can
-[suspend](#suspension) it.
+and appends platform statements, as the only writer of DISPUTE_OUTCOME; the network grants and
+revokes it at once.
 
 See: [trust assumptions](audit/trust-assumptions.md).
 
@@ -1152,14 +1163,6 @@ on-chain.
 
 See: [identity and recovery](spec/identity-and-recovery.md).
 
-### promise card
-
-A client-generated summary of one work at one block: what is fixed, who can still change what
-and after what delay, and the residual risks. Never written on chain; a grade may be computed
-from it.
-
-See: [declarations and conventions](spec/declarations-and-conventions.md#the-card).
-
 ## R
 
 ### raise-only parameter
@@ -1199,8 +1202,8 @@ See: [economics and payouts](spec/economics-and-payouts.md).
 
 ### relicense
 
-A change of a work's license (`WorkRecords.relicense`, PARAMETER_SETTER, 48 hours) with every
-party's consent. A CC0 work stays CC0 for good.
+A change of a work's license (`WorkRecords.relicense`, FUNDS_SETTER, 3 days) with every
+party's consent, counted by account. A CC0 work stays CC0 for good.
 
 See: [works and storage](spec/works-and-storage.md).
 
@@ -1214,11 +1217,21 @@ See: [rendering and tokenURI](spec/rendering-and-tokenuri.md).
 ### renounced power
 
 A power over one work (`ROYALTY_RATE`, any further royalty change; `RELICENSE`, any further
-license change) that the lead artist gave up for good through `IWorkPowers.renounce`; the
-function then always reverts for that work; and, after finalize, `RENDERER_REPIN`, the
-[errata repin](#errata-repin), after which the work's renderer pin never moves again.
+license change) given up for good through `IWorkPowers.renounce`, with the lead artist's
+signature and the network's agreement; the function then always reverts for that work; and,
+after finalize, `RENDERER_REPIN` (the artist alone), the [errata repin](#errata-repin), after
+which the work's renderer pin never moves again.
 
 See: [works and storage](spec/works-and-storage.md#rules-and-invariants).
+
+### replacement
+
+The network's change of an [account](#account)'s [root](#root) for a lost or stolen account
+(`stageReplacement`), with the new root's acceptance and 14 days' notice
+(`REPLACEMENT_NOTICE`). The network can cancel it; a wallet can [contest](#contest) it. While
+it is pending, no wallet acts for the account.
+
+See: [identity and recovery](spec/identity-and-recovery.md).
 
 ### reserve
 
@@ -1228,8 +1241,8 @@ See: [stream and auctions](spec/stream-and-auctions.md#rules-and-invariants).
 
 ### reserved authority
 
-An account a pending identity change would make an artist's authority (`reservedFor`). It
-cannot register or become another artist's authority meanwhile.
+An address a pending identity change would make an account's [root](#root) (`reservedFor`). It
+cannot register or become another account's root meanwhile.
 
 See: [identity and recovery](spec/identity-and-recovery.md).
 
@@ -1240,29 +1253,40 @@ The [economics resolver](#economics-resolver), [artist resolver](#artist-resolve
 
 ### restraint
 
-The state in which `activeAuthorityOf` is zero because a pending override would move the
-authority (IDENTITY-1). Nobody acts as the artist; running sales continue.
+The state in which `activeAuthorityOf` is zero: while an [account](#account) is
+[frozen](#freeze) or a [replacement](#replacement) is pending. No wallet acts for the account;
+running sales continue.
 
 See: [identity and recovery](spec/identity-and-recovery.md).
 
 ### revocation
 
-The guardian's immediate withdrawal of a package root's approval (`revokePackage`). A role
+The network's immediate withdrawal of a package root's approval (`revokePackage`). A role
 revocation is the AccessManager's `revokeRole`.
 
 See: [curation](spec/curation.md).
 
 ### role
 
-An AccessManager role from `Roles.sol`, whose holders carry its [delay class](#delay-class).
-Statement speakers use a separate [statement role](#statement-role).
+An AccessManager role from `Roles.sol`. The network roles (ADMIN, NETWORK and the three
+setters) are held by the [network](#network) alone, each with its [delay class](#delay-class);
+the operational roles are held by keys the network grants. Statement speakers use a separate
+[statement role](#statement-role).
 
 See: [roles](audit/roles.md).
 
+### root
+
+The wallet an [account](#account)'s consolidations are read from (`authorityOf`). It never
+depends on the consolidation source.
+
+See: [identity and recovery](spec/identity-and-recovery.md).
+
 ### royalty rate
 
-A work's ERC-2981 rate out of 100,000, 6,529 at launch (`EconomicsResolver.DEFAULT_ROYALTY_RATE`),
-locked at mint.
+A work's ERC-2981 rate out of 100,000, 6,529 at launch (`EconomicsResolver.DEFAULT_ROYALTY_RATE`).
+It changes, up or down to at most 100,000, with every party's consent and the network
+(`setRoyaltyRate`, R10), unless renounced.
 
 See: [economics and payouts](spec/economics-and-payouts.md).
 
@@ -1295,6 +1319,14 @@ A `bytes32` label naming a sale method, claimed by its adapter: `ENGLISH_AUCTION
 and `DUTCH` are reserved labels of rc.1's removed adapters.
 
 See: [`SaleTypes.sol`](../src/interfaces/types/SaleTypes.sol).
+
+### SaleStarter
+
+The stateless helper the network's keeper starts every 1/1 through: one transaction starts
+the auction, deploys the work's vaults and opens its record, or does nothing.
+`EnglishAuction.start` stays permissionless.
+
+See: [script README](../script/README.md#the-11-start-keeper).
 
 ### satellite
 
@@ -1352,8 +1384,8 @@ See: [economics and payouts](spec/economics-and-payouts.md).
 
 ### signer epoch
 
-The value a curation signer's approval must bind. A disable or re-enable starts a new one, so
-older approvals never count again.
+The value a curation signer's approval must bind. A disable, a re-enable, or a new grant of the
+role (`WorksAccessManager.grantCount`) starts a new one, so older approvals never count again.
 
 See: [curation](spec/curation.md).
 
@@ -1386,21 +1418,6 @@ See: [economics and payouts](spec/economics-and-payouts.md).
 Storing bytes as a contract's runtime code at a CREATE2 address salted by their hash.
 
 See: [`SSTORE2.sol`](../src/libraries/SSTORE2.sol).
-
-### standard change
-
-An identity change of kind STANDARD, executable after 7 days (`ArtistRegistry.CHANGE_DELAY`).
-The previous authority or a captured wallet may cancel it.
-
-See: [identity and recovery](spec/identity-and-recovery.md).
-
-### standing
-
-A consolidated wallet's right to cancel or contest an artist's pending identity change. A
-refresh records it once the consolidation is 30 days old, and it lasts `STANDING_GRACE` (30 days
-at genesis, governed; `ArtistRegistry.timer`) after the consolidation ends.
-
-See: [identity and recovery](spec/identity-and-recovery.md).
 
 ### start
 
@@ -1459,18 +1476,12 @@ mantissas: exact, strictly increasing, and the same in every client.
 
 See: [editions and sales](spec/editions-and-sales.md#the-step-ladder).
 
-### sticky standing snapshot
-
-Each artist's list of at most 16 wallets with [standing](#standing) (`standingOf`). Nothing is
-evicted early, so a thief cannot strip it.
-
-See: [identity and recovery](spec/identity-and-recovery.md).
-
 ### store set
 
 `WorkRecords`' append-only list of content stores a file may sync from: store 0 is the content
-store, and `addStore` (SUCCESSOR_SETTER, 30 days) adds an `IChunkStore` with its code hash
-pinned. A file's store is final once it is complete.
+store, and `addStore` (SUCCESSOR_SETTER, 7 days) adds an `IChunkStore` with its code hash
+pinned; `retireStore` (24 hours) stops a store counting anything new. A file's store is final
+once it is complete.
 
 See: [works and storage](spec/works-and-storage.md).
 
@@ -1495,22 +1506,6 @@ the log.
 
 See: [disputes and statements](spec/disputes-and-statements.md).
 
-### suspendable role
-
-A role a guardian may [suspend](#suspension): PLATFORM, CURATOR or STORAGE_OPERATOR
-(`Roles.isSuspendable`).
-
-See: [governance](spec/governance.md).
-
-### suspension
-
-A guardian's immediate stop of a [suspendable role](#suspendable-role)'s holder
-(`WorksAccessManager.suspend`, review finding GOV-2). Only an executed ADMIN grant or revocation
-of that role (30 days, guardian-vetoable) or the holder's own `renounceRole` lifts it
-(`WorksAccessManager._grantRole`, `_revokeRole`).
-
-See: [governance](spec/governance.md).
-
 ## T
 
 ### target
@@ -1519,12 +1514,6 @@ A token contract a sale adapter may sell (`isTarget`), listed by governance (`se
 AccessManager terms, a target is any contract the manager governs.
 
 See: [editions and sales](spec/editions-and-sales.md), [governance](spec/governance.md).
-
-### target admin delay
-
-The delay before an ADMIN change to a governed contract's settings in the AccessManager (its selector roles, closure or authority) takes effect: 30 days for every target.
-
-See: [governance](spec/governance.md).
 
 ### TDH
 
@@ -1570,13 +1559,6 @@ See: [curation](spec/curation.md).
 
 ## V
 
-### veto
-
-The guardian's immediate deletion of a pending identity change (`vetoChange`). It blocks, never
-redirects.
-
-See: [identity and recovery](spec/identity-and-recovery.md).
-
 ### VRF
 
 Verifiable random function: Chainlink VRF v2.5, through which the
@@ -1585,6 +1567,13 @@ Verifiable random function: Chainlink VRF v2.5, through which the
 See: [entropy](spec/entropy.md).
 
 ## W
+
+### wallet proof
+
+The form of every signature an account gives: `abi.encodePacked(wallet, signature)`, where
+`wallet` is the signing wallet of the account (`requireSigned`).
+
+See: [identity and recovery](spec/identity-and-recovery.md).
 
 ### wave
 
@@ -1621,8 +1610,10 @@ See: [works and storage](spec/works-and-storage.md).
 
 ### WorksAccessManager
 
-OpenZeppelin's `AccessManager` plus guardian [suspension](#suspension) and three cancel rules:
-any guardian may cancel an operation (Rule 1), no account may cancel another's revocation of its
-own role (Rule 2), and only a guardian may cancel another account's role revocation (Rule 3).
+OpenZeppelin's `AccessManager` with one [network](#network) address holding every network
+role, a two-step handover (`transferNetwork`, 7 days, then `acceptNetwork`), an optional
+[brake](#brake), and `grantCount`, which counts the grants that made an account a member of a
+role.
 
 See: [governance](spec/governance.md).
+

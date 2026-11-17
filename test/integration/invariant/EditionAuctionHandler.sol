@@ -233,7 +233,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         if (!found) return;
         Piece storage p = pieces[i];
         IEnglishAuction.Auction memory a = auction.auction(p.saleId);
-        if (block.timestamp + Roles.STANDARD > a.pausedAt + auction.MAX_PAUSE()) return;
+        if (block.timestamp + Roles.DELAY_24H > a.pausedAt + auction.MAX_PAUSE()) return;
         if (mode % 3 == 0) {
             bytes32 outcome = _platformStatement(
                 address(stream), p.tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://ea-outcome"
@@ -256,10 +256,11 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             uint256 i = (seed % MASTERS + k) % MASTERS;
             Piece storage p = pieces[i];
             if (!p.started || p.cancelled || (k < MASTERS && p.opened && seed % 4 != 0)) continue;
-            PackageItem memory item = _package(root)[i].item;
             bool expected = !p.opened && _openable(i);
             vm.prank(bidders[callerSeed % BIDDERS]);
-            try ea.open(address(editions), p.tokenId, abi.encode(item)) returns (uint256 saleId) {
+            try ea.open(address(editions), p.tokenId, _openData(root, _package(root), i)) returns (
+                uint256 saleId
+            ) {
                 if (!expected) _violation("an edition auction opened late or twice");
                 if (saleId != p.editionSaleId) _violation("the sale ID is not saleIdOf");
                 p.opened = true;
@@ -369,9 +370,9 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         }
     }
 
-    /// @notice A bidder withdraws an edition bid in full, which only a dispute pause of the 1/1
-    ///         allows, and only for a bid placed or last raised in a minute (from the sale's
-    ///         open) that ended before the pause began (bids are firm otherwise).
+    /// @notice A bidder tries to take an edition bid back, during a dispute pause of the 1/1 or
+    ///         not: bids are firm (R21), so the adapter has no withdrawal and the call fails,
+    ///         leaving the bid live.
     function withdraw(uint256 seed, uint256 bidSeed) external {
         for (uint256 k; k < MASTERS; ++k) {
             uint256 i = (seed % MASTERS + k) % MASTERS;
@@ -380,27 +381,15 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             uint256 index = bidSeed % book[i].length;
             GhostBid storage b = book[i][index];
             if (b.withdrawn || b.claimed) continue;
-            bool paused = _eligible(i, b);
-            if (_lens().canWithdraw(p.editionSaleId, index + 1) != paused) {
-                _violation("canWithdraw disagrees with the withdrawal rule");
-            }
-            uint256 escrow = b.qty * _price(i, b.step);
-            uint256 before = b.bidder.balance;
             vm.prank(b.bidder);
-            try ea.withdrawBid(p.editionSaleId, index + 1, b.bidder) {
-                if (!paused) {
-                    _violation("an ineligible bid was withdrawn");
-                    return;
-                }
-                if (b.bidder.balance - before != escrow) _violation("a withdrawal was not exact");
-                ghostOut += escrow;
-                _depart(i, b.step, b.pos, b.qty);
-                b.withdrawn = true;
-                ++hits["withdraw"];
-            } catch {
-                if (paused) _violation("an eligible withdrawal during a dispute pause failed");
-                ++hits["withdrawRefused"];
-            }
+            (bool ok,) = address(editionAuction)
+                .call(
+                    abi.encodeWithSignature(
+                        "withdrawBid(uint256,uint256,address)", p.editionSaleId, index + 1, b.bidder
+                    )
+                );
+            if (ok) _violation("an edition bid was withdrawn");
+            ++hits["withdrawRefused"];
             return;
         }
     }
@@ -454,21 +443,23 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         }
     }
 
-    /// @notice Anyone abandons an edition auction (EA-19), a quarter of the time after warping to
-    ///         its end plus the 150-day delay. The handler's model predicts the outcome: due once
-    ///         the delay has passed, the sale has paid nothing (open, or a scan still running),
-    ///         and its 1/1 is neither in progress nor settled with its master and edition.
+    /// @notice Anyone abandons an edition auction (R16, EA-19), a quarter of the time after
+    ///         warping to its close plus 21 days. The handler's model predicts the outcome: due
+    ///         once the wait has passed, the sale has paid nothing (open, or a scan still
+    ///         running), its 1/1 auction is settled or cancelled, and not both its master settled
+    ///         and its edition created. Then, with the master settled, the call creates the
+    ///         edition (the sale settles as usual); otherwise it voids the sale.
     function abandon(uint256 seed, uint256 warpSeed) external {
         for (uint256 k; k < MASTERS; ++k) {
             uint256 i = (seed % MASTERS + k) % MASTERS;
             Piece storage p = pieces[i];
             if (!p.opened || p.settled || p.voided) continue;
-            uint256 deadline = _endTime(i) + 150 days;
+            uint256 deadline = _closeAt(i) + 21 days;
             if (warpSeed % 4 == 0 && block.timestamp < deadline) {
                 vm.warp(deadline);
                 // A dispute pause that lapsed in the jump moves the 1/1's end, and so the
                 // sale's: the deadline is read again.
-                deadline = _endTime(i) + 150 days;
+                deadline = _closeAt(i) + 21 days;
             }
             IEnglishAuction.AuctionState s = _state1of1(i);
             IUniformEditionAuction.AuctionStatus st = ea.auction(p.editionSaleId).status;
@@ -482,13 +473,19 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             bool due = unpaid && block.timestamp >= deadline
                 && s != IEnglishAuction.AuctionState.ACTIVE
                 && s != IEnglishAuction.AuctionState.PAUSED
-                && !(s == IEnglishAuction.AuctionState.SETTLED
-                    && p.masterSettled
-                    && p.editionCreated);
-            try editionAuction.abandon(p.editionSaleId) {
+                && s != IEnglishAuction.AuctionState.ENDED && !(p.masterSettled && p.editionCreated);
+            try editionAuction.abandon(p.editionSaleId, abi.encode(_package(root)[i].item)) {
                 if (!due) _violation("abandoned an edition auction that could still settle");
-                p.voided = true;
-                ++hits["abandon"];
+                if (p.masterSettled) {
+                    if (!editions.exists(p.tokenId)) {
+                        _violation("abandon did not create the edition");
+                    }
+                    p.editionCreated = true;
+                    ++hits["abandonCreates"];
+                } else {
+                    p.voided = true;
+                    ++hits["abandon"];
+                }
             } catch (bytes memory why) {
                 if (due) _violation(_abandonDiag(i, why, deadline));
                 ++hits["abandonRefused"];
@@ -859,16 +856,23 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         }
     }
 
-    /// @dev A cancelled 1/1 takes no more edition bids, and settling voids its edition auction.
+    /// @dev A cancelled 1/1 takes no more edition bids once the adapter reads its state (within
+    ///      the soft window of the close, `UniformEditionAuction._end`; earlier the adapter skips
+    ///      that read, and such a bid is refunded when the sale voids), and settling voids its
+    ///      edition auction.
     function _void(uint256 i) internal {
         Piece storage p = pieces[i];
-        uint256 cost = _price(i, 0);
-        vm.deal(bidders[0], bidders[0].balance + cost);
-        vm.prank(bidders[0]);
-        try ea.bid{ value: cost }(p.editionSaleId, 0, 1) {
-            _violation("a cancelled 1/1's edition auction took a bid");
-        } catch {
-            ++hits["cancelledBidRefused"];
+        if (block.timestamp + _terms(i).softWindow >= _endTime(i)) {
+            uint256 cost = _price(i, 0);
+            vm.deal(bidders[0], bidders[0].balance + cost);
+            vm.prank(bidders[0]);
+            try ea.bid{ value: cost }(p.editionSaleId, 0, 1) {
+                _violation("a cancelled 1/1's edition auction took a bid");
+            } catch {
+                ++hits["cancelledBidRefused"];
+            }
+        } else {
+            ++hits["cancelledBidUnread"];
         }
         ea.settle(p.editionSaleId, new uint256[](0));
         if (ea.auction(p.editionSaleId).status != IUniformEditionAuction.AuctionStatus.VOID) {
@@ -1053,19 +1057,6 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         return (false, 0);
     }
 
-    /// @dev The withdrawal rule, modelled independently of the adapter: the 1/1 is paused, and
-    ///      the bid's minute (from the sale's open, capped at 65,535) is below the pause's.
-    function _eligible(uint256 i, GhostBid storage b) internal view returns (bool) {
-        IEnglishAuction.Auction memory o = auction.auction(pieces[i].saleId);
-        if (o.state != IEnglishAuction.AuctionState.PAUSED) return false;
-        uint256 opened = ea.auction(pieces[i].editionSaleId).openedAt;
-        uint256 placed = b.placedAt > opened ? (b.placedAt - opened) / 60 : 0;
-        uint256 paused = o.pausedAt > opened ? (o.pausedAt - opened) / 60 : 0;
-        if (placed > type(uint16).max) placed = type(uint16).max;
-        if (paused > type(uint16).max) paused = type(uint16).max;
-        return placed < paused;
-    }
-
     function _state1of1(uint256 i) internal view returns (IEnglishAuction.AuctionState) {
         return auction.auction(pieces[i].saleId).state;
     }
@@ -1076,7 +1067,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
 
     /// @dev The 1/1's end plus the locked offset: the earliest the edition auction can close.
     function _closeAt(uint256 i) internal view returns (uint256) {
-        return _oneOfOneEnd(i) + _terms(i).closeOffset;
+        return _oneOfOneEnd(i) + 15 minutes;
     }
 
     /// @dev The end the handler expects: `max(closeAt, softEnd)` (D140, D141).
@@ -1100,8 +1091,9 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
     function _openable(uint256 i) internal view returns (bool) {
         IEnglishAuction.AuctionState s = _state1of1(i);
         if (s == IEnglishAuction.AuctionState.CANCELLED) return false;
-        return s == IEnglishAuction.AuctionState.PAUSED
-            || block.timestamp < _oneOfOneEnd(i) + ea.config().closeOffset;
+        return
+            s == IEnglishAuction.AuctionState.PAUSED
+                || block.timestamp < _oneOfOneEnd(i) + 15 minutes;
     }
 
     function _terms(uint256 i) internal view returns (IUniformEditionAuction.AuctionConfig memory) {
@@ -1167,11 +1159,6 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         assertLe(e.endTime, e.backstop, "the soft close stays within the backstop");
         assertEq(uint8(e.oneOfOneState), uint8(s), "the 1/1's state");
         assertEq(e.biddingOpen, _biddingOpen(i), "bidding open exactly when the rules say");
-        assertEq(
-            e.withdrawalsOpen,
-            s == IEnglishAuction.AuctionState.PAUSED,
-            "withdrawals open exactly while the 1/1 is paused"
-        );
     }
 
     /// @dev Before settlement the live result equals the per-unit reference (so it is the

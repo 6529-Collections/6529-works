@@ -6,23 +6,24 @@ import { IMintTarget } from "./IMintTarget.sol";
 
 /// @title IFederatedToken
 /// @notice What both 6529 Stream Federated templates (`IFederatedStream`, `IFederatedEditions`)
-///         share: the terms each locks at deployment, joining and leaving the federation, and
-///         the artist's marketplace metadata (ADR 0008; spec `docs/spec/federation.md`).
+///         share: the terms fixed at deployment, joining the federation, and the artist's
+///         marketplace metadata (ADR 0008; spec `docs/spec/federation.md`).
 /// @dev A template carries no immutable, so every deployment of one version has one runtime code
 ///      hash; the federation registry recognises a genuine copy by that hash and by its
-///      version's approved deployer (`IFederatedDeployer`) having recorded it. Every
-///      power is the artist's, checked against the artist registry's active authority of the
-///      locked artist ID (so lost-key recovery works); the network holds none over a deployed
-///      contract. Before the artist has an identity, the account whose address is the artist ID
-///      acts for it (it can then only join, which creates the identity, or leave). Minting
-///      (`IMintTarget.isAdmittedMinter`): before the exit, the federation registry's `canMint`
-///      for this contract, once joined; after it, the artist's own list
-///      (`IMintTarget.setAdmittedMinter`, the artist only, refused before the exit); an
-///      editions contract's own minters mint only once its partner left too.
+///      version's approved deployer (`IFederatedDeployer`) having recorded it. Every artist
+///      power is checked with the artist registry (`IAccounts.isWallet`): any wallet of the
+///      artist's consolidated account acts, none while the account is frozen, and before the
+///      artist has an identity the address that is the artist ID acts (it can then only join,
+///      which creates the identity). Joining is for good: a joined contract has no way out of
+///      the federation. Minting (`IMintTarget.isAdmittedMinter`): never before joining; after
+///      it, only as the current federation registry's `canMint` answers, so a contract that is
+///      delisted, or whose template is suspended or revoked, mints nothing.
+///      `IMintTarget.setAdmittedMinter` always reverts: there are no minters of the artist's own.
 interface IFederatedToken is IMintTarget {
-    /// @notice The terms fixed at deployment, for good (constructor).
+    /// @notice The terms fixed at deployment (constructor). The network share can later only be
+    ///         lowered, by the artist registry's record for this contract.
     /// @param artistId The artist the contract belongs to.
-    /// @param artistRegistry The artist registry whose active authority acts for the artist.
+    /// @param artistRegistry The artist registry that answers who acts for the artist.
     /// @param splitLedger The split ledger that derives and deploys every payout vault.
     /// @param feeShare The network's share of primary sales and royalties, out of 100,000.
     /// @param feeRecipient The network's fee recipient (the governed fee vault).
@@ -51,15 +52,7 @@ interface IFederatedToken is IMintTarget {
         address feeRecipient,
         address partner
     );
-    /// @notice The contract left the federation, for good: no network adapter starts a sale of it
-    ///         any more (the federation registry answers no entry for it, so even a network
-    ///         adapter the artist admits as its own minter refuses), its running sales finish, and
-    ///         the artist admits its own minters. Works minted before keep their terms.
-    event FederationLeft();
-    /// @notice After its exit, the artist admitted or removed a minter.
-    /// @param adapter The minter.
-    /// @param admitted Whether it may now mint.
-    event MinterSet(address indexed adapter, bool admitted);
+
     /// @notice ERC-4906: one token's metadata changed.
     /// @param _tokenId The token.
     event MetadataUpdate(uint256 _tokenId);
@@ -74,14 +67,16 @@ interface IFederatedToken is IMintTarget {
     /// @param newOwner The owner after.
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
-    /// @notice The caller is not the artist's active authority.
+    /// @notice The caller is not a wallet of the artist's account.
     error NotArtist(address caller);
-    /// @notice The action is not allowed in the contract's federation state (joined, left).
+    /// @notice The action is not allowed in the contract's federation state (joined or not).
     error FederationStateInvalid();
     /// @notice A constructor argument is invalid.
     error InvalidConfig();
 
-    /// @notice The terms locked at deployment, and the partner.
+    /// @notice The terms fixed at deployment, and the partner. `feeShare` is the deployed share;
+    ///         the share in force is the smaller of it and the artist registry's record
+    ///         (`IAccounts.federatedFeeShare`).
     /// @return artistRegistry The artist registry.
     /// @return splitLedger The split ledger.
     /// @return artistId The artist.
@@ -99,24 +94,18 @@ interface IFederatedToken is IMintTarget {
             address feeRecipient,
             address partner
         );
-    /// @notice Whether the contract joined (`FederationJoined`) and whether it left.
+    /// @notice Whether the contract joined (`FederationJoined`), which is for good.
     /// @return joined True once joined.
-    /// @return left True once left (for good).
-    function federationState() external view returns (bool joined, bool left);
+    function federationState() external view returns (bool joined);
     /// @notice Joins the federation through the artist registry's current federation registry
     ///         (`IFederationRegistry.register`), once. The artist only (before its identity
     ///         exists, the account whose address is the artist ID, whose signature then creates
     ///         it). Reverts unless the artist registry lists this contract under its artist in
     ///         this transaction (`FederationStateInvalid`): a listing made by anyone else first
     ///         can never be confirmed, so the token never sells under it. An editions contract
-    ///         joins before its partner.
+    ///         joins before its partner. Joining is for good.
     /// @param j The identity fields and the artist's signatures (`IFederationRegistry.Join`).
     function joinFederation(IFederationRegistry.Join calldata j) external;
-    /// @notice Leaves the federation, for good. The artist only. Records `LEFT` in the artist
-    ///         registry if the contract was listed (the token itself writes it, so the exit
-    ///         needs no replaceable contract). Running sales finish; tokens, ownership, records,
-    ///         payout vaults and the terms of works minted before are untouched.
-    function leaveFederation() external;
     /// @notice The artist sets the ERC-7572 contract URI.
     /// @param uri The new URI.
     function setContractURI(string calldata uri) external;

@@ -17,7 +17,7 @@ merged in PRs #51 to #57 and are cited by finding ID. No external audit has star
 | --- | --- |
 | [Scope](scope.md) | Every contract in `src/` with its nSLOC and bytecode size, the inherited OpenZeppelin code, and what is out of scope |
 | [Trust assumptions](trust-assumptions.md) | What each role and each external dependency is trusted to do, what it could do if compromised, and how the system recovers |
-| [Role and permission matrix](roles.md) | Every restricted selector, its role, delay class and delay, and whether a guardian can cancel it. Generated from the genesis configuration and checked in CI |
+| [Role and permission matrix](roles.md) | Every restricted selector, its role, delay class and delay. Generated from the genesis configuration and checked in CI |
 | [Threat model](threat-model.md) | Assets, actors, attack surfaces and their mitigations, with the enforcing code and the tests |
 | [Invariants](invariants.md) | Every stateful invariant and the key fuzz and unit properties, linked to their tests |
 | [Known limitations and accepted risks](known-limitations.md) | Every limitation collected from the ADRs, READMEs and decisions, with its source |
@@ -58,19 +58,18 @@ Areas where a small change has large effects, or where the review concentrated:
 - **The split ledger.** One permanent `SplitLedger` keeps every wallet's accounting, verifies
   signed releases and moves funds through 66-byte vaults, proving each move by balances
   ([economics spec](../spec/economics-and-payouts.md#payee-lists-wallets-and-the-split-ledger)).
-- **Identity recovery.** The 7-day changes, 180-day overrides, contests decided by a recorded
-  vote, the sticky standing snapshot and the restraint while an override is pending
-  ([identity spec](../spec/identity-and-recovery.md)).
-- **The governance cancel rules and suspension.** `WorksAccessManager` overrides
-  OpenZeppelin's cancel check (three rules) and its membership check (`hasRole`, for the
-  guardians' suspension of operational keys), and adds the bounded veto, dead-admin recovery,
-  a two-step succession (the successor accepts itself) with `migrate`, seat caps and a class-delay
-  floor on every grant (GV-37 to GV-47)
-  ([governance spec](../spec/governance.md), [ADR 0002](../adr/0002-access-manager-hardening.md)
-  and its addendum).
-- **The deployment and readback guards.** The trust model assumes bare, independent admin and
-  guardian Safes and canonical dependencies, which only `Deploy.s.sol` and `Verify.s.sol`
-  check, off chain ([trust assumptions](trust-assumptions.md#admin-safes)).
+- **Consolidated accounts.** Every wallet of a 6529 consolidated account acts for it, read live
+  from a replaceable consolidation source (the root never reads it); 2-day own changes, the
+  network's 14-day replacement notice with a contest that lapses at 90 days, and its 14-day
+  freeze ([identity spec](../spec/identity-and-recovery.md)).
+- **The single network and the brake.** `WorksAccessManager` overrides OpenZeppelin's
+  membership check (`hasRole`) so that only `network()` holds the network roles, each with its
+  class delay (24 hours, 3 days, 7 days), refuses granting them, adds a two-step handover
+  (`transferNetwork`, `acceptNetwork`) and a brake that can delay a scheduled operation once by
+  7 days (GV-1 to GV-9) ([governance spec](../spec/governance.md)).
+- **The deployment and readback guards.** The trust model assumes a bare network Safe and
+  canonical dependencies, which only `Deploy.s.sol` and `Verify.s.sol` check, off chain
+  ([trust assumptions](trust-assumptions.md#the-network-safe-and-the-brake)).
 - **`tokenURI` within 8M gas** for any record within bounds; the worst measured case is about
   2.5% under the budget ([rendering spec](../spec/rendering-and-tokenuri.md)).
 

@@ -170,7 +170,8 @@ class RepositoryTest(unittest.TestCase):
         )
         auction = facts["parameters"]["editionAuction"]
         self.assertEqual(auction["breadthMargin"]["default"], 10_000)
-        self.assertEqual(auction["closeOffsetSeconds"]["default"], 15 * 60)
+        self.assertEqual(auction["closeOffsetSeconds"], {"fixed": 15 * 60})
+        self.assertEqual(auction["abandonmentDelaySeconds"], {"fixed": 21 * 86400})
         self.assertEqual(auction["stepsPerDecade"]["allowed"], [24, 48, 96, 192])
         self.assertGreater(len(facts["gas"]["rows"]), 10)
 
@@ -243,8 +244,8 @@ class TreeTest(unittest.TestCase):
         self.assertEqual(auction["softCloseWindowSeconds"]["default"], 600)
 
     def test_the_deploy_and_adr_0005_must_agree(self) -> None:
-        self._edit(gf.DEPLOY_LIBRARY, "closeOffset: 15 minutes", "closeOffset: 20 minutes")
-        with self.assertRaisesRegex(gf.FactError, "closeOffset"):
+        self._edit(gf.DEPLOY_LIBRARY, "softWindow: 5 minutes", "softWindow: 10 minutes")
+        with self.assertRaisesRegex(gf.FactError, "softWindow"):
             gf.generate(self.tmp)
 
     def test_adr_0005_and_the_ladder_code_must_agree(self) -> None:

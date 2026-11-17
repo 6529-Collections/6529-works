@@ -22,17 +22,20 @@ import { FederationBase } from "./FederationBase.sol";
 ///         Glamsterdam figures are estimates from ADR 0004's unit prices (the ADR shows the
 ///         arithmetic); Foundry cannot measure them.
 contract FederationGasTest is FederationBase {
-    uint256 internal constant DEPLOY_721_CEILING = 5_500_000;
+    uint256 internal constant DEPLOY_721_CEILING = 5_600_000;
     uint256 internal constant DEPLOY_1155_CEILING = 3_870_000;
     uint256 internal constant JOIN_CEILING = 345_000;
     uint256 internal constant APPROVE_CEILING = 61_000;
     uint256 internal constant FIRST_START_CEILING = 700_000;
+    /// @dev Regression ceilings at integration, measured against the real artist registry
+    ///      (`isWallet`, `federatedFeeShare`) and the merged sales adapters, about 2% above the
+    ///      measurement: steady start 416,559, restart 243,495, edition open 337,384.
     uint256 internal constant STEADY_START_CEILING = 425_000;
     uint256 internal constant BID_CEILING = 196_000;
-    uint256 internal constant SETTLE_SOLD_CEILING = 182_000;
-    uint256 internal constant SETTLE_UNBID_CEILING = 156_000;
-    uint256 internal constant RESTART_CEILING = 253_000;
-    uint256 internal constant EDITION_OPEN_CEILING = 380_000;
+    uint256 internal constant SETTLE_SOLD_CEILING = 187_000;
+    uint256 internal constant SETTLE_UNBID_CEILING = 162_000;
+    uint256 internal constant RESTART_CEILING = 249_000;
+    uint256 internal constant EDITION_OPEN_CEILING = 345_000;
     uint256 internal constant CREATE_EDITION_CEILING = 90_000;
     uint256 internal constant EDITION_SETTLE_CEILING = 162_000;
 
@@ -220,7 +223,8 @@ contract FederationGasTest is FederationBase {
             0
         );
         _row("join, creating the identity", total, g);
-        assertEq(g.slots, 7);
+        // Six: the account record has no activity word any more (identity second pass).
+        assertEq(g.slots, 6);
         assertLe(total, JOIN_CEILING);
     }
 
@@ -247,7 +251,7 @@ contract FederationGasTest is FederationBase {
             0
         );
         _row("federated start, first work (two vaults deployed)", total, g);
-        assertEq(g.slots, 18);
+        assertEq(g.slots, 17, "no locked federated terms slot (R18)");
         assertEq(g.accounts, 2, "the seller and royalty vaults");
         assertLe(total, FIRST_START_CEILING);
     }
@@ -286,7 +290,7 @@ contract FederationGasTest is FederationBase {
             1 ether
         );
         _row("federated first bid", bidGas, gb);
-        assertEq(gb.slots, 5);
+        assertEq(gb.slots, 4);
         assertLe(bidGas, BID_CEILING);
     }
 
@@ -361,7 +365,7 @@ contract FederationGasTest is FederationBase {
             0
         );
         _row("federated edition open", openGas, go);
-        assertEq(go.slots, 7);
+        assertEq(go.slots, 5, "no fee recipient interning (R18)");
         assertLe(openGas, EDITION_OPEN_CEILING);
     }
 

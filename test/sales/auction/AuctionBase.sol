@@ -31,14 +31,14 @@ import {
     PermitToken
 } from "../../mocks/sales/SaleMocks.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
-import { PRODUCT_FEDERATED } from "src/interfaces/types/EconomicsTypes.sol";
+import { PRODUCT_FEDERATED, PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
 
 /// @dev Deploys the auction against the real AccessManager, asset allowlist, revenue escrow and
 ///      statement log, with mocks for the token and Permit2. Unit tests use
 ///      zero-delay roles; the dispute tests that need the 48-hour class set it explicitly.
 abstract contract AuctionBase is Test {
-    uint64 internal constant GUARDIAN = Roles.GUARDIAN;
-    uint64 internal constant UNPAUSER = Roles.UNPAUSER;
+    uint64 internal constant GUARDIAN = Roles.NETWORK;
+    uint64 internal constant UNPAUSER = 3; // the former unpause role ID (removed from Roles)
     uint64 internal constant PLATFORM = Roles.PLATFORM;
     uint64 internal constant PARAMETER_SETTER = Roles.PARAMETER_SETTER;
     uint64 internal constant SUCCESSOR_SETTER = Roles.SUCCESSOR_SETTER;
@@ -51,7 +51,8 @@ abstract contract AuctionBase is Test {
     uint32 internal constant DURATION = 24 hours;
     uint32 internal constant WINDOW = 15 minutes;
     uint32 internal constant SHARE = 5_000;
-    uint32 internal constant REFUSAL_DELAY = 7 days;
+    /// @dev The auction's fixed refusal delay (`REFUSAL_DELAY`), not a parameter.
+    uint32 internal constant REFUSAL_DELAY = 2 days;
     uint32 internal constant REFUSAL_GAS = 4_000_000;
     uint32 internal constant FEE = 25_000;
     uint256 internal constant ETH_FLOOR = 0.001 ether;
@@ -100,7 +101,9 @@ abstract contract AuctionBase is Test {
         carol = vm.addr(carolPk);
         manager = new AccessManager(address(this));
         allowlist = new AssetAllowlist(address(manager), ETH_FLOOR);
-        escrow = new RevenueEscrow(address(manager), new SplitLedger(new MockArtistResolver()));
+        escrow = new RevenueEscrow(
+            address(manager), new SplitLedger(new MockArtistResolver(), address(manager))
+        );
         statements = new StatementLog(address(manager), address(0), bytes32(0));
         permit2 = new MockPermit2();
         stream = new MockMintTarget();
@@ -109,6 +112,9 @@ abstract contract AuctionBase is Test {
         resolver = new MockEconomicsResolver(MockAssetAllowlist(address(0)));
         resolver.setAllowlistOverride(address(allowlist));
         resolver.set(PRODUCT_FEDERATED, federatedNetwork, 10_000);
+        // R18: settlement pays the recipient the resolver names then; 6529 Stream's is `network`,
+        // the one the token's terms name too.
+        resolver.set(PRODUCT_STREAM, network, FEE);
         resolver.setMuseumAccount(museum);
         auction = _deploy(address(permit2));
         bareLens = _lens(address(0));
@@ -127,7 +133,7 @@ abstract contract AuctionBase is Test {
     // ------------------------------------------------------------------------ deployment
 
     function _config() internal pure returns (IEnglishAuction.AuctionConfig memory) {
-        return IEnglishAuction.AuctionConfig(DURATION, WINDOW, SHARE, REFUSAL_DELAY, REFUSAL_GAS);
+        return IEnglishAuction.AuctionConfig(DURATION, WINDOW, SHARE, REFUSAL_GAS);
     }
 
     /// @dev A lens on this test's escrow, statement log, allowlist and resolver, deployed on its

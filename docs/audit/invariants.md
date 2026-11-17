@@ -29,7 +29,6 @@ actions still checks its own effects.
   `afterInvariant` hook, checked at the end of every run).
 - **Non-vacuity.** `test_HandlerReachesEveryPath` (economics),
   `AuctionHandlerCoverage.test_EveryPathRuns`, `AuctionHaltsCoverage.test_HaltPathsRun`,
-  `ArtistRegistryInvariantTest.test_HandlerReachesContestResolveAndLapse` and
   `EditionAuctionInvariantTest.test_EveryActionRuns` replay campaign-shaped sequences and assert
   that every path the invariants rely on executes.
 - **Running them.** `forge test --match-contract Invariant`; commands and CI jobs are on
@@ -65,7 +64,7 @@ WS-38).
 | --- | --- | --- | --- |
 | INV-STR-12 | A work's renounced mask only gains bits: it equals the OR of every applied renunciation and keeps every bit it held at the previous check. | `invariant_renouncedMaskNeverLosesABit` | `renounce` |
 | INV-STR-13 | No renounced power's function succeeds again, every call the rules allow succeeds, and the rate and license are the ones the handler applied. | `invariant_aRenouncedPowerNeverSucceedsAgain` | `renounce`, `changeRoyalty`, `relicense` |
-| INV-STR-14 | A work's royalty rate never rises: never above its mint rate, and never at any step. | `invariant_royaltyRateNeverRises` | `changeRoyalty` |
+| INV-STR-14 | A work's royalty rate stays at most 100,000 and never moves once its royalty power is renounced. | `invariant_royaltyRateWithinTheCeilingAndFixedOnceRenounced` | `changeRoyalty`, `renounce` |
 
 ### The mint policy
 
@@ -79,11 +78,11 @@ or re-enters Stream's writes, next to honest mints.
 | INV-STR-15 | MP-1 ([AUC-38](../spec/stream-and-auctions.md#rules-and-invariants)): whatever the mint policy answers, no existing token's views change, and each stays held by the adapter that minted it. | `invariant_MP1_ExistingTokensNeverChange` | honest mints and every hostile policy mode |
 | INV-STR-16 | No content mints twice ([AUC-44](../spec/stream-and-auctions.md#rules-and-invariants)): whatever the mint policy answers, Stream's content record (`consumedItemOf`) names the item of the one token that minted each content hash, and no second mint of a content hash succeeds. | `invariant_MP1_ExistingTokensNeverChange` (with `test_MP1_AnAlreadyMintedContentIsRefused`, `test_MP1_ABlankPolicyCannotReMintExistingContent`) | honest mints and every hostile policy mode |
 
-### Work records under hostile governance
+### Work records under replaced delivery contracts and stores
 
 [`WorkRecordsGovernanceInvariant.t.sol`](../../test/stream/WorkRecordsGovernanceInvariant.t.sol).
-Real `WorkRecords` and `Renderer`; the handler installs a chain of hostile delivery contracts
-(`setDelivery`), adds hostile stores (`addStore`), syncs, sets preferences and swaps the default
+Real `WorkRecords` and `Renderer`; the handler installs a chain of misbehaving delivery contracts
+(`setDelivery`), adds misbehaving stores (`addStore`), syncs, sets preferences and swaps the default
 renderer, around a complete, finalized work ([WS-39 to WS-43](../spec/works-and-storage.md#rules-and-invariants)).
 
 | ID | Invariant | Test | Handler actions |
@@ -148,14 +147,15 @@ state, never `releasable`, and measures releases by balance deltas.
 | INV-ECO-3 | Per asset, total released across wallets equals what recipients measurably received, and (except for the rebasing token) the actors hold exactly that. | `invariant_RecipientsReceivedEverythingReleased` | release actions |
 | INV-ECO-4 | Recorded ERC-20 receipts equal the model's high-water mark (never decreasing and, except for the rebasing token, never above live receipts); ETH records no mark, and live ETH receipts never fall below the model's. | `invariant_ObservedNeverDecreases` | `rebaseTo`, `toggleFee`, release actions |
 | INV-ECO-5 | Unreleasable dust per wallet and asset (ETH, the blocklist and fee tokens) is at most the payee count minus one. | `invariant_DustIsBounded` | all |
-| INV-ECO-6 | Every escrow credit equals the model, credits sum to `totalOwed` per asset, and the escrow's balance is at least `totalOwed`. | `invariant_EscrowIsSolventAndMatchesTheModel` | `pay`, `deposit`, `flush`, `recover`, `consentToggle` |
+| INV-ECO-6 | Every escrow credit equals the model, credits sum to `totalOwed` per asset, and the escrow's balance is at least `totalOwed`. | `invariant_EscrowIsSolventAndMatchesTheModel` | `pay`, `deposit`, `flush`, `recover`, `consentToggle`, `expire` |
 | INV-ECO-7 | The claim router holds nothing, and the payer holds no ETH, no allowance to the escrow, and only the tokens of payments the model expected to revert. | `invariant_IntermediariesHoldNothing` | `claimBatch`, `pay` |
 | INV-ECO-8 | Every release, signed release, batch item, payment, deposit, flush and recovery reverts with exactly the predicted error data or moves exactly the predicted amount. | handler check: every action | all |
 | INV-ECO-9 | A replayed signed release fails with `NonceAlreadyUsed`, or with `NotPayoutAddress` once the artist's payout changed. | handler check: `replaySigned` | `releaseSigned`, `revokeNonce`, `setArtistPayout` |
-| INV-ECO-10 | Governed recovery moves a split wallet's credit only to its equivalent replacement (same payees, another salt) and another account's only to the replacement that account consented to, consuming the consent. | handler check: `recover`, `consentToggle` | as named |
+| INV-ECO-10 | Governed recovery moves a split wallet's credit only to its equivalent replacement (same payees, another salt), another account's only to the replacement that account consented to, consuming the consent, and the network's own credits without consent (C19). | handler check: `recover`, `consentToggle` | as named |
 | INV-ECO-11 | A claim batch pays each item its predicted amount, and the recipients' balances rise by exactly the batch total. | handler check: `claimBatch` | as named |
 | INV-ECO-12 | Per wallet and asset, what was released plus what is still releasable equals what the wallet received (the ledger's accounting matches the vault's balances). | `invariant_ReleasedPlusReleasableMatchesReceived` | release actions, `pay`, `receiveDirect` |
 | INV-ECO-13 | The escrow's excess over `totalOwed` is exactly what `sweepExcess` may move, and for every asset the handler uses (ETH and single-address, non-rebasing tokens) a sweep never reduces a credit's backing ([ECO-40](../spec/economics-and-payouts.md#rules-and-invariants); two-address and rebasing tokens: LIM-ECO-8). | `invariant_EscrowExcessIsExactlyTheUnowed` | `pay`, `deposit`, `flush`, `recover`, `sweep` |
+| INV-ECO-14 | A running mark never exceeds what the payee was entitled to when marked; a forfeit pays the network at most the marked level less what the payee released, and only 180 days after the mark; every release from a wallet naming the network fee vault also pays the vault its due share, or leaves it due when the vault's token refuses. | `invariant_MarksWithinEntitlement`; handler check: `mark`, `forfeit`, `expire` | `mark`, `forfeit`, `expire`, `warp`, release actions |
 
 ## English auction
 
@@ -167,9 +167,9 @@ suite's `afterInvariant` drives every sale to an end after each run.
 - [`AuctionInvariant.t.sol`](../../test/sales/auction/invariant/AuctionInvariant.t.sol)
   (`AuctionInvariantEth`, `AuctionInvariantErc20`), handler
   [`AuctionHandler`](../../test/sales/auction/invariant/AuctionHandler.sol): starts with and
-  without bids, honest and hostile bids (direct, EIP-2612, relayed Permit2), dispute pauses,
-  withdrawals, upheld cancellations, resumptions, settlements, claims, delivery claims, the
-  start pause and governance changes.
+  without bids, honest and hostile bids (direct and relayed Permit2; an EIP-2612 permit payment
+  is refused and moves nothing), dispute pauses, withdrawals, upheld cancellations, resumptions,
+  settlements, claims, delivery claims, the start pause and governance changes.
 - [`AuctionHaltsInvariant.t.sol`](../../test/sales/auction/invariant/AuctionHaltsInvariant.t.sol)
   (`AuctionHaltsInvariantEth`, `AuctionHaltsInvariantErc20`), handler
   [`AuctionHaltsHandler`](../../test/sales/auction/invariant/AuctionHaltsHandler.sol): the same,
@@ -195,11 +195,11 @@ suite's `afterInvariant` drives every sale to an end after each run.
 | INV-AUC-5 | Every sale, ended or not, keeps in storage the opening bid, increment share and anti-snipe window locked at start and its first bid's floor, whatever governance changed (read from storage, layout cross-checked against the view). | `invariant_StoredTermsMatchWhatEachSaleLocked` | `govern` |
 | INV-AUC-6 | After 30 days, settling every sale and claiming every delivery and credit leaves no funds and no token, with every deposit accounted for. | after-campaign: `AuctionInvariantBase.afterInvariant` | all |
 | INV-AUC-7 | Once the token stops blocking and the currency is re-admitted, every sale ends settled or cancelled, leaving no funds and no token. | after-campaign: `AuctionHaltsInvariantBase.afterInvariant` | `drain` |
-| INV-AUC-8 | A bid extends the end to at least `now + the locked window`; settlement delivers the token (or leaves it pending) to the high bid's recipient, or the museum if none (D140); a second dispute pause reverts (`PauseExhausted`); a withdrawal leaves the sale paused; `resume` or `unpause` within 48 hours (`Roles.STANDARD`) of the pause reverts (`UnpauseTooEarly`, review finding GOV-5). | handler check: `bid`, `settle`, `pause`, `pauseAndWithdraw`, `resume`, `toggleStartPause` | as named |
-| INV-AUC-9 | An unended sale refuses `settle`; a deprecated currency blocks settlement for 60 days, then `settle` credits the standing bid back to its bidder and gives the work to the museum (owner decision 10); re-admission in the last window or after the end reopens the sale for the longer of the governed duration and the locked window, keeping the bid. | handler check: `AuctionHaltsHandler.settle`, `_freezeExit` | `settle`, `toggleCurrency` |
+| INV-AUC-8 | A bid extends the end to at least `now + the locked window`; settlement delivers the token (or leaves it pending) to the high bid's recipient, or the museum if none (D140); a second dispute pause reverts (`PauseExhausted`); a withdrawal leaves the sale paused; the network's `resume` lands at any moment of the pause (C30). | handler check: `bid`, `settle`, `pause`, `pauseAndWithdraw`, `resume`, `toggleStartPause` | as named |
+| INV-AUC-9 | An unended sale refuses `settle`; a deprecated currency blocks settlement for 14 days, then `settle` credits the standing bid back to its bidder and gives the work to the museum (owner decision 10); re-admission in the last window or after the end reopens the sale for the longer of the governed duration and the locked window, keeping the bid. | handler check: `AuctionHaltsHandler.settle`, `_freezeExit` | `settle`, `toggleCurrency` |
 | INV-AUC-10 | With hostile tokens, the auction's balance equals the actors' credits plus the live high bids, and every deposited bid is held, claimed, or paid to the seller, the network or the escrow for them. | `invariant_HeldEqualsCreditsPlusLiveBids`, `invariant_ValueIsConserved` (refusal suite) | all |
-| INV-AUC-11 | The network receives exactly the fee on every sold sale (the listed terms, or for a federated sale the registry's share at start to the recipient locked at start) and nothing on a refused, rescued or unsold one. | `invariant_TheNetworkIsPaidOnEverySoldSale` | all |
-| INV-AUC-12 | From any state the campaign reaches, once each sale's refusal delay has passed and its currency is back or frozen out, `settleOrRefund` brings every unsettled federated sale to SETTLED whatever its token does, and `settle` the stand-in's, leaving no standing bid, with INV-AUC-10, INV-AUC-11 and INV-AUC-13 still holding. | after-campaign: `AuctionRefusalFixture.afterInvariant` | all |
+| INV-AUC-11 | The network receives exactly the fee on every sold sale (the listed terms, or for a federated sale the registry's share locked at start), paid to the recipient current at settlement, and nothing on a refused, rescued or unsold one. | `invariant_TheNetworkIsPaidOnEverySoldSale` | all |
+| INV-AUC-12 | From any state the campaign reaches, once 2 days have passed after each sale's end and its currency is back or frozen out, `settleOrRefund` brings every unsettled federated sale to SETTLED whatever its token does, and `settle` the stand-in's, leaving no standing bid, with INV-AUC-10, INV-AUC-11 and INV-AUC-13 still holding. | after-campaign: `AuctionRefusalFixture.afterInvariant` | all |
 | INV-AUC-13 | A bidder holds a sale's work, by the token's own ledger, only if that sale is SETTLED with it as the winning bidder, so it paid, and the network's fee on it is counted in INV-AUC-11. | `invariant_TheBuyerHoldsTheWorkOnlyIfItPaid` | all |
 
 ## Edition sales
@@ -224,16 +224,16 @@ are on [Editions and sales][ed] (EA-n).
 
 | ID | Invariant | Test | Handler actions |
 | --- | --- | --- | --- |
-| INV-EA-1 | No unsold or extra copies: an edition's minted supply equals the units its claims minted, never exceeds the clearing count `k`, and equals `k` once every winning bid is claimed; the units every bid wins sum to `k`. | `invariant_editionAuction` | `bid`, `raise`, `withdraw`, `settle`, `claim` |
-| INV-EA-2 | ETH conservation: the adapter's balance is what bidders paid in minus refunds, withdrawals, revenue and credits paid out, and equals exactly what it owes: every unclaimed bid's escrow, less its won units at the clearing price once settled, plus the credits. | `invariant_editionAuction` | all |
-| INV-EA-3 | Clearing optimality and the breadth rule: before settlement the live count, price and best revenue equal the per-unit reference's (so the count is the largest within the margin of `R*`); at settlement the stored result equals it too, and its revenue is within the margin of `R*`. | `invariant_editionAuction`; handler check: `settle` | `bid`, `raise`, `withdraw`, `settle` |
+| INV-EA-1 | No unsold or extra copies: an edition's minted supply equals the units its claims minted, never exceeds the clearing count `k`, and equals `k` once every winning bid is claimed; the units every bid wins sum to `k`. | `invariant_editionAuction` | `bid`, `raise`, `settle`, `claim` |
+| INV-EA-2 | ETH conservation: the adapter's balance is what bidders paid in minus refunds, revenue and credits paid out, and equals exactly what it owes: every unclaimed bid's escrow, less its won units at the clearing price once settled, plus the credits. | `invariant_editionAuction` | all |
+| INV-EA-3 | Clearing optimality and the breadth rule: before settlement the live count, price and best revenue equal the per-unit reference's (so the count is the largest within the margin of `R*`); at settlement the stored result equals it too, and its revenue is within the margin of `R*`. | `invariant_editionAuction`; handler check: `settle` | `bid`, `raise`, `settle` |
 | INV-EA-4 | The cap: the count never exceeds a nonzero creator cap. | `invariant_editionAuction` | `bid`, `raise` |
-| INV-EA-5 | FIFO at the cut step: every claim mints exactly the reference's fill in arrival order of the units the clearing step sells, the marginal bid partly, and `bidOutcome` agrees with the claim; the departure order the handler sorts equals `settlementOrder` (a fresh settler's order), and a sweep completes. | handler check: `settle`, `claim`; `invariant_editionAuction` | `raise`, `withdraw`, `settle` (by one or more settlers), `claim` |
+| INV-EA-5 | FIFO at the cut step: every claim mints exactly the reference's fill in arrival order of the units the clearing step sells, the marginal bid partly, and `bidOutcome` agrees with the claim; the departure order the handler sorts equals `settlementOrder` (a fresh settler's order), and a sweep completes. | handler check: `settle`, `claim`; `invariant_editionAuction` | `raise`, `settle` (by one or more settlers), `claim` |
 | INV-EA-6 | The view equals settlement: the last live `clearing` before settling is the stored result, and the stored result never changes afterwards. | handler check: `settle`; `invariant_editionAuction` | `settle`, `claim` |
-| INV-EA-7 | The clocks: `endTimes` reads the 1/1's end live, `closeAt` is that end plus the offset, `endTime = max(closeAt, softEnd)` never before `closeAt` and never past the backstop, the soft end is the handler's model (a bid or raise in the window, none while the 1/1 is paused), and bidding and withdrawals are open exactly when the rules say. | `invariant_editionAuction` | `bid` (a quarter in the window), `raise`, `bidOneOfOne` (half in its anti-snipe window), `disputePause`, `resolveDispute`, `warp` |
-| INV-EA-8 | No settlement before the end, before the 1/1 settles, or before the edition exists when copies sold; a cancelled 1/1's sale refuses a bid once the adapter reads the cancellation (every cancel here lands 48 hours after the pause, past the cached close; LIM-EA-16 has the rest) and settles VOID. | handler check: `settle` | `settle`, `resolveDispute`, `createEdition` |
+| INV-EA-7 | The clocks: `endTimes` reads the 1/1's end live, `closeAt` is that end plus 15 minutes, `endTime = max(closeAt, softEnd)` never before `closeAt` and never past the backstop, the soft end is the handler's model (a bid or raise in the window, none while the 1/1 is paused), and bidding is open exactly when the rules say. | `invariant_editionAuction` | `bid` (a quarter in the window), `raise`, `bidOneOfOne` (half in its anti-snipe window), `disputePause`, `resolveDispute`, `warp` |
+| INV-EA-8 | No settlement before the end, before the 1/1 settles, or before the edition exists when copies sold; a cancelled 1/1's sale refuses a bid once the adapter reads the cancellation (LIM-EA-16 has the rest) and settles VOID; `abandon` from 21 days after the close creates the edition when the master settled, else voids. | handler check: `settle`, `abandon` | `settle`, `resolveDispute`, `createEdition`, `abandon` |
 | INV-EA-9 | A void sale refunds every bid in full and mints nothing. | handler check: `claim`; `invariant_editionAuction` (INV-EA-2) | `resolveDispute` (cancel), `settle`, `claim` |
-| INV-EA-10 | Firm bids and single claims: a withdrawal outside a 1/1 dispute pause, a stranger's raise, a payment one wei off, a second open, a second claim, all revert; during a pause a bid placed or last raised before the pause's minute withdraws its whole escrow, one placed or raised during it (or in its minute) is refused, and the lens's `canWithdraw` agrees. | handler check: `withdraw`, `raise`, `bid`, `open`, `claim` | as named |
+| INV-EA-10 | Firm bids and single claims: a withdrawal at any time (also during a 1/1 dispute pause, R21), a stranger's raise, a payment one wei off, a second open, a second claim, all revert. | handler check: `withdraw`, `raise`, `bid`, `open`, `claim` | as named |
 | INV-EA-11 | Beside the 1/1: a 1/1 bid in its anti-snipe window extends the 1/1 and never moves the edition end earlier; an unbid 1/1 settles to the museum. | handler check: `bidOneOfOne`, `settleOneOfOne` | as named |
 | INV-EA-12 | Per-settler sweeps and completability: a settler's call moves only its own progress (`sweepOf`); an order that skips a departure is accepted but never finishes its sender's sweep; a reordered one reverts with `InvalidSettlementOrder`; after any of these, a keeper settling from its own address completes settlement within a bounded number of calls, and a later call by another settler returns true and changes nothing. | handler check: `settle` (one keeper, a handoff, a stranded sweep, a refused reorder, interleaved keepers) | `settle` |
 | INV-EA-13 | No claim while SETTLING: while a sale's scan or sweep is unfinished, its bidder's claim and a pushed claim both revert with `InvalidAuctionState`. A book wider than one call's scan (24 words) settles over calls: the first stores scan progress and no result; an early call may advance the scan before the edition exists, and the call that would finish it waits for the edition. | handler check: `settle` | `wideBook`, `settle` |
@@ -259,28 +259,22 @@ empty positions with foreign words so that terms must overflow.
 
 ## Identity and recovery
 
-[`ArtistRegistry.invariant.t.sol`](../../test/identity/ArtistRegistry.invariant.t.sol),
-handler [`ArtistRegistryHandler`](../../test/identity/ArtistRegistryHandler.sol). Real
-`ArtistRegistry` and `ConsolidationAdapter`; mocks `DelegationManagementMock`,
-`SplitFactoryWalletsMock` and `DisputeOutcomeLogMock`. One artist and four keys: the artist
-key, an established consolidated wallet, a fresh key and a thief. The handler predicts success
-or the exact error before every call.
+[`Accounts.invariant.t.sol`](../../test/identity/Accounts.invariant.t.sol), handler
+`AccountsHandler` in the same file. Real `ArtistRegistry` and `ConsolidationAdapter` with the
+identity fixture's mocks. The handler stages own changes and replacements, freezes and
+unfreezes, consolidates and unconsolidates wallets, and signs with the account's wallets and with
+outsiders.
 
 | ID | Invariant | Test | Handler actions |
 | --- | --- | --- | --- |
-| INV-ID-1 | The payout and `authorityOf` equal the model and change only by a successful `executeChange` or upheld `resolveContested`; `payoutAddress` is zero exactly while a pending change would move the payout and its contest, if any, has not lapsed (365 days). | `invariant_PayoutChangesOnlyThroughExecutedChanges` | `stageStandard`, `stageOverride`, `execute`, `resolve`, `expire`, `veto`, `cancel` |
-| INV-ID-2 | IDENTITY-1: `activeAuthorityOf` is zero exactly while a pending override (kind above STANDARD) would move the authority and its contest, if any, has not lapsed, and otherwise equals the authority. | `invariant_ActiveAuthorityIsRestrainedOnlyByAnAuthorityMovingOverride` | as INV-ID-1 |
-| INV-ID-3 | The last-activity time and `changeNonce` equal the model: dormancy counts only the artist's own activity and executions (not overrides, vetoes or refreshes), and the nonce moves only on stagings and revocations. | `invariant_ActivityAndNonceMatchTheModel` | `heartbeat`, `revokeNonce`, `refreshStanding`, stagings |
-| INV-ID-4 | A pending change is well formed: `executableAt` is `stagedAt` plus 7 days (STANDARD) or 180 days (override), `previousAuthority` is current, the evidence hash is zero exactly for STANDARD, the cancellers are those captured at staging (at most 16), the next authority and payout are nonzero, only overrides are contested (`contestedAt` in `[stagedAt, executableAt)`), and uncontested changes record no prior outcome. | `invariant_PendingChangeIsWellFormed` | stagings, `cancel`, `toggleConsolidation` |
-| INV-ID-5 | IDENTITY-2: `reservedFor(key)` is the artist ID for exactly the next authority of a pending authority-moving change. | `invariant_OnlyThePendingNextAuthorityIsReserved` | stagings, `execute`, `veto` |
-| INV-ID-6 | SIGS-3: `artistIdOf(key)` is the artist ID for exactly the keys that have been the artist's authority, as in the model, which refuses any return to such a key. | `invariant_PastAuthoritiesResolveToTheArtist` | stagings, `execute` |
-| INV-ID-7 | The authority resolves to the artist, and the standing snapshot holds at most 16 entries and no wallet twice. | `invariant_AuthorityAndStandingAreConsistent` | `refreshStanding`, `toggleConsolidation` |
-| INV-ID-8 | The guardian's `stageOverride` and `stageChange` revert, used payloads and override acceptances never restage, `resolveContested` succeeds only for a live contest citing a latest outcome that differs from the pre-contest one (to uphold, after the 180-day notice), and `expireContest` only 365 days after the contest. | handler check: `guardianRedirect`, `replayLast`, `replayAcceptance`, `resolve`, `expire` | as named |
-| INV-ID-9 | A refresh drops an established wallet only after 30 days missing and a pending one once its consolidation ends, marks missing exactly the established wallets no longer consolidated, stamps new entries with the source's `effectiveAt`, and records every consolidated key unless the snapshot is full. | handler check: `refreshStanding` | `refreshStanding`, `toggleConsolidation`, `warp` |
-| INV-ID-10 | The `restrained` flag in the authority's storage word is set exactly while the pending change is an override that moves the authority, lapsed or not. | `invariant_RestrainedFlagMatchesThePendingChange` | as INV-ID-1 |
-| INV-ID-11 | Each identity timer stays between its floor and ceiling, and the contest timeout exceeds the override delay by at least 185 days ([ID-35](../spec/identity-and-recovery.md#rules-and-invariants)). | `invariant_TimersStayWithinTheirBounds` | `setTimer`, stagings |
-| INV-ID-12 | The federation directory equals the model (one entry per token, ACTIVE and DELISTED only by the federation registry, LEFT only by the token, terminal), and no federation call changes the artist's authority, payout, standing or pending change ([ID-33, ID-34](../spec/identity-and-recovery.md#rules-and-invariants)). | `invariant_FederationDirectoryMatchesTheModel`; handler check: every federation call | `fedList`, `fedStatus`, `fedExit`, `fedRegister` |
-| INV-ID-13 | The consolidation source never acts for a live artist: no consolidated-wallet staging succeeds within `DORMANCY` of the artist's last signed activity, a pending wallet-signed change waits at least 180 days, and no call by a wallet other than the authority (staging, cancel, contest, heartbeat, nonce revocation), nor the execution of a wallet-signed change that keeps the authority, changes the artist's last-activity time, while the handler swaps in a source that names every wallet ([ID-40](../spec/identity-and-recovery.md#rules-and-invariants)). | `invariant_ASourceNeverActsForALiveArtist` | `stageStandard`, `cancel`, `execute`, `toggleSource`, `warp`, `heartbeat`, `revokeNonce` |
+| INV-ID-1 | `requireSigned` passes exactly for the account's wallets (the root, or a wallet the source says is consolidated with it), never for an outsider and never while the account is frozen ([ID-2, ID-3](../spec/identity-and-recovery.md#rules-and-invariants)). | `invariant_RequireSignedPassesExactlyForTheAccountsWallets` | as named in the handler |
+
+The earlier identity campaign (INV-ID-2 to INV-ID-13: the restraint flag, activity and nonces,
+reservations, past authorities, the standing snapshot, timers, the federation directory with
+LEFT, and the source acting only for dormant artists) left with that machinery in the second
+permanence pass; the contest, replacement and freeze rules are unit-tested in
+[`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) (`test_Contest_*`) and the
+directory in [`FederationDirectory.t.sol`](../../test/identity/FederationDirectory.t.sol).
 
 ## Statements
 
@@ -320,33 +314,26 @@ and 1.
 
 [`GovernanceInvariant.t.sol`](../../test/governance/GovernanceInvariant.t.sol), handler
 `GovernanceHandler` in the same file. Real `GovernanceConfigurator` and `WorksAccessManager`;
-mock `GovernedTargetMock`, plus a rogue stock `AccessManager` for hostile operations. Admins
-schedule hostile operations next to benign guardian and admin rotations, a vigilant guardian
-cancels each hostile one before time moves, and every warp runs `configurator.verify`.
-Guardians suspend the fixed PLATFORM, CURATOR and STORAGE_OPERATOR keys (and try a
-non-suspendable role), admins schedule 30-day grants that lift them, and admins try to cancel
-revocations another account scheduled (Rule 3).
+mock `GovernedTargetMock`. Random actors, the network among them, hand the network over, accept,
+try to grant themselves network roles, grant and revoke an operational key, brake and run
+operations, and renounce roles; refused calls are caught.
 
 | ID | Invariant | Test | Handler actions |
 | --- | --- | --- | --- |
-| INV-GV-1 | Hostile operations never change the target (authority, recipient, verifier, fee, admin calls) or grant the attacker a role; nothing executes early or through a wrapper; no account cancels its own role's revocation, and no admin another account's (Rule 3); benign rotations and lifts always execute; rotators' GUARDIAN, PAUSER and ADMIN membership equals the model; the hot admin keeps ADMIN; at least two guardians stay active. | `invariant_GovernanceStaysContained` | all except `guardianSuspends` |
-| INV-GV-2 | After every warp the on-chain configuration reads back as the model's: the unsuspended fixed holders plus the active rotators. | handler check: `warp` (`configurator.verify(modelConfig())`) | as named |
-| INV-GV-3 | No non-suspendable role is ever suspended; each fixed key's suspension equals the model (set by `suspend`, cleared by an executed 30-day lift); a suspended key fails `hasRole`, an unsuspended one passes; the CURATOR key's `canCall` on the target is immediate, with zero delay, exactly when unsuspended. | `invariant_SuspensionsStayContained` | `guardianSuspends`, `scheduleLift`, `executeBenign`, `warp` |
-| INV-GV-4 | A guardian's suspension of an unsuspended fixed key succeeds; its attempt on a non-suspendable role (ADMIN on the hot admin, another role on a guardian) never does. | handler check: `guardianSuspends` (`fail_on_revert`; `nonSuspendableSuspended` checked by INV-GV-3) | as named |
+| INV-GV-1 | Exactly one address holds the network roles (`ADMIN`, `NETWORK`, `PARAMETER_SETTER`, `FUNDS_SETTER`, `SUCCESSOR_SETTER`); it is `network()`, it carries each class's delay, and the configurator holds none ([GV-14](../spec/governance.md#rules-and-invariants)). | `invariant_ExactlyOneAddressHoldsTheNetworkRoles` | `transfer`, `accept`, `grantNetworkRole`, `grantOperational`, `brakeAndRun`, `renounce` |
 
-### The manager's permanence functions
+## Invariants removed or changed in the second permanence pass
 
-[`PermanenceInvariant.t.sol`](../../test/governance/PermanenceInvariant.t.sol): four campaigns on a
-real `WorksAccessManager` (the escalation campaign with five guardian seats, two admins and an
-outsider)
-([GV-37 to GV-45](../spec/governance.md#rules-and-invariants)).
+The behaviour these checked was removed or changed by the owner's decisions of 16 November 2026
+(ADR 0009); the IDs are not reused.
 
-| ID | Invariant | Test | Handler actions |
-| --- | --- | --- | --- |
-| INV-GV-5 | Once a guardian struck a protected action, only its scheduler or a majority of the guardian seats counted at scheduling, at least two, stops the re-proposal. | `invariant_OnlyAGuardianMajorityStopsTheEscalatedLane` | `cancelAs`, `leave`, `warp` |
-| INV-GV-6 | A dead-admin recovery never completes while an admin acts. | `invariant_RecoveryNeverCompletesWhileAnAdminActs` | `open`, `approve`, `complete`, `heartbeat`, `warp` |
-| INV-GV-7 | `migrate` is all-or-nothing per piece: every target of a completed piece answers to the successor, and none of a failed piece moved. | `invariant_MigrateIsAllOrNothingPerPiece` | `migrate` |
-| INV-GV-8 | The ADMIN and GUARDIAN seat caps hold. | `invariant_SeatCapsHold` | `grant`, `revoke`, `setCap` |
+| ID | What it checked | Now |
+| --- | --- | --- |
+| INV-ID-1 (old) to INV-ID-13 | The single authority, the restraint flag, activity and dormancy, reservations, the standing snapshot, governed timers, the directory's LEFT state, and a source acting only for dormant artists | Removed; INV-ID-1 now checks the consolidated account ([Identity and recovery](#identity-and-recovery)) |
+| INV-GV-2 to INV-GV-8; PROP-GV-1, PROP-GV-4 to PROP-GV-7 | Guardian cancel rules, suspensions, escalation, dead-admin recovery, seat caps | Removed with guardians, seats, suspension and recovery; INV-GV-1 and PROP-GV-8 check the single network |
+| INV-STR-14 (old) | A royalty rate never rises | Changed: a rate stays within 100,000 and is fixed once renounced (R10) |
+| INV-EA-10 (old) | Withdrawals of bids placed before a 1/1 dispute pause | Changed: no edition bid is ever withdrawn (R21) |
+| INV-EA-7 (old) | A per-sale close offset | Changed: every sale closes 15 minutes after its 1/1 (R20) |
 
 ## Properties tested by fuzz and unit tests
 
@@ -380,14 +367,10 @@ Properties with no campaign of their own, or tested more directly outside one: b
 | PROP-CUR-3 | Only active signers' attestations count, and arbitrary signature bytes are never approved. | [`Eip712CurationVerifier.t.sol`](../../test/curation/Eip712CurationVerifier.t.sol) `testFuzz_isApproved_onlyActiveSignersCount`, `testFuzz_isApproved_neverRevertsOnGarbage` |
 | PROP-ED-1 | An edition never mints beyond its creator's cap, and `createEdition` refuses a tampered item. | [`Editions.t.sol`](../../test/editions/Editions.t.sol) `testFuzz_Mint_NeverExceedsTheCap`, `testFuzz_CreateEdition_RefusesTamperedItem` |
 | PROP-ENT-1 | The first of many deliveries wins, only the coordinator delivers, an unissued request ID never delivers, and non-VRF items and items outside an approved package are always refused. | [`VrfEntropyFuzz.t.sol`](../../test/entropy/VrfEntropyFuzz.t.sol) `testFuzz_TheFirstDeliveryOfManyRequestsWins`, `testFuzz_OnlyTheCoordinatorMayFulfill`, `testFuzz_UnissuedRequestIdsNeverDeliver`, `testFuzz_NonVrfItemsAreAlwaysRefused`, `testFuzz_OnlyItemsOfAnApprovedPackageCanBeRequested` |
-| PROP-GV-1 | Nobody cancels the operation that revokes their own role. | [`GuardianCancel.t.sol`](../../test/governance/GuardianCancel.t.sol) `testFuzz_NobodyCancelsTheirOwnRevocation` |
+| PROP-GV-8 | Only the network holds a network role, for any account and network role. | [`NetworkAndBrake.t.sol`](../../test/governance/NetworkAndBrake.t.sol) `testFuzz_OnlyTheNetworkHoldsTheNetworkRoles` |
 | PROP-GV-2 | A raise-only parameter moves by at most 2× per step and never above its ceiling, for any sequence of raises. | [`BoundedParameter.t.sol`](../../test/governance/BoundedParameter.t.sol) `testFuzz_RaiseMatchesSpecification`, `testFuzz_RaiseSequenceStaysBounded` |
 | PROP-GV-3 | Only genesis selectors pass wiring validation. | [`GenesisWiring.t.sol`](../../test/governance/GenesisWiring.t.sol) `testFuzz_OnlyGenesisSelectorsPassValidation` |
-| PROP-GV-4 | For any role, victim and canceller (guardians, cold admin, keeper, key holder), another account's revocation is cancelled exactly when the canceller is a guardian and not the victim (Rules 2 and 3). | [`GuardianCancel.t.sol`](../../test/governance/GuardianCancel.t.sol) `testFuzz_OnlyGuardiansCancelAnotherAccountsRevocation` |
-| PROP-GV-5 | `suspend` refuses with `RoleNotSuspendable` every role ID from 0 to 13 (`Roles.COUNT`, one past the last role) except PLATFORM, CURATOR and STORAGE_OPERATOR (`test_SuspendableRolesAreTheZeroDelayOperationalKeys` also checks `PUBLIC`). | [`Suspension.t.sol`](../../test/governance/Suspension.t.sol) `testFuzz_OnlyOperationalRolesCanBeSuspended` |
-| PROP-GV-6 | A suspension takes effect in the same block on `hasRole`, `canCall` and the target, keeping the record and other roles; only guardians suspend; a suspended pending holder never activates; only an ADMIN grant (guardian-vetoable), a revocation or the holder's renounce lifts it; readback rejects a suspended holder. | `Suspension.t.sol` `test_AGuardianSuspendsAKeyInTheSameBlock`, `test_OnlyGuardiansSuspend`, `test_APendingGrantCanBeSuspended`, `test_OnlyAnAdminGrantLiftsItAndAGuardianCanVetoThat`, `test_ARevocationClearsItAndTheKeyCanRenounce`, `test_ReadbackRejectsASuspendedHolder` |
-| PROP-GV-7 | On the genesis deployment, a suspended PLATFORM key fails every PLATFORM path (manual checks included) while the creator's stays open, a dishonest guardian's suspension lasts 60 days (in force at day 59, lifted at 60), the cold admin removes a hot admin and a guardian acting together in two 30-day rounds, and demotions by grant stay cancellable by the demoted account. | [`GovernanceRecovery.t.sol`](../../test/integration/GovernanceRecovery.t.sol) `test_AGuardianSuspendsThePlatformKeyAtOnce`, `test_ADishonestGuardiansSuspensionLastsAboutSixtyDays`, `test_ColdAdminRemovesAHotAdminAndAGuardianActingTogether`, `test_DemotionsByGrantStayCancellable` |
-| PROP-ID-1 | A change never executes before its delay, a contested override's uphold window is always open, and the adapter's "established" answer matches a model. | [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) `testFuzz_ExecuteChange_RespectsTheDelay`; [`ContestedOverrides.t.sol`](../../test/identity/ContestedOverrides.t.sol) `testFuzz_Contest_TheUpholdWindowIsAlwaysOpen`; [`ConsolidationAdapter.t.sol`](../../test/identity/ConsolidationAdapter.t.sol) `testFuzz_IsEstablished_MatchesModel` |
+| PROP-ID-1 | The second pass's value rules hold for any input: a royalty rate up to 100,000 rises or falls with agreement; a fee share only ever falls; a federated share in force never exceeds the deployed share; every release path pays the network its share; a mark never takes money that arrived after it; every edition sale closes 15 minutes after its 1/1. | [`WorkPowers.t.sol`](../../test/stream/WorkPowers.t.sol) `testFuzz_setRoyaltyRate_anyRateUpToTheCeiling`; [`Stream.t.sol`](../../test/stream/Stream.t.sol) `testFuzz_lowerFeeShare_onlyEverFalls`; [`FederationSecondPass.t.sol`](../../test/federated/FederationSecondPass.t.sol) `testFuzz_FeeShare_NeverAboveTheDeployedShare`; [`NetworkShare.t.sol`](../../test/economics/NetworkShare.t.sol) `testFuzz_EveryReleasePathPaysTheNetwork`, `testFuzz_AMarkNeverTakesLaterMoney`; [`UniformEditionAuctionWindow.t.sol`](../../test/sales/edition/UniformEditionAuctionWindow.t.sol) `testFuzz_Window_TheCloseIsTheOneOfOneEndPlusFifteenMinutes` |
 | PROP-DSP-1 | Any append sequence matches the model, relays round-trip and never replay, and the nonce bitmap tracks exactly the spent nonces. | [`StatementLog.t.sol`](../../test/records/StatementLog.t.sol) `testFuzz_SequenceMatchesModel`, `testFuzz_RelayRoundTripAndReplay`, `testFuzz_NonceBitmapTracksExactlyTheSpentNonces` |
 | PROP-HASH-1 | The item hash binds the collection and the shares and does not depend on the chain. | [`WorksHashing.t.sol`](../../test/interfaces/WorksHashing.t.sol) `testFuzz_itemHash_bindsCollection`, `testFuzz_itemHash_bindsShares`, `testFuzz_itemHash_independentOfChain` |
 | PROP-STR-2 | The artist registry is fixed in Stream: `setDependency("ARTIST_REGISTRY")` reverts and a replacement mint policy naming another registry is refused ([AUC-39](../spec/stream-and-auctions.md#rules-and-invariants)). | [`Stream.t.sol`](../../test/stream/Stream.t.sol) `test_setDependency_refusesAPolicyWithAnotherArtistRegistry` |
@@ -415,7 +398,7 @@ Figures: [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table). Rul
 | PROP-GAS-4 | The harness's cold-account correction is exact (a `start` from a fully cold state equals the corrected figure after warming every account), adds nothing for accounts already cold, and refuses storage it does not cool. | [`GasHarness.t.sol`](../../test/integration/GasHarness.t.sol) `test_TheColdAccountCorrectionIsExact`, `test_NothingIsAddedForAccountsAlreadyCold`, `test_RequireCooledRefusesStorageItDoesNotCool` |
 | PROP-GAS-5 | The state-growth counter counts a slot once, ignores overwrites, zero-to-zero, reverted writes, out-of-gas and `INVALID` frames and transient storage, and counts `CREATE` and ETH sent to a fresh account or an empty precompile as new accounts. | [`StateGrowth.t.sol`](../../test/helpers/StateGrowth.t.sol) (24 tests) |
 | PROP-GAS-6 | With every record, media and locator cap filled on the real stack, Stream's `tokenURI` and Editions' `uri` cost at most 8M Prague gas (`TOKEN_URI_BUDGET`) and create no state. | [`TokenUriBudget.t.sol`](../../test/integration/TokenUriBudget.t.sol) `test_Budget_*`; `GasReport.t.sol` `test_Gas_TokenURIBySize`; [`RendererGas.t.sol`](../../test/content/renderer/RendererGas.t.sol) `RendererGasTest`, `RendererGasBudgetTest` |
-| PROP-GAS-7 | Worst-case bounded inputs fit the EIP-7825 cap of 16,777,216 gas in Prague gas, intrinsic and calldata included: claim batches and the largest payee list; mint, `openRecord`, relicense with 16 consents, the longest locator, the preferred-locator scan and `syncOnChain`; `consume` and `registerPackage`; `createEdition`; every `settle` call of the edition auction's worst cases (every step of the widest ladder used, the cap binding at step 0, the longest departure sweep); settlement with every fallback; `stageChange`, `stageOverride` and `refreshStanding` (under half the cap); manifest registration and attestation at `MAX_CHUNKS`; genesis `configure`. | [`GasCap.t.sol`](../../test/economics/GasCap.t.sol), [`StreamTxCap.t.sol`](../../test/stream/StreamTxCap.t.sol), [`PackageRegistryGas.t.sol`](../../test/curation/PackageRegistryGas.t.sol), `Editions.t.sol` `test_Gas_CreateEditionWorstCaseFitsTxCap`, [`EditionAuctionGasReport.t.sol`](../../test/integration/EditionAuctionGasReport.t.sol) `test_Gas_EditionAuction_SettleWorstCase`, `test_Gas_EditionAuction_SettleWorstCase512`, `test_Gas_EditionAuction_SweepChunkWorstCase`, [`EnglishAuctionGas.t.sol`](../../test/sales/auction/EnglishAuctionGas.t.sol) `test_SettleGas_FitsTheTransactionCap`, [`EnglishAuctionHostile.t.sol`](../../test/sales/auction/EnglishAuctionHostile.t.sol) `test_SettleWorstCaseFitsTheFusakaCap`, [`ArtistRegistryStanding.t.sol`](../../test/identity/ArtistRegistryStanding.t.sol) `test_WorstCase_*`, `ContentStore.t.sol` `test_RegisterManifest_OneCallOf512FitsTheTransactionGasCap`, `Base64Attest.t.sol` `test_Attest_AtMaxChunksEveryCallFitsTheTransactionGasCap`, [`Genesis.t.sol`](../../test/integration/Genesis.t.sol) `test_GenesisConfigureFitsTheTransactionCap`, [`GenesisConfig.t.sol`](../../test/governance/GenesisConfig.t.sol) `test_MaximumWiringFitsTheTransactionGasCap` |
+| PROP-GAS-7 | Worst-case bounded inputs fit the EIP-7825 cap of 16,777,216 gas in Prague gas, intrinsic and calldata included: claim batches and the largest payee list; mint, `openRecord`, relicense with 16 consents, the longest locator, the preferred-locator scan and `syncOnChain`; `consume` and `registerPackage`; `createEdition`; every `settle` call of the edition auction's worst cases (every step of the widest ladder used, the cap binding at step 0, the longest departure sweep); settlement with every fallback; `stageChange`, `stageOverride` and `refreshStanding` (under half the cap); manifest registration and attestation at `MAX_CHUNKS`; genesis `configure`. | [`GasCap.t.sol`](../../test/economics/GasCap.t.sol), [`StreamTxCap.t.sol`](../../test/stream/StreamTxCap.t.sol), [`PackageRegistryGas.t.sol`](../../test/curation/PackageRegistryGas.t.sol), `Editions.t.sol` `test_Gas_CreateEditionWorstCaseFitsTxCap`, [`EditionAuctionGasReport.t.sol`](../../test/integration/EditionAuctionGasReport.t.sol) `test_Gas_EditionAuction_SettleWorstCase`, `test_Gas_EditionAuction_SettleWorstCase512`, `test_Gas_EditionAuction_SweepChunkWorstCase`, [`EnglishAuctionGas.t.sol`](../../test/sales/auction/EnglishAuctionGas.t.sol) `test_SettleGas_FitsTheTransactionCap`, [`EnglishAuctionHostile.t.sol`](../../test/sales/auction/EnglishAuctionHostile.t.sol) `test_SettleWorstCaseFitsTheFusakaCap`, [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) `test_WorstCase_*`, `ContentStore.t.sol` `test_RegisterManifest_OneCallOf512FitsTheTransactionGasCap`, `Base64Attest.t.sol` `test_Attest_AtMaxChunksEveryCallFitsTheTransactionGasCap`, [`Genesis.t.sol`](../../test/integration/Genesis.t.sol) `test_GenesisConfigureFitsTheTransactionCap`, [`GenesisConfig.t.sol`](../../test/governance/GenesisConfig.t.sol) `test_MaximumWiringFitsTheTransactionGasCap` |
 | PROP-GAS-8 | The VRF callback creates no storage slot and, repriced as ADR 0004 models Glamsterdam, uses at most half of `MIN_CALLBACK_GAS` (100,000). | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol) `test_Callback_UsesUnderHalfTheFloorUnderGlamsterdam` |
 
 ## Gaps
@@ -437,11 +420,10 @@ and Halmos proofs are in [Testing](../testing/README.md).
   (PROP-CNT-1, PROP-CNT-2, PROP-RND-1).
 - **Curation signer changes**: the campaign never disables, re-enables or swaps an
   `Eip712CurationVerifier` signer.
-- **`ConsolidationAdapter`** runs only over a mock delegation contract; its model is a fuzz
-  test (PROP-ID-1).
-- **Suspension** is campaigned on a mock target, with `canCall` for CURATOR only and lifts by
-  grant only; the manual PLATFORM and CURATOR paths, lifts by revocation or renounce, and the
-  dishonest-guardian timeline are unit and integration tests (PROP-GV-6, PROP-GV-7).
+- **`ConsolidationAdapter`** runs only over a mock delegation contract, in the accounts
+  campaign (INV-ID-1) and its unit tests.
+- **The brake** is campaigned only on a mock target; its once-per-operation rule and the
+  cancel-and-reschedule case are unit tests (`NetworkAndBrake.t.sol`).
 - **Deployment and readback guards** (`DeployGuards`, `Verify.s.sol`): unit tests only, in
   [`DeployScript.t.sol`](../../test/deploy/DeployScript.t.sol).
 - **The fully wired system.** Every campaign mocks its neighbors; properties that span

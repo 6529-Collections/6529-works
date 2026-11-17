@@ -157,7 +157,7 @@ contract FederationHandler is Test {
             _auction.settle(saleId);
         }
         if (a.bidder != address(0) && served && !faulty) {
-            expectedFees += a.bid * 10_000 / 100_000;
+            expectedFees += a.bid - a.bid * (100_000 - 10_000) / 100_000;
             ++soldCount;
         }
     }

@@ -7,11 +7,12 @@ import { WorksAccessManager } from "./WorksAccessManager.sol";
 
 /// @title GovernanceConfigurator
 /// @notice One-shot installer that owns its manager: the constructor deploys
-///         `WorksAccessManager(address(this))`, so the manager's code is the hardened one and
-///         its only initial admin is this contract. Deploy it, deploy every target with
+///         `WorksAccessManager(address(this))`, so the manager's code is the 6529 one and its
+///         only installer is this contract. Deploy it, deploy every target with
 ///         `authority = worksManager()`, then call {configure}. The whole configuration,
 ///         including the genesis wiring calls (one-shot binds, admitted minters), lands in one
-///         transaction and this contract renounces the admin role at the end.
+///         transaction; it proposes the network and renounces the installer record at the end.
+///         The network then calls `acceptNetwork` on the manager.
 /// @dev Only `deployer`, a constructor argument, may call {configure}, so a front-runner
 ///      cannot install its own holders. Taking it as an argument rather than `msg.sender`
 ///      lets the configurator be deployed through a CREATE2 factory, so its address, and its
@@ -41,7 +42,7 @@ contract GovernanceConfigurator {
     error NotDeployer(address caller);
     /// @notice The deployer argument is the zero address.
     error InvalidDeployer();
-    /// @notice The configurator still holds the admin role on its manager.
+    /// @notice The configurator still holds its installer record on its manager.
     error ConfiguratorStillAdmin();
 
     /// @param deployer_ The only account that may call {configure}, normally the operator
@@ -52,9 +53,11 @@ contract GovernanceConfigurator {
         worksManager = new WorksAccessManager(address(this));
     }
 
-    /// @notice Installs `cfg` on {worksManager}, executes the genesis `wiring` as zero-delay
-    ///         admin, renounces this contract's admin role and emits the epoch's hashes.
-    /// @param cfg Holders and target selector mappings; delays come from {Roles}.
+    /// @notice Installs `cfg` on {worksManager}, executes the genesis `wiring` as the
+    ///         zero-delay installer, proposes `cfg.network`, renounces this contract's installer
+    ///         record and emits the epoch's hashes.
+    /// @param cfg The network, the brake, the operational holders and the selector map; delays
+    ///        come from {Roles}.
     /// @param manifestHash Hash of the signed governance manifest describing `cfg`.
     /// @param wiring Genesis calls on configured targets, at most
     ///        `GovernanceConfig.MAX_WIRING_CALLS`, each with a genesis selector
@@ -75,29 +78,18 @@ contract GovernanceConfigurator {
         );
     }
 
-    /// @notice Reverts unless {worksManager} matches `cfg`: this contract holds no admin role,
-    ///         every configured admin carries the full 30-day delay with nothing pending, and
-    ///         every other role, holder and selector reads back as configured.
-    /// @dev For CI readback by `eth_call`, at least `minSetback()` after {configure}. Because
-    ///      this contract deployed the manager and was its only initial admin, any other admin
-    ///      can only come from a configured grant or a later 30-day, guardian-vetoable grant,
-    ///      which an indexer sees as a `RoleGranted` event. It also requires the manager not to
-    ///      be handed over and every configured target to be on its managed list, so a later
-    ///      `migrate` moves each of them.
-    /// @param cfg The expected configuration: the holders and target selector mappings passed to
-    ///        {configure}.
+    /// @notice Reverts unless {worksManager} matches `cfg`: this contract holds no installer
+    ///         record, the network and brake are the configured ones (so the network has
+    ///         accepted), and every role, holder and selector reads back as configured.
+    /// @dev For CI readback by `eth_call` after the network accepted. Because this contract
+    ///      deployed the manager and was its only installer, every other holder comes from a
+    ///      configured grant or a later grant by the network, which an indexer sees as a
+    ///      `RoleGranted` event.
+    /// @param cfg The expected configuration, as passed to {configure}.
     function verify(GovernanceConfig.Config calldata cfg) external view {
         if (GovernanceConfig.hasRecord(worksManager, Roles.ADMIN, address(this))) {
             revert ConfiguratorStillAdmin();
         }
         GovernanceConfig.verify(worksManager, cfg);
-        if (worksManager.successor() != address(0)) revert WorksAccessManager.HandedOver();
-        address[] memory managed = worksManager.managedTargets();
-        for (uint256 i = 0; i < cfg.targets.length; ++i) {
-            address target = cfg.targets[i].target;
-            uint256 j = 0;
-            while (j < managed.length && managed[j] != target) ++j;
-            if (j == managed.length) revert GovernanceConfig.TargetMismatch(target);
-        }
     }
 }

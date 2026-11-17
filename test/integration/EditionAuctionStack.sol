@@ -27,6 +27,22 @@ abstract contract EditionAuctionStack is IntegrationBase {
         );
     }
 
+    /// @dev 6529 Stream Editions' open data (C23): item `index` of the package `works` under
+    ///      `root`, the root and the item's proof.
+    function _openData(bytes32 root, Work[] memory works, uint256 index)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encode(works[index].item, root, _proofOf(works, index));
+    }
+
+    /// @dev The open data of a master published as a one-item package.
+    function _openData(Work memory w) internal pure returns (bytes memory) {
+        Work[] memory works = _one(w);
+        return _openData(_rootOf(works), works, 0);
+    }
+
     /// @dev Another uniform auction against this stack, as an upgrade would deploy one: its lens
     ///      in its own deployment, then the adapter pinning it (F8). Not admitted or listed.
     function _newEditionAuction() internal returns (UniformEditionAuction) {
@@ -49,14 +65,12 @@ abstract contract EditionAuctionStack is IntegrationBase {
 
     /// @dev The launch parameters (ADR 0005 section 4).
     function _editionConfig() internal pure returns (IUniformEditionAuction.AuctionConfig memory) {
-        return IUniformEditionAuction.AuctionConfig(
-            1e14, 48, 336, 10_000, 15 minutes, 5 minutes, 1 days
-        );
+        return IUniformEditionAuction.AuctionConfig(1e14, 48, 336, 10_000, 5 minutes, 1 days);
     }
 
     /// @dev The launch limits (`DeployV1.editionAuctionLimits`).
     function _editionLimits() internal pure returns (IUniformEditionAuction.Limits memory) {
-        return IUniformEditionAuction.Limits(30 days, 150, 100_000, 730);
+        return IUniformEditionAuction.Limits(100_000);
     }
 
     /// @dev An EDITION_MASTER work by `lead` whose edition is sold by the uniform auction, in ETH,
@@ -76,7 +90,7 @@ abstract contract EditionAuctionStack is IntegrationBase {
         Work[] memory works = _one(w);
         root = _publish(works);
         (oneSaleId, tokenId) = _start(root, works, 0);
-        saleId = editionAuction.open(address(editions), tokenId, abi.encode(w.item));
+        saleId = editionAuction.open(address(editions), tokenId, _openData(root, works, 0));
     }
 
     function _editionBid(uint256 saleId, address bidder, uint256 step, uint256 quantity)

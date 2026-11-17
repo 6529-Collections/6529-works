@@ -6,7 +6,7 @@ the frontend and CI. Standard library only. It covers:
   - the step ladder: `MANTISSAS`, round half up of 100 * 10^(j/192) for j < 192, and
     `price(step)`, exactly as `src/interfaces/types/StepLadder.sol` computes it;
   - the clearing rule (`clear`) and a brute force over unit bids (`brute`) that defines it;
-  - an event-sourced bid book (`Book`): bids, raises and dispute withdrawals, FIFO queue
+  - an event-sourced bid book (`Book`): bids and raises (bids are firm, R21), FIFO queue
     positions at each step when a cap is set, the departure log, the sorted departure sweep
     that settlement runs at the cut step, and every bid's outcome;
   - the views a client shows: `Book.quote` (what a new bid would win and change) and
@@ -82,7 +82,6 @@ class Config:
     steps_per_decade: int = 48
     step_count: int = 336
     margin_share: int = 10_000
-    close_offset: int = 15 * 60
     soft_window: int = 5 * 60
     max_extension: int = 24 * 60 * 60
 
@@ -95,7 +94,6 @@ class Config:
             "stepsPerDecade": self.steps_per_decade,
             "stepCount": self.step_count,
             "marginShare": self.margin_share,
-            "closeOffset": self.close_offset,
             "softWindow": self.soft_window,
             "maxExtension": self.max_extension,
         }
@@ -120,9 +118,11 @@ def ladder(config: Config = DEFAULT) -> list[int]:
 
 
 # The ladder bounds governance may set (`StepLadder.isValid`). The base price is a power of
-# ten (`StepLadder.isBasePrice`), so every price reads as the table does (decision 3).
-MIN_BASE_PRICE, MAX_BASE_PRICE = 10**12, 10**17
-BASE_PRICES = tuple(10**k for k in range(12, 18))
+# ten (`StepLadder.isBasePrice`), so every price reads as the table does (decision 3). There is
+# no price cap (R19): the upper bound, 10^28, is the largest power of ten that fits the 96-bit
+# field the adapter stores it in, a safety bound against overflow (`BASE_PRICE_BOUND`).
+MIN_BASE_PRICE, BASE_PRICE_BOUND = 10**12, 10**28
+BASE_PRICES = tuple(10**k for k in range(12, 29))
 MIN_STEP_COUNT, MAX_STEP_COUNT = 64, 512
 MIN_TOP_PRICE = 10 * 10**18
 
@@ -222,7 +222,7 @@ def brute(totals: dict[int, int], cap: int, margin_share: int, price_of) -> tupl
 
 def sweep(clearing: Clearing, departures: list[tuple[int, int]]) -> int:
     """The cutoff X at a rationed cut step: start at the units the step wins (A) and, in
-    position order, add each departure (a hole left by a raise or a withdrawal) whose position
+    position order, add each departure (a hole left by a raise) whose position
     is below X. Bid b at the step then wins clamp(X - pos_b, 0, qty_b)."""
     cutoff = clearing.cut_units
     for position, quantity in sorted(departures):
@@ -257,8 +257,8 @@ class Book:
 
     Positions are counted in entered units per step and never decrease; they exist only when
     a cap is set (an uncapped step is never split, so its bids all report position 0). A raise
-    or a withdrawal at a capped auction leaves a departure (its old position and quantity) at
-    its old step; settlement sweeps the cut step's departures in position order.
+    at a capped auction leaves a departure (its old position and quantity) at its old step;
+    settlement sweeps the cut step's departures in position order. Bids never leave (R21).
     """
 
     config: Config = DEFAULT
@@ -342,13 +342,6 @@ class Book:
         bid.escrow += top_up
         return top_up
 
-    def withdraw(self, bid_id: int) -> int:
-        """A withdrawal while the 1/1 is paused for a dispute; returns the refund."""
-        bid = self._active(bid_id)
-        self._leave(bid)
-        bid.active = False
-        return bid.escrow
-
     def _active(self, bid_id: int) -> Bid:
         bid = self.bids.get(bid_id)
         if bid is None or not bid.active:
@@ -361,8 +354,6 @@ class Book:
             self.bid(event["bidder"], event["step"], event["quantity"])
         elif op == "raise":
             self.raise_bid(event["bidId"], event["toStep"])
-        elif op == "withdraw":
-            self.withdraw(event["bidId"])
         else:
             raise ValueError(f"unknown op {op}")
 
@@ -565,14 +556,13 @@ def dense_events(config: Config = DEFAULT) -> list[dict]:
 
 
 def fifo_holes_events() -> list[dict]:
-    """A capped cut step (200) with four holes, logged out of position order: three below the
-    final cutoff (two raises and a dispute withdrawal) and one above it (a raise)."""
+    """A capped cut step (200) with three holes, logged out of position order: two below the
+    final cutoff and one above it, each left by a raise."""
     events = _bids(("T", 210, 4), ("Q1", 200, 6), ("Q2", 200, 5), ("Q3", 200, 7),
                    ("Q4", 200, 3), ("Q5", 200, 8), ("Q6", 200, 6), ("Q7", 200, 4),
                    ("L", 150, 40))
     events += [
         {"op": "raise", "bidId": 3, "toStep": 210},   # Q2: hole at position 6
-        {"op": "withdraw", "bidId": 6},               # Q5, during a 1/1 pause: hole at 21
         {"op": "raise", "bidId": 8, "toStep": 205},   # Q7: hole at 35, above the cutoff
         {"op": "raise", "bidId": 2, "toStep": 205},   # Q1: hole at 0
     ]
@@ -641,11 +631,11 @@ def clearing_vectors() -> dict:
               "Bids at the base step (0.0001 ETH) and the top step (953 ETH).",
               _bids(("A", 0, 1000), ("B", DEFAULT.step_count - 1, 1))),
         _case("fifo-holes",
-              "A capped auction (cap 30) whose cut step (200) logged four departures out of "
-              "position order: Q2's raise (position 6), Q5's dispute withdrawal (21), Q7's "
-              "raise (35) and Q1's raise (0). The settler's order sorts them by position. The "
-              "sweep starts at A = 11 and takes the holes at 0, 6 and 21 (X = 30); the hole at "
-              "35 is above X. Q3 wins 7, Q4 3 and Q6 1 of 6.",
+              "A capped auction (cap 30) whose cut step (200) logged three departures out of "
+              "position order: Q2's raise (position 6), Q7's raise (35) and Q1's raise (0). "
+              "The settler's order sorts them by position. The sweep starts at A = 11 and "
+              "takes the holes at 0 and 6 (X = 22); the hole at 35 is above X. Q3 wins 7, Q4 3 "
+              "and Q5 1 of 8.",
               fifo_holes_events(), cap=30),
         _case("dense-book",
               "All 336 steps used, 1 + (step % 7) units each: the settlement worst case.",
@@ -656,7 +646,7 @@ def clearing_vectors() -> dict:
     ]
     return {
         "description": "Golden vectors of the 6529 Stream Editions auction (ADR 0005). Each "
-                       "case replays its events (bid, raise, withdraw; bid IDs from 1 in order) "
+                       "case replays its events (bid, raise; bid IDs from 1 in order) "
                        "on a fresh auction with `config` and `cap`, then expects the live "
                        "clearing, the settlement order and every bid's outcome as if the "
                        "auction closed now. Prices come from the ladder, or from `prices` "
@@ -695,6 +685,8 @@ def ladder_vectors() -> dict:
         (3 * 10**16, 192, 512), (5 * 10**14, 48, 336), (10**14 + 1, 48, 336),
         (2 * 10**12, 48, 512), (10**17 - 1, 48, 336),
         (10**14, 48, 240), (10**14, 48, 241),  # the top step at 9.53 ETH, then exactly 10 ETH
+        # No price cap (R19): any power of ten up to the 96-bit bound, and none above it.
+        (10**18, 48, 336), (10**28, 48, 336), (10**28, 24, 512), (10**29, 48, 336),
     ]
     return {
         "description": "The step ladder of the 6529 Stream Editions auction (ADR 0005): "
@@ -705,7 +697,7 @@ def ladder_vectors() -> dict:
                        "`ladders` gives the mantissas and first prices of each allowed "
                        "steps-per-decade at the default base price; `bounds` gives ladders "
                        "governance may or may not set (`StepLadder.isValid`: among them, "
-                       "the base price is a power of ten from 10^12 to 10^17 wei).",
+                       "the base price is a power of ten from 10^12 to 10^28 wei, the 96-bit safety bound).",
         "model": "tools/edition_auction_ref.py",
         "mantissas": MANTISSAS,
         "default": {
@@ -806,11 +798,6 @@ def random_events(rng: random.Random, steps: int) -> list[dict]:
                 to = rng.randint(bids[b] + 1, steps - 1)
                 events.append({"op": "raise", "bidId": b, "toStep": to})
                 bids[b] = to
-            continue
-        if active and roll < 0.38:
-            b = rng.choice(sorted(active))
-            events.append({"op": "withdraw", "bidId": b})
-            active.discard(b)
             continue
         step = rng.randrange(steps)
         events.append({"op": "bid", "bidder": f"b{next_id}", "step": step,

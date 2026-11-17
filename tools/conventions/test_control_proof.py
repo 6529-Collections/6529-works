@@ -37,7 +37,7 @@ class Fixture:
             official_tokens={STREAM: "stream", EDITIONS: "editions"},
             block={"number": 100, "timestamp": 1794787250}, head_block=110, signer_code=b"",
             ownership={"ownerOf": testdata.ANVIL_1},
-            consolidation={"isEstablished": True, "effectiveAt": 1700000000},
+            consolidation={"isConsolidated": True},
             ecdsa=accept_example,
         )  # fmt: skip
 
@@ -254,14 +254,13 @@ class ConsolidationTest(unittest.TestCase):
         self.assertEqual((verdict.accepted, verdict.step), (True, "DCL-24.5"))
 
     def test_consolidation_paths(self) -> None:
-        """DCL-25: established is accepted; a live, younger pair only at lower trust when the
-        venue allows it; no two-way consolidation is refused."""
-        young = {"isEstablished": False, "effectiveAt": 1794787250 + 86400}
+        """DCL-25: a live two-way consolidation is accepted, with no minimum age; anything else,
+        including a missing read or a non-boolean answer, is refused."""
         cases = [
-            ({"isEstablished": False, "effectiveAt": 0}, {}, False, None),
-            ({"isEstablished": False, "effectiveAt": 1700000000}, {}, False, None),
-            (young, {}, False, None),
-            (young, {"accept_young_consolidation": True}, True, "low"),
+            ({"isConsolidated": True}, {}, True, "full"),
+            ({"isConsolidated": False}, {}, False, None),
+            ({"isConsolidated": "true"}, {}, False, None),
+            ({}, {}, False, None),
             (None, {}, False, None),
         ]
         for consolidation, extra, accepted, trust in cases:

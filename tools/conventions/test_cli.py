@@ -1,6 +1,6 @@
 """The command line over the committed examples: validate (DCL-1), canonical (DCL-1), floor
-(DCL-5), card (DCL-26), grade (DCL-30), control-proof digest (DCL-23) and verify (DCL-24),
-custody digest (DCL-19) and check (DCL-21, DCL-22). Exit codes: 0 ok, 1 refused, 2 bad input."""
+(DCL-5), fact-sheet (DCL-26), control-proof digest (DCL-23) and verify (DCL-24), custody digest
+(DCL-19) and check (DCL-21, DCL-22). Exit codes: 0 ok, 1 refused, 2 bad input."""
 
 from __future__ import annotations
 
@@ -57,14 +57,17 @@ class CliTest(unittest.TestCase):
     def test_canonical(self) -> None:
         out = io.BytesIO()
         with contextlib.redirect_stdout(io.TextIOWrapper(out, encoding="utf-8")) as wrapper:
-            code = cli.main(["canonical", str(EXAMPLES / "promise-card.json")])
+            code = cli.main(["canonical", str(EXAMPLES / "fact-sheet.json")])
             wrapper.flush()
         self.assertEqual(code, 0)
-        self.assertEqual(out.getvalue(), testdata.canonical(testdata.example("promise-card.json")))
+        self.assertEqual(out.getvalue(), testdata.canonical(testdata.example("fact-sheet.json")))
 
-    def test_grade_example(self) -> None:
-        code, out, _ = run("grade", str(EXAMPLES / "promise-card.json"))
-        self.assertEqual((code, json.loads(out)), (0, testdata.example("promise-grade.json")))
+    def test_grade_and_card_commands_are_gone(self) -> None:
+        """O1, O2: there is no grade and no promise card; argparse refuses both names (exit 2)."""
+        for name in ("grade", "card"):
+            with self.subTest(name), self.assertRaises(SystemExit) as caught:
+                run(name, str(EXAMPLES / "fact-sheet.json"))
+            self.assertEqual(caught.exception.code, 2)
 
     def test_digests(self) -> None:
         code, out, _ = run("control-proof", "digest", str(EXAMPLES / "control-proof.json"))
@@ -92,28 +95,24 @@ class CliTest(unittest.TestCase):
         code, out, _ = run("floor", self.write("floor3.json", hashes_only))
         self.assertEqual(code, 1)  # stored receipts need the bytes
         self.assertTrue(any("needs the fetched bytes" in r for r in json.loads(out)["refusals"]))
-        inp["policy"]["workPowers"] = []  # an explicit list that names no power refuses ROYALTY_RATE
-        code, out, _ = run("floor", self.write("floor2.json", inp))
-        self.assertEqual(code, 1)
-        self.assertFalse(json.loads(out)["ok"])
 
-    def test_card(self) -> None:
-        code, out, _ = run("card", self.write("card.json", testdata.example_card_inputs()))
+    def test_fact_sheet(self) -> None:
+        code, out, _ = run("fact-sheet", self.write("sheet.json", testdata.example_sheet_inputs()))
         self.assertEqual(code, 0)
-        self.assertEqual(json.loads(out)["record"]["status"], "finalized")
-        code, out, _ = run("card", "--notes", self.write("card.json", testdata.example_card_inputs()))
-        self.assertEqual(set(json.loads(out)), {"card", "notes"})
+        self.assertEqual(json.loads(out), testdata.example("fact-sheet.json"))
+        code, out, _ = run("fact-sheet", "--notes", self.write("sheet.json", testdata.example_sheet_inputs()))
+        self.assertEqual(set(json.loads(out)), {"sheet", "notes"})
 
     def test_control_proof_verify(self) -> None:
         ctx = {"venue": "https://gallery.example", "chainId": 11155111, "now": 1794787260,
                "challenges": [{"v": 1, "message": testdata.example("control-proof.json")["message"]}],
                "officialTokens": {"0x02617dbdc0b0521124cb4c2a3ef602977e29bd91": "stream"},
                "block": {"number": 1, "timestamp": 1794787250}, "headBlock": 1,
-               "ownership": {"ownerOf": testdata.ANVIL_1}, "consolidation": {"isEstablished": False, "effectiveAt": 0}}
+               "ownership": {"ownerOf": testdata.ANVIL_1}, "consolidation": {"isConsolidated": False}}
         with mock.patch.object(eip712, "cast_ecdsa_verifier", return_value=True):
             code, out, _ = run("control-proof", "verify", str(EXAMPLES / "control-proof.json"), "--context", self.write("ctx.json", ctx))
         self.assertEqual((code, json.loads(out)["step"]), (1, "DCL-25"))  # no established consolidation
-        ctx["consolidation"]["isEstablished"] = True
+        ctx["consolidation"]["isConsolidated"] = True
         with mock.patch.object(eip712, "cast_ecdsa_verifier", return_value=True):
             code, out, _ = run("control-proof", "verify", str(EXAMPLES / "control-proof.json"), "--context", self.write("ctx.json", ctx))
         self.assertEqual((code, json.loads(out)["accepted"]), (0, True))
@@ -140,9 +139,9 @@ class CliTest(unittest.TestCase):
         self.assertIn("work", err)
 
     def test_bad_input_exits_2(self) -> None:
-        self.assertEqual(run("grade", str(self.dir / "missing.json"))[0], 2)
-        self.assertEqual(run("grade", self.write("x.json", b"{"))[0], 2)
-        self.assertEqual(run("card", self.write("y.json", {"reads": {}}))[0], 2)
+        self.assertEqual(run("fact-sheet", str(self.dir / "missing.json"))[0], 2)
+        self.assertEqual(run("fact-sheet", self.write("x.json", b"{"))[0], 2)
+        self.assertEqual(run("fact-sheet", self.write("y.json", {"reads": {}}))[0], 2)
         self.assertEqual(run("validate", "nope", str(EXAMPLES / "citation.json"))[0], 2)
 
     def test_non_object_json_input_exits_2(self) -> None:
@@ -150,7 +149,7 @@ class CliTest(unittest.TestCase):
         not a traceback."""
         for value in ([], 7, "x", None):
             path = self.write("v.json", value)
-            for argv in (("floor", path), ("card", path), ("grade", path), ("custody", "check", path),
+            for argv in (("floor", path), ("fact-sheet", path), ("custody", "check", path),
                          ("custody", "digest", path), ("control-proof", "digest", path),
                          ("control-proof", "verify", path, "--context", path)):  # fmt: skip
                 with self.subTest(value=value, command=argv[0]):

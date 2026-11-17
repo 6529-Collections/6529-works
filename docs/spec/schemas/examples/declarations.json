@@ -95,12 +95,5 @@
       "relation": "responds-to",
       "note": "A reply to an earlier work in the same Stream."
     }
-  ],
-  "intendedRenunciations": [
-    {
-      "power": "ROYALTY_RATE",
-      "withinDaysOfRecordOpen": 30,
-      "note": "The royalty rate will be fixed for good within 30 days of the record opening."
-    }
   ]
 }

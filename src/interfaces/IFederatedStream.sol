@@ -46,12 +46,18 @@ interface IFederatedStream is IFederatedToken {
     }
 
     /// @notice What an adapter passes to `mint` (opaque to it): `abi.encode(FederatedMint)`.
-    /// @param item The approved item (`WorksHashing.itemHash` names it).
+    /// @param item The approved item (`WorksHashing.itemHash` names it). Its first party is the
+    ///        artist; any later party is a collaborator.
     /// @param media Its media list, primary first, committed by `item.mediaHash` (ignored by a
     ///        restart).
+    /// @param consents One per party after the first, in order: `abi.encodePacked(wallet,
+    ///        signature)` of a wallet of that party's account over the artist registry's
+    ///        `consentDigest(this contract, itemHash)` (`IAccounts.requireConsent`), so a
+    ///        consent is good for this contract only (ignored by a restart).
     struct FederatedMint {
         PackageItem item;
         MediaFile[] media;
+        bytes[] consents;
     }
 
     /// @notice The artist approved an item for one mint (or one restart), or withdrew it.
@@ -65,8 +71,8 @@ interface IFederatedStream is IFederatedToken {
     /// @param itemHash Its item hash.
     /// @param seller The seller vault of the item's payees.
     /// @param royaltyRate Its royalty rate.
-    /// @param feeBearing Whether its royalties route through the network's split (minted
-    ///        before the exit).
+    /// @param feeShare The network share in force when it opened, whose royalty vault was
+    ///        deployed then (royalties follow the share in force, which can only fall).
     /// @param item The approved item.
     /// @param media The item's media list.
     event WorkOpened(
@@ -74,7 +80,7 @@ interface IFederatedStream is IFederatedToken {
         bytes32 indexed itemHash,
         address seller,
         uint32 royaltyRate,
-        bool feeBearing,
+        uint32 feeShare,
         PackageItem item,
         MediaFile[] media
     );
@@ -82,7 +88,7 @@ interface IFederatedStream is IFederatedToken {
     /// @param tokenId The token.
     /// @param workId Its work.
     /// @param adapter The minting adapter, the only one that settles or burns it.
-    /// @param feeShare The network share the token's sale terms carry (zero after the exit).
+    /// @param feeShare The network share in force at the mint.
     event TokenMinted(
         uint256 indexed tokenId, uint256 indexed workId, address indexed adapter, uint32 feeShare
     );

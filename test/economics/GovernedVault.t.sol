@@ -11,16 +11,17 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 import { GovernedVault } from "src/economics/GovernedVault.sol";
 import { IGovernedVault } from "src/economics/interfaces/IGovernedVault.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
-import { ISplitLedger } from "src/economics/interfaces/ISplitLedger.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { Roles } from "src/governance/Roles.sol";
-import { Dependency } from "src/libraries/Dependency.sol";
 import { ProtocolContracts } from "src/libraries/ProtocolContracts.sol";
 import {
     BlocklistToken,
     NoReturnToken,
     RejectingRecipient
 } from "../mocks/economics/EconomicsMocks.sol";
+import { ISplitLedger } from "src/economics/interfaces/ISplitLedger.sol";
+import { BoundedCall } from "src/libraries/BoundedCall.sol";
+import { ReturnDataMock } from "test/mocks/libraries/AdversarialTargets.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 
 contract VaultTest721 is ERC721("Work", "WRK") {
@@ -47,9 +48,9 @@ contract ProtocolProbe {
 }
 
 /// @notice The governed vault the network fee recipient and the museum become: it receives ETH,
-///         ERC-20s, ERC-721s and ERC-1155s, moves them only to a destination governance sets on
-///         the funds path (FUNDS_SETTER, 14 days), and can be a split-wallet payee that releases
-///         or consents to escrow recovery toward that destination.
+///         ERC-20s, ERC-721s and ERC-1155s, moves them only to a destination the network sets
+///         with a delay, and can be a split-wallet payee that releases toward that destination.
+///         The network moves its escrow credits itself (C19).
 /// @dev New contract: every test fails without it (the file does not compile on main).
 contract GovernedVaultTest is EconomicsBase {
     GovernedVault internal vault;
@@ -58,26 +59,23 @@ contract GovernedVaultTest is EconomicsBase {
 
     function setUp() public override {
         super.setUp();
-        vault = new GovernedVault(address(manager), ledger, safe);
+        vault = new GovernedVault(address(manager), safe);
     }
 
     function test_ConstructorSetsTheFirstDestination() public {
         vm.expectEmit(true, true, false, true);
         emit IGovernedVault.DestinationSet(address(0), safe, 1);
-        GovernedVault v = new GovernedVault(address(manager), ledger, safe);
+        GovernedVault v = new GovernedVault(address(manager), safe);
         assertEq(v.destination(), safe);
         assertEq(v.destinationRevision(), 1);
-        assertEq(address(v.ledger()), address(ledger));
         assertEq(v.authority(), address(manager));
     }
 
-    function test_ConstructorRefusesBadDestinationsAndLedgers() public {
+    function test_ConstructorRefusesBadDestinations() public {
         vm.expectRevert(
             abi.encodeWithSelector(IGovernedVault.InvalidDestination.selector, address(0))
         );
-        new GovernedVault(address(manager), ledger, address(0));
-        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, alice));
-        new GovernedVault(address(manager), ISplitLedger(alice), safe);
+        new GovernedVault(address(manager), address(0));
     }
 
     // ------------------------------------------------------------------ receiving
@@ -138,8 +136,7 @@ contract GovernedVaultTest is EconomicsBase {
     }
 
     function test_ARefusingDestinationKeepsTheFunds() public {
-        GovernedVault v =
-            new GovernedVault(address(manager), ledger, address(new RejectingRecipient()));
+        GovernedVault v = new GovernedVault(address(manager), address(new RejectingRecipient()));
         vm.deal(address(v), 1 ether);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -198,7 +195,7 @@ contract GovernedVaultTest is EconomicsBase {
         vault.setDestination(1, next);
 
         uint64 funds = Roles.FUNDS_SETTER;
-        uint32 delay = Roles.FUNDS;
+        uint32 delay = Roles.DELAY_3D;
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = IGovernedVault.setDestination.selector;
         manager.setTargetFunctionRole(address(vault), selectors, funds);
@@ -241,13 +238,14 @@ contract GovernedVaultTest is EconomicsBase {
         vm.expectRevert();
         _release(royalty, address(usdc), index);
         vm.prank(stranger);
-        assertEq(vault.releaseToDestination(payees, bytes32(0), address(usdc), index), 100);
+        assertEq(vault.releaseToDestination(ledger, payees, bytes32(0), address(usdc), index), 100);
         assertEq(usdc.balanceOf(safe), 100);
     }
 
-    /// @dev A credit escrowed under the vault (a token that blocks it) moves to the destination
-    ///      with the vault's consent, which anyone may record, and governance's `recover`.
-    function test_EscrowCreditMovesToTheDestinationWithTheVaultsConsent() public {
+    /// @dev C19: a credit escrowed under the vault (a token that blocks it) is the network's own,
+    ///      so the network moves it with `recover` and no consent, to wherever it names. Fails
+    ///      without the change: `recover` requires the vault's recorded consent.
+    function test_TheNetworkMovesTheVaultsEscrowCreditWithoutConsent() public {
         BlocklistToken usdc = new BlocklistToken();
         usdc.mint(address(this), 50);
         usdc.approve(address(escrow), 50);
@@ -256,42 +254,13 @@ contract GovernedVaultTest is EconomicsBase {
         vm.expectRevert();
         escrow.flush(address(vault), address(usdc));
 
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IRevenueEscrow.RecoveryNotConsented.selector, address(vault), safe
-            )
-        );
-        escrow.recover(address(vault), safe, address(usdc));
-        vm.prank(stranger);
-        vault.consentToRecovery(escrow);
-        assertEq(escrow.recoveryConsent(address(vault)), safe);
-        escrow.recover(address(vault), safe, address(usdc));
-        escrow.flush(safe, address(usdc));
-        assertEq(usdc.balanceOf(safe), 50);
-    }
-
-    /// @dev Review C F14: a recovery consent the vault gave for its old destination does not
-    ///      survive a destination change: the escrow refuses it, and a fresh consent names the
-    ///      new destination. Fails without the change: `recover` moves the credit to the retired
-    ///      destination.
-    function test_StaleEscrowConsentDoesNotSurviveADestinationChange() public {
-        BlocklistToken usdc = new BlocklistToken();
-        usdc.mint(address(this), 50);
-        usdc.approve(address(escrow), 50);
-        escrow.depositERC20(address(vault), address(usdc), 50);
-        vault.consentToRecovery(escrow);
-        address next = makeAddr("nextSafe");
-        vault.setDestination(1, next);
-        assertEq(escrow.recoveryConsent(address(vault)), safe, "the stored consent is stale");
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IRevenueEscrow.RecoveryNotConsented.selector, address(vault), safe
-            )
-        );
-        escrow.recover(address(vault), safe, address(usdc));
-        vault.consentToRecovery(escrow);
-        escrow.recover(address(vault), next, address(usdc));
-        assertEq(escrow.owed(next, address(usdc)), 50);
+        address elsewhere = makeAddr("elsewhere");
+        assertEq(escrow.recoveryConsent(address(vault)), address(0), "no consent recorded");
+        vm.expectEmit(address(escrow));
+        emit IRevenueEscrow.Recovered(address(vault), elsewhere, address(usdc), 50, 50, false);
+        escrow.recover(address(vault), elsewhere, address(usdc));
+        escrow.flush(elsewhere, address(usdc));
+        assertEq(usdc.balanceOf(elsewhere), 50);
     }
 
     /// @dev Review C F4: a work moves only to a destination that accepts ERC-721s. A split vault
@@ -303,7 +272,7 @@ contract GovernedVaultTest is EconomicsBase {
         address splitVault = _wallet(_list(_fixed(alice, 50_000), _fixed(bob, 50_000)));
         address[2] memory refusing = [splitVault, address(new ProtocolProbe())];
         for (uint256 i; i < 2; ++i) {
-            GovernedVault v = new GovernedVault(address(manager), ledger, refusing[i]);
+            GovernedVault v = new GovernedVault(address(manager), refusing[i]);
             works.mint(address(v), 10 + i);
             vm.expectRevert();
             vm.prank(stranger);
@@ -311,15 +280,51 @@ contract GovernedVaultTest is EconomicsBase {
             assertEq(works.ownerOf(10 + i), address(v), "the work stays in the vault");
         }
         VaultTest1155 editions = new VaultTest1155();
-        GovernedVault toSplit = new GovernedVault(address(manager), ledger, splitVault);
+        GovernedVault toSplit = new GovernedVault(address(manager), splitVault);
         editions.mint(address(toSplit), 1, 2);
         vm.expectRevert();
         toSplit.forwardERC1155(address(editions), 1, 2);
         assertEq(editions.balanceOf(address(toSplit), 1), 2);
         // A destination that accepts works (another governed vault) receives it.
-        GovernedVault successor = new GovernedVault(address(manager), ledger, safe);
+        GovernedVault successor = new GovernedVault(address(manager), safe);
         vault.setDestination(1, address(successor));
         vault.forwardERC721(address(works), 9);
         assertEq(works.ownerOf(9), address(successor));
+    }
+
+    /// @dev The caller picks the ledger, so its answer is copied only up to 1,024 bytes: a
+    ///      longer refusal reverts with `BoundedCallFailed(ledger)`, a short one keeps its
+    ///      reason, and an answer that is not one word is malformed. Fails without the change:
+    ///      the typed call re-raises the whole 4,096-byte payload.
+    function test_ReleaseToDestinationBoundsTheLedgersAnswer() public {
+        ReturnDataMock fake = new ReturnDataMock();
+        ISplitWallet.Payee[] memory payees = _list(_fixed(address(vault), 100_000));
+        ISplitLedger ledger_ = ISplitLedger(address(fake));
+
+        fake.configure(new bytes(4096), true);
+        vm.expectRevert(
+            abi.encodeWithSelector(BoundedCall.BoundedCallFailed.selector, address(fake))
+        );
+        vault.releaseToDestination(ledger_, payees, bytes32(0), ETH, 0);
+
+        bytes memory reason = abi.encodeWithSignature("Refused(uint256)", 7);
+        fake.configure(reason, true);
+        vm.expectRevert(reason);
+        vault.releaseToDestination(ledger_, payees, bytes32(0), ETH, 0);
+
+        fake.configure(abi.encode(uint256(1), uint256(2)), false);
+        vm.expectRevert(
+            abi.encodeWithSelector(BoundedCall.BoundedCallMalformedReturn.selector, address(fake))
+        );
+        vault.releaseToDestination(ledger_, payees, bytes32(0), ETH, 0);
+
+        fake.configure(abi.encode(uint256(5)), false);
+        assertEq(vault.releaseToDestination(ledger_, payees, bytes32(0), ETH, 0), 5);
+
+        address codeless = makeAddr("codelessLedger");
+        vm.expectRevert(
+            abi.encodeWithSelector(BoundedCall.BoundedCallMalformedReturn.selector, codeless)
+        );
+        vault.releaseToDestination(ISplitLedger(codeless), payees, bytes32(0), ETH, 0);
     }
 }

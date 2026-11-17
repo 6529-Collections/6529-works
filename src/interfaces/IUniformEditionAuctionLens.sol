@@ -31,20 +31,21 @@ interface IUniformEditionAuctionLens {
     /// @param maxCount The creator's cap from the edition terms, zero for none.
     /// @param oneOfOneEnd The 1/1's end now.
     /// @param oneOfOneState The 1/1's state now: never NONE or CANCELLED.
-    /// @param closeOffset The edition terms' own close offset, at most `Limits.maxCloseOffset`,
-    ///        or `DEFAULT_CLOSE_OFFSET` when they name none (the adapter's current default).
     struct MasterTerms {
         uint32 maxCount;
         uint64 oneOfOneEnd;
         IEnglishAuction.AuctionState oneOfOneState;
-        uint32 closeOffset;
     }
 
-    /// @notice What `masterTerms` returns as `closeOffset` for edition terms that name none:
-    ///         the adapter then locks its current default. No edition can name it (the maximum's
-    ///         bound is far below 2^32 - 1).
-    /// @return `type(uint32).max`.
-    function DEFAULT_CLOSE_OFFSET() external view returns (uint32);
+    /// @notice How long after its 1/1's final end every edition sale closes: 15 minutes, a fixed
+    ///         value (R20).
+    /// @return 900.
+    function CLOSE_OFFSET() external view returns (uint32);
+    /// @notice How long after its scheduled close (its 1/1's final end plus {CLOSE_OFFSET}; a
+    ///         soft-close extension does not move it) a sale may be abandoned (R16): 21 days, a
+    ///         fixed value.
+    /// @return 1,814,400.
+    function ABANDON_DELAY() external view returns (uint32);
 
     /// @notice The 6529 Stream Editions this lens was deployed for (immutable).
     /// @return The address its adapter must also have.
@@ -59,11 +60,14 @@ interface IUniformEditionAuctionLens {
     /// @return The address its adapter must also have.
     function escrow() external view returns (address);
     /// @notice The master check of `open`. For 6529 Stream Editions, `data` must be
-    ///         `abi.encode(PackageItem)` of an EDITION_MASTER item whose `WorksHashing.itemHash`
-    ///         is the one 6529 Stream stored for `id`, with edition terms naming
-    ///         `SaleKind.UNIFORM_AUCTION` and `CURRENCY_ETH`, and params empty or exactly
-    ///         `abi.encode(uint256 closeOffset)` with an offset of at most the caller's
-    ///         `Limits.maxCloseOffset`; the `PRODUCT_EDITIONS` payout terms 6529 Stream Editions
+    ///         `abi.encode(PackageItem item, bytes32 packageRoot, bytes32[] proof)` with an
+    ///         EDITION_MASTER item whose `WorksHashing.itemHash` is the one 6529 Stream stored for
+    ///         `id` and that the package registry still approves in `packageRoot`
+    ///         (`IItemApprovals.isApprovedItem`, C23); for a federated pair `abi.encode(item)`,
+    ///         whose contract the federation registry lets this adapter mint (`canMint`: a
+    ///         suspended template opens no sale, C26). The edition terms must name
+    ///         `SaleKind.UNIFORM_AUCTION` and `CURRENCY_ETH`, with empty params; the payout terms
+    ///         the edition contract
     ///         will lock (an existing edition's, or the current resolver's) must be payable; and
     ///         its 1/1 auction must exist and not be cancelled. Reverts with the adapter's
     ///         `InvalidSaleTerms` or `NoOneOfOneAuction` otherwise (a 1/1 auction that runs out
@@ -81,14 +85,12 @@ interface IUniformEditionAuctionLens {
         returns (MasterTerms memory);
 
     /// @notice Whether the caller's sale can be abandoned now, and from when
-    ///         (`IUniformEditionAuction.abandonable`): OPEN, its 1/1 neither in progress nor
-    ///         settled with its master settled in 6529 Stream (a 1/1 auction that refuses to
-    ///         answer counts as stuck, with the end last read), and its end plus its locked
-    ///         abandonment delay plus its capped rescue addition passed: how much later than the
-    ///         end plus Stream's 90-day floor the master can be rescued (the English auction's
-    ///         removal time, once removed, plus the delay Stream locked then), at most the
-    ///         governed rescue cap. Reverts with `UnknownAuction`, or `StreamReadFailed` when a
-    ///         read of 6529 Stream fails.
+    ///         (`IUniformEditionAuction.abandonable`): OPEN (or SETTLING with its scan in
+    ///         progress), its 1/1 auction no longer ACTIVE, PAUSED or ENDED (one that refuses to
+    ///         answer counts as finished, with the end last read), not both its master settled
+    ///         and its edition existing, and its scheduled close (its 1/1's final end plus 15
+    ///         minutes, not moved by a soft-close extension) plus 21 days passed. A shortfall in
+    ///         any read reverts with `BoundedCallShortfall`.
     /// @param saleId The sale ID.
     /// @return ok Whether it can be abandoned now.
     /// @return abandonAt The earliest time, or zero when it cannot be from what is known now.
@@ -96,17 +98,35 @@ interface IUniformEditionAuctionLens {
 
     /// @notice The check `abandon` makes: reverts with `NotAbandonable(saleId)` unless
     ///         `abandonable(saleId)` is true for the caller (`UnknownAuction` for a sale never
-    ///         opened).
+    ///         opened), and says what `abandon` does.
     /// @param saleId The sale ID.
-    function checkAbandon(uint256 saleId) external view;
+    /// @return createEdition True when the master's sale is settled in its token, so `abandon`
+    ///         creates the edition and the sale settles as usual; false when it voids the sale
+    ///         and seals the edition at zero.
+    function checkAbandon(uint256 saleId) external view returns (bool createEdition);
+
+    /// @notice The network fee recipient a payout of the caller pays now (R18): the economics
+    ///         resolver's for the deployment's product (6529 Stream Editions or Federated), or,
+    ///         when it names none or the escrow and `token` is nonzero, the recipient edition
+    ///         `id` of `token` recorded (zero when that edition does not exist).
+    /// @param token The edition contract, or zero for the resolver's answer alone.
+    /// @param id The edition ID.
+    /// @return The recipient.
+    function feeRecipient(address token, uint256 id) external view returns (address);
+
+    /// @notice When `account`'s credit may be sent to the network's fee recipient
+    ///         (`expireCredit`): 180 days after it went from zero; zero with no credit.
+    /// @param account The credited account.
+    /// @return The first second `expireCredit` succeeds, or zero.
+    function creditExpiresAt(address account) external view returns (uint256);
 
     /// @notice One of the caller's storage words, from which every other view is computed: the
     ///         lens finds its slot from the adapter's layout and reads it with
     ///         `IUniformEditionAuctionStorage.storageAt`. `IUniformEditionAuctionStorage.Space`
     ///         documents each family's key and packing.
     /// @param space The word's family.
-    /// @param saleId The sale ID, for the per-sale families; ignored for TERMS, FEE_RECIPIENT,
-    ///        CREDIT and SETTINGS.
+    /// @param saleId The sale ID, for the per-sale families; ignored for TERMS, CREDIT and
+    ///        SETTINGS.
     /// @param key The key within the family.
     /// @return The stored word; zero when unset.
     function storageWord(IUniformEditionAuctionStorage.Space space, uint256 saleId, uint256 key)
@@ -117,10 +137,11 @@ interface IUniformEditionAuctionLens {
     /// @notice The caller's current configuration (`IUniformEditionAuction.config`).
     /// @return The parameters new sales lock.
     function config() external view returns (IUniformEditionAuction.AuctionConfig memory);
-    /// @notice The caller's governed limits (`IUniformEditionAuction.limits`).
+    /// @notice The caller's governed limit (`IUniformEditionAuction.limits`): the payout gas.
     /// @return The current limits.
     function limits() external view returns (IUniformEditionAuction.Limits memory);
-    /// @notice The caller's claimable credits (`ISaleAdapter.claimable`): ETH only.
+    /// @notice The caller's claimable credits (`ISaleAdapter.claimable`): ETH only, without the
+    ///         time packed beside them.
     /// @param account The account.
     /// @param currency The currency; anything but `CURRENCY_ETH` has none.
     /// @return The amount claimable.
@@ -186,13 +207,6 @@ interface IUniformEditionAuctionLens {
         external
         view
         returns (IUniformEditionAuction.Bid memory);
-    /// @notice Whether bid `bidId` may be withdrawn now: the sale is OPEN, its 1/1 is paused for a
-    ///         dispute, and the bid was placed (or last raised) in a minute that ended before the
-    ///         pause began (decision 12, as amended 1 November 2026). Reverts with `UnknownBid`.
-    /// @param saleId The sale ID.
-    /// @param bidId The bid's ID.
-    /// @return Whether `withdrawBid` would accept it now.
-    function canWithdraw(uint256 saleId, uint256 bidId) external view returns (bool);
     /// @notice A bid's position in the result: copies won, price, escrow, refund and units ahead
     ///         in its queue; final once the sale is SETTLED or VOID. Reverts with `UnknownBid`.
     /// @param saleId The sale ID.

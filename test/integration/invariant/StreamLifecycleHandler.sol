@@ -418,7 +418,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         IEnglishAuction.Auction memory a = auction.auction(t.saleId);
         // A governed decision lands 48 hours after scheduling; past the 7-day allowance the
         // pause lapses by itself instead.
-        if (block.timestamp + Roles.STANDARD > a.pausedAt + auction.MAX_PAUSE()) return;
+        if (block.timestamp + Roles.DELAY_24H > a.pausedAt + auction.MAX_PAUSE()) return;
         if (_isCopy(t.item)) {
             bytes32 outcome = _platformStatement(
                 address(stream), tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://lifecycle-outcome"
@@ -604,8 +604,8 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             address stranger = lcBidders[seed % BIDDERS];
             if (stranger == winner) stranger = lcBidders[(seed % BIDDERS + 1) % BIDDERS];
             bytes memory toStranger = abi.encodeCall(auction.claimDelivery, (saleId, stranger));
-            if (winner != address(lcHostile) && block.timestamp >= uint256(a.endTime) + 30 days) {
-                // The recipient's own redirect, open from 30 days after the end.
+            if (winner != address(lcHostile) && block.timestamp >= uint256(a.endTime) + 14 days) {
+                // The recipient's own redirect, open from 14 days after the end.
                 vm.prank(stranger);
                 lcHostile.execute(address(auction), 0, toStranger);
                 t.owner = stranger;
@@ -751,7 +751,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         }
     }
 
-    /// @notice A governed 48-hour relicense with every party's consent. A CC0 work must stay
+    /// @notice A governed 3-day relicense with every party's consent. A CC0 work must stay
     ///         CC0 with the pinned text (both moves refused); another license moves to CC0 or
     ///         MIT, unless a party is restrained and so cannot consent.
     function relicense(uint256 seed, uint256 choice) external {
@@ -798,16 +798,14 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             ArtistIdentity memory identity =
                 ArtistIdentity(next, next, _profileId(account), _profileDoc(account));
             bytes32 evidence = keccak256(abi.encode("lifecycle recovery evidence", recoveries));
-            uint64 deadline = uint64(block.timestamp + 7 days);
-            bytes memory acceptance = _sign(
-                next, artists.overrideDigest(id, ChangeKind.CONTESTED, identity, evidence, deadline)
-            );
+            uint64 deadline = uint64(block.timestamp + 60 days);
+            bytes memory acceptance =
+                _sign(next, artists.replacementDigest(id, identity, evidence, deadline));
             _govern(
                 hotAdmin,
                 address(artists),
                 abi.encodeCall(
-                    artists.stageOverride,
-                    (id, ChangeKind.CONTESTED, identity, evidence, deadline, acceptance)
+                    artists.stageReplacement, (id, identity, evidence, deadline, acceptance)
                 )
             );
             reservedKey[id] = next;
@@ -824,8 +822,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             uint256 id = uint160(_party((seed % (ARTISTS + 1) + k) % (ARTISTS + 1)));
             if (reservedKey[id] == address(0)) continue;
             if (mode % 2 == 0) {
-                vm.prank(guardian2);
-                artists.vetoChange(id);
+                _govern(hotAdmin, address(artists), abi.encodeCall(artists.cancelReplacement, (id)));
                 ++hits["veto"];
             } else {
                 PendingChange memory p = artists.pendingChange(id);
@@ -953,7 +950,8 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         PoolItem storage it = pool[p];
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes32 digest = registry.moveDigest(it.root, it.itemHash, nonce, deadline);
-        MoveAuthorization memory move = MoveAuthorization(nonce, deadline, _sign(signer, digest));
+        MoveAuthorization memory move =
+            MoveAuthorization(nonce, deadline, abi.encodePacked(signer, _sign(signer, digest)));
         return abi.encode(
             StreamMintRequest(it.root, abi.decode(it.item, (PackageItem)), it.proof, move)
         );
@@ -1104,7 +1102,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
                 restrainedParty = true;
                 signer = artists.authorityOf(id);
             }
-            sigs[i] = _sign(signer, digest);
+            sigs[i] = abi.encodePacked(signer, _sign(signer, digest));
         }
         call = abi.encodeCall(records.relicense, (tokenId, next, item, state, deadline, sigs));
     }
@@ -1113,7 +1111,8 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         PartyAcceptance memory a = PartyAcceptance(
             account, _profileId(account), _profileDoc(account), uint64(block.timestamp + 1 days)
         );
-        bytes memory signature = _sign(signer, registry.acceptanceDigest(root, a));
+        bytes memory signature =
+            abi.encodePacked(signer, _sign(signer, registry.acceptanceDigest(root, a)));
         try registry.acceptPackage(root, a, signature) {
             _violation("a restrained artist accepted a package");
         } catch {
@@ -1149,7 +1148,9 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
                     _profileDoc(lcArtists[lead]),
                     uint64(block.timestamp + 1 days)
                 );
-                bytes memory signature = _sign(actor, registry.acceptanceDigest(packageOf[lead], a));
+                bytes memory signature = abi.encodePacked(
+                    actor, _sign(actor, registry.acceptanceDigest(packageOf[lead], a))
+                );
                 try registry.acceptPackage(packageOf[lead], a, signature) {
                     return true;
                 } catch {
@@ -1188,8 +1189,10 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             }
         }
         if (power == 2) {
+            // Anyone may record a finalize notice once the primary sale settled (C9); acting as
+            // the artist means finalizing at once, so only that counts.
             try records.finalize(tokenId, state) {
-                return true;
+                return records.record(tokenId).finalized;
             } catch {
                 return false;
             }
@@ -1378,7 +1381,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             uint256 id = uint160(_party(i));
             if (reservedKey[id] == address(0)) continue;
             PendingChange memory p = artists.pendingChange(id);
-            assertTrue(p.kind == ChangeKind.CONTESTED, "the recovery is pending");
+            assertTrue(p.kind == ChangeKind.REPLACEMENT, "the recovery is pending");
             assertEq(artists.activeAuthorityOf(id), address(0), "a recovering artist is restrained");
         }
     }

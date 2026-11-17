@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Create2 } from "@openzeppelin/contracts/utils/Create2.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
@@ -25,8 +26,9 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///         `observed` is the wallet's balance plus everything released from it. Because
 ///         entitlements are cumulative, release order never matters and rounding dust stays
 ///         below the number of payees.
-/// @dev Permissionless, unowned and immutable: no governance, no asset allowlist, no rescue, no
-///      `delegatecall`. Funds stay in each wallet (never pooled), so a token that blocks one
+/// @dev Permissionless, unowned and immutable: no governance, no asset allowlist, no
+///      `delegatecall`; the only way money leaves a wallet other than to its payees is the
+///      unclaimed-share rule ({mark}, {forfeit}), which pays the network. Funds stay in each wallet (never pooled), so a token that blocks one
 ///      wallet blocks only that wallet. The ledger stores one word per wallet, its payee hash
 ///      (`configOf`), and takes the payee list in calldata wherever it needs it, so deploying a
 ///      wallet writes one slot whatever its payee count.
@@ -44,14 +46,25 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///      checks), so nobody can push an accrued balance to a lost key before recovery.
 ///      Every external call forwards all available gas and any failure reverts the release, so
 ///      no gas shortfall can produce a partial or success-shaped result.
+///      The network (R11, R12): every release also pays the network fee vault ({network}) its
+///      share of the same asset when the vault is a payee of the wallet, and a payee's share that
+///      someone marked and that is still unreleased {UNCLAIMED_PERIOD} later goes to the network.
 contract SplitLedger is ISplitLedger, EIP712 {
     /// @notice The EIP-712 type hash of {IReleaseVerifier.Authorization}.
     bytes32 public constant RELEASE_TYPEHASH = keccak256(
         "ReleaseAuthorization(address wallet,address asset,uint256 payee,address account,address recipient,uint256 amount,uint256 nonce,uint256 deadline)"
     );
 
+    /// @notice How long a marked share stays its payee's: 180 days. The number is the guarantee
+    ///         (an unclaimed share is its payee's for at least this long after it was marked), so
+    ///         it is compiled in and nothing changes it.
+    uint256 public constant UNCLAIMED_PERIOD = 180 days;
+
     /// @inheritdoc ISplitFactory
     IArtistPayoutResolver public immutable resolver;
+
+    /// @inheritdoc ISplitFactory
+    address public immutable network;
 
     /// @inheritdoc ISplitFactory
     bytes32 public immutable walletInitCodeHash;
@@ -70,11 +83,22 @@ contract SplitLedger is ISplitLedger, EIP712 {
     /// @dev Bit `nonce % 256` of word `nonce / 256` is set once `account` used `nonce`.
     mapping(address account => mapping(uint256 word => uint256 bits)) private _nonceBitmap;
 
+    /// @dev A payee's mark: the time it was placed (top 48 bits) and the released level the payee
+    ///      must reach (low 208 bits). Zero when there is none.
+    mapping(address wallet => mapping(address asset => mapping(uint256 index => uint256))) private
+        _marks;
+
     /// @param resolver_ The artist payout resolver (the artist registry). It must have code and
     ///        not be an EIP-7702 delegated account.
-    constructor(IArtistPayoutResolver resolver_) EIP712("6529 Works Release Verifier", "1") {
+    /// @param network_ The network fee vault (a `GovernedVault`), deployed first. It must have
+    ///        code and not be an EIP-7702 delegated account.
+    constructor(IArtistPayoutResolver resolver_, address network_)
+        EIP712("6529 Works Release Verifier", "1")
+    {
         Dependency.check(address(resolver_));
+        Dependency.check(network_);
         resolver = resolver_;
+        network = network_;
         walletInitCodeHash = keccak256(SplitVault.INIT_CODE);
     }
 
@@ -123,6 +147,7 @@ contract SplitLedger is ISplitLedger, EIP712 {
         (address account, bool artist) = _payout(p);
         if (artist && msg.sender != account) revert NotPayoutAddress(msg.sender, account);
         amount = _release(wallet, asset, index, p.share, account, account, type(uint256).max);
+        _payNetwork(payees, wallet, asset, index);
         _unlock(wallet);
     }
 
@@ -140,6 +165,7 @@ contract SplitLedger is ISplitLedger, EIP712 {
         (address account,) = _payout(p);
         if (msg.sender != account) revert NotPayoutAddress(msg.sender, account);
         amount = _release(wallet, asset, index, p.share, account, recipient, type(uint256).max);
+        _payNetwork(payees, wallet, asset, index);
         _unlock(wallet);
     }
 
@@ -170,7 +196,53 @@ contract SplitLedger is ISplitLedger, EIP712 {
             authorization.recipient,
             authorization.amount
         );
+        _payNetwork(payees, wallet, authorization.asset, authorization.payee);
         _unlock(wallet);
+    }
+
+    // ------------------------------------------------------------------ unclaimed shares
+
+    /// @inheritdoc ISplitLedger
+    function mark(Payee[] calldata payees, bytes32 salt, address asset, uint256 index) external {
+        address wallet = _walletOf(payees, salt);
+        _checkUnlocked(wallet);
+        if (configOf[wallet] == bytes32(0)) revert WalletNotDeployed(wallet);
+        uint32 share = _payee(payees, index).share;
+        uint256 done = released[wallet][asset][index];
+        uint256 due = _dueNow(wallet, asset, index, share);
+        if (due == 0) revert NothingToRelease(asset, index);
+        uint256 previous = _marks[wallet][asset][index];
+        // A mark the payee has not yet released past keeps its clock: nobody can restart it.
+        if (previous != 0 && done < uint208(previous)) revert MarkPending(wallet, asset, index);
+        uint256 target = done + due;
+        _marks[wallet][asset][index] = block.timestamp << 208 | SafeCast.toUint208(target);
+        emit Marked(wallet, asset, index, target, block.timestamp);
+    }
+
+    /// @inheritdoc ISplitLedger
+    function forfeit(Payee[] calldata payees, bytes32 salt, address asset, uint256 index)
+        external
+        returns (uint256 amount)
+    {
+        address wallet = _walletOf(payees, salt);
+        _lock(wallet);
+        uint32 share = _payee(payees, index).share;
+        amount = _forfeitable(wallet, asset, index, share);
+        address net = network;
+        amount = _release(wallet, asset, index, share, net, net, amount);
+        emit Forfeited(wallet, asset, index, amount);
+        _payNetwork(payees, wallet, asset, index);
+        _unlock(wallet);
+    }
+
+    /// @inheritdoc ISplitLedger
+    function markOf(address wallet, address asset, uint256 index)
+        external
+        view
+        returns (uint256 target, uint256 markedAt)
+    {
+        uint256 m = _marks[wallet][asset][index];
+        return (uint208(m), m >> 208);
     }
 
     // ------------------------------------------------------------------ nonces
@@ -249,14 +321,83 @@ contract SplitLedger is ISplitLedger, EIP712 {
         }
         emit Released(wallet, asset, recipient, index, account, amount, current);
 
-        if (asset == address(0)) {
-            (bool ok,) = _instruct(wallet, recipient, amount, "");
-            if (!ok) revert ETHTransferFailed(recipient, amount);
-            // The outcome, not the call, proves the move: a call to an address without code
-            // "succeeds" and moves nothing.
-            if (wallet.balance != balance - amount) _revertMismatch(wallet, asset);
-        } else {
-            _transferToken(wallet, asset, recipient, amount, balance);
+        if (!_move(wallet, asset, recipient, amount, balance)) {
+            if (asset == address(0)) revert ETHTransferFailed(recipient, amount);
+            revert TokenTransfer.TokenCallFailed(asset, IERC20.transfer.selector);
+        }
+    }
+
+    /// @dev Clears a matured mark and returns what of it is still unreleased, at most what the
+    ///      payee can release now: only what was due at the mark, never money that arrived later.
+    ///      Reverts with {MarkNotDue} when there is no mark or it is younger than the period.
+    function _forfeitable(address wallet, address asset, uint256 index, uint32 share)
+        private
+        returns (uint256 amount)
+    {
+        uint256 m = _marks[wallet][asset][index];
+        {
+            uint256 dueAt = m == 0 ? 0 : (m >> 208) + UNCLAIMED_PERIOD;
+            // forge-lint: disable-next-line(block-timestamp)
+            if (m == 0 || block.timestamp < dueAt) revert MarkNotDue(wallet, asset, index, dueAt);
+        }
+        delete _marks[wallet][asset][index];
+        uint256 done = released[wallet][asset][index];
+        amount = done < uint208(m) ? uint208(m) - done : 0;
+        uint256 due = _dueNow(wallet, asset, index, share);
+        if (amount > due) amount = due;
+    }
+
+    /// @dev What payee `index` can release now.
+    function _dueNow(address wallet, address asset, uint256 index, uint32 share)
+        private
+        view
+        returns (uint256)
+    {
+        return _due(
+            wallet, asset, index, share, _balance(wallet, asset) + totalReleased[wallet][asset]
+        );
+    }
+
+    /// @dev R11: after a release of payee `paid` of `wallet`, pays the network fee vault, when it
+    ///      is a fixed payee of the wallet, everything it is due in the same asset, under the
+    ///      wallet's lock that the release holds. The move comes first and the accounting is
+    ///      written only once it succeeded; a refusal (the token will not pay the vault) leaves the
+    ///      share due and the release stands. A shortfall or a balance mismatch reverts. Only the
+    ///      network is pushed: any other fixed payee could spend all the gas it is forwarded and
+    ///      so block every payee's release.
+    function _payNetwork(Payee[] calldata payees, address wallet, address asset, uint256 paid)
+        private
+    {
+        address net = network;
+        uint256 count = payees.length;
+        // Binary search for `(0, net)`: a release only gets here for a deployed wallet, whose
+        // list is canonical, strictly ascending by `(artistId, account)`. Each payee is three
+        // calldata words: artist ID, account, share.
+        uint256 i;
+        uint256 hi = count;
+        assembly ("memory-safe") {
+            for { } lt(i, hi) { } {
+                let mid := shr(1, add(i, hi))
+                let at := add(payees.offset, mul(mid, 0x60))
+                switch and(iszero(calldataload(at)), lt(calldataload(add(at, 0x20)), net))
+                case 1 { i := add(mid, 1) }
+                default { hi := mid }
+            }
+        }
+        if (i == count || i == paid || payees[i].artistId != 0 || payees[i].account != net) {
+            return;
+        }
+        uint256 balance = _balance(wallet, asset);
+        uint256 current = balance + totalReleased[wallet][asset];
+        uint256 due = _due(wallet, asset, i, payees[i].share, current);
+        if (due == 0) return;
+        if (_move(wallet, asset, net, due, balance)) {
+            released[wallet][asset][i] += due;
+            totalReleased[wallet][asset] += due;
+            emit Released(wallet, asset, net, i, net, due, current);
+        } else if (_balance(wallet, asset) != balance) {
+            // A refusal that moved funds anyway cannot be accounted: fail closed.
+            _revertMismatch(wallet, asset);
         }
     }
 
@@ -268,27 +409,37 @@ contract SplitLedger is ISplitLedger, EIP712 {
         revert TokenTransfer.TokenBalanceMismatch(asset);
     }
 
-    /// @dev Has `wallet` transfer `amount` of `asset` to `recipient`. `balance` is the wallet's
-    ///      balance read before the move. Counts a `transfer` that returns `true` or nothing; a
-    ///      `false`, any other return and any balance change other than exactly `amount` on both
-    ///      sides revert (ECO-23).
-    function _transferToken(
+    /// @dev Has `wallet` send `amount` of `asset` to `recipient`; `balance` is the wallet's
+    ///      balance read before the move. True when exactly `amount` moved; false when the
+    ///      recipient (ETH) or the token refused. An ERC-20 `transfer` counts when it returns
+    ///      `true` or nothing; a `false` or any other return is a refusal. A counted move with any
+    ///      balance change other than exactly `amount` on both sides reverts (ECO-23). The
+    ///      outcome, not the call, proves an ETH move: a call to an address without code
+    ///      "succeeds" and moves nothing.
+    function _move(
         address wallet,
         address asset,
         address recipient,
         uint256 amount,
         uint256 balance
-    ) private {
+    ) private returns (bool) {
+        if (asset == address(0)) {
+            (bool sent,) = _instruct(wallet, recipient, amount, "");
+            if (!sent) return false;
+            if (wallet.balance != balance - amount) _revertMismatch(wallet, asset);
+            return true;
+        }
         uint256 toBefore = TokenTransfer.balanceOf(asset, recipient);
         (bool ok, bytes memory data) =
             _instruct(wallet, asset, 0, abi.encodeCall(IERC20.transfer, (recipient, amount)));
         if (!ok || (data.length != 0 && (data.length != 32 || uint256(bytes32(data)) != 1))) {
-            revert TokenTransfer.TokenCallFailed(asset, IERC20.transfer.selector);
+            return false;
         }
         if (
             TokenTransfer.balanceOf(asset, wallet) != balance - amount
                 || TokenTransfer.balanceOf(asset, recipient) != toBefore + amount
         ) _revertMismatch(wallet, asset);
+        return true;
     }
 
     /// @dev Tells `wallet` to call `target` with `value` of its own wei and `data`, forwarding all

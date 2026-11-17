@@ -72,7 +72,7 @@ abstract contract StreamFixture is Test {
         artists = new MockArtistRegistry();
         registry.setArtistRegistry(address(artists));
         renderer = new MockRenderer("default");
-        splitFactory = new SplitLedger(IArtistPayoutResolver(address(artists)));
+        splitFactory = new SplitLedger(IArtistPayoutResolver(address(artists)), address(manager));
         seller = _sellerOf(_item(0).payees);
         econ = new MockEconomics(_defaultTerms(), address(splitFactory));
         entropy = new MockEntropy();
@@ -157,6 +157,14 @@ abstract contract StreamFixture is Test {
             ISplitWallet.Payee(0, sellerWallet, Splits.DENOMINATOR - feeShare);
         (payees[0], payees[1]) = fee < sellerWallet ? (a, b) : (b, a);
         return splitFactory.walletFor(payees, bytes32(0));
+    }
+
+    /// @dev Deploys the royalty wallet `_royaltyWallet` names (permissionless), when it is not
+    ///      deployed yet.
+    function _deployRoyaltyWallet(address sellerWallet, address fee, uint32 feeShare) internal {
+        address wallet = _royaltyWallet(sellerWallet, fee, feeShare);
+        if (wallet.code.length != 0) return;
+        splitFactory.createWallet(Splits.royaltyPayees(sellerWallet, fee, feeShare), bytes32(0));
     }
 
     /// @dev The seller wallet Stream derives for `payees`: the salt-zero split wallet.

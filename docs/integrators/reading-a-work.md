@@ -24,7 +24,7 @@ interface IDs are in [ABIs and interface IDs](abis-and-interface-ids.md).
 | The edition of a master, and back | `editionOf(tokenId)`; `masterOf(editionId)` | 6529 Stream; 6529 Stream Editions |
 | When to refresh | `MetadataUpdate`, `BatchMetadataUpdate` (ERC-4906) | both tokens |
 | The primary sale price | `primarySale(tokenId)`; for an edition, `clearing(saleIdOf(editions, id))` | 6529 Stream; UniformEditionAuction |
-| The work's declarations, statements and promise card | `mediaOf(tokenId)`, then the statement log's events | WorkRecords; StatementLog ([below](#declarations-statements-and-the-promise-card)) |
+| The work's declarations, statements and fact sheet | `mediaOf(tokenId)`, then the statement log's events | WorkRecords; StatementLog ([below](#declarations-statements-and-the-fact-sheet)) |
 
 ## Fetching the metadata
 
@@ -214,7 +214,7 @@ Work 40 is serial 12 of "Spring", a VRF-seeded work whose record nobody has open
   (the record breaks a rule). There is no media, no license and no `content_hash` in this form.
 - The name is the collection and the serial, not the token ID.
 - `Artist ID` is the lead artist ID as lowercase hex, with leading zero bytes dropped. For most
-  artists it is their first authority address, but it is an ID, not a wallet to pay.
+  artists it is their first root address, but it is an ID, not a wallet to pay.
 - `Seed` appears here only for a VRF work. An artist-chosen seed appears once the record opens.
 - Anyone can open a record (`openRecord` is permissionless), so this state is usually short.
 
@@ -386,7 +386,7 @@ outcome document restates the earlier disputes it keeps in force. For an edition
 master: `(stream, editionId)`. The log refuses an outcome about an ERC-1155 subject, so none is
 ever recorded against the edition itself ([DSP-11][dsp]).
 
-## Declarations, statements and the promise card
+## Declarations, statements and the fact sheet
 
 Beyond the metadata, a work can carry promises and records that no contract checks. They are
 conventions, specified with their JSON Schemas in
@@ -397,8 +397,8 @@ who made them.
   `application/vnd.6529-works.declarations+json`, fixed from approval: read `mediaOf(tokenId)`,
   then `ContentStore.fileInfo(fileId)` for each AUXILIARY entry, then `ContentStore.read`, or
   fetch a locator's copy and check its SHA-256 against the media entry ([DCL-3][dcl]). It holds
-  the conservation floor, named custodians of a physical twin, citations at birth, the powers the
-  artist promised to renounce, and a living-work note. A living work changes with no ERC-4906
+  the conservation floor, named custodians of a physical twin, citations at birth, and a
+  living-work note. A living work changes with no ERC-4906
   event ([DCL-9][dcl]).
 - **Convention statements.** Index `StatementAppended` for the work's subject and read each kind
   only under the role the [kind registry](../spec/disputes-and-statements.md#statement-kind-registry)
@@ -410,16 +410,16 @@ who made them.
 - **Proving control at a venue.** A gallery or app checks that a visitor controls the holding
   wallet with an off-chain EIP-712 challenge, no transaction, including a cold wallet through a
   consolidated one ([DCL-24, DCL-25][dcl]).
-- **The promise card.** Generated from the reads in [DCL-26][dcl] at one block: what is fixed,
-  who can still change what and after what delay, and the residual risks. A grade, if you show
-  one, is the published rubric applied to the card, with its version ([DCL-30][dcl]).
+- **The fact sheet.** Generated from the reads in [DCL-26][dcl] at one block: what is recorded
+  about the work, and who can change what after what delay ([DCL-27][dcl]). It states facts
+  only.
 
 ## Other reads
 
 | Read | Contract | Returns | Notes |
 | --- | --- | --- | --- |
-| `royaltyInfo(tokenId, salePrice)` | Stream | receiver, amount | ERC-2981. Rate out of 100,000 (`Splits.DENOMINATOR`). The receiver is fixed at mint; the rate changes only with every party's consent plus a governed action (FUNDS_SETTER, 14 days, [WS-14][ws]). It makes one view call to the split factory: it can run out of gas and revert, but never returns a zero royalty for lack of gas ([AUC-7][auc]). About 41K gas ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table)). |
-| `royaltyInfo(id, salePrice)` | Editions | receiver, amount | Read from storage, no external call. Receiver locked at creation; the rate follows the master's. |
+| `royaltyInfo(tokenId, salePrice)` | Stream | receiver, amount | ERC-2981. Rate out of 100,000 (`Splits.DENOMINATOR`). The receiver follows the work's terms: it changes only when the network lowers the fee share (`lowerFeeShare`, R9). The rate changes, up or down to at most 100,000, only with every party's consent plus the network (FUNDS_SETTER, 3 days, R10, [WS-14][ws]). It makes one view call to the split factory: it can run out of gas and revert, but never returns a zero royalty for lack of gas ([AUC-7][auc]). About 41K gas ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table)). |
+| `royaltyInfo(id, salePrice)` | Editions | receiver, amount | Read from storage, no external call. Receiver stored at creation and derived again only when the network lowers the edition's fee share; the rate follows the master's. |
 | `licenseOf(tokenId)` | WorkRecords | `(spdxId, textFileId)` | Reverts with `RecordNotOpen` until the record opens. Defaults to the deployment's CC0. |
 | `licenseOf(editionId)` | Editions | the master's license | Reverts with `UnknownEdition`, or `RecordNotOpen` until the master's record opens. |
 | `work(tokenId)` | Stream (`IStreamViews`, answered by its `StreamViews` extension) | item hash, artist ID, collection, serial, kind, seed policy, seller, royalty receiver, royalty rate | Reverts with `UnknownWork`. Kind and seed policy are `uint8`. |
@@ -432,7 +432,7 @@ who made them.
 | `isOpen(tokenId)` | WorkRecords | bool | Never reverts. Every other per-token WorkRecords view reverts with `RecordNotOpen` until the record opens. |
 | `record(tokenId)` | WorkRecords | record file ID, media hash, license key, version, `finalized`, `onChainComplete`, pinned renderer | |
 | `mediaOf(tokenId)`, `preferredLocator(tokenId, fileId)`, `mediaStore(tokenId, index)` | WorkRecords | the media list (primary first, roles as open `uint8`s), the served copy, the store a synced file was verified against | See [Storage](storage.md). |
-| `locators(tokenId, fileId)`, `locatorCounts(tokenId, fileId)` | WorkDelivery (`WorkRecords.delivery()`) | every registered copy, and how many the artist and PLATFORM added | Replaceable: a successor names its predecessor and keeps its locators. |
+| `locators(tokenId, fileId)`, `locatorCounts(tokenId, fileId)` | WorkDelivery (`WorkRecords.delivery()`) | every registered copy, and how many the artist and PLATFORM added | `deadLocators(tokenId, fileId)` is the mask of copies the storage operator marked dead, which are never served (C21). Replaceable: a successor names its predecessor. |
 | `seedOf(tokenId)` | WorkRecords | seed policy and seed | |
 | `rendererOf(tokenId)` | Stream | renderer address | Reverts if the renderer's code changed (below). Only a work with no pin, or whose record is not open, gets the default renderer; any other fault of the records satellite reverts (`RendererPinUnreadable` for a malformed answer), and a call short of gas reverts with `BoundedCallShortfall` ([AUC-42](../spec/stream-and-auctions.md#rules-and-invariants)). |
 | `collection(collectionId)` | Stream | name, metadata hash, works minted | |
@@ -454,7 +454,7 @@ Both tokens report ERC-4906 (`0x49064906`) and ERC-2981 through ERC-165.
 
 Stream emits `MetadataUpdate` when a record opens, changes or is finalized, when a work becomes
 on-chain complete, when a locator is added or a file preference set, after a relicense, a
-royalty change or an errata repin, and when an edition is linked to a master. Editions emits the
+royalty change or a renderer repin, and when an edition is linked to a master. Editions emits the
 same for a master's edition ([RND-27][rnd]). Every source is listed under
 [ERC-4906 refresh triggers](events-and-indexing.md#erc-4906-refresh-triggers).
 
@@ -478,16 +478,17 @@ indexing these in full.
   permanent.
 - **The record, after finalize.** Once `WorkFinalized` is emitted, `name`, `description`, the
   artist, year, medium and dimensions traits and the record's attributes never change, and the
-  renderer is pinned, so the output format does not change either. Only an errata repin
-  (`RendererRepinned`, the artist's signature plus a 30-day governed delay, [WS-15][ws])
-  installs another renderer for that work.
+  renderer is pinned, so the output format does not change either. Only a repin by the network
+  (`RendererRepinned`, SUCCESSOR_SETTER, 7 days, for example to repair a broken renderer;
+  [WS-15][ws]) installs another renderer for that work, and never once the artist renounced
+  `RENDERER_REPIN`.
 - **The collection and serial.** Collections cannot be renamed; serials never change.
 - **A CC0 license.** It is irrevocable ([WS-12][ws]).
 
 What can still change after finalize: the media members (new copies, a new preference,
-on-chain completion, attestation), a non-CC0 license (a relicense needs every party plus a
-48-hour governed action, [WS-13][ws]), the dispute statement, and the royalty rate (not part
-of the JSON).
+on-chain completion, attestation), a non-CC0 license (a relicense needs every party plus the
+network, FUNDS_SETTER, 3 days, [WS-13][ws]), the dispute statement, and the royalty rate and fee
+share (not part of the JSON).
 
 ### When a call reverts
 

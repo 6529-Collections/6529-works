@@ -1,68 +1,38 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @notice An artist identity's mutable state (ADR 0001 section 11 "Registry").
-/// @dev `authority` signs for the artist and is never zero. `payout` receives the artist's
-///      artist-resolved split payments and is never zero. `profileId` is the 6529 profile ID and
-///      `profileDocHash` the hash of the profile document; every artist-signed identity payload
-///      includes both.
+/// @notice An artist account's recorded fields (ADR 0001 section 11 "Registry").
+/// @dev `root` is the wallet the account's 6529 consolidation is read from; every wallet
+///      consolidated with it acts for the account with the same rights. `payout` receives the
+///      account's artist-resolved split payments and is never zero. `profileId` is the 6529
+///      profile ID and `profileDocHash` the hash of the profile document.
 struct ArtistIdentity {
-    address authority;
+    address root;
     address payout;
     bytes32 profileId;
     bytes32 profileDocHash;
 }
 
-/// @notice What kind of identity change is pending (ADR 0001 section 11).
-/// @dev NONE: nothing pending. STANDARD: staged by the authority or an established consolidated
-///      wallet; executable after the change delay (at least 7 days). CONTESTED, ESTATE and
-///      LOST_KEY are network overrides with a public notice of at least 180 days; ESTATE and
-///      LOST_KEY, and any override that moves the payout but keeps the authority, also need the
-///      dormancy period (at least a year) with no signed activity. The waits are the registry's
-///      governed timers (`IArtistRegistry.Timer`).
+/// @notice What kind of identity change is pending.
+/// @dev NONE: nothing pending. OWN: the account's own change, signed by any of its wallets,
+///      executable after 2 days. REPLACEMENT: the network replaces the root, executable after
+///      14 days' notice; a contested one runs only if the network upholds it within 90 days.
 enum ChangeKind {
     NONE,
-    STANDARD,
-    CONTESTED,
-    ESTATE,
-    LOST_KEY
-}
-
-/// @notice A wallet with recovery standing in an artist's sticky snapshot (ADR 0001 section 11
-///         "Canceller set captured at staging").
-/// @dev `effectiveAt` is when the wallet's consolidation became (or becomes) at least 30 days
-///      old; before then the entry is pending and confers no standing. `missingSince` is when a
-///      refresh first found the established wallet no longer consolidated, or zero. A missing
-///      wallet keeps standing until a refresh at least `STANDING_GRACE` later removes it; a
-///      pending entry found no longer consolidated is removed at once. One storage slot.
-struct Standing {
-    address wallet;
-    uint48 effectiveAt;
-    uint48 missingSince;
+    OWN,
+    REPLACEMENT
 }
 
 /// @notice A staged identity change.
-/// @dev `cancellers` are the established consolidated wallets captured when the change was
-///      staged (ADR 0001 section 11 "Canceller set captured at staging"); a later revocation of
-///      a consolidation does not remove them; at most `Limits.MAX_CANCELLERS` are captured.
-///      `previousAuthority` may cancel a STANDARD change but never an override. `evidenceHash`
-///      is zero for STANDARD changes. An override a captured wallet cancelled during its notice
-///      is contested: `contestedAt` records the first such cancel (zero otherwise), and
-///      `priorOutcome` the artist's latest DISPUTE_OUTCOME entry at that moment, so only a vote
-///      recorded after the contest can resolve it. `contestedAt` shares `executableAt`'s slot.
-///      `contestTimeout` is the registry's contest timeout locked when the change was staged, so
-///      a later change of the governed value never shortens or lengthens this change's lapse; it
-///      shares `kind`'s slot.
+/// @dev `executableAt` is when it may execute. `contestedAt` is when a wallet of the account
+///      contested a REPLACEMENT (zero otherwise), and `priorOutcome` the account's latest
+///      DISPUTE_OUTCOME entry at that moment, so only a vote recorded after the contest can
+///      resolve it. `evidenceHash` is zero for an OWN change.
 struct PendingChange {
     ChangeKind kind;
-    uint48 contestTimeout;
+    uint48 executableAt;
+    uint48 contestedAt;
     ArtistIdentity next;
-    address previousAuthority;
-    uint64 stagedAt;
-    uint64 executableAt;
-    uint64 contestedAt;
-    bytes32 priorOutcome;
     bytes32 evidenceHash;
-    address[] cancellers;
+    bytes32 priorOutcome;
 }
-

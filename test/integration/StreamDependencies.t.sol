@@ -375,7 +375,7 @@ contract StreamDependenciesTest is IntegrationBase {
         bytes memory call = abi.encodeCall(stream.setDependency, (kind, previous, next));
         (bool immediate, uint32 delay) = manager.canCall(hotAdmin, address(stream), bytes4(call));
         assertFalse(immediate);
-        assertEq(delay, 30 days, "the successor class");
+        assertEq(delay, 7 days, "the successor class");
         _schedule(hotAdmin, address(stream), call);
         vm.warp(block.timestamp + delay);
         vm.expectEmit(address(stream));
@@ -390,7 +390,7 @@ contract StreamDependenciesTest is IntegrationBase {
         address previous = _current(kind);
         bytes memory call = abi.encodeCall(stream.setDependency, (kind, previous, next));
         _schedule(hotAdmin, address(stream), call);
-        vm.warp(block.timestamp + 30 days);
+        vm.warp(block.timestamp + 7 days);
         vm.prank(hotAdmin);
         vm.expectRevert(reason);
         manager.execute(address(stream), call);
@@ -815,7 +815,7 @@ contract StreamDependenciesTest is IntegrationBase {
             abi.encodeCall(artists.setPackageRegistry, (address(old), address(next)));
         (bool immediate, uint32 delay) = manager.canCall(hotAdmin, address(artists), bytes4(rebind));
         assertFalse(immediate);
-        assertEq(delay, 30 days, "the successor class");
+        assertEq(delay, 7 days, "the successor class");
         _schedule(hotAdmin, address(artists), rebind);
         vm.warp(block.timestamp + delay);
         vm.expectEmit(address(artists));

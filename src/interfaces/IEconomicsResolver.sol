@@ -99,9 +99,13 @@ interface IEconomicsResolver is IERC165 {
     /// @return The fee recipient, fee share and royalty rate new works lock, both rates out of
     ///        100,000.
     function economics(bytes32 product) external view returns (ProductEconomics memory);
-    /// @notice A product's network fee recipient (`economics(product).feeRecipient`).
+    /// @notice A product's network fee recipient (`economics(product).feeRecipient`). Sale
+    ///         adapters read it when a sale settles and pay the network's fee there, so a change
+    ///         reaches running sales too (R18); a sale pays the recipient it recorded when this
+    ///         answers zero.
     /// @param product The product identifier; reverts with {UnknownProduct} if not configured.
-    /// @return The fee recipient; zero only while the fee share is zero.
+    /// @return The fee recipient; zero only while the fee share is zero, and never the revenue
+    ///         escrow or another contract the fee-recipient rule refuses.
     function networkFeeRecipient(bytes32 product) external view returns (address);
     /// @notice A product's default license for new packages (CC0 at launch).
     /// @param product The product identifier; reverts with {UnknownProduct} if not configured.
@@ -124,7 +128,7 @@ interface IEconomicsResolver is IERC165 {
     function splitFactory() external view returns (address);
     /// @notice The 6529 Network Museum (ADR 0005; 6529chain D140): the network-held account
     ///         that receives a 6529 Stream work whose 1/1 auction drew no bids, or that ended
-    ///         unsold after its currency stayed deprecated for 60 days, whatever the sale method
+    ///         unsold after its currency stayed deprecated past the freeze exit, whatever the sale method
     ///         (owner decision 22), and a work governance rescues from a removed sale adapter
     ///         (owner decision 20). 6529 Stream reads it when the sale settles and moves the work
     ///         itself (owner decision 17); another token's unsold work goes to its artist
@@ -136,7 +140,7 @@ interface IEconomicsResolver is IERC165 {
     function museumRevision() external view returns (uint64);
 
     /// @notice Sets a product's network fee recipient and fee share for new works. FUNDS_SETTER
-    ///         role (14 days). Reverts with {InvalidFeeRecipient} for a recipient that could
+    ///         role (the network, 3 days). Reverts with {InvalidFeeRecipient} for a recipient that could
     ///         never be paid: a work locks its fee recipient at mint, so such a recipient would
     ///         make every sale of every work minted under it unsettleable.
     /// @param product The product identifier; reverts with {UnknownProduct} if not configured.
@@ -150,13 +154,13 @@ interface IEconomicsResolver is IERC165 {
         address feeRecipient,
         uint32 feeShare
     ) external;
-    /// @notice Sets a product's royalty rate for new works. PARAMETER_SETTER role (48 hours).
+    /// @notice Sets a product's royalty rate for new works. PARAMETER_SETTER role (24 hours).
     /// @param product The product identifier; reverts with {UnknownProduct} if not configured.
     /// @param expectedRevision The royalty-rate revision the product must be at.
     /// @param royaltyRate The ERC-2981 royalty rate, out of 100,000; at most 100,000.
     function setRoyaltyRate(bytes32 product, uint64 expectedRevision, uint32 royaltyRate) external;
     /// @notice Sets a product's default license for new packages. PARAMETER_SETTER role
-    ///         (48 hours). A CC0 license must name the deployment's CC0 text, as
+    ///         (24 hours). A CC0 license must name the deployment's CC0 text, as
     ///         `IWorkRecords.openRecord` requires.
     /// @param product The product identifier; reverts with {UnknownProduct} if not configured.
     /// @param expectedRevision The license revision the product must be at.
@@ -165,7 +169,7 @@ interface IEconomicsResolver is IERC165 {
     function setDefaultLicense(bytes32 product, uint64 expectedRevision, License calldata next)
         external;
     /// @notice Sets the 6529 Network Museum for settlements from now on. FUNDS_SETTER role
-    ///         (14 days, the network-level recipients class), compare-and-set on the museum
+    ///         (the network, 3 days), compare-and-set on the museum
     ///         revision. Reverts with {InvalidMuseum} for an address that could never hold the
     ///         network's works; the runbook also requires an existing account that accepts
     ///         ERC-721 tokens (a Safe). A work already delivered or pending for the previous

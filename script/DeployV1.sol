@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { Vm } from "forge-std/Vm.sol";
 import { ContentStore } from "src/content/ContentStore.sol";
 import { Renderer } from "src/content/Renderer.sol";
+import { SaleStarter } from "src/sales/SaleStarter.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { DependencyRegistry } from "src/content/DependencyRegistry.sol";
 import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol";
@@ -97,8 +98,8 @@ library DeployV1 {
         address feeRecipient;
         /// The 6529 Network Museum (D140): the first destination of the museum's governed vault,
         /// where an unbid canonical 6529 Stream work goes. An existing Safe or EOA;
-        /// SUCCESSOR_SETTER (30 days) can change the vault's destination (`setDestination`),
-        /// FUNDS_SETTER (14 days) the resolver's museum.
+        /// SUCCESSOR_SETTER (7 days) can change the vault's destination (`setDestination`),
+        /// FUNDS_SETTER (3 days) the resolver's museum.
         address museum;
         /// The marketplace `owner()` of 6529 Stream (and 6529 Stream Editions): collection admin
         /// on marketplaces, no protocol power. FUNDS_SETTER can change it.
@@ -174,6 +175,9 @@ library DeployV1 {
         /// its template's creation code and records every copy it deploys.
         FederatedDeployer federatedStreamDeployer;
         FederatedDeployer federatedEditionsDeployer;
+        /// The keeper's stateless helper: starts a 1/1, deploys its vaults and opens its record
+        /// in one transaction (no constructor argument, no role, holds nothing).
+        SaleStarter saleStarter;
     }
 
     /// @notice The epoch-0 governance manifest: the SHA-256 of the signed manifest JSON and
@@ -242,15 +246,15 @@ library DeployV1 {
     ///         Each lens is its own entry, just before its auction, so no deployment carries two
     ///         contracts' code (F8, the rc.2 review's GAS M-2).
     function order(Params memory p) internal pure returns (string[] memory list) {
-        string[28] memory all = [
+        string[29] memory all = [
             "GovernanceConfigurator",
             "ContentStore",
             "DependencyRegistry",
             "ConsolidationAdapter",
             "ArtistRegistry",
-            "SplitFactory",
             "FeeRecipientVault",
             "MuseumVault",
+            "SplitFactory",
             "ClaimRouter",
             "AssetAllowlist",
             "EconomicsResolver",
@@ -270,7 +274,8 @@ library DeployV1 {
             "FederatedStreamDeployer",
             "FederatedEditionsDeployer",
             "FederatedEditionAuctionLens",
-            "FederatedEditionAuction"
+            "FederatedEditionAuction",
+            "SaleStarter"
         ];
         bool vrf = p.vrfCoordinator != address(0);
         list = new string[](all.length + (vrf ? 1 : 0));
@@ -306,15 +311,15 @@ library DeployV1 {
                 _code(type(ArtistRegistry).creationCode, abi.encode(m, adapter, adapter.codehash));
         }
         if (n == keccak256("SplitFactory")) {
-            return _code(type(SplitLedger).creationCode, abi.encode(d.artistRegistry));
-        }
-        if (n == keccak256("FeeRecipientVault")) {
             return _code(
-                type(GovernedVault).creationCode, abi.encode(m, d.splitFactory, p.feeRecipient)
+                type(SplitLedger).creationCode, abi.encode(d.artistRegistry, d.feeRecipientVault)
             );
         }
+        if (n == keccak256("FeeRecipientVault")) {
+            return _code(type(GovernedVault).creationCode, abi.encode(m, p.feeRecipient));
+        }
         if (n == keccak256("MuseumVault")) {
-            return _code(type(GovernedVault).creationCode, abi.encode(m, d.splitFactory, p.museum));
+            return _code(type(GovernedVault).creationCode, abi.encode(m, p.museum));
         }
         if (n == keccak256("ClaimRouter")) {
             return _code(type(ClaimRouter).creationCode, abi.encode(d.splitFactory));
@@ -535,6 +540,7 @@ library DeployV1 {
                 )
             );
         }
+        if (n == keccak256("SaleStarter")) return type(SaleStarter).creationCode;
         revert UnknownContract(name);
     }
 
@@ -564,8 +570,7 @@ library DeployV1 {
 
     /// @notice The edition auction's genesis parameters (ADR 0005 §4; D138, D140, D141, owner
     ///         decisions 3 to 5): 0.0001 ETH at step 0, 48 steps per decade over 336 steps (to
-    ///         about 953 ETH), a 10% breadth margin (10,000 of 100,000), a close 15 minutes after
-    ///         the 1/1's, a 5-minute soft close and a 24-hour extension backstop. Each is
+    ///         about 953 ETH), a 10% breadth margin (10,000 of 100,000), a 5-minute soft close and a 24-hour extension backstop. Each is
     ///         governed (`setConfig`, PARAMETER_SETTER) and locked into a sale when it opens.
     function editionAuctionDefaults()
         internal
@@ -577,22 +582,16 @@ library DeployV1 {
             stepsPerDecade: 48,
             stepCount: 336,
             marginShare: 10_000,
-            closeOffset: 15 minutes,
             softWindow: 5 minutes,
             maxExtension: 24 hours
         });
     }
 
-    /// @notice The edition auction's genesis limits (ADR 0005 §4, as amended 15 November 2026):
-    ///         an edition's terms may name a close offset of up to 30 days (owner to confirm the
-    ///         maximum), a sale whose master cannot be settled may be abandoned 150 days after its
-    ///         end, and each payout forwards 100,000 gas. Each is governed (`setLimits`,
-    ///         PARAMETER_SETTER); a sale locks its close offset and abandonment delay when it
-    ///         opens.
+    /// @notice The edition auction's genesis limit: each payout forwards 100,000 gas (governed,
+    ///         `setLimits`, PARAMETER_SETTER). The close offset (15 minutes) and the abandonment
+    ///         wait (21 days) are fixed in the adapter.
     function editionAuctionLimits() internal pure returns (IUniformEditionAuction.Limits memory) {
-        return IUniformEditionAuction.Limits({
-            maxCloseOffset: 30 days, voidDelayDays: 150, payoutGas: 100_000, rescueCapDays: 730
-        });
+        return IUniformEditionAuction.Limits({ payoutGas: 100_000 });
     }
 
     /// @notice Permit2 for the English auction, which takes zero where Permit2 has no code (a
@@ -692,6 +691,7 @@ library DeployV1 {
         if (n == keccak256("FederatedEditionsDeployer")) {
             return address(d.federatedEditionsDeployer);
         }
+        if (n == keccak256("SaleStarter")) return address(d.saleStarter);
         revert UnknownContract(name);
     }
 
@@ -761,6 +761,8 @@ library DeployV1 {
             d.federatedStreamDeployer = FederatedDeployer(a);
         } else if (n == keccak256("FederatedEditionsDeployer")) {
             d.federatedEditionsDeployer = FederatedDeployer(a);
+        } else if (n == keccak256("SaleStarter")) {
+            d.saleStarter = SaleStarter(a);
         } else {
             revert UnknownContract(name);
         }
@@ -768,7 +770,7 @@ library DeployV1 {
 
     /// @notice Every contract name `addressOf` knows, for records and readback.
     function names() internal pure returns (string[] memory list) {
-        string[31] memory all = [
+        string[32] memory all = [
             "GovernanceConfigurator",
             "WorksAccessManager",
             "ContentStore",
@@ -799,7 +801,8 @@ library DeployV1 {
             "FederatedEditionAuctionLens",
             "FederatedEditionAuction",
             "FederatedStreamDeployer",
-            "FederatedEditionsDeployer"
+            "FederatedEditionsDeployer",
+            "SaleStarter"
         ];
         list = new string[](all.length);
         for (uint256 i; i < all.length; ++i) {
@@ -817,6 +820,8 @@ library DeployV1 {
         returns (GovernanceConfig.Config memory cfg)
     {
         checkRoles(json);
+        cfg.network = vm.parseJsonAddress(json, ".network");
+        if (vm.keyExistsJson(json, ".brake")) cfg.brake = vm.parseJsonAddress(json, ".brake");
         cfg.grants = _grants(json);
         uint256 contracts = _count(json, ".contracts");
         uint256 deployed;
@@ -833,23 +838,29 @@ library DeployV1 {
         }
     }
 
-    /// @notice Reverts unless the JSON's `roles` table is exactly `Roles.sol`: every role once,
-    ///         with its ID, execution delay and grant delay. `configure` takes the delays from
+    /// @notice Reverts unless the JSON's `roles` table is exactly `Roles.sol`: every role once
+    ///         (as many entries as `Roles.isKnown` IDs, none repeated), with its ID, execution
+    ///         delay and grant delay. `configure` takes the delays from
     ///         `Roles.sol`; this keeps the published table honest.
     function checkRoles(string memory json) internal view {
         uint256 n = _count(json, ".roles");
-        if (n != Roles.COUNT) revert RoleTableMismatch("count");
+        uint256 known;
+        for (uint64 id; id < Roles.COUNT; ++id) {
+            if (Roles.isKnown(id)) ++known;
+        }
+        if (n != known) revert RoleTableMismatch("count");
+        uint256 seen;
         for (uint256 i; i < n; ++i) {
             string memory r = _at(".roles", i);
             string memory name = vm.parseJsonString(json, string.concat(r, ".name"));
             uint64 id = _roleId(name);
             if (
-                vm.parseJsonUint(json, string.concat(r, ".id")) != id
+                seen & (1 << id) != 0 || vm.parseJsonUint(json, string.concat(r, ".id")) != id
                     || vm.parseJsonUint(json, string.concat(r, ".executionDelay"))
                         != Roles.executionDelay(id)
-                    || vm.parseJsonUint(json, string.concat(r, ".grantDelay"))
-                        != Roles.grantDelay(id)
+                    || vm.parseJsonUint(json, string.concat(r, ".grantDelay")) != 0
             ) revert RoleTableMismatch(name);
+            seen |= 1 << id;
         }
     }
 
@@ -1057,6 +1068,7 @@ library DeployV1 {
     function _roleId(string memory name) private pure returns (uint64) {
         if (keccak256(bytes(name)) == keccak256("ADMIN")) return Roles.ADMIN;
         for (uint64 role = 1; role < Roles.COUNT; ++role) {
+            if (!Roles.isKnown(role)) continue;
             if (keccak256(bytes(name)) == keccak256(bytes(Roles.label(role)))) return role;
         }
         revert UnknownRoleName(name);

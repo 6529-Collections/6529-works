@@ -58,7 +58,8 @@ abstract contract WorksDeployment is Test {
     uint32 internal constant AUCTION_DURATION = 24 hours;
     uint32 internal constant EXTENSION_WINDOW = 15 minutes;
     uint32 internal constant INCREMENT_SHARE = 5_000;
-    uint32 internal constant REFUSAL_DELAY = 7 days;
+    /// @dev The English auction's fixed refusal delay (`REFUSAL_DELAY`), not a parameter.
+    uint32 internal constant REFUSAL_DELAY = 2 days;
     uint32 internal constant REFUSAL_GAS = 4_000_000;
 
     // ------------------------------------------------------------------ external systems
@@ -96,12 +97,13 @@ abstract contract WorksDeployment is Test {
     UniformEditionAuction internal editionAuction;
 
     // ------------------------------------------------------------------ genesis holders
-    address internal hotAdmin = makeAddr("hotAdminSafe");
-    address internal coldAdmin = makeAddr("coldAdminSafe");
-    address internal thirdAdmin = makeAddr("thirdAdminSafe");
-    address internal guardian1 = makeAddr("guardianSafe1");
-    address internal guardian2 = makeAddr("guardianSafe2");
-    address internal guardian3 = makeAddr("guardianSafe3");
+    /// @dev The network: the single address that holds every network role (`network` in the
+    ///      genesis file; until the TDH bridge exists, one 6529 Safe).
+    address internal hotAdmin = makeAddr("networkSafe");
+    /// @dev The three PAUSER keys.
+    address internal guardian1 = makeAddr("pauserKey1");
+    address internal guardian2 = makeAddr("pauserKey2");
+    address internal guardian3 = makeAddr("pauserKey3");
     uint256 internal signer1Pk = uint256(keccak256("curation signer 1"));
     uint256 internal signer2Pk = uint256(keccak256("curation signer 2"));
     address internal signer1;
@@ -136,7 +138,11 @@ abstract contract WorksDeployment is Test {
         _adopt(d);
         genesisJson = _withHolders(vm.readFile(GENESIS_PATH));
         manifest = DeployV1.Manifest(MANIFEST_HASH, "ar://integration-epoch-0-manifest");
-        if (!deferGenesis) DeployV1.install(d, _genesisConfig(), manifest, _genesisWiring());
+        if (!deferGenesis) {
+            DeployV1.install(d, _genesisConfig(), manifest, _genesisWiring());
+            vm.prank(hotAdmin);
+            manager.acceptNetwork();
+        }
     }
 
     /// @dev The external systems: the identity lane's delegation reduction, the entropy lane's
@@ -161,7 +167,7 @@ abstract contract WorksDeployment is Test {
         p.ethIncrementFloor = ETH_INCREMENT_FLOOR;
         p.permit2 = PERMIT2;
         p.auction = IEnglishAuction.AuctionConfig(
-            AUCTION_DURATION, EXTENSION_WINDOW, INCREMENT_SHARE, REFUSAL_DELAY, REFUSAL_GAS
+            AUCTION_DURATION, EXTENSION_WINDOW, INCREMENT_SHARE, REFUSAL_GAS
         );
         p.editionAuction = DeployV1.editionAuctionDefaults();
         p.vrfCoordinator = address(coordinator);
@@ -202,10 +208,8 @@ abstract contract WorksDeployment is Test {
     /// @dev The committed genesis JSON with each placeholder holder (`0x...b0xx`) replaced by
     ///      this test's actor for it.
     function _withHolders(string memory json) internal view returns (string memory) {
-        address[11] memory actors = [
+        address[9] memory actors = [
             hotAdmin,
-            coldAdmin,
-            thirdAdmin,
             guardian1,
             guardian2,
             guardian3,
@@ -215,10 +219,9 @@ abstract contract WorksDeployment is Test {
             platform,
             curator
         ];
-        uint16[11] memory placeholders = [
-            0xb001, 0xb002, 0xb004, 0xb011, 0xb012, 0xb013, 0xb021, 0xb022, 0xb031, 0xb051, 0xb061
-        ];
-        for (uint256 i; i < 11; ++i) {
+        uint16[9] memory placeholders =
+            [0xb001, 0xb011, 0xb012, 0xb013, 0xb021, 0xb022, 0xb031, 0xb051, 0xb061];
+        for (uint256 i; i < 9; ++i) {
             string memory from = vm.toLowercase(vm.toString(address(uint160(placeholders[i]))));
             json = vm.replace(json, from, vm.toString(actors[i]));
         }
@@ -314,12 +317,17 @@ abstract contract WorksDeployment is Test {
     }
 
     /// @dev `_govern` that reports whether the governed call executed instead of reverting; a
-    ///      failed operation is cancelled so the same call can be scheduled again.
+    ///      failed scheduled operation is cancelled so the same call can be scheduled again.
     function _governTry(address caller, address target, bytes memory data)
         internal
         returns (bool ok)
     {
-        (, uint32 delay) = manager.canCall(caller, target, bytes4(data));
+        (bool immediate, uint32 delay) = manager.canCall(caller, target, bytes4(data));
+        if (immediate) {
+            vm.prank(caller);
+            (ok,) = target.call(data);
+            return ok;
+        }
         vm.prank(caller);
         manager.schedule(target, data, 0);
         vm.warp(block.timestamp + delay);

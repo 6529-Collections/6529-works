@@ -68,8 +68,9 @@ contract IntegrationGasReport is IntegrationBase {
     ///      budget (the review of #81): the largest round value the measured rows support. The
     ///      mint policy and the locked-terms events took it to 2,500 during the permanence
     ///      integration; moving the opening bid into the asset allowlist's status word (one read
-    ///      fewer per start) restored it: the tightest row is 344,980, 5,020 under the budget.
-    uint256 internal constant START_MARGIN = 5000;
+    ///      fewer per start) restored it to 5,000 (tightest row 344,980). The owner set it to
+    ///      3,000 on 16 November 2026, so every such row stays at or under 347,000.
+    uint256 internal constant START_MARGIN = 3000;
     /// @dev After governance replaced Stream's three mint-path dependencies (the mint policy,
     ///      the economics resolver and the entropy module; owner decision 16), a mint reads each
     ///      it uses from storage: about 2,100 more per dependency. The binding rows are then
@@ -88,6 +89,11 @@ contract IntegrationGasReport is IntegrationBase {
     uint256 internal constant FIRST_START_CEILING = 449_000;
     uint256 internal constant NEW_TERMS_CEILING = 390_000;
     uint256 internal constant PERMIT2_START_CEILING = 365_000;
+    /// @dev A start whose move a consolidated (non-root) wallet of the lead's account signed:
+    ///      the artist registry reads the consolidation source (the 6529 delegation contract,
+    ///      through the adapter) once, a path off the default. Measured 314,199,
+    ///      plus about 2%, rounded up to the thousand.
+    uint256 internal constant CONSOLIDATED_START_CEILING = 321_000;
     uint256 internal constant BID_CEILING = 75_000;
     /// @dev The mint policy's `authorize` (consent, item rules, consume, terms quote): measured
     ///      91,180; it writes no slot since Stream holds content uniqueness (AUC-44). 2% up.
@@ -95,13 +101,11 @@ contract IntegrationGasReport is IntegrationBase {
     /// @dev Moved down from 275,000: Editions no longer proves the item under a package root nor
     ///      claims its content in the mint policy (review A, M-1). Measured 213,166, plus 2%.
     uint256 internal constant CREATE_EDITION_CEILING = 218_000;
-    uint256 internal constant REFRESH_FIRST_CEILING = 131_000;
     /// @dev Moved from 192,000 (permanence integration, 15 November 2026): an admin's governed
     ///      `execute` also updates the manager's admin-liveness clock and checks its hand-over
     ///      flag (GV-42, GV-43; one cold ADMIN-membership read, one shared-slot read and a
     ///      write). Measured 198,314, plus about 2%, rounded up.
     uint256 internal constant RERATE_CEILING = 203_000;
-    uint256 internal constant REFRESH_FURTHER_CEILING = 161_000;
     uint256 internal constant CREATE_WALLET_CEILING = 100_000;
     uint256 internal constant RELEASE_FIRST_CEILING = 96_000;
     uint256 internal constant SIGNED_FIRST_CEILING = 145_000;
@@ -248,7 +252,7 @@ contract IntegrationGasReport is IntegrationBase {
         ISplitWallet.Payee[] memory duoC = new ISplitWallet.Payee[](2);
         duoC[0] = ISplitWallet.Payee(0, makeAddr("gasCollaborator"), 20_000);
         duoC[1] = ISplitWallet.Payee(uint160(makeAddr("gasArtistC")), address(0), 80_000);
-        address[23] memory extra = [
+        address[24] memory extra = [
             artistA,
             artistB,
             makeAddr("gasArtistC"),
@@ -269,6 +273,7 @@ contract IntegrationGasReport is IntegrationBase {
             makeAddr("gasCollaborator"),
             makeAddr("permit2Payer"),
             makeAddr("relayer"),
+            makeAddr("consolidatedWallet"),
             economics.newWorkTerms(PRODUCT_STREAM, solo).seller,
             economics.newWorkTerms(PRODUCT_EDITIONS, solo).seller,
             economics.newWorkTerms(PRODUCT_STREAM, duo).seller
@@ -328,7 +333,7 @@ contract IntegrationGasReport is IntegrationBase {
     function _rowStart() internal returns (Row memory r) {
         _steadyState();
         r = _row("start, steady state", starter, address(auction), _startData(2), 0);
-        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 3K margin");
         _growthIs(r, 5, 0);
         _slotsAtMost(r, START_MAX_SLOTS);
     }
@@ -337,9 +342,27 @@ contract IntegrationGasReport is IntegrationBase {
         _steadyState();
         bytes memory data = _startWithBidData(root, _package(root), 2);
         r = _row("startWithBid, steady state", bidder, address(auction), data, 1 ether);
-        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 3K margin");
         _growthIs(r, 6, 0);
         _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
+    }
+
+    function _rowStartConsolidatedWallet() internal returns (Row memory r) {
+        _steadyState();
+        address wallet = _actor("consolidatedWallet");
+        _consolidate(artistA, wallet);
+        uint256 artistId = artists.artistIdOf(artistA);
+        bytes memory mintData =
+            _mintDataSignedBy(root, _package(root), 2, wallet, nextMoveNonce[artistId]++);
+        r = _row(
+            "start, steady state, move signed by a consolidated wallet",
+            starter,
+            address(auction),
+            abi.encodeCall(auction.start, (address(stream), mintData)),
+            0
+        );
+        _gasAtMost(r, CONSOLIDATED_START_CEILING, "regression ceiling");
+        _growthIs(r, 5, 0);
     }
 
     /// @dev A two-party work: the lead artist and a collaborator who is paid as a fixed payee.
@@ -373,7 +396,7 @@ contract IntegrationGasReport is IntegrationBase {
         bytes memory data =
             abi.encodeCall(auction.start, (address(stream), _mintData(twoRoot, works, 1)));
         r = _row("start, steady state, two-party work", starter, address(auction), data, 0);
-        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 3K margin");
         _growthIs(r, 5, 0);
         _slotsAtMost(r, START_MAX_SLOTS);
     }
@@ -389,7 +412,7 @@ contract IntegrationGasReport is IntegrationBase {
         r = _row(
             "startWithBid, steady state, two-party work", bidder, address(auction), data, 1 ether
         );
-        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 3K margin");
         _growthIs(r, 6, 0);
         _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
     }
@@ -405,7 +428,7 @@ contract IntegrationGasReport is IntegrationBase {
         bytes memory data =
             abi.encodeCall(auction.start, (address(stream), _mintData(vrfRoot, works, 0)));
         r = _row("start, steady state, VRF work", starter, address(auction), data, 0);
-        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 3K margin");
         _growthIs(r, 5, 0);
         _slotsAtMost(r, START_MAX_SLOTS);
     }
@@ -426,7 +449,7 @@ contract IntegrationGasReport is IntegrationBase {
         bytes memory data =
             abi.encodeCall(auction.start, (address(stream), _mintData(masterRoot, works, 0)));
         r = _row("start, steady state, edition master", starter, address(auction), data, 0);
-        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 3K margin");
         _growthIs(r, 5, 0);
         _slotsAtMost(r, START_MAX_SLOTS);
     }
@@ -535,7 +558,7 @@ contract IntegrationGasReport is IntegrationBase {
         bytes memory data =
             abi.encodeCall(auction.start, (address(stream), _mintData(cRoot, works, 0)));
         r = _row("start, an artist's first work", starter, address(auction), data, 0);
-        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 3K margin");
         _growthIs(r, 6, 0);
         _slotsAtMost(r, START_MAX_SLOTS);
     }
@@ -551,7 +574,7 @@ contract IntegrationGasReport is IntegrationBase {
             _startWithBidData(cRoot, works, 0),
             1 ether
         );
-        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 3K margin");
         _growthIs(r, 7, 0);
         _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
     }
@@ -566,7 +589,7 @@ contract IntegrationGasReport is IntegrationBase {
             _bindingData(false),
             1 ether
         );
-        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 3K margin");
         _growthIs(r, 7, 0);
         _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
     }
@@ -655,7 +678,7 @@ contract IntegrationGasReport is IntegrationBase {
             _bindingData(true),
             1 ether
         );
-        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 3K margin");
         _growthIs(r, 7, 0);
         _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
     }
@@ -702,7 +725,7 @@ contract IntegrationGasReport is IntegrationBase {
         );
         console2.log(r.label, r.total);
         // At 1,024 bytes this row was 361,211, at 256 348,132 and at 128 345,988 (ADR 0005 §12).
-        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 3K margin");
         _growthIs(r, 7, 0);
     }
 
@@ -720,7 +743,7 @@ contract IntegrationGasReport is IntegrationBase {
             0
         );
         console2.log(r.label, r.total);
-        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 3K margin");
         _growthIs(r, 5, 0);
     }
 
@@ -909,8 +932,8 @@ contract IntegrationGasReport is IntegrationBase {
 
     // ------------------------------------------------------------------ re-rate
 
-    /// @dev A work re-rated to 5% (every party's consent plus FUNDS_SETTER's governed action;
-    ///      rates are lower-only, ADR 0006),
+    /// @dev A work re-rated to 5% (every party's consent, each a wallet-prefixed proof, plus
+    ///      FUNDS_SETTER's governed action),
     ///      executed through the manager: Stream moves the token to the terms with its new rate,
     ///      which no work has yet, so it writes that terms word (QUALITY-6); before, it overwrote
     ///      the token's own word.
@@ -922,12 +945,15 @@ contract IntegrationGasReport is IntegrationBase {
         uint64 deadline = uint64(block.timestamp + 30 days);
         bytes32 state = records.workStateHash(tokenId);
         bytes[] memory sigs = new bytes[](1);
-        sigs[0] = _sign(
+        sigs[0] = abi.encodePacked(
             artistA,
-            _typedDigest(
-                address(records),
-                keccak256(
-                    abi.encode(Typehashes.ROYALTY_RATE_CHANGE, tokenId, rate, state, deadline)
+            _sign(
+                artistA,
+                _typedDigest(
+                    address(records),
+                    keccak256(
+                        abi.encode(Typehashes.ROYALTY_RATE_CHANGE, tokenId, rate, state, deadline)
+                    )
                 )
             )
         );
@@ -963,37 +989,6 @@ contract IntegrationGasReport is IntegrationBase {
         delegation.registerDelegationAddress(
             ALL_COLLECTIONS, a, type(uint64).max, CONSOLIDATION, true, 0
         );
-    }
-
-    function _refreshData() internal view returns (bytes memory) {
-        return abi.encodeCall(artists.refreshStanding, (artists.artistIdOf(artistA)));
-    }
-
-    /// @dev The artist's first consolidated wallet is recorded (as pending) by a refresh the
-    ///      artist pays for (ADR 0003).
-    function _rowRefreshFirst() internal returns (Row memory r) {
-        _consolidate(artistA, makeAddr("gasWallet1"));
-        r = _row(
-            "refreshStanding, records a first wallet", artistA, address(artists), _refreshData(), 0
-        );
-        _gasAtMost(r, REFRESH_FIRST_CEILING, "regression ceiling");
-        _growthIs(r, 2, 0);
-    }
-
-    /// @dev A further wallet joins a snapshot that already has one, as on Sepolia r2.
-    function _rowRefreshFurther() internal returns (Row memory r) {
-        _consolidate(artistA, makeAddr("gasWallet1"));
-        artists.refreshStanding(artists.artistIdOf(artistA));
-        _consolidate(artistA, makeAddr("gasWallet2"));
-        r = _row(
-            "refreshStanding, records a further wallet",
-            artistA,
-            address(artists),
-            _refreshData(),
-            0
-        );
-        _gasAtMost(r, REFRESH_FURTHER_CEILING, "regression ceiling");
-        _growthIs(r, 1, 0);
     }
 
     // ------------------------------------------------------------------ split wallets
@@ -1132,6 +1127,10 @@ contract IntegrationGasReport is IntegrationBase {
         _rowStartWithBid();
     }
 
+    function test_Gas_Start_ConsolidatedWallet() public {
+        _rowStartConsolidatedWallet();
+    }
+
     function test_Gas_Start_TwoPartyWork() public {
         _rowStartTwoParty();
     }
@@ -1236,14 +1235,6 @@ contract IntegrationGasReport is IntegrationBase {
         _rowReRate();
     }
 
-    function test_Gas_RefreshStanding_FirstWallet() public {
-        _rowRefreshFirst();
-    }
-
-    function test_Gas_RefreshStanding_FurtherWallet() public {
-        _rowRefreshFurther();
-    }
-
     function test_Gas_RoyaltyInfo() public {
         _rowRoyaltyInfo();
     }
@@ -1275,9 +1266,10 @@ contract IntegrationGasReport is IntegrationBase {
     ///      row before any recording, then once for its growth and cold accounts, which add the
     ///      cold-account surcharge.
     function test_Gas_Table() public {
-        function() internal returns (Row memory)[35] memory rows = [
+        function() internal returns (Row memory)[34] memory rows = [
             _rowStart,
             _rowStartWithBid,
+            _rowStartConsolidatedWallet,
             _rowStartTwoParty,
             _rowStartWithBidTwoParty,
             _rowStartVrf,
@@ -1304,15 +1296,13 @@ contract IntegrationGasReport is IntegrationBase {
             _rowConsume,
             _rowCreateEdition,
             _rowReRate,
-            _rowRefreshFirst,
-            _rowRefreshFurther,
             _rowRoyaltyInfo,
             _rowCreateWallet,
             _rowReleaseFirst,
             _rowSignedFirst,
             _rowSignedLater
         ];
-        Row[35] memory measured;
+        Row[34] memory measured;
         for (uint256 i; i < rows.length; ++i) {
             measured[i] = _runRow(rows[i], Pass.GAS);
         }

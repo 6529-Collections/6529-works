@@ -2,13 +2,13 @@
 pragma solidity ^0.8.24;
 
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
+import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import {
     ReentrancyGuardTransient
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Dependency } from "../libraries/Dependency.sol";
-import { IGovernedVault } from "./interfaces/IGovernedVault.sol";
 import { IRevenueEscrow } from "./interfaces/IRevenueEscrow.sol";
 import { ISplitFactory } from "./interfaces/ISplitFactory.sol";
 import { TokenTransfer } from "./TokenTransfer.sol";
@@ -20,17 +20,25 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///         was made for.
 /// @dev Crediting and flushing are permissionless and never consult the asset allowlist: a credit
 ///      is backed by funds that arrived by exact balance delta, and credits are isolated per asset,
-///      so a hostile token can only affect its own credits. The one governed path, {recover},
-///      needs the consent ADR 0001 section 7 requires. A split wallet's credit moves only to a
-///      replacement wallet with an identical payee configuration, where consent is trivially
-///      satisfied because the payees and shares are identical (recorded in ADR 0003). Any other
-///      account's credit, such as the network fee recipient's, moves only to the replacement that
-///      account named itself with {consentToRecovery}, and each consent covers one recovery.
+///      so a hostile token can only affect its own credits. The governed path, {recover}, moves a
+///      split wallet's credit only to a replacement wallet with an identical payee configuration
+///      (consent is trivially satisfied because the payees and shares are identical; ADR 0003),
+///      the network's own credits (an account whose `authority()` is this escrow's, such as the
+///      fee and museum vaults) wherever the network names (C19), and any other account's credit
+///      only to the replacement that account named itself with {consentToRecovery}, each consent
+///      covering one recovery. A credit nobody flushed for {UNCLAIMED_PERIOD} after it last
+///      went from zero to nonzero moves to the network ({expire}, R12); later additions do not
+///      move its clock.
 ///      Funds force-sent or transferred here without a deposit are owed to nobody; only
 ///      {sweepExcess} moves them, and it can reach nothing beyond `balance - totalOwed` of the
 ///      asset it names. That bound is per token address: for a token with two addresses over one
 ///      balance, or one that rebases, see {IRevenueEscrow.sweepExcess}.
 contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransient {
+    /// @notice How long a credit stays its account's after it went from zero: 180 days. The
+    ///         number is the guarantee (an unclaimed credit is its owner's for at least this
+    ///         long), so it is compiled in and nothing changes it.
+    uint256 public constant UNCLAIMED_PERIOD = 180 days;
+
     /// @inheritdoc IRevenueEscrow
     ISplitFactory public immutable factory;
 
@@ -40,6 +48,8 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
     mapping(address asset => uint256) public totalOwed;
     /// @inheritdoc IRevenueEscrow
     mapping(address account => address replacement) public recoveryConsent;
+    /// @inheritdoc IRevenueEscrow
+    mapping(address wallet => mapping(address asset => uint48)) public creditedAt;
 
     /// @param authority The AccessManager governing {recover}.
     /// @param factory_ The split factory whose wallet configurations {recover} compares.
@@ -94,24 +104,40 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
         nonReentrant
     {
         bytes32 config = factory.configOf(wallet);
+        bool consentUsed;
         if (config != bytes32(0)) {
             if (replacement == wallet || factory.configOf(replacement) != config) {
                 revert NotEquivalentWallet(wallet, replacement);
             }
+        } else if (_isNetworks(wallet)) {
+            // C19: the network moves its own credits without consent.
+            if (replacement == address(0) || replacement == address(this) || replacement == wallet)
+            {
+                revert InvalidWallet(replacement);
+            }
         } else {
-            if (
-                replacement == address(0) || recoveryConsent[wallet] != replacement
-                    || !_stillNamed(wallet, replacement)
-            ) revert RecoveryNotConsented(wallet, replacement);
+            if (replacement == address(0) || recoveryConsent[wallet] != replacement) {
+                revert RecoveryNotConsented(wallet, replacement);
+            }
             // Single use: one consent covers one recovery of one asset.
             delete recoveryConsent[wallet];
+            consentUsed = true;
         }
-        uint256 amount = owed[wallet][asset];
-        if (amount == 0) revert NothingOwed(wallet, asset);
-        owed[wallet][asset] = 0;
-        uint256 balance = owed[replacement][asset] + amount;
-        owed[replacement][asset] = balance;
-        emit Recovered(wallet, replacement, asset, amount, balance);
+        uint256 amount = _take(wallet, asset);
+        emit Recovered(
+            wallet, replacement, asset, amount, _add(replacement, asset, amount), consentUsed
+        );
+    }
+
+    /// @inheritdoc IRevenueEscrow
+    function expire(address wallet, address asset) external nonReentrant returns (uint256 amount) {
+        address network = factory.network();
+        if (wallet == network) revert InvalidWallet(wallet);
+        uint256 dueAt = uint256(creditedAt[wallet][asset]) + UNCLAIMED_PERIOD;
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp < dueAt) revert CreditNotExpired(wallet, asset, dueAt);
+        amount = _take(wallet, asset);
+        emit Expired(wallet, asset, network, amount, _add(network, asset, amount));
     }
 
     /// @inheritdoc IRevenueEscrow
@@ -148,24 +174,32 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
     }
 
     function _credit(address wallet, address asset, uint256 amount) private {
-        uint256 balance = owed[wallet][asset] + amount;
-        owed[wallet][asset] = balance;
         totalOwed[asset] += amount;
-        emit Credited(wallet, asset, msg.sender, amount, balance);
+        emit Credited(wallet, asset, msg.sender, amount, _add(wallet, asset, amount));
     }
 
-    /// @dev False when `account` is a governed vault whose destination is no longer
-    ///      `replacement`: its consent named a destination governance has since replaced. Reads
-    ///      forward all gas; a shortfall reverts (`BoundedCall`). Any account that declares
-    ///      `IGovernedVault` by ERC-165 is held to it, vault or not: one whose `destination()`
-    ///      refuses or names another address cannot be recovered to its consented replacement.
-    ///      Only that account's own consent is affected, by its own code (the consent is the
-    ///      account's call), so no one else's credit is.
-    function _stillNamed(address account, address replacement) private view returns (bool) {
-        if (!BoundedCall.supportsInterface(account, type(IGovernedVault).interfaceId)) return true;
+    /// @dev Adds `amount` to `wallet`'s credit and returns the new credit. The clock starts only
+    ///      when the credit goes from zero, so an addition never postpones its expiry.
+    function _add(address wallet, address asset, uint256 amount) private returns (uint256 balance) {
+        balance = owed[wallet][asset] + amount;
+        owed[wallet][asset] = balance;
+        if (balance == amount) creditedAt[wallet][asset] = uint48(block.timestamp);
+    }
+
+    /// @dev Zeroes `wallet`'s credit in `asset` and returns it; reverts when there is none.
+    function _take(address wallet, address asset) private returns (uint256 amount) {
+        amount = owed[wallet][asset];
+        if (amount == 0) revert NothingOwed(wallet, asset);
+        owed[wallet][asset] = 0;
+    }
+
+    /// @dev Whether `account` is the network's own: a contract whose `authority()` is this
+    ///      escrow's authority (the fee and museum vaults). The read forwards all gas; a
+    ///      shortfall reverts (`BoundedCall`), and any other failure or answer is "no".
+    function _isNetworks(address account) private view returns (bool) {
         (bool ok, bytes32 word) =
-            BoundedCall.tryReadWordAll(account, abi.encodeCall(IGovernedVault.destination, ()));
-        return ok && word == bytes32(uint256(uint160(replacement)));
+            BoundedCall.tryReadWordAll(account, abi.encodeCall(IAccessManaged.authority, ()));
+        return ok && word == bytes32(uint256(uint160(authority())));
     }
 
     function _checkCredit(address wallet, uint256 amount) private view {

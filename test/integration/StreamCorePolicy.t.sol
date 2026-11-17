@@ -134,12 +134,17 @@ contract StreamCorePolicyTest is IntegrationBase {
 
     // ------------------------------------------------------------------ royalty floor
 
-    function test_SetRoyaltyRate_LowerOnlyInCore() public {
+    /// @dev R10: the core takes a rise or a cut from the bound satellite, never past 100%.
+    function test_SetRoyaltyRate_BothWaysInCoreUpToTheCeiling() public {
         uint256 tokenId = _first();
         (,,,,, uint32 rate) = stream.coreOf(tokenId);
         vm.prank(address(records));
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidRoyaltyRate.selector, rate + 1));
+        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidRoyaltyRate.selector, 100_001));
+        stream.setRoyaltyRate(tokenId, 100_001);
+        vm.prank(address(records));
         stream.setRoyaltyRate(tokenId, rate + 1);
+        (,,,,, uint32 raised) = stream.coreOf(tokenId);
+        assertEq(raised, rate + 1);
         vm.prank(address(records));
         stream.setRoyaltyRate(tokenId, rate - 1);
         (,,,,, uint32 lowered) = stream.coreOf(tokenId);

@@ -10,8 +10,8 @@ import { EditionAuctionHandler } from "./EditionAuctionHandler.sol";
 ///
 ///         The handler (`EditionAuctionHandler`, inherited) starts 1/1 auctions, opens their
 ///         edition auctions, bids (sometimes in the soft-close window), raises, bids on the
-///         1/1 in its anti-snipe window, pauses a 1/1 for a dispute and withdraws edition bids
-///         during the pause, cancels the 1/1 (voiding its editions) or resumes it, settles the
+///         1/1 in its anti-snipe window, pauses a 1/1 for a dispute and tries to take edition
+///         bids back during the pause (bids are firm, R21), cancels the 1/1 (voiding its editions) or resumes it, settles the
 ///         1/1 (an unbid one goes to the museum), creates editions, spreads a few books wider
 ///         than one settle call scans, settles edition auctions with the departure hint (and
 ///         tries to settle them early, and to claim while they are SETTLING), and claims bids
@@ -20,7 +20,7 @@ import { EditionAuctionHandler } from "./EditionAuctionHandler.sol";
 ///         1. No unsold editions: copies minted equal the units claimed, never exceed the
 ///            clearing count `k`, and equal `k` once every bid is claimed.
 ///         2. ETH conservation: the adapter's balance is what bidders paid in minus refunds,
-///            withdrawals, revenue and credits paid out, and equals exactly what it owes.
+///            revenue and credits paid out, and equals exactly what it owes.
 ///         3. Clearing optimality: the live result and the settled one equal a brute-force
 ///            per-unit reference (every bid expanded into unit bids, every count scanned).
 ///         4. The breadth rule: the count is the largest whose revenue is within the margin of
@@ -30,8 +30,8 @@ import { EditionAuctionHandler } from "./EditionAuctionHandler.sol";
 ///            arrival order (the reference's fill), the marginal bid partly.
 ///         7. The view equals settlement: the last live result before settling is the stored
 ///            one.
-///         8. Timing: the end is `max(1/1 end + offset, soft end)`, never before the 1/1's
-///            final end plus the offset, and within the backstop.
+///         8. Timing: the end is `max(1/1 end + 15 minutes, soft end)`, never before the 1/1's
+///            final end plus 15 minutes, and within the backstop.
 ///         9. No settlement before the end, or before the 1/1 settles or is cancelled.
 ///         10. A void auction refunds every bid in full and mints nothing.
 ///         11. No claim while SETTLING: a book spread wider than one call's scan settles over
@@ -40,7 +40,7 @@ import { EditionAuctionHandler } from "./EditionAuctionHandler.sol";
 ///         Every action also predicts its outcome; any disagreement fails the campaign.
 contract EditionAuctionInvariantTest is EditionAuctionHandler {
     uint256 internal constant ACTIONS = 24;
-    /// @dev Actions `test_EveryActionRuns` replays: every one but `abandon`, whose 150-day jumps
+    /// @dev Actions `test_EveryActionRuns` replays: every one but `abandon`, whose 21-day jumps
     ///      the campaign exercises (its outcome is predicted and checked on every call).
     uint256 internal constant STEP_ACTIONS = 23;
     /// @dev Replayed sequences in `test_EveryActionRuns`.
@@ -95,7 +95,7 @@ contract EditionAuctionInvariantTest is EditionAuctionHandler {
     function test_EveryActionRuns() public {
         // The campaign-shaped runs exceed the test gas limit; the metering is not what is tested.
         vm.pauseGasMetering();
-        string[43] memory paths = [
+        string[42] memory paths = [
             "startOneOfOne",
             "bidOneOfOne",
             "oneOfOneSnipe",
@@ -112,7 +112,6 @@ contract EditionAuctionInvariantTest is EditionAuctionHandler {
             "softClose",
             "raise",
             "raiseRefused",
-            "withdraw",
             "withdrawRefused",
             "createEdition",
             "settle",
@@ -140,7 +139,7 @@ contract EditionAuctionInvariantTest is EditionAuctionHandler {
             "withdrawCredit",
             "warp"
         ];
-        uint256[43] memory totals;
+        uint256[42] memory totals;
         for (uint256 run; run < RUNS; ++run) {
             uint256 snapshot = vm.snapshotState();
             for (uint256 depth; depth < 128; ++depth) {

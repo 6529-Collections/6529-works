@@ -118,7 +118,7 @@ contract RendererCodePinTest is IntegrationBase {
         _changeCode(address(renderer));
         bytes memory call = _repinCall(open, address(renderer));
         _schedule(hotAdmin, address(records), call);
-        vm.warp(block.timestamp + 30 days);
+        vm.warp(block.timestamp + 7 days);
         vm.prank(hotAdmin);
         vm.expectRevert(
             abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, address(renderer))
@@ -137,21 +137,10 @@ contract RendererCodePinTest is IntegrationBase {
         records.finalize(open, state);
     }
 
+    /// @dev The network's repin (C8): no artist signature.
     function _repinCall(uint256 tokenId, address next) internal view returns (bytes memory) {
-        uint64 deadline = uint64(block.timestamp + 40 days);
         bytes32 current = records.workStateHash(tokenId);
-        bytes32 digest = _typedDigest(
-            address(records),
-            keccak256(
-                abi.encode(
-                    Typehashes.RENDERER_REPIN, tokenId, next, next.codehash, current, deadline
-                )
-            )
-        );
-        return abi.encodeCall(
-            records.repinRenderer,
-            (tokenId, next, next.codehash, current, deadline, _sign(artist, digest))
-        );
+        return abi.encodeCall(records.repinRenderer, (tokenId, next, next.codehash, current));
     }
 
     function _repin(uint256 tokenId, address next) internal {

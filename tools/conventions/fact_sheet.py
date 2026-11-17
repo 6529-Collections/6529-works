@@ -1,7 +1,8 @@
-"""The promise-card builder (DCL-26 to DCL-29).
+"""The fact-sheet builder (DCL-26 to DCL-28).
 
-`build_card(inputs)` turns the on-chain reads of one work at one block, plus the documents a
-reader holds, into a promise-card.v1 document. It makes no RPC call: the caller makes every read
+`build_fact_sheet(inputs)` turns the on-chain reads of one work at one block, plus the documents
+a reader holds, into a fact-sheet.v1 document: what is recorded about the work and who can change
+what. It states facts only. It makes no RPC call: the caller makes every read
 at the same block `B` (DCL-26) and passes the answers in the shape below, named after the
 functions the spec cites. The existing chain tooling (`tools/content/rpc.py`) reaches a node over
 JSON-RPC with `urllib`, not by shelling out, so fetching is left to the caller.
@@ -14,7 +15,7 @@ reads:
   token, tokenId
   WorkMinted:  {contentHash}            # the event; no view returns the content hash
   Stream:
-    ownerOf:         address | null     # null when it reverted: a burned token has no card
+    ownerOf:         address | null     # null when it reverted: a burned token has no sheet
     coreOf:          {itemHash, artistId, collectionId, kind, seedPolicy}
     primarySale:     {outcome, currency, price}
     editionOf:       {editionsContract, editionId}
@@ -28,7 +29,6 @@ reads:
     pinnedRenderer:  address                                           # when open
     locators:        {fileId: [{kind, uri}]}                           # when open
     preferredLocator:{fileId: {kind, uri}}                             # when open
-    RecordOpened:    {timestamp}            # the event's block time, for DCL-8
   ContentStore:
     fileInfo:   {fileId: {sha256Hash, length, chunkCount, encoding, mimeType}}
     isComplete: {fileId: bool}              # media files and the license text file
@@ -39,7 +39,7 @@ reads:
     chainOf:              {count, head}
     artistResolver:       address
   ArtistRegistry:
-    activeAuthorityOf: address              # zero while restrained
+    activeAuthorityOf: address              # zero while frozen or being replaced
     pendingChange:     {kind}
   UniformEditionAuction:
     clearing: {count, price}                # for a master that has an edition
@@ -53,7 +53,7 @@ floor:        a floor-result.v1 object (the published curation evidence, DCL-33)
 attestations: [custody attestation inputs, as custody.evaluate_custody takes them]
 displayChange:{proposal, acceptance, contentSha256, acceptedBy}   # the DCL-12 winner, if any
 dispute:      {documentVerified}            # optional (DCL-28)
-roles:        [{what, who, delaySeconds, guardianCancel, phase?}] # required: from the role matrix
+roles:        [{what, who, delaySeconds, phase?}]  # required: from the role matrix
               (DCL-27); phase is "beforeFinalize" or "afterFinalize" for a path that applies only then
 Every read the chain returns as a bool must be a JSON boolean; anything else is refused.
 generator:    {name, version}               # optional
@@ -74,29 +74,24 @@ from .schema import validate
 
 ZERO_ADDRESS = "0x" + "00" * 20
 ZERO32 = "0x" + "00" * 32
-DAY = 86_400
 FLOOR_STATES = ("met", "waived", "unmet", "not_applicable")
 CC0_KEY = floor.license_key("CC0-1.0")
 
-ALWAYS_RISKS = (
-    "LIM-GV-1", "LIM-GV-2", "LIM-GV-9", "LIM-GV-10", "LIM-GV-11", "LIM-ID-11", "LIM-ID-13",
-    "LIM-CNT-2", "LIM-CNT-3", "LIM-CNT-12", "LIM-CNT-13", "LIM-SAL-8",
-)  # fmt: skip
 #: The `WorkPowers` names in bit order (bit 0 = 1, bit 1 = 2, bit 2 = 4), and the `changeable`
 #: row each covers (DCL-8, DCL-27).
-POWERS = floor.WORK_POWERS
+POWERS = ("ROYALTY_RATE", "RELICENSE", "RENDERER_REPIN")
 COVERS = {"ROYALTY_RATE": ["royalty_rate"], "RELICENSE": ["license"], "RENDERER_REPIN": ["renderer"]}
 UNTIL = {"record": "finalize", "burn_and_release": "settlement"}
 GENERATOR = {"name": "6529-works tools.conventions", "version": "1"}
 
 
-class NoCard(ToolError):
-    """A burned token has no card (DCL-28)."""
+class NoFactSheet(ToolError):
+    """A burned token has no fact sheet (DCL-28)."""
 
 
 @dataclass
-class CardResult:
-    card: dict
+class FactSheetResult:
+    sheet: dict
     notes: dict = field(default_factory=dict)
 
 
@@ -127,28 +122,6 @@ def _per_file(mapping: Mapping[str, Any], file_id: str, where: str) -> Any:
         if key.lower() == file_id.lower():
             return value
     raise ToolError(f"missing read {where}[{file_id}]")
-
-
-def _risk_key(risk: str) -> tuple[str, int]:
-    _, area, number = risk.split("-")
-    return area, int(number)
-
-
-def residual_risks(
-    *, on_chain_complete: bool, finalized: bool, ea14: bool, added_store_only: bool = False
-) -> list[str]:
-    """DCL-29, sorted by area then number. `added_store_only`: a media file is not complete in
-    the content store (with `on_chain_complete`, it is complete only in an added store)."""
-    risks = set(ALWAYS_RISKS)
-    if not on_chain_complete:
-        risks.add("LIM-CNT-1")
-    elif added_store_only:
-        risks.add("LIM-CNT-21")
-    if finalized:
-        risks.add("LIM-CNT-10")
-    if ea14:
-        risks.add("LIM-EA-14")
-    return sorted(risks, key=_risk_key)
 
 
 def declarations_status(
@@ -232,7 +205,7 @@ def _changeable(roles, *, finalized: bool, cc0: bool, sale_outcome: str, powers:
         if what == "burn_and_release" and sale_outcome != "NONE":
             continue  # until settlement
         out = {"what": what, "who": list(row["who"]), "delaySeconds": row["delaySeconds"],
-               "guardianCancel": row["guardianCancel"], "until": UNTIL.get(what, "permanent")}  # fmt: skip
+               "until": UNTIL.get(what, "permanent")}
         by = next((p for p in renounced if what in covers.get(p, [])), None)
         if by is not None:
             out["until"] = "renounced"
@@ -244,12 +217,12 @@ def _changeable(roles, *, finalized: bool, cc0: bool, sale_outcome: str, powers:
 def _floor_states(
     published: Any, item_hash: str, status: str, decl_file: str | None
 ) -> tuple[dict[str, str], str | None]:
-    """DCL-33: the floor states the card shows, and why they fell back to `unmet` if they did.
+    """DCL-33: the floor states the sheet shows, and why they fell back to `unmet` if they did.
 
     `published` is a floor-result.v1 object, or a `floor.check_floor` result the reader
-    recomputed (turned into one with the card's item hash). It is used only when the
+    recomputed (turned into one with the sheet's item hash). It is used only when the
     declarations are `valid` or `absent` and it names the work's item hash and the declarations
-    file the card found (None when absent); otherwise every fact is `unmet`."""
+    file the sheet found (None when absent); otherwise every fact is `unmet`."""
     unmet = {k: "unmet" for k in floor.FACTS}
     if published is None:
         return unmet, "no floor result was published for the item"
@@ -268,7 +241,7 @@ def _floor_states(
     return dict(published["facts"]), None
 
 
-def build_card(inputs: Mapping[str, Any]) -> CardResult:
+def build_fact_sheet(inputs: Mapping[str, Any]) -> FactSheetResult:
     reads = _need(inputs, "reads", "inputs")
     at = _need(reads, "at", "reads")
     token = _lc(_need(reads, "token", "reads"))
@@ -276,7 +249,7 @@ def build_card(inputs: Mapping[str, Any]) -> CardResult:
     stream = _need(reads, "Stream", "reads")
     owner = _need(stream, "ownerOf", "Stream")  # null, not absent, when it reverted
     if owner is None:
-        raise NoCard("the token is burned (ownerOf reverts): a burned token has no card")
+        raise NoFactSheet("the token is burned (ownerOf reverts): a burned token has no fact sheet")
     core = _need(stream, "coreOf", "Stream")
     records = _need(reads, "WorkRecords", "reads")
     store = reads.get("ContentStore", {})
@@ -363,21 +336,6 @@ def build_card(inputs: Mapping[str, Any]) -> CardResult:
     if doc is not None:
         declarations["timeCapsule"] = "timeCapsule" in doc
         declarations["livingWork"] = "livingWork" in doc
-        opened = (records.get("RecordOpened") or {}).get("timestamp")
-        if doc.get("intendedRenunciations") and opened is not None:
-            items = []
-            for r in doc["intendedRenunciations"]:
-                due = opened + r["withinDaysOfRecordOpen"] * DAY
-                if not powers["available"]:
-                    state = "unknown"
-                elif r["power"] in powers["renounced"]:
-                    state = "renounced"
-                elif at["timestamp"] < due:  # due from dueAt on (DCL-8)
-                    state = "pending"
-                else:
-                    state = "overdue"
-                items.append({"power": r["power"], "dueAt": due, "state": state})
-            declarations["intendedRenunciations"] = items
 
     conservation, why = _floor_states(inputs.get("floor"), _lc(core["itemHash"]), status, decl_file)
     if why is not None:
@@ -407,7 +365,7 @@ def build_card(inputs: Mapping[str, Any]) -> CardResult:
 
     authority = _lc(_need(registry, "activeAuthorityOf", "ArtistRegistry"))
     chain = _need(log, "chainOf", "StatementLog")
-    card = {
+    sheet = {
         "v": 1,
         "generator": dict(inputs.get("generator") or GENERATOR),
         "at": {"chainId": at["chainId"], "blockNumber": at["blockNumber"],
@@ -427,16 +385,11 @@ def build_card(inputs: Mapping[str, Any]) -> CardResult:
         "declarations": declarations,
         "conservationFloor": conservation,
         "displayChange": display,
-        "custody": custody.card_custody(evaluation),
+        "custody": custody.sheet_custody(evaluation),
         "changeable": changeable,
-        "residualRisks": residual_risks(
-            on_chain_complete=on_chain_complete, finalized=finalized,
-            ea14=core["kind"] == "EDITION_MASTER" and has_edition and dispute["entryHash"] is not None,
-            added_store_only=any(not f["complete"] for f in files),
-        ),
         "statements": {"count": chain["count"], "head": _lc(chain["head"])},
     }  # fmt: skip
-    errors = validate(card, "promise-card")
+    errors = validate(sheet, "fact-sheet")
     if errors:
-        raise ToolError("the reads do not give a valid promise-card.v1: " + "; ".join(errors[:5]))
-    return CardResult(card, notes)
+        raise ToolError("the reads do not give a valid fact-sheet.v1: " + "; ".join(errors[:5]))
+    return FactSheetResult(sheet, notes)

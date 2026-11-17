@@ -421,7 +421,7 @@ contract ReleaseVerifierTest is EconomicsBase {
         vm.expectRevert(abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, alice));
         _releaseSigned(a, sig);
         vm.chainId(chain);
-        SplitLedger other = new SplitLedger(resolver);
+        SplitLedger other = new SplitLedger(resolver, address(feeVault));
         assertTrue(other.releaseDigest(a) != verifier.releaseDigest(a));
     }
 

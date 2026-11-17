@@ -272,8 +272,8 @@ After ADR 0007's review fixes:
   48 hours, guardian-vetoable, the vote reference recorded in the artist registry's event.
 - Suspension stops new joins and new works; running sales finish. Revocation and delisting stop
   new sales and end running sales unsold with refunds (the work stays with the template);
-  `propagateRevocation` writes a revoked template's listings DELISTED in the directory, anyone
-  may call it. Nothing touches tokens, ownership, records, vaults or credits.
+  a permissionless call wrote a revoked template's listings DELISTED in the directory (removed
+  by the second pass's review fixes, 17 November 2026: a revocation now writes no listing). Nothing touches tokens, ownership, records, vaults or credits.
 - Exit (`leaveFederation`, the artist, one-way) writes LEFT through the token itself; running
   sales finish (`isActive` serves LEFT); works minted before keep the 90/10 vault; new works pay
   no network share; the artist then admits its own minters.
@@ -494,7 +494,7 @@ alone:
   (`MinterMismatch`), and no minter, the artist's own included, can mint it.
 - **Canonical ledger in the lens.** The federated edition lens refuses a token whose reported
   split ledger is not the economics resolver's split factory before it deploys any wallet.
-- **Bounded batches.** `setStatus` and `propagateRevocation` take at most `MAX_BATCH` (256)
+- **Bounded batches.** `setStatus` (and, until 17 November 2026, the revocation propagation) take at most `MAX_BATCH` (256)
   contracts. The worst element (a cold listed contract written DELISTED) measures about 11,800
   gas after the first (about 16,600 cold), under the 20,000 the bound assumes: 256 x 20,000 =
   5.12M, a third of EIP-7825's 2^24 cap.
@@ -593,3 +593,15 @@ revocation stop its sales (LIM-FED-2). The deployment cost falls on the artist (
   increase).
 - Budget: raised to 16,500 for the federation review's fixes (provenance, consent, the pair, the
   exit status, genesis scoping), 16 November 2026 (owner: the budget can increase).
+
+## Amendment note (16 November 2026, [ADR 0009](0009-second-permanence-pass.md))
+
+No exit (R1 to R5, C4): a joined contract stays joined, there are no artist-owned minters, and
+the LEFT and LEFT_DELISTED statuses are gone. Delisting is per artist account, at the 24-hour
+class. The share in force is the smaller of the deployed share and the artist registry's
+record, which the network can only lower (R8); the fee recipient is read at settlement. Works
+may name collaborators who consent on chain, and VRF works take a seed the requester pays the
+provider for (off until the network sets a wrapper). A revoked template can be reinstated
+(C26); a replacement registry inherits every listing (C3). The context's "the network adds no
+control whose only purpose is to restrict that" and "exit is one-way and clean" are history.
+Current rules: [Federation](../spec/federation.md#rules-and-invariants).

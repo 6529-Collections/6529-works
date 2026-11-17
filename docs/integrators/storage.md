@@ -211,10 +211,11 @@ may add kinds.
 `preferredLocator` returns the [preferred locator](../glossary.md#preferred-locator), the copy
 `tokenURI` serves, and its registration index. The most specific setting wins: the file's
 preferred index (`setFilePreference`), then the collection's and the global preferred kind
-(`setCollectionPreferredKind`, `setPreferredKind`), then the first registered copy (WS-21). The
-kind and first-registered fallbacks consider only the artist's locators: a PLATFORM copy is
-served only once the storage operator selects it with `setFilePreference`, and a file with no
-artist locator yields the on-chain copy of a synced work, otherwise an empty one. Two results
+(`setCollectionPreferredKind`, `setPreferredKind`), then the first live registered copy (WS-21). The
+kind preferences and the fallback choose among every live locator, whoever added it (the artist
+or PLATFORM); a locator the storage operator marked dead (`markLocatorDead`, C21) is never
+served, and a file preference naming one is passed over. A file with no live locator yields the
+on-chain copy of a synced work, otherwise an empty one. Two results
 carry the index `type(uint256).max`:
 
 - kind `ONCHAIN`: the work is on-chain complete, and a preferred kind names `ONCHAIN` or no copy
@@ -228,7 +229,10 @@ preferred locator as it is ([Rendering and tokenURI](../spec/rendering-and-token
 **Who sets what.** The artist and the PLATFORM role each add up to 8 locators per file before
 finalize; after it, only PLATFORM adds, up to 16 per file in all (WS-19). Locators are
 append-only (WS-20). The STORAGE_OPERATOR role sets the file, collection and global preferences,
-with no delay, and can only choose among registered copies or the on-chain bytes (WS-22). The
+with no delay, and can only choose among registered copies or the on-chain bytes (WS-22). It can also mark a
+locator dead (`markLocatorDead`), for good. The network can retire an added store
+(`retireStore`, PARAMETER_SETTER, 24 hours): nothing more is counted through it, and files already
+complete in it keep their record. The
 selectors and delays are in the [role matrix](../audit/roles.md).
 
 **Off-chain monitoring.** Because locators are not verified on chain, the network runs an
@@ -382,8 +386,10 @@ differ from Sepolia's; re-measure there. The full figures are in the
 - **The collector is the designated payer for the on-chain upgrade** of the media
   ([ADR 0001 §8](../adr/0001-v1-scope.md#8-works-content-and-storage)): any collector can finish
   what the artist or platform started, with `calls --only-missing`.
-- **The off-chain copies** (Arweave transactions, IPFS pins) are paid by whoever publishes them;
-  the network pins with at least two independent providers plus a 6529 node (ADR 0001 §8).
+- **The off-chain copies** (Arweave transactions, IPFS pins) are paid for by the network
+  ([ADR 0001 §7](../adr/0001-v1-scope.md#7-economics)). Its current practice is to pin with at
+  least two independent providers plus a 6529 node. Anyone else may also publish and pay for
+  further copies.
 
 On-chain bytes are permanent. Nothing in the protocol deletes a chunk or a manifest.
 

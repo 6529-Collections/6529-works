@@ -16,8 +16,9 @@ decisions win. The precise contract surfaces are the interfaces in
 ## Modules
 
 ```
-                    governance: one AccessManager (Roles.sol) restricts every
-                    governed selector; satellites are bound once at genesis
+                    governance: one AccessManager (Roles.sol), held by one network
+                    address, restricts every governed selector; satellites are bound
+                    once at genesis
   ............................................................................
 
    artists, voters      curation signer (signs only)     anyone
@@ -53,7 +54,7 @@ decisions win. The precise contract surfaces are the interfaces in
      |   +---------------+           +-------------+   +-----------------+
      |
      +-- IEntropyModule (optional VRF, one seed per content hash, before the start)
-         IFederationRegistry (v1, a later ADR; read by the sale adapters, lists in IArtistRegistry)
+         IFederationRegistry (ADR 0008; read by the sale adapters, lists in IArtistRegistry)
 ```
 
 `*` marks the economics lane's interfaces (`src/economics/interfaces/`).
@@ -65,12 +66,12 @@ decisions win. The precise contract surfaces are the interfaces in
 | `IEditions` (+ `IMintTarget`) | 6529 Stream Editions ERC-1155 (`src/editions/`) | §6 |
 | `IPackageRegistry`, `ICurationVerifier` (v1: `ICurationSignerVerifier`) | package registry, v1 verifier (`src/curation/`) | §3 |
 | `IContentStore`, `IDependencyRegistry`, `IRenderer` | content store, dependency registry, renderer (`src/content/`) | §8 |
-| `ISaleAdapter`, `IEnglishAuction`, `IUniformEditionAuction` | shared sale adapters (`src/sales/`) | §5, §6, §12; ADR 0005 |
+| `ISaleAdapter`, `IEnglishAuction`, `IUniformEditionAuction` | shared sale adapters, and the stateless `SaleStarter` the keeper starts through (`src/sales/`) | §5, §6, §12; ADR 0005 |
 | `IEconomicsResolver` and the economics lane's interfaces | money routing (`src/economics/`) | §5, §7 |
-| `IArtistRegistry` (+ `IArtistRoleResolver`), `IConsolidationSource` | artist registry, consolidation adapter (`src/identity/`) | §11 |
+| `IArtistRegistry` (+ `IArtistRoleResolver`, `IAccounts`), `IConsolidationSource` | artist registry (consolidated accounts), consolidation adapter (`src/identity/`) | §11 |
 | `IStatementLog` | statement log (`src/records/`) | §12, §15 |
 | `IEntropyModule` | optional VRF module (`src/entropy/`) | §9 |
-| `IFederationRegistry` | in v1 by [ADR 0007](adr/0007-permanence.md), specified by a later ADR; no implementation in this tree yet (`src/federated/`) | §16 |
+| `IFederationRegistry`, `IFederatedStream`, `IFederatedEditions` | federation registry, the Federated Stream templates and their deployers, the federated edition auction (`src/federated/`, [ADR 0008](adr/0008-federation.md)) | §16 |
 
 Shared types live in [`src/interfaces/types/`](../src/interfaces/types/):
 - package items, parties, licenses and sale terms (`PackageTypes`);
@@ -135,9 +136,10 @@ default when the sale starts".
      `abi.encode(signer, signature)`.
    - Anyone calls `IPackageRegistry.registerPackage`, which emits the signer
      and the evidence hash. The CURATOR role appends `CURATION_EVIDENCE`.
-3. **Consent.** Each party's `PackageAcceptance` is recorded as
-   `acceptedAs[root][account] = artistId`; a first acceptance creates the
-   identity and counts as artist activity.
+3. **Consent.** Each party's `PackageAcceptance`, signed by any wallet of its
+   6529 consolidated account (the proof is `abi.encodePacked(wallet, signature)`),
+   is recorded as `acceptedAs[root][account] = artistId`; a first acceptance
+   creates the account.
 4. **Seed (VRF works only).** Anyone calls `IEntropyModule.requestSeed(item,
    packageRoot, proof)` for an approved, unconsumed VRF item. The seed is drawn
    once per content hash: every approved item carrying the same work links to
@@ -145,12 +147,13 @@ default when the sale starts".
    again. While no seed is fixed, anyone may add another request after a
    backoff wait (at least 3 days, doubling with each repeat up to 30 days); the
    first delivery wins and later ones are no-ops. Nothing is in custody yet, so nothing can get stuck.
-5. **Move to Stream.** The lead artist signs `MoveToStream` off-chain;
-   `revokeMove` cancels an unused one.
+5. **Move to Stream.** A wallet of the lead artist's account signs `MoveToStream`
+   off-chain; `revokeMove` (any wallet) cancels an unused one.
 6. **Start (permissionless; per steady-state start, at most 350K Prague gas and
    6 new slots, 7 with a bid; ADR 0004).** Anyone calls
    `IEnglishAuction.start(stream, abi.encode(StreamMintRequest))` or
-   `startWithBid`.
+   `startWithBid`. The network's keeper starts through `SaleStarter`, which also
+   deploys the work's vaults and opens its record in the same transaction (step 7).
    - The auction calls `IStream.mint`, which checks the admitted-minter mapping
      and hands the request, unread, to the mint policy (`IMintPolicy.authorize`,
      the package registry at genesis; [ADR 0007](adr/0007-permanence.md)). The
@@ -183,8 +186,10 @@ default when the sale starts".
    credited and `claim`, and PERMIT2 bids carry the `Bid` witness.
 9. **Settle (permissionless).** `settle` delivers the token or records a pending
    claim (`claimDelivery`, where the winner names the recipient).
-   - Seller and fee terms are read back from the token, and the predicted seller
-     wallet and the fee recipient are paid; failed pushes go to the escrow. An
+   - Seller and fee terms are read back from the token; the predicted seller
+     wallet is paid, and the network fee (the price less the seller's floored share,
+     so leftover wei is the network's) goes to the recipient the economics resolver
+     names at settlement; failed pushes go to the escrow. An
      ERC-20 payout runs in its own call frame: if it fails even through the
      escrow (the token changed behaviour, or blocks the auction), it is credited
      to its wallet in the auction and the work is still delivered; anyone pays
@@ -193,11 +198,11 @@ default when the sale starts".
      settler must forward the frame's 1,000,000 gas: an ERC-20 settle needs a
      call gas limit of about 1.11M.
    - A deprecated currency freezes the auction (MARKET-2): nothing settles, and
-     a standing bidder may withdraw. A re-admission comes no earlier than 14
+     a standing bidder may withdraw. A re-admission comes no earlier than 3
      days after the deprecation. If it comes after the auction's end, or within
      its last anti-snipe window, the first `settle` reopens the auction for at
      least the governed duration; otherwise the auction settles as usual. Once
-     the currency has been deprecated for 60 days, anyone
+     the currency has been deprecated for 14 days, anyone
      may end the sale unsold (reported FROZEN_OUT): the standing bid is credited
      back and the work goes where an unbid work goes, the museum for a 6529
      Stream work and the artist for any other token (owner decisions 9 and 10).
@@ -213,12 +218,16 @@ default when the sale starts".
      Museum (a governed vault at genesis), `EconomicsResolver.museum()` resolved
      at settlement (D140), for
      every admitted 1/1 adapter. Any other token's work, federated or listed,
-     goes to its artist's active authority, and while a recovery override is
-     pending its settlement waits.
+     goes to its artist's root, and while that account is frozen or a replacement
+     is pending its settlement waits.
 10. **Royalties.** `royaltyInfo` derives the receiver from the stored seller and
     fee terms, and reads the stored rate.
     - Payees `release` from split wallets, or batch through the claim router.
+      Every release from a wallet that names the network's fee vault also pays
+      the vault its whole due share in the same call (R11).
     - Artist-resolved payees are paid at `IArtistRegistry.payoutAddress`.
+    - A payee's share not released within 180 days of a mark anyone places
+      (`mark`, then `forfeit`) goes to the network (R12).
 
 ### Edition master and edition sale
 
@@ -234,9 +243,12 @@ default when the sale starts".
      `IStream.linkEdition`.
    - A burned or disputed master never gets an edition.
 3. The edition auction runs beside the master's 1/1: anyone opens it from the
-   1/1's start (the keeper batches it with `start`), anyone bids a quantity at a
-   ladder step in ETH, and it closes a governed offset after the 1/1's final end, or
-   later under its own soft close. Settlement needs the 1/1 settled and, when
+   1/1's start (the keeper batches it with `start`) while the master's package is
+   still approved (C23), anyone bids a quantity at a ladder step in ETH (bids are
+   firm: there is no withdrawal), and it closes exactly 15 minutes after the 1/1's
+   final end, or later under its own soft close. From 21 days after the close,
+   `abandon` creates the edition if the master's sale settled and nobody created it,
+   or voids the sale and seals the edition at zero. Settlement needs the 1/1 settled and, when
    copies sold, the edition created (step 2); it computes one clearing price and
    count and pays the seller and the network.
 4. Each claim of a winning bid mints through `IEditions.mint`, so the edition
@@ -260,97 +272,76 @@ default when the sale starts".
 2. The artist or the PLATFORM role appends ARWEAVE or IPFS locators. Each is a
    content address: `ar://` and a 43-character transaction ID, or `ipfs://` and
    a CIDv1 of the fixed profile, with no path.
-   - The STORAGE_OPERATOR role sets preferences. The most specific one wins:
-     the file index, then the collection kind, then the global kind, then the
-     first registered locator. The kind and first-registered fallbacks consider
-     only the artist's locators: a PLATFORM copy is served only once the storage
-     operator selects it. A file with no such locator yields the on-chain copy
-     of a synced work, otherwise an empty one.
+   - The STORAGE_OPERATOR role sets preferences and marks dead locators
+     (`markLocatorDead`). The most specific preference wins: the file index, then
+     the collection kind, then the global kind, then the first registered live
+     locator. Every tier chooses among the live locators of any adder (C33). A file
+     with no live locator yields the on-chain copy of a synced work, otherwise an
+     empty one.
    - After finalize only the PLATFORM role adds locators.
    - It cannot add, remove or alter locators.
    - Locators, kinds and preferences live in the delivery contract (`WorkDelivery` at genesis),
-     which governance replaces with `setDelivery` (SUCCESSOR_SETTER, 30 days); `WorkRecords`
+     which the network replaces with `setDelivery` (SUCCESSOR_SETTER, 7 days); `WorkRecords`
      serves its answer only when well formed, else the work's own answer, and it changes no fact.
 3. The artist calls `finalize(tokenId, expectedStateHash)` once the record file
    is on-chain complete: the record becomes immutable and Stream's default
-   renderer is pinned.
+   renderer is pinned. Once the primary sale settled, anyone else may record a
+   finalize notice; from 14 days after it (`FINALIZE_NOTICE`), anyone finalizes the
+   work as it stands (C9).
 4. Anyone uploads the media's chunks and calls `syncOnChain(tokenId, storeId,
    maxChunks)`; the work is then permanently on-chain complete. A call checks the
    caller's number of chunks and keeps its place (a chunk cursor), so a file of any
    size up to the store's 4,096 chunks syncs in pieces, each within the per-transaction
-   cap. A file may sync from an added store (`addStore`), whose bytes are re-hashed. This
+   cap. A file may sync from an added store (`addStore`), whose bytes are re-hashed; the
+   network can retire a store (`retireStore`), after which it counts nothing new. This
    does not change the state hash.
 5. Amendments need agreement plus a governed action:
-   - **Relicensing:** every party, PARAMETER_SETTER role. CC0 is irrevocable, and a
-     CC0 license (approved or set this way) names the deployment's CC0 text.
-   - **Royalty-rate change:** every party, FUNDS_SETTER role, and only lower
-     (ADR 0006). Payees never change. A master's change also applies to its
-     edition (`IEditions.setRoyaltyRate`).
-   - **Errata repin:** the artist, SUCCESSOR_SETTER role and its 30-day delay.
+   - **Relicensing:** every party (counted by account), FUNDS_SETTER role (3 days).
+     CC0 is irrevocable, and a CC0 license (approved or set this way) names the
+     deployment's CC0 text.
+   - **Royalty-rate change:** every party and the network (FUNDS_SETTER, 3 days),
+     up or down, at most 100,000 (R10). Payees never change. A master's change also
+     applies to its edition (`IEditions.setRoyaltyRate`).
+   - **Fee share:** the network alone may lower a work's or an edition's network
+     share (`lowerFeeShare`, PARAMETER_SETTER, 24 hours), never raise it (R9).
+   - **Renderer repair:** the network alone (`repinRenderer`, SUCCESSOR_SETTER,
+     7 days), unless the artist renounced it (C8).
 6. The lead artist may renounce, for one work and for good, any further royalty
-   change and any further license change (`IWorkPowers.renounce`, ADR 0006): its
-   signature only, no role and no delay, relayed by anyone. After finalize it may
-   also renounce the errata repin (`RENDERER_REPIN`), after which the work's
-   renderer pin never moves.
+   change and any further license change (`IWorkPowers.renounce`, ADR 0006); with
+   the artist's signature, a renunciation of either also needs the network
+   (PARAMETER_SETTER, 24 hours; C7). After finalize the artist alone may renounce
+   the renderer repair (`RENDERER_REPIN`), after which the work's renderer pin
+   never moves.
 
-### Recovery
+### Accounts and recovery
 
-1. A lost key: once the artist has had no signed activity for a year
-   (DORMANCY), an established consolidated wallet (6529 delegation, use case
-   999, at least 30 days old, not expired) stages a STANDARD change, with the
-   new authority's signed acceptance; it waits the 180-day override delay. The
-   consolidation source is replaceable, so it never acts for a live artist
-   (ID-40). A stolen key cannot be recovered this
-   way, because the thief, as the previous authority, can cancel any STANDARD
-   change; a stolen key goes through the override in step 4.
-2. The registry captures cancellers at staging: the effective wallets in the
-   artist's sticky standing snapshot. A refresh records every two-way
-   consolidation, a young one as pending until it is 30 days old; a keeper or
-   the 6529.io UI refreshes after consolidation events. An established wallet
-   that is no longer consolidated keeps standing until a refresh at least 30
-   days after it went missing, so revoking the artist's consolidations cannot
-   strip their standing. A pending one found no longer consolidated is dropped
-   at once: a consolidation that ended before its 30 days never counts. An authority can also burn its current change nonce
-   (`revokeNonce`) so that a change it pre-signed can never be staged.
-   - For 7 days, the previous authority or any captured wallet can cancel.
-   - The guardian can veto (`vetoChange`), which blocks a change but never
-     redirects it.
-3. After 7 days anyone calls `executeChange`. At staging and again at execution,
-   the new authority must never have been an authority (of any artist, this
-   one included: A, then B, then A is refused, so A's unused signatures stay
-   void), and not reserved by another artist's pending change. Staging
-   reserves it (`reservedFor`) until the change ends, so a package acceptance
-   by the new key cannot register it as a separate artist meanwhile. Future
-   payouts follow the new payout address, including balances already accrued.
-4. Overrides cover contested changes, estates, and lost keys with no
-   consolidation.
-   - `stageOverride` (PARAMETER_SETTER role) gives 180 days' public notice. An
-     override that moves the authority needs the new authority's
-     `OverrideAcceptance` signature; a payout-only override needs none.
-   - Estates and lost keys also need a year without the artist's own activity:
-     registration, a staged change, a heartbeat, a cancellation by the old key
-     or a captured wallet, a nonce revocation, or an executed change. Overrides
-     and guardian vetoes do not count.
-   - Only captured wallets, never the old key, can stop an override, and a
-     captured wallet's cancel only contests it. A TDH vote, recorded as a
-     DISPUTE_OUTCOME statement on `(registry, artistId)`, decides the contest
-     through the governed 30-day `resolveContested` (uphold executes, void
-     deletes). The guardian can veto, and an unresolved contest lapses after a
-     year.
-   - While an override that would move the authority is pending, nobody acts
-     as the artist (ADR 0003 owner decision 6). `activeAuthorityOf` is zero, so
-     the sale `creator`, move and acceptance signatures, record amendments and
-     consents, and ARTIST statements all refuse both the old and the new key
-     until it executes, is vetoed or voided, or lapses. A federated work's
-     no-bid settlement waits for the outcome (a canonical one goes to the
-     museum); sales already running continue, with
-     the artist's share frozen. `authorityOf` keeps identifying the artist.
+An artist, and each collaborator, is a 6529 consolidated account: its root wallet
+and every wallet the consolidation source reports as consolidated with it (a
+direct two-way link, read live, no minimum age). All wallets are equal
+([identity and recovery](spec/identity-and-recovery.md)).
+
+1. **Own change.** Any wallet signs an `IdentityChange` (a new root among the
+   account's wallets, a payout, a profile); it waits 2 days, and any wallet can
+   cancel it. The network can also cancel it at once (`cancelOwnChange`).
+2. **Replacement.** For a lost or stolen account, the network stages a replacement
+   (`stageReplacement`, 24-hour class) with the new root's signed acceptance and
+   gives 14 days' notice; it can cancel it at once (`cancelReplacement`). Any wallet
+   can contest during the notice; a contested replacement runs only if the network
+   upholds it (`resolveContested`, citing a DISPUTE_OUTCOME recorded after the
+   contest) within 90 days, and otherwise lapses. While a replacement is pending,
+   no wallet acts for the account.
+3. **Freeze.** The network can freeze an account at once for 14 days (`freeze`);
+   no wallet acts, and its payouts are held. `unfreeze` ends it early.
+4. At execution the new root must never have been a root (of any account), so
+   unused signatures of an old root stay void, and staging reserves it
+   (`reservedFor`) until the change ends. Future payouts follow the new payout
+   address, including balances already accrued.
 
 ### Dispute pause
 
-1. A dispute is filed in the 6529 disputes wave. The GUARDIAN role calls
-   `IEnglishAuction.pause`: one dispute pause per auction, lasting at most 7
-   days (`MAX_PAUSE`).
+1. A dispute is filed in the 6529 disputes wave. The PAUSER role calls
+   `IEnglishAuction.pause(saleId, disputeRef)`: one dispute pause per auction,
+   lasting at most 3 days (`MAX_PAUSE`).
 2. While paused, the high bidder may `withdrawBid`. The withdrawn amount
    stays as a reserve the next bid must reach. When the auction resumes (by
    `resume` or when the pause lapses) it runs for its remaining time or the
@@ -358,8 +349,8 @@ default when the sale starts".
    still), with or without a standing bid, so the refunded bidders can return.
 3. **Upheld.** The platform appends a `DISPUTE_OUTCOME` statement about the
    token (it must exist; an outcome recorded about the item before its mint is
-   also shown, until one about the token replaces it). The PARAMETER_SETTER
-   role then calls `cancel(saleId, outcomeRef)` while the auction is still
+   also shown, until one about the token replaces it). The network then calls
+   `cancel(saleId, outcomeRef)`, with no delay, while the auction is still
    paused.
    - `outcomeRef` must be the token's own latest outcome
      (`disputeOutcomeOf`, with no item fallback) and must have been recorded
@@ -368,25 +359,21 @@ default when the sale starts".
      about the package item, cannot cancel it.
    - The window is inclusive (`block.timestamp <= pausedAt + MAX_PAUSE`).
    - The bid is credited back and the token is burned.
-   - **Before the cancel executes, the guardian revokes every approved root
-     that lists the copier's items** (`revokePackage`): any other copy of the
+   - **Before the cancel, the network revokes every approved root that lists
+     the copier's items** (`revokePackage`, no delay): any other copy of the
      content, and the copier's other works in those packages. Revocation is
      per root, and the cancel tombstones only the burned item.
    - PARAMETER_SETTER then calls `IStream.releaseContent(tokenId, contentHash,
-     beneficiary)` (48 hours; schedule it with the cancel, to execute after
+     beneficiary)` (24 hours; schedule it with the cancel, to execute after
      it), naming the rightful artist's ID from the outcome. The beneficiary must
      be a registered artist (`UnknownArtist` otherwise), so schedule the release
      once the rightful artist has an identity (its first package acceptance
      creates it). Stream itself (`Stream.releaseContent`, its own content record)
      reserves the content hash for items
      whose lead artist is the beneficiary, and the burned item is tombstoned. A
-     release happens once per burned work, so the guardians check the
-     beneficiary during the delay.
-4. **Rejected.** The UNPAUSER role calls `resume`, no earlier than 48 hours
-   after the pause (the auction refuses an earlier one, even if it was
-   scheduled before the pause, so the guardians always have the standard
-   window to cancel it). With no outcome, the pause ends by itself when the
-   allowance runs out.
+     release happens once per burned work.
+4. **Rejected.** The network calls `resume`, with no wait. With no outcome, the
+   pause ends by itself after 3 days.
 5. **After a sale.** A dispute only produces a statement; the renderer shows
    it through `latestDisputeOutcome`, on the work and on its edition. The
    latest outcome about a work is its current dispute status, so each outcome
@@ -397,17 +384,19 @@ default when the sale starts".
 
 | Actor | Can | Cannot |
 | --- | --- | --- |
-| Curation signer | Attest that a package root was approved, after checking every declared SHA-256 against the decoded bytes. The v1 verifier trusts the key, not the vote. | Call any contract (it only signs); mint without party consent and the move signature; alter an item; reuse an item or a content hash. The guardian can disable a key at once; re-enabling takes 30 days and starts a new signer epoch, so no earlier approval revives. |
-| Guardian Safes | Pause a live auction for a dispute (once, at most 7 days); pause the sale adapters' new sales; deprecate a currency, which freezes live auctions in it; veto identity changes; revoke unconsumed approvals; disable a curation signer; deprecate a dependency version; cancel scheduled governance operations; suspend a platform, curator or storage operator key at once (lifted only by a 30-day ADMIN grant or revocation) | Redirect funds or identities; cancel or resume an auction; lift a suspension or grant any role |
+| Curation signer | Attest that a package root was approved, after checking every declared SHA-256 against the decoded bytes. The v1 verifier trusts the key, not the vote. | Call any contract (it only signs); mint without party consent and the move signature; alter an item; reuse an item or a content hash. The network can disable a key at once and kill its approvals not yet minted (C32); re-enabling takes 7 days and starts a new signer epoch, as does every new grant of the role, so no earlier approval revives. |
+| Pauser keys | Pause a live 1/1 for a dispute (once, at most 3 days); pause the sale adapters' new sales | Unpause, resume or cancel; move funds |
+| The network | Every network role: at once (cancel or resume a disputed 1/1, unpause, revoke approvals, disable a signer, freeze an account, cancel identity changes, deprecate a currency or a dependency version, grant and revoke operational keys), and through scheduled actions at 24 hours, 3 days or 7 days; cancel any scheduled action | Change a minted work's facts, move a collector's token, mint a content again, or reduce what the escrow owes |
+| Brake (none at launch) | Delay one scheduled network action by 7 days, once | Cancel or run an action |
 | Storage operator | Set preferred locations among the copies registered for each file (the contract stores no locator hash; the off-chain monitor verifies copies) | Add, remove or change locators; change content hashes |
 | Platform | Create collections; add locators | Change an approved package's terms or media |
 | CURATOR role | Append CURATION_EVIDENCE statements | Approve packages |
-| Admin Safe and setter roles | Governed setters behind the delay classes (48 hours, 14 days, 30 days), compare-and-set; genesis bindings, once | Change a work's royalty rate or license without every party, or its renderer pin without the artist; move an escrow credit anywhere but an identical replacement wallet, or the replacement its holder named (`consentToRecovery`) |
-| Lead artist (active authority) | Move to Stream; edit the record until finalize; finalize; co-sign amendments | Change the approved media, parties, payees or sale terms |
+| Network setter roles | Governed setters behind the delay classes (24 hours, 3 days, 7 days), compare-and-set; genesis bindings, once | Change a work's royalty rate or license without every party, or raise a network share; move another account's escrow credit anywhere but an identical replacement wallet (the network's own credits move freely, C19) |
+| Lead artist (any wallet of its account) | Move to Stream; edit the record until finalize; finalize; co-sign amendments | Change the approved media, parties, payees or sale terms |
 | Sale adapters (admitted) | Mint through `IMintTarget` on the token's own terms | Mint outside an approved item or an edition's terms |
-| Bound contracts | Stream's mint policy authorizes items (Stream records each content hash); Editions claims content hashes; the package registry registers artists; the federation registry lists federated contracts in the artist registry's per-token directory (replaceable by `setFederationRegistry`, 30 days; no authority over artists, payouts or canonical tokens); WorkRecords sets royalty rates and asks Stream and Editions for ERC-4906 | Act for anyone else: each binding is one caller, set once at genesis |
+| Bound contracts | Stream's mint policy authorizes items (Stream records each content hash); Editions claims content hashes; the package registry registers artists; the federation registry lists federated contracts in the artist registry's per-token directory (replaceable by `setFederationRegistry`, 7 days; a replacement inherits every listing; no authority over artists, payouts or canonical tokens); WorkRecords sets royalty rates and asks Stream and Editions for ERC-4906 | Act for anyone else: each binding is one caller, set once at genesis |
 | VRF coordinator | Deliver a seed once per requested content | Choose which items are VRF, or change a delivered seed |
-| 6529 delegation contract | Supply consolidations used as recovery cancellers, and as recovery stagers for dormant artists | Act for a live artist, execute a wallet-signed change before the 180-day override delay, or bypass the guardian veto |
+| 6529 delegation contract, through the consolidation source | Report which wallets are consolidated with an account's root, so they act for the account | Act for the root itself, act for a frozen account or one with a replacement pending, or change who the root is without a 2-day own change |
 
 On-chain content uniqueness is defense in depth: the curation signer's SHA-256
 check, covered by the evidence hash, is the primary control. Every external
@@ -421,18 +410,21 @@ interfaces name the role each governed selector is meant to map to. The complete
 authoritative list, generated from `config/genesis.example.json`, is the
 [role and permission matrix](audit/roles.md):
 
+One address, the network, holds every network role (ADMIN, NETWORK and the three setters);
+it hands over with `transferNetwork` (7 days) and `acceptNetwork`. An optional brake can delay
+one scheduled network action by 7 days, once (none at launch).
+
 | Role | Selectors |
 | --- | --- |
-| ADMIN (genesis, once each) | `IStream.bindWorkRecords`, `bindEditions`; `IPackageRegistry.bindStream`, `bindEditions`; `IArtistRegistry.bindPackageRegistry`, `bindStream`, `bindSplitFactory`, `bindStatementLog`; `IEditions.bindWorkRecords`. `IArtistRegistry.bindFederationRegistry` is deferred until the federation registry ships (a 30-day ADMIN action then) |
-| GUARDIAN | `IEnglishAuction.pause(saleId, disputeRef)`, `IArtistRegistry.vetoChange`, `IPackageRegistry.revokePackage` (also pre-revokes unregistered roots), `ICurationSignerVerifier.disableSigner`, `IDependencyRegistry.deprecate`; economics `IAssetAllowlist.deprecateAsset`; the manager's own `WorksAccessManager.suspend` (checked by the manager, not mapped) |
-| PAUSER | the sale adapters' emergency `pause()` |
-| UNPAUSER (48 hours) | `IEnglishAuction.resume`; the sale adapters' `unpause()` |
-| STORAGE_OPERATOR | the delivery contract's `setPreferredKind`, `setCollectionPreferredKind`, `setFilePreference` |
+| ADMIN (7 days; genesis bindings once each) | The manager's `transferNetwork`, `setBrake` and selector maps; `IStream.bindWorkRecords`, `bindEditions`; `IPackageRegistry.bindStream`, `bindEditions`; `IArtistRegistry.bindPackageRegistry`, `bindStream`, `bindSplitFactory`, `bindStatementLog`; `IEditions.bindWorkRecords` (genesis only) |
+| NETWORK (at once) | `IEnglishAuction.unpause`, `resume`, `cancel`; the edition auctions' `unpause()`; `IPackageRegistry.revokePackage`, `killSignerApprovals`; `ICurationSignerVerifier.disableSigner`; `IArtistRegistry.freeze`, `unfreeze`, `cancelReplacement`, `cancelOwnChange`; `IAssetAllowlist.deprecateAsset`; `IDependencyRegistry.deprecate`; granting and revoking every operational role |
+| PAUSER | the sale adapters' emergency `pause()`; `IEnglishAuction.pause(saleId, disputeRef)` |
+| STORAGE_OPERATOR | the delivery contract's `setPreferredKind`, `setCollectionPreferredKind`, `setFilePreference`, `markLocatorDead`; `IWorkRecords.syncOnChain` from an added store |
 | PLATFORM | `IStream.createCollection`; the delivery contract's `addLocator` (also the artist); statement log `appendPlatform` (DISPUTE_OUTCOME) |
 | CURATOR | statement log `appendCurator` (CURATION_EVIDENCE) |
-| PARAMETER_SETTER (48 hours) | `IStream.setContractURI`, `releaseContent`, `IEditions.setContractURI`, `IWorkRecords.relicense`, `IEnglishAuction.cancel`, `setConfig`, `IUniformEditionAuction.setLimits`, `IEconomicsResolver.setRoyaltyRate`, `setDefaultLicense`, `IArtistRegistry.stageOverride`, `IDependencyRegistry.register`, `IEntropyModule.setConfig`, `IFederationRegistry.setStatus`, `setArtistDelisted` (when it ships); economics `IAssetAllowlist.setIncrementFloor`, `setOpeningBid` (economics setters are guarded by an expected revision) |
-| FUNDS_SETTER (14 days) | `IWorkRecords.setRoyaltyRate`, `IStream.setOwner`, `IEditions.setOwner`, `IEconomicsResolver.setFeeTerms`; economics `IAssetAllowlist.admitAsset`, `setDefaultCurrency`, `IRevenueEscrow.recover`, `sweepExcess`; the governed vaults' `setDestination` (ADR 0002, ADR 0003, ADR 0007) |
-| SUCCESSOR_SETTER (30 days) | `IMintTarget.setAdmittedMinter` (6529 Stream and 6529 Stream Editions), `IStream.setDefaultRenderer`, `setDependency`, `setRescueDelay`, `IWorkRecords.repinRenderer`, `setDelivery`, `addStore`, `IPackageRegistry.setVerifier`, `ICurationSignerVerifier.enableSigner`, `IArtistRegistry.setConsolidationSource`, `resolveContested`, `setFederationRegistry`, `setTimer`, `IEntropyModule.setCoordinator`, entropy `lowerCallbackGasLimit`, `ISaleAdapter.setTarget`, `setFederationRegistry`; statement log `setArtistResolver`, `appendGovernanceManifest` |
+| PARAMETER_SETTER (24 hours) | `IStream.setContractURI`, `releaseContent`, `rescueToMuseum`, `lowerFeeShare`; `IEditions.setContractURI`, `lowerFeeShare`; `IWorkRecords.retireStore`, `renounce` (royalty and license powers); `IArtistRegistry.stageReplacement`, `resolveContested`, `setFederationDelisted`, `lowerFederatedFeeShare`; the auctions' `setConfig` and `setLimits`; `IEconomicsResolver.setRoyaltyRate`, `setDefaultLicense`; `IAssetAllowlist.setIncrementFloor`, `setOpeningBid`; `IDependencyRegistry.register`; `IEntropyModule.setConfig`; `IFederationRegistry.approveTemplate`, `suspendTemplate`, `resumeTemplate`, `revokeTemplate`, `reinstateTemplate`, `setStatus` |
+| FUNDS_SETTER (3 days) | `IWorkRecords.relicense`, `setRoyaltyRate`; `IStream.setOwner`, `IEditions.setOwner`; `IEconomicsResolver.setFeeTerms`, `setMuseum`; `IAssetAllowlist.admitAsset`, `setDefaultCurrency`; `IRevenueEscrow.recover`, `sweepExcess`; `FeeRecipientVault.setDestination` |
+| SUCCESSOR_SETTER (7 days) | `IMintTarget.setAdmittedMinter` (6529 Stream and 6529 Stream Editions), `IStream.setDefaultRenderer`, `setDependency`; `IWorkRecords.repinRenderer`, `setDelivery`, `addStore`; `IPackageRegistry.setVerifier`; `ICurationSignerVerifier.enableSigner`; `IArtistRegistry.setConsolidationSource`, `setPackageRegistry`, `setFederationRegistry`; `IEntropyModule.setCoordinator`, `lowerCallbackGasLimit`, `setWrapper`; `ISaleAdapter.setTarget`, the English auction's `setFederationRegistry`; `IFederationRegistry.setAdapter`; `MuseumVault.setDestination`; statement log `setArtistResolver`, `appendGovernanceManifest` |
 
 There is no SYSTEM role: contract-to-contract calls use the one-shot bindings in
 the first row, so they skip the AccessManager hop. Sale adapters are admitted
@@ -480,8 +472,9 @@ setters for funds, recipients, verifiers and renderers are compare-and-set.
   - Mint checks an admitted-minter mapping, not an AccessManager hop.
   - The auction locks the increment floor at the first bid, not at start, and
     reads seller and fee terms back from the token.
-  - Record opening, ARTIST seeds, VRF requests, split-wallet deployment and
-    artist heartbeats all happen off the start path.
+  - Record opening, ARTIST seeds, VRF requests and split-wallet deployment all
+    happen off the start path (the keeper's `SaleStarter` batches them in the
+    same transaction, outside the measured start).
 - **`tokenURI` gas (at most 8M).** The renderer inlines media only for on-chain
   complete works under the inline threshold.
 - **Transaction cap.** Every transaction's regular gas must fit the
@@ -489,4 +482,4 @@ setters for funds, recipients, verifiers and renderers are compare-and-set.
   in mind. On Sepolia, state-creation gas above the cap was accepted (ADR 0004).
 - **Contract size.** Stream core stays within EIP-170 because records, licenses and
   finalize live in `IWorkRecords`, and locators in its replaceable delivery contract.
-- **Lines.** Interfaces and shared types count toward the 16,500-line budget (ADR 0007, raised by ADR 0008).
+- **Lines.** Interfaces and shared types count toward the 17,000-line budget (ADR 0007, raised by ADR 0008 and by the owner on 16 November 2026).

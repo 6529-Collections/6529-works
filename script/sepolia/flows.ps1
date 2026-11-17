@@ -48,9 +48,9 @@ param(
     [Parameter(Mandatory)] [string] $State,
     [Parameter(Mandatory)] [ValidateSet('content', 'collections', 'package', 'start', 'startWithBid',
         'bid', 'openRecord', 'sync', 'requestSeed', 'settle', 'createEdition', 'openEdition',
-        'editionBid', 'editionRaise', 'editionWithdraw', 'editionSettle', 'claimBid', 'claimBidFor',
+        'editionBid', 'editionRaise', 'editionSettle', 'claimBid', 'claimBidFor',
         'claimCredits', 'editionState', 'englishState', 'pause', 'englishWithdraw', 'outcome',
-        'scheduleCancel', 'executeCancel', 'send', 'record', 'prague', 'report')] [string] $Step,
+        'cancel', 'send', 'record', 'prague', 'report')] [string] $Step,
     [string] $Rpc = 'https://ethereum-sepolia-rpc.publicnode.com',
     # The deployment record, relative to the repository root (r4 by default).
     [string] $Record = 'deployments/11155111/1793536584.json',
@@ -75,7 +75,7 @@ param(
     [string] $Order = $null,
     # claimCredits: which adapter holds the credits (`english` or `edition`).
     [ValidateSet('english', 'edition')] [string] $Adapter = 'english',
-    # The Safe that pauses (a guardian) or schedules and executes a cancel (the hot admin).
+    # The account that pauses (a pauser key) or the Safe that cancels (the network).
     [string] $Safe = '',
     [switch] $ExpectRevert,
     [string] $GasLimit = '500000'
@@ -449,9 +449,6 @@ switch ($Step) {
     'editionRaise' {
         Send-Items (Invoke-Plan 'editionRaiseTx(uint256,uint256,uint256)' @("$TokenId", "$BidId", "$EditionStep"))
     }
-    'editionWithdraw' {
-        Send-Items (Invoke-Plan 'editionWithdrawTx(uint256,uint256)' @("$TokenId", "$BidId"))
-    }
     'editionSettle' {
         $settler = Get-Address $Settler
         if ($PSBoundParameters.ContainsKey('Order')) {
@@ -485,15 +482,21 @@ switch ($Step) {
     'outcome' {
         Send-Items (Invoke-Plan 'outcomeTx(uint256)' @("$TokenId"))
     }
-    'scheduleCancel' {
-        $admin = if ($Safe) { $Safe } else { $HotAdminSafe }
-        $plan = Invoke-Plan 'scheduleCancelTx(uint256,address)' @("$TokenId", $admin)
-        Set-Note "cancelOperation-$TokenId" (Get-Info $plan 'operationId')
-        Send-Items $plan
-    }
-    'executeCancel' {
-        $admin = if ($Safe) { $Safe } else { $HotAdminSafe }
-        Send-Items (Invoke-Plan 'executeCancelTx(uint256,address)' @("$TokenId", $admin))
+    'cancel' {
+        # The selected record's network (the manager's `network()`). A failed read stops the
+        # step: a record from before the single network address has no `network()`, and for
+        # such a record pass -Safe (its network was the hot admin Safe). -Safe always
+        # overrides. Send-Safe refuses a Safe without configured signers.
+        $network = $Safe
+        if (-not $network) {
+            try {
+                $network = (Invoke-Cli 'cast' @('call', $Contracts.WorksAccessManager.address,
+                        'network()(address)', '--rpc-url', $Rpc)).Trim()
+            }
+            catch { throw "could not read network() from the selected record's manager; pass -Safe for a record that predates it" }
+        }
+        if (-not $SafeSigners[$network.ToLower()]) { throw "no signers configured for network Safe $network" }
+        Send-Items (Invoke-Plan 'cancelTx(uint256,address)' @("$TokenId", $network))
     }
     'record' {
         # Records a transaction sent outside this driver (for example by the Chainlink node).

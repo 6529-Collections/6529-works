@@ -47,7 +47,7 @@ contract RecipientValidationTest is IntegrationBase {
         id.payout = payout;
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes32 digest = artists.changeDigest(artistId, id, artists.changeNonce(artistId), deadline);
-        artists.stageChange(artistId, id, artist, deadline, _sign(artist, digest), "");
+        artists.stageChange(artistId, id, deadline, abi.encodePacked(artist, _sign(artist, digest)));
     }
 
     /// @dev A work by the artist sold for 1,000 USD, its seller wallet deployed.
@@ -140,7 +140,7 @@ contract RecipientValidationTest is IntegrationBase {
             vm.recordLogs();
             _stagePayout(allowed[i]);
             assertTrue(_logged(IArtistRegistry.ChangeStaged.selector), "ChangeStaged");
-            vm.warp(block.timestamp + artists.timer(IArtistRegistry.Timer.CHANGE_DELAY));
+            vm.warp(block.timestamp + artists.OWN_CHANGE_DELAY());
             artists.executeChange(artistId);
             assertEq(artists.payoutAddress(artistId), allowed[i]);
         }
@@ -154,7 +154,7 @@ contract RecipientValidationTest is IntegrationBase {
         address predicted = _otherWallet(false);
         _stagePayout(predicted);
         _otherWallet(true);
-        vm.warp(block.timestamp + artists.timer(IArtistRegistry.Timer.CHANGE_DELAY));
+        vm.warp(block.timestamp + artists.OWN_CHANGE_DELAY());
         vm.expectEmit(address(artists));
         emit IArtistRegistry.ChangeCancelled(artistId, address(artists), false);
         artists.executeChange(artistId);
@@ -191,7 +191,7 @@ contract RecipientValidationTest is IntegrationBase {
             bytes memory call =
                 abi.encodeCall(economics.setFeeTerms, (product, revision, refused[i], 25_000));
             _schedule(hotAdmin, address(economics), call);
-            vm.warp(block.timestamp + Roles.FUNDS);
+            vm.warp(block.timestamp + Roles.DELAY_3D);
             vm.prank(hotAdmin);
             vm.expectRevert(
                 abi.encodeWithSelector(IEconomicsResolver.InvalidFeeRecipient.selector, refused[i])
@@ -210,7 +210,7 @@ contract RecipientValidationTest is IntegrationBase {
             economics.setFeeTerms, (PRODUCT_STREAM, revision, address(escrow), 25_000)
         );
         _schedule(hotAdmin, address(economics), call);
-        vm.warp(block.timestamp + Roles.FUNDS);
+        vm.warp(block.timestamp + Roles.DELAY_3D);
         vm.prank(hotAdmin);
         vm.expectRevert(
             abi.encodeWithSelector(IEconomicsResolver.InvalidFeeRecipient.selector, address(escrow))

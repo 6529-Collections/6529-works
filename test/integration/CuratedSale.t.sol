@@ -202,10 +202,11 @@ contract CuratedSaleFlowTest is IntegrationBase {
         assertEq(splitFactory.createWallet(royaltyPayees, bytes32(0)), receiver);
         uint256 feeBefore = networkFee.balance;
         uint256 sellerBefore = terms.seller.balance;
-        for (uint256 i; i < 2; ++i) {
-            vm.prank(keeper);
-            splitFactory.release(royaltyPayees, bytes32(0), CURRENCY_ETH, i);
-        }
+        // The seller's release also pays the network its share (R11).
+        vm.prank(keeper);
+        splitFactory.release(
+            royaltyPayees, bytes32(0), CURRENCY_ETH, royaltyPayees[0].account == networkFee ? 1 : 0
+        );
         assertEq(networkFee.balance - feeBefore, amount / 4, "25% of royalties to the network");
         assertEq(terms.seller.balance - sellerBefore, amount - amount / 4, "75% to the seller");
         payees; // the seller wallet's own payees are unchanged by royalties
@@ -332,7 +333,9 @@ contract CuratedSaleFlowTest is IntegrationBase {
     function test_RefusedFeeGoesToTheEscrow() public {
         RefusingWallet safe = new RefusingWallet();
         safe.setRefuse(true);
-        // A sale running while the fee terms change keeps the terms its work locked at mint.
+        // A sale running while the fee terms change keeps the share its work locked at mint;
+        // the fee goes to the recipient the resolver names at settlement (R18), here the
+        // refusing one, so it is escrowed for it.
         (uint256 oldSale,) = _start(root, _package(root), 2);
         _ethBid(oldSale, bidder1, 1 ether);
         _govern(
@@ -341,17 +344,18 @@ contract CuratedSaleFlowTest is IntegrationBase {
             abi.encodeCall(economics.setFeeTerms, (PRODUCT_STREAM, 1, address(safe), 25_000))
         );
         auction.settle(oldSale);
-        assertEq(networkFee.balance, 0.25 ether, "locked at mint");
+        assertEq(networkFee.balance, 0, "not the recipient current at mint");
+        assertEq(IRevenueEscrow(address(escrow)).owed(address(safe), CURRENCY_ETH), 0.25 ether);
 
         Work[] memory works = _one(_collaboration(_work(artist, collectionId)));
         bytes32 newRoot = _publish(works);
         uint256 tokenId = _sell(newRoot, works, 0, bidder2, 2 ether);
         assertEq(stream.ownerOf(tokenId), bidder2, "settled despite the refusal");
-        assertEq(IRevenueEscrow(address(escrow)).owed(address(safe), CURRENCY_ETH), 0.5 ether);
+        assertEq(IRevenueEscrow(address(escrow)).owed(address(safe), CURRENCY_ETH), 0.75 ether);
         safe.setRefuse(false);
         vm.prank(keeper);
         IRevenueEscrow(address(escrow)).flush(address(safe), CURRENCY_ETH);
-        assertEq(address(safe).balance, 0.5 ether, "flushed by anyone");
+        assertEq(address(safe).balance, 0.75 ether, "flushed by anyone");
         (address receiver,) = stream.royaltyInfo(tokenId, 1 ether);
         assertEq(
             receiver, economics.newWorkTerms(PRODUCT_STREAM, works[0].item.payees).royaltyReceiver
@@ -385,18 +389,18 @@ contract CuratedSaleFlowTest is IntegrationBase {
         assertEq(stream.ownerOf(tokenId), vault);
     }
 
-    /// @dev The guardian's curation controls (ADR 0003): revoking an approved root stops its
+    /// @dev The network's curation controls, with no delay (ADR 0003): revoking an approved root stops its
     ///      starts at once; disabling a curation signer stops its new attestations, and the
     ///      second genesis signer keeps curation running.
     function test_GuardianRevokesAPackageAndDisablesASigner() public {
         Work[] memory works = _package(root);
         bytes memory data = _mintData(root, works, 0);
-        vm.prank(guardian1);
+        vm.prank(hotAdmin);
         registry.revokePackage(root, keccak256("leaked attestation"));
         vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.PackageNotApproved.selector, root));
         auction.start(address(stream), data);
 
-        vm.prank(guardian2);
+        vm.prank(hotAdmin);
         verifier.disableSigner(signer1);
         Work[] memory fresh = _one(_work(artist, collectionId));
         bytes32 freshRoot = _rootOf(fresh);
@@ -428,7 +432,7 @@ contract CuratedSaleFlowTest is IntegrationBase {
     function test_ReEnablingASignerDoesNotReviveOlderApprovals() public {
         address unvetted = _actor("unvetted");
         uint256 epoch = verifier.signerEpoch(signer1);
-        vm.prank(guardian1);
+        vm.prank(hotAdmin);
         verifier.disableSigner(signer1);
         assertTrue(verifier.signerEpoch(signer1) != epoch, "disabling ends the epoch");
         Work[] memory unreviewed = _one(_work(unvetted, collectionId));
@@ -459,7 +463,7 @@ contract CuratedSaleFlowTest is IntegrationBase {
     ///      re-enable would start if it were not salted from the re-enable's block, does not
     ///      register after the re-enable.
     function test_AnApprovalSignedWhileDisabledCannotNameTheReEnableEpoch() public {
-        vm.prank(guardian1);
+        vm.prank(hotAdmin);
         verifier.disableSigner(signer1);
         Work[] memory works = _one(_work(_actor("unvetted"), collectionId));
         bytes32 packageRoot = _rootOf(works);
@@ -484,9 +488,13 @@ contract CuratedSaleFlowTest is IntegrationBase {
         bytes32 evidence = _evidence(packageRoot);
         bytes memory oldGrant = _attestation(signer1, packageRoot, evidence);
         uint64 role = Roles.CURATION_SIGNER;
-        _govern(hotAdmin, address(manager), abi.encodeCall(manager.revokeRole, (role, signer1)));
-        _govern(hotAdmin, address(manager), abi.encodeCall(manager.grantRole, (role, signer1, 0)));
-        vm.warp(block.timestamp + 31 days); // the role's grant delay
+        // The network administers operational keys with no delay (integrator ruling 14): the
+        // revocation and the new grant land in the same second as the genesis grant, so the
+        // grant's `since` alone is unchanged; the manager's grant count still moves the epoch.
+        vm.startPrank(hotAdmin);
+        manager.revokeRole(role, signer1);
+        manager.grantRole(role, signer1, 0);
+        vm.stopPrank();
         assertTrue(verifier.isSignerActive(signer1));
         vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.NotApproved.selector, packageRoot));
         registry.registerPackage(packageRoot, evidence, oldGrant);

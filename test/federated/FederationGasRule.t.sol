@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
 import { FederatedStream } from "src/federated/FederatedStream.sol";
+import { FederationRegistry } from "src/federated/FederationRegistry.sol";
 import { IFederatedStream } from "src/interfaces/IFederatedStream.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { Burner, GasRuleAssertions } from "../helpers/GasRule.sol";
@@ -88,24 +89,34 @@ contract FederationGasRuleTest is FederationBase, GasRuleAssertions {
         IFederatedStream.Config memory c = _streamConfig(fedArtist);
         c.contentStore = address(burner);
         FederatedStream other = _deployStream(c);
-        // The registry lists only a copy naming the canonical store, so this one mints after
-        // its exit, through a minter the artist admits.
+        // The registry lists only a copy naming its canonical store, so this one joins through
+        // a replacement registry whose canonical store is the burner.
         _join(
             address(other),
             fedArtist,
             abi.encodeWithSelector(IFederationRegistry.NotListable.selector, address(other))
         );
-        vm.startPrank(fedArtist);
-        other.leaveFederation();
-        other.setAdmittedMinter(address(this), true);
+        FederationRegistry next = new FederationRegistry(
+            address(manager), address(artists), address(economics), address(burner)
+        );
+        _mapRegistryRoles(address(next));
+        _approveTemplates(next);
+        _govern(hotAdmin, address(next), abi.encodeCall(next.setAdapter, (address(auction), true)));
+        _govern(
+            hotAdmin,
+            address(artists),
+            abi.encodeCall(artists.setFederationRegistry, (address(fedRegistry), address(next)))
+        );
+        _join(address(other), fedArtist);
         Work memory w = _fedWork(fedArtist);
+        vm.prank(fedArtist);
         other.approveItem(_itemHash(w), RATE);
-        vm.stopPrank();
-        bytes memory mint = abi.encodeCall(other.mint, (address(this), 0, 1, _mintData(w)));
-        Outcome memory o = _assertSameAtEveryMultiple(burner, address(this), address(other), mint);
+        bytes memory start = abi.encodeCall(auction.start, (address(other), _mintData(w)));
+        Outcome memory o =
+            _assertSameAtEveryMultiple(burner, address(this), address(auction), start);
         assertTrue(o.ok);
         burner.burnerSetMultiple(4);
-        _assertNeverAnswersShort(address(this), address(other), mint);
+        _assertNeverAnswersShort(address(this), address(auction), start);
     }
 
     function test_GasRule_TokenUriReadsTheRendererWithAllGas() public {

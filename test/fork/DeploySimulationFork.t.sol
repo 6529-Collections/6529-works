@@ -9,8 +9,8 @@ import { DeployHarness, VerifyHarness } from "../deploy/ScriptHarness.sol";
 import { Forks, IVrfSubscriptions } from "./WorksForkBase.sol";
 
 /// @notice The full deploy script simulated against a Sepolia fork with sepolia-r3's inputs: its
-///         holders (the real Safes behind the admins and guardians, its signer and operator
-///         keys) on the committed policy, its network fee recipient and marketplace owner, the
+///         accounts (its hot admin Safe as the network, its guardian Safes as the pausers, its
+///         signer and operator keys) on the committed policy, its network fee recipient and marketplace owner, the
 ///         official 6529 delegation contract, the canonical Permit2, the real VRF v2.5
 ///         coordinator with r3's gas lane (and a new subscription, as the runbook creates for
 ///         each deployment), and r3's epoch-0 manifest, under a fresh namespace. Every off-anvil
@@ -19,9 +19,9 @@ import { Forks, IVrfSubscriptions } from "./WorksForkBase.sol";
 ///         fork.
 ///
 ///         The genesis is `config/genesis.example.json` with r3's holders, as a new rehearsal's
-///         would be, so the simulation follows the committed policy as it changes; r3's own file
-///         (the committed policy at `e5fe78c` with r1's holders) is checked against the live Safes
-///         on its own.
+///         would be, so the simulation follows the committed policy as it changes. r3's own file
+///         predates the single network address (it names ADMIN and GUARDIAN holders), so it is
+///         no longer a valid genesis; its live Safes are checked through the example instead.
 /// @dev Opt-in: skipped unless `FORK_SEPOLIA_RPC` is set (`FORK_SEPOLIA_RPC_BLOCK` pins the
 ///      block). See `test/fork/README.md`.
 contract DeploySimulationSepoliaForkTest is Test {
@@ -39,9 +39,6 @@ contract DeploySimulationSepoliaForkTest is Test {
     bool internal forked;
     address internal subscriptionOwner = makeAddr("forkSimulationSubscriptionOwner");
     uint256 internal subscriptionId;
-    /// @dev r3 had two admin Safes; the third admin seat (ADR 0007) is a copy of r3's hot admin
-    ///      Safe proxy on the fork, with two fresh owners of its own.
-    address internal thirdAdmin;
 
     function setUp() public {
         string memory rpc = vm.envOr("FORK_SEPOLIA_RPC", string(""));
@@ -52,7 +49,6 @@ contract DeploySimulationSepoliaForkTest is Test {
         deployer = new DeployHarness();
         verifier = new VerifyHarness();
         r3 = vm.readFile(R3_RECORD);
-        thirdAdmin = _cloneSafe(_holder(vm.readFile(R3_GENESIS), "ADMIN", 0));
         bytes memory genesis = bytes(_committedPolicyWithR3Holders());
         deployer.setFile(GENESIS, genesis);
         verifier.setFile(GENESIS, genesis);
@@ -72,24 +68,20 @@ contract DeploySimulationSepoliaForkTest is Test {
         _env("MANIFEST_URI", vm.parseJsonString(r3, ".manifestUri"));
     }
 
-    /// @dev The committed example with each placeholder holder replaced by r3's holder of the
-    ///      same role, in order (hot then cold admin, the three guardians, the two curation
-    ///      signers, the storage operator, the platform and the curator), and the third admin
-    ///      by the fork's copy of a Safe.
+    /// @dev The committed example with the placeholder network replaced by r3's hot admin Safe
+    ///      (the network of every instance before the single network address) and each
+    ///      placeholder holder by r3's holder of the same role, in order (the three pausers, the
+    ///      two curation signers, the storage operator, the platform and the curator).
     function _committedPolicyWithR3Holders() internal view returns (string memory json) {
         json = vm.readFile(EXAMPLE);
-        json = vm.replace(
-            json, vm.toLowercase(vm.toString(address(uint160(0xb004)))), vm.toString(thirdAdmin)
-        );
         string memory holders = vm.readFile(R3_GENESIS);
-        uint16[10] memory placeholders =
-            [0xb001, 0xb002, 0xb011, 0xb012, 0xb013, 0xb021, 0xb022, 0xb031, 0xb051, 0xb061];
-        string[10] memory roles = [
+        uint16[9] memory placeholders =
+            [0xb001, 0xb011, 0xb012, 0xb013, 0xb021, 0xb022, 0xb031, 0xb051, 0xb061];
+        string[9] memory roles = [
             "ADMIN",
-            "ADMIN",
-            "GUARDIAN",
-            "GUARDIAN",
-            "GUARDIAN",
+            "PAUSER",
+            "PAUSER",
+            "PAUSER",
             "CURATION_SIGNER",
             "CURATION_SIGNER",
             "STORAGE_OPERATOR",
@@ -104,29 +96,6 @@ contract DeploySimulationSepoliaForkTest is Test {
             string memory from = vm.toLowercase(vm.toString(address(uint160(placeholders[i]))));
             json = vm.replace(json, from, vm.toString(_holder(holders, roles[i], nth)));
         }
-    }
-
-    /// @dev A Safe on the fork: `template`'s proxy code at a fresh address, pointing at the same
-    ///      canonical singleton, with two fresh owners, threshold 2, no module and no guard
-    ///      (Safe storage: slot 0 the singleton, 1 modules, 2 owners, 3 owner count, 4
-    ///      threshold).
-    function _cloneSafe(address template) internal returns (address safe) {
-        safe = makeAddr("forkThirdAdminSafe");
-        vm.etch(safe, template.code);
-        vm.store(safe, bytes32(0), vm.load(template, bytes32(0)));
-        address sentinel = address(1);
-        address a = makeAddr("forkThirdAdminOwnerA");
-        address b = makeAddr("forkThirdAdminOwnerB");
-        vm.store(safe, _slot(sentinel, 1), bytes32(uint256(uint160(sentinel))));
-        vm.store(safe, _slot(sentinel, 2), bytes32(uint256(uint160(a))));
-        vm.store(safe, _slot(a, 2), bytes32(uint256(uint160(b))));
-        vm.store(safe, _slot(b, 2), bytes32(uint256(uint160(sentinel))));
-        vm.store(safe, bytes32(uint256(3)), bytes32(uint256(2)));
-        vm.store(safe, bytes32(uint256(4)), bytes32(uint256(2)));
-    }
-
-    function _slot(address key, uint256 mappingSlot) internal pure returns (bytes32) {
-        return keccak256(abi.encode(key, mappingSlot));
     }
 
     /// @dev The `nth` holder of `role` in a genesis file.
@@ -201,21 +170,21 @@ contract DeploySimulationSepoliaForkTest is Test {
         assertEq(r.manifest.digest, vm.parseJsonBytes32(r3, ".manifestDigest"), "r3's manifest");
     }
 
-    /// @dev r3's own genesis file, with the third admin seat added (ADR 0007; r3 had two),
-    ///      still passes every holder guard against the live Safes.
-    function test_TheR3HoldersPassTheHolderGuards() public onFork {
+    /// @dev The holder guards against r3's live Safes and keys, on the committed policy: the
+    ///      network (r3's hot admin Safe) is a bare canonical Safe with a threshold of at least
+    ///      2 and plain-key owners, and no holder is a placeholder, a system address or a holder
+    ///      of a network role. (r3's own file, from before the single network address, names
+    ///      network-role holders and no `network`, so it is no longer checked as it stands.)
+    function test_TheR3SafesPassTheHolderGuards() public onFork {
         (address[] memory singletons, bytes32[] memory codehashes) =
             DeployGuards.canonicalSafeSingletons();
-        string memory json = vm.replace(
-            vm.readFile(R3_GENESIS),
-            '"holders": [',
-            string.concat(
-                '"holders": [{"role": "ADMIN", "account": "',
-                vm.toString(thirdAdmin),
-                '", "label": "Third admin Safe (fork copy)"},'
-            )
-        );
+        string memory json = _committedPolicyWithR3Holders();
         DeployGuards.checkHolders(json, vm.readFile(EXAMPLE), singletons, codehashes);
+        assertEq(
+            vm.parseJsonAddress(json, ".network"),
+            _holder(vm.readFile(R3_GENESIS), "ADMIN", 0),
+            "r3's hot admin Safe is the network"
+        );
     }
 
     /// @dev The whole run, simulated: deploy, the deployment guards (nothing dropped, the
@@ -237,13 +206,18 @@ contract DeploySimulationSepoliaForkTest is Test {
         assertEq(vm.parseJsonString(record, ".entropy"), "vrf");
         assertEq(vm.parseJsonStringArray(record, ".standIns").length, 0);
 
+        // The runbook's acceptance: the proposed network takes the authority.
+        vm.prank(d.manager.pendingNetwork());
+        d.manager.acceptNetwork();
         vm.warp(block.timestamp + 5 days);
         (uint256 targets, uint256 calls, uint256 holders) = verifier.verify(record);
         // The anvil run's 18 targets and 24 wiring calls (DeployScript.t.sol), plus the entropy
         // module, which is governed but has no genesis wiring call.
         assertEq(targets, 19, "every governed contract, the entropy module included");
         assertEq(calls, 24, "every wiring call");
-        assertEq(holders, 18, "every genesis holder");
+        // Operational keys only: three pausers, two curation signers, the storage operator,
+        // the platform and the curator.
+        assertEq(holders, 8, "every genesis holder");
         assertEq(
             vm.parseJsonAddress(record, ".params.networkFeeRecipient"),
             _r3Address("networkFeeRecipient")

@@ -10,8 +10,8 @@ import { DeployV1 } from "./DeployV1.sol";
 /// @title DeployGuards
 /// @notice The off-anvil checks `Deploy.s.sol` runs before anything is broadcast and
 ///         `Verify.s.sol` repeats against the chain. Each one exists because the configurator
-///         renounces ADMIN in the genesis transaction: after that, nothing the genesis got wrong
-///         can be fixed except through the governance it installed.
+///         renounces its installer record in the genesis transaction: after that, nothing the
+///         genesis got wrong can be fixed except by the network address it names.
 /// @dev Pure functions of their inputs (the genesis JSON, the committed example JSON, the
 ///      deployment), so the tests drive them directly.
 library DeployGuards {
@@ -20,14 +20,9 @@ library DeployGuards {
     /// @notice Holder addresses at or below this are placeholders (the example's `0x…b0xx`) or
     ///         precompiles, never a Safe or a key.
     uint160 internal constant MAX_PLACEHOLDER = 0xFFFF;
-    /// @notice Off anvil, at least three admin Safes: the hot admin, the cold recovery admin and
-    ///         the third admin (owner decision of 15 November 2026, ADR 0007).
-    uint256 internal constant MIN_ADMINS = 3;
-    /// @notice Off anvil, at least three guardian Safes (`GovernanceConfig` alone requires two).
-    uint256 internal constant MIN_GUARDIANS = 3;
     /// @notice Off anvil, at least two curation signer keys.
     uint256 internal constant MIN_CURATION_SIGNERS = 2;
-    /// @notice Off anvil, every admin and guardian Safe needs at least two signatures.
+    /// @notice Off anvil, the network Safe needs at least two signatures.
     uint256 internal constant MIN_THRESHOLD = 2;
     /// @notice A Safe's transaction guard slot (`GuardManager`:
     ///         `keccak256("guard_manager.guard.address")`).
@@ -83,36 +78,33 @@ library DeployGuards {
 
     /// @notice The genesis file is the committed example, whose holders are all placeholders.
     error ExampleGenesisOffAnvil();
+    /// @notice Off anvil, the genesis file names a brake: none is installed at launch.
+    error BrakeAtLaunch(address brake);
     error PlaceholderHolder(string role, address account);
     /// @notice A holder is a system contract, a precompile-range address, the CREATE2 deployer,
     ///         Permit2 or the delegation contract: no key can act for it.
     error ForbiddenHolder(string role, address account);
-    /// @notice An ADMIN or GUARDIAN holder is not a deployed Safe: no code, an EIP-7702
-    ///         delegated EOA, no nonzero `getThreshold()`, or no `getOwners()`.
+    /// @notice The network address is not a deployed Safe: no code, an EIP-7702 delegated EOA,
+    ///         no nonzero `getThreshold()`, or no `getOwners()`.
     error HolderNotASafe(string role, address account);
-    error TooFewAdmins(uint256 count);
-    error TooFewGuardians(uint256 count);
-    /// @notice Two of the admin and guardian Safes share a signer: the cold admin must be able
-    ///         to recover from a lost hot admin, the guardians must be able to veto the admins,
-    ///         and each guardian must be independent of the others.
-    error SharedSigner(address safe, address other, address signer);
-    /// @notice An admin or guardian Safe needs fewer than `MIN_THRESHOLD` signatures.
+    /// @notice The network Safe needs fewer than `MIN_THRESHOLD` signatures.
     error ThresholdTooLow(string role, address safe, uint256 threshold);
-    /// @notice An admin or guardian Safe's proxy does not point to a canonical Safe singleton
-    ///         with its pinned code (`canonicalSafeSingletons`).
+    /// @notice The network Safe's proxy does not point to a canonical Safe singleton with its
+    ///         pinned code (`canonicalSafeSingletons`).
     error NotACanonicalSafe(string role, address safe, address singleton);
-    /// @notice An admin or guardian Safe has an enabled module, which can act without the
-    ///         owners' signatures.
+    /// @notice The network Safe has an enabled module, which can act without the owners'
+    ///         signatures.
     error SafeHasModules(string role, address safe, address module);
-    /// @notice An admin or guardian Safe has a transaction guard, which can block its
-    ///         transactions.
+    /// @notice The network Safe has a transaction guard, which can block its transactions.
     error SafeHasGuard(string role, address safe, address guard);
-    /// @notice An owner of an admin or guardian Safe is a contract (a nested Safe, a passkey
-    ///         signer or any other), so its signers cannot be compared.
+    /// @notice An owner of the network Safe is a contract (a nested Safe, a passkey signer or
+    ///         any other).
     error NestedOwner(address safe, address owner);
-    /// @notice An owner of an admin or guardian Safe is an EIP-7702 delegated EOA: wallet code
-    ///         can act for it. It passes again once the delegation is cleared.
+    /// @notice An owner of the network Safe is an EIP-7702 delegated EOA: wallet code can act
+    ///         for it. It passes again once the delegation is cleared.
     error DelegatedOwner(address safe, address owner);
+    /// @notice A holder in the genesis file names a network role, which only `network()` holds.
+    error NetworkRoleHolder(string role, address account);
     error TooFewCurationSigners(uint256 count);
     /// @notice A holder is a contract of this deployment or one of its dependencies.
     error HolderIsADeploymentContract(uint64 role, address account);
@@ -121,11 +113,11 @@ library DeployGuards {
     error PolicyMismatch(string what);
     /// @notice The genesis names something this deployment does not have.
     error DroppedFromGenesis(string what);
-    /// @notice On mainnet, a role is held by the deployer EOA (owner decision 18).
+    /// @notice On mainnet, a role (or the network address) is the deployer EOA (owner decision
+    ///         18).
     error HolderIsTheDeployer(string role, address account);
     /// @notice On mainnet, one account holds roles of two groups that must be held apart: the
-    ///         community council's, the security council's or the curation signer's (owner
-    ///         decision 18).
+    ///         network address, the pausers and the curation signers (owner decision 18).
     error RoleGroupsShareAHolder(address account, string role, string otherRole);
     /// @notice On mainnet, the museum, the marketplace owner or the network fee recipient
     ///         (`name`) is the deployer EOA.
@@ -137,36 +129,42 @@ library DeployGuards {
     /// @notice The VRF subscription has `count` consumers: the entropy module must be the only
     ///         one.
     error SubscriptionConsumers(uint256 subscriptionId, uint256 count);
-    /// @notice On mainnet, the VRF subscription's owner is not the hot admin Safe (the
-    ///         configured holder of ADMIN and PARAMETER_SETTER).
+    /// @notice On mainnet, the VRF subscription's owner is not the network address.
     error SubscriptionOwner(address owner);
     /// @notice The coordinator does not report the subscription (on mainnet, or off mainnet
     ///         with a reason).
     error SubscriptionUnreadable(address coordinator, uint256 subscriptionId);
 
-    /// @notice The community council's roles (owner decision 18): ADMIN and the delayed
-    ///         setters, each acting 48 hours to 30 days after it is scheduled.
-    uint8 internal constant COMMUNITY_COUNCIL = 1;
-    /// @notice The security council's roles: the immediate GUARDIAN and PAUSER.
-    uint8 internal constant SECURITY_COUNCIL = 2;
-    /// @notice The dedicated key that signs the published curation result: CURATION_SIGNER.
+    /// @notice The network address: every network role (ADMIN, NETWORK and the delayed
+    ///         setters), held by `network()` alone.
+    uint8 internal constant NETWORK_GROUP = 1;
+    /// @notice The keys that pause: PAUSER.
+    uint8 internal constant PAUSERS = 2;
+    /// @notice The dedicated keys that sign the published curation result: CURATION_SIGNER.
     uint8 internal constant CURATION_SIGNERS = 3;
 
     // ------------------------------------------------------------------ the genesis file
 
+    /// @notice Off anvil, the genesis file names no brake, or the zero address: no brake is
+    ///         installed at launch (the network may install one later, at its 7-day class).
+    ///         Checked on the genesis file only, never on a later epoch's file.
+    function checkNoBrake(string memory json) internal view {
+        if (!vm.keyExistsJson(json, ".brake")) return;
+        address brake = vm.parseJsonAddress(json, ".brake");
+        if (brake != address(0)) revert BrakeAtLaunch(brake);
+    }
+
     /// @notice Off-anvil checks of the genesis file alone: not the example itself, and every
-    ///         holder reachable (M-1).
-    ///         - ADMIN and GUARDIAN holders must be deployed Safes (code, not an EIP-7702
-    ///           delegated EOA, a `getThreshold()` of at least `MIN_THRESHOLD`, a
-    ///           `getOwners()` list of keys without code) whose proxy points to one of
-    ///           `singletons` (a canonical Safe singleton, with its code hash), with no
-    ///           enabled module and no transaction guard.
-    ///         - No holder may be a placeholder or a system address.
-    ///         - At least `MIN_ADMINS` admins (hot, cold and third), `MIN_GUARDIANS` guardians and
-    ///           `MIN_CURATION_SIGNERS` curation signers. `GovernanceConfig` rejects duplicate
-    ///           grants, so the counts are of distinct accounts.
-    ///         - No signer is shared between any two of the admin and guardian Safes (owner
-    ///           decisions 2 and 3).
+    ///         account reachable (M-1).
+    ///         - The network address (the single authority; until the TDH bridge exists, one
+    ///           6529 Safe) must be a deployed Safe: code, not an EIP-7702 delegated EOA, a
+    ///           `getThreshold()` of at least `MIN_THRESHOLD`, a `getOwners()` list of keys
+    ///           without code, a proxy pointing to one of `singletons` (a canonical Safe
+    ///           singleton, with its code hash), no enabled module and no transaction guard.
+    ///         - Every holder may not be a placeholder or a system address; no holder names a
+    ///           network role. (The genesis brake is refused by `checkNoBrake`.)
+    ///         - At least `MIN_CURATION_SIGNERS` curation signers. `GovernanceConfig` rejects
+    ///           duplicate grants, so the count is of distinct accounts.
     function checkHolders(
         string memory json,
         string memory example,
@@ -176,70 +174,31 @@ library DeployGuards {
         if (keccak256(bytes(json)) == keccak256(bytes(example))) {
             revert ExampleGenesisOffAnvil();
         }
+        address network = vm.parseJsonAddress(json, ".network");
+        _requireReachable("NETWORK", network);
+        requireSafe("NETWORK", network);
+        requireBareSafe("NETWORK", network, singletons, codehashes);
+        ownersOf("NETWORK", network);
+        if (vm.keyExistsJson(json, ".brake")) {
+            address brake = vm.parseJsonAddress(json, ".brake");
+            if (brake != address(0)) _requireReachable("BRAKE", brake);
+        }
         uint256 holders;
         while (vm.keyExistsJson(json, _holder(holders, ""))) ++holders;
-        address[] memory admins = new address[](holders);
-        address[] memory guardians = new address[](holders);
-        uint256 nAdmins;
-        uint256 nGuardians;
         uint256 signers;
         for (uint256 i; i < holders; ++i) {
             string memory role = vm.parseJsonString(json, _holder(i, ".role"));
             address account = vm.parseJsonAddress(json, _holder(i, ".account"));
-            if (uint160(account) <= MAX_PLACEHOLDER) revert PlaceholderHolder(role, account);
-            if (isSystemAddress(account)) revert ForbiddenHolder(role, account);
-            bytes32 r = keccak256(bytes(role));
-            if (r == keccak256("ADMIN") || r == keccak256("GUARDIAN")) {
-                requireSafe(role, account);
-                requireBareSafe(role, account, singletons, codehashes);
-            }
-            if (r == keccak256("ADMIN")) admins[nAdmins++] = account;
-            if (r == keccak256("GUARDIAN")) guardians[nGuardians++] = account;
-            if (r == keccak256("CURATION_SIGNER")) ++signers;
+            _requireReachable(role, account);
+            if (roleGroup(role) == NETWORK_GROUP) revert NetworkRoleHolder(role, account);
+            if (keccak256(bytes(role)) == keccak256("CURATION_SIGNER")) ++signers;
         }
-        if (nAdmins < MIN_ADMINS) revert TooFewAdmins(nAdmins);
-        if (nGuardians < MIN_GUARDIANS) revert TooFewGuardians(nGuardians);
         if (signers < MIN_CURATION_SIGNERS) revert TooFewCurationSigners(signers);
-        _requireSeparateSigners(admins, nAdmins, guardians, nGuardians);
     }
 
-    /// @dev The signers of every admin and guardian Safe are pairwise disjoint: admins with
-    ///      admins, admins with guardians, and guardians with guardians.
-    function _requireSeparateSigners(
-        address[] memory admins,
-        uint256 nAdmins,
-        address[] memory guardians,
-        uint256 nGuardians
-    ) private view {
-        uint256 n = nAdmins + nGuardians;
-        for (uint256 i; i < n; ++i) {
-            (string memory role, address safe) = _safeAt(admins, nAdmins, guardians, i);
-            address[] memory mine = ownersOf(role, safe);
-            for (uint256 j = i + 1; j < n; ++j) {
-                (string memory otherRole, address other) = _safeAt(admins, nAdmins, guardians, j);
-                _disjoint(safe, mine, other, ownersOf(otherRole, other));
-            }
-        }
-    }
-
-    function _safeAt(
-        address[] memory admins,
-        uint256 nAdmins,
-        address[] memory guardians,
-        uint256 i
-    ) private pure returns (string memory role, address safe) {
-        return i < nAdmins ? ("ADMIN", admins[i]) : ("GUARDIAN", guardians[i - nAdmins]);
-    }
-
-    function _disjoint(address a, address[] memory ownersA, address b, address[] memory ownersB)
-        private
-        pure
-    {
-        for (uint256 i; i < ownersA.length; ++i) {
-            for (uint256 j; j < ownersB.length; ++j) {
-                if (ownersA[i] == ownersB[j]) revert SharedSigner(a, b, ownersA[i]);
-            }
-        }
+    function _requireReachable(string memory role, address account) private pure {
+        if (uint160(account) <= MAX_PLACEHOLDER) revert PlaceholderHolder(role, account);
+        if (isSystemAddress(account)) revert ForbiddenHolder(role, account);
     }
 
     /// @notice A Safe's `getOwners()`; fails closed (`HolderNotASafe`) when it has none, and
@@ -331,16 +290,14 @@ library DeployGuards {
     }
 
     /// @notice Owner decision 18, at mainnet genesis (`Deploy.s.sol` and `Verify.s.sol` run it
-    ///         on chain 1 only): the deployer EOA holds no role at all (`HolderIsTheDeployer`),
-    ///         and the community council, the security council and the curation signers
-    ///         ({roleGroup}) are held by distinct accounts (`RoleGroupsShareAHolder`). An account
-    ///         may hold several roles of one group: the community council's Safe holds ADMIN and
-    ///         the setters, and each of the security council's three guardian Safes holds GUARDIAN
-    ///         and PAUSER ({checkHolders} keeps their signers disjoint, so one lost or compromised
-    ///         Safe never takes the veto or the pause away). The operational roles
-    ///         (STORAGE_OPERATOR, MINTER, KEEPER, PLATFORM, CURATOR) belong to no group; who holds
-    ///         them on mainnet is an open owner decision.
+    ///         on chain 1 only): the deployer EOA is neither the network nor a holder
+    ///         (`HolderIsTheDeployer`), and the network address, the pausers and the curation
+    ///         signers ({roleGroup}) are distinct accounts (`RoleGroupsShareAHolder`). The other
+    ///         operational roles (STORAGE_OPERATOR, MINTER, KEEPER, PLATFORM, CURATOR) belong to no
+    ///         group.
     function checkRoleGroups(string memory json, address deployer) internal view {
+        address network = vm.parseJsonAddress(json, ".network");
+        if (network == deployer) revert HolderIsTheDeployer("NETWORK", network);
         uint256 holders;
         while (vm.keyExistsJson(json, _holder(holders, ""))) ++holders;
         address[] memory accounts = new address[](holders);
@@ -350,6 +307,7 @@ library DeployGuards {
             string memory role = vm.parseJsonString(json, _holder(i, ".role"));
             address account = vm.parseJsonAddress(json, _holder(i, ".account"));
             if (account == deployer) revert HolderIsTheDeployer(role, account);
+            if (account == network) revert RoleGroupsShareAHolder(account, "NETWORK", role);
             uint8 group = roleGroup(role);
             if (group == 0) continue;
             for (uint256 j; j < i; ++j) {
@@ -365,7 +323,7 @@ library DeployGuards {
     ///         deployer EOA (`Deploy.s.sol` runs it before the broadcast, `Verify.s.sol` against
     ///         the record): the 6529 Network Museum, the marketplace `owner()` and the network
     ///         fee recipient. Each is changed later only by a governed action (the museum vault's
-    ///         destination in 30 days, SUCCESSOR_SETTER; the others in 14, FUNDS_SETTER), and the
+    ///         destination in 7 days, SUCCESSOR_SETTER; the others in 3, FUNDS_SETTER), and the
     ///         deployer's key, used once to deploy, is not a network-held account (owner decision
     ///         18).
     function checkRecipients(DeployV1.Params memory p) internal pure {
@@ -380,10 +338,10 @@ library DeployGuards {
 
     /// @notice The entropy module's VRF subscription, read from the module's coordinator
     ///         (`getSubscription`, Chainlink v2.5): the module is its only consumer, and on
-    ///         `mainnet` its owner is the hot admin Safe, the configured holder of both ADMIN and
-    ///         PARAMETER_SETTER (which moves the module between subscriptions). `Verify.s.sol`
+    ///         `mainnet` its owner is the network address (which moves the module between
+    ///         subscriptions). `Verify.s.sol`
     ///         runs it off anvil; on mainnet `Deploy.s.sol` runs it before the broadcast,
-    ///         against the module the simulation deployed, so the hot admin Safe adds that
+    ///         against the module the simulation deployed, so the network Safe adds that
     ///         address as a consumer first (Chainlink accepts an address without code). A read
     ///         that fails fails the check, except off mainnet when the coordinator has no such
     ///         function (it reverts with no data).
@@ -410,63 +368,62 @@ library DeployGuards {
         }
         if (!listed) revert ModuleNotAConsumer(id, module);
         if (consumers.length != 1) revert SubscriptionConsumers(id, consumers.length);
-        if (
-            mainnet
-                && !(_holds(cfg, Roles.ADMIN, owner) && _holds(cfg, Roles.PARAMETER_SETTER, owner))
-        ) revert SubscriptionOwner(owner);
+        if (mainnet && owner != cfg.network) revert SubscriptionOwner(owner);
     }
 
-    function _holds(GovernanceConfig.Config memory cfg, uint64 role, address account)
-        private
-        pure
-        returns (bool)
-    {
-        for (uint256 i; i < cfg.grants.length; ++i) {
-            if (cfg.grants[i].role == role && cfg.grants[i].account == account) return true;
-        }
-        return false;
-    }
-
-    /// @notice The owner decision 18 group of `role`: {COMMUNITY_COUNCIL} for ADMIN, UNPAUSER,
-    ///         PARAMETER_SETTER, FUNDS_SETTER and SUCCESSOR_SETTER; {SECURITY_COUNCIL} for
-    ///         GUARDIAN and PAUSER; {CURATION_SIGNERS} for CURATION_SIGNER; zero for the
-    ///         operational roles.
+    /// @notice The owner decision 18 group of `role`: {NETWORK_GROUP} for ADMIN, NETWORK,
+    ///         PARAMETER_SETTER, FUNDS_SETTER and SUCCESSOR_SETTER; {PAUSERS} for PAUSER;
+    ///         {CURATION_SIGNERS} for CURATION_SIGNER; zero for the other operational roles.
     function roleGroup(string memory role) internal pure returns (uint8) {
         bytes32 r = keccak256(bytes(role));
         if (
-            r == keccak256("ADMIN") || r == keccak256("UNPAUSER")
+            r == keccak256("ADMIN") || r == keccak256("NETWORK")
                 || r == keccak256("PARAMETER_SETTER") || r == keccak256("FUNDS_SETTER")
                 || r == keccak256("SUCCESSOR_SETTER")
-        ) return COMMUNITY_COUNCIL;
-        if (r == keccak256("GUARDIAN") || r == keccak256("PAUSER")) return SECURITY_COUNCIL;
+        ) return NETWORK_GROUP;
+        if (r == keccak256("PAUSER")) return PAUSERS;
         if (r == keccak256("CURATION_SIGNER")) return CURATION_SIGNERS;
         return 0;
     }
 
     // ------------------------------------------------------------------ against the deployment
 
-    /// @notice No holder is a contract of `d` or a dependency it was deployed with (M-1).
+    /// @notice Neither the network nor any holder is a contract of `d` or a dependency it was
+    ///         deployed with (M-1).
     function checkHoldersAgainst(
         DeployV1.Deployment memory d,
         DeployV1.Params memory p,
         GovernanceConfig.Config memory cfg
     ) internal pure {
         string[] memory names = DeployV1.names();
+        _notADeploymentContract(d, p, names, Roles.NETWORK, cfg.network);
         for (uint256 i; i < cfg.grants.length; ++i) {
-            address account = cfg.grants[i].account;
-            bool forbidden =
-                account == p.delegation || account == p.permit2 || account == p.vrfCoordinator;
-            for (uint256 j; j < names.length && !forbidden; ++j) {
-                forbidden = account == DeployV1.addressOf(d, names[j]);
-            }
-            if (forbidden) revert HolderIsADeploymentContract(cfg.grants[i].role, account);
+            _notADeploymentContract(d, p, names, cfg.grants[i].role, cfg.grants[i].account);
         }
+    }
+
+    /// @dev Reverts (`HolderIsADeploymentContract`) when `account`, holding `role`, is a
+    ///      contract of `d` (`names`) or a dependency it was deployed with.
+    function _notADeploymentContract(
+        DeployV1.Deployment memory d,
+        DeployV1.Params memory p,
+        string[] memory names,
+        uint64 role,
+        address account
+    ) private pure {
+        bool forbidden = account == p.delegation || account == p.permit2
+            || account == p.vrfCoordinator;
+        for (uint256 j; j < names.length && !forbidden; ++j) {
+            forbidden = account == DeployV1.addressOf(d, names[j]);
+        }
+        if (forbidden) revert HolderIsADeploymentContract(role, account);
     }
 
     /// @notice The genesis file's policy is the committed one (M-2): for the same deployment and
     ///         manifest, its governed targets (every selector, role and target) and its wiring
-    ///         equal what `example` (config/genesis.example.json) produces. Only the holders, and
-    ///         addresses that `DeployV1` substitutes by name, may differ.
+    ///         equal what `example` (config/genesis.example.json) produces. Only the holders,
+    ///         the network and brake addresses, and addresses that `DeployV1` substitutes by name,
+    ///         may differ.
     function checkPolicy(
         DeployV1.Deployment memory d,
         string memory json,

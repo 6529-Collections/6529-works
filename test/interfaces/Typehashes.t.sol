@@ -41,20 +41,20 @@ contract TypehashesTest is Test {
             0x4f00b7a5a626b7fd46a6eb233ba5926281727b94836ffa9091fa1cc73d7fa038
         );
         assertEq(
-            Typehashes.RENDERER_REPIN,
-            0xe02c73b10a1645fcc06fd6d114765861f5bcd1cd03d788c53c6bdf196c748bd4
-        );
-        assertEq(
             Typehashes.RENOUNCE_POWERS,
             0xff8cc1b150cf1b390fd870b4a587d3c2632e80f32efbefe166b9f7b0131d3aff
         );
         assertEq(
             Typehashes.IDENTITY_CHANGE,
-            0xa474bd174aa5ecb19efe75995251c1fb8289b62bca04bc6c19e869f254e190f0
+            0x861dd247b7856a4fbd738106b59a20eabf86c787bcc7c5c77f8bf506b24e4495
         );
         assertEq(
-            Typehashes.OVERRIDE_ACCEPTANCE,
-            0xe94c9e2e1a4e3c2652a414f70c177a61fc880d94ede3aaaf03a976666431f9a3
+            Typehashes.REPLACEMENT_ACCEPTANCE,
+            0xa0e556173f6123b1243ffd400cc5066b72e9f63a185f7c223a7a9761be52aeff
+        );
+        assertEq(
+            Typehashes.ACCOUNT_CONSENT,
+            0x698c989ad77f65b3786711063b64ef5589a2f9efc6261c97a73e4eee803af539
         );
         assertEq(
             Typehashes.ARTIST_REGISTRATION,

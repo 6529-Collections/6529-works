@@ -17,8 +17,9 @@ dispute pause) and [Editions and sales](../../docs/spec/editions-and-sales.md) (
 | --- | --- |
 | `EnglishAuction.sol` | [`IEnglishAuction`](../interfaces/IEnglishAuction.sol): permissionless start into its own custody, anti-snipe bids, pull credits, settlement with pending delivery and escrow fallback, the outcome reported to the token (`settlePrimary`), the exit for a token that will not settle ([`IEnglishAuctionRefusal`](../interfaces/IEnglishAuctionRefusal.sol)), the dispute pause, the currency freeze, the emergency pause. |
 | `EnglishAuctionLens.sol` | The English auction's read side, deployed before it and pinned by its constructor: every view the auction does not declare, decoded from its caller's storage words (`storageWords`). |
-| `UniformEditionAuction.sol` | The shared base `UniformEditionAuctionBase` (the federated deployment is in [`src/federated`](../federated/README.md)) and 6529 Stream Editions' deployment: [`IUniformEditionAuction`](../interfaces/IUniformEditionAuction.sol)'s writes and [`IUniformEditionAuctionStorage`](../interfaces/IUniformEditionAuctionStorage.sol): the bid book (step totals, bids, FIFO departure logs), the coupling with the 1/1's end, the edition's own close offset, settlement in calls of bounded gas, claims through `IMintTarget.mint`, the abandonment exit, governance (configuration and limits). |
-| `UniformEditionAuctionLens.sol` | [`IUniformEditionAuctionLens`](../interfaces/IUniformEditionAuctionLens.sol): every view (the adapter's own settings included), computed from the adapter's storage words, which it locates from the adapter's layout; the package-item check `open` consults, which also resolves the close offset and deploys the sale's split wallets; and the abandonment check. Stateless and bound to no adapter (it reads its caller): deployed in its own transaction, then pinned by the adapter's constructor (code hash and wiring) and forwards its views to it. |
+| `UniformEditionAuction.sol` | The shared base `UniformEditionAuctionBase` (the federated deployment is in [`src/federated`](../federated/README.md)) and 6529 Stream Editions' deployment: [`IUniformEditionAuction`](../interfaces/IUniformEditionAuction.sol)'s writes and [`IUniformEditionAuctionStorage`](../interfaces/IUniformEditionAuctionStorage.sol): the bid book (step totals, bids, FIFO departure logs), the coupling with the 1/1's end (the sale closes 15 minutes after it, fixed), settlement in calls of bounded gas, claims through `IMintTarget.mint`, credits that expire to the network after 180 days, the abandonment exit (21 days after the close), governance (configuration and payout gas). |
+| `UniformEditionAuctionLens.sol` | [`IUniformEditionAuctionLens`](../interfaces/IUniformEditionAuctionLens.sol): every view (the adapter's own settings included), computed from the adapter's storage words, which it locates from the adapter's layout; the package-item check `open` consults (with the package registry's approval, C23, for 6529 Stream Editions), which also deploys the sale's split wallets; the abandonment check; and the network fee recipient settlement pays (R18). Stateless and bound to no adapter (it reads its caller): deployed in its own transaction, then pinned by the adapter's constructor (code hash and wiring) and forwards its views to it. |
+| `SaleStarter.sol` | A stateless helper with no roles: starts a 6529 Stream sale (`start` or `startWithBid`), deploys the work's seller and royalty vaults and opens its WorkRecords record in one transaction, all or nothing. The network's keeper starts sales only through it; `start` itself stays permissionless. |
 | `UniformClearing.sol` | Internal library, pure: the D138 clearing on [`StepLadder`](../interfaces/types/StepLadder.sol)'s prices, the FIFO split of the cut step and the what-if quote, shared by the lens, the adapter's sweep and the Halmos proofs. |
 
 Edition bids are ETH; only the English auction calls Permit2
@@ -28,11 +29,11 @@ Edition bids are ETH; only the English auction calls Permit2
 
 | Caller | Calls | Rules |
 | --- | --- | --- |
-| Anyone | `start`, `startWithBid`, `bid`, `settle`, `settleOrRefund`, `claimFor` | AUC-14 to AUC-25, AUC-29, AUC-45 to AUC-48 |
-| A bidder | `claim` of its credits; `withdrawBid` (the high bidder, while paused or frozen); `claimDelivery` (the winning bidder to any address; the recipient it named to itself, or anywhere from 30 days after the end) | AUC-18, AUC-21, DSP-15 |
-| Guardians and governance | The dispute `pause(saleId, …)`, `resume`, `cancel`; `pause()`, `unpause()`; `setConfig`, `setTarget`, `setFederationRegistry` (the opening bid is the asset allowlist's `setOpeningBid`) | AUC-13, AUC-26, AUC-30, DSP-13 to DSP-19; [role matrix](../../docs/audit/roles.md#englishauction) |
-| Anyone (edition auction) | `open`, `bid`, `settle`, `claimBidFor`, `abandon`, every view | EA-1, EA-4, EA-8 to EA-13, EA-17, EA-19, EA-20 |
-| An edition bidder | `raise`, `claimBid`; `withdrawBid` while the 1/1 is paused for a dispute; `claim` of its credits | EA-5, EA-9, EA-16 |
+| Anyone | `start`, `startWithBid`, `bid`, `settle`, `settleOrRefund`, `claimFor`, `expireCredit` (180 days after a credit went from zero) | AUC-14 to AUC-25, AUC-29, AUC-45 to AUC-48 |
+| A bidder | `claim` of its credits; `withdrawBid` (the high bidder, while paused or frozen); `claimDelivery` (the winning bidder to any address; the recipient it named to itself, or anywhere from 14 days after the end) | AUC-18, AUC-21, DSP-15 |
+| The pauser and the network | The dispute `pause(saleId, …)` (the pauser, at most 3 days), `resume`, `cancel` (the network, no wait); `pause()`, `unpause()`; `setConfig`, `setTarget`, `setFederationRegistry` (the opening bid is the asset allowlist's `setOpeningBid`) | AUC-13, AUC-26, AUC-30, DSP-13 to DSP-19; [role matrix](../../docs/audit/roles.md#englishauction) |
+| Anyone (edition auction) | `open`, `bid`, `settle`, `claimBidFor`, `abandon`, `expireCredit`, every view | EA-1, EA-4, EA-8 to EA-13, EA-17, EA-19, EA-20 |
+| An edition bidder | `raise`, `claimBid`, `claim` of its credits (bids are firm: no withdrawal) | EA-5, EA-9, EA-16 |
 | Governance (edition auction) | `pause()`, `unpause()`, `setConfig`, `setLimits`, `setTarget` (no federation registry) | EA-15, EA-18; [role matrix](../../docs/audit/roles.md#uniformeditionauction) |
 
 Call sequences and errors: [Buying, bidding and settling](../../docs/integrators/buying-bidding-settling.md);
@@ -50,28 +51,31 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
   `auctionClock` (`IEnglishAuctionClock`), which the edition auction reads and any new on-chain
   consumer should. Nothing sweeps assets sent to an auction outside its flows; the edition
   auction now has room for a governed rescue, so adding one is a scope decision (LIM-SAL-10). The
-  English auction keeps 514 bytes of EIP-170 margin since its opening bids moved to the asset
-  allowlist (ADR 0007): little room, so new English-auction surface goes to its lens.
+  English auction keeps 865 bytes of EIP-170 margin after the second pass (no EIP-2612 permit, no
+  per-sale federated terms): new English-auction surface still goes to its lens.
 - **Edition auction storage and the lens.** The lens reads the adapter's words with
   `storageAt(slot)`, computing each slot from the adapter's layout (its `_SLOT_*` constants),
   so a change to the adapter's state variables must change the lens too
-  (`test_StorageWord_TheLensFollowsTheAdaptersLayout`). A sale whose edition names its own
-  close offset interns one terms record (24-bit IDs); the abandonment delay sits in the payout
-  word's last 16 bits; the limits share the settings word. Stored times are 32 bits, checked
-  (EA-18).
+  (`test_StorageWord_TheLensFollowsTheAdaptersLayout`). Every sale locks the current terms
+  record (24-bit IDs); the payout gas shares the settings word; a credit word packs the amount
+  (208 bits) with the time it went from zero. Stored times are 32 bits, checked (EA-18).
 - **English auction storage.** A steady-state start writes one `Sale` word and shares a terms
   record per distinct combination; seller and fee terms come back from the token at settlement,
   from the call that reports the outcome (`IMintTarget.settlePrimary`, owner decision 17).
-- **A token that will not settle (AUC-45).** For federated sales only (a nonzero
-  `_federatedTerms` word, which also holds the locked delay), `settleOrRefund` calls `settle` on
+- **A token that will not settle (AUC-45).** For federated sales only (the terms record's
+  `federated` flag), from 2 days after the end (a fixed value), `settleOrRefund` calls `settle` on
   the auction
   itself with exactly `refusalGas` (the one governed gas bound, raise-only) and, if that fails,
   closes the sale with refunds in `_closeWithRefund`, which makes no external call. It takes no
   guard but refuses to run inside the auction's or the escrow's (`_reentrancyGuardEntered`, and a
-  zero `depositETH` that must revert with `ZeroAmount`). A federated terms record keeps its
-  network fee recipient and refusal delay in `_federatedTerms` and in its key; a listed token's
-  record and key are unchanged, so a 6529 Stream start pays nothing for them. The start writes
-  its `Sale` word in one `sstore`.
+  zero `depositETH` that must revert with `ZeroAmount`). The start writes its `Sale` word in one
+  `sstore`.
+- **Money (R18, R12).** At settlement the seller gets `floor(price × (100,000 − share) /
+  100,000)` and the network the rest, paid to the recipient the economics resolver names then
+  (`networkFeeRecipient(product)`), or the token's when it names none or the escrow. A credit
+  word packs the amount with the time it went from zero; 180 days later anyone may send it to
+  the resolver's 6529 Stream recipient (`expireCredit`). Payments are DIRECT or PERMIT2; an
+  EIP-2612 PERMIT payment is refused.
 - **The no-bid recipient (D140, owner decision 17).** `settle` reports SOLD, UNBID or
   FROZEN_OUT to the token; 6529 Stream moves an unsold work to the museum itself and returns it
   as `holder`, so a 6529 Stream work is never pending (AUC-33). Any other token's unsold work
@@ -95,17 +99,14 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
   of 96 at 10,000 departures (`test_F9_AKeeperPagesTenThousandDepartures`). `clearing` and
   `quote` cost about 5,000 gas a departure at the cut step, within a 50M `eth_call` up to about
   9,000; `settlementOrder` up to about 7,000.
-- **Withdrawals during a dispute pause** are open only to a bid placed or last raised in a
-  minute (from the sale's open) that ended before the pause began: the bid word keeps that
-  minute in its 16 spare bits, and `withdrawBid` reads the 1/1's `pausedAt` (ADR 0005 §12).
+- **Firm edition bids (R21).** There is no withdrawal; an upheld dispute voids the sale and
+  every bid comes back in full at its claim.
 - **The 1/1's end is cached.** It only moves later, so a bid reads `auctionClock` only within the
-  soft-close window of the cached close; settlement and withdrawals always do.
-- **Delays counted from the pause.** `unpause`, `resume` and the dispute `cancel` check 48 hours
-  from the pause in code, because AccessManager counts a delay from scheduling (GV-23).
+  soft-close window of the cached close; settlement always does.
+- **No wait after a pause (C30).** `unpause`, `resume` and the dispute `cancel` add no wait of
+  their own; the network acts at any moment of the 3-day pause.
 - **ERC-20 transfers.** The English auction's Permit2 pull checks only balance deltas, not the
-  return word, so admitting only standard ERC-20s is the guard (ECO-23, LIM-SAL-7). It reads the
-  federated fee recipient at start and locks it for the sale (AUC-48,
-  [federated](../federated/README.md#genesis)).
+  return word, so admitting only standard ERC-20s is the guard (ECO-23, LIM-SAL-7).
 - **Gas.** Per-operation Prague gas and slots are in
   [ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table);
   `UniformClearingGas.t.sol` measures a full 336-step clearing.

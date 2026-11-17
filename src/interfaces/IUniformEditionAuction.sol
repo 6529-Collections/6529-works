@@ -8,16 +8,16 @@ import { ISaleAdapter } from "./ISaleAdapter.sol";
 /// @notice The uniform-price edition auction: how 6529 Stream Editions sells an edition (ADR
 ///         0005; 6529chain D138-D141). One auction per edition decides both how many copies
 ///         exist and their one price, so the number is never fixed in advance and nothing is
-///         left unsold. It runs alongside the edition master's 1/1 English auction and closes a
-///         close offset after the 1/1 finally closes: the artist's own, signed in the edition
-///         terms, or else the governed default (15 minutes at launch). Anyone bids a quantity at a price
-///         step; bids are public, fully escrowed in ETH, and can be raised but not lowered or
-///         withdrawn (except while the 1/1 is paused for a dispute). At the close, revenue(k) is
+///         left unsold. It runs alongside the edition master's 1/1 English auction and closes
+///         exactly 15 minutes after the 1/1 finally closes (a fixed value, R20). Anyone bids a
+///         quantity at a price step; bids are public, fully escrowed in ETH, and can be raised
+///         but never lowered or withdrawn, also while the 1/1 is paused (R21). At the close, revenue(k) is
 ///         k times the k-th highest unit bid; the result is the largest k whose revenue is at
 ///         least (100% - margin) of the highest, at most the creator's optional cap. Every winner
 ///         pays the lowest winning step's price, every other unit is refunded in full, and
 ///         exactly k copies are minted, as winners claim. The network fee (25% at launch) is the
-///         share the edition's economics locked at open.
+///         share the edition's economics locked at open, rounded up (the seller's part rounds
+///         down), paid to the recipient the economics resolver names at settlement (R18).
 /// @dev Sales are keyed like the English auction's: `saleId = saleIdOf(token, id)`, the edition
 ///      contract and edition ID (for 6529 Stream Editions, the master's 6529 Stream token ID), so
 ///      one adapter can serve every listed token and, from v1.1, federated linked pairs. The
@@ -32,18 +32,15 @@ import { ISaleAdapter } from "./ISaleAdapter.sol";
 ///      `IEnglishAuction.saleIdOf(master, id)`, where `master` is the token's
 ///      `IEditions.stream()`. Bids are accepted while `block.timestamp < endTime`, where
 ///      `closeAt` is the 1/1's current `endTime` (anti-snipe extensions and resumptions
-///      included) plus the sale's close offset, locked at open, and
-///      `endTime = max(closeAt, softEnd)`. A bid or raise
+///      included) plus 15 minutes, and `endTime = max(closeAt, softEnd)`. A bid or raise
 ///      strictly inside the last `softWindow` (`block.timestamp + softWindow > endTime`; one
 ///      exactly `softWindow` before the end does not extend) sets `softEnd =
 ///      min(block.timestamp + softWindow, backstop)` with `backstop = closeAt + maxExtension`,
 ///      a hard close. While the 1/1 is PAUSED for a dispute, bids and raises are accepted
 ///      whatever the time and do not move `softEnd`; a resumed 1/1 runs at least its governed
-///      duration, and the edition close follows it. During the pause a bid may be withdrawn
-///      only if it was placed (or last raised) in a minute, counted from the sale's open, that
-///      ended before the pause began (decision 12, as amended 1 November 2026): demand added
-///      during a pause is as firm as any other, so a pause cannot be used to spoof it. A CANCELLED 1/1 voids the sale: nothing is minted or paid, and every bid
-///      is refunded in full. A bid reads the 1/1 live only within `softWindow` of the close (or
+///      duration, and the edition close follows it. Bids stay firm during the pause (R21). A
+///      CANCELLED 1/1 (an upheld dispute) voids the sale: nothing is minted or paid, and every
+///      bid is refunded in full. A bid reads the 1/1 live only within `softWindow` of the close (or
 ///      later), so a bid placed earlier, after the cancel but before the sale is voided, can
 ///      still be accepted; it is refunded in full with every other, and `EndTimes.biddingOpen`
 ///      (read live) is already false. Any `settle` call voids the sale at once. Editions sell
@@ -59,9 +56,8 @@ import { ISaleAdapter } from "./ISaleAdapter.sol";
 ///      The cut step (owner decision 1). Without a cap no step is split. When a cap binds
 ///      inside the clearing step, its units fill in arrival order (price-time priority): a bid's
 ///      `position` there is the step's entered units before it, counted in units that only
-///      increase; a raise rejoins at the back of its new step; a raise out of a step, or a
-///      dispute withdrawal, leaves a departure (its old position and quantity) in that step's
-///      log. Settlement starts the cutoff at the units the step wins and sweeps the step's
+///      increase; a raise rejoins at the back of its new step; a raise out of a step leaves a
+///      departure (its old position and quantity) in that step's log. Settlement starts the cutoff at the units the step wins and sweeps the step's
 ///      departures in position order, adding each whose position is below the cutoff; a bid at
 ///      the step then wins `clamp(cutoff - position, 0, quantity)`, the marginal bid partly.
 ///      Positions and departures exist only when a cap is set.
@@ -70,7 +66,7 @@ interface IUniformEditionAuction is ISaleAdapter {
     ///         if the 1/1's end moves later). SETTLING: settlement under way, in calls of bounded
     ///         gas: the book still being scanned, or cleared and paid with the departure sweep not
     ///         yet complete. SETTLED: claims are open. VOID: the 1/1 was cancelled, or the sale
-    ///         was abandoned because its master could not be settled (`abandon`); claims refund.
+    ///         was abandoned because its master's sale never completed (`abandon`); claims refund.
     enum AuctionStatus {
         NONE,
         OPEN,
@@ -80,16 +76,13 @@ interface IUniformEditionAuction is ISaleAdapter {
         VOID
     }
 
-    /// @notice The governed parameters (D86), locked into each sale when it opens (ADR 0005). A
-    ///         sale whose edition terms carry their own close offset locks a record of these
-    ///         with that offset in `closeOffset`.
+    /// @notice The governed parameters (D86), locked into each sale when it opens (ADR 0005).
+    ///         The close offset is not one of them: every sale closes 15 minutes after its 1/1.
     /// @param basePrice The price of step 0, in wei (0.0001 ETH at launch).
     /// @param stepsPerDecade Steps per tenfold rise: 24, 48, 96 or 192 (48 at launch).
     /// @param stepCount Steps on the ladder (336 at launch, up to 953 ETH).
     /// @param marginShare The breadth margin, out of 100,000 (10,000 at launch): the result is
     ///        the largest count whose revenue is within this share of the best.
-    /// @param closeOffset Seconds the edition close follows the 1/1's final end, for a sale whose
-    ///        edition terms name none (15 minutes at launch); at most `Limits.maxCloseOffset`.
     /// @param softWindow The soft-close window and extension, in seconds (5 minutes).
     /// @param maxExtension The most the soft close may move the end past `closeAt`, in seconds
     ///        (24 hours).
@@ -98,34 +91,16 @@ interface IUniformEditionAuction is ISaleAdapter {
         uint16 stepsPerDecade;
         uint16 stepCount;
         uint32 marginShare;
-        uint32 closeOffset;
         uint32 softWindow;
         uint32 maxExtension;
     }
 
-    /// @notice The governed limits (ADR 0005 section 4, as amended 15 November 2026), set by
-    ///         `setLimits`. Read at open (the close offset's maximum and the abandonment delay,
-    ///         which the sale locks), at payout (the payout gas) and at abandonment (the rescue
-    ///         cap). `setLimits` and `LimitsSet` carry them packed in one word: `maxCloseOffset |
-    ///         voidDelayDays << 32 | payoutGas << 48 | rescueCapDays << 80`, nothing past bit 96.
-    /// @param maxCloseOffset The longest close offset an edition's terms may name, in seconds
-    ///        (30 days at launch; bounds 1 day to 3,650 days). The only cap on an edition's open
-    ///        period: a parameter of this adapter, not a rule of the token.
-    /// @param voidDelayDays Whole days after a sale's end before it may be abandoned when its
-    ///        master cannot be settled or its edition created (150 at launch; bounds 120 to
-    ///        730), locked at open.
+    /// @notice The governed limit, set by `setLimits` (which carries it as a plain number).
     /// @param payoutGas Gas forwarded with each settlement payout; a wallet that refuses, or
     ///        needs more, is paid in the revenue escrow instead (100,000 at launch; bounds 30,000
     ///        to 3,000,000; after construction it only rises, at most doubling per change).
-    /// @param rescueCapDays The most whole days 6529 Stream's rescue lengthening adds to an
-    ///        abandonment (730 at launch; bounds 90 to 730), read when a sale is abandoned. So a
-    ///        sale's bidders can always leave by its end plus at most 730 + 730 days, however
-    ///        long governance makes Stream's rescue delay.
     struct Limits {
-        uint32 maxCloseOffset;
-        uint16 voidDelayDays;
         uint32 payoutGas;
-        uint16 rescueCapDays;
     }
 
     /// @notice One sale, as stored and derived now.
@@ -135,9 +110,10 @@ interface IUniformEditionAuction is ISaleAdapter {
     /// @param oneOfOneSaleId The 1/1's English auction sale ID.
     /// @param status The derived status.
     /// @param maxCount The creator's cap, locked at open; zero for none.
-    /// @param terms The parameters locked at open, with the sale's own close offset.
+    /// @param terms The parameters locked at open.
     /// @param seller The artist-portion split wallet, locked at open.
-    /// @param feeRecipient The network fee recipient, locked at open.
+    /// @param feeRecipient The network fee recipient settlement would pay now: the economics
+    ///        resolver's, or the edition's recorded one when the resolver names none (R18).
     /// @param feeShare The network share of revenue, out of 100,000, locked at open.
     /// @param openedAt When the sale opened.
     /// @param bidCount Bids placed so far; bid IDs run from 1 to `bidCount`.
@@ -164,14 +140,12 @@ interface IUniformEditionAuction is ISaleAdapter {
 
     /// @notice A sale's clocks, read live from the 1/1.
     /// @param oneOfOneEnd The 1/1's end as the English auction reports it now.
-    /// @param closeAt `oneOfOneEnd` plus the sale's close offset: the earliest it can close.
+    /// @param closeAt `oneOfOneEnd` plus 15 minutes: the earliest it can close.
     /// @param softEnd The soft-close end, or zero before any bid in the window.
     /// @param endTime `max(closeAt, softEnd)`: bids are accepted before it.
     /// @param backstop `closeAt + maxExtension`: the soft close never moves past it.
     /// @param oneOfOneState The 1/1's state.
     /// @param biddingOpen Whether a bid would be accepted now.
-    /// @param withdrawalsOpen Whether the 1/1 is paused, so that bids placed before the pause may
-    ///        be withdrawn now (the lens's `canWithdraw` answers for one bid).
     struct EndTimes {
         uint64 oneOfOneEnd;
         uint64 closeAt;
@@ -180,10 +154,9 @@ interface IUniformEditionAuction is ISaleAdapter {
         uint64 backstop;
         IEnglishAuction.AuctionState oneOfOneState;
         bool biddingOpen;
-        bool withdrawalsOpen;
     }
 
-    /// @notice One bid, as stored; deleted when claimed or withdrawn.
+    /// @notice One bid, as stored; deleted when claimed.
     /// @param bidder Who placed it, and who claims it.
     /// @param step Its step; its escrow is `quantity * price(step)`.
     /// @param quantity Its units.
@@ -195,7 +168,7 @@ interface IUniformEditionAuction is ISaleAdapter {
         uint32 position;
     }
 
-    /// @notice A hole a bid left at a step of a capped sale, by a raise or a dispute withdrawal.
+    /// @notice A hole a bid left at a step of a capped sale, by a raise.
     /// @param position The bid's position at that step.
     /// @param quantity The bid's units.
     struct Departure {
@@ -209,7 +182,8 @@ interface IUniformEditionAuction is ISaleAdapter {
     /// @param price The clearing step's price, which every winner pays per copy; zero when
     ///        `count` is zero.
     /// @param revenue `count * price`.
-    /// @param networkFee `revenue * feeShare / 100,000`, rounded down; the rest is the seller's.
+    /// @param networkFee `revenue - floor(revenue * (100,000 - feeShare) / 100,000)`: the
+    ///        seller's part rounds down and the network takes the rest (R18).
     /// @param bestRevenue R*, the highest candidate revenue.
     /// @param rationed Whether the cap binds inside the clearing step.
     /// @param cutUnits The clearing step's winning units (all of them unless rationed).
@@ -288,8 +262,8 @@ interface IUniformEditionAuction is ISaleAdapter {
     /// @param id The edition ID.
     /// @param master The 1/1's token contract.
     /// @param maxCount The creator's cap; zero for none.
-    /// @param terms The parameters it locked, with its own close offset in `closeOffset`.
-    /// @param closeAt Its earliest close at opening: the 1/1's end then, plus its close offset.
+    /// @param terms The parameters it locked.
+    /// @param closeAt Its earliest close at opening: the 1/1's end then, plus 15 minutes.
     event AuctionOpened(
         uint256 indexed saleId,
         address indexed token,
@@ -339,19 +313,6 @@ interface IUniformEditionAuction is ISaleAdapter {
         uint256 paid,
         uint64 endTime
     );
-    /// @notice A bidder withdrew a bid while the 1/1 was paused for a dispute.
-    /// @param saleId The sale ID.
-    /// @param bidId The bid's ID.
-    /// @param bidder The bidder.
-    /// @param to Where its escrow was sent.
-    /// @param amount The escrow returned, in wei.
-    event BidWithdrawn(
-        uint256 indexed saleId,
-        uint256 indexed bidId,
-        address indexed bidder,
-        address to,
-        uint256 amount
-    );
     /// @notice A sale was cleared and its revenue paid (beside `ISaleAdapter.SaleSettled`).
     /// @param saleId The sale ID.
     /// @param count Copies sold.
@@ -384,8 +345,8 @@ interface IUniformEditionAuction is ISaleAdapter {
     event AuctionSettled(uint256 indexed saleId, uint256 count, uint256 cutoff);
     /// @notice The sale is void: nothing is minted or paid, and every bid is refunded in full.
     ///         Either the 1/1 was cancelled after an upheld dispute (`settle`), or the sale was
-    ///         abandoned because its master could not be settled (`abandon`, which also seals the
-    ///         edition at zero: `IEditions.EditionSupplySealed(id, 0)`).
+    ///         abandoned because its master's sale never completed (`abandon`, which also seals
+    ///         the edition at zero: `IEditions.EditionSupplySealed(id, 0)`).
     /// @param saleId The sale ID.
     event AuctionVoided(uint256 indexed saleId);
     /// @notice A bid was claimed: its copies minted and its refund paid or credited.
@@ -408,11 +369,9 @@ interface IUniformEditionAuction is ISaleAdapter {
     /// @param previous The parameters before the change (all zero in the constructor).
     /// @param next The parameters after the change.
     event ConfigSet(AuctionConfig previous, AuctionConfig next);
-    /// @notice The governed limits changed. Open sales keep the close offset and abandonment
-    ///         delay they locked.
-    /// @param previous The limits before the change, packed as `Limits` documents (zero in the
-    ///        constructor).
-    /// @param next The limits after the change, packed.
+    /// @notice The governed payout gas changed.
+    /// @param previous The payout gas before the change (zero in the constructor).
+    /// @param next The payout gas after the change.
     event LimitsSet(uint256 previous, uint256 next);
 
     /// @notice No sale has this ID.
@@ -437,8 +396,6 @@ interface IUniformEditionAuction is ISaleAdapter {
     error UnknownBid(uint256 saleId, uint256 bidId);
     /// @notice The caller is not the bid's bidder.
     error NotBidder(address caller);
-    /// @notice Withdrawals are open only while the 1/1 is paused for a dispute.
-    error WithdrawalsClosed(uint256 saleId);
     /// @notice The sale cannot settle yet: its end has not passed, or the 1/1 is neither
     ///         SETTLED nor CANCELLED.
     error SettlementNotReady(uint256 saleId);
@@ -450,14 +407,10 @@ interface IUniformEditionAuction is ISaleAdapter {
     error InvalidSettlementOrder(uint256 index);
     /// @notice A configuration or limits outside the bounds `setConfig` and `setLimits` document.
     error InvalidConfig();
-    /// @notice The sale cannot be abandoned: it has paid or settled, its 1/1 is still in
-    ///         progress or has settled with its master and edition, or its abandonment delay has
-    ///         not passed.
+    /// @notice The sale cannot be abandoned: it has paid or settled, its 1/1 is not settled yet,
+    ///         its master settled and its edition exists (it settles as usual), or 21 days have
+    ///         not passed since its close.
     error NotAbandonable(uint256 saleId);
-    /// @notice A read of 6529 Stream that the abandonment check needs (`selector`: `extsload` of
-    ///         the English auction's minter word, or `rescueDelay`) failed or answered malformed,
-    ///         so whether the sale can be abandoned is not known; nothing is decided.
-    error StreamReadFailed(bytes4 selector);
     /// @notice A time that does not fit the 32-bit clocks the sale stores: a soft end or a 1/1
     ///         end at or past 2^32 seconds (7 February 2106). The adapter must be replaced before
     ///         then; until then no stored time wraps.
@@ -483,13 +436,15 @@ interface IUniformEditionAuction is ISaleAdapter {
     ///         `InvalidSaleTerms` when the terms do not match or are not this kind's.
     /// @param token A served edition contract.
     /// @param id The edition ID (the master's token ID).
-    /// @param data Token-specific terms. For 6529 Stream Editions: `abi.encode(PackageItem)`
-    ///        of the master's EDITION_MASTER item, whose `WorksHashing.itemHash` must equal the
-    ///        item hash 6529 Stream stored for `id` (`IStream.coreOf`), so no proof is needed;
-    ///        its edition terms must name `SaleKind.UNIFORM_AUCTION` and `CURRENCY_ETH`, their
-    ///        `maxCount` is the cap, and their params are empty (the governed default close
-    ///        offset) or exactly `abi.encode(uint256 closeOffset)`, the artist's close offset in
-    ///        seconds, at most `limits().maxCloseOffset`. Before locking anything, `open`
+    /// @param data Token-specific terms. For 6529 Stream Editions: `abi.encode(PackageItem item,
+    ///        bytes32 packageRoot, bytes32[] proof)`: the master's EDITION_MASTER item, whose
+    ///        `WorksHashing.itemHash` must equal the item hash 6529 Stream stored for `id`
+    ///        (`IStream.coreOf`), and the package it was approved in, which must still be
+    ///        approved and contain the item (`IItemApprovals.isApprovedItem` of 6529 Stream's
+    ///        package registry, C23: a revoked package or a disabled signer opens no sale; a sale
+    ///        already open is untouched). For a federated pair: `abi.encode(PackageItem item)`.
+    ///        The edition terms must name `SaleKind.UNIFORM_AUCTION` and `CURRENCY_ETH`, their
+    ///        `maxCount` is the cap, and their params are empty. Before locking anything, `open`
     ///        deploys the seller's and the royalty receiver's split wallets if they have no code
     ///        (`ISplitFactory.createWallet`), so no payment from this sale, and no royalty on its
     ///        copies, can reach an undeployed wallet.
@@ -517,24 +472,13 @@ interface IUniformEditionAuction is ISaleAdapter {
     /// @param newStep A step above the bid's step and below `stepCount`.
     function raise(uint256 saleId, uint256 bidId, uint256 newStep) external payable;
 
-    /// @notice Withdraws a bid and sends its whole escrow to `to`. The bidder only, only while
-    ///         the 1/1 is PAUSED for a dispute (owner decision 12), and only for a bid placed or
-    ///         last raised in a minute, counted from the sale's open, that ended before the
-    ///         pause began (amended 1 November 2026): a bid placed during the pause, in its
-    ///         minute, or in the withdrawal's own block stays (`WithdrawalsClosed`). Leaves a
-    ///         departure in a capped sale.
-    /// @param saleId The sale ID.
-    /// @param bidId The bid's ID.
-    /// @param to The address that receives the escrow; zero reverts, and a failed transfer
-    ///        reverts with `ClaimFailed`.
-    function withdrawBid(uint256 saleId, uint256 bidId, address to) external;
-
     /// @notice Settles a closed sale. Permissionless; once the end has passed and the 1/1 is
     ///         SETTLED or CANCELLED. A cancelled 1/1 makes the sale VOID. Otherwise settlement
     ///         runs in calls of bounded gas, each advancing it: a call scans a bounded number of
     ///         the book's words (a wide book takes several calls), and the call that finishes the
     ///         scan clears the book, stores the result and pays the revenue: the network fee to
-    ///         the fee recipient and the rest to the seller, each through the revenue escrow if
+    ///         the recipient the economics resolver names then (the edition's recorded one when it
+    ///         names none) and the rest to the seller, each through the revenue escrow if
     ///         refused; it emits `AuctionCleared` and `ISaleAdapter.SaleSettled` (buyer and
     ///         recipient zero, quantity the count). Copies sold need the edition to exist
     ///         (`EditionNotCreated`). When the cap binds inside the clearing step, that call and
@@ -580,58 +524,63 @@ interface IUniformEditionAuction is ISaleAdapter {
         external
         returns (uint256 unitsWon, uint256 refund);
 
+    /// @notice Sends `account`'s claimable ETH to the network's fee recipient (the economics
+    ///         resolver's, read now) once 180 days have passed since it went from zero (R12;
+    ///         `CreditNotExpired` before). Permissionless; an unclaimed bid becomes a credit
+    ///         through `claimBidFor`. Emits `Claimed` with that recipient as `to`.
+    /// @param account The credited account.
+    /// @param currency `CURRENCY_ETH`; any other currency has nothing to send.
+    /// @return amount The wei sent.
+    function expireCredit(address account, address currency) external returns (uint256 amount);
+
     /// @notice Sets the governed parameters for sales that open afterwards. PARAMETER_SETTER role
-    ///         (48 hours), compare-and-set. Bounds: a ladder `StepLadder.isValid` accepts (24,
-    ///         48, 96 or 192 steps per decade; a base price that is a power of ten from 10^12 to
-    ///         10^17 wei, `StepLadder.isBasePrice`; 64 to 512 steps; a top step of at least 10
-    ///         ETH), a margin of at most 50,000, a default close offset of at most
-    ///         `limits().maxCloseOffset`, a soft-close window of 1 minute to 1 hour, and a maximum
-    ///         extension of 1 hour to 7 days.
+    ///         (24 hours), compare-and-set. Bounds: a ladder `StepLadder.isValid` accepts (24,
+    ///         48, 96 or 192 steps per decade; a base price that is a power of ten from 10^12 up
+    ///         to the 96-bit field, `StepLadder.isBasePrice`; 64 to 512 steps; a top step of at
+    ///         least 10 ETH), a margin of at most 50,000, a soft-close window of 1 minute to 1
+    ///         hour, and a maximum extension of 1 hour to 7 days.
     /// @param expected The parameters the caller expects are current; a stale value reverts with
     ///        `ExpectedValueMismatch`.
     /// @param next The new parameters, within the bounds above (`InvalidConfig`).
     function setConfig(AuctionConfig calldata expected, AuctionConfig calldata next) external;
 
-    /// @notice Sets the governed limits. PARAMETER_SETTER role (48 hours), compare-and-set.
-    ///         Bounds, fixed in code: a maximum close offset of 1 day to 3,650 days, and at least
-    ///         the current default close offset; an abandonment delay of 120 to 730 days (at
-    ///         least governance's 30-day replacement of a dependency of the master's settlement
-    ///         plus 6529 Stream's 90-day rescue floor); a payout gas of 30,000 to 3,000,000 that,
-    ///         after construction, only rises and at most doubles per change (from 100,000, at
-    ///         most 200,000; never lower), checked against the figure current when the change
-    ///         executes, so a change scheduled from a stale figure reverts; a rescue cap of 90 to
-    ///         730 days. Open sales keep the close offset and the abandonment delay they locked;
-    ///         the payout gas applies to every later payout and the rescue cap to every later
-    ///         abandonment.
-    /// @param expected The limits the caller expects are current, packed as `Limits` documents;
-    ///        a stale value reverts with `ExpectedValueMismatch`.
-    /// @param next The new limits, packed, within the bounds above and with nothing past bit 96
-    ///        (`InvalidConfig`).
+    /// @notice Sets the governed payout gas. PARAMETER_SETTER role, compare-and-set. Bounds,
+    ///         fixed in code: 30,000 to 3,000,000, and after construction it only rises and at
+    ///         most doubles per change, checked against the figure current when the change
+    ///         executes. It applies to every later payout.
+    /// @param expected The payout gas the caller expects is current; a stale value reverts with
+    ///        `ExpectedValueMismatch`.
+    /// @param next The new payout gas, within the bounds above (`InvalidConfig`).
     function setLimits(uint256 expected, uint256 next) external;
 
-    /// @notice Voids a sale that has paid nothing and can never settle, so its bidders are
-    ///         refunded in full: nothing is minted or paid, and the edition is sealed at zero
-    ///         (`IEditions.sealSupply(id, 0)`), so no copy of it can ever exist. Permissionless,
-    ///         once `abandonable(saleId)` is true: the sale is OPEN (or SETTLING with its scan
-    ///         still in progress), its end plus its locked abandonment delay plus its rescue
-    ///         lengthening (what 6529 Stream's rescue delay exceeds its 90-day floor by: the delay
-    ///         Stream locked for the English auction's works if governance removed it, else the
-    ///         delay in force; at most `Limits.rescueCapDays` days) has passed, and its
-    ///         1/1 is neither in progress (ACTIVE or PAUSED) nor settled with its master settled
-    ///         in 6529 Stream and the edition created; a 1/1 auction that does not answer counts
-    ///         as stuck, and the end is then the one last read. Emits `AuctionVoided`. Reverts
-    ///         with `UnknownAuction`, `NotAbandonable`, or `InvalidAuctionState` for a sale that
-    ///         has paid.
+    /// @notice Finishes a sale whose 1/1 has settled but whose edition sale cannot complete on
+    ///         its own (R16). Permissionless, from 21 days after the sale's scheduled close (its
+    ///         1/1's final end plus the fixed 15 minutes; a soft-close extension of the edition
+    ///         sale does not move it. A fixed value: the number is the guarantee to bidders), while the sale has paid nothing (OPEN, or
+    ///         SETTLING with its scan in progress), once its 1/1 auction is no longer ACTIVE,
+    ///         PAUSED or ENDED (a 1/1 auction that does not answer counts as finished). Then:
+    ///         - the master's primary sale is settled in its token and the edition does not exist
+    ///           yet: the call creates the edition from `item` (`createEdition`), and `settle`
+    ///           completes the sale as usual, copies minted to the winners;
+    ///         - the master's sale never completed (cancelled, refused or burned): the sale is
+    ///           void, every bid refunded in full, and the edition sealed at zero
+    ///           (`IEditions.sealSupply(id, 0)`; `AuctionVoided`).
+    ///         Reverts with `UnknownAuction`, `NotAbandonable` (too early, the 1/1 not settled,
+    ///         or the edition already exists, so `settle` completes it), or
+    ///         `InvalidAuctionState` for a sale that has paid.
     /// @param saleId The sale ID.
-    function abandon(uint256 saleId) external;
+    /// @param item `abi.encode(PackageItem)` of the master's EDITION_MASTER item; read only when
+    ///        the edition is created.
+    function abandon(uint256 saleId, bytes calldata item) external;
 
-    /// @notice Whether `abandon(saleId)` would void the sale now, and from when (answered by
-    ///         the lens). Reverts with `UnknownAuction`.
+    /// @notice Whether `abandon(saleId, item)` would act now, and from when (answered by the
+    ///         lens). Reverts with `UnknownAuction`.
     /// @param saleId The sale ID.
     /// @return ok Whether the sale can be abandoned now.
-    /// @return abandonAt The earliest time it can be, from what is known now: its end plus its
-    ///         abandonment delay plus its capped rescue lengthening; zero while its 1/1 is in
-    ///         progress, settled with its master, or the sale is not OPEN.
+    /// @return abandonAt The earliest time it can be, from what is known now: its scheduled
+    ///         close (its 1/1's final end plus 15 minutes, not moved by a soft-close extension)
+    ///         plus 21 days; zero while its 1/1 is unsettled, when its edition exists with its master
+    ///         settled, or when the sale is not OPEN.
     function abandonable(uint256 saleId) external view returns (bool ok, uint256 abandonAt);
 
     /// @notice The governed parameters new sales lock.

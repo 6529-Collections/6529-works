@@ -150,6 +150,17 @@ abstract contract CurationHelpers is Test {
         return abi.encodePacked(r, s, v);
     }
 
+    /// @dev The proof the artist registry checks (`IAccounts.requireSigned`): the signing
+    ///      wallet of `key`, then `signature`.
+    function _pf(uint256 key, bytes memory signature) internal pure returns (bytes memory) {
+        return abi.encodePacked(vm.addr(key), signature);
+    }
+
+    /// @dev A proof naming `wallet` as the signer of `signature`.
+    function _as(address wallet, bytes memory signature) internal pure returns (bytes memory) {
+        return abi.encodePacked(wallet, signature);
+    }
+
     /// @dev The ERC-2098 64-byte form of the same signature.
     function _compact(uint256 key, bytes32 digest) internal pure returns (bytes memory) {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(key, digest);
@@ -212,13 +223,14 @@ abstract contract CurationBase is CurationHelpers {
         editions = address(new MockBoundCaller(type(IEditions).interfaceId));
 
         vm.startPrank(admin);
-        _map(address(registry), PackageRegistry.revokePackage.selector, Roles.GUARDIAN);
+        _map(address(registry), PackageRegistry.revokePackage.selector, Roles.NETWORK);
+        _map(address(registry), PackageRegistry.killSignerApprovals.selector, Roles.NETWORK);
         _map(address(registry), PackageRegistry.setVerifier.selector, Roles.SUCCESSOR_SETTER);
-        _map(address(verifier), Eip712CurationVerifier.disableSigner.selector, Roles.GUARDIAN);
+        _map(address(verifier), Eip712CurationVerifier.disableSigner.selector, Roles.NETWORK);
         _map(
             address(verifier), Eip712CurationVerifier.enableSigner.selector, Roles.SUCCESSOR_SETTER
         );
-        manager.grantRole(Roles.GUARDIAN, guardian, 0);
+        manager.grantRole(Roles.NETWORK, guardian, 0);
         manager.grantRole(Roles.SUCCESSOR_SETTER, successor, 0);
         manager.grantRole(Roles.CURATION_SIGNER, signer1, 0);
         manager.grantRole(Roles.CURATION_SIGNER, signer2, 0);
@@ -276,7 +288,8 @@ abstract contract CurationBase is CurationHelpers {
 
     function _accept(bytes32 root, uint256 key) internal returns (uint256) {
         PartyAcceptance memory a = _acceptance(vm.addr(key));
-        return registry.acceptPackage(root, a, _sig(key, registry.acceptanceDigest(root, a)));
+        return
+            registry.acceptPackage(root, a, _pf(key, _sig(key, registry.acceptanceDigest(root, a))));
     }
 
     function _move(uint256 key, bytes32 root, bytes32 itemHash, uint256 nonce)
@@ -285,7 +298,9 @@ abstract contract CurationBase is CurationHelpers {
         returns (MoveAuthorization memory)
     {
         return MoveAuthorization(
-            nonce, deadline, _sig(key, registry.moveDigest(root, itemHash, nonce, deadline))
+            nonce,
+            deadline,
+            _pf(key, _sig(key, registry.moveDigest(root, itemHash, nonce, deadline)))
         );
     }
 

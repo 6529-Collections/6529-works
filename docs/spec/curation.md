@@ -44,8 +44,11 @@ glossary. What this page adds:
 - Content uniqueness is 6529 Stream's, not the registry's ([AUC-44](stream-and-auctions.md#rules-and-invariants)):
   Stream's one word per content hash, written when a work mints it, is both the consume-once
   record and the uniqueness record, whatever mint policy is installed.
-- While an authority-moving override is pending, `activeAuthorityOf` returns zero, so no
-  acceptance, move or move revocation verifies for that artist (CUR-19, ADR 0003 owner decision 6).
+- An artist or collaborator is a 6529 consolidated account: any wallet of the account accepts,
+  signs the move and revokes a move nonce, checked by the artist registry
+  (`IAccounts.requireSigned`, `isWallet`). While the account is frozen or a replacement of its
+  root is pending, no acceptance, move or move revocation verifies for it (CUR-19). Signatures
+  travel as a proof: `abi.encodePacked(wallet, signature)`.
 
 ### The package item
 
@@ -67,8 +70,9 @@ enters the item hash, so voters approve and parties sign exactly these values.
 | `edition` | `EditionTerms` of the edition a master anchors; all zero for an `ORIGINAL`. | `consume` and Editions `createEdition`: `EditionRules.isValid`. |
 
 Canonical payee order is strictly increasing `(artistId, account)`, so fixed payees (`artistId`
-zero) come first, ordered by address. One party may be paid both as a fixed and as an
-artist-resolved payee; the two are distinct keys (`test_validItem_partyPaidBothWays`).
+zero) come first, ordered by address. A collaborator may be paid both as a fixed and as an
+artist-resolved payee; the two are distinct keys (`test_validItem_partyPaidBothWays`). The lead
+artist's account is never a fixed payee (`test_invalidItem_leadPaidAsAFixedPayee`). On a curated work the lead artist is paid only through its account (artist-resolved payee), so a freeze holds its payout. Collaborators may be fixed payees, and a freeze does not hold those. On federated works the freeze holds artist-resolved payees only; fixed payees chosen by the artist are paid as named.
 
 ### Identifiers and hashes
 
@@ -95,8 +99,8 @@ Each signing contract uses the domain `(name, "1", chainid, itself)`
 | Message | Type string (`Typehashes`) | Domain name | Signed by | Replay protection |
 | --- | --- | --- | --- | --- |
 | `PACKAGE_APPROVAL` | `PackageApproval(bytes32 packageRoot,bytes32 evidenceHash,uint256 signerEpoch)` | `6529 Works Curation Verifier` | A curation signer | A root registers once; the signer epoch. |
-| `PACKAGE_ACCEPTANCE` | `PackageAcceptance(bytes32 packageRoot,address account,bytes32 profileId,bytes32 profileDocHash,uint64 deadline)` | `6529 Works Package Registry` | The account itself if it has no artist ID, otherwise its artist's active authority | Once per `(root, account)`; a deadline. |
-| `MOVE_TO_STREAM` | `MoveToStream(bytes32 packageRoot,bytes32 itemHash,uint256 nonce,uint64 deadline)` | `6529 Works Package Registry` | The lead artist's active authority | A per-artist nonce; a deadline. |
+| `PACKAGE_ACCEPTANCE` | `PackageAcceptance(bytes32 packageRoot,address account,bytes32 profileId,bytes32 profileDocHash,uint64 deadline)` | `6529 Works Package Registry` | The account itself if it has no artist ID, otherwise any wallet of its account | Once per `(root, account)`; a deadline. |
+| `MOVE_TO_STREAM` | `MoveToStream(bytes32 packageRoot,bytes32 itemHash,uint256 nonce,uint64 deadline)` | `6529 Works Package Registry` | Any wallet of the lead artist's account | A per-artist nonce; a deadline. |
 
 - **Attestation encoding.** The registry passes the attestation to the verifier unread. The v1
   verifier accepts only canonical `abi.encode(address signer, bytes signature)` (clean address
@@ -110,11 +114,14 @@ Each signing contract uses the domain `(name, "1", chainid, itself)`
 
 ### Signer epoch
 
-`signerEpoch(signer)` is `since << 128 | salt << 64 | changes`
+`signerEpoch(signer)` is `grants << 176 | since << 128 | salt << 64 | changes`
 (`Eip712CurationVerifier.signerEpoch`):
 
 - `since` is when the signer's current `CURATION_SIGNER` grant takes or took effect, read from
-  the AccessManager. A revocation deletes it and a new grant sets a later one.
+  the AccessManager. A revocation deletes it and a new grant sets it again.
+- `grants` is the manager's count of grants that made the signer a member
+  (`WorksAccessManager.grantCount`), so a revocation and a new grant change the epoch even when
+  both land in the same second as the earlier grant (grants take effect at once).
 - `changes` counts `disableSigner` and `enableSigner` calls.
 - `salt` is the low 64 bits of `keccak256(abi.encode(block.prevrandao, signer, changes))`,
   drawn at the latest disable or enable. It only has to be unknown before that block.
@@ -131,10 +138,12 @@ every written word is a sentinel. The acceptance that creates an identity writes
 into word 0, so the artist's first 255 starts update an existing slot. Tools should use nonces 0,
 1, 2, and so on per artist; any `uint256` works.
 
-### Trust obligations of the curation signer
+<a id="trust-obligations-of-the-curation-signer"></a>
 
-The contracts cannot check these; the signer's tooling must, before it attests (ADR 0003,
-"Package format and curation").
+### What the curation signer's tooling checks
+
+The contracts cannot check these. The signer's tooling currently checks them before it attests
+(ADR 0003, "Package format and curation").
 
 - **Verify every declared SHA-256 against the decoded bytes**, for every media file, including
   the content hash, on which on-chain uniqueness keys.
@@ -142,12 +151,12 @@ The contracts cannot check these; the signer's tooling must, before it attests (
   ([WS-2](works-and-storage.md#rules-and-invariants)) do not run at mint, so a mis-committed
   item mints and its record never opens.
 - **Decode Base64 strictly** (RFC 4648 alphabet, as the content store's `attestBase64` checks).
-- **Check the conservation floor when the wave's policy requires it**
+- **Check the conservation floor when the wave's policy runs it**
   ([DCL-5](declarations-and-conventions.md#the-conservation-floor)), refuse a package that
   declares a time capsule while that is outside the v1 curation policy (DCL-7), and publish the
   result in the curation evidence as a `floor-result.v1` object per item (DCL-33).
 - **Revoke before revising a VRF work's media.** A revision of the primary media has a new
-  content hash and so draws a new seed; the guardian revokes the old root first
+  content hash and so draws a new seed; the network revokes the old root first
   ([`src/curation/README.md`](../../src/curation/README.md)).
 
 ## State machine
@@ -161,8 +170,8 @@ stateDiagram-v2
     state "Revoked" as Revoked
     [*] --> Unregistered
     Unregistered --> Approved : registerPackage, verifier approves
-    Unregistered --> Revoked : revokePackage in advance (GUARDIAN)
-    Approved --> Revoked : revokePackage (GUARDIAN, immediate)
+    Unregistered --> Revoked : revokePackage in advance (NETWORK)
+    Approved --> Revoked : revokePackage (NETWORK, no delay)
     Revoked --> [*]
     note right of Revoked
         Final. A revoked root never registers again.
@@ -187,7 +196,7 @@ stateDiagram-v2
     state "Released, reserved for the beneficiary" as Released
     [*] --> Free
     Free --> Used : a mint of any approved item
-    Used --> Released : Stream.releaseContent (PARAMETER_SETTER, 48 hours)
+    Used --> Released : Stream.releaseContent (PARAMETER_SETTER, 24 hours)
     Released --> Used : a mint of an item whose lead is the beneficiary
 ```
 
@@ -209,7 +218,7 @@ stateDiagram-v2
     [*] --> Inactive
     Inactive --> Active : CURATION_SIGNER grant takes effect
     Inactive --> Disabled : disableSigner in advance
-    Active --> Disabled : disableSigner (GUARDIAN) ends the epoch
+    Active --> Disabled : disableSigner (NETWORK) ends the epoch
     Disabled --> Active : enableSigner (SUCCESSOR_SETTER) starts a new epoch
     Active --> Delayed : ADMIN sets a nonzero execution delay
     Delayed --> Active : delay back to zero
@@ -221,15 +230,16 @@ stateDiagram-v2
 | Transition | Caller (role) | Delay | Function |
 | --- | --- | --- | --- |
 | Root: unregistered to approved | Anyone | none | `PackageRegistry.registerPackage` |
-| Root: unregistered or approved to revoked | `GUARDIAN` | immediate | `PackageRegistry.revokePackage` |
+| Root: unregistered or approved to revoked | `NETWORK` | none | `PackageRegistry.revokePackage` |
 | Party consent recorded | Anyone, relaying the party's signature | none | `PackageRegistry.acceptPackage` |
-| Move nonce revoked | The lead artist's active authority | none | `PackageRegistry.revokeMove` |
+| Move nonce revoked | Any wallet of the lead artist's account | none | `PackageRegistry.revokeMove` |
+| A signer's registered approvals killed | The network | none | `PackageRegistry.killSignerApprovals` |
 | Item consumed, content used | Bound 6529 Stream, inside `IStream.mint` at the auction start | none | `PackageRegistry.authorize` (its private `_consume`) |
-| Content released, item tombstoned | `PARAMETER_SETTER` | standard, 48 hours | `Stream.releaseContent` (AUC-10, AUC-44) |
-| Signer becomes active | ADMIN grants `CURATION_SIGNER` | 30-day ADMIN operation, then the 30-day grant delay (`Roles.grantDelay`) | `AccessManager.grantRole` |
-| Signer disabled | `GUARDIAN` | immediate | `Eip712CurationVerifier.disableSigner` |
-| Signer re-enabled | `SUCCESSOR_SETTER` | successor, 30 days | `Eip712CurationVerifier.enableSigner` |
-| Verifier replaced, old one retired | `SUCCESSOR_SETTER` | successor, 30 days | `PackageRegistry.setVerifier` |
+| Content released, item tombstoned | `PARAMETER_SETTER` | 24 hours | `Stream.releaseContent` (AUC-10, AUC-44) |
+| Signer becomes active | The network grants `CURATION_SIGNER` (the role's admin is `NETWORK`) | none, no grant delay | `AccessManager.grantRole` |
+| Signer disabled | `NETWORK` | none | `Eip712CurationVerifier.disableSigner` |
+| Signer re-enabled | `SUCCESSOR_SETTER` | 7 days | `Eip712CurationVerifier.enableSigner` |
+| Verifier replaced, old one retired | `SUCCESSOR_SETTER` | 7 days | `PackageRegistry.setVerifier` |
 | Stream or Editions bound | ADMIN (genesis configurator, before it renounces ADMIN) | once each | `PackageRegistry.bindStream`, `bindEditions` |
 
 Role mappings are from [`config/genesis.example.json`](../../config/genesis.example.json); the
@@ -265,7 +275,7 @@ sequenceDiagram
 - **Effects.** Status `APPROVED`; the signer and evidence hash are stored and emitted.
 - **Curation evidence.** Only CURATOR writes a `CURATION_EVIDENCE` statement, subject
   `(address(0), uint256(root))`, by `appendCurator` or a relayed `appendSigned`
-  ([`StatementLog.sol`](../../src/records/StatementLog.sol); delays and suspension in
+  ([`StatementLog.sol`](../../src/records/StatementLog.sol); delays and revocation in
   [disputes-and-statements.md](disputes-and-statements.md)). The registry neither requires nor
   checks it.
 
@@ -283,13 +293,12 @@ sequenceDiagram
     Party->>Relayer: signed PackageAcceptance
     Relayer->>Registry: acceptPackage(root, acceptance, signature)
     Registry->>Artists: artistIdOf(account)
+    Registry->>Artists: requireSigned(account, digest, proof)
     alt no artist ID yet
-        Registry->>Registry: verify the account's own signature
         Registry->>Registry: record acceptedAs, pre-write nonce word 0
         Registry->>Artists: register(account, profileId, profileDocHash)
     else existing artist
-        Registry->>Artists: activeAuthorityOf(artistId)
-        Registry->>Registry: verify, match profile, record acceptedAs
+        Registry->>Registry: match profile, record acceptedAs
     end
     Registry-->>Relayer: emit PackageAccepted
 ```
@@ -297,13 +306,12 @@ sequenceDiagram
 - **Preconditions.** The root is `APPROVED`; `block.timestamp <= deadline`. For an existing
   artist, `profileId` and `profileDocHash` must match the identity record (`ProfileMismatch`).
 - **Effects.** `acceptedAs[root][account] = artistId`. A first acceptance creates artist ID
-  `uint256(uint160(account))` with the signed profile and is the artist's first activity; later
-  acceptances do not reset the dormancy clock. A repeat changes nothing.
-- **Consent is per account.** An item listing an artist under another address (say, a new
-  authority after recovery) needs an acceptance for that address; an item listing two accounts of
-  one artist is invalid at consume.
-- **Restraint.** Acceptances, even ones signed before the override was staged, revert with
-  `InvalidSignature` until a veto.
+  `uint256(uint160(account))` with the signed profile. A repeat changes nothing.
+- **Name the root.** A party is named by its account's root (or a past root). Naming another
+  wallet of the account creates a separate account at its first acceptance; an item listing two
+  addresses of one account is invalid at consume.
+- **Frozen or replaced.** Acceptances, even ones signed earlier, revert with `InvalidSignature`
+  while the account is frozen or its root is being replaced.
 
 ### Move and start
 
@@ -328,7 +336,11 @@ sequenceDiagram
     Registry->>Registry: caller, root, proof, content, terms, parties, payees
     Registry->>Registry: move deadline, then spend the nonce
     Registry->>Artists: activeAuthorityOf(lead artist ID)
-    Registry->>Registry: verify the move signature, write the content word
+    alt the proof names that root
+        Registry->>Registry: verify the move signature here
+    else another wallet of the account
+        Registry->>Artists: requireSigned(lead artist ID, digest, proof)
+    end
     opt seed policy VRF
         Registry->>Entropy: isDeliveredContent(item.contentHash), at Stream's module
     end
@@ -351,18 +363,25 @@ not the beneficiary (`ContentReserved`), AUC-44. A revert anywhere in the start 
 consume and the nonce. The consume emits no event of its own: Stream's permanent `WorkMinted` carries the
 package root, item hash, lead artist and content hash ([AUC-43](stream-and-auctions.md#rules-and-invariants)).
 
-- **Consent reads, not calls.** The only external call in the consume is `activeAuthorityOf`
-  for the lead (plus ERC-1271 if that authority is a contract); the record names that
-  authority, which signed the move, as the work's creator. The quote then reads Stream's
+- **Consent reads, not calls.** The only external calls in the consume check the move: the
+  lead's `activeAuthorityOf` (plus ERC-1271 if the root is a contract), and, when another wallet
+  of the account signed, `requireSigned`, which reads the consolidation source (tens of
+  thousands of gas more: a non-default path). The record names the wallet that signed as the
+  work's creator.
+- **Killed signers.** A package records the kill epoch at registration; `killSignerApprovals`
+  stops every package that signer registered before it. While no kill has happened since a
+  package was registered, its starts read nothing more (the epoch sits beside `stream`); after
+  one, they read the signer's last kill (about 2,100 gas). The quote then reads Stream's
   economics resolver and split factory, passed in the call (`MintContext`), so the policy holds
   no copy of Stream's dependencies.
 - **Uniqueness belongs to Stream.** The registry writes no content record: Stream checks and
   sets it after the policy answers, so no replacement policy, blank or hostile, can mint a
   content hash a second time ([AUC-44](stream-and-auctions.md#rules-and-invariants)).
-- **Restraint.** No move verifies, from the old key or the reserved new key, and `revokeMove`
-  reverts with `NotAuthority`. After execution the new key signs.
-- **Rotated keys.** Unused moves signed by a rotated-away key stay void, unless the new authority
-  is an ERC-1271 or EIP-7702 wallet that accepts them (ADR 0003, SIGS-3).
+- **Frozen or being replaced.** While the account is frozen or its root is being replaced, no
+  move verifies from any wallet of the account, and `revokeMove` reverts with `NotAuthority`
+  (CUR-19). After a replacement executes, the new root and its consolidated wallets sign.
+- **Wallets that left.** A move signed by a wallet that is no longer a wallet of the account
+  does not verify (`test_AWalletThatLeftTheConsolidationCannotStart`).
 - **Gas.** `authorize`'s Prague gas, new slots and regression ceiling are in the
   [ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table).
 
@@ -376,9 +395,9 @@ package when the master minted, so neither a revoked root nor a replaced mint po
 a settled master's edition. The registry's Editions binding (`bindEditions`, `editions()`) is
 kept for the genesis wiring and is informational.
 
-### Guardian revocation
+### Revoking a package
 
-A guardian calls `revokePackage(root, reasonHash)` (GUARDIAN, immediate). From then on
+The network calls `revokePackage(root, reasonHash)` (NETWORK, no delay). From then on
 `acceptPackage` and `consume` revert for the root, and the entropy module's `requestSeed` refuses
 its items.
 
@@ -386,42 +405,43 @@ its items.
   be revoked in advance, say after an attestation leaked; it then never registers (`PackageExists`).
 - **Effects.** Final. Consumed items, minted works and their editions are unaffected.
 - **Per root, not per item.** An item listed in two approved roots stays consumable through the
-  other (`test_revokePackage_isPerRoot`), so the guardian revokes every root that lists it.
+  other (`test_revokePackage_isPerRoot`), so the network revokes every root that lists it.
 
 ### Signer disable and re-enable
 
 ```mermaid
 sequenceDiagram
-    participant Guardian as Guardian Safe
-    participant Setter as SUCCESSOR_SETTER holder
+    participant Network as Network Safe
     participant Manager as WorksAccessManager
     participant Verifier as Eip712CurationVerifier
-    Guardian->>Verifier: disableSigner(signer) (GUARDIAN, immediate)
-    Verifier-->>Guardian: emit SignerDisabled, the epoch ends
-    Setter->>Manager: schedule enableSigner(signer) (30 days)
-    Note over Guardian,Manager: any guardian may cancel during the delay
-    Setter->>Manager: execute after 30 days
+    Network->>Verifier: disableSigner(signer) (NETWORK, no delay)
+    Verifier-->>Network: emit SignerDisabled, the epoch ends
+    Network->>Manager: schedule enableSigner(signer) (SUCCESSOR_SETTER, 7 days)
+    Note over Manager: the brake may delay it once
+    Network->>Manager: execute after 7 days
     Manager->>Verifier: enableSigner(signer)
-    Verifier-->>Setter: emit SignerEnabled, a new salted epoch
+    Verifier-->>Network: emit SignerEnabled, a new salted epoch
 ```
 
-- **Disable.** Roots the signer registered stay approved until the guardian revokes them.
+- **Disable.** Roots the signer registered stay approved until the network revokes them, or
+  kills every approval that signer registered (`killSignerApprovals`). `killSignerApprovals` is a network action with no delay. To stop a signer, send `disableSigner` and `killSignerApprovals` in one Safe batch. A kill alone leaves attestations signed before it registrable, and a disable alone leaves registered packages live.
 - **Re-enable.** Only a disabled signer (`SignerNotDisabled`). After a suspected compromise,
   grant the role to a fresh key instead.
-- **Not suspendable.** `WorksAccessManager.suspend` refuses `CURATION_SIGNER`
-  (`RoleNotSuspendable`): `disableSigner` also ends the epoch, which a lift by grant would not.
+- **Revoke and grant again.** A revocation and a new grant of `CURATION_SIGNER` also move the
+  signer's epoch, even within one second: the epoch includes the manager's `grantCount` of new
+  memberships, so approvals made under the earlier grant never count again.
 
 ### Verifier swap
 
 ```mermaid
 sequenceDiagram
-    participant Setter as SUCCESSOR_SETTER holder
+    participant Setter as Network Safe
     participant Manager as WorksAccessManager
     participant Registry as PackageRegistry
     participant Next as New verifier
-    Setter->>Manager: schedule setVerifier(current, next, codeHash) (30 days)
-    Note over Manager: any guardian may cancel during the delay
-    Setter->>Manager: execute after 30 days
+    Setter->>Manager: schedule setVerifier(current, next, codeHash) (SUCCESSOR_SETTER, 7 days)
+    Note over Manager: the brake may delay it once
+    Setter->>Manager: execute after 7 days
     Manager->>Registry: setVerifier(current, next, codeHash)
     Registry->>Next: code, not delegated, ERC-165, code hash
     Registry-->>Setter: emit VerifierSet, the old verifier is retired
@@ -437,7 +457,7 @@ sequenceDiagram
 ### Content release after an upheld dispute
 
 [Disputes and statements](disputes-and-statements.md) specifies the dispute, the burn and the
-governed `Stream.releaseContent` (PARAMETER_SETTER, 48 hours). The release is Stream's alone
+governed `Stream.releaseContent` (PARAMETER_SETTER, 24 hours). The release is Stream's alone
 since AUC-44; the registry plays no part:
 
 - **Preconditions.** The token is burned (`NotBurned`); its own work minted `contentHash` and it
@@ -458,22 +478,24 @@ since AUC-44; the registry plays no part:
 | CUR-4 | An approval counts only from a signer that holds `CURATION_SIGNER` with no execution delay, is not disabled, and signed over its current epoch, in this verifier's domain on this chain. | `Eip712CurationVerifier.isApproved`, `isSignerActive`, `signerEpoch` | [`Eip712CurationVerifier.t.sol`](../../test/curation/Eip712CurationVerifier.t.sol): `test_isApproved_onlyAtTheCurrentEpoch`, `test_isApproved_reEnablingDoesNotReviveOlderApprovals`, `test_isApproved_regrantingDoesNotReviveOlderApprovals`, `test_isApproved_anApprovalSignedWhileDisabledCannotNameTheNextEpoch`, `test_isApproved_signerWithExecutionDelayDoesNotCount`, `test_isApproved_rejectsWrongChain`, `testFuzz_isApproved_onlyActiveSignersCount`; [`CuratedSale.t.sol`](../../test/integration/CuratedSale.t.sol): `test_ReEnablingASignerDoesNotReviveOlderApprovals` |
 | CUR-5 | The verifier accepts only the canonical attestation encoding and never reverts on a malformed one. | `Eip712CurationVerifier._decode` | [`Eip712CurationVerifier.t.sol`](../../test/curation/Eip712CurationVerifier.t.sol): `test_isApproved_rejectsNonCanonicalEncodings`, `test_isApproved_malformedAttestationsReturnFalse`, `testFuzz_isApproved_neverRevertsOnGarbage` |
 | CUR-6 | Every party of a consumed item accepted the root, and the parties are distinct artists. | `PackageRegistry._checkParties` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_consume_revertsMissingCollaboratorAcceptance`, `test_invalidItem_parties`, `test_invalidItem_sameArtistUnderTwoAccounts`, `test_invalidItem_tooManyParties` |
-| CUR-7 | An acceptance is signed by the account (no identity yet) or its artist's active authority, unexpired, with a matching profile; it is recorded once per `(root, account)`, and only a first acceptance creates an identity. | `PackageRegistry.acceptPackage` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_acceptPackage_createsIdentity`, `test_acceptPackage_replayIsNoop`, `test_acceptPackage_afterRecoverySignedByNewAuthority`, `test_acceptPackage_revertsProfileMismatch`, `test_acceptPackage_relayOrderPicksProfile`, `test_acceptPackage_revertsExpired` |
-| CUR-8 | The payee list is canonical, nonempty, no longer than the party list, pays only parties, and sums to 100,000. | `PackageRegistry._checkParties` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_invalidItem_payees`, `test_invalidItem_duplicatePayee`, `test_validItem_partyPaidBothWays` |
+| CUR-7 | An acceptance is signed by the account (no identity yet) or any wallet of its account, unexpired, with a matching profile; it is recorded once per `(root, account)`, and only a first acceptance creates an identity. | `PackageRegistry.acceptPackage` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_acceptPackage_createsIdentity`, `test_acceptPackage_replayIsNoop`, `test_acceptPackage_afterRecoverySignedByNewAuthority`, `test_acceptPackage_revertsProfileMismatch`, `test_acceptPackage_relayOrderPicksProfile`, `test_acceptPackage_revertsExpired` |
+| CUR-8 | The payee list is canonical, nonempty, no longer than the party list, pays only parties, never names the lead artist's account as a fixed payee, and sums to 100,000. | `PackageRegistry._checkParties` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_invalidItem_payees`, `test_invalidItem_duplicatePayee`, `test_validItem_partyPaidBothWays`, `test_invalidItem_leadPaidAsAFixedPayee` |
 | CUR-9 | A consumed item has a nonzero content hash, a seed exactly under `ARTIST`, empty edition terms if `ORIGINAL`, and terms `EditionRules.isValid` accepts if `EDITION_MASTER`. Kind, seed policy and party roles are open `uint8`s in the package types; this policy refuses any value it does not know (a kind above `EDITION_MASTER`, a seed policy above `VRF`, a party role above `COLLABORATOR`), where a value above today's enums used to fail the ABI decode. | `PackageRegistry._checkTerms` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_invalidItem_seedPolicy`, `test_invalidItem_valuesTodaysEnumsDoNotName`, `test_invalidItem_zeroContentHash`, `test_invalidItem_originalWithEditionTerms`, `test_invalidItem_masterEditionTerms`, `test_invalidItem_masterEditionTermsSharedRule` |
-| CUR-10 | A move is signed by the lead's active authority over this registry's `MoveToStream` digest for this item, unexpired, on an unused nonce; the nonce is spent whatever the signature encoding. | `PackageRegistry._useMove`, `_spendMoveNonce` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_move_revertsExpired`, `test_move_revertsWrongSigner`, `test_move_revertsWrongChain`, `test_move_bindsItem`, `test_move_signedByCurrentAuthorityAfterRecovery`, `test_move_nonceSpentWhateverTheSignatureForm` |
-| CUR-11 | Only the artist's active authority revokes its unused move nonces; a used or revoked nonce reverts; nonces are isolated per artist and bit. | `PackageRegistry.revokeMove` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_revokeMove_beforeUse`, `test_revokeMove_onlyCurrentAuthority`, `test_revokeMove_revertsWhenUsedOrRevoked`, `testFuzz_revokeMove_bitmapIsolation`; [`CuratedSale.t.sol`](../../test/integration/CuratedSale.t.sol): `test_MoveSignatureIsRevocable` |
+| CUR-10 | A move is signed by a wallet of the lead's account over this registry's `MoveToStream` digest for this item, unexpired, on an unused nonce; the nonce is spent whatever the signature encoding. | `PackageRegistry._useMove`, `_spendMoveNonce` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_move_revertsExpired`, `test_move_revertsWrongSigner`, `test_move_revertsWrongChain`, `test_move_bindsItem`, `test_move_signedByCurrentAuthorityAfterRecovery`, `test_move_nonceSpentWhateverTheSignatureForm`; [`ConsolidatedAccounts.t.sol`](../../test/curation/ConsolidatedAccounts.t.sol): `test_Move_AnyWalletOfTheLeadAccount`; [`IdentityRecovery.t.sol`](../../test/integration/IdentityRecovery.t.sol): `test_ASecondWalletSignsTheMove` |
+| CUR-11 | Only a wallet of the artist's account revokes its unused move nonces; a used or revoked nonce reverts; nonces are isolated per artist and bit. | `PackageRegistry.revokeMove` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_revokeMove_beforeUse`, `test_revokeMove_onlyCurrentAuthority`, `test_revokeMove_revertsWhenUsedOrRevoked`, `testFuzz_revokeMove_bitmapIsolation`; [`CuratedSale.t.sol`](../../test/integration/CuratedSale.t.sol): `test_MoveSignatureIsRevocable` |
 | CUR-12 | A content hash is held by at most one item on 6529 Stream, so an item is consumed at most once, through any root: Stream holds the record (AUC-44). | `Stream._claimContent` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_consume_revertsDoubleConsume`, `test_consume_itemIsSingleUseAcrossPackages`, `test_consume_contentUniquenessKeysOnContentHash`; [`PackageRegistryInvariant.t.sol`](../../test/curation/PackageRegistryInvariant.t.sol): `invariant_itemConsumedAtMostOnce`, `invariant_contentRecordsMatch` |
 | CUR-13 | Retired: the registry no longer records edition claims; an edition's content is decided from Stream's permanent record (ED-1, ED-3; review A, M-1). The ID is not reused. | none | none |
-| CUR-14 | A release happens once per burned item, names a registered artist, reserves the content for items led by that artist, and tombstones the burned item everywhere. It is governed (48 hours) and held by Stream (AUC-44). | `Stream.releaseContent`, `_claimContent` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_releaseContent_afterBurnLetsTheRealArtistMint`, `test_releaseContent_reverts`; [`Dispute.t.sol`](../../test/integration/Dispute.t.sol): `test_UpheldDisputeCancelsBurnsReleasesAndTheRightfulArtistMints`, `test_ReleaseIsGovernedNamesAnArtistAndHappensOnce`, `test_AGuardianCancelsAPendingRelease` |
+| CUR-14 | A release happens once per burned item, names a registered artist, reserves the content for items led by that artist, and tombstones the burned item everywhere. It is governed (24 hours) and held by Stream (AUC-44). | `Stream.releaseContent`, `_claimContent` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_releaseContent_afterBurnLetsTheRealArtistMint`, `test_releaseContent_reverts`; [`Dispute.t.sol`](../../test/integration/Dispute.t.sol): `test_UpheldDisputeCancelsBurnsReleasesAndTheRightfulArtistMints`, `test_ReleaseIsGovernedNamesAnArtistAndHappensOnce`, `test_TheNetworkCancelsAPendingRelease` |
 | CUR-15 | Only the bound Stream calls `authorize`; Stream and Editions are each bound once, to a contract answering ERC-165 for its interface and not delegated (the Editions binding is informational). | `PackageRegistry.authorize`, `bindStream`, `bindEditions` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_consume_onlyBoundStream`, `test_bindStream_once`, `test_bindEditions_onceAndLater`, `test_unboundRegistryRefusesEveryone` |
-| CUR-16 | Revocation is GUARDIAN-only, immediate, final and per root. | `PackageRegistry.revokePackage`; genesis role map | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_revokePackage_onlyGuardian`, `test_revokePackage_isPerRoot`; [`CuratedSale.t.sol`](../../test/integration/CuratedSale.t.sol): `test_GuardianRevokesAPackageAndDisablesASigner` |
-| CUR-17 | Disabling a signer is GUARDIAN-only, immediate, one-way, possible in advance, and stops only future registrations; re-enabling is 30 days. | `Eip712CurationVerifier.disableSigner`, `enableSigner` | [`Eip712CurationVerifier.t.sol`](../../test/curation/Eip712CurationVerifier.t.sol): `test_disableSigner_immediateAndOneWay`, `test_disableSigner_inAdvance`, `test_disableSigner_survivesRoleRegrant`, `test_enableSigner_thirtyDayClass`; [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_registerPackage_revertsAfterSignerDisabled`, `test_disabledSigner_registeredRootsStayUsable` |
+| CUR-16 | Revocation is the network's (NETWORK, no delay), final and per root. | `PackageRegistry.revokePackage`; genesis role map | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_revokePackage_onlyGuardian`, `test_revokePackage_isPerRoot`; [`CuratedSale.t.sol`](../../test/integration/CuratedSale.t.sol): `test_GuardianRevokesAPackageAndDisablesASigner` |
+| CUR-17 | Disabling a signer is the network's (NETWORK, no delay), possible in advance, and stops only future registrations; re-enabling is 7 days (SUCCESSOR_SETTER). | `Eip712CurationVerifier.disableSigner`, `enableSigner` | [`Eip712CurationVerifier.t.sol`](../../test/curation/Eip712CurationVerifier.t.sol): `test_disableSigner_immediateAndOneWay`, `test_disableSigner_inAdvance`, `test_disableSigner_survivesRoleRegrant`, `test_enableSigner_thirtyDayClass`; [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_registerPackage_revertsAfterSignerDisabled`, `test_disabledSigner_registeredRootsStayUsable` |
 | CUR-18 | A verifier swap is compare-and-set, pins the code hash, never installs the current or a retired verifier, and leaves registered approvals intact. | `PackageRegistry.setVerifier`, `_setVerifier` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_setVerifier`, `test_setVerifier_compareAndSet`, `test_setVerifier_refusesARetiredVerifier`, `test_setVerifier_keepsRegisteredApprovals`, `test_setVerifier_onlySuccessorSetter` |
-| CUR-19 | While an authority-moving override is pending, the artist's acceptances and moves do not verify and it cannot revoke moves. | `PackageRegistry.acceptPackage`, `_useMove`, `revokeMove` (through `activeAuthorityOf`) | [`RecoveryRestraint.t.sol`](../../test/integration/RecoveryRestraint.t.sol): `test_PreSignedAcceptanceRefusedWhileRestrained`, `test_NobodyStartsAnUnmintedWorkDuringTheNotice` |
+| CUR-19 | While the account is frozen or its root is being replaced, its acceptances and moves do not verify and it cannot revoke moves. | `PackageRegistry.acceptPackage`, `_useMove`, `revokeMove` (through the artist registry) | [`ConsolidatedAccounts.t.sol`](../../test/curation/ConsolidatedAccounts.t.sol): `test_Move_RefusedWhileTheAccountIsFrozen`; [`IdentityRecovery.t.sol`](../../test/integration/IdentityRecovery.t.sol): `test_AFrozenAccountCannotStart`, `test_AReplacedAccountCannotStartUntilItEnds` |
 | CUR-20 | Item hashes, leaves, media hashes and typehashes match independently computed golden vectors and do not depend on the chain. | `WorksHashing`, `Typehashes` | [`WorksHashing.t.sol`](../../test/interfaces/WorksHashing.t.sol): `test_itemHash_golden`, `test_mediaHash_golden`, `testFuzz_itemHash_independentOfChain`, `test_threeItemPackage_proofs`; [`Typehashes.t.sol`](../../test/interfaces/Typehashes.t.sol): `test_domainConstants`, `test_signedPayloadTypehashes`; [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_golden_typehashes`, `test_golden_digests`, `testFuzz_consume_itemHashMatchesWorksHashing` |
 | CUR-21 | Governed functions are non-payable. | `PackageRegistry`, `Eip712CurationVerifier` | `test_governedFunctionsAreNonPayable` in both [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol) and [`Eip712CurationVerifier.t.sol`](../../test/curation/Eip712CurationVerifier.t.sol) |
 | CUR-22 | `consume` stays within its gas ceiling and the worst case fits the per-transaction cap. | `PackageRegistry.consume` | [`PackageRegistryGas.t.sol`](../../test/curation/PackageRegistryGas.t.sol): `test_gas_streamShape_typical`, `test_txCap_consumeWorstCase`; [`GasReport.t.sol`](../../test/integration/GasReport.t.sol): `test_Gas_Consume` |
+| CUR-23 | `killSignerApprovals` (the network, no delay) stops every package the signer registered before it: their unminted items no longer mint, open an edition sale or accept parties; packages of other signers, packages the signer registers later, and minted works are untouched. | `PackageRegistry.killSignerApprovals`, `_isLive` | [`ConsolidatedAccounts.t.sol`](../../test/curation/ConsolidatedAccounts.t.sol): `test_KillSignerApprovals_StopsPackagesRegisteredBefore`, `test_KillSignerApprovals_LeavesMintedItems`; [`IdentityRecovery.t.sol`](../../test/integration/IdentityRecovery.t.sol): `test_KillingASignersApprovalsStopsUnmintedItems`; [`CurationSigner.t.sol`](../../test/integration/CurationSigner.t.sol): `test_TheNetworkKillsASignersApprovalsAtOnce`, `test_AKillWithoutADisableLeavesUnregisteredAttestationsGood`, `test_ARegrantInTheSameSecondChangesTheSignerEpoch` |
+| CUR-24 | `isApprovedItem(root, itemHash, proof)` is true only for a live package (approved, not revoked, signer not killed since) that contains the item under a proof of at most 32 nodes. | `PackageRegistry.isApprovedItem` | [`ConsolidatedAccounts.t.sol`](../../test/curation/ConsolidatedAccounts.t.sol): `test_IsApprovedItem` |
 
 ## Events
 
@@ -487,17 +509,17 @@ repeat acceptance emits no `PackageAccepted`: read `isMoveNonceUsed` and `accept
 
 | Failure | Effect | Recovery |
 | --- | --- | --- |
-| A curation signer key is compromised. | It can attest new roots. | `disableSigner` at once; curation continues on the other key (at least two at deployment). Revoke every root the key registered that should not stand (`packageOf` names the signer); grant the role to a fresh key. |
-| The CURATOR key is compromised. | Misleading `CURATION_EVIDENCE` stays in the log. | A guardian suspends it; governance replaces it (30 days, then the 30-day grant delay). A later statement supersedes the false one. |
+| A curation signer key is compromised. | It can attest new roots. | `disableSigner` and `killSignerApprovals` in one Safe batch, both at once: the kill stops every root the key registered so far; curation continues on the other key; grant the role to a fresh key. |
+| The CURATOR key is compromised. | Misleading `CURATION_EVIDENCE` stays in the log. | The network revokes it and grants a new key, at once. A later statement supersedes the false one. |
 | A root with a bad item is approved. | Its items can start. | Revoke that root and every other root listing the item; works already started are disputes. |
-| The verifier's code no longer has the pinned hash. | `registerPackage` reverts (`DependencyCodeChanged`); registered roots keep working. | `setVerifier` to a reviewed verifier (30 days). |
+| The verifier's code no longer has the pinned hash. | `registerPackage` reverts (`DependencyCodeChanged`); registered roots keep working. | `setVerifier` to a reviewed verifier (7 days). |
 | Pre-signed acceptances differ in profile fields. | The first relayed sets a new identity's profile; the others revert (`ProfileMismatch`). | The artist re-signs with the recorded profile. |
 | An account to be accepted is another artist's pending new authority. | The artist registry reverts (`AccountTaken`). | Wait for the change to resolve, or list another account. |
 | An unwanted move signature exists. | Anyone holding it can start the work before its deadline. | `revokeMove`, or let the deadline pass. |
 | An item's media commitments do not match the content store. | It mints, but its record never opens: core-only metadata. | None on-chain; the signer's `openRecord` simulation is the control. |
-| A copier's work is minted from another artist's content. | During the auction an upheld dispute burns it; after the sale, a statement only. | `releaseContent` (48 hours) reserves the content for the rightful artist. |
+| A copier's work is minted from another artist's content. | During the auction an upheld dispute burns it; after the sale, a statement only. | `releaseContent` (24 hours) reserves the content for the rightful artist. |
 | A release names an artist with no identity. | `UnknownArtist`. | The rightful artist first registers, by a first acceptance. |
-| A mistaken content release is scheduled. | The content would be reserved for the wrong artist. | Any guardian cancels it within the 48 hours. |
+| A mistaken content release is scheduled. | The content would be reserved for the wrong artist. | The network cancels it within the 24 hours. |
 | An ERC-1271 check runs short of gas. | `BoundedCall.BoundedCallShortfall(signer)`. | Resubmit with more gas. |
 
 ## Parameters and limits
@@ -511,7 +533,7 @@ repeat acceptance emits no `PackageAccepted`: read `isMoveNonceUsed` and `accept
 | Signature length | at most 65,536 bytes | `SignatureVerifier.MAX_SIGNATURE_LENGTH` |
 | ERC-1271 gas allowance | all the gas EIP-150 allows; a shortfall reverts | `SignatureVerifier.isValidERC1271` |
 | EIP-712 domain version | `"1"` | `Typehashes.DOMAIN_VERSION` |
-| `CURATION_SIGNER` and `CURATOR` grant delay | 30 days | `Roles.grantDelay`, [`Roles.sol`](../../src/governance/Roles.sol) |
+| `CURATION_SIGNER` and `CURATOR` grant delay | None: the network grants and revokes operational keys at once | `GovernanceConfig.install`, [`Roles.sol`](../../src/governance/Roles.sol) |
 | Curation signer keys at deployment | at least 2 (off a local chain) | `DeployGuards.MIN_CURATION_SIGNERS`, [`DeployGuards.sol`](../../script/DeployGuards.sol) |
 
 ## Differences from the ADRs

@@ -17,7 +17,7 @@ import { PrimaryOutcome, PrimarySettlement, PrimaryTerms } from "./types/SaleTyp
 ///      artist signed "move to Stream", by an admitted sale adapter whose sale kind, recorded at
 ///      its first admission, is the item's sale kind. The 1/1 sale method is pluggable (ADR 0005, owner decisions 14 and 15):
 ///      the English auction (`SaleKind.ENGLISH_AUCTION`) is admitted at genesis, and a later
-///      method is an adapter governance admits (`setAdmittedMinter`, the 30-day class), with no
+///      method is an adapter governance admits (`setAdmittedMinter`, the 7-day class), with no
 ///      new Stream. A VRF item's seed must already be delivered (`IEntropyModule.requestSeed`
 ///      runs before the start).
 ///
@@ -153,7 +153,9 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @param previous The URI before the change.
     /// @param next The URI after the change.
     event ContractURISet(string previous, string next);
-    /// @notice Governance replaced a dependency (owner decision 16).
+    /// @notice Governance replaced a dependency (owner decision 16). The constructor emits it
+    ///         once per kind with `previous` zero, naming the genesis dependency (the entropy
+    ///         module may be zero).
     /// @param kind `"PACKAGE_REGISTRY"`, `"ECONOMICS"`, `"ENTROPY_MODULE"` or `"EXTENSION"`.
     /// @param previous The address before.
     /// @param next The address after.
@@ -223,7 +225,7 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     ///         decision 28).
     error AdmissionUnchanged(address adapter, bool admitted);
     /// @notice The work is not stranded: its primary sale settled, its holder is not the adapter
-    ///         that minted it, or that adapter is admitted or was removed less than 90 days ago
+    ///         that minted it, or that adapter is admitted or was removed less than 14 days ago
     ///         (`rescueToMuseum`).
     error WorkNotRescuable(uint256 tokenId);
     /// @notice The content hash is already used on 6529 Stream (`product` is `PRODUCT_STREAM`),
@@ -234,12 +236,14 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @notice `releaseContent` names a content hash the burned token did not use, or one
     ///         already released.
     error ClaimNotAllowed(bytes32 product, bytes32 contentHash);
-    /// @notice The rescue delay may only grow, by at most double, and fit 32 bits.
-    error InvalidRescueDelay(uint256 next);
-    /// @notice The rescue delay for later removals changed (`setRescueDelay`).
-    /// @param previous The delay before, in seconds.
-    /// @param next The delay after, in seconds.
-    event RescueDelaySet(uint256 previous, uint256 next);
+    /// @notice `lowerFeeShare` names a share that is not below the work's current one.
+    error InvalidFeeShare(uint32 share);
+    /// @notice The network lowered a work's fee share (`lowerFeeShare`, R9). The work's new terms
+    ///         are announced by `TermsInterned` when new; its royalty receiver follows the share.
+    /// @param tokenId The work's token ID.
+    /// @param previous The share before, out of 100,000.
+    /// @param share The share after, out of 100,000.
+    event FeeShareLowered(uint256 indexed tokenId, uint32 previous, uint32 share);
     /// @notice The records satellite answered `pinnedRenderer` with something that is not an
     ///         address word.
     error RendererPinUnreadable(uint256 tokenId);
@@ -331,7 +335,7 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     ///         `"PACKAGE_REGISTRY"` (the mint policy, which must use Stream's artist registry),
     ///         `"ECONOMICS"`, `"ENTROPY_MODULE"` or `"EXTENSION"` (the read-only view extension
     ///         Stream's fallback STATICCALLs). The artist registry is permanent. SUCCESSOR_SETTER role
-    ///         (the 30-day class), compare-and-set. The replacement must have code, no EIP-7702
+    ///         (the 7-day class), compare-and-set. The replacement must have code, no EIP-7702
     ///         delegation and ERC-165 support for its interface; it is never zero. If it answers
     ///         `authority()` with one word, that must be Stream's own AccessManager
     ///         (`InvalidBinding` otherwise). Stream's own
@@ -346,8 +350,8 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     function setDependency(bytes32 kind, address expected, address next) external;
     /// @notice Moves a stranded work to the museum (owner decision 20): one whose primary sale
     ///         never settled (`primarySale` NONE), still held by the sale adapter that minted
-    ///         it, which governance removed at least 90 days ago and has not
-    ///         admitted again. SUCCESSOR_SETTER role (the 30-day class). The destination is
+    ///         it, which the network removed at least `rescueDelay` (14 days) ago and has not
+    ///         admitted again. PARAMETER_SETTER role (the network, 24 hours). The destination is
     ///         always the museum the economics resolver names now (`ERC721InvalidReceiver` for
     ///         zero), never a caller's choice; a collector's work, a settled work and a work in a
     ///         live adapter's custody are refused (`WorkNotRescuable`). The work is then settled
@@ -356,19 +360,19 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     ///         `WorkRescued`).
     /// @param tokenId The stranded work.
     function rescueToMuseum(uint256 tokenId) external;
-    /// @notice How long after its removal a sale adapter's unsettled works become rescuable, for
-    ///         removals made from now on: `RESCUE_DELAY_FLOOR` (90 days) until governance
-    ///         lengthens it. Each removal locks the delay in force when it is made.
+    /// @notice How long after its removal a sale adapter's unsettled works become rescuable: 14
+    ///         days, compiled in and the same for every removal (C12).
     /// @return The rescue delay, in seconds.
     function rescueDelay() external view returns (uint256);
-    /// @notice The shortest rescue delay there can ever be (90 days): the guarantee a removed
-    ///         adapter always keeps.
-    /// @return The floor, in seconds.
-    function RESCUE_DELAY_FLOOR() external view returns (uint256);
-    /// @notice Lengthens the rescue delay for later removals: more than the current delay and at
-    ///         most twice it (`InvalidRescueDelay`). SUCCESSOR_SETTER role (the 30-day class).
-    /// @param next The new delay, in seconds.
-    function setRescueDelay(uint256 next) external;
+    /// @notice Lowers the network's fee share of an existing work; never raises it (R9).
+    ///         PARAMETER_SETTER role (the network, 24 hours). The royalty receiver and the share
+    ///         a later settlement reports follow the new share; the fee recipient does not change.
+    ///         For a nonzero share the new royalty wallet must already be deployed
+    ///         (`ISplitFactory.createWallet`, permissionless), or it reverts with
+    ///         `ISplitWallet.WalletNotDeployed`, so royalties never point at an undeployed wallet.
+    /// @param tokenId A live token ID.
+    /// @param share The new share, out of 100,000: below the current one (`InvalidFeeShare`).
+    function lowerFeeShare(uint256 tokenId, uint32 share) external;
     /// @notice Raw storage words of this contract, from `slot` on: the read port the view
     ///         extension, a pinned renderer and anyone read Stream's state through. Stream's
     ///         storage layout is part of its permanent interface: Stream is never redeployed and
@@ -424,7 +428,7 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @notice After an upheld-dispute burn, releases the burned work's content to the rightful
     ///         artist `beneficiary` the dispute outcome names: the content then mints again only
     ///         for that artist's items, never by the burned item (tombstoned). Stream holds the
-    ///         record; the mint policy plays no part. PARAMETER_SETTER role (48 hours); reverts
+    ///         record; the mint policy plays no part. PARAMETER_SETTER role (24 hours); reverts
     ///         with `NotBurned` for a live or unminted token, `ClaimNotAllowed` for another
     ///         content or a second release of the same burn, `IArtistRegistry.UnknownArtist` for
     ///         an unregistered beneficiary. A content released, minted again and burned again
@@ -507,10 +511,10 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     // ----- hooks for the bound satellites -----
 
     /// @notice Sets a work's royalty rate (payees never change). Bound `IWorkRecords` only, after
-    ///         it verified every party's consent and the governed action.
+    ///         it verified every party's consent and the network's action. Up or down (R10).
     /// @param tokenId A live token ID.
-    /// @param rate The new royalty rate, out of 100,000: never above the current rate
-    ///        (`InvalidRoyaltyRate`), so royalties only go down, whatever the satellite checks.
+    /// @param rate The new royalty rate, out of 100,000: never above 100,000
+    ///        (`InvalidRoyaltyRate`), whatever the satellite checks.
     function setRoyaltyRate(uint256 tokenId, uint32 rate) external;
     /// @notice Emits ERC-4906 for `[fromTokenId, toTokenId]` (one `MetadataUpdate` when equal).
     ///         Bound `IWorkRecords` only.

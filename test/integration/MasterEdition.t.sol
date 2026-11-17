@@ -82,7 +82,7 @@ contract MasterEditionFlowTest is IntegrationBase {
         (uint256 saleId, uint256 workId) = _start(root, works, 0);
         _ethBid(saleId, collector, 1 ether);
         _settleAtEnd(saleId);
-        vm.prank(guardian1);
+        vm.prank(hotAdmin);
         registry.revokePackage(root, keccak256("another item of the package is disputed"));
 
         assertEq(editions.createEdition(workId, works[0].item), workId);
@@ -140,7 +140,7 @@ contract MasterEditionFlowTest is IntegrationBase {
         bytes memory admit = abi.encodeCall(editions.setAdmittedMinter, (address(fixedPrice), true));
         (bool immediate, uint32 delay) = manager.canCall(hotAdmin, address(editions), bytes4(admit));
         assertFalse(immediate);
-        assertEq(delay, 30 days, "the 30-day successor class");
+        assertEq(delay, 7 days, "the 7-day successor class");
         _govern(hotAdmin, address(editions), admit);
         assertTrue(editions.isAdmittedMinter(address(fixedPrice)));
 
@@ -208,7 +208,7 @@ contract MasterEditionFlowTest is IntegrationBase {
         }
         uint64 deadline = uint64(block.timestamp + 30 days);
         bytes[] memory sigs = new bytes[](1);
-        sigs[0] = _sign(artist, _rateDigest(workId, rate, deadline));
+        sigs[0] = abi.encodePacked(artist, _sign(artist, _rateDigest(workId, rate, deadline)));
         bytes32 state = records.workStateHash(workId);
         _govern(
             hotAdmin,

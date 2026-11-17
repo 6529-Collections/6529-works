@@ -153,7 +153,7 @@ contract SplitLedgerStressTest is EconomicsBase, GasRuleAssertions {
 
     function test_GasRule_ResolverCostingMoreResolvesTheSame() public {
         Burner slow = new Burner(address(resolver), 10_000);
-        SplitLedger l = new SplitLedger(IArtistPayoutResolver(address(slow)));
+        SplitLedger l = new SplitLedger(IArtistPayoutResolver(address(slow)), address(feeVault));
         ISplitWallet.Payee[] memory payees = _list(_fixed(alice, 50_000), _artist(ARTIST, 50_000));
         address wallet = l.createWallet(payees, bytes32(0));
         vm.deal(wallet, 1 ether);
@@ -252,7 +252,7 @@ contract SplitLedgerStressTest is EconomicsBase, GasRuleAssertions {
     ///      artist payee unresolved rather than paying a truncated address.
     function test_ResolverAnsweringANonAddressIsUnresolved() public {
         GarbageResolver garbage = new GarbageResolver();
-        SplitLedger l = new SplitLedger(IArtistPayoutResolver(address(garbage)));
+        SplitLedger l = new SplitLedger(IArtistPayoutResolver(address(garbage)), address(feeVault));
         ISplitWallet.Payee[] memory payees = _list(_artist(ARTIST, D));
         address wallet = l.createWallet(payees, bytes32(0));
         vm.deal(wallet, 1 ether);

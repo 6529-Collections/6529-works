@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { IVRFCoordinatorV2Plus } from "src/entropy/IVRFCoordinatorV2Plus.sol";
+import { IVRFV2PlusWrapper } from "src/entropy/IVRFV2PlusWrapper.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
@@ -212,5 +213,46 @@ contract EntropyPackageRegistryMock {
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return interfaceId == type(IERC165).interfaceId
             || interfaceId == type(IPackageRegistry).interfaceId;
+    }
+}
+
+/// @dev A VRF v2.5 wrapper stand-in (direct funding): quotes a settable native price, keeps what
+///      a request sends, checks the native-payment option, and delivers through the consumer's
+///      `rawFulfillRandomWords` as the real wrapper does.
+contract MockVrfWrapper is IVRFV2PlusWrapper {
+    error FeeTooLow();
+    error NotNativePayment();
+
+    uint256 public price = 0.003 ether;
+    uint256 public nextId = 7001;
+    uint256 public received;
+    mapping(uint256 requestId => address consumer) public consumerOf;
+
+    function setPrice(uint256 value) external {
+        price = value;
+    }
+
+    function calculateRequestPriceNative(uint32, uint32) external view returns (uint256) {
+        return price;
+    }
+
+    function requestRandomWordsInNative(uint32, uint16, uint32, bytes calldata extraArgs)
+        external
+        payable
+        returns (uint256 requestId)
+    {
+        if (msg.value < price) revert FeeTooLow();
+        if (keccak256(extraArgs) != keccak256(abi.encodeWithSelector(bytes4(0x92fd1338), true))) {
+            revert NotNativePayment();
+        }
+        received += msg.value;
+        requestId = nextId++;
+        consumerOf[requestId] = msg.sender;
+    }
+
+    function fulfill(uint256 requestId, uint256 word) external {
+        uint256[] memory words = new uint256[](1);
+        words[0] = word;
+        VrfEntropyModule(consumerOf[requestId]).rawFulfillRandomWords(requestId, words);
     }
 }

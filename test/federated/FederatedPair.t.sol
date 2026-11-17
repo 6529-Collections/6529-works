@@ -246,43 +246,66 @@ contract FederatedPairTest is FederationBase {
         assertTrue(fedRegistry.canMint(address(ed), address(fea)));
     }
 
-    /// @dev Editions that leave while their 1/1 contract is listed admit no minter of their
-    ///      own, and the 1/1 contract mints no new master, until it leaves too.
-    function test_Pair_EditionsThatLeaveFirstSellNothingWithoutTheFee() public {
-        address own = makeAddr("ownMinter");
-        vm.startPrank(fedArtist);
-        pairEditions.leaveFederation();
-        pairEditions.setAdmittedMinter(own, true);
-        vm.stopPrank();
-        assertFalse(pairEditions.isAdmittedMinter(own), "not while the 1/1 half is listed");
-        Work memory w = _fedMaster(fedArtist, 0);
-        vm.prank(fedArtist);
-        pairStream.approveItem(_itemHash(w), RATE);
-        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
-        auction.start(address(pairStream), _mintData(w));
-        Work memory original = _fedWork(fedArtist);
-        _startFed(pairStream, fedArtist, original, RATE);
-        vm.prank(fedArtist);
-        pairStream.leaveFederation();
-        assertTrue(pairEditions.isAdmittedMinter(own), "both halves out");
-    }
-
     /// @dev Review G (G4): a restart re-offers an edition master only while its editions are
-    ///      listed ACTIVE (or after the 1/1 contract left), as a first mint does.
+    ///      listed ACTIVE, as a first mint does.
     function test_Pair_AMasterRestartsOnlyWhileItsEditionsAreListed() public {
         Work memory w = _fedMaster(fedArtist, 0);
         (uint256 oneSaleId,) = _startFed(pairStream, fedArtist, w, RATE);
         _settleAtEnd(oneSaleId);
-        vm.startPrank(fedArtist);
-        pairEditions.leaveFederation();
+        _setListing(address(pairEditions), IFederationRegistry.Status.DELISTED);
+        vm.prank(fedArtist);
         pairStream.approveItem(_itemHash(w), RATE);
-        vm.stopPrank();
         vm.expectRevert(abi.encodeWithSelector(IFederatedStream.WorkNotRestartable.selector, 1));
         auction.start(address(pairStream), _mintData(w));
     }
 
-    /// @dev Editions joined beside a 1/1 half that never joins, or that left, mint nothing
-    ///      through the network.
+    /// @dev D-1: an unsold master with no bound edition sale gets no edition from anyone, so the
+    ///      artist's restart stays possible. Fails without the change: an outsider's
+    ///      `createEdition` binds the master and the restart reverts `WorkNotRestartable`.
+    function test_Pair_AnUnsoldUnboundMasterGetsNoEditionAndRestarts() public {
+        Work memory w = _fedMaster(fedArtist, 0);
+        (uint256 oneSaleId, uint256 tokenId) = _startFed(pairStream, fedArtist, w, RATE);
+        _settleAtEnd(oneSaleId);
+        vm.prank(makeAddr("outsider"));
+        vm.expectRevert(
+            abi.encodeWithSelector(IFederatedEditions.NotEditionMaster.selector, tokenId)
+        );
+        pairEditions.createEdition(tokenId, w.item);
+        assertFalse(pairEditions.isBound(tokenId));
+        vm.prank(fedArtist);
+        pairStream.approveItem(_itemHash(w), RATE);
+        uint256 again = auction.start(address(pairStream), _mintData(w));
+        assertEq(auction.auction(again).tokenId, tokenId + 1, "restarted");
+    }
+
+    /// @dev R16 keeps working: with an edition sale bound, the edition is created after an
+    ///      unsold master settles (here through `createEdition` itself, as `abandon` calls it).
+    function test_Pair_ABoundSaleStillGetsItsEditionAfterAnUnsoldMaster() public {
+        (Work memory w, uint256 oneSaleId, uint256 tokenId,) = _openPair(0);
+        _settleAtEnd(oneSaleId);
+        pairEditions.createEdition(tokenId, w.item);
+        assertTrue(pairEditions.exists(tokenId));
+    }
+
+    /// @dev D-2: suspending only the 1/1 template also stops new edition sales of its pair.
+    ///      Fails without the change: `canMint` ignored the partner's template and `open`
+    ///      returned a sale ID.
+    function test_Pair_ASuspended1of1TemplateOpensNoEditionSale() public {
+        Work memory w = _fedMaster(fedArtist, 0);
+        (, uint256 tokenId) = _startFed(pairStream, fedArtist, w, RATE);
+        assertTrue(fedRegistry.canMint(address(pairEditions), address(fea)));
+        _govern(
+            hotAdmin,
+            address(fedRegistry),
+            abi.encodeCall(fedRegistry.suspendTemplate, (streamHash))
+        );
+        assertFalse(fedRegistry.canMint(address(pairEditions), address(fea)));
+        vm.expectRevert();
+        fea.open(address(pairEditions), tokenId, abi.encode(w.item));
+    }
+
+    /// @dev Editions joined beside a 1/1 half that never joins, or that is delisted, mint
+    ///      nothing through the network.
     function test_Pair_EditionsWithoutAListed1of1MintNothing() public {
         FederatedStream s = _deployStream(fedArtist);
         FederatedEditions ed = _deployEditions(fedArtist, address(s));
@@ -290,33 +313,13 @@ contract FederatedPairTest is FederationBase {
         s.linkEditions(address(ed));
         _join(address(ed), fedArtist);
         assertFalse(ed.isAdmittedMinter(address(fea)), "1/1 never joined");
-        vm.prank(fedArtist);
-        pairStream.leaveFederation();
-        assertFalse(pairEditions.isAdmittedMinter(address(fea)), "1/1 left");
-    }
-
-    /// @dev F2 for editions: delisted, then left, the running edition sale stays void.
-    function test_Pair_EditionsLeavingWhileDelistedReviveNoEditionSale() public {
-        (,,, uint256 saleId) = _openPair(0);
-        address[] memory tokens = new address[](1);
-        tokens[0] = address(pairEditions);
-        _govern(
-            hotAdmin,
-            address(fedRegistry),
-            abi.encodeCall(
-                fedRegistry.setStatus, (tokens, IFederationRegistry.Status.DELISTED, "vote")
-            )
-        );
-        assertFalse(fl.isTarget(address(pairEditions)));
-        vm.prank(fedArtist);
-        pairEditions.leaveFederation();
-        assertFalse(fl.isTarget(address(pairEditions)), "an exit serves nothing again");
-        assertTrue(fea.settle(saleId, new uint256[](0)), "voided");
+        _setListing(address(pairStream), IFederationRegistry.Status.DELISTED);
+        assertFalse(pairEditions.isAdmittedMinter(address(fea)), "1/1 delisted");
     }
 
     /// @dev Pass 3: the edition sale's fee recipient is locked at open; a governance change of
     ///      the federated recipient before settlement does not redirect it.
-    function test_Pair_TheEditionFeeRecipientIsLockedAtOpen() public {
+    function test_Pair_TheEditionFeeRecipientIsTheOneCurrentAtSettlement() public {
         (Work memory w, uint256 oneSaleId, uint256 tokenId, uint256 saleId) = _openPair(0);
         _editionBidFed(saleId, makeAddr("a"), 100, 3);
         address next = makeAddr("nextFeeRecipient");
@@ -327,14 +330,15 @@ contract FederatedPairTest is FederationBase {
             abi.encodeCall(economics.setFeeTerms, (PRODUCT_FEDERATED, revision, next, FED_SHARE))
         );
         assertEq(economics.networkFeeRecipient(PRODUCT_FEDERATED), next);
-        assertEq(fl.auction(saleId).feeRecipient, networkFee, "locked at open");
+        assertEq(fl.auction(saleId).feeRecipient, next, "R18: read at settlement");
         auction.settle(oneSaleId);
         pairEditions.createEdition(tokenId, w.item);
         uint256 before = networkFee.balance;
         assertTrue(fea.settle(saleId, new uint256[](0)));
         IUniformEditionAuction.Settlement memory st = fl.settlement(saleId);
-        assertEq(networkFee.balance - before, st.count * st.price * FED_SHARE / 100_000);
-        assertEq(next.balance, 0);
+        uint256 revenue = st.count * st.price;
+        assertEq(next.balance, revenue - revenue * (100_000 - FED_SHARE) / 100_000);
+        assertEq(networkFee.balance, before);
     }
 
     /// @dev Pass 3: the lens deploys a sale's wallets only through the canonical split ledger;

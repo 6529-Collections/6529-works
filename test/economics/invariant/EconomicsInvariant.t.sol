@@ -4,9 +4,11 @@ pragma solidity ^0.8.24;
 import { Test } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { ClaimRouter } from "src/economics/ClaimRouter.sol";
+import { GovernedVault } from "src/economics/GovernedVault.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
 import { SplitLedger } from "src/economics/SplitLedger.sol";
 import { Splits } from "src/economics/Splits.sol";
+import { ISplitLedger } from "src/economics/interfaces/ISplitLedger.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import {
     BlocklistToken,
@@ -21,7 +23,10 @@ import { EconomicsHandler } from "./EconomicsHandler.sol";
 
 /// @notice Stateful invariants for the split ledger and its wallets (releases, signed releases),
 ///         the revenue escrow (credits, recovery, the governed sweep of unowed funds), payments
-///         and batch claims (ADR 0001 test plan: value conservation and split sums).
+///         and batch claims (ADR 0001 test plan: value conservation and split sums), the
+///         network's share pushed on every release from a wallet that names it (R11), marked
+///         shares forfeited to the network after 180 days and escrow credits expiring to it
+///         (R12), and the network's recovery of its own credits (C19).
 ///         Runs and depth come from `foundry.toml` (256 x 128, `fail_on_revert`).
 contract EconomicsInvariantTest is Test {
     address internal constant ETH = address(0);
@@ -36,13 +41,15 @@ contract EconomicsInvariantTest is Test {
     NoReturnToken internal silent;
     ToggleRecipient internal toggle;
     SplitLedger internal ledger;
+    address internal network;
     address[] internal wallets;
     address[5] internal assets;
 
     function setUp() public {
         AccessManager manager = new AccessManager(address(this));
         MockArtistResolver resolver = new MockArtistResolver();
-        ledger = new SplitLedger(resolver);
+        network = address(new GovernedVault(address(manager), makeAddr("feeSafe")));
+        ledger = new SplitLedger(resolver, network);
         escrow = new RevenueEscrow(address(manager), ledger);
         router = new ClaimRouter(ledger);
         payer = new PaymentHarness(escrow);
@@ -64,10 +71,14 @@ contract EconomicsInvariantTest is Test {
         resolver.set(7, vm.addr(keys[5]));
         resolver.set(9, vm.addr(keys[6]));
 
-        ISplitWallet.Payee[][3] memory configs = [
+        // The last two name the network: a royalty wallet (the seller's wallet and the network)
+        // and a split where the network sits beside an artist and a fixed payee.
+        ISplitWallet.Payee[][5] memory configs = [
             _three(_p(vm.addr(keys[0]), 50_000), _p(vm.addr(keys[1]), 30_000), _art(7, 20_000)),
             _three(_p(vm.addr(keys[2]), 33_333), _p(vm.addr(keys[3]), 33_333), _art(9, 33_334)),
-            _two(_p(vm.addr(keys[0]), 1), _p(vm.addr(keys[4]), 99_999))
+            _two(_p(vm.addr(keys[0]), 1), _p(vm.addr(keys[4]), 99_999)),
+            _two(_p(vm.addr(keys[1]), 75_000), _p(network, 25_000)),
+            _three(_p(vm.addr(keys[3]), 40_000), _p(network, 10_000), _art(7, 50_000))
         ];
         // Originals first (salt 0), then equivalent replacements (salt 1) for escrow recovery.
         ISplitWallet.Payee[][] memory lists = new ISplitWallet.Payee[][](2 * configs.length);
@@ -102,7 +113,7 @@ contract EconomicsInvariantTest is Test {
         // The handler exercises governed recovery and sweeps as the admin (zero delay here).
         manager.grantRole(manager.ADMIN_ROLE(), address(handler), 0);
 
-        bytes4[] memory selectors = new bytes4[](20);
+        bytes4[] memory selectors = new bytes4[](24);
         selectors[0] = EconomicsHandler.release.selector;
         selectors[1] = EconomicsHandler.releaseTo.selector;
         selectors[2] = EconomicsHandler.releaseSigned.selector;
@@ -123,6 +134,10 @@ contract EconomicsInvariantTest is Test {
         selectors[17] = EconomicsHandler.strayToken.selector;
         selectors[18] = EconomicsHandler.forceETH.selector;
         selectors[19] = EconomicsHandler.sweep.selector;
+        selectors[20] = EconomicsHandler.mark.selector;
+        selectors[21] = EconomicsHandler.forfeit.selector;
+        selectors[22] = EconomicsHandler.expire.selector;
+        selectors[23] = EconomicsHandler.warp.selector;
         targetSelector(FuzzSelector({ addr: address(handler), selectors: selectors }));
         targetContract(address(handler));
     }
@@ -182,11 +197,46 @@ contract EconomicsInvariantTest is Test {
             }
             assertEq(released, handler.paidOut(asset), "released == paid out");
             if (asset == address(rebase)) continue;
-            uint256 held;
+            // The network vault holds its pushes, forfeits and releases, plus what it got
+            // otherwise (payments and flushes).
+            uint256 held = _balance(asset, network) - handler.networkOther(asset);
             for (uint256 i; i < handler.actorCount(); ++i) {
                 held += _balance(asset, handler.actors(i));
             }
             assertEq(held, released, "payees hold what was released");
+        }
+    }
+
+    /// @notice R11 and R12: in a wallet that names the network, the network's released total is
+    ///         its own releases, the pushes and the forfeits, and never exceeds its entitlement;
+    ///         a running mark never asks for more than the payee's entitlement at the receipts
+    ///         seen so far, so a forfeit can never take money that arrived after the mark.
+    function invariant_MarksWithinEntitlement() public view {
+        for (uint256 w; w < wallets.length; ++w) {
+            address wallet = wallets[w];
+            ISplitWallet.Payee[] memory payees = handler.payeesOf(wallet);
+            for (uint256 k; k < assets.length; ++k) {
+                address asset = assets[k];
+                uint256 seen = asset == ETH
+                    ? handler.modelHigh(wallet, ETH)
+                    : ledger.recordedObserved(wallet, asset);
+                for (uint256 i; i < payees.length; ++i) {
+                    (uint256 target, uint256 at) = ledger.markOf(wallet, asset, i);
+                    assertEq(target, handler.markTarget(wallet, asset, i), "mark target model");
+                    assertEq(at, handler.markAt(wallet, asset, i), "mark time model");
+                    if (at == 0 || asset == address(rebase)) continue;
+                    assertLe(
+                        target,
+                        Splits.entitlement(
+                            seen > ledger.observed(wallet, asset)
+                                ? seen
+                                : ledger.observed(wallet, asset),
+                            payees[i].share
+                        ),
+                        "mark within entitlement"
+                    );
+                }
+            }
         }
     }
 
@@ -264,8 +314,12 @@ contract EconomicsInvariantTest is Test {
     function invariant_EscrowIsSolventAndMatchesTheModel() public view {
         for (uint256 k; k < 3; ++k) {
             address asset = assets[k];
-            uint256 sum = escrow.owed(address(toggle), asset);
-            assertEq(sum, handler.ghostOwed(address(toggle), asset));
+            uint256 sum = escrow.owed(address(toggle), asset) + escrow.owed(network, asset);
+            assertEq(escrow.owed(address(toggle), asset), handler.ghostOwed(address(toggle), asset));
+            assertEq(escrow.owed(network, asset), handler.ghostOwed(network, asset));
+            assertEq(
+                escrow.creditedAt(network, asset), handler.ghostCreditedAt(network, asset), "clock"
+            );
             for (uint256 w; w < wallets.length; ++w) {
                 uint256 owed = escrow.owed(address(wallets[w]), asset);
                 assertEq(owed, handler.ghostOwed(address(wallets[w]), asset));
@@ -292,9 +346,9 @@ contract EconomicsInvariantTest is Test {
     /// @notice Drives the handler with pseudo-random inputs and checks that the value paths and
     ///         the predicted failures the invariants rely on are actually reached.
     function test_HandlerReachesEveryPath() public {
-        for (uint256 i; i < 1500; ++i) {
+        for (uint256 i; i < 3000; ++i) {
             uint256 r = uint256(keccak256(abi.encode(i)));
-            uint256 action = r % 19;
+            uint256 action = r % 23;
             if (action == 0) {
                 handler.release(r >> 8, r >> 16, r >> 24, r >> 32);
             } else if (action == 1) {
@@ -331,11 +385,19 @@ contract EconomicsInvariantTest is Test {
                 handler.forceETH(r >> 8);
             } else if (action == 17) {
                 handler.sweep(r >> 8);
+            } else if (action == 18) {
+                handler.mark(r >> 8, r >> 16, r >> 24);
+            } else if (action == 19) {
+                handler.forfeit(r >> 8, r >> 16, r >> 24);
+            } else if (action == 20) {
+                handler.expire(r >> 8, r >> 16);
+            } else if (action == 21) {
+                handler.warp(r >> 8);
             } else {
                 handler.toggleOpen();
             }
         }
-        bytes32[21] memory paths = [
+        bytes32[28] memory paths = [
             keccak256(abi.encode(bytes32("release"), "ok")),
             keccak256(abi.encode(bytes32("releaseTo"), "ok")),
             keccak256(abi.encode(bytes32("signed"), "ok")),
@@ -357,7 +419,14 @@ contract EconomicsInvariantTest is Test {
             bytes32("excess.token"),
             bytes32("excess.eth"),
             bytes32("sweep.ok"),
-            bytes32("sweep.reverted")
+            bytes32("sweep.reverted"),
+            bytes32("push.ok"),
+            bytes32("mark.ok"),
+            keccak256(abi.encode(bytes32("mark"), ISplitLedger.MarkPending.selector)),
+            bytes32("forfeit.ok"),
+            keccak256(abi.encode(bytes32("forfeit"), ISplitLedger.MarkNotDue.selector)),
+            bytes32("expire.ok"),
+            bytes32("recover.network")
         ];
         for (uint256 i; i < paths.length; ++i) {
             assertGt(handler.outcomes(paths[i]), 0, vm.toString(i));
@@ -371,6 +440,7 @@ contract EconomicsInvariantTest is Test {
         invariant_IntermediariesHoldNothing();
         invariant_ReleasedPlusReleasableMatchesReceived();
         invariant_EscrowExcessIsExactlyTheUnowed();
+        invariant_MarksWithinEntitlement();
     }
 
     function _releasable(address wallet, address asset, uint256 index)

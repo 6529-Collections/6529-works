@@ -35,7 +35,7 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         PackageItem memory item = _item(ID, 42);
         vm.expectEmit(true, true, false, true, address(editions));
         emit IEditions.EditionMinterBound(ID, address(auction));
-        auction.open(address(editions), ID, abi.encode(item));
+        auction.open(address(editions), ID, _openData(item));
         assertEq(editions.minterOf(ID), address(auction));
         assertEq(editions.boundItemHash(ID), WorksHashing.itemHash(item), "the item, intact");
         assertEq(editions.binds(), 1);
@@ -50,7 +50,7 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         vm.prank(other);
         editions.bindMinter(ID, item);
         vm.expectRevert(abi.encodeWithSelector(IEditions.MinterMismatch.selector, ID, other));
-        auction.open(address(editions), ID, abi.encode(item));
+        auction.open(address(editions), ID, _openData(item));
         uint256 saleId = ua.saleIdOf(address(editions), ID);
         vm.expectRevert(
             abi.encodeWithSelector(IUniformEditionAuction.UnknownAuction.selector, saleId)
@@ -73,7 +73,10 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         economics.setWalletOverride(address(0));
         IUniformEditionAuction.Auction memory a = ua.auction(saleId);
         assertEq(a.seller, recordedSeller);
-        assertEq(a.feeRecipient, recordedFee);
+        // R18: the recipient is the resolver's now; the recorded one only when it names none.
+        assertEq(a.feeRecipient, networkFee);
+        economics.setNetworkFeeRecipient(address(0));
+        assertEq(ua.auction(saleId).feeRecipient, recordedFee);
         assertEq(a.feeShare, 10_000);
         // The lens's preview of them refuses unpayable terms (here, no seller).
         editions.setLocked(ID + 1, address(0), recordedFee, 10_000);
@@ -90,7 +93,7 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
                 ISaleAdapter.InvalidSaleTerms.selector, address(editions), ID + 1
             )
         );
-        auction.open(address(editions), ID + 1, abi.encode(item));
+        auction.open(address(editions), ID + 1, _openData(item));
     }
 
     /// @dev The cut step's departure log sorted in `O(n log n)` (a heapsort of packed keys): 600
@@ -157,8 +160,7 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         // It deploys wallets, so the adapter calls it directly (the fallback's staticcall cannot).
         vm.prank(address(auction));
         IUniformEditionAuctionLens.MasterTerms memory m = IUniformEditionAuctionLens(lensAddress)
-            .masterTerms(address(editions), ID, abi.encode(item));
-        assertEq(m.closeOffset, type(uint32).max, "no offset named: the adapter's default");
+            .masterTerms(address(editions), ID, _openData(item));
         assertEq(m.maxCount, 42);
         assertEq(m.oneOfOneEnd, block.timestamp + 1 days);
         assertEq(uint8(m.oneOfOneState), uint8(IEnglishAuction.AuctionState.ACTIVE));
@@ -167,7 +169,7 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
             abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(stream), ID)
         );
         vm.prank(address(auction));
-        IUniformEditionAuctionLens(lensAddress).masterTerms(address(stream), ID, abi.encode(item));
+        IUniformEditionAuctionLens(lensAddress).masterTerms(address(stream), ID, _openData(item));
     }
 
     function test_Lens_BeforeOpening() public view {
@@ -207,10 +209,6 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.UnknownBid.selector, 5, 1));
         ua.bidOutcome(5, 1);
         uint256 saleId = _open(0);
-        vm.expectRevert(
-            abi.encodeWithSelector(IUniformEditionAuction.UnknownBid.selector, saleId, 1)
-        );
-        lens.canWithdraw(saleId, 1);
         vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.InvalidStep.selector, 336));
         ua.stepPrice(saleId, 336);
         vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.InvalidStep.selector, 337));
@@ -266,7 +264,6 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         assertEq(e.endTime, end + 15 minutes);
         assertEq(e.backstop, end + 15 minutes + 1 days);
         assertTrue(e.biddingOpen);
-        assertFalse(e.withdrawalsOpen);
         vm.warp(end + 15 minutes);
         assertFalse(ua.endTimes(saleId).biddingOpen);
         assertEq(

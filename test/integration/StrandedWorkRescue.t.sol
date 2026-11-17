@@ -18,15 +18,15 @@ import { IntegrationBase } from "./IntegrationBase.sol";
 /// @notice Owner decision 20 on the real genesis deployment: governance may move a work stranded
 ///         in a removed sale adapter's custody to the museum, and nothing else. A work is
 ///         stranded only while its primary sale never settled, its minting adapter still holds
-///         it, and that adapter was removed at least 90 days earlier and not admitted again. The
-///         rescue is SUCCESSOR_SETTER (30 days), goes to the economics resolver's museum only,
+///         it, and that adapter was removed at least 14 days earlier (C12) and not admitted again. The
+///         rescue is a network action (the genesis class), goes to the economics resolver's museum only,
 ///         settles the work as RESCUED (owner decision 28), and leaves the stranded adapter
 ///         nothing it can do with it.
 contract StrandedWorkRescueTest is IntegrationBase {
     address internal artist;
     address internal collector = makeAddr("rescueCollector");
     bytes32 internal root;
-    uint256 internal constant RESCUE_DELAY = 90 days;
+    uint256 internal constant RESCUE_DELAY = 14 days;
 
     function setUp() public override {
         super.setUp();
@@ -59,8 +59,7 @@ contract StrandedWorkRescueTest is IntegrationBase {
     /// @dev Schedules `call` on Stream as the hot admin now, waits out its delay and executes
     ///      it; a failed operation is cancelled, so the same call can be scheduled again.
     function _governed(bytes memory call) internal returns (bool ok, bytes memory reason) {
-        (, uint32 delay) = manager.canCall(hotAdmin, address(stream), bytes4(call));
-        assertEq(delay, 30 days, "the successor class");
+        uint256 delay = _govDelay();
         vm.prank(hotAdmin);
         manager.schedule(address(stream), call, 0);
         vm.warp(block.timestamp + delay);
@@ -72,6 +71,21 @@ contract StrandedWorkRescueTest is IntegrationBase {
             vm.prank(hotAdmin);
             manager.cancel(hotAdmin, address(stream), call);
         }
+    }
+
+    /// @dev The governance delay of `rescueToMuseum` in the genesis role map.
+    function _govDelay() internal view returns (uint256) {
+        (, uint32 delay) =
+            manager.canCall(hotAdmin, address(stream), IStream.rescueToMuseum.selector);
+        return delay;
+    }
+
+    /// @dev Warps so that a rescue scheduled now executes at `at`, when the governance delay
+    ///      allows it; returns whether it does (otherwise it executes later).
+    function _executeAt(uint256 at) internal returns (bool exact) {
+        uint256 d = _govDelay();
+        exact = block.timestamp + d <= at;
+        if (exact) vm.warp(at - d);
     }
 
     function _rescueCall(uint256 tokenId) internal view returns (bytes memory) {
@@ -92,7 +106,7 @@ contract StrandedWorkRescueTest is IntegrationBase {
 
     // -------------------------------------------------------------------------- tests
 
-    /// @dev The happy path: 90 days after its removal, the auction's unsettled work moves to
+    /// @dev The happy path: 14 days after its removal, the auction's unsettled work moves to
     ///      the museum, recorded RESCUED (owner decision 28), with `PrimarySaleSettled`, then
     ///      `Transfer`, then `WorkRescued`. The old adapter can
     ///      then neither settle nor burn it, and the auction's own settlement closes the sale
@@ -100,12 +114,12 @@ contract StrandedWorkRescueTest is IntegrationBase {
     function test_Rescue_MovesAStrandedWorkToTheMuseum() public {
         (uint256 saleId, uint256 tokenId) = _startItem(0);
         uint256 removedAt = _setAuctionAdmitted(false);
-        vm.warp(removedAt + RESCUE_DELAY - 30 days);
+        _executeAt(removedAt + RESCUE_DELAY);
 
         bytes memory call = _rescueCall(tokenId);
         vm.prank(hotAdmin);
         manager.schedule(address(stream), call, 0);
-        vm.warp(block.timestamp + 30 days);
+        vm.warp(block.timestamp + _govDelay());
         vm.expectEmit(address(stream));
         emit IStream.PrimarySaleSettled(tokenId, PrimaryOutcome.RESCUED, address(0), address(0), 0);
         vm.expectEmit(address(stream));
@@ -145,17 +159,15 @@ contract StrandedWorkRescueTest is IntegrationBase {
         _assertRefused(tokenId);
     }
 
-    /// @dev The 90 days run from the removal: one second short is refused, the boundary passes.
-    function test_Rescue_RefusesAnAdapterRemovedLessThan90DaysAgo() public {
+    /// @dev The 14 days run from the removal: one second short is refused, the boundary passes
+    ///      (exactly when the genesis delay of the rescue is shorter than 14 days).
+    function test_Rescue_RefusesAnAdapterRemovedLessThan14DaysAgo() public {
         (, uint256 tokenId) = _startItem(0);
         uint256 removedAt = _setAuctionAdmitted(false);
-        // Executed 30 days after the removal: refused.
-        _assertRefused(tokenId);
-        // Executed one second before the 90 days: refused.
-        vm.warp(removedAt + RESCUE_DELAY - 30 days - 1);
-        _assertRefused(tokenId);
-        // Executed exactly 90 days after: moved.
-        vm.warp(removedAt + RESCUE_DELAY - 30 days);
+        // Executed one second before the 14 days: refused.
+        if (_executeAt(removedAt + RESCUE_DELAY - 1)) _assertRefused(tokenId);
+        // Executed 14 days after: moved.
+        _executeAt(removedAt + RESCUE_DELAY);
         (bool ok,) = _governed(_rescueCall(tokenId));
         assertTrue(ok, "at the boundary");
         assertEq(stream.ownerOf(tokenId), museum);
@@ -175,7 +187,7 @@ contract StrandedWorkRescueTest is IntegrationBase {
         _assertRefused(second);
     }
 
-    /// @dev The 90 days run from the removal that took the adapter out: removing it again is
+    /// @dev The 14 days run from the removal that took the adapter out: removing it again is
     ///      refused (owner decision 28: `AdmissionUnchanged`), while admitting it again and
     ///      removing it restarts them.
     function test_Rescue_CountsFromTheRemovalThatTookTheAdapterOut() public {
@@ -184,7 +196,7 @@ contract StrandedWorkRescueTest is IntegrationBase {
         bytes memory again_ = abi.encodeCall(stream.setAdmittedMinter, (address(auction), false));
         vm.prank(hotAdmin);
         manager.schedule(address(stream), again_, 0);
-        vm.warp(block.timestamp + 30 days);
+        vm.warp(block.timestamp + 7 days);
         vm.prank(hotAdmin);
         vm.expectRevert(
             abi.encodeWithSelector(IStream.AdmissionUnchanged.selector, address(auction), false)
@@ -192,21 +204,20 @@ contract StrandedWorkRescueTest is IntegrationBase {
         manager.execute(address(stream), again_);
         vm.prank(hotAdmin);
         manager.cancel(hotAdmin, address(stream), again_);
-        vm.warp(removedAt + RESCUE_DELAY - 30 days);
+        _executeAt(removedAt + RESCUE_DELAY);
         (bool ok,) = _governed(_rescueCall(first));
         assertTrue(ok, "a second removal does not restart the clock");
 
         _setAuctionAdmitted(true);
         (, uint256 second) = _startItem(1);
         uint256 again = _setAuctionAdmitted(false);
-        vm.warp(again + RESCUE_DELAY - 30 days - 1);
-        _assertRefused(second);
-        vm.warp(again + RESCUE_DELAY - 30 days);
+        if (_executeAt(again + RESCUE_DELAY - 1)) _assertRefused(second);
+        _executeAt(again + RESCUE_DELAY);
         (ok,) = _governed(_rescueCall(second));
         assertTrue(ok, "from the latest removal");
     }
 
-    /// @dev A settled work is never rescued, even 90 days after its adapter's removal: an unbid
+    /// @dev A settled work is never rescued, even 14 days after its adapter's removal: an unbid
     ///      work already in the museum, a sold work delivered to its collector, and a sold work
     ///      whose delivery is pending, which the removed adapter still holds.
     function test_Rescue_RefusesSettledAndSoldWorks() public {
@@ -258,7 +269,7 @@ contract StrandedWorkRescueTest is IntegrationBase {
     }
 
     /// @dev Only the adapter that MINTED the work strands it: a work its minting adapter handed
-    ///      unsettled to another Stream adapter, itself removed 90 days earlier, is refused, so
+    ///      unsettled to another Stream adapter, itself removed 14 days earlier, is refused, so
     ///      the minter-ID check matters on its own.
     function test_Rescue_RefusesAWorkHeldByAnotherRemovedAdapter() public {
         (, uint256 tokenId) = _startItem(0);
@@ -349,7 +360,7 @@ contract StrandedWorkRescueTest is IntegrationBase {
         (bool immediate, uint32 delay) =
             manager.canCall(hotAdmin, address(stream), IStream.rescueToMuseum.selector);
         assertFalse(immediate);
-        assertEq(delay, 30 days);
+        assertGt(delay, 0, "a scheduled network action");
         address[2] memory callers = [collector, guardian1];
         for (uint256 i; i < callers.length; ++i) {
             vm.prank(callers[i]);

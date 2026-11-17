@@ -6,6 +6,11 @@ project. It is not an external audit, and nothing in it says the contracts are f
 report records what was attacked, what was found, how each finding was resolved, and what is
 left for the external audit.
 
+> **History (16 November 2026).** This record describes the code of October 2026. The second
+> permanence pass ([ADR 0009](../adr/0009-second-permanence-pass.md)) removed guardians, seats,
+> suspension, recovery, the restraint override and the identity standing machinery, with their
+> tests; test names this report cites that no longer exist are left as plain text.
+
 | | |
 | --- | --- |
 | Commit reviewed | `2cd1e3462e795124f6f51a80f319fa812506f2a1` (`main` on 14 October 2026, the merge of #49, ADR 0004) |
@@ -312,12 +317,12 @@ gains an addendum. Trade-off: a guardian targeted by a hostile admin now relies 
 guardian, not the cold admin, to cancel the revocation.
 
 **Regression tests.** `test/integration/GovernanceRecovery.t.sol`
-(`test_ColdAdminRemovesAHotAdminAndAGuardianActingTogether`,
-`test_TheGuardianVetoIsUnchanged`, `test_DemotionsByGrantStayCancellable`);
-`test/governance/GuardianCancel.t.sol` (`test_AdminCannotCancelAnotherAccountsRevocation`,
-`testFuzz_OnlyGuardiansCancelAnotherAccountsRevocation`,
-`testFuzz_NobodyCancelsTheirOwnRevocation`);
-`test/governance/GovernanceInvariant.t.sol` (`invariant_GovernanceStaysContained`).
+(test_ColdAdminRemovesAHotAdminAndAGuardianActingTogether,
+test_TheGuardianVetoIsUnchanged, test_DemotionsByGrantStayCancellable);
+`test/governance/GuardianCancel.t.sol` (test_AdminCannotCancelAnotherAccountsRevocation,
+testFuzz_OnlyGuardiansCancelAnotherAccountsRevocation,
+testFuzz_NobodyCancelsTheirOwnRevocation);
+`test/governance/GovernanceInvariant.t.sol` (invariant_GovernanceStaysContained).
 
 **Fix review: approve with nits.** The original PoC now reverts with
 `AccessManagerUnauthorizedCancel`. The reviewer found no entrenchment path: only `revokeRole`
@@ -348,12 +353,12 @@ state how long a suspension lasts: 30 days for a mistaken one, about 60 with one
 guardian, about 90 with a dishonest guardian and a compromised hot admin.
 
 **Regression tests.** `test/governance/Suspension.t.sol` (12 tests, including
-`test_AGuardianSuspendsAKeyInTheSameBlock`, `testFuzz_OnlyOperationalRolesCanBeSuspended`,
-`test_OnlyAnAdminGrantLiftsItAndAGuardianCanVetoThat`);
-`test/integration/GovernanceRecovery.t.sol` (`test_AGuardianSuspendsThePlatformKeyAtOnce`,
-`test_EveryOperationalRoleCanBeSuspended`, `test_ReplacingASuspendedKey`,
-`test_ADishonestGuardiansSuspensionLastsAboutSixtyDays`);
-`test/governance/GovernanceInvariant.t.sol` (`invariant_SuspensionsStayContained`).
+test_AGuardianSuspendsAKeyInTheSameBlock, testFuzz_OnlyOperationalRolesCanBeSuspended,
+test_OnlyAnAdminGrantLiftsItAndAGuardianCanVetoThat);
+`test/integration/GovernanceRecovery.t.sol` (test_AGuardianSuspendsThePlatformKeyAtOnce,
+test_EveryOperationalRoleCanBeSuspended, test_ReplacingASuspendedKey,
+test_ADishonestGuardiansSuspensionLastsAboutSixtyDays);
+`test/governance/GovernanceInvariant.t.sol` (invariant_SuspensionsStayContained).
 
 **Fix review: approve with nits.** With a suspension added at detection, the original PoC reverts
 with `AccessManagedUnauthorized` on day 29. The reviewer confirmed that "suspended fails
@@ -391,14 +396,14 @@ guardian veto, a contest decided by the TDH vote, or the lapse.
 **Regression tests.** `test/integration/RecoveryRestraint.t.sol` (14 tests on the real
 deployment, including test_RestrainedKeyCannotManageTheEditionSale, removed with the
 fixed-price and Dutch adapters by ADR 0005 and kept at `v1.0.0-rc.1`,
-`test_NobodyStartsAnUnmintedWorkDuringTheNotice`, `test_RestrainedKeyCannotAmendTheRecord`,
-`test_NoBidAuctionRunningAtStagingGoesToTheMuseumAtOnce` (it tested this wait until ADR 0005
+test_NobodyStartsAnUnmintedWorkDuringTheNotice, test_RestrainedKeyCannotAmendTheRecord,
+test_NoBidAuctionRunningAtStagingGoesToTheMuseumAtOnce (it tested this wait until ADR 0005
 sent an unbid canonical work to the museum),
-`test_PreSignedAcceptanceRefusedWhileRestrained`,
-`test_PowersReturnWhenAVoteVoidsTheOverride`); `test/identity/ArtistRegistry.t.sol`
-(`test_ActiveAuthority_RestrainedUntilTheOverrideExecutes`);
+test_PreSignedAcceptanceRefusedWhileRestrained,
+test_PowersReturnWhenAVoteVoidsTheOverride); `test/identity/ArtistRegistry.t.sol`
+(test_ActiveAuthority_RestrainedUntilTheOverrideExecutes);
 `test/identity/ArtistRegistry.invariant.t.sol`
-(`invariant_ActiveAuthorityIsRestrainedOnlyByAnAuthorityMovingOverride`).
+(invariant_ActiveAuthorityIsRestrainedOnlyByAnAuthorityMovingOverride).
 
 **Fix review: approve with nits.** All three original PoCs now fail with the intended errors. The
 reviewer confirmed every creator-power read moved to the active authority and that the remaining
@@ -424,11 +429,11 @@ void, lapse, clear). `register` and other artists' changes refuse a reserved acc
 `AccountTaken`.
 
 **Regression tests.** `test/integration/IdentityRecovery.t.sol`
-(`test_PendingNextAuthorityIsReservedUntilTheRecoveryExecutes`,
-`test_StandardChangeReservesItsNewAuthorityUntilVetoed`); `test/identity/ArtistRegistry.t.sol`
-(`test_Reservation_FollowsThePendingChange`, `test_Reservation_ReleasedWhenExecutionClears`,
-`test_ExecuteChange_NewAuthorityCannotBeTakenMeanwhile`);
-`test/identity/ArtistRegistry.invariant.t.sol` (`invariant_OnlyThePendingNextAuthorityIsReserved`).
+(test_PendingNextAuthorityIsReservedUntilTheRecoveryExecutes,
+test_StandardChangeReservesItsNewAuthorityUntilVetoed); `test/identity/ArtistRegistry.t.sol`
+(test_Reservation_FollowsThePendingChange, test_Reservation_ReleasedWhenExecutionClears,
+test_ExecuteChange_NewAuthorityCannotBeTakenMeanwhile);
+`test/identity/ArtistRegistry.invariant.t.sol` (invariant_OnlyThePendingNextAuthorityIsReserved).
 
 **Fix review: approve with nits.** The original PoC now reverts with `AccountTaken`. The reviewer
 checked that every way a change ends releases the reservation, that reserving a key needs that
@@ -458,7 +463,7 @@ during the 48 hours.
 **Regression tests.** `test/integration/Dispute.t.sol`
 (`test_ReleasedContentIsReservedForTheNamedArtist`,
 `test_ReleaseIsGovernedNamesAnArtistAndHappensOnce`,
-`test_TheRightfulVrfItemReadsTheContentsSeed`, `test_AGuardianCancelsAPendingRelease`);
+`test_TheRightfulVrfItemReadsTheContentsSeed`, test_AGuardianCancelsAPendingRelease);
 `test/curation/PackageRegistry.t.sol` (then its release test; since ADR 0007 the release is Stream's, `test/stream/Stream.t.sol` `test_releaseContent_afterBurnLetsTheRealArtistMint`).
 
 **Fix review: approve with nits.** The copier's release now reverts with
@@ -827,15 +832,15 @@ are not part of the repository.
 | --- | --- |
 | GOV-1 | `test/integration/GovernanceRecovery.t.sol`, `test/governance/GuardianCancel.t.sol`, `test/governance/GovernanceInvariant.t.sol` |
 | GOV-2 | `test/governance/Suspension.t.sol`, `test/integration/GovernanceRecovery.t.sol`, `test/governance/GovernanceInvariant.t.sol` |
-| GOV-3, GOV-4, DEPS-3, DEPS-4 | `test/deploy/DeployScript.t.sol` (the tests whose `Regression:` line names one of them, such as `test_VerifyRepeatsTheHolderGuards`, `test_OneKeyBehindEveryGuardianSafeIsRefused`, `test_MainnetRefusesANonCanonicalCoordinator` and `test_VerifyChecksTheSubscriptionConsumers`; and the Safe module, guard and singleton tests) |
+| GOV-3, GOV-4, DEPS-3, DEPS-4 | `test/deploy/DeployScript.t.sol` (the tests whose `Regression:` line names one of them, such as `test_VerifyRepeatsTheHolderGuards`, test_OneKeyBehindEveryGuardianSafeIsRefused, `test_MainnetRefusesANonCanonicalCoordinator` and `test_VerifyChecksTheSubscriptionConsumers`; and the Safe module, guard and singleton tests) |
 | GOV-5 | `test/sales/PauseWindow.t.sol` |
 | IDENTITY-1 | `test/integration/RecoveryRestraint.t.sol`, `test/identity/ArtistRegistry.t.sol`, `test/identity/ArtistRegistry.invariant.t.sol` |
 | IDENTITY-2 | `test/integration/IdentityRecovery.t.sol`, `test/identity/ArtistRegistry.t.sol`, `test/identity/ArtistRegistry.invariant.t.sol` |
-| IDENTITY-3 | `test/identity/ArtistRegistryStanding.t.sol` (`test_Standing_PendingWalletRevokedBeforeThirtyDaysNeverGainsStanding`, `test_Standing_PendingEntryFollowsALaterReRegistration`, `test_Standing_RevocationObservedOnlyAfterTheThirtyDaysKeepsTheGrace`) |
-| IDENTITY-4 | `test/identity/ConsolidationAdapter.t.sol` (`test_Reads_*`), `test/identity/ArtistRegistry.t.sol` (`test_SourceReadFailure_FailsClosed`) |
+| IDENTITY-3 | `test/identity/ArtistRegistryStanding.t.sol` (test_Standing_PendingWalletRevokedBeforeThirtyDaysNeverGainsStanding, test_Standing_PendingEntryFollowsALaterReRegistration, test_Standing_RevocationObservedOnlyAfterTheThirtyDaysKeepsTheGrace) |
+| IDENTITY-4 | `test/identity/ConsolidationAdapter.t.sol` (`test_Reads_*`), `test/identity/ArtistRegistry.t.sol` (test_SourceReadFailure_FailsClosed) |
 | SIGS-1 = LIFECYCLE-2 | `test/integration/Dispute.t.sol`, `test/curation/PackageRegistry.t.sol` |
 | SIGS-2 | `test/curation/Eip712CurationVerifier.t.sol`, `test/integration/CuratedSale.t.sol`, `test/curation/PackageRegistry.t.sol` (`test_setVerifier_refusesARetiredVerifier`) |
-| SIGS-3 | `test/integration/IdentityRecovery.t.sol` (`test_RotationBackToAPreviousAuthorityIsRefused`), `test/identity/ArtistRegistry.t.sol` |
+| SIGS-3 | `test/integration/IdentityRecovery.t.sol` (test_RotationBackToAPreviousAuthorityIsRefused), `test/identity/ArtistRegistry.t.sol` |
 | SIGS-4 | `test/integration/MasterEdition.t.sol` (`test_RevokingTheRootDoesNotStrandASoldMastersEdition`) |
 | LIFECYCLE-1 | `test/sales/auction/AuctionDisputePause.t.sol`, `test/sales/auction/EnglishAuctionDisputes.t.sol`, `test/sales/auction/invariant/AuctionHaltsInvariant.t.sol` |
 | LIFECYCLE-3, CONTENT-3 | `test/integration/WorkRecordsStack.t.sol` (`test_Locator_*`) |

@@ -14,8 +14,8 @@ import { Dependency } from "../libraries/Dependency.sol";
 ///      deprecation is a one-way flag. Because a registered file must already be complete in the
 ///      store, every registered version is readable for as long as the chain exists.
 ///
-///      Genesis maps `register` to `Roles.PARAMETER_SETTER` (48 hours, so guardians can cancel a
-///      version before it is permanent) and `deprecate` to `Roles.GUARDIAN` (immediate).
+///      Genesis maps `register` to `Roles.PARAMETER_SETTER` (the network at 24 hours, so a
+///      version is public before it is permanent) and `deprecate` to `Roles.NETWORK` (no delay).
 contract DependencyRegistry is IDependencyRegistry, AccessManaged {
     struct Entry {
         bytes32 fileId;

@@ -33,8 +33,11 @@ contract EditionAuctionGasReport is EditionAuctionStack {
     ///      gas. To 296,000 and 342,000 (measured 289,387 and 335,124, were 282,248 and 327,985)
     ///      by review C, F16: `open` confirms an existing wallet through the ledger's idempotent
     ///      `createWallet` (about 3,600 each: the payee validation, the hash and one cold word),
-    ///      never by code at the address.
-    uint256 internal constant OPEN_CEILING = 296_000;
+    ///      never by code at the address. To 301,000 (measured 298,471) at integration: `open`
+    ///      asks the real package registry whether the item is still approved (C23,
+    ///      `isApprovedItem`: the package, its signer's kill epoch and the Merkle proof), which
+    ///      the sales lane measured against a stub.
+    uint256 internal constant OPEN_CEILING = 301_000;
     uint256 internal constant OPEN_FIRST_CEILING = 342_000;
     /// @dev Moved from 144,000 by owner decision 16: 6529 Stream Editions reads the package
     ///      registry from Stream (two reads) instead of an immutable; from 148,000 (measured
@@ -46,12 +49,12 @@ contract EditionAuctionGasReport is EditionAuctionStack {
     uint256 internal constant RAISE_CAPPED_CEILING = 81_000;
     uint256 internal constant CLAIM_LOSER_CEILING = 49_000;
     uint256 internal constant CLAIM_FOR_CEILING = 67_000;
-    uint256 internal constant WITHDRAW_CEILING = 90_000;
     /// @dev From 153,000 (measured 169,657, was 149,586) by the permanence plan: the clearing call
     ///      seals the edition's supply at the count sold (`Editions.sealSupply`, ED-25, +12.6K),
     ///      reads the governed payout gas (+2.1K), and pays a seller wallet that now exists (its
     ///      `receive` runs; it was an empty address before `open` deployed it).
-    uint256 internal constant SWEEP_SETTLE_CEILING = 174_000;
+    /// @dev Second pass: the clearing call reads the fee recipient at settlement (R18).
+    uint256 internal constant SWEEP_SETTLE_CEILING = 182_000;
     /// @dev On the split ledger (permanence integration, 15 November 2026): each wallet is a
     ///      66-byte vault and one configuration word, so the first open deploys two vaults and
     ///      writes 8 new slots (was 14 and 2,611,680 gas on the split factory). Measured 434,296,
@@ -80,30 +83,21 @@ contract EditionAuctionGasReport is EditionAuctionStack {
     // ------------------------------------------------------------------ rows
 
     function test_Gas_EditionAuction_OpenFirst() public {
-        // A fresh adapter: the first open interns the fee recipient.
+        // A fresh adapter's first open (the fee recipient is no longer interned, R18).
         _setUpFreshAdapter();
         (bytes32 r, Work memory w) = _masterPackage(0);
         (, uint256 id) = _start(r, _one(w), 0);
         bytes memory data =
-            abi.encodeCall(editionAuction.open, (address(editions), id, abi.encode(w.item)));
+            abi.encodeCall(editionAuction.open, (address(editions), id, _openData(w)));
         _probeWallets(w);
-        _rowGate(
-            "open, first (fee recipient interned)",
-            keeper,
-            address(editionAuction),
-            data,
-            0,
-            OPEN_FIRST_CEILING,
-            8,
-            0
-        );
+        _rowGate("open, first", keeper, address(editionAuction), data, 0, OPEN_FIRST_CEILING, 6, 0);
     }
 
     function test_Gas_EditionAuction_Open() public {
         (bytes32 r, Work memory w) = _masterPackage(0);
         (, uint256 id) = _start(r, _one(w), 0);
         bytes memory data =
-            abi.encodeCall(editionAuction.open, (address(editions), id, abi.encode(w.item)));
+            abi.encodeCall(editionAuction.open, (address(editions), id, _openData(w)));
         _probeWallets(w);
         _rowGate("open, steady state", keeper, address(editionAuction), data, 0, OPEN_CEILING, 6, 0);
     }
@@ -120,7 +114,7 @@ contract EditionAuctionGasReport is EditionAuctionStack {
         (, uint256 id) = _start(r, _one(w), 0);
         assertEq(_editionSeller(w).code.length, 0, "the seller wallet is not deployed yet");
         bytes memory data =
-            abi.encodeCall(editionAuction.open, (address(editions), id, abi.encode(w.item)));
+            abi.encodeCall(editionAuction.open, (address(editions), id, _openData(w)));
         _probeWallets(w);
         probes.push(newArtist);
         _rowGate(
@@ -254,27 +248,6 @@ contract EditionAuctionGasReport is EditionAuctionStack {
             data,
             value,
             RAISE_CAPPED_CEILING,
-            1,
-            0
-        );
-    }
-
-    function test_Gas_EditionAuction_WithdrawDuringDispute() public {
-        _openMaster(60);
-        address b = makeAddr("gasBidder");
-        uint256 bidId = _editionBid(saleId, b, 130, 5);
-        // The pause comes a minute after the bid: only bids placed before it may leave.
-        vm.warp(block.timestamp + 60);
-        vm.prank(guardian1);
-        auction.pause(oneSaleId, keccak256("dispute"));
-        bytes memory data = abi.encodeCall(editionAuction.withdrawBid, (saleId, bidId, b));
-        _rowGate(
-            "withdrawBid, capped, 1/1 paused",
-            b,
-            address(editionAuction),
-            data,
-            0,
-            WITHDRAW_CEILING,
             1,
             0
         );

@@ -160,9 +160,14 @@ contract WorkRecordsStackTest is IntegrationBase {
         emit IWorkLocators.LocatorAdded(tokenId, file, 1, canonical, platform, false);
         vm.prank(platform);
         delivery.addLocator(tokenId, file, canonical);
+        // C33: the network's preferred kind chooses among every live locator, the platform's
+        // included.
         vm.prank(storageOperator);
         delivery.setPreferredKind(LocatorKind.IPFS);
-        assertEq(_served(tokenId, file), "", "platform copies wait for the operator's pick");
+        assertEq(_served(tokenId, file), canonical.uri, "the network's preferred kind serves it");
+        vm.prank(storageOperator);
+        delivery.setPreferredKind(LocatorKind.ARWEAVE);
+        assertEq(_served(tokenId, file), arweaveCopy, "and the Arweave copy under its kind");
         vm.prank(storageOperator);
         delivery.setFilePreference(tokenId, file, 1);
         assertEq(_served(tokenId, file), canonical.uri, "the operator's pick serves it");
@@ -172,8 +177,9 @@ contract WorkRecordsStackTest is IntegrationBase {
 
     /// Regression: LIFECYCLE-3 (docs/security/internal-review-2026-10.md)
     /// Regression: RFX-REC-1
-    /// @dev The artist's locators added before finalize are served by the kind preferences and
-    ///      the fallback; the platform's, at any time, once the storage operator selects them.
+    /// @dev The artist's locators added before finalize and the platform's, at any time, are
+    ///      all served by the kind preferences (C33), the first live one by the fallback, and
+    ///      any one by the storage operator's pick.
     function test_Locator_ArtistBeforeAndPlatformAfterFinalizeAreServed() public {
         (uint256 tokenId, bytes32 file) = _openWork();
         vm.prank(artist);
@@ -182,9 +188,10 @@ contract WorkRecordsStackTest is IntegrationBase {
         assertEq(_served(tokenId, file), CA.arweave("artist before"), "the fallback");
         vm.prank(platform);
         delivery.addLocator(tokenId, file, CA.ipfsLocator("platform after"));
+        assertEq(_served(tokenId, file), CA.arweave("artist before"), "the first live locator");
         vm.prank(storageOperator);
         delivery.setPreferredKind(LocatorKind.IPFS);
-        assertEq(_served(tokenId, file), CA.arweave("artist before"), "no platform fallback");
+        assertEq(_served(tokenId, file), CA.ipfs("platform after"), "the preferred kind (C33)");
         vm.prank(storageOperator);
         delivery.setFilePreference(tokenId, file, 1);
         assertEq(_served(tokenId, file), CA.ipfs("platform after"), "the operator's pick");
@@ -267,13 +274,13 @@ contract WorkRecordsStackTest is IntegrationBase {
             )
         );
         bytes[] memory sigs = new bytes[](1);
-        sigs[0] = _sign(artist, digest);
+        sigs[0] = abi.encodePacked(artist, _sign(artist, digest));
         return abi.encodeCall(records.relicense, (tokenId, next, w.item, state, deadline, sigs));
     }
 
     function _expectRelicenseRefused(bytes memory call) internal {
         _schedule(hotAdmin, address(records), call);
-        vm.warp(block.timestamp + 2 days);
+        vm.warp(block.timestamp + 3 days); // relicense: the network at 3 days
         vm.prank(hotAdmin);
         vm.expectRevert(IWorkRecords.InvalidLicense.selector);
         manager.execute(address(records), call);

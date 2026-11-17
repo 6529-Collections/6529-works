@@ -97,11 +97,14 @@ contract FederatedSaleTest is FederationBase {
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes memory sig =
             _sign(other, artists.registrationDigest(other, bytes32(0), bytes32(0), deadline));
-        bytes memory consent = _sign(
+        bytes memory consent = abi.encodePacked(
             other,
-            _listingDigest(
-                IArtistRegistry.FederatedListing(
-                    uint160(other), address(fed), 0, address(0), 0, address(0), deadline
+            _sign(
+                other,
+                _listingDigest(
+                    IArtistRegistry.FederatedListing(
+                        uint160(other), address(fed), 0, address(0), 0, address(0), deadline
+                    )
                 )
             )
         );
@@ -232,11 +235,10 @@ contract FederatedSaleTest is FederationBase {
         uint256 before = networkFee.balance;
         _ethBid(saleId, collector, price);
         _settleAtEnd(saleId);
-        assertEq(networkFee.balance - before, uint256(price) * FED_SHARE / 100_000);
-        assertEq(
-            splitFactory.walletFor(w.item.payees, 0).balance,
-            price - uint256(price) * FED_SHARE / 100_000
-        );
+        // R18: the seller's part rounds down; the network takes the rest.
+        uint256 sellerPart = uint256(price) * (100_000 - FED_SHARE) / 100_000;
+        assertEq(networkFee.balance - before, price - sellerPart);
+        assertEq(splitFactory.walletFor(w.item.payees, 0).balance, sellerPart);
     }
 
     // ------------------------------------------------------------------ unsold and restart

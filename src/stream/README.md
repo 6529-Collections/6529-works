@@ -15,8 +15,8 @@ selection in [Rendering and tokenURI](../../docs/spec/rendering-and-tokenuri.md#
 | `Stream.sol` | The permanent core ([`IStream`](../interfaces/IStream.sol), one flat ERC-165 id; [`IMintTarget`](../interfaces/IMintTarget.sol)): mints what its mint policy ([`IMintPolicy`](../interfaces/IMintPolicy.sol), the package registry) admits into an admitted adapter's custody, collections and serials, the terms locked at mint, `royaltyInfo`, settle, burn, rescue and museum routing, the edition link, `rendererOf` and `tokenURI`, contract URI and marketplace owner. |
 | `StreamViews.sol` | The genesis read-only extension ([`IStreamExtension`](../interfaces/IStreamExtension.sol), [`IStreamViews`](../interfaces/IStreamViews.sol)), deployed by Stream's constructor and reached only by STATICCALL: the fallback forwards only its three views (`work`, `collection`, `totalSupply`), and `createCollection` calls its collection-name rule (`isValidCollectionName`) directly. Nothing permanent or pinned reads it (AUC-49); a broken one can only refuse new collections until replaced (LIM-GV-25). |
 | `StreamLayout.sol` | The permanent storage slots of Stream that `extsload` readers (a pinned renderer, the extension) use: the token words, a collection's words and name, the counters, the owner and the contract URI (AUC-49). |
-| `WorkRecords.sol` | The permanent records satellite ([`IWorkRecords`](../interfaces/IWorkRecords.sol), [`IWorkPowers`](../interfaces/IWorkPowers.sol)): opening a work's record, the record file, media list, license and seed, the state hash, finalize and renderer pins, amendments (the royalty rate only down), the lead artist's renounced powers, on-chain completeness and each file's store, and the governed pointers to the delivery contract and the store set. |
-| `WorkDelivery.sol` | The first, replaceable delivery contract ([`IWorkDelivery`, `IWorkLocators`](../interfaces/IWorkDelivery.sol)), deployed by `WorkRecords`' constructor: locators, kinds, preferences and the URI grammar. |
+| `WorkRecords.sol` | The permanent records satellite ([`IWorkRecords`](../interfaces/IWorkRecords.sol), [`IWorkPowers`](../interfaces/IWorkPowers.sol)): opening a work's record, the record file, media list, license and seed, the state hash, finalize and renderer pins, amendments (the royalty rate up or down), the network's errata repin, the finalize notice, the lead artist's renounced powers, on-chain completeness and each file's store, and the governed pointers to the delivery contract and the store set. |
+| `WorkDelivery.sol` | The first, replaceable delivery contract ([`IWorkDelivery`, `IWorkLocators`](../interfaces/IWorkDelivery.sol)), deployed by `WorkRecords`' constructor: locators, kinds, preferences (among all live locators), the storage operator's dead-locator mark and the URI grammar. |
 | `SpdxId.sol` | Internal library: the license-ID rule Stream applies at mint and `WorkRecords` at deployment and relicense. |
 
 ## Entry points
@@ -27,11 +27,11 @@ selection in [Rendering and tokenURI](../../docs/spec/rendering-and-tokenuri.md#
 | PLATFORM | `createCollection` | AUC-12 |
 | Editions | `linkEdition` once per settled master | AUC-11, ED-2 |
 | The bound `WorkRecords` | `setRoyaltyRate`, `emitMetadataUpdate` | AUC-6, WS-23 |
-| Anyone | `openRecord`, `syncOnChain(tokenId, 0, maxChunks)` (the content store; an added store is the work's artist's choice); the views (`work`, `coreOf`, `artistOf`, `royaltyInfo`, `rendererOf`, `tokenURI`, `record`, `mediaOf`, `licenseOf`, `seedOf`, `preferredLocator`, ...) | WS-1 to WS-3, WS-17, WS-40 to WS-43, AUC-7, RND-1 |
-| The lead artist's active authority | `setRecord`, `finalize`; `WorkDelivery.addLocator` before finalize; EIP-712 consents to amendments; the `RenouncePowers` signature anyone may relay to `renounce` | WS-7 to WS-9, WS-19, WS-37, WS-38 |
-| PLATFORM; STORAGE_OPERATOR | `WorkDelivery.addLocator` (after finalize only PLATFORM); its three preference setters | WS-19, WS-22 |
+| Anyone | `openRecord`, `syncOnChain(tokenId, 0, maxChunks)` (the content store; an added store is walked by the work's artist or STORAGE_OPERATOR); `finalize` 14 days after a recorded notice once the primary sale settled; the views (`work`, `coreOf`, `artistOf`, `royaltyInfo`, `rendererOf`, `tokenURI`, `record`, `mediaOf`, `licenseOf`, `seedOf`, `preferredLocator`, ...) | WS-1 to WS-3, WS-17, WS-40 to WS-43, AUC-7, RND-1 |
+| Any wallet of the lead artist's 6529 account | `setRecord`, `finalize`; `WorkDelivery.addLocator` before finalize; EIP-712 consents to amendments (every party consents by any wallet of its account); the `RenouncePowers` signature anyone may relay to `renounce` (the network relays it for the royalty or licence power) | WS-7 to WS-9, WS-19, WS-37, WS-38 |
+| PLATFORM; STORAGE_OPERATOR | `WorkDelivery.addLocator` (after finalize only PLATFORM); its three preference setters and `markLocatorDead`; `syncOnChain` on an added store | WS-19 to WS-22, WS-43 |
 | The current delivery contract | `WorkRecords.refreshMetadata`, `refreshAllMetadata` | WS-39 |
-| Governance | `setAdmittedMinter`, `setDependency`, `setRescueDelay`, `setDefaultRenderer`, `releaseContent`, `setContractURI`, `setOwner`; `relicense`, `setRoyaltyRate`, `repinRenderer` with every consent they need; `setDelivery`, `addStore`; the genesis binds | [Role matrix: Stream](../../docs/audit/roles.md#stream) and [WorkRecords](../../docs/audit/roles.md#workrecords) |
+| Governance | `setAdmittedMinter`, `setDependency`, `lowerFeeShare`, `rescueToMuseum`, `setDefaultRenderer`, `releaseContent`, `setContractURI`, `setOwner`; `relicense` and `setRoyaltyRate` with every consent they need; `repinRenderer` alone; `renounce` of the royalty or licence power with the artist's signature; `setDelivery`, `addStore`, `retireStore`; the genesis binds | [Role matrix: Stream](../../docs/audit/roles.md#stream) and [WorkRecords](../../docs/audit/roles.md#workrecords) |
 
 Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
 [Works and storage](../../docs/spec/works-and-storage.md#who-calls-workrecords-and-what-it-calls).
@@ -67,7 +67,7 @@ Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
 
 [ADR 0001](../../docs/adr/0001-v1-scope.md) §4 (token model), §5, §7 (royalties), §8 (works,
 content, storage), §9, §10 (permanence) and §12; [ADR 0006](../../docs/adr/0006-work-powers-and-conventions.md)
-(lower-only royalty, renounceable powers); [ADR 0003](../../docs/adr/0003-build-time-decisions.md#token-model-and-storage-amends-adr-0001-4-and-8);
+(renounceable powers; its lower-only royalty is replaced by R10, up or down with agreement); [ADR 0003](../../docs/adr/0003-build-time-decisions.md#token-model-and-storage-amends-adr-0001-4-and-8);
 the [differences from the ADRs](../../docs/spec/README.md#differences-from-the-adrs);
 [known limitations](../../docs/audit/known-limitations.md) LIM-GAS-10, LIM-CNT-2 and
 LIM-CNT-10; [events: Stream and WorkRecords](../../docs/integrators/events-and-indexing.md#stream).

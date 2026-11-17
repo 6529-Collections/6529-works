@@ -36,12 +36,14 @@ import {
 ///         adapter, its lens and the clearing library are the real ones. This contract is the
 ///         AccessManager's admin, so it may call every restricted setter at once.
 /// @dev Helpers keep ghost accounting of every wei the auction takes in and pays out, so a suite
-///      can check conservation at any point: `escrowIn - refundsOut - withdrawnOut - paidOut ==
+///      can check conservation at any point: `escrowIn - refundsOut - paidOut ==
 ///      address(auction).balance - credits`.
 abstract contract EditionAuctionBase is Test {
     /// @dev Edition ID (the master's token ID) every test sells unless it opens another.
     uint256 internal constant ID = 7;
     uint32 internal constant FEE_SHARE = 25_000;
+    /// @dev The package root every test opens with.
+    bytes32 internal constant ROOT = keccak256("package root");
 
     AccessManager internal manager;
     MockRevenueEscrow internal escrow;
@@ -118,26 +120,21 @@ abstract contract EditionAuctionBase is Test {
 
     /// @dev The launch parameters (ADR 0005 section 4).
     function defaultConfig() internal pure returns (IUniformEditionAuction.AuctionConfig memory) {
-        return IUniformEditionAuction.AuctionConfig(
-            1e14, 48, 336, 10_000, 15 minutes, 5 minutes, 1 days
-        );
+        return IUniformEditionAuction.AuctionConfig(1e14, 48, 336, 10_000, 5 minutes, 1 days);
     }
 
     function _setConfig(IUniformEditionAuction.AuctionConfig memory next) internal {
         auction.setConfig(ua.config(), next);
     }
 
-    /// @dev The launch limits (ADR 0005 section 4, as amended 15 November 2026): a close offset
-    ///      of up to 30 days, abandonment 150 days after the end, 100,000 gas per payout, and
-    ///      at most 730 days of Stream's rescue lengthening added to an abandonment.
+    /// @dev The launch limit: 100,000 gas per payout.
     function defaultLimits() internal pure returns (IUniformEditionAuction.Limits memory) {
-        return IUniformEditionAuction.Limits(30 days, 150, 100_000, 730);
+        return IUniformEditionAuction.Limits(100_000);
     }
 
-    /// @dev Limits packed as `setLimits` takes them.
+    /// @dev The limit as `setLimits` takes it: the payout gas.
     function _packedLimits(IUniformEditionAuction.Limits memory l) internal pure returns (uint256) {
-        return uint256(l.maxCloseOffset) | uint256(l.voidDelayDays) << 32 | uint256(l.payoutGas)
-            << 48 | uint256(l.rescueCapDays) << 80;
+        return l.payoutGas;
     }
 
     function _setLimits(IUniformEditionAuction.Limits memory next) internal {
@@ -173,7 +170,13 @@ abstract contract EditionAuctionBase is Test {
     function _openId(uint256 id, uint32 maxCount) internal returns (uint256 saleId) {
         PackageItem memory item = _item(id, maxCount);
         vm.prank(opener);
-        saleId = auction.open(address(editions), id, abi.encode(item));
+        saleId = auction.open(address(editions), id, _openData(item));
+    }
+
+    /// @dev 6529 Stream Editions' open data (C23): the item, its package root and proof. The
+    ///      mock package registry approves every root the test has not revoked.
+    function _openData(PackageItem memory item) internal pure returns (bytes memory) {
+        return abi.encode(item, ROOT, new bytes32[](0));
     }
 
     // ------------------------------------------------------------------ bidding
@@ -200,20 +203,6 @@ abstract contract EditionAuctionBase is Test {
         vm.prank(b.bidder);
         auction.raise{ value: amount }(saleId, bidId, newStep);
         escrowIn += amount;
-    }
-
-    /// @dev Withdraws `bidId` during a dispute pause of the 1/1 (paused around the call).
-    function _withdrawDuringPause(uint256 saleId, uint256 bidId) internal {
-        IUniformEditionAuction.Bid memory b = ua.bidOf(saleId, bidId);
-        IEnglishAuction.Auction memory o = english.auction(english.saleIdOf(address(stream), ID));
-        // A pause in a later minute than the bid's (only bids placed before the pause leave).
-        vm.warp(block.timestamp + 60);
-        english.set(address(stream), ID, IEnglishAuction.AuctionState.PAUSED, o.endTime);
-        uint256 amount = uint256(b.quantity) * _price(saleId, b.step);
-        vm.prank(b.bidder);
-        auction.withdrawBid(saleId, bidId, b.bidder);
-        english.set(address(stream), ID, o.state, o.endTime);
-        refundsOut += amount;
     }
 
     // ------------------------------------------------------------------ closing

@@ -49,9 +49,10 @@ METHODS = {
 
 CONFIG = {
     "roles": [
-        {"name": "PARAMETER_SETTER", "executionDelay": 172800},
-        {"name": "SUCCESSOR_SETTER", "executionDelay": 2592000},
+        {"name": "PARAMETER_SETTER", "executionDelay": 86400, "network": True},
+        {"name": "SUCCESSOR_SETTER", "executionDelay": 604800, "network": True},
     ],
+    "network": "0x" + "00" * 18 + "b001",
     "peers": [{"name": "Peer", "address": "0x" + "00" * 19 + "01"}],
     "contracts": [
         {
@@ -61,9 +62,9 @@ CONFIG = {
             "implementation": "src/x/Foo.sol:Foo",
             "functions": [
                 {"signature": "setFee(uint256)", "selector": "0x11111111",
-                 "role": "PARAMETER_SETTER", "class": "standard", "delay": 172800},
+                 "role": "PARAMETER_SETTER", "class": "24h", "delay": 86400},
                 {"signature": "setAdmittedMinter(address,bool)", "selector": "0x33333333",
-                 "role": "SUCCESSOR_SETTER", "class": "successor", "delay": 2592000},
+                 "role": "SUCCESSOR_SETTER", "class": "7d", "delay": 604800},
             ],
             "genesisOnly": [{"signature": "bindStream(address)", "selector": "0x22222222"}],
             "deferred": [],
@@ -210,7 +211,7 @@ class CheckGenesisTest(unittest.TestCase):
             "artifact": "src/later/Later.sol:Later",
             "implementation": "src/later/Later.sol:Later",
             "functions": [{"signature": "setLater(uint256)", "selector": "0x12345678",
-                           "role": "PARAMETER_SETTER", "class": "standard", "delay": 172800}],
+                           "role": "PARAMETER_SETTER", "class": "24h", "delay": 86400}],
             "genesisOnly": [{"signature": "bindStream(address)", "selector": "0x7d4b8f67"}],
             "deferred": [],
         }
@@ -308,10 +309,10 @@ class CheckGenesisTest(unittest.TestCase):
 
     def test_delay_or_class_mismatch_fails(self) -> None:
         self.foo["functions"][0]["delay"] = 0
-        self.assertProblem("setFee(uint256) delay 0 / class standard does not match")
-        self.foo["functions"][0]["delay"] = 172800
-        self.foo["functions"][0]["class"] = "funds"
-        self.assertProblem("setFee(uint256) delay 172800 / class funds does not match")
+        self.assertProblem("setFee(uint256) delay 0 / class 24h does not match")
+        self.foo["functions"][0]["delay"] = 86400
+        self.foo["functions"][0]["class"] = "3d"
+        self.assertProblem("setFee(uint256) delay 86400 / class 3d does not match")
 
     def test_unknown_role_fails(self) -> None:
         self.foo["functions"][0]["role"] = "SYSTEM"
@@ -445,9 +446,11 @@ class CheckGenesisTest(unittest.TestCase):
 
     # -- the committed policy ------------------------------------------------------------------
 
-    def test_policy_allows_holders_description_and_addresses_to_differ(self) -> None:
+    def test_policy_allows_holders_description_network_brake_and_addresses_to_differ(self) -> None:
         deployed = copy.deepcopy(CONFIG)
-        deployed["holders"] = [{"role": "ADMIN", "account": "0x" + "ab" * 20}]
+        deployed["holders"] = [{"role": "PAUSER", "account": "0x" + "ab" * 20}]
+        deployed["network"] = "0x" + "12" * 20
+        deployed["brake"] = "0x" + "34" * 20
         deployed["description"] = "Sepolia genesis"
         deployed["contracts"][0]["address"] = "0x" + "cd" * 20
         deployed["peers"][0]["address"] = "0x" + "ef" * 20
@@ -458,7 +461,7 @@ class CheckGenesisTest(unittest.TestCase):
         # The review PoC: a 30-day selector moved to a faster role.
         deployed = copy.deepcopy(CONFIG)
         fn = deployed["contracts"][0]["functions"][1]
-        fn.update({"role": "PARAMETER_SETTER", "class": "standard", "delay": 172800})
+        fn.update({"role": "PARAMETER_SETTER", "class": "24h", "delay": 86400})
         problems = cg.policy_differences(deployed, CONFIG)
         self.assertTrue(any(".contracts[0].functions[1].role" in p for p in problems), problems)
 
@@ -481,7 +484,7 @@ class CheckGenesisTest(unittest.TestCase):
     def test_main_checks_a_given_config_against_the_committed_policy(self) -> None:
         policy = copy.deepcopy(self.repo.config)
         self.foo["functions"][0].update(
-            {"role": "SUCCESSOR_SETTER", "class": "successor", "delay": 2592000}
+            {"role": "SUCCESSOR_SETTER", "class": "7d", "delay": 604800}
         )
         code, out = self.repo.run(policy=policy)
         self.assertEqual(code, 1)
@@ -491,7 +494,8 @@ class CheckGenesisTest(unittest.TestCase):
 
     def test_main_passes_a_copy_that_changes_only_holders(self) -> None:
         policy = copy.deepcopy(self.repo.config)
-        self.repo.config["holders"] = [{"role": "ADMIN", "account": "0x" + "ab" * 20}]
+        self.repo.config["holders"] = [{"role": "PAUSER", "account": "0x" + "ab" * 20}]
+        self.repo.config["network"] = "0x" + "cd" * 20
         code, out = self.repo.run(policy=policy)
         self.assertEqual(code, 0, out)
 
@@ -509,12 +513,12 @@ class CheckGenesisTest(unittest.TestCase):
             self.repo.problems()
         self.assertIn("run forge build", str(raised.exception))
 
-    # -- the manager's own functions and suspendable roles (checks 7 and 8) ----------------------
+    # -- the manager's own functions (check 7) -------------------------------------------------
 
     def _manager(self) -> dict:
         self.repo.config["roles"] += [
-            {"name": "GUARDIAN", "executionDelay": 0, "suspendable": False},
-            {"name": "PLATFORM", "executionDelay": 0, "suspendable": True},
+            {"name": "NETWORK", "executionDelay": 0, "network": True},
+            {"name": "PLATFORM", "executionDelay": 0, "network": False},
         ]
         self.repo.artifact("Base.sol", "Base", {"cancel(address)": "aaaaaaaa"})
         self.repo.artifact("Manager.sol", "Manager", {"cancel(address)": "aaaaaaaa",
@@ -524,7 +528,7 @@ class CheckGenesisTest(unittest.TestCase):
             "artifact": "src/g/Manager.sol:Manager",
             "base": "lib/oz/Base.sol:Base",
             "functions": [{"signature": "suspend(uint64,address)", "selector": "0x64bf6e5d",
-                           "role": "GUARDIAN", "class": "immediate", "delay": 0}],
+                           "role": "NETWORK", "class": "immediate", "delay": 0}],
             "views": [{"signature": "isSuspended(uint64,address)", "selector": "0xbd2e6ac3"}],
         }
         self.repo.config["manager"] = manager
@@ -561,76 +565,69 @@ class CheckGenesisTest(unittest.TestCase):
     def test_manager_function_selector_role_and_base_are_checked(self) -> None:
         manager = self._manager()
         manager["functions"][0]["selector"] = "0x11111111"
-        manager["functions"][0]["delay"] = 172800
+        manager["functions"][0]["delay"] = 86400
         manager["views"].append({"signature": "cancel(address)", "selector": "0xaaaaaaaa"})
         problems = self.repo.problems()
         self.assertIn(
             "manager: functions suspend(uint64,address) selector 0x11111111 != compiled 0x64bf6e5d",
             problems,
         )
-        self.assertTrue(any("does not match GUARDIAN" in p for p in problems), problems)
+        self.assertTrue(any("does not match NETWORK" in p for p in problems), problems)
         self.assertIn("manager: views cancel(address) is a method of the base "
                       "lib/oz/Base.sol:Base", problems)
 
-    # -- seat caps (check 9) -------------------------------------------------------------
+    # -- the roles' network flags and the single authority (checks 8 and 9) --------------------
 
-    def _seats(self, admins: int, guardians: int) -> None:
-        self.repo.config["holders"] = [
-            {"role": "ADMIN", "account": f"0x{i:040x}"} for i in range(1, admins + 1)
-        ] + [{"role": "GUARDIAN", "account": f"0x{i:040x}"} for i in range(100, 100 + guardians)]
-
-    def test_seat_caps_are_read_from_the_manager_source(self) -> None:
-        self.repo.source(
-            "g/Manager.sol",
-            "contract Manager {\n    // _params = [uint32(1), 2, 3, 4, 9, 9];\n"
-            "    constructor() { _params = [uint32(60 days), 120 days, 365 days, 180 days, 5, 7]; }"
-            "\n}\n",
-        )
-        self.repo.config["manager"] = {"artifact": "src/g/Manager.sol:Manager"}
-        self.assertEqual(cg.seat_caps(self.repo.root, self.repo.config), {"ADMIN": 5, "GUARDIAN": 7})
-        self.repo.config["manager"] = {"artifact": "src/g/Missing.sol:Manager"}
-        self.assertIsNone(cg.seat_caps(self.repo.root, self.repo.config))
-
-    def test_genesis_may_name_up_to_the_seat_caps(self) -> None:
-        caps = {"ADMIN": 5, "GUARDIAN": 7}
-        for admins in (3, 4, 5):
-            self._seats(admins, 3)
-            self.assertEqual(cg.check_seats(self.repo.config, caps), [])
-        self._seats(6, 8)
+    def test_network_flags_must_match_the_network_roles(self) -> None:
+        self.repo.config["roles"] += [
+            {"name": "NETWORK", "executionDelay": 0, "network": False},
+            {"name": "PAUSER", "executionDelay": 0, "network": True},
+            {"name": "PLATFORM", "executionDelay": 0, "network": "no"},
+            {"name": "CURATOR", "executionDelay": 0, "network": False, "grantDelay": 86400},
+        ]
         self.assertEqual(
-            cg.check_seats(self.repo.config, caps),
-            ["holders: 6 ADMIN holders exceed the manager's default seat cap of 5; configure "
-             "would revert with SeatCapReached",
-             "holders: 8 GUARDIAN holders exceed the manager's default seat cap of 7; configure "
-             "would revert with SeatCapReached"],
+            cg.check_roles(self.repo.config),
+            ["roles: NETWORK network flag is false",
+             "roles: PAUSER network flag is true",
+             "roles: PLATFORM network is not a boolean",
+             "roles: CURATOR has a grant delay; operational keys take effect at once"],
         )
 
-    def test_a_holder_listed_twice_takes_one_seat(self) -> None:
-        self._seats(5, 3)
-        self.repo.config["holders"].append({"role": "ADMIN", "account": "0x" + "0" * 39 + "1"})
-        self.assertEqual(cg.check_seats(self.repo.config, {"ADMIN": 5, "GUARDIAN": 7}), [])
+    def test_the_configuration_names_one_network_address(self) -> None:
+        self.assertEqual(cg.check_authority(self.repo.config), [])
+        for bad in (None, "0x" + "00" * 20, "0x1234", 7):
+            if bad is None:
+                self.repo.config.pop("network", None)
+            else:
+                self.repo.config["network"] = bad
+            self.assertEqual(
+                cg.check_authority(self.repo.config),
+                ["network: not a nonzero address (the single authority)"],
+            )
 
-    def test_only_zero_delay_operational_roles_are_suspendable(self) -> None:
-        self._manager()
-        roles = {r["name"]: r for r in self.repo.config["roles"]}
-        roles["GUARDIAN"]["suspendable"] = True
-        roles["PARAMETER_SETTER"]["suspendable"] = True
-        self.repo.config["roles"].append(
-            {"name": "CURATION_SIGNER", "executionDelay": 0, "suspendable": True}
+    def test_the_brake_is_optional_but_must_be_an_address(self) -> None:
+        self.repo.config["brake"] = "0x" + "00" * 20
+        self.assertEqual(cg.check_authority(self.repo.config), [])
+        self.repo.config["brake"] = "none"
+        self.assertEqual(cg.check_authority(self.repo.config), ["brake: not an address"])
+
+    def test_holders_name_operational_roles_only(self) -> None:
+        self.repo.config["holders"] = [
+            {"role": "PAUSER", "account": "0x" + "0" * 39 + "1"},
+            {"role": "ADMIN", "account": "0x" + "0" * 39 + "2"},
+            {"role": "PARAMETER_SETTER", "account": "0x" + "0" * 39 + "3"},
+        ]
+        self.assertEqual(
+            cg.check_authority(self.repo.config),
+            ["holders: 0x" + "0" * 39 + "2 holds ADMIN, a network role",
+             "holders: 0x" + "0" * 39 + "3 holds PARAMETER_SETTER, a network role"],
         )
-        roles["PLATFORM"]["suspendable"] = "yes"
-        problems = self.repo.problems()
-        self.assertIn(
-            "roles: GUARDIAN is suspendable but not a zero-delay operational role", problems
-        )
-        self.assertIn(
-            "roles: PARAMETER_SETTER is suspendable but not a zero-delay operational role",
-            problems,
-        )
-        self.assertIn("roles: PLATFORM suspendable is not a boolean", problems)
-        self.assertIn(
-            "roles: CURATION_SIGNER is suspendable but not a zero-delay operational role", problems
-        )
+
+    def test_main_reports_a_missing_network(self) -> None:
+        del self.repo.config["network"]
+        code, out = self.repo.run()
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL network: not a nonzero address (the single authority)", out)
 
 
 if __name__ == "__main__":

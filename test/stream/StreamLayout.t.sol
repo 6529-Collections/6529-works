@@ -114,7 +114,12 @@ contract StreamLayoutTest is StreamFixture {
         word = _word(StreamLayout.minterSlot(address(auction)));
         assertEq(uint8(word), 0, "removed");
         assertEq(uint40(word >> 32), block.timestamp, "removedAt, bits 32-71");
-        assertEq(uint32(word >> 72), stream.rescueDelay(), "the locked delay, bits 72-103");
+        assertEq(
+            uint152(word >> 72),
+            uint152(uint256(keccak256(abi.encode(auction.saleKind())))),
+            "the kind key, bits 72-223"
+        );
+        assertEq(word >> 224, 0, "nothing above the kind key");
         assertEq(_word(StreamLayout.minterSlot(address(0xBEEF))), 0, "an unknown adapter is empty");
     }
 }

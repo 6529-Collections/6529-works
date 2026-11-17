@@ -958,6 +958,23 @@ AccessManager governs all of them. The VRF module is optional.
   by its code hash ([ADR 0008](0008-federation.md)); no audit of any contract has been done
   ([docs/spec/federation.md](../spec/federation.md)).
 
+- **16 November 2026: the second permanence pass ([ADR 0009](0009-second-permanence-pass.md)).** This record is history; where it
+  differs, read ADR 0009.
+  - **§7.** The network can change its fee-receiving address and lower its share on existing
+    works alone; a royalty rate can rise when the artist and the network agree; every split
+    release also pays the network; unclaimed shares and credits go to the network after
+    180 days; no price caps.
+  - **§11.** An artist is a 6529 consolidated account, every wallet equal; own changes wait
+    2 days. The network does more than veto: it replaces an identity after 14 days' notice (a
+    contested replacement lapses after 90 days unless a later vote upholds it), cancels pending
+    changes, and freezes an account for 14 days. The 30-day consolidation age, the 7-day wait,
+    the 180-day override notice and the year of dormancy no longer apply.
+  - **§13.** One network address with delays of 24 hours, 3 days and 7 days, an optional
+    brake, and a two-step handover; no guardians, seats, recovery or succession.
+  - **§16.** No exit from the federation. Delisting is per artist account, by a network
+    decision at the 24-hour class, for any reason the network decides; the code does not limit
+    the grounds. Templates take collaborators and requester-paid VRF.
+
 ## Open items
 
 - Whether Stream and 6529 Editions count toward TDH (a backend decision,

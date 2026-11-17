@@ -17,7 +17,6 @@ import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import { ItemKind, PackageItem, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
-import { StreamLayout } from "src/stream/StreamLayout.sol";
 
 /// @dev The English auction surface the edition auction reads: `auctionClock(saleId)` on its
 ///      hot paths and `auction(saleId)` in the lens's `endTimes`, with each 1/1's state and end
@@ -109,7 +108,7 @@ contract MockOneOfOneAuction {
 
 /// @dev 6529 Stream's reads: `coreOf` (the stored item hash and kind), `economics`,
 ///      `primarySaleSettled`, `rescueDelay` (set by the test) and `extsload` (raw words of this
-///      mock, where `setRemoval` writes a sale adapter's admission word as Stream packs it).
+///      mock).
 contract MockMasterStream {
     address public economics;
     mapping(uint256 id => bool) public primarySaleSettled;
@@ -118,17 +117,6 @@ contract MockMasterStream {
 
     function setRescueDelay(uint256 next) external {
         rescueDelay = next;
-    }
-
-    /// @dev Governance removed `adapter` at `removedAt` (zero: admitted again), locking `delay`
-    ///      for its works, at `StreamLayout.minterSlot(adapter)` as Stream packs it.
-    function setRemoval(address adapter, uint40 removedAt, uint32 delay) external {
-        bytes32 slot = StreamLayout.minterSlot(adapter);
-        uint256 word = uint256(removedAt) << 32 | uint256(delay) << 72 | 1 << 8;
-        if (removedAt == 0) word |= 1;
-        assembly ("memory-safe") {
-            sstore(slot, word)
-        }
     }
 
     function extsload(bytes32 slot, uint256 n) external view returns (bytes32[] memory words) {
@@ -144,6 +132,26 @@ contract MockMasterStream {
 
     function setSettled(uint256 id, bool value) external {
         primarySaleSettled[id] = value;
+    }
+
+    /// @dev The package registry's approval check (`IItemApprovals`), answered by this mock: every
+    ///      root is approved until the test revokes it.
+    mapping(bytes32 root => bool) public revoked;
+
+    function setRevoked(bytes32 root, bool value) external {
+        revoked[root] = value;
+    }
+
+    function packageRegistry() external view returns (address) {
+        return address(this);
+    }
+
+    function isApprovedItem(bytes32 root, bytes32, bytes32[] calldata)
+        external
+        view
+        returns (bool)
+    {
+        return !revoked[root];
     }
 
     mapping(uint256 id => bytes32) internal _itemHashes;
@@ -240,6 +248,23 @@ contract MockEditionToken is ERC1155 {
         return _locked[id];
     }
 
+    /// @dev Editions' `createEdition`, reduced to what the auction relies on: the master's sale
+    ///      settled in 6529 Stream, the item the one the master stored, and the edition not yet
+    ///      created; then it exists.
+    function createEdition(uint256 id, PackageItem calldata item) external returns (uint256) {
+        (bytes32 itemHash,,,,,) = MockMasterStream(stream).coreOf(id);
+        if (
+            exists[id] || !MockMasterStream(stream).primarySaleSettled(id)
+                || WorksHashing.itemHashCalldata(item) != itemHash
+        ) revert IEditions.NotEditionMaster(id);
+        exists[id] = true;
+        ++created;
+        return id;
+    }
+
+    /// @dev Counts `createEdition` calls.
+    uint256 public created;
+
     /// @dev The economics an edition recorded (as `createEdition` or a binding locked them).
     function setLocked(uint256 id, address seller, address feeRecipient, uint32 feeShare) external {
         _locked[id] = WorkTerms(seller, feeRecipient, feeShare, seller, 0);
@@ -330,6 +355,19 @@ contract MockWorkTermsResolver {
 
     function splitFactory() external view returns (address) {
         return address(this);
+    }
+
+    /// @dev The network fee recipient settlement reads (R18): the one the test set, else the
+    ///      terms' fee recipient.
+    address public currentFeeRecipient;
+    bool public currentFeeRecipientSet;
+
+    function setNetworkFeeRecipient(address recipient) external {
+        (currentFeeRecipient, currentFeeRecipientSet) = (recipient, true);
+    }
+
+    function networkFeeRecipient(bytes32) external view returns (address) {
+        return currentFeeRecipientSet ? currentFeeRecipient : _terms.feeRecipient;
     }
 
     function createWallet(ISplitWallet.Payee[] calldata payees, bytes32)

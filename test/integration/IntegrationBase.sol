@@ -298,7 +298,8 @@ abstract contract IntegrationBase is WorksDeployment {
         );
         uint256 id = artists.artistIdOf(account);
         address signer = id == 0 ? account : artists.authorityOf(id);
-        bytes memory signature = _sign(signer, registry.acceptanceDigest(root, a));
+        bytes memory signature =
+            abi.encodePacked(signer, _sign(signer, registry.acceptanceDigest(root, a)));
         registry.acceptPackage(root, a, signature);
     }
 
@@ -339,7 +340,9 @@ abstract contract IntegrationBase is WorksDeployment {
         PackageItem memory item = works[index].item;
         uint64 deadline = uint64(block.timestamp + 7 days);
         bytes32 digest = registry.moveDigest(root, WorksHashing.itemHash(item), nonce, deadline);
-        MoveAuthorization memory move = MoveAuthorization(nonce, deadline, _sign(authority, digest));
+        MoveAuthorization memory move = MoveAuthorization(
+            nonce, deadline, abi.encodePacked(authority, _sign(authority, digest))
+        );
         return abi.encode(StreamMintRequest(root, item, _proofOf(works, index), move));
     }
 
@@ -371,10 +374,10 @@ abstract contract IntegrationBase is WorksDeployment {
         );
     }
 
-    /// @dev One guardian deprecates the test ERC-20 (immediate); returns when.
+    /// @dev The network deprecates the test ERC-20 (no delay); returns when.
     function _deprecateUsd() internal returns (uint256 frozenAt) {
         _govern(
-            guardian1, address(allowlist), abi.encodeCall(allowlist.deprecateAsset, (address(usd)))
+            hotAdmin, address(allowlist), abi.encodeCall(allowlist.deprecateAsset, (address(usd)))
         );
         frozenAt = block.timestamp;
     }

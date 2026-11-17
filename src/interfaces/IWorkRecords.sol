@@ -28,7 +28,8 @@ import { License, PackageItem } from "./types/PackageTypes.sol";
 ///      it can show (it validates the JSON and its size, and renders core-only metadata with a
 ///      record status for a record it refuses), and what it inlines of a preview.
 ///
-///      "The artist" is the active authority of the work's lead artist ID. The state hash
+///      "The artist" is any wallet of the work's lead artist account (`IAccounts.isWallet` on
+///      6529 Stream's artist registry): the root or a wallet consolidated with it. The state hash
 ///      commits to the token ID, the version, the record file ID, the license key and text, the
 ///      royalty rate and the effective renderer. The version bumps only on a real change (a new
 ///      record pointer, license, royalty rate or renderer pin, finalize, or a renunciation
@@ -87,12 +88,16 @@ interface IWorkRecords {
     /// @param recordFileId The new record file.
     /// @param stateHash The work's state hash after the change.
     event RecordSet(uint256 indexed tokenId, bytes32 recordFileId, bytes32 stateHash);
-    /// @notice The artist finalized a work: the record is immutable and `renderer` is pinned.
+    /// @notice A work was finalized (by the artist, or by anyone 14 days after a recorded
+    ///         notice): the record is immutable and `renderer` is pinned.
     /// @param tokenId The work's token ID.
     /// @param renderer The pinned renderer: 6529 Stream's default renderer at finalize, pinned
     ///        with the code hash 6529 Stream installed it with.
+    /// @param codeHash The renderer code hash pinned with it (`pinnedRenderer`'s code).
     /// @param stateHash The work's state hash after finalize.
-    event WorkFinalized(uint256 indexed tokenId, address renderer, bytes32 stateHash);
+    event WorkFinalized(
+        uint256 indexed tokenId, address renderer, bytes32 codeHash, bytes32 stateHash
+    );
     /// @notice Every media file of the work is complete in some store (the content store or an
     ///         added store, per file: `MediaFileComplete`); one-way.
     /// @param tokenId The work's token ID.
@@ -128,18 +133,18 @@ interface IWorkRecords {
     event LicenseChanged(
         uint256 indexed tokenId, License previous, License next, bytes32 stateHash
     );
-    /// @notice A work's royalty rate was lowered, by every party's agreement plus a governed
-    ///         action (applied in 6529 Stream and, for a linked master, its edition).
+    /// @notice A work's royalty rate changed, up or down, by every party's agreement plus the
+    ///         network's action (applied in 6529 Stream and, for a linked master, its edition).
     /// @param tokenId The work's token ID.
     /// @param previous The rate before the change, out of 100,000.
     /// @param next The rate after the change, out of 100,000.
     /// @param stateHash The work's state hash after the change.
     event RoyaltyRateSet(uint256 indexed tokenId, uint32 previous, uint32 next, bytes32 stateHash);
-    /// @notice The errata path replaced a finalized work's renderer pin (ADR 0001 section 10).
+    /// @notice The network replaced a finalized work's renderer pin (the errata repin, C8).
     /// @param tokenId The work's token ID.
     /// @param previous The renderer pinned before the change.
     /// @param next The renderer pinned after the change.
-    /// @param codeHash The code hash the artist signed for `next`.
+    /// @param codeHash The code hash `next` is pinned with.
     /// @param stateHash The work's state hash after the change.
     event RendererRepinned(
         uint256 indexed tokenId, address previous, address next, bytes32 codeHash, bytes32 stateHash
@@ -153,6 +158,15 @@ interface IWorkRecords {
     /// @param store The store contract.
     /// @param codeHash The code hash it is pinned with, checked at each use.
     event StoreAdded(uint256 indexed storeId, address store, bytes32 codeHash);
+    /// @notice The network marked an added store dead (`retireStore`, C21): nothing more is
+    ///         counted through it. Files already complete in it keep their record.
+    /// @param storeId The store's ID.
+    event StoreRetired(uint256 indexed storeId);
+    /// @notice Someone other than the artist asked to finalize a work whose primary sale settled
+    ///         (C9): from `dueAt` anyone may finalize it as it then stands.
+    /// @param tokenId The work's token ID.
+    /// @param dueAt When the work may be finalized by anyone (the notice plus 14 days).
+    event FinalizeNoticeRecorded(uint256 indexed tokenId, uint256 dueAt);
 
     /// @notice The work has no open record.
     error RecordNotOpen(uint256 tokenId);
@@ -163,15 +177,20 @@ interface IWorkRecords {
     error InvalidRecordData(uint256 tokenId);
     /// @notice The record file is not registered in the content store, or breaks a record bound.
     error UnknownRecordFile(bytes32 recordFileId);
-    /// @notice The caller is not the work's artist.
+    /// @notice The caller is not a wallet of the work's lead artist account (for `finalize`:
+    ///         and the work's primary sale has not settled).
     error NotWorkArtist(uint256 tokenId, address caller);
+    /// @notice A finalize by anyone but the artist comes before `dueAt` (14 days after the
+    ///         recorded notice).
+    error FinalizeNotDue(uint256 tokenId, uint256 dueAt);
     /// @notice The work is finalized, so its record can no longer change.
     error WorkIsFinalized(uint256 tokenId);
     /// @notice The work's state hash is not the one the caller or signers expected.
     error StateHashMismatch(bytes32 expected, bytes32 actual);
-    /// @notice A party's signature does not verify, or (`partyIndex` equal to the number of
-    ///         signatures given) the number of signatures is not the number of parties. An
-    ///         expired consent reverts with `SignatureVerifier.SignatureExpired`.
+    /// @notice The number of signatures is not the number of parties (`partyIndex` is the number
+    ///         of signatures given). A signature that does not verify reverts with the artist
+    ///         registry's reason (`IAccounts.requireSigned`); an expired consent with
+    ///         `SignatureVerifier.SignatureExpired`.
     error InvalidConsent(uint256 tokenId, uint256 partyIndex);
     /// @notice A CC0 dedication is irrevocable, so the license key cannot change.
     error LicenseIrrevocable(uint256 tokenId);
@@ -186,7 +205,7 @@ interface IWorkRecords {
     error InvalidLicense();
     /// @notice The work is not finalized (an errata repin, and renouncing it, need one).
     error WorkNotFinalized(uint256 tokenId);
-    /// @notice No store has this ID, or its code changed since it was added.
+    /// @notice No store has this ID, its code changed since it was added, or it was retired.
     error UnknownStore(uint256 storeId);
     /// @notice Every store ID is taken (at most 15 stores beside the content store).
     error StoreLimitReached();
@@ -229,8 +248,13 @@ interface IWorkRecords {
     /// @param recordFileId The new record file (`UnknownRecordFile` unless it meets the bounds).
     /// @param expectedStateHash The work's current state hash (`StateHashMismatch` otherwise).
     function setRecord(uint256 tokenId, bytes32 recordFileId, bytes32 expectedStateHash) external;
-    /// @notice The artist finalizes the work: the record becomes immutable and Stream's current
-    ///         default renderer is pinned with its code hash (ADR 0001 section 10). The record
+    /// @notice Finalizes the work: the record becomes immutable and Stream's current default
+    ///         renderer is pinned with its code hash (ADR 0001 section 10). The artist finalizes
+    ///         at any time (C9). Anyone else may once 6529 Stream reports the primary sale
+    ///         settled (`NotWorkArtist` before): the first such call records a notice
+    ///         (`FinalizeNoticeRecorded`) and changes nothing else; from 14 days after the notice
+    ///         (`FinalizeNotDue` before), a call finalizes the record as it then stands, whatever
+    ///         state hash it passes (only the artist's own call checks it). The record
     ///         file must meet the structural bounds (one chunk; see the contract notes), the
     ///         license text (the deployment's CC0 text for a work with no stored license) must
     ///         be registered, with a SHA-256 digest, in at most 16 chunks and complete on-chain,
@@ -238,7 +262,8 @@ interface IWorkRecords {
     ///         none of this for a stored license (`InvalidLicense`). Renouncing RELICENSE
     ///         checks the same ID and text except completeness.
     /// @param tokenId A work with an open record, not finalized.
-    /// @param expectedStateHash The work's current state hash (`StateHashMismatch` otherwise).
+    /// @param expectedStateHash For the artist's call, the work's current state hash
+    ///        (`StateHashMismatch` otherwise); ignored for anyone else's.
     function finalize(uint256 tokenId, bytes32 expectedStateHash) external;
     /// @notice Marks media on-chain, in pieces of the caller's choosing; never changes the state
     ///         hash. Each call verifies at most `maxChunks` chunks, in media order, through
@@ -252,9 +277,10 @@ interface IWorkRecords {
     ///           complete the walk goes round again over the files still complete only in an
     ///           added store; a call that reaches the end with budget left wraps once, up to the
     ///           file it started from. No added store is called on this walk.
-    ///         - An added store: only the work's artist (`NotWorkArtist`), until the work is
+    ///         - An added store that is not retired: a wallet of the work's artist account or the
+    ///           storage operator (the role mapped to this selector), until the work is
     ///           on-chain complete; one walk at a time, resumed on the same store and restarted at
-    ///           the content walk's cursor when the artist names another; it skips files already
+    ///           the content walk's cursor when a caller names another; it skips files already
     ///           complete in any store. Each chunk is checked alone: the bytes the store
     ///           serves for the manifest's chunk hash must hash to it and have the required length,
     ///           and a chunk the store refuses (reverts, or serves other bytes) is missing.
@@ -317,12 +343,16 @@ interface IWorkRecords {
     /// @return policy The work's seed policy.
     /// @return seed The seed, or zero under NONE.
     function seedOf(uint256 tokenId) external view returns (uint8 policy, bytes32 seed);
+    /// @notice When a finalize notice was recorded for the work (C9), or zero.
+    /// @param tokenId Any token ID.
+    /// @return The notice time, in seconds since the epoch.
+    function finalizeNoticeAt(uint256 tokenId) external view returns (uint48);
 
     // ----- amendments: agreement plus a governed action (ADR 0001 sections 7, 8 and 10) -----
 
-    /// @notice Changes a work's license. PARAMETER_SETTER role plus an EIP-712
+    /// @notice Changes a work's license. FUNDS_SETTER role (the network, 3 days) plus an EIP-712
     ///         `Typehashes.RELICENSE` signature from every party of `item`, in order, each by
-    ///         its active authority. Leaving CC0 reverts (`LicenseIrrevocable`); a CC0 license
+    ///         a wallet of its account. Leaving CC0 reverts (`LicenseIrrevocable`); a CC0 license
     ///         names the deployment's CC0 text; the new text must be registered with a SHA-256
     ///         digest in at most 16 chunks, before finalize too (`InvalidLicense`), and complete
     ///         for a finalized work (a no-op, the current key and text, is not checked). Reverts with `PowerRenounced` once relicensing is renounced.
@@ -331,7 +361,8 @@ interface IWorkRecords {
     /// @param item The work's approved package item, whose parties consent.
     /// @param expectedStateHash The work's current state hash, which every signature binds.
     /// @param deadline The consents' deadline, inclusive; it must cover the governance delay.
-    /// @param partySignatures One signature per party of `item`, in party order.
+    /// @param partySignatures One proof per party of `item`, in party order: the signing wallet
+    ///        followed by its signature (`abi.encodePacked(wallet, signature)`).
     function relicense(
         uint256 tokenId,
         License calldata next,
@@ -340,9 +371,10 @@ interface IWorkRecords {
         uint64 deadline,
         bytes[] calldata partySignatures
     ) external;
-    /// @notice Lowers a work's royalty rate (payees never change). FUNDS_SETTER role plus a
-    ///         `Typehashes.ROYALTY_RATE_CHANGE` signature from every party of `item`. A higher
-    ///         rate reverts (`RoyaltyRateNotLowered`), the current rate is a no-op, and every
+    /// @notice Raises or lowers a work's royalty rate (payees never change; R10). FUNDS_SETTER
+    ///         role (the network, 3 days) plus a `Typehashes.ROYALTY_RATE_CHANGE` signature from
+    ///         every party of `item`, each by a wallet of its account. Above 100,000 reverts in
+    ///         6529 Stream (`IStream.InvalidRoyaltyRate`), the current rate is a no-op, and every
     ///         call reverts once the power is renounced. Applies in 6529 Stream and a linked
     ///         edition, then emits `RoyaltyRateSet`.
     /// @param tokenId A live work with an open record.
@@ -350,7 +382,8 @@ interface IWorkRecords {
     /// @param item The work's approved package item, whose parties consent.
     /// @param expectedStateHash The work's current state hash, which every signature binds.
     /// @param deadline The consents' deadline, inclusive; it must cover the governance delay.
-    /// @param partySignatures One signature per party of `item`, in party order.
+    /// @param partySignatures One proof per party of `item`, in party order: the signing wallet
+    ///        followed by its signature (`abi.encodePacked(wallet, signature)`).
     function setRoyaltyRate(
         uint256 tokenId,
         uint32 rate,
@@ -361,22 +394,18 @@ interface IWorkRecords {
     ) external;
     /// @notice The errata path: pins a new renderer (`IRenderer` by ERC-165, code hash
     ///         `rendererCodeHash`, not an EIP-7702 delegated account) on a finalized work.
-    ///         SUCCESSOR_SETTER role plus the artist's `Typehashes.RENDERER_REPIN` signature.
+    ///         SUCCESSOR_SETTER role (the network, 7 days), with no artist signature (C8).
     ///         Reverts with `PowerRenounced` for good once the lead artist renounced
     ///         `WorkPowers.RENDERER_REPIN`.
     /// @param tokenId A finalized work (`WorkNotFinalized` otherwise).
     /// @param renderer The new renderer.
     /// @param rendererCodeHash The code hash `renderer` must have, which it is pinned with.
-    /// @param expectedStateHash The work's current state hash, which the signature binds.
-    /// @param deadline The signature's deadline, inclusive; it must cover the governance delay.
-    /// @param artistSignature The signature of the active authority of the work's lead artist.
+    /// @param expectedStateHash The work's current state hash (`StateHashMismatch` otherwise).
     function repinRenderer(
         uint256 tokenId,
         address renderer,
         bytes32 rendererCodeHash,
-        bytes32 expectedStateHash,
-        uint64 deadline,
-        bytes calldata artistSignature
+        bytes32 expectedStateHash
     ) external;
 
     // ----- delivery: a replaceable contract that never changes a fact -----
@@ -384,8 +413,8 @@ interface IWorkRecords {
     /// @notice The current delivery contract (locators, kinds and preferences).
     /// @return The delivery contract.
     function delivery() external view returns (address);
-    /// @notice Replaces the delivery contract, compare-and-set. SUCCESSOR_SETTER role (the slow
-    ///         class; any guardian may cancel). `next` must declare `IWorkDelivery` by ERC-165,
+    /// @notice Replaces the delivery contract, compare-and-set. SUCCESSOR_SETTER role (the network
+    ///         at 7 days). `next` must declare `IWorkDelivery` by ERC-165,
     ///         serve this contract (`records()`) and name the current contract as its
     ///         `predecessor()`, whose locators it is obliged to keep serving (`IWorkDelivery`).
     ///         Refreshes every token's metadata.
@@ -422,10 +451,10 @@ interface IWorkRecords {
 
     // ----- stores -----
 
-    /// @notice Adds a store `syncOnChain` may verify media against, at a work's artist's choice.
-    ///         SUCCESSOR_SETTER role (the slow class; any guardian may cancel). Append-only: an
-    ///         ID is never reused, a store never removed, and no existing file's completeness
-    ///         ever changes. The store must implement `IChunkStore`; its code hash is pinned and
+    /// @notice Adds a store `syncOnChain` may verify media against, walked by a work's artist or
+    ///         the storage operator. SUCCESSOR_SETTER role (the network, 7 days). Append-only: an
+    ///         ID is never reused, a store is never removed (only retired, `retireStore`), and no
+    ///         existing file's completeness ever changes. The store must implement `IChunkStore`; its code hash is pinned and
     ///         checked at each use. The pin fixes the store's code, not what it reads: a store
     ///         may stop serving, and a file complete in it stays recorded as complete there
     ///         (`MediaFileComplete` names the store), so the duty to keep serving bytes once
@@ -435,6 +464,15 @@ interface IWorkRecords {
     ///        EIP-7702 delegated account or does not have `codeHash`).
     /// @param codeHash The store's code hash.
     function addStore(address source, bytes32 codeHash) external;
+    /// @notice Marks an added store dead (C21): nothing more is counted through it
+    ///         (`syncOnChain` refuses it with `UnknownStore`). Works already counted keep their
+    ///         record. PARAMETER_SETTER role (the network, 24 hours). One-way.
+    /// @param storeId An added store's ID (`UnknownStore` for 0 or an unused ID).
+    function retireStore(uint256 storeId) external;
+    /// @notice Whether the network retired store `storeId` (`retireStore`); false for 0.
+    /// @param storeId A store ID (`UnknownStore` for an unused nonzero ID).
+    /// @return Whether the store is retired.
+    function storeRetired(uint256 storeId) external view returns (bool);
     /// @notice The store with `storeId`: the content store for 0.
     /// @param storeId A store ID (`UnknownStore` otherwise).
     /// @return The store contract.

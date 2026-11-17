@@ -8,7 +8,6 @@ import { ISplitFactory } from "../economics/interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "../economics/interfaces/ISplitWallet.sol";
 import { Splits } from "../economics/Splits.sol";
 import { EditionRules } from "../editions/EditionRules.sol";
-import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
 import { IEditions } from "../interfaces/IEditions.sol";
 import { IFederatedEditions } from "../interfaces/IFederatedEditions.sol";
 import { IFederatedStream } from "../interfaces/IFederatedStream.sol";
@@ -34,9 +33,9 @@ import { FederatedMembership } from "./FederatedMembership.sol";
 /// @dev Deployed as a full copy per artist after its partner `FederatedStream`, which the
 ///      artist then links back (`linkEditions`). An edition is anchored by an EDITION_MASTER work
 ///      of the partner and has its token ID; it is bound to the adapter whose sale opens it,
-///      sealed by that adapter at its sale's count, and created by anyone once the master's sale
-///      settled. Its payees are the master's (same seller vault), its network share the locked
-///      one, its royalty rate the master's current one. No immutables; no network authority.
+///      sealed by that adapter at its sale's count, and created by anyone once the master SOLD,
+///      or once its sale settled when an edition sale is bound (R16). Its payees are the master's (same seller vault), its network share the one in
+///      force (`_feeTerms`), its royalty rate the master's current one. No immutables.
 contract FederatedEditions is ERC1155, FederatedMembership, IFederatedEditions {
     /// @dev `ItemKind.EDITION_MASTER`.
     uint8 private constant EDITION_MASTER = 1;
@@ -45,8 +44,8 @@ contract FederatedEditions is ERC1155, FederatedMembership, IFederatedEditions {
     uint40 private constant UNCAPPED = type(uint40).max;
 
     /// @dev An edition. Slot 0: the content hash (nonzero once created). Slot 1: the seller
-    ///      vault, the current maximum, the count minted and the seal. Slot 2: the bound adapter,
-    ///      the creator's cap and whether the network's share applies (locked while listed).
+    ///      vault, the current maximum, the count minted and the seal. Slot 2: the bound adapter
+    ///      and the creator's cap.
     struct Record {
         bytes32 contentHash;
         address seller;
@@ -55,7 +54,6 @@ contract FederatedEditions is ERC1155, FederatedMembership, IFederatedEditions {
         bool supplySealed;
         address minter;
         uint32 maxCount;
-        bool fee;
     }
 
     string private _name;
@@ -86,6 +84,12 @@ contract FederatedEditions is ERC1155, FederatedMembership, IFederatedEditions {
         Record storage r = _records[editionId];
         if (r.contentHash != 0) revert EditionExists(editionId);
         _checkMaster(editionId, item, true);
+        // Unbound, only a SOLD master gets its edition: an unsold, unbound master stays free to
+        // restart (`IFederatedStream`), so no one else can tie it to a dead edition.
+        if (r.minter == address(0)) {
+            (PrimaryOutcome outcome,,) = IFederatedStream(_partner).primarySale(editionId);
+            if (outcome != PrimaryOutcome.SOLD) revert NotEditionMaster(editionId);
+        }
         if (r.seller == address(0)) _lock(r, editionId, item);
         uint32 maxCount = item.edition.maxCount;
         (r.contentHash, r.maxCount) = (item.contentHash, maxCount);
@@ -164,7 +168,7 @@ contract FederatedEditions is ERC1155, FederatedMembership, IFederatedEditions {
     }
 
     /// @inheritdoc IMintTarget
-    /// @dev The locked terms; the creator is the partner, which holds an unsold master.
+    /// @dev The terms in force; the creator is the partner, which holds an unsold master.
     function primaryTerms(uint256 id, bytes calldata)
         external
         view
@@ -238,7 +242,7 @@ contract FederatedEditions is ERC1155, FederatedMembership, IFederatedEditions {
     {
         w.seller = ISplitFactory(_splitLedger).walletFor(payees, bytes32(0));
         (w.feeRecipient, w.feeShare) = _feeTerms();
-        w.royaltyReceiver = w.feeShare == 0 ? w.seller : _royaltyVault(w.seller);
+        w.royaltyReceiver = _royaltyReceiver(w.seller, w.feeRecipient, w.feeShare);
     }
 
     /// @notice ERC-2981 royalty information.
@@ -246,7 +250,7 @@ contract FederatedEditions is ERC1155, FederatedMembership, IFederatedEditions {
     /// @param salePrice The sale price.
     /// @return receiver The royalty receiver.
     /// @return amount The royalty.
-    /// @dev The receiver locked with the edition; the master's current rate.
+    /// @dev The royalty receiver at the share in force; the master's current rate.
     function royaltyInfo(uint256 tokenId, uint256 salePrice)
         external
         view
@@ -285,16 +289,6 @@ contract FederatedEditions is ERC1155, FederatedMembership, IFederatedEditions {
 
     // ------------------------------------------------------------------ internal
 
-    /// @dev After the exit, the artist's own minters mint only once the partner is out of the
-    ///      federation too (unlisted, LEFT or LEFT_DELISTED), so no edition of a master sold at
-    ///      the network's fee sells without it while the partner is listed.
-    function _ownMinters() internal view override returns (bool) {
-        (, IArtistRegistry.FederationStatus status) =
-            IArtistRegistry(_artistRegistry).federatedListing(_partner);
-        return status != IArtistRegistry.FederationStatus.ACTIVE
-            && status != IArtistRegistry.FederationStatus.DELISTED;
-    }
-
     /// @dev Reverts unless `item` is the partner's EDITION_MASTER item for `editionId`, with ETH
     ///      edition terms, and (when `settled`) the master's primary sale settled.
     function _checkMaster(uint256 editionId, PackageItem calldata item, bool settled) private view {
@@ -307,26 +301,23 @@ contract FederatedEditions is ERC1155, FederatedMembership, IFederatedEditions {
         ) revert NotEditionMaster(editionId);
     }
 
-    /// @dev Locks an edition's payees (the master's seller vault) and whether the network's share
-    ///      applies (the contract still listed), deploying the vaults it pays.
+    /// @dev Locks an edition's payees (the master's seller vault), deploying it and the
+    ///      royalty vault at the share in force.
     function _lock(Record storage r, uint256 editionId, PackageItem calldata item) private {
         address seller = _vault(item.payees);
         (address feeRecipient, uint32 feeShare) = _feeTerms();
         address royalty = seller;
         if (feeShare != 0) royalty = _vault(Splits.royaltyPayees(seller, feeRecipient, feeShare));
-        (r.seller, r.fee) = (seller, feeShare != 0);
+        r.seller = seller;
         emit EditionTermsLocked(editionId, seller, royalty, feeRecipient, feeShare);
     }
 
-    /// @dev An edition's locked terms, with the master's current royalty rate.
+    /// @dev An edition's terms: its locked seller vault, the fee terms in force and their
+    ///      royalty receiver, and the master's current royalty rate.
     function _terms(Record storage r, uint256 editionId) private view returns (WorkTerms memory w) {
         w.seller = r.seller;
-        if (r.fee) {
-            (w.feeRecipient, w.feeShare) = (_feeRecipient, _feeShare);
-            w.royaltyReceiver = _royaltyVault(w.seller);
-        } else {
-            w.royaltyReceiver = w.seller;
-        }
+        (w.feeRecipient, w.feeShare) = _feeTerms();
+        w.royaltyReceiver = _royaltyReceiver(w.seller, w.feeRecipient, w.feeShare);
         (,,,,, w.royaltyRate) = IFederatedStream(_partner).coreOf(editionId);
     }
 

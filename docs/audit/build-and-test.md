@@ -56,7 +56,7 @@ forge test
 | A deeper campaign than CI's (the nightly run's) | `FOUNDRY_PROFILE=deep forge test --match-test invariant_`: 2,000 runs of depth 256 |
 | More fuzz runs | `FOUNDRY_FUZZ_RUNS=10000 forge test --match-test testFuzz_` |
 | The integration flows on the real, wired contracts | `forge test --match-path "test/integration/*"` |
-| Governance: the cancellation rules, suspension and recovery | `forge test --match-path "test/governance/*"`, then `forge test --match-contract GovernanceRecoveryTest` |
+| Governance: the single network, the handover and the brake | `forge test --match-path "test/governance/*"` |
 | The deploy guards and the readback (`Deploy.s.sol`, `DeployGuards`, `Verify.s.sol`) | `forge test --match-path test/deploy/DeployScript.t.sol` |
 | The gas and state-growth gates | `forge test --match-path test/integration/GasReport.t.sol` |
 | The gas table (operation, Prague gas, new slots, new accounts) | `forge test --match-test test_Gas_Table -vv` |
@@ -70,7 +70,7 @@ forge test
   test.
 - **The integration suite** mocks only external systems: the 6529 delegation contract, the
   Chainlink VRF coordinator, Permit2 (a faithful reproduction at the canonical address) and an
-  EIP-2612 ERC-20 ([`test/integration/README.md`](../../test/integration/README.md)).
+  ERC-20 with EIP-2612 (whose permit payments the auction refuses) ([`test/integration/README.md`](../../test/integration/README.md)).
 
 ## CI
 
@@ -106,8 +106,8 @@ mutation shard, weekly). [Testing](../testing/README.md) describes them and the 
 | Format | Any file `forge fmt` would change (line length 100, tab width 4, bracket spacing) | `forge fmt --check`, `[fmt]` in `foundry.toml` |
 | Build | A compile error | `forge build` |
 | Tests | Any failing unit, fuzz, invariant or integration test, including the gas and state-growth gates | `forge test` |
-| Budgets | More than 16,500 code lines under `src/`; `delegatecall` or `callcode` in `src/`; more than 5 libraries with a public or external function; any contract of the `default` profile over 24,576 bytes of runtime (EIP-170) or 49,152 bytes of initcode (EIP-3860); a contract declared in `src/` with less than 512 bytes of EIP-170 margin, unless exempt; an exempt contract whose margin fell below the value its exemption records, or is back at 512 bytes or more; an exemption naming no measured `src/` contract | [`tools/check_budgets.py`](../../tools/check_budgets.py), [`tools/size-margins.json`](../../tools/size-margins.json) |
-| Genesis configuration | A selector in [`config/genesis.example.json`](../../config/genesis.example.json) that is not in its contract's compiled ABI; a `restricted` function (inherited ones included) that is neither mapped, genesis-only nor deferred; a wiring call to an unlisted target or with a non-genesis selector; a delay that does not match its role's class; a role whose `suspendable` flag is not a boolean, or is set on a role with a delay or on GUARDIAN, PAUSER or CURATION_SIGNER; a function `WorksAccessManager` adds to its OpenZeppelin base that `manager` does not list, or lists with another selector, role or delay. `GenesisConfig.t.sol` checks the flags against `Roles.isSuspendable` exactly | [`tools/check_genesis.py`](../../tools/check_genesis.py) |
+| Budgets | More than 17,000 code lines under `src/`; `delegatecall` or `callcode` in `src/`; more than 5 libraries with a public or external function; any contract of the `default` profile over 24,576 bytes of runtime (EIP-170) or 49,152 bytes of initcode (EIP-3860); a contract declared in `src/` with less than 512 bytes of EIP-170 margin, unless exempt; an exempt contract whose margin fell below the value its exemption records, or is back at 512 bytes or more; an exemption naming no measured `src/` contract | [`tools/check_budgets.py`](../../tools/check_budgets.py), [`tools/size-margins.json`](../../tools/size-margins.json) |
+| Genesis configuration | A selector in [`config/genesis.example.json`](../../config/genesis.example.json) that is not in its contract's compiled ABI; a `restricted` function (inherited ones included) that is neither mapped, genesis-only nor deferred; a wiring call to an unlisted target or with a non-genesis selector; a delay that does not match its role's class; a role whose `network` flag is not a boolean true exactly for the network's roles, or any grant delay; no single nonzero `network` address, or a holder of a network role; a function `WorksAccessManager` adds to its OpenZeppelin base that `manager` does not list, or lists with another selector, role or delay. `GenesisConfig.t.sol` checks the same JSON against the compiled roles | [`tools/check_genesis.py`](../../tools/check_genesis.py) |
 | NatSpec | In `src/`: an external or public function or getter without `@notice` or `@inheritdoc` (the only declarations `@inheritdoc` can stand in for); an event without `@notice`; a function or event without a `@param` for a named parameter; a function without one `@return` per return value (a named return cited by name); a `@param` that names no parameter; an error without `@notice` | [`tools/check_natspec.py`](../../tools/check_natspec.py) |
 | Content tooling | A failing `unittest` in `tools/content`. `test_anvil.py` sends the uploader's calldata to the compiled `ContentStore` on a local Anvil node; `CONTENT_E2E_REQUIRE=1` makes a missing `anvil` or build output a failure, not a skip | `python -m unittest discover -s tools/content -t . -p "test_*.py"` |
 | Edition auction reference model | A failing check of [`tools/edition_auction_ref.py`](../../tools/edition_auction_ref.py) (ADR 0005): the mantissa table and ladder, the clearing rule against brute force, the FIFO sweep, monotone winning in the step, or golden vectors in `test/fixtures/edition-auction/` that differ from what the model generates | `python -m tools.test_edition_auction_ref` |
@@ -209,7 +209,7 @@ move whenever a source file changes. CI enforces them in
 
 | Budget | Limit | Enforced by | Source |
 | --- | --- | --- | --- |
-| Solidity size | At most 16,500 non-comment, non-blank lines under `src/` (ADR 0001, amended 1 November 2026; ADR 0007; ADR 0008); interfaces and shared types count | `check_budgets.py` (`MAX_LINES`) | [ADR 0001](../adr/0001-v1-scope.md#intended-behavior), [AGENTS.md](../../AGENTS.md) |
+| Solidity size | At most 17,000 non-comment, non-blank lines under `src/` (ADR 0001, amended 1 November 2026; ADR 0007; ADR 0008; owner direction of 16 November 2026); interfaces and shared types count | `check_budgets.py` (`MAX_LINES`) | [ADR 0001](../adr/0001-v1-scope.md#intended-behavior), [AGENTS.md](../../AGENTS.md) |
 | Linked libraries | At most 5 libraries with a public or external function | `check_budgets.py` (`MAX_LINKED_LIBRARIES`) | ADR 0001, AGENTS.md |
 | No delegatecall | No `delegatecall` or `callcode` in `src/`; the one sanctioned exception is OpenZeppelin `Multicall` in `lib/`, inherited by `WorksAccessManager` | `check_budgets.py` (a scan of `src/` with comments and strings stripped) | ADR 0001, [ADR 0002](../adr/0002-access-manager-hardening.md#security-impact) |
 | No proxies | No contract is a proxy | By design; the delegatecall scan is the mechanical check | ADR 0001 |

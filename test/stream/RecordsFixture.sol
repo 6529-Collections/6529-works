@@ -50,6 +50,10 @@ abstract contract RecordsFixture is StreamFixture {
         _map(address(records), records.repinRenderer.selector, Roles.SUCCESSOR_SETTER);
         _map(address(records), records.setDelivery.selector, Roles.SUCCESSOR_SETTER);
         _map(address(records), records.addStore.selector, Roles.SUCCESSOR_SETTER);
+        _map(address(records), records.renounce.selector, Roles.PARAMETER_SETTER);
+        _map(address(records), records.retireStore.selector, Roles.PARAMETER_SETTER);
+        _map(address(records), records.syncOnChain.selector, Roles.STORAGE_OPERATOR);
+        _map(address(delivery), delivery.markLocatorDead.selector, Roles.STORAGE_OPERATOR);
         _map(address(delivery), delivery.setPreferredKind.selector, Roles.STORAGE_OPERATOR);
         _map(
             address(delivery), delivery.setCollectionPreferredKind.selector, Roles.STORAGE_OPERATOR
@@ -173,9 +177,10 @@ abstract contract RecordsFixture is StreamFixture {
         return keccak256(abi.encodePacked("\x19\x01", domain, structHash));
     }
 
+    /// @dev A consent proof (`IAccounts.requireSigned`): the signing wallet, then its signature.
     function _sign(uint256 key, bytes32 structHash) internal view returns (bytes memory) {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(key, _digest(structHash));
-        return abi.encodePacked(r, s, v);
+        return abi.encodePacked(vm.addr(key), r, s, v);
     }
 
     function _both(bytes32 structHash) internal view returns (bytes[] memory sigs) {

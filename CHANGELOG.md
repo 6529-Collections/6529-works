@@ -2,6 +2,68 @@
 
 ## Unreleased
 
+- Second pass (owner decisions of 16 November 2026; not yet reviewed as a whole):
+  - Identity: an artist or collaborator is a 6529 consolidated account and every wallet of it
+    acts (`IAccounts`, `isWallet`, `requireSigned`, `requireConsent`); an account signature is
+    `abi.encodePacked(wallet, signature)`. Fixed timers: an own change waits 2 days, a network
+    replacement gives 14 days' notice, a contest lapses after 90 days. The network freezes an
+    account for 14 days (`freeze`, `unfreeze`), withdraws its replacement
+    (`cancelReplacement`) and cancels an account's own pending change (`cancelOwnChange`), all
+    with no delay. Heartbeat, standing, timers, veto and override are removed. Curation:
+    `killSignerApprovals`, `isApprovedItem`.
+  - Governance: one network address holds every network role (`transferNetwork`,
+    `acceptNetwork`), with fixed classes of no delay, 24 hours, 3 days and 7 days and an optional
+    brake that can delay a scheduled action once by 7 days; guardians, seats, suspension and
+    recovery are removed; the network grants and revokes operational keys and unpauses with no
+    delay.
+  - Economics: every split-wallet release also pays the network fee vault its share (R11);
+    unclaimed marked shares and escrow credits go to the network after 180 days (R12); the
+    network moves its own escrow credits without consent (C19); no opening-bid price cap (R19);
+    `GovernedVault` takes no ledger and is deployed before the split ledger.
+  - Stream, work records, Editions: the network lowers a fee share, never raises it
+    (`lowerFeeShare`); a royalty rate may rise with every party's and the network's agreement;
+    the network alone repins a finalized work's renderer; renouncing the royalty or licence
+    power needs the network; anyone finalizes 14 days after a recorded notice once the primary
+    sale settled; the rescue delay is a fixed 14 days; the network retires a store and marks a
+    locator dead.
+  - Sales: every edition sale closes exactly 15 minutes after its 1/1 (no per-sale offset);
+    edition bids are firm (no `withdrawBid`); `abandon` opens 21 days after the close and creates
+    the edition when the master's sale settled; a dispute pause lasts at most 3 days and the
+    network resumes or cancels with no wait; the federated refusal exit opens 2 days after the
+    end; the currency-freeze exit and the delivery redirect wait 14 days; the network fee takes
+    the rounding and goes to the recipient read at settlement (R18); a credit unclaimed for
+    180 days may be sent to the network (`expireCredit`); EIP-2612 permit payments are refused;
+    no edition base-price cap (`StepLadder.BASE_PRICE_BOUND`, a storage bound); opening an
+    edition sale checks the item's package is still approved (C23); new stateless `SaleStarter`
+    starts a 1/1, deploys its vaults and opens its record in one transaction.
+  - Federation: a joined federated contract stays in the federation (no exit, no artist-owned
+    minters); any wallet of the artist's consolidated account acts for it; works may name
+    collaborators who consent on chain; VRF works take a seed the requester pays the VRF
+    provider for; the network share in force is the smaller of the deployed share and the artist
+    registry's record (lower only); the network can reinstate a revoked template.
+  - Conventions: the promise grade is removed (tool, schema, rules DCL-29 to DCL-31); the promise
+    card is now a neutral fact sheet (`fact-sheet.v1`, `python -m tools.conventions
+    fact-sheet`) with no residual-risk list; declarations no longer carry intended
+    renunciations. Budgets: 17,000 source lines; start-gas margin 3,000. Storage guide: the
+    network pays for the Arweave and IPFS copies.
+  - Review fixes: escrow and sale credits start their 180-day clock only when they go from zero;
+    a due non-artist finalize finalizes the record as it stands; `ChangeContested` carries
+    `priorOutcome`; `killSignerApprovals` is a no-delay network action; a curated lead artist is
+    paid only through its account; `FederatedEditions.createEdition` needs a SOLD master or a
+    bound sale; `canMint` checks the partner template; `propagateRevocation` is removed; VRF
+    curated and federated draws have separate seed maps and tenures; Deploy and Verify refuse a
+    genesis brake off anvil; `SaleStarter` refuses itself as payer; the deployment record no
+    longer has `pendingLanes`. Gas: `startWithBid` hands its first bid the terms record the
+    start locked instead of reading it back (about 5,300 gas less; tightest start row 341,582).
+    Owner, 17 November 2026: an edition is created for any completed
+    1/1, unbid included; collaborator consent has no expiry; declarations carry no intended
+    renunciations.
+  - Documents: [ADR 0009](docs/adr/0009-second-permanence-pass.md) records the pass, with dated
+    amendment notes on ADRs 0001, 0002, 0005, 0006, 0007 and 0008; the specs, audit pages,
+    integrator pages, glossary, architecture and runbook describe the code as merged, with the
+    network's duties as current practice; the control-proof tool reads the consolidation
+    source's `isConsolidated`; `docs/facts.json` regenerated.
+
 - Federation review fixes (reviews F and G; [ADR 0008](docs/adr/0008-federation.md) §1, §2, §8,
   §10, §12; FED-64 to FED-70, ID-41): a template version is its runtime code hash bound to an
   ownerless `FederatedDeployer` (new; `IFederatedDeployer` `0xf53f1196`), which holds the
