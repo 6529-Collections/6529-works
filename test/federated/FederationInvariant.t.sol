@@ -13,6 +13,7 @@ import { Payment, PaymentMethod, PrimaryOutcome } from "src/interfaces/types/Sal
 import { IEnglishAuctionFull } from "../helpers/IEnglishAuctionFull.sol";
 import { FederationBase } from "./FederationBase.sol";
 import { FaultyFederatedStream } from "./FederatedRefusal.t.sol";
+import { HandlerReach } from "../helpers/HandlerReach.sol";
 
 /// @notice Drives federated sales on the real stack: starts on a genuine and a faulty template,
 ///         bids, settles, refused closes and reclaims, fault switching, delisting and relisting.
@@ -83,12 +84,21 @@ contract FederationHandler is Test {
         sales.push(_auction.start(address(token), s.data));
     }
 
+    uint256 public bids;
+
+    /// @dev Bids on a live sale: the first one still taking bids from `i` on. (Picking one sale
+    ///      at random and returning when it had ended left nearly every bid unplaced once a few
+    ///      sales had closed, so few federated sales ever sold.)
     function bid(uint256 i, uint256 seed, uint96 amount) external {
-        if (sales.length == 0) return;
-        uint256 saleId = sales[i % sales.length];
-        IEnglishAuction.Auction memory a = _auction.auction(saleId);
-        if (a.state != IEnglishAuction.AuctionState.ACTIVE || block.timestamp >= a.endTime) return;
-        if (delisted) return;
+        if (sales.length == 0 || delisted) return;
+        uint256 saleId;
+        bool live;
+        for (uint256 k; k < sales.length && !live; ++k) {
+            saleId = sales[(i % sales.length + k) % sales.length];
+            IEnglishAuction.Auction memory a = _auction.auction(saleId);
+            live = a.state == IEnglishAuction.AuctionState.ACTIVE && block.timestamp < a.endTime;
+        }
+        if (!live) return;
         uint256 minimum = _auction.minimumBid(saleId);
         uint256 value = bound(amount, minimum, minimum + 10 ether);
         address bidder = address(uint160(0xb1d000 + seed % 4));
@@ -101,6 +111,7 @@ contract FederationHandler is Test {
         _auction.bid{ value: value }(
             saleId, address(0), Payment(PaymentMethod.DIRECT, bidder, value, 0, 0, "")
         );
+        ++bids;
     }
 
     function settle(uint256 i) external {
@@ -265,5 +276,49 @@ contract FederationInvariantTest is FederationBase {
         }
         invariant_TheAuctionHoldsExactlyCreditsAndLiveBids();
         invariant_TheNetworkIsPaidItsShareExactlyOnSoldSales();
+    }
+
+    /// @notice Handler self-test: starts, bids, settlements, refused closes, fault switches and
+    ///         listing changes all write the auction, the two templates or the registry; some
+    ///         federated sales sell. Then every invariant holds, and so does the end-of-run
+    ///         check.
+    function test_HandlerPathsReachState() public {
+        uint8 w = HandlerReach.WRITES;
+        HandlerReach.Expect[] memory e = new HandlerReach.Expect[](6);
+        e[0] = HandlerReach.Expect(handler.start.selector, w);
+        e[1] = HandlerReach.Expect(handler.bid.selector, w);
+        e[2] = HandlerReach.Expect(handler.settle.selector, w);
+        e[3] = HandlerReach.Expect(handler.refuse.selector, w);
+        e[4] = HandlerReach.Expect(handler.toggleFault.selector, w);
+        e[5] = HandlerReach.Expect(handler.toggleListing.selector, w);
+        HandlerReach.covers(targetSelectors()[0].selectors, e);
+        // The listing status lives in the artist registry; the manager runs the delisting.
+        address[] memory sut = new address[](6);
+        sut[0] = address(auction);
+        sut[1] = address(fedRegistry);
+        sut[2] = address(fed);
+        sut[3] = address(bad);
+        sut[4] = address(artists);
+        sut[5] = address(manager);
+        // Eight campaign-length runs (21 rounds of six actions), each from the starting state
+        // but the last, as the campaign runs them: the ready works run out within one run.
+        HandlerReach.Tally[] memory t = new HandlerReach.Tally[](e.length);
+        uint256 bids;
+        uint256 sold;
+        for (uint256 run; run < 8; ++run) {
+            uint256 snapshot = vm.snapshotState();
+            HandlerReach.add(t, HandlerReach.drive(address(handler), e, sut, 21, run));
+            bids += handler.bids();
+            sold += handler.soldCount();
+            if (run < 7) vm.revertToState(snapshot);
+        }
+        HandlerReach.check(e, t);
+        assertGt(bids, 0);
+        assertGt(sold, 0);
+        invariant_TheAuctionHoldsExactlyCreditsAndLiveBids();
+        invariant_TheNetworkIsPaidItsShareExactlyOnSoldSales();
+        invariant_ABuyerHoldsAFederatedWorkOnlyIfItPaid();
+        invariant_FederationNeverTouchesCanonicalState();
+        afterInvariant();
     }
 }

@@ -6,6 +6,7 @@ import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
 import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
 import { IdentityFixture } from "./IdentityFixture.sol";
+import { HandlerReach } from "../helpers/HandlerReach.sol";
 
 /// @notice Drives one account through consolidations made and revoked in either direction, root
 ///         moves, freezes and time, keeping a model of who belongs to it.
@@ -133,5 +134,25 @@ contract AccountsInvariantTest is IdentityFixture {
         } catch {
             return false;
         }
+    }
+
+    /// @notice Handler self-test: consolidations and revocations write the delegation contract,
+    ///         freezes, unfreezes and root moves write the registry, and time moves; the root
+    ///         actually moves to another wallet. Then the invariant holds.
+    function test_HandlerPathsReachState() public {
+        uint8 w = HandlerReach.WRITES;
+        HandlerReach.Expect[] memory e = new HandlerReach.Expect[](6);
+        e[0] = HandlerReach.Expect(AccountsHandler.consolidate.selector, w);
+        e[1] = HandlerReach.Expect(AccountsHandler.revoke.selector, w);
+        e[2] = HandlerReach.Expect(AccountsHandler.freeze.selector, w);
+        e[3] = HandlerReach.Expect(AccountsHandler.unfreeze.selector, w);
+        e[4] = HandlerReach.Expect(AccountsHandler.warp.selector, HandlerReach.CLOCK);
+        e[5] = HandlerReach.Expect(AccountsHandler.moveRoot.selector, w);
+        address[] memory sut = new address[](2);
+        sut[0] = address(registry);
+        sut[1] = address(delegation);
+        HandlerReach.check(e, HandlerReach.drive(address(handler), e, sut, 80, 1));
+        assertGt(handler.moves(), 0);
+        invariant_RequireSignedPassesExactlyForTheAccountsWallets();
     }
 }

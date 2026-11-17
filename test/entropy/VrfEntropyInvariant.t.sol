@@ -11,6 +11,7 @@ import {
     MockVrfCoordinator
 } from "test/mocks/entropy/EntropyMocks.sol";
 import { EntropyBase, EntropyItems } from "./EntropyBase.sol";
+import { HandlerReach } from "../helpers/HandlerReach.sol";
 
 /// @dev Drives the module with arbitrary requests, deliveries, revocations, consumptions and
 ///      coordinator swaps (between two coordinators, so A to B to A happens), and tracks what
@@ -358,5 +359,30 @@ contract VrfEntropyInvariantTest is EntropyBase {
                 assertEq(module.seedOf(revision), module.seedOf(original));
             }
         }
+    }
+
+    /// @notice Handler self-test: requests both reach the module's state and are refused by the
+    ///         gate; deliveries both fix seeds and are refused from a replaced coordinator; swaps
+    ///         write the module and the package switches write the registry stand-in. Then every
+    ///         invariant holds.
+    function test_HandlerPathsReachState() public {
+        uint8 wr = HandlerReach.WRITES | HandlerReach.REFUSED;
+        HandlerReach.Expect[] memory e = new HandlerReach.Expect[](5);
+        e[0] = HandlerReach.Expect(EntropyHandler.request.selector, wr);
+        e[1] = HandlerReach.Expect(EntropyHandler.fulfill.selector, wr);
+        e[2] = HandlerReach.Expect(EntropyHandler.setApproved.selector, HandlerReach.WRITES);
+        e[3] = HandlerReach.Expect(EntropyHandler.setConsumed.selector, HandlerReach.WRITES);
+        e[4] = HandlerReach.Expect(EntropyHandler.swap.selector, HandlerReach.WRITES);
+        HandlerReach.covers(targetSelectors()[0].selectors, e);
+        address[] memory sut = new address[](2);
+        sut[0] = address(module);
+        sut[1] = address(registry);
+        HandlerReach.check(e, HandlerReach.drive(address(handler), e, sut, 80, 1));
+        assertGt(handler.accepted(), 0);
+        invariant_EveryCallHadThePredictedOutcome();
+        invariant_AtMostOneSeedPerItemAndItNeverChanges();
+        invariant_TheCurrentRequestIsTheLastIssued();
+        invariant_TheBackoffBoundsTheRequestsOfAContent();
+        invariant_ItemsThatShareContentReadOneSeed();
     }
 }
