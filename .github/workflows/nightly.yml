@@ -42,7 +42,7 @@ jobs:
       - name: Install Foundry
         id: foundry_setup
         continue-on-error: true
-        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09
+        uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf
         with:
           version: v1.7.1
 
@@ -86,7 +86,7 @@ jobs:
       - name: Install Foundry
         id: foundry_setup
         continue-on-error: true
-        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09
+        uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf
         with:
           version: v1.7.1
 
@@ -129,7 +129,7 @@ jobs:
       - name: Install Foundry
         id: foundry_setup
         continue-on-error: true
-        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09
+        uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf
         with:
           version: v1.7.1
 
