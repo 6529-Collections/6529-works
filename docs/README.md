@@ -6,12 +6,13 @@
 
 | You want to | Read |
 | --- | --- |
+| Build, test and run the system locally for the first time | The [quickstart](quickstart.md) |
 | Learn how the protocol works now | The [specification](spec/README.md) and the [glossary](glossary.md) |
 | See how the contracts fit together | The [architecture overview](architecture.md) |
 | Integrate a marketplace, wallet or indexer | The [integrator guide](integrators/README.md) |
 | Audit or review the code | The [auditor pack](audit/README.md) |
 | Know why a decision was made | The [ADRs](adr/README.md) |
-| Deploy or operate | The [runbook](../script/README.md) and the [genesis configuration](../config/README.md) |
+| Deploy or operate | The [runbook](../script/README.md) and the [genesis configuration](../config/README.md); a local deployment with one work sold end to end: [`script/local/`](../script/local/README.md) |
 | Contribute | [CONTRIBUTING.md](../CONTRIBUTING.md); automated agents also read [AGENTS.md](../AGENTS.md) |
 | Run or extend the tests, or see how strong they are | [Testing](testing/README.md): the layers of the suite, coverage, mutation testing and the symbolic proofs |
 | Report a vulnerability | [SECURITY.md](../SECURITY.md) |

@@ -128,11 +128,19 @@ forge build
 forge test
 python tools/check_budgets.py --profile default
 python tools/check_genesis.py
+python tools/check_natspec.py
+python tools/check_docs_facts.py --artifacts out
 python -m unittest discover -s tools/content -t . -p "test_*.py"
 python tools/check_markdown_links.py
 python tools/gen_role_matrix.py --check
-python tools/check_natspec.py
 ```
+
+- `forge test` runs every invariant campaign in one process: about 15 minutes on one machine,
+  where CI splits it in three parallel jobs. `forge test --no-match-test "^invariant"` takes
+  about a minute.
+- `check_budgets.py` runs `forge build --sizes --json`, which recompiles when its output is
+  stale (about 5 minutes for a full compile); `check_genesis.py` runs one `forge inspect` per
+  contract, about a minute.
 
 Slither needs the pinned toolchain, ideally in a virtual environment. CI installs the hash
 lock, wheels only:

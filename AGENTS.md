@@ -88,7 +88,7 @@ Each fact has one owner; every other page links to it instead of repeating it
 | Selector, role, delay | The generated [role matrix](docs/audit/roles.md) (from `config/genesis.example.json`) |
 | Gas budgets and measured gas | [ADR 0004's table](docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table) |
 | Accepted risks and known gaps | [Known limitations](docs/audit/known-limitations.md) |
-| Sizes and nSLOC | [Audit scope](docs/audit/scope.md) and the README's module table, refreshed by `check_docs_facts.py --update` |
+| Sizes and nSLOC | [Audit scope](docs/audit/scope.md), refreshed by `check_docs_facts.py --update` |
 
 - **Module READMEs under `src/` are code maps:** what the module is for, its files, entry
   points with rule IDs, developer notes (storage layout, bytecode headroom, gotchas, tests)

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Developer path: a [quickstart](docs/quickstart.md) from clone to a local run, with measured
+  build and test times; `script/local/walkthrough.sh`, which deploys on anvil with test accounts,
+  accepts, verifies and sells one work end to end (store, curate, accept, start with a bid,
+  outbid, settle, record, finalize, `tokenURI`, edition auction, claims, payouts); a shorter
+  root README (its diagram moved to the [architecture overview](docs/architecture.md), its
+  module sizes left to the [audit scope](docs/audit/scope.md)); runbook corrections (local gas
+  figures, the genesis and manifest writers); `make_manifest.py` lists every deployed contract.
 - Second pass (owner decisions of 16 November 2026; not yet reviewed as a whole):
   - Identity: an artist or collaborator is a 6529 consolidated account and every wallet of it
     acts (`IAccounts`, `isWallet`, `requireSigned`, `requireConsent`); an account signature is
