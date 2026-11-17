@@ -126,8 +126,10 @@ contract FederatedStateInvariantTest is FederationBase {
         }
     }
 
-    /// INV-FED-3 (FED-24): each work's royalty rate is the model's and never rises.
+    /// INV-FED-3 (FED-24): each work's royalty rate is the model's and never rises: no change
+    /// that did not lower it ever succeeded, and the rate is at most the one last checked.
     function invariant_RoyaltyRateOnlyFalls() public {
+        assertEq(handler.rateRises(), 0, "a royalty change that did not lower the rate");
         for (uint256 workId = 1; workId <= handler.workCount(); ++workId) {
             uint256 live = pairStream.liveTokenOf(workId);
             if (live == 0) continue;

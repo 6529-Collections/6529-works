@@ -123,6 +123,8 @@ contract FederatedStateHandler is Test {
     uint256 public settlements;
     uint256 public refusedSettlements;
     uint256 public rateCuts;
+    /// @notice Royalty changes that succeeded without lowering the rate.
+    uint256 public rateRises;
     uint256 public copiesMinted;
     uint256 public seals;
     uint256 public delistedRefusals;
@@ -269,6 +271,7 @@ contract FederatedStateHandler is Test {
         vm.prank(caller);
         try stream.setRoyaltyRate(id, rate) {
             if (!expected) ++violations;
+            if (rate >= rateOf[workId]) ++rateRises;
             rateOf[workId] = rate;
             ++rateCuts;
         } catch {

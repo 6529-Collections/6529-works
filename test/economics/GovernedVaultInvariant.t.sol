@@ -93,6 +93,8 @@ contract GovernedVaultHandler is Test {
     uint256 public refusedForwards;
     uint256 public destinationChanges;
     uint256 public refusedChanges;
+    /// @notice Destination changes that succeeded with a wrong revision or from a stranger.
+    uint256 public wrongChanges;
     uint256 public releasedToDestination;
 
     constructor(
@@ -258,6 +260,7 @@ contract GovernedVaultHandler is Test {
         vm.prank(caller);
         try vault.setDestination(revision, next) {
             if (!expected) ++violations;
+            if (caller != network || revision != ghostRevision) ++wrongChanges;
             ghostDestination = next;
             ++ghostRevision;
             ++destinationChanges;
@@ -396,6 +399,7 @@ contract GovernedVaultInvariantTest is EconomicsBase {
         assertEq(feeVault.destinationRevision(), handler.ghostRevision(), "revision");
         assertTrue(d != address(0) && d != address(feeVault), "a valid destination");
         assertEq(handler.reenter().seized(), 0, "seized by the destination");
+        assertEq(handler.wrongChanges(), 0, "a change without the current revision or role");
     }
 
     /// INV-ECO-17: every forward and destination change had the outcome the model predicts:
