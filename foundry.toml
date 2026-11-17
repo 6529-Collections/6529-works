@@ -55,6 +55,9 @@ show_metrics = true
 # Only the campaigns change; the compiler settings are the default profile's.
 [profile.deep.fuzz]
 runs = 10000
+# Two fuzz tests filter their inputs with `vm.assume` at about seven rejections per accepted
+# run; at 10,000 runs they pass the default limit of 65,536 rejections.
+max_test_rejects = 1000000
 
 [profile.deep.invariant]
 runs = 2000
