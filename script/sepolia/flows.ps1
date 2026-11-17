@@ -483,8 +483,9 @@ switch ($Step) {
         Send-Items (Invoke-Plan 'outcomeTx(uint256)' @("$TokenId"))
     }
     'cancel' {
-        # The selected record's network (the manager's `network()`); a record from before the
-        # single network address has none, and its network was the hot admin Safe. -Safe
+        # The selected record's network (the manager's `network()`). A failed read stops the
+        # step: a record from before the single network address has no `network()`, and for
+        # such a record pass -Safe (its network was the hot admin Safe). -Safe always
         # overrides. Send-Safe refuses a Safe without configured signers.
         $network = $Safe
         if (-not $network) {
@@ -492,7 +493,7 @@ switch ($Step) {
                 $network = (Invoke-Cli 'cast' @('call', $Contracts.WorksAccessManager.address,
                         'network()(address)', '--rpc-url', $Rpc)).Trim()
             }
-            catch { $network = $HotAdminSafe }
+            catch { throw "could not read network() from the selected record's manager; pass -Safe for a record that predates it" }
         }
         if (-not $SafeSigners[$network.ToLower()]) { throw "no signers configured for network Safe $network" }
         Send-Items (Invoke-Plan 'cancelTx(uint256,address)' @("$TokenId", $network))
