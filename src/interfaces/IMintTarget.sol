@@ -9,7 +9,7 @@ import { PrimaryOutcome, PrimarySettlement, PrimaryTerms } from "./types/SaleTyp
 ///         and 16). Adapters are written against this and nothing else.
 /// @dev The token, not the adapter, decides what may be minted and on what terms, so an adapter
 ///      can never sell outside the approved package. `mint` accepts only adapters in the token's
-///      admitted-minter mapping (`isAdmittedMinter`), written by a governed setter on the 30-day
+///      admitted-minter mapping (`isAdmittedMinter`), written by a governed setter on the 7-day
 ///      class (a mapping read is cheaper on the start path than an AccessManager hop). Removal
 ///      stops new mints only: an adapter that minted can still settle and burn.
 ///      The token checks that the calling adapter's sale kind equals `terms.saleKind`: 6529
@@ -126,7 +126,7 @@ interface IMintTarget {
     /// @return True while the adapter is admitted.
     function isAdmittedMinter(address adapter) external view returns (bool);
     /// @notice Admits or removes a sale adapter (ERC-165 checked for `ISaleAdapter`, not an
-    ///         EIP-7702 delegated account). SUCCESSOR_SETTER role (30-day class).
+    ///         EIP-7702 delegated account). SUCCESSOR_SETTER role (7-day class).
     /// @param adapter The sale adapter.
     /// @param admitted True to admit it, false to remove it.
     function setAdmittedMinter(address adapter, bool admitted) external;

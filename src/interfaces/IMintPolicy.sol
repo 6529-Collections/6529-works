@@ -15,7 +15,7 @@ import { PrimaryTerms } from "./types/SaleTypes.sol";
 ///      invariants on the answer (the adapter's sale kind, a nonzero lead artist and seller,
 ///      bounded economics, an existing collection, the kind and seed policy within their stored
 ///      width), interns the terms and mints into the adapter's custody. Governance replaces the
-///      policy (`IStream.setDependency("PACKAGE_REGISTRY", ...)`, the 30-day class); a successor
+///      policy (`IStream.setDependency("PACKAGE_REGISTRY", ...)`, the 7-day class); a successor
 ///      must keep its predecessor's consumed items and content claims authoritative.
 ///
 ///      What the core enforces, and what it leaves to the policy: Stream holds content

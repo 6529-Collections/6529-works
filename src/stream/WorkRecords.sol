@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
-import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
+import { IAccounts } from "../interfaces/IAccounts.sol";
 import { IContentStore } from "../interfaces/IContentStore.sol";
 import { IEditions } from "../interfaces/IEditions.sol";
 import { IEntropyModule } from "../interfaces/IEntropyModule.sol";
@@ -43,9 +43,10 @@ import { WorkDelivery } from "./WorkDelivery.sol";
 ///      call: it forwards all the gas EIP-150 allows and any failure, running short included,
 ///      reverts the transaction. No gas amount is compiled in.
 ///
-///      Consents are EIP-712 signatures in this contract's domain (`Typehashes`), each by a
-///      party's active authority and bound to the work's state hash; every applied change bumps
-///      the version, so a consent can never apply twice or to a state its signers did not see.
+///      Consents are EIP-712 signatures in this contract's domain (`Typehashes`), each by any
+///      wallet of the party's 6529 account (checked by the artist registry, `IAccounts`) and
+///      bound to the work's state hash; every applied change bumps the version, so a consent
+///      can never apply twice or to a state its signers did not see.
 contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers {
     uint256 private constant NONE = type(uint256).max;
     bytes32 private constant STATE_DOMAIN = keccak256("6529WORKS_WORK_STATE_V1");
@@ -86,6 +87,11 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     ///      is complete in.
     uint256 private constant ADDED_STORES =
         0xf0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0;
+    /// @dev How long after a recorded finalize notice anyone may finalize a work whose primary
+    ///      sale settled (C9). The number is the guarantee, fixed for good.
+    uint256 private constant FINALIZE_NOTICE = 14 days;
+    /// @dev The powers whose renunciation also needs the network's action (C7).
+    uint16 private constant NETWORK_POWERS = WorkPowers.ROYALTY_RATE | WorkPowers.RELICENSE;
 
     /// @dev Word 0: the pin, version, media count, how many leading media files are complete in
     ///      the content store, flags, the content store's chunk cursor in the next file, and the
@@ -121,9 +127,11 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         bool done;
     }
 
-    /// @dev A store beside the content store, pinned by code hash.
+    /// @dev A store beside the content store, pinned by code hash; `retired` once the network
+    ///      marked it dead (nothing more is counted through it).
     struct StoreEntry {
         address source;
+        bool retired;
         bytes32 codeHash;
     }
 
@@ -149,6 +157,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     /// @dev The artist's added-store walk, beside the content store's cursor in word 0: the store
     ///      ID from bit 32, the file from bit 24 and the chunk in the low 24 bits.
     mapping(uint256 tokenId => uint256) private _storeCursors;
+    /// @dev When a finalize notice was recorded for a work (C9), zero while none was.
+    mapping(uint256 tokenId => uint48) private _finalizeNotices;
 
     /// @param authority_ The AccessManager governing this contract and its first delivery
     ///        contract.
@@ -266,13 +276,32 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     /// @inheritdoc IWorkRecords
     /// @dev The approved record file reaches here unchecked when the artist never replaced it,
     ///      so finalize applies the structural bounds itself. The license text must be complete
-    ///      on-chain.
+    ///      on-chain. Any wallet of the lead artist's account finalizes at any time. Anyone else,
+    ///      once 6529 Stream reports the primary sale settled (`NotWorkArtist` before): the first
+    ///      call records a notice and returns (`FinalizeNoticeRecorded`); `FINALIZE_NOTICE` (14
+    ///      days) after it, a call finalizes the record as it then stands (`FinalizeNotDue`
+    ///      before): that call's `expectedStateHash` is not checked, so no change to the record
+    ///      can make it fail; it finalizes only the stored current state.
     function finalize(uint256 tokenId, bytes32 expectedStateHash) external {
         RecordData storage r = _open(tokenId);
         uint8 flags = r.flags;
         if (flags & FINALIZED != 0) revert WorkIsFinalized(tokenId);
-        _onlyArtist(tokenId);
-        _checkState(tokenId, expectedStateHash);
+        if (!_isArtist(tokenId)) {
+            if (!IStream(stream).primarySaleSettled(tokenId)) {
+                revert NotWorkArtist(tokenId, msg.sender);
+            }
+            uint256 notice = _finalizeNotices[tokenId];
+            if (notice == 0) {
+                _finalizeNotices[tokenId] = uint48(block.timestamp);
+                emit FinalizeNoticeRecorded(tokenId, block.timestamp + FINALIZE_NOTICE);
+                return;
+            }
+            if (block.timestamp < notice + FINALIZE_NOTICE) {
+                revert FinalizeNotDue(tokenId, notice + FINALIZE_NOTICE);
+            }
+        } else {
+            _checkState(tokenId, expectedStateHash);
+        }
         // The default renderer, its code checked against Stream's pin (not finalized: no pin).
         address renderer = IStream(stream).rendererOf(tokenId);
         _checkRecordFile(r.recordFileId);
@@ -317,7 +346,9 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         // The chunk cursor is zero whenever every file was reached.
         Sync memory c = Sync(synced, r.chunk, files, count, maxChunks, flags & ON_CHAIN != 0);
         if (storeId != 0) {
-            _onlyArtist(tokenId);
+            // An added store is walked by a wallet of the lead artist's account or by the
+            // storage operator (the role mapped to this selector, C21).
+            if (!_isArtist(tokenId)) _checkCanCall(msg.sender, _msgData());
             // Resumes only on the same store and ahead of the content store's walk.
             uint256 cursor = _storeCursors[tokenId];
             uint256 file = (cursor >> 24) & 0xff;
@@ -454,10 +485,16 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         }
     }
 
-    /// @dev The artist registry resolving every party's active authority: 6529 Stream's, which
-    ///      6529 Stream sets once at genesis and never replaces.
-    function _artistRegistry() private view returns (address) {
-        return IStream(stream).artistRegistry();
+    /// @inheritdoc IWorkRecords
+    function finalizeNoticeAt(uint256 tokenId) external view returns (uint48) {
+        return _finalizeNotices[tokenId];
+    }
+
+    /// @dev The artist registry answering which wallets act for each party's account
+    ///      (`IAccounts`): 6529 Stream's, which 6529 Stream sets once at genesis and never
+    ///      replaces.
+    function _accounts() private view returns (IAccounts) {
+        return IAccounts(IStream(stream).artistRegistry());
     }
 
     /// @inheritdoc IWorkRecords
@@ -504,9 +541,9 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     }
 
     /// @inheritdoc IWorkRecords
-    /// @dev Lower-only (ADR 0006). The version bumps after the view calls that check state and
-    ///      consents and before the state-changing ones; the core emits
-    ///      `RoyaltyRateChanged`, a linked edition's rate follows its master's.
+    /// @dev Up or down (R10), at most 100,000 (6529 Stream refuses more). The version bumps
+    ///      after the view calls that check state and consents and before the state-changing
+    ///      ones; the core emits `RoyaltyRateChanged`, a linked edition's rate follows its master's.
     function setRoyaltyRate(
         uint256 tokenId,
         uint32 rate,
@@ -519,7 +556,6 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         _checkPower(r, tokenId, WorkPowers.ROYALTY_RATE);
         uint32 previous = _royaltyRateOf(tokenId);
         if (rate == previous) return;
-        if (rate > previous) revert RoyaltyRateNotLowered(tokenId, previous, rate);
         bytes32 structHash = keccak256(
             abi.encode(
                 Typehashes.ROYALTY_RATE_CHANGE,
@@ -535,14 +571,13 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     }
 
     /// @inheritdoc IWorkRecords
-    /// @dev Pinning the current renderer again is a no-op, unless the power is renounced.
+    /// @dev The network's action alone (C8): no artist signature. Pinning the current renderer
+    ///      again is a no-op, unless the artist renounced the power.
     function repinRenderer(
         uint256 tokenId,
         address renderer,
         bytes32 rendererCodeHash,
-        bytes32 expectedStateHash,
-        uint64 deadline,
-        bytes calldata artistSignature
+        bytes32 expectedStateHash
     ) external restricted {
         RecordData storage r = _open(tokenId);
         _checkPower(r, tokenId, WorkPowers.RENDERER_REPIN);
@@ -550,17 +585,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         address previous = r.renderer;
         if (renderer == previous) return;
         Dependency.checkPinned(renderer, type(IRenderer).interfaceId, rendererCodeHash);
-        bytes32 structHash = keccak256(
-            abi.encode(
-                Typehashes.RENDERER_REPIN,
-                tokenId,
-                renderer,
-                rendererCodeHash,
-                _checkState(tokenId, expectedStateHash),
-                deadline
-            )
-        );
-        _checkArtistConsent(tokenId, structHash, deadline, artistSignature);
+        _checkState(tokenId, expectedStateHash);
         _pinCode(renderer, rendererCodeHash);
         r.renderer = renderer;
         ++r.version;
@@ -571,9 +596,11 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     // -------------------------------------------------------------------------------- powers
 
     /// @inheritdoc IWorkPowers
-    /// @dev Authenticated as `repinRenderer` is: the lead artist's active authority (zero while
-    ///      an authority-moving override is pending). Collaborators do not sign: each power
-    ///      already needs the lead artist's signature. The version bump is the replay protection.
+    /// @dev Signed by any wallet of the lead artist's account (`IAccounts.requireSigned`);
+    ///      anyone relays it. Collaborators do not sign. Renouncing ROYALTY_RATE or RELICENSE
+    ///      also needs the network's action (C7): the call must pass the role mapped to this
+    ///      selector (the network, 24 hours); renouncing RENDERER_REPIN alone is the artist's.
+    ///      The version bump is the replay protection.
     function renounce(
         uint256 tokenId,
         uint16 powers,
@@ -585,6 +612,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         if (powers & ~WorkPowers.ALL != 0) revert UnknownPower(powers);
         uint16 renounced = r.renounced;
         if (powers & ~renounced == 0) return;
+        if (powers & ~renounced & NETWORK_POWERS != 0) _checkCanCall(msg.sender, _msgData());
         if (powers & WorkPowers.RENDERER_REPIN != 0 && r.flags & FINALIZED == 0) {
             revert WorkNotFinalized(tokenId);
         }
@@ -602,7 +630,11 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
                 deadline
             )
         );
-        _checkArtistConsent(tokenId, structHash, deadline, artistSignature);
+        SignatureVerifier.checkDeadline(deadline);
+        _accounts()
+            .requireSigned(
+                IStream(stream).artistOf(tokenId), _hashTypedDataV4(structHash), artistSignature
+            );
         renounced |= powers;
         r.renounced = renounced;
         ++r.version;
@@ -676,8 +708,21 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         uint256 id = _stores.length + 1;
         if (id >= MAX_STORES) revert StoreLimitReached();
         Dependency.checkPinned(source, codeHash);
-        _stores.push(StoreEntry(source, codeHash));
+        _stores.push(StoreEntry(source, false, codeHash));
         emit StoreAdded(id, source, codeHash);
+    }
+
+    /// @inheritdoc IWorkRecords
+    /// @dev Works already counted through the store keep their record; nothing is rewritten.
+    function retireStore(uint256 storeId) external restricted {
+        if (storeId == 0) revert UnknownStore(0);
+        _entry(storeId).retired = true;
+        emit StoreRetired(storeId);
+    }
+
+    /// @inheritdoc IWorkRecords
+    function storeRetired(uint256 storeId) external view returns (bool) {
+        return storeId != 0 && _entry(storeId).retired;
     }
 
     /// @inheritdoc IWorkRecords
@@ -760,36 +805,22 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         if (state != expected) revert StateHashMismatch(expected, state);
     }
 
-    /// @dev The lead artist's active authority (zero while a recovery override is pending);
-    ///      reverts with the core's `UnknownWork` for a burned token.
-    function _artistOf(uint256 tokenId) private view returns (address) {
-        return
-            IArtistRegistry(_artistRegistry()).activeAuthorityOf(IStream(stream).artistOf(tokenId));
+    /// @dev Whether the caller is a wallet of the lead artist's account now (C6, C16); reverts
+    ///      with the core's `UnknownWork` for a burned token.
+    function _isArtist(uint256 tokenId) private view returns (bool) {
+        return _accounts().isWallet(IStream(stream).artistOf(tokenId), msg.sender);
     }
 
     function _onlyArtist(uint256 tokenId) private view {
-        if (_artistOf(tokenId) != msg.sender) revert NotWorkArtist(tokenId, msg.sender);
+        if (!_isArtist(tokenId)) revert NotWorkArtist(tokenId, msg.sender);
     }
 
-    /// @dev The lead artist's active authority signed `structHash` before `deadline`
-    ///      (`InvalidConsent(tokenId, 0)` otherwise): the errata repin and renunciation.
-    function _checkArtistConsent(
-        uint256 tokenId,
-        bytes32 structHash,
-        uint64 deadline,
-        bytes calldata signature
-    ) private view {
-        SignatureVerifier.checkDeadline(deadline);
-        if (!SignatureVerifier.isValid(_artistOf(tokenId), _hashTypedDataV4(structHash), signature))
-        {
-            revert InvalidConsent(tokenId, 0);
-        }
-    }
-
-    /// @dev Every party of the work's item consents, in order, each by its active authority
-    ///      (artist ID `artistIdOf(account)`, else `uint160(account)`). A wrong count reports the
-    ///      party index `signatures.length`. Unanimity is the rule (ADR 0006); a party whose
-    ///      authority is a contract wallet decides by that wallet's own rule (ERC-1271).
+    /// @dev Every party of the work's item consents, in order: each proof is a wallet of the
+    ///      party's account (the account named by `uint160(account)`, which the registry
+    ///      resolves to its current wallets) followed by that wallet's signature of the digest
+    ///      (`IAccounts.requireSigned`, ECDSA or ERC-1271), whose revert for any other proof is
+    ///      passed on as it is. A wrong count reverts with `InvalidConsent` and the party index
+    ///      `signatures.length`. Unanimity, counted by account, is the rule (C6).
     function _checkConsents(
         uint256 tokenId,
         PackageItem calldata item,
@@ -804,16 +835,9 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         uint256 parties = item.parties.length;
         if (signatures.length != parties) revert InvalidConsent(tokenId, signatures.length);
         bytes32 digest = _hashTypedDataV4(structHash);
-        IArtistRegistry registry = IArtistRegistry(_artistRegistry());
+        IAccounts accounts = _accounts();
         for (uint256 i; i < parties; ++i) {
-            address account = item.parties[i].account;
-            uint256 artistId = registry.artistIdOf(account);
-            if (artistId == 0) artistId = uint256(uint160(account));
-            if (!SignatureVerifier.isValid(
-                    registry.activeAuthorityOf(artistId), digest, signatures[i]
-                )) {
-                revert InvalidConsent(tokenId, i);
-            }
+            accounts.requireSigned(uint160(item.parties[i].account), digest, signatures[i]);
         }
     }
 
@@ -918,14 +942,20 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         revert FileNotInWork(tokenId, fileId);
     }
 
-    /// @dev Store `storeId` and whether its code is still the code it was added with (the
-    ///      content store, 0, always is). Reverts with `UnknownStore` for an unused ID.
+    /// @dev Store `storeId` and whether it may count: not retired and its code still the code it
+    ///      was added with (the content store, 0, always may). Reverts with `UnknownStore` for an
+    ///      unused ID.
     function _storeOf(uint256 storeId) private view returns (address source, bool intact) {
         if (storeId == 0) return (contentStore, true);
-        if (storeId > _stores.length) revert UnknownStore(storeId);
-        StoreEntry storage e = _stores[storeId - 1];
+        StoreEntry storage e = _entry(storeId);
         source = e.source;
-        intact = source.codehash == e.codeHash;
+        intact = !e.retired && source.codehash == e.codeHash;
+    }
+
+    /// @dev Added store `storeId` (from 1); `UnknownStore` for an unused ID.
+    function _entry(uint256 storeId) private view returns (StoreEntry storage) {
+        if (storeId > _stores.length) revert UnknownStore(storeId);
+        return _stores[storeId - 1];
     }
 
     /// @dev Moves the sync cursor `c` of work `tokenId` over at most `c.budget` chunks verified

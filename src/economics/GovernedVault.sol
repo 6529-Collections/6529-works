@@ -7,9 +7,7 @@ import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Rec
 import { IERC1155 } from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import { IERC1155Receiver } from "@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import { Dependency } from "../libraries/Dependency.sol";
 import { IGovernedVault } from "./interfaces/IGovernedVault.sol";
-import { IRevenueEscrow } from "./interfaces/IRevenueEscrow.sol";
 import { ISplitLedger } from "./interfaces/ISplitLedger.sol";
 import { ISplitWallet } from "./interfaces/ISplitWallet.sol";
 import { TokenTransfer } from "./TokenTransfer.sol";
@@ -26,21 +24,15 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///      out of a token a marketplace chose. Every external call forwards all available gas and
 ///      reverts on failure.
 contract GovernedVault is IGovernedVault, IERC721Receiver, IERC1155Receiver, AccessManaged {
-    /// @inheritdoc IGovernedVault
-    ISplitLedger public immutable ledger;
-
     /// @dev The destination and its revision share one slot.
     address private _destination;
     uint64 private _revision;
 
+    /// @dev Takes no split ledger, so the fee vault is deployed before the ledger, which names it
+    ///      as the network (`ISplitFactory.network`).
     /// @param authority The AccessManager governing {setDestination}.
-    /// @param ledger_ The split ledger whose wallets name this vault as a payee.
     /// @param destination_ The first destination; not zero or the vault.
-    constructor(address authority, ISplitLedger ledger_, address destination_)
-        AccessManaged(authority)
-    {
-        Dependency.check(address(ledger_));
-        ledger = ledger_;
+    constructor(address authority, address destination_) AccessManaged(authority) {
         _setDestination(destination_);
     }
 
@@ -97,17 +89,13 @@ contract GovernedVault is IGovernedVault, IERC721Receiver, IERC1155Receiver, Acc
 
     /// @inheritdoc IGovernedVault
     function releaseToDestination(
+        ISplitLedger ledger,
         ISplitWallet.Payee[] calldata payees,
         bytes32 salt,
         address asset,
         uint256 index
     ) external returns (uint256) {
         return ledger.releaseTo(payees, salt, asset, index, _destination);
-    }
-
-    /// @inheritdoc IGovernedVault
-    function consentToRecovery(IRevenueEscrow escrow) external {
-        escrow.consentToRecovery(_destination);
     }
 
     /// @inheritdoc IERC721Receiver

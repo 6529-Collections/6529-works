@@ -22,7 +22,9 @@ import { VerifyV1 } from "./VerifyV1.sol";
 
 /// @title Verify
 /// @notice Confirms a recorded deployment against the chain. Run it against the chain the
-///         deployment is on, at least `minSetback()` (5 days) after genesis:
+///         deployment is on, after the network has accepted (`acceptNetwork`). Genesis sets no
+///         grant or target-admin delay, so no setback wait applies (a later pending delay
+///         change fails the run, `PendingGrantDelayChange`):
 ///
 ///         DEPLOYMENT=deployments/<chainId>/<timestamp>.json \
 ///           forge script script/Verify.s.sol --rpc-url <rpc>
@@ -49,21 +51,22 @@ import { VerifyV1 } from "./VerifyV1.sol";
 ///            readback, so a later governed change fails them, as a later default-currency
 ///            change fails check 6. Whether the recorded recipients are the intended ones is
 ///            for a human to confirm against the signed manifest; no check here can.
-///            Outside epoch mode, the manager's parameters are their compiled defaults, no
-///            recovery address and no successor is registered, its governance chain holds only
-///            the epoch-0 manifest, and both sales run the recorded configuration
+///            Outside epoch mode, the manager's governance chain holds only the epoch-0
+///            manifest, and both sales run the recorded configuration
 ///            (`VerifyV1.checkGenesisState`).
 ///         5. Off anvil, the genesis file still matches the committed policy and names nothing
-///            the deployment lacks, and its holders pass the deploy's holder guards against the
-///            chain as it is now: Safes, signer separation, no deployment contract
-///            (`DeployGuards.checkHolders`, `checkHoldersAgainst`); on mainnet, the role groups
+///            the deployment lacks, and its network and holders pass the deploy's guards
+///            against the chain as it is now: the network a bare canonical Safe, no deployment
+///            contract (`DeployGuards.checkHolders`, `checkHoldersAgainst`), and the genesis
+///            file names no brake (`checkNoBrake`, ruling 1); on mainnet, the role groups
 ///            and no deployer as a holder, museum, marketplace owner or fee recipient
 ///            (`checkRoleGroups`, `checkRecipients`).
-///         6. `VerifyV1.check`: every role, holder, delay and selector, no role left with the
+///         6. `VerifyV1.check`: the network accepted and is the configured one, the brake is
+///            the configured one, every role, holder, delay and selector, no role left with the
 ///            configurator, every target's authority, every wired getter, and PLATFORM's
-///            immediate path into `openSale`, `closeSale` and `addLocator`. Off anvil, the
-///            entropy module is its VRF subscription's only consumer, and on mainnet the
-///            subscription's owner is the hot admin Safe.
+///            immediate path into `addLocator`. Off anvil, the entropy module is its VRF
+///            subscription's only consumer, and on mainnet the subscription's owner is the
+///            network.
 ///         7. The `GovernanceConfigured` event carries the configuration, manifest and wiring
 ///            hashes recomputed from the JSON.
 ///         8. No pending grant-delay or target-admin-delay change other than genesis setting
@@ -75,11 +78,11 @@ import { VerifyV1 } from "./VerifyV1.sol";
 ///         11. Every selector remap, role-admin change, role-guardian change and target closure
 ///            on the manager since genesis matches the configuration: a selector the
 ///            configuration maps keeps its role, every other selector stays with ADMIN (its
-///            default), every role's admin is ADMIN, every configured role's guardian is
-///            GUARDIAN and any other role's stays ADMIN, and no target is closed. Check 6 reads
+///            default), every operational role's admin is NETWORK and any other role's stays
+///            ADMIN, every role's guardian stays ADMIN, and no target is closed. Check 6 reads
 ///            the configured selectors, roles and targets; this check covers the rest.
 ///
-///         After a governance change (an admin recovery, a key rotation), set
+///         After a governance change (a key rotation, a network handover), set
 ///         `GOVERNANCE_CONFIG` to a copy of the genesis file with the current holders (epoch
 ///         mode). Checks 5, 6, 9 and 11 then use it; checks 7 and 8 keep the genesis file;
 ///         every genesis holder it drops must hold no record for that role any more, and each
@@ -124,10 +127,10 @@ contract Verify is ScriptIO {
     ///         configuration does not give it (ADMIN for a selector the configuration does not
     ///         map).
     error UnexpectedFunctionRole(address target, bytes4 selector, uint64 role);
-    /// @notice Since genesis, `role`'s admin was set to `admin`; every role's admin is ADMIN.
+    /// @notice Since genesis, `role`'s admin was set to `admin`, which is not NETWORK for an
+    ///         operational role or ADMIN for any other.
     error UnexpectedRoleAdmin(uint64 role, uint64 admin);
-    /// @notice Since genesis, `role`'s guardian was set to `guardian`, which is not GUARDIAN
-    ///         for a configured role or ADMIN for any other.
+    /// @notice Since genesis, `role`'s guardian was set to `guardian`; every role's stays ADMIN.
     error UnexpectedRoleGuardian(uint64 role, uint64 guardian);
     /// @notice Since genesis, `target` was closed on the manager; the configuration closes none.
     error UnexpectedTargetClosed(address target);
@@ -230,7 +233,10 @@ contract Verify is ScriptIO {
         string memory genesis = _read(vm.parseJsonString(record, ".genesisConfig"));
         GovernanceConfig.Config memory cfg = DeployV1.config(d, _currentConfig(genesis));
         GovernanceConfig.Call[] memory wired = DeployV1.wiring(d, genesis, manifest);
-        if (!local) _checkGuards(record, d, _currentConfig(genesis), cfg, manifest);
+        if (!local) {
+            DeployGuards.checkNoBrake(genesis);
+            _checkGuards(record, d, _currentConfig(genesis), cfg, manifest);
+        }
         VerifyV1.check(d, cfg, wired);
         if (!local) _checkSubscription(d, cfg, block.chainid == DeployGuards.MAINNET_CHAIN_ID);
         _checkHistory(d, genesis, cfg, wired, manifest, record);
@@ -264,7 +270,6 @@ contract Verify is ScriptIO {
             SafeCast.toUint32(_uint(record, "auctionDuration")),
             SafeCast.toUint32(_uint(record, "auctionExtensionWindow")),
             SafeCast.toUint32(_uint(record, "auctionIncrementShare")),
-            SafeCast.toUint32(_uint(record, "auctionRefusalDelay")),
             SafeCast.toUint32(_uint(record, "auctionRefusalGas"))
         );
         p.editionAuction = IUniformEditionAuction.AuctionConfig(
@@ -272,7 +277,6 @@ contract Verify is ScriptIO {
             SafeCast.toUint16(_uint(record, "editionStepsPerDecade")),
             SafeCast.toUint16(_uint(record, "editionStepCount")),
             SafeCast.toUint32(_uint(record, "editionMarginShare")),
-            SafeCast.toUint32(_uint(record, "editionCloseOffset")),
             SafeCast.toUint32(_uint(record, "editionSoftWindow")),
             SafeCast.toUint32(_uint(record, "editionMaxExtension"))
         );
@@ -336,7 +340,7 @@ contract Verify is ScriptIO {
     }
 
     /// @dev The live entropy module's VRF subscription (`DeployGuards.checkSubscription`): the
-    ///      module is the only consumer, and on `mainnet` the owner is the hot admin Safe.
+    ///      module is the only consumer, and on `mainnet` the owner is the network.
     function _checkSubscription(
         DeployV1.Deployment memory d,
         GovernanceConfig.Config memory cfg,
@@ -569,7 +573,7 @@ contract Verify is ScriptIO {
             (uint32 delay, uint48 effect) = abi.decode(grants[i].data, (uint32, uint48));
             // Only "is the change still pending" matters here; seconds of skew are irrelevant.
             // forge-lint: disable-next-line(block-timestamp)
-            if (effect > block.timestamp && delay != Roles.grantDelay(role)) {
+            if (effect > block.timestamp && delay != 0) {
                 revert PendingGrantDelayChange(role, delay, effect);
             }
         }
@@ -579,7 +583,7 @@ contract Verify is ScriptIO {
             address target = address(uint160(uint256(targets[i].topics[1])));
             (uint32 delay, uint48 effect) = abi.decode(targets[i].data, (uint32, uint48));
             // forge-lint: disable-next-line(block-timestamp)
-            if (effect > block.timestamp && delay != GovernanceConfig.TARGET_ADMIN_DELAY) {
+            if (effect > block.timestamp && delay != 0) {
                 revert PendingTargetAdminDelayChange(target, delay, effect);
             }
         }
@@ -616,7 +620,7 @@ contract Verify is ScriptIO {
 
     /// @dev Check 11, over the manager's `TargetFunctionRoleUpdated`, `RoleAdminChanged`,
     ///      `RoleGuardianChanged` and `TargetClosed` events since genesis. Genesis itself emits
-    ///      only matching ones (each role's guardian, each configured selector). Outside epoch
+    ///      only matching ones (each operational role's admin, each configured selector). Outside epoch
     ///      mode every event must match; in epoch mode a past one that does not match the epoch
     ///      configuration (a genesis mapping included) is accepted, and logged, when the
     ///      manager's current state for it matches the epoch configuration.
@@ -649,8 +653,8 @@ contract Verify is ScriptIO {
         for (uint256 i; i < logs.length; ++i) {
             uint64 role = uint64(uint256(logs[i].topics[1]));
             uint64 admin = uint64(uint256(logs[i].topics[2]));
-            if (admin == Roles.ADMIN) continue;
-            if (!epoch || d.manager.getRoleAdmin(role) != Roles.ADMIN) {
+            if (admin == _expectedAdmin(role)) continue;
+            if (!epoch || d.manager.getRoleAdmin(role) != _expectedAdmin(role)) {
                 revert UnexpectedRoleAdmin(role, admin);
             }
             console2.log("epoch mode: accepted a past role-admin change, since restored", role);
@@ -659,9 +663,8 @@ contract Verify is ScriptIO {
         for (uint256 i; i < logs.length; ++i) {
             uint64 role = uint64(uint256(logs[i].topics[1]));
             uint64 guardian = uint64(uint256(logs[i].topics[2]));
-            uint64 expected = _expectedGuardian(role);
-            if (guardian == expected) continue;
-            if (!epoch || d.manager.getRoleGuardian(role) != expected) {
+            if (guardian == Roles.ADMIN) continue;
+            if (!epoch || d.manager.getRoleGuardian(role) != Roles.ADMIN) {
                 revert UnexpectedRoleGuardian(role, guardian);
             }
             console2.log("epoch mode: accepted a past role-guardian change, since restored", role);
@@ -692,10 +695,10 @@ contract Verify is ScriptIO {
         return Roles.ADMIN;
     }
 
-    /// @dev GUARDIAN for every role genesis configures but ADMIN (`GovernanceConfig.install`),
-    ///      ADMIN, the manager's default, for any other role.
-    function _expectedGuardian(uint64 role) internal pure returns (uint64) {
-        return role != Roles.ADMIN && role < Roles.COUNT ? Roles.GUARDIAN : Roles.ADMIN;
+    /// @dev NETWORK for every operational role genesis configures (`GovernanceConfig.install`),
+    ///      ADMIN, the manager's default, for the network roles and any other role.
+    function _expectedAdmin(uint64 role) internal pure returns (uint64) {
+        return Roles.isKnown(role) && !Roles.isNetworkRole(role) ? Roles.NETWORK : Roles.ADMIN;
     }
 
     function _checkCodeHashes(string memory record) internal view {

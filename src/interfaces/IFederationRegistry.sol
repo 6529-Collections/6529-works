@@ -18,9 +18,10 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 ///      and version). Nothing migrates when the registry is replaced.
 ///      Through the artist registry a registry may only create an identity for an account that
 ///      signed for it, list a non-canonical contract whose artist signed for it, and set a
-///      listed contract ACTIVE or DELISTED; it has no authority over any artist's authority,
-///      payout or standing, nor over any token, work or fund. A token records its own exit
-///      (`LEFT`, or `LEFT_DELISTED` from DELISTED) without it.
+///      listed contract ACTIVE or DELISTED; it has no authority over any artist's identity or
+///      payout, nor over any token, work or fund. A listed contract stays listed for good (there
+///      is no exit); the network delists it here, or every contract of an account at once in the
+///      artist registry (`IAccounts.isFederationDelisted`).
 interface IFederationRegistry is IERC165 {
     /// @notice What a federated contract is: the 1/1 template or the linked pair's editions.
     ///         `PAIR` is not used by the v1 templates (each half is listed on its own, with its
@@ -31,12 +32,7 @@ interface IFederationRegistry is IERC165 {
         PAIR
     }
 
-    /// @notice A contract's status as the adapters see it. A contract that left the federation
-    ///         (`IArtistRegistry.FederationStatus.LEFT`, the token's own one-way exit) has no
-    ///         entry (`entry` answers NONE), so no shared adapter can start a new sale of it
-    ///         (each locks its fee from the entry), while `isActive` still serves the sales it
-    ///         started before the exit, which finish; the artist registry's `federatedListing`
-    ///         records the exit.
+    /// @notice A contract's status as the adapters see it.
     enum Status {
         NONE,
         ACTIVE,
@@ -50,8 +46,9 @@ interface IFederationRegistry is IERC165 {
     /// @param artistId The artist the contract is listed under.
     /// @param templateVersion The version the template table gives its code hash.
     /// @param codeHash The contract's runtime code hash.
-    /// @param feeShare The network's share of primary sales and royalties, out of 100,000, as
-    ///        locked in the contract at deployment.
+    /// @param feeShare The network's share of primary sales and royalties now, out of 100,000:
+    ///        the smaller of the share fixed in the contract at deployment and the artist
+    ///        registry's record for it (`IAccounts.federatedFeeShare`), which can only fall.
     /// @param status Its status.
     struct Entry {
         Form form;
@@ -107,28 +104,36 @@ interface IFederationRegistry is IERC165 {
     /// @param j The identity fields and the artist's signatures (`Join`).
     function register(Join calldata j) external;
 
-    /// @notice A contract's entry; all zero (`status` NONE) for a contract that is not listed,
-    ///         whose code hash this registry does not know, or that left the federation. Every
+    /// @notice A contract's entry; all zero (`status` NONE) for a contract that is not listed or
+    ///         whose code hash this registry does not know. Every
     ///         shared adapter locks a new sale's fee from this answer and requires its code hash
     ///         to be the token's, so a contract without an entry starts no sale there.
     /// @param token The federated contract.
     /// @return The entry.
     function entry(address token) external view returns (Entry memory);
 
-    /// @notice Whether the shared adapters serve `token`'s sales: listed ACTIVE or LEFT (a sale
-    ///         started before an exit from ACTIVE finishes; a new one also needs an `entry`,
-    ///         which a left contract has not), and its template version not revoked. A delisted
-    ///         contract's running sales end unsold with refunds, and so do those of a contract
-    ///         that left while delisted (LEFT_DELISTED).
+    /// @notice Whether the shared adapters serve `token`'s running sales: listed ACTIVE and its
+    ///         template version approved or suspended (not revoked). A delisted contract's running
+    ///         sales end unsold with refunds. A new work or sale also needs `canMint`.
     /// @param token The federated contract.
     /// @return True while it is served.
     function isActive(address token) external view returns (bool);
 
     /// @notice Whether `adapter` may mint a new work into `token` now: an admitted adapter, a
     ///         contract listed ACTIVE, and a template version approved and not suspended; for an
-    ///         editions contract, its partner listed ACTIVE too.
+    ///         editions contract, its partner listed ACTIVE too and on an APPROVED template.
     /// @param token The federated contract (the caller, when a template asks).
     /// @param adapter The sale adapter asking to mint.
     /// @return True when the mint may proceed.
     function canMint(address token, address adapter) external view returns (bool);
+
+    /// @notice Reverses a template revocation: REVOKED to APPROVED. The network. A revocation
+    ///         writes no listing, so the template's contracts are served again as listed.
+    /// @param codeHash The template code hash.
+    function reinstateTemplate(bytes32 codeHash) external;
+
+    /// @notice The entropy module whose federated seeds (`IEntropyModule.federatedSeedOf`) a VRF
+    ///         work of a federated contract stores at its first mint; zero when there is none.
+    /// @return The entropy module.
+    function entropyModule() external view returns (address);
 }

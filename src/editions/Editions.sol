@@ -8,6 +8,7 @@ import { IERC1155Receiver } from "@openzeppelin/contracts/token/ERC1155/IERC1155
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { Splits } from "../economics/Splits.sol";
+import { ISplitFactory } from "../economics/interfaces/ISplitFactory.sol";
 import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IEditions } from "../interfaces/IEditions.sol";
@@ -54,7 +55,7 @@ import { EditionRules } from "./EditionRules.sol";
 ///      afterwards. Nothing ever changes or removes a link.
 ///
 ///      Copies are minted only by admitted adapters (`isAdmittedMinter`, written by a governed
-///      setter in the 30-day class) whose sale kind (`ISaleAdapter.saleKind`) is the edition's
+///      setter in the 7-day class) whose sale kind (`ISaleAdapter.saleKind`) is the edition's
 ///      own, from its approved terms. Minting is generic (ADR 0005, owner decision 14): rc.2
 ///      sells editions by the uniform-price edition auction (`SaleKind.UNIFORM_AUCTION`), and a
 ///      later sale method (a fixed-price adapter, say) is a new adapter governance admits,
@@ -81,10 +82,11 @@ import { EditionRules } from "./EditionRules.sol";
 ///      `BoundedCallShortfall`, and any other failure reverts with the callee's reason, so no
 ///      shortfall ever yields an answer. Royalties are read from this contract's storage with
 ///      no external call. The receiver is the edition's split (from `PRODUCT_EDITIONS`
-///      economics) and never changes; the rate starts at the master's current
-///      rate, so a consented re-rate of the master before the edition exists carries over, and
-///      the bound work-records satellite re-rates the edition with its master afterwards (every
-///      party's consent plus a governed action). The license and `uri` come from the master.
+///      economics), derived again only when the network lowers the fee share (`lowerFeeShare`,
+///      never higher); the rate starts at the master's current rate, so a consented re-rate of
+///      the master before the edition exists carries over, and the bound work-records satellite
+///      re-rates the edition with its master afterwards, up or down (every party's consent
+///      plus the network's action). The license and `uri` come from the master.
 ///      ERC-4906 events follow the master: one per edition from the work-records satellite, and a
 ///      batch over every ID when Stream's default renderer or a global or collection preferred
 ///      location changes.
@@ -318,20 +320,41 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     }
 
     /// @inheritdoc IEditions
-    /// @dev The receiver never changes. A master without an edition, or an unchanged rate, is a
-    ///      no-op without events, so the satellite can call this for every re-rated master. A
-    ///      higher rate is refused here too (ADR 0006: the edition starts at its master's rate
-    ///      and both only fall), so the rate never rises whatever the satellite sends.
+    /// @dev A master without an edition, or an unchanged rate, is a no-op without events, so the
+    ///      satellite can call this for every re-rated master. The rate follows its master's up
+    ///      or down (R10), never past 100,000 (`InvalidRoyaltyRate`), whatever the satellite sends.
     function setRoyaltyRate(uint256 editionId, uint32 rate) external {
         if (msg.sender != workRecords) revert UnboundCaller(msg.sender);
         if (!exists(editionId)) return;
         Record storage r = _records[editionId];
         uint32 previous = r.royaltyRate;
-        if (rate > previous) revert InvalidRoyaltyRate(rate);
+        if (rate > Splits.DENOMINATOR) revert InvalidRoyaltyRate(rate);
         if (rate == previous) return;
         emit RoyaltyRateChanged(editionId, previous, rate);
         emit MetadataUpdate(editionId);
         r.royaltyRate = rate;
+    }
+
+    /// @inheritdoc IEditions
+    /// @dev PARAMETER_SETTER role (the network, 24 hours). Lower only (`InvalidFeeShare`): no
+    ///      path ever raises the network's share of an existing edition (R9). An edition whose
+    ///      economics are locked (created, or bound by its sale) qualifies (`UnknownEdition`
+    ///      otherwise). The royalty receiver is derived again as the economics resolver derives
+    ///      it (the seller once the share is zero, else the split factory's salt-zero wallet for
+    ///      `Splits.royaltyPayees`), through 6529 Stream's split factory, fixed for good; the
+    ///      fee recipient does not change. A sale already open pays what it locked when it opened.
+    function lowerFeeShare(uint256 editionId, uint32 share) external restricted {
+        Record storage r = _records[editionId];
+        address seller = r.seller;
+        if (seller == address(0)) revert UnknownEdition(editionId);
+        uint32 previous = r.feeShare;
+        if (share >= previous) revert InvalidFeeShare(share);
+        r.feeShare = share;
+        r.royaltyReceiver = share == 0
+            ? seller
+            : ISplitFactory(_address(IStream.splitFactory.selector))
+                .walletFor(Splits.royaltyPayees(seller, r.feeRecipient, share), bytes32(0));
+        emit EditionFeeShareLowered(editionId, previous, share);
     }
 
     /// @inheritdoc IEditions

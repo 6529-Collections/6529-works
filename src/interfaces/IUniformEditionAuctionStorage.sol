@@ -10,11 +10,11 @@ import { IUniformEditionAuction } from "./IUniformEditionAuction.sol";
 ///         from these words, and the adapter answers its own views by asking the lens, because
 ///         its write path alone nearly fills EIP-170.
 interface IUniformEditionAuctionStorage {
-    /// @notice A sale's state word, as stored (`Space.SALE`): written at open and by every bid,
-    ///         raise and withdrawal.
+    /// @notice A sale's state word, as stored (`Space.SALE`): written at open and by every bid
+    ///         and raise.
     /// @param status The stored status: never CLOSED, which is derived.
     /// @param termsId The locked parameters' interned ID (`Space.TERMS`): the configuration
-    ///        current at open, or a record of it with the edition's own close offset.
+    ///        current at open.
     /// @param maxCount The creator's cap; zero for none.
     /// @param oneOfOneEnd The 1/1's end as last read (it only moves later).
     /// @param softEnd The soft-close end; zero before any bid in the window.
@@ -36,36 +36,27 @@ interface IUniformEditionAuctionStorage {
         uint32 bidCount;
     }
 
-    /// @notice One bid as stored (`Space.BID`): `IUniformEditionAuction.Bid`'s fields, then the
-    ///         minute it was placed or last raised, counted from the sale's `openedAt` and
-    ///         capped at 65,535. A withdrawal during a 1/1 dispute pause is open only to a bid
-    ///         placed in a minute that ended before the pause began (ADR 0005, amended
-    ///         1 November 2026).
+    /// @notice One bid as stored (`Space.BID`): `IUniformEditionAuction.Bid`'s fields.
     /// @param bidder Who placed it.
     /// @param step Its step.
     /// @param quantity Its units.
     /// @param position Units entered at its step before it.
-    /// @param placedMinute `(placed or raised - openedAt) / 60`, at most 65,535.
     struct BidWord {
         address bidder;
         uint16 step;
         uint32 quantity;
         uint32 position;
-        uint16 placedMinute;
     }
 
-    /// @notice A sale's payout terms, locked at open (`Space.PAYOUT`).
+    /// @notice A sale's payout terms, locked at open (`Space.PAYOUT`). The fee recipient is not
+    ///         locked: settlement pays the one the economics resolver names then (R18).
     /// @param seller The artist-portion split wallet.
     /// @param feeShare The network fee share, out of 100,000.
-    /// @param feeRecipientId The interned fee recipient (`Space.FEE_RECIPIENT`); zero for none.
     /// @param id The edition ID.
-    /// @param voidDelayDays The abandonment delay locked at open (`Limits.voidDelayDays`).
     struct PayoutWord {
         address seller;
         uint32 feeShare;
-        uint16 feeRecipientId;
         uint32 id;
-        uint16 voidDelayDays;
     }
 
     /// @notice A sale's result, written at settlement (`Space.RESULT`). Each settler's sweep
@@ -121,15 +112,13 @@ interface IUniformEditionAuctionStorage {
     ///      holds the step's departure count (bits 0-31), its departed units (32-63) and entries
     ///      0-2 (64 bits each from bit 64), and word `w >= 1` entries `4w - 1` to `4w + 2` (64
     ///      bits each from bit 0); an entry is `position | quantity << 32`. TERMS: `key` a terms
-    ///      ID (`IUniformEditionAuction.AuctionConfig`). FEE_RECIPIENT: `key` an interned index; the address.
+    ///      ID (`IUniformEditionAuction.AuctionConfig`).
     ///      SWEEP: `key` a settler's address; its own departure sweep in progress, `swept |
     ///      nextPosition << 32 | cutoff << 64`, zero when it has none (never swept, or
-    ///      finished). CREDIT: `key` an account; its claimable ETH. SETTINGS: `saleId` and
-    ///      `key` ignored; `termsId` (the current configuration's ID, bits 0-23), `termsCount`
-    ///      (24-47), the fee recipients interned (48-63), `pausedAt` (64-103, zero while not
-    ///      paused), `listed` (104-111), then `IUniformEditionAuction.Limits`:
-    ///      `maxCloseOffset` (112-143), `voidDelayDays` (144-159), `payoutGas` (160-191) and
-    ///      `rescueCapDays` (192-207).
+    ///      finished). CREDIT: `key` an account; its claimable ETH (bits 0-207) and when it went
+    ///      from zero (208-255). SETTINGS: `saleId` and `key` ignored; `termsId` (the
+    ///      current configuration's ID, bits 0-23), `termsCount` (24-47), `pausedAt` (48-87,
+    ///      zero while not paused), `listed` (88-95), then `payoutGas` (96-127).
     enum Space {
         SALE,
         PAYOUT,
@@ -138,7 +127,6 @@ interface IUniformEditionAuctionStorage {
         LIVE,
         DEPARTURE,
         TERMS,
-        FEE_RECIPIENT,
         SCAN,
         SWEEP,
         CREDIT,

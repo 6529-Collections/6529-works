@@ -12,6 +12,7 @@ import { IEnglishAuctionRefusal } from "../interfaces/IEnglishAuctionRefusal.sol
 import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
+import { PRODUCT_FEDERATED, PRODUCT_STREAM } from "../interfaces/types/EconomicsTypes.sol";
 import { LockedTerms, PrimaryTerms } from "../interfaces/types/SaleTypes.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 
@@ -46,12 +47,11 @@ interface IEnglishAuctionStorage {
 ///      economics resolver and the federation registry from this address instead of the
 ///      auction's; those are views that do not read their caller.
 contract EnglishAuctionLens {
-    /// @notice The longest a dispute pause lasts; one pause per auction (ADR 0001 section 12).
-    uint64 public constant MAX_PAUSE = 7 days;
-    /// @notice An opening bid is at most this many increment floors of its currency (1 ETH for
-    ///         the 0.001 ETH floor), and at most `type(uint96).max`, the largest bid: the
-    ///         absolute ceiling of the governed opening bid.
-    uint256 public constant OPENING_BID_FLOORS = 1_000;
+    /// @notice The longest a dispute pause lasts; one pause per auction (ADR 0001 section 12,
+    ///         C30). A fixed value: the number is the guarantee.
+    uint64 public constant MAX_PAUSE = 3 days;
+    /// @notice How long after a federated sale's end a refused settlement may close it (AUC-46).
+    uint256 public constant REFUSAL_DELAY = 2 days;
     /// @notice Gas forwarded to a seller or fee wallet on an ETH payout; a refusal is escrowed.
     ///         Under the EIP-8037 draft it caps regular gas only: a wallet that writes new state
     ///         draws state gas from the settler's EIP-8037 reservoir, so whether it is paid or
@@ -67,8 +67,6 @@ contract EnglishAuctionLens {
     uint256 private constant _TERMS_SLOT = 7;
     uint256 private constant _SALES_SLOT = 8;
     uint256 private constant _CREDITS_SLOT = 9;
-    uint256 private constant _FEDERATED_TERMS_SLOT = 10;
-    uint256 private constant _REFUSAL_SLOT = 11;
 
     /// @dev The most bytes of a `primaryTerms` answer `pendingDelivery` copies: the ten-word
     ///      head of a `PrimaryTerms` with up to 3,776 bytes of params (4 KiB in all), a bound
@@ -86,8 +84,8 @@ contract EnglishAuctionLens {
     address public immutable statementLog;
     /// @notice The asset allowlist: currencies, defaults and increment floors.
     IAssetAllowlist public immutable allowlist;
-    /// @notice The economics resolver, whose federated network fee recipient a federated sale
-    ///         locks at start (MARKET-3).
+    /// @notice The economics resolver, whose network fee recipient a sale pays at settlement
+    ///         (R18).
     IEconomicsResolver public immutable economicsResolver;
     /// @notice The canonical Permit2, or zero when PERMIT2 payments are disabled.
     address public immutable permit2;
@@ -184,9 +182,10 @@ contract EnglishAuctionLens {
         }
     }
 
-    /// @notice The terms a sale settles on (`IEnglishAuction.lockedTerms`): the locked currency,
-    ///         the token's seller and fee terms, and for a federated token the registry fee share
-    ///         and the resolver's federated network fee recipient, both locked at start (AUC-41).
+    /// @notice The terms a sale settles on now (`IEnglishAuction.lockedTerms`): the locked
+    ///         currency, the token's seller and fee terms (for a federated token, the registry fee
+    ///         share locked at start, AUC-41), and the network fee recipient the economics
+    ///         resolver names now, or the token's when it names none or the escrow (R18).
     /// @param saleId The sale ID.
     /// @return lt The terms; reverts with `UnknownSale` for a sale ID with no sale, and with
     ///         `InvalidSaleTerms` for a fee share above 100,000.
@@ -198,13 +197,15 @@ contract EnglishAuctionLens {
         Terms memory t = _decodeTerms(uint256(w[0]), uint256(w[1]));
         bool federated = t.federated;
         PrimaryTerms memory p = IMintTarget(s.token).primaryTerms(s.tokenId, "");
+        address current =
+            economicsResolver.networkFeeRecipient(federated ? PRODUCT_FEDERATED : PRODUCT_STREAM);
         lt = LockedTerms(
             s.token,
             s.tokenId,
             t.currency,
             0,
             p.seller,
-            federated ? address(uint160(_federatedTerms(s.termsId))) : p.feeRecipient,
+            current != address(0) && current != escrow ? current : p.feeRecipient,
             federated ? t.registryFee : p.feeShare
         );
         if (lt.feeShare > Splits.DENOMINATOR) {
@@ -214,7 +215,7 @@ contract EnglishAuctionLens {
 
     /// @notice When a refused settlement may first close the sale
     ///         (`IEnglishAuctionRefusal.refusableAt`, AUC-39): its end, as `auction` reports it,
-    ///         plus the refusal delay it locked at start.
+    ///         plus 2 days (`REFUSAL_DELAY`).
     /// @param saleId The sale ID.
     /// @return The first second `settleOrRefund` may close the sale as refused; reverts with
     ///         `UnknownSale` for a sale ID with no sale, and with `SaleNotRefusable` for a sale
@@ -224,17 +225,16 @@ contract EnglishAuctionLens {
         bytes32[] memory w = _read3(bytes32(base), bytes32(base + 1), bytes32(base + 2));
         Sale memory s = _decodeSale(uint256(w[0]), uint256(w[1]), uint256(w[2]));
         if (s.status == IEnglishAuction.AuctionState.NONE) revert ISaleAdapter.UnknownSale(saleId);
-        uint256 federated = _federatedTerms(s.termsId);
-        if (federated == 0) revert IEnglishAuctionRefusal.SaleNotRefusable(saleId);
+        Terms memory t = _decodeTerms(0, uint256(_read1(bytes32(_termsBase(s.termsId) + 1))));
+        if (!t.federated) revert IEnglishAuctionRefusal.SaleNotRefusable(saleId);
         uint256 end = s.endTime;
         // A pause that has run its course moves the end, as `auction` reports it.
         // forge-lint: disable-next-line(block-timestamp)
         if (s.pausedAt != 0 && block.timestamp > s.pausedAt + MAX_PAUSE) {
-            Terms memory t = _decodeTerms(0, uint256(_read1(bytes32(_termsBase(s.termsId) + 1))));
             // forge-lint: disable-next-line(unsafe-typecast)
             end = uint32(_resumedEnd(s, t, uint256(_read1(bytes32(_SETTINGS_SLOT))), MAX_PAUSE));
         }
-        return end + (federated >> 160);
+        return end + REFUSAL_DELAY;
     }
 
     /// @notice The smallest bid the sale accepts now (`IEnglishAuction.minimumBid`, D12).
@@ -261,7 +261,7 @@ contract EnglishAuctionLens {
 
     /// @notice The recipient the sale's delivery is pending for
     ///         (`IEnglishAuction.pendingDelivery`): it may claim the token to itself (to any
-    ///         address from 30 days after the end), and the winning bidder to any address.
+    ///         address from 14 days after the end), and the winning bidder to any address.
     ///         A pending delivery with neither a stored recipient nor a bidder (a federated sale
     ///         closed as refused, whose standing bid was credited back) is the no-bid path: the
     ///         token's current creator may claim it, as `claimDelivery` checks, so that creator
@@ -281,14 +281,15 @@ contract EnglishAuctionLens {
     }
 
     /// @notice The governed auction parameters (`IEnglishAuction.config`).
-    /// @return The duration, anti-snipe window and increment share new sales lock.
+    /// @return The duration, anti-snipe window and increment share new sales lock, and the
+    ///         refusal gas.
     function config() external view returns (IEnglishAuction.AuctionConfig memory) {
-        bytes32[] memory w = _read2(bytes32(_SETTINGS_SLOT), bytes32(_REFUSAL_SLOT));
-        (uint256 c, uint256 r) = (uint256(w[0]), uint256(w[1]));
-        // The settings word packs three 32-bit fields from the low end, and the refusal word two.
+        uint256 c = uint256(_read1(bytes32(_SETTINGS_SLOT)));
+        // The settings word packs three 32-bit fields from the low end, the 40-bit pause start,
+        // then the 32-bit refusal gas.
         // forge-lint: disable-start(unsafe-typecast)
         return IEnglishAuction.AuctionConfig(
-            uint32(c), uint32(c >> 32), uint32(c >> 64), uint32(r), uint32(r >> 32)
+            uint32(c), uint32(c >> 32), uint32(c >> 64), uint32(c >> 136)
         );
         // forge-lint: disable-end(unsafe-typecast)
     }
@@ -305,8 +306,17 @@ contract EnglishAuctionLens {
     /// @param currency The currency.
     /// @return The credit, in the currency's base units.
     function claimable(address account, address currency) external view returns (uint256) {
-        bytes32 inner = _mapSlot(bytes32(uint256(uint160(account))), _CREDITS_SLOT);
-        return uint256(_read1(_mapSlot(bytes32(uint256(uint160(currency))), uint256(inner))));
+        return uint208(_creditWord(account, currency));
+    }
+
+    /// @notice When `account`'s credit in `currency` may be sent to the network's fee recipient
+    ///         (`expireCredit`): 180 days after it went from zero; zero with no credit.
+    /// @param account The credited account.
+    /// @param currency The currency.
+    /// @return The first second `expireCredit` succeeds, or zero.
+    function creditExpiresAt(address account, address currency) external view returns (uint256) {
+        uint256 w = _creditWord(account, currency);
+        return uint208(w) == 0 ? 0 : (w >> 208) + 180 days;
     }
 
     /// @notice Whether the emergency start pause is on (`ISaleAdapter.paused`).
@@ -455,11 +465,11 @@ contract EnglishAuctionLens {
         return uint256(_mapSlot(bytes32(saleId), _SALES_SLOT));
     }
 
-    /// @dev A federated terms record's locked network fee recipient (low 160 bits) and refusal
-    ///      delay (the next 32), or zero for a listed token's record
-    ///      (`EnglishAuction._federatedTerms`).
-    function _federatedTerms(uint16 termsId) private view returns (uint256) {
-        return uint256(_read1(_mapSlot(bytes32(uint256(termsId)), _FEDERATED_TERMS_SLOT)));
+    /// @dev A credit word (`EnglishAuction._credits`): the amount in the low 208 bits, the time
+    ///      it went from zero above.
+    function _creditWord(address account, address currency) private view returns (uint256) {
+        bytes32 inner = _mapSlot(bytes32(uint256(uint160(account))), _CREDITS_SLOT);
+        return uint256(_read1(_mapSlot(bytes32(uint256(uint160(currency))), uint256(inner))));
     }
 
     /// @dev The first slot of a terms record in `EnglishAuction._terms`.

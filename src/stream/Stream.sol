@@ -63,15 +63,14 @@ import { StreamViews } from "./StreamViews.sol";
 ///
 ///      Trust: the artist registry and the split factory are fixed at deployment. The mint
 ///      policy, the economics resolver, the entropy module and the view extension are
-///      replaceable one by one by governance (`setDependency`, the 30-day class); a replacement
+///      replaceable one by one by governance (`setDependency`, the 7-day class); a replacement
 ///      changes nothing about an existing work (its terms, its seed's module, its renderer pin).
 ///      The records satellite and 6529 Stream Editions are bound once each. No delegatecall.
 contract Stream is ERC721, AccessManaged, IStream {
-    /// @notice The shortest rescue delay there can ever be: a removed sale adapter always has at
-    ///         least 90 days to settle its works before governance may move them to the museum
-    ///         (`rescueToMuseum`, owner decision 20). The number is the guarantee; the delay in
-    ///         force (`rescueDelay`) can only grow from it.
-    uint256 public constant RESCUE_DELAY_FLOOR = 90 days;
+    /// @dev The rescue delay (`rescueDelay`): a removed sale adapter has 14 days to settle its
+    ///      works before the network may move them to the museum (`rescueToMuseum`, C12). The
+    ///      number is the guarantee, fixed for good.
+    uint256 private constant RESCUE_DELAY = 14 days;
 
     bytes32 private constant WORK_RECORDS = "WORK_RECORDS";
     bytes32 private constant EDITIONS = "EDITIONS";
@@ -129,13 +128,11 @@ contract Stream is ERC721, AccessManaged, IStream {
     /// @dev `id` is assigned on first admission and kept, so a removed adapter still settles
     ///      the sales it started. Its sale kind is recorded then too: in full in `_minterKinds`
     ///      and as `kindKey` (`_kindKey`, 152 bits of its hash) in this word, which `mint` reads
-    ///      anyway. `removedAt` is when governance removed the adapter, zero while admitted, and
-    ///      `rescueDelay` the rescue delay in force then, locked for that removal's works.
+    ///      anyway. `removedAt` is when the network removed the adapter, zero while admitted.
     struct Minter {
         bool admitted;
         uint24 id;
         uint40 removedAt;
-        uint32 rescueDelay;
         uint152 kindKey;
     }
 
@@ -156,7 +153,6 @@ contract Stream is ERC721, AccessManaged, IStream {
         uint24 minters;
         uint24 overflowTerms;
         uint8 replaced;
-        uint32 rescueDelay;
     }
 
     /// @notice The split factory that derives seller and royalty wallets (the first economics
@@ -311,8 +307,8 @@ contract Stream is ERC721, AccessManaged, IStream {
 
     /// @inheritdoc IMintTarget
     /// @dev For a minted token, only the sale kind (the minting adapter's), seller, fee terms
-    ///      and the creator (the lead artist's active authority, resolved now: zero while a
-    ///      recovery override is pending). For `id` 0, the mint policy's preview of `data`.
+    ///      and the creator (the lead artist's active authority, resolved now: zero while the
+    ///      account is frozen or a replacement of its root is pending). For `id` 0, the mint policy's preview of `data`.
     function primaryTerms(uint256 id, bytes calldata data)
         external
         view
@@ -350,7 +346,7 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IStream
-    /// @dev PARAMETER_SETTER role, 48 hours: the upheld-dispute class of the auction's `cancel`.
+    /// @dev PARAMETER_SETTER role, the network at 24 hours, after the auction's `cancel`.
     ///      Only a burned token's own content (`ClaimNotAllowed` otherwise, also once released),
     ///      and only for a registered artist (`IArtistRegistry.UnknownArtist`: the artist
     ///      registry's `authorityOf` reverts so for zero or an unknown ID). The content is then
@@ -400,7 +396,7 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IMintTarget
-    /// @dev SUCCESSOR_SETTER role (the 30-day class). Admission checks code, ERC-165 for
+    /// @dev SUCCESSOR_SETTER role (the 7-day class). Admission checks code, ERC-165 for
     ///      `ISaleAdapter`, no EIP-7702 delegation and a nonzero sale kind, which the first
     ///      admission records with the adapter's index. Removal stops new mints only: the adapter
     ///      keeps its index, so it can still settle and cancel the sales it started. Only real
@@ -419,7 +415,6 @@ contract Stream is ERC721, AccessManaged, IStream {
             }
         }
         (minter.admitted, minter.removedAt) = (admitted, admitted ? 0 : uint40(block.timestamp));
-        if (!admitted) minter.rescueDelay = uint32(rescueDelay());
         emit AdmittedMinterSet(adapter, minter.id, admitted, _minterKinds[minter.id]);
     }
 
@@ -430,7 +425,7 @@ contract Stream is ERC721, AccessManaged, IStream {
     ///      to the museum the economics resolver names now, with no receiver callback. That read
     ///      is the one dependence of a settlement on replaceable code (L-5, governance trust): a
     ///      resolver that reverts or names zero blocks unsold settlements and rescues, never a
-    ///      SOLD one, until governance repairs it (the 30-day class); the work waits in the
+    ///      SOLD one, until governance repairs it (the 7-day class); the work waits in the
     ///      adapter's custody, and no money waits on it (an unbid sale holds no bid, and a
     ///      frozen-out bidder may withdraw). A native fallback would add a custody state for a
     ///      fault the same governance must repair anyway, so there is none.
@@ -471,8 +466,9 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IStream
-    /// @dev SUCCESSOR_SETTER role (the 30-day class). A work is stranded only while its minting
-    ///      adapter holds it unsettled after governance removed that adapter. RESCUED is both
+    /// @dev PARAMETER_SETTER role (the network, 24 hours), `rescueDelay` (14 days) after the
+    ///      removal. A work is stranded only while its minting adapter holds it unsettled after
+    ///      the network removed that adapter. RESCUED is both
     ///      outcome bits, a combination no adapter can report (owner decision 28).
     function rescueToMuseum(uint256 tokenId) external restricted {
         TokenData storage t = _live(tokenId);
@@ -481,7 +477,7 @@ contract Stream is ERC721, AccessManaged, IStream {
         uint256 removedAt = minter.removedAt;
         if (
             t.flags & SETTLED != 0 || minter.id != _terms[t.termsId].minterId || removedAt == 0
-                || block.timestamp < removedAt + minter.rescueDelay
+                || block.timestamp < removedAt + RESCUE_DELAY
         ) revert WorkNotRescuable(tokenId);
         t.flags |= SETTLED | SALE_SOLD | SALE_FROZEN_OUT;
         emit PrimarySaleSettled(tokenId, PrimaryOutcome.RESCUED, address(0), address(0), 0);
@@ -490,23 +486,8 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IStream
-    function rescueDelay() public view returns (uint256) {
-        uint256 delay = _counts.rescueDelay;
-        return delay == 0 ? RESCUE_DELAY_FLOOR : delay;
-    }
-
-    /// @inheritdoc IStream
-    /// @dev SUCCESSOR_SETTER role (the 30-day class). Lengthen only, and at most double at a
-    ///      time (`InvalidRescueDelay`); a removal already made keeps the delay it locked.
-    function setRescueDelay(uint256 next) external restricted {
-        uint256 current = rescueDelay();
-        if (next <= current || next > 2 * current || next > type(uint32).max) {
-            revert InvalidRescueDelay(next);
-        }
-        // Checked above: `next` fits 32 bits.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        _counts.rescueDelay = uint32(next);
-        emit RescueDelaySet(current, next);
+    function rescueDelay() external pure returns (uint256) {
+        return RESCUE_DELAY;
     }
 
     /// @dev Moves `tokenId` to the museum the economics resolver names now (a zero museum
@@ -695,7 +676,7 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IStream
-    /// @dev Bounded by the number of entropy replacements, each a 30-day governance action.
+    /// @dev Bounded by the number of entropy replacements, each a 7-day governance action.
     function entropyModuleOf(uint256 tokenId) external view returns (address) {
         uint256 eras = _entropyEras.length;
         for (uint256 i; i < eras; ++i) {
@@ -706,7 +687,7 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IStream
-    /// @dev SUCCESSOR_SETTER role (the 30-day class). The entropy module may be installed on a
+    /// @dev SUCCESSOR_SETTER role (the 7-day class). The entropy module may be installed on a
     ///      Stream deployed without one, but never removed; replacing it records the module it
     ///      replaces with the last token ID minted so far (`entropyModuleOf`). A replacement
     ///      policy must resolve parties through Stream's own artist registry, and a replacement
@@ -757,18 +738,38 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IStream
-    /// @dev The payees (and so the receiver) are fixed at mint; only the rate changes (D19), and
-    ///      only downwards, enforced here whatever the satellite checks. The token moves to the
-    ///      terms that differ from its own only by the rate, interned if new.
+    /// @dev The payees (and so the receiver) are fixed at mint; only the rate changes (D19), up
+    ///      or down (R10), never past 100%, enforced here whatever the satellite checks. The token
+    ///      moves to the terms that differ from its own only by the rate, interned if new.
     function setRoyaltyRate(uint256 tokenId, uint32 rate) external {
         _onlyBound(workRecords);
         (TokenData storage t, Terms memory shared) = _shared(tokenId);
         uint32 previous = shared.royaltyRate;
-        if (rate > previous) revert InvalidRoyaltyRate(rate);
+        if (rate > Splits.DENOMINATOR) revert InvalidRoyaltyRate(rate);
+        // Checked above: at most 100,000, so the rate fits 24 bits.
+        // forge-lint: disable-next-line(unsafe-typecast)
         shared.royaltyRate = uint24(rate);
         // New terms are announced (`TermsInterned`) before the change that first uses them.
         t.termsId = _termsId(shared);
         emit RoyaltyRateChanged(tokenId, previous, rate);
+    }
+
+    /// @inheritdoc IStream
+    /// @dev PARAMETER_SETTER role (the network, 24 hours). Lower only (`InvalidFeeShare`): no
+    ///      path ever raises the network's share of an existing work (R9). The token moves to the
+    ///      terms that differ from its own only by the share, interned if new, so the royalty
+    ///      receiver (the seller once the share is zero) and the share a later settlement reports
+    ///      both follow. The fee recipient stays the one recorded at mint; the network moves
+    ///      where its fee vault pays instead.
+    function lowerFeeShare(uint256 tokenId, uint32 share) external restricted {
+        (TokenData storage t, Terms memory shared) = _shared(tokenId);
+        uint32 previous = shared.feeShare;
+        if (share >= previous) revert InvalidFeeShare(share);
+        // Below the previous share, which fits 24 bits.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        shared.feeShare = uint24(share);
+        t.termsId = _termsId(shared);
+        emit FeeShareLowered(tokenId, previous, share);
     }
 
     /// @inheritdoc IStream

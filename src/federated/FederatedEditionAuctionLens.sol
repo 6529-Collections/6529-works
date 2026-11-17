@@ -16,6 +16,7 @@ import {
     IUniformEditionAuctionStorage as IStorage
 } from "../interfaces/IUniformEditionAuctionStorage.sol";
 import { PRODUCT_FEDERATED, WorkTerms } from "../interfaces/types/EconomicsTypes.sol";
+import { PackageItem } from "../interfaces/types/PackageTypes.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { UniformEditionAuctionLensBase } from "../sales/UniformEditionAuctionLens.sol";
 
@@ -23,13 +24,13 @@ import { UniformEditionAuctionLensBase } from "../sales/UniformEditionAuctionLen
 /// @notice The lens of {FederatedEditionAuction} (ADR 0008): {UniformEditionAuctionLensBase}'s
 ///         views and checks, plus the federation rules the adapter asks it for: which contracts
 ///         are served, the fee a sale locks, and the 1/1 clock a delisting cancels.
-/// @dev Stateless; reads the calling adapter's storage (slot 14: each sale's edition contract)
+/// @dev Stateless; reads the calling adapter's storage (slot 12: each sale's edition contract)
 ///      and, for the federation registry, the artist registry's current pointer. Every call out
 ///      forwards all gas; a high-level call reverts on any failure, and the existence check
 ///      uses `BoundedCall`'s forward-all read, so no shortfall is read as an answer. `editions`
 ///      and `stream` answer zero (there is no single one).
 contract FederatedEditionAuctionLens is UniformEditionAuctionLensBase {
-    uint256 private constant _SLOT_TOKENS = 14;
+    uint256 private constant _SLOT_TOKENS = 12;
 
     address private immutable _englishAuctionAddress;
     IArtistRegistry private immutable _artistRegistry;
@@ -51,7 +52,8 @@ contract FederatedEditionAuctionLens is UniformEditionAuctionLensBase {
     }
 
     /// @notice The fee a sale of `token` locks at open: the federation registry entry's share,
-    ///         paid to the economics resolver's federated recipient. Reverts with
+    ///         and the economics resolver's federated recipient now (settlement reads it again).
+    ///         Reverts with
     ///         `InvalidSaleTerms` unless the registry serves `token` with an entry whose code hash
     ///         is the token's, the share is at most 100,000, and a nonzero share has a payable
     ///         recipient (not zero, not `escrow`).
@@ -130,8 +132,11 @@ contract FederatedEditionAuctionLens is UniformEditionAuctionLensBase {
         return IFederatedEditions(token).stream();
     }
 
+    /// @dev C26: the registry lets the calling adapter mint `token` now (`canMint`: the template
+    ///      approved, not suspended, and the pair listed), so a suspended template opens no sale.
     function _sells(address token) internal view override returns (bool) {
-        return _served(token);
+        address registry = federationRegistry();
+        return registry != address(0) && IFederationRegistry(registry).canMint(token, msg.sender);
     }
 
     function _newTerms(address token, ISplitWallet.Payee[] memory payees)
@@ -159,10 +164,20 @@ contract FederatedEditionAuctionLens is UniformEditionAuctionLensBase {
         return ok && word != 0;
     }
 
-    /// @dev A federated 1/1 has no rescue (no museum path): nothing added, so the wait is the
-    ///      locked delay alone, as the adapter enforces; no 6529 Stream slot is read.
-    function _rescueLengthening(uint256) internal pure override returns (uint256) {
-        return 0;
+    /// @dev `data` is `abi.encode(PackageItem)`: a federated item has no package to check (the
+    ///      template's own item revocation plays that part).
+    function _item(address, uint256, bytes32, bytes calldata data)
+        internal
+        pure
+        override
+        returns (PackageItem memory)
+    {
+        return abi.decode(data, (PackageItem));
+    }
+
+    /// @dev The economics resolver and the Federated product.
+    function _feeSource() internal view override returns (IEconomicsResolver, bytes32) {
+        return (_economics, PRODUCT_FEDERATED);
     }
 
     /// @dev Whether the current federation registry serves `token`.

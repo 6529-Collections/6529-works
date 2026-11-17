@@ -19,7 +19,7 @@ import { EditionTerms, License, PackageItem } from "./types/PackageTypes.sol";
 ///      carries its master's license: `uri(id)` is served by the master's renderer
 ///      (`IStream.rendererOf(id)`). Copies are minted only by an admitted sale adapter whose
 ///      `saleKind()` equals the edition's terms, within the creator's cap
-///      (`EditionTerms.maxCount`): any adapter governance admits (`setAdmittedMinter`, 30-day
+///      (`EditionTerms.maxCount`): any adapter governance admits (`setAdmittedMinter`, 7-day
 ///      class), so a sale method is added by deploying and admitting an adapter, never by
 ///      redeploying this contract (ADR 0005, owner decision 14); in rc.2, the uniform-price
 ///      edition auction, whose clearing decides how many copies exist. An edition is bound to
@@ -147,11 +147,17 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     /// @param next The value after the change.
     event ContractURISet(string previous, string next);
     /// @notice An edition's royalty rate changed with its master's, by every party's agreement
-    ///         plus a governed action, relayed by the work-records satellite.
+    ///         plus the network's action, relayed by the work-records satellite.
     /// @param editionId The edition whose rate changed.
     /// @param previous The rate before the change, out of 100,000.
     /// @param next The rate after the change, out of 100,000.
     event RoyaltyRateChanged(uint256 indexed editionId, uint32 previous, uint32 next);
+    /// @notice The network lowered an edition's fee share (`lowerFeeShare`, R9). The royalty
+    ///         receiver is derived again from the seller, the fee recipient and the new share.
+    /// @param editionId The edition.
+    /// @param previous The share before, out of 100,000.
+    /// @param share The share after, out of 100,000.
+    event EditionFeeShareLowered(uint256 indexed editionId, uint32 previous, uint32 share);
 
     /// @notice The item does not match the master's committed item hash, 6529 Stream does not
     ///         record it as the item that consumed its content, the item is not an EDITION_MASTER
@@ -186,8 +192,10 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     error InvalidEditionTerms(uint256 workId);
     /// @notice 6529 Stream did not record the link back to this edition.
     error LinkFailed(uint256 workId);
-    /// @notice A royalty rate above the edition's current rate (rates only fall, ADR 0006).
+    /// @notice A royalty rate above 100,000.
     error InvalidRoyaltyRate(uint32 rate);
+    /// @notice `lowerFeeShare` names a share that is not below the edition's current one.
+    error InvalidFeeShare(uint32 share);
     /// @notice The work-records satellite is not bound yet, so no edition can be created.
     error WorkRecordsUnbound();
     /// @notice The edition is bound to `minter`, another adapter: only that one may mint it or
@@ -285,9 +293,15 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     ///         work-records satellite only.
     /// @param editionId The edition ID (its master's token ID); an ID without an edition is a
     ///        no-op.
-    /// @param rate The new ERC-2981 rate, out of 100,000; a rate above the edition's current
-    ///        one reverts with `InvalidRoyaltyRate` (lower-only, ADR 0006).
+    /// @param rate The new ERC-2981 rate, out of 100,000, up or down (R10); above 100,000 it
+    ///        reverts with `InvalidRoyaltyRate`.
     function setRoyaltyRate(uint256 editionId, uint32 rate) external;
+    /// @notice Lowers the network's fee share of an edition whose economics are locked; never
+    ///         raises it (R9). PARAMETER_SETTER role (the network, 24 hours). The royalty
+    ///         receiver is derived again for the new share; the fee recipient does not change.
+    /// @param editionId The edition ID (`UnknownEdition` while its economics are not locked).
+    /// @param share The new share, out of 100,000: below the current one (`InvalidFeeShare`).
+    function lowerFeeShare(uint256 editionId, uint32 share) external;
     /// @notice Emits a batch ERC-4906 update for every edition, after a global or collection
     ///         preferred-location change or a new default renderer. Bound work-records satellite
     ///         or 6529 Stream only.

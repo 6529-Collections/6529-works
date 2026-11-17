@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IRevenueEscrow } from "./IRevenueEscrow.sol";
 import { ISplitLedger } from "./ISplitLedger.sol";
 import { ISplitWallet } from "./ISplitWallet.sol";
 
@@ -10,9 +9,10 @@ import { ISplitWallet } from "./ISplitWallet.sol";
 ///         Network Museum. Every royalty wallet names the fee recipient as a fixed payee for good,
 ///         and the museum keeps every unbid work it receives, so neither may be an address whose
 ///         loss strands what it holds. The vault receives ETH, ERC-20s, ERC-721s and ERC-1155s,
-///         and moves them only to its `destination`, which governance sets on the slow funds path.
-///         Anyone may push its holdings there, release its split-wallet shares to it, and name it
-///         as the vault's escrow recovery replacement.
+///         and moves them only to its `destination`, which the network sets. Anyone may push its
+///         holdings there and release its split-wallet shares to it. The network moves the
+///         vault's escrow credits itself (`IRevenueEscrow.recover`, without consent, because the
+///         vault answers to the same authority).
 /// @dev Holds no other authority: it cannot approve, call arbitrary contracts or change what it
 ///      is owed. Its governance is the stock `AccessManaged` authority, so it follows the rest of
 ///      the protocol through any handover.
@@ -46,10 +46,6 @@ interface IGovernedVault {
     /// @notice There is nothing of `asset` to forward.
     error NothingToForward(address asset);
 
-    /// @notice The split ledger whose wallets name this vault as a payee.
-    /// @return The split ledger, fixed at deployment.
-    function ledger() external view returns (ISplitLedger);
-
     /// @notice Where the vault's holdings go.
     /// @return The current destination.
     function destination() external view returns (address);
@@ -59,7 +55,8 @@ interface IGovernedVault {
     function destinationRevision() external view returns (uint64);
 
     /// @notice Sets the destination, compare-and-set on its revision.
-    /// @dev Governed: `Roles.FUNDS_SETTER` (`Roles.FUNDS`, 14 days), so a guardian may cancel.
+    /// @dev Governed: the network, 3 days for the fee vault and 7 days for the museum vault
+    ///      (the role map sets each vault's class).
     /// @param expectedRevision The revision the change was written against.
     /// @param next The new destination; not zero or the vault.
     function setDestination(uint64 expectedRevision, address next) external;
@@ -74,8 +71,8 @@ interface IGovernedVault {
     /// @notice Moves ERC-721 `tokenId` of `token` to the destination with `safeTransferFrom`,
     ///         so a destination contract that does not accept ERC-721s (a split vault, a plain
     ///         contract) refuses the move and the work stays in the vault. Anyone may call: the
-    ///         vault holds no key, and the destination, which governance sets on the funds path
-    ///         (14 days, guardian-cancellable), is the decision. Setting a museum vault's
+    ///         vault holds no key, and the destination, which the network sets with a delay, is
+    ///         the decision. Setting a museum vault's
     ///         destination therefore lets anyone move every work it holds there.
     /// @param token The ERC-721 contract.
     /// @param tokenId The token to move.
@@ -90,26 +87,20 @@ interface IGovernedVault {
     function forwardERC1155(address token, uint256 id, uint256 amount) external;
 
     /// @notice Releases this vault's share as fixed payee `index` of the wallet for `payees` and
-    ///         `salt` straight to the destination (the ledger's `releaseTo`), for an asset that
-    ///         cannot be paid to the vault itself. Anyone may call.
+    ///         `salt` of split ledger `ledger` straight to the destination (the ledger's
+    ///         `releaseTo`), for an asset that cannot be paid to the vault itself. Anyone may
+    ///         call; the vault only ever names its destination.
+    /// @param ledger The split ledger that keeps the wallet.
     /// @param payees The wallet's payee list; entry `index` must be this vault.
     /// @param salt The wallet's salt.
     /// @param asset The asset to release (ETH is `address(0)`).
     /// @param index This vault's index in the payee list.
     /// @return amount The amount released.
     function releaseToDestination(
+        ISplitLedger ledger,
         ISplitWallet.Payee[] calldata payees,
         bytes32 salt,
         address asset,
         uint256 index
     ) external returns (uint256 amount);
-
-    /// @notice Names the destination as this vault's escrow recovery replacement
-    ///         (`consentToRecovery`), so governance can move a credit the vault cannot take, for
-    ///         example when a token blocks the vault. Anyone may call; it only ever names the
-    ///         current destination. A consent that a later {setDestination} made stale is
-    ///         refused by the escrow, which requires a governed vault's replacement to be its
-    ///         current destination.
-    /// @param escrow The revenue escrow holding the vault's credit.
-    function consentToRecovery(IRevenueEscrow escrow) external;
 }

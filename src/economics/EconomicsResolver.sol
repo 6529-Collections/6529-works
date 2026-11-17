@@ -29,15 +29,16 @@ import { Splits } from "./Splits.sol";
 ///         (6,529 out of 100,000); the default license is CC0. Currencies come from the asset
 ///         allowlist.
 /// @dev Changes apply to new works only: a work locks its terms (seller wallet, fee terms,
-///      royalty receiver and rate) at mint and a sale locks its currency at start, and nothing
-///      here reaches back into either. The museum is the exception: 6529 Stream reads it
+///      royalty receiver and rate) at mint and a sale locks its currency at start. Two
+///      exceptions: sale adapters pay the network's fee to {networkFeeRecipient} as it reads at
+///      settlement (R18), and 6529 Stream reads the museum
 ///      (through `IStream.economics()`) when it settles an unbid or frozen-out work and moves
 ///      the work there itself (`IMintTarget.settlePrimary`, D140, owner decision 17), and when
 ///      governance rescues a stranded work (`IStream.rescueToMuseum`, owner decision 20).
 ///      Governed through AccessManager with
 ///      `Roles` (src/governance/Roles.sol): {setFeeTerms} and {setMuseum} map to
-///      `Roles.FUNDS_SETTER` (14 days); {setRoyaltyRate} and {setDefaultLicense} map to
-///      `Roles.PARAMETER_SETTER` (48 hours). Each setter compares its own revision, bumped by
+///      `Roles.FUNDS_SETTER` (the network, 3 days); {setRoyaltyRate} and {setDefaultLicense} map
+///      to `Roles.PARAMETER_SETTER` (the network, 24 hours). Each setter compares its own revision, bumped by
 ///      every change to that setting (the museum's is {museumRevision}).
 ///      A fee recipient must be able to accept payments, because works lock it at mint: the
 ///      resolver refuses itself, its allowlist and the split ledger (which is also the release

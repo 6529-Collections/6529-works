@@ -19,9 +19,7 @@ pragma solidity ^0.8.24;
 ///      - `COUNTS_SLOT`: minted (0-63), burned (64-127), collections (128-159).
 ///      - `OWNER_SLOT`: the marketplace owner; `CONTRACT_URI_SLOT`: the contract URI string.
 ///      - sale adapter, `minterSlot(adapter)`: admitted (0-7), index (8-31), `removedAt` (32-71,
-///        when governance removed it, zero while admitted), the rescue delay locked at that
-///        removal for its works (72-103, seconds; stale while `removedAt` is zero), kind key
-///        (104-255).
+///        when the network removed it, zero while admitted), kind key (72-223).
 library StreamLayout {
     uint256 internal constant COUNTS_SLOT = 11;
     uint256 internal constant OWNER_SLOT = 12;

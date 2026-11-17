@@ -33,8 +33,8 @@ abstract contract ScriptIO is Script {
         return DeployV1.CC0_LEGALCODE_SHA256;
     }
 
-    /// @notice The Safe singletons (with their runtime code hashes) that off-anvil admin and
-    ///         guardian Safes may run: the canonical Safe 1.3.0 and 1.4.1 deployments.
+    /// @notice The Safe singletons (with their runtime code hashes) that the off-anvil network
+    ///         Safe may run: the canonical Safe 1.3.0 and 1.4.1 deployments.
     function safeSingletons()
         public
         view

@@ -43,6 +43,20 @@ interface IEntropyModule is IERC165 {
     /// @param next The coordinator after the change.
     /// @param codeHash The code hash `next` must keep at every later use.
     event CoordinatorSet(address previous, address next, bytes32 codeHash);
+    /// @notice A seed was requested for a federated contract's content, paid by the requester.
+    ///         The draw is keyed by `key`, which `SeedDelivered` names as its content hash.
+    /// @param token The federated contract.
+    /// @param contentHash The work's content hash.
+    /// @param key The draw's key: `keccak256(abi.encode(token, contentHash))`.
+    /// @param requestId The provider's ID for the request.
+    event FederatedSeedRequested(
+        address indexed token, bytes32 indexed contentHash, bytes32 key, uint256 requestId
+    );
+    /// @notice The provider of paid federated requests changed (zero: none, federated VRF off).
+    /// @param previous The provider before the change.
+    /// @param next The provider after the change.
+    /// @param codeHash The code hash `next` must keep at every later use.
+    event WrapperSet(address previous, address next, bytes32 codeHash);
 
     /// @notice The item is not in an approved package, is already consumed, has no content hash,
     ///         or is not VRF.
@@ -68,6 +82,9 @@ interface IEntropyModule is IERC165 {
     error InvalidRequestId(uint256 requestId);
     /// @notice The coordinator delivered other than exactly one random word.
     error InvalidRandomWords(uint256 requestId);
+    /// @notice The payment sent is below the provider's quoted price.
+    /// @param price The quoted price.
+    error InsufficientPayment(uint256 price);
 
     /// @notice Links an approved, unconsumed VRF item to its content's draw and requests that
     ///         draw's seed, or adds another request once the content's current wait has passed
@@ -127,10 +144,35 @@ interface IEntropyModule is IERC165 {
     /// @return The coordinator's address, the only account that may deliver seeds.
     function coordinator() external view returns (address);
     /// @notice Sets the VRF coordinator (Chainlink migrations): code hash `nextCodeHash`, not an
-    ///         EIP-7702 delegated account. SUCCESSOR_SETTER role (30-day class), compare-and-set.
+    ///         EIP-7702 delegated account. SUCCESSOR_SETTER role (7-day class), compare-and-set.
     /// @param expected The current coordinator; any other value reverts with
     ///        `ExpectedValueMismatch`.
     /// @param next The new coordinator, which must differ from the current one.
     /// @param nextCodeHash The reviewed code hash `next` must have now and at every later use.
     function setCoordinator(address expected, address next, bytes32 nextCodeHash) external;
+
+    /// @notice Requests the seed of a VRF work of a federated contract, keyed by the contract and
+    ///         the work's content hash. The caller pays: `msg.value` must be at least the
+    ///         provider's quoted price (`InsufficientPayment`), and all of it goes to the provider
+    ///         with the request; no network subscription is used. Only a wallet of the contract's
+    ///         artist may request, while the artist registry lists the contract ACTIVE, for an
+    ///         item whose seed policy is VRF with a content hash (`NotRequestable`). One request
+    ///         is outstanding per draw; a repeat follows the same backoff as `requestSeed`. The
+    ///         first delivery is final.
+    /// @param token The federated contract.
+    /// @param item The item; only its seed policy and content hash are read.
+    /// @return requestId The provider's ID for the request.
+    function requestFederatedSeed(address token, PackageItem calldata item)
+        external
+        payable
+        returns (uint256 requestId);
+    /// @notice A federated contract's seed for a content hash.
+    /// @param token The federated contract.
+    /// @param contentHash The work's content hash.
+    /// @return delivered Whether the seed was delivered.
+    /// @return seed The seed, zero until delivered.
+    function federatedSeedOf(address token, bytes32 contentHash)
+        external
+        view
+        returns (bool delivered, bytes32 seed);
 }

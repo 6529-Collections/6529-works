@@ -63,12 +63,12 @@ interface IAssetAllowlist {
     error InvalidStatusTransition(address asset, Status current);
     /// @notice `asset` is not active.
     error AssetNotActive(address asset);
-    /// @notice ETH, the native currency, is never deprecated: one guardian could otherwise
-    ///         freeze every ETH sale and, after the 60-day freeze exit, end each one unsold
-    ///         (MONEY-M1, G-2 in the rc.2 review).
+    /// @notice ETH, the native currency, is never deprecated: a deprecation would otherwise
+    ///         freeze every ETH sale and, after the freeze exit, end each one unsold (MONEY-M1,
+    ///         G-2 in the rc.2 review).
     error EthNotDeprecable();
-    /// @notice A deprecated `asset` may be re-admitted only from `allowedAt`, 14 days
-    ///         (`Roles.FUNDS`) after its deprecation.
+    /// @notice A deprecated `asset` may be re-admitted only from `allowedAt`, one
+    ///         `Roles.DELAY_3D` (3 days) after its deprecation.
     error ReadmissionTooEarly(address asset, uint256 allowedAt);
     /// @notice An increment floor must be non-zero.
     error InvalidIncrementFloor();
@@ -76,8 +76,7 @@ interface IAssetAllowlist {
     error InvalidProduct();
     /// @notice `product` has no default currency.
     error CurrencyNotConfigured(bytes32 product);
-    /// @notice The opening bid is above its ceiling: `OPENING_BID_FLOORS` increment floors,
-    ///         capped at `type(uint96).max`.
+    /// @notice The opening bid does not fit its storage: it is above `type(uint96).max`.
     error OpeningBidAboveCeiling(uint256 bid, uint256 ceiling);
 
     /// @notice The status of `asset`.
@@ -160,7 +159,7 @@ interface IAssetAllowlist {
 
     /// @notice Admits `asset`, or re-admits a deprecated one, with increment floor `floor`, if the
     ///         asset is at `expectedRevision` (0 for a never-admitted asset). Re-admission is the
-    ///         only way back from deprecation, and is refused until 14 days after it
+    ///         only way back from deprecation, and is refused until `Roles.DELAY_3D` (3 days) after it
     ///         (`ReadmissionTooEarly`), even when scheduled before the deprecation.
     /// @param asset The asset to admit: ETH (`address(0)`) or a token contract that passes the
     ///        {AssetNotAdmissible} checks; must not be active already.
@@ -189,10 +188,10 @@ interface IAssetAllowlist {
     /// @param asset The new default currency; must be active.
     function setDefaultCurrency(bytes32 product, uint64 expectedRevision, address asset) external;
 
-    /// @notice Sets an active asset's opening bid, raising or lowering it (zero included) up to
-    ///         `OPENING_BID_FLOORS` increment floors, capped at `type(uint96).max` so a bid can
-    ///         always meet it, if the asset is at `expectedRevision`. Applies to English auctions
-    ///         that start afterwards. PARAMETER_SETTER role (48 hours).
+    /// @notice Sets an active asset's opening bid, raising or lowering it (zero included) to any
+    ///         value up to `type(uint96).max` (a storage bound, not a price cap), if the asset is
+    ///         at `expectedRevision`. Applies to English auctions that start afterwards.
+    ///         PARAMETER_SETTER role (the network, 24 hours).
     /// @param asset The asset; must be active.
     /// @param expectedRevision The revision the asset must be at.
     /// @param bid The new opening bid, in the asset's base units.

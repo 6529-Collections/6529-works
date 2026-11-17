@@ -24,7 +24,7 @@ below.
 | File | Purpose |
 | --- | --- |
 | [`DeployV1.sol`](DeployV1.sol) | Library shared by the script and the tests. Deploys every merged v1 contract with CREATE2, uploads the CC0 text, builds the genesis configuration and wiring from the genesis JSON, and installs it. `predict` recomputes every address from the same initcode. |
-| [`DeployGuards.sol`](DeployGuards.sol) | The off-anvil checks of the genesis file and the deployment: reachable holders, the committed policy, nothing dropped. |
+| [`DeployGuards.sol`](DeployGuards.sol) | The off-anvil checks of the genesis file and the deployment: the network a bare canonical Safe, reachable holders, the committed policy, nothing dropped. |
 | [`VerifyV1.sol`](VerifyV1.sol) | Library: static readback of a deployment against its configuration, its predicted addresses and its default license. |
 | [`Deploy.s.sol`](Deploy.s.sol) | Checks every input, deploys, configures, and records `deployments/<chainId>/<timestamp>.json`. |
 | [`Verify.s.sol`](Verify.s.sol) | Confirms a recorded deployment against the chain: addresses, code, CC0 text, manifest, governance and events. |
@@ -36,8 +36,10 @@ below.
 DeployV1.Deployment memory d = DeployV1.deploy(p);          // p.deployer = address(this)
 GovernanceConfig.Config memory cfg = DeployV1.config(d, json);
 GovernanceConfig.Call[] memory calls = DeployV1.wiring(d, json, manifest);
-DeployV1.install(d, cfg, manifest, calls);                  // configure: the system is live
-vm.warp(block.timestamp + d.manager.minSetback());          // the genesis delays take effect
+DeployV1.install(d, cfg, manifest, calls);                  // configure: proposes cfg.network
+vm.prank(cfg.network);
+d.manager.acceptNetwork();                                  // the network accepts: the system is live
+vm.warp(block.timestamp + d.manager.minSetback());          // as Verify asks
 VerifyV1.check(d, cfg, calls);
 ```
 
@@ -62,6 +64,10 @@ Worked examples:
 anvil --port 8545
 forge script script/Deploy.s.sol --rpc-url http://127.0.0.1:8545 --broadcast --slow \
   --unlocked --sender 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+# The example genesis names the placeholder network 0x...b001: impersonate it to accept.
+cast rpc anvil_impersonateAccount 0x000000000000000000000000000000000000b001 --rpc-url http://127.0.0.1:8545
+cast send --unlocked --from 0x000000000000000000000000000000000000b001 <WorksAccessManager> \
+  "acceptNetwork()" --rpc-url http://127.0.0.1:8545
 cast rpc evm_increaseTime 432000 --rpc-url http://127.0.0.1:8545   # minSetback: 5 days
 cast rpc evm_mine --rpc-url http://127.0.0.1:8545
 DEPLOYMENT=deployments/31337/<timestamp>.json \
@@ -72,16 +78,19 @@ DEPLOYMENT=deployments/31337/<timestamp>.json \
   recipient and the marketplace owner. The CC0 text is the real one, the committed fixture.
   A `DelegationManagementMock` is deployed first, because the canonical delegation address has
   no code. The record says `"placeholders": true` and marks the mock (`"delegationMock": true`).
-  Its `standIns` and `pendingLanes` are empty.
+  Its `standIns` list is empty.
+- **The network accepts.** `configure` only proposes the genesis file's `network`; nothing is
+  governed until that address calls `acceptNetwork()`. With `ACCEPT_NETWORK=1`, `Deploy.s.sol`
+  broadcasts the acceptance from the network address itself, for a network account the operator
+  holds; on anvil, impersonate the placeholder as above.
 - **Use `--slow`.** Without it, anvil can pack a block until the next deploy transaction no
   longer fits. That transaction then waits for a block that automine never produces;
   `cast rpc evm_mine` frees it.
 - **No key is handled.** The anvil node unlocks its own dev account.
 - **Restart, don't reset.** Restart anvil rather than calling `anvil_reset`, which removes the
   CREATE2 deployer.
-- **Verify needs the 5 days.** Before the warp, Verify fails with `RoleMismatch`. The grant
-  delays and target admin delays that genesis sets take effect only after the manager's
-  `minSetback`. Every role works from genesis.
+- **Verify after the acceptance and 5 days.** `Verify.s.sol` runs after the network accepted
+  (else `NetworkNotAccepted`) and at least the manager's `minSetback` (5 days) after genesis.
 
 ## Sepolia runbook
 
@@ -105,53 +114,46 @@ or stores a key:
   `DEPLOY_NAMESPACE`. Off anvil the namespace has no default. Choose a fresh one, keep it
   private until the broadcast, and send through a private transaction endpoint.
 - **Sepolia mirrors mainnet.** Use throwaway signers, but the mainnet structure and thresholds:
-  - the same Safes, roles and thresholds as below;
+  - the network as a Safe with the mainnet threshold, and the same operational roles as below;
   - the entropy module with a real VRF subscription (step 7), not `NO_VRF`;
   - the official 6529 delegation contract (step 5).
 
-  A rehearsal then exercises the same flows, admin recovery included.
+  A rehearsal then exercises the same flows, a network handover included.
 
 ### 1. Accounts
 
 | Account | Roles | Kind |
 | --- | --- | --- |
-| Deployer (operator) | None after genesis. It is the configurator's `deployer`, and signs every deploy transaction and `configure` | Keystore or Ledger EOA, funded with Sepolia ETH. Not an EIP-7702 delegated account: the script refuses one (`DelegatedDeployer`). On mainnet it may not be a role holder, the museum, the marketplace owner or the network fee recipient (`HolderIsTheDeployer`, `RecipientIsTheDeployer`; Verify repeats both) |
-| Hot admin Safe | ADMIN, UNPAUSER, PARAMETER_SETTER, FUNDS_SETTER, SUCCESSOR_SETTER | Safe |
-| Cold recovery admin Safe | ADMIN only. It acts only for [admin recovery](#admin-recovery) | Safe, 3-of-5 recommended. Its signers differ from the hot admin's and the guardians', on hardware wallets kept in separate places |
-| Guardian Safes 1, 2 and 3 | GUARDIAN, PAUSER (at least three off anvil) | Safe, 2-of-3 each |
+| Deployer (operator) | None after genesis. It is the configurator's `deployer`, and signs every deploy transaction and `configure` | Keystore or Ledger EOA, funded with Sepolia ETH. Not an EIP-7702 delegated account: the script refuses one (`DelegatedDeployer`). On mainnet it may not be the network, a role holder, the museum, the marketplace owner or the network fee recipient (`HolderIsTheDeployer`, `RecipientIsTheDeployer`; Verify repeats both) |
+| Network | Every network role: ADMIN, NETWORK, PARAMETER_SETTER, FUNDS_SETTER, SUCCESSOR_SETTER (the genesis file's `network`). It holds them once it calls `acceptNetwork()` | One Safe: a canonical Safe singleton, a threshold of at least 2, plain-key owners, no module and no guard ([step 2](#2-safe-pre-flight)) |
+| Brake | None at launch. The network may name one later (`setBrake`, 7 days). The brake can delay one scheduled network action by 7 days, once | Any account, when named |
+| Pauser keys 1 to 3 | PAUSER: the emergency pause and a 1/1's dispute pause | EOA |
 | Curation signer keys 1 and 2 | CURATION_SIGNER (at least two off anvil). They sign approvals off-chain and never call a contract | EOA |
 | Storage operator | STORAGE_OPERATOR | EOA |
 | Platform | PLATFORM | EOA |
 | Curator | CURATOR | EOA |
-| Network fee recipient | No role (`NETWORK_FEE_RECIPIENT`) | An existing account: a Safe, or an EOA with a balance or a sent transaction ([below](#the-network-fee-recipient-must-exist)) |
-| 6529 Network Museum | No role (`MUSEUM`). Receives every 6529 Stream work whose 1/1 sale ends unsold (D140), moved there by Stream (owner decision 17); FUNDS_SETTER can change it (`setMuseum`, 14 days) | An existing Safe or EOA that can hold ERC-721 tokens ([below](#the-museum-must-exist)) |
-| Marketplace owner | No role (`MARKETPLACE_OWNER`). Stream's `owner()`: collection admin on marketplaces, no protocol power; FUNDS_SETTER can change it (`setOwner`, 14 days) | Safe or EOA, separate from the platform key, so a stolen platform key does not also hold the marketplace listing |
-| VRF subscription owner | No role; owns the Chainlink subscription. It can cancel the subscription or remove the module at once, outside governance, so on mainnet it must be the hot admin Safe (the deploy checks it before the broadcast, and Verify again) | Mainnet: the hot admin Safe. Sepolia: EOA or Safe |
-| Keeper | No role (`refreshStanding` is permissionless) | Any funded EOA |
+| Network fee recipient | No role (`NETWORK_FEE_RECIPIENT`); the fee vault's destination | An existing account: a Safe, or an EOA with a balance or a sent transaction ([below](#the-network-fee-recipient-must-exist)) |
+| 6529 Network Museum | No role (`MUSEUM`). Receives every 6529 Stream work whose 1/1 sale ends unsold (D140), moved there by Stream (owner decision 17); FUNDS_SETTER can change it (`setMuseum`, 3 days) | An existing Safe or EOA that can hold ERC-721 tokens ([below](#the-museum-must-exist)) |
+| Marketplace owner | No role (`MARKETPLACE_OWNER`). Stream's `owner()`: collection admin on marketplaces, no protocol power; FUNDS_SETTER can change it (`setOwner`, 3 days) | Safe or EOA, separate from the platform key, so a stolen platform key does not also hold the marketplace listing |
+| VRF subscription owner | No role; owns the Chainlink subscription. It can cancel the subscription or remove the module at once, outside governance, so on mainnet it must be the network Safe (the deploy checks it before the broadcast, and Verify again) | Mainnet: the network Safe. Sepolia: EOA or Safe |
+| Keeper | No role. Starts sales through `SaleStarter` and runs the edition steps ([keepers](#the-11-start-keeper)) | Any funded EOA |
 
 Delays and responsibilities are in the [role table](../docs/spec/governance.md#roles).
 
-**Guardians.** They veto any scheduled operation and pause in an emergency, so they must be
-independent of the admins they check:
-- **Signers.** Use signers independent of the admin Safes and of the other guardian Safes; the
-  script refuses a signer shared between any two admin or guardian Safes. Mix team and community members across the three Safes.
-- **Operations.** Monitoring, emergencies, suspensions and rotations are under
-  [Operating procedures](#operating-procedures).
-- **Separate pause and unpause.** The guardians hold PAUSER and the hot admin holds UNPAUSER;
-  the configuration refuses one account holding both. A pause by a guardian is undone only by
-  the admins, and no earlier than 48 hours after it (`unpause`, `resume` and `cancel` count
-  the delay from the pause; re-admitting a deprecated currency waits 14 days from the
-  deprecation).
+**Pauses and the network.**
+- **Pausing is immediate** (PAUSER); `unpause`, and a dispute's `resume` and `cancel`, are the
+  network's at once (NETWORK, no delay). The adapters add no wait of their own.
 - **The edition auction's pause stops new opens only.** Running edition sales keep taking
   bids, settle and pay out; a sale nobody opened before its close never sells copies, so lift a
   pause before the 1/1s that started under it close.
-- **Deprecating an auction's currency.** A deprecation freezes the live auctions in that
-  currency: nothing settles, and their high bidders may withdraw. To keep them alive,
-  re-admit the currency between day 14 and day 60 after the deprecation (`admitAsset` is in
-  the 14-day class and executes no earlier than 14 days from the deprecation); the first
-  `settle` after the re-admission reopens each auction for at least the governed duration.
-  After day 60, anyone can end a frozen auction unsold: its standing bid is credited back to
-  the bidder and a 6529 Stream work goes to the museum (any other token's to its artist).
+- **Deprecating an auction's currency** (`deprecateAsset`, the network, at once) freezes the
+  live auctions in that currency: nothing settles, and their high bidders may withdraw. To keep
+  them alive, re-admit the currency between day 3 and day 14 after the deprecation
+  (`admitAsset` is in the 3-day class and executes no earlier than 3 days from the
+  deprecation); the first `settle` after the re-admission reopens each auction for at least the
+  governed duration. After day 14, anyone can end a frozen auction unsold: its standing bid is
+  credited back to the bidder and a 6529 Stream work goes to the museum (any other token's to
+  its artist).
 
 #### The network fee recipient must exist
 
@@ -170,7 +172,7 @@ Glamsterdam that costs whoever settles or buys about 184K more gas
 
 #### The museum must exist
 
-6529 Stream moves every work whose 1/1 sale ends unsold, unbid or by the 60-day currency
+6529 Stream moves every work whose 1/1 sale ends unsold, unbid or by the 14-day currency
 freeze, to the museum its current economics resolver names when the adapter settles the sale,
 with no receiver callback (owner decision 17;
 [AUC-24, AUC-33](../docs/spec/stream-and-auctions.md#rules-and-invariants)).
@@ -186,9 +188,9 @@ with no receiver callback (owner decision 17;
 
 ### 2. Safe pre-flight
 
-The configurator renounces ADMIN in the genesis transaction. An admin or guardian that nobody
-can operate is therefore permanent. Off anvil, the script refuses an ADMIN or GUARDIAN holder
-in these cases:
+The configurator renounces its ADMIN record in the genesis transaction, and the network address
+then holds every network role. A network that nobody can operate can never hand over, so off
+anvil the script refuses the genesis file's `network` in these cases:
 - it has no code;
 - it is an EIP-7702 delegated EOA;
 - it does not answer `getThreshold()` with a nonzero value, or `getOwners()` with a list;
@@ -215,37 +217,36 @@ in these cases:
   the owners' signatures. Disable both before the run, and keep them disabled: Verify
   repeats every check.
 
-It also requires at least two admin Safes, the hot and the cold, and refuses a signer that any
-two of the admin and guardian Safes share: two admin Safes, an admin and a guardian Safe, or
-two guardian Safes (owner decision 3: independent guardians).
+Off anvil the recorded genesis file names no brake (`BrakeAtLaunch`, checked by
+`DeployGuards.checkNoBrake` in `Deploy.prepare` and again in Verify; a later epoch file may name
+one). Every holder must be reachable (not a placeholder or a system address), and no holder may
+name a network role (`NetworkRoleHolder`): those are the network's alone.
 
-The script cannot check that the owners are the right people, so check every Safe before the
-run:
+The script cannot check that the owners are the right people, so check the network Safe before
+the run:
 
 ```bash
-for SAFE in <hot> <cold> <guardian1> <guardian2> <guardian3>; do
-  cast code "$SAFE" --rpc-url "$SEPOLIA_RPC_URL" | head -c 12; echo   # not 0x
-  cast call "$SAFE" "getThreshold()(uint256)" --rpc-url "$SEPOLIA_RPC_URL"
-  cast call "$SAFE" "getOwners()(address[])" --rpc-url "$SEPOLIA_RPC_URL"
-done
+SAFE=<network>
+cast code "$SAFE" --rpc-url "$SEPOLIA_RPC_URL" | head -c 12; echo   # not 0x
+cast call "$SAFE" "getThreshold()(uint256)" --rpc-url "$SEPOLIA_RPC_URL"
+cast call "$SAFE" "getOwners()(address[])" --rpc-url "$SEPOLIA_RPC_URL"
 ```
 
-- Each Safe is on this chain, with the intended owners and threshold.
-- The hot and cold admin Safes share no signer.
-- Each guardian Safe is separate from the admins and from the other guardians.
-- At least one owner of each Safe has signed a test transaction on it.
+- The Safe is on this chain, with the intended owners and threshold.
+- At least one owner has signed a test transaction on it.
 
 ### 3. The genesis configuration
 
 ```bash
 cp config/genesis.example.json config/genesis.sepolia.json
-# Replace every holder (0x...b0xx) with the account from step 1.
+# Replace the network (0x...b001) and every holder (0x...b0xx) with the accounts from step 1.
 # Leave the contract placeholders (0x...a0xx): the library substitutes deployed addresses by name.
 python tools/check_genesis.py --config config/genesis.sepolia.json
 ```
 
 - **The policy is pinned.** A deployment's genesis file may differ from the committed
-  `config/genesis.example.json` only in its holders, its description and its address fields.
+  `config/genesis.example.json` only in its network, its brake, its holders, its description and
+  its address fields.
   Both tools enforce this:
   - `tools/check_genesis.py --config` compares the file with the committed one;
   - off anvil, `Deploy.s.sol` (`DeployGuards.checkPolicy`) checks that the file's governed
@@ -258,13 +259,11 @@ python tools/check_genesis.py --config config/genesis.sepolia.json
   - any holder at or below `0xFFFF` (the placeholder range and the precompiles);
   - a system contract, the CREATE2 deployer, Permit2 or the delegation contract;
   - a contract of the deployment itself;
-  - fewer than three guardians or two curation signers;
-  - on mainnet only (owner decision 18, `DeployGuards.checkRoleGroups`), any role held by the
-    deployer EOA, or an account holding roles of two groups. The groups are:
-    - the community council: ADMIN, UNPAUSER, PARAMETER_SETTER, FUNDS_SETTER and
-      SUCCESSOR_SETTER;
-    - the security council: GUARDIAN and PAUSER;
-    - the curation signers: CURATION_SIGNER.
+  - a holder that names a network role, or fewer than two curation signers;
+  - on mainnet only (owner decision 18, `DeployGuards.checkRoleGroups`), the deployer EOA as the
+    network or as any holder, the network address as a holder, or an account holding roles of
+    two groups. The groups are the network (every network role), the pausers (PAUSER) and the
+    curation signers (CURATION_SIGNER).
 
     Verify repeats this check ([mainnet governance](#mainnet-governance-owner-decision-18)).
 
@@ -326,8 +325,9 @@ Sepolia deployment is therefore not marked.
 
 To consolidate two wallets, each one calls
 `registerDelegationAddress(0x8888888888888888888888888888888888888888, <other wallet>, <expiry>, 999, true, 0)`:
-use case 999, all collections, in both directions. Then refresh the artist's standing
-(step 12).
+use case 999, all collections, in both directions. The artist registry reads it live: a wallet
+with a direct two-way consolidation with the account's root acts for the account at once, with no
+minimum age ([identity](../docs/spec/identity-and-recovery.md)).
 
 ### 6. The CC0 license text
 
@@ -392,23 +392,19 @@ On Sepolia, set the module up as on mainnet; do not use `NO_VRF`.
    only consumer. Requests fail until it is a consumer and the subscription is funded.
    Verify, off anvil, requires the module to be the only consumer. **On mainnet, add it before
    the broadcast:** the simulation reads the subscription after deploying the contracts and
-   before `configure`, and stops with nothing broadcast unless the hot admin Safe owns it and
+   before `configure`, and stops with nothing broadcast unless the network Safe owns it and
    the module this run deploys is its only consumer. The first simulation stops with
    `ModuleNotAConsumer(subscriptionId, module)`, naming the module's address (CREATE2 under
-   `DEPLOY_NAMESPACE`, so the broadcast deploys it there); the hot admin Safe adds that
+   `DEPLOY_NAMESPACE`, so the broadcast deploys it there); the network Safe adds that
    address (`addConsumer` accepts an address without code), and the next simulation passes.
-4. **On mainnet, the subscription owner is the hot admin Safe.** This is an accepted
-   trade-off: if the hot admin is compromised, VRF works stop for about 64 days or more. The
-   hot Safe can cancel the subscription at once. The cold admin removes it (30 days), then
-   appoints a new hot Safe (30 days, then PARAMETER_SETTER's 48-hour grant delay), which
-   moves the module to a new subscription (`setConfig`, 48 hours). A guardian acting with
-   the hot Safe adds another 30 days ([admin recovery](#admin-recovery)). Create the subscription
-   from it, or transfer it (`requestSubscriptionOwnerTransfer`, then the Safe's
-   `acceptSubscriptionOwnerTransfer`) before Verify. The owner can cancel the subscription
-   and take its balance, or remove the consumer, at once and outside governance; the
-   module's recovery is a 48-hour `setConfig`. Verify reads `getSubscription` and requires
-   the owner to hold ADMIN and PARAMETER_SETTER. Keep the balance small, and alert the
-   guardians on the coordinator's `SubscriptionCanceled`, `SubscriptionConsumerRemoved` and
+4. **On mainnet, the subscription owner is the network Safe.** Create the subscription from
+   it, or transfer it (`requestSubscriptionOwnerTransfer`, then the Safe's
+   `acceptSubscriptionOwnerTransfer`) before Verify; Verify reads `getSubscription` and
+   requires the owner to be the network. The owner can cancel the subscription and take its
+   balance, or remove the consumer, at once and outside governance; the module moves to a new
+   subscription with `setConfig` (PARAMETER_SETTER, 24 hours). After a network handover the new
+   network takes the subscription over the same way. Keep the balance small, and watch the
+   coordinator's `SubscriptionCanceled`, `SubscriptionConsumerRemoved` and
    `SubscriptionOwnerTransferRequested` for the subscription ID.
 5. Never use Chainlink's subscription `migrate`. The [entropy README](../src/entropy/README.md)
    describes the coordinator-change procedure.
@@ -419,6 +415,11 @@ On Sepolia, set the module up as on mainnet; do not use `NO_VRF`.
    only when every request has its delivery (no `SeedRequested` without a `SeedDelivered` for
    its content), or accept and publish the redraw of each pending content
    ([LIM-ENT-7](../docs/audit/known-limitations.md#entropy)).
+7. **Federated VRF works are paid by the requester, never from this subscription.** A wallet of
+   a listed federated artist calls `VrfEntropyModule.requestFederatedSeed(token, item)` with the
+   VRF v2.5 wrapper's quoted price as `msg.value`; the module forwards it to Chainlink's wrapper.
+   It is off at launch: federated requests are refused until the network sets the wrapper
+   (`setWrapper(expected, next, codeHash)`, SUCCESSOR_SETTER, 7 days; zero turns it off again).
 
 ### 8. Default currencies
 
@@ -431,7 +432,7 @@ therefore start in the genesis block:
 
 Verify reads every default back at the revision genesis produced.
 
-A later change is a FUNDS_SETTER action from the hot admin Safe, with a 14-day delay:
+A later change is a FUNDS_SETTER action of the network, with a 3-day delay:
 1. Allowlist the asset (it must be active).
 2. Schedule `setDefaultCurrency(product, expectedRevision, asset)`. `expectedRevision` is the
    current revision, which is 1 after genesis.
@@ -501,16 +502,16 @@ forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" --sender <deployer
   that can call `configure`.
 - **The opening bid.** The committed policy wires the English auction's ETH opening bid at
   0.05 ETH (owner decision 19), on Sepolia as on mainnet: a rehearsal's first ETH bid on each
-  1/1 must be at least 0.05 ETH, so fund the bidders for it. `ETH_INCREMENT_FLOOR` must stay at
-  least 0.00005 ETH, or the wired bid is above the auction's ceiling (1,000 floors) and
-  `configure` reverts.
+  1/1 must be at least 0.05 ETH, so fund the bidders for it. The allowlist bounds an opening
+  bid only by its 96-bit field (`type(uint96).max`), not by a price cap (R19).
 - **Addresses are predictable.** Most depend on the deployer and `DEPLOY_NAMESPACE`;
   ContentStore and ClaimRouter (which takes the split ledger) depend on `DEPLOY_NAMESPACE` alone. To repeat a
   rehearsal, use a new `DEPLOY_NAMESPACE`.
 - **Resuming.** `--slow` waits for each receipt. If a broadcast stops partway, rerun the
   broadcast command with `--resume` added.
 - **Gas.**
-  - **On anvil, with Prague costs,** the whole system is 26 transactions and about 71.7M gas,
+  - **On anvil, with Prague costs,** the whole system was 26 transactions and about 71.7M gas
+    before the second pass added `SaleStarter` (one more transaction),
     including the delegation mock. The largest transaction is the edition auction's creation,
     at about 5.5M, within the 16,777,216-gas EIP-7825 cap.
   - **Each auction's lens is its own transaction** (the rc.2 review's GAS M-2). Created inside
@@ -549,9 +550,10 @@ forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" --sender <deployer
 
 ### 11. Verify after 5 days
 
-The system is live from genesis, but the delays genesis sets take effect after the manager's
-5-day `minSetback`. During those days, the guardians watch `OperationScheduled` on the manager
-and cancel anything unexpected. Then run Verify:
+The system is governed once the network accepts (`acceptNetwork`, from the network Safe, or
+`ACCEPT_NETWORK=1` when the operator holds the network). Run Verify after the acceptance and at
+least the manager's 5-day `minSetback` after genesis, as `Verify.s.sol` asks; until the
+acceptance it fails with `NetworkNotAccepted`:
 
 ```bash
 DEPLOYMENT=deployments/11155111/<timestamp>.json MANIFEST_PATH=config/<manifest file> \
@@ -571,16 +573,17 @@ The record is only an index; each check is made against the chain or the committ
   the delegation contract is no mock;
 - off anvil, the genesis file still matches the committed policy and names nothing the
   deployment lacks;
-- off anvil, the holders still pass the deploy's holder guards against the chain as it is
-  now: admin and guardian Safes with their current owners and thresholds, no shared signer,
-  and no contract of the deployment as a holder. A Safe owner change after genesis that the
-  deploy would refuse fails the readback;
-- the configurator's own `verify` (roles, delays and selector map), no role left with the
+- off anvil, the network and the holders still pass the deploy's guards against the chain as
+  it is now: the network a bare canonical Safe with its current owners and threshold, and no
+  contract of the deployment as a holder. A Safe change after genesis that the deploy would
+  refuse fails the readback;
+- the network accepted and is the configured one, the brake is the configured one, the
+  configurator's own `verify` (roles, delays and selector map), no role left with the
   configurator, and every target's authority;
 - every wired getter and default currency, the epoch-0 manifest, and PLATFORM's immediate
   path into `WorkRecords.addLocator`;
 - off anvil, the entropy module is its VRF subscription's only consumer, read from its
-  current coordinator; on mainnet the subscription's owner is the hot admin Safe. A read
+  current coordinator; on mainnet the subscription's owner is the network. A read
   that fails (for example `InvalidSubscription`) fails the run; only off mainnet, a
   coordinator without `getSubscription` (an empty revert) is skipped;
 - the `GovernanceConfigured` hashes match the configuration and wiring recomputed from the
@@ -589,8 +592,8 @@ The record is only an index; each check is made against the chain or the committ
 - no account outside the configuration was granted a role;
 - every selector remap, role-admin change, role-guardian change and target closure on the
   manager since genesis matches the configuration: a configured selector keeps its role, any
-  other selector stays with ADMIN, every role's admin is ADMIN, a configured role's guardian
-  is GUARDIAN and any other role's ADMIN, and no target is closed. The configurator's readback
+  other selector stays with ADMIN, every operational role's admin is NETWORK and any other
+  role's ADMIN, every role's guardian stays ADMIN, and no target is closed. The configurator's readback
   sees only the configured selectors and roles, so this catches a genesis-only bind or the
   deferred `bindFederationRegistry` given a role, a mapping to a new role ID or the public
   role, and a change made and later undone;
@@ -598,8 +601,8 @@ The record is only an index; each check is made against the chain or the committ
   run with its ID, caller, target, selector and ready time. After reviewing them, set
   `ALLOW_PENDING_OPERATIONS=1` to log them instead.
 
-Verify checks the genesis configuration. After a governance change, such as an
-[admin recovery](#admin-recovery) or a key rotation, run it in epoch mode: set
+Verify checks the genesis configuration. After a governance change, such as a
+[network handover](#handing-the-network-over) or a key rotation, run it in epoch mode: set
 `GOVERNANCE_CONFIG` to a copy of the genesis file with the current holders. The wiring
 readback stays genesis readback, so a later default-currency change still fails it. Epoch
 mode logs every grant it accepts for an account that no longer holds the role, and every
@@ -610,39 +613,7 @@ epoch's governance manifest is given (`GOVERNANCE_MANIFEST_PATH`), Verify requir
 SHA-256 to be the content of a `GOVERNANCE_MANIFEST` statement on the manager's chain, and
 its `governanceConfig.sha256` to be the SHA-256 of the `GOVERNANCE_CONFIG` file.
 
-### 12. Standing refresh: `refreshStanding`
-
-`ArtistRegistry.refreshStanding(artistId)` is permissionless and does not count as artist
-activity. One refresh any time after a consolidation records the wallet; a consolidation
-younger than 30 days is recorded as pending. The worst case was measured at about 4.7M gas
-with Prague costs. A refresh writes new storage slots, which Glamsterdam reprices, so
-re-measure it on Sepolia before relying on that figure.
-
-- **Artists pay (owner decision).** Right after an artist links a wallet (a two-way
-  use-case-999 consolidation), 6529.io prompts the artist to call `refreshStanding` from their
-  own wallet. The artist pays the gas, and their recovery standing is current from then on.
-- **A network keeper is optional.** It is a later safety net, not part of the launch. Such a
-  keeper watches the delegation contract for use-case-999 registrations involving a
-  registered artist's wallets, and refreshes that artist.
-- **On Sepolia,** call it by hand, as the artist would:
-
-  ```bash
-  cast send <ArtistRegistry> "refreshStanding(uint256)" <artistId> \
-    --rpc-url "$SEPOLIA_RPC_URL" --account <artist>
-  ```
-
-- **If the consolidation source cannot read** (a call reverts with
-  `DelegationReadFailed`, for example after a gas repricing): staging, heartbeats and
-  `refreshStanding` revert until it is fixed. Registrations and executions go ahead and skip
-  their standing refresh, emitting `StandingRefreshSkipped(artistId)`; nobody loses standing.
-  1. Confirm the failure with a direct read of the adapter (`effectiveAt`) and of the
-     delegation contract.
-  2. If the adapter needs replacing, deploy and review a new one and schedule
-     `setConsolidationSource` (SUCCESSOR_SETTER, 30 days).
-  3. Once reads work, call `refreshStanding` for every artist ID in a `StandingRefreshSkipped`
-     event since the outage began.
-
-### 13. To do: test the state-gas reservoir (CALLS-3)
+### 12. To do: test the state-gas reservoir (CALLS-3)
 
 The NatSpec of the fixed-gas calls (`DELIVERY_GAS`, `PAYOUT_GAS`, `BoundedCall`,
 `RevenuePayment`, `TokenTransfer`, `ClaimRouter`) says, from the EIP-8037 draft, that a state-gas
@@ -659,217 +630,175 @@ caller's gas limit. Sepolia has so far shown only that transactions above 2^24 g
 
 ## Mainnet governance (owner decision 18)
 
-D67 and D98 say no 6529 entity holds a privileged role from 2027-01-01, and a role handover
-takes 60, 44 or 32 days (the 30-day grant operation plus the role's grant delay), so the owner
-decided on 1 November 2026 that mainnet roles are network-held from day one. This does not apply to Sepolia,
-whose rehearsals keep the owner's keys ([accounts](#1-accounts)).
+One address holds every network role. Until the TDH bridge exists, that address is one 6529
+Safe; it then hands over to the bridge's executor with `transferNetwork` (7 days) and
+`acceptNetwork` (owner, 16 November 2026). Earlier commitments (D67, D98; owner decision 18,
+1 November 2026) say no 6529 entity holds a privileged role from 2027-01-01; how the two dates
+meet is an owner decision. This does not apply to Sepolia, whose rehearsals keep the owner's
+keys ([accounts](#1-accounts)).
 
 | Holder | Roles | Who |
 | --- | --- | --- |
-| Community council multisig | The delayed roles: ADMIN, UNPAUSER, PARAMETER_SETTER, FUNDS_SETTER, SUCCESSOR_SETTER (the hot admin Safe's roles, with execution delays of 48 hours to 30 days) | A Safe of about 5 of 9 independent signers, none from 6529 |
-| Security council | The immediate roles: PAUSER and GUARDIAN | Three guardian Safes, each holding both roles, whose signers are separate members of a council of independent signers (below) |
-| Curation signer | CURATION_SIGNER | A dedicated key that signs only the published TDH-vote result |
+| Network | ADMIN, NETWORK, PARAMETER_SETTER, FUNDS_SETTER, SUCCESSOR_SETTER (at once, 24 hours, 3 days or 7 days by class) | One Safe; later the TDH bridge's executor |
+| Pauser keys | PAUSER | Dedicated keys |
+| Curation signers | CURATION_SIGNER | Dedicated keys that sign only the published TDH-vote result |
 
-Later, on-chain TDH governance takes the roles over through ordinary role grants (and the
-revocation of the councils' roles), each in its class's delay.
-
-**Open before a mainnet genesis** (not decided yet):
-- **The operational keys and the cold recovery admin have no named holders.** Decision 18 does
-  not cover PLATFORM, CURATOR, STORAGE_OPERATOR or the cold recovery admin (the second ADMIN
-  Safe, which acts only for [admin recovery](#admin-recovery)). Who holds them on mainnet,
-  consistent with D67 and D98, needs an owner decision.
-
-**How the security council fills the three guardian seats.** Off anvil the deploy requires at
-least three GUARDIAN Safes whose signers are disjoint from each other's and from the admin
-Safes' (`DeployGuards.checkHolders`, owner decisions 2 and 3, GOV-4). Decision 18 names one
-security council, and the deploy keeps the three seats: the security council is held as three
-guardian Safes, each holding GUARDIAN and PAUSER, each with a threshold of at least two, and
-each signed by a different subset of the council's members. A council of nine, for example,
-holds three 2-of-3 Safes. This keeps the redundancy the guardian design was built for:
-
-- each Safe can veto a scheduled operation and pause on its own, at once;
-- one Safe whose keys are lost leaves the other two with the veto and the pause;
-- no signer sits in two Safes, so one stolen key never acts for more than one seat.
-
-A single security-council Safe would give the immediate roles one point of failure, and the
-veto would go if its keys were lost.
+**Open before a mainnet genesis** (not decided yet): who holds PLATFORM, CURATOR and
+STORAGE_OPERATOR on mainnet, consistent with D67 and D98, needs an owner decision. The network
+grants and revokes those keys at once (it administers every operational role).
 
 **The deploy-side guard.** On mainnet (chain 1), `Deploy.s.sol` and `Verify.s.sol` run
-`DeployGuards.checkRoleGroups` on the genesis holders. It refuses:
-
-- any role held by the deployer EOA;
-- an account that holds roles of two groups: the community council's (ADMIN, UNPAUSER,
-  PARAMETER_SETTER, FUNDS_SETTER, SUCCESSOR_SETTER), the security council's (GUARDIAN,
-  PAUSER) or the curation signers' (CURATION_SIGNER).
-
-Together with `checkHolders`, which keeps every admin and guardian Safe's signers disjoint,
-this keeps the community council and the security council apart. The guard compares
-addresses only: the same people behind different addresses pass it, for example a
-curation signer key whose holder also signs for a council Safe, or a setter or PAUSER held
-by a separate account the other group controls. The checklist below checks the people.
+`DeployGuards.checkRoleGroups` on the genesis file. It refuses the deployer EOA as the network
+or as any holder, the network address as a holder, and an account that holds roles of two groups
+(the pausers' PAUSER, the curation signers' CURATION_SIGNER). The guard compares addresses
+only: the same people behind different addresses pass it. The checklist below checks the
+people.
 
 ### Mainnet genesis checklist
 
 Before the mainnet broadcast, besides the [Sepolia runbook](#sepolia-runbook) steps:
 
-1. The community council and the security council Safes exist, with the signers and thresholds
-   above, and none of their signers is a 6529 entity or key; check each Safe's owners by hand
+1. The network Safe exists with the intended signers and threshold; check its owners by hand
    ([Safe pre-flight](#2-safe-pre-flight)).
-2. The genesis configuration gives ADMIN, UNPAUSER, PARAMETER_SETTER, FUNDS_SETTER and
-   SUCCESSOR_SETTER to the community council, and PAUSER and GUARDIAN to the security
-   council's three guardian Safes (above).
-3. The curation signer keys are dedicated to signing the published TDH-vote result, and are
-   held outside 6529.
-4. The owner has decided who holds the operational keys and the cold recovery admin (the open
-   item above), and the genesis configuration names them.
-5. The deploy's mainnet guard (`DeployGuards.checkRoleGroups`, above) passes, every holder is
-   also checked against decision 18 by hand, and Verify reads every role holder back
-   ([step 11](#11-verify-after-5-days)).
-6. The VRF subscription owner is the community council (it must hold ADMIN and
-   PARAMETER_SETTER), and it has added the module's address as the only consumer
-   ([step 7](#7-chainlink-vrf-the-entropy-module)). The deploy checks both before the
-   broadcast, and Verify again.
-7. The museum, the marketplace owner and the network fee recipient are network-held accounts,
-   not the deployer (the deploy and Verify refuse the deployer for each).
+2. The genesis configuration names it as `network`, names no brake (refused off anvil:
+   `BrakeAtLaunch`), and gives only operational roles to holders.
+3. The curation signer keys are dedicated to signing the published TDH-vote result.
+4. The owner has decided who holds the operational keys (the open item above), and the genesis
+   configuration names them.
+5. The deploy's mainnet guard (`DeployGuards.checkRoleGroups`, above) passes, and Verify reads
+   every role holder back ([step 11](#11-verify-after-5-days)).
+6. The VRF subscription owner is the network Safe, and it has added the module's address as the
+   only consumer ([step 7](#7-chainlink-vrf-the-entropy-module)). The deploy checks both before
+   the broadcast, and Verify again.
+7. The museum, the marketplace owner and the network fee recipient are not the deployer (the
+   deploy and Verify refuse the deployer for each).
+8. After the broadcast, the network Safe calls `acceptNetwork()`; then run Verify.
 
 ## Operating procedures
 
-The contracts do not enforce these procedures; they make the enforced rules effective. The
-rules themselves, including the cancellation Rules 1 to 3 cited below, are in the
-[governance spec](../docs/spec/governance.md#cancellation-rules).
+The contracts do not enforce these procedures; they describe the network's current practice.
+The rules themselves are in the [governance spec](../docs/spec/governance.md).
 
-### Guardian liveness and monitoring
+### Scheduled network actions
 
-- **Two honest guardians online at all times.** A guardian cannot cancel its own removal
-  (Rule 2), so one may be the target of a hostile revocation while another cancels it. With one
-  guardian online, a compromised admin removes it in 30 days, and nothing then stops a target
-  takeover (`test_Residual_LivenessNeedsTwoHonestGuardiansOnline`). The code floor is two
-  guardians (`GovernanceConfig.MIN_GUARDIANS`); off anvil the deploy requires three
-  (`DeployGuards.MIN_GUARDIANS`), 2-of-3 each (ADR 0003, owner decision 3).
-- **Monitoring.** Alert every guardian on the manager's `OperationScheduled`, `RoleGranted`,
-  `RoleGrantDelayChanged`, `TargetAdminDelayUpdated` and `RoleSuspended` events. A hostile
-  admin operation waits at least its delay class (up to 30 days), and a guardian cancels it in
-  that window. The pending set is every `OperationScheduled` not followed by
+- **Classes.** A network action runs at once (NETWORK) or after its class: 24 hours
+  (PARAMETER_SETTER), 3 days (FUNDS_SETTER) or 7 days (ADMIN, SUCCESSOR_SETTER). A delayed one
+  is scheduled on the manager first; the network or the scheduler can cancel it
+  ([cancellation rules](../docs/spec/governance.md#cancellation-rules)). The brake, when one is
+  set, can delay a scheduled action once by 7 days (`brakeOnce`).
+- **Watching.** The pending set is every `OperationScheduled` not followed by
   `OperationExecuted` or `OperationCanceled` with the same operation ID and nonce, and not yet
-  one week past its ready time; Verify fails while any is pending on the manager, unless
-  `ALLOW_PENDING_OPERATIONS=1`. On mainnet, also alert on the VRF coordinator's
+  past its expiry; Verify fails while any is pending on the manager, unless
+  `ALLOW_PENDING_OPERATIONS=1`. On mainnet, also watch the VRF coordinator's
   `SubscriptionCanceled`, `SubscriptionConsumerRemoved` and `SubscriptionOwnerTransferRequested`
   for the subscription ID ([step 7](#7-chainlink-vrf-the-entropy-module)).
-- **Operation expiry.** An operation must execute within one week of becoming ready
-  (`expiration()`). After that `execute` reverts with `AccessManagerExpired`, and the operation
-  must be scheduled again with the full delay.
+- **Operation expiry.** An operation must execute within `expiration()` of becoming ready: 14
+  days (one week plus the brake delay, so a braked operation keeps a week to run). After that
+  `execute` reverts with `AccessManagerExpired`, and the operation must be scheduled again with
+  the full delay.
 
 ### Emergencies
 
-- **Pausing** is immediate (PAUSER). Unpausing is a 48-hour UNPAUSER operation that any
-  guardian can cancel. The adapters and the auction also refuse an unpause, a `resume` or a
-  dispute `cancel` until 48 hours after the pause they end (review finding GOV-5), so one
-  scheduled before the pause cannot land inside it.
+- **Pausing** is immediate (PAUSER); unpausing is the network's, at once.
 - **Pausing the edition auction pauses the English auction's starts too** (LC-2). While the
-  edition auction is paused (at least 48 hours) it refuses `open`, and an edition master whose
-  1/1 starts and closes in that time can never get an edition sale from it (LIM-EA-11). Pause
-  `EnglishAuction` with it (its `pause()` stops `start` and `startWithBid`; running 1/1s are
-  unaffected) and unpause both together.
-- **A dispute cancel cites the latest outcome.** `EnglishAuction.cancel(saleId, outcomeRef)`
-  needs `outcomeRef` to be the token's latest `DISPUTE_OUTCOME` statement recorded after the
-  pause (`OutcomeNotRecorded` otherwise). A correction recorded after the cancel is scheduled
-  makes the scheduled call revert, and rescheduling takes another 48 hours, which can pass the
-  pause's 7-day lapse (`MAX_PAUSE`), after which the auction resumes. Record the final outcome
-  first, then schedule the cancel early in the window.
-- **A compromised operational key.** Any guardian Safe calls `manager.suspend(role, key)` for a
-  PLATFORM, CURATOR or STORAGE_OPERATOR key; the key stops in the same block. Pause the affected
-  targets as well where they have a pause. The hot admin then schedules `revokeRole(role, key)`
-  and the grant of a replacement key (30 days, then the role's grant delay). If the same key is
+  edition auction is paused it refuses `open`, and an edition master whose 1/1 starts and closes
+  in that time can never get an edition sale from it (LIM-EA-11). Pause `EnglishAuction` with it
+  (its `pause()` stops `start` and `startWithBid`; running 1/1s are unaffected) and unpause both
+  together.
+- **A dispute on a live 1/1.** A pauser's `pause(saleId, disputeRef)` holds the auction for at
+  most 3 days, once per auction (`MAX_PAUSE`, C30). The network's `resume` and
+  `cancel(saleId, outcomeRef)` take no wait and may land at any moment of the pause.
+  `cancel` needs `outcomeRef` to be the token's latest `DISPUTE_OUTCOME` statement recorded
+  after the pause (`OutcomeNotRecorded` otherwise): record the final outcome first, then cancel.
+  Edition bids cannot be withdrawn meanwhile (R21).
+- **A compromised operational key.** The network revokes it at once (`revokeRole(role, key)`:
+  the network administers every operational role, with no delay) and grants a replacement key
+  the same way. Pause the affected targets as well where they have a pause. If the same key is
   also the marketplace owner, schedule `setOwner` on Stream and Editions as well (FUNDS_SETTER,
-  14 days).
-- **A compromised curation signer.** Signers cannot be suspended. A guardian calls the curation
-  verifier's one-way `disableSigner(key)`, which cuts the key off at once. Re-enabling it is a
-  30-day SUCCESSOR_SETTER action and starts a new curation signer epoch, so no earlier approval
-  counts again.
-- **Suspensions last.** No guardian can lift a suspension, and nobody can cancel one. It ends
-  when a 30-day ADMIN `grantRole` of that role to that account executes (the key acts again), or
-  a `revokeRole` (the key loses the role), or when the key renounces the role itself. Plan for
-  30 days after a mistaken suspension, about 60 days if a dishonest guardian suspends keys (it
-  cancels each lift until its own removal executes), and about 90 days if it acts with a
-  compromised hot admin.
+  3 days).
+- **A compromised curation signer.** The network calls the curation verifier's one-way
+  `disableSigner(key)` and `PackageRegistry.killSignerApprovals(key)` in one Safe batch, both at
+  once; the kill stops the key's approvals not yet minted (C32). A kill alone leaves attestations
+  signed before it registrable, and a disable alone leaves registered packages live. Re-enabling a signer is a 7-day
+  SUCCESSOR_SETTER action and starts a new curation signer epoch, and so does every new grant
+  of the role (`grantCount`), so no earlier approval counts again.
+- **An artist account.** The network can freeze an account at once for 14 days (`freeze`,
+  `unfreeze`, C17); while frozen, no wallet acts for it and its payouts are held.
+  The network's monitor watches `ArtistRegistered` for wallets consolidated with a frozen or
+  delisted root and freezes (at once) or delists (24 hours) such a new account (LIM-ID-23).
+- **A contested replacement.** The network holds PLATFORM itself and sends the
+  `DISPUTE_OUTCOME` write and the execution of the scheduled `resolveContested` in one batch: a
+  newer outcome appended in between makes the resolution revert (`OutcomeNotRecorded`,
+  LIM-GV-29).
 
-### Rotating a guardian
+### Handing the network over
 
-- **Cooperative: grant the replacement first, then revoke.**
-  1. Schedule `grantRole(GUARDIAN, new, 0)` and `grantRole(PAUSER, new, 0)`.
-  2. Once both are active (30 days to execute, then GUARDIAN's 30-day grant delay), schedule
-     `revokeRole(GUARDIAN, old)` and `revokeRole(PAUSER, old)`.
+1. The network schedules `transferNetwork(next)` (ADMIN, 7 days; the brake can delay it once)
+   and executes it: `next` is now pending (`pendingNetwork`). Zero withdraws a proposal.
+2. `next` calls `acceptNetwork()`. From then on the old address holds nothing, and its
+   scheduled operations can no longer run
+   ([handing the network over](../docs/spec/governance.md#handing-the-network-over)).
+3. On mainnet, move the VRF subscription to the new network
+   ([step 7](#7-chainlink-vrf-the-entropy-module)).
+4. Re-run Verify in epoch mode with `GOVERNANCE_CONFIG` naming the new network
+   ([step 11](#11-verify-after-5-days)) and publish the change as a governance manifest.
 
-  The departing guardian cannot cancel its own removal; the others can. The guardian count
-  never drops below the configured number.
-- **Compromised: revoke first.** Only the other guardians, or the admin that scheduled it, can
-  cancel the revocation (Rules 2 and 3). While still active, the guardian can cancel a grant to
-  its replacement (`test_GuardianCanCancelGrantOfAReplacement`), so schedule the grant once the
-  revocation has executed. Suspensions it made outlast its removal until an admin lifts them.
-
-### Rotating the hot admin Safe
-
-For a cooperative rotation; a compromised hot admin is removed by
-[admin recovery](#admin-recovery) instead.
-
-1. The old admin schedules grants of ADMIN, UNPAUSER and the three setter roles to the new
-   Safe, each at its class delay (`Roles.executionDelay`).
-2. Guardians, the old admin or the cold admin cancel every other pending operation of the old
-   admin (the pending set under [Monitoring](#guardian-liveness-and-monitoring)). A revocation
-   the old admin scheduled can be cancelled only by itself or a guardian (Rule 3).
-3. Execute the grants after 30 days and wait for the grant delays: 48 hours for UNPAUSER and
-   PARAMETER_SETTER, 14 days for FUNDS_SETTER, 30 days for SUCCESSOR_SETTER and ADMIN.
-4. The old admin renounces every role, which is immediate. Its remaining scheduled operations
-   can no longer execute.
-5. On mainnet, transfer the VRF subscription to the new Safe (Verify requires its owner to hold
-   ADMIN and PARAMETER_SETTER). Re-run Verify in epoch mode ([step 11](#11-verify-after-5-days))
-   and publish the change as a governance manifest.
+Only the current network can propose a handover, and nothing in the contracts recovers a
+network address whose keys are lost, so the network Safe's signers and threshold are chosen so
+that it cannot be lost.
 
 ### Onboarding a target after genesis
 
 Deploy the target with `authority` set to the manager, then:
 
-1. schedule `setTargetAdminDelay(newTarget, 30 days)` and one `setTargetFunctionRole` per
-   selector, each a 30-day admin operation the guardians can cancel;
+1. schedule one `setTargetFunctionRole` per selector, each a 7-day ADMIN operation;
 2. execute them, for example in one `multicall`, where each call consumes its own schedule;
-3. wait `minSetback()` (5 days);
-4. read the manager back with the target added to the configuration
+3. read the manager back with the target added to the configuration
    (`GovernanceConfigurator.verify`, `test_OnboardATargetAfterGenesis`).
 
 ### The 1/1 start keeper
 
-A keeper (any funded EOA, no role) that starts 1/1 auctions adds two calls to each start batch.
-Neither is required by any contract; both keep facts and money where logs and readers expect them.
+The network's keeper (a funded hot wallet with no role) starts every 1/1 through
+`SaleStarter` ([`src/sales/SaleStarter.sol`](../src/sales/SaleStarter.sol)), never by calling the
+English auction directly:
 
-1. **Open the record right after `start`:** `WorkRecords.openRecord(tokenId, item, media)`, in
-   the same batch. A logs-only reader learns a work's parties, payees and shares, initial
-   license, seed and media list from `RecordOpened`, not from `WorkMinted` (LIM-CNT-19). Anyone
-   may open a record at any time and nothing forces it; the curation signer's `openRecord`
-   simulation before attesting already guarantees it can open. About 176K gas, outside the start
-   budget.
-2. **Deploy the 1/1's payout vaults in the start batch.** The English auction never deploys
-   wallets, so a 1/1's seller vault (and, with a fee share, its royalty vault) may still be
-   undeployed when the sale pays it. The keeper adds, before `start`,
-   `SplitLedger.createWallet(item.payees, 0)` and, when the item's fee share is nonzero,
-   `createWallet(Splits.royaltyPayees(seller, feeRecipient, feeShare), 0)`: permissionless and
-   idempotent (a deployed vault returns its address), so the batch is safe to repeat. Nothing on
-   chain depends on it: ETH paid to an undeployed vault waits at its address and the vault
-   deploys there later (LIM-ECO-7).
+- `SaleStarter.start(auction, stream, mintData, media)` (or `startWithBid`, PERMIT2 payments
+  only) starts the auction, deploys the work's seller vault (`createWallet(item.payees, 0)`,
+  checked against the seller the work's terms name) and, with a nonzero fee share, its royalty
+  vault (`createWallet(Splits.royaltyPayees(seller, feeRecipient, feeShare), 0)`), and opens the
+  record (`WorkRecords.openRecord(tokenId, item, media)`) in one transaction. If any step fails,
+  nothing happens: no token, no sale, no vault. The helper is stateless, holds nothing and has
+  no roles.
+- This is the keeper's rule, not the chain's: `EnglishAuction.start` stays permissionless, and
+  anyone holding the artist's signed move can still start a sale directly, leaving the vaults
+  and the record to later permissionless calls (LIM-CNT-19, LIM-ECO-7).
+- A direct `EnglishAuction.start` with the same mint data makes `SaleStarter.start` revert. The
+  keeper then calls `createWallet` (seller, and royalty when the share is above zero) and
+  `openRecord` itself; both are permissionless and fully determined.
+- `startWithBid` refuses the helper itself as the payer (`HelperAsPayer`): the bid is paid by
+  the keeper or another account through Permit2.
+- **Claims through the `ClaimRouter`.** In a batch, leave out the network's own index for any
+  wallet and asset whose payee is also released in the batch: the R11 push already paid the
+  network, so that item releases zero and fails (atomic mode reverts the batch).
 
 ### The edition auction keeper
 
-Every step of an edition sale is permissionless; a keeper (any funded EOA, no role) batches
-them so that nothing waits ([ADR 0005](../docs/adr/0005-stream-editions-auction.md)):
+Every step of an edition sale is permissionless. The network currently runs a keeper (any
+funded EOA, no role) that batches them so that nothing waits, and anyone else may make the same
+calls ([ADR 0005](../docs/adr/0005-stream-editions-auction.md)):
 
 1. **Open the edition auction right after every edition-master start** (owner decision 7):
-   `UniformEditionAuction.open(editions, tokenId, abi.encode(item))`, the master's
-   EDITION_MASTER package item, in the same batch as the keeper's own starts, and for starts by
-   anyone else as soon as the English auction's `SaleStarted` for an `EDITION_MASTER` work
-   appears. `open` also binds the edition to the adapter. An auction nobody
-   opens before the 1/1's end plus the close offset can never be opened by this adapter
-   (LIM-EA-11); a later admitted adapter of the edition's kind still can.
+   `UniformEditionAuction.open(editions, tokenId, abi.encode(item, packageRoot, proof))`, the
+   master's EDITION_MASTER package item with the package root it was approved in and its Merkle
+   proof (C23: a revoked package, or one whose curation signer was disabled, opens no sale), in
+   the same batch as the keeper's own starts, and for starts by anyone else as soon as the English
+   auction's `SaleStarted` for an `EDITION_MASTER` work appears. `open` also binds the edition to
+   the adapter. An auction nobody opens before the 1/1's end plus 15 minutes can never be opened
+   by this adapter (LIM-EA-11); a later admitted adapter of the edition's kind still can.
 2. **Create the edition once the 1/1 settles:** `Editions.createEdition(tokenId, item)`. A sale
-   with winners settles only once the edition exists (`EditionNotCreated`; LIM-EA-12).
+   with winners settles only once the edition exists (`EditionNotCreated`; LIM-EA-12). If it was
+   missed, `abandon(saleId, abi.encode(item))` creates it from 21 days after the sale's close,
+   for any completed 1/1, including one that ended with no bid (R16; owner, 17 November 2026).
 3. **Settle after the edition close:** call `settle(saleId, order)` until it returns `true`,
    with `order` the keeper's own rest, `settlementOrderFor(saleId, keeper)` (on the adapter or
    its lens), cut to one chunk (16 entries in the call that clears, 96 after) to keep calldata
@@ -887,10 +816,15 @@ them so that nothing waits ([ADR 0005](../docs/adr/0005-stream-editions-auction.
    them. A keeper's own batching contract is its own settler.
 4. **Optionally push claims** with `claimBidFor(saleId, bidId)`: copies go to the bidder and the
    refund is credited to it.
+5. **Sweep stale credits to the network:** a credit (an outbid refund, a pushed claim's refund, a
+   payout credited after a failed ERC-20 push) not claimed within 180 days of when it last went
+   from zero (later credits do not move that clock) may be sent to the network's fee recipient
+   with `expireCredit(account, currency)` on either auction (`creditExpiresAt` tells when). Push unclaimed edition bids with
+   `claimBidFor` first: their refunds then become credits.
 
 ### Replacing one of Stream's dependencies
 
-`Stream.setDependency(kind, expected, next)` (SUCCESSOR_SETTER, 30 days, owner decision 16)
+`Stream.setDependency(kind, expected, next)` (SUCCESSOR_SETTER, 7 days, owner decision 16)
 replaces Stream's package registry, artist registry, economics resolver or entropy module.
 Stream, 6529 Stream Editions and `WorkRecords` follow at once; existing tokens do not change
 (`test_ReplacingEachDependencyLeavesExistingTokensUnchanged`): ownership, the terms and royalty
@@ -907,20 +841,20 @@ Before any switch:
   auction or the edition auction. A master started on the old English auction whose edition
   sale is not open yet can never be opened afterwards: the old edition auction is no longer
   admitted, and the new one reads only the new English auction (`NoOneOfOneAuction`).
-- **No edition sale with winners may be OPEN or SETTLING across a package-registry switch**, and
-  every edition such a sale needs must exist: settle those sales and create their editions
-  first. An open sale settles only after its close, so new 1/1 starts must stop (pausing
+- **Settle edition sales with winners, and create their editions, before a package-registry
+  switch.** A sale still OPEN or SETTLING across the switch, or one whose edition does not exist
+  yet, depends on the successor. An open sale settles only after its close, so new 1/1 starts must stop (pausing
   `EnglishAuction`, as in [Emergencies](#emergencies)) early enough for every running sale to
   close and settle before the switch executes. A successor that cannot create an earlier master's edition leaves such a sale on
-  `EditionNotCreated`, its bidders unable to withdraw or claim until governance reverses the
-  switch (another 30 days).
+  `EditionNotCreated`, its bidders unable to claim until the network reverses the switch
+  (another 7 days).
 
 | Replaced | Who else holds it | The replacement set | Without a Stream redeploy? |
 | --- | --- | --- | --- |
-| Entropy module | Nobody: the renderer and `WorkRecords` ask Stream | A new `VrfEntropyModule` pinned to Stream's current package registry, added as a consumer of a funded subscription ([step 7](#7-chainlink-vrf-the-entropy-module)); then `setDependency("ENTROPY_MODULE")`. A successor entropy module MUST honour every seed its predecessor delivered for content not yet minted: answer `isDeliveredContent`, `seedOfContent` and `seedOf` with the predecessor's seed and refuse a new draw for it. Today's `VrfEntropyModule` reads no predecessor, so until such a module exists schedule a replacement only when no unminted VRF content has a seed delivered or requested on the old module, or publish that each such content is redrawn. List those contents before scheduling: every content hash in the old module's `SeedLinked` events whose `PackageRegistry.consumedItemOf` reads zero (a content a dispute released reads zero again, so it stays on the list). A delivered content is drawn again by the new module; a pending one is drawn there too, while the old module may still deliver its request. Rebuild the list immediately before executing, since anyone can request a seed and the old coordinator can deliver one during the 30-day delay, and cancel the switch, or publish the redraw, for each content not already disclosed ([LIM-ENT-7](../docs/audit/known-limitations.md#entropy)). Keep the old module deployed: the works minted under it read their seeds from it. | Yes |
+| Entropy module | Nobody: the renderer and `WorkRecords` ask Stream | A new `VrfEntropyModule` pinned to Stream's current package registry, added as a consumer of a funded subscription ([step 7](#7-chainlink-vrf-the-entropy-module)) and, when federated VRF is on, given the wrapper (`setWrapper`); then `setDependency("ENTROPY_MODULE")`. A successor entropy module keeps the seeds its predecessor delivered for content not yet minted only if it answers `isDeliveredContent`, `seedOfContent` and `seedOf` with the predecessor's seed and refuses a new draw for it. Today's `VrfEntropyModule` reads no predecessor, so the network's current practice is to schedule a replacement only when no unminted VRF content has a seed delivered or requested on the old module, or to publish that each such content is redrawn. List those contents before scheduling: every content hash in the old module's `SeedLinked` events whose `PackageRegistry.consumedItemOf` reads zero (a content a dispute released reads zero again, so it stays on the list). A delivered content is drawn again by the new module; a pending one is drawn there too, while the old module may still deliver its request. Rebuild the list immediately before executing, since anyone can request a seed and the old coordinator can deliver one during the 7-day delay, and cancel the switch, or publish the redraw, for each content not already disclosed ([LIM-ENT-7](../docs/audit/known-limitations.md#entropy)). Keep the old module deployed: the works minted under it read their seeds from it. | Yes |
 | Economics resolver | `EnglishAuction` (immutable: the federated fee recipient and the asset allowlist; since owner decision 17 Stream, not the auction, reads the museum) and `UniformEditionAuction` (it holds no resolver: a sale pays exactly the terms `Editions.bindMinter` locks and returns, one source of truth since ADR 0005 §12; but it reads the 1/1's clock from its immutable English auction, so it is replaced with it) | A new resolver whose `splitFactory()` is Stream's (Stream derives sellers with its own immutable factory and Editions with the resolver's; `setDependency` does not check it), a new `EnglishAuction` and a new edition auction on it; then `setDependency("ECONOMICS")`, `Stream.setAdmittedMinter` (the new auction in, the old out: one adapter per kind, ADR 0005) and the same on Editions. Sales running on the old adapters finish there: their fees follow the terms locked at mint or at open, while an unsold 1/1 goes to the NEW resolver's museum, since Stream reads `museum()` from its current resolver when it settles (owner decision 17). | Yes |
-| Package registry | `VrfEntropyModule` (pinned registry), `ArtistRegistry` (its only `register` caller: `setPackageRegistry`, SUCCESSOR_SETTER, 30 days) | A successor registry pinned to the current artist registry, bound to the existing Stream and Editions (`bindStream`, `bindEditions`: one-shot per instance, so a new instance binds), plus a new entropy module pinned to it, which carries the same obligation as in the row above (honour the predecessor's delivered seeds for unminted content, or schedule only when there are none, or publish the redraw); then, in one batch, `setDependency("PACKAGE_REGISTRY")`, `ArtistRegistry.setPackageRegistry(old, successor)`, so new artists register through the successor (`test_AReplacementPackageRegistryRegistersNewArtists`), and `setDependency("ENTROPY_MODULE")`. The successor MUST read its predecessor's state: approved packages, consumed content (or content minted before would mint again), and releases (or `releaseContent` refuses every work burned before); it must also keep `consume`'s ABI, which Stream calls (LIM-GV-17). Today's `PackageRegistry` reads none of it: the successor is new code. | Yes, with new code |
-| Artist registry | 6529 Stream (an immutable with no setter: `setDependency("ARTIST_REGISTRY")` reverts, AUC-39), 6529 Stream Editions (cached at deployment), `SplitLedger` (the payout resolver, an immutable without a code-hash pin), `PackageRegistry` (pinned), `StatementLog` (`setArtistResolver`, 30 days) | None: the artist registry is permanent ([ADR 0007](../docs/adr/0007-permanence.md)). | **No.** It is never replaced; its replaceable parts are its federation-registry pointer (`setFederationRegistry`) and its timers (`setTimer`), both SUCCESSOR_SETTER, 30 days. |
+| Package registry | `VrfEntropyModule` (pinned registry), `ArtistRegistry` (its only `register` caller: `setPackageRegistry`, SUCCESSOR_SETTER, 7 days) | A successor registry pinned to the current artist registry, bound to the existing Stream and Editions (`bindStream`, `bindEditions`: one-shot per instance, so a new instance binds), plus a new entropy module pinned to it, with the same seed question as in the row above; then, in one batch, `setDependency("PACKAGE_REGISTRY")`, `ArtistRegistry.setPackageRegistry(old, successor)`, so new artists register through the successor (`test_AReplacementPackageRegistryRegistersNewArtists`), and `setDependency("ENTROPY_MODULE")`. For earlier packages and releases to stay usable, the successor reads its predecessor's state: approved packages and releases (without them `releaseContent` refuses every work burned before); Stream calls it through `consume`'s ABI (LIM-GV-17). Today's `PackageRegistry` reads none of it: such a successor is new code. | Yes, with new code |
+| Artist registry | 6529 Stream (an immutable with no setter: `setDependency("ARTIST_REGISTRY")` reverts, AUC-39), 6529 Stream Editions (cached at deployment), `SplitLedger` (the payout resolver, an immutable without a code-hash pin), `PackageRegistry` (pinned), `StatementLog` (`setArtistResolver`, 7 days) | None: the artist registry is permanent ([ADR 0007](../docs/adr/0007-permanence.md)). | **No.** It is never replaced; its replaceable parts are its consolidation source (`setConsolidationSource`), its package registry (`setPackageRegistry`) and its federation-registry pointer (`setFederationRegistry`), each SUCCESSOR_SETTER, 7 days. Its timers are compiled. |
 
 One limit follows ([LIM-GV-16](../docs/audit/known-limitations.md#trust-and-governance)): the
 genesis artist registry is permanent for Stream's payouts. A replacement package registry does
@@ -930,9 +864,10 @@ same batch (`ArtistRegistry.setPackageRegistry`).
 ### Replacing the federation registry
 
 The federation registry is replaceable ([ADR 0008](../docs/adr/0008-federation.md) §8);
-nothing migrates, because entries are composed from the permanent directory. The successor MUST
-serve the predecessor's set before the switch, or every running federated sale freezes out
-(refunds) the moment the artist registry's pointer moves
+nothing migrates, because entries are composed from the permanent directory: a successor
+inherits every listing, and no artist signs anything (C3). A successor that
+does not yet serve the predecessor's set when the artist registry's pointer moves freezes out
+every running federated sale (refunds)
 (`test_Replacement_SwappedBeforeItsApprovalsFreezesRunningSales`):
 
 1. Deploy the successor (the artist registry, the economics resolver and the canonical content
@@ -940,7 +875,7 @@ serve the predecessor's set before the switch, or every running federated sale f
 2. On the successor, approve every template version the predecessor approves, each bound to
    the same deployer (`approveTemplate(codeHash, deployer, version, form)`), carrying over any
    SUSPENDED or REVOKED status, and admit the same adapters (`setAdapter`). These wait their
-   class (30 days), so schedule them first.
+   class (24 hours for the template actions, 7 days for `setAdapter`), so schedule them first.
 3. Before scheduling the switch, check the successor answers as the predecessor: for each
    approved code hash, `templateOf` matches (`VerifyV1.checkTemplate` against the successor
    reproduces genesis's template check), and `isAdmittedAdapter` matches for each adapter.
@@ -956,7 +891,7 @@ serve the predecessor's set before the switch, or every running federated sale f
 
    It prints the counts compared and fails with `FederationMismatch("templateOf")` or
    `("isAdmittedAdapter")` on the first difference. The switch's setters check only the expected pointer and ERC-165, and a
-   revocation, suspension or adapter change on the predecessor during the 30-day delay would
+   revocation, suspension or adapter change on the predecessor during the 7-day delay would
    otherwise go unnoticed; once the switch lands, the successor answers every read. Do not
    execute the switch while the check fails: mirror the change on the successor first.
 5. Then, in one batch, `ArtistRegistry.setFederationRegistry(old, successor)` and
@@ -965,59 +900,10 @@ serve the predecessor's set before the switch, or every running federated sale f
 
 ### Publishing a configuration epoch
 
-Schedule `StatementLog.appendGovernanceManifest` (SUCCESSOR_SETTER, 30 days) with the epoch's
+Schedule `StatementLog.appendGovernanceManifest` (SUCCESSOR_SETTER, 7 days) with the epoch's
 other operations, so the manifest's hash is public before they take effect. Once they have
 executed, run Verify in epoch mode with `GOVERNANCE_CONFIG` and `GOVERNANCE_MANIFEST_PATH`
 ([step 11](#11-verify-after-5-days)).
-
-## Admin recovery
-
-The cold recovery admin Safe holds ADMIN only and stays offline. It acts in one case: the hot
-admin Safe is lost or compromised (owner decision 2).
-
-1. **Pause and suspend if needed.** A guardian pauses the affected contracts while the
-   recovery runs, and suspends any operational key the hot Safe could have reached
-   (`manager.suspend`).
-2. **Schedule the removal.** The cold Safe schedules `revokeRole(role, hotSafe)` on the
-   manager for each of the hot Safe's roles: ADMIN, UNPAUSER, PARAMETER_SETTER, FUNDS_SETTER and
-   SUCCESSOR_SETTER. In the Safe transaction builder, each is
-   `manager.schedule(manager, revokeRole(role, hotSafe), 0)`. ADMIN's 30-day execution delay
-   applies to each. Schedule nothing else yet.
-   - **The hot Safe cannot cancel its own removal.** `WorksAccessManager` lets no one but the
-     scheduler cancel the revocation of their own role, and no admin cancel another
-     account's revocation (Rules 2 and 3).
-   - **The guardians can cancel any operation.** They must know of the recovery and let these
-     through, and keep cancelling anything the compromised hot Safe schedules.
-3. **If a guardian cancels the removal,** treat that guardian as compromised too. The cold
-   Safe schedules `revokeRole(GUARDIAN, guardian)` and `revokeRole(PAUSER, guardian)`. Only
-   the other guardians may cancel those. After 30 days it executes them, then schedules the
-   hot Safe's revocations again (step 2).
-4. **Execute after 30 days.** The cold Safe calls `manager.execute` for each revocation. The old
-   hot Safe loses its roles at once.
-5. **Only then appoint the new hot Safe.** Schedule
-   `grantRole(role, newHotSafe, Roles.executionDelay(role))` for the same five roles, and
-   execute them after 30 days. Revocations go first: a hot Safe that still holds ADMIN can
-   cancel any grant scheduled before its removal executes. The new Safe holds each role after
-   that role's grant delay: 48 hours for UNPAUSER and PARAMETER_SETTER, 14 days for
-   FUNDS_SETTER, and 30 days for SUCCESSOR_SETTER and ADMIN.
-6. **Move the VRF subscription.** On mainnet the hot Safe owns it ([step 7](#7-chainlink-vrf-the-entropy-module)),
-   and governance cannot take it over. Create a subscription owned by the new hot Safe, fund
-   it, add the module as its only consumer, and have the new Safe schedule the module's
-   `setConfig` to it (PARAMETER_SETTER, 48 hours).
-7. **Re-verify in epoch mode.** Copy the genesis file, replace the old hot Safe's entries with
-   the new one, and run Verify with `GOVERNANCE_CONFIG` set to the copy, after the last grant
-   delay:
-
-   ```bash
-   DEPLOYMENT=deployments/<chainId>/<timestamp>.json GOVERNANCE_CONFIG=config/<epoch file> \
-     forge script script/Verify.s.sol --rpc-url "$RPC_URL"
-   ```
-
-   The current-state checks use the copy. The genesis event checks keep the recorded genesis
-   file, and every genesis holder the copy drops must hold no record any more. Publish the
-   change as a governance manifest (`appendGovernanceManifest`).
-
-**Rehearse this once on Sepolia** with the throwaway Safes, end to end, before mainnet.
 
 ## Environment reference
 
@@ -1043,6 +929,7 @@ Unset and empty are the same. Numbers are checked against their type (`SafeCast`
 | `VRF_CALLBACK_GAS_LIMIT`, `VRF_CONFIRMATIONS`, `VRF_NATIVE_PAYMENT`, `VRF_RETRY_DELAY` | Defaults in step 7 | Optional |
 | `VRF_COORDINATOR_CODEHASH` | Unset | Optional off mainnet; must match the coordinator's code. On mainnet the canonical coordinator and its code hash are pinned |
 | `NO_VRF` | `0` | `1` declines the entropy module explicitly |
+| `ACCEPT_NETWORK` | `0` | `1` also broadcasts `acceptNetwork()` from the genesis file's network address, for a network account the operator holds |
 | `DEPLOYMENT` | (Verify) | The record to verify |
 | `GOVERNANCE_CONFIG` | (Verify) unset: the genesis file | Epoch mode: a copy of the genesis file with the current holders, for readback after a governance change |
 | `GOVERNANCE_MANIFEST_PATH` | (Verify) unset | Epoch mode: the epoch's manifest file; it must be recorded on chain and name the `GOVERNANCE_CONFIG` file's SHA-256 |

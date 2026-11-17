@@ -8,14 +8,24 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 import { Roles } from "../governance/Roles.sol";
 import { ICurationSignerVerifier, ICurationVerifier } from "../interfaces/ICurationVerifier.sol";
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
+import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
+
+/// @dev The grant counter the 6529 Works manager keeps (`WorksAccessManager.grantCount`).
+interface IGrantCount {
+    /// @notice How many grants made `account` a member of `roleId`.
+    /// @param roleId The role.
+    /// @param account The account.
+    /// @return The grant count.
+    function grantCount(uint64 roleId, address account) external view returns (uint32);
+}
 
 /// @title Eip712CurationVerifier
 /// @notice The v1 curation verifier: a `Typehashes.PACKAGE_APPROVAL` attestation by an active
 ///         curation signer (ADR 0001 sections 3 and 13).
 /// @dev Signers are the AccessManager's `Roles.CURATION_SIGNER` members with no execution delay,
-///      so the 30-day grant delay governs who becomes a signer. The deploy configuration grants
-///      the role to at least two keys, so the guardian can cut one off with `disableSigner` and
+///      so the role grant governs who becomes a signer. The deploy configuration may grant
+///      the role to two keys, so the network can cut one off with `disableSigner` and
 ///      curation continues on the other. Replay needs no tracking here: the registry stores each
 ///      package root once. The approval digest binds this contract and the chain ID, so an
 ///      attestation is valid for one verifier deployment only.
@@ -28,7 +38,7 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      start, because that epoch's salt comes from the re-enable's block. The signer re-signs
 ///      what it still approves. Approvals still never expire with time (ADR 0001 section 3).
 ///
-///      Stopping a signer. `disableSigner` (GUARDIAN, immediate) is the way to stop a signer,
+///      Stopping a signer. `disableSigner` (the network, immediate) is the way to stop a signer,
 ///      and only it, or revoking the role and granting it again, ends an epoch. An ADMIN change
 ///      of the signer's execution delay makes the signer inactive while the delay is nonzero,
 ///      but keeps its epoch: approvals made before or during that change count again once the
@@ -70,7 +80,7 @@ contract Eip712CurationVerifier is ICurationSignerVerifier, AccessManaged, EIP71
     }
 
     /// @inheritdoc ICurationSignerVerifier
-    /// @dev Governed: map to GUARDIAN with no delay. Any address may be disabled in advance.
+    /// @dev A network action with no delay. Any address may be disabled in advance.
     ///      Ends the signer's epoch, so no approval it signed so far counts again.
     function disableSigner(address signer) external restricted {
         SignerState storage s = _signers[signer];
@@ -81,7 +91,7 @@ contract Eip712CurationVerifier is ICurationSignerVerifier, AccessManaged, EIP71
     }
 
     /// @inheritdoc ICurationSignerVerifier
-    /// @dev Governed: map to SUCCESSOR_SETTER (30 days). The signer starts a new epoch, salted
+    /// @dev A network action (7-day class). The signer starts a new epoch, salted
     ///      from this block, so nothing signed while it was disabled counts.
     function enableSigner(address signer) external restricted {
         SignerState storage s = _signers[signer];
@@ -113,14 +123,21 @@ contract Eip712CurationVerifier is ICurationSignerVerifier, AccessManaged, EIP71
     }
 
     /// @inheritdoc ICurationSignerVerifier
-    /// @dev `since << 128 | salt << 64 | changes`: `since` is when the signer's CURATION_SIGNER
-    ///      grant takes or took effect (zero without a grant); a revocation deletes it and a new
-    ///      grant sets a later one. `changes` counts `disableSigner` and `enableSigner` calls, and
-    ///      `salt` is drawn at the latest of them.
+    /// @dev `grants << 176 | since << 128 | salt << 64 | changes`: `since` is when the signer's
+    ///      CURATION_SIGNER grant takes or took effect (zero without a grant), and `grants` the
+    ///      manager's count of grants that made it a member (`grantCount`), so a revocation and a
+    ///      new grant change the epoch even within one second. A manager without the counter
+    ///      answers zero (a shortfall reverts, `BoundedCall`). `changes` counts `disableSigner`
+    ///      and `enableSigner` calls, and `salt` is drawn at the latest of them.
     function signerEpoch(address signer) public view returns (uint256) {
-        (uint48 since,,,) = IAccessManager(authority()).getAccess(Roles.CURATION_SIGNER, signer);
+        address manager = authority();
+        (uint48 since,,,) = IAccessManager(manager).getAccess(Roles.CURATION_SIGNER, signer);
+        (bool ok, bytes32 word) = BoundedCall.tryReadWordAll(
+            manager, abi.encodeCall(IGrantCount.grantCount, (Roles.CURATION_SIGNER, signer))
+        );
+        uint256 grants = ok ? uint256(uint32(uint256(word))) : 0;
         SignerState storage s = _signers[signer];
-        return uint256(since) << 128 | uint256(s.salt) << 64 | s.changes;
+        return grants << 176 | uint256(since) << 128 | uint256(s.salt) << 64 | s.changes;
     }
 
     /// @notice The EIP-712 digest a curation signer signs to approve a package root, at its

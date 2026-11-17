@@ -45,7 +45,7 @@ import { StatementKinds } from "../interfaces/types/StatementKinds.sol";
 ///      resolver's code, whatever governs the resolver's answers, {setArtistResolver}, and the
 ///      AccessManager that can call it or replace this contract's authority. The code-hash pin
 ///      binds bytecode, not behaviour; it is checked again at every ARTIST authorization. So
-///      {setArtistResolver} must map to the 30-day class, and every ARTIST entry records the
+///      {setArtistResolver} must map to the 7-day class, and every ARTIST entry records the
 ///      resolver that vouched for it, in its hash and its event, so a swap can never pass
 ///      unnoticed. OWNER authority is only as strong as the token contract.
 ///      No statement is ever attributed to the AccessManager, with one exception: a governance
@@ -147,7 +147,7 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     /// @dev The one path that records `signer = authority()` (with role PLATFORM) and the only one
     ///      that may write GOVERNANCE_MANIFEST. The subject is `(authority, 0)`, so a governance
     ///      chain lives under the manager's address. The deploy configuration must map this
-    ///      selector to the 30-day class and schedule each call through the AccessManager with
+    ///      selector to the 7-day class and schedule each call through the AccessManager with
     ///      the epoch's operations; the log cannot enforce the delay, which belongs to the
     ///      mapping, and a zero-delay mapping would let its role holder write at once.
     function appendGovernanceManifest(Statement calldata statement)
@@ -194,7 +194,7 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
 
     /// @notice Replaces the artist resolver (compare-and-set, code-hash pinned).
     /// @dev Governed. It decides who may speak as an artist, so the deploy configuration must
-    ///      map it to the 30-day verifier class (ADR 0001 section 13) and no faster. Zero disables
+    ///      map it to the 7-day verifier class (ADR 0001 section 13) and no faster. Zero disables
     ///      ARTIST statements. Non-payable, as every governed function is.
     /// @param expected The resolver the proposer saw; a stale proposal reverts.
     /// @param next The new resolver, or zero.

@@ -6,11 +6,15 @@ import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Splits } from "../economics/Splits.sol";
+import { IAccounts } from "../interfaces/IAccounts.sol";
+import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
 import { IContentStore } from "../interfaces/IContentStore.sol";
 import { IEnglishAuction } from "../interfaces/IEnglishAuction.sol";
+import { IEntropyModule } from "../interfaces/IEntropyModule.sol";
 import { IFederatedEditions } from "../interfaces/IFederatedEditions.sol";
 import { IFederatedStream } from "../interfaces/IFederatedStream.sol";
 import { IFederatedToken } from "../interfaces/IFederatedToken.sol";
+import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
 import { IRenderer } from "../interfaces/IRenderer.sol";
 import { IStreamViews } from "../interfaces/IStreamViews.sol";
@@ -29,7 +33,8 @@ import { FederatedMembership } from "./FederatedMembership.sol";
 /// @title FederatedStream
 /// @notice Federated Stream template: an artist's own ERC-721 of 1/1s, uncurated, listed in the
 ///         network's directory and sold through the network's shared adapters at the network's
-///         locked 10% (ADR 0008; FED-10 to FED-30 in `docs/spec/federation.md`).
+///         share, 10% at deployment and only ever lowered (ADR 0008; FED-10 to FED-30 in
+///         `docs/spec/federation.md`).
 /// @dev Deployed as a full copy per artist, never behind a proxy or a clone. A work is minted
 ///      only into the custody of the adapter that starts its sale; unsold, the token returns to
 ///      this contract's own custody and the work can be offered again, so a work leaves this
@@ -51,10 +56,10 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
     /// @dev Work flags.
     uint8 private constant FINALIZED = 1;
     uint8 private constant ONCHAIN = 2;
-    uint8 private constant FEE_BEARING = 4;
     /// @dev Item kinds and seed policies this template mints (`ItemKind`, `SeedPolicy`).
     uint8 private constant EDITION_MASTER = 1;
     uint8 private constant SEED_ARTIST = 1;
+    uint8 private constant SEED_VRF = 2;
     /// @dev `_items` word: bit 0 approved, bits 8 to 31 the royalty rate, from bit 32 the work.
     uint256 private constant APPROVED = 1;
     /// @dev The one collection: this contract, named by the token name.
@@ -99,26 +104,25 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
         string name;
     }
 
-    /// @dev A token: its minting adapter, work, sale state and whether its sale terms carry the
-    ///      network's fee (minted before the exit). Packed from the least significant bit as 6529
-    ///      Stream's token word is up to the serial (`StreamLayout.tokenSlot`): the adapter in the
-    ///      seller's 160 bits, the work ID in the serial's 32.
+    /// @dev A token: its minting adapter, work and sale state. Packed from the least significant
+    ///      bit as 6529 Stream's token word is up to the serial (`StreamLayout.tokenSlot`): the
+    ///      adapter in the seller's 160 bits, the work ID in the serial's 32.
     struct Token {
         address adapter;
         uint32 workId;
         uint8 state;
-        bool fee;
     }
 
     address private _contentStore;
     address private _defaultRenderer;
     bytes32 private _defaultRendererCodeHash;
+    /// @dev Slot 16, before the renderer's two slots.
+    uint32 private _workCount;
+    uint32 private _tokenCount;
     /// @dev Slot 17 (`StreamLayout.COLLECTIONS_SLOT`): the one collection.
     mapping(uint256 collectionId => CollectionEntry) private _collections;
     /// @dev Slot 18 (`StreamLayout.TOKENS_SLOT`): the token words.
     mapping(uint256 tokenId => Token) private _tokens;
-    uint32 private _workCount;
-    uint32 private _tokenCount;
     mapping(bytes32 itemHash => uint256) private _items;
     mapping(uint256 workId => Work) private _works;
     /// @dev A sold token's currency (low 160 bits) and price (high 96, saturated).
@@ -164,12 +168,14 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
 
     /// @inheritdoc IMintTarget
     /// @dev An admitted adapter mints into its own custody (`to == msg.sender`, `id` 0, `amount`
-    ///      1) with `data` `abi.encode(FederatedMint(item, media))` of an approved item, sold in
-    ///      ETH. The first mint of an item creates its work (`WorkOpened`): every file must be
-    ///      registered in the content store with the declared SHA-256, and the seller vault of
-    ///      the item's payees (and, while listed, the royalty vault) is deployed now, so no sale
-    ///      ever pays an undeployed vault. A later approved mint of the same item restarts its
-    ///      unsold work: the token in this contract's custody is burned and the next ID minted.
+    ///      1) with `data` `abi.encode(FederatedMint(item, media, consents))` of an approved item,
+    ///      sold in ETH. The first mint of an item creates its work (`WorkOpened`): every file
+    ///      must be registered in the content store with the declared SHA-256, every party after
+    ///      the first must consent, and the seller vault of the item's payees and the royalty
+    ///      vault at the share in force are deployed now, so no sale ever pays an undeployed
+    ///      vault. A later approved mint of the same item restarts its unsold work: the token in
+    ///      this contract's custody is burned and the next ID minted. The terms returned carry
+    ///      the share in force; the federated adapters lock theirs from the registry entry.
     function mint(address to, uint256 id, uint256 amount, bytes calldata data)
         external
         returns (uint256 tokenId, PrimaryTerms memory terms)
@@ -184,10 +190,17 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
             revert InvalidMintRequest();
         }
         uint256 workId = approval >> 32;
+        (address feeRecipient, uint32 feeShare) = _feeTerms();
         if (workId == 0) {
             // Safe: the rate was bounded by `approveItem`.
             // forge-lint: disable-next-line(unsafe-typecast)
-            workId = _open(item, m.media, itemHash, uint24(approval >> 8));
+            workId = _open(
+                item,
+                m,
+                itemHash,
+                uint24(approval >> 8),
+                uint160(feeRecipient) | uint256(feeShare) << 160
+            );
         } else {
             _restart(workId);
         }
@@ -197,9 +210,8 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
         // Safe: token IDs and work IDs are 32-bit counters.
         // forge-lint: disable-next-line(unsafe-typecast)
         w.token = uint32(tokenId);
-        (address feeRecipient, uint32 feeShare) = _feeTerms();
         // forge-lint: disable-next-line(unsafe-typecast)
-        _tokens[tokenId] = Token(msg.sender, uint32(workId), IN_SALE, feeShare != 0);
+        _tokens[tokenId] = Token(msg.sender, uint32(workId), IN_SALE);
         _mint(to, tokenId);
         emit TokenMinted(tokenId, workId, msg.sender, feeShare);
         terms = PrimaryTerms(
@@ -218,7 +230,8 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
     /// @dev The minting adapter only, once, while it holds the token: SOLD records the sale;
     ///      UNBID and FROZEN_OUT move the token into this contract's own custody, with no
     ///      receiver call, and return this contract as `holder`. No external call, no identity
-    ///      read: the terms returned were fixed at mint.
+    ///      read: it returns the seller and no fee terms, since the federated adapters pay the
+    ///      fee they locked from the registry entry when the sale started.
     function settlePrimary(
         uint256 tokenId,
         PrimaryOutcome outcome,
@@ -246,13 +259,12 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
         }
         emit PrimarySaleSettled(tokenId, outcome, buyer, currency, price);
         s.seller = _works[t.workId].seller;
-        if (t.fee) (s.feeRecipient, s.feeShare) = (_feeRecipient, _feeShare);
     }
 
     /// @inheritdoc IMintTarget
-    /// @dev For a minted token: the seller, the fee terms its sale carries and this contract as
+    /// @dev For a minted token: the seller, the fee terms in force now and this contract as
     ///      creator (an unsold token comes back here, never to a person). The sale kind is not
-    ///      recorded (zero). Storage reads only.
+    ///      recorded (zero).
     function primaryTerms(uint256 id, bytes calldata)
         external
         view
@@ -261,7 +273,7 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
         Token storage t = _tokens[id];
         if (t.adapter == address(0)) revert UnknownWork(id);
         p.seller = _works[t.workId].seller;
-        if (t.fee) (p.feeRecipient, p.feeShare) = (_feeRecipient, _feeShare);
+        (p.feeRecipient, p.feeShare) = _feeTerms();
         p.creator = address(this);
     }
 
@@ -434,16 +446,16 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
     /// @param salePrice The sale price.
     /// @return receiver The royalty receiver.
     /// @return amount The royalty.
-    /// @dev Works minted while listed pay their royalties to the 90/10 vault of the seller and
-    ///      the locked fee recipient (`Splits.royaltyPayees`), deployed at mint; later works to
-    ///      the seller vault. Exact `floor(price * rate / 100,000)` for any price.
+    /// @dev Royalties go to the vault of the seller and the fee recipient at the share in force
+    ///      (`Splits.royaltyPayees`; the seller vault itself at a zero share). Exact
+    ///      `floor(price * rate / 100,000)` for any price.
     function royaltyInfo(uint256 tokenId, uint256 salePrice)
         external
         view
         returns (address receiver, uint256 amount)
     {
         (, Work storage w) = _work(tokenId);
-        receiver = _receiver(w);
+        receiver = _royaltyReceiver(w.seller);
         amount = Splits.entitlement(salePrice, w.royaltyRate);
     }
 
@@ -466,7 +478,7 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
             w.kind,
             w.seedPolicy,
             w.seller,
-            _receiver(w),
+            _royaltyReceiver(w.seller),
             w.royaltyRate
         );
     }
@@ -556,7 +568,8 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
         return w.license;
     }
 
-    /// @notice A work's seed policy and seed (`IWorkRecords.seedOf`): none or the artist's.
+    /// @notice A work's seed policy and seed (`IWorkRecords.seedOf`): none, the artist's, or the
+    ///         VRF seed delivered for this contract and the work's content, stored at mint.
     /// @param tokenId A live token.
     /// @return The policy.
     /// @return The seed, zero under NONE.
@@ -608,29 +621,30 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
     // ------------------------------------------------------------------ internal
 
     /// @dev Creates the work of a newly minted item: checks the media against the item and the
-    ///      content store, deploys the payout vaults and writes the record. The item may name no
-    ///      one but this contract's artist: every party's account and every artist-resolved
-    ///      payee must be the artist (its ID's account and its ID), since no other party consents
-    ///      on chain; fixed payees are accounts the artist pays. The license ID follows the mint
-    ///      rule (`SpdxId`), so the renderer can always show it. An EDITION_MASTER needs the
-    ///      linked editions contract listed ACTIVE while this contract has not left, so a master
-    ///      sold at the network's fee always has editions that carry it.
+    ///      content store and the parties' consents (`_checkParties`), deploys the payout vaults
+    ///      and writes the record. The license ID follows the mint rule (`SpdxId`), so the
+    ///      renderer can always show it. An EDITION_MASTER needs the linked editions contract
+    ///      listed ACTIVE, so a master always has editions that carry the network's share. A VRF
+    ///      item needs its seed delivered (`_vrfSeed`).
     function _open(
         PackageItem memory item,
-        MediaFile[] memory media,
+        FederatedMint memory m,
         bytes32 itemHash,
-        uint24 royaltyRate
+        uint24 royaltyRate,
+        uint256 fee
     ) private returns (uint256 workId) {
+        MediaFile[] memory media = m.media;
         uint256 count = media.length;
         if (
             count == 0 || count > Limits.MAX_MEDIA_FILES || item.contentHash == 0
                 || media[0].sha256Hash != item.contentHash
                 || WorksHashing.mediaHash(media) != item.mediaHash || item.kind > EDITION_MASTER
-                || item.seedPolicy > SEED_ARTIST
+                || item.seedPolicy > SEED_VRF
                 || (item.kind == EDITION_MASTER
-                    && (_partner == address(0) || !(_left() || _listedActive(_partner))))
-                || !SpdxId.isValid(item.license.spdxId) || !_namesOnlyTheArtist(item)
+                    && (_partner == address(0) || !_listedActive(_partner)))
+                || !SpdxId.isValid(item.license.spdxId)
         ) revert InvalidMintRequest();
+        _checkParties(item, itemHash, m.consents);
         workId = ++_workCount;
         Work storage w = _works[workId];
         uint256 files = count << 248;
@@ -650,36 +664,34 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
         _requireLicenseText(item.license.textFileId, false);
         (w.itemHash, w.recordFileId, w.license) = (itemHash, item.recordFileId, item.license);
         if (item.seedPolicy == SEED_ARTIST) w.seed = item.seed;
-        bool fee = _openTerms(w, item, royaltyRate);
-        emit WorkOpened(workId, itemHash, w.seller, royaltyRate, fee, item, media);
+        if (item.seedPolicy == SEED_VRF) w.seed = _vrfSeed(item.contentHash);
+        _openTerms(w, item, royaltyRate, fee);
+        emit WorkOpened(workId, itemHash, w.seller, royaltyRate, uint32(fee >> 160), item, media);
     }
 
-    /// @dev Writes a new work's first word: the seller vault of the item's payees (deployed now),
-    ///      and, while listed, the deployed royalty vault's flag; returns whether it bears fees.
-    function _openTerms(Work storage w, PackageItem memory item, uint24 royaltyRate)
+    /// @dev Writes a new work's first word: the seller vault of the item's payees and the
+    ///      royalty vault at `fee` (the recipient in the low 160 bits, the share in force above),
+    ///      both deployed now.
+    function _openTerms(Work storage w, PackageItem memory item, uint24 royaltyRate, uint256 fee)
         private
-        returns (bool fee)
     {
         address seller = _vault(item.payees);
-        (address feeRecipient, uint32 feeShare) = _feeTerms();
-        fee = feeShare != 0;
-        if (fee) _vault(Splits.royaltyPayees(seller, feeRecipient, feeShare));
-        w.seller = seller;
-        w.royaltyRate = royaltyRate;
-        (w.kind, w.seedPolicy, w.flags) = (item.kind, item.seedPolicy, fee ? FEE_BEARING : 0);
+        uint32 share = uint32(fee >> 160);
+        if (share != 0) _vault(Splits.royaltyPayees(seller, address(uint160(fee)), share));
+        (w.seller, w.royaltyRate, w.kind, w.seedPolicy) =
+        (seller, royaltyRate, item.kind, item.seedPolicy);
     }
 
     /// @dev Burns a work's unsold token held in this contract's custody so its next one can be
     ///      minted; an edition master only while no edition sale has bound its token and, as at
-    ///      its first mint, while its editions are listed ACTIVE or after this contract left.
+    ///      its first mint, while its editions are listed ACTIVE.
     function _restart(uint256 workId) private {
         Work storage w = _works[workId];
         uint256 old = w.token;
         if (
             old == 0 || _ownerOf(old) != address(this) || _tokens[old].state < UNBID
                 || (w.kind == EDITION_MASTER
-                    && (IFederatedEditions(_partner).isBound(old)
-                        || !(_left() || _listedActive(_partner))))
+                    && (IFederatedEditions(_partner).isBound(old) || !_listedActive(_partner)))
         ) revert WorkNotRestartable(workId);
         _burn(old);
     }
@@ -698,11 +710,6 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
         if (w.flags & FINALIZED != 0) revert WorkFinalized(workId);
     }
 
-    /// @dev The royalty receiver of a work.
-    function _receiver(Work storage w) private view returns (address) {
-        return w.flags & FEE_BEARING != 0 ? _royaltyVault(w.seller) : w.seller;
-    }
-
     /// @dev A work's media list, with each file's SHA-256 from the content store.
     function _mediaOf(Work storage w) private view returns (MediaFile[] memory media) {
         uint256 files = w.files;
@@ -717,19 +724,50 @@ contract FederatedStream is ERC721, FederatedMembership, IFederatedStream {
         }
     }
 
-    /// @dev Whether every party of `item` is the artist's account and every artist-resolved payee
-    ///      the artist's ID.
-    function _namesOnlyTheArtist(PackageItem memory item) private view returns (bool) {
-        uint256 id = _artistId;
+    /// @dev Reverts (`InvalidMintRequest`) unless the first party is this contract's artist (its
+    ///      ID as an address), there are at most `Limits.MAX_PARTIES` parties and one consent per
+    ///      later party. Each later party's consent to `itemHash` must then be good for this
+    ///      contract (`IAccounts.requireConsent` reverts otherwise): signed by a wallet of that
+    ///      party's account, so consent is unanimous and counted by account. Every
+    ///      artist-resolved payee must be a party's ID with a payout address now; fixed payees
+    ///      are accounts the parties agreed to pay.
+    function _checkParties(PackageItem memory item, bytes32 itemHash, bytes[] memory consents)
+        private
+        view
+    {
         Party[] memory parties = item.parties;
-        for (uint256 i; i < parties.length; ++i) {
-            if (uint160(parties[i].account) != id) return false;
+        uint256 n = parties.length;
+        if (
+            n == 0 || n > Limits.MAX_PARTIES || uint160(parties[0].account) != _artistId
+                || consents.length != n - 1
+        ) revert InvalidMintRequest();
+        address registry = _artistRegistry;
+        for (uint256 i = 1; i < n; ++i) {
+            IAccounts(registry)
+                .requireConsent(uint160(parties[i].account), itemHash, consents[i - 1]);
         }
         for (uint256 i; i < item.payees.length; ++i) {
             uint256 payee = item.payees[i].artistId;
-            if (payee != 0 && payee != id) return false;
+            if (payee == 0) continue;
+            uint256 j;
+            while (j < n && uint160(parties[j].account) != payee) {
+                ++j;
+            }
+            if (j == n || IArtistRegistry(registry).payoutAddress(payee) == address(0)) {
+                revert InvalidMintRequest();
+            }
         }
-        return true;
+    }
+
+    /// @dev The VRF seed delivered for this contract and `contentHash` by the entropy module the
+    ///      current federation registry names (`IEntropyModule.federatedSeedOf`); reverts
+    ///      (`InvalidMintRequest`) until it is delivered.
+    function _vrfSeed(bytes32 contentHash) private view returns (bytes32 seed) {
+        address module = IFederationRegistry(IArtistRegistry(_artistRegistry).federationRegistry())
+            .entropyModule();
+        bool delivered;
+        (delivered, seed) = IEntropyModule(module).federatedSeedOf(address(this), contentHash);
+        if (!delivered) revert InvalidMintRequest();
     }
 
     /// @dev Whether `uri` is a locator the renderer can always serve: at most

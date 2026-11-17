@@ -78,8 +78,8 @@ struct SaleTerms {
 ///      `currency` and `params` are that kind's, opaque to the token and the package registry,
 ///      which check only a nonzero kind and a bounded `params` length (`EditionRules`); a priced
 ///      method carries its price in `params`, and the adapter validates both when it opens a
-///      sale. The edition auction takes `CURRENCY_ETH`, and `params` empty or exactly
-///      `abi.encode(uint256 closeOffset)` (EA-17). For an ORIGINAL item
+///      sale. The edition auction takes `CURRENCY_ETH` and empty `params` (its close is a fixed
+///      15 minutes after the 1/1, R20). For an ORIGINAL item
 ///      every field is zero or empty.
 struct EditionTerms {
     uint32 maxCount;

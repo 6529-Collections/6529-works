@@ -75,7 +75,7 @@ interface ISaleAdapter is IERC165 {
 
     /// @notice `amount` was credited to `account` and is claimable: an outbid refund, a
     ///         withdrawn bid, or an ETH overpayment; for the auction also the high bid refunded by
-    ///         a dispute cancel or by a sale ending unsold (a currency freeze past its 60 days, or
+    ///         a dispute cancel or by a sale ending unsold (a currency freeze past its 14 days, or
     ///         a delisted federated contract), and an ERC-20 settlement payout that failed in its
     ///         own frame (MONEY-1), which `IEnglishAuction.claimFor` pays out.
     /// @param account The account credited: the bidder or buyer, or (MONEY-1) the seller or fee
@@ -124,9 +124,9 @@ interface ISaleAdapter is IERC165 {
     error SalePaused();
     /// @notice `unpause` was called while the adapter is not paused.
     error NotPaused();
-    /// @notice An unpause (or an auction's `resume`) before `allowedAt`, which is 48 hours
-    ///         (`Roles.STANDARD`) after the pause it would end.
-    error UnpauseTooEarly(uint256 allowedAt);
+    /// @notice A credit may be sent to the network's fee recipient only from `expiresAt`, 180
+    ///         days after it went from zero (R12).
+    error CreditNotExpired(address account, uint256 expiresAt);
     /// @notice The address cannot receive the token or the credit (for `claim`, zero).
     error InvalidRecipient(address recipient);
     /// @notice An ETH claim could not be delivered to `to`; the credit is kept.
@@ -138,9 +138,7 @@ interface ISaleAdapter is IERC165 {
     ///         above the denominator, federated code that differs from its registry entry, or a
     ///         mint that returned another token ID. The auction also: a token ID of 2^32 or more,
     ///         no creator (a pending recovery override), a nonzero price or sale parameters, the
-    ///         token not in its custody after the mint, or, for a federated token, an escrow or
-    ///         zero network fee recipient for a nonzero registry fee. Other adapters add
-    ///         their own cases.
+    ///         token not in its custody after the mint. Other adapters add their own cases.
     error InvalidSaleTerms(address token, uint256 id);
 
     /// @notice This adapter's `SaleKind` label: a token mints only for an admitted adapter whose
@@ -153,9 +151,7 @@ interface ISaleAdapter is IERC165 {
     ///         Bids on live auctions, settlements, claims and closes continue. PAUSER role
     ///         (immediate).
     function pause() external;
-    /// @notice Unpauses the adapter. UNPAUSER role. Refused until 48 hours (`Roles.STANDARD`)
-    ///         after the pause, so the guardians always have the standard delay to cancel an
-    ///         unpause, even one scheduled before the pause.
+    /// @notice Unpauses the adapter. The network's role map decides who may; no wait.
     function unpause() external;
     /// @notice Whether the adapter is paused.
     /// @return True from `pause` until `unpause`.

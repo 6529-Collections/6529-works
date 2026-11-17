@@ -83,7 +83,7 @@ library UniformClearing {
     /// @dev On the domain every price of a book of at most {MAX_STEPS} steps is strictly above
     ///      the one below it (exact, with no rounding, when `basePrice` is a multiple of 100),
     ///      and {clear} cannot overflow. Every ladder `StepLadder.isValid` accepts (a power of
-    ///      ten from 10**12 to 10**17 wei) lies inside it, so a settlement on terms an auction
+    ///      ten from 10**12 to 10**28 wei, the 96-bit bound) lies inside it, so a settlement on terms an auction
     ///      locked cannot revert. The domain is wider than governance's on purpose: it is what
     ///      the arithmetic supports, and it does not move if governance's bounds do.
     /// @param basePrice The price of step 0 in wei.

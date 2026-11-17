@@ -37,6 +37,11 @@ interface ISplitFactory {
     /// @return The artist payout resolver (the artist registry).
     function resolver() external view returns (IArtistPayoutResolver);
 
+    /// @notice The network fee vault: the payee every release also pays when it is in the wallet,
+    ///         and where unclaimed shares and unclaimed escrow credits go.
+    /// @return The network fee vault, fixed at deployment.
+    function network() external view returns (address);
+
     /// @notice The keccak256 of the wallets' init code, the same for every wallet.
     /// @return The init code hash used in every wallet's CREATE2 address.
     function walletInitCodeHash() external view returns (bytes32);
