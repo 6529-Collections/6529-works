@@ -280,7 +280,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     ///      once 6529 Stream reports the primary sale settled (`NotWorkArtist` before): the first
     ///      call records a notice and returns (`FinalizeNoticeRecorded`); `FINALIZE_NOTICE` (14
     ///      days) after it, a call finalizes the record as it then stands (`FinalizeNotDue`
-    ///      before).
+    ///      before): that call's `expectedStateHash` is not checked, so no change to the record
+    ///      can make it fail; it finalizes only the stored current state.
     function finalize(uint256 tokenId, bytes32 expectedStateHash) external {
         RecordData storage r = _open(tokenId);
         uint8 flags = r.flags;
@@ -298,8 +299,9 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
             if (block.timestamp < notice + FINALIZE_NOTICE) {
                 revert FinalizeNotDue(tokenId, notice + FINALIZE_NOTICE);
             }
+        } else {
+            _checkState(tokenId, expectedStateHash);
         }
-        _checkState(tokenId, expectedStateHash);
         // The default renderer, its code checked against Stream's pin (not finalized: no pin).
         address renderer = IStream(stream).rendererOf(tokenId);
         _checkRecordFile(r.recordFileId);

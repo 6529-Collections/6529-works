@@ -1012,27 +1012,30 @@ contract WorkRecordsTest is RecordsFixture {
         assertTrue(records.record(tokenId).finalized);
     }
 
-    /// @dev C9: a finalize after the notice still binds the state hash and the structural
-    ///      checks: a stale state hash is refused and the record can still change before.
-    function test_finalize_afterANoticeTheArtistMayStillEditFirst() public {
+    /// @dev C9: the artist may still edit before a non-artist's due finalize, and that finalize
+    ///      then pins the record as it stands, whatever state hash it passes: a change made just
+    ///      before it cannot make it fail. The artist's own finalize still checks the hash.
+    ///      Fails without the change: the stale hash reverts `StateHashMismatch`.
+    function test_finalize_afterANoticeFinalizesTheRecordAsItStands() public {
         (uint256 tokenId,) = _work(1);
         auction.settle(IStream(address(stream)), tokenId);
         bytes32 state = records.workStateHash(tokenId);
         vm.prank(outsider);
         records.finalize(tokenId, state);
+        vm.warp(block.timestamp + 14 days);
         bytes32 nextRecord = _record(77);
         vm.prank(artist);
         records.setRecord(tokenId, nextRecord, state);
         bytes32 moved = records.workStateHash(tokenId);
-        vm.warp(block.timestamp + 14 days);
-        vm.prank(outsider);
+        vm.prank(artist);
         vm.expectRevert(
             abi.encodeWithSelector(IWorkRecords.StateHashMismatch.selector, state, moved)
         );
         records.finalize(tokenId, state);
         vm.prank(outsider);
-        records.finalize(tokenId, moved);
-        assertEq(records.record(tokenId).recordFileId, nextRecord);
+        records.finalize(tokenId, state);
+        assertTrue(records.record(tokenId).finalized);
+        assertEq(records.record(tokenId).recordFileId, nextRecord, "the record as it stood");
     }
 
     function _relicense(uint256 tokenId, PackageItem memory item, License memory next) internal {
