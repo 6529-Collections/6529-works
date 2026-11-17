@@ -28,9 +28,9 @@ python tools/check_rules.py --uncovered               # every rule names a test 
 python tools/make_vectors.py --check                  # real-data vectors and event topics
 ```
 
-The whole `forge test` ran 3,084 tests (44 fork tests skipped without an RPC URL) in about 11
-minutes of wall time and 3 CPU hours on a 48-thread Windows machine shared with other jobs, on
-17 November 2026. Longer campaigns, as the nightly workflow runs them (10,000 fuzz runs; 2,000
+The whole `forge test` ran 3,084 tests (3,040 passed, the 44 fork tests skipped without an RPC
+URL) in 11 to 16 minutes of wall time (3 to 6 CPU hours) in two runs on a 48-thread Windows
+machine shared with other jobs, on 17 November 2026. Longer campaigns, as the nightly workflow runs them (10,000 fuzz runs; 2,000
 invariant runs of 256 calls):
 
 ```bash
