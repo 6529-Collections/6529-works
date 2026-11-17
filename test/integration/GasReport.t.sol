@@ -89,6 +89,11 @@ contract IntegrationGasReport is IntegrationBase {
     uint256 internal constant FIRST_START_CEILING = 449_000;
     uint256 internal constant NEW_TERMS_CEILING = 390_000;
     uint256 internal constant PERMIT2_START_CEILING = 365_000;
+    /// @dev A start whose move a consolidated (non-root) wallet of the lead's account signed:
+    ///      the artist registry reads the consolidation source (the 6529 delegation contract,
+    ///      through the adapter) once, a path off the default. Measured 314,199,
+    ///      plus about 2%, rounded up to the thousand.
+    uint256 internal constant CONSOLIDATED_START_CEILING = 321_000;
     uint256 internal constant BID_CEILING = 75_000;
     /// @dev The mint policy's `authorize` (consent, item rules, consume, terms quote): measured
     ///      91,180; it writes no slot since Stream holds content uniqueness (AUC-44). 2% up.
@@ -247,7 +252,7 @@ contract IntegrationGasReport is IntegrationBase {
         ISplitWallet.Payee[] memory duoC = new ISplitWallet.Payee[](2);
         duoC[0] = ISplitWallet.Payee(0, makeAddr("gasCollaborator"), 20_000);
         duoC[1] = ISplitWallet.Payee(uint160(makeAddr("gasArtistC")), address(0), 80_000);
-        address[23] memory extra = [
+        address[24] memory extra = [
             artistA,
             artistB,
             makeAddr("gasArtistC"),
@@ -268,6 +273,7 @@ contract IntegrationGasReport is IntegrationBase {
             makeAddr("gasCollaborator"),
             makeAddr("permit2Payer"),
             makeAddr("relayer"),
+            makeAddr("consolidatedWallet"),
             economics.newWorkTerms(PRODUCT_STREAM, solo).seller,
             economics.newWorkTerms(PRODUCT_EDITIONS, solo).seller,
             economics.newWorkTerms(PRODUCT_STREAM, duo).seller
@@ -339,6 +345,24 @@ contract IntegrationGasReport is IntegrationBase {
         _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 3K margin");
         _growthIs(r, 6, 0);
         _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
+    }
+
+    function _rowStartConsolidatedWallet() internal returns (Row memory r) {
+        _steadyState();
+        address wallet = _actor("consolidatedWallet");
+        _consolidate(artistA, wallet);
+        uint256 artistId = artists.artistIdOf(artistA);
+        bytes memory mintData =
+            _mintDataSignedBy(root, _package(root), 2, wallet, nextMoveNonce[artistId]++);
+        r = _row(
+            "start, steady state, move signed by a consolidated wallet",
+            starter,
+            address(auction),
+            abi.encodeCall(auction.start, (address(stream), mintData)),
+            0
+        );
+        _gasAtMost(r, CONSOLIDATED_START_CEILING, "regression ceiling");
+        _growthIs(r, 5, 0);
     }
 
     /// @dev A two-party work: the lead artist and a collaborator who is paid as a fixed payee.
@@ -1103,6 +1127,10 @@ contract IntegrationGasReport is IntegrationBase {
         _rowStartWithBid();
     }
 
+    function test_Gas_Start_ConsolidatedWallet() public {
+        _rowStartConsolidatedWallet();
+    }
+
     function test_Gas_Start_TwoPartyWork() public {
         _rowStartTwoParty();
     }
@@ -1238,9 +1266,10 @@ contract IntegrationGasReport is IntegrationBase {
     ///      row before any recording, then once for its growth and cold accounts, which add the
     ///      cold-account surcharge.
     function test_Gas_Table() public {
-        function() internal returns (Row memory)[33] memory rows = [
+        function() internal returns (Row memory)[34] memory rows = [
             _rowStart,
             _rowStartWithBid,
+            _rowStartConsolidatedWallet,
             _rowStartTwoParty,
             _rowStartWithBidTwoParty,
             _rowStartVrf,
@@ -1273,7 +1302,7 @@ contract IntegrationGasReport is IntegrationBase {
             _rowSignedFirst,
             _rowSignedLater
         ];
-        Row[33] memory measured;
+        Row[34] memory measured;
         for (uint256 i; i < rows.length; ++i) {
             measured[i] = _runRow(rows[i], Pass.GAS);
         }

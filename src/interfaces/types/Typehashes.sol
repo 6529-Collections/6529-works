@@ -11,7 +11,9 @@ pragma solidity ^0.8.24;
 ///         tests.
 /// @dev Each signing contract uses the EIP-712 domain `(name, DOMAIN_VERSION, chainid, itself)`.
 ///      Every artist or party signature binds a deadline and either a single-use nonce or a
-///      work's state hash. Constants only; nothing here is linked bytecode.
+///      work's state hash, except `ACCOUNT_CONSENT`: a collaborator's consent binds only the
+///      contract and what it consents to (for a federated item, the item hash, used once), and
+///      has no deadline. Constants only; nothing here is linked bytecode.
 library Typehashes {
     /// @notice The EIP-712 domain version of every v1 contract.
     string internal constant DOMAIN_VERSION = "1";
@@ -65,7 +67,8 @@ library Typehashes {
         "bytes32 profileDocHash,bytes32 evidenceHash,uint64 deadline)"
     );
     /// @notice An account consents to `what`, for the contract `subject` only (artist registry
-    ///         domain, `IAccounts.consentDigest`).
+    ///         domain, `IAccounts.consentDigest`). No deadline and no nonce: the consent holds
+    ///         until it is used, or its signing wallet leaves the account.
     bytes32 internal constant ACCOUNT_CONSENT = keccak256("Consent(address subject,bytes32 what)");
     /// @notice An account consents to an identity the federation registry creates for it
     ///         (artist registry domain, `registerFederated`).

@@ -13,9 +13,9 @@ import { EditionTerms } from "../interfaces/types/PackageTypes.sol";
 ///      Sale methods stay extensible (ADR 0005, owner decision 14): a sale kind is a label a sale
 ///      adapter claims (`ISaleAdapter.saleKind`), and its `currency` and `params` are opaque
 ///      here. The rule checks only the generic shape; the kind's adapter validates the rest when
-///      it opens a sale (the edition auction requires `SaleKind.UNIFORM_AUCTION`, ETH, and params
-///      empty or exactly `abi.encode(uint256 closeOffset)`, EA-17) and refuses terms it cannot
-///      sell. Terms naming a kind no admitted adapter serves
+///      it opens a sale (the edition auction requires `SaleKind.UNIFORM_AUCTION`, ETH, and empty
+///      params: every edition sale closes a fixed 15 minutes after its 1/1, R20) and refuses
+///      terms it cannot sell. Terms naming a kind no admitted adapter serves
 ///      are valid, so their edition waits for such an adapter (LIM-EA-8).
 library EditionRules {
     /// @notice The most bytes of `params` an edition may carry: 64, two words (ADR 0005 §12).
