@@ -22,9 +22,8 @@ import { ReplayIndexer } from "./ReplayIndexer.sol";
 ///         default renderer, the replaced dependencies and the marketplace fields.
 /// @dev Written from `docs/integrators/events-and-indexing.md` (Stream). The royalty receiver is
 ///      derived, never logged (ECO-7): the indexer computes it with the split ledger's CREATE2
-///      formula. Stream's four genesis dependencies are not logged (no `DependencySet` at
-///      construction), so they are compared only once a `DependencySet` has named them; the
-///      suite's `test_Finding_*` pins that gap.
+///      formula. Stream's constructor logs a `DependencySet` for each of its four mutable genesis
+///      dependencies, so every dependency is known from the logs from deployment on.
 contract StreamIndexer is ReplayIndexer {
     struct Token {
         bool burned;
@@ -327,8 +326,7 @@ contract StreamIndexer is ReplayIndexer {
         address[4] memory live =
             [s.packageRegistry(), s.economics(), s.entropyModule(), s.extension()];
         for (uint256 i; i < 4; ++i) {
-            address known = _deps[_kinds[i]];
-            if (known != address(0)) assertEq(live[i], known, "dependency");
+            assertEq(live[i], _deps[_kinds[i]], "dependency");
         }
         for (uint256 id = 1; id <= minted; ++id) {
             for (uint256 e; e < _eras.length; ++e) {
@@ -456,8 +454,10 @@ contract WorkRecordsIndexer is ReplayIndexer {
         } else if (sig == IWorkRecords.RecordSet.selector) {
             (r.recordFileId, stateHash) = abi.decode(log.data, (bytes32, bytes32));
         } else if (sig == IWorkRecords.WorkFinalized.selector) {
-            (r.renderer, stateHash) = abi.decode(log.data, (address, bytes32));
+            bytes32 codeHash;
+            (r.renderer, codeHash, stateHash) = abi.decode(log.data, (address, bytes32, bytes32));
             r.finalized = true;
+            if (pinnedCodeHash[r.renderer] == 0) pinnedCodeHash[r.renderer] = codeHash;
         } else if (sig == IWorkRecords.LicenseChanged.selector) {
             License memory next;
             (, next, stateHash) = abi.decode(log.data, (License, License, bytes32));

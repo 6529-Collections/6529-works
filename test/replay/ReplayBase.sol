@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
+import { Splits } from "src/economics/Splits.sol";
 import { FederationBase } from "../federated/FederationBase.sol";
 import { ContentIndexer } from "./ContentIndexer.sol";
 import { EditionsIndexer } from "./EditionsIndexer.sol";
@@ -56,6 +57,11 @@ abstract contract ReplayBase is FederationBase {
     /// @dev Applies the logs recorded since the last call, then compares every indexer. The
     ///      logs are given the current block timestamp: call it after each step whose time a
     ///      rebuilt value records (an escrow credit's clock).
+    function _deployLoweredVault(address seller, address feeRecipient, uint32 share) internal {
+        // A fee share is lowered only once the royalty vault at the lower share exists (R9).
+        splitFactory.createWallet(Splits.royaltyPayees(seller, feeRecipient, share), bytes32(0));
+    }
+
     function _sync() internal {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         for (uint256 i; i < logs.length; ++i) {

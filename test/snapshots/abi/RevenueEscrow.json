@@ -445,7 +445,7 @@
   },
   {
     "anonymous": false,
-    "id": "0xc8e2b659b1d85626596b21f7945db0a7a6af6e14418d8abc2027b3bd5e86701b",
+    "id": "0x68a926f9ac3012213c7c910c9ab35da7a4435bad8108a53996843598e6d9f8a2",
     "inputs": [
       {
         "indexed": true,
@@ -476,10 +476,16 @@
         "internalType": "uint256",
         "name": "owed",
         "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "consentUsed",
+        "type": "bool"
       }
     ],
     "name": "Recovered",
-    "signature": "Recovered(address,address,address,uint256,uint256)",
+    "signature": "Recovered(address,address,address,uint256,uint256,bool)",
     "type": "event"
   },
   {

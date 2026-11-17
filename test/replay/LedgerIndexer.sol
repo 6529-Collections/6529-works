@@ -145,11 +145,9 @@ contract LedgerIndexer is ReplayIndexer {
 /// @notice Rebuilds the revenue escrow from its own logs (ECO-27, ECO-28, ECO-40, ECO-45): every
 ///         credit per wallet and asset, `totalOwed` per asset, each credit's 180-day clock and
 ///         every recovery consent.
-/// @dev A recovery consumes the consent of an ordinary account only; for a split wallet (known
-///      from the ledger's `WalletCreated`) and for a contract governed by the network's manager,
-///      it leaves the consent as it is. The `Recovered` event does not say which case applied:
-///      the indexer treats every non-ledger wallet as an ordinary account, which holds unless a
-///      network-governed contract had given a consent (see the suite's finding note).
+/// @dev A recovery consumes the consent of an ordinary account only; for a split wallet and for
+///      the network's own credit it leaves the consent as it is. `Recovered` says which case
+///      applied (`consentUsed`), so the indexer clears a consent exactly when the log says so.
 contract EscrowIndexer is ReplayIndexer {
     LedgerIndexer public immutable ledgerIndexer;
     address public authority;
@@ -191,9 +189,10 @@ contract EscrowIndexer is ReplayIndexer {
             address replacement = _addr(log.topics[2]);
             address asset = _track(log.topics[1], log.topics[3]);
             _track(log.topics[2], log.topics[3]);
-            (uint256 amount, uint256 owed) = abi.decode(log.data, (uint256, uint256));
+            (uint256 amount, uint256 owed, bool consentUsed) =
+                abi.decode(log.data, (uint256, uint256, bool));
             _move(wallet, replacement, asset, amount, owed);
-            if (ledgerIndexer.configOf(wallet) == 0) delete _consent[wallet];
+            if (consentUsed) delete _consent[wallet];
         } else if (sig == IRevenueEscrow.Expired.selector) {
             address asset = _track(log.topics[1], log.topics[2]);
             _track(log.topics[3], log.topics[2]);

@@ -480,6 +480,19 @@
     "type": "error"
   },
   {
+    "id": "0xaedb273b",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      }
+    ],
+    "name": "WalletNotDeployed",
+    "signature": "WalletNotDeployed(address)",
+    "type": "error"
+  },
+  {
     "id": "0x5f130804",
     "inputs": [],
     "name": "WorkRecordsUnbound",
@@ -641,7 +654,7 @@
   },
   {
     "anonymous": false,
-    "id": "0x3a4f273bace47a11e8e5de24d0acbc869a740c271e97cfecf75bd80c2cb740da",
+    "id": "0x913d00d9897b4c40a3d14e8096992faad27d1236291c1af16667e8e3a20a7dc5",
     "inputs": [
       {
         "indexed": true,
@@ -654,6 +667,12 @@
         "internalType": "bytes32",
         "name": "contentHash",
         "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
       },
       {
         "components": [
@@ -685,7 +704,7 @@
       }
     ],
     "name": "EditionCreated",
-    "signature": "EditionCreated(uint256,bytes32,(uint32,address,bytes32,bytes))",
+    "signature": "EditionCreated(uint256,bytes32,uint256,(uint32,address,bytes32,bytes))",
     "type": "event"
   },
   {

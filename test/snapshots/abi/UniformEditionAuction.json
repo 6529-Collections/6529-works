@@ -160,6 +160,19 @@
     "type": "error"
   },
   {
+    "id": "0x8d6f91fb",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      }
+    ],
+    "name": "BoundedCallFailed",
+    "signature": "BoundedCallFailed(address)",
+    "type": "error"
+  },
+  {
     "id": "0x7775c359",
     "inputs": [
       {

@@ -621,6 +621,19 @@
     "type": "error"
   },
   {
+    "id": "0xaedb273b",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      }
+    ],
+    "name": "WalletNotDeployed",
+    "signature": "WalletNotDeployed(address)",
+    "type": "error"
+  },
+  {
     "id": "0x44b873b2",
     "inputs": [
       {

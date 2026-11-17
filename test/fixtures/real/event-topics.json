@@ -67,7 +67,7 @@
       "RoyaltyRateSet(uint256,uint32,uint32,bytes32)",
       "StoreAdded(uint256,address,bytes32)",
       "StoreRetired(uint256)",
-      "WorkFinalized(uint256,address,bytes32)",
+      "WorkFinalized(uint256,address,bytes32,bytes32)",
       "WorkOnChainComplete(uint256)"
     ],
     "topics": [
@@ -85,7 +85,7 @@
       "0xe8cb89229984389ed515ad4468d11354162343e1f8a6428bec4ffc6c1f6b04a5",
       "0x33a0067382509bd225121e0df109204fa1c0f3a77159dd2cfe964663410d72d7",
       "0xc7b2b3897c4390e52536d6aa48ff4740f04bd1a90ac2ba6202dee15611febfb9",
-      "0x01445583576e00c75dcf7097e261819caa20e55dc9609e8d62000ae1ea472986",
+      "0xf100e8c1f63f815e08f80d5f364ce0827966ad82edfa2987d03daa563a971fe1",
       "0x15405c6beca1812d5599c3c71668ef2f894705b2271421a61bceb70c6fcb1428"
     ]
   },
@@ -98,7 +98,7 @@
       "Bound(bytes32,address)",
       "ContractURISet(string,string)",
       "ContractURIUpdated()",
-      "EditionCreated(uint256,bytes32,(uint32,address,bytes32,bytes))",
+      "EditionCreated(uint256,bytes32,uint256,(uint32,address,bytes32,bytes))",
       "EditionFeeShareLowered(uint256,uint32,uint32)",
       "EditionMinterBound(uint256,address)",
       "EditionPrimaryMint(uint256,address,uint256,address,uint256)",
@@ -119,7 +119,7 @@
       "0xd18d9295537e6da9cdfc3a07c1de8a8d8eb30fd42853acff19f097e2969f4784",
       "0xd144c5914915e649557dfce6d3199a18bae1ec7c249c1766603a2b76ade11c06",
       "0xa5d4097edda6d87cb9329af83fb3712ef77eeb13738ffe43cc35a4ce305ad962",
-      "0x3a4f273bace47a11e8e5de24d0acbc869a740c271e97cfecf75bd80c2cb740da",
+      "0x913d00d9897b4c40a3d14e8096992faad27d1236291c1af16667e8e3a20a7dc5",
       "0xd33d609cac1c22ea4fd1b4bac2ed648ecaa972555ff8e91bc28f1407c0ada7d8",
       "0x35bb9c806dab754b3f2ba332514b28be18c8c25f824111ab5ca68be3d8fbbc93",
       "0xb55f6fc86ee3461384b52d2e7af0f915fea4f827385a1b154208870d6eaf503c",
@@ -174,7 +174,7 @@
       "ExcessSwept(address,address,uint256)",
       "Expired(address,address,address,uint256,uint256)",
       "Flushed(address,address,address,uint256)",
-      "Recovered(address,address,address,uint256,uint256)",
+      "Recovered(address,address,address,uint256,uint256,bool)",
       "RecoveryConsentSet(address,address)"
     ],
     "topics": [
@@ -183,7 +183,7 @@
       "0xb3c71476dfd272eb50cc448234b60ee937ab332f54e7eaab71159ca6eb677440",
       "0x077a06ed25a672da3d2c8553e96ab0dded8e77c8fc9e1c4b2a9b2ed86ff42d0c",
       "0xf5c342afbc0fd5497d66d2246a8208902c06a969755b7f7c415041a67d222caf",
-      "0xc8e2b659b1d85626596b21f7945db0a7a6af6e14418d8abc2027b3bd5e86701b",
+      "0x68a926f9ac3012213c7c910c9ab35da7a4435bad8108a53996843598e6d9f8a2",
       "0x4d47077de11627502b9cf0f9e550c82b6776030b1e996a5688440f97717726b7"
     ]
   },
@@ -219,7 +219,7 @@
       "FederatedContractListed(uint256,address,bytes32,uint8,address,uint32,address)",
       "FederatedContractStatus(address,uint256,uint8,uint8,bytes32)",
       "FederatedFeeShareLowered(address,uint32,uint32)",
-      "FederationDelistedSet(uint256,bool,bytes32)",
+      "FederationDelistedSet(uint256,bool,bool,bytes32)",
       "FederationRegistrySet(address,address)",
       "NonceRevoked(uint256,uint256)",
       "PackageRegistrySet(address,address)",
@@ -242,7 +242,7 @@
       "0x6b2a1b3a8725954154a06c0e100d75e409c0ff5593e919df78a8de1b952bd40b",
       "0x34ddebd723a6fae844a0667301c47c47f0b958a848e80ac6a6d9f98937629a7b",
       "0xc7648c17054c8f47113daa71098fcf516d2dd4a9396ab95c941454d3e097360b",
-      "0x25b948fdadbaa38e071c57aae7d4a2b67388abf50a6548a443d7fd2acb90e3f1",
+      "0x0fe1f870a2a94dfac17f383bdd9f7b03bb9adaa7ae996a9a7825832dcf71e87d",
       "0xb6b3a87c0596650c0cf0eb6eca374c8ddc3de178190eabdc7b67d09f2f3a431e",
       "0x7b1a3f30c1ca888cfd6defd5d5df604c39c92f54a37840d7b876254accf0d4d7",
       "0xf602f9bca87ed171d7fdb8fdcbde47a70bb58e7a2029620f431ea07ddb8edb93",

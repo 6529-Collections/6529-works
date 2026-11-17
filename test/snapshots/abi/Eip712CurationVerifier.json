@@ -55,6 +55,19 @@
     "type": "error"
   },
   {
+    "id": "0x74920c38",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      }
+    ],
+    "name": "BoundedCallMalformedReturn",
+    "signature": "BoundedCallMalformedReturn(address)",
+    "type": "error"
+  },
+  {
     "id": "0x5b20679f",
     "inputs": [
       {

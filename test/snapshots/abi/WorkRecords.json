@@ -975,7 +975,7 @@
   },
   {
     "anonymous": false,
-    "id": "0x01445583576e00c75dcf7097e261819caa20e55dc9609e8d62000ae1ea472986",
+    "id": "0xf100e8c1f63f815e08f80d5f364ce0827966ad82edfa2987d03daa563a971fe1",
     "inputs": [
       {
         "indexed": true,
@@ -992,12 +992,18 @@
       {
         "indexed": false,
         "internalType": "bytes32",
+        "name": "codeHash",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
         "name": "stateHash",
         "type": "bytes32"
       }
     ],
     "name": "WorkFinalized",
-    "signature": "WorkFinalized(uint256,address,bytes32)",
+    "signature": "WorkFinalized(uint256,address,bytes32,bytes32)",
     "type": "event"
   },
   {

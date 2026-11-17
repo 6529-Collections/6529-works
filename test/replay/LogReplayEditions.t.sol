@@ -84,6 +84,7 @@ contract LogReplayEditionsTest is ReplayBase {
         // The master re-rated with every party's consent: the edition follows (ED-7).
         records.openRecord(m0, works[0].item, works[0].media);
         _govern(hotAdmin, address(records), _rerateCall(m0, 3_000));
+        _deployLoweredVault(editions.edition(m0).seller, editions.edition(m0).feeRecipient, 1_000);
         _govern(hotAdmin, address(editions), abi.encodeCall(editions.lowerFeeShare, (m0, 1_000)));
         _govern(
             hotAdmin, address(editions), abi.encodeCall(editions.setContractURI, ("ar://editions"))
@@ -111,6 +112,10 @@ contract LogReplayEditionsTest is ReplayBase {
         adapter.buy(editions, m1, buyer, 1);
         _sync();
         _assertEveryEventReplayed("Editions", editionsIdx, _list("URI(string,uint256)"));
+        // The artist ID each edition stores comes from its master; `EditionCreated` carries it.
+        assertEq(editionsIdx.artistIdOf(m0), stream.artistOf(m0), "edition artist from logs");
+        assertEq(editionsIdx.artistIdOf(m1), stream.artistOf(m1), "edition artist from logs");
+        assertTrue(editionsIdx.artistIdOf(m0) != 0, "edition artist logged");
     }
 
     function _rerateCall(uint256 tokenId, uint32 rate) internal view returns (bytes memory) {

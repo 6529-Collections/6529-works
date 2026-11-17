@@ -72,7 +72,10 @@ contract DirectoryIndexer is ReplayIndexer {
             assertEq(uint256(log.topics[2]), l.artistId, "indexer: status artist");
             l.status = status;
         } else if (sig == IArtistRegistry.FederationDelistedSet.selector) {
-            (_delisted[uint256(log.topics[1])],) = abi.decode(log.data, (bool, bytes32));
+            uint256 artistId = uint256(log.topics[1]);
+            (bool previous, bool delisted,) = abi.decode(log.data, (bool, bool, bytes32));
+            assertEq(previous, _delisted[artistId], "indexer: previous delisting");
+            _delisted[artistId] = delisted;
         } else if (sig == IArtistRegistry.FederatedFeeShareLowered.selector) {
             Listing storage l = _listings[_addr(log.topics[1])];
             (uint32 previous, uint32 share) = abi.decode(log.data, (uint32, uint32));

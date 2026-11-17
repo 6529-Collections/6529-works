@@ -8,7 +8,7 @@ import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { WorkPowers } from "src/interfaces/IWorkPowers.sol";
 import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { EditionTerms, ItemKind, License } from "src/interfaces/types/PackageTypes.sol";
-import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
@@ -131,7 +131,9 @@ contract LogReplayStreamTest is ReplayBase {
             address(stream),
             abi.encodeCall(stream.setOwner, (marketOwner, makeAddr("nextMarketOwner")))
         );
-        uint32 share = stream.primaryTerms(t0, "").feeShare / 2;
+        PrimaryTerms memory terms = stream.primaryTerms(t0, "");
+        uint32 share = terms.feeShare / 2;
+        _deployLoweredVault(terms.seller, terms.feeRecipient, share);
         _govern(hotAdmin, address(stream), abi.encodeCall(stream.lowerFeeShare, (t0, share)));
         vm.prank(platform);
         stream.createCollection("Replay", keccak256("replay collection"));
@@ -334,24 +336,14 @@ contract LogReplayStreamTest is ReplayBase {
         recordsIdx.assertMatches();
     }
 
-    // ------------------------------------------------------------------ findings
+    // ------------------------------------------------------------------ genesis and finalize
 
-    /// Finding: Stream's constructor logs no `DependencySet` for its four genesis dependencies.
-    /// @dev Its mint policy, economics resolver, entropy module and view extension are mutable
-    ///      state (`setDependency`), but their genesis values appear in no Stream log, unlike the
-    ///      default renderer, the owner, `WorkRecords`' delivery and the artist registry's
-    ///      consolidation source, whose constructors log them. A logs-only reader learns each one
-    ///      only from the first `DependencySet` of its kind (its `previous` field), and until then
-    ///      cannot answer `economics()` or `entropyModuleOf(tokenId)` (WS-44, ADR 0007).
-    function test_Finding_StreamGenesisDependenciesAreNotLogged() public {
-        _expectFailure(
-            abi.encodeCall(this.check_GenesisDependenciesFromLogs, ()),
-            bytes4(0),
-            "Stream genesis dependencies are not in Stream's logs"
-        );
-    }
-
-    function check_GenesisDependenciesFromLogs() external view {
+    /// @notice Stream's constructor logs a `DependencySet` for each of its four mutable genesis
+    ///         dependencies (mint policy, economics resolver, entropy module, view extension), so
+    ///         a logs-only reader knows `economics()` and `entropyModuleOf(tokenId)` from
+    ///         deployment on (WS-44, ADR 0007).
+    /// @dev Was an open finding of the replay lane; the review fixes added the events.
+    function test_StreamGenesisDependenciesReplayFromStreamsLogs() public view {
         assertEq(streamIdx.dependency("ECONOMICS"), stream.economics(), "economics from logs");
         assertEq(
             streamIdx.dependency("ENTROPY_MODULE"), stream.entropyModule(), "entropy from logs"
@@ -360,15 +352,13 @@ contract LogReplayStreamTest is ReplayBase {
             streamIdx.dependency("PACKAGE_REGISTRY"), stream.packageRegistry(), "policy from logs"
         );
         assertEq(streamIdx.dependency("EXTENSION"), stream.extension(), "extension from logs");
+        assertTrue(streamIdx.dependency("ECONOMICS") != address(0), "economics logged");
     }
 
-    /// Finding: `WorkFinalized` does not carry the renderer code hash `finalize` pins.
-    /// @dev `finalize` records `_rendererCodeHashes[renderer]` (the code `pinnedRenderer` later
-    ///      checks), but `WorkFinalized(tokenId, renderer, stateHash)` has no code hash, unlike
-    ///      `RendererRepinned`. The value equals the code hash of Stream's `DefaultRendererSet`
-    ///      for that renderer, so it can be rebuilt across contracts, not from `WorkRecords`' own
-    ///      logs.
-    function test_Finding_FinalizedRendererCodeHashIsNotInWorkRecordsLogs() public {
+    /// @notice `WorkFinalized` carries the renderer code hash `finalize` pins, so `WorkRecords`'
+    ///         own logs rebuild it.
+    /// @dev Was an open finding of the replay lane; the review fixes added `codeHash`.
+    function test_FinalizedRendererCodeHashReplaysFromWorkRecordsLogs() public {
         (uint256 t0,) = _sales();
         Work memory w = _package(rootA)[0];
         records.openRecord(t0, w.item, w.media);
@@ -376,14 +366,7 @@ contract LogReplayStreamTest is ReplayBase {
         vm.prank(artist);
         records.finalize(t0, state);
         _sync();
-        _expectFailure(
-            abi.encodeCall(this.check_FinalizedCodeHashFromOwnLogs, ()),
-            bytes4(0),
-            "WorkFinalized lacks the pinned code hash"
-        );
-    }
-
-    function check_FinalizedCodeHashFromOwnLogs() external view {
         assertEq(recordsIdx.pinnedCodeHash(address(renderer)), address(renderer).codehash);
+        recordsIdx.assertMatches();
     }
 }

@@ -972,13 +972,19 @@
   },
   {
     "anonymous": false,
-    "id": "0x25b948fdadbaa38e071c57aae7d4a2b67388abf50a6548a443d7fd2acb90e3f1",
+    "id": "0x0fe1f870a2a94dfac17f383bdd9f7b03bb9adaa7ae996a9a7825832dcf71e87d",
     "inputs": [
       {
         "indexed": true,
         "internalType": "uint256",
         "name": "artistId",
         "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "previous",
+        "type": "bool"
       },
       {
         "indexed": false,
@@ -994,7 +1000,7 @@
       }
     ],
     "name": "FederationDelistedSet",
-    "signature": "FederationDelistedSet(uint256,bool,bytes32)",
+    "signature": "FederationDelistedSet(uint256,bool,bool,bytes32)",
     "type": "event"
   },
   {

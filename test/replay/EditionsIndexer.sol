@@ -32,6 +32,7 @@ contract EditionsIndexer is ReplayIndexer {
         uint32 royaltyRate;
         uint64 maxSupply;
         bool sealed_;
+        uint256 artistId;
     }
 
     struct Minter {
@@ -71,7 +72,8 @@ contract EditionsIndexer is ReplayIndexer {
             Edition storage e = _edition(id);
             e.exists = true;
             e.contentHash = log.topics[2];
-            EditionTerms memory t = abi.decode(log.data, (EditionTerms));
+            EditionTerms memory t;
+            (e.artistId, t) = abi.decode(log.data, (uint256, EditionTerms));
             if (t.saleKind == 0) t.saleKind = SaleKind.UNIFORM_AUCTION;
             e.terms = t;
             if (!e.sealed_) e.maxSupply = t.maxCount == 0 ? UNCAPPED : t.maxCount;
@@ -161,6 +163,12 @@ contract EditionsIndexer is ReplayIndexer {
             _holders.push(to);
         }
         _balances[id][to] += value;
+    }
+
+    /// @notice The artist ID an edition's `EditionCreated` carries (the master's, stored with the
+    ///         edition); Editions has no view of it, so the suite compares it with Stream's.
+    function artistIdOf(uint256 editionId) external view returns (uint256) {
+        return _editions[editionId].artistId;
     }
 
     function assertMatches() external view override {
