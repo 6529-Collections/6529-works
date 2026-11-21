@@ -37,7 +37,9 @@ forge build
 
 - Without submodules, run `git submodule update --init`. CI checks out
   `lib/openzeppelin-contracts` and `lib/forge-std` without their nested, test-only submodules.
-- `forge build` also lints production code; `[profile.default.lint]` ignores `test/**/*.sol`.
+- `forge build` also lints production code; `[profile.default.lint]` ignores `test/**/*.sol`
+  and leaves out three reviewed lints (`unsafe-typecast`, `incorrect-shift`, `block-timestamp`),
+  each with its reason; `forge lint --only-lint <lint>` still runs any of them.
 - `forge build --sizes` prints each contract's runtime and initcode size; the budget gate reads
   the same data as JSON.
 
@@ -77,9 +79,9 @@ forge test
 ## CI
 
 [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs these jobs, in parallel, on
-every pull request and every push to `main`. `forge test` is split in four parts whose
+every pull request and every push to `main`. `forge test` is split in five parts whose
 filters together select every test exactly once; the required check **Contracts** is green
-only when Build and checks and all four parts are.
+only when Build and checks and all five parts are.
 
 | Job | Timeout | Steps, in order |
 | --- | --- | --- |
@@ -89,7 +91,7 @@ only when Build and checks and all four parts are.
 | **Tests** (economics invariants) | 15 minutes | the same; `forge test --match-test ^invariant --match-contract ^EconomicsInvariant` |
 | **Tests** (testing-build invariants) | 15 minutes | the same; `forge test --match-test ^invariant --match-contract ^(WorkDelivery\|GovernedVault\|FederatedState\|CurationSigner)Invariant` |
 | **Tests** (other invariants) | 15 minutes | the same; `forge test --match-test ^invariant --no-match-contract ^(Economics\|WorkDelivery\|GovernedVault\|FederatedState\|CurationSigner)Invariant` (the Medusa harnesses' Forge runners among them) |
-| **Contracts** | 5 minutes | fails unless Build and checks and the four Tests jobs succeeded |
+| **Contracts** | 5 minutes | fails unless Build and checks and the five Tests jobs succeeded |
 | **Static analysis** | 15 minutes | checkout with submodules; Python 3.12.13; Foundry v1.7.1; install Slither from the hash lock; `python -m tools.test_check_slither`; `python tools/check_slither.py` |
 Three more workflows run what a pull request leaves out, to keep the organisation's shared
 runners for the checks above:
@@ -107,13 +109,16 @@ mutation shard, weekly). [Testing](../testing/README.md) describes them and the 
 
 | Gate | What fails it | Enforced by |
 | --- | --- | --- |
-| Format | Any file `forge fmt` would change (line length 100, tab width 4, bracket spacing) | `forge fmt --check`, `[fmt]` in `foundry.toml` |
+| Format | Any file `forge fmt` would change (line length 100, tab width 4, bracket spacing), in `src/`, `test/`, `script/`, `examples/` and `keeper/test/` | `forge fmt --check` and `forge fmt --check examples keeper/test`, `[fmt]` in `foundry.toml` |
 | Build | A compile error | `forge build` |
 | Tests | Any failing unit, fuzz, invariant or integration test, including the gas and state-growth gates | `forge test` |
 | Budgets | More than 17,000 code lines under `src/`; `delegatecall` or `callcode` in `src/`; more than 5 libraries with a public or external function; any contract of the `default` profile over 24,576 bytes of runtime (EIP-170) or 49,152 bytes of initcode (EIP-3860); a contract declared in `src/` with less than 512 bytes of EIP-170 margin, unless exempt; an exempt contract whose margin fell below the value its exemption records, or is back at 512 bytes or more; an exemption naming no measured `src/` contract | [`tools/check_budgets.py`](../../tools/check_budgets.py), [`tools/size-margins.json`](../../tools/size-margins.json) |
 | Genesis configuration | A selector in [`config/genesis.example.json`](../../config/genesis.example.json) that is not in its contract's compiled ABI; a `restricted` function (inherited ones included) that is neither mapped, genesis-only nor deferred; a wiring call to an unlisted target or with a non-genesis selector; a delay that does not match its role's class; a role whose `network` flag is not a boolean true exactly for the network's roles, or any grant delay; no single nonzero `network` address, or a holder of a network role; a function `WorksAccessManager` adds to its OpenZeppelin base that `manager` does not list, or lists with another selector, role or delay. `GenesisConfig.t.sol` checks the same JSON against the compiled roles | [`tools/check_genesis.py`](../../tools/check_genesis.py) |
 | NatSpec | In `src/`: an external or public function or getter without `@notice` or `@inheritdoc` (the only declarations `@inheritdoc` can stand in for); an event without `@notice`; a function or event without a `@param` for a named parameter; a function without one `@return` per return value (a named return cited by name); a `@param` that names no parameter; an error without `@notice` | [`tools/check_natspec.py`](../../tools/check_natspec.py) |
 | Content tooling | A failing `unittest` in `tools/content`. `test_anvil.py` sends the uploader's calldata to the compiled `ContentStore` on a local Anvil node; `CONTENT_E2E_REQUIRE=1` makes a missing `anvil` or build output a failure, not a skip | `python -m unittest discover -s tools/content -t . -p "test_*.py"` |
+| Exported ABIs | A file in [`abi/`](../../abi/) that differs from what [`tools/export_abis.py`](../../tools/export_abis.py) renders from the build, or a missing or stale file | `python tools/export_abis.py --check` |
+| Reference keeper | A failing `unittest` in `keeper/test_keeper.py`: the unit tests, and end-to-end runs on a local Anvil node loaded from `keeper/test/KeeperFixture.t.sol`; `KEEPER_E2E_REQUIRE=1` makes a missing `anvil`, `forge` or `cast` a failure, not a skip | `python -m unittest keeper.test_keeper` |
+| Local walkthrough | Any failing step of the deploy, acceptance, Verify or the one-work sale on a fresh Anvil node ([script/local](../../script/local/README.md)) | `bash script/local/walkthrough.sh` (job Local walkthrough) |
 | Edition auction reference model | A failing check of [`tools/edition_auction_ref.py`](../../tools/edition_auction_ref.py) (ADR 0005): the mantissa table and ladder, the clearing rule against brute force, the FIFO sweep, monotone winning in the step, or golden vectors in `test/fixtures/edition-auction/` that differ from what the model generates | `python -m tools.test_edition_auction_ref` |
 | Slither | A High or Medium finding in a file outside `lib/`, `test/` and `script/` with no row in [`docs/security/slither-triage.md`](../security/slither-triage.md); any `src/**/*.sol` file Slither did not analyze; an unreadable report. Low, Informational and Optimization findings are counted, not gated | [`tools/check_slither.py`](../../tools/check_slither.py) |
 | Markdown links | A relative link or `#anchor` in a tracked `*.md` file (outside `lib/`) that does not resolve, with exact letter case. External links are not fetched | [`tools/check_markdown_links.py`](../../tools/check_markdown_links.py) |
@@ -134,11 +139,25 @@ forge build
 forge test
 python tools/check_budgets.py --profile default
 python tools/check_genesis.py
+python tools/check_natspec.py
+python tools/check_docs_facts.py --artifacts out
 python -m unittest discover -s tools/content -t . -p "test_*.py"
 python tools/check_markdown_links.py
 python tools/gen_role_matrix.py --check
-python tools/check_natspec.py
+python tools/check_snapshots.py
+python tools/check_rules.py --uncovered
+forge fmt --check examples keeper/test
+python tools/export_abis.py --check
+KEEPER_E2E_REQUIRE=1 python -m unittest keeper.test_keeper
+bash script/local/walkthrough.sh
 ```
+
+- `forge test` runs every invariant campaign in one process: about 15 minutes on one machine,
+  where CI splits it in four parallel jobs. `forge test --no-match-test "^invariant"` takes
+  about a minute.
+- `check_budgets.py` runs `forge build --sizes --json`, which recompiles when its output is
+  stale (about 5 minutes for a full compile); `check_genesis.py` runs one `forge inspect` per
+  contract, about a minute.
 
 Slither needs the pinned toolchain, ideally in a virtual environment. CI installs the hash
 lock, wheels only:

@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Developer path: a [quickstart](docs/quickstart.md) from clone to a local run, with measured
+  build and test times; `script/local/walkthrough.sh`, which deploys on anvil with test accounts,
+  accepts, verifies and sells one work end to end (store, curate, accept, start with a bid,
+  outbid, settle, record, finalize, `tokenURI`, edition auction, claims, payouts); a shorter
+  root README (its diagram moved to the [architecture overview](docs/architecture.md), its
+  module sizes left to the [audit scope](docs/audit/scope.md)); runbook corrections (local gas
+  figures, the genesis and manifest writers); `make_manifest.py` lists every deployed contract.
+- Integrators: exported ABIs in `abi/` (`tools/export_abis.py`, with ERC-165 IDs and the
+  forwarded surfaces merged in `abi/full/`; `--check` in CI), runnable examples in `examples/`
+  (compiled and run by `forge test` through `test/Integrators.t.sol`) and a reference keeper in
+  `keeper/` (reference code, tested end to end on anvil). CI runs the ABI check, the keeper's
+  tests (`KEEPER_E2E_REQUIRE=1`), the format of `examples/` and `keeper/test/`, and the local
+  walkthrough in its own job, which the Contracts check now requires. `make_manifest.py` builds
+  the manifest's `safes` from the new single-network genesis. The stale local deployment record
+  `deployments/31337/1793486175.json` is removed (the folder is git-ignored).
 - Testing build ("all frameworks", November 2026; tests, tools, CI and docs only, no contract
   change; [Testing](docs/testing/README.md)):
   - 36 Halmos proofs of the permanent contracts' state rules (ledger, escrow and governed vault,

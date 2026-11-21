@@ -1,0 +1,291 @@
+[
+  {
+    "inputs": [],
+    "name": "artistRegistry",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "adapter",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "economics",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "entropyModule",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "splitFactory",
+            "type": "address"
+          }
+        ],
+        "internalType": "struct IMintPolicy.MintContext",
+        "name": "context",
+        "type": "tuple"
+      },
+      {
+        "internalType": "bytes",
+        "name": "request",
+        "type": "bytes"
+      }
+    ],
+    "name": "authorize",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "bytes32",
+            "name": "itemHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint256",
+            "name": "artistId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "collectionId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint8",
+            "name": "kind",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint8",
+            "name": "seedPolicy",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint32",
+            "name": "royaltyRate",
+            "type": "uint32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "packageRoot",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "contentHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "mediaHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "recordFileId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "saleKind",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "address",
+            "name": "currency",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "seller",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "feeRecipient",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "feeShare",
+            "type": "uint32"
+          },
+          {
+            "internalType": "address",
+            "name": "creator",
+            "type": "address"
+          },
+          {
+            "internalType": "bytes",
+            "name": "params",
+            "type": "bytes"
+          }
+        ],
+        "internalType": "struct IMintPolicy.MintRecord",
+        "name": "record",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "adapter",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "economics",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "entropyModule",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "splitFactory",
+            "type": "address"
+          }
+        ],
+        "internalType": "struct IMintPolicy.MintContext",
+        "name": "context",
+        "type": "tuple"
+      },
+      {
+        "internalType": "bytes",
+        "name": "request",
+        "type": "bytes"
+      }
+    ],
+    "name": "preview",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "bytes32",
+            "name": "saleKind",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "address",
+            "name": "currency",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "price",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bytes",
+            "name": "params",
+            "type": "bytes"
+          },
+          {
+            "internalType": "address",
+            "name": "seller",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "feeRecipient",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "feeShare",
+            "type": "uint32"
+          },
+          {
+            "internalType": "address",
+            "name": "creator",
+            "type": "address"
+          }
+        ],
+        "internalType": "struct PrimaryTerms",
+        "name": "terms",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes4",
+        "name": "interfaceId",
+        "type": "bytes4"
+      }
+    ],
+    "name": "supportsInterface",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidItemSale",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidLeadArtist",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidLicenseId",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidSeedPolicy",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidWorkTerms",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "itemHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "SeedNotDelivered",
+    "type": "error"
+  }
+]

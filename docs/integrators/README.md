@@ -21,6 +21,14 @@ mainnet deployment, and interfaces may still change before the audit.
 | [Buying, bidding, settling and claiming](buying-bidding-settling.md) | Send transactions: start and bid on auctions, settle as a keeper, buy editions, claim credits and payouts, with the errors to handle and gas notes |
 | [Storage](storage.md) | Fetch and verify a work's bytes: the content store, Arweave and IPFS locators, and the uploader |
 
+Beside the pages:
+
+| Directory | What it holds |
+| --- | --- |
+| [`abi/`](../../abi/) | The exported ABIs of every deployable contract and public interface, with a manifest of interface IDs and hashes ([how to use them](abis-and-interface-ids.md#the-exported-abis)) |
+| [`examples/`](../../examples/README.md) | Short Foundry examples of the common jobs (reading a work, bidding, starting, settling, edition sales, split releases, indexing, the federation directory), run by every `forge test` |
+| [`keeper/`](../../keeper/README.md) | A reference keeper for the permissionless steps (start, open, settle, create, abandon, finalize, expire, forfeit), tested on a local anvil chain; reference code, not production software |
+
 ## Five things to know first
 
 1. **One contract per product.** Every Stream work is a token of one ERC-721; every edition is

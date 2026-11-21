@@ -19,156 +19,61 @@ governs every contract: one network address acts at once or after fixed delays o
 > adversarial review by AI agents, not an external audit. A rehearsal runs on Sepolia; there
 > is no mainnet deployment. See [Status](#status).
 
-## Architecture
-
-```mermaid
-flowchart TB
-    Artist([Artist and parties])
-    Signer([Curation signer])
-    Buyers([Collectors, keepers, anyone])
-
-    subgraph Curation
-        direction LR
-        PR[PackageRegistry] --> CV[Eip712CurationVerifier]
-    end
-    subgraph Sales [Sale adapters]
-        direction LR
-        EA[EnglishAuction]
-        UA[UniformEditionAuction]
-    end
-    subgraph Products
-        direction LR
-        S[Stream ERC-721] --- WR[WorkRecords]
-        S <-->|master and edition| E[6529 Stream Editions ERC-1155]
-    end
-    subgraph Money
-        direction LR
-        ER[EconomicsResolver]
-        SW[Split wallets]
-        RE[RevenueEscrow]
-    end
-    subgraph Content [Content and records]
-        direction LR
-        R[Renderer] --> CS[ContentStore]
-        R --> SL[StatementLog]
-    end
-    AR[ArtistRegistry]
-    AM[WorksAccessManager]
-
-    Signer -->|approves roots| Curation
-    Artist -->|accepts, signs the move| Curation
-    Buyers -->|start, bid, settle, claim| Sales
-    Sales -->|mint| Products
-    Products -->|consume item| Curation
-    Sales -->|pay, or escrow on failure| Money
-    Products -->|tokenURI| Content
-    Money -->|artist payouts| AR
-    AM -.->|governs every contract| Products
-```
-
-A work's path: the artist's package is voted on and attested, each party accepts it, the lead
-artist signs "move to Stream", anyone starts the auction (which mints the token into auction
-custody and consumes the item), bids extend the clock near the end, and anyone settles. A master
-work's copies sell in a uniform-price edition auction beside its 1/1, which closes after the 1/1
-and sells as many copies as the bids support, at one price
-([ADR 0005](docs/adr/0005-stream-editions-auction.md)). By default, primary sales of both
-products pay 75% to the artist's side and 25% to the network, and royalties are 6.529%
-(ERC-2981, out of 100,000); a work keeps the terms it was minted with. The
-[protocol specification](docs/spec/README.md) describes every flow; the
-[architecture overview](docs/architecture.md) shows how the contracts fit together.
-
-## Modules
-
-| Contract | Purpose | nSLOC |
-| --- | --- | ---: |
-| [`Stream`](src/stream/README.md), [`StreamViews`](src/stream/README.md) | The permanent shared ERC-721: mints what the replaceable mint policy authorizes, locks terms, royalties, the edition link; informational views in a read-only extension | 799 + 79 |
-| [`WorkRecords`](src/stream/README.md), [`WorkDelivery`](src/stream/README.md) | Each work's permanent record, media, license, seed, finalize and renderer pin, on-chain completeness across an append-only store set; locators and preferences in a replaceable delivery contract | 737 + 203 |
-| [`Editions`](src/editions/README.md) | 6529 Stream Editions, the shared ERC-1155, linked to Stream masters; supply sealed at settlement, prices logged | 502 |
-| [`PackageRegistry`](src/curation/README.md) | Stream's replaceable mint policy: package roots, party consent, the move signature, consume-once items, content uniqueness | 435 |
-| [`Eip712CurationVerifier`](src/curation/README.md) | Accepts curation signers' EIP-712 approvals | 117 |
-| [`EnglishAuction`](src/sales/README.md), [`EnglishAuctionLens`](src/sales/README.md) | Stream's primary sale: anti-snipe clock, pull refunds, pending claims, dispute pause; its views answered by a lens | 880 + 345 |
-| [`UniformEditionAuction`](src/sales/README.md), [`UniformEditionAuctionLens`](src/sales/README.md) | The edition auction: firm ETH bids on a step ladder beside the 1/1, one clearing price, FIFO at a capped step, claims | 914 + 901 |
-| [`EconomicsResolver`](src/economics/README.md), [`AssetAllowlist`](src/economics/README.md) | Terms for new works, fee recipients, currencies and increment floors | 212 + 151 |
-| [`SplitLedger`](src/economics/README.md), [`SplitVault`](src/economics/README.md) | One permanent ledger for every split wallet (66-byte vaults at predicted addresses), its accounting and signed releases | 371 + 8 |
-| [`RevenueEscrow`](src/economics/README.md), [`ClaimRouter`](src/economics/README.md), [`GovernedVault`](src/economics/README.md) | Failed-payment escrow, batch claims, the fee recipient's and museum's governed vaults | 143 + 148 + 114 |
-| [`ArtistRegistry`](src/identity/README.md), [`ConsolidationAdapter`](src/identity/README.md) | Permanent artist accounts (consolidated wallets, fixed timers for changes and replacements, freezes) and payouts, the federation directory; consolidations through the adapter | 611 + 52 |
-| [`ContentStore`](src/content/README.md), [`DependencyRegistry`](src/content/README.md) | Content-addressed on-chain chunks and shared libraries | 436 + 66 |
-| [`Renderer`](src/content/README.md) | `tokenURI` and `fullTokenURI` for works and editions | 761 |
-| [`StatementLog`](src/records/README.md) | Append-only signed statements: dispute outcomes, curation evidence, manifests | 309 |
-| [`VrfEntropyModule`](src/entropy/README.md) | Optional Chainlink VRF seed per work, delivered before the start; requester-paid seeds for federated works (off until a wrapper is set) | 351 |
-| [`WorksAccessManager`](src/governance/README.md), [`GovernanceConfigurator`](src/governance/README.md) | One AccessManager for everything: one network address, fixed delay classes, an optional brake and a two-step handover | 100 + 43 |
-
-nSLOC counts non-blank lines without comments. The [audit scope](docs/audit/scope.md) lists every
-file, its bytecode size and how the figures are measured; `tools/check_docs_facts.py` keeps
-both pages in step with the code. Shared code lives in internal
-[libraries](src/libraries/README.md) and the [interfaces](src/interfaces/README.md); nothing is
-linked, proxied or `delegatecall`ed. 6529 Stream Federated (artist-owned contracts from the
-network's templates) is in v1, specified by [ADR 0008](docs/adr/0008-federation.md) ([ADR 0007](docs/adr/0007-permanence.md) for the permanent directory; [federated](src/federated/README.md)).
-
 ## Status
 
 | | |
 | --- | --- |
 | Maturity | **Pre-audit.** Not production-ready. An internal adversarial review, carried out by AI agents in October 2026, found no Critical or High issues; its fixes are merged ([report](docs/security/internal-review-2026-10.md)), as are those of the rc.2 seven-lens review, also by AI agents. No external audit has started. |
 | Release | **[v1.0.0-rc.2](docs/releases/v1.0.0-rc.2.md)**, 4 November 2026: the second release candidate, pre-audit. Its contracts and deploy pipeline are the code Sepolia r4 runs. The first, [v1.0.0-rc.1](docs/releases/v1.0.0-rc.1.md), is the code of r3. |
-| Scope | Fixed by [ADR 0001](docs/adr/0001-v1-scope.md), amended by ADRs [0002](docs/adr/0002-access-manager-hardening.md), [0003](docs/adr/0003-build-time-decisions.md), [0004](docs/adr/0004-gas-budgets-under-glamsterdam.md), [0005](docs/adr/0005-stream-editions-auction.md) and [0006](docs/adr/0006-work-powers-and-conventions.md). |
-| Code | Every v1 module is on `main`, with about 2,600 unit, fuzz, integration and fork tests in 148 test files, and 64 stateful invariants in 16 invariant suites ([invariants](docs/audit/invariants.md), [testing](docs/testing/README.md)). |
-| Testnet | Sepolia rehearsal **r4**, deployed on 1 November 2026 from `1e7022b` (the code of v1.0.0-rc.2: the uniform edition auction, the museum rule and the rc.2 fixes) with throwaway signers in the mainnet Safe structure and 1-hour 1/1 auctions, every contract verified on Sourcify: [addresses](docs/integrators/addresses.md), [deployment record](deployments/11155111/README.md), [flows and their gas](deployments/11155111/flows.md). It is a rehearsal; its live Verify passed on 6 November 2026, after the 5-day setback. |
+| Scope | Fixed by [ADR 0001](docs/adr/0001-v1-scope.md) and the ADRs that amend it, through [ADR 0008](docs/adr/0008-federation.md) ([index](docs/adr/README.md)). |
+| Code | Every v1 module is on `main`, with about 3,000 unit, fuzz, integration, invariant and fork tests ([testing](docs/testing/README.md), [invariants](docs/audit/invariants.md)). |
+| Testnet | Sepolia rehearsal **r4**, deployed on 1 November 2026 from `1e7022b` (the code of v1.0.0-rc.2: the uniform edition auction, the museum rule and the rc.2 fixes) with throwaway signers in the mainnet Safe structure and 1-hour 1/1 auctions, every contract verified on Sourcify: [addresses](docs/integrators/addresses.md), [deployment record](deployments/11155111/README.md), [flows and their gas](deployments/11155111/flows.md). It is a rehearsal; its live Verify passed on 6 November 2026, after the 5-day setback. `main` has moved on since: the permanence and federation work ([ADR 0007](docs/adr/0007-permanence.md), [ADR 0008](docs/adr/0008-federation.md)) and the single network address are not on a testnet yet, so r4's ABIs and roles differ from `main`'s. |
 | Mainnet | Not deployed. It follows an external audit ([delivery plan](ops/DELIVERY_PLAN.md)). |
-| Gas | Budgets are in Prague gas: a steady-state ETH auction start costs at most 350K and writes at most 6 new storage slots, `tokenURI` at most 8M. Sepolia runs Glamsterdam, which prices new state higher ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md)). |
 | Known limits | Listed with their sources in [known limitations and accepted risks](docs/audit/known-limitations.md). |
+
 
 ## Quickstart
 
-You need [Foundry](https://book.getfoundry.sh/) (CI pins v1.7.1) and Python 3.12 or later. The
-Python tools use only the standard library.
+You need [Foundry](https://book.getfoundry.sh/) v1.7.1 (as CI pins it), Python 3.12 or later
+(standard library only) and, for the local walkthrough, bash (Git Bash on Windows).
 
 ```bash
 git clone --recurse-submodules https://github.com/6529-Collections/6529-works.git
 cd 6529-works
-forge build
-forge test
+forge build                                  # first build: about 520 files, about 5 minutes
+forge test --no-match-test "^invariant"      # about 1 minute; plain `forge test` takes about 15
+bash script/local/walkthrough.sh             # deploy on anvil and sell one work end to end
 ```
 
-The first build compiles about 350 files and takes a few minutes. If you cloned without
-submodules, run `git submodule update --init` first. To run the gas report with its exact
-new-slot counts:
-
-```bash
-forge test --match-test test_Gas_Table -vv
-```
-
-The CI gates, Slither and the other checks are in
-[Build, test and budgets](docs/audit/build-and-test.md); coverage, mutation testing and the
-Halmos proofs, which run on `main` and on a schedule, are in [Testing](docs/testing/README.md).
-The code is Solidity 0.8.37 on the `prague` EVM, with OpenZeppelin 5.7.0 and forge-std 1.17.0
-in `lib/`.
+The [quickstart](docs/quickstart.md) explains each step, what to expect (the timings, the CI
+checks to run locally) and what the walkthrough does.
 
 ## Where to go next
 
-| You are | Start with |
+| You want to | Start with |
 | --- | --- |
-| New to the protocol | The [specification](docs/spec/README.md) and the [glossary](docs/glossary.md) |
-| Integrating: a marketplace, wallet, indexer or front end | The [integrator guide](docs/integrators/README.md): reading a work, events, ABIs, buying and settling, storage |
-| Auditing or reviewing security | The [auditor pack](docs/audit/README.md): scope, trust, roles, threat model, invariants, limitations |
-| Contributing code | [CONTRIBUTING.md](CONTRIBUTING.md); automated agents also read [AGENTS.md](AGENTS.md) |
-| Deploying or operating | The [deploy runbook](script/README.md) and the [genesis configuration](config/README.md) |
-| Looking for why a decision was made | The [ADRs](docs/adr/README.md) |
+| Understand the protocol | The [architecture overview](docs/architecture.md), the [specification](docs/spec/README.md) and the [glossary](docs/glossary.md) |
+| Integrate a marketplace, wallet, indexer or front end | The [integrator guide](docs/integrators/README.md), the exported ABIs in [`abi/`](abi/), runnable examples in [`examples/`](examples/README.md), and a reference keeper in [`keeper/`](keeper/README.md) (reference code, not production software) |
+| Run, read or extend the tests | [Testing](docs/testing/README.md) and the [test map](test/README.md) |
+| Deploy or operate | The [deploy runbook](script/README.md) and the [genesis configuration](config/README.md) |
+| Audit or review security | The [auditor pack](docs/audit/README.md): scope and sizes, trust, roles, threat model, invariants, limitations |
+| Contribute code | [CONTRIBUTING.md](CONTRIBUTING.md); automated agents also read [AGENTS.md](AGENTS.md) |
+| Know why a decision was made | The [ADRs](docs/adr/README.md) |
 
 Everything else is indexed in [docs/README.md](docs/README.md).
 
 ## Repository layout
 
 ```
-src/         contracts, one folder per module, with interfaces/ for the shared surfaces
-test/        unit, fuzz, invariant, integration and review-regression tests
-script/      the deploy library, deploy and verify scripts, the Sepolia flow driver
+src/         contracts, one folder per module, each with a README that maps its code
+test/        unit, fuzz, invariant, integration, fork and symbolic tests
+script/      the deploy library, deploy and verify scripts, the local walkthrough, the Sepolia tools
 config/      the committed genesis policy and the Sepolia instances' copies
 deployments/ deployment records and measured flows, per chain
-tools/       standard-library Python: CI gates, the role matrix and the uploader
+tools/       standard-library Python: CI gates, generators and the content uploader
 docs/        specification, auditor pack, integrator guide, glossary, ADRs, architecture
 ops/         the delivery plan
-lib/         git submodules: OpenZeppelin Contracts and forge-std
+lib/         git submodules: OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0
 ```
 
 ## Security
