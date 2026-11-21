@@ -79,9 +79,9 @@ forge test
 ## CI
 
 [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs these jobs, in parallel, on
-every pull request and every push to `main`. `forge test` is split in four parts whose
+every pull request and every push to `main`. `forge test` is split in five parts whose
 filters together select every test exactly once; the required check **Contracts** is green
-only when Build and checks and all four parts are.
+only when Build and checks and all five parts are.
 
 | Job | Timeout | Steps, in order |
 | --- | --- | --- |
@@ -91,7 +91,7 @@ only when Build and checks and all four parts are.
 | **Tests** (economics invariants) | 15 minutes | the same; `forge test --match-test ^invariant --match-contract ^EconomicsInvariant` |
 | **Tests** (testing-build invariants) | 15 minutes | the same; `forge test --match-test ^invariant --match-contract ^(WorkDelivery\|GovernedVault\|FederatedState\|CurationSigner)Invariant` |
 | **Tests** (other invariants) | 15 minutes | the same; `forge test --match-test ^invariant --no-match-contract ^(Economics\|WorkDelivery\|GovernedVault\|FederatedState\|CurationSigner)Invariant` (the Medusa harnesses' Forge runners among them) |
-| **Contracts** | 5 minutes | fails unless Build and checks and the four Tests jobs succeeded |
+| **Contracts** | 5 minutes | fails unless Build and checks and the five Tests jobs succeeded |
 | **Static analysis** | 15 minutes | checkout with submodules; Python 3.12.13; Foundry v1.7.1; install Slither from the hash lock; `python -m tools.test_check_slither`; `python tools/check_slither.py` |
 Three more workflows run what a pull request leaves out, to keep the organisation's shared
 runners for the checks above:

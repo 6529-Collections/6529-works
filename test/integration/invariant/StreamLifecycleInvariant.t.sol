@@ -203,6 +203,42 @@ contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
         _assertLifecycle();
     }
 
+    /// @notice The deep campaign's shrunk sequence (nightly, 19 and 21 Nov 2026): while artist
+    ///         0 is restrained, its reserved key, a stranger to the record, records a finalize
+    ///         notice on the settled work; the recovery executes 14 days later and a second one
+    ///         is staged; the restrained authority then calls `finalize` once the notice is due.
+    ///         Not a wallet of the account, it finalizes the record as it stands, as anyone may
+    ///         (C9): a due finalize, not an artist's act. Every invariant holds after each step.
+    function test_DueFinalizeNoticeWhileRestrained() public {
+        this.start(89, 2222568082);
+        this.stageRecovery(14940972799394490962644263919452925702448);
+        this.settle(17034);
+        this.openRecord(121992225);
+        uint256 id = uint160(lcArtists[0]);
+        assertEq(stream.artistOf(1), id, "artist 0's work");
+        assertTrue(stream.primarySaleSettled(1));
+        _assertLifecycle();
+        // The reserved key (which % 2 == 1), power 2: a notice, not a finalize.
+        this.restrainedAct(1e17, 3233);
+        uint256 notice = records.finalizeNoticeAt(1);
+        assertEq(notice, block.timestamp, "the stranger's call recorded a notice");
+        assertFalse(records.record(1).finalized);
+        _assertLifecycle();
+        this.endRecovery(
+            190490946534341508236511762691880928699280104594725378915283106627852459552, 117
+        );
+        this.stageRecovery(5566827158041360516774494190951858655291761710741097064);
+        address authority = artists.authorityOf(id);
+        assertEq(artists.activeAuthorityOf(id), address(0), "restrained again");
+        assertFalse(artists.isWallet(id, authority), "the authority is not a wallet");
+        assertGe(block.timestamp, notice + FINALIZE_NOTICE, "the notice is due");
+        // The authority (which % 2 == 0), power 2: the due finalize anyone may make.
+        this.restrainedAct(12493, 64);
+        assertTrue(records.record(1).finalized, "the due notice finalized the record");
+        assertEq(hits["dueFinalize"], 1);
+        _assertLifecycle();
+    }
+
     /// @dev One handler call chosen and parameterised from `seed`, as the fuzzer would.
     function _step(uint256 seed) internal {
         uint256 which = seed % ACTIONS;
