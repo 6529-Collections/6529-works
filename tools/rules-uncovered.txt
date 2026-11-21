@@ -48,6 +48,5 @@ DCL-33 declaration off-chain convention
 
 # Live rules with no test reference today.
 FED-57 uncovered cites "the edition auction suites": no test is named for the federated pair's use of the shared base
-FED-58 uncovered cites "(documented)": no test pins the lens's view of a delisted sale
 GV-18 uncovered cites "Per module": no test checks that every governed setter emits old and new values
 GV-20 uncovered cites "Per module": no single test covers the dependency checks across setters
