@@ -101,6 +101,47 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
     ///      quadratic) keep `settlementOrder`, `clearing` and `quote` near 5.2M gas each, far
     ///      inside a 50M `eth_call` gas cap (the test logs the figures), and the order is by
     ///      position.
+    /// @dev The paged order (`settlementOrderFor` with `fromPosition` and `max`) returns the
+    ///      full order's slices: a keeper paging with `fromPosition` one past the last position it
+    ///      got reads every departure once, in position order, whatever order they departed in.
+    function test_Lens_PagedSettlementOrderIsTheFullOrderInSlices() public {
+        uint256 saleId = _open(30);
+        address crowd = makeAddr("crowd");
+        for (uint256 i; i < 40; ++i) {
+            _bid(saleId, crowd, 10, 1);
+        }
+        // 20 departures from step 10, in a scrambled order (13 is coprime with 40).
+        for (uint256 k; k < 20; ++k) {
+            _raise(saleId, (k * 13) % 40 + 1, 11);
+        }
+        IUniformEditionAuction.Clearing memory c = ua.clearing(saleId);
+        assertTrue(c.rationed);
+        assertEq(c.step, 10);
+        IUniformEditionAuction.Departure[] memory deps = lens.departures(saleId, 10);
+        uint256[] memory full = lens.settlementOrderFor(saleId, address(this));
+        assertEq(full.length, 20);
+        assertEq(
+            keccak256(abi.encode(lens.settlementOrderFor(saleId, address(this), 0, 100))),
+            keccak256(abi.encode(full)),
+            "a page larger than the log is the whole order"
+        );
+        assertEq(lens.settlementOrderFor(saleId, address(this), 0, 0).length, 0);
+
+        uint256 from;
+        uint256 got;
+        for (uint256 pages; got < full.length; ++pages) {
+            require(pages < 10, "paging did not finish");
+            uint256[] memory page = lens.settlementOrderFor(saleId, address(this), from, 6);
+            assertEq(page.length, full.length - got < 6 ? full.length - got : 6);
+            for (uint256 i; i < page.length; ++i) {
+                assertEq(page[i], full[got + i], "the page is the full order's slice");
+            }
+            got += page.length;
+            from = uint256(deps[page[page.length - 1]].position) + 1;
+        }
+        assertEq(lens.settlementOrderFor(saleId, address(this), from, 6).length, 0, "the end");
+    }
+
     function test_Lens_SixHundredDeparturesInReverseOrderStayCheap() public {
         uint256 saleId = _open(900);
         address crowd = makeAddr("crowd");
