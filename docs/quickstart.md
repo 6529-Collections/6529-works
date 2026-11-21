@@ -34,13 +34,14 @@ forge build
 
 ```bash
 forge test --no-match-test "^invariant"      # unit, fuzz and integration: about 1 minute
-forge test                                    # everything: about 15 minutes
+forge test                                    # everything: 15 to 18 minutes
 ```
 
-- The full run is about 3,000 tests. Most of its time is the stateful invariant campaigns
-  (256 runs of depth 128 each), which CI runs in two parallel jobs. Use the first command while
+- The full run is about 3,100 tests. Most of its time is the stateful invariant campaigns
+  (256 runs of depth 128 each), which CI runs in three of its four parallel test jobs. Use the first command while
   you work and the full run before a pull request.
-- The 24 fork tests are skipped unless you set an RPC URL ([fork tests](../test/fork/README.md)).
+- The 44 fork tests are skipped unless you set an RPC URL ([fork tests](../test/fork/README.md)),
+  and so is the keeper's fixture, which its own tests run.
 - Running one file, one contract or one test, and every other layer of the suite, is described in
   [Testing](testing/README.md) and the [test map](../test/README.md).
 
