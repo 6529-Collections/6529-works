@@ -8,8 +8,11 @@ The manifest is hashed into genesis, but no contract address depends on it, so i
 two passes: without a simulation output its contracts are null; with one (the output of
 `script/sepolia/deploy.ps1` without -Broadcast, which prints the returned `Deployment`), the
 addresses come from the simulation. Then simulate again: the addresses must not move. The
-Safes and their owners come from the earlier instance's manifest (the same throwaway Safes),
-and every deployment input from config/sepolia-<new>/deploy.env.
+`safes` section follows the new genesis (config/sepolia-<new>/genesis.json, single network):
+the network address and every holder that is a Safe of the earlier instance's manifest, each
+with that Safe's owners, threshold and version (the same throwaway Safes); a network address
+that is not one of those Safes is written with null details, to fill in before publishing.
+Every deployment input comes from config/sepolia-<new>/deploy.env.
 """
 import hashlib
 import json
@@ -40,6 +43,37 @@ def env(new):
     return out
 
 
+def safes_from_genesis(genesis, prev_safes):
+    """The manifest's `safes` section for a single-network genesis.
+
+    `network` is the genesis network address; each holder whose account is a Safe of the earlier
+    manifest is listed as `<role>-<n>` (by role, in genesis order). Owners, threshold and version
+    are copied from that earlier Safe, matched by address; holders that are plain keys are not
+    Safes and stay out. A network that is no earlier Safe gets null details and a note.
+    """
+    if not genesis.get("network"):
+        raise ValueError("the genesis names no network address (pre-single-network genesis)")
+    known = {s["address"].lower(): s for s in prev_safes.values()}
+
+    def entry(address):
+        s = known.get(address.lower())
+        if s is None:
+            return {"address": address, "threshold": None, "owners": None, "version": None,
+                    "note": "Not a Safe of the earlier manifest: fill in before publishing."}
+        return {"address": address, "threshold": s["threshold"], "owners": list(s["owners"]),
+                "version": s["version"]}
+
+    out = {"network": entry(genesis["network"])}
+    counts = {}
+    for h in genesis["holders"]:
+        if h["account"].lower() not in known:
+            continue
+        role = h["role"].lower().replace("_", "-")
+        counts[role] = counts.get(role, 0) + 1
+        out[f"{role}-{counts[role]}"] = entry(h["account"])
+    return out
+
+
 def sha(path):
     return hashlib.sha256((REPO / path).read_bytes()).hexdigest()
 
@@ -54,6 +88,12 @@ def main(new, prev, commit, sim_path=None):
     m["namespace"] = {"label": label, "keccak256": e["DEPLOY_NAMESPACE"]}
     genesis = f"config/sepolia-{new}/genesis.json"
     m["genesis"] = {"path": genesis, "sha256": sha(genesis)}
+    g = json.loads((REPO / genesis).read_text(encoding="utf-8"))
+    m["safes"] = safes_from_genesis(g, m["safes"])
+    for name, s in m["safes"].items():
+        if s["owners"] is None:
+            print(f"warning: safes.{name} ({s['address']}) needs its owners, threshold and version",
+                  file=sys.stderr)
     m["policy"] = {"path": "config/genesis.example.json", "sha256": sha("config/genesis.example.json")}
     m["deployer"] = e["DEPLOYER"]
     duration = int(e.get("AUCTION_DURATION", 86400))

@@ -467,9 +467,10 @@ Then set:
 Genesis appends it to the statement log as the manager's first governance statement.
 
 For a Sepolia instance, `python script/sepolia/make_manifest.py` writes it in two passes from the
-previous instance's manifest (its usage is in the file). It copies that manifest's `safes`
-section, which for r4 still describes the pre-single-network structure (hot and cold admin,
-guardians): rewrite it for the new instance's network and pausers before publishing.
+previous instance's manifest (its usage is in the file). Its `safes` section follows the new
+genesis: the network address and each holder that is a Safe of the previous manifest, with that
+Safe's owners, threshold and version. A network address that was no earlier Safe is written with
+null details and a warning: fill them in before publishing.
 
 ### 10. Simulate, then broadcast
 
