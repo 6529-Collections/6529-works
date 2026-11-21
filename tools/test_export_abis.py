@@ -28,14 +28,24 @@ _SPEC.loader.exec_module(ea)
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _fn(name: str, *types: str) -> dict:
+def _fn(name: str, *types: str, mutability: str = "nonpayable") -> dict:
     return {
         "type": "function",
         "name": name,
         "inputs": [{"name": "", "type": t, "internalType": t} for t in types],
         "outputs": [],
-        "stateMutability": "nonpayable",
+        "stateMutability": mutability,
     }
+
+
+# The contracts with a full ABI, and what each forwards to, written out here rather than read
+# from the exporter, so dropping one from export_abis.FORWARDED fails the tests.
+EXPECTED_FORWARDED = {
+    "Stream": "IStreamViews",
+    "EnglishAuction": "EnglishAuctionLens",
+    "UniformEditionAuction": "UniformEditionAuctionLens",
+    "FederatedEditionAuction": "FederatedEditionAuctionLens",
+}
 
 
 def _sel(sig: str, value: int) -> tuple[str, str]:
@@ -105,16 +115,18 @@ def _standard(repo: FakeRepo) -> None:
     repo.artifact("src/Thing.sol", "Thing", list(reversed(child)) + [event], child_sel)
     repo.artifact("src/Lib.sol", "Lib", [_fn("f")], {"f()": "22222222"})
     repo.artifact("src/Base.sol", "Base", [_fn("g")], {"g()": "33333333"})
-    for name, lens in ea.FORWARDED.items():
+    for name, lens in EXPECTED_FORWARDED.items():
         repo.source(f"src/{name}.sol", f"contract {name} {{ function own() external {{}} }}\n")
         kind = "interface" if lens.startswith("I") else "contract"
         folder = "src/interfaces" if kind == "interface" else "src"
         repo.source(f"{folder}/{lens}.sol", f"{kind} {lens} {{ function view1() external; }}\n")
         repo.artifact(f"src/{name}.sol", name, [_fn("own")], {"own()": "44444444"})
         ctor = {"type": "constructor", "inputs": [], "stateMutability": "nonpayable"}
-        repo.artifact(
-            f"{folder}/{lens}.sol", lens, [_fn("view1"), _fn("own"), ctor], {"view1()": "55555555", "own()": "44444444"}
-        )
+        # write1 changes state, like a lens's masterTerms: the auction's read-only staticcall
+        # cannot serve it, so it stays out of the full ABI.
+        lens_abi = [_fn("view1", mutability="view"), _fn("own"), _fn("write1"), ctor]
+        lens_sel = {"view1()": "55555555", "own()": "44444444", "write1()": "77777777"}
+        repo.artifact(f"{folder}/{lens}.sol", lens, lens_abi, lens_sel)
 
 
 class ExportTest(unittest.TestCase):
@@ -157,7 +169,11 @@ class ExportTest(unittest.TestCase):
         self._run()
         text = (self.repo.root / "abi" / "Thing.json").read_text(encoding="utf-8")
         abi = json.loads(text)
-        self.assertEqual(abi, ea.normalize(abi))
+        # The artifact lists them reversed; the export orders by kind, name and signature.
+        self.assertEqual(
+            [ea.signature(e) for e in abi],
+            ["a(uint256)", "b(string)", "pause()", "pause(uint256,bytes32)", "Done()"],
+        )
         self.assertEqual([e["type"] for e in abi][-1], "event")
         for word in ("bytecode", "metadata", "0x6000", "compilationTarget"):
             self.assertNotIn(word, text)
@@ -179,11 +195,17 @@ class ExportTest(unittest.TestCase):
     def test_FullAbiMergesTheForwardedSurface(self) -> None:
         self._run()
         m = self._manifest()
-        for name, lens in ea.FORWARDED.items():
+        fulls = {p.name for p in (self.repo.root / "abi" / "full").glob("*.json")}
+        self.assertEqual(fulls, {f"{name}.json" for name in EXPECTED_FORWARDED})
+        for name, lens in EXPECTED_FORWARDED.items():
             self.assertEqual(m[name]["forwardsTo"], lens)
+            self.assertEqual(m[name]["fullAbi"], f"full/{name}.json")
             full = json.loads((self.repo.root / "abi" / "full" / f"{name}.json").read_text("utf-8"))
             sigs = [ea.signature(e) for e in full]
-            self.assertEqual(sigs, ["own()", "view1()"], name)  # no duplicate, no constructor
+            # No duplicate, no constructor, and not the lens's state-changing write1.
+            self.assertEqual(sigs, ["own()", "view1()"], name)
+            lens_abi = json.loads((self.repo.root / "abi" / f"{lens}.json").read_text("utf-8"))
+            self.assertIn("write1()", [ea.signature(e) for e in lens_abi], lens)
 
     def test_CheckPassesOnAFreshExport(self) -> None:
         self._run()
@@ -223,6 +245,49 @@ class ExportTest(unittest.TestCase):
         after = sorted(p.name for p in (self.repo.root / "abi").glob("*.json"))
         self.assertEqual(after, before)
 
+    def test_InterfaceIdLeavesOutASameArityInheritedOverload(self) -> None:
+        # Solidity accepts a child's f(address) beside its parent's f(uint256); the child's ID
+        # counts only f(address).
+        self.repo.source("src/interfaces/IP2.sol", "interface IP2 {\n  function f(uint256 x) external;\n}\n")
+        self.repo.source(
+            "src/interfaces/IC2.sol", "interface IC2 is IP2 {\n  function f(address a) external;\n}\n"
+        )
+        parent_sel = {"f(uint256)": "000000f0"}
+        self.repo.artifact("src/interfaces/IP2.sol", "IP2", [_fn("f", "uint256")], parent_sel)
+        child = [_fn("f", "uint256"), _fn("f", "address")]
+        self.repo.artifact("src/interfaces/IC2.sol", "IC2", child, dict(parent_sel, **{"f(address)": "00000f00"}))
+        self.assertEqual(self._run(), (0, ""))
+        self.assertEqual(self._manifest()["IC2"]["interfaceId"], "0x00000f00")
+
+    def test_WriteAndCheckLeaveUnmanagedFilesAlone(self) -> None:
+        self._run()
+        readme = self.repo.root / "abi" / "README.md"
+        readme.write_text("notes\n", encoding="utf-8")
+        self.assertEqual(self._run("--check"), (0, ""))
+        self._run()
+        self.assertTrue(readme.is_file())
+
+    def _assert_export_refused(self, needle: str) -> None:
+        before = ea.existing(self.repo.root / "abi")
+        code, err = self._run()
+        self.assertEqual(code, 2)
+        self.assertIn(needle, err)
+        self.assertEqual(ea.existing(self.repo.root / "abi"), before, "the export is unchanged")
+        self.assertEqual(self._run("--check")[0], 2)
+
+    def test_MalformedArtifactsFailWithTheirPath(self) -> None:
+        self._run()
+        path = self.repo.root / "out" / "IParent.sol" / "IParent.json"
+        good = path.read_text(encoding="utf-8")
+        for bad in (good[: len(good) // 2], "[]", good.replace('"abi": [', '"abi": null, "x": [', 1)):
+            path.write_text(bad, encoding="utf-8")
+            self._assert_export_refused(str(path))
+
+    def test_ADeclaredContractMissingFromTheBuildFails(self) -> None:
+        self._run()
+        (self.repo.root / "out" / "IParent.sol" / "IParent.json").unlink()
+        self._assert_export_refused("missing from the build: IParent")
+
     def test_NoBuildFailsClearly(self) -> None:
         import shutil
 
@@ -239,7 +304,37 @@ class OwnFunctionsTest(unittest.TestCase):
             "function b(uint256[] calldata x, (uint256, address) memory y) external;\n"
             "function c(mapping(uint256 => uint256) storage m) internal;\n"
         )
-        self.assertEqual(ea.own_functions(body), {("a", 0), ("b", 2), ("c", 1)})
+        self.assertEqual(ea.own_functions(body), [("a", 0), ("b", 2), ("c", 1)])
+
+    def test_ABlockCommentSeparatesTokens(self) -> None:
+        body = ea.strip_solidity("function/* note */f() external;\nfunction/**/g(uint256 x) external;")
+        self.assertEqual(ea.own_functions(body), [("f", 0), ("g", 1)])
+
+    def test_SameArityOverloadsCountOncePerDeclaration(self) -> None:
+        body = ea.strip_solidity("function f(uint256 x) external;\nfunction f(address a) external;")
+        self.assertEqual(ea.own_functions(body), [("f", 1), ("f", 1)])
+
+
+class InterfaceIdTest(unittest.TestCase):
+    ABI = [_fn("f", "uint256"), _fn("f", "address"), _fn("g")]
+    SELECTORS = {"f(uint256)": "000000f0", "f(address)": "00000f00", "g()": "0000f000"}
+
+    def test_ASameArityInheritedOverloadIsLeftOut(self) -> None:
+        # The child declares f(address); its parent declares f(uint256).
+        value = ea.interface_id(self.ABI, self.SELECTORS, [("f", 1)], {"f(uint256)"})
+        self.assertEqual(value, "0x00000f00")
+
+    def test_TwoOwnOverloadsOfOneArityAreBothCounted(self) -> None:
+        value = ea.interface_id(self.ABI, self.SELECTORS, [("f", 1), ("f", 1), ("g", 0)], set())
+        self.assertEqual(value, f"0x{0xF0 ^ 0xF00 ^ 0xF000:08x}")
+
+    def test_AnAmbiguousMatchFails(self) -> None:
+        with self.assertRaises(ea.ExportError):
+            ea.interface_id(self.ABI, self.SELECTORS, [("f", 1)], None)
+
+    def test_ParentsAreReadFromTheDeclaration(self) -> None:
+        code = ea.strip_solidity("interface IC is IA, Lib.IB /* x */ {\n function f() external;\n}")
+        self.assertEqual(ea.declarations(code)[0][3], ["IA", "Lib.IB"])
 
 
 @unittest.skipUnless((ROOT / "out" / "Stream.sol" / "Stream.json").is_file(), "out/ not built")

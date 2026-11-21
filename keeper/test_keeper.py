@@ -31,9 +31,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-_SPEC = importlib.util.spec_from_file_location("keeper", HERE / "keeper.py")
+_SPEC = importlib.util.spec_from_file_location("keeper_under_test", HERE / "keeper.py")
 k = importlib.util.module_from_spec(_SPEC)
-sys.modules["keeper_under_test"] = k
+sys.modules[_SPEC.name] = k  # before exec: @dataclass resolves annotations through it
 _SPEC.loader.exec_module(k)
 
 REQUIRED = os.environ.get("KEEPER_E2E_REQUIRE") == "1"
@@ -80,9 +80,17 @@ class FakeKeeper(k.Keeper):
         super().__init__(rpc=None, c=names, sender=ZERO, cast_signing=[])
         self.c["FeeRecipientVault"] = "0x" + "fe" * 20
         self._views, self._logs, self.sends = views, logs, []
+        self._views.setdefault(("MAX_CONTINUE_CLAIMS", None), k.word(8))
 
     def view(self, contract, signature, *args):
-        return self._views[(signature.split("(")[0], args[-1])]
+        """The table's answer for (name, last argument), else for (name, None); a callable
+        answer is called with the arguments."""
+        name = signature.split("(")[0]
+        for key in ((name, args[-1] if args else None), (name, None)):
+            if key in self._views:
+                answer = self._views[key]
+                return answer(*args) if callable(answer) else answer
+        raise KeyError((name, args))
 
     def logs(self, contract, sig):
         return self._logs.get(sig.split("(")[0], [])
@@ -126,6 +134,86 @@ class ReleaseRuleTest(unittest.TestCase):
         self.assertEqual(self._run(seller_due=0, network_due=0), [])
 
 
+class ReleaseBatchTest(unittest.TestCase):
+    def test_ContinueModeBatchesStayWithinTheRoutersLimit(self) -> None:
+        # Nine wallets, each with its seller due: the router takes at most MAX_CONTINUE_CLAIMS
+        # (8) items in continue mode and refuses a larger batch whole.
+        payees = k.royalty_payees("0x" + "11" * 20, "0x" + "fe" * 20, 25_000)
+        views = {("releasable", 0): k.word(1), ("releasable", 1): k.word(0)}
+        keeper = FakeKeeper(views, {"WalletCreated": [_wallet_log(payees)] * 9})
+        keeper.step_release()
+        self.assertEqual([k.w(claims, 0) for _, (claims, _) in keeper.sends], [8, 1])
+
+
+class MarkRuleTest(unittest.TestCase):
+    """A mark stays recorded after its payee releases up to it: only a mark not yet reached is
+    pending (forfeited when mature); a reached one is replaced by a new mark."""
+
+    def _run(self, released: int, now: int) -> list[str]:
+        seller, network = "0x" + "11" * 20, "0x" + "fe" * 20
+        payees = k.royalty_payees(seller, network, 25_000)  # seller is index 0
+        views = {
+            ("markOf", 0): k.word(100) + k.word(1_000),  # target 100, marked at t = 1,000
+            ("released", 0): k.word(released),
+            ("releasable", 0): k.word(5),
+        }
+        keeper = FakeKeeper(views, {"WalletCreated": [_wallet_log(payees)]})
+        keeper.step_marks(now, mark=True)
+        return [name for name, _ in keeper.sends]
+
+    def test_AReachedMarkIsReplaced(self) -> None:
+        self.assertEqual(self._run(released=100, now=1_000 + k.MARK_EXPIRY), ["mark"])
+
+    def test_APendingMatureMarkIsForfeited(self) -> None:
+        self.assertEqual(self._run(released=60, now=1_000 + k.MARK_EXPIRY), ["forfeit"])
+
+    def test_APendingYoungMarkKeepsItsClock(self) -> None:
+        self.assertEqual(self._run(released=60, now=1_000 + k.MARK_EXPIRY - 1), [])
+
+
+def _item(kind: int, content: bytes) -> k.Dyn:
+    """A minimal PackageItem encoding: the kind, the content hash and an empty payee list."""
+    return k.Dyn(k.encode(kind, 0, content, 0, 0, 0, k.Dyn(k.word(0)), k.Dyn(k.word(0))))
+
+
+class WorkGuardTest(unittest.TestCase):
+    def test_OpenSkipsASaleWhoseWorkIsNotInTheSnapshot(self) -> None:
+        # Work 2 was minted (and its record opened) after this run read WorkMinted.
+        stream = "0x" + "57" * 20
+        sale = {"topics": ["0x0", hex(1), "0x" + "00" * 12 + stream[2:], hex(2)], "data": "0x"}
+        keeper = FakeKeeper({}, {"SaleStarted": [sale]})
+        keeper.c["Stream"] = stream
+        items = {2: (_item(k.EDITION_MASTER, k.word(7)), k.Dyn(b""))}
+        keeper.step_open({1: {"root": k.word(0), "content": k.word(9)}}, items)
+        self.assertEqual(keeper.sends, [])
+
+    def test_ABurnedWorkDoesNotStopTheVaultsStep(self) -> None:
+        # primaryTerms reverts for a burned work (UnknownWork); the later work still gets its vaults.
+        def terms(token_id, _data):
+            if token_id == 1:
+                raise k.Reverted("UnknownWork(1)")
+            return k.word(0) * 5 + k.word("0x" + "11" * 20) + k.word("0x" + "fe" * 20) + k.word(25_000)
+
+        views = {("primaryTerms", None): terms, ("walletFor", None): k.word(0x99), ("isWallet", None): k.word(0)}
+        keeper = FakeKeeper(views, {})
+        works = {t: {"root": k.word(0), "content": k.word(t)} for t in (1, 2)}
+        keeper.step_vaults(works, {})
+        self.assertEqual([name for name, _ in keeper.sends], ["createWallet"])
+
+    def test_StartFinishesTheNewestWorkWithTheRequestsContent(self) -> None:
+        # Work 1 was burned and its content released; work 2 re-minted it, started directly.
+        content = k.word(7)
+        keeper = FakeKeeper(
+            {("consumedItemOf", None): k.word(1), ("isOpen", None): lambda t: k.word(1 if t == 1 else 0)},
+            {},
+        )
+        keeper.starts = [{"name": "r", "content": content, "payees": None, "item": b"", "media": b""}]
+        keeper.ensure_vaults = lambda token_id, payees: None
+        keeper.step_start({1: {"content": content}, 2: {"content": content}})
+        (name, args), = keeper.sends
+        self.assertEqual((name, args[0]), ("openRecord", 2))
+
+
 class SignaturesTest(unittest.TestCase):
     """Every function and event signature the keeper hand-writes is in the exported ABIs (abi/,
     tools/export_abis.py), so a renamed or reshaped function fails here, not on chain."""
@@ -151,6 +239,30 @@ class SignaturesTest(unittest.TestCase):
 
 
 class RequestTest(unittest.TestCase):
+    def _request(self, **extra: str) -> dict:
+        proof = k.array([k.word(0xAA), k.word(0xBB)], False)
+        body = k.encode(k.word(0x55), _item(k.EDITION_MASTER, k.word(7)), proof, k.blob(b"move"))
+        raw = {"mintData": "0x" + k.encode(k.Dyn(body)).hex(), "media": "0x" + k.word(32).hex() + k.word(0).hex()}
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "r.json"
+            path.write_text(json.dumps(dict(raw, **extra)), "utf-8")
+            return k.load_request(path), proof
+
+    def test_ProofDefaultsToTheOneInMintData(self) -> None:
+        request, proof = self._request()
+        self.assertEqual(request["proof"], proof)
+        self.assertEqual(k.w(request["item"], k.ITEM_KIND), k.EDITION_MASTER)
+
+    def test_AnExplicitProofIsKept(self) -> None:
+        empty = k.array([], False)
+        request, _ = self._request(proof="0x" + k.encode(empty).hex())
+        self.assertEqual(request["proof"], empty)
+
+    def test_TheModuleIsRegisteredUnderItsOwnName(self) -> None:
+        # @dataclass resolves Keeper's string annotations through sys.modules[Keeper.__module__];
+        # running this file directly (`python keeper/test_keeper.py`) needs that entry.
+        self.assertIs(sys.modules[k.Keeper.__module__], k)
+
     def test_RejectsMintDataNotEncodedAsOneTuple(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "bad.json"
@@ -453,6 +565,17 @@ class AlreadyDoneTest(_E2E):
         self.assertNotIn("createEdition 1", out)
         self.assertIn("sent  settle 1/1 sale of token 2", out)
         self.assertIn("sent  settle edition sale of edition 1", out)
+
+    def test_RequestWithoutASeparateProofOpensTheEditionSale(self) -> None:
+        # start0 is the edition master of a two-item package: its open needs the Merkle proof,
+        # which the keeper takes from mintData when the request has no "proof" field.
+        raw = json.loads((_fixture / "starts" / "start0.json").read_text("utf-8"))
+        self.assertNotEqual(k.load_request(_fixture / "starts" / "start0.json")["proof"], k.array([], False))
+        del raw["proof"]
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "start0.json").write_text(json.dumps(raw), "utf-8")
+            out = self.chain.keeper(starts=Path(d))
+        self.assertIn("sent  open the edition sale of work 1", out)
 
     def test_DryRunSendsNothing(self) -> None:
         ch = self.chain
