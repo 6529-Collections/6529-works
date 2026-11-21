@@ -58,6 +58,8 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
     /// @dev Locators each side may add per file (`WorkRecords.LOCATOR_QUOTA`), and both together.
     uint256 internal constant SIDE_QUOTA = 8;
     uint256 internal constant FILE_QUOTA = 16;
+    /// @dev `WorkRecords.FINALIZE_NOTICE`: a recorded finalize notice is due this long after.
+    uint256 internal constant FINALIZE_NOTICE = 14 days;
 
     /// @dev One approved-to-be package item, with what a start and `openRecord` need.
     struct PoolItem {
@@ -1180,6 +1182,9 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         bytes32 fileId = pool[tok[tokenId].item].fileId;
         Locator memory locator = _newLocator(0);
         bytes32 recordFile = spareRecords[tokenId % SPARE_RECORDS];
+        // Anyone may finalize the record as it stands once a recorded notice is due (C9).
+        uint256 notice = records.finalizeNoticeAt(tokenId);
+        bool dueToAnyone = notice != 0 && block.timestamp >= notice + FINALIZE_NOTICE;
         vm.prank(actor);
         if (power == 1) {
             try records.setRecord(tokenId, recordFile, state) {
@@ -1189,11 +1194,19 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             }
         }
         if (power == 2) {
-            // Anyone may record a finalize notice once the primary sale settled (C9); acting as
-            // the artist means finalizing at once, so only that counts.
+            // Anyone may record a finalize notice once the primary sale settled, and finalize
+            // once it is due (C9); acting as the artist means finalizing at once, without a due
+            // notice, so only that counts. A due finalize must go through, as for anyone.
             try records.finalize(tokenId, state) {
-                return records.record(tokenId).finalized;
+                bool finalized = records.record(tokenId).finalized;
+                if (!dueToAnyone) return finalized;
+                if (!finalized) _violation("a due finalize did not finalize");
+                tok[tokenId].finalized = true;
+                tok[tokenId].recordFileId = records.record(tokenId).recordFileId;
+                ++hits["dueFinalize"];
+                return false;
             } catch {
+                if (dueToAnyone) _violation("a due finalize was refused");
                 return false;
             }
         }

@@ -61,17 +61,25 @@ contract PreferredLocationTest is RecordsFixture {
         uint256 artistAdded;
         for (uint256 i; i < count; ++i) {
             kinds[i] = (kindBits >> i) & 1 == 0 ? LocatorKind.ARWEAVE : LocatorKind.IPFS;
-            string memory seed = vm.toString(i);
-            string memory uri = kinds[i] == LocatorKind.ARWEAVE ? CA.arweave(seed) : CA.ipfs(seed);
             // Each side has a quota of 8; a full side passes to the other.
             bool artistAdds = (adderBits >> i) & 1 == 1;
             if (artistAdds && artistAdded == 8) artistAdds = false;
             if (!artistAdds && i - artistAdded == 8) artistAdds = true;
             byArtist[i] = artistAdds;
             if (artistAdds) ++artistAdded;
-            vm.prank(artistAdds ? artist : platform);
-            delivery.addLocator(tokenId, file, Locator(kinds[i], uri));
+            _addLocator(tokenId, file, kinds[i], i, artistAdds);
         }
+    }
+
+    /// @dev The artist or the platform adds locator `i` of `kind` (its own helper: the
+    ///      unoptimized coverage build runs out of stack slots in the loop above otherwise).
+    function _addLocator(uint256 tokenId, bytes32 file, LocatorKind kind, uint256 i, bool byArtist)
+        internal
+    {
+        string memory seed = vm.toString(i);
+        string memory uri = kind == LocatorKind.ARWEAVE ? CA.arweave(seed) : CA.ipfs(seed);
+        vm.prank(byArtist ? artist : platform);
+        delivery.addLocator(tokenId, file, Locator(kind, uri));
     }
 
     function _modelFirstLive(bool[] memory live) internal pure returns (bool, uint256) {
