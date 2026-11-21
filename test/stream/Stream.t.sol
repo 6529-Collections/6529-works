@@ -131,6 +131,16 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         );
     }
 
+    /// @dev The policy must resolve parties through the artist registry Stream is given.
+    function test_constructor_refusesAPolicyWithAnotherArtistRegistry() public {
+        MockPackageRegistry policy = new MockPackageRegistry();
+        policy.setArtistRegistry(address(new MockArtistRegistry()));
+        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, address(policy)));
+        _deploy(
+            address(policy), address(artists), address(econ), address(entropy), address(renderer)
+        );
+    }
+
     /// @dev The split factory comes from the economics resolver and gets the same install check:
     ///      code and no EIP-7702 delegation (it implements no ERC-165).
     function test_constructor_checksTheResolversSplitFactory() public {

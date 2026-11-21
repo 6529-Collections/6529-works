@@ -38,6 +38,10 @@ contract VaultTest1155 is ERC1155("") {
     function mint(address to, uint256 id, uint256 amount) external {
         _mint(to, id, amount, "");
     }
+
+    function mintBatch(address to, uint256[] memory ids, uint256[] memory amounts) external {
+        _mintBatch(to, ids, amounts, "");
+    }
 }
 
 /// @dev Exposes the protocol-contract check the economics resolver applies to fee recipients.
@@ -162,6 +166,24 @@ contract GovernedVaultTest is EconomicsBase {
         vault.forwardERC1155(address(editions), 7, 3);
         assertEq(editions.balanceOf(safe, 7), 3);
         assertEq(editions.balanceOf(address(vault), 7), 1);
+    }
+
+    /// @dev The vault accepts a batch of editions (the batch receiver hook) and forwards each.
+    function test_AcceptsABatchOfEditionsAndForwardsEach() public {
+        VaultTest1155 editions = new VaultTest1155();
+        uint256[] memory ids = new uint256[](2);
+        uint256[] memory amounts = new uint256[](2);
+        (ids[0], ids[1], amounts[0], amounts[1]) = (1, 2, 3, 4);
+        editions.mintBatch(address(vault), ids, amounts);
+        assertEq(editions.balanceOf(address(vault), 1), 3);
+        assertEq(editions.balanceOf(address(vault), 2), 4);
+        assertEq(
+            vault.onERC1155BatchReceived(address(0), address(0), ids, amounts, ""),
+            IERC1155Receiver.onERC1155BatchReceived.selector
+        );
+        vm.prank(stranger);
+        vault.forwardERC1155(address(editions), 2, 4);
+        assertEq(editions.balanceOf(safe, 2), 4);
     }
 
     // ------------------------------------------------------------------ the destination
