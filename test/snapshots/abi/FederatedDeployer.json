@@ -1,0 +1,207 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "bytes",
+        "name": "creationCode",
+        "type": "bytes"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "id": "0x665adf1d",
+    "inputs": [],
+    "name": "EmptyCreationCode",
+    "signature": "EmptyCreationCode()",
+    "type": "error"
+  },
+  {
+    "id": "0x7861dda3",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "length",
+        "type": "uint256"
+      }
+    ],
+    "name": "SSTORE2ChunkTooLarge",
+    "signature": "SSTORE2ChunkTooLarge(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xd8415944",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "pointer",
+        "type": "address"
+      }
+    ],
+    "name": "SSTORE2InvalidPointer",
+    "signature": "SSTORE2InvalidPointer(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x24ad6e11",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "start",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "end",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "size",
+        "type": "uint256"
+      }
+    ],
+    "name": "SSTORE2OutOfBounds",
+    "signature": "SSTORE2OutOfBounds(uint256,uint256,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xfbad885d",
+    "inputs": [],
+    "name": "SSTORE2WriteFailed",
+    "signature": "SSTORE2WriteFailed()",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "id": "0x87b99061ecbd89753d1b3526110e824d217ba03d46d34772dbc2fcb290f43fba",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "creationHash",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "address[]",
+        "name": "pointers",
+        "type": "address[]"
+      }
+    ],
+    "name": "CreationCodeStored",
+    "signature": "CreationCodeStored(bytes32,address[])",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0xe51cd6598376a15fc5313375fb7622c135e466c5a071e795afc7e99214282fb5",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "salt",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes",
+        "name": "config",
+        "type": "bytes"
+      }
+    ],
+    "name": "Deployed",
+    "signature": "Deployed(address,address,bytes32,bytes)",
+    "type": "event"
+  },
+  {
+    "id": "0x25dd03a1",
+    "inputs": [],
+    "name": "codeOf",
+    "outputs": [
+      {
+        "internalType": "address[]",
+        "name": "",
+        "type": "address[]"
+      }
+    ],
+    "signature": "codeOf()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x98925d1e",
+    "inputs": [],
+    "name": "creationHash",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "creationHash()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xcdcb760a",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "salt",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes",
+        "name": "config",
+        "type": "bytes"
+      }
+    ],
+    "name": "deploy",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
+    "signature": "deploy(bytes32,bytes)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x85bb3923",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
+    "name": "deployed",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "deployed(address)",
+    "stateMutability": "view",
+    "type": "function"
+  }
+]

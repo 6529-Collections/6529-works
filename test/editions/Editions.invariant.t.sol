@@ -8,6 +8,7 @@ import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { EditionsAdapterMock } from "../mocks/editions/EditionsMocks.sol";
 import { EditionsBase } from "./EditionsBase.sol";
 import { EditionsHandler } from "./EditionsHandler.sol";
+import { HandlerReach } from "../helpers/HandlerReach.sol";
 
 /// @notice Stateful invariants of 6529 Stream Editions over three editions: one capped at 20,
 ///         one uncapped, and one capped at 30, minted and sealed through two uniform-auction
@@ -124,5 +125,37 @@ contract EditionsInvariantTest is StdInvariant, EditionsBase {
             assertEq(receiver, royaltyReceivers[i]);
             assertEq(amount, royaltyAmounts[i]);
         }
+    }
+
+    /// @notice Handler self-test: mints, seals, burns, transfers and admission changes write
+    ///         Editions; mints and seals are also refused (cap, binding, admission, range); the
+    ///         wrong-kind adapter, the outsider and the re-creation reach Editions and are
+    ///         refused; the master moves in the Stream stand-in. Then every invariant holds.
+    function test_HandlerPathsReachState() public {
+        uint8 w = HandlerReach.WRITES;
+        uint8 r = HandlerReach.REFUSED;
+        HandlerReach.Expect[] memory e = new HandlerReach.Expect[](10);
+        e[0] = HandlerReach.Expect(EditionsHandler.buy.selector, w | r);
+        e[1] = HandlerReach.Expect(EditionsHandler.buyWithWrongKind.selector, r);
+        e[2] = HandlerReach.Expect(EditionsHandler.mintAsOutsider.selector, r);
+        e[3] = HandlerReach.Expect(EditionsHandler.burnFromCustody.selector, w);
+        e[4] = HandlerReach.Expect(EditionsHandler.transfer.selector, w);
+        e[5] = HandlerReach.Expect(EditionsHandler.warp.selector, HandlerReach.CLOCK);
+        e[6] = HandlerReach.Expect(EditionsHandler.recreate.selector, r);
+        e[7] = HandlerReach.Expect(EditionsHandler.moveMaster.selector, w);
+        e[8] = HandlerReach.Expect(EditionsHandler.seal.selector, w | r);
+        e[9] = HandlerReach.Expect(EditionsHandler.toggleAdmission.selector, w);
+        HandlerReach.covers(targetSelectors()[0].selectors, e);
+        address[] memory sut = new address[](2);
+        sut[0] = address(editions);
+        sut[1] = address(stream);
+        HandlerReach.check(e, HandlerReach.drive(address(handler), e, sut, 60, 1));
+        assertGt(handler.mints(), 0);
+        assertGt(handler.seals(), 0);
+        invariant_MintsFollowEditionTerms();
+        invariant_SealedSupplyNeverExceedsTheSealedCount();
+        invariant_SupplyAccounting();
+        invariant_BoundToTheFirstMinter();
+        invariant_LinkAndRoyaltyFixed();
     }
 }

@@ -1,0 +1,59 @@
+[
+  {
+    "id": "0xd1a5d181",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "marginShare",
+        "type": "uint256"
+      }
+    ],
+    "name": "MarginTooLarge",
+    "signature": "MarginTooLarge(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x16ec68ab",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "step",
+        "type": "uint256"
+      }
+    ],
+    "name": "StepUnitsOverflow",
+    "signature": "StepUnitsOverflow(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x16f52576",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "steps",
+        "type": "uint256"
+      }
+    ],
+    "name": "TooManySteps",
+    "signature": "TooManySteps(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x9ae34d3d",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "basePrice",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "stepsPerDecade",
+        "type": "uint256"
+      }
+    ],
+    "name": "UnsupportedLadder",
+    "signature": "UnsupportedLadder(uint256,uint256)",
+    "type": "error"
+  }
+]

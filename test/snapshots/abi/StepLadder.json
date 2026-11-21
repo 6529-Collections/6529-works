@@ -1,0 +1,15 @@
+[
+  {
+    "id": "0x2ed8798d",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "MantissaIndexOutOfRange",
+    "signature": "MantissaIndexOutOfRange(uint256)",
+    "type": "error"
+  }
+]

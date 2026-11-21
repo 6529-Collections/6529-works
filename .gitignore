@@ -30,3 +30,9 @@ cache-lite/
 lcov.info
 coverage/
 mutation/
+# Medusa campaigns and crytic-compile output (docs/testing/README.md)
+medusa-corpus/
+crytic-export/
+out-medusa/
+cache-medusa/
+slither_results.json

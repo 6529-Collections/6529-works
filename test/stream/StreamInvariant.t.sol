@@ -9,6 +9,7 @@ import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IStreamViews } from "src/interfaces/IStreamViews.sol";
+import { HandlerReach } from "../helpers/HandlerReach.sol";
 import { MockRenderer } from "../mocks/stream/StreamMocks.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 import { StreamHandler } from "./StreamHandler.sol";
@@ -164,5 +165,45 @@ contract StreamInvariantTest is RecordsFixture {
             assertEq(info.renderer, pinned);
             assertEq(stream.rendererOf(id), pinned);
         }
+    }
+
+    /// @notice Handler self-test: every action the campaign targets reaches Stream, the records
+    ///         satellite or the delivery satellite and changes their state, or (the attacks) is
+    ///         refused there; then every invariant holds on the state the drive left.
+    function test_HandlerPathsReachState() public {
+        HandlerReach.Expect[] memory e = new HandlerReach.Expect[](17);
+        uint8 w = HandlerReach.WRITES;
+        uint8 r = HandlerReach.REFUSED;
+        e[0] = HandlerReach.Expect(handler.mint.selector, w);
+        e[1] = HandlerReach.Expect(handler.burn.selector, w | r);
+        e[2] = HandlerReach.Expect(handler.deliver.selector, w);
+        e[3] = HandlerReach.Expect(handler.transfer.selector, w);
+        e[4] = HandlerReach.Expect(handler.openRecord.selector, w);
+        e[5] = HandlerReach.Expect(handler.setRecord.selector, w);
+        e[6] = HandlerReach.Expect(handler.finalize.selector, w);
+        e[7] = HandlerReach.Expect(handler.attackFinalized.selector, r);
+        e[8] = HandlerReach.Expect(handler.changeRoyalty.selector, w);
+        e[9] = HandlerReach.Expect(handler.forceRoyalty.selector, r);
+        e[10] = HandlerReach.Expect(handler.swapRenderer.selector, w);
+        e[11] = HandlerReach.Expect(handler.addLocator.selector, w);
+        e[12] = HandlerReach.Expect(handler.warp.selector, HandlerReach.CLOCK);
+        e[13] = HandlerReach.Expect(handler.settle.selector, w);
+        e[14] = HandlerReach.Expect(handler.forgeSettle.selector, r);
+        e[15] = HandlerReach.Expect(handler.replayRoyalty.selector, r);
+        e[16] = HandlerReach.Expect(handler.lowerFeeShare.selector, w | r);
+        HandlerReach.covers(targetSelectors()[0].selectors, e);
+        address[] memory sut = new address[](3);
+        sut[0] = address(stream);
+        sut[1] = address(records);
+        sut[2] = address(delivery);
+        HandlerReach.check(e, HandlerReach.drive(address(handler), e, sut, 80, 1));
+        assertGt(handler.ghostMinted(), 0);
+        assertGt(handler.ghostBurned(), 0);
+        invariant_supplyIsMintedMinusBurned();
+        invariant_idsMonotonicAndNeverReused();
+        invariant_royaltyTermsLocked();
+        invariant_serialsPerCollection();
+        invariant_primarySaleSettledOnlyByMintingAdapter();
+        invariant_finalizedRecordsImmutable();
     }
 }

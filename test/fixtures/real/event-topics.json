@@ -1,0 +1,252 @@
+{
+  "Stream": {
+    "signatures": [
+      "AdmittedMinterSet(address,uint24,bool,bytes32)",
+      "Approval(address,address,uint256)",
+      "ApprovalForAll(address,address,bool)",
+      "AuthorityUpdated(address)",
+      "BatchMetadataUpdate(uint256,uint256)",
+      "Bound(bytes32,address)",
+      "CollectionCreated(uint256,string,bytes32)",
+      "ContentReleased(uint256,bytes32,uint256)",
+      "ContractURISet(string,string)",
+      "ContractURIUpdated()",
+      "DefaultRendererSet(address,address,bytes32)",
+      "DependencySet(bytes32,address,address)",
+      "EditionLinked(uint256,address,uint256)",
+      "FeeRecipientRegistered(uint24,address)",
+      "FeeShareLowered(uint256,uint32,uint32)",
+      "MetadataUpdate(uint256)",
+      "OwnershipTransferred(address,address)",
+      "PrimarySaleSettled(uint256,uint8,address,address,uint256)",
+      "RoyaltyRateChanged(uint256,uint32,uint32)",
+      "TermsInterned(uint24,uint32,uint32,uint24,uint24)",
+      "Transfer(address,address,uint256)",
+      "WorkMinted(uint256,uint256,uint256,bytes32,uint64,uint8,bytes32,bytes32,bytes32,bytes32,address,uint24)",
+      "WorkRescued(uint256,address,address)"
+    ],
+    "topics": [
+      "0xa70d819c10500da6d19e930cca70fe20dbc8af527c2ceb3f1568fc006b4bbf28",
+      "0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925",
+      "0x17307eab39ab6107e8899845ad3d59bd9653f200f220920489ca2b5937696c31",
+      "0x2f658b440c35314f52658ea8a740e05b284cdc84dc9ae01e891f21b8933e7cad",
+      "0x6bd5c950a8d8df17f772f5af37cb3655737899cbf903264b9795592da439661c",
+      "0xd18d9295537e6da9cdfc3a07c1de8a8d8eb30fd42853acff19f097e2969f4784",
+      "0x8966ba956c90c682e7629fa1eff72812e2a5d54259d1e684285c761439588057",
+      "0xdd81ba436305d34f5866960f30a9170d41375c2cb34e977cbb433a4ed0297d12",
+      "0xd144c5914915e649557dfce6d3199a18bae1ec7c249c1766603a2b76ade11c06",
+      "0xa5d4097edda6d87cb9329af83fb3712ef77eeb13738ffe43cc35a4ce305ad962",
+      "0xe2fab5e93f4326fb3c630fb4727e23f53f515c7850a15793f49130e5c0bcd320",
+      "0xb584a2a692666686fcb905c82c0288fcf5affc0262d8ee91245238fdd26cc677",
+      "0xbab490db1fd479b73eef98c43ceeab4d158fbc6ac6a8dd914df5849d80a60b99",
+      "0x69bdf78741820f5caa14a7ef4d189d7fde519f3edc06e5473d43b02efd2948a2",
+      "0x3b3b8394c8a0cdf1c74dec6c576dc308710b34b1d7d97966c193db92fc03741e",
+      "0xf8e1a15aba9398e019f0b49df1a4fde98ee17ae345cb5f6b5e2c27f5033e8ce7",
+      "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0",
+      "0xbb0a6d98d06d32ed01207833227c13c8ef140cc29411188e5f0e63d544ecd471",
+      "0x2114cdf53fc75abac90fa604432eefa896d1dd5272aa96c82c01f9b543f8cd53",
+      "0x30c73bd08c42aadc4ff9cd4e7dd70df7221810db3b2b6852de3c5f05f99c3304",
+      "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+      "0xf6cc1a1d15a1fb0103fa5d9540690ff72c36812162d1db9744ad76cfd5ee2d31",
+      "0x77ac3c6455fa9305b1c12dc5c6cefeb7417b9d5ed5009a19a6bb464e41428ea8"
+    ]
+  },
+  "WorkRecords": {
+    "signatures": [
+      "AuthorityUpdated(address)",
+      "DeliverySet(address,address)",
+      "EIP712DomainChanged()",
+      "FinalizeNoticeRecorded(uint256,uint256)",
+      "LicenseChanged(uint256,(string,bytes32),(string,bytes32),bytes32)",
+      "MediaFileComplete(uint256,uint256,uint256)",
+      "OnChainSyncProgress(uint256,uint256,uint256,uint256)",
+      "PowersRenounced(uint256,uint16,uint16,bytes32)",
+      "RecordOpened(uint256,(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),(bytes32,bytes32,uint8)[],bytes32,bytes32)",
+      "RecordSet(uint256,bytes32,bytes32)",
+      "RendererRepinned(uint256,address,address,bytes32,bytes32)",
+      "RoyaltyRateSet(uint256,uint32,uint32,bytes32)",
+      "StoreAdded(uint256,address,bytes32)",
+      "StoreRetired(uint256)",
+      "WorkFinalized(uint256,address,bytes32,bytes32)",
+      "WorkOnChainComplete(uint256)"
+    ],
+    "topics": [
+      "0x2f658b440c35314f52658ea8a740e05b284cdc84dc9ae01e891f21b8933e7cad",
+      "0x113e2022127f41af1670206bb33d2c69486d7f4f382e9284c2c974fea2fbd666",
+      "0x0a6387c9ea3628b88a633bb4f3b151770f70085117a15f9bf3787cda53f13d31",
+      "0x748054178d2e9baf8b284f3b4aa86e7b086f8c15d636e6dc56121edc7e77662f",
+      "0x65b760e0af5d980706ddd8d0fb2a36bf185861fb11d3df573d90455355703d99",
+      "0x34b39a845bc0217c0f9eeb94c80e0deae37b42c15a7481651a934cddc6ff4ba7",
+      "0x9f94058f71fd08b8591d89976d6cdaed6f95ef35a5b6f919bf7be18b1fa034fe",
+      "0x1645831232817ad28692844e620258135b764cbc32106d9c36fc183ae2e4bd70",
+      "0xb87810676022db88ecd7836f0ff5c5740b79dd50cb2ab388f02c1d3167b69689",
+      "0xe459e8a97a49d1b5f56a31c6ab1565c10a52e0bbc110dcccb81c2e3a745ec19a",
+      "0x4decb991d34e1966c6aec825348b2da0d1ad9d127f691f50eeee04454cfd4add",
+      "0xe8cb89229984389ed515ad4468d11354162343e1f8a6428bec4ffc6c1f6b04a5",
+      "0x33a0067382509bd225121e0df109204fa1c0f3a77159dd2cfe964663410d72d7",
+      "0xc7b2b3897c4390e52536d6aa48ff4740f04bd1a90ac2ba6202dee15611febfb9",
+      "0xf100e8c1f63f815e08f80d5f364ce0827966ad82edfa2987d03daa563a971fe1",
+      "0x15405c6beca1812d5599c3c71668ef2f894705b2271421a61bceb70c6fcb1428"
+    ]
+  },
+  "Editions": {
+    "signatures": [
+      "AdmittedMinterSet(address,uint24,bool,bytes32)",
+      "ApprovalForAll(address,address,bool)",
+      "AuthorityUpdated(address)",
+      "BatchMetadataUpdate(uint256,uint256)",
+      "Bound(bytes32,address)",
+      "ContractURISet(string,string)",
+      "ContractURIUpdated()",
+      "EditionCreated(uint256,bytes32,uint256,(uint32,address,bytes32,bytes))",
+      "EditionFeeShareLowered(uint256,uint32,uint32)",
+      "EditionMinterBound(uint256,address)",
+      "EditionPrimaryMint(uint256,address,uint256,address,uint256)",
+      "EditionSupplySealed(uint256,uint256)",
+      "EditionTermsLocked(uint256,address,address,uint32,address,uint32)",
+      "MetadataUpdate(uint256)",
+      "OwnershipTransferred(address,address)",
+      "RoyaltyRateChanged(uint256,uint32,uint32)",
+      "TransferBatch(address,address,address,uint256[],uint256[])",
+      "TransferSingle(address,address,address,uint256,uint256)",
+      "URI(string,uint256)"
+    ],
+    "topics": [
+      "0xa70d819c10500da6d19e930cca70fe20dbc8af527c2ceb3f1568fc006b4bbf28",
+      "0x17307eab39ab6107e8899845ad3d59bd9653f200f220920489ca2b5937696c31",
+      "0x2f658b440c35314f52658ea8a740e05b284cdc84dc9ae01e891f21b8933e7cad",
+      "0x6bd5c950a8d8df17f772f5af37cb3655737899cbf903264b9795592da439661c",
+      "0xd18d9295537e6da9cdfc3a07c1de8a8d8eb30fd42853acff19f097e2969f4784",
+      "0xd144c5914915e649557dfce6d3199a18bae1ec7c249c1766603a2b76ade11c06",
+      "0xa5d4097edda6d87cb9329af83fb3712ef77eeb13738ffe43cc35a4ce305ad962",
+      "0x913d00d9897b4c40a3d14e8096992faad27d1236291c1af16667e8e3a20a7dc5",
+      "0xd33d609cac1c22ea4fd1b4bac2ed648ecaa972555ff8e91bc28f1407c0ada7d8",
+      "0x35bb9c806dab754b3f2ba332514b28be18c8c25f824111ab5ca68be3d8fbbc93",
+      "0xb55f6fc86ee3461384b52d2e7af0f915fea4f827385a1b154208870d6eaf503c",
+      "0xbf26eb1fb29573bf3ae0bba9e4607e51bbe158ec8720aaee88bc9f1d83abf356",
+      "0xfd8bc2cddbf1e979335e7adacb5b5f9d522b30e14343c3e0d8d1d7c3291ab1c0",
+      "0xf8e1a15aba9398e019f0b49df1a4fde98ee17ae345cb5f6b5e2c27f5033e8ce7",
+      "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0",
+      "0x2114cdf53fc75abac90fa604432eefa896d1dd5272aa96c82c01f9b543f8cd53",
+      "0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb",
+      "0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62",
+      "0x6bb7ff708619ba0610cba295a58592e0451dee2622938c8755667688daf3529b"
+    ]
+  },
+  "ContentStore": {
+    "signatures": [
+      "Base64Attested(bytes32)",
+      "Base64Progress(bytes32,uint256)",
+      "ChunkLinked(bytes32,bytes32[],uint256)",
+      "ChunkWritten(bytes32,address,uint256)",
+      "ManifestRegistered(bytes32,uint256,uint8,uint8,bytes32,string,bytes32[])"
+    ],
+    "topics": [
+      "0xde611757905ea5f13eedb7ea4f8e87ddcbc29ce9429073a6a8b0cf12101e563e",
+      "0x02b839e82d6e5c2ec40d13754cce314a887150d421bd3eeb478b03567c686971",
+      "0x056e8d2d0e279c919bc0abf134aa1cbaa238e1c82e00b6a5824a9cbd4b045425",
+      "0xa720bfe8fb78f1436f460c61e8c1a02410fc148201c63e8e07a8f54a82e5627a",
+      "0x9d2280aa98b792abae06fab8602782374ae1ba5da821d3bf33469828424a6fea"
+    ]
+  },
+  "SplitLedger": {
+    "signatures": [
+      "EIP712DomainChanged()",
+      "Forfeited(address,address,uint256,uint256)",
+      "Marked(address,address,uint256,uint256,uint256)",
+      "NonceUsed(address,uint256,bool)",
+      "Released(address,address,address,uint256,address,uint256,uint256)",
+      "WalletCreated(address,bytes32,bytes32,(uint256,address,uint32)[])"
+    ],
+    "topics": [
+      "0x0a6387c9ea3628b88a633bb4f3b151770f70085117a15f9bf3787cda53f13d31",
+      "0x0442f04792766e07062ce8326d55602839c8446474241c3142c422143d63b877",
+      "0x1b7ef417e104a7de7d3eada7ae1d9dd6aaf812a0f7490141c66d7ae502b50614",
+      "0x4efdf80e1ee210a464536b94135bd8ee19bc4cfe4f456dee6baa71426721a82b",
+      "0x6f6357cde2444cd0595d716c6d2f41683d4bcbc3792451a714a1f8e6e7dcabd1",
+      "0x140f5f9969cb7742e82b483caead38e16ee71968d0c0147939e24b8cc251372f"
+    ]
+  },
+  "RevenueEscrow": {
+    "signatures": [
+      "AuthorityUpdated(address)",
+      "Credited(address,address,address,uint256,uint256)",
+      "ExcessSwept(address,address,uint256)",
+      "Expired(address,address,address,uint256,uint256)",
+      "Flushed(address,address,address,uint256)",
+      "Recovered(address,address,address,uint256,uint256,bool)",
+      "RecoveryConsentSet(address,address)"
+    ],
+    "topics": [
+      "0x2f658b440c35314f52658ea8a740e05b284cdc84dc9ae01e891f21b8933e7cad",
+      "0x2a56c0b8b56559d2047c27729efa9ad0bba3ad9f14cbab37251e3008934dbdb0",
+      "0xb3c71476dfd272eb50cc448234b60ee937ab332f54e7eaab71159ca6eb677440",
+      "0x077a06ed25a672da3d2c8553e96ab0dded8e77c8fc9e1c4b2a9b2ed86ff42d0c",
+      "0xf5c342afbc0fd5497d66d2246a8208902c06a969755b7f7c415041a67d222caf",
+      "0x68a926f9ac3012213c7c910c9ab35da7a4435bad8108a53996843598e6d9f8a2",
+      "0x4d47077de11627502b9cf0f9e550c82b6776030b1e996a5688440f97717726b7"
+    ]
+  },
+  "FederationRegistry": {
+    "signatures": [
+      "AdapterSet(address,bool)",
+      "AuthorityUpdated(address)",
+      "Registered(address,uint256,bytes32,address)",
+      "TemplateSet(bytes32,address,bytes32,uint32,uint8,uint8)"
+    ],
+    "topics": [
+      "0x85ff5d10aa202e69f691155a2050fed648b2d67f85e35d1279510cc434023736",
+      "0x2f658b440c35314f52658ea8a740e05b284cdc84dc9ae01e891f21b8933e7cad",
+      "0x91376e24c6bd16c4acb8824f0538b695c24069230a2f42fea3673ca3572cb3c1",
+      "0x2f731f1fff5cfa97053322b7b102e06f0a9f1fc997163feb440bf5f0ed4304a7"
+    ]
+  },
+  "ArtistRegistry": {
+    "signatures": [
+      "AccountFrozen(uint256,uint48)",
+      "AccountUnfrozen(uint256)",
+      "ArtistRegistered(uint256,(address,address,bytes32,bytes32))",
+      "AuthorityUpdated(address)",
+      "Bound(bytes32,address)",
+      "ChangeCancelled(uint256,address,bool)",
+      "ChangeContested(uint256,address,bytes32)",
+      "ChangeExecuted(uint256,(address,address,bytes32,bytes32),(address,address,bytes32,bytes32))",
+      "ChangeStaged(uint256,(uint8,uint48,uint48,(address,address,bytes32,bytes32),bytes32,bytes32))",
+      "ConsolidationSourceSet(address,address,bytes32)",
+      "ContestExpired(uint256)",
+      "ContestResolved(uint256,bool,bool,bytes32)",
+      "EIP712DomainChanged()",
+      "FederatedContractListed(uint256,address,bytes32,uint8,address,uint32,address)",
+      "FederatedContractStatus(address,uint256,uint8,uint8,bytes32)",
+      "FederatedFeeShareLowered(address,uint32,uint32)",
+      "FederationDelistedSet(uint256,bool,bool,bytes32)",
+      "FederationRegistrySet(address,address)",
+      "NonceRevoked(uint256,uint256)",
+      "PackageRegistrySet(address,address)",
+      "ReplacementAcceptanceConsumed(uint256,bytes32)"
+    ],
+    "topics": [
+      "0x983a5942682c78759d32ecfdf88ff04ffd3274f4392eae9115fa650723991cc9",
+      "0x5538ed094a81af73ef675d54ae7afcd21726935740de63e8dd6403fbb715eaf4",
+      "0xd245a084992a93fd6ea576a8978336bc03798bf9ae33d7863f3f5ac2464d2e8e",
+      "0x2f658b440c35314f52658ea8a740e05b284cdc84dc9ae01e891f21b8933e7cad",
+      "0xd18d9295537e6da9cdfc3a07c1de8a8d8eb30fd42853acff19f097e2969f4784",
+      "0x88a03d9ccb529a0c33b398ed874de8eb17013d6989134d8ca2bb31d264882ddf",
+      "0xd816e77c80ae4c124434434545964f41df90e44dd453a550fef12460674dbad6",
+      "0x8e7ef8fd2a03e7165c8094e3607108b18469eeed2ed508186ffefd3fa6e0488c",
+      "0x43a503407545bc966818e02c3e25cab33c7e2478d79741918dcde367f8842d10",
+      "0x8d645963c52b8e54544a25d9c9cd4e06057464ce600dd092641fd970f630c37b",
+      "0x7581cc54a135d361750f6124773095c416d451f6b06538f823864a9755ec25df",
+      "0x82a368c0e2070f2987a33692517ce1d64696a873b53c7323dbca5a8a998bfb10",
+      "0x0a6387c9ea3628b88a633bb4f3b151770f70085117a15f9bf3787cda53f13d31",
+      "0x6b2a1b3a8725954154a06c0e100d75e409c0ff5593e919df78a8de1b952bd40b",
+      "0x34ddebd723a6fae844a0667301c47c47f0b958a848e80ac6a6d9f98937629a7b",
+      "0xc7648c17054c8f47113daa71098fcf516d2dd4a9396ab95c941454d3e097360b",
+      "0x0fe1f870a2a94dfac17f383bdd9f7b03bb9adaa7ae996a9a7825832dcf71e87d",
+      "0xb6b3a87c0596650c0cf0eb6eca374c8ddc3de178190eabdc7b67d09f2f3a431e",
+      "0x7b1a3f30c1ca888cfd6defd5d5df604c39c92f54a37840d7b876254accf0d4d7",
+      "0xf602f9bca87ed171d7fdb8fdcbde47a70bb58e7a2029620f431ea07ddb8edb93",
+      "0xe1bf6b84e73459c51246c8f5fc3e7f3c0fc2e9bd11eb59219b353501e7975df8"
+    ]
+  }
+}

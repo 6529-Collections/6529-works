@@ -1,0 +1,2594 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "initialAuthority",
+        "type": "address"
+      },
+      {
+        "internalType": "contract IConsolidationSource",
+        "name": "source",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "sourceCodeHash",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "id": "0xe8453598",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "digest",
+        "type": "bytes32"
+      }
+    ],
+    "name": "AcceptanceUsed",
+    "signature": "AcceptanceUsed(bytes32)",
+    "type": "error"
+  },
+  {
+    "id": "0xc2f31e5e",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "authority",
+        "type": "address"
+      }
+    ],
+    "name": "AccessManagedInvalidAuthority",
+    "signature": "AccessManagedInvalidAuthority(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xaf77169d",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      },
+      {
+        "internalType": "uint32",
+        "name": "delay",
+        "type": "uint32"
+      }
+    ],
+    "name": "AccessManagedRequiredDelay",
+    "signature": "AccessManagedRequiredDelay(address,uint32)",
+    "type": "error"
+  },
+  {
+    "id": "0x068ca9d8",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      }
+    ],
+    "name": "AccessManagedUnauthorized",
+    "signature": "AccessManagedUnauthorized(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x8172ce2b",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint48",
+        "name": "until",
+        "type": "uint48"
+      }
+    ],
+    "name": "AccountIsFrozen",
+    "signature": "AccountIsFrozen(uint256,uint48)",
+    "type": "error"
+  },
+  {
+    "id": "0xf74d69ef",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "AccountTaken",
+    "signature": "AccountTaken(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x3afc4899",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "name",
+        "type": "bytes32"
+      }
+    ],
+    "name": "AlreadyBound",
+    "signature": "AlreadyBound(bytes32)",
+    "type": "error"
+  },
+  {
+    "id": "0x5b20679f",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      }
+    ],
+    "name": "BoundedCallShortfall",
+    "signature": "BoundedCallShortfall(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x30373471",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint48",
+        "name": "executableAt",
+        "type": "uint48"
+      }
+    ],
+    "name": "ChangeNotDue",
+    "signature": "ChangeNotDue(uint256,uint48)",
+    "type": "error"
+  },
+  {
+    "id": "0xb3da7185",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "ChangePending",
+    "signature": "ChangePending(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x6708849a",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint48",
+        "name": "expiresAt",
+        "type": "uint48"
+      }
+    ],
+    "name": "ContestNotExpired",
+    "signature": "ContestNotExpired(uint256,uint48)",
+    "type": "error"
+  },
+  {
+    "id": "0xd8ed6809",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint48",
+        "name": "executableAt",
+        "type": "uint48"
+      }
+    ],
+    "name": "ContestWindowClosed",
+    "signature": "ContestWindowClosed(uint256,uint48)",
+    "type": "error"
+  },
+  {
+    "id": "0x281aa7f8",
+    "inputs": [],
+    "name": "ExpectedValueMismatch",
+    "signature": "ExpectedValueMismatch()",
+    "type": "error"
+  },
+  {
+    "id": "0x3a0479ef",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
+    "name": "FederatedContractRefused",
+    "signature": "FederatedContractRefused(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xb70b497b",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "enum IArtistRegistry.FederationStatus",
+        "name": "current",
+        "type": "uint8"
+      }
+    ],
+    "name": "FederatedStatusRefused",
+    "signature": "FederatedStatusRefused(address,uint8)",
+    "type": "error"
+  },
+  {
+    "id": "0x58858f3f",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint32",
+        "name": "current",
+        "type": "uint32"
+      }
+    ],
+    "name": "FeeShareNotLowered",
+    "signature": "FeeShareNotLowered(address,uint32)",
+    "type": "error"
+  },
+  {
+    "id": "0x3c7f6848",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      }
+    ],
+    "name": "InvalidBinding",
+    "signature": "InvalidBinding(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xf7293a48",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "dependency",
+        "type": "address"
+      }
+    ],
+    "name": "InvalidDependency",
+    "signature": "InvalidDependency(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x178423dd",
+    "inputs": [],
+    "name": "InvalidIdentity",
+    "signature": "InvalidIdentity()",
+    "type": "error"
+  },
+  {
+    "id": "0xb3512b0c",
+    "inputs": [],
+    "name": "InvalidShortString",
+    "signature": "InvalidShortString()",
+    "type": "error"
+  },
+  {
+    "id": "0xd855c4f4",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "signer",
+        "type": "address"
+      }
+    ],
+    "name": "InvalidSignature",
+    "signature": "InvalidSignature(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xcd62ef87",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "NoPendingChange",
+    "signature": "NoPendingChange(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x6fd36239",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "NotAuthorized",
+    "signature": "NotAuthorized(uint256,address)",
+    "type": "error"
+  },
+  {
+    "id": "0x902e3d15",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "NotContested",
+    "signature": "NotContested(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x659d4d84",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "outcomeRef",
+        "type": "bytes32"
+      }
+    ],
+    "name": "OutcomeNotRecorded",
+    "signature": "OutcomeNotRecorded(uint256,bytes32)",
+    "type": "error"
+  },
+  {
+    "id": "0xe315380a",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "outcomeRef",
+        "type": "bytes32"
+      }
+    ],
+    "name": "OutcomePredatesContest",
+    "signature": "OutcomePredatesContest(uint256,bytes32)",
+    "type": "error"
+  },
+  {
+    "id": "0x6843f25c",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "ReplacementContested",
+    "signature": "ReplacementContested(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xcd21db4f",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "deadline",
+        "type": "uint256"
+      }
+    ],
+    "name": "SignatureExpired",
+    "signature": "SignatureExpired(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x305a27a9",
+    "inputs": [
+      {
+        "internalType": "string",
+        "name": "str",
+        "type": "string"
+      }
+    ],
+    "name": "StringTooLong",
+    "signature": "StringTooLong(string)",
+    "type": "error"
+  },
+  {
+    "id": "0xd81cc86c",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      }
+    ],
+    "name": "UnboundCaller",
+    "signature": "UnboundCaller(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x85d10384",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "UnknownArtist",
+    "signature": "UnknownArtist(uint256)",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "id": "0x983a5942682c78759d32ecfdf88ff04ffd3274f4392eae9115fa650723991cc9",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint48",
+        "name": "until",
+        "type": "uint48"
+      }
+    ],
+    "name": "AccountFrozen",
+    "signature": "AccountFrozen(uint256,uint48)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x5538ed094a81af73ef675d54ae7afcd21726935740de63e8dd6403fbb715eaf4",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "AccountUnfrozen",
+    "signature": "AccountUnfrozen(uint256)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0xd245a084992a93fd6ea576a8978336bc03798bf9ae33d7863f3f5ac2464d2e8e",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "root",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "payout",
+            "type": "address"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "profileId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "profileDocHash",
+            "type": "bytes32"
+          }
+        ],
+        "indexed": false,
+        "internalType": "struct ArtistIdentity",
+        "name": "identity",
+        "type": "tuple"
+      }
+    ],
+    "name": "ArtistRegistered",
+    "signature": "ArtistRegistered(uint256,(address,address,bytes32,bytes32))",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x2f658b440c35314f52658ea8a740e05b284cdc84dc9ae01e891f21b8933e7cad",
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "authority",
+        "type": "address"
+      }
+    ],
+    "name": "AuthorityUpdated",
+    "signature": "AuthorityUpdated(address)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0xd18d9295537e6da9cdfc3a07c1de8a8d8eb30fd42853acff19f097e2969f4784",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "name",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      }
+    ],
+    "name": "Bound",
+    "signature": "Bound(bytes32,address)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x88a03d9ccb529a0c33b398ed874de8eb17013d6989134d8ca2bb31d264882ddf",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "by",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "byNetwork",
+        "type": "bool"
+      }
+    ],
+    "name": "ChangeCancelled",
+    "signature": "ChangeCancelled(uint256,address,bool)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0xd816e77c80ae4c124434434545964f41df90e44dd453a550fef12460674dbad6",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "by",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "priorOutcome",
+        "type": "bytes32"
+      }
+    ],
+    "name": "ChangeContested",
+    "signature": "ChangeContested(uint256,address,bytes32)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x8e7ef8fd2a03e7165c8094e3607108b18469eeed2ed508186ffefd3fa6e0488c",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "root",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "payout",
+            "type": "address"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "profileId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "profileDocHash",
+            "type": "bytes32"
+          }
+        ],
+        "indexed": false,
+        "internalType": "struct ArtistIdentity",
+        "name": "previous",
+        "type": "tuple"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "root",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "payout",
+            "type": "address"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "profileId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "profileDocHash",
+            "type": "bytes32"
+          }
+        ],
+        "indexed": false,
+        "internalType": "struct ArtistIdentity",
+        "name": "next",
+        "type": "tuple"
+      }
+    ],
+    "name": "ChangeExecuted",
+    "signature": "ChangeExecuted(uint256,(address,address,bytes32,bytes32),(address,address,bytes32,bytes32))",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x43a503407545bc966818e02c3e25cab33c7e2478d79741918dcde367f8842d10",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "components": [
+          {
+            "internalType": "enum ChangeKind",
+            "name": "kind",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint48",
+            "name": "executableAt",
+            "type": "uint48"
+          },
+          {
+            "internalType": "uint48",
+            "name": "contestedAt",
+            "type": "uint48"
+          },
+          {
+            "components": [
+              {
+                "internalType": "address",
+                "name": "root",
+                "type": "address"
+              },
+              {
+                "internalType": "address",
+                "name": "payout",
+                "type": "address"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "profileId",
+                "type": "bytes32"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "profileDocHash",
+                "type": "bytes32"
+              }
+            ],
+            "internalType": "struct ArtistIdentity",
+            "name": "next",
+            "type": "tuple"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "evidenceHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "priorOutcome",
+            "type": "bytes32"
+          }
+        ],
+        "indexed": false,
+        "internalType": "struct PendingChange",
+        "name": "change",
+        "type": "tuple"
+      }
+    ],
+    "name": "ChangeStaged",
+    "signature": "ChangeStaged(uint256,(uint8,uint48,uint48,(address,address,bytes32,bytes32),bytes32,bytes32))",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x8d645963c52b8e54544a25d9c9cd4e06057464ce600dd092641fd970f630c37b",
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "previous",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "next",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "codeHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "ConsolidationSourceSet",
+    "signature": "ConsolidationSourceSet(address,address,bytes32)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x7581cc54a135d361750f6124773095c416d451f6b06538f823864a9755ec25df",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "ContestExpired",
+    "signature": "ContestExpired(uint256)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x82a368c0e2070f2987a33692517ce1d64696a873b53c7323dbca5a8a998bfb10",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "upheld",
+        "type": "bool"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "executed",
+        "type": "bool"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "outcomeRef",
+        "type": "bytes32"
+      }
+    ],
+    "name": "ContestResolved",
+    "signature": "ContestResolved(uint256,bool,bool,bytes32)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x0a6387c9ea3628b88a633bb4f3b151770f70085117a15f9bf3787cda53f13d31",
+    "inputs": [],
+    "name": "EIP712DomainChanged",
+    "signature": "EIP712DomainChanged()",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x6b2a1b3a8725954154a06c0e100d75e409c0ff5593e919df78a8de1b952bd40b",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "codeHash",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint8",
+        "name": "form",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "partner",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "feeShare",
+        "type": "uint32"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "feeRecipient",
+        "type": "address"
+      }
+    ],
+    "name": "FederatedContractListed",
+    "signature": "FederatedContractListed(uint256,address,bytes32,uint8,address,uint32,address)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x34ddebd723a6fae844a0667301c47c47f0b958a848e80ac6a6d9f98937629a7b",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum IArtistRegistry.FederationStatus",
+        "name": "previous",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum IArtistRegistry.FederationStatus",
+        "name": "status",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "ref",
+        "type": "bytes32"
+      }
+    ],
+    "name": "FederatedContractStatus",
+    "signature": "FederatedContractStatus(address,uint256,uint8,uint8,bytes32)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0xc7648c17054c8f47113daa71098fcf516d2dd4a9396ab95c941454d3e097360b",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "previous",
+        "type": "uint32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "share",
+        "type": "uint32"
+      }
+    ],
+    "name": "FederatedFeeShareLowered",
+    "signature": "FederatedFeeShareLowered(address,uint32,uint32)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x0fe1f870a2a94dfac17f383bdd9f7b03bb9adaa7ae996a9a7825832dcf71e87d",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "previous",
+        "type": "bool"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "delisted",
+        "type": "bool"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "ref",
+        "type": "bytes32"
+      }
+    ],
+    "name": "FederationDelistedSet",
+    "signature": "FederationDelistedSet(uint256,bool,bool,bytes32)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0xb6b3a87c0596650c0cf0eb6eca374c8ddc3de178190eabdc7b67d09f2f3a431e",
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "previous",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "next",
+        "type": "address"
+      }
+    ],
+    "name": "FederationRegistrySet",
+    "signature": "FederationRegistrySet(address,address)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x7b1a3f30c1ca888cfd6defd5d5df604c39c92f54a37840d7b876254accf0d4d7",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "nonce",
+        "type": "uint256"
+      }
+    ],
+    "name": "NonceRevoked",
+    "signature": "NonceRevoked(uint256,uint256)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0xf602f9bca87ed171d7fdb8fdcbde47a70bb58e7a2029620f431ea07ddb8edb93",
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "previous",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "next",
+        "type": "address"
+      }
+    ],
+    "name": "PackageRegistrySet",
+    "signature": "PackageRegistrySet(address,address)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0xe1bf6b84e73459c51246c8f5fc3e7f3c0fc2e9bd11eb59219b353501e7975df8",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "digest",
+        "type": "bytes32"
+      }
+    ],
+    "name": "ReplacementAcceptanceConsumed",
+    "signature": "ReplacementAcceptanceConsumed(uint256,bytes32)",
+    "type": "event"
+  },
+  {
+    "id": "0xceb38f1a",
+    "inputs": [],
+    "name": "CONTEST_LAPSE",
+    "outputs": [
+      {
+        "internalType": "uint48",
+        "name": "",
+        "type": "uint48"
+      }
+    ],
+    "signature": "CONTEST_LAPSE()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x823c82ca",
+    "inputs": [],
+    "name": "FREEZE_PERIOD",
+    "outputs": [
+      {
+        "internalType": "uint48",
+        "name": "",
+        "type": "uint48"
+      }
+    ],
+    "signature": "FREEZE_PERIOD()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x39c95ced",
+    "inputs": [],
+    "name": "OWN_CHANGE_DELAY",
+    "outputs": [
+      {
+        "internalType": "uint48",
+        "name": "",
+        "type": "uint48"
+      }
+    ],
+    "signature": "OWN_CHANGE_DELAY()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x31fa1bfb",
+    "inputs": [],
+    "name": "REPLACEMENT_NOTICE",
+    "outputs": [
+      {
+        "internalType": "uint48",
+        "name": "",
+        "type": "uint48"
+      }
+    ],
+    "signature": "REPLACEMENT_NOTICE()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xf003c266",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "activeAuthorityOf",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "activeAuthorityOf(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x4b1b7b84",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "artist",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "root",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "payout",
+            "type": "address"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "profileId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "profileDocHash",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct ArtistIdentity",
+        "name": "identity",
+        "type": "tuple"
+      },
+      {
+        "internalType": "uint48",
+        "name": "frozenUntil_",
+        "type": "uint48"
+      }
+    ],
+    "signature": "artist(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xee8667d6",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "artistIdOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "artistIdOf(address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xbf7e214f",
+    "inputs": [],
+    "name": "authority",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "authority()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x30317458",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "authorityOf",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "authorityOf(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x3d4dbd3c",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      }
+    ],
+    "name": "bindFederationRegistry",
+    "outputs": [],
+    "signature": "bindFederationRegistry(address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x56ea1bf8",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      }
+    ],
+    "name": "bindPackageRegistry",
+    "outputs": [],
+    "signature": "bindPackageRegistry(address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x5b004c86",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      }
+    ],
+    "name": "bindSplitFactory",
+    "outputs": [],
+    "signature": "bindSplitFactory(address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xa46c8086",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      }
+    ],
+    "name": "bindStatementLog",
+    "outputs": [],
+    "signature": "bindStatementLog(address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x7d4b8f67",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      }
+    ],
+    "name": "bindStream",
+    "outputs": [],
+    "signature": "bindStream(address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x5b57a2ed",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "cancelChange",
+    "outputs": [],
+    "signature": "cancelChange(uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x6196ae79",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "cancelOwnChange",
+    "outputs": [],
+    "signature": "cancelOwnChange(uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x0c3f8b2a",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "cancelReplacement",
+    "outputs": [],
+    "signature": "cancelReplacement(uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xf2553a31",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "root",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "payout",
+            "type": "address"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "profileId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "profileDocHash",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct ArtistIdentity",
+        "name": "next",
+        "type": "tuple"
+      },
+      {
+        "internalType": "uint256",
+        "name": "nonce",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint64",
+        "name": "deadline",
+        "type": "uint64"
+      }
+    ],
+    "name": "changeDigest",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "changeDigest(uint256,(address,address,bytes32,bytes32),uint256,uint64)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x3473a6ee",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "changeNonce",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "changeNonce(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x163f322c",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "subject",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "what",
+        "type": "bytes32"
+      }
+    ],
+    "name": "consentDigest",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "consentDigest(address,bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xb1909646",
+    "inputs": [],
+    "name": "consolidationSource",
+    "outputs": [
+      {
+        "internalType": "contract IConsolidationSource",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "consolidationSource()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x3b8b5c40",
+    "inputs": [],
+    "name": "consolidationSourceCodeHash",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "consolidationSourceCodeHash()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x84b0196e",
+    "inputs": [],
+    "name": "eip712Domain",
+    "outputs": [
+      {
+        "internalType": "bytes1",
+        "name": "fields",
+        "type": "bytes1"
+      },
+      {
+        "internalType": "string",
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "internalType": "string",
+        "name": "version",
+        "type": "string"
+      },
+      {
+        "internalType": "uint256",
+        "name": "chainId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "verifyingContract",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "salt",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "extensions",
+        "type": "uint256[]"
+      }
+    ],
+    "signature": "eip712Domain()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x196fe7b1",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "executeChange",
+    "outputs": [],
+    "signature": "executeChange(uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x44220959",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "expireContest",
+    "outputs": [],
+    "signature": "expireContest(uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x838c6165",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
+    "name": "federatedFeeShare",
+    "outputs": [
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      }
+    ],
+    "signature": "federatedFeeShare(address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xf209f5a3",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
+    "name": "federatedListing",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "enum IArtistRegistry.FederationStatus",
+        "name": "status",
+        "type": "uint8"
+      }
+    ],
+    "signature": "federatedListing(address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xadb08ded",
+    "inputs": [],
+    "name": "federationRegistry",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "federationRegistry()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xd7a78db8",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "freeze",
+    "outputs": [],
+    "signature": "freeze(uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xa8bbc0c0",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "accountId",
+        "type": "uint256"
+      }
+    ],
+    "name": "frozenUntil",
+    "outputs": [
+      {
+        "internalType": "uint48",
+        "name": "",
+        "type": "uint48"
+      }
+    ],
+    "signature": "frozenUntil(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x3074ca00",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "isArtist",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "isArtist(address,uint256,address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x8fb36037",
+    "inputs": [],
+    "name": "isConsumingScheduledOp",
+    "outputs": [
+      {
+        "internalType": "bytes4",
+        "name": "",
+        "type": "bytes4"
+      }
+    ],
+    "signature": "isConsumingScheduledOp()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x455cf18c",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "accountId",
+        "type": "uint256"
+      }
+    ],
+    "name": "isFederationDelisted",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "isFederationDelisted(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x229575fc",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "accountId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      }
+    ],
+    "name": "isWallet",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "isWallet(uint256,address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xdd3b55e0",
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "artistId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "token",
+            "type": "address"
+          },
+          {
+            "internalType": "uint8",
+            "name": "form",
+            "type": "uint8"
+          },
+          {
+            "internalType": "address",
+            "name": "partner",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "feeShare",
+            "type": "uint32"
+          },
+          {
+            "internalType": "address",
+            "name": "feeRecipient",
+            "type": "address"
+          },
+          {
+            "internalType": "uint64",
+            "name": "deadline",
+            "type": "uint64"
+          }
+        ],
+        "internalType": "struct IArtistRegistry.FederatedListing",
+        "name": "listing",
+        "type": "tuple"
+      },
+      {
+        "internalType": "bytes",
+        "name": "consent",
+        "type": "bytes"
+      }
+    ],
+    "name": "listFederatedContract",
+    "outputs": [],
+    "signature": "listFederatedContract((uint256,address,uint8,address,uint32,address,uint64),bytes)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xa8bf8adc",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint32",
+        "name": "share",
+        "type": "uint32"
+      }
+    ],
+    "name": "lowerFederatedFeeShare",
+    "outputs": [],
+    "signature": "lowerFederatedFeeShare(address,uint32)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x16f23f68",
+    "inputs": [],
+    "name": "packageRegistry",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "packageRegistry()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x9b2c1793",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "payoutAddress",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "payoutAddress(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xb50d9cdf",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "pendingChange",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "enum ChangeKind",
+            "name": "kind",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint48",
+            "name": "executableAt",
+            "type": "uint48"
+          },
+          {
+            "internalType": "uint48",
+            "name": "contestedAt",
+            "type": "uint48"
+          },
+          {
+            "components": [
+              {
+                "internalType": "address",
+                "name": "root",
+                "type": "address"
+              },
+              {
+                "internalType": "address",
+                "name": "payout",
+                "type": "address"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "profileId",
+                "type": "bytes32"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "profileDocHash",
+                "type": "bytes32"
+              }
+            ],
+            "internalType": "struct ArtistIdentity",
+            "name": "next",
+            "type": "tuple"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "evidenceHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "priorOutcome",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct PendingChange",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "signature": "pendingChange(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xf44b483e",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "root",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "profileId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "profileDocHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "register",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "register(address,bytes32,bytes32)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x33cc27e2",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "profileId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "profileDocHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint64",
+        "name": "deadline",
+        "type": "uint64"
+      },
+      {
+        "internalType": "bytes",
+        "name": "signature",
+        "type": "bytes"
+      }
+    ],
+    "name": "registerFederated",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "registerFederated(address,bytes32,bytes32,uint64,bytes)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x2eaed25f",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "profileId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "profileDocHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint64",
+        "name": "deadline",
+        "type": "uint64"
+      }
+    ],
+    "name": "registrationDigest",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "registrationDigest(address,bytes32,bytes32,uint64)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xd0d4e397",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "root",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "payout",
+            "type": "address"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "profileId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "profileDocHash",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct ArtistIdentity",
+        "name": "next",
+        "type": "tuple"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "evidenceHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint64",
+        "name": "deadline",
+        "type": "uint64"
+      }
+    ],
+    "name": "replacementDigest",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "replacementDigest(uint256,(address,address,bytes32,bytes32),bytes32,uint64)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x4aeb30f0",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "accountId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "what",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes",
+        "name": "proof",
+        "type": "bytes"
+      }
+    ],
+    "name": "requireConsent",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      }
+    ],
+    "signature": "requireConsent(uint256,bytes32,bytes)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x8fade530",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "accountId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "digest",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes",
+        "name": "proof",
+        "type": "bytes"
+      }
+    ],
+    "name": "requireSigned",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      }
+    ],
+    "signature": "requireSigned(uint256,bytes32,bytes)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x1b93c623",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "reservedFor",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "reservedFor(address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xd16d1602",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bool",
+        "name": "uphold",
+        "type": "bool"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "outcomeRef",
+        "type": "bytes32"
+      }
+    ],
+    "name": "resolveContested",
+    "outputs": [],
+    "signature": "resolveContested(uint256,bool,bytes32)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x05c1ee20",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "revokeNonce",
+    "outputs": [],
+    "signature": "revokeNonce(uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x7a9e5e4b",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "newAuthority",
+        "type": "address"
+      }
+    ],
+    "name": "setAuthority",
+    "outputs": [],
+    "signature": "setAuthority(address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x741cbdad",
+    "inputs": [
+      {
+        "internalType": "contract IConsolidationSource",
+        "name": "expected",
+        "type": "address"
+      },
+      {
+        "internalType": "contract IConsolidationSource",
+        "name": "next",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "nextCodeHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "setConsolidationSource",
+    "outputs": [],
+    "signature": "setConsolidationSource(address,address,bytes32)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x8415daa1",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "enum IArtistRegistry.FederationStatus",
+        "name": "status",
+        "type": "uint8"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "ref",
+        "type": "bytes32"
+      }
+    ],
+    "name": "setFederatedStatus",
+    "outputs": [],
+    "signature": "setFederatedStatus(address,uint8,bytes32)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x2a973e93",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bool",
+        "name": "delisted",
+        "type": "bool"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "ref",
+        "type": "bytes32"
+      }
+    ],
+    "name": "setFederationDelisted",
+    "outputs": [],
+    "signature": "setFederationDelisted(uint256,bool,bytes32)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x747e3199",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "expected",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "next",
+        "type": "address"
+      }
+    ],
+    "name": "setFederationRegistry",
+    "outputs": [],
+    "signature": "setFederationRegistry(address,address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x00752cf1",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "expected",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "next",
+        "type": "address"
+      }
+    ],
+    "name": "setPackageRegistry",
+    "outputs": [],
+    "signature": "setPackageRegistry(address,address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x5720babb",
+    "inputs": [],
+    "name": "splitFactory",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "splitFactory()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xd5359c77",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "root",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "payout",
+            "type": "address"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "profileId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "profileDocHash",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct ArtistIdentity",
+        "name": "next",
+        "type": "tuple"
+      },
+      {
+        "internalType": "uint64",
+        "name": "deadline",
+        "type": "uint64"
+      },
+      {
+        "internalType": "bytes",
+        "name": "proof",
+        "type": "bytes"
+      }
+    ],
+    "name": "stageChange",
+    "outputs": [],
+    "signature": "stageChange(uint256,(address,address,bytes32,bytes32),uint64,bytes)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x2eff6829",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "root",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "payout",
+            "type": "address"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "profileId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "profileDocHash",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct ArtistIdentity",
+        "name": "next",
+        "type": "tuple"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "evidenceHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint64",
+        "name": "deadline",
+        "type": "uint64"
+      },
+      {
+        "internalType": "bytes",
+        "name": "rootAcceptance",
+        "type": "bytes"
+      }
+    ],
+    "name": "stageReplacement",
+    "outputs": [],
+    "signature": "stageReplacement(uint256,(address,address,bytes32,bytes32),bytes32,uint64,bytes)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xe726ef63",
+    "inputs": [],
+    "name": "statementLog",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "statementLog()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x6f2a6791",
+    "inputs": [],
+    "name": "stream",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "stream()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x01ffc9a7",
+    "inputs": [
+      {
+        "internalType": "bytes4",
+        "name": "interfaceId",
+        "type": "bytes4"
+      }
+    ],
+    "name": "supportsInterface",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "supportsInterface(bytes4)",
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "id": "0x6623fc46",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "unfreeze",
+    "outputs": [],
+    "signature": "unfreeze(uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+]

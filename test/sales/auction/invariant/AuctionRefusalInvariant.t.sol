@@ -25,6 +25,7 @@ import {
     PermitToken
 } from "../../../mocks/sales/SaleMocks.sol";
 import { AuctionBase } from "../AuctionBase.sol";
+import { HandlerReach } from "../../../helpers/HandlerReach.sol";
 
 /// @dev Drives sales of two hostile federated tokens, whose settlement calls fail, burn gas,
 ///      answer malformed or hostile values, re-enter another sale, or steer by gas, time, buyer
@@ -322,11 +323,35 @@ contract AuctionRefusalHandler is Test {
         ghostClaimed += owed;
     }
 
+    uint256 public deliveriesClaimed;
+
+    /// @dev Claims a pending delivery, scanning from `seed` for a sale that has one, as the party
+    ///      the auction names for it (the artist claims to its vault). (Claiming a random sale as
+    ///      the artist reached no pending delivery in 40 measured campaign-length runs: about one
+    ///      sale in eighty has one.)
     function claimDelivery(uint256 seed) external {
         if (sales.length == 0) return;
-        vm.prank(artist);
-        try auction.claimDelivery{ gas: KEEPER_GAS }(sales[seed % sales.length], artistVault) { }
-            catch { }
+        uint256 saleId;
+        address recipient;
+        for (uint256 k; k < sales.length && recipient == address(0); ++k) {
+            saleId = sales[(seed % sales.length + k) % sales.length];
+            // The lens reads an unbid work's claimant from its token, and refuses a hostile
+            // token's malformed answer (BoundedCall): such a sale is skipped here.
+            try auction.pendingDelivery(saleId) returns (address r) {
+                recipient = r;
+            } catch { }
+        }
+        if (recipient == address(0)) {
+            // None pending: the artist's claim of a random sale must be refused.
+            saleId = sales[seed % sales.length];
+            recipient = artist;
+        }
+        vm.prank(recipient);
+        try auction.claimDelivery{ gas: KEEPER_GAS }(
+            saleId, recipient == artist ? artistVault : recipient
+        ) {
+            ++deliveriesClaimed;
+        } catch { }
     }
 }
 
@@ -567,6 +592,59 @@ abstract contract AuctionRefusalFixture is AuctionBase {
             if (handler.isStreamSale(saleId)) listed += fee;
             else fed += fee;
         }
+    }
+
+    /// @notice Handler self-test, in each currency: every action reaches the auction, the token
+    ///         stand-ins, the registry, the resolver, the allowlist or the statement log and
+    ///         changes it; settlements and disputes are also refused; the end-of-run check holds.
+    ///         In ETH the currency switch has nothing to switch and returns at once, by design;
+    ///         a delivery claim is shown only to reach the auction (see below).
+    function test_HandlerPathsReachState() public {
+        uint8 w = HandlerReach.WRITES;
+        uint8 wr = HandlerReach.WRITES | HandlerReach.REFUSED;
+        HandlerReach.Expect[] memory e = new HandlerReach.Expect[](13);
+        e[0] = HandlerReach.Expect(AuctionRefusalHandler.start.selector, w);
+        e[1] = HandlerReach.Expect(AuctionRefusalHandler.bid.selector, w);
+        e[2] = HandlerReach.Expect(AuctionRefusalHandler.warp.selector, HandlerReach.CLOCK);
+        e[3] = HandlerReach.Expect(AuctionRefusalHandler.setFault.selector, w);
+        e[4] = HandlerReach.Expect(AuctionRefusalHandler.clearFaults.selector, w);
+        e[5] = HandlerReach.Expect(AuctionRefusalHandler.settle.selector, wr);
+        e[6] = HandlerReach.Expect(AuctionRefusalHandler.settleOrRefund.selector, wr);
+        e[7] = HandlerReach.Expect(AuctionRefusalHandler.claim.selector, w);
+        // A pending delivery is rare here (one in about 90 measured runs): the claim is shown to
+        // reach the auction, not to succeed.
+        e[8] =
+            HandlerReach.Expect(AuctionRefusalHandler.claimDelivery.selector, HandlerReach.REFUSED);
+        e[9] = HandlerReach.Expect(AuctionRefusalHandler.govern.selector, w);
+        e[10] = HandlerReach.Expect(AuctionRefusalHandler.toggleListing.selector, w);
+        e[11] =
+            HandlerReach.Expect(AuctionRefusalHandler.toggleCurrency.selector, cur == ETH ? 0 : w);
+        e[12] = HandlerReach.Expect(AuctionRefusalHandler.dispute.selector, wr);
+        HandlerReach.covers(targetSelectors()[0].selectors, e);
+        address[] memory sut = new address[](9);
+        sut[0] = address(auction);
+        sut[1] = address(stream);
+        sut[2] = address(handler.hostiles(0));
+        sut[3] = address(handler.hostiles(1));
+        sut[4] = address(registry);
+        sut[5] = address(resolver);
+        sut[6] = address(allowlist);
+        sut[7] = address(statements);
+        sut[8] = address(usd);
+        // Six campaign-length runs (10 rounds of 13 actions), each from the starting state but
+        // the last: a run opens at most eight sales.
+        HandlerReach.Tally[] memory t = new HandlerReach.Tally[](e.length);
+        for (uint256 run; run < 6; ++run) {
+            uint256 snapshot = vm.snapshotState();
+            HandlerReach.add(t, HandlerReach.drive(address(handler), e, sut, 10, run));
+            if (run < 5) vm.revertToState(snapshot);
+        }
+        HandlerReach.check(e, t);
+        invariant_HeldEqualsCreditsPlusLiveBids();
+        invariant_ValueIsConserved();
+        invariant_TheNetworkIsPaidOnEverySoldSale();
+        invariant_TheBuyerHoldsTheWorkOnlyIfItPaid();
+        afterInvariant();
     }
 }
 

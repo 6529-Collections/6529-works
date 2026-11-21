@@ -8,6 +8,7 @@ import { Roles } from "src/governance/Roles.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
 import { GovernanceFixture } from "../helpers/GovernanceFixture.sol";
 import { GovernedTargetMock } from "../mocks/governance/GovernanceMocks.sol";
+import { HandlerReach } from "../helpers/HandlerReach.sol";
 
 /// @notice Random actors hand the network over, accept, try to grant themselves network roles,
 ///         grant and revoke operational keys, brake, cancel and run operations. Every call that
@@ -146,5 +147,30 @@ contract GovernanceInvariantTest is StdInvariant, GovernanceFixture {
             assertFalse(configurator);
             assertEq(holders, 1);
         }
+    }
+
+    /// @notice Handler self-test: hand-overs, acceptances, operational grants and revocations,
+    ///         and braked operations both change the manager (or the governed target) and are
+    ///         refused by it; renunciations remove operational roles; grants of a network role
+    ///         are only ever refused; the network actually changes hands. Then the invariant
+    ///         holds.
+    function test_HandlerPathsReachState() public {
+        uint8 wr = HandlerReach.WRITES | HandlerReach.REFUSED;
+        HandlerReach.Expect[] memory e = new HandlerReach.Expect[](6);
+        e[0] = HandlerReach.Expect(GovernanceHandler.transfer.selector, wr);
+        e[1] = HandlerReach.Expect(GovernanceHandler.accept.selector, wr);
+        e[2] =
+            HandlerReach.Expect(GovernanceHandler.grantNetworkRole.selector, HandlerReach.REFUSED);
+        e[3] = HandlerReach.Expect(GovernanceHandler.grantOperational.selector, wr);
+        e[4] = HandlerReach.Expect(GovernanceHandler.brakeAndRun.selector, wr);
+        // A renunciation is never refused: of a role the caller lacks (a network role is the
+        // network's by address, not a record) it is a no-op; of PLATFORM it removes the record.
+        e[5] = HandlerReach.Expect(GovernanceHandler.renounce.selector, HandlerReach.WRITES);
+        address[] memory sut = new address[](2);
+        sut[0] = address(manager);
+        sut[1] = address(target);
+        HandlerReach.check(e, HandlerReach.drive(address(handler), e, sut, 80, 1));
+        assertGt(handler.accepted(), 0);
+        invariant_ExactlyOneAddressHoldsTheNetworkRoles();
     }
 }

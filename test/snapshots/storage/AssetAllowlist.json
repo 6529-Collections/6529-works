@@ -1,0 +1,92 @@
+{
+  "structs": {
+    "struct AssetAllowlist.AssetConfig": [
+      {
+        "label": "status",
+        "offset": 0,
+        "slot": 0,
+        "type": "enum IAssetAllowlist.Status"
+      },
+      {
+        "label": "revision",
+        "offset": 1,
+        "slot": 0,
+        "type": "uint64"
+      },
+      {
+        "label": "since",
+        "offset": 9,
+        "slot": 0,
+        "type": "uint40"
+      },
+      {
+        "label": "inactiveTotal",
+        "offset": 14,
+        "slot": 0,
+        "type": "uint40"
+      },
+      {
+        "label": "openingBid",
+        "offset": 19,
+        "slot": 0,
+        "type": "uint96"
+      },
+      {
+        "label": "incrementFloor",
+        "offset": 0,
+        "slot": 1,
+        "type": "uint256"
+      }
+    ],
+    "struct AssetAllowlist.Currency": [
+      {
+        "label": "configured",
+        "offset": 0,
+        "slot": 0,
+        "type": "bool"
+      },
+      {
+        "label": "asset",
+        "offset": 1,
+        "slot": 0,
+        "type": "address"
+      },
+      {
+        "label": "revision",
+        "offset": 21,
+        "slot": 0,
+        "type": "uint64"
+      }
+    ]
+  },
+  "variables": [
+    {
+      "contract": "AssetAllowlist",
+      "label": "_authority",
+      "offset": 0,
+      "slot": 0,
+      "type": "address"
+    },
+    {
+      "contract": "AssetAllowlist",
+      "label": "_consumingSchedule",
+      "offset": 20,
+      "slot": 0,
+      "type": "bool"
+    },
+    {
+      "contract": "AssetAllowlist",
+      "label": "_assets",
+      "offset": 0,
+      "slot": 1,
+      "type": "mapping(address => struct AssetAllowlist.AssetConfig)"
+    },
+    {
+      "contract": "AssetAllowlist",
+      "label": "_defaults",
+      "offset": 0,
+      "slot": 2,
+      "type": "mapping(bytes32 => struct AssetAllowlist.Currency)"
+    }
+  ]
+}

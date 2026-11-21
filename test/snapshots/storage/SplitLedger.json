@@ -1,0 +1,61 @@
+{
+  "structs": {},
+  "variables": [
+    {
+      "contract": "SplitLedger",
+      "label": "_nameFallback",
+      "offset": 0,
+      "slot": 0,
+      "type": "string"
+    },
+    {
+      "contract": "SplitLedger",
+      "label": "_versionFallback",
+      "offset": 0,
+      "slot": 1,
+      "type": "string"
+    },
+    {
+      "contract": "SplitLedger",
+      "label": "configOf",
+      "offset": 0,
+      "slot": 2,
+      "type": "mapping(address => bytes32)"
+    },
+    {
+      "contract": "SplitLedger",
+      "label": "released",
+      "offset": 0,
+      "slot": 3,
+      "type": "mapping(address => mapping(address => mapping(uint256 => uint256)))"
+    },
+    {
+      "contract": "SplitLedger",
+      "label": "totalReleased",
+      "offset": 0,
+      "slot": 4,
+      "type": "mapping(address => mapping(address => uint256))"
+    },
+    {
+      "contract": "SplitLedger",
+      "label": "recordedObserved",
+      "offset": 0,
+      "slot": 5,
+      "type": "mapping(address => mapping(address => uint256))"
+    },
+    {
+      "contract": "SplitLedger",
+      "label": "_nonceBitmap",
+      "offset": 0,
+      "slot": 6,
+      "type": "mapping(address => mapping(uint256 => uint256))"
+    },
+    {
+      "contract": "SplitLedger",
+      "label": "_marks",
+      "offset": 0,
+      "slot": 7,
+      "type": "mapping(address => mapping(address => mapping(uint256 => uint256)))"
+    }
+  ]
+}

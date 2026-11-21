@@ -1,0 +1,53 @@
+{
+  "source": {
+    "repository": "https://github.com/6529-Collections/6529networkmuseum",
+    "commit": "3926d78faacf67a62b8d9b48e15d26c43b52eae9",
+    "license": "Museum-authored records: CC0-1.0 (RIGHTS.md). The image is not copied: only its digests are kept."
+  },
+  "museumRecord": {
+    "path": "records/entities/6529NM-W-0029.json",
+    "recordId": "6529NM-W-0029",
+    "subjectId": "0x679e5d5d3ba5319ec829712587487f2be970587d62e5fb25275d3b484fa7b34c",
+    "schemaId": "0xd8aef6592fe156c4c3c10e59de540f5cdf8b130eedca322e0e22b30764bee1a9",
+    "contentDigest": "0x1fef3d9ed642c0e89522b3c6f9fc0bf18e2815249bbd0ad2b1427861da2a9757",
+    "uri": "https://6529networkmuseum.org/records/entities/6529NM-W-0029.json"
+  },
+  "record": {
+    "json": "{\"name\":\"Themes and Variations #210\",\"description\":\"This Work is one exact output from the Themes and Variations edition. Its token, custody, title, rights, source image, live generator, and Museum accession are recorded as separate facts. 6529 Network Museum record 6529NM-W-0029.\",\"artists\":[\"Vera Molnár\",\"Martin Grasser\"],\"year\":2023,\"medium\":\"On-chain generative software; Ethereum ERC-721 token; live browser generator\",\"dimensions\":\"2400 x 2400 px (Museum display image)\"}",
+    "bytes": "0x7b226e616d65223a225468656d657320616e6420566172696174696f6e732023323130222c226465736372697074696f6e223a225468697320576f726b206973206f6e65206578616374206f75747075742066726f6d20746865205468656d657320616e6420566172696174696f6e732065646974696f6e2e2049747320746f6b656e2c20637573746f64792c207469746c652c207269676874732c20736f7572636520696d6167652c206c6976652067656e657261746f722c20616e64204d757365756d20616363657373696f6e20617265207265636f726465642061732073657061726174652066616374732e2036353239204e6574776f726b204d757365756d207265636f726420363532394e4d2d572d303032392e222c2261727469737473223a5b2256657261204d6f6c6ec3a172222c224d617274696e2047726173736572225d2c2279656172223a323032332c226d656469756d223a224f6e2d636861696e2067656e6572617469766520736f6674776172653b20457468657265756d204552432d37323120746f6b656e3b206c6976652062726f777365722067656e657261746f72222c2264696d656e73696f6e73223a22323430302078203234303020707820284d757365756d20646973706c617920696d61676529227d",
+    "length": 480,
+    "sha256": "0x6188607ce04cab19234520557c9f6d62a40d841e9455348fb28f55535b90fe1b",
+    "chunkHashes": [
+      "0x3dde1db001e5b625c50b796af842bee33afc365c3b22dc956f8d1b8610fbbd39"
+    ],
+    "mimeType": "application/json",
+    "fileId": "0xb123c5edb2ef306a53a758fe279ad112c05d173c3ea2bc464e7213397f10b0fb"
+  },
+  "media": {
+    "path": "media/accessions/6529NM.2026.003/6529NM-W-0029/c1b6541832f2a237555adffae2f4870143a976549e591e2dbaa4d3d87f75d166/webp-v2-q82-m6-fixed-icc/2400.webp",
+    "length": 48920,
+    "sha256": "0x0ec810b0e62cdc9c4cfaf2a24553b4feaf57e49a877d519f7dda5300c78dc436",
+    "chunkHashes": [
+      "0x404c7c7b9537ab7e7a85354b12eb67e7095e73999574bd8517d462f37232b825",
+      "0x6a97c5bcd006ef06507eb7eae98aedaa1f1ded72ab1106c57c5c95b07391704d"
+    ],
+    "mimeType": "image/webp",
+    "fileId": "0x6a08eff157ddab402f5880a6307a225c938286e4f1fb2eb10cf1c0b0a5150d39"
+  },
+  "tokenUriFragments": [
+    "\"name\":\"Themes and Variations %23210\"",
+    "{\"trait_type\":\"Artist\",\"value\":\"Vera Molnár\"}",
+    "{\"trait_type\":\"Artist\",\"value\":\"Martin Grasser\"}",
+    "{\"trait_type\":\"Year\",\"value\":2023}",
+    "{\"trait_type\":\"Medium\",\"value\":\"On-chain generative software; Ethereum ERC-721 token; live browser generator\"}",
+    "{\"trait_type\":\"Dimensions\",\"value\":\"2400 x 2400 px (Museum display image)\"}"
+  ],
+  "statement": {
+    "kind": "0xaacce03f8117fda5561145df82472ae33d3859d463cf544fdb49c147f4c86dff",
+    "schema": "0xd8aef6592fe156c4c3c10e59de540f5cdf8b130eedca322e0e22b30764bee1a9",
+    "contentAlgorithm": 1,
+    "contentDigest": "0x1fef3d9ed642c0e89522b3c6f9fc0bf18e2815249bbd0ad2b1427861da2a9757",
+    "uri": "https://6529networkmuseum.org/records/entities/6529NM-W-0029.json",
+    "statementHash": "0xe248dab5c019106ece52981db0a2e99a0b2295c787b7fd8f6127876766130334"
+  }
+}

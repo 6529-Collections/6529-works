@@ -1,0 +1,246 @@
+[
+  {
+    "id": "0x3c9b4d2c",
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "role",
+        "type": "uint64"
+      },
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "DuplicateGrant",
+    "signature": "DuplicateGrant(uint64,address)",
+    "type": "error"
+  },
+  {
+    "id": "0x3da450e3",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes4",
+        "name": "selector",
+        "type": "bytes4"
+      }
+    ],
+    "name": "DuplicateSelector",
+    "signature": "DuplicateSelector(address,bytes4)",
+    "type": "error"
+  },
+  {
+    "id": "0x5eae4409",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes4",
+        "name": "selector",
+        "type": "bytes4"
+      },
+      {
+        "internalType": "uint64",
+        "name": "actual",
+        "type": "uint64"
+      }
+    ],
+    "name": "FunctionRoleMismatch",
+    "signature": "FunctionRoleMismatch(address,bytes4,uint64)",
+    "type": "error"
+  },
+  {
+    "id": "0x325006ee",
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "role",
+        "type": "uint64"
+      },
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "HolderMismatch",
+    "signature": "HolderMismatch(uint64,address)",
+    "type": "error"
+  },
+  {
+    "id": "0x584ec40b",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes4",
+        "name": "selector",
+        "type": "bytes4"
+      },
+      {
+        "internalType": "uint64",
+        "name": "role",
+        "type": "uint64"
+      }
+    ],
+    "name": "InvalidFunctionRole",
+    "signature": "InvalidFunctionRole(address,bytes4,uint64)",
+    "type": "error"
+  },
+  {
+    "id": "0x69c91b5e",
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "role",
+        "type": "uint64"
+      },
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "InvalidGrant",
+    "signature": "InvalidGrant(uint64,address)",
+    "type": "error"
+  },
+  {
+    "id": "0xd08525e9",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      }
+    ],
+    "name": "InvalidTarget",
+    "signature": "InvalidTarget(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x0e8f0d89",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes4",
+        "name": "selector",
+        "type": "bytes4"
+      }
+    ],
+    "name": "InvalidWiringCall",
+    "signature": "InvalidWiringCall(address,bytes4)",
+    "type": "error"
+  },
+  {
+    "id": "0xc201390f",
+    "inputs": [],
+    "name": "MissingNetwork",
+    "signature": "MissingNetwork()",
+    "type": "error"
+  },
+  {
+    "id": "0x3a47fdde",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "network",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "brake",
+        "type": "address"
+      }
+    ],
+    "name": "NetworkMismatch",
+    "signature": "NetworkMismatch(address,address)",
+    "type": "error"
+  },
+  {
+    "id": "0x23a4c89f",
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "role",
+        "type": "uint64"
+      }
+    ],
+    "name": "RoleMismatch",
+    "signature": "RoleMismatch(uint64)",
+    "type": "error"
+  },
+  {
+    "id": "0xbdec2782",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      }
+    ],
+    "name": "TargetMismatch",
+    "signature": "TargetMismatch(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x5c69c8bb",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "count",
+        "type": "uint256"
+      }
+    ],
+    "name": "TooManyWiringCalls",
+    "signature": "TooManyWiringCalls(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xe627f1e2",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "WiringCallFailed",
+    "signature": "WiringCallFailed(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xdfa92eb3",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes4",
+        "name": "selector",
+        "type": "bytes4"
+      }
+    ],
+    "name": "WiringSelectorNotAllowed",
+    "signature": "WiringSelectorNotAllowed(address,bytes4)",
+    "type": "error"
+  }
+]
