@@ -20,8 +20,11 @@ import {
     Party,
     PartyAcceptance,
     PartyRole,
-    SeedPolicy
+    SeedPolicy,
+    StreamMintRequest
 } from "src/interfaces/types/PackageTypes.sol";
+import { ProductEconomics } from "src/interfaces/types/EconomicsTypes.sol";
+import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
 import { IStream } from "src/interfaces/IStream.sol";
@@ -45,6 +48,47 @@ contract ApproveEverythingVerifier {
 
     function supportsInterface(bytes4) external pure returns (bool) {
         return true;
+    }
+}
+
+/// @dev An economics resolver and split factory whose answers a test sets, for the policy's
+///      quote (`_quote`) under terms the stub in `CurationBase` never returns.
+contract SettablePolicyStub {
+    ProductEconomics internal _e;
+    address internal _wallet = address(0x5E11E7);
+
+    function set(ProductEconomics memory e) external {
+        _e = e;
+    }
+
+    function economics(bytes32) external view returns (ProductEconomics memory) {
+        return _e;
+    }
+
+    function walletFor(ISplitWallet.Payee[] calldata, bytes32) external view returns (address) {
+        return _wallet;
+    }
+}
+
+/// @dev An artist registry that answers `register` with another artist ID than the
+///      `uint160(account)` the package registry assigns: the code a pinned registry could never
+///      run, kept to show `acceptPackage` refuses it instead of recording a mismatched account.
+contract MisnumberingArtistRegistry is IERC165 {
+    function artistIdOf(address) external pure returns (uint256) {
+        return 0;
+    }
+
+    function requireSigned(uint256, bytes32, bytes calldata) external pure returns (address) {
+        return address(0);
+    }
+
+    function register(address root, bytes32, bytes32) external pure returns (uint256) {
+        return uint256(uint160(root)) + 1;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IERC165).interfaceId
+            || interfaceId == type(IArtistRegistry).interfaceId;
     }
 }
 
@@ -1201,6 +1245,160 @@ contract PackageRegistryTest is CurationBase {
         _expectValid(item, _keys(leadKey, collabKey));
     }
 
+    /// @dev An item with no sale kind is refused by the policy's item rules, before the consume.
+    function test_invalidItem_noSaleKind() public {
+        PackageItem memory item = _item(lead, SHA_A);
+        item.sale.saleKind = 0;
+        _expectInvalidWith(
+            item, _keys(leadKey), abi.encodeWithSelector(IMintPolicy.InvalidItemSale.selector)
+        );
+    }
+
+    /// @dev A license ID outside the `SpdxId` rule (empty, a character it does not allow, longer
+    ///      than the limit) is refused, as `WorkRecords` refuses it at relicense.
+    function test_invalidItem_licenseId() public {
+        bytes memory reason = abi.encodeWithSelector(IMintPolicy.InvalidLicenseId.selector);
+        PackageItem memory item = _item(lead, SHA_A);
+        item.license.spdxId = "";
+        _expectInvalidWith(item, _keys(leadKey), reason);
+        item.license.spdxId = "CC0 1.0";
+        _expectInvalidWith(item, _keys(leadKey), reason);
+        item.license.spdxId = string(new bytes(Limits.MAX_LICENSE_ID_BYTES + 1));
+        _expectInvalidWith(item, _keys(leadKey), reason);
+    }
+
+    /// @dev A request that is not `abi.encode(StreamMintRequest)` (too short, or a head that
+    ///      does not point at offset 32) is refused before anything is read from it.
+    function test_authorize_revertsMalformedRequest() public {
+        IMintPolicy.MintContext memory c = _context(address(_policyStub));
+        bytes memory reason = abi.encodeWithSelector(IPackageRegistry.InvalidMintRequest.selector);
+        vm.prank(stream);
+        vm.expectRevert(reason);
+        registry.authorize(c, new bytes(159));
+        (bytes32 root, PackageItem memory item,) = _ready(SHA_A);
+        bytes memory request = abi.encode(
+            StreamMintRequest(root, item, new bytes32[](0), _move(leadKey, root, _hash(item), 0))
+        );
+        request[31] = bytes1(uint8(64)); // the head no longer points at offset 32
+        vm.prank(stream);
+        vm.expectRevert(reason);
+        registry.authorize(c, request);
+    }
+
+    /// @dev The quote refuses product terms that cannot yield a valid royalty payee list: a
+    ///      royalty rate above the denominator, a fee share at it, or a fee share whose recipient
+    ///      is zero or the seller wallet itself. Valid fee terms pass and are quoted as they are.
+    function test_authorize_revertsInvalidWorkTerms() public {
+        SettablePolicyStub stub = new SettablePolicyStub();
+        address seller = address(0x5E11E7);
+        address fee = makeAddr("feeRecipient");
+        ProductEconomics[4] memory bad = [
+            ProductEconomics(address(0), 0, 100_001),
+            ProductEconomics(fee, 100_000, 5000),
+            ProductEconomics(address(0), 1, 5000),
+            ProductEconomics(seller, 1, 5000)
+        ];
+        (bytes32 root, PackageItem memory item,) = _ready(SHA_A);
+        bytes memory request = abi.encode(
+            StreamMintRequest(root, item, new bytes32[](0), _move(leadKey, root, _hash(item), 0))
+        );
+        for (uint256 i; i < bad.length; ++i) {
+            stub.set(bad[i]);
+            vm.prank(stream);
+            vm.expectRevert(IMintPolicy.InvalidWorkTerms.selector);
+            registry.authorize(_context(address(stub)), request);
+        }
+        stub.set(ProductEconomics(fee, 99_999, 100_000));
+        vm.prank(stream);
+        IMintPolicy.MintRecord memory r = registry.authorize(_context(address(stub)), request);
+        assertEq(r.seller, seller);
+        assertEq(r.feeRecipient, fee);
+        assertEq(r.feeShare, 99_999);
+        assertEq(r.royaltyRate, 100_000);
+    }
+
+    // -------------------------------------------------------------------------- preview
+
+    /// @dev `preview` quotes the terms `authorize` would lock without consuming anything: the
+    ///      seller wallet, the product's fee terms, the item's sale terms, and the lead's active
+    ///      authority as creator (zero while the account is frozen). Anyone may call it.
+    function test_preview_quotesWithoutConsuming() public {
+        SettablePolicyStub stub = new SettablePolicyStub();
+        address fee = makeAddr("feeRecipient");
+        stub.set(ProductEconomics(fee, 10_000, 7500));
+        (bytes32 root, PackageItem memory item,) = _ready(SHA_A);
+        bytes memory request = abi.encode(
+            StreamMintRequest(root, item, new bytes32[](0), _move(leadKey, root, _hash(item), 0))
+        );
+        vm.prank(makeAddr("anyone"));
+        PrimaryTerms memory t = registry.preview(_context(address(stub)), request);
+        assertEq(t.seller, address(0x5E11E7));
+        assertEq(t.feeRecipient, fee);
+        assertEq(t.feeShare, 10_000);
+        assertEq(t.saleKind, item.sale.saleKind);
+        assertEq(t.currency, item.sale.currency);
+        assertEq(t.params, item.sale.params);
+        assertEq(t.price, 0);
+        assertEq(t.creator, lead);
+        assertEq(registry.consumedItemOf(SHA_A), bytes32(0), "nothing consumed");
+        artists.setFrozen(_id(lead), true);
+        assertEq(registry.preview(_context(address(stub)), request).creator, address(0));
+        // The quote is still consumable afterwards.
+        artists.setFrozen(_id(lead), false);
+        _consume(root, item, new bytes32[](0), _move(leadKey, root, _hash(item), 0));
+        assertEq(registry.consumedItemOf(SHA_A), _hash(item));
+    }
+
+    /// @dev `preview` refuses what `authorize` would: a malformed request, the item rules, a
+    ///      lead artist with no identity, and invalid product terms.
+    function test_preview_reverts() public {
+        IMintPolicy.MintContext memory c = _context(address(_policyStub));
+        vm.expectRevert(IPackageRegistry.InvalidMintRequest.selector);
+        registry.preview(c, new bytes(159));
+        PackageItem memory item = _item(lead, SHA_A);
+        bytes32 root = WorksHashing.leaf(_hash(item));
+        MoveAuthorization memory none;
+        // The lead has no identity yet: nobody has accepted a package for this account.
+        vm.expectRevert(IMintPolicy.InvalidLeadArtist.selector);
+        registry.preview(c, abi.encode(StreamMintRequest(root, item, new bytes32[](0), none)));
+        item.sale.saleKind = 0;
+        vm.expectRevert(IMintPolicy.InvalidItemSale.selector);
+        registry.preview(c, abi.encode(StreamMintRequest(root, item, new bytes32[](0), none)));
+        item = _item(lead, SHA_A);
+        _register(root);
+        _accept(root, leadKey);
+        SettablePolicyStub stub = new SettablePolicyStub();
+        stub.set(ProductEconomics(address(0), 1, 5000));
+        vm.expectRevert(IMintPolicy.InvalidWorkTerms.selector);
+        registry.preview(
+            _context(address(stub)),
+            abi.encode(StreamMintRequest(root, item, new bytes32[](0), none))
+        );
+    }
+
+    // ------------------------------------------------------- acceptPackage: registry answer
+
+    /// @dev The package registry assigns the artist ID `uint160(account)` before it registers
+    ///      the identity; an artist registry that answers with another ID is refused
+    ///      (`InvalidDependency`), so no acceptance is recorded under an ID the registry does not
+    ///      hold. Defensive: the pinned artist registry always returns the ID asked for.
+    function test_acceptPackage_revertsWhenTheArtistRegistryMisnumbers() public {
+        MisnumberingArtistRegistry odd = new MisnumberingArtistRegistry();
+        PackageRegistry reg = new PackageRegistry(
+            address(manager),
+            ICurationVerifier(address(verifier)),
+            address(verifier).codehash,
+            address(odd),
+            address(odd).codehash
+        );
+        bytes32 root = keccak256("misnumbered");
+        reg.registerPackage(root, EVIDENCE, _attestation(signerKey1, root, EVIDENCE));
+        PartyAcceptance memory a = _acceptance(lead);
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(odd)));
+        reg.acceptPackage(root, a, "");
+        assertEq(reg.acceptedAs(root, lead), 0);
+    }
+
     // ------------------------------------------------------------------- releaseContent
 
     // Content uniqueness and the post-dispute release are Stream's (AUC-44): see
@@ -1462,6 +1660,12 @@ contract PackageRegistryTest is CurationBase {
         for (uint256 i; i < keys.length; ++i) {
             if (registry.acceptedAs(root, vm.addr(keys[i])) == 0) _accept(root, keys[i]);
         }
+    }
+
+    /// @dev The mint context the bound Stream passes, with `quote` as both the economics
+    ///      resolver and the split factory, and no entropy module.
+    function _context(address quote) internal view returns (IMintPolicy.MintContext memory) {
+        return IMintPolicy.MintContext(stream, quote, address(0), quote);
     }
 
     function _expectInvalid(PackageItem memory item, uint256[] memory keys) internal {
