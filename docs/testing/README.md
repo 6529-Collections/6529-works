@@ -89,8 +89,10 @@ section below says which.
 | Contracts | every pull request and push to `main` | the summary of Build and checks, the six Tests jobs and the Local walkthrough, green only when all are | seconds, after the last of them | yes |
 | Build and checks | every pull request and push | `forge fmt --check`, `forge build` (from the cached compiler output), the docs facts against the build, the ABI and storage snapshots, the real-data vectors and event topics (`make_vectors.py --check`), the exported ABIs (`export_abis.py --check`), the format of `examples/` and `keeper/test/`, the budget gate, the genesis check, the content and convention tooling tests, the reference keeper's tests on anvil (`KEEPER_E2E_REQUIRE=1`), and the tools' unit tests | about 3.5 min before this build; the snapshot and vector checks add about two seconds | through Contracts |
 | Tests (unit, fuzz and integration) | every pull request and push | `forge test --no-match-test ^invariant`: also the replay suites, the real-data vectors and the Medusa harnesses' self-tests | about 1 min before this build; the replay suites add under a second after the build | through Contracts |
-| Tests (economics invariants) | every pull request and push | the economics invariant suite: 256 runs of depth 128 | about 2 min | through Contracts |
+| Tests (economics invariants, escrow and marks) | every pull request and push | six of the economics invariants (`invariant_Dust*`, `invariant_Escrow*`, `invariant_Intermediaries*`, `invariant_Marks*`, `invariant_Observed*`): 256 runs of depth 128 | not yet measured on a runner since the split | through Contracts |
+| Tests (economics invariants, releases) | every pull request and push | the other four (`invariant_Recipients*`, `invariant_Released*`, `invariant_Wallet*`): 256 runs of depth 128 | not yet measured on a runner since the split | through Contracts |
 | Tests (testing-build invariants) | every pull request and push | the four campaigns added in November 2026 (`WorkDelivery`, `GovernedVault`, `FederatedState`, `CurationSigner`): 256 runs of depth 128 | 18 to 70 s each locally; not yet measured on a runner | through Contracts |
+| Tests (auction invariants) | every pull request and push | the English and edition auction invariant suites (`Auction*`, `EditionAuction*`): 256 runs of depth 128 | not yet measured on a runner | through Contracts |
 | Tests (other invariants) | every pull request and push | every other invariant suite, the Medusa harnesses' Forge runners (64 runs of depth 64) among them | about 7 min before this build; the runners add about 22 s locally | through Contracts |
 | Local walkthrough | every pull request and push | `forge build`, then `bash script/local/walkthrough.sh`: deploy on anvil, accept, Verify, and one work sold end to end | about 1.5 min locally after a build; not yet measured on a runner | through Contracts |
 | Static analysis | every pull request and push | Slither 0.11.6: no untriaged High or Medium finding | about 1 min | yes |
@@ -104,7 +106,7 @@ section below says which.
 tests on 21 November 2026: 3,053, 6, 4, 16, 25 and 48; the 12 examples and the keeper fixture fall
 in the first), so the parts run on separate runners. Each
 part restores the latest compiler output and compiles only what changed. The 15-minute CI
-budget applies to each job. The third part holds the four campaigns of this build, which
+budget applies to each job. The fourth part holds the four campaigns of this build, which
 added about 60% to the other invariants' CPU time locally (2,730 to 4,358 CPU seconds), more
 than a shared runner's other-invariants job could take within its budget. The organisation's
 runners are shared, so a run's wall time is mostly the wait for them. The auction invariants
