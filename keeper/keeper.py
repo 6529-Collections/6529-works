@@ -53,8 +53,6 @@ EDITION_MASTER = 1
 # English auction states; edition auction statuses.
 ENDED, SETTLED_1 = 3, 4
 EA_SETTLED, EA_VOID = 4, 5
-# The ClaimRouter's batch limit for plain claims.
-MAX_CLAIMS = 50
 CREDIT_EXPIRY = MARK_EXPIRY = 180 * 86400
 
 # Canonical ABI types (src/interfaces/types/PackageTypes.sol, ContentTypes.sol, ISplitWallet.sol).
@@ -308,7 +306,9 @@ class Keeper:
                     label=f"start {req['name']} through SaleStarter",
                 )
                 continue
-            token_id = next((t for t, v in works.items() if v["content"] == req["content"]), 0)
+            # The newest work with this content (an earlier one may have been burned and its
+            # content released for a new start).
+            token_id = max((t for t, v in works.items() if v["content"] == req["content"]), default=0)
             if not token_id:
                 continue  # started in a block after this run's log read; the next run sees it
             self.ensure_vaults(token_id, req["payees"])
@@ -324,7 +324,10 @@ class Keeper:
 
     def ensure_vaults(self, token_id: int, payees: Dyn | None) -> None:
         """Deploy the work's seller vault (when its payees are known) and royalty vault."""
-        terms = self.view("Stream", "primaryTerms(uint256,bytes)", token_id, blob(b""))
+        try:
+            terms = self.view("Stream", "primaryTerms(uint256,bytes)", token_id, blob(b""))
+        except Reverted:
+            return  # burned (a sale cancelled after an upheld dispute): no vaults to deploy
         seller, fee_recipient, fee_share = a(terms, 5), a(terms, 6), w(terms, 7)
         wallets = []
         if payees is not None:
@@ -352,6 +355,8 @@ class Keeper:
             item = self.item_of(token_id, works, items)
             if item is None or w(item, ITEM_KIND) != EDITION_MASTER:
                 continue
+            if token_id not in works:
+                continue  # minted after this run's WorkMinted read; the next run sees it
             sig = "saleIdOf(address,uint256)"
             sale = w(self.view("UniformEditionAuction", sig, self.c["Editions"], token_id), 0)
             if self.rpc.ok(self.c["UniformEditionAuction"], call_data("auction(uint256)", sale), ""):
@@ -511,6 +516,12 @@ class Keeper:
                 mark_of = self.view("SplitFactory", sig, wallet, ETH, index)
                 target, marked_at = w(mark_of, 0), w(mark_of, 1)
                 args = (payees, salt, ETH, index)
+                # A mark stays recorded after the payee releases up to its target; only one not
+                # yet reached is pending (forfeitable once mature). A reached one may be replaced.
+                if target:
+                    sig = "released(address,address,uint256)"
+                    done = w(self.view("SplitFactory", sig, wallet, ETH, index), 0)
+                    target = target if done < target else 0
                 if target and now >= marked_at + MARK_EXPIRY:
                     self.send(
                         "SplitFactory",
@@ -547,8 +558,12 @@ class Keeper:
             others = [i for i, is_network in due if not is_network]
             for index in others or [i for i, _ in due]:
                 claims.append(Dyn(encode(payees, salt, ETH, index)))
-        for start in range(0, len(claims), MAX_CLAIMS):
-            batch = claims[start : start + MAX_CLAIMS]
+        if not claims:
+            return
+        # Continue mode takes at most MAX_CONTINUE_CLAIMS items (fewer than plain MAX_CLAIMS).
+        size = w(self.view("ClaimRouter", "MAX_CONTINUE_CLAIMS()"), 0)
+        for start in range(0, len(claims), size):
+            batch = claims[start : start + size]
             self.send(
                 "ClaimRouter",
                 f"claim(({PAYEES},bytes32,address,uint256)[],bool)",
@@ -595,16 +610,20 @@ def _short(exc: Exception) -> str:
 
 def load_request(path: Path) -> dict:
     """A start request: {"mintData": hex, "media": hex of abi.encode(MediaFile[]),
-    "proof": hex of abi.encode(bytes32[]) (optional, for the edition sale's open)}."""
+    "proof": hex of abi.encode(bytes32[]) (optional, for the edition sale's open; by default the
+    proof inside mintData)}."""
     raw = json.loads(path.read_text(encoding="utf-8"))
     mint = bytes.fromhex(raw["mintData"].removeprefix("0x"))
     if w(mint, 0) != 32:
         raise SystemExit(f"{path}: mintData must be abi.encode(StreamMintRequest)")
-    body = mint[32:]
+    body = mint[32:]  # StreamMintRequest(packageRoot, item, proof, move)
     item = tail(body, w(body, 1), w(body, 2))
     media = bytes.fromhex(raw["media"].removeprefix("0x"))
-    no_proof = "0x" + word(32).hex() + word(0).hex()  # abi.encode(new bytes32[](0))
-    proof = bytes.fromhex(raw.get("proof", no_proof).removeprefix("0x"))
+    if "proof" in raw:
+        proof = tail(bytes.fromhex(raw["proof"].removeprefix("0x")), 32)
+    else:
+        at = w(body, 2)
+        proof = tail(body, at, at + 32 * (1 + w(body[at:], 0)))
     return {
         "name": path.stem,
         "mintData": mint,
@@ -612,7 +631,7 @@ def load_request(path: Path) -> dict:
         "payees": item_payees(item),
         "content": item[32 * ITEM_CONTENT_HASH : 32 * ITEM_CONTENT_HASH + 32],
         "media": tail(media, 32),
-        "proof": tail(proof, 32),
+        "proof": proof,
     }
 
 

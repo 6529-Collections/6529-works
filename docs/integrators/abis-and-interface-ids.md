@@ -27,8 +27,8 @@ commit in [Addresses](addresses.md) and build that commit as below.
 | File | What it is |
 | --- | --- |
 | `abi/<Name>.json` | The ABI of each deployable contract declared in `src/` and each public interface (`src/interfaces/`, `src/economics/interfaces/`): a plain JSON array, entries sorted by kind, name and signature, with no bytecode or compiler metadata |
-| `abi/full/<Name>.json` | For `Stream`, `EnglishAuction` and `UniformEditionAuction`, the contract's ABI merged with what it forwards ([below](#calling-through-a-lens-or-extension)): the ABI to call the deployed address with |
-| `abi/manifest.json` | One entry per file: the name, `kind` (`contract` or `interface`), source path, ERC-165 `interfaceId` (interfaces only: the XOR of the selectors the interface itself declares, as `type(I).interfaceId`; which contract answers it is in the [table below](#erc-165-interface-ids)), the counts of functions, events and errors, the solc version, and the SHA-256 of the file's bytes |
+| `abi/full/<Name>.json` | For `Stream`, `EnglishAuction`, `UniformEditionAuction` and `FederatedEditionAuction`, the contract's ABI merged with what it forwards ([below](#calling-through-a-lens-or-extension)): the forwarded views, events and errors, not a lens function that writes (such as `masterTerms`, which the read-only forward cannot serve). The ABI to call the deployed address with |
+| `abi/manifest.json` | One entry per file: the name, `kind` (`contract` or `interface`), source path, ERC-165 `interfaceId` (interfaces only: the XOR of the selectors the interface itself declares, as `type(I).interfaceId`; which contract answers it is in the [table below](#erc-165-interface-ids)), the counts of functions, events and errors, the solc version, and `sha256`, the SHA-256 of `abi/<Name>.json`'s bytes. A contract with a full ABI also has `forwardsTo` (the lens or extension), `fullAbi` (`full/<Name>.json`) and `fullSha256`, the SHA-256 of that file |
 
 Load them as they are, for example with viem:
 
@@ -45,7 +45,8 @@ jq -r '.[] | select(.type=="function") | .name' abi/full/EnglishAuction.json
 jq '.contracts[] | select(.kind=="interface") | {name, interfaceId}' abi/manifest.json
 ```
 
-The manifest's `sha256` changes exactly when a file's bytes change, so a client can pin it.
+The manifest's `sha256` changes exactly when `abi/<Name>.json`'s bytes change, and `fullSha256`
+when `abi/full/<Name>.json`'s do, so a client can pin the one for the file it loads.
 After a source change, `forge build` then `python tools/export_abis.py` rewrites the files;
 `python tools/export_abis.py --check` reports any difference without writing. Runnable examples
 of the common calls, compiled against these interfaces, are in [`examples/`](../../examples/README.md).
@@ -84,11 +85,11 @@ come from a contract further down the call, so decode it against every contract 
 
 ### Calling through a lens or extension
 
-**6529 Stream answers its informational views through an extension.** `work`, `collection`,
-`totalSupply`, `contractURI` and `owner` (`IStreamViews`) are served by `StreamViews`, a
-stateless contract 6529 Stream's constructor deploys, through a read-only `staticcall` fallback;
-call them on 6529 Stream's address. The `Stream` artifact's `abi` lacks them: merge it with
-`IStreamViews`. `IStream` is one flat interface that also re-declares the `IMintTarget` and
+**6529 Stream answers its informational views through an extension.** `work`, `collection` and
+`totalSupply` (`IStreamViews`) are served by `StreamViews`, a stateless contract 6529 Stream's
+constructor deploys, through a read-only `staticcall` fallback; call them on 6529 Stream's
+address. The `Stream` artifact's `abi` lacks them: merge it with `IStreamViews`. `contractURI`
+and `owner` are native to 6529 Stream and already in its `abi`. `IStream` is one flat interface that also re-declares the `IMintTarget` and
 ERC-2981 functions, so its ID covers 6529 Stream's whole native surface
 ([AUC-40](../spec/stream-and-auctions.md#rules-and-invariants)).
 

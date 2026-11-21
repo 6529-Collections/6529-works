@@ -28,9 +28,9 @@ schedule (every few minutes); each run picks up where the chain is.
 | `finalize` | A `FinalizeNoticeRecorded` notice is 14 days old and the work is not finalized | `WorkRecords.finalize(tokenId, 0)` |
 | `vaults` | A 6529 Stream work's seller vault (payees known from its record) or royalty vault is not deployed | `SplitLedger.createWallet(payees, 0)` |
 | `expire` | A credit on either auction, or in the revenue escrow, is unclaimed 180 days after it went from zero | `expireCredit(account, currency)`, `RevenueEscrow.expire(wallet, asset)` |
-| `forfeit` | A split-wallet mark is 180 days old | `SplitLedger.forfeit(payees, salt, asset, index)` |
-| `release` (opt-in, `--release`) | A fixed payee of a split wallet has ETH to release | `ClaimRouter.claim(claims, true)` in batches of at most 50; the network's own index is left out of a batch that releases another payee of the same wallet and asset, because that release already paid the network |
-| `mark` (opt-in, `--mark`) | A payee other than the network has ETH releasable and no mark | `SplitLedger.mark(payees, salt, asset, index)`, which starts the payee's 180 days |
+| `forfeit` | A split-wallet mark the payee has not released up to is 180 days old | `SplitLedger.forfeit(payees, salt, asset, index)` |
+| `release` (opt-in, `--release`) | A fixed payee of a split wallet has ETH to release | `ClaimRouter.claim(claims, true)` in batches of at most the router's `MAX_CONTINUE_CLAIMS` (8); the network's own index is left out of a batch that releases another payee of the same wallet and asset, because that release already paid the network |
+| `mark` (opt-in, `--mark`) | A payee other than the network has ETH releasable and no pending mark (none, or one it has since released up to) | `SplitLedger.mark(payees, salt, asset, index)`, which starts the payee's 180 days |
 | `notice` (opt-in, `--notice`) | A work's primary sale settled and it has no finalize notice | `WorkRecords.finalize(tokenId, 0)` from a non-artist, which records the notice |
 
 The rules behind each step are in the [script README's operating procedures](../script/README.md#operating-procedures)
@@ -46,7 +46,7 @@ is one request:
 {
   "mintData": "0x...  abi.encode(StreamMintRequest(packageRoot, item, proof, move))",
   "media": "0x...     abi.encode(MediaFile[]), in the order the item's mediaHash commits to",
-  "proof": "0x...     optional: abi.encode(bytes32[]), the item's Merkle proof, for the edition sale's open"
+  "proof": "0x...     optional: abi.encode(bytes32[]), the item's Merkle proof for the edition sale's open (default: the proof in mintData)"
 }
 ```
 
