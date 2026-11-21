@@ -15,9 +15,10 @@ src/economics/interfaces/), plus abi/manifest.json, which lists for each file:
   - the solc version that compiled it;
   - the SHA-256 of the exported ABI file's bytes, which does not depend on git.
 
-Three contracts answer part of their surface through a lens or an extension they forward calls
-to (docs/integrators/abis-and-interface-ids.md). For those, abi/full/<Name>.json is the contract's
-ABI merged with the forwarded surface: the ABI to call the deployed address with.
+Four contracts answer part of their surface through a lens or an extension they forward calls
+to with a read-only `staticcall` (docs/integrators/abis-and-interface-ids.md). For those,
+abi/full/<Name>.json is the contract's ABI merged with what that call can serve (the forwarded
+surface's view and pure functions, events and errors): the ABI to call the deployed address with.
 
 The output is deterministic: entries are sorted by kind, name and signature, keys are sorted,
 and nothing from the compiler metadata or bytecode is written. `--check` compares the committed
@@ -46,17 +47,22 @@ FULL_DIR = "full"
 INTERFACE_DIRS = ("src/interfaces/", "src/economics/interfaces/")
 EXCLUDED_DIRS = ("src/interfaces/external/",)
 # The deployed contract, and the ABI of what it forwards with a read-only call (its lens or
-# extension). The fallback of Stream forwards only IStreamViews; the two auctions forward every
-# call they do not declare to their lens.
+# extension). The fallback of Stream forwards only IStreamViews; the auctions forward every call
+# they do not declare to their lens (the federated edition auction shares the edition auction's
+# fallback).
 FORWARDED = {
     "Stream": "IStreamViews",
     "EnglishAuction": "EnglishAuctionLens",
     "UniformEditionAuction": "UniformEditionAuctionLens",
+    "FederatedEditionAuction": "FederatedEditionAuctionLens",
 }
+# The paths the exporter owns in abi/: it writes, checks and removes only these.
+MANAGED = re.compile(r"(?:full/)?[A-Za-z_$][\w$]*\.json")
 KIND_ORDER = {"constructor": 0, "fallback": 1, "receive": 2, "function": 3, "event": 4, "error": 5}
 
 DECLARATION = re.compile(r"\b(abstract\s+contract|contract|interface|library)\s+([A-Za-z_$][\w$]*)")
 FUNCTION_NAME = re.compile(r"\bfunction\s+([A-Za-z_$][\w$]*)\s*\(")
+PARENT = re.compile(r"([A-Za-z_$][\w$.]*)\s*(?:\([^)]*\))?\s*(?:,|$)")
 
 
 class ExportError(Exception):
@@ -77,6 +83,7 @@ def strip_solidity(text: str) -> str:
             while i < n and text[i] != "\n":
                 i += 1
         elif c == "/" and nxt == "*":
+            out.append(" ")  # a comment separates tokens: `function/* x */f()` is `function f()`
             i += 2
             while i < n and not (text[i] == "*" and i + 1 < n and text[i + 1] == "/"):
                 if text[i] == "\n":
@@ -96,14 +103,16 @@ def strip_solidity(text: str) -> str:
     return "".join(out)
 
 
-def declarations(code: str) -> list[tuple[str, str, str]]:
-    """Each top-level declaration in stripped `code`: (kind, name, body)."""
+def declarations(code: str) -> list[tuple[str, str, str, list[str]]]:
+    """Each top-level declaration in stripped `code`: (kind, name, body, parent names)."""
     found = []
     for m in DECLARATION.finditer(code):
         kind = "abstract" if m.group(1).startswith("abstract") else m.group(1)
         open_index = code.find("{", m.end())
         if open_index < 0:
             continue
+        header = code[m.end() : open_index].strip()
+        parents = PARENT.findall(header[2:].strip()) if re.match(r"is\b", header) else []
         depth = 0
         for close_index in range(open_index, len(code)):
             if code[close_index] == "{":
@@ -112,13 +121,14 @@ def declarations(code: str) -> list[tuple[str, str, str]]:
                 depth -= 1
                 if depth == 0:
                     break
-        found.append((kind, m.group(2), code[open_index + 1 : close_index]))
+        found.append((kind, m.group(2), code[open_index + 1 : close_index], parents))
     return found
 
 
-def own_functions(body: str) -> set[tuple[str, int]]:
-    """(name, parameter count) of every function a contract body declares itself."""
-    found = set()
+def own_functions(body: str) -> list[tuple[str, int]]:
+    """(name, parameter count) of every function a contract body declares itself, sorted, one
+    entry per declaration (two overloads of one arity give two equal entries)."""
+    found = []
     for m in FUNCTION_NAME.finditer(body):
         depth, start = 1, m.end()
         i = start
@@ -138,8 +148,8 @@ def own_functions(body: str) -> set[tuple[str, int]]:
             elif ch == "," and level == 0:
                 count += 1
             seen = seen or not ch.isspace()
-        found.add((m.group(1), count + 1 if seen else 0))
-    return found
+        found.append((m.group(1), count + 1 if seen else 0))
+    return sorted(found)
 
 
 def is_public_interface(source: str) -> bool:
@@ -172,30 +182,45 @@ def normalize(abi: list[dict]) -> list[dict]:
     return [json.loads(json.dumps(e, sort_keys=True)) for e in sorted(abi, key=sort_key)]
 
 
+def forwardable(entry: dict) -> bool:
+    """Whether a forwarded entry works through a read-only `staticcall`: events, errors, and the
+    view and pure functions (one that writes, such as a lens's `masterTerms`, reverts there)."""
+    if entry["type"] == "function":
+        return entry.get("stateMutability") in ("view", "pure")
+    return entry["type"] in ("event", "error")
+
+
 def merged(abi: list[dict], forwarded: list[dict]) -> list[dict]:
-    """`abi` plus the functions, events and errors of `forwarded` it lacks (by signature)."""
+    """`abi` plus the forwardable entries of `forwarded` it lacks (by signature)."""
     seen = {(e["type"], signature(e)) for e in abi}
-    extra = [
-        e
-        for e in forwarded
-        if e["type"] in ("function", "event", "error") and (e["type"], signature(e)) not in seen
-    ]
+    extra = [e for e in forwarded if forwardable(e) and (e["type"], signature(e)) not in seen]
     return normalize(abi + extra)
 
 
-def interface_id(abi: list[dict], selectors: dict[str, str], own: set[tuple[str, int]]) -> str:
-    """XOR of the selectors of the functions the interface itself declares, matched by name and
-    parameter count; an ambiguous match (an inherited overload of the same arity) fails."""
+def interface_id(
+    abi: list[dict],
+    selectors: dict[str, str],
+    own: list[tuple[str, int]],
+    inherited: set[str] | None = None,
+) -> str:
+    """XOR of the selectors of the functions the interface itself declares. Each declaration is
+    matched by name and parameter count; when the ABI has more functions of that name and arity
+    than the interface declares, those its parents' ABIs list (`inherited`, by signature) are
+    left out. A match that stays ambiguous fails."""
     value = 0
-    for name, arity in sorted(own):
+    for name, arity in sorted(set(own)):
+        count = own.count((name, arity))
         matches = [
-            e
+            signature(e)
             for e in abi
             if e["type"] == "function" and e["name"] == name and len(e["inputs"]) == arity
         ]
-        if len(matches) != 1:
+        if len(matches) != count and inherited is not None:
+            matches = [s for s in matches if s not in inherited]
+        if len(matches) != count:
             raise ExportError(f"cannot match {name} with {arity} parameters to one ABI function")
-        value ^= int(selectors[signature(matches[0])], 16)
+        for sig in matches:
+            value ^= int(selectors[sig], 16)
     return f"0x{value:08x}"
 
 
@@ -208,22 +233,33 @@ def encode(data: object) -> bytes:
 
 def collect(root: Path, out: Path) -> dict[str, dict]:
     """Every exported contract by name: kind, source, ABI, selectors and solc version."""
-    source_cache: dict[str, list[tuple[str, str, str]]] = {}
+    source_cache: dict[str, list[tuple[str, str, str, list[str]]]] = {}
     found: dict[str, dict] = {}
+    abis_by_name: dict[str, list[list]] = {}  # every artifact's ABI, for interface parents
     for path in sorted(out.rglob("*.json")):
         if path.parent.name == "build-info":
             continue
         try:
             artifact = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
+        except (OSError, ValueError) as exc:
+            raise ExportError(f"{path}: unreadable artifact ({exc}); rebuild with `forge build`")
+        if not isinstance(artifact, dict):
+            raise ExportError(f"{path}: malformed artifact (not a JSON object)")
         metadata = artifact.get("metadata")
         if not isinstance(metadata, dict) or "abi" not in artifact:
             continue
         target = metadata.get("settings", {}).get("compilationTarget", {})
-        if len(target) != 1:
+        if not isinstance(target, dict) or len(target) != 1:
             continue
         source, name = next(iter(target.items()))
+        abi, selectors = artifact["abi"], artifact.get("methodIdentifiers", {})
+        if not (
+            isinstance(abi, list)
+            and all(isinstance(e, dict) and isinstance(e.get("type"), str) for e in abi)
+            and isinstance(selectors, dict)
+        ):
+            raise ExportError(f"{path}: malformed artifact (abi or methodIdentifiers)")
+        abis_by_name.setdefault(name, []).append(abi)
         if not source.startswith("src/"):
             continue
         if source not in source_cache:
@@ -236,24 +272,54 @@ def collect(root: Path, out: Path) -> dict[str, dict]:
         decl = next((d for d in source_cache[source] if d[1] == name), None)
         if decl is None:
             continue
-        kind, _, body = decl
-        if kind == "contract" or (kind == "interface" and is_public_interface(source)):
+        kind, _, body, parents = decl
+        if exported(kind, source):
             if name in found:
                 raise ExportError(f"two exported contracts are named {name}")
             found[name] = {
                 "kind": kind,
                 "source": source,
-                "abi": artifact["abi"],
-                "selectors": artifact.get("methodIdentifiers", {}),
+                "abi": abi,
+                "selectors": selectors,
                 "own": own_functions(body),
+                "parents": parents,
                 "solc": metadata.get("compiler", {}).get("version", ""),
             }
     if not found:
         raise ExportError(f"no src/ artifacts under {out}: run `forge build` first")
-    for name, lens in FORWARDED.items():
-        if name not in found or lens not in found:
-            raise ExportError(f"{name} or its forwarded surface {lens} is missing from the build")
+    missing = sorted(set(expected(root)) - set(found))
+    if missing:
+        raise ExportError(f"declared in src/ but missing from the build: {', '.join(missing)}")
+    for c in found.values():
+        c["inherited"] = inherited(c["parents"], abis_by_name)
     return found
+
+
+def exported(kind: str, source: str) -> bool:
+    return kind == "contract" or (kind == "interface" and is_public_interface(source))
+
+
+def expected(root: Path) -> list[str]:
+    """Every contract and public interface the sources under src/ declare."""
+    names = []
+    for file in sorted((root / "src").rglob("*.sol")):
+        source = file.relative_to(root).as_posix()
+        for kind, name, _, _ in declarations(strip_solidity(file.read_text(encoding="utf-8"))):
+            if exported(kind, source):
+                names.append(name)
+    return names
+
+
+def inherited(parents: list[str], abis_by_name: dict[str, list[list]]) -> set[str] | None:
+    """The function signatures the parents' ABIs list, or None when a parent's artifact is
+    missing or ambiguous (two different ABIs under its name)."""
+    sigs: set[str] = set()
+    for parent in parents:
+        abis = {encode(normalize(a)) for a in abis_by_name.get(parent.split(".")[-1], [])}
+        if len(abis) != 1:
+            return None
+        sigs |= {signature(e) for e in json.loads(abis.pop()) if e["type"] == "function"}
+    return sigs
 
 
 def render(found: dict[str, dict]) -> dict[str, bytes]:
@@ -277,7 +343,7 @@ def render(found: dict[str, dict]) -> dict[str, bytes]:
             "sha256": hashlib.sha256(data).hexdigest(),
         }
         if c["kind"] == "interface":
-            entry["interfaceId"] = interface_id(abi, c["selectors"], c["own"])
+            entry["interfaceId"] = interface_id(abi, c["selectors"], c["own"], c["inherited"])
         if name in FORWARDED:
             full = encode(merged(c["abi"], found[FORWARDED[name]]["abi"]))
             files[f"{FULL_DIR}/{name}.json"] = full
@@ -297,13 +363,15 @@ def render(found: dict[str, dict]) -> dict[str, bytes]:
 
 
 def existing(abi_dir: Path) -> dict[str, bytes]:
+    """The files of `abi_dir` the exporter owns (MANAGED); anything else there is left alone."""
     if not abi_dir.is_dir():
         return {}
-    return {
-        p.relative_to(abi_dir).as_posix(): p.read_bytes()
-        for p in sorted(abi_dir.rglob("*"))
-        if p.is_file()
-    }
+    found = {}
+    for p in sorted(abi_dir.rglob("*")):
+        rel = p.relative_to(abi_dir).as_posix()
+        if p.is_file() and MANAGED.fullmatch(rel):
+            found[rel] = p.read_bytes()
+    return found
 
 
 def diff(committed: dict[str, bytes], fresh: dict[str, bytes]) -> list[str]:
