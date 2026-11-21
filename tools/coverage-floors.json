@@ -41,8 +41,8 @@
       "branches": 98.0
     },
     "src/curation/PackageRegistry.sol": {
-      "lines": 97.9,
-      "branches": 93.4
+      "lines": 99.0,
+      "branches": 98.0
     },
     "src/economics/AssetAllowlist.sol": {
       "lines": 99.0,
@@ -56,6 +56,10 @@
       "lines": 99.0,
       "branches": 98.0
     },
+    "src/economics/GovernedVault.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
     "src/economics/RevenueEscrow.sol": {
       "lines": 99.0,
       "branches": 98.0
@@ -64,13 +68,17 @@
       "lines": 99.0,
       "branches": 98.0
     },
+    "src/economics/SplitLedger.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
     "src/economics/Splits.sol": {
       "lines": 99.0,
       "branches": 98.0
     },
     "src/economics/TokenTransfer.sol": {
-      "lines": 97.2,
-      "branches": 90.3
+      "lines": 97.5,
+      "branches": 92.1
     },
     "src/editions/EditionRules.sol": {
       "lines": 99.0,
@@ -81,6 +89,34 @@
       "branches": 98.0
     },
     "src/entropy/VrfEntropyModule.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/federated/FederatedDeployer.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/federated/FederatedEditionAuction.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/federated/FederatedEditionAuctionLens.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/federated/FederatedEditions.sol": {
+      "lines": 98.1,
+      "branches": 98.0
+    },
+    "src/federated/FederatedMembership.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/federated/FederatedStream.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/federated/FederationRegistry.sol": {
       "lines": 99.0,
       "branches": 98.0
     },
@@ -112,6 +148,10 @@
       "lines": 99.0,
       "branches": 98.0
     },
+    "src/interfaces/types/StepLadder.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
     "src/interfaces/types/WorksHashing.sol": {
       "lines": 99.0,
       "branches": 98.0
@@ -121,6 +161,10 @@
       "branches": 98.0
     },
     "src/libraries/DelegatedEOA.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/libraries/Dependency.sol": {
       "lines": 99.0,
       "branches": 98.0
     },
@@ -150,7 +194,27 @@
     },
     "src/sales/EnglishAuction.sol": {
       "lines": 99.0,
-      "branches": 95.9
+      "branches": 96.0
+    },
+    "src/sales/EnglishAuctionLens.sol": {
+      "lines": 98.5,
+      "branches": 89.6
+    },
+    "src/sales/SaleStarter.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/sales/UniformClearing.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/sales/UniformEditionAuction.sol": {
+      "lines": 98.6,
+      "branches": 93.4
+    },
+    "src/sales/UniformEditionAuctionLens.sol": {
+      "lines": 98.8,
+      "branches": 94.5
     },
     "src/stream/SpdxId.sol": {
       "lines": 99.0,
@@ -158,11 +222,23 @@
     },
     "src/stream/Stream.sol": {
       "lines": 99.0,
-      "branches": 92.3
+      "branches": 95.6
+    },
+    "src/stream/StreamLayout.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/stream/StreamViews.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/stream/WorkDelivery.sol": {
+      "lines": 99.0,
+      "branches": 98.0
     },
     "src/stream/WorkRecords.sol": {
       "lines": 99.0,
-      "branches": 95.5
+      "branches": 95.7
     }
   }
 }
