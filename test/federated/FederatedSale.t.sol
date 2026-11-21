@@ -15,7 +15,10 @@ import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
+import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
+import { SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { PrimaryOutcome } from "src/interfaces/types/SaleTypes.sol";
+import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { FederationBase } from "./FederationBase.sol";
 
 /// @notice Federated 1/1s end to end on the real stack: joining, minting into the English
@@ -124,6 +127,22 @@ contract FederatedSaleTest is FederationBase {
 
     /// @dev FED-1: the compiled runtime code is the deployed code (this only compiles for a
     ///      contract with no immutable), so every copy of a version has one code hash.
+    function test_Join_ARegistryThatListsNothingLeavesTheContractUnjoined() public {
+        address hostile = address(new HostileLister(artists));
+        _govern(
+            hotAdmin,
+            address(artists),
+            abi.encodeCall(artists.setFederationRegistry, (address(fedRegistry), hostile))
+        );
+        _join(
+            address(fed),
+            fedArtist,
+            abi.encodePacked(IFederatedToken.FederationStateInvalid.selector)
+        );
+        assertFalse(fed.federationState());
+        assertFalse(fed.isAdmittedMinter(address(auction)));
+    }
+
     function test_Template_EveryCopyRunsTheCompiledRuntimeCode() public {
         assertEq(keccak256(type(FederatedStream).runtimeCode), streamHash);
         assertEq(keccak256(type(FederatedEditions).runtimeCode), editionsHash);
@@ -284,6 +303,130 @@ contract FederatedSaleTest is FederationBase {
         auction.start(address(fed), _mintData(w));
     }
 
+    // ------------------------------------------------------------------ item approvals
+
+    function test_RevokeItem_OnlyTheArtistAndTheItemNoLongerMints() public {
+        _joinedFed();
+        Work memory w = _fedWork(fedArtist);
+        bytes32 h = _itemHash(w);
+        vm.prank(fedArtist);
+        fed.approveItem(h, RATE);
+        vm.prank(collector);
+        vm.expectRevert(abi.encodeWithSelector(IFederatedToken.NotArtist.selector, collector));
+        fed.revokeItem(h);
+        vm.expectEmit(address(fed));
+        emit IFederatedStream.ItemApproval(h, 0, false);
+        vm.prank(fedArtist);
+        fed.revokeItem(h);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        auction.start(address(fed), _mintData(w));
+    }
+
+    function test_Mint_RefusesARequestNotForTheAdaptersOwnCustody() public {
+        _joinedFed();
+        Work memory w = _fedWork(fedArtist);
+        vm.prank(fedArtist);
+        fed.approveItem(_itemHash(w), RATE);
+        bytes memory data = _mintData(w);
+        vm.startPrank(address(auction));
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        fed.mint(collector, 0, 1, data);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        fed.mint(address(auction), 1, 1, data);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        fed.mint(address(auction), 0, 2, data);
+        vm.stopPrank();
+        assertEq(fed.liveTokenOf(1), 0, "no work opened");
+    }
+
+    function test_Mint_EachFileMatchesTheStoreAndOnlyTheFirstIsPrimary() public {
+        _joinedFed();
+        Work memory w = _fedWork(fedArtist);
+        // A second file whose declared hash the store does not hold for it.
+        MediaFile[] memory media = new MediaFile[](2);
+        media[0] = w.media[0];
+        media[1] = MediaFile(w.media[0].fileId, keccak256("not the file"), 1);
+        _expectMediaRefused(w, media);
+        // The same file again as a second primary.
+        media[1] = MediaFile(w.media[0].fileId, w.media[0].sha256Hash, 0);
+        _expectMediaRefused(w, media);
+        // A role above the sixteen the record packs.
+        media[1] = MediaFile(w.media[0].fileId, w.media[0].sha256Hash, 16);
+        _expectMediaRefused(w, media);
+        // The accepted form: the same file as a secondary role.
+        media[1] = MediaFile(w.media[0].fileId, w.media[0].sha256Hash, 1);
+        w.media = media;
+        w.item.mediaHash = WorksHashing.mediaHash(media);
+        _startFed(w);
+        assertEq(fed.liveTokenOf(1), 1);
+    }
+
+    function test_Mint_AnArtistSeedIsStoredAsGiven() public {
+        _joinedFed();
+        Work memory w = _fedWork(fedArtist);
+        w.item.seedPolicy = uint8(SeedPolicy.ARTIST);
+        w.item.seed = keccak256("the artist's seed");
+        (, uint256 tokenId) = _startFed(w);
+        (uint8 policy, bytes32 seed) = fed.seedOf(tokenId);
+        assertEq(policy, uint8(SeedPolicy.ARTIST));
+        assertEq(seed, keccak256("the artist's seed"));
+    }
+
+    // ------------------------------------------------------------------ pairing and metadata
+
+    function test_LinkEditions_OnlyCodeOnceAndBeforeJoining() public {
+        FederatedStream s = _deployStream(fedArtist);
+        vm.prank(collector);
+        vm.expectRevert(abi.encodeWithSelector(IFederatedToken.NotArtist.selector, collector));
+        s.linkEditions(address(fed));
+        vm.startPrank(fedArtist);
+        vm.expectRevert(IFederatedToken.FederationStateInvalid.selector);
+        s.linkEditions(collector);
+        FederatedEditions ed = _deployEditions(fedArtist, address(s));
+        vm.expectEmit(address(s));
+        emit IFederatedStream.EditionsLinked(address(ed));
+        s.linkEditions(address(ed));
+        vm.expectRevert(IFederatedToken.FederationStateInvalid.selector);
+        s.linkEditions(address(ed));
+        vm.stopPrank();
+        // A joined contract without a partner can no longer take one.
+        _joinedFed();
+        vm.prank(fedArtist);
+        vm.expectRevert(IFederatedToken.FederationStateInvalid.selector);
+        fed.linkEditions(address(ed));
+    }
+
+    function test_Metadata_OnlyTheArtistSetsTheContractUriAndTheOwner() public {
+        assertEq(fed.owner(), fedArtist, "the configured owner");
+        assertEq(fed.contractURI(), "");
+        vm.startPrank(collector);
+        vm.expectRevert(abi.encodeWithSelector(IFederatedToken.NotArtist.selector, collector));
+        fed.setContractURI("ipfs://x");
+        vm.expectRevert(abi.encodeWithSelector(IFederatedToken.NotArtist.selector, collector));
+        fed.setOwner(collector);
+        vm.stopPrank();
+        vm.startPrank(fedArtist);
+        vm.expectEmit(address(fed));
+        emit IFederatedToken.ContractURIUpdated();
+        fed.setContractURI("ipfs://collection");
+        vm.expectEmit(address(fed));
+        emit IFederatedToken.OwnershipTransferred(fedArtist, collector);
+        fed.setOwner(collector);
+        vm.stopPrank();
+        assertEq(fed.contractURI(), "ipfs://collection");
+        assertEq(fed.owner(), collector);
+    }
+
+    function _expectMediaRefused(Work memory w, MediaFile[] memory media) internal {
+        Work memory bad = w;
+        bad.media = media;
+        bad.item.mediaHash = WorksHashing.mediaHash(media);
+        vm.prank(fedArtist);
+        fed.approveItem(_itemHash(bad), RATE);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        auction.start(address(fed), _mintData(bad));
+    }
+
     // ------------------------------------------------------------------ helpers
 
     function _royaltyVault(address seller) internal view returns (address) {
@@ -326,6 +469,9 @@ contract HostileLister {
             consent
         );
     }
+
+    /// @dev Accepts a join and lists nothing.
+    function register(IFederationRegistry.Join calldata) external { }
 
     function supportsInterface(bytes4 id) external pure returns (bool) {
         return id == type(IFederationRegistry).interfaceId || id == 0x01ffc9a7;

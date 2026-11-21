@@ -19,6 +19,7 @@ import { Editions } from "src/editions/Editions.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
+import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
@@ -596,6 +597,28 @@ contract EditionsTest is EditionsBase {
         vm.prank(outsider);
         vm.expectRevert(abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, outsider));
         editions.burn(1, 1);
+    }
+
+    /// @dev An adapter whose `saleKind` read is refused is not admitted: a refusal with a reason
+    ///      keeps it, one without a reason reverts `BoundedCallFailed(adapter)`.
+    function test_SetAdmittedMinter_ARefusedSaleKindReadIsNotAdmitted() public {
+        EditionsAdapterMock fresh = new EditionsAdapterMock(FIXED_PRICE);
+        bytes memory read = abi.encodeWithSelector(ISaleAdapter.saleKind.selector);
+        vm.mockCallRevert(address(fresh), read, "");
+        vm.prank(governor);
+        vm.expectRevert(
+            abi.encodeWithSelector(BoundedCall.BoundedCallFailed.selector, address(fresh))
+        );
+        editions.setAdmittedMinter(address(fresh), true);
+
+        vm.mockCallRevert(address(fresh), read, abi.encodeWithSignature("Error(string)", "no"));
+        vm.prank(governor);
+        vm.expectRevert(bytes("no"));
+        editions.setAdmittedMinter(address(fresh), true);
+
+        vm.clearMockedCalls();
+        vm.prank(governor);
+        editions.setAdmittedMinter(address(fresh), true);
     }
 
     function _expectNotAdmissible(address candidate) internal {

@@ -28,6 +28,25 @@ contract ConsolidationAdapterTest is IdentityFixture {
         assertFalse(adapter.isConsolidated(artist, wallet));
     }
 
+    /// @dev At most `MAX_REGISTRATIONS_READ` registrations are read per direction: a live one
+    ///      within the bound counts, and one after that many lapsed ones does not.
+    function test_ReadsAtMostTheBoundOfRegistrations() public {
+        _delegate(wallet2, artist, FAR);
+        uint256 bound = adapter.MAX_REGISTRATIONS_READ();
+        for (uint256 i = 1; i < bound; ++i) {
+            _delegate(artist, wallet2, block.timestamp); // expires at once
+        }
+        _delegate(artist, wallet2, FAR); // the last one read
+        assertTrue(adapter.isConsolidated(artist, wallet2), "within the bound");
+
+        _revoke(artist, wallet2);
+        for (uint256 i; i < bound; ++i) {
+            _delegate(artist, wallet2, block.timestamp);
+        }
+        _delegate(artist, wallet2, FAR); // past the bound
+        assertFalse(adapter.isConsolidated(artist, wallet2), "past the bound");
+    }
+
     function test_SpecificCollectionDoesNotCount() public {
         address collection = makeAddr("collection");
         vm.prank(artist);

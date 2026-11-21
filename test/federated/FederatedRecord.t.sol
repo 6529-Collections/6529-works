@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IFederatedStream } from "src/interfaces/IFederatedStream.sol";
 import { IFederatedToken } from "src/interfaces/IFederatedToken.sol";
+import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { IWorkDelivery } from "src/interfaces/IWorkDelivery.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
-import { PrimaryOutcome } from "src/interfaces/types/SaleTypes.sol";
+import { PrimaryOutcome, PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { FederationBase } from "./FederationBase.sol";
 
@@ -136,6 +138,91 @@ contract FederatedRecordTest is FederationBase {
             abi.encodeWithSelector(IFederatedStream.SaleAlreadySettled.selector, tokenId)
         );
         fed.settlePrimary(tokenId, PrimaryOutcome.SOLD, collector, address(0), 1);
+    }
+
+    function test_SettlePrimary_RefusesAMalformedOutcome() public {
+        (,, uint256 tokenId) = _opened();
+        bytes4 invalid = IFederatedStream.InvalidSaleOutcome.selector;
+        vm.startPrank(address(auction));
+        vm.expectRevert(invalid);
+        fed.settlePrimary(tokenId, PrimaryOutcome.SOLD, address(0), address(0), 1);
+        vm.expectRevert(invalid);
+        fed.settlePrimary(tokenId, PrimaryOutcome.NONE, address(0), address(0), 0);
+        vm.expectRevert(invalid);
+        fed.settlePrimary(tokenId, PrimaryOutcome.UNBID, collector, address(0), 0);
+        vm.expectRevert(invalid);
+        fed.settlePrimary(tokenId, PrimaryOutcome.FROZEN_OUT, address(0), address(0), 1);
+        vm.stopPrank();
+        (,, uint8 state) = fed.tokenInfo(tokenId);
+        assertEq(state, 1, "still in sale");
+    }
+
+    function test_SettlePrimary_FrozenOutTakesTheTokenHome() public {
+        (,, uint256 tokenId) = _opened();
+        vm.expectEmit(address(fed));
+        emit IFederatedStream.PrimarySaleSettled(
+            tokenId, PrimaryOutcome.FROZEN_OUT, address(0), address(0), 0
+        );
+        vm.prank(address(auction));
+        fed.settlePrimary(tokenId, PrimaryOutcome.FROZEN_OUT, address(0), address(0), 0);
+        assertEq(fed.ownerOf(tokenId), address(fed));
+    }
+
+    function test_SettlePrimary_UnsoldRefusedWhenTheAdapterNoLongerHoldsTheToken() public {
+        (,, uint256 tokenId) = _opened();
+        vm.startPrank(address(auction));
+        fed.transferFrom(address(auction), collector, tokenId);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IERC721Errors.ERC721IncorrectOwner.selector, address(auction), tokenId, collector
+            )
+        );
+        fed.settlePrimary(tokenId, PrimaryOutcome.UNBID, address(0), address(0), 0);
+        vm.stopPrank();
+        assertEq(fed.ownerOf(tokenId), collector);
+    }
+
+    function test_Burn_RefusesAWrongAmountASettledSaleAndAMovedToken() public {
+        (, uint256 saleId, uint256 tokenId) = _opened();
+        vm.prank(address(auction));
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        fed.burn(tokenId, 2);
+        // The adapter moved the token out of its custody: it can no longer burn it.
+        vm.startPrank(address(auction));
+        fed.transferFrom(address(auction), collector, tokenId);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IERC721Errors.ERC721IncorrectOwner.selector, address(auction), tokenId, collector
+            )
+        );
+        fed.burn(tokenId, 1);
+        vm.stopPrank();
+        vm.prank(collector);
+        fed.transferFrom(collector, address(auction), tokenId);
+        _settleAtEnd(saleId);
+        vm.prank(address(auction));
+        vm.expectRevert(
+            abi.encodeWithSelector(IFederatedStream.SaleAlreadySettled.selector, tokenId)
+        );
+        fed.burn(tokenId, 1);
+    }
+
+    function test_primaryTerms_UnknownTokenAndAMintedOne() public {
+        (Work memory w,, uint256 tokenId) = _opened();
+        vm.expectRevert(abi.encodeWithSelector(IFederatedStream.UnknownWork.selector, 99));
+        fed.primaryTerms(99, "");
+        PrimaryTerms memory p = fed.primaryTerms(tokenId, "");
+        assertEq(p.seller, splitFactory.walletFor(w.item.payees, 0));
+        assertEq(p.feeShare, FED_SHARE);
+        assertEq(p.creator, address(fed));
+    }
+
+    function test_collection_OnlyTheOne() public {
+        _opened();
+        IStreamViews.Collection memory c = fed.collection(1);
+        assertEq(c.name, fed.name());
+        vm.expectRevert(abi.encodeWithSelector(IFederatedStream.UnknownWork.selector, 2));
+        fed.collection(2);
     }
 
     /// @dev A work whose media are uploaded in full, so `syncOnChain` can mark it complete.

@@ -21,6 +21,7 @@ import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { Party, PartyRole, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { MockVrfWrapper } from "../mocks/entropy/EntropyMocks.sol";
@@ -618,6 +619,62 @@ contract FederationSecondPassTest is FederationBase {
             )
         );
         entropy.rawFulfillRandomWords(requestId, words);
+    }
+
+    /// @dev The wrapper setter is compare-and-set, and refuses the current wrapper and the
+    ///      coordinator as the next one.
+    function test_Vrf_SetWrapperRefusesAStaleExpectedTheSameWrapperAndTheCoordinator() public {
+        bytes32 hash = address(wrapper).codehash;
+        _governExpectRevert(
+            address(entropy),
+            abi.encodeCall(entropy.setWrapper, (address(1), address(wrapper), hash)),
+            abi.encodeWithSelector(IEntropyModule.ExpectedValueMismatch.selector)
+        );
+        _setWrapper();
+        _governExpectRevert(
+            address(entropy),
+            abi.encodeCall(entropy.setWrapper, (address(wrapper), address(wrapper), hash)),
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(wrapper))
+        );
+        address coord = address(coordinator);
+        _governExpectRevert(
+            address(entropy),
+            abi.encodeCall(entropy.setWrapper, (address(wrapper), coord, coord.codehash)),
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, coord)
+        );
+        assertEq(entropy.wrapper(), address(wrapper), "unchanged");
+    }
+
+    /// @dev A request ID of zero, or one the wrapper already returned, is refused and records
+    ///      nothing.
+    function test_Vrf_AZeroOrRepeatedRequestIdFromTheWrapperIsRefused() public {
+        Work memory w = _vrfWork();
+        _setWrapper();
+        uint256 price = wrapper.price();
+        vm.deal(fedArtist, price);
+        bytes4 request = IVRFV2PlusWrapper.requestRandomWordsInNative.selector;
+
+        vm.mockCall(address(wrapper), abi.encodePacked(request), abi.encode(uint256(0)));
+        vm.prank(fedArtist);
+        vm.expectRevert(abi.encodeWithSelector(IEntropyModule.InvalidRequestId.selector, 0));
+        entropy.requestFederatedSeed{ value: price }(address(fed), w.item);
+        vm.clearMockedCalls();
+
+        uint256 first = _paidRequest(w);
+        Work memory other = _fedWork(fedArtist);
+        other.item.seedPolicy = uint8(SeedPolicy.VRF);
+        other.item.contentHash = keccak256("another work");
+        vm.prank(fedArtist);
+        fed.approveItem(_itemHash(other), RATE);
+        vm.mockCall(address(wrapper), abi.encodePacked(request), abi.encode(first));
+        vm.deal(fedArtist, price);
+        vm.prank(fedArtist);
+        vm.expectRevert(abi.encodeWithSelector(IEntropyModule.InvalidRequestId.selector, first));
+        entropy.requestFederatedSeed{ value: price }(address(fed), other.item);
+        (bool delivered, bytes32 seed) =
+            entropy.federatedSeedOf(address(fed), other.item.contentHash);
+        assertFalse(delivered);
+        assertEq(seed, bytes32(0), "nothing recorded");
     }
 
     // ------------------------------------------------------------------ R8

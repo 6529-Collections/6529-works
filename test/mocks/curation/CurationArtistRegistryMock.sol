@@ -124,3 +124,25 @@ contract CurationArtistRegistryMock is IERC165 {
         if (_identity[artistId].root == address(0)) revert UnknownArtist(artistId);
     }
 }
+
+/// @dev An artist registry that answers `register` with another artist ID than the
+///      `uint160(account)` the package registry assigns: the code a pinned registry could never
+///      run, kept to show `acceptPackage` refuses it instead of recording a mismatched account.
+contract MisnumberingArtistRegistry is IERC165 {
+    function artistIdOf(address) external pure returns (uint256) {
+        return 0;
+    }
+
+    function requireSigned(uint256, bytes32, bytes calldata) external pure returns (address) {
+        return address(0);
+    }
+
+    function register(address root, bytes32, bytes32) external pure returns (uint256) {
+        return uint256(uint160(root)) + 1;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IERC165).interfaceId
+            || interfaceId == type(IArtistRegistry).interfaceId;
+    }
+}

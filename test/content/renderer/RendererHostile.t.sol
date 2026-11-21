@@ -2,7 +2,11 @@
 pragma solidity ^0.8.24;
 
 import { RendererBase } from "./RendererBase.sol";
-import { BurningRecords, HostileStore } from "../../mocks/content/RendererHostile.sol";
+import {
+    BurningRecords,
+    HostileStore,
+    ShortAnswerToken
+} from "../../mocks/content/RendererHostile.sol";
 import { StreamMock } from "../../mocks/stream/StreamMock.sol";
 import {
     GasBurnerMock,
@@ -183,6 +187,27 @@ contract RendererHostileTest is RendererBase {
         garbage.configure("", false); // an empty answer
         vm.expectRevert();
         renderer.tokenURI(address(garbage), ID);
+    }
+
+    /// @dev A token whose `coreOf` answer is shorter than the six words of a `WorkCore`, and one
+    ///      whose `extsload` answer is shorter than the words it was asked for, fail closed on
+    ///      that read.
+    function test_Token_ShortCoreOrStorageAnswersFailClosed() public {
+        ShortAnswerToken token = new ShortAnswerToken(32, 64);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IRenderer.RendererReadFailed.selector, address(token), IStream.coreOf.selector
+            )
+        );
+        renderer.tokenURI(address(token), ID);
+
+        token = new ShortAnswerToken(192, 64);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IRenderer.RendererReadFailed.selector, address(token), IStream.extsload.selector
+            )
+        );
+        renderer.tokenURI(address(token), ID);
     }
 
     function test_Token_OversizedAnswersFailClosed() public {

@@ -1,12 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IERC1155Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
+import {
+    ReentrancyGuardTransient
+} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import { FederatedEditionAuction } from "src/federated/FederatedEditionAuction.sol";
 import { FederatedEditionAuctionLens } from "src/federated/FederatedEditionAuctionLens.sol";
 import { FederatedEditions } from "src/federated/FederatedEditions.sol";
 import { FederatedStream } from "src/federated/FederatedStream.sol";
 import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
+import { IEditions } from "src/interfaces/IEditions.sol";
+import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { IEnglishAuctionRefusal } from "src/interfaces/IEnglishAuctionRefusal.sol";
 import { IFederatedEditions } from "src/interfaces/IFederatedEditions.sol";
 import { IFederatedStream } from "src/interfaces/IFederatedStream.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
@@ -16,7 +23,15 @@ import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
+import {
+    PrimaryOutcome,
+    PrimarySettlement,
+    PrimaryTerms,
+    SaleKind
+} from "src/interfaces/types/SaleTypes.sol";
+import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { DeployV1 } from "script/DeployV1.sol";
+import { SettleOnRefund, StarvedSeal } from "../mocks/federated/FederatedMocks.sol";
 import { FederationBase } from "./FederationBase.sol";
 
 /// @notice An editions copy that reports no network fee when an adapter binds it: different code,
@@ -41,6 +56,7 @@ contract FeeDodgingEditions is FederatedEditions {
 contract FederatedPairTest is FederationBase {
     FederatedEditionAuction internal fea;
     IUniformEditionAuctionLens internal fl;
+    FederatedEditionAuctionLens internal flens;
     FederatedStream internal pairStream;
     FederatedEditions internal pairEditions;
     address internal collector = makeAddr("collector");
@@ -60,6 +76,7 @@ contract FederatedPairTest is FederationBase {
             DeployV1.editionAuctionLimits()
         );
         fl = IUniformEditionAuctionLens(address(fea));
+        flens = lens;
         _govern(
             hotAdmin,
             address(fedRegistry),
@@ -357,6 +374,246 @@ contract FederatedPairTest is FederationBase {
             abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(pairEditions), 0)
         );
         fea.open(address(pairEditions), tokenId, abi.encode(w.item));
+    }
+
+    // ------------------------------------------------------------------ the editions half
+
+    /// @dev An open pair whose master settled and whose edition exists, bound to `fea`.
+    function _createdEdition() internal returns (uint256 tokenId, uint256 saleId) {
+        Work memory w;
+        uint256 oneSaleId;
+        (w, oneSaleId, tokenId, saleId) = _openPair(0);
+        _settleAtEnd(oneSaleId);
+        pairEditions.createEdition(tokenId, w.item);
+    }
+
+    function test_Editions_NameAndSymbolAreTheConfiguredOnes() public view {
+        assertEq(pairEditions.name(), "Artist Editions");
+        assertEq(pairEditions.symbol(), "ARTE");
+    }
+
+    /// @dev FED-33: an adapter binds an unopened master only if it runs the sale kind the item
+    ///      names; the English auction (admitted for 1/1s) cannot take a UNIFORM_AUCTION edition.
+    function test_BindMinter_RefusesAnAdapterOfAnotherSaleKind() public {
+        Work memory w = _fedMaster(fedArtist, 0);
+        (, uint256 tokenId) = _startFed(pairStream, fedArtist, w, RATE);
+        assertTrue(pairEditions.isAdmittedMinter(address(auction)));
+        vm.prank(address(auction));
+        vm.expectRevert(
+            abi.encodeWithSelector(IFederatedEditions.NotEditionMaster.selector, tokenId)
+        );
+        pairEditions.bindMinter(tokenId, w.item);
+        assertFalse(pairEditions.isBound(tokenId));
+    }
+
+    function test_Mint_RefusesAZeroAmountAMalformedRequestAndAnotherCurrency() public {
+        (uint256 tokenId,) = _createdEdition();
+        bytes memory eth = abi.encode(address(0), 1 ether);
+        vm.startPrank(address(fea));
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        pairEditions.mint(collector, tokenId, 0, eth);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        pairEditions.mint(collector, tokenId, 1, abi.encode(address(0)));
+        address other = makeAddr("otherCurrency");
+        vm.expectRevert(
+            abi.encodeWithSelector(IFederatedEditions.CurrencyMismatch.selector, address(0), other)
+        );
+        pairEditions.mint(collector, tokenId, 1, abi.encode(other, 1 ether));
+        vm.stopPrank();
+        assertEq(pairEditions.edition(tokenId).minted, 0);
+    }
+
+    /// @dev FED-34: the terms in force for the adapter, with the partner as creator; nothing to
+    ///      settle per token.
+    function test_PrimaryTerms_TheLockedVaultTheShareInForceAndThePartnerAsCreator() public {
+        (uint256 tokenId,) = _createdEdition();
+        IEditions.Edition memory e = pairEditions.edition(tokenId);
+        PrimaryTerms memory p = pairEditions.primaryTerms(tokenId, "");
+        assertEq(p.saleKind, SaleKind.UNIFORM_AUCTION);
+        assertEq(p.seller, e.seller);
+        assertEq(p.feeRecipient, e.feeRecipient);
+        assertEq(p.feeShare, e.feeShare);
+        assertEq(p.feeShare, FED_SHARE);
+        assertEq(p.creator, address(pairStream));
+        vm.expectRevert(abi.encodeWithSelector(IFederatedEditions.UnknownEdition.selector, 999));
+        pairEditions.primaryTerms(999, "");
+        PrimarySettlement memory s =
+            pairEditions.settlePrimary(tokenId, PrimaryOutcome.SOLD, collector, collector, 1);
+        assertEq(s.seller, address(0));
+        assertEq(s.feeRecipient, address(0));
+        assertEq(s.feeShare, 0);
+        assertEq(s.holder, address(0));
+    }
+
+    /// @dev Only the bound adapter burns, a nonzero amount, from its own balance.
+    function test_Burn_OnlyTheBoundAdapterFromItsOwnBalance() public {
+        (uint256 tokenId,) = _createdEdition();
+        vm.prank(collector);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IFederatedEditions.MinterMismatch.selector, tokenId, address(fea)
+            )
+        );
+        pairEditions.burn(tokenId, 1);
+        vm.startPrank(address(fea));
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        pairEditions.burn(tokenId, 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IERC1155Errors.ERC1155InsufficientBalance.selector, address(fea), 0, 1, tokenId
+            )
+        );
+        pairEditions.burn(tokenId, 1);
+        vm.stopPrank();
+    }
+
+    // ------------------------------------------------------------------ the federated adapter
+
+    /// @dev FED-57: a served sale takes a raise as the shared base does.
+    function test_Pair_AServedSaleTakesARaise() public {
+        (,,, uint256 saleId) = _openPair(0);
+        address a = makeAddr("a");
+        uint256 bidId = _editionBidFed(saleId, a, 100, 2);
+        uint256 diff = 2 * (fl.stepPrice(saleId, 110) - fl.stepPrice(saleId, 100));
+        vm.deal(a, diff);
+        // An uncapped sale (position zero); the raise is early, so the end does not move.
+        vm.expectEmit(address(fea));
+        emit IUniformEditionAuction.BidRaised(
+            saleId, bidId, a, 100, 110, 0, diff, fl.endTimes(saleId).endTime
+        );
+        vm.prank(a);
+        fea.raise{ value: diff }(saleId, bidId, 110);
+        assertEq(fl.auction(saleId).highStep, 110);
+    }
+
+    /// @dev FED-58: after a delisting the lens's views show the 1/1 as the English auction has
+    ///      it (still ACTIVE, the sale's view still open), while a bid is refused and settlement
+    ///      voids the sale as if the 1/1 were cancelled.
+    function test_Pair_ADelistedSalesViewsShowItsOneOfOneAsItIs() public {
+        // The vote is scheduled first, so it lands while the 1/1 is still running.
+        address[] memory tokens = new address[](2);
+        (tokens[0], tokens[1]) = (address(pairStream), address(pairEditions));
+        bytes memory delist = abi.encodeCall(
+            fedRegistry.setStatus, (tokens, IFederationRegistry.Status.DELISTED, "vote")
+        );
+        (, uint32 delay) = manager.canCall(hotAdmin, address(fedRegistry), bytes4(delist));
+        vm.prank(hotAdmin);
+        manager.schedule(address(fedRegistry), delist, 0);
+        vm.warp(block.timestamp + delay);
+        (,,, uint256 saleId) = _openPair(0);
+        _editionBidFed(saleId, makeAddr("a"), 100, 1);
+        vm.prank(hotAdmin);
+        manager.execute(address(fedRegistry), delist);
+        assertFalse(fl.isTarget(address(pairEditions)));
+        IUniformEditionAuction.EndTimes memory e = fl.endTimes(saleId);
+        assertEq(uint8(e.oneOfOneState), uint8(IEnglishAuction.AuctionState.ACTIVE));
+        assertTrue(e.biddingOpen, "the view reads the 1/1 as it is");
+        uint256 amount = fl.stepPrice(saleId, 100);
+        address b = makeAddr("b");
+        vm.deal(b, amount);
+        vm.prank(b);
+        vm.expectRevert(
+            abi.encodeWithSelector(IUniformEditionAuction.BiddingClosed.selector, saleId, 0)
+        );
+        fea.bid{ value: amount }(saleId, 100, 1);
+        assertTrue(fea.settle(saleId, new uint256[](0)));
+        assertEq(uint8(fl.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.VOID));
+    }
+
+    /// @dev The settle re-check of a delisted mid-scan sale keeps the shared guard: entered from
+    ///      a refund paid by another call of the adapter, it reverts and voids nothing.
+    function test_Settle_AMidScanVoidReenteredFromARefundIsRefused() public {
+        (,,, uint256 saleA) = _openPair(0);
+        (Work memory w, uint256 oneB, uint256 tokenB, uint256 saleB) = _openPair(0);
+        address a = makeAddr("a");
+        uint256 bidA = _editionBidFed(saleA, a, 100, 1);
+        _editionBidFed(saleB, makeAddr("low"), 0, 40);
+        _editionBidFed(saleB, makeAddr("high"), 300, 1);
+        _settleAtEnd(oneB);
+        pairEditions.createEdition(tokenB, w.item);
+        vm.warp(fl.endTimes(saleB).endTime);
+        assertFalse(fea.settle(saleB, new uint256[](0)), "the scan continues");
+        _delistPair();
+        assertTrue(fea.settle(saleA, new uint256[](0)), "A voided");
+        SettleOnRefund hostile = new SettleOnRefund(fea, saleB);
+        vm.prank(a);
+        (, uint256 refund) = fea.claimBid(saleA, bidA, address(hostile));
+        assertEq(address(hostile).balance, refund);
+        assertEq(
+            hostile.revertData(),
+            abi.encodeWithSelector(ReentrancyGuardTransient.ReentrancyGuardReentrantCall.selector)
+        );
+        assertEq(
+            uint8(fl.auction(saleB).status), uint8(IUniformEditionAuction.AuctionStatus.SETTLING)
+        );
+        assertTrue(fea.settle(saleB, new uint256[](0)));
+        assertEq(uint8(fl.auction(saleB).status), uint8(IUniformEditionAuction.AuctionStatus.VOID));
+    }
+
+    /// @dev FED-56: the abandoned sale's best-effort seal is never read as a refusal when the
+    ///      editions contract ran out of gas: the abandonment reverts `BoundedCallShortfall`. The
+    ///      editions' code is replaced, after the sale opened, by one whose `sealSupply` consumes
+    ///      all the gas it is given, as an honest callee that ran short does.
+    function test_Abandon_ASealThatRunsOutOfGasIsAShortfall() public {
+        Work memory w = _fedMaster(fedArtist, 0);
+        (uint256 oneSaleId, uint256 tokenId) = _startFed(pairStream, fedArtist, w, RATE);
+        uint256 saleId = fea.open(address(pairEditions), tokenId, abi.encode(w.item));
+        vm.mockCallRevert(
+            address(pairStream), abi.encodeWithSelector(IMintTarget.settlePrimary.selector), "x"
+        );
+        vm.warp(auction.auction(oneSaleId).endTime + 2 days);
+        IEnglishAuctionRefusal(address(auction)).settleOrRefund(oneSaleId);
+        vm.clearMockedCalls();
+        (, uint256 abandonAt) = fl.abandonable(saleId);
+        vm.warp(abandonAt);
+        vm.etch(address(pairEditions), address(new StarvedSeal(address(pairStream))).code);
+        vm.expectRevert(
+            abi.encodeWithSelector(BoundedCall.BoundedCallShortfall.selector, pairEditions)
+        );
+        fea.abandon{ gas: 5_000_000 }(saleId, abi.encode(w.item));
+        assertEq(
+            uint8(fl.auction(saleId).status),
+            uint8(IUniformEditionAuction.AuctionStatus.CLOSED),
+            "not voided"
+        );
+    }
+
+    /// @dev R16 through the federated lens: a settled master whose edition was never created
+    ///      is abandonable, and `abandon` creates the edition; once it exists the sale is no
+    ///      longer abandonable.
+    function test_Abandon_ASettledMasterGetsItsEditionCreated() public {
+        (Work memory w, uint256 oneSaleId, uint256 tokenId, uint256 saleId) = _openPair(0);
+        _settleAtEnd(oneSaleId);
+        (, uint256 abandonAt) = fl.abandonable(saleId);
+        assertGt(abandonAt, 0);
+        vm.warp(abandonAt);
+        (bool ok,) = fl.abandonable(saleId);
+        assertTrue(ok);
+        fea.abandon(saleId, abi.encode(w.item));
+        assertTrue(pairEditions.exists(tokenId), "created");
+        (ok, abandonAt) = fl.abandonable(saleId);
+        assertFalse(ok);
+        assertEq(abandonAt, 0);
+    }
+
+    /// @dev The lens's fixed answers and its fee check, through the adapter and directly.
+    function test_Lens_FixedAnswersAndTheFeeCheckOfAnUnservedToken() public {
+        assertEq(fl.editions(), address(0));
+        assertEq(fl.stream(), address(0));
+        assertEq(fl.federationRegistry(), address(fedRegistry));
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.TargetNotAllowed.selector, address(7)));
+        fl.setFederationRegistry(address(fedRegistry), address(7));
+        (address recipient, uint256 share) = flens.feeTerms(address(pairEditions), address(escrow));
+        assertEq(recipient, networkFee);
+        assertEq(share, FED_SHARE);
+        vm.expectRevert(
+            abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(editions), 0)
+        );
+        flens.feeTerms(address(editions), address(escrow));
+        vm.expectRevert(
+            abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(pairEditions), 0)
+        );
+        flens.feeTerms(address(pairEditions), networkFee);
     }
 
     function _delistPair() internal {

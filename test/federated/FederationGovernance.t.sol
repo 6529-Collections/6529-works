@@ -6,12 +6,14 @@ import { FederatedStream } from "src/federated/FederatedStream.sol";
 import { FederationRegistry } from "src/federated/FederationRegistry.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { IFederatedStream } from "src/interfaces/IFederatedStream.sol";
 import { IFederatedToken } from "src/interfaces/IFederatedToken.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { Payment, PaymentMethod, PrimaryOutcome } from "src/interfaces/types/SaleTypes.sol";
+import { NonDeliveringAdapter } from "../mocks/federated/FederatedMocks.sol";
 import { FederationBase } from "./FederationBase.sol";
 
 /// @notice The federation registry's governed paths and their exact effects: template approval,
@@ -184,6 +186,24 @@ contract FederationGovernanceTest is FederationBase {
         assertEq(fed.ownerOf(tokenId), collector);
     }
 
+    /// @dev An admitted adapter whose `claimDelivery` returns without delivering (this test
+    ///      contract) cannot leave the token reclaimed: `reclaim` reverts unless it came home.
+    function test_Reclaim_RefusesAnAdapterThatReturnsWithoutDelivering() public {
+        NonDeliveringAdapter adapter = new NonDeliveringAdapter();
+        _govern(
+            hotAdmin,
+            address(fedRegistry),
+            abi.encodeCall(fedRegistry.setAdapter, (address(adapter), true))
+        );
+        Work memory w = _fedWork(fedArtist);
+        vm.prank(fedArtist);
+        fed.approveItem(_itemHash(w), RATE);
+        uint256 tokenId = adapter.mint(fed, _mintData(w));
+        vm.expectRevert(abi.encodeWithSelector(IFederatedStream.WorkNotRestartable.selector, 1));
+        fed.reclaim(tokenId);
+        assertEq(fed.ownerOf(tokenId), address(adapter));
+    }
+
     function test_Adapters_MustBeSaleAdapters() public {
         assertFalse(
             _governTry(
@@ -225,6 +245,31 @@ contract FederationGovernanceTest is FederationBase {
         assertEq(networkFee.balance - feeBefore, 0.1 ether, "the fee locked at start");
         (uint256 again,) = _startFed(_fedWork(fedArtist));
         assertEq(uint8(auction.auction(again).state), uint8(IEnglishAuction.AuctionState.ACTIVE));
+    }
+
+    function test_Revocation_OnlyAnApprovedOrSuspendedTemplate() public {
+        bytes32 unknown = keccak256("never approved");
+        _governExpectRevert(
+            address(fedRegistry),
+            abi.encodeCall(fedRegistry.revokeTemplate, (unknown)),
+            abi.encodeWithSelector(
+                FederationRegistry.TemplateStatusInvalid.selector,
+                unknown,
+                FederationRegistry.TemplateStatus.NONE
+            )
+        );
+        _govern(
+            hotAdmin, address(fedRegistry), abi.encodeCall(fedRegistry.revokeTemplate, (streamHash))
+        );
+        _governExpectRevert(
+            address(fedRegistry),
+            abi.encodeCall(fedRegistry.revokeTemplate, (streamHash)),
+            abi.encodeWithSelector(
+                FederationRegistry.TemplateStatusInvalid.selector,
+                streamHash,
+                FederationRegistry.TemplateStatus.REVOKED
+            )
+        );
     }
 
     function _payment(address payer, uint256 amount) internal pure returns (Payment memory) {

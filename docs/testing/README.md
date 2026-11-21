@@ -86,11 +86,13 @@ section below says which.
 
 | Job | When | What | Time | Required |
 | --- | --- | --- | --- | --- |
-| Contracts | every pull request and push to `main` | the summary of Build and checks, the five Tests jobs and the Local walkthrough, green only when all are | seconds, after the last of them | yes |
+| Contracts | every pull request and push to `main` | the summary of Build and checks, the six Tests jobs and the Local walkthrough, green only when all are | seconds, after the last of them | yes |
 | Build and checks | every pull request and push | `forge fmt --check`, `forge build` (from the cached compiler output), the docs facts against the build, the ABI and storage snapshots, the real-data vectors and event topics (`make_vectors.py --check`), the exported ABIs (`export_abis.py --check`), the format of `examples/` and `keeper/test/`, the budget gate, the genesis check, the content and convention tooling tests, the reference keeper's tests on anvil (`KEEPER_E2E_REQUIRE=1`), and the tools' unit tests | about 3.5 min before this build; the snapshot and vector checks add about two seconds | through Contracts |
 | Tests (unit, fuzz and integration) | every pull request and push | `forge test --no-match-test ^invariant`: also the replay suites, the real-data vectors and the Medusa harnesses' self-tests | about 1 min before this build; the replay suites add under a second after the build | through Contracts |
-| Tests (economics invariants) | every pull request and push | the economics invariant suite: 256 runs of depth 128 | about 2 min | through Contracts |
+| Tests (economics invariants, escrow and marks) | every pull request and push | six of the economics invariants (`invariant_Dust*`, `invariant_Escrow*`, `invariant_Intermediaries*`, `invariant_Marks*`, `invariant_Observed*`): 256 runs of depth 128 | not yet measured on a runner since the split | through Contracts |
+| Tests (economics invariants, releases) | every pull request and push | the other four (`invariant_Recipients*`, `invariant_Released*`, `invariant_Wallet*`): 256 runs of depth 128 | not yet measured on a runner since the split | through Contracts |
 | Tests (testing-build invariants) | every pull request and push | the four campaigns added in November 2026 (`WorkDelivery`, `GovernedVault`, `FederatedState`, `CurationSigner`): 256 runs of depth 128 | 18 to 70 s each locally; not yet measured on a runner | through Contracts |
+| Tests (auction invariants) | every pull request and push | the English and edition auction invariant suites (`Auction*`, `EditionAuction*`): 256 runs of depth 128 | not yet measured on a runner | through Contracts |
 | Tests (other invariants) | every pull request and push | every other invariant suite, the Medusa harnesses' Forge runners (64 runs of depth 64) among them | about 7 min before this build; the runners add about 22 s locally | through Contracts |
 | Local walkthrough | every pull request and push | `forge build`, then `bash script/local/walkthrough.sh`: deploy on anvil, accept, Verify, and one work sold end to end | about 1.5 min locally after a build; not yet measured on a runner | through Contracts |
 | Static analysis | every pull request and push | Slither 0.11.6: no untriaged High or Medium finding | about 1 min | yes |
@@ -100,15 +102,16 @@ section below says which.
 | Nightly (`.github/workflows/nightly.yml`) | every day at 03:30 UTC, and on demand | the invariant suites under the `deep` profile (2,000 runs of depth 256) in three jobs of up to 3 hours (economics, the four new campaigns, the others); every fuzz test at 10,000 runs (`deep`); one 30-minute Medusa campaign per harness (45-minute job, the release verified by its build attestation, the corpus cached); the fork tests in `test/fork` (the Safe suites included) against public mainnet and Sepolia endpoints | locally: deep fuzz 10.5 min on 48 threads (5.9 CPU hours, so roughly 1.5 hours on a 4-core runner); the four new campaigns under `deep` about 68 min; the fork suites 6 s from the RPC cache. The deep fuzz, the new deep partition and the Medusa jobs have not run on a runner | no (scheduled) |
 | Mutation (`.github/workflows/mutation.yml`) | weekly, Sunday 02:00 UTC, and on demand; one small shard when a push to `main` changes the workflow or the tool | every shard of `tools/mutation.py`, eight jobs at a time, each stopped at a 335-minute budget; the merged report in the run summary, with a row for every planned file; fails, naming the shard or contract, when a planned shard left no results or ran out of its budget, a contract has no floor, or a contract's kill rate drops below its floor | several hours | no (scheduled) |
 
-`forge test` runs in five parts whose filters together select every test exactly once (3,098
-tests on 21 November 2026: 2,999, 10, 16, 25 and 48; the 12 examples and the keeper fixture fall
+`forge test` runs in six parts whose filters together select every test exactly once (3,152
+tests on 21 November 2026: 3,053, 6, 4, 16, 25 and 48; the 12 examples and the keeper fixture fall
 in the first), so the parts run on separate runners. Each
 part restores the latest compiler output and compiles only what changed. The 15-minute CI
-budget applies to each job. The third part holds the four campaigns of this build, which
+budget applies to each job. The fourth part holds the four campaigns of this build, which
 added about 60% to the other invariants' CPU time locally (2,730 to 4,358 CPU seconds), more
 than a shared runner's other-invariants job could take within its budget. The organisation's
 runners are shared, so a run's wall time is mostly the wait for them. The auction invariants
-became a part of their own on 21 November 2026, when the other-invariants job reached that
+became a part of their own, and the economics invariants two parts split by test, on
+21 November 2026, when those jobs reached or neared that
 budget.
 
 Coverage and the Halmos proofs run after a merge rather than on the pull request, to keep the
@@ -165,9 +168,9 @@ the rule was removed), `declaration` (an off-chain convention) or `uncovered`, a
 as known uncovered. The list can only shrink: an entry for a rule that now names a test, or for
 an ID the spec does not define, fails the check.
 
-On 17 November 2026, 458 rules and 107 invariants resolve; known uncovered are 6 removed
+On 21 November 2026, 458 rules and 107 invariants resolve; known uncovered are 6 removed
 rows, the 30 declaration rows (`DCL-*`, whose conventions the Python tests in
-`tools/conventions/` exercise) and 4 live rules: FED-57, FED-58, GV-18 and GV-20. Writing the
+`tools/conventions/` exercise) and 3 live rules: FED-57, GV-18 and GV-20. Writing the
 checker found five rules that cited only a test file or an abbreviation (GV-12, GV-15, GV-19,
 GV-21, ID-16), one property that cited only a file (PROP-GAS-5), one invariant whose Test cell
 named no function (INV-ECO-8), and one property citing `test_WorstCase_*` in
@@ -299,9 +302,11 @@ python tools/check_coverage.py --uncovered
   and 16 invariant runs of depth 64. That is enough to reach every line and branch the full
   campaigns reach: two runs with different fuzz seeds gave identical per-contract figures.
   No `--ir-minimum` is needed; the unoptimized legacy pipeline compiles every contract.
-- **Expected failures.** Without the optimizer about 51 gas-ceiling tests fail
-  (`GasReport`, the `*Gas*` tests, the `tokenURI` budgets). `--allow-failure` keeps the run
-  going and writes the report; the Tests jobs run every test for real.
+- **Expected failures.** Without the optimizer about 80 gas-ceiling tests fail
+  (`GasReport`, the `*Gas*` and `*GasRule*` tests, the `tokenURI` budgets, the lens
+  differential's long sequences, and `DeployScriptTest`, whose deployment runs out of gas
+  unoptimized). `--allow-failure` keeps the run going and writes the report; the Tests jobs run
+  every test for real.
 - **The gate.** [`tools/coverage-floors.json`](../../tools/coverage-floors.json) holds a
   floor per src/ contract: the measured figure minus a margin of 1 point for lines and 2 for
   branches, rounded down to 0.1. A contract below either floor fails the check. A src/ file
@@ -314,19 +319,23 @@ python tools/check_coverage.py --uncovered
   rewrites the floors from the run; review the diff. Lowering a floor needs a reason in the
   pull request.
 
-Measured on 15 October 2026, on `main` at 054442d (after #63) with these tests (Foundry 1.7.1,
-lite profile). Of the 46 src/ contracts with code, 40 are at 100% of lines, branches and functions;
-`check_coverage.py` prints all of them. The others, and what they leave unreached:
+Measured on 21 November 2026, on `claude/coverage` (main at ff334c1f with the coverage tests of
+that branch; Foundry 1.7.1, lite profile). Of the 58 src/ contracts with code, 49 are at 100% of
+lines, branches and functions; `check_coverage.py` prints all of them. The others, and what they
+leave unreached:
 
 | Contract | Lines | Branches | Unreached |
 | --- | ---: | ---: | --- |
-| `curation/PackageRegistry.sol` | 98.99% (196/198) | 95.45% (42/44) | two defensive reverts: an artist registry that returns another ID than the one it just assigned, and `releaseContent` to an artist whose authority is zero (the registry reverts `UnknownArtist` first) |
-| `economics/TokenTransfer.sol` | 98.28% (57/58) | 92.31% (12/13) | `transferExact`'s own revert: unreachable, because the strict transfer path never returns false (it reverts inside) |
-| `sales/EnglishAuction.sol` | 100% (433/433) | 97.98% (97/99) | `start` on a sale that already exists, and a locked fee share above the denominator |
-| `sales/MintSaleBase.sol` | 99.40% (167/168) | 98.00% (49/50) | `claim` of an ERC-20: unreachable today, since only ETH is ever credited (Dutch refunds) |
-| `stream/Stream.sol` | 100% (288/288) | 94.34% (50/53) | a package registry that returns a malformed `consume` result, the 65,536th fee recipient, and the 2**23rd terms word in the overflow range |
-| `stream/WorkRecords.sol` | 100% (366/366) | 97.53% (79/81) | consent from a party that never registered as an artist, and a content store that returns a short `FileInfo` |
-| **src/ total** | **99.91% (4,624/4,628)** | **98.96% (1,043/1,054)** | functions 100% (661/661) |
+| `economics/TokenTransfer.sol` | 98.55% (68/69) | 94.12% (16/17) | `transferExact`'s own revert: unreachable, because the strict transfer path never returns false (it reverts inside) |
+| `editions/Editions.sol` | 99.62% (260/261) | 100% (58/58) | `settlePrimary`'s `return nothing;`: the function runs, but the coverage map gives that statement no executed code |
+| `federated/FederatedEditions.sol` | 99.17% (120/121) | 100% (24/24) | the same `return nothing;` in its `settlePrimary` |
+| `sales/EnglishAuction.sol` | 99.57% (461/463) | 98.00% (98/100) | `_isTarget`'s listed-token return (its callers ask only for unlisted or federated tokens), and a locked fee share above the denominator |
+| `sales/EnglishAuctionLens.sol` | 99.51% (204/205) | 91.67% (22/24) | `refusableAt` for an unknown sale, and for a sale whose pause ran its full course; not yet tested |
+| `sales/UniformEditionAuction.sol` | 99.60% (503/505) | 95.45% (84/88) | `abandon` in the wrong state, the soft close capped by the backstop, a position past 2^32, and the 2^24th terms record; not yet classified |
+| `sales/UniformEditionAuctionLens.sol` | 99.81% (513/514) | 96.59% (85/88) | a split factory that returns another wallet, one branch of `_abandon`'s 1/1 end, and `_sorted`'s skip of entries below `from`; not yet classified |
+| `stream/Stream.sol` | 100% (454/454) | 97.67% (84/86) | the 65,536th fee recipient and the 2^23rd terms word in the overflow range |
+| `stream/WorkRecords.sol` | 100% (431/431) | 97.75% (87/89) | `mediaStore` past the work's media count, and a content store that returns a short `FileInfo`; not yet classified |
+| **src/ total** | **99.88% (7,283/7,292)** | **98.89% (1,427/1,443)** | functions 100% (1,062/1,062) |
 
 Since then the mutation gap lane's `test_Start_RevertsWhenTheSaleAlreadyExists` reaches `start`
 on a sale that already exists: on d50bb61's code with the lane's tests, `EnglishAuction.sol`
@@ -656,12 +665,13 @@ survivors, and only a lying mock of a trusted contract the defensive ones.
 - **Campaign gaps.** Listed in [Invariants: Gaps](../audit/invariants.md#gaps): among them the
   refusal campaign's rare pending deliveries, curation signers' execution-delay changes, and
   delivery successors carrying a predecessor's locators.
-- **Rules without a test.** Four live rules name no test: FED-57 (the federated pair's use of
-  the shared edition auction base), FED-58 (the lens's view of a delisted sale), GV-18 (every
-  governed setter emits old and new values) and GV-20 (dependency checks across setters). The 30
+- **Rules without a test.** Three live rules name no test: FED-57 (the federated pair's use of
+  the shared edition auction base), GV-18 (every governed setter emits old and new values) and
+  GV-20 (dependency checks across setters). The 30
   declaration rules are off-chain conventions ([rule traceability](#rule-traceability)).
-- **Unmeasured code.** Fourteen implementation files have no mutation floor and nineteen no
-  coverage floor, among them `SplitLedger`, `SplitVault`, `GovernedVault`, `WorkDelivery`,
-  `StreamViews`, `StreamLayout`, `SaleStarter` and the seven federated contracts. One trial,
+- **Unmeasured code.** Fourteen implementation files have no mutation floor, among them
+  `SplitLedger`, `SplitVault`, `GovernedVault`, `WorkDelivery`, `StreamViews`, `StreamLayout`,
+  `SaleStarter` and the seven federated contracts. Since 21 November 2026 every src/ file with
+  executable code has its own coverage floor ([coverage](#coverage)). One trial,
   `GovernedVault` on 93d10d42's code, killed 91 of 101 mutants (about 84 s a mutant); its ten
   survivors are not yet triaged ([mutation testing](#mutation-testing)).

@@ -10,7 +10,12 @@ import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { ISplitLedger } from "src/economics/interfaces/ISplitLedger.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { Burner, GasRuleAssertions } from "../helpers/GasRule.sol";
-import { BlocklistToken, FeeOnTransferToken } from "../mocks/economics/EconomicsMocks.sol";
+import {
+    BlocklistToken,
+    FeeOnTransferToken,
+    RefusesButMovesToken
+} from "../mocks/economics/EconomicsMocks.sol";
+import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 
 /// @dev Calls a release and returns what it released and what `watched` holds afterwards, so a
@@ -180,6 +185,23 @@ contract NetworkShareTest is EconomicsBase, GasRuleAssertions {
         vm.expectRevert();
         vm.prank(artistPayout);
         _release(wallet, address(fee), _artistIndex(wallet, ARTIST));
+    }
+
+    /// @dev A push the token reports as refused but that moved funds anyway cannot be accounted:
+    ///      the whole release reverts, the artist's own transfer included.
+    function test_APushRefusedButMovedRevertsTheRelease() public {
+        RefusesButMovesToken liar = new RefusesButMovesToken();
+        liar.setLiar(address(feeVault));
+        address wallet = _mixed();
+        liar.mint(wallet, 1_000);
+        uint256 artistIndex = _artistIndex(wallet, ARTIST);
+        vm.prank(artistPayout);
+        vm.expectRevert(
+            abi.encodeWithSelector(TokenTransfer.TokenBalanceMismatch.selector, address(liar))
+        );
+        _release(wallet, address(liar), artistIndex);
+        assertEq(liar.balanceOf(wallet), 1_000, "nothing moved");
+        assertEq(liar.balanceOf(artistPayout), 0);
     }
 
     /// @dev Gas rule (R11's push): the network vault costing 1x to 100x more is paid the same,
