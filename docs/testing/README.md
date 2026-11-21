@@ -91,13 +91,15 @@ section below says which.
 | Nightly (`.github/workflows/nightly.yml`) | every day at 03:30 UTC, and on demand | the invariant suites under the `deep` profile (2,000 runs of depth 256) in three jobs of up to 3 hours (economics, the four new campaigns, the others); every fuzz test at 10,000 runs (`deep`); one 30-minute Medusa campaign per harness (45-minute job, the release verified by its build attestation, the corpus cached); the fork tests in `test/fork` (the Safe suites included) against public mainnet and Sepolia endpoints | locally: deep fuzz 10.5 min on 48 threads (5.9 CPU hours, so roughly 1.5 hours on a 4-core runner); the four new campaigns under `deep` about 68 min; the fork suites 6 s from the RPC cache. The deep fuzz, the new deep partition and the Medusa jobs have not run on a runner | no (scheduled) |
 | Mutation (`.github/workflows/mutation.yml`) | weekly, Sunday 02:00 UTC, and on demand; one small shard when a push to `main` changes the workflow or the tool | every shard of `tools/mutation.py`, eight jobs at a time, each stopped at a 335-minute budget; the merged report in the run summary, with a row for every planned file; fails, naming the shard or contract, when a planned shard left no results or ran out of its budget, a contract has no floor, or a contract's kill rate drops below its floor | several hours | no (scheduled) |
 
-`forge test` runs in four parts whose filters together select every test exactly once (3,084
-tests on 17 November 2026: 2,985, 10, 16 and 73), so the parts run on separate runners. Each
+`forge test` runs in five parts whose filters together select every test exactly once (3,085
+tests on 21 November 2026: 2,986, 10, 16, 25 and 48), so the parts run on separate runners. Each
 part restores the latest compiler output and compiles only what changed. The 15-minute CI
-budget applies to each job. The fourth part holds the four campaigns of this build, which
+budget applies to each job. The third part holds the four campaigns of this build, which
 added about 60% to the other invariants' CPU time locally (2,730 to 4,358 CPU seconds), more
 than a shared runner's other-invariants job could take within its budget. The organisation's
-runners are shared, so a run's wall time is mostly the wait for them.
+runners are shared, so a run's wall time is mostly the wait for them. The auction invariants
+became a part of their own on 21 November 2026, when the other-invariants job reached that
+budget.
 
 Coverage and the Halmos proofs run after a merge rather than on the pull request, to keep the
 shared runners for the required checks. A change that may lower coverage or touch a proven

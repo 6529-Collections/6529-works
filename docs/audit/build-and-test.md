@@ -77,9 +77,9 @@ forge test
 ## CI
 
 [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs these jobs, in parallel, on
-every pull request and every push to `main`. `forge test` is split in four parts whose
+every pull request and every push to `main`. `forge test` is split in five parts whose
 filters together select every test exactly once; the required check **Contracts** is green
-only when Build and checks and all four parts are.
+only when Build and checks and all five parts are.
 
 | Job | Timeout | Steps, in order |
 | --- | --- | --- |
