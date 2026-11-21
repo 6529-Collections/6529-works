@@ -23,11 +23,12 @@ forge build
 ```
 
 - If you cloned without submodules, run `git submodule update --init` first.
-- The first build compiles about 470 files and runs solc as a single job: it took about 5 minutes
+- The first build compiles about 520 files and runs solc as a single job: it took 5 to 6 minutes
   on a recent machine. Later builds compile only what changed.
-- `forge build` also lints `src/` and prints about 40 lint warnings (`unsafe-typecast`,
-  `incorrect-shift`, `block-timestamp`) on every build, cached or not. They are expected: each
-  flagged line has been reviewed, and the lint does not fail the build.
+- `forge build` also lints `src/` and `script/`. Three lints whose every hit was reviewed
+  (`unsafe-typecast`, `incorrect-shift`, `block-timestamp`) are left out of the build output, with
+  the reason for each in `foundry.toml`; `forge lint --only-lint unsafe-typecast incorrect-shift
+  block-timestamp` lists their hits when you review a change to `src/`.
 
 ## 2. Test
 

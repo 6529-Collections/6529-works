@@ -40,13 +40,13 @@ You need [Foundry](https://book.getfoundry.sh/) v1.7.1 (as CI pins it), Python 3
 ```bash
 git clone --recurse-submodules https://github.com/6529-Collections/6529-works.git
 cd 6529-works
-forge build                                  # first build: about 470 files, about 5 minutes
+forge build                                  # first build: about 520 files, about 5 minutes
 forge test --no-match-test "^invariant"      # about 1 minute; plain `forge test` takes about 15
 bash script/local/walkthrough.sh             # deploy on anvil and sell one work end to end
 ```
 
-The [quickstart](docs/quickstart.md) explains each step, what to expect (the lint warnings
-`forge build` prints, the timings, the CI checks to run locally) and what the walkthrough does.
+The [quickstart](docs/quickstart.md) explains each step, what to expect (the timings, the CI
+checks to run locally) and what the walkthrough does.
 
 ## Where to go next
 

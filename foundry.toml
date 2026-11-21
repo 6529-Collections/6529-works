@@ -41,6 +41,20 @@ runs = 256
 # Lint production code on every build; tests build byte fixtures with deliberate casts.
 [profile.default.lint]
 ignore = ["test/**/*.sol"]
+# Three lints are left out of the build output. Every hit in src/ and script/ was reviewed
+# (39 on 21 November 2026) and src/ already marks 149 sites of the first and third inline;
+# the hits left are on multi-line expressions an inline comment cannot reach. Each lint stays
+# one command away for review: `forge lint --only-lint unsafe-typecast incorrect-shift
+# block-timestamp` (`--only-lint` overrides this list). Slither, gated in CI, runs its own
+# incorrect-shift and timestamp detectors (docs/security/slither-triage.md).
+# - unsafe-typecast: unpacking a packed storage word (`uint208(w)`, `address(uint160(x))`,
+#   `uint64(counts >> 64)`), a selector from revert data (`bytes4(reason)`), a word from return
+#   data whose length is checked (`bytes32(answer)`), and casts bounded by a preceding check.
+# - incorrect-shift: fires on a literal shifted by a variable, which here is always a bitmask
+#   (`1 << index`, `(1 << n) - 1`), never a reversed shift.
+# - block-timestamp: the protocol is timed by design (auctions, notices, delays of hours to
+#   days), where a validator's few seconds of drift change nothing.
+exclude_lints = ["unsafe-typecast", "incorrect-shift", "block-timestamp"]
 
 [profile.default.invariant]
 runs = 256
