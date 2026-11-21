@@ -185,6 +185,27 @@ contract RendererHostileTest is RendererBase {
         renderer.tokenURI(address(garbage), ID);
     }
 
+    /// @dev A token whose `coreOf` answer is shorter than the six words of a `WorkCore`, and one
+    ///      whose `extsload` answer is shorter than the words it was asked for, fail closed on
+    ///      that read.
+    function test_Token_ShortCoreOrStorageAnswersFailClosed() public {
+        ShortAnswerToken token = new ShortAnswerToken(32, 64);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IRenderer.RendererReadFailed.selector, address(token), IStream.coreOf.selector
+            )
+        );
+        renderer.tokenURI(address(token), ID);
+
+        token = new ShortAnswerToken(192, 64);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IRenderer.RendererReadFailed.selector, address(token), IStream.extsload.selector
+            )
+        );
+        renderer.tokenURI(address(token), ID);
+    }
+
     function test_Token_OversizedAnswersFailClosed() public {
         bytes32 file = _file(hex"89504e47", IDENTITY, "image/png");
 
@@ -308,5 +329,27 @@ contract RendererHostileTest is RendererBase {
             b[i] = "x";
         }
         return string(b);
+    }
+}
+
+/// @dev Answers `coreOf` with `coreBytes` zero bytes, `extsload` with `slotBytes` zero bytes, and
+///      every other call with one zero word (so it is no ERC-1155).
+contract ShortAnswerToken {
+    uint256 internal immutable coreBytes;
+    uint256 internal immutable slotBytes;
+
+    constructor(uint256 coreBytes_, uint256 slotBytes_) {
+        coreBytes = coreBytes_;
+        slotBytes = slotBytes_;
+    }
+
+    fallback() external {
+        uint256 n = 32;
+        if (msg.sig == IStream.coreOf.selector) n = coreBytes;
+        else if (msg.sig == IStream.extsload.selector) n = slotBytes;
+        bytes memory data = new bytes(n);
+        assembly ("memory-safe") {
+            return(add(data, 0x20), n)
+        }
     }
 }
