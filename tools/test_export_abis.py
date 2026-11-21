@@ -211,6 +211,18 @@ class ExportTest(unittest.TestCase):
         self._run()
         self.assertFalse((self.repo.root / "abi" / "Gone.json").exists())
 
+    def test_LeftoverArtifactsOfARestoredCacheAreSkipped(self) -> None:
+        # A restored `out/` can hold artifacts of a deleted source and of a contract its source
+        # no longer declares. Neither is part of the build, so neither is exported.
+        self._run()
+        before = sorted(p.name for p in (self.repo.root / "abi").glob("*.json"))
+        self.repo.artifact("src/sales/Deleted.sol", "Deleted", [_fn("old")], {"old()": "66666666"})
+        self.repo.artifact("src/Thing.sol", "Renamed", [_fn("old")], {"old()": "66666666"})
+        self.assertEqual(self._run("--check"), (0, ""))
+        self._run()
+        after = sorted(p.name for p in (self.repo.root / "abi").glob("*.json"))
+        self.assertEqual(after, before)
+
     def test_NoBuildFailsClearly(self) -> None:
         import shutil
 

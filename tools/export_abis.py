@@ -227,11 +227,15 @@ def collect(root: Path, out: Path) -> dict[str, dict]:
         if not source.startswith("src/"):
             continue
         if source not in source_cache:
-            text = (root / source).read_text(encoding="utf-8")
+            # A restored compiler cache can hold artifacts of sources that no longer exist, or of
+            # contracts a source no longer declares; forge leaves them in `out/`. They are not
+            # part of this build, so they are skipped.
+            file = root / source
+            text = file.read_text(encoding="utf-8") if file.is_file() else ""
             source_cache[source] = declarations(strip_solidity(text))
         decl = next((d for d in source_cache[source] if d[1] == name), None)
         if decl is None:
-            raise ExportError(f"{name} is not declared in {source}")
+            continue
         kind, _, body = decl
         if kind == "contract" or (kind == "interface" and is_public_interface(source)):
             if name in found:
