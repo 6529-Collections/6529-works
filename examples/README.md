@@ -63,10 +63,17 @@ ESALE=$(cast call "$EDITION_AUCTION" "saleIdOf(address,uint256)(uint256)" "$EDIT
 cast call "$EDITION_AUCTION" "stepPrice(uint256,uint256)(uint256)" "$ESALE" 10 --rpc-url "$RPC_URL"
 cast call "$EDITION_AUCTION" "quote(uint256,uint256,uint256)((uint256,uint256,uint256,uint256,(uint256,uint256,uint256,uint256,uint256,uint256,bool,uint256,uint256,uint256)))" "$ESALE" 10 2 --rpc-url "$RPC_URL"
 
-# A split wallet: what payee 0 can release (ETH), named by its payee list and salt
+# A split wallet: what a payee can release (ETH), named by its payee list and salt. A royalty
+# wallet's payees are the seller wallet and the fee vault sorted by address (here a 25% fee
+# share); the payee's index is its position in that order.
+if [[ "${SELLER_WALLET,,}" < "${FEE_VAULT,,}" ]]; then
+  PAYEES="[(0,$SELLER_WALLET,75000),(0,$FEE_VAULT,25000)]"; SELLER_INDEX=0
+else
+  PAYEES="[(0,$FEE_VAULT,25000),(0,$SELLER_WALLET,75000)]"; SELLER_INDEX=1
+fi
 cast call "$LEDGER" "releasable((uint256,address,uint32)[],bytes32,address,uint256)(uint256)" \
-  "[(0,$SELLER_WALLET,75000),(0,$FEE_VAULT,25000)]" 0x0000000000000000000000000000000000000000000000000000000000000000 \
-  0x0000000000000000000000000000000000000000 0 --rpc-url "$RPC_URL"
+  "$PAYEES" 0x0000000000000000000000000000000000000000000000000000000000000000 \
+  0x0000000000000000000000000000000000000000 "$SELLER_INDEX" --rpc-url "$RPC_URL"
 
 # The federation directory entry of a federated contract
 cast call "$ARTISTS" "federatedListing(address)(uint256,uint8)" "$TOKEN" --rpc-url "$RPC_URL"
