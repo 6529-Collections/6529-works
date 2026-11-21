@@ -225,9 +225,9 @@ jobs:
     runs-on: ubuntu-latest
     # ADR 0001 budget: every CI job finishes in under 15 minutes.
     timeout-minutes: 15
-    # `forge test` in four parallel parts that together run every test exactly once:
+    # `forge test` in five parallel parts that together run every test exactly once:
     # everything but the invariant tests, the economics invariants (the longest suite), the
-    # four campaigns of the November 2026 testing build, and the other invariants (the Medusa
+    # four campaigns of the November 2026 testing build, the auction invariants, and the other invariants (the Medusa
     # harnesses' Forge runners among them). Each part builds incrementally from the cached compiler output.
     strategy:
       fail-fast: false
@@ -239,8 +239,10 @@ jobs:
             filter: --match-test ^invariant --match-contract ^EconomicsInvariant
           - name: testing-build invariants
             filter: --match-test ^invariant --match-contract ^(WorkDelivery|GovernedVault|FederatedState|CurationSigner)Invariant
+          - name: auction invariants
+            filter: --match-test ^invariant --match-contract ^(Auction|EditionAuction)
           - name: other invariants
-            filter: --match-test ^invariant --no-match-contract ^(Economics|WorkDelivery|GovernedVault|FederatedState|CurationSigner)Invariant
+            filter: --match-test ^invariant --no-match-contract ^((Economics|WorkDelivery|GovernedVault|FederatedState|CurationSigner)Invariant|Auction|EditionAuction)
 
     steps:
       - name: Checkout
