@@ -120,6 +120,15 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         IUniformEditionAuction.Departure[] memory deps = lens.departures(saleId, 10);
         uint256[] memory full = lens.settlementOrderFor(saleId, address(this));
         assertEq(full.length, 20);
+        assertEq(full.length, deps.length, "every departure once");
+        // Positions are unique in a log, so a strict increase rules out repeats and misorder.
+        for (uint256 i = 1; i < full.length; ++i) {
+            assertLt(
+                uint256(deps[full[i - 1]].position),
+                uint256(deps[full[i]].position),
+                "the full order is by position"
+            );
+        }
         assertEq(
             keccak256(abi.encode(lens.settlementOrderFor(saleId, address(this), 0, 100))),
             keccak256(abi.encode(full)),
