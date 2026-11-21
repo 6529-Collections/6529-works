@@ -13,6 +13,7 @@ import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { Payment, PaymentMethod, PrimaryOutcome } from "src/interfaces/types/SaleTypes.sol";
+import { NonDeliveringAdapter } from "../mocks/federated/FederatedMocks.sol";
 import { FederationBase } from "./FederationBase.sol";
 
 /// @notice The federation registry's governed paths and their exact effects: template approval,
@@ -286,22 +287,5 @@ contract FederationGovernanceTest is FederationBase {
         returns (bytes4)
     {
         return this.onERC721Received.selector;
-    }
-}
-
-/// @dev An admitted sale adapter whose `claimDelivery` returns without delivering anything.
-contract NonDeliveringAdapter {
-    function mint(FederatedStream token, bytes calldata data) external returns (uint256 tokenId) {
-        (tokenId,) = token.mint(address(this), 0, 1, data);
-    }
-
-    function saleIdOf(address, uint256 tokenId) external pure returns (uint256) {
-        return tokenId;
-    }
-
-    function claimDelivery(uint256, address) external { }
-
-    function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(ISaleAdapter).interfaceId || id == 0x01ffc9a7;
     }
 }

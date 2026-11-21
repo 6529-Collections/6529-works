@@ -146,6 +146,7 @@ two consumers need different stand-ins for the same contract, the name says whos
 | [`mocks/editions/`](mocks/editions/) | Editions' dependencies, among them `EditionsStreamMock` (masters, settlement and the edition link, with faults), and hostile ERC-1155 receivers |
 | [`mocks/identity/`](mocks/identity/) | The delegation contract's faithful reduction, a repriced variant, and the artist registry's dependencies |
 | [`mocks/curation/`](mocks/curation/), [`mocks/entropy/`](mocks/entropy/), [`mocks/records/`](mocks/records/), [`mocks/governance/`](mocks/governance/) | Each module's dependencies and adversaries |
+| [`mocks/federated/`](mocks/federated/) | `FederatedMocks.sol`: hostile counterparts of the federated pair (a refund recipient that re-enters `settle`, an editions contract whose seal runs out of gas, an adapter that never delivers) |
 | [`mocks/libraries/`](mocks/libraries/) | Adversarial call targets (return bombs, gas burners, ERC-1271 wallets) for the bounded-call and signature libraries and their callers |
 | [`mocks/integration/`](mocks/integration/) | A refusing wallet for the integration flows |
 

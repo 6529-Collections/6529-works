@@ -13,7 +13,7 @@ import { Burner, GasRuleAssertions } from "../helpers/GasRule.sol";
 import {
     BlocklistToken,
     FeeOnTransferToken,
-    MockERC20
+    RefusesButMovesToken
 } from "../mocks/economics/EconomicsMocks.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
@@ -32,20 +32,6 @@ contract ReleaseProbe {
             }
         }
         return (abi.decode(ret, (uint256)), watched.balance);
-    }
-}
-
-/// @dev Moves a transfer to `liar` but answers `false`: a refusal that moved funds anyway.
-contract RefusesButMovesToken is MockERC20("Liar", "LIE") {
-    address public liar;
-
-    function setLiar(address account) external {
-        liar = account;
-    }
-
-    function transfer(address to, uint256 amount) public override returns (bool) {
-        _transfer(msg.sender, to, amount);
-        return to != liar;
     }
 }
 

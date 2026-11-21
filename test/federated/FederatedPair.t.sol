@@ -31,6 +31,7 @@ import {
 } from "src/interfaces/types/SaleTypes.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { DeployV1 } from "script/DeployV1.sol";
+import { SettleOnRefund, StarvedSeal } from "../mocks/federated/FederatedMocks.sol";
 import { FederationBase } from "./FederationBase.sol";
 
 /// @notice An editions copy that reports no network fee when an adapter binds it: different code,
@@ -692,48 +693,5 @@ contract FederatedPairTest is FederationBase {
         assertEq(wonLow + wonHigh, 0);
         assertEq(refundLow, paidLow);
         assertEq(refundHigh, paidHigh);
-    }
-}
-
-/// @notice A refund recipient that, when paid, calls `settle` of another sale of the same adapter
-///         and keeps what it reverted with.
-contract SettleOnRefund {
-    FederatedEditionAuction internal immutable _fea;
-    uint256 internal immutable _saleId;
-    bytes public revertData;
-
-    constructor(FederatedEditionAuction fea_, uint256 saleId_) {
-        (_fea, _saleId) = (fea_, saleId_);
-    }
-
-    receive() external payable {
-        try _fea.settle(_saleId, new uint256[](0)) { }
-        catch (bytes memory data) {
-            revertData = data;
-        }
-    }
-}
-
-/// @notice Stands in for an editions contract whose `sealSupply` runs out of gas: it answers the
-///         reads an abandonment makes and consumes every gas unit it is given on the seal.
-contract StarvedSeal {
-    address internal immutable _stream;
-
-    constructor(address stream_) {
-        _stream = stream_;
-    }
-
-    function stream() external view returns (address) {
-        return _stream;
-    }
-
-    function exists(uint256) external pure returns (bool) {
-        return false;
-    }
-
-    function sealSupply(uint256, uint256) external pure {
-        assembly ("memory-safe") {
-            invalid()
-        }
     }
 }

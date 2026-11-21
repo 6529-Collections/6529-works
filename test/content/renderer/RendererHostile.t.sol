@@ -2,7 +2,11 @@
 pragma solidity ^0.8.24;
 
 import { RendererBase } from "./RendererBase.sol";
-import { BurningRecords, HostileStore } from "../../mocks/content/RendererHostile.sol";
+import {
+    BurningRecords,
+    HostileStore,
+    ShortAnswerToken
+} from "../../mocks/content/RendererHostile.sol";
 import { StreamMock } from "../../mocks/stream/StreamMock.sol";
 import {
     GasBurnerMock,
@@ -329,27 +333,5 @@ contract RendererHostileTest is RendererBase {
             b[i] = "x";
         }
         return string(b);
-    }
-}
-
-/// @dev Answers `coreOf` with `coreBytes` zero bytes, `extsload` with `slotBytes` zero bytes, and
-///      every other call with one zero word (so it is no ERC-1155).
-contract ShortAnswerToken {
-    uint256 internal immutable coreBytes;
-    uint256 internal immutable slotBytes;
-
-    constructor(uint256 coreBytes_, uint256 slotBytes_) {
-        coreBytes = coreBytes_;
-        slotBytes = slotBytes_;
-    }
-
-    fallback() external {
-        uint256 n = 32;
-        if (msg.sig == IStream.coreOf.selector) n = coreBytes;
-        else if (msg.sig == IStream.extsload.selector) n = slotBytes;
-        bytes memory data = new bytes(n);
-        assembly ("memory-safe") {
-            return(add(data, 0x20), n)
-        }
     }
 }

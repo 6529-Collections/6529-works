@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
+import { IStream } from "src/interfaces/IStream.sol";
 
 /// @dev A content store that answers `fileInfo`, `maxParts` and `readChunk` for a work record
 ///      (`RECORD`, always honest) and for one base64 file of `'A'` bytes (every other ID), and
@@ -148,5 +149,27 @@ contract BurningRecords {
             }
         }
         return ret;
+    }
+}
+
+/// @dev Answers `coreOf` with `coreBytes` zero bytes, `extsload` with `slotBytes` zero bytes, and
+///      every other call with one zero word (so it is no ERC-1155).
+contract ShortAnswerToken {
+    uint256 internal immutable coreBytes;
+    uint256 internal immutable slotBytes;
+
+    constructor(uint256 coreBytes_, uint256 slotBytes_) {
+        coreBytes = coreBytes_;
+        slotBytes = slotBytes_;
+    }
+
+    fallback() external {
+        uint256 n = 32;
+        if (msg.sig == IStream.coreOf.selector) n = coreBytes;
+        else if (msg.sig == IStream.extsload.selector) n = slotBytes;
+        bytes memory data = new bytes(n);
+        assembly ("memory-safe") {
+            return(add(data, 0x20), n)
+        }
     }
 }
