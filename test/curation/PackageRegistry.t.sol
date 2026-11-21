@@ -1242,7 +1242,12 @@ contract PackageRegistryTest is CurationBase {
         _expectInvalidWith(item, _keys(leadKey), reason);
         item.license.spdxId = "CC0 1.0";
         _expectInvalidWith(item, _keys(leadKey), reason);
-        item.license.spdxId = string(new bytes(Limits.MAX_LICENSE_ID_BYTES + 1));
+        // One byte over the limit, every byte allowed: only the length check refuses it.
+        bytes memory long = new bytes(Limits.MAX_LICENSE_ID_BYTES + 1);
+        for (uint256 i; i < long.length; ++i) {
+            long[i] = "A";
+        }
+        item.license.spdxId = string(long);
         _expectInvalidWith(item, _keys(leadKey), reason);
     }
 
