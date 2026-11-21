@@ -26,7 +26,8 @@
    - unit tests with specific revert selectors;
    - invariants for anything that moves money;
    - gas checks where the budgets apply.
-8. `forge build` and `forge test` must pass, and the CI budgets must hold.
+8. `forge build` and `forge test` must pass, and the CI budgets must hold. The
+   [quickstart](docs/quickstart.md) has the commands, their timings and a local end-to-end run.
 9. A new or changed `restricted` function is mapped in
    [`config/genesis.example.json`](config/genesis.example.json) in the same PR
    (`tools/check_genesis.py` fails otherwise). Then regenerate the

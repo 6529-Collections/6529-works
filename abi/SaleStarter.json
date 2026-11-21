@@ -1,0 +1,162 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "contract IEnglishAuction",
+        "name": "auction",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "stream",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes",
+        "name": "mintData",
+        "type": "bytes"
+      },
+      {
+        "components": [
+          {
+            "internalType": "bytes32",
+            "name": "fileId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "sha256Hash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint8",
+            "name": "role",
+            "type": "uint8"
+          }
+        ],
+        "internalType": "struct MediaFile[]",
+        "name": "media",
+        "type": "tuple[]"
+      }
+    ],
+    "name": "start",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "contract IEnglishAuction",
+        "name": "auction",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "stream",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes",
+        "name": "mintData",
+        "type": "bytes"
+      },
+      {
+        "components": [
+          {
+            "internalType": "bytes32",
+            "name": "fileId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "sha256Hash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint8",
+            "name": "role",
+            "type": "uint8"
+          }
+        ],
+        "internalType": "struct MediaFile[]",
+        "name": "media",
+        "type": "tuple[]"
+      },
+      {
+        "internalType": "address",
+        "name": "recipient",
+        "type": "address"
+      },
+      {
+        "components": [
+          {
+            "internalType": "enum PaymentMethod",
+            "name": "method",
+            "type": "uint8"
+          },
+          {
+            "internalType": "address",
+            "name": "payer",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "amount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "deadline",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "nonce",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bytes",
+            "name": "signature",
+            "type": "bytes"
+          }
+        ],
+        "internalType": "struct Payment",
+        "name": "payment",
+        "type": "tuple"
+      }
+    ],
+    "name": "startWithBid",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "HelperAsPayer",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      }
+    ],
+    "name": "VaultMismatch",
+    "type": "error"
+  }
+]

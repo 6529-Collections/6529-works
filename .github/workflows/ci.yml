@@ -67,6 +67,10 @@ jobs:
         # in tools/rules-uncovered.txt, which can only shrink.
         run: python tools/check_rules.py --uncovered
 
+      - name: Sepolia manifest writer unit tests
+        # script/sepolia/make_manifest.py builds the manifest's `safes` from the new genesis.
+        run: python -m unittest discover -s script/sepolia -p "test_*.py"
+
   checks:
     name: Build and checks
     runs-on: ubuntu-latest
@@ -117,7 +121,8 @@ jobs:
         run: |
           set -euo pipefail
           # Staged records bind paths, blob IDs, modes and the lib/ submodule commits.
-          digest=$(git ls-files --stage -z -- foundry.toml foundry.lock .gitmodules src test script lib | sha256sum | cut -d ' ' -f1)
+          # test/Integrators.t.sol compiles examples/ and keeper/test/ with the test suite.
+          digest=$(git ls-files --stage -z -- foundry.toml foundry.lock .gitmodules src test script lib examples keeper | sha256sum | cut -d ' ' -f1)
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Restore compiler output
@@ -134,6 +139,10 @@ jobs:
 
       - name: Format
         run: forge fmt --check
+
+      - name: Format of examples and the keeper fixture
+        # Plain `forge fmt --check` covers only the src, test and script folders.
+        run: forge fmt --check examples keeper/test
 
       - name: Build
         run: forge build
@@ -159,6 +168,14 @@ jobs:
 
       - name: Snapshot checker unit tests
         run: python -m tools.test_check_snapshots
+
+      - name: Exported ABIs
+        # abi/ (the integrator-facing export: one JSON ABI per deployable contract and public
+        # interface, the forwarded surfaces merged, ERC-165 IDs) must match the build.
+        run: python tools/export_abis.py --check
+
+      - name: ABI exporter unit tests
+        run: python -m tools.test_export_abis
 
       - name: Real-data vectors and event topics
         # test/fixtures/real/ must be what tools/make_vectors.py writes from the pinned Museum
@@ -219,6 +236,15 @@ jobs:
         env:
           CONVENTIONS_CAST_REQUIRE: "1"
         run: python -m unittest discover -s tools/conventions -t . -p "test_*.py"
+
+      - name: Reference keeper tests
+        # keeper/ (standard library only): unit tests, then end-to-end runs on a local Anvil node
+        # loaded from the Forge fixture keeper/test/KeeperFixture.t.sol; anvil, forge and cast
+        # come with Foundry above. With KEEPER_E2E_REQUIRE a missing prerequisite fails the step
+        # instead of skipping the test.
+        env:
+          KEEPER_E2E_REQUIRE: "1"
+        run: python -m unittest keeper.test_keeper
 
   tests:
     name: Tests (${{ matrix.name }})
@@ -288,7 +314,8 @@ jobs:
         run: |
           set -euo pipefail
           # Staged records bind paths, blob IDs, modes and the lib/ submodule commits.
-          digest=$(git ls-files --stage -z -- foundry.toml foundry.lock .gitmodules src test script lib | sha256sum | cut -d ' ' -f1)
+          # test/Integrators.t.sol compiles examples/ and keeper/test/ with the test suite.
+          digest=$(git ls-files --stage -z -- foundry.toml foundry.lock .gitmodules src test script lib examples keeper | sha256sum | cut -d ' ' -f1)
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Restore compiler output
@@ -311,10 +338,85 @@ jobs:
           # shellcheck disable=SC2086
           forge test $FILTER
 
+  walkthrough:
+    name: Local walkthrough
+    runs-on: ubuntu-latest
+    # ADR 0001 budget: every CI job finishes in under 15 minutes.
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          # lib/openzeppelin-contracts and lib/forge-std only; their nested
+          # submodules are test-only and not needed.
+          submodules: true
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12.13"
+
+      - name: Install Foundry
+        id: foundry_setup
+        continue-on-error: true
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09
+        with:
+          version: v1.7.1
+
+      - name: Retry Foundry installation
+        if: ${{ steps.foundry_setup.outcome == 'failure' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export FOUNDRY_DIR="$HOME/.foundry"
+          foundryup="$FOUNDRY_DIR/bin/foundryup"
+          test -x "$foundryup"
+          for attempt in 1 2 3; do
+            sleep "$((attempt * 15))"
+            if "$foundryup" --install 1.7.1; then
+              echo "$FOUNDRY_DIR/bin" >> "$GITHUB_PATH"
+              exit 0
+            fi
+          done
+          exit 1
+
+      - name: Identify compiler inputs
+        id: inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Staged records bind paths, blob IDs, modes and the lib/ submodule commits.
+          # test/Integrators.t.sol compiles examples/ and keeper/test/ with the test suite.
+          digest=$(git ls-files --stage -z -- foundry.toml foundry.lock .gitmodules src test script lib examples keeper | sha256sum | cut -d ' ' -f1)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Restore compiler output
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            out
+            cache
+            ~/.svm
+          key: ${{ runner.os }}-${{ runner.arch }}-forge-1.7.1-solc-0.8.37-${{ steps.inputs.outputs.digest }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-forge-1.7.1-solc-0.8.37-
+
+      - name: Build
+        run: forge build
+
+      - name: Walkthrough
+        # script/local/walkthrough.sh: deploys on a fresh Anvil node with its test accounts,
+        # accepts the network, runs Verify and sells one work end to end; any failure fails it.
+        run: bash script/local/walkthrough.sh
+
   contracts:
-    # The required check: green only when the build, the checks and every test part are.
+    # The required check: green only when the build, the checks, every test part and the
+    # local walkthrough are.
     name: Contracts
-    needs: [checks, tests]
+    needs: [checks, tests, walkthrough]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -324,10 +426,12 @@ jobs:
         env:
           CHECKS: ${{ needs.checks.result }}
           TESTS: ${{ needs.tests.result }}
+          WALKTHROUGH: ${{ needs.walkthrough.result }}
         run: |
-          echo "Build and checks: $CHECKS; tests: $TESTS"
+          echo "Build and checks: $CHECKS; tests: $TESTS; local walkthrough: $WALKTHROUGH"
           test "$CHECKS" = success
           test "$TESTS" = success
+          test "$WALKTHROUGH" = success
 
   static-analysis:
     name: Static analysis

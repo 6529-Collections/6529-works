@@ -38,6 +38,14 @@ FOUNDRY_PROFILE=deep forge test --no-match-test "^invariant" --no-match-path "te
 FOUNDRY_PROFILE=deep forge test --match-test "^invariant"
 ```
 
+The integration examples in `examples/` and the keeper fixture are compiled through
+`test/Integrators.t.sol`, so `forge test` runs the examples (`forge test --match-path
+"examples/*"`); the fixture skips. The keeper's tests: `python -m unittest keeper.test_keeper`
+(anvil; `KEEPER_E2E_REQUIRE=1` fails instead of skipping). The local walkthrough,
+`bash script/local/walkthrough.sh`, deploys on a fresh anvil node, accepts the network, runs
+Verify and sells one work end to end ([script/local](../../script/local/README.md)); CI runs it
+in its own job.
+
 The other layers have their own commands, in their sections: Halmos
 ([symbolic proofs](#symbolic-proofs-halmos)), Medusa ([second fuzzer](#second-fuzzer-medusa)),
 the fork suites ([Safe fork tests](#safe-fork-tests)), coverage and mutation testing.
@@ -78,12 +86,13 @@ section below says which.
 
 | Job | When | What | Time | Required |
 | --- | --- | --- | --- | --- |
-| Contracts | every pull request and push to `main` | the summary of Build and checks and the four Tests jobs, green only when all are | seconds, after the last of them | yes |
-| Build and checks | every pull request and push | `forge fmt --check`, `forge build` (from the cached compiler output), the docs facts against the build, the ABI and storage snapshots, the real-data vectors and event topics (`make_vectors.py --check`), the budget gate, the genesis check, the content and convention tooling tests, and the tools' unit tests | about 3.5 min before this build; the snapshot and vector checks add about two seconds | through Contracts |
+| Contracts | every pull request and push to `main` | the summary of Build and checks, the five Tests jobs and the Local walkthrough, green only when all are | seconds, after the last of them | yes |
+| Build and checks | every pull request and push | `forge fmt --check`, `forge build` (from the cached compiler output), the docs facts against the build, the ABI and storage snapshots, the real-data vectors and event topics (`make_vectors.py --check`), the exported ABIs (`export_abis.py --check`), the format of `examples/` and `keeper/test/`, the budget gate, the genesis check, the content and convention tooling tests, the reference keeper's tests on anvil (`KEEPER_E2E_REQUIRE=1`), and the tools' unit tests | about 3.5 min before this build; the snapshot and vector checks add about two seconds | through Contracts |
 | Tests (unit, fuzz and integration) | every pull request and push | `forge test --no-match-test ^invariant`: also the replay suites, the real-data vectors and the Medusa harnesses' self-tests | about 1 min before this build; the replay suites add under a second after the build | through Contracts |
 | Tests (economics invariants) | every pull request and push | the economics invariant suite: 256 runs of depth 128 | about 2 min | through Contracts |
 | Tests (testing-build invariants) | every pull request and push | the four campaigns added in November 2026 (`WorkDelivery`, `GovernedVault`, `FederatedState`, `CurationSigner`): 256 runs of depth 128 | 18 to 70 s each locally; not yet measured on a runner | through Contracts |
 | Tests (other invariants) | every pull request and push | every other invariant suite, the Medusa harnesses' Forge runners (64 runs of depth 64) among them | about 7 min before this build; the runners add about 22 s locally | through Contracts |
+| Local walkthrough | every pull request and push | `forge build`, then `bash script/local/walkthrough.sh`: deploy on anvil, accept, Verify, and one work sold end to end | about 1.5 min locally after a build; not yet measured on a runner | through Contracts |
 | Static analysis | every pull request and push | Slither 0.11.6: no untriaged High or Medium finding | about 1 min | yes |
 | Docs | every pull request and push | relative links and anchors in Markdown, the generated role matrix, the facts the docs quote from the code, and rule traceability (`check_rules.py`, which lists the known uncovered rules) | under 1 min | no |
 | Coverage (`.github/workflows/strength.yml`) | every push to `main`, every day at 04:30 UTC, and on demand | `forge coverage` under the lite profile; the per-contract table in the job summary; fails when a contract drops below its floor; uploads `lcov.info` | about 4 min | no (not on pull requests) |
@@ -91,8 +100,9 @@ section below says which.
 | Nightly (`.github/workflows/nightly.yml`) | every day at 03:30 UTC, and on demand | the invariant suites under the `deep` profile (2,000 runs of depth 256) in three jobs of up to 3 hours (economics, the four new campaigns, the others); every fuzz test at 10,000 runs (`deep`); one 30-minute Medusa campaign per harness (45-minute job, the release verified by its build attestation, the corpus cached); the fork tests in `test/fork` (the Safe suites included) against public mainnet and Sepolia endpoints | locally: deep fuzz 10.5 min on 48 threads (5.9 CPU hours, so roughly 1.5 hours on a 4-core runner); the four new campaigns under `deep` about 68 min; the fork suites 6 s from the RPC cache. The deep fuzz, the new deep partition and the Medusa jobs have not run on a runner | no (scheduled) |
 | Mutation (`.github/workflows/mutation.yml`) | weekly, Sunday 02:00 UTC, and on demand; one small shard when a push to `main` changes the workflow or the tool | every shard of `tools/mutation.py`, eight jobs at a time, each stopped at a 335-minute budget; the merged report in the run summary, with a row for every planned file; fails, naming the shard or contract, when a planned shard left no results or ran out of its budget, a contract has no floor, or a contract's kill rate drops below its floor | several hours | no (scheduled) |
 
-`forge test` runs in five parts whose filters together select every test exactly once (3,085
-tests on 21 November 2026: 2,986, 10, 16, 25 and 48), so the parts run on separate runners. Each
+`forge test` runs in five parts whose filters together select every test exactly once (3,098
+tests on 21 November 2026: 2,999, 10, 16, 25 and 48; the 12 examples and the keeper fixture fall
+in the first), so the parts run on separate runners. Each
 part restores the latest compiler output and compiles only what changed. The 15-minute CI
 budget applies to each job. The third part holds the four campaigns of this build, which
 added about 60% to the other invariants' CPU time locally (2,730 to 4,358 CPU seconds), more

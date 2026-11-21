@@ -60,11 +60,17 @@ Worked examples:
 
 ## Local dry run (anvil)
 
+To deploy, accept, verify and sell one work end to end with one command, run
+`bash script/local/walkthrough.sh` ([`local/`](local/README.md)). The steps below do the
+deployment by hand, with the committed example genesis.
+
 ```bash
 anvil --port 8545
 forge script script/Deploy.s.sol --rpc-url http://127.0.0.1:8545 --broadcast --slow \
   --unlocked --sender 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
 # The example genesis names the placeholder network 0x...b001: impersonate it to accept.
+# <WorksAccessManager> is the `manager` address the deploy prints; <timestamp> is in the
+# `recorded deployments/31337/<timestamp>.json` line.
 cast rpc anvil_impersonateAccount 0x000000000000000000000000000000000000b001 --rpc-url http://127.0.0.1:8545
 cast rpc anvil_setBalance 0x000000000000000000000000000000000000b001 0xDE0B6B3A7640000 --rpc-url http://127.0.0.1:8545   # 1 ETH for gas
 cast send --unlocked --from 0x000000000000000000000000000000000000b001 <WorksAccessManager> \
@@ -88,6 +94,13 @@ DEPLOYMENT=deployments/31337/<timestamp>.json \
   longer fits. That transaction then waits for a block that automine never produces;
   `cast rpc evm_mine` frees it.
 - **No key is handled.** The anvil node unlocks its own dev account.
+- **The example's holders cannot sign.** The example genesis's holders are placeholders
+  without keys, so no curation signer can sign. To run flows locally, deploy with a genesis
+  file that names keys you hold, as the [walkthrough](local/README.md) does with anvil's test
+  accounts (`GENESIS_CONFIG`, any file under `config/`, and `ACCEPT_NETWORK=1` when the network
+  is one of them).
+- **The record is local.** `deployments/31337/` is git-ignored; delete old records when you no
+  longer need them.
 - **Restart, don't reset.** Restart anvil rather than calling `anvil_reset`, which removes the
   CREATE2 deployer.
 - **Verify after the acceptance and 5 days.** `Verify.s.sol` runs after the network accepted
@@ -244,6 +257,12 @@ cp config/genesis.example.json config/genesis.sepolia.json
 # Leave the contract placeholders (0x...a0xx): the library substitutes deployed addresses by name.
 python tools/check_genesis.py --config config/genesis.sepolia.json
 ```
+
+For a new Sepolia rehearsal instance with an earlier instance's accounts,
+`python script/sepolia/make_genesis.py <new> <previous>` (for example `r5 r4`) writes
+`config/sepolia-<new>/genesis.json` from the committed policy. For an instance from before the
+single network address (r1 to r4), it names that instance's first ADMIN holder, the hot admin
+Safe, as the network; run `check_genesis.py --config` on the result.
 
 - **The policy is pinned.** A deployment's genesis file may differ from the committed
   `config/genesis.example.json` only in its network, its brake, its holders, its description and
@@ -447,6 +466,12 @@ Then set:
 
 Genesis appends it to the statement log as the manager's first governance statement.
 
+For a Sepolia instance, `python script/sepolia/make_manifest.py` writes it in two passes from the
+previous instance's manifest (its usage is in the file). Its `safes` section follows the new
+genesis: the network address and each holder that is a Safe of the previous manifest, with that
+Safe's owners, threshold and version. A network address that was no earlier Safe is written with
+null details and a warning: fill them in before publishing.
+
 ### 10. Simulate, then broadcast
 
 ```bash
@@ -511,10 +536,9 @@ forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" --sender <deployer
 - **Resuming.** `--slow` waits for each receipt. If a broadcast stops partway, rerun the
   broadcast command with `--resume` added.
 - **Gas.**
-  - **On anvil, with Prague costs,** the whole system was 26 transactions and about 71.7M gas
-    before the second pass added `SaleStarter` (one more transaction),
-    including the delegation mock. The largest transaction is the edition auction's creation,
-    at about 5.5M, within the 16,777,216-gas EIP-7825 cap.
+  - **On anvil, with Prague costs,** the whole system is 33 transactions and about 104M gas
+    including the delegation mock (measured on 17 November 2026, after federation). The largest
+    transaction is about 7.2M, within the 16,777,216-gas EIP-7825 cap.
   - **Each auction's lens is its own transaction** (the rc.2 review's GAS M-2). Created inside
     its auction's deployment, a lens put both contracts' code in one transaction: the edition
     auction's would have needed about 68.9M with Glamsterdam costs, over a 60M block and the
@@ -678,6 +702,8 @@ Before the mainnet broadcast, besides the [Sepolia runbook](#sepolia-runbook) st
 ## Operating procedures
 
 The contracts do not enforce these procedures; they describe the network's current practice.
+A reference implementation of the keeper steps below, tested on a local anvil chain, is in
+[`keeper/`](../keeper/README.md).
 The rules themselves are in the [governance spec](../docs/spec/governance.md).
 
 ### Scheduled network actions

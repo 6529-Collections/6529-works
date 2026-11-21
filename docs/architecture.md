@@ -13,6 +13,62 @@ decisions win. The precise contract surfaces are the interfaces in
 > area works now, flow by flow, and the [role and permission matrix](audit/roles.md)
 > lists every governed selector.
 
+## At a glance
+
+```mermaid
+flowchart TB
+    Artist([Artist and parties])
+    Signer([Curation signer])
+    Buyers([Collectors, keepers, anyone])
+
+    subgraph Curation
+        direction LR
+        PR[PackageRegistry] --> CV[Eip712CurationVerifier]
+    end
+    subgraph Sales [Sale adapters]
+        direction LR
+        EA[EnglishAuction]
+        UA[UniformEditionAuction]
+    end
+    subgraph Products
+        direction LR
+        S[Stream ERC-721] --- WR[WorkRecords]
+        S <-->|master and edition| E[6529 Stream Editions ERC-1155]
+    end
+    subgraph Money
+        direction LR
+        ER[EconomicsResolver]
+        SW[Split wallets]
+        RE[RevenueEscrow]
+    end
+    subgraph Content [Content and records]
+        direction LR
+        R[Renderer] --> CS[ContentStore]
+        R --> SL[StatementLog]
+    end
+    AR[ArtistRegistry]
+    AM[WorksAccessManager]
+
+    Signer -->|approves roots| Curation
+    Artist -->|accepts, signs the move| Curation
+    Buyers -->|start, bid, settle, claim| Sales
+    Sales -->|mint| Products
+    Products -->|consume item| Curation
+    Sales -->|pay, or escrow on failure| Money
+    Products -->|tokenURI| Content
+    Money -->|artist payouts| AR
+    AM -.->|governs every contract| Products
+```
+
+A work's path: the artist's package is voted on and attested, each party accepts it, the lead
+artist signs "move to Stream", anyone starts the auction (which mints the token into auction
+custody and consumes the item), bids extend the clock near the end, and anyone settles. A master
+work's copies sell in a uniform-price edition auction beside its 1/1, which closes after the 1/1
+and sells as many copies as the bids support, at one price
+([ADR 0005](adr/0005-stream-editions-auction.md)). By default, primary sales of both
+products pay 75% to the artist's side and 25% to the network, and royalties are 6.529%
+(ERC-2981, out of 100,000); a work keeps the terms it was minted with.
+
 ## Modules
 
 ```
