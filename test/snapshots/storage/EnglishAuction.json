@@ -1,0 +1,233 @@
+{
+  "structs": {
+    "struct EnglishAuction.Sale": [
+      {
+        "label": "token",
+        "offset": 0,
+        "slot": 0,
+        "type": "address"
+      },
+      {
+        "label": "tokenId",
+        "offset": 20,
+        "slot": 0,
+        "type": "uint32"
+      },
+      {
+        "label": "endTime",
+        "offset": 24,
+        "slot": 0,
+        "type": "uint32"
+      },
+      {
+        "label": "termsId",
+        "offset": 28,
+        "slot": 0,
+        "type": "uint16"
+      },
+      {
+        "label": "status",
+        "offset": 30,
+        "slot": 0,
+        "type": "enum IEnglishAuction.AuctionState"
+      },
+      {
+        "label": "flags",
+        "offset": 31,
+        "slot": 0,
+        "type": "uint8"
+      },
+      {
+        "label": "bidder",
+        "offset": 0,
+        "slot": 1,
+        "type": "address"
+      },
+      {
+        "label": "bid",
+        "offset": 20,
+        "slot": 1,
+        "type": "uint96"
+      },
+      {
+        "label": "recipient",
+        "offset": 0,
+        "slot": 2,
+        "type": "address"
+      },
+      {
+        "label": "pausedAt",
+        "offset": 20,
+        "slot": 2,
+        "type": "uint32"
+      },
+      {
+        "label": "pausedTotal",
+        "offset": 24,
+        "slot": 2,
+        "type": "uint24"
+      },
+      {
+        "label": "outcomeFrom",
+        "offset": 27,
+        "slot": 2,
+        "type": "uint40"
+      }
+    ],
+    "struct EnglishAuction.Settings": [
+      {
+        "label": "duration",
+        "offset": 0,
+        "slot": 0,
+        "type": "uint32"
+      },
+      {
+        "label": "extensionWindow",
+        "offset": 4,
+        "slot": 0,
+        "type": "uint32"
+      },
+      {
+        "label": "incrementShare",
+        "offset": 8,
+        "slot": 0,
+        "type": "uint32"
+      },
+      {
+        "label": "pausedAt",
+        "offset": 12,
+        "slot": 0,
+        "type": "uint40"
+      },
+      {
+        "label": "refusalGas",
+        "offset": 17,
+        "slot": 0,
+        "type": "uint32"
+      }
+    ],
+    "struct EnglishAuction.Terms": [
+      {
+        "label": "currency",
+        "offset": 0,
+        "slot": 0,
+        "type": "address"
+      },
+      {
+        "label": "incrementFloor",
+        "offset": 20,
+        "slot": 0,
+        "type": "uint96"
+      },
+      {
+        "label": "openingBid",
+        "offset": 0,
+        "slot": 1,
+        "type": "uint96"
+      },
+      {
+        "label": "incrementShare",
+        "offset": 12,
+        "slot": 1,
+        "type": "uint24"
+      },
+      {
+        "label": "extensionWindow",
+        "offset": 15,
+        "slot": 1,
+        "type": "uint24"
+      },
+      {
+        "label": "registryFee",
+        "offset": 18,
+        "slot": 1,
+        "type": "uint32"
+      },
+      {
+        "label": "federated",
+        "offset": 22,
+        "slot": 1,
+        "type": "bool"
+      }
+    ]
+  },
+  "variables": [
+    {
+      "contract": "EnglishAuction",
+      "label": "_authority",
+      "offset": 0,
+      "slot": 0,
+      "type": "address"
+    },
+    {
+      "contract": "EnglishAuction",
+      "label": "_consumingSchedule",
+      "offset": 20,
+      "slot": 0,
+      "type": "bool"
+    },
+    {
+      "contract": "EnglishAuction",
+      "label": "_federationRegistry",
+      "offset": 0,
+      "slot": 1,
+      "type": "address"
+    },
+    {
+      "contract": "EnglishAuction",
+      "label": "_federationRegistryCodeHash",
+      "offset": 0,
+      "slot": 2,
+      "type": "bytes32"
+    },
+    {
+      "contract": "EnglishAuction",
+      "label": "_settings",
+      "offset": 0,
+      "slot": 3,
+      "type": "struct EnglishAuction.Settings"
+    },
+    {
+      "contract": "EnglishAuction",
+      "label": "_termsCount",
+      "offset": 0,
+      "slot": 4,
+      "type": "uint16"
+    },
+    {
+      "contract": "EnglishAuction",
+      "label": "_listed",
+      "offset": 0,
+      "slot": 5,
+      "type": "mapping(address => bool)"
+    },
+    {
+      "contract": "EnglishAuction",
+      "label": "_termsIds",
+      "offset": 0,
+      "slot": 6,
+      "type": "mapping(bytes32 => uint16)"
+    },
+    {
+      "contract": "EnglishAuction",
+      "label": "_terms",
+      "offset": 0,
+      "slot": 7,
+      "type": "mapping(uint16 => struct EnglishAuction.Terms)"
+    },
+    {
+      "contract": "EnglishAuction",
+      "label": "_sales",
+      "offset": 0,
+      "slot": 8,
+      "type": "mapping(uint256 => struct EnglishAuction.Sale)"
+    },
+    {
+      "contract": "EnglishAuction",
+      "label": "_credits",
+      "offset": 0,
+      "slot": 9,
+      "type": "mapping(address => mapping(address => uint256))"
+    }
+  ]
+}

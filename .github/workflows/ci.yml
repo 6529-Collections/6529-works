@@ -58,6 +58,15 @@ jobs:
         # docs/facts.json, which the 6529.io site syncs, must be generated from the repository.
         run: python tools/gen_facts.py --check
 
+      - name: Rule traceability checker unit tests
+        run: python -m tools.test_check_rules
+
+      - name: Rule traceability
+        # Every rule row in docs/spec/ and every property and invariant in
+        # docs/audit/invariants.md names a test that exists; a rule without one must be listed
+        # in tools/rules-uncovered.txt, which can only shrink.
+        run: python tools/check_rules.py --uncovered
+
   checks:
     name: Build and checks
     runs-on: ubuntu-latest
@@ -143,6 +152,22 @@ jobs:
         # The audit scope's bytecode sizes, computed interface IDs and ABI event signatures.
         run: python tools/check_docs_facts.py --artifacts out
 
+      - name: ABI and storage snapshots
+        # Every src/ contract's ABI (selectors, topics, errors) and storage layout against
+        # test/snapshots/; an agreed change is committed with `check_snapshots.py --update`.
+        run: python tools/check_snapshots.py
+
+      - name: Snapshot checker unit tests
+        run: python -m tools.test_check_snapshots
+
+      - name: Real-data vectors and event topics
+        # test/fixtures/real/ must be what tools/make_vectors.py writes from the pinned Museum
+        # records and the compiled ABIs (the replay suites require every listed event).
+        run: python tools/make_vectors.py --check
+
+      - name: Vector generator unit tests
+        run: python -m unittest tools.test_make_vectors
+
       - name: Budget gates
         # The measured profile is explicit: adding a Foundry profile must not silently
         # change which bytecode the EIP-170 gate measures.
@@ -200,9 +225,10 @@ jobs:
     runs-on: ubuntu-latest
     # ADR 0001 budget: every CI job finishes in under 15 minutes.
     timeout-minutes: 15
-    # `forge test` in three parallel parts that together run every test exactly once:
-    # everything but the invariant tests, the economics invariants (the longest suite), and
-    # the other invariants. Each part builds incrementally from the cached compiler output.
+    # `forge test` in four parallel parts that together run every test exactly once:
+    # everything but the invariant tests, the economics invariants (the longest suite), the
+    # four campaigns of the November 2026 testing build, and the other invariants (the Medusa
+    # harnesses' Forge runners among them). Each part builds incrementally from the cached compiler output.
     strategy:
       fail-fast: false
       matrix:
@@ -211,8 +237,10 @@ jobs:
             filter: --no-match-test ^invariant
           - name: economics invariants
             filter: --match-test ^invariant --match-contract ^EconomicsInvariant
+          - name: testing-build invariants
+            filter: --match-test ^invariant --match-contract ^(WorkDelivery|GovernedVault|FederatedState|CurationSigner)Invariant
           - name: other invariants
-            filter: --match-test ^invariant --no-match-contract ^EconomicsInvariant
+            filter: --match-test ^invariant --no-match-contract ^(Economics|WorkDelivery|GovernedVault|FederatedState|CurationSigner)Invariant
 
     steps:
       - name: Checkout
@@ -277,7 +305,9 @@ jobs:
         env:
           FILTER: ${{ matrix.filter }}
         # FILTER is fixed in this file (word splitting is intended).
-        run: forge test $FILTER
+        run: |
+          # shellcheck disable=SC2086
+          forge test $FILTER
 
   contracts:
     # The required check: green only when the build, the checks and every test part are.

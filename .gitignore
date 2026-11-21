@@ -34,3 +34,10 @@ mutation/
 # The local walkthrough's generated genesis file and local deployment records (script/local/README.md)
 config/local/
 deployments/31337/
+
+# Medusa campaigns and crytic-compile output (docs/testing/README.md)
+medusa-corpus/
+crytic-export/
+out-medusa/
+cache-medusa/
+slither_results.json

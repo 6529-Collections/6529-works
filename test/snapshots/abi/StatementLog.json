@@ -1,0 +1,1347 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "authority_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "resolver",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "resolverCodeHash",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "id": "0xc2f31e5e",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "authority",
+        "type": "address"
+      }
+    ],
+    "name": "AccessManagedInvalidAuthority",
+    "signature": "AccessManagedInvalidAuthority(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xaf77169d",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      },
+      {
+        "internalType": "uint32",
+        "name": "delay",
+        "type": "uint32"
+      }
+    ],
+    "name": "AccessManagedRequiredDelay",
+    "signature": "AccessManagedRequiredDelay(address,uint32)",
+    "type": "error"
+  },
+  {
+    "id": "0x068ca9d8",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      }
+    ],
+    "name": "AccessManagedUnauthorized",
+    "signature": "AccessManagedUnauthorized(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x38bd8370",
+    "inputs": [],
+    "name": "AuthorityCannotSign",
+    "signature": "AuthorityCannotSign()",
+    "type": "error"
+  },
+  {
+    "id": "0x8d6f91fb",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      }
+    ],
+    "name": "BoundedCallFailed",
+    "signature": "BoundedCallFailed(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x5b20679f",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      }
+    ],
+    "name": "BoundedCallShortfall",
+    "signature": "BoundedCallShortfall(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x9915fd30",
+    "inputs": [],
+    "name": "ConflictingLocators",
+    "signature": "ConflictingLocators()",
+    "type": "error"
+  },
+  {
+    "id": "0x258d23f5",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "dependency",
+        "type": "address"
+      }
+    ],
+    "name": "DependencyCodeChanged",
+    "signature": "DependencyCodeChanged(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x281aa7f8",
+    "inputs": [],
+    "name": "ExpectedValueMismatch",
+    "signature": "ExpectedValueMismatch()",
+    "type": "error"
+  },
+  {
+    "id": "0xf7293a48",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "dependency",
+        "type": "address"
+      }
+    ],
+    "name": "InvalidDependency",
+    "signature": "InvalidDependency(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xb6d12253",
+    "inputs": [],
+    "name": "InvalidGovernanceManifest",
+    "signature": "InvalidGovernanceManifest()",
+    "type": "error"
+  },
+  {
+    "id": "0x49ed0be9",
+    "inputs": [
+      {
+        "internalType": "uint16",
+        "name": "algorithm",
+        "type": "uint16"
+      }
+    ],
+    "name": "InvalidHashRef",
+    "signature": "InvalidHashRef(uint16)",
+    "type": "error"
+  },
+  {
+    "id": "0x2b79ed30",
+    "inputs": [],
+    "name": "InvalidKind",
+    "signature": "InvalidKind()",
+    "type": "error"
+  },
+  {
+    "id": "0xf17864de",
+    "inputs": [
+      {
+        "internalType": "enum Role",
+        "name": "role",
+        "type": "uint8"
+      }
+    ],
+    "name": "InvalidRole",
+    "signature": "InvalidRole(uint8)",
+    "type": "error"
+  },
+  {
+    "id": "0xbf37b20e",
+    "inputs": [],
+    "name": "InvalidSchema",
+    "signature": "InvalidSchema()",
+    "type": "error"
+  },
+  {
+    "id": "0xb3512b0c",
+    "inputs": [],
+    "name": "InvalidShortString",
+    "signature": "InvalidShortString()",
+    "type": "error"
+  },
+  {
+    "id": "0xd855c4f4",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "signer",
+        "type": "address"
+      }
+    ],
+    "name": "InvalidSignature",
+    "signature": "InvalidSignature(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xd5be818f",
+    "inputs": [],
+    "name": "InvalidSubject",
+    "signature": "InvalidSubject()",
+    "type": "error"
+  },
+  {
+    "id": "0xad63f58a",
+    "inputs": [],
+    "name": "InvalidUri",
+    "signature": "InvalidUri()",
+    "type": "error"
+  },
+  {
+    "id": "0xca5a32c2",
+    "inputs": [],
+    "name": "MissingLocator",
+    "signature": "MissingLocator()",
+    "type": "error"
+  },
+  {
+    "id": "0xe90aded4",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "signer",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "nonce",
+        "type": "uint256"
+      }
+    ],
+    "name": "NonceAlreadyUsed",
+    "signature": "NonceAlreadyUsed(address,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xd75b2c51",
+    "inputs": [
+      {
+        "internalType": "enum Role",
+        "name": "role",
+        "type": "uint8"
+      },
+      {
+        "internalType": "address",
+        "name": "signer",
+        "type": "address"
+      }
+    ],
+    "name": "NotAuthorized",
+    "signature": "NotAuthorized(uint8,address)",
+    "type": "error"
+  },
+  {
+    "id": "0xb9c8b628",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "kind",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "enum Role",
+        "name": "role",
+        "type": "uint8"
+      }
+    ],
+    "name": "ReservedKind",
+    "signature": "ReservedKind(bytes32,uint8)",
+    "type": "error"
+  },
+  {
+    "id": "0xcd21db4f",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "deadline",
+        "type": "uint256"
+      }
+    ],
+    "name": "SignatureExpired",
+    "signature": "SignatureExpired(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x305a27a9",
+    "inputs": [
+      {
+        "internalType": "string",
+        "name": "str",
+        "type": "string"
+      }
+    ],
+    "name": "StringTooLong",
+    "signature": "StringTooLong(string)",
+    "type": "error"
+  },
+  {
+    "id": "0xb77cfad7",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      }
+    ],
+    "name": "UnknownDisputeSubject",
+    "signature": "UnknownDisputeSubject(address,uint256)",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "id": "0x0923c8444fde0faa8f8b86ac14170efc9116fa3fc434402baab8c4ef1731c3ff",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "previous",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "next",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "codeHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "ArtistResolverSet",
+    "signature": "ArtistResolverSet(address,address,bytes32)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x2f658b440c35314f52658ea8a740e05b284cdc84dc9ae01e891f21b8933e7cad",
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "authority",
+        "type": "address"
+      }
+    ],
+    "name": "AuthorityUpdated",
+    "signature": "AuthorityUpdated(address)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x0a6387c9ea3628b88a633bb4f3b151770f70085117a15f9bf3787cda53f13d31",
+    "inputs": [],
+    "name": "EIP712DomainChanged",
+    "signature": "EIP712DomainChanged()",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x22cd1acb7e7a306800a1b2c0ca9b0280187bbc00b7fbf55d38ad6cbf73082aec",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "signer",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "nonce",
+        "type": "uint256"
+      }
+    ],
+    "name": "NonceRevoked",
+    "signature": "NonceRevoked(address,uint256)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x5cc78d0bb8cba9859acd138dcd052b94f324e46596996fa42262ccee5d1a45a5",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "subjectKey",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "kind",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "signer",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum Role",
+        "name": "role",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "resolver",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "index",
+        "type": "uint64"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "recordedAt",
+        "type": "uint64"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "entryHash",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "head",
+        "type": "bytes32"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "token",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "id",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "kind",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "schema",
+            "type": "bytes32"
+          },
+          {
+            "components": [
+              {
+                "internalType": "uint16",
+                "name": "algorithm",
+                "type": "uint16"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "digest",
+                "type": "bytes32"
+              }
+            ],
+            "internalType": "struct HashRef",
+            "name": "content",
+            "type": "tuple"
+          },
+          {
+            "internalType": "string",
+            "name": "uri",
+            "type": "string"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "fileId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "supersedes",
+            "type": "bytes32"
+          }
+        ],
+        "indexed": false,
+        "internalType": "struct Statement",
+        "name": "statement",
+        "type": "tuple"
+      }
+    ],
+    "name": "StatementAppended",
+    "signature": "StatementAppended(bytes32,bytes32,address,uint8,address,uint64,uint64,bytes32,bytes32,(address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x080f9921ae00d2f63d13ca84de2d985b72f4a84a0a7b898d568853dc747754fc",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "entryHash",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "signer",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "nonce",
+        "type": "uint256"
+      }
+    ],
+    "name": "StatementRelayed",
+    "signature": "StatementRelayed(bytes32,address,uint256)",
+    "type": "event"
+  },
+  {
+    "id": "0x718a60ee",
+    "inputs": [],
+    "name": "MAX_URI_BYTES",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "MAX_URI_BYTES()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x733f8454",
+    "inputs": [
+      {
+        "internalType": "enum Role",
+        "name": "role",
+        "type": "uint8"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "token",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "id",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "kind",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "schema",
+            "type": "bytes32"
+          },
+          {
+            "components": [
+              {
+                "internalType": "uint16",
+                "name": "algorithm",
+                "type": "uint16"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "digest",
+                "type": "bytes32"
+              }
+            ],
+            "internalType": "struct HashRef",
+            "name": "content",
+            "type": "tuple"
+          },
+          {
+            "internalType": "string",
+            "name": "uri",
+            "type": "string"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "fileId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "supersedes",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct Statement",
+        "name": "statement",
+        "type": "tuple"
+      }
+    ],
+    "name": "append",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "append(uint8,(address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xa054305a",
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "token",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "id",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "kind",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "schema",
+            "type": "bytes32"
+          },
+          {
+            "components": [
+              {
+                "internalType": "uint16",
+                "name": "algorithm",
+                "type": "uint16"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "digest",
+                "type": "bytes32"
+              }
+            ],
+            "internalType": "struct HashRef",
+            "name": "content",
+            "type": "tuple"
+          },
+          {
+            "internalType": "string",
+            "name": "uri",
+            "type": "string"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "fileId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "supersedes",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct Statement",
+        "name": "statement",
+        "type": "tuple"
+      }
+    ],
+    "name": "appendCurator",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "appendCurator((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x5cab7fab",
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "token",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "id",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "kind",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "schema",
+            "type": "bytes32"
+          },
+          {
+            "components": [
+              {
+                "internalType": "uint16",
+                "name": "algorithm",
+                "type": "uint16"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "digest",
+                "type": "bytes32"
+              }
+            ],
+            "internalType": "struct HashRef",
+            "name": "content",
+            "type": "tuple"
+          },
+          {
+            "internalType": "string",
+            "name": "uri",
+            "type": "string"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "fileId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "supersedes",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct Statement",
+        "name": "statement",
+        "type": "tuple"
+      }
+    ],
+    "name": "appendGovernanceManifest",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "appendGovernanceManifest((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x8479b292",
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "token",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "id",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "kind",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "schema",
+            "type": "bytes32"
+          },
+          {
+            "components": [
+              {
+                "internalType": "uint16",
+                "name": "algorithm",
+                "type": "uint16"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "digest",
+                "type": "bytes32"
+              }
+            ],
+            "internalType": "struct HashRef",
+            "name": "content",
+            "type": "tuple"
+          },
+          {
+            "internalType": "string",
+            "name": "uri",
+            "type": "string"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "fileId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "supersedes",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct Statement",
+        "name": "statement",
+        "type": "tuple"
+      }
+    ],
+    "name": "appendPlatform",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "appendPlatform((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x5b980617",
+    "inputs": [
+      {
+        "internalType": "enum Role",
+        "name": "role",
+        "type": "uint8"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "token",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "id",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "kind",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "schema",
+            "type": "bytes32"
+          },
+          {
+            "components": [
+              {
+                "internalType": "uint16",
+                "name": "algorithm",
+                "type": "uint16"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "digest",
+                "type": "bytes32"
+              }
+            ],
+            "internalType": "struct HashRef",
+            "name": "content",
+            "type": "tuple"
+          },
+          {
+            "internalType": "string",
+            "name": "uri",
+            "type": "string"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "fileId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "supersedes",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct Statement",
+        "name": "statement",
+        "type": "tuple"
+      },
+      {
+        "internalType": "address",
+        "name": "signer",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "nonce",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint64",
+        "name": "deadline",
+        "type": "uint64"
+      },
+      {
+        "internalType": "bytes",
+        "name": "signature",
+        "type": "bytes"
+      }
+    ],
+    "name": "appendSigned",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "entryHash",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "appendSigned(uint8,(address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32),address,uint256,uint64,bytes)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xcdd19d41",
+    "inputs": [],
+    "name": "artistResolver",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "artistResolver()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xbf7e214f",
+    "inputs": [],
+    "name": "authority",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "authority()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x4c927666",
+    "inputs": [
+      {
+        "internalType": "enum Role",
+        "name": "role",
+        "type": "uint8"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "token",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "id",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "kind",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "schema",
+            "type": "bytes32"
+          },
+          {
+            "components": [
+              {
+                "internalType": "uint16",
+                "name": "algorithm",
+                "type": "uint16"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "digest",
+                "type": "bytes32"
+              }
+            ],
+            "internalType": "struct HashRef",
+            "name": "content",
+            "type": "tuple"
+          },
+          {
+            "internalType": "string",
+            "name": "uri",
+            "type": "string"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "fileId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "supersedes",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct Statement",
+        "name": "statement",
+        "type": "tuple"
+      },
+      {
+        "internalType": "address",
+        "name": "signer",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "nonce",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint64",
+        "name": "deadline",
+        "type": "uint64"
+      }
+    ],
+    "name": "authorizationDigest",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "authorizationDigest(uint8,(address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32),address,uint256,uint64)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x62fbcce1",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      }
+    ],
+    "name": "chainOf",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "chainOf(address,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x9c3ac891",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      }
+    ],
+    "name": "disputeOutcomeOf",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "entryHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint64",
+        "name": "index",
+        "type": "uint64"
+      }
+    ],
+    "signature": "disputeOutcomeOf(address,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x84b0196e",
+    "inputs": [],
+    "name": "eip712Domain",
+    "outputs": [
+      {
+        "internalType": "bytes1",
+        "name": "fields",
+        "type": "bytes1"
+      },
+      {
+        "internalType": "string",
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "internalType": "string",
+        "name": "version",
+        "type": "string"
+      },
+      {
+        "internalType": "uint256",
+        "name": "chainId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "verifyingContract",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "salt",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "extensions",
+        "type": "uint256[]"
+      }
+    ],
+    "signature": "eip712Domain()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x8fb36037",
+    "inputs": [],
+    "name": "isConsumingScheduledOp",
+    "outputs": [
+      {
+        "internalType": "bytes4",
+        "name": "",
+        "type": "bytes4"
+      }
+    ],
+    "signature": "isConsumingScheduledOp()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x1074e1b7",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      }
+    ],
+    "name": "latestDisputeOutcome",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "entryHash",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "latestDisputeOutcome(address,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x1647795e",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "signer",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "nonce",
+        "type": "uint256"
+      }
+    ],
+    "name": "nonceUsed",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "nonceUsed(address,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x05c1ee20",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "nonce",
+        "type": "uint256"
+      }
+    ],
+    "name": "revokeNonce",
+    "outputs": [],
+    "signature": "revokeNonce(uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x4585913a",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "expected",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "next",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "nextCodeHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "setArtistResolver",
+    "outputs": [],
+    "signature": "setArtistResolver(address,address,bytes32)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x7a9e5e4b",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "newAuthority",
+        "type": "address"
+      }
+    ],
+    "name": "setAuthority",
+    "outputs": [],
+    "signature": "setAuthority(address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x3587c1b6",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      }
+    ],
+    "name": "subjectKey",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "subjectKey(address,uint256)",
+    "stateMutability": "pure",
+    "type": "function"
+  }
+]

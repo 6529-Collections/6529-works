@@ -85,10 +85,50 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
-  symbolic:
-    name: Symbolic (Halmos)
+  symbolic-contracts:
+    name: Symbolic (list the proof contracts)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
+    outputs:
+      contracts: ${{ steps.list.outputs.contracts }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: List the test contracts
+        id: list
+        # Every *SymbolicTest contract in test/symbolic, one matrix job each below. Every
+        # check_* in test/symbolic must sit inside one of them, so a proof in a contract the
+        # name match misses fails here instead of being skipped.
+        shell: bash
+        run: |
+          set -euo pipefail
+          contracts=$(grep -ho '^contract [A-Za-z0-9_]*SymbolicTest\b' test/symbolic/*.sol | cut -d' ' -f2 | sort)
+          test -n "$contracts"
+          declared=$(grep -ho 'function check_[A-Za-z0-9_]*' test/symbolic/*.sol | wc -l)
+          inside=$(awk 'FNR == 1 || /^(abstract contract|contract|library|interface) /{ok = ($0 ~ /^contract [A-Za-z0-9_]*SymbolicTest[^A-Za-z0-9_]/)} ok && /function check_/{n++} END {print n+0}' test/symbolic/*.sol)
+          echo "$inside of $declared proofs are in a *SymbolicTest contract"
+          test "$inside" -eq "$declared"
+          json=$(echo "$contracts" | python3 -c 'import json, sys; print(json.dumps(sys.stdin.read().split()))')
+          echo "contracts=$json" >> "$GITHUB_OUTPUT"
+
+  symbolic:
+    name: Symbolic (${{ matrix.contract }})
+    needs: symbolic-contracts
+    runs-on: ubuntu-latest
+    # One test contract per job: a solver crash names its contract and the other contracts
+    # still report. Locally the longest contract took under 2.5 minutes with its build
+    # (TextSymbolic 147 s, UniformClearing 91 s, StreamSymbolic 49 s; all 67 proofs in about 8
+    # minutes), so 30 minutes leaves room for a slower runner without hiding a proof that
+    # stopped converging.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        contract: ${{ fromJSON(needs.symbolic-contracts.outputs.contracts) }}
 
     steps:
       - name: Checkout
@@ -135,28 +175,22 @@ jobs:
           --only-binary=:all: --no-deps -r requirements-tools.lock
 
       - name: Halmos
-        # Every check_* in test/symbolic, with the options in halmos.toml, one test contract at
-        # a time: a solver crash then names its contract, and the other contracts still report.
+        # Every check_* of this contract, with the options in halmos.toml; the job fails unless
+        # each proof the contract declares ran and passed.
         env:
           FOUNDRY_PROFILE: symbolic
+          CONTRACT: ${{ matrix.contract }}
         shell: bash
         run: |
           set -uo pipefail
           status=0
           log=$(mktemp)
-          contracts=$(grep -ho '^contract [A-Za-z0-9_]*SymbolicTest' test/symbolic/*.sol | cut -d' ' -f2 | sort)
-          test -n "$contracts"
-          for contract in $contracts; do
-            echo "::group::$contract"
-            start=$SECONDS
-            halmos --no-status --contract "$contract" 2>&1 | tee -a "$log" || status=1
-            echo "$contract took $((SECONDS - start))s"
-            echo "::endgroup::"
-          done
-          # Every proof declared in test/symbolic ran and passed, so a test contract the name
-          # match above misses fails the job instead of being skipped.
-          declared=$(grep -ho 'function check_[A-Za-z0-9_]*' test/symbolic/*.sol | wc -l)
+          start=$SECONDS
+          halmos --no-status --contract "$CONTRACT" 2>&1 | tee "$log" || status=1
+          echo "$CONTRACT took $((SECONDS - start))s"
+          declared=$(awk -v c="$CONTRACT" 'FNR == 1 || /^(abstract contract|contract|library|interface) /{ok = ($1 == "contract" && $2 == c)} ok && /function check_/{n++} END {print n+0}' test/symbolic/*.sol)
           passed=$(sed 's/\x1b\[[0-9;]*m//g' "$log" | grep -c '^\[PASS\] check_' || true)
           echo "$passed of $declared proofs passed"
+          test "$declared" -gt 0 || status=1
           test "$passed" -eq "$declared" || status=1
           exit $status

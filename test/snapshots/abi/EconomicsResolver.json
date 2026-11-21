@@ -1,0 +1,877 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "authority",
+        "type": "address"
+      },
+      {
+        "internalType": "contract IAssetAllowlist",
+        "name": "allowlist_",
+        "type": "address"
+      },
+      {
+        "internalType": "contract ISplitFactory",
+        "name": "factory_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "feeRecipient",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "museum_",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "cc0TextFileId_",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "id": "0xc2f31e5e",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "authority",
+        "type": "address"
+      }
+    ],
+    "name": "AccessManagedInvalidAuthority",
+    "signature": "AccessManagedInvalidAuthority(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xaf77169d",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      },
+      {
+        "internalType": "uint32",
+        "name": "delay",
+        "type": "uint32"
+      }
+    ],
+    "name": "AccessManagedRequiredDelay",
+    "signature": "AccessManagedRequiredDelay(address,uint32)",
+    "type": "error"
+  },
+  {
+    "id": "0x068ca9d8",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      }
+    ],
+    "name": "AccessManagedUnauthorized",
+    "signature": "AccessManagedUnauthorized(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x8a6ce247",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "currency",
+        "type": "address"
+      }
+    ],
+    "name": "CurrencyNotAllowed",
+    "signature": "CurrencyNotAllowed(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xf7293a48",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "dependency",
+        "type": "address"
+      }
+    ],
+    "name": "InvalidDependency",
+    "signature": "InvalidDependency(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x0b1ba793",
+    "inputs": [],
+    "name": "InvalidEconomics",
+    "signature": "InvalidEconomics()",
+    "type": "error"
+  },
+  {
+    "id": "0xf80a23ec",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "recipient",
+        "type": "address"
+      }
+    ],
+    "name": "InvalidFeeRecipient",
+    "signature": "InvalidFeeRecipient(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x5d608519",
+    "inputs": [],
+    "name": "InvalidLicense",
+    "signature": "InvalidLicense()",
+    "type": "error"
+  },
+  {
+    "id": "0x938dabdd",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "museum",
+        "type": "address"
+      }
+    ],
+    "name": "InvalidMuseum",
+    "signature": "InvalidMuseum(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x03227756",
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "expected",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "actual",
+        "type": "uint64"
+      }
+    ],
+    "name": "RevisionMismatch",
+    "signature": "RevisionMismatch(uint64,uint64)",
+    "type": "error"
+  },
+  {
+    "id": "0x951e5918",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "product",
+        "type": "bytes32"
+      }
+    ],
+    "name": "UnknownProduct",
+    "signature": "UnknownProduct(bytes32)",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "id": "0x2f658b440c35314f52658ea8a740e05b284cdc84dc9ae01e891f21b8933e7cad",
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "authority",
+        "type": "address"
+      }
+    ],
+    "name": "AuthorityUpdated",
+    "signature": "AuthorityUpdated(address)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x45967214951395edfaed913e180d66f46dc20f884611341e05657335090698b1",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "product",
+        "type": "bytes32"
+      },
+      {
+        "components": [
+          {
+            "internalType": "string",
+            "name": "spdxId",
+            "type": "string"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "textFileId",
+            "type": "bytes32"
+          }
+        ],
+        "indexed": false,
+        "internalType": "struct License",
+        "name": "previous",
+        "type": "tuple"
+      },
+      {
+        "components": [
+          {
+            "internalType": "string",
+            "name": "spdxId",
+            "type": "string"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "textFileId",
+            "type": "bytes32"
+          }
+        ],
+        "indexed": false,
+        "internalType": "struct License",
+        "name": "next",
+        "type": "tuple"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "revision",
+        "type": "uint64"
+      }
+    ],
+    "name": "DefaultLicenseSet",
+    "signature": "DefaultLicenseSet(bytes32,(string,bytes32),(string,bytes32),uint64)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x7b619472492d3cc46abfe0e47b5d8d9cda2fc6d6d600c6419416f2216b2ae7d3",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "product",
+        "type": "bytes32"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "feeRecipient",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "feeShare",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "royaltyRate",
+            "type": "uint32"
+          }
+        ],
+        "indexed": false,
+        "internalType": "struct ProductEconomics",
+        "name": "previous",
+        "type": "tuple"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "feeRecipient",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "feeShare",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "royaltyRate",
+            "type": "uint32"
+          }
+        ],
+        "indexed": false,
+        "internalType": "struct ProductEconomics",
+        "name": "next",
+        "type": "tuple"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "revision",
+        "type": "uint64"
+      }
+    ],
+    "name": "EconomicsSet",
+    "signature": "EconomicsSet(bytes32,(address,uint32,uint32),(address,uint32,uint32),uint64)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x2a1c096078cbb1875dbcbf421f3c0f318e9bed496c866d5b4c3b234470ce684f",
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "previous",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "next",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "revision",
+        "type": "uint64"
+      }
+    ],
+    "name": "MuseumSet",
+    "signature": "MuseumSet(address,address,uint64)",
+    "type": "event"
+  },
+  {
+    "id": "0xf2453213",
+    "inputs": [],
+    "name": "CC0",
+    "outputs": [
+      {
+        "internalType": "string",
+        "name": "",
+        "type": "string"
+      }
+    ],
+    "signature": "CC0()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xfd27f525",
+    "inputs": [],
+    "name": "DEFAULT_FEE_SHARE",
+    "outputs": [
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      }
+    ],
+    "signature": "DEFAULT_FEE_SHARE()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x46138ba4",
+    "inputs": [],
+    "name": "DEFAULT_ROYALTY_RATE",
+    "outputs": [
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      }
+    ],
+    "signature": "DEFAULT_ROYALTY_RATE()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x9eed6a12",
+    "inputs": [],
+    "name": "FEDERATED_FEE_SHARE",
+    "outputs": [
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      }
+    ],
+    "signature": "FEDERATED_FEE_SHARE()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x5de62d41",
+    "inputs": [],
+    "name": "assetAllowlist",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "assetAllowlist()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xbf7e214f",
+    "inputs": [],
+    "name": "authority",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "authority()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xe8ef3c7a",
+    "inputs": [],
+    "name": "cc0TextFileId",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "cc0TextFileId()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xc0b40cf8",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "product",
+        "type": "bytes32"
+      }
+    ],
+    "name": "defaultLicense",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "string",
+            "name": "spdxId",
+            "type": "string"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "textFileId",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct License",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "signature": "defaultLicense(bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xf51728c9",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "product",
+        "type": "bytes32"
+      }
+    ],
+    "name": "economics",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "feeRecipient",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "feeShare",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "royaltyRate",
+            "type": "uint32"
+          }
+        ],
+        "internalType": "struct ProductEconomics",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "signature": "economics(bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x8fb36037",
+    "inputs": [],
+    "name": "isConsumingScheduledOp",
+    "outputs": [
+      {
+        "internalType": "bytes4",
+        "name": "",
+        "type": "bytes4"
+      }
+    ],
+    "signature": "isConsumingScheduledOp()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x45e67a8c",
+    "inputs": [],
+    "name": "museum",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "museum()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xff9bcc9e",
+    "inputs": [],
+    "name": "museumRevision",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      }
+    ],
+    "signature": "museumRevision()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x54df211a",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "product",
+        "type": "bytes32"
+      }
+    ],
+    "name": "networkFeeRecipient",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "networkFeeRecipient(bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x2cc75942",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "product",
+        "type": "bytes32"
+      },
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "artistId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "account",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "share",
+            "type": "uint32"
+          }
+        ],
+        "internalType": "struct ISplitWallet.Payee[]",
+        "name": "payees",
+        "type": "tuple[]"
+      }
+    ],
+    "name": "newWorkTerms",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "seller",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "feeRecipient",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "feeShare",
+            "type": "uint32"
+          },
+          {
+            "internalType": "address",
+            "name": "royaltyReceiver",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "royaltyRate",
+            "type": "uint32"
+          }
+        ],
+        "internalType": "struct WorkTerms",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "signature": "newWorkTerms(bytes32,(uint256,address,uint32)[])",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x6dd5e5c8",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "product",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "requested",
+        "type": "address"
+      }
+    ],
+    "name": "resolveCurrency",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "currency",
+        "type": "address"
+      }
+    ],
+    "signature": "resolveCurrency(bytes32,address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xd70f76dc",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "product",
+        "type": "bytes32"
+      }
+    ],
+    "name": "revisions",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      }
+    ],
+    "signature": "revisions(bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x7a9e5e4b",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "newAuthority",
+        "type": "address"
+      }
+    ],
+    "name": "setAuthority",
+    "outputs": [],
+    "signature": "setAuthority(address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x387226d6",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "product",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint64",
+        "name": "expectedRevision",
+        "type": "uint64"
+      },
+      {
+        "components": [
+          {
+            "internalType": "string",
+            "name": "spdxId",
+            "type": "string"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "textFileId",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct License",
+        "name": "next",
+        "type": "tuple"
+      }
+    ],
+    "name": "setDefaultLicense",
+    "outputs": [],
+    "signature": "setDefaultLicense(bytes32,uint64,(string,bytes32))",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x9a8fce26",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "product",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint64",
+        "name": "expectedRevision",
+        "type": "uint64"
+      },
+      {
+        "internalType": "address",
+        "name": "feeRecipient",
+        "type": "address"
+      },
+      {
+        "internalType": "uint32",
+        "name": "feeShare",
+        "type": "uint32"
+      }
+    ],
+    "name": "setFeeTerms",
+    "outputs": [],
+    "signature": "setFeeTerms(bytes32,uint64,address,uint32)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x10d71d79",
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "expectedRevision",
+        "type": "uint64"
+      },
+      {
+        "internalType": "address",
+        "name": "next",
+        "type": "address"
+      }
+    ],
+    "name": "setMuseum",
+    "outputs": [],
+    "signature": "setMuseum(uint64,address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x6e58f7af",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "product",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint64",
+        "name": "expectedRevision",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint32",
+        "name": "royaltyRate",
+        "type": "uint32"
+      }
+    ],
+    "name": "setRoyaltyRate",
+    "outputs": [],
+    "signature": "setRoyaltyRate(bytes32,uint64,uint32)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x5720babb",
+    "inputs": [],
+    "name": "splitFactory",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "splitFactory()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x01ffc9a7",
+    "inputs": [
+      {
+        "internalType": "bytes4",
+        "name": "interfaceId",
+        "type": "bytes4"
+      }
+    ],
+    "name": "supportsInterface",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "supportsInterface(bytes4)",
+    "stateMutability": "pure",
+    "type": "function"
+  }
+]

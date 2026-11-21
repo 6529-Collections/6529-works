@@ -1,0 +1,61 @@
+{
+  "structs": {
+    "struct Eip712CurationVerifier.SignerState": [
+      {
+        "label": "disabled",
+        "offset": 0,
+        "slot": 0,
+        "type": "bool"
+      },
+      {
+        "label": "changes",
+        "offset": 1,
+        "slot": 0,
+        "type": "uint64"
+      },
+      {
+        "label": "salt",
+        "offset": 9,
+        "slot": 0,
+        "type": "uint64"
+      }
+    ]
+  },
+  "variables": [
+    {
+      "contract": "Eip712CurationVerifier",
+      "label": "_authority",
+      "offset": 0,
+      "slot": 0,
+      "type": "address"
+    },
+    {
+      "contract": "Eip712CurationVerifier",
+      "label": "_consumingSchedule",
+      "offset": 20,
+      "slot": 0,
+      "type": "bool"
+    },
+    {
+      "contract": "Eip712CurationVerifier",
+      "label": "_nameFallback",
+      "offset": 0,
+      "slot": 1,
+      "type": "string"
+    },
+    {
+      "contract": "Eip712CurationVerifier",
+      "label": "_versionFallback",
+      "offset": 0,
+      "slot": 2,
+      "type": "string"
+    },
+    {
+      "contract": "Eip712CurationVerifier",
+      "label": "_signers",
+      "offset": 0,
+      "slot": 3,
+      "type": "mapping(address => struct Eip712CurationVerifier.SignerState)"
+    }
+  ]
+}

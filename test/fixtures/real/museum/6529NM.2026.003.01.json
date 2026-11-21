@@ -1,0 +1,259 @@
+{
+  "$schema": "https://6529networkmuseum.org/schemas/record-envelope-v1.json",
+  "envelope": {
+    "contentHash": {
+      "algorithm": 1,
+      "canonicalizationId": "0x886c7c89c308c459ca8a626e0ef36a5ea9f4c7a7b56aaf86c71a2ddf3b4f9044",
+      "digest": "0xf4dcad64000200bc51a4958068eb47a2a0f1d0e1df99c05ff4586db43a9e6b6c"
+    },
+    "effectiveAt": 1787478417,
+    "recordType": "WORK_DESCRIPTION",
+    "schemaId": "0x5bb3543c4c007f4396474b74ec81dd8bca13028b6d945020e4b48ff236b26a3c",
+    "signatureHash": {
+      "algorithm": 2,
+      "canonicalizationId": "0x886c7c89c308c459ca8a626e0ef36a5ea9f4c7a7b56aaf86c71a2ddf3b4f9044",
+      "digest": "0x0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "signatureScheme": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "subjectId": "0xabb7755b734bbfd7a973ae70e49932ebb6a19e346b982792ca8f64a351cf8183",
+    "uri": "https://github.com/6529-Collections/6529networkmuseum/blob/main/records/accessions/6529NM.2026.003/objects/6529NM.2026.003.01.json"
+  },
+  "payload": {
+    "accession_lot_id": "6529NM.2026.003",
+    "artist": {
+      "claim_type": "source_credit",
+      "evidence_class": "A",
+      "preferred_name": "Vera Molnár, in collaboration with Martin Grasser",
+      "source_refs": [
+        "6529NM-PG-2026-002"
+      ]
+    },
+    "chain_identity": {
+      "acquisition_transaction": "0x618603d9f21dc09a4a7b2d6b6b242cc337127e8052116d0ee28c6c25f012a5cd",
+      "caip19": "eip155:1/erc721:0xe034bb2b1b9471e11cf1a0a9199a156fb227aa5d/210",
+      "chain_id": 1,
+      "contract": "0xe034bb2b1b9471e11cf1a0a9199a156fb227aa5d",
+      "custody_account": "eip155:1:0xbecfa2ba5a782d11e1a0e821e8f2e30b6684178c",
+      "custody_block": 25816984,
+      "custody_receipt_block": 25816958,
+      "custody_receipt_log": 315,
+      "custody_receipt_transaction": "0x618603d9f21dc09a4a7b2d6b6b242cc337127e8052116d0ee28c6c25f012a5cd",
+      "custody_status": "verified",
+      "custody_verified_at": "2026-08-23T09:46:57.326Z",
+      "decoded_invocation": 210,
+      "generator_uri": "https://generator.artblocks.io/1/0xe034bb2b1b9471e11cf1a0a9199a156fb227aa5d/210",
+      "metadata_sha256": "sha256:0e513d3982144bfbc2bf8f3a7890086a3f34566927c62581d4f74370deba8409",
+      "metadata_uri": "https://token.artblocks.io/0xe034bb2b1b9471e11cf1a0a9199a156fb227aa5d/210",
+      "mint_transaction": "0x6838200beb692a066e6a9cc0fd83e06ef58aecb716ce75423c4331270ffaaaa8",
+      "project_artist_address": "0x25f8f79610637c31d52413fb503e11c4ca2a4bf2",
+      "raw_art_blocks": {
+        "engine_type": "flex",
+        "project_id": 0,
+        "tokenID": 210
+      },
+      "token_hash": "0xd0a3be9aa1a3e101a12ec038ceb71a18846dbc62eac3e91fb425232e7820a318",
+      "token_id": "210",
+      "token_standard": "ERC-721"
+    },
+    "condition": {
+      "behavior": "amber",
+      "dependencies": "green",
+      "documentation": "amber",
+      "metadata": "amber",
+      "method": "Reviewed the exact token, finalized ownership, retained metadata and preview, and the on-chain project script package.",
+      "narrative": "Token identity, hash, finalized custody, and the locked on-chain project script are verified. Art Blocks metadata and generator endpoints remain service dependencies.",
+      "observed_at": "2026-08-23T09:46:57.326Z",
+      "protocol_state": "ERC-721 non-static generative software; live browser renderer",
+      "rendering": "amber",
+      "script": "green",
+      "token": "green"
+    },
+    "constructor": {
+      "id": "codex-task:vera-molnar-accession-2026-08-23",
+      "observed_at": "2026-08-23T09:46:57.326Z",
+      "role": "constructor"
+    },
+    "created_at": "2026-08-23T09:46:57.326Z",
+    "creator": "Vera Molnár, in collaboration with Martin Grasser",
+    "credit_line": "Vera Molnár, in collaboration with Martin Grasser, Themes and Variations #210, 2023. Art Blocks / Sotheby's Gen Art. Licensed under CC BY-NC 4.0.",
+    "current_state": "accessioned",
+    "display": {
+      "credit_line": "Vera Molnár, in collaboration with Martin Grasser, Themes and Variations #210, 2023. Licensed under CC BY-NC 4.0.",
+      "manifest_uri": "https://github.com/6529-Collections/6529networkmuseum/blob/main/records/accessions/6529NM.2026.003/public/web-presentation-authority.md",
+      "observed_at": "2026-08-23T09:46:57.326Z",
+      "status": "ready_with_conditions"
+    },
+    "effective_at": "2026-08-23T09:46:57.326Z",
+    "evidence_grade": "A/B/C",
+    "medium": "On-chain generative software; Ethereum ERC-721 token; live browser generator",
+    "object_id": "6529NM.2026.003.01",
+    "observed_at": "2026-08-23T09:46:57.326Z",
+    "payload_sha256": "sha256:e133aebd9f0e11199dc637728337dd0127ead04596b1b8a49ad2ea9dff01318f",
+    "preservation": {
+      "fixity_sha256": "sha256:71fb6066e1113e22c8586e195bfb8d553dcc8c4d7dec5b33de3ae47d3ebcafe5",
+      "observed_at": "2026-08-23T09:46:57.326Z",
+      "package_uri": "https://github.com/6529-Collections/6529networkmuseum/tree/main/evidence/vera-molnar-210-sources",
+      "render_environment": "The live Art Blocks generator remains the primary browser display. The Museum retains the official still and the exact on-chain script package.",
+      "status": "in_progress"
+    },
+    "project": {
+      "edition_size": 500,
+      "edition_statement": "500 unique outputs; token 210",
+      "license_claim_status": "source metadata label",
+      "name": "Themes and Variations",
+      "platform": "Art Blocks / Sotheby's Gen Art",
+      "platform_metadata_license_label": "CC BY-NC 4.0",
+      "release_year": 2023,
+      "script_type_and_version": "js@na; GenArt721CoreV3_Engine_Flex v3.1.3"
+    },
+    "record_id": "6529NM.2026.003.01",
+    "record_status": "reviewed",
+    "record_type": "WORK_DESCRIPTION",
+    "record_version": "1.0.0",
+    "references": [
+      "6529NM.2026.003",
+      "6529NM.2026.003.GAA-01",
+      "6529NM-ACC-2026-003",
+      "6529NM.2026.003.RIGHTS.01",
+      "6529NM.2026.003.COND.01"
+    ],
+    "review_status": "reviewed",
+    "reviewer": {
+      "id": "codex-reviewer:museum-publication-2026-08-23-independent",
+      "outcome": "approved",
+      "reviewed_at": "2026-08-23T15:10:17.867Z",
+      "reviewed_commit": "3eab50914a90c079fe0383624e760fc0a954e709",
+      "reviewed_manifest_keccak": "0xd3b728ca1bdbbf99602d626df93b6903bbacf624f2ef71e064412654e71cf313",
+      "reviewed_manifest_sha256": "sha256:f672c3503baa823cf4af5eac3bf0513b6b25de6e2674902273cb778f4e771080",
+      "reviewer_ids": [
+        "codex-reviewer:museum-publication-2026-08-23-independent"
+      ],
+      "role": "reviewer"
+    },
+    "rights": {
+      "accessibility": {
+        "basis": "Credited accessibility publication within the institutional presentation boundary.",
+        "evidence_ref": "6529NM.2026.003.RIGHTS.01",
+        "grant_status": "granted_with_conditions",
+        "observed_at": "2026-08-23T09:46:57.326Z"
+      },
+      "ai_training": {
+        "basis": "The source licence is not treated as an AI-training grant.",
+        "evidence_ref": "6529NM.2026.003.RIGHTS.01",
+        "grant_status": "denied",
+        "observed_at": "2026-08-23T09:46:57.326Z"
+      },
+      "derivative_use": {
+        "basis": "No unrestricted derivative grant is asserted.",
+        "evidence_ref": "6529NM.2026.003.RIGHTS.01",
+        "grant_status": "denied",
+        "observed_at": "2026-08-23T09:46:57.326Z"
+      },
+      "exhibition": {
+        "basis": "Credited institutional display of the tokenized work.",
+        "evidence_ref": "6529NM.2026.003.RIGHTS.01",
+        "grant_status": "granted_with_conditions",
+        "observed_at": "2026-08-23T09:46:57.326Z"
+      },
+      "migration_emulation": {
+        "basis": "Migration or emulation may be used for continued credited institutional access, subject to rights review.",
+        "evidence_ref": "6529NM.2026.003.RIGHTS.01",
+        "grant_status": "granted_with_conditions",
+        "observed_at": "2026-08-23T09:46:57.326Z"
+      },
+      "preservation": {
+        "basis": "Preservation copies are limited to lawful institutional stewardship and recorded source fixity.",
+        "evidence_ref": "6529NM.2026.003.RIGHTS.01",
+        "grant_status": "granted_with_conditions",
+        "observed_at": "2026-08-23T09:46:57.326Z"
+      },
+      "print": {
+        "basis": "No print grant is asserted.",
+        "evidence_ref": "6529NM.2026.003.RIGHTS.01",
+        "grant_status": "denied",
+        "observed_at": "2026-08-23T09:46:57.326Z"
+      },
+      "publication": {
+        "basis": "Credited noncommercial Museum publication within the source CC BY-NC 4.0 boundary.",
+        "evidence_ref": "6529NM.2026.003.RIGHTS.01",
+        "grant_status": "granted_with_conditions",
+        "observed_at": "2026-08-23T09:46:57.326Z"
+      },
+      "reproduction": {
+        "basis": "No general reproduction grant is asserted beyond credited institutional uses.",
+        "evidence_ref": "6529NM.2026.003.RIGHTS.01",
+        "grant_status": "denied",
+        "observed_at": "2026-08-23T09:46:57.326Z"
+      }
+    },
+    "schema_id": "0x5bb3543c4c007f4396474b74ec81dd8bca13028b6d945020e4b48ff236b26a3c",
+    "source": {
+      "source_record_ids": [
+        "6529NM-PG-2026-002",
+        "6529NM.2026.003.GAA-01",
+        "6529NM-ACC-2026-003"
+      ]
+    },
+    "source_refs": [
+      "evidence/vera-molnar-210-sources",
+      "evidence/vera-molnar-210-custody"
+    ],
+    "state_history": [
+      {
+        "evidence_refs": [
+          "6529NM-PG-2026-002"
+        ],
+        "observed_at": "2026-08-13T19:19:40.216Z",
+        "state": "offered"
+      },
+      {
+        "evidence_refs": [
+          "6529NM-WAVE-OBS-2026-08-23-002"
+        ],
+        "observed_at": "2026-08-23T09:40:25.465Z",
+        "state": "authorized"
+      },
+      {
+        "evidence_refs": [
+          "6529NM.2026.003.GAA-01"
+        ],
+        "observed_at": "2026-08-23T09:46:57.326Z",
+        "state": "acquired"
+      },
+      {
+        "evidence_refs": [
+          "6529NM.2026.003.GAA-01"
+        ],
+        "observed_at": "2026-08-23T09:46:57.326Z",
+        "state": "received_onchain"
+      },
+      {
+        "evidence_refs": [
+          "6529NM-ACC-2026-003"
+        ],
+        "observed_at": "2026-08-23T09:46:57.326Z",
+        "state": "accessioned"
+      }
+    ],
+    "state_history_semantics": "Lifecycle observed_at values record when the Museum verified and entered each institutional state. The on-chain receipt transaction occurred earlier, at 2026-08-23T09:27:59Z, and is preserved separately in chain_identity and the custody evidence package.",
+    "subject_id": "6529NM.2026.003.01",
+    "title": "Themes and Variations #210",
+    "title_binding": {
+      "basis": "Gift Acceptance Authorization 6529NM.2026.003.GAA-01 and Accession Certificate 6529NM-ACC-2026-003 bind the donor's transferable token interest to this exact object.",
+      "block_number": 25816958,
+      "bound_at": "2026-08-23T09:46:57.326Z",
+      "custodian_reference": "networkmuseum.6529.eth",
+      "from": "0x6daa633c23615a29471deafae351727867e7dad1",
+      "instrument_sha256": "sha256:d7c59d50fd60ff570712a4a93f57b9294a94e8ab0011b5ca1ebe6c7eed88d37f",
+      "object_id": "6529NM.2026.003.01",
+      "status": "executed",
+      "to": "0xbecfa2ba5a782d11e1a0e821e8f2e30b6684178c",
+      "transfer_transaction": "0x618603d9f21dc09a4a7b2d6b6b242cc337127e8052116d0ee28c6c25f012a5cd"
+    },
+    "uncertainties": [
+      "Art Blocks service endpoints and project base URI are mutable presentation dependencies.",
+      "No exact #210 exhibition history is asserted from project-level exhibition records."
+    ],
+    "visibility": "public"
+  }
+}

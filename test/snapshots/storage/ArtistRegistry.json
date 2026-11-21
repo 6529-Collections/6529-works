@@ -1,0 +1,259 @@
+{
+  "structs": {
+    "struct ArtistIdentity": [
+      {
+        "label": "root",
+        "offset": 0,
+        "slot": 0,
+        "type": "address"
+      },
+      {
+        "label": "payout",
+        "offset": 0,
+        "slot": 1,
+        "type": "address"
+      },
+      {
+        "label": "profileId",
+        "offset": 0,
+        "slot": 2,
+        "type": "bytes32"
+      },
+      {
+        "label": "profileDocHash",
+        "offset": 0,
+        "slot": 3,
+        "type": "bytes32"
+      }
+    ],
+    "struct ArtistRegistry.Artist": [
+      {
+        "label": "root",
+        "offset": 0,
+        "slot": 0,
+        "type": "address"
+      },
+      {
+        "label": "frozenUntil",
+        "offset": 20,
+        "slot": 0,
+        "type": "uint48"
+      },
+      {
+        "label": "replacing",
+        "offset": 26,
+        "slot": 0,
+        "type": "bool"
+      },
+      {
+        "label": "delisted",
+        "offset": 27,
+        "slot": 0,
+        "type": "bool"
+      },
+      {
+        "label": "payout",
+        "offset": 0,
+        "slot": 1,
+        "type": "address"
+      },
+      {
+        "label": "nonce",
+        "offset": 20,
+        "slot": 1,
+        "type": "uint64"
+      },
+      {
+        "label": "profileId",
+        "offset": 0,
+        "slot": 2,
+        "type": "bytes32"
+      },
+      {
+        "label": "profileDocHash",
+        "offset": 0,
+        "slot": 3,
+        "type": "bytes32"
+      }
+    ],
+    "struct ArtistRegistry.Listing": [
+      {
+        "label": "artistId",
+        "offset": 0,
+        "slot": 0,
+        "type": "uint160"
+      },
+      {
+        "label": "status",
+        "offset": 20,
+        "slot": 0,
+        "type": "enum IArtistRegistry.FederationStatus"
+      },
+      {
+        "label": "feeShare",
+        "offset": 21,
+        "slot": 0,
+        "type": "uint32"
+      }
+    ],
+    "struct PendingChange": [
+      {
+        "label": "kind",
+        "offset": 0,
+        "slot": 0,
+        "type": "enum ChangeKind"
+      },
+      {
+        "label": "executableAt",
+        "offset": 1,
+        "slot": 0,
+        "type": "uint48"
+      },
+      {
+        "label": "contestedAt",
+        "offset": 7,
+        "slot": 0,
+        "type": "uint48"
+      },
+      {
+        "label": "next",
+        "offset": 0,
+        "slot": 1,
+        "type": "struct ArtistIdentity"
+      },
+      {
+        "label": "evidenceHash",
+        "offset": 0,
+        "slot": 5,
+        "type": "bytes32"
+      },
+      {
+        "label": "priorOutcome",
+        "offset": 0,
+        "slot": 6,
+        "type": "bytes32"
+      }
+    ]
+  },
+  "variables": [
+    {
+      "contract": "ArtistRegistry",
+      "label": "_authority",
+      "offset": 0,
+      "slot": 0,
+      "type": "address"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "label": "_consumingSchedule",
+      "offset": 20,
+      "slot": 0,
+      "type": "bool"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "label": "_nameFallback",
+      "offset": 0,
+      "slot": 1,
+      "type": "string"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "label": "_versionFallback",
+      "offset": 0,
+      "slot": 2,
+      "type": "string"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "label": "_artists",
+      "offset": 0,
+      "slot": 3,
+      "type": "mapping(uint256 => struct ArtistRegistry.Artist)"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "label": "_pending",
+      "offset": 0,
+      "slot": 4,
+      "type": "mapping(uint256 => struct PendingChange)"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "label": "_acceptanceUsed",
+      "offset": 0,
+      "slot": 5,
+      "type": "mapping(bytes32 => bool)"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "label": "_listings",
+      "offset": 0,
+      "slot": 6,
+      "type": "mapping(address => struct ArtistRegistry.Listing)"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "label": "artistIdOf",
+      "offset": 0,
+      "slot": 7,
+      "type": "mapping(address => uint256)"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "label": "reservedFor",
+      "offset": 0,
+      "slot": 8,
+      "type": "mapping(address => uint256)"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "label": "consolidationSource",
+      "offset": 0,
+      "slot": 9,
+      "type": "contract IConsolidationSource"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "label": "consolidationSourceCodeHash",
+      "offset": 0,
+      "slot": 10,
+      "type": "bytes32"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "label": "packageRegistry",
+      "offset": 0,
+      "slot": 11,
+      "type": "address"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "label": "stream",
+      "offset": 0,
+      "slot": 12,
+      "type": "address"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "label": "federationRegistry",
+      "offset": 0,
+      "slot": 13,
+      "type": "address"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "label": "splitFactory",
+      "offset": 0,
+      "slot": 14,
+      "type": "address"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "label": "statementLog",
+      "offset": 0,
+      "slot": 15,
+      "type": "address"
+    }
+  ]
+}

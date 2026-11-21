@@ -1,0 +1,1535 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "editions_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "stream_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "englishAuction_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "escrow_",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "id": "0x5b20679f",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      }
+    ],
+    "name": "BoundedCallShortfall",
+    "signature": "BoundedCallShortfall(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xad525a96",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "quantity",
+        "type": "uint256"
+      }
+    ],
+    "name": "InvalidQuantity",
+    "signature": "InvalidQuantity(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x2bf76211",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      }
+    ],
+    "name": "InvalidSaleTerms",
+    "signature": "InvalidSaleTerms(address,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xc320db18",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "InvalidSettlementOrder",
+    "signature": "InvalidSettlementOrder(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x64e78b07",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "step",
+        "type": "uint256"
+      }
+    ],
+    "name": "InvalidStep",
+    "signature": "InvalidStep(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x2ed8798d",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "MantissaIndexOutOfRange",
+    "signature": "MantissaIndexOutOfRange(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xd1a5d181",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "marginShare",
+        "type": "uint256"
+      }
+    ],
+    "name": "MarginTooLarge",
+    "signature": "MarginTooLarge(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x58490410",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "master",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      }
+    ],
+    "name": "NoOneOfOneAuction",
+    "signature": "NoOneOfOneAuction(address,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x2c1d96d2",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "NotAbandonable",
+    "signature": "NotAbandonable(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x16ec68ab",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "step",
+        "type": "uint256"
+      }
+    ],
+    "name": "StepUnitsOverflow",
+    "signature": "StepUnitsOverflow(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xe356c1d3",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
+    "name": "TargetNotAllowed",
+    "signature": "TargetNotAllowed(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x16f52576",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "steps",
+        "type": "uint256"
+      }
+    ],
+    "name": "TooManySteps",
+    "signature": "TooManySteps(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x4c6a6e54",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "UnknownAuction",
+    "signature": "UnknownAuction(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x896b782e",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "bidId",
+        "type": "uint256"
+      }
+    ],
+    "name": "UnknownBid",
+    "signature": "UnknownBid(uint256,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x9ae34d3d",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "basePrice",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "stepsPerDecade",
+        "type": "uint256"
+      }
+    ],
+    "name": "UnsupportedLadder",
+    "signature": "UnsupportedLadder(uint256,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x765b0d80",
+    "inputs": [],
+    "name": "ABANDON_DELAY",
+    "outputs": [
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      }
+    ],
+    "signature": "ABANDON_DELAY()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x431264c5",
+    "inputs": [],
+    "name": "CLOSE_OFFSET",
+    "outputs": [
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      }
+    ],
+    "signature": "CLOSE_OFFSET()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x5f99c051",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "abandonable",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "ok",
+        "type": "bool"
+      },
+      {
+        "internalType": "uint256",
+        "name": "abandonAt",
+        "type": "uint256"
+      }
+    ],
+    "signature": "abandonable(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x1200617f",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "auction",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "token",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "id",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "master",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "oneOfOneSaleId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "enum IUniformEditionAuction.AuctionStatus",
+            "name": "status",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint32",
+            "name": "maxCount",
+            "type": "uint32"
+          },
+          {
+            "components": [
+              {
+                "internalType": "uint96",
+                "name": "basePrice",
+                "type": "uint96"
+              },
+              {
+                "internalType": "uint16",
+                "name": "stepsPerDecade",
+                "type": "uint16"
+              },
+              {
+                "internalType": "uint16",
+                "name": "stepCount",
+                "type": "uint16"
+              },
+              {
+                "internalType": "uint32",
+                "name": "marginShare",
+                "type": "uint32"
+              },
+              {
+                "internalType": "uint32",
+                "name": "softWindow",
+                "type": "uint32"
+              },
+              {
+                "internalType": "uint32",
+                "name": "maxExtension",
+                "type": "uint32"
+              }
+            ],
+            "internalType": "struct IUniformEditionAuction.AuctionConfig",
+            "name": "terms",
+            "type": "tuple"
+          },
+          {
+            "internalType": "address",
+            "name": "seller",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "feeRecipient",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "feeShare",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint64",
+            "name": "openedAt",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint32",
+            "name": "bidCount",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "liveUnits",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint16",
+            "name": "lowStep",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint16",
+            "name": "highStep",
+            "type": "uint16"
+          }
+        ],
+        "internalType": "struct IUniformEditionAuction.Auction",
+        "name": "v",
+        "type": "tuple"
+      }
+    ],
+    "signature": "auction(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xba361672",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "bidId",
+        "type": "uint256"
+      }
+    ],
+    "name": "bidOf",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "bidder",
+            "type": "address"
+          },
+          {
+            "internalType": "uint16",
+            "name": "step",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint32",
+            "name": "quantity",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "position",
+            "type": "uint32"
+          }
+        ],
+        "internalType": "struct IUniformEditionAuction.Bid",
+        "name": "b",
+        "type": "tuple"
+      }
+    ],
+    "signature": "bidOf(uint256,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x210b534d",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "bidId",
+        "type": "uint256"
+      }
+    ],
+    "name": "bidOutcome",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "unitsWon",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "price",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "escrow",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "refund",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "unitsAhead",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "isFinal",
+            "type": "bool"
+          }
+        ],
+        "internalType": "struct IUniformEditionAuction.BidOutcome",
+        "name": "o",
+        "type": "tuple"
+      }
+    ],
+    "signature": "bidOutcome(uint256,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x41e19ce6",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "checkAbandon",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "createEdition",
+        "type": "bool"
+      }
+    ],
+    "signature": "checkAbandon(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xd4570c1c",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "currency",
+        "type": "address"
+      }
+    ],
+    "name": "claimable",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "claimable(address,address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x645c0d30",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "clearing",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "count",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "step",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "price",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "revenue",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "networkFee",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "bestRevenue",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "rationed",
+            "type": "bool"
+          },
+          {
+            "internalType": "uint256",
+            "name": "cutUnits",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "unitsAtStep",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "cutoff",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct IUniformEditionAuction.Clearing",
+        "name": "c",
+        "type": "tuple"
+      }
+    ],
+    "signature": "clearing(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x79502c55",
+    "inputs": [],
+    "name": "config",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint96",
+            "name": "basePrice",
+            "type": "uint96"
+          },
+          {
+            "internalType": "uint16",
+            "name": "stepsPerDecade",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint16",
+            "name": "stepCount",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint32",
+            "name": "marginShare",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "softWindow",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "maxExtension",
+            "type": "uint32"
+          }
+        ],
+        "internalType": "struct IUniformEditionAuction.AuctionConfig",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "signature": "config()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xbcd01380",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "creditExpiresAt",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "creditExpiresAt(address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x4e052e08",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "step",
+        "type": "uint256"
+      }
+    ],
+    "name": "departures",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint32",
+            "name": "position",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "quantity",
+            "type": "uint32"
+          }
+        ],
+        "internalType": "struct IUniformEditionAuction.Departure[]",
+        "name": "list",
+        "type": "tuple[]"
+      }
+    ],
+    "signature": "departures(uint256,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xb8ddbcb3",
+    "inputs": [],
+    "name": "editions",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "editions()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x932b37e0",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "endTimes",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint64",
+            "name": "oneOfOneEnd",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "closeAt",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "softEnd",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "endTime",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "backstop",
+            "type": "uint64"
+          },
+          {
+            "internalType": "enum IEnglishAuction.AuctionState",
+            "name": "oneOfOneState",
+            "type": "uint8"
+          },
+          {
+            "internalType": "bool",
+            "name": "biddingOpen",
+            "type": "bool"
+          }
+        ],
+        "internalType": "struct IUniformEditionAuction.EndTimes",
+        "name": "e",
+        "type": "tuple"
+      }
+    ],
+    "signature": "endTimes(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xdd70d1ab",
+    "inputs": [],
+    "name": "englishAuction",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "englishAuction()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xe2fdcc17",
+    "inputs": [],
+    "name": "escrow",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "escrow()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xadb08ded",
+    "inputs": [],
+    "name": "federationRegistry",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "federationRegistry()",
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "id": "0x7af6bd79",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      }
+    ],
+    "name": "feeRecipient",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "recipient",
+        "type": "address"
+      }
+    ],
+    "signature": "feeRecipient(address,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xaa642274",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
+    "name": "isTarget",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "isTarget(address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x4cffb6cc",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "ladder",
+    "outputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "prices",
+        "type": "uint256[]"
+      }
+    ],
+    "signature": "ladder(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x860aefcf",
+    "inputs": [],
+    "name": "limits",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint32",
+            "name": "payoutGas",
+            "type": "uint32"
+          }
+        ],
+        "internalType": "struct IUniformEditionAuction.Limits",
+        "name": "l",
+        "type": "tuple"
+      }
+    ],
+    "signature": "limits()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x3d3a9ebd",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "quantity",
+        "type": "uint256"
+      }
+    ],
+    "name": "lowestWinningStep",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "found",
+        "type": "bool"
+      },
+      {
+        "internalType": "uint256",
+        "name": "step",
+        "type": "uint256"
+      }
+    ],
+    "signature": "lowestWinningStep(uint256,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x8b0fd619",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes",
+        "name": "data",
+        "type": "bytes"
+      }
+    ],
+    "name": "masterTerms",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint32",
+            "name": "maxCount",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint64",
+            "name": "oneOfOneEnd",
+            "type": "uint64"
+          },
+          {
+            "internalType": "enum IEnglishAuction.AuctionState",
+            "name": "oneOfOneState",
+            "type": "uint8"
+          }
+        ],
+        "internalType": "struct IUniformEditionAuctionLens.MasterTerms",
+        "name": "m",
+        "type": "tuple"
+      }
+    ],
+    "signature": "masterTerms(address,uint256,bytes)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x5c975abb",
+    "inputs": [],
+    "name": "paused",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "paused()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xad615dec",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "step",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "quantity",
+        "type": "uint256"
+      }
+    ],
+    "name": "quote",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "unitsWon",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "escrow",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "unitsPushedOut",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "unitsPulledIn",
+            "type": "uint256"
+          },
+          {
+            "components": [
+              {
+                "internalType": "uint256",
+                "name": "count",
+                "type": "uint256"
+              },
+              {
+                "internalType": "uint256",
+                "name": "step",
+                "type": "uint256"
+              },
+              {
+                "internalType": "uint256",
+                "name": "price",
+                "type": "uint256"
+              },
+              {
+                "internalType": "uint256",
+                "name": "revenue",
+                "type": "uint256"
+              },
+              {
+                "internalType": "uint256",
+                "name": "networkFee",
+                "type": "uint256"
+              },
+              {
+                "internalType": "uint256",
+                "name": "bestRevenue",
+                "type": "uint256"
+              },
+              {
+                "internalType": "bool",
+                "name": "rationed",
+                "type": "bool"
+              },
+              {
+                "internalType": "uint256",
+                "name": "cutUnits",
+                "type": "uint256"
+              },
+              {
+                "internalType": "uint256",
+                "name": "unitsAtStep",
+                "type": "uint256"
+              },
+              {
+                "internalType": "uint256",
+                "name": "cutoff",
+                "type": "uint256"
+              }
+            ],
+            "internalType": "struct IUniformEditionAuction.Clearing",
+            "name": "result",
+            "type": "tuple"
+          }
+        ],
+        "internalType": "struct IUniformEditionAuction.Quote",
+        "name": "q",
+        "type": "tuple"
+      }
+    ],
+    "signature": "quote(uint256,uint256,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x26a43283",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      }
+    ],
+    "name": "saleIdOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "saleIdOf(address,uint256)",
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "id": "0xd0653e18",
+    "inputs": [],
+    "name": "saleKind",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "saleKind()",
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "id": "0x747e3199",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "next",
+        "type": "address"
+      }
+    ],
+    "name": "setFederationRegistry",
+    "outputs": [],
+    "signature": "setFederationRegistry(address,address)",
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "id": "0x60ad2391",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "settlement",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "count",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "step",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "price",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "rationed",
+            "type": "bool"
+          },
+          {
+            "internalType": "uint256",
+            "name": "cutUnits",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "cutoff",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "departuresSwept",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "departures",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct IUniformEditionAuction.Settlement",
+        "name": "s",
+        "type": "tuple"
+      }
+    ],
+    "signature": "settlement(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xcb5be6db",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "settlementOrder",
+    "outputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "order",
+        "type": "uint256[]"
+      }
+    ],
+    "signature": "settlementOrder(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x6c1ba417",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "settler",
+        "type": "address"
+      }
+    ],
+    "name": "settlementOrderFor",
+    "outputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "",
+        "type": "uint256[]"
+      }
+    ],
+    "signature": "settlementOrderFor(uint256,address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x35e0802a",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "settler",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "fromPosition",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "max",
+        "type": "uint256"
+      }
+    ],
+    "name": "settlementOrderFor",
+    "outputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "order",
+        "type": "uint256[]"
+      }
+    ],
+    "signature": "settlementOrderFor(uint256,address,uint256,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xa589b6ae",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "step",
+        "type": "uint256"
+      }
+    ],
+    "name": "stepPrice",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "stepPrice(uint256,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x870b3a28",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "stepTotals",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "lowStep",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "units",
+        "type": "uint256[]"
+      }
+    ],
+    "signature": "stepTotals(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x81bb2d65",
+    "inputs": [
+      {
+        "internalType": "enum IUniformEditionAuctionStorage.Space",
+        "name": "space",
+        "type": "uint8"
+      },
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "key",
+        "type": "uint256"
+      }
+    ],
+    "name": "storageWord",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "storageWord(uint8,uint256,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x6f2a6791",
+    "inputs": [],
+    "name": "stream",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "stream()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x01ffc9a7",
+    "inputs": [
+      {
+        "internalType": "bytes4",
+        "name": "interfaceId",
+        "type": "bytes4"
+      }
+    ],
+    "name": "supportsInterface",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "supportsInterface(bytes4)",
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "id": "0x4032f0d6",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "settler",
+        "type": "address"
+      }
+    ],
+    "name": "sweepOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "swept",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "nextPosition",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "cutoff",
+        "type": "uint256"
+      }
+    ],
+    "signature": "sweepOf(uint256,address)",
+    "stateMutability": "view",
+    "type": "function"
+  }
+]
