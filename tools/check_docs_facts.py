@@ -10,12 +10,14 @@ Checks every Markdown file under docs/, plus README.md:
   3. every event topic0 on the events page (a full value, or a short `0x12345678…` prefix next
      to an event signature) is the keccak-256 of that event's canonical signature (with
      `--artifacts`, the signature as the compiled ABIs declare it);
-  4. the audit scope's nSLOC figures and the README's module table match the sources (the line
-     rules of tools/check_budgets.py), and with `--artifacts`, the scope's runtime, initcode and
-     EIP-170 margin figures match the compiled bytecode.
+  4. the audit scope's nSLOC figures match the sources (the line rules of
+     tools/check_budgets.py), and with `--artifacts`, the scope's runtime, initcode and EIP-170
+     margin figures match the compiled bytecode. A module table in README.md (a header row with
+     `| Contract` and an nSLOC column) is checked the same way; the README has none at present
+     (docs/audit/scope.md owns the sizes), so that check finds nothing to do.
 
-`--update` rewrites the nSLOC and size figures in docs/audit/scope.md and README.md instead of
-failing on them (other checks still fail). Run from anywhere:
+`--update` rewrites the nSLOC and size figures in docs/audit/scope.md (and in a README module
+table, if one is added) instead of failing on them (other checks still fail). Run from anywhere:
 
   python tools/check_docs_facts.py                      # source-only checks
   python tools/check_docs_facts.py --artifacts out      # all checks, after `forge build`
