@@ -127,6 +127,32 @@ contract FederationProvenanceTest is FederationBase {
 
     // ------------------------------------------------------------------ the content store (F6)
 
+    function test_Join_RefusesTermsNamingAnotherSplitLedger() public {
+        IFederatedStream.Config memory c = _streamConfig(fedArtist);
+        c.splitLedger = address(store);
+        FederatedStream copy = _deployStream(c);
+        _join(
+            address(copy),
+            fedArtist,
+            abi.encodeWithSelector(IFederationRegistry.NotListable.selector, address(copy))
+        );
+        (, IArtistRegistry.FederationStatus status) = artists.federatedListing(address(copy));
+        assertEq(uint8(status), uint8(IArtistRegistry.FederationStatus.NONE));
+    }
+
+    function test_Entry_AnUnlistedContractHasNone() public {
+        FederatedStream copy = _deployStream(fedArtist);
+        IFederationRegistry.Entry memory e = fedRegistry.entry(address(copy));
+        assertEq(e.artistId, 0);
+        assertEq(e.codeHash, bytes32(0));
+        assertEq(uint8(e.status), 0);
+        // Listed, the same copy has its facts.
+        _join(address(copy), fedArtist);
+        e = fedRegistry.entry(address(copy));
+        assertEq(e.artistId, uint160(fedArtist));
+        assertEq(e.codeHash, streamHash);
+    }
+
     function test_Join_RefusesAContentStoreOtherThanTheCanonicalOne() public {
         ContentStore other = new ContentStore();
         IFederatedStream.Config memory c = _streamConfig(fedArtist);

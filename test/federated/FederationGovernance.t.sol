@@ -6,6 +6,7 @@ import { FederatedStream } from "src/federated/FederatedStream.sol";
 import { FederationRegistry } from "src/federated/FederationRegistry.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { IFederatedStream } from "src/interfaces/IFederatedStream.sol";
 import { IFederatedToken } from "src/interfaces/IFederatedToken.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
@@ -184,6 +185,24 @@ contract FederationGovernanceTest is FederationBase {
         assertEq(fed.ownerOf(tokenId), collector);
     }
 
+    /// @dev An admitted adapter whose `claimDelivery` returns without delivering (this test
+    ///      contract) cannot leave the token reclaimed: `reclaim` reverts unless it came home.
+    function test_Reclaim_RefusesAnAdapterThatReturnsWithoutDelivering() public {
+        NonDeliveringAdapter adapter = new NonDeliveringAdapter();
+        _govern(
+            hotAdmin,
+            address(fedRegistry),
+            abi.encodeCall(fedRegistry.setAdapter, (address(adapter), true))
+        );
+        Work memory w = _fedWork(fedArtist);
+        vm.prank(fedArtist);
+        fed.approveItem(_itemHash(w), RATE);
+        uint256 tokenId = adapter.mint(fed, _mintData(w));
+        vm.expectRevert(abi.encodeWithSelector(IFederatedStream.WorkNotRestartable.selector, 1));
+        fed.reclaim(tokenId);
+        assertEq(fed.ownerOf(tokenId), address(adapter));
+    }
+
     function test_Adapters_MustBeSaleAdapters() public {
         assertFalse(
             _governTry(
@@ -227,6 +246,49 @@ contract FederationGovernanceTest is FederationBase {
         assertEq(uint8(auction.auction(again).state), uint8(IEnglishAuction.AuctionState.ACTIVE));
     }
 
+    function test_Revocation_OnlyAnApprovedOrSuspendedTemplate() public {
+        bytes32 unknown = keccak256("never approved");
+        _governExpectRevert(
+            address(fedRegistry),
+            abi.encodeCall(fedRegistry.revokeTemplate, (unknown)),
+            abi.encodeWithSelector(
+                FederationRegistry.TemplateStatusInvalid.selector,
+                unknown,
+                FederationRegistry.TemplateStatus.NONE
+            )
+        );
+        _govern(
+            hotAdmin, address(fedRegistry), abi.encodeCall(fedRegistry.revokeTemplate, (streamHash))
+        );
+        _governExpectRevert(
+            address(fedRegistry),
+            abi.encodeCall(fedRegistry.revokeTemplate, (streamHash)),
+            abi.encodeWithSelector(
+                FederationRegistry.TemplateStatusInvalid.selector,
+                streamHash,
+                FederationRegistry.TemplateStatus.REVOKED
+            )
+        );
+    }
+
+    /// @dev `_govern`, expecting the governed call itself to revert with `reason`.
+    function _governExpectRevert(address target, bytes memory data, bytes memory reason) internal {
+        (bool immediate, uint32 delay) = manager.canCall(hotAdmin, target, bytes4(data));
+        if (immediate) {
+            vm.prank(hotAdmin);
+            vm.expectRevert(reason);
+            (bool ok,) = target.call(data);
+            ok;
+            return;
+        }
+        vm.prank(hotAdmin);
+        manager.schedule(target, data, 0);
+        vm.warp(block.timestamp + delay);
+        vm.prank(hotAdmin);
+        vm.expectRevert(reason);
+        manager.execute(target, data);
+    }
+
     function _payment(address payer, uint256 amount) internal pure returns (Payment memory) {
         return Payment(PaymentMethod.DIRECT, payer, amount, 0, 0, "");
     }
@@ -242,5 +304,22 @@ contract FederationGovernanceTest is FederationBase {
         returns (bytes4)
     {
         return this.onERC721Received.selector;
+    }
+}
+
+/// @dev An admitted sale adapter whose `claimDelivery` returns without delivering anything.
+contract NonDeliveringAdapter {
+    function mint(FederatedStream token, bytes calldata data) external returns (uint256 tokenId) {
+        (tokenId,) = token.mint(address(this), 0, 1, data);
+    }
+
+    function saleIdOf(address, uint256 tokenId) external pure returns (uint256) {
+        return tokenId;
+    }
+
+    function claimDelivery(uint256, address) external { }
+
+    function supportsInterface(bytes4 id) external pure returns (bool) {
+        return id == type(ISaleAdapter).interfaceId || id == 0x01ffc9a7;
     }
 }
