@@ -50,6 +50,11 @@ After a source change, `forge build` then `python tools/export_abis.py` rewrites
 `python tools/export_abis.py --check` reports any difference without writing. Runnable examples
 of the common calls, compiled against these interfaces, are in [`examples/`](../../examples/README.md).
 
+`abi/` is the export for integrators to load; [`test/snapshots/`](../../test/snapshots) is the
+developers' drift gate ([`tools/check_snapshots.py`](../../tools/check_snapshots.py): every `src/`
+contract's ABI and storage layout, so a change to either is deliberate), and the two are
+checked separately.
+
 ### Building them from a deployment's commit
 
 Build the ABIs from the commit the target deployment was built from:
