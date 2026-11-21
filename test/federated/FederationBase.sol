@@ -91,8 +91,10 @@ abstract contract FederationBase is IntegrationBase {
         if (immediate) {
             vm.prank(hotAdmin);
             vm.expectRevert(reason);
-            (bool ok,) = target.call(data);
-            ok;
+            // With `expectRevert`, a low-level call returns true only when the expected revert
+            // happened.
+            (bool revertedAsExpected,) = target.call(data);
+            assertTrue(revertedAsExpected, "the governed call did not revert as expected");
             return;
         }
         vm.prank(hotAdmin);
