@@ -271,24 +271,6 @@ contract FederationGovernanceTest is FederationBase {
         );
     }
 
-    /// @dev `_govern`, expecting the governed call itself to revert with `reason`.
-    function _governExpectRevert(address target, bytes memory data, bytes memory reason) internal {
-        (bool immediate, uint32 delay) = manager.canCall(hotAdmin, target, bytes4(data));
-        if (immediate) {
-            vm.prank(hotAdmin);
-            vm.expectRevert(reason);
-            (bool ok,) = target.call(data);
-            ok;
-            return;
-        }
-        vm.prank(hotAdmin);
-        manager.schedule(target, data, 0);
-        vm.warp(block.timestamp + delay);
-        vm.prank(hotAdmin);
-        vm.expectRevert(reason);
-        manager.execute(target, data);
-    }
-
     function _payment(address payer, uint256 amount) internal pure returns (Payment memory) {
         return Payment(PaymentMethod.DIRECT, payer, amount, 0, 0, "");
     }
