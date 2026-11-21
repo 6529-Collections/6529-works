@@ -1,0 +1,745 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "authority_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "artistRegistry_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "economics_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "contentStore_",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "id": "0xc2f31e5e",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "authority",
+        "type": "address"
+      }
+    ],
+    "name": "AccessManagedInvalidAuthority",
+    "signature": "AccessManagedInvalidAuthority(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xaf77169d",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      },
+      {
+        "internalType": "uint32",
+        "name": "delay",
+        "type": "uint32"
+      }
+    ],
+    "name": "AccessManagedRequiredDelay",
+    "signature": "AccessManagedRequiredDelay(address,uint32)",
+    "type": "error"
+  },
+  {
+    "id": "0x068ca9d8",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      }
+    ],
+    "name": "AccessManagedUnauthorized",
+    "signature": "AccessManagedUnauthorized(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xa67b9f9e",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "length",
+        "type": "uint256"
+      }
+    ],
+    "name": "BatchTooLarge",
+    "signature": "BatchTooLarge(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xf7293a48",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "dependency",
+        "type": "address"
+      }
+    ],
+    "name": "InvalidDependency",
+    "signature": "InvalidDependency(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xaa4ace61",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
+    "name": "NotListable",
+    "signature": "NotListable(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x24eadb2a",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "codeHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "enum FederationRegistry.TemplateStatus",
+        "name": "current",
+        "type": "uint8"
+      }
+    ],
+    "name": "TemplateStatusInvalid",
+    "signature": "TemplateStatusInvalid(bytes32,uint8)",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "id": "0x85ff5d10aa202e69f691155a2050fed648b2d67f85e35d1279510cc434023736",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "adapter",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "admitted",
+        "type": "bool"
+      }
+    ],
+    "name": "AdapterSet",
+    "signature": "AdapterSet(address,bool)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x2f658b440c35314f52658ea8a740e05b284cdc84dc9ae01e891f21b8933e7cad",
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "authority",
+        "type": "address"
+      }
+    ],
+    "name": "AuthorityUpdated",
+    "signature": "AuthorityUpdated(address)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x91376e24c6bd16c4acb8824f0538b695c24069230a2f42fea3673ca3572cb3c1",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "codeHash",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "deployer",
+        "type": "address"
+      }
+    ],
+    "name": "Registered",
+    "signature": "Registered(address,uint256,bytes32,address)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x2f731f1fff5cfa97053322b7b102e06f0a9f1fc997163feb440bf5f0ed4304a7",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "codeHash",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "deployer",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "creationHash",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "version",
+        "type": "uint32"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum IFederationRegistry.Form",
+        "name": "form",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum FederationRegistry.TemplateStatus",
+        "name": "status",
+        "type": "uint8"
+      }
+    ],
+    "name": "TemplateSet",
+    "signature": "TemplateSet(bytes32,address,bytes32,uint32,uint8,uint8)",
+    "type": "event"
+  },
+  {
+    "id": "0x950bff9f",
+    "inputs": [],
+    "name": "MAX_BATCH",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "MAX_BATCH()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x62c03b8e",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "codeHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "deployer",
+        "type": "address"
+      },
+      {
+        "internalType": "uint32",
+        "name": "version",
+        "type": "uint32"
+      },
+      {
+        "internalType": "enum IFederationRegistry.Form",
+        "name": "form",
+        "type": "uint8"
+      }
+    ],
+    "name": "approveTemplate",
+    "outputs": [],
+    "signature": "approveTemplate(bytes32,address,uint32,uint8)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x81703be7",
+    "inputs": [],
+    "name": "artistRegistry",
+    "outputs": [
+      {
+        "internalType": "contract IArtistRegistry",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "artistRegistry()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xbf7e214f",
+    "inputs": [],
+    "name": "authority",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "authority()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xe09276ba",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "adapter",
+        "type": "address"
+      }
+    ],
+    "name": "canMint",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "canMint(address,address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x3a6e674c",
+    "inputs": [],
+    "name": "contentStore",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "contentStore()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x2e239d97",
+    "inputs": [],
+    "name": "economics",
+    "outputs": [
+      {
+        "internalType": "contract IEconomicsResolver",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "economics()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x6e2bf19f",
+    "inputs": [],
+    "name": "entropyModule",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "entropyModule()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xafb2ee73",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
+    "name": "entry",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "enum IFederationRegistry.Form",
+            "name": "form",
+            "type": "uint8"
+          },
+          {
+            "internalType": "address",
+            "name": "partner",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "artistId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint32",
+            "name": "templateVersion",
+            "type": "uint32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "codeHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "feeShare",
+            "type": "uint32"
+          },
+          {
+            "internalType": "enum IFederationRegistry.Status",
+            "name": "status",
+            "type": "uint8"
+          }
+        ],
+        "internalType": "struct IFederationRegistry.Entry",
+        "name": "e",
+        "type": "tuple"
+      }
+    ],
+    "signature": "entry(address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x9f8a13d7",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
+    "name": "isActive",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "isActive(address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x334ea7ea",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "adapter",
+        "type": "address"
+      }
+    ],
+    "name": "isAdmittedAdapter",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "isAdmittedAdapter(address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x8fb36037",
+    "inputs": [],
+    "name": "isConsumingScheduledOp",
+    "outputs": [
+      {
+        "internalType": "bytes4",
+        "name": "",
+        "type": "bytes4"
+      }
+    ],
+    "signature": "isConsumingScheduledOp()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x138592d3",
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "bytes32",
+            "name": "profileId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "profileDocHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint64",
+            "name": "deadline",
+            "type": "uint64"
+          },
+          {
+            "internalType": "bytes",
+            "name": "registration",
+            "type": "bytes"
+          },
+          {
+            "internalType": "bytes",
+            "name": "consent",
+            "type": "bytes"
+          }
+        ],
+        "internalType": "struct IFederationRegistry.Join",
+        "name": "j",
+        "type": "tuple"
+      }
+    ],
+    "name": "register",
+    "outputs": [],
+    "signature": "register((bytes32,bytes32,uint64,bytes,bytes))",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x8a9e9fbe",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "codeHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "reinstateTemplate",
+    "outputs": [],
+    "signature": "reinstateTemplate(bytes32)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x8a16038f",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "codeHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "resumeTemplate",
+    "outputs": [],
+    "signature": "resumeTemplate(bytes32)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x3d4e7cc8",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "codeHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "revokeTemplate",
+    "outputs": [],
+    "signature": "revokeTemplate(bytes32)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x332f6465",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "adapter",
+        "type": "address"
+      },
+      {
+        "internalType": "bool",
+        "name": "admitted",
+        "type": "bool"
+      }
+    ],
+    "name": "setAdapter",
+    "outputs": [],
+    "signature": "setAdapter(address,bool)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x7a9e5e4b",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "newAuthority",
+        "type": "address"
+      }
+    ],
+    "name": "setAuthority",
+    "outputs": [],
+    "signature": "setAuthority(address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x565f9c3d",
+    "inputs": [
+      {
+        "internalType": "address[]",
+        "name": "tokens",
+        "type": "address[]"
+      },
+      {
+        "internalType": "enum IFederationRegistry.Status",
+        "name": "status",
+        "type": "uint8"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "voteRef",
+        "type": "bytes32"
+      }
+    ],
+    "name": "setStatus",
+    "outputs": [],
+    "signature": "setStatus(address[],uint8,bytes32)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x780d228a",
+    "inputs": [],
+    "name": "splitLedger",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "splitLedger()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x01ffc9a7",
+    "inputs": [
+      {
+        "internalType": "bytes4",
+        "name": "interfaceId",
+        "type": "bytes4"
+      }
+    ],
+    "name": "supportsInterface",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "supportsInterface(bytes4)",
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "id": "0xbb294eed",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "codeHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "suspendTemplate",
+    "outputs": [],
+    "signature": "suspendTemplate(bytes32)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xc9c3c70b",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "codeHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "templateOf",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint32",
+            "name": "version",
+            "type": "uint32"
+          },
+          {
+            "internalType": "enum IFederationRegistry.Form",
+            "name": "form",
+            "type": "uint8"
+          },
+          {
+            "internalType": "enum FederationRegistry.TemplateStatus",
+            "name": "status",
+            "type": "uint8"
+          },
+          {
+            "internalType": "address",
+            "name": "deployer",
+            "type": "address"
+          }
+        ],
+        "internalType": "struct FederationRegistry.Template",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "signature": "templateOf(bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  }
+]

@@ -1,0 +1,158 @@
+{
+  "$schema": "https://6529networkmuseum.org/schemas/record-envelope-v1.json",
+  "envelope": {
+    "contentHash": {
+      "algorithm": 1,
+      "canonicalizationId": "0x886c7c89c308c459ca8a626e0ef36a5ea9f4c7a7b56aaf86c71a2ddf3b4f9044",
+      "digest": "0x3370ff4951e8c080cf7a20b366838d4894386fad12d4e5a26f81f1ba91d9cfd9"
+    },
+    "effectiveAt": 1787478417,
+    "recordType": "PUBLIC_ENTITY",
+    "schemaId": "0xd8aef6592fe156c4c3c10e59de540f5cdf8b130eedca322e0e22b30764bee1a9",
+    "signatureHash": {
+      "algorithm": 2,
+      "canonicalizationId": "0x886c7c89c308c459ca8a626e0ef36a5ea9f4c7a7b56aaf86c71a2ddf3b4f9044",
+      "digest": "0x0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "signatureScheme": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "subjectId": "0x151dd7a1e0f4c4cc7a45f6583f266a9f653db5754e9711997ee1fa0e12a9801f",
+    "uri": "https://6529networkmuseum.org/records/entities/6529NM-ART-0023.json"
+  },
+  "payload": {
+    "canonical_route": "/museum/network/artists/martin-grasser",
+    "constructor": {
+      "id": "codex-task:vera-molnar-accession-2026-08-23",
+      "observed_at": "2026-08-23T09:46:57.326Z",
+      "role": "constructor"
+    },
+    "created_at": "2026-08-23T09:46:57.326Z",
+    "effective_at": "2026-08-23T09:46:57.326Z",
+    "entity_id": "6529NM-ART-0023",
+    "entity_status": "published",
+    "entity_type": "ARTIST",
+    "evidence_refs": [
+      {
+        "evidence_class": "E",
+        "label": "Martin Grasser artist profile",
+        "observed_at": "2026-08-23T09:46:57.326Z",
+        "uri": "https://github.com/6529-Collections/6529networkmuseum/blob/main/records/proposed-gifts/6529NM-PG-2026-002/public/scholarship/artists/martin-grasser.md"
+      },
+      {
+        "evidence_class": "E",
+        "label": "Themes and Variations work record",
+        "observed_at": "2026-08-23T09:46:57.326Z",
+        "uri": "https://github.com/6529-Collections/6529networkmuseum/blob/main/records/proposed-gifts/6529NM-PG-2026-002/public/scholarship/works/01-vera-molnar-210.md"
+      }
+    ],
+    "observed_at": "2026-08-23T09:46:57.326Z",
+    "page_exposure": "canonical_page",
+    "payload_sha256": "sha256:12f23f17d38de6f1e1d666519f16add65e8bb5f6edc67d431d51584a25ffe792",
+    "preferred_label": "Martin Grasser",
+    "profile": {
+      "authority": {
+        "authority_record_ids": [],
+        "authority_status": "established",
+        "evidence_refs": [
+          {
+            "evidence_class": "E",
+            "label": "Martin Grasser artist profile",
+            "observed_at": "2026-08-23T09:46:57.326Z",
+            "uri": "https://github.com/6529-Collections/6529networkmuseum/blob/main/records/proposed-gifts/6529NM-PG-2026-002/public/scholarship/artists/martin-grasser.md"
+          },
+          {
+            "evidence_class": "E",
+            "label": "Themes and Variations work record",
+            "observed_at": "2026-08-23T09:46:57.326Z",
+            "uri": "https://github.com/6529-Collections/6529networkmuseum/blob/main/records/proposed-gifts/6529NM-PG-2026-002/public/scholarship/works/01-vera-molnar-210.md"
+          }
+        ]
+      },
+      "name_variants": [
+        {
+          "evidence_refs": [
+            {
+              "evidence_class": "B",
+              "label": "Name source",
+              "observed_at": "2026-08-23T09:46:57.326Z",
+              "uri": "https://github.com/6529-Collections/6529networkmuseum/blob/main/records/proposed-gifts/6529NM-PG-2026-002/proposal.json"
+            }
+          ],
+          "source_kind": "proposal",
+          "value": "Martin Grasser",
+          "variant_role": "preferred"
+        }
+      ],
+      "practice": {
+        "areas": [
+          "typography",
+          "letterform abstraction",
+          "generative systems",
+          "creative coding"
+        ],
+        "evidence_refs": [
+          {
+            "evidence_class": "E",
+            "label": "Martin Grasser artist profile",
+            "observed_at": "2026-08-23T09:46:57.326Z",
+            "uri": "https://github.com/6529-Collections/6529networkmuseum/blob/main/records/proposed-gifts/6529NM-PG-2026-002/public/scholarship/artists/martin-grasser.md"
+          },
+          {
+            "evidence_class": "E",
+            "label": "Themes and Variations work record",
+            "observed_at": "2026-08-23T09:46:57.326Z",
+            "uri": "https://github.com/6529-Collections/6529networkmuseum/blob/main/records/proposed-gifts/6529NM-PG-2026-002/public/scholarship/works/01-vera-molnar-210.md"
+          }
+        ],
+        "summary": "Martin Grasser works with letterforms, code, and systems that turn language into visual form. In Themes and Variations, his collaboration with Vera Molnár gives the project a rule-based structure in which letters become shapes, fields, and measured changes."
+      },
+      "profile_type": "ARTIST"
+    },
+    "public_slug": "martin-grasser",
+    "record_id": "6529NM-ART-0023",
+    "record_status": "reviewed",
+    "record_type": "PUBLIC_ENTITY",
+    "record_version": "1.0.0",
+    "references": [
+      "6529NM-PG-2026-002",
+      "6529NM.2026.003.01"
+    ],
+    "review_status": "reviewed",
+    "reviewer": {
+      "id": "codex-reviewer:museum-publication-2026-08-23-independent",
+      "outcome": "approved",
+      "reviewed_at": "2026-08-23T15:10:17.867Z",
+      "reviewed_commit": "3eab50914a90c079fe0383624e760fc0a954e709",
+      "reviewed_manifest_keccak": "0xd3b728ca1bdbbf99602d626df93b6903bbacf624f2ef71e064412654e71cf313",
+      "reviewed_manifest_sha256": "sha256:f672c3503baa823cf4af5eac3bf0513b6b25de6e2674902273cb778f4e771080",
+      "reviewer_ids": [
+        "codex-reviewer:museum-publication-2026-08-23-independent"
+      ],
+      "role": "reviewer"
+    },
+    "schema_id": "0xd8aef6592fe156c4c3c10e59de540f5cdf8b130eedca322e0e22b30764bee1a9",
+    "source_record_ids": [
+      "6529NM-PG-2026-002",
+      "6529NM.2026.003.01"
+    ],
+    "status_observation": {
+      "evidence_refs": [
+        {
+          "evidence_class": "E",
+          "label": "Martin Grasser artist profile",
+          "observed_at": "2026-08-23T09:46:57.326Z",
+          "uri": "https://github.com/6529-Collections/6529networkmuseum/blob/main/records/proposed-gifts/6529NM-PG-2026-002/public/scholarship/artists/martin-grasser.md"
+        },
+        {
+          "evidence_class": "E",
+          "label": "Themes and Variations work record",
+          "observed_at": "2026-08-23T09:46:57.326Z",
+          "uri": "https://github.com/6529-Collections/6529networkmuseum/blob/main/records/proposed-gifts/6529NM-PG-2026-002/public/scholarship/works/01-vera-molnar-210.md"
+        }
+      ],
+      "observed_at": "2026-08-23T09:46:57.326Z",
+      "status_label": "published"
+    },
+    "subject_id": "6529NM-ART-0023",
+    "visibility": "public"
+  }
+}

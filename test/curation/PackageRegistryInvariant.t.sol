@@ -19,6 +19,7 @@ import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { CurationArtistRegistryMock } from "test/mocks/curation/CurationArtistRegistryMock.sol";
 import { CurationBase, CurationHelpers } from "./CurationBase.sol";
+import { HandlerReach } from "../helpers/HandlerReach.sol";
 
 /// @dev An exact model of the registry, driven the way Stream, Editions, artists, relayers, the
 ///      guardian and outsiders would. Twenty items by three artists: items 0-9 form package A,
@@ -418,5 +419,35 @@ contract PackageRegistryInvariantTest is CurationBase {
             (IPackageRegistry.PackageStatus status,,) = registry.packageOf(root);
             assertEq(uint8(status), handler.statusOf(root));
         }
+    }
+
+    /// @notice Handler self-test: each action both succeeds (writing the registry, Stream's
+    ///         content stand-in or the artist registry) and, where the model has a forbidden
+    ///         case, is refused there; rebinding only ever reaches a refusal. Then every
+    ///         invariant holds on the state the drive left.
+    function test_HandlerPathsReachState() public {
+        uint8 wr = HandlerReach.WRITES | HandlerReach.REFUSED;
+        HandlerReach.Expect[] memory e = new HandlerReach.Expect[](8);
+        e[0] = HandlerReach.Expect(CurationHandler.consume.selector, wr);
+        e[1] = HandlerReach.Expect(CurationHandler.release.selector, wr);
+        e[2] = HandlerReach.Expect(CurationHandler.revokeMove.selector, wr);
+        e[3] = HandlerReach.Expect(CurationHandler.rotate.selector, HandlerReach.WRITES);
+        e[4] = HandlerReach.Expect(CurationHandler.revokePackage.selector, wr);
+        e[5] = HandlerReach.Expect(CurationHandler.registerLate.selector, wr);
+        e[6] = HandlerReach.Expect(CurationHandler.acceptLate.selector, wr);
+        e[7] = HandlerReach.Expect(CurationHandler.rebind.selector, HandlerReach.REFUSED);
+        HandlerReach.covers(targetSelectors()[0].selectors, e);
+        address[] memory sut = new address[](3);
+        sut[0] = address(registry);
+        sut[1] = stream;
+        sut[2] = address(artists);
+        HandlerReach.check(e, HandlerReach.drive(address(handler), e, sut, 160, 1));
+        assertGt(handler.consumed(), 0);
+        assertGt(handler.releases(), 0);
+        invariant_noUnexpectedSuccess();
+        invariant_noUnexpectedFailure();
+        invariant_itemConsumedAtMostOnce();
+        invariant_contentRecordsMatch();
+        invariant_noncesAndStatuses();
     }
 }

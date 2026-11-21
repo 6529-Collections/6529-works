@@ -1,0 +1,1097 @@
+[
+  {
+    "id": "0x5b20679f",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      }
+    ],
+    "name": "BoundedCallShortfall",
+    "signature": "BoundedCallShortfall(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x61edd20c",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "ContentBase64Invalid",
+    "signature": "ContentBase64Invalid(bytes32,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xd8f10c6f",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "length",
+        "type": "uint256"
+      }
+    ],
+    "name": "ContentBase64LengthInvalid",
+    "signature": "ContentBase64LengthInvalid(bytes32,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x3d90f1fb",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "chunkCount",
+        "type": "uint256"
+      }
+    ],
+    "name": "ContentChunkCountInvalid",
+    "signature": "ContentChunkCountInvalid(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x5335f53d",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "ContentChunkIndexOutOfBounds",
+    "signature": "ContentChunkIndexOutOfBounds(bytes32,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x905abbf4",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "expected",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "actual",
+        "type": "uint256"
+      }
+    ],
+    "name": "ContentChunkLengthMismatch",
+    "signature": "ContentChunkLengthMismatch(bytes32,uint256,uint256,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xe495961c",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "chunkHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "ContentChunkMissing",
+    "signature": "ContentChunkMissing(bytes32,uint256,bytes32)",
+    "type": "error"
+  },
+  {
+    "id": "0x5234a9cf",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "chunkHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "ContentChunkUnknown",
+    "signature": "ContentChunkUnknown(bytes32)",
+    "type": "error"
+  },
+  {
+    "id": "0x662e43c1",
+    "inputs": [],
+    "name": "ContentDigestMissing",
+    "signature": "ContentDigestMissing()",
+    "type": "error"
+  },
+  {
+    "id": "0xfe35c224",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint8",
+        "name": "digestKind",
+        "type": "uint8"
+      }
+    ],
+    "name": "ContentDigestNotSha256",
+    "signature": "ContentDigestNotSha256(bytes32,uint8)",
+    "type": "error"
+  },
+  {
+    "id": "0x793ba8b9",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "ContentFileUnknown",
+    "signature": "ContentFileUnknown(bytes32)",
+    "type": "error"
+  },
+  {
+    "id": "0x56279490",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "length",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "chunkCount",
+        "type": "uint256"
+      }
+    ],
+    "name": "ContentLengthInvalid",
+    "signature": "ContentLengthInvalid(uint256,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x038867c6",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "length",
+        "type": "uint256"
+      }
+    ],
+    "name": "ContentLinkTooLong",
+    "signature": "ContentLinkTooLong(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xae42c7c1",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "chunkHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "ContentLinkedChunkCorrupt",
+    "signature": "ContentLinkedChunkCorrupt(bytes32)",
+    "type": "error"
+  },
+  {
+    "id": "0x788758b6",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "ContentListInvalid",
+    "signature": "ContentListInvalid(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x71c4f580",
+    "inputs": [],
+    "name": "ContentMimeInvalid",
+    "signature": "ContentMimeInvalid()",
+    "type": "error"
+  },
+  {
+    "id": "0xa49dcc96",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint8",
+        "name": "encoding",
+        "type": "uint8"
+      }
+    ],
+    "name": "ContentNotBase64",
+    "signature": "ContentNotBase64(bytes32,uint8)",
+    "type": "error"
+  },
+  {
+    "id": "0x765cd2ed",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "parts",
+        "type": "uint256"
+      }
+    ],
+    "name": "ContentPartCountInvalid",
+    "signature": "ContentPartCountInvalid(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x6eff8be7",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "offset",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "length",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "total",
+        "type": "uint256"
+      }
+    ],
+    "name": "ContentRangeOutOfBounds",
+    "signature": "ContentRangeOutOfBounds(uint256,uint256,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x7861dda3",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "length",
+        "type": "uint256"
+      }
+    ],
+    "name": "SSTORE2ChunkTooLarge",
+    "signature": "SSTORE2ChunkTooLarge(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x04b36e98",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "pointer",
+        "type": "address"
+      }
+    ],
+    "name": "SSTORE2HashMismatch",
+    "signature": "SSTORE2HashMismatch(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xd8415944",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "pointer",
+        "type": "address"
+      }
+    ],
+    "name": "SSTORE2InvalidPointer",
+    "signature": "SSTORE2InvalidPointer(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x24ad6e11",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "start",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "end",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "size",
+        "type": "uint256"
+      }
+    ],
+    "name": "SSTORE2OutOfBounds",
+    "signature": "SSTORE2OutOfBounds(uint256,uint256,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xfbad885d",
+    "inputs": [],
+    "name": "SSTORE2WriteFailed",
+    "signature": "SSTORE2WriteFailed()",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "id": "0xde611757905ea5f13eedb7ea4f8e87ddcbc29ce9429073a6a8b0cf12101e563e",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "Base64Attested",
+    "signature": "Base64Attested(bytes32)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x02b839e82d6e5c2ec40d13754cce314a887150d421bd3eeb478b03567c686971",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "chunksValidated",
+        "type": "uint256"
+      }
+    ],
+    "name": "Base64Progress",
+    "signature": "Base64Progress(bytes32,uint256)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x056e8d2d0e279c919bc0abf134aa1cbaa238e1c82e00b6a5824a9cbd4b045425",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "chunkHash",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32[]",
+        "name": "parts",
+        "type": "bytes32[]"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "length",
+        "type": "uint256"
+      }
+    ],
+    "name": "ChunkLinked",
+    "signature": "ChunkLinked(bytes32,bytes32[],uint256)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0xa720bfe8fb78f1436f460c61e8c1a02410fc148201c63e8e07a8f54a82e5627a",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "chunkHash",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "pointer",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "length",
+        "type": "uint256"
+      }
+    ],
+    "name": "ChunkWritten",
+    "signature": "ChunkWritten(bytes32,address,uint256)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x9d2280aa98b792abae06fab8602782374ae1ba5da821d3bf33469828424a6fea",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "length",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint8",
+        "name": "encoding",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint8",
+        "name": "digestKind",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "digest",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "string",
+        "name": "mimeType",
+        "type": "string"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32[]",
+        "name": "chunkHashes",
+        "type": "bytes32[]"
+      }
+    ],
+    "name": "ManifestRegistered",
+    "signature": "ManifestRegistered(bytes32,uint256,uint8,uint8,bytes32,string,bytes32[])",
+    "type": "event"
+  },
+  {
+    "id": "0xe91e13a9",
+    "inputs": [],
+    "name": "CHUNK_SIZE",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "CHUNK_SIZE()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x5ed25346",
+    "inputs": [],
+    "name": "MAX_CHUNKS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "MAX_CHUNKS()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xdb88c86f",
+    "inputs": [],
+    "name": "MAX_MIME_LENGTH",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "MAX_MIME_LENGTH()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xd2a75cca",
+    "inputs": [],
+    "name": "MAX_PARTS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "MAX_PARTS()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x561c986e",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "maxChunks",
+        "type": "uint256"
+      }
+    ],
+    "name": "attestBase64",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "done",
+        "type": "bool"
+      }
+    ],
+    "signature": "attestBase64(bytes32,uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x81c8e452",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "chunkHash_",
+        "type": "bytes32"
+      }
+    ],
+    "name": "chunkData",
+    "outputs": [
+      {
+        "internalType": "bytes",
+        "name": "data",
+        "type": "bytes"
+      }
+    ],
+    "signature": "chunkData(bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xee9f3687",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "chunkHash",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "chunkHash(bytes32,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x23cc7937",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "chunkHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "chunkPointer",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "chunkPointer(bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x9754c8fd",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "fileInfo",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "bytes32",
+            "name": "sha256Hash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint256",
+            "name": "length",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "chunkCount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint8",
+            "name": "encoding",
+            "type": "uint8"
+          },
+          {
+            "internalType": "string",
+            "name": "mimeType",
+            "type": "string"
+          },
+          {
+            "internalType": "uint8",
+            "name": "digestKind",
+            "type": "uint8"
+          }
+        ],
+        "internalType": "struct IContentStore.FileInfo",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "signature": "fileInfo(bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xd67fd7b5",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "from",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "to",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "source",
+        "type": "address"
+      }
+    ],
+    "name": "firstMissing",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "firstMissing(bytes32,uint256,uint256,address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x3435213b",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "isBase64Attested",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "isBase64Attested(bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x4f88fa7d",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "isComplete",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "isComplete(bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xae15d2c7",
+    "inputs": [
+      {
+        "internalType": "bytes32[]",
+        "name": "parts",
+        "type": "bytes32[]"
+      }
+    ],
+    "name": "linkChunk",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "hash",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "linkChunk(bytes32[])",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xba75583e",
+    "inputs": [
+      {
+        "internalType": "bytes32[]",
+        "name": "chunkHashes",
+        "type": "bytes32[]"
+      },
+      {
+        "internalType": "uint256",
+        "name": "length",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint8",
+        "name": "encoding",
+        "type": "uint8"
+      },
+      {
+        "internalType": "string",
+        "name": "mimeType",
+        "type": "string"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "sha256Hash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "manifestId",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "manifestId(bytes32[],uint256,uint8,string,bytes32)",
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "id": "0x5e3ae594",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "maxParts",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "parts",
+        "type": "uint256"
+      }
+    ],
+    "signature": "maxParts(bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x0084671c",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "missingChunks",
+    "outputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "missing",
+        "type": "uint256[]"
+      }
+    ],
+    "signature": "missingChunks(bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x90e36003",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "offset",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "length",
+        "type": "uint256"
+      }
+    ],
+    "name": "read",
+    "outputs": [
+      {
+        "internalType": "bytes",
+        "name": "out",
+        "type": "bytes"
+      }
+    ],
+    "signature": "read(bytes32,uint256,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xc203cb0c",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "readChunk",
+    "outputs": [
+      {
+        "internalType": "bytes",
+        "name": "",
+        "type": "bytes"
+      }
+    ],
+    "signature": "readChunk(bytes32,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xe90c46ad",
+    "inputs": [
+      {
+        "internalType": "bytes32[]",
+        "name": "chunkHashes",
+        "type": "bytes32[]"
+      },
+      {
+        "internalType": "uint256",
+        "name": "length",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint8",
+        "name": "encoding",
+        "type": "uint8"
+      },
+      {
+        "internalType": "string",
+        "name": "mimeType",
+        "type": "string"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "sha256Hash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "registerManifest",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "registerManifest(bytes32[],uint256,uint8,string,bytes32)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xc6b06d62",
+    "inputs": [
+      {
+        "internalType": "bytes32[]",
+        "name": "lists",
+        "type": "bytes32[]"
+      },
+      {
+        "internalType": "uint256",
+        "name": "hashesPerList",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "length",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint8",
+        "name": "encoding",
+        "type": "uint8"
+      },
+      {
+        "internalType": "string",
+        "name": "mimeType",
+        "type": "string"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "digest",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint8",
+        "name": "digestKind",
+        "type": "uint8"
+      }
+    ],
+    "name": "registerManifestList",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "registerManifestList(bytes32[],uint256,uint256,uint8,string,bytes32,uint8)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x08b98b64",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "sha256Of",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "sha",
+        "type": "bytes32"
+      }
+    ],
+    "signature": "sha256Of(bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x6fba0bf5",
+    "inputs": [
+      {
+        "internalType": "bytes",
+        "name": "data",
+        "type": "bytes"
+      }
+    ],
+    "name": "writeChunk",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "hash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "pointer",
+        "type": "address"
+      }
+    ],
+    "signature": "writeChunk(bytes)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+]

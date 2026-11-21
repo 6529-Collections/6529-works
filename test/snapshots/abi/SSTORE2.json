@@ -1,0 +1,71 @@
+[
+  {
+    "id": "0x7861dda3",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "length",
+        "type": "uint256"
+      }
+    ],
+    "name": "SSTORE2ChunkTooLarge",
+    "signature": "SSTORE2ChunkTooLarge(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x04b36e98",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "pointer",
+        "type": "address"
+      }
+    ],
+    "name": "SSTORE2HashMismatch",
+    "signature": "SSTORE2HashMismatch(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xd8415944",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "pointer",
+        "type": "address"
+      }
+    ],
+    "name": "SSTORE2InvalidPointer",
+    "signature": "SSTORE2InvalidPointer(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x24ad6e11",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "start",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "end",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "size",
+        "type": "uint256"
+      }
+    ],
+    "name": "SSTORE2OutOfBounds",
+    "signature": "SSTORE2OutOfBounds(uint256,uint256,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xfbad885d",
+    "inputs": [],
+    "name": "SSTORE2WriteFailed",
+    "signature": "SSTORE2WriteFailed()",
+    "type": "error"
+  }
+]

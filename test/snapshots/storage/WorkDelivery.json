@@ -1,0 +1,102 @@
+{
+  "structs": {
+    "struct Locator": [
+      {
+        "label": "kind",
+        "offset": 0,
+        "slot": 0,
+        "type": "enum LocatorKind"
+      },
+      {
+        "label": "uri",
+        "offset": 0,
+        "slot": 1,
+        "type": "string"
+      }
+    ],
+    "struct WorkDelivery.LocatorCounts": [
+      {
+        "label": "artist",
+        "offset": 0,
+        "slot": 0,
+        "type": "uint8"
+      },
+      {
+        "label": "platform",
+        "offset": 1,
+        "slot": 0,
+        "type": "uint8"
+      },
+      {
+        "label": "byArtist",
+        "offset": 2,
+        "slot": 0,
+        "type": "uint16"
+      },
+      {
+        "label": "dead",
+        "offset": 4,
+        "slot": 0,
+        "type": "uint16"
+      }
+    ]
+  },
+  "variables": [
+    {
+      "contract": "WorkDelivery",
+      "label": "_authority",
+      "offset": 0,
+      "slot": 0,
+      "type": "address"
+    },
+    {
+      "contract": "WorkDelivery",
+      "label": "_consumingSchedule",
+      "offset": 20,
+      "slot": 0,
+      "type": "bool"
+    },
+    {
+      "contract": "WorkDelivery",
+      "label": "preferredKind",
+      "offset": 21,
+      "slot": 0,
+      "type": "enum LocatorKind"
+    },
+    {
+      "contract": "WorkDelivery",
+      "label": "_collectionKinds",
+      "offset": 0,
+      "slot": 1,
+      "type": "mapping(uint256 => enum LocatorKind)"
+    },
+    {
+      "contract": "WorkDelivery",
+      "label": "_locators",
+      "offset": 0,
+      "slot": 2,
+      "type": "mapping(uint256 => mapping(bytes32 => struct Locator[]))"
+    },
+    {
+      "contract": "WorkDelivery",
+      "label": "_filePrefs",
+      "offset": 0,
+      "slot": 3,
+      "type": "mapping(uint256 => mapping(bytes32 => uint256))"
+    },
+    {
+      "contract": "WorkDelivery",
+      "label": "_locatorCounts",
+      "offset": 0,
+      "slot": 4,
+      "type": "mapping(uint256 => mapping(bytes32 => struct WorkDelivery.LocatorCounts))"
+    },
+    {
+      "contract": "WorkDelivery",
+      "label": "_locatorUris",
+      "offset": 0,
+      "slot": 5,
+      "type": "mapping(uint256 => mapping(bytes32 => mapping(bytes32 => bool)))"
+    }
+  ]
+}

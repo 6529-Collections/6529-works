@@ -8,6 +8,7 @@ import { WorkPowersHandler } from "./WorkPowersHandler.sol";
 import { MockRenderer } from "../mocks/stream/StreamMocks.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IStreamViews } from "src/interfaces/IStreamViews.sol";
+import { HandlerReach } from "../helpers/HandlerReach.sol";
 
 /// @notice Stateful invariants of the renounceable powers and royalty changes (ADR 0006 as
 ///         amended by R10 and C7): a work's renounced mask never loses a bit, a renounced
@@ -90,5 +91,30 @@ contract WorkPowersInvariantTest is RecordsFixture {
             assertEq(rate + 1, _frozenRate[tokenId], "a renounced rate moved");
         }
         assertEq(handler.violations(), 0);
+    }
+
+    /// @notice Handler self-test: every action both succeeds on the records satellite (changing
+    ///         its state) and is refused there once a renunciation or finalization forbids it,
+    ///         so the campaign exercises the allowed and the forbidden branch of each power.
+    function test_HandlerPathsReachState() public {
+        uint8 wr = HandlerReach.WRITES | HandlerReach.REFUSED;
+        HandlerReach.Expect[] memory e = new HandlerReach.Expect[](5);
+        e[0] = HandlerReach.Expect(handler.renounce.selector, wr);
+        e[1] = HandlerReach.Expect(handler.changeRoyalty.selector, wr);
+        e[2] = HandlerReach.Expect(handler.relicense.selector, wr);
+        e[3] = HandlerReach.Expect(handler.finalize.selector, wr);
+        e[4] = HandlerReach.Expect(handler.repin.selector, wr);
+        HandlerReach.covers(targetSelectors()[0].selectors, e);
+        address[] memory sut = new address[](2);
+        sut[0] = address(stream);
+        sut[1] = address(records);
+        HandlerReach.check(e, HandlerReach.drive(address(handler), e, sut, 120, 1));
+        assertGt(handler.renounced(), 0);
+        assertGt(handler.reRated(), 0);
+        assertGt(handler.relicensed(), 0);
+        assertGt(handler.repinned(), 0);
+        invariant_renouncedMaskNeverLosesABit();
+        invariant_aRenouncedPowerNeverSucceedsAgain();
+        invariant_royaltyRateWithinTheCeilingAndFixedOnceRenounced();
     }
 }

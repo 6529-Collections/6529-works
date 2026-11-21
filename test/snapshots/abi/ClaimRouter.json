@@ -1,0 +1,487 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "contract ISplitLedger",
+        "name": "ledger_",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "id": "0x38e24fd6",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "size",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes",
+        "name": "reason",
+        "type": "bytes"
+      }
+    ],
+    "name": "ClaimCallFailed",
+    "signature": "ClaimCallFailed(uint256,address,uint256,bytes)",
+    "type": "error"
+  },
+  {
+    "id": "0x07ed95da",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "available",
+        "type": "uint256"
+      }
+    ],
+    "name": "ClaimInsufficientGas",
+    "signature": "ClaimInsufficientGas(uint256,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x67922d55",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "size",
+        "type": "uint256"
+      }
+    ],
+    "name": "InvalidClaimReturnData",
+    "signature": "InvalidClaimReturnData(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xf7293a48",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "dependency",
+        "type": "address"
+      }
+    ],
+    "name": "InvalidDependency",
+    "signature": "InvalidDependency(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x7a5f35ab",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "total",
+        "type": "uint256"
+      }
+    ],
+    "name": "SignaturesTooLong",
+    "signature": "SignaturesTooLong(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x3fd3f82f",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "count",
+        "type": "uint256"
+      }
+    ],
+    "name": "TooManyClaims",
+    "signature": "TooManyClaims(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x67c16401",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "payees",
+        "type": "uint256"
+      }
+    ],
+    "name": "TooManyPayees",
+    "signature": "TooManyPayees(uint256,uint256)",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "id": "0xdaabf7a59b4eba4a2596b828b3ea851d5c37ae2de75087cf6d2c2bdd159d7070",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "payee",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "size",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes",
+        "name": "reason",
+        "type": "bytes"
+      }
+    ],
+    "name": "ClaimFailed",
+    "signature": "ClaimFailed(address,address,uint256,uint256,uint256,bytes)",
+    "type": "event"
+  },
+  {
+    "id": "0xcf62ba92",
+    "inputs": [],
+    "name": "MAX_CLAIMS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "MAX_CLAIMS()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x02c9c972",
+    "inputs": [],
+    "name": "MAX_CONTINUE_CLAIMS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "MAX_CONTINUE_CLAIMS()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x28d06dd5",
+    "inputs": [],
+    "name": "MAX_CONTINUE_SIGNATURE_BYTES",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "MAX_CONTINUE_SIGNATURE_BYTES()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x2d256533",
+    "inputs": [],
+    "name": "MAX_SIGNED_CLAIMS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "MAX_SIGNED_CLAIMS()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x8340ead1",
+    "inputs": [],
+    "name": "MIN_ITEM_GAS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "MIN_ITEM_GAS()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xac1a7500",
+    "inputs": [],
+    "name": "MIN_SIGNED_ITEM_GAS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "MIN_SIGNED_ITEM_GAS()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x0ea4ed08",
+    "inputs": [],
+    "name": "SHORTFALL_REVERT_CEILING",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "SHORTFALL_REVERT_CEILING()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x3130a811",
+    "inputs": [
+      {
+        "components": [
+          {
+            "components": [
+              {
+                "internalType": "uint256",
+                "name": "artistId",
+                "type": "uint256"
+              },
+              {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+              },
+              {
+                "internalType": "uint32",
+                "name": "share",
+                "type": "uint32"
+              }
+            ],
+            "internalType": "struct ISplitWallet.Payee[]",
+            "name": "payees",
+            "type": "tuple[]"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "salt",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "address",
+            "name": "asset",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "payee",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct IClaimRouter.Claim[]",
+        "name": "claims",
+        "type": "tuple[]"
+      },
+      {
+        "internalType": "bool",
+        "name": "continueOnFailure",
+        "type": "bool"
+      }
+    ],
+    "name": "claim",
+    "outputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "amounts",
+        "type": "uint256[]"
+      }
+    ],
+    "signature": "claim(((uint256,address,uint32)[],bytes32,address,uint256)[],bool)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xfe27a22f",
+    "inputs": [
+      {
+        "components": [
+          {
+            "components": [
+              {
+                "internalType": "address",
+                "name": "wallet",
+                "type": "address"
+              },
+              {
+                "internalType": "address",
+                "name": "asset",
+                "type": "address"
+              },
+              {
+                "internalType": "uint256",
+                "name": "payee",
+                "type": "uint256"
+              },
+              {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+              },
+              {
+                "internalType": "address",
+                "name": "recipient",
+                "type": "address"
+              },
+              {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+              },
+              {
+                "internalType": "uint256",
+                "name": "nonce",
+                "type": "uint256"
+              },
+              {
+                "internalType": "uint256",
+                "name": "deadline",
+                "type": "uint256"
+              }
+            ],
+            "internalType": "struct IReleaseVerifier.Authorization",
+            "name": "authorization",
+            "type": "tuple"
+          },
+          {
+            "internalType": "bytes",
+            "name": "signature",
+            "type": "bytes"
+          },
+          {
+            "components": [
+              {
+                "internalType": "uint256",
+                "name": "artistId",
+                "type": "uint256"
+              },
+              {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+              },
+              {
+                "internalType": "uint32",
+                "name": "share",
+                "type": "uint32"
+              }
+            ],
+            "internalType": "struct ISplitWallet.Payee[]",
+            "name": "payees",
+            "type": "tuple[]"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "salt",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct IClaimRouter.SignedClaim[]",
+        "name": "claims",
+        "type": "tuple[]"
+      },
+      {
+        "internalType": "bool",
+        "name": "continueOnFailure",
+        "type": "bool"
+      }
+    ],
+    "name": "claimSigned",
+    "outputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "amounts",
+        "type": "uint256[]"
+      }
+    ],
+    "signature": "claimSigned(((address,address,uint256,address,address,uint256,uint256,uint256),bytes,(uint256,address,uint32)[],bytes32)[],bool)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x56397c35",
+    "inputs": [],
+    "name": "ledger",
+    "outputs": [
+      {
+        "internalType": "contract ISplitLedger",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "ledger()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x01ffc9a7",
+    "inputs": [
+      {
+        "internalType": "bytes4",
+        "name": "interfaceId",
+        "type": "bytes4"
+      }
+    ],
+    "name": "supportsInterface",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "supportsInterface(bytes4)",
+    "stateMutability": "pure",
+    "type": "function"
+  }
+]

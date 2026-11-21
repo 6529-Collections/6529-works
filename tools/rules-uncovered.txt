@@ -1,0 +1,53 @@
+# Rules of docs/spec/ (and properties of docs/audit/invariants.md) that name no test today.
+# Read by tools/check_rules.py, which reports each as known uncovered. This list can only
+# shrink: an entry for a rule that names a test, or for an ID the spec does not define, fails
+# the check. Format: <rule ID> <removed|declaration|uncovered> <note>
+
+# Rows kept only to record that a rule was removed or retired; the ID is not reused.
+CUR-13 removed retired: the registry no longer records edition claims
+FED-9 removed second pass: no minters of the artist's own
+FED-47 removed second-pass review fixes: no revocation propagation call
+FED-59 removed second pass: no exit, so no left contract
+FED-62 removed second pass: the abandonment wait is a fixed 21 days
+FED-66 removed second pass: no LEFT or LEFT_DELISTED status
+
+# Off-chain conventions (docs/spec/declarations-and-conventions.md): rules for readers, signers
+# and tooling, with the on-chain rules they rely on in their last cell. The schemas, floor check,
+# fact sheet, control proof and custody check have Python tests in tools/conventions/, which this
+# checker does not resolve.
+DCL-1 declaration off-chain convention
+DCL-2 declaration off-chain convention
+DCL-3 declaration off-chain convention
+DCL-4 declaration off-chain convention
+DCL-5 declaration off-chain convention
+DCL-6 declaration off-chain convention
+DCL-7 declaration off-chain convention
+DCL-8 declaration off-chain convention
+DCL-9 declaration off-chain convention
+DCL-10 declaration off-chain convention
+DCL-11 declaration off-chain convention
+DCL-12 declaration off-chain convention
+DCL-13 declaration off-chain convention
+DCL-14 declaration off-chain convention
+DCL-15 declaration off-chain convention
+DCL-16 declaration off-chain convention
+DCL-17 declaration off-chain convention
+DCL-18 declaration off-chain convention
+DCL-19 declaration off-chain convention
+DCL-20 declaration off-chain convention
+DCL-21 declaration off-chain convention
+DCL-22 declaration off-chain convention
+DCL-23 declaration off-chain convention
+DCL-24 declaration off-chain convention
+DCL-25 declaration off-chain convention
+DCL-26 declaration off-chain convention
+DCL-27 declaration off-chain convention
+DCL-28 declaration off-chain convention
+DCL-32 declaration off-chain convention
+DCL-33 declaration off-chain convention
+
+# Live rules with no test reference today.
+FED-57 uncovered cites "the edition auction suites": no test is named for the federated pair's use of the shared base
+FED-58 uncovered cites "(documented)": no test pins the lens's view of a delisted sale
+GV-18 uncovered cites "Per module": no test checks that every governed setter emits old and new values
+GV-20 uncovered cites "Per module": no single test covers the dependency checks across setters

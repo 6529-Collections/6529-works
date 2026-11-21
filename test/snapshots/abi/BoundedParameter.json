@@ -1,0 +1,63 @@
+[
+  {
+    "id": "0x3cbe3a2c",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "proposed",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "ceiling",
+        "type": "uint256"
+      }
+    ],
+    "name": "ParameterAboveCeiling",
+    "signature": "ParameterAboveCeiling(uint256,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x1ed35604",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "current",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "proposed",
+        "type": "uint256"
+      }
+    ],
+    "name": "ParameterNotRaised",
+    "signature": "ParameterNotRaised(uint256,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x13e1dd2f",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "current",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "proposed",
+        "type": "uint256"
+      }
+    ],
+    "name": "ParameterStepTooLarge",
+    "signature": "ParameterStepTooLarge(uint256,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x8aeca851",
+    "inputs": [],
+    "name": "ParameterZero",
+    "signature": "ParameterZero()",
+    "type": "error"
+  }
+]

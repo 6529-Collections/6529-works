@@ -79,6 +79,9 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
     mapping(uint256 => bool) public settled;
     mapping(uint256 => Snapshot) internal _final;
     mapping(uint256 => Consent) internal _lastConsent;
+    /// @dev The consent applied before the last one: its rate differs from the current rate, so
+    ///      replaying it reaches the stale-state check rather than the unchanged-rate no-op.
+    mapping(uint256 => Consent) internal _priorConsent;
     mapping(uint256 => uint256) public ghostCollection;
     mapping(uint256 => uint256) public ghostSerial;
     mapping(uint256 => uint256) public ghostCollectionMinted;
@@ -311,15 +314,19 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         vm.prank(governor);
         records.setRoyaltyRate(tokenId, rate, item, state, deadline, sigs);
         ghostRate[tokenId] = rate;
+        _priorConsent[tokenId] = _lastConsent[tokenId];
         _lastConsent[tokenId] = Consent(rate, state, deadline, sigs[0], sigs[1]);
     }
 
-    /// @dev Re-submits a work's last applied consents (stale after the version bump). Any
-    ///      effect is a violation: the state hash must not move.
+    /// @dev Re-submits consents a work already used (stale after the version bump). Any
+    ///      effect is a violation: the state hash must not move. The consent before the last is
+    ///      replayed when there is one: the last one's rate is the current rate, and an
+    ///      unchanged rate returns before any consent is checked.
     function replayRoyalty(uint256 seed) external {
         (bool ok, uint256 tokenId) = _live(seed);
         if (!ok || !opened[tokenId]) return;
-        Consent memory c = _lastConsent[tokenId];
+        Consent memory c = _priorConsent[tokenId];
+        if (c.state == bytes32(0)) c = _lastConsent[tokenId];
         if (c.state == bytes32(0)) return;
         bytes[] memory sigs = new bytes[](2);
         sigs[0] = c.artistSig;

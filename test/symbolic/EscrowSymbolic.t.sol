@@ -1,0 +1,333 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
+import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
+import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
+import { GovernedVault } from "src/economics/GovernedVault.sol";
+import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
+import { SplitLedger } from "src/economics/SplitLedger.sol";
+import { IGovernedVault } from "src/economics/interfaces/IGovernedVault.sol";
+import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
+import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
+import { SymHelpers, SymResolver } from "./LedgerSymbolic.t.sol";
+
+/// @notice Halmos proofs of the escrow's and the governed vault's rules on the real
+///         `RevenueEscrow`, `GovernedVault` and `SplitLedger` behind a real OpenZeppelin
+///         `AccessManager` (docs/testing/README.md, "Symbolic"). ETH only: the ERC-20 paths
+///         differ in the balance reads, which the unit and invariant suites cover.
+/// @dev Credits go to fixed EOA-like wallets; amounts are 64-bit.
+contract EscrowSymbolicTest is SymHelpers {
+    uint64 internal constant FUNDS_ROLE = 3;
+    uint32 internal constant FUNDS_DELAY = 3 days;
+    address internal constant ETH = address(0);
+    address internal constant PAYER = address(0xBA7E);
+    address internal constant W1 = address(0xA001);
+    address internal constant W2 = address(0xA002);
+    address internal constant GOV = address(0x6060);
+    address internal constant SLOW = address(0x5101);
+    address internal constant FEE_SAFE = address(0xFEE5);
+    address internal constant MUSEUM_SAFE = address(0x3A5E);
+
+    AccessManager internal manager;
+    SplitLedger internal ledger;
+    RevenueEscrow internal escrow;
+    GovernedVault internal feeVault;
+    GovernedVault internal museum;
+
+    function setUp() public {
+        manager = new AccessManager(address(this));
+        feeVault = new GovernedVault(address(manager), FEE_SAFE);
+        museum = new GovernedVault(address(manager), MUSEUM_SAFE);
+        ledger = new SplitLedger(new SymResolver(), address(feeVault));
+        escrow = new RevenueEscrow(address(manager), ledger);
+        _map(address(escrow), escrow.recover.selector);
+        _map(address(escrow), escrow.sweepExcess.selector);
+        _map(address(feeVault), feeVault.setDestination.selector);
+        _map(address(museum), museum.setDestination.selector);
+        manager.grantRole(FUNDS_ROLE, GOV, 0);
+        // A holder with the class delay must schedule; it cannot call at once.
+        manager.grantRole(FUNDS_ROLE, SLOW, FUNDS_DELAY);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Credits: ECO-27, ECO-45
+    // ---------------------------------------------------------------------------------------
+
+    /// @notice ECO-27: a flush, by anyone, pays the credited wallet exactly its credit and
+    ///         nothing to the caller or another wallet; credits are isolated per wallet; the
+    ///         escrow stays solvent.
+    /// @dev Bounds: any caller (not the escrow or a wallet), any two 64-bit credits, either
+    ///      wallet flushed, once or twice.
+    function check_flush_paysOnlyTheCreditedWallet(
+        address caller,
+        uint64 c1,
+        uint64 c2,
+        bool second,
+        bool twice
+    ) public {
+        vm.assume(caller != address(escrow) && caller != W1 && caller != W2);
+        _deposit(W1, c1);
+        _deposit(W2, c2);
+        // W1 and W2 start empty, so their balances afterwards are what they were paid.
+        (address target, uint256 credit, address other, uint256 otherCredit) =
+            second ? (W2, uint256(c2), W1, uint256(c1)) : (W1, uint256(c1), W2, uint256(c2));
+        uint256 callerBefore = caller.balance;
+
+        (bool ok, bytes4 err) =
+            _call(caller, address(escrow), abi.encodeCall(escrow.flush, (target, ETH)));
+        assert(ok == (credit != 0));
+        if (!ok) assert(err == IRevenueEscrow.NothingOwed.selector);
+        assert(target.balance == _pick(ok, credit, 0) && other.balance == 0);
+        assert(caller.balance == callerBefore);
+        assert(escrow.owed(target, ETH) == 0 && escrow.owed(other, ETH) == otherCredit);
+        assert(escrow.totalOwed(ETH) == otherCredit);
+        assert(address(escrow).balance == otherCredit);
+        if (twice) {
+            (bool again, bytes4 err2) =
+                _call(caller, address(escrow), abi.encodeCall(escrow.flush, (target, ETH)));
+            assert(!again && err2 == IRevenueEscrow.NothingOwed.selector);
+        }
+    }
+
+    /// @notice ECO-45: a credit can be expired to the network fee vault only 180 days or more
+    ///         after it went from zero, a later credit does not move that clock, the moved
+    ///         amount becomes the vault's credit, and the network's own credit never expires.
+    /// @dev Bounds: any 64-bit credits, any delays below 2**32 seconds, any caller.
+    function check_expiry_waits180Days(
+        address caller,
+        uint64 c1,
+        uint64 c2,
+        uint32 addDelay,
+        uint32 expireDelay,
+        bool networkCredit
+    ) public {
+        vm.assume(c1 != 0 && caller != address(escrow));
+        address wallet = networkCredit ? address(feeVault) : W1;
+        uint256 start = block.timestamp;
+        _deposit(wallet, c1);
+        vm.warp(start + addDelay);
+        if (c2 != 0) _deposit(wallet, c2);
+        uint256 credit = escrow.owed(wallet, ETH);
+        uint256 vaultCredit = escrow.owed(address(feeVault), ETH);
+        vm.warp(start + expireDelay);
+
+        (bool ok, bytes4 err) =
+            _call(caller, address(escrow), abi.encodeCall(escrow.expire, (wallet, ETH)));
+        if (networkCredit) {
+            assert(!ok && err == IRevenueEscrow.InvalidWallet.selector);
+            return;
+        }
+        assert(ok == (expireDelay >= 180 days));
+        if (!ok) {
+            assert(err == IRevenueEscrow.CreditNotExpired.selector);
+            assert(escrow.owed(wallet, ETH) == credit);
+        } else {
+            assert(escrow.owed(wallet, ETH) == 0);
+            assert(escrow.owed(address(feeVault), ETH) == vaultCredit + credit);
+            assert(escrow.totalOwed(ETH) == uint256(c1) + c2);
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Governed paths: ECO-28, ECO-40, ECO-5
+    // ---------------------------------------------------------------------------------------
+
+    /// @notice ECO-40, INV-ECO-13: `sweepExcess` moves exactly the balance above `totalOwed`
+    ///         and nothing else: no credit changes, the escrow stays solvent, and it reverts
+    ///         when there is no excess.
+    /// @dev Bounds: any two 64-bit credits, any 64-bit forced ETH, any recipient but zero and
+    ///      the escrow.
+    function check_sweepExcess_neverTouchesOwed(
+        uint64 c1,
+        uint64 c2,
+        uint64 forced,
+        address recipient
+    ) public {
+        vm.assume(recipient != address(0) && recipient != address(escrow));
+        vm.assume(recipient != W1 && recipient != W2 && recipient != GOV);
+        _deposit(W1, c1);
+        _deposit(W2, c2);
+        vm.deal(address(escrow), address(escrow).balance + forced);
+        uint256 total = escrow.totalOwed(ETH);
+        uint256 recipientBefore = recipient.balance;
+
+        (bool ok, bytes4 err) =
+            _call(GOV, address(escrow), abi.encodeCall(escrow.sweepExcess, (ETH, recipient)));
+        if (forced == 0) assert(!ok && err == IRevenueEscrow.NothingToSweep.selector);
+        if (ok) {
+            assert(recipient.balance == recipientBefore + forced);
+            assert(address(escrow).balance == total);
+        }
+        assert(escrow.totalOwed(ETH) == total && total == uint256(c1) + c2);
+        assert(escrow.owed(W1, ETH) == c1 && escrow.owed(W2, ETH) == c2);
+    }
+
+    /// @notice ECO-28, INV-ECO-10: `recover` moves a split wallet's credit only to a distinct
+    ///         wallet with the same payees, the network's own credit to any account but zero,
+    ///         the escrow or itself, and any other account's credit only to the replacement it
+    ///         consented to, consuming the consent; the total owed never changes.
+    /// @dev Bounds: any replacement address; the three kinds of credited account (a split
+    ///      wallet, the museum vault, an EOA that consented to any address or none).
+    function check_recover_onlyToTheEquivalentWallet(
+        uint8 kind,
+        address replacement,
+        address consentTo,
+        bool consented,
+        uint64 credit
+    ) public {
+        vm.assume(credit != 0);
+        _splitWallets();
+        address wallet = kind == 0 ? split : kind == 1 ? address(museum) : W1;
+        if (consented) {
+            vm.assume(consentTo != address(escrow) && consentTo != W1);
+            vm.prank(W1);
+            escrow.consentToRecovery(consentTo);
+        }
+        _deposit(wallet, credit);
+        uint256 total = escrow.totalOwed(ETH);
+        uint256 before = escrow.owed(replacement, ETH);
+
+        (bool ok,) = _call(
+            GOV, address(escrow), abi.encodeCall(escrow.recover, (wallet, replacement, ETH))
+        );
+        if (kind == 0) {
+            assert(ok == (replacement == equivalent));
+            assert(replacement != different || !ok);
+        } else if (kind == 1) {
+            bool invalid = _or(
+                _or(replacement == address(0), replacement == address(escrow)),
+                replacement == wallet
+            );
+            assert(ok == !invalid);
+        } else {
+            assert(ok == _and(_and(consented, replacement == consentTo), replacement != address(0)));
+            if (ok) assert(escrow.recoveryConsent(W1) == address(0));
+        }
+        assert(escrow.totalOwed(ETH) == total);
+        if (ok) {
+            assert(escrow.owed(wallet, ETH) == 0);
+            assert(escrow.owed(replacement, ETH) == before + credit);
+        } else {
+            assert(escrow.owed(wallet, ETH) == credit);
+        }
+    }
+
+    /// @notice ECO-5: every governed write of the escrow and the vaults reverts for any caller
+    ///         without the role (`AccessManagedUnauthorized`) and for a holder whose role carries
+    ///         the class delay and did not schedule (`AccessManagerNotScheduled`), and changes
+    ///         nothing.
+    /// @dev Bounds: any caller but the immediate holder; every restricted selector of
+    ///      `RevenueEscrow` and `GovernedVault` (`recover`, `sweepExcess`, `setDestination` on
+    ///      both vaults).
+    function check_everyGovernedWrite_needsItsRole(address caller, uint8 action, address arg)
+        public
+    {
+        vm.assume(caller != GOV && caller != address(manager));
+        _deposit(W1, 1 ether);
+        vm.deal(address(escrow), 2 ether);
+        address target;
+        bytes memory data;
+        if (action == 0) {
+            (target, data) = (address(escrow), abi.encodeCall(escrow.recover, (W1, arg, ETH)));
+        } else if (action == 1) {
+            (target, data) = (address(escrow), abi.encodeCall(escrow.sweepExcess, (ETH, arg)));
+        } else if (action == 2) {
+            (target, data) = (address(feeVault), abi.encodeCall(feeVault.setDestination, (1, arg)));
+        } else {
+            (target, data) = (address(museum), abi.encodeCall(museum.setDestination, (1, arg)));
+        }
+        (bool ok, bytes4 err) = _call(caller, target, data);
+        // The delayed holder reaches the manager's schedule check, which finds nothing
+        // scheduled; everyone else is refused by the target.
+        bytes4 expected = caller == SLOW
+            ? IAccessManager.AccessManagerNotScheduled.selector
+            : IAccessManaged.AccessManagedUnauthorized.selector;
+        assert(!ok && err == expected);
+        assert(escrow.owed(W1, ETH) == 1 ether && address(escrow).balance == 2 ether);
+        assert(feeVault.destination() == FEE_SAFE && museum.destination() == MUSEUM_SAFE);
+    }
+
+    /// @notice ECO-41: a governed vault moves ETH only to its destination, whoever calls
+    ///         `forward`; the destination changes only by the role holder's compare-and-set on
+    ///         the current revision, never to zero or the vault.
+    /// @dev Bounds: any caller, any 64-bit holdings and amount, any next destination and
+    ///      expected revision.
+    function check_governedVault_paysOnlyItsDestination(
+        address caller,
+        uint64 held,
+        uint256 amount,
+        address next,
+        uint64 expected,
+        bool setFirst
+    ) public {
+        vm.assume(caller != address(feeVault) && caller != FEE_SAFE);
+        vm.assume(next != caller && next != FEE_SAFE && uint160(next) > 0xffff);
+        vm.deal(address(feeVault), held);
+        address dest = FEE_SAFE;
+        if (setFirst) {
+            uint64 revision = feeVault.destinationRevision();
+            (bool set, bytes4 err) = _call(
+                GOV, address(feeVault), abi.encodeCall(feeVault.setDestination, (expected, next))
+            );
+            bool valid = _and(next != address(0), next != address(feeVault));
+            assert(set == _and(expected == revision, valid));
+            if (!set && expected != revision) {
+                assert(err == IGovernedVault.RevisionMismatch.selector);
+            }
+            if (set) {
+                dest = next;
+                assert(feeVault.destinationRevision() == revision + 1);
+            }
+        }
+        assert(feeVault.destination() == dest);
+        uint256 destBefore = dest.balance;
+        uint256 callerBefore = caller.balance;
+        (bool ok,) =
+            _call(caller, address(feeVault), abi.encodeCall(feeVault.forward, (ETH, amount)));
+        uint256 sent = amount == type(uint256).max ? held : amount;
+        if (ok) {
+            assert(sent != 0 && sent <= held);
+            assert(dest.balance == destBefore + sent);
+            assert(address(feeVault).balance == held - sent);
+        } else {
+            assert(address(feeVault).balance == held);
+        }
+        assert(caller.balance == callerBefore);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Helpers
+    // ---------------------------------------------------------------------------------------
+
+    address internal split;
+    address internal equivalent;
+    address internal different;
+
+    /// @dev Deploys a split wallet, one with the same payees under another salt, and one with
+    ///      other shares.
+    function _splitWallets() internal {
+        ISplitWallet.Payee[] memory p = new ISplitWallet.Payee[](2);
+        p[0] = ISplitWallet.Payee(0, W1, 60_000);
+        p[1] = ISplitWallet.Payee(0, W2, 40_000);
+        split = ledger.createWallet(p, bytes32(0));
+        equivalent = ledger.createWallet(p, bytes32(uint256(1)));
+        p[0].share = 50_000;
+        p[1].share = 50_000;
+        different = ledger.createWallet(p, bytes32(0));
+    }
+
+    function _map(address target, bytes4 selector) internal {
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = selector;
+        manager.setTargetFunctionRole(target, selectors, FUNDS_ROLE);
+    }
+
+    /// @dev Credits `wallet` with `amount` wei from the payer; a zero amount credits nothing.
+    function _deposit(address wallet, uint256 amount) internal {
+        if (amount == 0) return;
+        vm.deal(PAYER, amount);
+        vm.prank(PAYER);
+        escrow.depositETH{ value: amount }(wallet);
+    }
+}

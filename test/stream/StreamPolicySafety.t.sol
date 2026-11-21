@@ -13,6 +13,7 @@ import { PrimaryOutcome, PrimaryTerms, SaleKind } from "src/interfaces/types/Sal
 import { Stream } from "src/stream/Stream.sol";
 import { MockPackageRegistry, MockSaleAdapter } from "../mocks/stream/StreamMocks.sol";
 import { StreamFixture } from "./StreamFixture.sol";
+import { HandlerReach } from "../helpers/HandlerReach.sol";
 
 /// @dev `coreOf`'s six words, hashed.
 function _coreHash(Stream stream, uint256 id) view returns (bytes32) {
@@ -597,5 +598,21 @@ contract StreamPolicyInvariantTest is StreamFixture {
             assertEq(stream.consumedItemOf(content), itemHash, "Stream's content record");
         }
         assertFalse(handler.duplicateMinted(), "a content minted twice");
+    }
+
+    /// @notice Handler self-test: the one action, a mint under an honest or hostile policy
+    ///         answer, both mints (writing Stream) and is refused by Stream; tokens and contents
+    ///         accumulate. Then the invariant holds.
+    function test_HandlerPathsReachState() public {
+        HandlerReach.Expect[] memory e = new HandlerReach.Expect[](1);
+        e[0] = HandlerReach.Expect(
+            PolicyHandler.mintRandom.selector, HandlerReach.WRITES | HandlerReach.REFUSED
+        );
+        HandlerReach.covers(targetSelectors()[0].selectors, e);
+        address[] memory sut = new address[](1);
+        sut[0] = address(stream);
+        HandlerReach.check(e, HandlerReach.drive(address(handler), e, sut, 60, 1));
+        assertGt(handler.tokenCount(), 1);
+        invariant_MP1_ExistingTokensNeverChange();
     }
 }
