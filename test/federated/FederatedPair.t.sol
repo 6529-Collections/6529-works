@@ -476,6 +476,11 @@ contract FederatedPairTest is FederationBase {
         uint256 bidId = _editionBidFed(saleId, a, 100, 2);
         uint256 diff = 2 * (fl.stepPrice(saleId, 110) - fl.stepPrice(saleId, 100));
         vm.deal(a, diff);
+        // An uncapped sale (position zero); the raise is early, so the end does not move.
+        vm.expectEmit(address(fea));
+        emit IUniformEditionAuction.BidRaised(
+            saleId, bidId, a, 100, 110, 0, diff, fl.endTimes(saleId).endTime
+        );
         vm.prank(a);
         fea.raise{ value: diff }(saleId, bidId, 110);
         assertEq(fl.auction(saleId).highStep, 110);
