@@ -125,31 +125,33 @@ abstract contract ReplayBase is IntegrationBase {
     }
 
     /// @dev The network's royalty-rate change of `tokenId` to `rate`, with every party's consent.
-    function _setRoyaltyRate(uint256 tokenId, Work memory w, uint24 rate) internal {
-        bytes32 state = rules.workStateHash(address(stream), tokenId);
+    function _setRoyaltyRateOn(address token, uint256 tokenId, Work memory w, uint24 rate)
+        internal
+    {
+        bytes32 state = rules.workStateHash(token, tokenId);
         uint64 deadline = uint64(block.timestamp + 60 days);
         bytes32 structHash = keccak256(
-            abi.encode(
-                rules.ROYALTY_RATE_TYPEHASH(), address(stream), tokenId, rate, state, deadline
-            )
+            abi.encode(rules.ROYALTY_RATE_TYPEHASH(), token, tokenId, rate, state, deadline)
         );
         _asNetwork(
             address(rules),
             abi.encodeCall(
                 rules.setRoyaltyRate,
-                (address(stream), tokenId, rate, w.item, state, deadline, _consents(w, structHash))
+                (token, tokenId, rate, w.item, state, deadline, _consents(w, structHash))
             )
         );
     }
 
     /// @dev The network's relicense of `tokenId` to `next`, with every party's consent.
-    function _relicense(uint256 tokenId, Work memory w, License memory next) internal {
-        bytes32 state = rules.workStateHash(address(stream), tokenId);
+    function _relicenseOn(address token, uint256 tokenId, Work memory w, License memory next)
+        internal
+    {
+        bytes32 state = rules.workStateHash(token, tokenId);
         uint64 deadline = uint64(block.timestamp + 60 days);
         bytes32 structHash = keccak256(
             abi.encode(
                 rules.RELICENSE_TYPEHASH(),
-                address(stream),
+                token,
                 tokenId,
                 WorksHashing.licenseKey(next.spdxId),
                 next.textFileId,
@@ -161,29 +163,37 @@ abstract contract ReplayBase is IntegrationBase {
             address(rules),
             abi.encodeCall(
                 rules.relicense,
-                (address(stream), tokenId, next, w.item, state, deadline, _consents(w, structHash))
+                (token, tokenId, next, w.item, state, deadline, _consents(w, structHash))
             )
         );
     }
 
     /// @dev The lead artist renounces `powers` of `tokenId`, relayed by the network (the royalty
     ///      and license powers also need the network's role).
-    function _renounce(uint256 tokenId, address lead, uint16 powers) internal {
-        bytes32 state = rules.workStateHash(address(stream), tokenId);
+    function _renounceOn(address token, uint256 tokenId, address lead, uint16 powers) internal {
+        bytes32 state = rules.workStateHash(token, tokenId);
         uint64 deadline = uint64(block.timestamp + 60 days);
         bytes32 structHash = keccak256(
-            abi.encode(
-                rules.RENOUNCE_POWERS_TYPEHASH(), address(stream), tokenId, powers, state, deadline
-            )
+            abi.encode(rules.RENOUNCE_POWERS_TYPEHASH(), token, tokenId, powers, state, deadline)
         );
         bytes memory proof =
             abi.encodePacked(lead, _sign(lead, _typedDigest(address(rules), structHash)));
         _asNetwork(
             address(rules),
-            abi.encodeCall(
-                rules.renounce, (address(stream), tokenId, powers, state, deadline, proof)
-            )
+            abi.encodeCall(rules.renounce, (token, tokenId, powers, state, deadline, proof))
         );
+    }
+
+    function _setRoyaltyRate(uint256 tokenId, Work memory w, uint24 rate) internal {
+        _setRoyaltyRateOn(address(stream), tokenId, w, rate);
+    }
+
+    function _relicense(uint256 tokenId, Work memory w, License memory next) internal {
+        _relicenseOn(address(stream), tokenId, w, next);
+    }
+
+    function _renounce(uint256 tokenId, address lead, uint16 powers) internal {
+        _renounceOn(address(stream), tokenId, lead, powers);
     }
 
     /// @dev Every event in `events` (a contract's compiled ABI, `ReplayEvents`) was replayed at
