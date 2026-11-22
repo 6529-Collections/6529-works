@@ -2,7 +2,7 @@
 
 Every known limitation and accepted risk of 6529 Works v1, one row per risk, for auditors: what
 it is, what follows, what mitigates it, and where it is recorded. Rows cite spec rule IDs and the
-finding IDs of the [internal adversarial review](../security/internal-review-2026-10.md). No
+finding IDs of the internal adversarial review. No
 external audit has happened yet.
 
 > Pre-audit. See the [project status](../../README.md#status).
@@ -251,10 +251,10 @@ See the [register](../spec/README.md#differences-from-the-adrs).
 - ADRs: [0001](../adr/0001-v1-scope.md#accepted-risks), [0002](../adr/0002-access-manager-hardening.md#security-impact)
   and its [addendum][adr2-addendum], [0003](../adr/0003-build-time-decisions.md#security-impact),
   [0004][adr4-security], [0005][adr5].
-- Review: [internal adversarial review, October 2026](../security/internal-review-2026-10.md).
+- Review: internal adversarial review, October 2026.
 - Deployment: [script README](../../script/README.md), [Sepolia flows][flows].
-- Related pages: [Invariants](invariants.md), [Build, test and budgets](build-and-test.md),
-  [Trust assumptions](trust-assumptions.md), [Threat model](threat-model.md), [Roles](roles.md).
+- Related pages: [Invariants](invariants.md), Build, test and budgets,
+  [Trust assumptions](trust-assumptions.md), Threat model, [Roles](roles.md).
 
 [adr4-table]: ../adr/0004-gas-budgets-under-glamsterdam.md#the-table
 [adr5]: ../adr/0005-stream-editions-auction.md
@@ -265,8 +265,8 @@ See the [register](../spec/README.md#differences-from-the-adrs).
 [flows]: ../../deployments/11155111/flows.md#budgets-under-glamsterdam-r2
 [r4-gas]: ../../deployments/11155111/README.md
 [script-vrf]: ../../script/README.md#7-chainlink-vrf-the-entropy-module
-[review-4]: ../security/internal-review-2026-10.md#4-decisions-and-accepted-risks
-[review-6]: ../security/internal-review-2026-10.md#6-residual-risks-and-recommended-next-steps
+[review-4]: https://github.com/6529-Collections/6529-works/blob/581cfb6f/docs/security/internal-review-2026-10.md#4-decisions-and-accepted-risks
+[review-6]: https://github.com/6529-Collections/6529-works/blob/581cfb6f/docs/security/internal-review-2026-10.md#6-residual-risks-and-recommended-next-steps
 [auc]: ../spec/stream-and-auctions.md#rules-and-invariants
 [exit]: ../spec/stream-and-auctions.md#a-token-that-will-not-settle
 [cur]: ../spec/curation.md#rules-and-invariants

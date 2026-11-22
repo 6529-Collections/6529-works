@@ -57,10 +57,13 @@ python tools/check_markdown_links.py
 python tools/gen_role_matrix.py --check
 ```
 
-What each gate checks, and the rest of what CI runs, is in
-[Build, test and budgets](audit/build-and-test.md#running-the-ci-checks-locally).
+What each gate checks, and the rest of what CI runs, is in [Testing](testing/README.md#what-ci-runs).
 
 ## 4. Run the whole system locally
+
+> The walkthrough still deploys the contracts from before the plain-core restructuring
+> ([ADR 0010](adr/0010-plain-permanent-core.md)); it moves to `script/DeployCore.s.sol` when the
+> restructuring is integrated.
 
 ```bash
 bash script/local/walkthrough.sh
@@ -88,7 +91,7 @@ To deploy by hand instead, step by step, follow the runbook's
 
 | To | Read |
 | --- | --- |
-| Learn how the protocol works | The [specification](spec/README.md), the [architecture overview](architecture.md) and the [glossary](glossary.md) |
+| Learn how the protocol works | The [overview](overview.md), the [specification](spec/README.md), the [architecture](architecture.md) and the [glossary](glossary.md) |
 | Integrate a marketplace, wallet, indexer or front end | The [integrator guide](integrators/README.md), the exported ABIs in [`abi/`](../abi/), runnable examples in [`examples/`](../examples/README.md), and a reference keeper in [`keeper/`](../keeper/README.md) (reference code, not production software) |
 | Deploy to a testnet | The [runbook](../script/README.md#sepolia-runbook) |
 | Contribute | [CONTRIBUTING.md](../CONTRIBUTING.md) |

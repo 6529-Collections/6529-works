@@ -24,7 +24,7 @@ description of the contract.
 
 - **For a review finding:** a regression test carries the finding's ID in a NatSpec line,
   `/// Regression: <ID> (<where the ID is defined>)`. Findings of the October 2026 internal
-  review point to [the report](../docs/security/internal-review-2026-10.md); earlier IDs name the
+  review point to the report; earlier IDs name the
   pull request whose review raised them.
 
   ```bash

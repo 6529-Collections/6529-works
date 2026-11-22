@@ -218,7 +218,7 @@ continue to work (`test_Gate_ConsumptionAfterDeliveryBlocksNothingRead`).
 | Coordinator replaced | `SUCCESSOR_SETTER` | 7 days |
 | Wrapper for federated requests set or turned off | `SUCCESSOR_SETTER` | 7 days | `VrfEntropyModule.setWrapper` | `VrfEntropyModule.setCoordinator` |
 
-Role mappings are from [`config/genesis.example.json`](../../config/genesis.example.json); the
+Role mappings are from [`config/genesis.core.example.json`](../../config/genesis.core.example.json); the
 selector matrix is [roles.md](../audit/roles.md). The network or the scheduler may cancel a
 scheduled operation during its delay, and the brake may delay it once.
 

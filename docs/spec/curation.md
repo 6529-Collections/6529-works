@@ -238,7 +238,7 @@ stateDiagram-v2
 | Signer re-enabled | `SUCCESSOR_SETTER` | 7 days | `Eip712CurationVerifier.enableSigner` |
 | Verifier replaced, old one retired | `SUCCESSOR_SETTER` | 7 days | `PackageRegistry.setVerifier` |
 
-Role mappings are from [`config/genesis.example.json`](../../config/genesis.example.json); the
+Role mappings are from [`config/genesis.core.example.json`](../../config/genesis.core.example.json); the
 selector-by-selector matrix is [roles.md](../audit/roles.md).
 
 ## Flows

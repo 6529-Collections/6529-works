@@ -579,12 +579,12 @@ phase:
 | What | Paths | Until |
 | --- | --- | --- |
 | `record` | `WorkRules.setRecord`, `finalize`: the artist, no governed delay ([WS-7](works-and-storage.md#rules-and-invariants)) | finalize |
-| `license` | `WorkRules.relicense` ([roles](../audit/roles.md#workrecords)); never for CC0 (WS-12) | permanent |
-| `royalty_rate` | `WorkRules.setRoyaltyRate` ([roles](../audit/roles.md#workrecords)) | permanent |
+| `license` | `WorkRules.relicense` ([roles](../audit/roles.md#workrules)); never for CC0 (WS-12) | permanent |
+| `royalty_rate` | `WorkRules.setRoyaltyRate` ([roles](../audit/roles.md#workrules)) | permanent |
 | `renderer` | Before finalize the token's RENDERER module (`proposeModule`, after `moduleDelay`); after, `WorkRules.repinRenderer` | permanent |
-| `served_copy` | The delivery contract (`WorkDelivery.addLocator`, the artist before finalize; `setFilePreference`, `setCollectionPreferredKind`, `setPreferredKind`), and `WorkRules.setDelivery`, which replaces it ([roles](../audit/roles.md#workrecords)) | permanent |
+| `served_copy` | The delivery contract (`WorkDelivery.addLocator`, the artist before finalize; `setFilePreference`, `setCollectionPreferredKind`, `setPreferredKind`), and `WorkRules.setDelivery`, which replaces it ([roles](../audit/roles.md#workrules)) | permanent |
 | `dispute_statement` | `StatementLog.appendPlatform` ([roles](../audit/roles.md#statementlog)) | permanent |
-| `artist_authority` | `Accounts.stageChange` (a wallet of the account), `stageReplacement` ([roles](../audit/roles.md#artistregistry); [change kinds](identity-and-recovery.md#change-kinds)) | permanent |
+| `artist_authority` | `Accounts.stageChange` (a wallet of the account), `stageReplacement` ([roles](../audit/roles.md#accounts); [change kinds](identity-and-recovery.md#change-kinds)) | permanent |
 | `artist_resolver` | `StatementLog.setArtistResolver` ([roles](../audit/roles.md#statementlog)) | permanent |
 | `burn_and_release` | `EnglishAuction.cancel` and `PackageRegistry.releaseContent` after an upheld dispute ([roles](../audit/roles.md#englishauction)) | settlement ([DSP-20, DSP-22](disputes-and-statements.md#rules-and-invariants)) |
 

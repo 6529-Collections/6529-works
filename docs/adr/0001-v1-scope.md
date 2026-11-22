@@ -986,3 +986,15 @@ AccessManager governs all of them. The VRF module is optional.
 - The timeline for the 6529 chain verifier.
 - The autonomous Codex run on PR #744 was terminated on 11 October 2026 at the
   owner's instruction. Delivery passes to Claude Code under this ADR.
+
+## Amendment note (22 November 2026, [ADR 0010](0010-plain-permanent-core.md))
+
+The permanent contracts now hold only who owns which token (and the collection's address), the
+facts of a finished work and money already owed. Every rule (fee terms, sale state, rescue
+routing, record editing, consent, timers, identity, delisting, royalty policy) lives in a
+replaceable module that the network adds and removes. Payments are ETH only at launch: no
+ERC-20, no Permit2, no currency freeze and reopening. The artist registry becomes the
+replaceable accounts module behind the permanent `Directory`. Waiting periods in permanent
+contracts are the network's settings with launch values, not fixed numbers. Sections of this
+ADR that describe those mechanisms inside the token contracts are history; the current rules are
+in the [specification](../spec/README.md).

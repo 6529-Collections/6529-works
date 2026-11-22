@@ -62,7 +62,7 @@ the fork suites ([Safe fork tests](#safe-fork-tests)), coverage and mutation tes
 | Oracles and differential | [`TextOracles`](../../test/helpers/TextOracles.sol), the frozen RC1 code in [`Pr744Utf8`](../../test/helpers/Pr744Utf8.sol) and [`Pr744Escape`](../../test/helpers/Pr744Escape.sol), the vectors in [`test/fixtures/oracles/`](../../test/fixtures/oracles) from [`tools/content/oracles.py`](../../tools/content/oracles.py), the uploader's golden vectors, the edition auction's golden vectors in [`test/fixtures/edition-auction/`](../../test/fixtures/edition-auction) from [`tools/edition_auction_ref.py`](../../tools/edition_auction_ref.py), and [`UniformClearingReference`](../../test/helpers/UniformClearingReference.sol) | Assembly against naive byte loops and against RC1; the JSON scanner against `serde_json` and CPython; the Python uploader against the real `ContentStore`; the edition auction's clearing against the reference model's vectors and a brute-force per-unit clearing | `forge test --match-path "test/content/**"`, and `python -m unittest discover -s tools/content -t . -p "test_*.py"` | PR |
 | Symbolic | [`test/symbolic/`](../../test/symbolic) | 67 Halmos proofs (`check_*`): the pure libraries, and the state rules of the permanent contracts (ledger, escrow, governed vault, statement log, Stream and work records, Editions, the federated template) on the real contracts ([below](#symbolic-proofs-halmos)) | `FOUNDRY_PROFILE=symbolic halmos` | after merge and daily, one job per test contract |
 | Second fuzzer | [`test/medusa/`](../../test/medusa), [`medusa.json`](../../medusa.json) | Three cheatcode-free harnesses, each with its own model of the rules written from the spec, run by Medusa and by a Forge runner ([below](#second-fuzzer-medusa)) | `medusa fuzz --compilation-target test/medusa/LedgerMedusa.sol --target-contracts LedgerMedusa` | Forge runner on PR; Medusa nightly |
-| Fork | [`test/fork/`](../../test/fork/README.md) | The stack against the real delegation contract, Permit2 and the VRF coordinator on local forks of mainnet and Sepolia, and the deploy script simulated on Sepolia; skipped without an RPC URL | `forge test --match-path "test/fork/*"` with `FORK_MAINNET_RPC` and `FORK_SEPOLIA_RPC` set | nightly |
+| Fork | [`test/fork/`](../../test/fork/README.md) | The stack against the real delegation contract, the network Safe and the VRF coordinator on local forks of mainnet and Sepolia, and the deploy script simulated on Sepolia; skipped without an RPC URL | `forge test --match-path "test/fork/*"` with `FORK_MAINNET_RPC` and `FORK_SEPOLIA_RPC` set | nightly |
 | Safe | `test/fork/Safe*.t.sol` | The network, an artist wallet, holders, the museum and the fee destination as real Safe v1.4.1 wallets on a mainnet fork ([below](#safe-fork-tests)) | `forge test --match-path "test/fork/Safe*" -vv` with `FORK_MAINNET_RPC` set | nightly |
 | Log replay | [`test/replay/`](../../test/replay) (`LogReplay*.t.sol`, `*Indexer.sol`); the statement log's handler (`test/records/StatementLogHandler.sol`) | Eight permanent contracts rebuilt from their logs alone; the comparison fails on disagreement; every compiled event is replayed ([below](#log-replay-and-real-data)) | `forge test --match-path "test/replay/*"` | PR |
 | Real data | `test/replay/RealVectors.t.sol`, [`test/fixtures/real/`](../../test/fixtures/real), [`tools/make_vectors.py`](../../tools/make_vectors.py) | A 6529 Network Museum record (6529NM-W-0029) through upload, curated sale, record and `tokenURI` | `forge test --match-contract RealVectors`, `python tools/make_vectors.py --check` | PR |
@@ -428,7 +428,7 @@ python tools/mutation.py report mutation --markdown mutation/report.md
   one wrote the whole statement's text into the comparison's place, so many of its mutants
   did not compile) and skips Yul comparisons; LIR gives `bool` the values `false` and `true`.
 
-**Status.** The first full baseline is in [mutation-baseline.md](mutation-baseline.md): 11,735
+**Status.** The first full baseline is in mutation-baseline.md: 11,735
 mutants of 054442d's code in 50 contracts, 88.2% killed by the campaign and 90.6% by the final
 suite, 98.9% once the 992 equivalent mutants are left out. Every survivor is triaged there, and
 `tools/mutation-floors.json` holds a floor for each contract the baseline measured. 289 of the
@@ -450,13 +450,13 @@ eac9dd2e measured 19 files (two with nothing to mutate) in about 153 hours of sh
 checkouts: 5,093 mutants, 4,518 killed by the campaign (88.7%) and 4,819 by the final suite
 (94.6%), every remaining survivor argued equivalent, gas-only or defensive. It set or raised
 their floors; its tables and the triage of every survivor are in
-[mutation-baseline.md](mutation-baseline.md#second-campaign-21-to-22-november-2026). It wrote
+mutation-baseline.md. It wrote
 107 new tests, and extended about 26, for its gaps, each run against the mutant it kills. None
 of its survivors was a defect in a contract; three were access checks no test pinned
 (`ArtistRegistry.resolveContested`, `FederationRegistry.setStatus`, and `FederatedStream`'s
 `setLocator` and `setDefaultRenderer`), now pinned. It did not reach every stale floor, and two
 of its shards ran longer than the weekly job allows (now split in parts): see
-[what it did not reach](mutation-baseline.md#not-reached).
+what it did not reach.
 
 ## Symbolic proofs (Halmos)
 
@@ -579,7 +579,7 @@ that need a change under `src/` are for the module owners; the rest are tests.
 **From mutation testing:**
 
 The baseline's 78 open gaps are closed: the gap lane killed 69 with focused tests, re-triaged 3,
-and found 6 moved by #66 ([how each was decided](mutation-baseline.md#what-survives-and-why)).
+and found 6 moved by #66 (how each was decided).
 None was a bug.
 
 **rc.2 (November 2026).** The weekly run on 808705c1 and the runs on rc.2's code that followed
@@ -695,6 +695,6 @@ survivors, and only a lying mock of a trusted contract the defensive ones.
 - **Mutation floors.** Every file the weekly run mutates has a floor. Four permanent files
   (`WorkRecords`, `Editions`, `StatementLog`, `ContentStore`) and nine replaceable ones keep
   first-campaign floors measured before later rewrites, and `Stream` and `GovernanceConfig`
-  were re-measured only in part ([not reached](mutation-baseline.md#not-reached)). Since 21
+  were re-measured only in part (not reached). Since 21
   November 2026 every src/ file with executable code has its own coverage floor
   ([coverage](#coverage)).

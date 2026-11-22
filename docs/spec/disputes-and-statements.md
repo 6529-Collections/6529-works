@@ -562,7 +562,7 @@ See the [register](README.md#differences-from-the-adrs).
   [`PackageRegistry.sol`](../../src/curation/PackageRegistry.sol),
   [`ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol),
   [`Renderer.sol`](../../src/content/Renderer.sol), [`Roles.sol`](../../src/governance/Roles.sol),
-  [`config/genesis.example.json`](../../config/genesis.example.json).
+  [`config/genesis.core.example.json`](../../config/genesis.core.example.json).
 - ADRs: [ADR 0001 §12](../adr/0001-v1-scope.md#12-disputes),
   [ADR 0002 decisions 6 and 7](../adr/0002-access-manager-hardening.md#decision),
   [ADR 0003 "Disputes and statements"](../adr/0003-build-time-decisions.md#disputes-and-statements-amends-adr-0001-12),

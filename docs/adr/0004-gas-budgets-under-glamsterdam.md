@@ -133,6 +133,14 @@ also lets a package's sale terms name any currency on the asset allowlist.
 
 ### The table
 
+**Amendment, 22 November 2026 ([ADR 0010](0010-plain-permanent-core.md)).** The 350,000 start
+budget and its 6- and 7-slot maxima are replaced by one gate: **every start row, with or without
+a bid, at most 370,000 Prague gas and 8 new storage slots** (`START_BUDGET` and
+`START_MAX_SLOTS` in the integration base). The start rows below carry the new ceiling; their
+measured gas and slot counts are from before the plain core and are re-measured on the built
+stack when the restructuring is integrated (the study measured the tightest row at 363,899 gas
+and 8 slots, and a steady `start` at 311,906). The history below is unchanged.
+
 Prague gas, counts and ceilings are from `test/integration/GasReport.t.sol`
 (`forge test --match-test test_Gas_Table -vv`) at the head of this ADR's pull
 request. Prague figures move by a few dozen gas whenever a source file changes:
@@ -523,19 +531,19 @@ enforces those ceilings (`FederationGas.t.sol`).
 
 | Operation | Prague gas | Prague ceiling | New slots | New accounts | Sepolia gas |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `start`, steady state | 267,047 | 350,000 | **5** | 0 | 735,859 |
-| `startWithBid`, steady state | 303,745 | 350,000 | **6** | 0 | 871,980 |
+| `start`, steady state | 267,047 | 370,000 | **5** | 0 | 735,859 |
+| `startWithBid`, steady state | 303,745 | 370,000 | **6** | 0 | 871,980 |
 | `start`, steady state, move signed by a consolidated (non-root) wallet | 314,220 | 321,000 (regression; LIM-ID-21) | 5 | 0 | — |
-| `start`, two-party work | 275,543 | 350,000 | **5** | 0 | — |
-| `startWithBid`, two-party work | 312,241 | 350,000 | **6** | 0 | — |
-| `start`, VRF work | 272,745 | 350,000 | **5** | 0 | 852,868 (r2) |
-| `start`, edition master | 267,137 | 350,000 | **5** | 0 | 736,477 |
-| `start`, edition master with 64 bytes of params (the bound) | 268,229 | 350,000 | **5** | 0 | — |
-| `start`, an artist's first work | 289,580 | 350,000 | **6** | 0 | — |
-| `startWithBid`, an artist's first work | 326,278 | 350,000 | **7** | 0 | — |
-| `startWithBid`, an artist's first work, two-party | 334,749 | 350,000 | **7** | 0 | — |
-| `startWithBid`, an artist's first work, two-party, VRF | 340,405 | 350,000 | **7** | 0 | — |
-| `startWithBid`, an artist's first work, two-party, VRF, edition master with 64 bytes of params (the bound) | 341,582 | 350,000 | **7** | 0 | — |
+| `start`, two-party work | 275,543 | 370,000 | **5** | 0 | — |
+| `startWithBid`, two-party work | 312,241 | 370,000 | **6** | 0 | — |
+| `start`, VRF work | 272,745 | 370,000 | **5** | 0 | 852,868 (r2) |
+| `start`, edition master | 267,137 | 370,000 | **5** | 0 | 736,477 |
+| `start`, edition master with 64 bytes of params (the bound) | 268,229 | 370,000 | **5** | 0 | — |
+| `start`, an artist's first work | 289,580 | 370,000 | **6** | 0 | — |
+| `startWithBid`, an artist's first work | 326,278 | 370,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party | 334,749 | 370,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party, VRF | 340,405 | 370,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party, VRF, edition master with 64 bytes of params (the bound) | 341,582 | 370,000 | **7** | 0 | — |
 | `startWithBid`, an artist's first work, two-party, the three mint-path dependencies replaced | 341,133 | 352,000 (regression; LIM-GAS-11) | 7 | 0 | — |
 | `startWithBid`, an artist's first work, two-party, VRF, the three mint-path dependencies replaced | 346,789 | 358,000 (regression; LIM-GAS-11) | 7 | 0 | — |
 | `startWithBid`, ERC-20 by relayed Permit2 | 348,817 | 365,000 (regression) | 6 | 0 | — |

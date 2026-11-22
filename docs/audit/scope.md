@@ -7,9 +7,14 @@ lies outside.
 
 The nSLOC and bytecode figures below are checked against the code in CI by
 [`tools/check_docs_facts.py`](../../tools/check_docs_facts.py); after a source change, run it
-with `--artifacts out --update` to refresh them. The internal review that preceded this pack is
-[docs/security/internal-review-2026-10.md](../security/internal-review-2026-10.md); it is not
-an audit.
+with `--artifacts out --update` to refresh them. No audit has taken place.
+
+**Two trees until integration.** The plain permanent core ([ADR 0010](../adr/0010-plain-permanent-core.md))
+is in `src/core/`. The contracts it replaces (`src/stream/Stream.sol`, `StreamViews.sol`,
+`StreamLayout.sol`, `WorkRecords.sol`, `src/editions/Editions.sol`,
+`src/identity/ArtistRegistry.sol`, `src/sales/EnglishAuctionLens.sol`; the full list is
+[`tools/retiring.json`](../../tools/retiring.json)) still appear below and are deleted at
+integration, when this page is regenerated.
 
 ## Summary
 
@@ -17,11 +22,11 @@ an audit.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 16,038 non-blank, non-comment lines in 114 files under `src/` (budget: 17,000; ADR 0001, amended 1 November 2026, ADR 0007 and ADR 0008, as amended for the federation review's fixes, and the owner's direction of 16 November 2026) |
-| Deployed contracts | 31 per deployment without the optional VRF entropy module and 32 with it: the 28 (or 29) that `DeployV1.order` lists, the three auctions' lenses among them (each deployed in its own transaction and pinned by its auction), the two governed vaults (`FeeRecipientVault`, `MuseumVault`, after the split ledger) and the two federated template deployers (`FederatedStreamDeployer`, `FederatedEditionsDeployer`, each a `FederatedDeployer`), plus the AccessManager the governance configurator creates, `StreamViews`, the read-only extension `Stream`'s constructor creates, and `WorkDelivery`, the first delivery contract `WorkRecords`' constructor creates (replaceable by `setDelivery`). Not counted as contracts: the three `SSTORE2` data contracts the two deployers' constructors create to hold the templates' creation code (two for `FederatedStream`'s, one for `FederatedEditions'`; code bytes behind a `STOP`, never called); one 66-byte `SplitVault` per payee configuration, deployed on demand by the split ledger; and, outside genesis, each federated artist's own template copies, created by the version's deployer ([ADR 0008](../adr/0008-federation.md)) |
+| Source lines | 17,185 non-blank, non-comment lines in 133 files under `src/` (budget: 17,000; both trees are counted until integration deletes the retiring files) |
+| Deployed contracts | Regenerated at integration from `script/DeployCore.sol`: the permanent core (`Stream`, `Editions`, `WorkFacts`, `Directory`, `SplitLedger`, `RevenueEscrow`, `ContentStore`), the modules, the governed vaults and the AccessManager. Split vaults are deployed on demand by the split ledger |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
-| Contract size | Every contract within EIP-170 (24,576 bytes of runtime) and EIP-3860 (49,152 bytes of initcode), and every contract declared in `src/` with at least 512 bytes of EIP-170 margin; [`tools/size-margins.json`](../../tools/size-margins.json) records no exemption since the permanence integration ([ADR 0007](../adr/0007-permanence.md)): the English auction regained its floor when its opening bids moved to the asset allowlist, the renderer when its reads stopped carrying gas caps, and the edition auction when its lane replaced the interim wiring. Checked by `tools/check_budgets.py` in CI ([Build, test and budgets](build-and-test.md)) |
+| Contract size | Every contract within EIP-170 and EIP-3860; every contract under `src/core/` keeps at least 3,000 bytes of EIP-170 margin and every other contract at least 512 ([`tools/size-margins.json`](../../tools/size-margins.json)), checked by `tools/check_budgets.py` in CI |
 
 ## Contracts in scope
 
@@ -29,15 +34,27 @@ nSLOC counts the non-blank lines left after removing comments, as
 [`tools/check_budgets.py`](../../tools/check_budgets.py) does for the line budget. Sizes are
 from `forge build --sizes` on the `default` profile. The margin is what remains under EIP-170.
 
+### The permanent core
+
+| Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `Stream` (on `StreamBase`) | [`src/core/Stream.sol`](../../src/core/Stream.sol) | 46 | 13,821 | 15,351 | 10,755 |
+| `Editions` (on `EditionsBase`) | [`src/core/Editions.sol`](../../src/core/Editions.sol) | 41 | 12,538 | 13,953 | 12,038 |
+| `WorkFacts` | [`src/core/WorkFacts.sol`](../../src/core/WorkFacts.sol) | 161 | 9,076 | 9,281 | 15,500 |
+| `Directory` | [`src/core/Directory.sol`](../../src/core/Directory.sol) | 40 | 2,911 | 3,479 | 21,665 |
+
+`StreamBase`, `EditionsBase` and `Modules` are abstract and counted with the contracts above
+only through their bytecode; the frozen interfaces are in `src/interfaces/core/`.
+
 ### Products and sales
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 799 | 22,814 | 29,291 | **1,762** |
+| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 799 | 13,821 | 15,351 | **10,755** |
 | `StreamViews` (created by `Stream`'s constructor) | [`src/stream/StreamViews.sol`](../../src/stream/StreamViews.sol) | 79 | 4,110 | 4,138 | 20,466 |
 | `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 737 | 22,934 | 36,031 | 1,642 |
 | `WorkDelivery` (created by `WorkRecords`' constructor; replaceable) | [`src/stream/WorkDelivery.sol`](../../src/stream/WorkDelivery.sol) | 203 | 9,283 | 9,708 | 15,293 |
-| `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 502 | 19,966 | 21,795 | 4,610 |
+| `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 502 | 12,538 | 13,953 | 12,038 |
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 880 | 23,799 | 27,002 | 777 |
 | `EnglishAuctionLens` | [`src/sales/EnglishAuctionLens.sol`](../../src/sales/EnglishAuctionLens.sol) | 345 | 7,787 | 8,094 | 16,789 |
 | `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 914 | 21,764 | 26,070 | 2,812 |
@@ -133,7 +150,7 @@ The "Used by" column is a reading aid; the import graph is authoritative.
 
 ### Interfaces and shared types
 
-2,576 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
+3,005 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
 [`src/economics/interfaces/`](../../src/economics/interfaces/), plus the 14-line Chainlink
 coordinator interface [`src/entropy/IVRFCoordinatorV2Plus.sol`](../../src/entropy/IVRFCoordinatorV2Plus.sol).
 `WorksHashing` is counted here and listed with the libraries above. They carry the external
@@ -176,11 +193,10 @@ are outside this scope, but their use (overrides, hooks, assumptions) is in scop
   federated edition auction, installed at genesis; the permanent artist registry's federation
   directory (ID-33, ID-34) lists every federated contract.
 - **External contracts:** the 6529 delegation contract, the Chainlink VRF coordinator,
-  Permit2, Safe wallets and admitted ERC-20 tokens. The protocol's assumptions about each are
+  and Safe wallets. The protocol's assumptions about each are
   in [Trust assumptions](trust-assumptions.md).
 - **Off-chain systems:** 6529 waves and TDH votes, the curation signer's tooling, the storage
   health monitor, 6529.io and keepers. Their obligations are listed as trust assumptions.
-- **The RC1 reference implementation** in the private 6529Stream repository.
 
 ## How the figures are measured
 
@@ -199,8 +215,8 @@ margin, or that takes an exempt contract below the margin
 
 ## Related
 
-- [Trust assumptions](trust-assumptions.md) and the [threat model](threat-model.md).
+- [Trust assumptions](trust-assumptions.md).
 - [Role and permission matrix](roles.md).
 - [Invariants](invariants.md) and [known limitations](known-limitations.md).
-- [Build, test and budgets](build-and-test.md).
+- [Quickstart](../quickstart.md) and [Testing](../testing/README.md).
 - The [protocol specification](../spec/README.md).

@@ -93,7 +93,7 @@ actions still checks its own effects.
 - **Traceability.** Every row's Test cell must name a function that exists under `test/`;
   [`tools/check_rules.py`](../../tools/check_rules.py) checks it in CI.
 - **Running them.** `forge test --match-contract Invariant`; commands and CI jobs are on
-  [Build, test and budgets](build-and-test.md).
+  Build, test and budgets.
 
 ## Stream and work records
 
@@ -544,7 +544,7 @@ Properties with no campaign of their own, or tested more directly outside one: b
 ### Gas, state growth and the transaction cap
 
 Figures: [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table). Rules:
-[Build, test and budgets](build-and-test.md#gas-and-state-growth-rules).
+Build, test and budgets.
 
 | ID | Property | Test |
 | --- | --- | --- |
@@ -609,6 +609,6 @@ See the [register](../spec/README.md#differences-from-the-adrs).
 - ADRs: [ADR 0001](../adr/0001-v1-scope.md#test-plan), [ADR 0002](../adr/0002-access-manager-hardening.md#test-plan),
   [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#consequences)
 - Tests: every file linked above; [`test/integration/README.md`](../../test/integration/README.md)
-- Related pages: [Build, test and budgets](build-and-test.md),
-  [Known limitations and accepted risks](known-limitations.md), [Threat model](threat-model.md),
+- Related pages: Build, test and budgets,
+  [Known limitations and accepted risks](known-limitations.md), Threat model,
   [Scope](scope.md), the [spec](../spec/README.md)
