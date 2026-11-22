@@ -23,8 +23,8 @@ modules**, which the network adds (after a waiting period that is the network's 
 | | |
 | --- | --- |
 | Maturity | **Pre-audit.** Not production-ready. No external audit has started. |
-| Code | Being restructured into the plain permanent core of [ADR 0010](docs/adr/0010-plain-permanent-core.md): the core is in [`src/core/`](src/core/); the contracts it replaces are deleted when the restructuring is integrated. |
-| Testnet | Earlier Sepolia rehearsals (up to r5) ran the code before the restructuring ([deployment record](deployments/11155111/README.md)). Round r6, on Sepolia only, will deploy the plain core. |
+| Code | The plain permanent core of [ADR 0010](docs/adr/0010-plain-permanent-core.md) is integrated: the permanent contracts are in [`src/core/`](src/core/), the modules beside them. Some test suites are still being ported to it ([Testing](docs/testing/README.md#what-is-not-tested)). |
+| Testnet | Earlier Sepolia rehearsals (up to r5) ran the code before the restructuring ([deployment record](deployments/11155111/README.md)). Round r6, on Sepolia only, will deploy the plain core; its tooling is ready and simulated, not broadcast. |
 | Mainnet | Not deployed. |
 | Known limits | [Known limitations](docs/audit/known-limitations.md) |
 

@@ -24,8 +24,8 @@ the coordinator change.
 | A wallet of a listed federated contract's artist | `requestFederatedSeed{value}(token, item)`, paying at least the wrapper's quote, all forwarded to it | ENT-20, ENT-21 |
 | The current coordinator, or the wrapper for its requests | `rawFulfillRandomWords(requestId, words)`; the first delivery fixes the seed, later ones are silent no-ops | ENT-4, ENT-6 to ENT-8, ENT-13 |
 | A federated template's first mint of a VRF item | `federatedSeedOf(token, contentHash)` | FED-72 |
-| `Stream.mint`, inside the auction's `start` | `isDeliveredContent(item.contentHash)`, one word, after the item is consumed; a `VRF` item whose content has no delivered seed reverts the start with `SeedNotDelivered` | ENT-12 |
-| `WorkRecords.openRecord`; the renderer before a record opens | `seedOfContent(item.contentHash)`; `seedOf(itemHash)` | ENT-3, ENT-18 |
+| The mint policy (`PackageRegistry.authorize`), inside the auction's `start` | `isDeliveredContent(item.contentHash)` and `seedOfContent`, one word each; a `VRF` item whose content has no delivered seed reverts the start with `SeedNotDelivered` | ENT-12 |
+| Readers of an item before its mint | `seedOf(itemHash)`, `isDelivered(itemHash)` | ENT-3 |
 | Governance | `setConfig`, `lowerCallbackGasLimit`, `setCoordinator`, `setWrapper` | ENT-9 to ENT-11; [role matrix](../../docs/audit/roles.md#entropymodule) |
 
 6529 Stream holds the module's address, and the federation registry answers it from there
@@ -64,12 +64,12 @@ under [VrfEntropyModule events](../../docs/integrators/events-and-indexing.md#vr
 - **Operations** (dedicated subscription, the coordinator change in one batch, why Chainlink's
   `migrate` cannot be used) are in the spec's
   [coordinator change](../../docs/spec/entropy.md#coordinator-change) and the
-  [runbook, step 7](../../script/README.md#7-chainlink-vrf-the-entropy-module).
+  [runbook, step 7](../../script/README.md#4-after-the-broadcast).
 - **Bytecode:** wide margin; figures in the
-  [audit scope](../../docs/audit/scope.md#curation-identity-and-records).
+  [audit scope](../../docs/audit/scope.md#modules).
 - **Tests:** `forge test --match-path 'test/entropy/**'`: unit, fuzz, the invariant suite,
   governance and `VrfEntropyManaged.t.sol`, which installs the module under the real
-  `GovernanceConfigurator`. End to end: [`VrfWork.t.sol`](../../test/integration/VrfWork.t.sol).
+  `GovernanceConfigurator`. End to end: `VrfWork.t.sol`.
   Mocks are in
   [`test/mocks/entropy/EntropyMocks.sol`](../../test/mocks/entropy/EntropyMocks.sol). Coverage and
   mutation testing: [Testing](../../docs/testing/README.md).

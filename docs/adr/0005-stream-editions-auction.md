@@ -129,7 +129,7 @@ own, and claims open when the first sweep completes.) `claimBid` mints a winner'
 sends its refund to an address it names; `claimBidFor` lets anyone push a claim, crediting the
 refund. Supply reaches exactly k once every winner has claimed.
 
-**6529 Stream Editions** ([`IEditions`](../../src/interfaces/IEditions.sol)).
+**6529 Stream Editions** ([`IEditions`](../../src/interfaces/core/IEditions.sol)).
 - `name()` is "6529 Stream Editions" and `symbol()` `STREAMEDITIONS` (D139, decision 13). The
   identifiers `Editions`, `IEditions`, `PRODUCT_EDITIONS` and the `"EDITIONS"` binding label
   stay: renaming them would change genesis keys, tools, selectors and events for nothing a
@@ -336,7 +336,7 @@ be claimed.
   `swept` going down. A call on a settled sale returns `true`.
 - A shared public relayer such as Multicall3 is one settler for all its callers, who would
   share one sweep: keepers settle directly or through their own contract
-  ([runbook](../../script/README.md#the-edition-auction-keeper)).
+  ([runbook](../../script/README.md#keepers)).
 - LIM-EA-4 now reads: a dense book's settlement costs more calls, each of bounded gas, and a
   griefer's sweep never blocks a keeper's.
 
@@ -357,7 +357,7 @@ Made by PR #81, with the review fixes of #80 and #81.
   dependencies on their own (one-shot binds, pinned code hashes, the auctions' economics
   resolver: the edition auction's lens copies it at construction) do not follow, so a
   replacement is a set planned with them
-  ([the procedure](../../script/README.md#replacing-one-of-streams-dependencies)). Stream's
+  ([the procedure](../../script/README.md#modules-and-minters)). Stream's
   immutable split factory keeps the genesis artist registry as the payout resolver of every
   Stream work, so that registry is only partly replaceable (LIM-GV-16). The artist registry's
   one `register` caller is governed (`setPackageRegistry`, 30 days), so a successor package
@@ -400,7 +400,7 @@ and amends the decision 15 note under [Open items](#open-items).
   artist as the buyer of a work nobody bought: Stream cannot tell a false sale from a true one,
   and refusing the artist as a buyer would block an artist buying their own work. An adapter
   can also bypass the call: Stream lets a holder transfer an unsettled work
-  (`test_transfersDoNotSettle`) and the minting adapter burn one, so an adapter that never
+  (test_transfersDoNotSettle) and the minting adapter burn one, so an adapter that never
   settles can hand an unsold work to anyone; such a work stays NONE in `primarySale` and its
   edition can never be created. Refusing transfers of unsettled works would cost about 2,100 gas
   on every later transfer of every work, so it is left to the admission review.
@@ -415,7 +415,7 @@ and amends the decision 15 note under [Open items](#open-items).
   in the 30-day review before `Stream.setAdmittedMinter(adapter, true)` executes, with the three
   cases on-chain enforcement leaves to it (a false SOLD, a work moved without settling, a burn
   outside a cancel); a guardian vetoes an admission that does not hold it.
-  `StreamSaleMethods.t.sol` (`test_ASecondAdapterSendsAnUnbidWorkToTheMuseum`) shows a second
+  `StreamSaleMethods.t.sol` (test_ASecondAdapterSendsAnUnbidWorkToTheMuseum) shows a second
   adapter's unbid work landing in the museum without the adapter moving it.
   *Amended 1 November 2026 (owner decision 20):* the adapter must also complete a sale whose
   work Stream reports as rescued (`primarySale` not NONE before the adapter settled it): with
@@ -489,8 +489,8 @@ after the rc.2 seven-lens review.
   `params = abi.encode(keccak256(extra))` with `open`'s `data = abi.encode(item, extra)`.
   Once the edition exists, the hash is the one it records (`edition(id).terms.params`), never
   the caller's copy of the item: `bindMinter` checks a caller's item against 6529 Stream only
-  before the edition exists. `test_F10_AnAdapterTakesLongParamsByHash` and
-  `test_F10_TheRecordedHashGovernsOnceTheEditionExists` prove the path with a mock adapter.
+  before the edition exists. test_F10_AnAdapterTakesLongParamsByHash and
+  test_F10_TheRecordedHashGovernsOnceTheEditionExists prove the path with a mock adapter.
 
 ### 13. Amendment (6 November 2026): explicit Stream state machines (owner decision 28, rc.3)
 
@@ -664,13 +664,13 @@ over as the edition auction lands.
   end plus the close offset. If nobody opens it by then, this adapter can never sell that
   work's editions. The edition is still unbound, so a later admitted adapter of its kind can
   open it (decision 14). The keeper opens the edition auction in the same batch as the 1/1's
-  start (decision 7; [runbook](../../script/README.md#the-edition-auction-keeper)).
+  start (decision 7; [runbook](../../script/README.md#keepers)).
 - **LIM-EA-12: settlement waits for `createEdition`.** (Added 1 November 2026 with the adapter, PR #77.) A sale with winners settles only once
   the edition exists (`EditionNotCreated`). `createEdition` is permissionless and
   deterministic once the 1/1 settles, but it takes the master's item, its package root and a
   Merkle proof, which the frozen `settle(saleId, order)` and `claimBid` cannot carry, and the
   adapter has no bytecode to store them. So a keeper or any participant creates the edition
-  first ([runbook](../../script/README.md#the-edition-auction-keeper)).
+  first ([runbook](../../script/README.md#keepers)).
 
 ## Alternatives considered
 
@@ -759,7 +759,7 @@ before each merge.
   - and governance checks both in the 30-day review before `Stream.setAdmittedMinter(adapter,
     true)` executes; a guardian vetoes an admission that does not hold them.
 
-  `StreamSaleMethods.t.sol` (`test_ASecondAdapterSendsAnUnbidWorkToTheMuseum`) shows a second
+  `StreamSaleMethods.t.sol` (test_ASecondAdapterSendsAnUnbidWorkToTheMuseum) shows a second
   adapter sending a work that ends unbid to the museum; its mock has no currency-freeze exit,
   so the test does not show that branch.
 

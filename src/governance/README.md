@@ -41,7 +41,7 @@ Flows: [Genesis configure](../../docs/spec/governance.md#genesis-configure),
   network changes at once through the NETWORK role (ADR 0010).
 - **A new governed function** follows GV-15 to GV-22
   ([rules](../../docs/spec/governance.md#rules-and-invariants)): mark it `restricted`, map its
-  selector in [`config/genesis.example.json`](../../config/genesis.example.json) (for the plain-core
+  selector in [`config/genesis.core.example.json`](../../config/genesis.core.example.json) (for the plain-core
   stack: `config/make_core_genesis.py`, which writes `config/genesis.core.example.json`) (unmapped falls
   back to `ADMIN`, 7 days), run `python tools/gen_role_matrix.py`, and add a new `bind*` to
   `GovernanceConfig.isGenesisSelector` and the wiring.

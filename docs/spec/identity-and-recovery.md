@@ -72,7 +72,7 @@ promises of a permanent contract.
 | ID-8 | A freeze lasts 14 days per placement, stops every wallet, zeroes the payout and holds pending changes. It blocks a contest, and the network can end it and place it again. An upheld contested replacement still executes during a freeze. | `test_Freeze_*`, `test_Freeze_AnUpheldContestedReplacementStillExecutes` |
 | ID-9 | Reads of other contracts forward all gas; a shortfall reverts, never "no". | `test_GasRule_*` |
 | ID-10 | A payout that cannot pull is refused; `payoutAddress` is zero while frozen or while a pending change would move it. | `test_PayoutValidation_*` |
-| ID-11 | `isArtist` is true only for a wallet of the work's lead account. | `test_IsArtist_AnyWalletOfTheLeadAccount` |
+| ID-11 | `isArtist` is true only for a wallet of the work's lead account. | |
 | ID-15 | The network swaps the consolidation source, compare-and-set, to a checked target. | `test_SetConsolidationSource_SwapsTheSourceWithItsPin` |
 | ID-16 | A wallet can be any account `SignatureVerifier` verifies, including ERC-1271 and EIP-7702 accounts. | `test_ContractRoot_StagesByPreApproval`, `test_7702Account_PreApprovalAndECDSABothWork` |
 | ID-17 | `Directory.payoutAddress` forwards to the ACCOUNTS module; a missing, reverting or gas-burning module reverts and never answers a default. | |

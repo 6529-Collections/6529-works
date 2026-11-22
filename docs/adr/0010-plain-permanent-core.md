@@ -180,3 +180,11 @@ is re-measured on the built stack.
   role delay a guarantee is corrected.
 - Tests of removed mechanisms (interned terms, the view extension, `extsload`, dependency
   replacement, the sync walks, ERC-20 paths) are deleted with them; behaviour tests are ported.
+
+## Amendment note (22 November 2026, after integration)
+
+The waiting-period table above says the unclaimed period is "read when the forfeit or expiry is
+attempted". That is exact for the split ledger and for both auctions (`AgedCredits`). The escrow
+also reads the period at every deposit and recovery, when it ages an account's credit windows:
+a change of the period reaches every amount not yet aged, and an amount a write has already
+counted as aged stays aged (`RevenueEscrow`, ECO-45).

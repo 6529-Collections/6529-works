@@ -165,11 +165,11 @@ costs about 30M gas, 512 KiB about 8.4M (`test_FullForm_1MiB` and `test_FullForm
 
 | ID | Rule | Tests |
 | --- | --- | --- |
-| RND-1 | A finalized work is drawn by its pinned renderer, an unfinalized one by the RENDERER module; never by any other. | `test_finalize_pinsDefaultRenderer`, `test_PinnedRendererWithChangedCodeIsRefused` |
-| RND-2 | A pinned renderer whose code changed is refused; `tokenURI` and `uri` revert instead of falling back. | `test_PinnedRendererWithChangedCodeIsRefused` |
-| RND-3 | Finalize pins the token's current RENDERER module with its code hash; an address is pinned with one code hash. | `test_RepinRefusesARendererWhoseCodeChangedSincePinned` |
+| RND-1 | A finalized work is drawn by its pinned renderer, an unfinalized one by the RENDERER module; never by any other. | |
+| RND-2 | A pinned renderer whose code changed is refused; `tokenURI` and `uri` revert instead of falling back. | |
+| RND-3 | Finalize pins the token's current RENDERER module with its code hash; an address is pinned with one code hash. | |
 | RND-4 | A new RENDERER module is installed only after `moduleDelay`, announced by `ModuleProposed`. | `testFuzz_Activate_NeverBeforeTheWait` |
-| RND-5 | The network repins a finalized work through the RECORDS module until the pin is locked. | `test_repinRenderer_errataPath`, `test_repinRenderer_reverts` |
+| RND-5 | The network repins a finalized work through the RECORDS module until the pin is locked. | |
 | RND-6 | Every read forwards all the gas it may with its own return cap; a failed read reverts with `RendererReadFailed`. | `test_Token_ReturnDataBombsAndGasBurnersFailClosed`, `test_FailsClosed_EveryReadOfTheStreamAndRecords` |
 | RND-7 | A read that runs short of gas reverts with `BoundedCallShortfall`; an answer is always the full answer. | `test_NotEnoughGasRevertsInsteadOfMisreporting` |
 | RND-8 | A store chunk must have the layout length, or the call reverts. | `test_Store_ChunksOfTheWrongLengthRevert` |
@@ -184,14 +184,14 @@ costs about 30M gas, 512 KiB about 8.4M (`test_FullForm_1MiB` and `test_FullForm
 | RND-17 | A primary is inlined only when the work is on-chain complete, the file complete and its weighted size within the limit. | `test_Locator_NotOnChainCompleteIsNotInlined`, `test_Inline_TheThresholdIsInclusive` |
 | RND-18 | `Base64` text is copied only once attested; gzip files are never inlined. | `test_Base64_AValidFileIsCopiedOnlyOnceAttested` |
 | RND-19 | A script is wrapped only if small, UTF-8 and without dependencies; `</script` and `<!--` are neutralized. | `test_Script_IsWrappedInAPageThatSetsWindowWorks` |
-| RND-20 | The preferred locator is served only if it passes the renderer's locator check; a failing or malformed delivery answer is "no locator". | `test_AnUnusableLocatorLeavesTokenUriUnchanged`, `test_Locator_AnOnChainPreferenceGivesNoUrl` |
+| RND-20 | The preferred locator is served only if it passes the renderer's locator check; a failing or malformed delivery answer is "no locator". | `test_Locator_AnOnChainPreferenceGivesNoUrl` |
 | RND-21 | `fullTokenURI` inlines up to 1 MiB and reverts instead of falling back. | `test_Full_RevertsWhenThePrimaryCannotBeInlined` |
 | RND-22 | A work's facts are read through plain views of the token (`workOf`, `collectionOf`) and `WorkFacts.factsOf`. | `test_Edition_RendersTheMastersWorkAsAnEdition` |
 | RND-23 | The dispute status is the statement log's latest outcome; a broken log reverts. | `test_Dispute_ShownWhenTheLogHasAnOutcome`, `test_Dispute_ABrokenLogFailsClosed` |
 | RND-24 | `license_url` is the SPDX page only for an SPDX identifier that is not `LicenseRef-`. | `test_License_UrlIsTheSpdxPageInTheOriginalCase` |
 | RND-25 | The inline threshold is between 1 and 1,048,576. | `test_Constructor_RejectsBadThresholds` |
 | RND-26 | `tokenURI` and `uri` cost at most 8M Prague gas with every cap at once. | `test_Budget_*` |
-| RND-27 | Every visible change to a work's record emits ERC-4906 on its token. | `test_preferenceSetters_eventsAndRefresh` |
+| RND-27 | Every visible change to a work's record emits ERC-4906 on its token. | |
 | RND-28 | Retired: there is no default renderer and no fallback path; RND-1 and RND-2 hold. | |
 
 ## Events

@@ -112,7 +112,7 @@ nonce).
   more gas, paid by whoever settles or buys.
 - Off anvil, the deploy refuses a `NETWORK_FEE_RECIPIENT` that does not exist.
   The runbook asks the same of a later `setFeeTerms`
-  ([script README](../../script/README.md#the-network-fee-recipient-must-exist)).
+  ([script README](../../script/README.md#1-accounts-and-inputs)).
 - A new payee configuration's split wallet still costs one account creation
   on its first payout. This happens once per configuration, and the table
   shows it.
@@ -142,7 +142,7 @@ stack when the restructuring is integrated (the study measured the tightest row 
 and 8 slots, and a steady `start` at 311,906). The history below is unchanged.
 
 Prague gas, counts and ceilings are from `test/integration/GasReport.t.sol`
-(`forge test --match-test test_Gas_Table -vv`) at the head of this ADR's pull
+(forge test --match-test test_Gas_Table -vv) at the head of this ADR's pull
 request. Prague figures move by a few dozen gas whenever a source file changes:
 metadata hashes change CREATE2 addresses, and with them the calldata. Sepolia
 gas is the receipt on the r3 rehearsal (`e5fe78c`,
@@ -190,7 +190,7 @@ records satellite instead of two).
 
 The review of #81 measured the binding row with a VRF seed, which no row covered: 350,126 Prague
 gas, over 350K, since a VRF start read the entropy module twice. `mint` now reads it once, and
-the row is gated (`test_Gas_StartWithBid_ArtistsFirstWork_TwoParty_Vrf`): 349,668 after the
+the row is gated (test_Gas_StartWithBid_ArtistsFirstWork_TwoParty_Vrf): 349,668 after the
 merge of the edition auction (#77), 332 under 350K, the row with the smallest margin. With #77,
 6529 Stream Editions reads the package registry and economics resolver from Stream in the edition
 auction's `open` (281,104) and in `createEdition` of a bound edition (144,169, over its 144,000
@@ -335,7 +335,7 @@ Re-measured for the review-fix pass of November 2026, on the merged tree:
   satellite (the locator fallback of RFX-REC-1) and deployment addresses took 321 off, and the
   statement log's check that the token declares `IStream`, now made before its item read
   (RFX-REC-2), adds 2,208.
-- **`royaltyInfo`** is unchanged; [`RoyaltyInfoGas.t.sol`](../../test/integration/RoyaltyInfoGas.t.sol)
+- **`royaltyInfo`** is unchanged; `RoyaltyInfoGas.t.sol`
   now also calls it with exactly its 50,000-gas budget, cold, and requires every lower limit
   to revert rather than answer a zero royalty.
 - **Every other row** moved by at most 32 with the new code and deployment addresses (the
@@ -519,7 +519,7 @@ or budget moved.
 
 (Note, 17 November 2026, [ADR 0009](0009-second-permanence-pass.md).) Re-measured after the
 second permanence pass and its review fixes: the 1/1 and edition-auction rows are
-`test_Gas_Table` and `EditionAuctionGasReport.t.sol` at the merge of the review fixes; the
+test_Gas_Table and `EditionAuctionGasReport.t.sol` at the merge of the review fixes; the
 start-row margin gate is 3,000 under 350K (rows at or under 347,000), and the tightest row is
 346,923. A later gas pass passes the terms record `_start` locks to the first bid of
 `startWithBid`, which no longer reads its two cold slots back: every `startWithBid` row falls by

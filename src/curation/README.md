@@ -62,11 +62,11 @@ are under [Flows](../../docs/spec/curation.md#flows).
   roots; the verifier's code hash is re-checked at every registration; a retired verifier can
   never be reinstalled. Each is a rule above; keep the tests that pin them.
 - **Bytecode:** comfortable margin; figures in the
-  [audit scope](../../docs/audit/scope.md#curation-identity-and-records).
+  [audit scope](../../docs/audit/scope.md#modules).
 - **Tests:** `forge test --match-path 'test/curation/**'` (unit, the registry invariant suite and
   `PackageRegistryGas.t.sol`, which measures `authorize` cold, directly and as Stream calls it);
   Halmos proofs of the signer-epoch encoding in `test/symbolic/` ([Testing](../../docs/testing/README.md)); end to end,
-  [`CuratedSale.t.sol`](../../test/integration/CuratedSale.t.sol).
+  `CuratedSale.t.sol`.
 
 ## See also
 
@@ -74,4 +74,4 @@ are under [Flows](../../docs/spec/curation.md#flows).
 linked-pair exception), [ADR 0003](../../docs/adr/0003-build-time-decisions.md); the
 [differences from the ADRs](../../docs/spec/README.md#differences-from-the-adrs) (`CUR-*` rows);
 [known limitations](../../docs/audit/known-limitations.md#trust-and-governance) LIM-GV-1 to
-LIM-GV-3; [threat model](../../docs/audit/threat-model.md).
+LIM-GV-3; [threat model](../../docs/audit/trust-assumptions.md).
