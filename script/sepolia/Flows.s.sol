@@ -55,6 +55,10 @@ interface IDigests {
         returns (bytes32);
 }
 
+// Round r6 (Sepolia only) deploys the plain core of ADR 0010. This script still encodes the
+// r5 contracts (WorkRecords, Payment frames, createEdition, the views extension) and is moved
+// to the new interfaces at integration, once the sale modules exist, before r6 runs.
+
 /// @title Flows
 /// @notice Encodes the v1 flows run on a Sepolia rehearsal deployment (r4 by default, `RECORD`;
 ///         set `FLOWS_RECORD` for another record): the content uploads, one curated package of

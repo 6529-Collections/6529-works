@@ -3,6 +3,11 @@
     Runs the v1 flows on a Sepolia rehearsal deployment (r5 by default; -Record selects
     another) and records the gas of every transaction (deployments/11155111/flows.md).
 
+    Round r6 (Sepolia only) deploys the plain core of ADR 0010. This driver and
+    script/sepolia/Flows.s.sol still encode r5's contracts (WorkRecords, the ERC-20 payment
+    frame, createEdition, the views extension); they are moved to the new interfaces at
+    integration, once the sale modules exist, before r6 runs.
+
 .DESCRIPTION
     script/sepolia/Flows.s.sol encodes every call and reads every EIP-712 digest from the
     contract that checks it; this driver signs the digests, sends the transactions with

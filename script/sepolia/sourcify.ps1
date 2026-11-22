@@ -39,6 +39,13 @@ $paths = [ordered]@{
     DependencyRegistry        = 'src/content/DependencyRegistry.sol:DependencyRegistry'
     ConsolidationAdapter      = 'src/identity/ConsolidationAdapter.sol:ConsolidationAdapter'
     ArtistRegistry            = 'src/identity/ArtistRegistry.sol:ArtistRegistry'
+    # The plain core (ADR 0010), from round r6: the permanent Directory and WorkFacts, and the
+    # Accounts, WorkRules and StreamTerms modules.
+    Directory                 = 'src/core/Directory.sol:Directory'
+    WorkFacts                 = 'src/core/WorkFacts.sol:WorkFacts'
+    Accounts                  = 'src/identity/Accounts.sol:Accounts'
+    WorkRules                 = 'src/records/WorkRules.sol:WorkRules'
+    StreamTerms               = 'src/terms/StreamTerms.sol:StreamTerms'
     SplitFactory              = 'src/economics/SplitLedger.sol:SplitLedger'
     FeeRecipientVault         = 'src/economics/GovernedVault.sol:GovernedVault'
     MuseumVault               = 'src/economics/GovernedVault.sol:GovernedVault'
@@ -51,14 +58,17 @@ $paths = [ordered]@{
     StatementLog              = 'src/records/StatementLog.sol:StatementLog'
     EntropyModule             = 'src/entropy/VrfEntropyModule.sol:VrfEntropyModule'
     Renderer                  = 'src/content/Renderer.sol:Renderer'
-    Stream                    = 'src/stream/Stream.sol:Stream'
+    # r6 on: the plain permanent tokens. Records up to r5 name the earlier contracts, which
+    # integration deletes; verify those from the commit they were deployed from.
+    Stream                    = 'src/core/Stream.sol:Stream'
     WorkRecords               = 'src/stream/WorkRecords.sol:WorkRecords'
-    Editions                  = 'src/editions/Editions.sol:Editions'
+    Editions                  = 'src/core/Editions.sol:Editions'
     EnglishAuctionLens        = 'src/sales/EnglishAuctionLens.sol:EnglishAuctionLens'
     EnglishAuction            = 'src/sales/EnglishAuction.sol:EnglishAuction'
     UniformEditionAuctionLens = 'src/sales/UniformEditionAuctionLens.sol:UniformEditionAuctionLens'
     UniformEditionAuction     = 'src/sales/UniformEditionAuction.sol:UniformEditionAuction'
-    # r5 on: created inside WorkRecords' constructor, so its creation transaction is WorkRecords'.
+    # r5: created inside WorkRecords' constructor, so its creation transaction is WorkRecords'.
+    # r6: deployed on its own unless the WorkRules constructor creates it (see $createdBy).
     WorkDelivery              = 'src/stream/WorkDelivery.sol:WorkDelivery'
     FederationRegistry        = 'src/federated/FederationRegistry.sol:FederationRegistry'
     FederatedEditionAuctionLens = 'src/federated/FederatedEditionAuctionLens.sol:FederatedEditionAuctionLens'
@@ -68,8 +78,12 @@ $paths = [ordered]@{
     SaleStarter               = 'src/sales/SaleStarter.sol:SaleStarter'
 }
 # Contracts created inside another contract's constructor: verified against that transaction.
-$createdBy = @{ WorksAccessManager = 'GovernanceConfigurator'; WorkDelivery = 'WorkRecords' }
+$createdBy = @{ WorksAccessManager = 'GovernanceConfigurator' }
 $names = @($rec.contracts.PSObject.Properties.Name)
+# r5 created WorkDelivery inside WorkRecords. From r6 the record says it: a `createdBy` field on
+# the WorkDelivery entry names its creator, if any.
+if ($names -contains 'WorkRecords') { $createdBy.WorkDelivery = 'WorkRecords' }
+elseif ($rec.contracts.WorkDelivery.createdBy) { $createdBy.WorkDelivery = $rec.contracts.WorkDelivery.createdBy }
 $unmapped = @($names | Where-Object { -not $paths.Contains($_) })
 if ($unmapped.Count) { throw "unmapped contract in the record: $($unmapped -join ', ')" }
 # The creation transactions, from forge's broadcast cache: needed to submit, not to read status.
