@@ -1,5 +1,44 @@
 {
-  "structs": {},
+  "structs": {
+    "struct RevenueEscrow.Credit": [
+      {
+        "label": "aged",
+        "offset": 0,
+        "slot": 0,
+        "type": "uint256"
+      },
+      {
+        "label": "maturing",
+        "offset": 0,
+        "slot": 1,
+        "type": "uint256"
+      },
+      {
+        "label": "recent",
+        "offset": 0,
+        "slot": 2,
+        "type": "uint256"
+      },
+      {
+        "label": "maturesAt",
+        "offset": 0,
+        "slot": 3,
+        "type": "uint48"
+      },
+      {
+        "label": "openedAt",
+        "offset": 6,
+        "slot": 3,
+        "type": "uint48"
+      },
+      {
+        "label": "lastAt",
+        "offset": 12,
+        "slot": 3,
+        "type": "uint48"
+      }
+    ]
+  },
   "variables": [
     {
       "contract": "RevenueEscrow",
@@ -17,10 +56,10 @@
     },
     {
       "contract": "RevenueEscrow",
-      "label": "owed",
+      "label": "credits",
       "offset": 0,
       "slot": 1,
-      "type": "mapping(address => mapping(address => uint256))"
+      "type": "mapping(address => mapping(address => struct RevenueEscrow.Credit))"
     },
     {
       "contract": "RevenueEscrow",
@@ -35,13 +74,6 @@
       "offset": 0,
       "slot": 3,
       "type": "mapping(address => address)"
-    },
-    {
-      "contract": "RevenueEscrow",
-      "label": "creditedAt",
-      "offset": 0,
-      "slot": 4,
-      "type": "mapping(address => mapping(address => uint48))"
     }
   ]
 }
