@@ -6,11 +6,15 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 /// @title IRenderer
 /// @notice Builds token metadata for 6529 Stream works and the editions of 6529 Stream Editions
 ///         (ADR 0001 section 8 "`tokenURI` size").
-/// @dev A renderer is immutable: a change of rendering is a new renderer contract, which works
-///      adopt as the default before finalize or by the errata path after. It reads the core and
-///      seed from 6529 Stream, the record file ID, media, license and preferred locators from
-///      `IWorkRecords` (an edition reads through its master), the record JSON and media bytes from
-///      the content store, and dispute status from the statement log's `latestDisputeOutcome`. It
+/// @dev A renderer is immutable: a change of rendering is a new renderer contract, which a token
+///      installs as its RENDERER module before finalize, or the RECORDS module repins after. It
+///      reads the work (item, artist, collection, serial, seed) from the token's plain views
+///      (`IStream.workOf`, `collectionOf`; an edition reads through its master,
+///      `IEditions.stream()`), the record file ID, media and license from `IWorkFacts.factsOf`,
+///      preferred locators from the token's RECORDS module's delivery contract (`ILocators`;
+///      the renderer checks what it prints and treats any failure as no locator), the record
+///      JSON and media bytes from the content store, and dispute status from the statement
+///      log's `latestDisputeOutcome`. It
 ///      writes the license fields, and traits for the artist ID, the record's artists, year, medium
 ///      and dimensions, the collection and serial, the edition's master, the seed and a dispute
 ///      statement. `tokenURI` stays small: it inlines the media only when the work is on-chain
@@ -26,14 +30,14 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 interface IRenderer is IERC165 {
     /// @notice The inline threshold is zero or above the renderer's `MAX_INLINE_BYTES`.
     error RendererThresholdInvalid(uint256 threshold);
-    /// @notice A read of `target` failed: no code, a revert, out of its gas cap, or too much
-    ///         return data. `selector` names the call.
+    /// @notice A read of `target` failed: no code, a revert, too much return data, or a work
+    ///         that was never minted. `selector` names the call.
     error RendererReadFailed(address target, bytes4 selector);
     /// @notice A string from 6529 Stream, a locator or the content store is not well-formed
     ///         UTF-8.
     error RendererInvalidUtf8();
-    /// @notice The work's data breaks a rule: no primary file first, or an edition whose content
-    ///         hash is not its master's. (A bad record is not an error: it renders core-only.)
+    /// @notice The work's data breaks a rule: no primary file first. (A bad record is not an
+    ///         error: it renders core-only.)
     error RendererRecordInvalid(address token, uint256 tokenId);
     /// @notice `fullTokenURI` cannot serve the work in full: its record is not open, incomplete
     ///         or invalid, or the primary file is not on-chain complete, is incomplete, too large,

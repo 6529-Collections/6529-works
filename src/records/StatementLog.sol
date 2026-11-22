@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { AuthorityUtils } from "@openzeppelin/contracts/access/manager/AuthorityUtils.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { IERC1155 } from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
@@ -12,7 +13,7 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 import { Utf8 } from "../libraries/Utf8.sol";
 import { IArtistRoleResolver } from "../interfaces/IArtistRoleResolver.sol";
 import { IStatementLog, Role, Statement } from "../interfaces/IStatementLog.sol";
-import { IStream } from "../interfaces/IStream.sol";
+import { IStream } from "../interfaces/core/IStream.sol";
 import { StatementKinds } from "../interfaces/types/StatementKinds.sol";
 
 /// @title StatementLog
@@ -32,7 +33,7 @@ import { StatementKinds } from "../interfaces/types/StatementKinds.sol";
 ///      work ID, an artist in the artist registry) are not checked.
 ///      {latestDisputeOutcome} answers for a work: the latest outcome about the token, or, while
 ///      it has none, the latest about the package item it was minted from (read from the token's
-///      `IStream.coreOf`).
+///      `IStream.itemHashOf`).
 ///
 ///      Authorization per role:
 ///      - ARTIST: the pluggable {IArtistRoleResolver} says the signer is an artist of the subject.
@@ -53,7 +54,7 @@ import { StatementKinds } from "../interfaces/types/StatementKinds.sol";
 ///      AccessManager as the signer of a statement about itself.
 ///
 ///      Calls out (the gas rule): every read of a token (ERC-165 probes, `ownerOf`, `balanceOf`,
-///      `coreOf`) and the ERC-1271 check forward all the gas EIP-150 allows through
+///      `itemHashOf`) and the ERC-1271 check forward all the gas EIP-150 allows through
 ///      `BoundedCall`, and a read that fails while leaving only the retained share reverts the
 ///      transaction with `BoundedCall.BoundedCallShortfall`. No gas number is compiled in, and
 ///      running short never yields an answer: not "no outcome", not "not a token", not "not the
@@ -224,11 +225,12 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IStatementLog
-    /// @dev The item fallback reads `coreOf(id)` on a token that declares `IStream` by ERC-165,
-    ///      checked first in full (with the `0xffffffff` probe, so a contract that answers every
-    ///      call with a true word declares nothing); both reads forward all the gas EIP-150 allows. A token that does not
-    ///      declare it is never asked for `coreOf`, so whatever it would answer, it keeps its own
-    ///      result, zero; so does a Stream's burned or unminted token (`IStream.UnknownWork`).
+    /// @dev The item fallback reads `itemHashOf(id)` on a token that declares `IStream` by
+    ///      ERC-165, checked first in full (with the `0xffffffff` probe, so a contract that
+    ///      answers every call with a true word declares nothing); both reads forward all the gas
+    ///      EIP-150 allows. A token that does not declare it is never asked for `itemHashOf`, so
+    ///      whatever it would answer, it keeps its own result, zero; so does a Stream's burned or
+    ///      unminted token (`itemHashOf` reverts with OpenZeppelin's `ERC721NonexistentToken`).
     ///      Either read running short reverts with `BoundedCall.BoundedCallShortfall`, and any
     ///      other failure of a token that declares `IStream` reverts with
     ///      `BoundedCall.BoundedCallFailed` (fail closed), so neither passes for "no outcome".
@@ -241,20 +243,23 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
         if (entryHash != 0 || token == address(0) || token.code.length == 0) return entryHash;
         // RFX-REC-2: only a declared Stream's answer can name an item.
         if (!BoundedCall.supportsInterface(token, type(IStream).interfaceId)) return 0;
-        // `coreOf` answers six static words, the item hash first; `UnknownWork` reverts with 36.
+        // `itemHashOf` answers one word; `ERC721NonexistentToken` reverts with 36 bytes.
         (bool ok, bytes memory answer) =
-            BoundedCall.tryReadAll(token, abi.encodeCall(IStream.coreOf, (id)), 192);
+            BoundedCall.tryReadAll(token, abi.encodeCall(IStream.itemHashOf, (id)), 36);
         bytes32 head;
         assembly ("memory-safe") {
             // The first word: the item hash of an answer, or the selector of a revert.
             head := mload(add(answer, 0x20))
         }
-        if (ok && answer.length == 192) {
+        if (ok && answer.length == 32) {
             return _latestDispute[subjectKey(address(0), uint256(head))];
         }
         // Only the selector is compared, so truncating to four bytes is intended.
         // forge-lint: disable-next-line(unsafe-typecast)
-        if (!ok && answer.length == 36 && bytes4(head) == IStream.UnknownWork.selector) return 0;
+        if (
+            !ok && answer.length == 36
+                && bytes4(head) == IERC721Errors.ERC721NonexistentToken.selector
+        ) return 0;
         revert BoundedCall.BoundedCallFailed(token);
     }
 

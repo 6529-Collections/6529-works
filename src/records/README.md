@@ -48,15 +48,17 @@ events in [StatementLog events](../../docs/integrators/events-and-indexing.md#st
   and OWNER never consult it, which is the whole of the "no governance path to an artist
   statement" guarantee; keep it that way. The trust boundary for ARTIST entries is in
   [trust assumptions](../../docs/audit/trust-assumptions.md#resolvers-and-renderer-pins).
-- **Calls out** (ERC-165 probes, `ownerOf`, `balanceOf`, `coreOf`, ERC-1271) forward all gas
-  through `BoundedCall`'s forward-all family and copy at most 32 bytes (192 for `coreOf`); a
+- **Calls out** (ERC-165 probes, `ownerOf`, `balanceOf`, `itemHashOf`, ERC-1271) forward all
+  gas through `BoundedCall`'s forward-all family and copy at most 32 bytes (36 for `itemHashOf`,
+  so its revert can be read); a
   read that runs short reverts with `BoundedCallShortfall` (DSP-26). Only a full 32-byte
   `ownerOf` answer counts as ERC-721, anything else falls through to `balanceOf`.
   [`StatementLogOwnerRead.t.sol`](../../test/records/StatementLogOwnerRead.t.sol) covers real
   tokens and bombs; [`StatementLogGasRule.t.sol`](../../test/records/StatementLogGasRule.t.sol)
   stresses every call out at 1x to 100x its cost and short of gas.
-- **What the log needs from Stream:** ERC-165 `IStream`, `coreOf(uint256)` answering six static
-  words with the item hash first, and `IStream.UnknownWork(uint256)`. Nothing else.
+- **What the log needs from Stream:** ERC-165 `IStream` (`src/interfaces/core/IStream.sol`),
+  `itemHashOf(uint256)` answering one word, and OpenZeppelin's
+  `ERC721NonexistentToken(uint256)` for a burned or unminted token. Nothing else.
 - **Logs only:** every state change is reconstructible from `StatementAppended`,
   `StatementRelayed`, `NonceRevoked` and `ArtistResolverSet` without a call.
 - **Supersession is not checked on-chain** (one more write per entry); readers verify

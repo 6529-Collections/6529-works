@@ -13,12 +13,15 @@ import { ISplitWallet } from "./ISplitWallet.sol";
 ///         deployment beyond the vault's 66 bytes of code, once per wallet.
 ///         Every release also pays the network fee vault ({ISplitFactory.network}) its share of
 ///         the same asset when the vault is a fixed payee of the wallet (a royalty wallet). A
-///         payee's share that anyone marked and that is still unreleased 180 days later goes to
-///         the network ({mark}, {forfeit}).
+///         payee's share that anyone marked and that is still unreleased once the unclaimed
+///         period has passed goes to the network ({mark}, {forfeit}). The period is the
+///         network's setting (`IDirectory.unclaimedPeriod`, 180 days at launch), read when a
+///         forfeit is attempted, so a change applies to marks already running; it is not a
+///         fixed promise. What a mark covers never changes.
 interface ISplitLedger is ISplitFactory, ISplitWallet, IReleaseVerifier {
     /// @notice Anyone marked payee `payee`'s share of `asset` in `wallet`: unless the payee's
-    ///         released total reaches `target` within 180 days of `markedAt`, the rest of it may
-    ///         go to the network.
+    ///         released total reaches `target` before the unclaimed period in force has passed
+    ///         since `markedAt`, the rest of it may go to the network.
     /// @param wallet The split wallet.
     /// @param asset The asset (ETH is `address(0)`).
     /// @param payee The payee's index.
@@ -44,8 +47,8 @@ interface ISplitLedger is ISplitFactory, ISplitWallet, IReleaseVerifier {
     /// @notice The payee's earlier mark still runs (it has not released up to it), so it is not
     ///         replaced.
     error MarkPending(address wallet, address asset, uint256 payee);
-    /// @notice The payee has no mark, or its mark is younger than 180 days; `dueAt` is when it
-    ///         matures (zero when there is no mark).
+    /// @notice The payee has no mark, or its mark is younger than the unclaimed period in
+    ///         force; `dueAt` is when it matures under that period (zero when there is no mark).
     error MarkNotDue(address wallet, address asset, uint256 payee, uint256 dueAt);
 
     /// @notice Executes a payee's signed release from `authorization.wallet`. Anyone may submit
@@ -67,7 +70,8 @@ interface ISplitLedger is ISplitFactory, ISplitWallet, IReleaseVerifier {
 
     /// @notice Marks payee `index`'s share of `asset` in the wallet for `payees` and `salt`: what it
     ///         can release now. Anyone may call. If the payee's released total has not reached
-    ///         that level 180 days later, {forfeit} sends the rest of it to the network. Money that
+    ///         that level once the unclaimed period has passed, {forfeit} sends the rest of it to
+    ///         the network. Money that
     ///         arrives after the mark is never part of it. A mark the payee has not yet released
     ///         past cannot be replaced, so nobody can restart its clock.
     /// @dev Reverts with `WalletNotDeployed` for a wallet not deployed, `NothingToRelease` when the
@@ -79,11 +83,13 @@ interface ISplitLedger is ISplitFactory, ISplitWallet, IReleaseVerifier {
     function mark(Payee[] calldata payees, bytes32 salt, address asset, uint256 index) external;
 
     /// @notice Sends to the network what is still unreleased of payee `index`'s marked share, at
-    ///         least 180 days after the mark: the marked level minus what the payee has released,
+    ///         once the unclaimed period in force (`IDirectory.unclaimedPeriod`, read now) has
+    ///         passed since the mark: the marked level minus what the payee has released,
     ///         at most what it can release now. Anyone may call. The amount counts as released
     ///         for the payee, and the mark is cleared.
     /// @dev Reverts with {MarkNotDue} before the mark matures and `NothingToRelease` when the
-    ///      payee reached its mark. Like a release, it also pays the network its own share.
+    ///      payee reached its mark; it also reverts, and the money stays, if the resolver does
+    ///      not answer the period. Like a release, it also pays the network its own share.
     /// @param payees The wallet's payee list.
     /// @param salt The wallet's salt.
     /// @param asset The asset (ETH is `address(0)`).

@@ -6,6 +6,7 @@ import { Create2 } from "@openzeppelin/contracts/utils/Create2.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
+import { IDirectory } from "../interfaces/core/IDirectory.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 import { IArtistPayoutResolver } from "./interfaces/IArtistPayoutResolver.sol";
@@ -48,17 +49,16 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///      no gas shortfall can produce a partial or success-shaped result.
 ///      The network (R11, R12): every release also pays the network fee vault ({network}) its
 ///      share of the same asset when the vault is a payee of the wallet, and a payee's share that
-///      someone marked and that is still unreleased {UNCLAIMED_PERIOD} later goes to the network.
+///      someone marked and that is still unreleased once the unclaimed period has passed goes to
+///      the network. The period is the network's setting, read from the resolver
+///      (`IDirectory.unclaimedPeriod`, 180 days at launch) when a forfeit is attempted, so a
+///      change applies to marks already running; what a mark covers never changes. The ledger
+///      itself gains no authority, setter or storage for it.
 contract SplitLedger is ISplitLedger, EIP712 {
     /// @notice The EIP-712 type hash of {IReleaseVerifier.Authorization}.
     bytes32 public constant RELEASE_TYPEHASH = keccak256(
         "ReleaseAuthorization(address wallet,address asset,uint256 payee,address account,address recipient,uint256 amount,uint256 nonce,uint256 deadline)"
     );
-
-    /// @notice How long a marked share stays its payee's: 180 days. The number is the guarantee
-    ///         (an unclaimed share is its payee's for at least this long after it was marked), so
-    ///         it is compiled in and nothing changes it.
-    uint256 public constant UNCLAIMED_PERIOD = 180 days;
 
     /// @inheritdoc ISplitFactory
     IArtistPayoutResolver public immutable resolver;
@@ -88,8 +88,9 @@ contract SplitLedger is ISplitLedger, EIP712 {
     mapping(address wallet => mapping(address asset => mapping(uint256 index => uint256))) private
         _marks;
 
-    /// @param resolver_ The artist payout resolver (the artist registry). It must have code and
-    ///        not be an EIP-7702 delegated account.
+    /// @param resolver_ The artist payout resolver (the `Directory`), which also answers the
+    ///        unclaimed period (`IDirectory.unclaimedPeriod`). It must have code and not be an
+    ///        EIP-7702 delegated account.
     /// @param network_ The network fee vault (a `GovernedVault`), deployed first. It must have
     ///        code and not be an EIP-7702 delegated account.
     constructor(IArtistPayoutResolver resolver_, address network_)
@@ -329,14 +330,17 @@ contract SplitLedger is ISplitLedger, EIP712 {
 
     /// @dev Clears a matured mark and returns what of it is still unreleased, at most what the
     ///      payee can release now: only what was due at the mark, never money that arrived later.
-    ///      Reverts with {MarkNotDue} when there is no mark or it is younger than the period.
+    ///      Reverts with {MarkNotDue} when there is no mark or it is younger than the unclaimed
+    ///      period, read from the resolver now (a plain call: if it fails, the forfeit reverts
+    ///      and the money stays in the wallet).
     function _forfeitable(address wallet, address asset, uint256 index, uint32 share)
         private
         returns (uint256 amount)
     {
         uint256 m = _marks[wallet][asset][index];
         {
-            uint256 dueAt = m == 0 ? 0 : (m >> 208) + UNCLAIMED_PERIOD;
+            uint256 dueAt =
+                m == 0 ? 0 : (m >> 208) + IDirectory(address(resolver)).unclaimedPeriod();
             // forge-lint: disable-next-line(block-timestamp)
             if (m == 0 || block.timestamp < dueAt) revert MarkNotDue(wallet, asset, index, dueAt);
         }
