@@ -83,9 +83,9 @@ contract SplitLedger is ISplitLedger, EIP712 {
     /// @dev Bit `nonce % 256` of word `nonce / 256` is set once `account` used `nonce`.
     mapping(address account => mapping(uint256 word => uint256 bits)) private _nonceBitmap;
 
-    /// @dev A payee's mark, one storage slot. `target` is never zero in a mark that exists.
-    /// @param target The released level the payee must reach to clear the mark.
-    /// @param markedAt The time the mark was placed.
+    /// @dev A payee's mark, one storage slot: `target` is the released level the payee must reach
+    ///      to clear the mark (never zero in a mark that exists) and `markedAt` the time it was
+    ///      placed.
     struct Mark {
         uint208 target;
         uint48 markedAt;

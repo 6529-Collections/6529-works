@@ -45,6 +45,31 @@ contract ContentStoreLinkTest is PermanenceBase {
         store = new ContentStore();
     }
 
+    /// @dev A link is one storage slot (slot 3 of the store's layout,
+    ///      `test/snapshots/storage/ContentStore.json`): the chunk's length in the low 64 bits
+    ///      and its part count in the 32 bits above them. Read from the slot itself, so the test
+    ///      fails if a link grows to a second slot or its fields change place or width.
+    function testFuzz_Link_IsOneWord_LengthBelowPartCount(uint256 length, uint256 size) public {
+        length = bound(length, 2, CHUNK);
+        size = bound(size, (length + 255) / 256, length - 1);
+        (bytes32 fileId, bytes[] memory chunks, bytes32[] memory hashes) =
+            _declare(_data(length, length ^ size), IDENTITY, HTML);
+        bytes32[] memory parts = _writeParts(chunks[0], size);
+        bytes32 slot = keccak256(abi.encode(hashes[0], uint256(3)));
+        assertEq(vm.load(address(store), slot), bytes32(0), "no link, an empty slot");
+        assertEq(store.linkChunk(parts), hashes[0]);
+        assertEq(uint256(vm.load(address(store), slot)), parts.length << 64 | length, "the word");
+        assertEq(store.maxParts(fileId), parts.length);
+        assertEq(store.readChunk(fileId, 0), chunks[0]);
+        // A link from fewer parts rewrites the same one slot.
+        if (parts.length > 2) {
+            store.linkChunk(_writeParts(chunks[0], (length + 1) / 2));
+            assertEq(uint256(vm.load(address(store), slot)), 2 << 64 | length, "replaced");
+            assertEq(store.maxParts(fileId), 2);
+            assertEq(store.readChunk(fileId, 0), chunks[0]);
+        }
+    }
+
     function test_Link_IsTheSameChunkAsAWholeWrite() public {
         bytes memory file = _data(2 * CHUNK + 300, 1);
         (bytes32 fileId, bytes[] memory chunks, bytes32[] memory hashes) =
