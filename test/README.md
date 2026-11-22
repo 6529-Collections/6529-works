@@ -44,55 +44,44 @@ description of the contract.
 
 | `src/` | Tests |
 | --- | --- |
-| `stream/Stream.sol` | [`stream/Stream.t.sol`](stream/Stream.t.sol) (by function; `StreamWithRecordsTest` for the cases that need the records satellite bound), `StreamTerms*`, `StreamEconomics`, `StreamGas`, `StreamTxCap`, `StreamInvariant`; the Halmos proofs `symbolic/StreamSymbolic`, the Medusa harness `medusa/StreamMedusa` and the replay suite `replay/LogReplayStream` |
-| `stream/WorkRecords.sol` | [`stream/WorkRecords.t.sol`](stream/WorkRecords.t.sol), [`PreferredLocation.t.sol`](stream/PreferredLocation.t.sol); on the real stack [`integration/WorkRecordsStack.t.sol`](integration/WorkRecordsStack.t.sol), `RecordAmendments`, `SyncOnChainResume` |
-| `stream/WorkDelivery.sol` | [`stream/WorkDelivery.t.sol`](stream/WorkDelivery.t.sol), `WorkDeliveryInvariant` with `WorkDeliveryHandler` |
-| `stream/SpdxId.sol` | [`stream/SpdxId.t.sol`](stream/SpdxId.t.sol); the proof in `symbolic/` |
-| `sales/EnglishAuction.sol`, `sales/EnglishAuctionLens.sol` | [`sales/auction/EnglishAuction.t.sol`](sales/auction/EnglishAuction.t.sol) (start, bids, settlement, credits, 96-bit arithmetic), `EnglishAuctionLens` (the lens and the fallback), `EnglishAuctionLensDifferential` (every moved view against the pre-lens build in [`legacy/`](sales/auction/legacy/), a test-only copy), `EnglishAuctionDisputes` (pause, withdrawals, resume, cancel, governed setters), `EnglishAuctionFederation`, `EnglishAuctionHostile`, `EnglishAuctionGas`, `invariant/`; on the real stack the `Auction*.t.sol` suites beside them |
-| `sales/UniformEditionAuction.sol`, `UniformEditionAuctionLens.sol` | [`sales/edition/`](sales/edition/): `UniformEditionAuction` (configuration, opening, bids, the soft close, the 1/1 coupling, raises, withdrawals, settlement and the sweep, claims), `UniformEditionAuctionLens`, `UniformEditionAuctionSettlement` (settlement against `UniformClearing` at the numeric limits), `UniformEditionAuctionHostile`, `UniformEditionAuctionVectors` (the golden vectors), `SweepSkipRegression` (each settler's own sweep), on the mock harness `EditionAuctionBase`; on the real stack, through [`integration/EditionAuctionStack.sol`](integration/EditionAuctionStack.sol): `EditionAuction` (the flows), `EditionAuctionBinding` (the edition bound at open), `EditionAuctionGasReport`, `PieceLifecycle`, `EditionAuctionDifferential` (random books against the brute-force reference) and [`integration/invariant/EditionAuctionInvariant.t.sol`](integration/invariant/EditionAuctionInvariant.t.sol) |
-| `interfaces/types/StepLadder.sol` | [`interfaces/StepLadder.t.sol`](interfaces/StepLadder.t.sol) (the golden ladder) |
-| `sales/EnglishAuction.sol`, its pause windows | on the real stack: [`sales/PauseWindow.t.sol`](sales/PauseWindow.t.sol) |
-| `sales/UniformClearing.sol` | [`sales/uniform/UniformClearing.t.sol`](sales/uniform/UniformClearing.t.sol) (the ladder domain, the clearing against a brute force over units and against the reference model's golden vectors in `fixtures/edition-auction/`, the quote, the cut step), `UniformClearingGas`; the proofs in `symbolic/` |
-| `editions/Editions.sol`, `EditionRules.sol` | [`editions/`](editions/): `Editions`, `EditionRules`, `EditionsGasReport`, `Editions.invariant` |
-| `curation/PackageRegistry.sol`, `Eip712CurationVerifier.sol` | [`curation/`](curation/): `PackageRegistry`, `PackageRegistryGas`, `PackageRegistryInvariant`, `Eip712CurationVerifier`, `CurationSignerInvariant` (signer disable, enable and swap around live approvals) |
-| `identity/ArtistRegistry.sol` | [`identity/ArtistRegistry.t.sol`](identity/ArtistRegistry.t.sol) (wallets, signatures, own changes, replacements and contests, freezes, payouts), [`Accounts.invariant.t.sol`](identity/Accounts.invariant.t.sol), `AccountsGasRule`, `FederationDirectory`, `SignatureAgility`, `ConsolidationAdapter`; on the real stack [`integration/IdentityRecovery.t.sol`](integration/IdentityRecovery.t.sol) |
-| `identity/ConsolidationAdapter.sol` | [`identity/ConsolidationAdapter.t.sol`](identity/ConsolidationAdapter.t.sol); against the real contract in `fork/` |
-| `records/StatementLog.sol` | [`records/`](records/): `StatementLog`, `StatementLogPolicy`, `StatementLogGolden`, `StatementLogOwnerRead`, `StatementLogGasRule` (every call out at 1x to 100x its cost and short of gas), `StatementLog.invariant`; `symbolic/StatementLogSymbolic`, `medusa/LogMedusa` |
-| `content/ContentStore.sol`, `DependencyRegistry.sol`, `Base64Validator.sol` | [`content/`](content/): `ContentStore`, `ContentStoreInvariant`, `DependencyRegistry`, `Base64Attest` |
-| `content/Renderer.sol`, `JsonScan.sol`, `DataUri.sol`, `HtmlScript.sol` | [`content/renderer/`](content/renderer/): `Renderer` (metadata, escaping, license, disputes, editions, failing closed), `RendererRecords` (what a record may hold), `RendererMedia`, `RendererHostile`, `RendererGas`, `RendererOracles`, `JsonScan`, `TextHelpers` |
-| `economics/SplitLedger.sol`, `SplitVault.sol` | [`economics/`](economics/): the ledger by side, under the suite names of the interfaces it implements: `SplitFactory` (`ISplitFactory`: prediction, deployment, the payee-list rules), `SplitWallet` (`ISplitWallet`: receipts and releases), `ReleaseVerifier` (`IReleaseVerifier`: signed releases and nonces); `NetworkShare` (the network's share, marks and forfeits), `SplitLedgerStress` (the gas rule), `LedgerEdgeCases`; `SplitVault` (the 66-byte wallet code); `symbolic/LedgerSymbolic`, `medusa/LedgerMedusa`, `replay/LogReplayLedger` |
-| `economics/*` (the rest) | [`economics/`](economics/): one suite per contract (`AssetAllowlist`, `ClaimRouter`, `EconomicsResolver`, `GovernedVault`, `RevenueEscrow`, `RevenuePayment`), `SplitMath` (`Splits`), `HostileTokens` (`TokenTransfer` and hostile ERC-20s), `GasCap`, `invariant/`; `GovernedVaultInvariant`; `symbolic/EscrowSymbolic` (escrow and governed vault) |
-| `federated/*` | [`federated/`](federated/): on the wired stack through `FederationBase`: `FederatedPair`, `FederatedRecord`, `FederatedSale`, `FederatedRefusal`, `FederatedPermanence`, `FederationGovernance`, `FederationProvenance`, `FederationSecondPass`, `FederationPass3`, `FederationGas`, `FederationGasRule`, `FederationInvariant`, `FederatedStateInvariant` with `FederatedStateHandler`; `symbolic/FederatedSymbolic`, `replay/LogReplayFederation` |
-| ABI and storage layout of every `src/` contract | [`snapshots/`](snapshots/): committed snapshots that `tools/check_snapshots.py` compares with the build ([Testing](../docs/testing/README.md#abi-and-storage-snapshots)) |
-| `entropy/VrfEntropyModule.sol` | [`entropy/`](entropy/): `VrfEntropyModule`, `VrfEntropyFuzz`, `VrfEntropyGovernance`, `VrfEntropyManaged`, `VrfEntropyInvariant` |
-| `governance/*` | [`governance/`](governance/): `NetworkAndBrake` and `GovernanceInvariant` (`WorksAccessManager`), `GovernanceConfigurator`, `GenesisConfig`, `GenesisWiring` (`GovernanceConfig`), `BoundedParameter`, `Roles`; on the real stack `integration/Genesis.t.sol` |
+| `core/` (`Stream`, `Editions`, `Directory`, `WorkFacts`, `Modules`) | [`core/`](core/): `Stream`, `StreamSettings`, `StreamHostile`, `Editions`, `EditionsHostile`, `EditionsInvariant` with `EditionsHandler`, `Directory`, `Modules`, `WorkFacts`, `WorkFactsPorted`, `WorkFactsInvariant`, `CoreSeam` (the seams between the tokens and their modules), `CoreTokenFixes` and `WorkFactsFixes` (review fixes); the proofs `symbolic/StreamCoreSymbolic`, `EditionsCoreSymbolic`, `WorkFactsSymbolic`, `ModulesSymbolic`; the harnesses `medusa/StreamCoreMedusa`, `WorkFactsMedusa`; the replays `replay/LogReplayStream`, `LogReplayEditions`, `LogReplayWorkFacts` |
+| `records/WorkRules.sol`, `stream/WorkDelivery.sol`, `stream/SpdxId.sol` | [`records/`](records/): `WorkRules`, `WorkRulesPorted`, `WorkRulesHostile`; [`stream/`](stream/): `WorkDelivery`, `WorkDeliveryPorted`, `PreferredLocation`, `SpdxId`; on the real stack `integration/WorkRecordsStackPorted`, `RecordLifecycle`, `SyncOnChainResumePorted` |
+| `terms/StreamTerms.sol` | [`terms/`](terms/): `StreamTerms`, `StreamTermsFixes`; on the real stack `integration/LoweredShareRoyalties` |
+| `sales/EnglishAuction.sol`, `SaleStarter.sol` | [`sales/auction/`](sales/auction/): `EnglishAuction`, `EnglishAuctionCredits`, `EnglishAuctionDisputes`, `EnglishAuctionFederated`, `EnglishAuctionFederatedFixes`, `EnglishAuctionHostile`, `EnglishAuctionPorted`, `EnglishAuctionEndToEnd`; [`sales/PauseWindow.t.sol`](sales/PauseWindow.t.sol) |
+| `sales/UniformEditionAuction.sol`, `UniformEditionAuctionLens.sol`, `federated/FederatedEditionAuction*.sol` | [`sales/edition/`](sales/edition/): `UniformEditionAuction`, `UniformEditionAuctionLens`, `UniformEditionAuctionSettlement`, `UniformEditionAuctionWindow`, `UniformEditionAuctionAbandon`, `UniformEditionAuctionAdopt`, `UniformEditionAuctionHostile`, `UniformEditionAuctionVectors`, `UniformEditionAuctionGasRule`, `UniformEditionAuctionPorted`, `SweepSkipRegression`, `EditionAuctionFixes`, `FederatedEditionAuction`, `FederatedEditionAuctionFixes` |
+| `sales/UniformClearing.sol`, `interfaces/types/StepLadder.sol` | [`sales/uniform/`](sales/uniform/): `UniformClearing`, `UniformClearingGas`; [`interfaces/StepLadder.t.sol`](interfaces/StepLadder.t.sol); the proofs in `symbolic/UniformClearingSymbolic` |
+| `curation/PackageRegistry.sol`, `Eip712CurationVerifier.sol` | [`curation/`](curation/): `PackageRegistry`, `PackageRegistryFixes`, `PackageRegistryGas`, `PackageRegistryInvariant`, `Eip712CurationVerifier`, `CurationSignerInvariant`, `ConsolidatedAccounts`; `symbolic/CurationEpochSymbolic` |
+| `identity/Accounts.sol`, `ConsolidationAdapter.sol` | [`identity/`](identity/): `Accounts`, `AccountsFreeze`, `FreezeAndContest`, `AccountsResolvers`, `AccountsWiring`, `AccountsGasRule`, `Accounts.invariant`, `SignatureAgility`, `ConsolidationAdapter`; against the real delegation contract in `fork/` |
+| `records/StatementLog.sol` | [`records/`](records/): `StatementLog`, `StatementLogPolicy`, `StatementLogGolden`, `StatementLogOwnerRead`, `StatementLogCoreStream`, `StatementLogGasRule`, `StatementLog.invariant`; `symbolic/StatementLogSymbolic`, `medusa/LogMedusa`, `replay/LogReplayStatements` |
+| `content/ContentStore.sol`, `DependencyRegistry.sol`, `Base64Validator.sol` | [`content/`](content/): `ContentStore`, `ContentStoreAttestComplete`, `ContentStoreCompletenessGas`, `ContentStorePermanence`, `ContentStoreInvariant`, `Base64Attest`, `DependencyRegistry`; `symbolic/Base64ValidatorSymbolic`, `replay/LogReplayContent` |
+| `content/Renderer.sol`, `JsonScan.sol`, `DataUri.sol`, `HtmlScript.sol` | [`content/renderer/`](content/renderer/): `Renderer`, `RendererCore`, `RendererRecords`, `RendererMedia`, `RendererHostile`, `RendererGas`, `RendererOracles`, `JsonScan`, `TextHelpers`; `symbolic/TextSymbolic`; the budget on the real stack in `integration/TokenUriBudget` |
+| `economics/*` | [`economics/`](economics/): one suite per contract (`AssetAllowlist`, `EconomicsResolver`, `ClaimRouter`, `GovernedVault*`, `RevenueEscrow*`, `RevenuePayment`, `SplitFactory`, `SplitVault`, `SplitWallet`, `SplitMath`), `HostileTokens`, `LedgerEdgeCases`, `NetworkShare`, `GasCap`, `SplitLedgerStress`, `SplitLedgerUnclaimedPeriod`, `SplitsLowerBoundDifferential`, and [`invariant/`](economics/invariant/); `symbolic/LedgerSymbolic`, `EscrowSymbolic`, `SplitsSymbolic`; `medusa/LedgerMedusa`; `replay/LogReplayLedger` |
+| `federated/*` | [`federated/`](federated/): `FederatedStream`, `FederatedEditions`, `FederatedHostile`, `FederatedFlow`, `FederationRegistryGovernance`, `FederationRegistryListing`, `FederationRegistryPolicy`, `FederationRegistryFixes`, and [`invariant/`](federated/invariant/); `symbolic/FederatedSymbolic`, `replay/LogReplayFederated`; on the real stack `integration/FederatedPair` |
+| `entropy/VrfEntropyModule.sol` | [`entropy/`](entropy/): `VrfEntropyModule`, `VrfEntropyManaged`, `VrfEntropyGovernance`, `VrfEntropyFuzz`, `VrfEntropyInvariant`; on the real stack `integration/VrfWork` |
+| `governance/*` | [`governance/`](governance/): `NetworkAndBrake`, `GovernanceInvariant`, `GovernanceConfigurator`, `Roles`, `BoundedParameter`, `CoreNetwork`, `CoreRoleMap`, `RoleMapComplete`, `GenesisConfig*`, `GenesisWiring*` |
 | `libraries/*` | [`libraries/`](libraries/): one suite per library; the proofs in `symbolic/` |
 | `interfaces/*` | [`interfaces/`](interfaces/): pinned interface IDs, typehashes, `WorksHashing` |
-| `script/` | [`deploy/`](deploy/): `DeployV1` (the deploy library), `DeployScript` (the deploy and Verify scripts and their guards), `GenesisFlows` |
+| `script/` | [`deploy/`](deploy/): `DeployCore` (the deploy library and the whole-stack readback), `DeployCoreSafety` (the one-call factory and the runtime-code comparison) |
 
 ## The tree
 
 | Directory | What lives there | Layers |
 | --- | --- | --- |
-| `content/`, `curation/`, `economics/`, `editions/`, `entropy/`, `governance/`, `identity/`, `interfaces/`, `libraries/`, `records/`, `stream/` | The suites of one `src/` module each, with the module's base or fixture (`*Base.sol`, `*Fixture.sol`) and its invariant handlers (`*Handler.sol`) | unit, fuzz, invariant, gas |
-| `sales/` | The two sale adapters: `auction/` for the English auction and `edition/` for the edition auction; at the top, suites that span the adapters, on the real stack through [`SalesStackBase.sol`](sales/SalesStackBase.sol) | unit, fuzz, invariant, gas, integration |
-| `sales/auction/Auction*.t.sol` | The auction's regression suites on the real stack: currency freeze, dispute pause and cancel, payout failures, custody, federated tokens | integration |
+| `content/`, `core/`, `curation/`, `economics/`, `entropy/`, `federated/`, `governance/`, `identity/`, `interfaces/`, `libraries/`, `records/`, `stream/`, `terms/` | The suites of one `src/` module each, with the module's base or fixture (`*Base.sol`, `*Fixture.sol`) and its invariant handlers (`*Handler.sol`) | unit, fuzz, invariant, gas |
+| `sales/` | The two sale adapters: `auction/` for the English auction and `edition/` for the edition auction; `uniform/` for the clearing library; at the top, `PauseWindow` | unit, fuzz, invariant, gas, integration |
 | `*/invariant/` | Larger stateful campaigns, each test contract with its handler | invariant |
-| `content/tooling/` | The Python uploader's and the CID helper's golden vectors against the real `ContentStore` | differential |
 | `integration/` | The real, wired v1 stack, deployed by the deploy library with the committed genesis ([its README](integration/README.md)); the gas report and its harness; `invariant/` runs a campaign on the same stack | integration, gas, invariant |
 | `deploy/` | The deploy library, the deploy and Verify scripts, genesis | integration |
 | `fork/` | The stack against the real delegation contract, Permit2 and the VRF coordinator, and Safe v1.4.1 wallets in the network's, an artist's and holders' roles (`Safe*`); skipped without an RPC URL ([its README](fork/README.md)) | fork |
-| `symbolic/` | Halmos proofs (`check_*`), compiled only under the `symbolic` profile: the pure libraries, and the permanent contracts' state rules (`LedgerSymbolic`, `EscrowSymbolic`, `StatementLogSymbolic`, `StreamSymbolic`, `EditionsSymbolic`, `FederatedSymbolic`, with stand-ins named `Sym*`) | symbolic |
-| `medusa/` | Cheatcode-free harnesses with their own model of the rules (`LedgerMedusa`, `StreamMedusa`, `LogMedusa`, on `MedusaBase`), run by Medusa (`medusa.json`) and by a Forge runner each (`*Medusa.t.sol`); `MedusaClock` is the Forge runner's clock | second fuzzer |
+| `symbolic/` | Halmos proofs (`check_*`), compiled only under the `symbolic` profile: the pure libraries, and the permanent contracts' state rules (`LedgerSymbolic`, `EscrowSymbolic`, `StatementLogSymbolic`, `StreamCoreSymbolic`, `EditionsCoreSymbolic`, `WorkFactsSymbolic`, `ModulesSymbolic`, `FederatedSymbolic`, with stand-ins named `Sym*`) | symbolic |
+| `medusa/` | Cheatcode-free harnesses with their own model of the rules (`LedgerMedusa`, `StreamCoreMedusa`, `LogMedusa`, `WorkFactsMedusa`, on `MedusaBase`), run by Medusa (`medusa.json`) and by a Forge runner each (`*Medusa.t.sol`); `MedusaClock` is the Forge runner's clock | second fuzzer |
 | `replay/` | Reference indexers that rebuild each permanent contract from its logs alone (`*Indexer.sol`), the replay suites (`LogReplay*.t.sol`) and the real-data vectors (`RealVectors.t.sol`) | replay, real data |
 | `helpers/` | Shared fixtures (`GovernanceFixture`), `HandlerReach` (the handler self-test driver: each action's state diff against its expectation), oracles (`TextOracles`, the frozen RC1 code in `Pr744Utf8` and `Pr744Escape`, and `UniformClearingReference`, the edition auction's brute-force clearing and FIFO fill, with its own test), the state-growth meter (`StateGrowth`, with its own test), the gas-rule stress harness (`GasRule`: a `Burner` that makes a dependency cost a multiple of a base, and `GasRuleAssertions`), revert data (`SignatureReverts`) and locator builders (`ContentAddresses`) | support |
 | `mocks/` | Stand-ins and adversaries, by module ([below](#mocks)) | support |
 | `fixtures/` | Byte-exact data: the CC0 legal code, Permit2's mainnet runtime code, the oracle vectors from `tools/content/oracles.py`, and in `real/` the 6529 Network Museum record and the event topics the replay suites read (`tools/make_vectors.py`) | support |
 | `snapshots/` | Generated JSON, not Solidity: `abi/<Contract>.json` (every function, event and error with its selector or topic) for every `src/` contract and library, and `storage/<Contract>.json` (every state variable and stored struct member) for every contract; rewritten only by `python tools/check_snapshots.py --update` | interface |
 
-A file may hold more than one test contract when tests of one subject need different fixtures:
-`Stream.t.sol` has `StreamTest` and `StreamWithRecordsTest`, `PauseWindow.t.sol` has
-`PauseWindowTest` (the bare stack) and `PauseWindowSalesStackTest` (the sales package).
+A file may hold more than one test contract when tests of one subject need different fixtures.
 
 ## Naming
 
@@ -113,7 +102,7 @@ and `*GasReport.t.sol`.
 | Symbolic | `check_<property>`, in `test/symbolic` | `check_spdxId_matchesTheRuleForEveryInput` |
 | Gas | `test_Gas_*`, `test_WorstCase_*`, `test_Budget_*` | `test_Gas_Table` |
 | Scenario | a sentence, in `integration/`, `governance/` and `deploy/` | `test_ColdAdminRemovesAHotAdminAndAGuardianActingTogether` |
-| Open finding | `test_Finding_*`, passing while the finding stands ([integration README](integration/README.md#findings)) | |
+| Open finding | `test_Finding_*`, passing while the finding stands ([integration README](integration/README.md#open-findings)) | |
 
 The function part matches the contract's function as the suite writes it: most suites capitalise
 it (`test_Settle_`, `test_Bid_`), the Stream, WorkRecords and curation suites keep its case
@@ -132,29 +121,20 @@ A finding raised in a pull request's review names that review instead, for examp
 ## Mocks
 
 A mock lives in `test/mocks/<module>/`, under the module of the tests that use it; a mock shared
-by several modules lives under the module of the contract it stands in for (`StreamMock` in
-`mocks/stream/`, `MockPermit2` in `mocks/sales/`). Each contract name means one behaviour: when
-two consumers need different stand-ins for the same contract, the name says whose view it is
-(`RendererWorkRecordsMock`, `EntropyPackageRegistryMock`, `CurationArtistRegistryMock`).
+by several modules lives under the module of the contract it stands in for. Each contract name
+means one behaviour: when two consumers need different stand-ins for the same contract, the name
+says whose view it is (`CurationArtistRegistryMock`).
 
 | Directory | Contents |
 | --- | --- |
-| [`mocks/stream/`](mocks/stream/) | `StreamMocks.sol`: Stream's dependencies (package and artist registries, economics, entropy, renderer, sale adapter, records, editions); `StreamMock.sol`: the minimal Stream stand-in |
-| [`mocks/sales/`](mocks/sales/) | `SaleMocks.sol`: an edition-like mint target, escrow, allowlist and economics stand-ins, the federation registry, a faithful Permit2 and an EIP-2612 token, shared by the sale suites and the integration stack; `AuctionMocks.sol`: an ERC-721 mint target and hostile bidders for the auction; `LeanStartStack.sol`: the lean start-path model the auction's gas tests measure |
-| [`mocks/economics/`](mocks/economics/) | `MockERC20` and the hostile tokens (fee on transfer, rebasing, no return, blocklists, gas burners), wallets and payees |
-| [`mocks/content/`](mocks/content/) | What the renderer reads (`Renderer*Mock`) and hostile stores and satellites |
-| [`mocks/editions/`](mocks/editions/) | Editions' dependencies, among them `EditionsStreamMock` (masters, settlement and the edition link, with faults), and hostile ERC-1155 receivers |
-| [`mocks/identity/`](mocks/identity/) | The delegation contract's faithful reduction, a repriced variant, and the artist registry's dependencies |
+| [`mocks/core/`](mocks/core/) | `CoreFixture.sol` (the tokens with their modules), `CoreMocks.sol` and `StreamCoreMocks.sol`: stand-ins for the modules, minters and gates the tokens call |
+| [`mocks/sales/`](mocks/sales/) | `SaleMocks.sol`: mint targets, escrow, allowlist and economics stand-ins shared by the sale suites |
+| [`mocks/economics/`](mocks/economics/) | `MockERC20` and the hostile tokens (fee on transfer, rebasing, no return, blocklists), wallets and payees |
+| [`mocks/content/`](mocks/content/) | What the renderer reads, and hostile stores and chunk sources |
+| [`mocks/editions/`](mocks/editions/) | Stand-ins the mutation tests of the editions code use |
+| [`mocks/identity/`](mocks/identity/) | The delegation contract's faithful reduction and the accounts module's dependencies |
 | [`mocks/curation/`](mocks/curation/), [`mocks/entropy/`](mocks/entropy/), [`mocks/records/`](mocks/records/), [`mocks/governance/`](mocks/governance/) | Each module's dependencies and adversaries |
-| [`mocks/federated/`](mocks/federated/) | `FederatedMocks.sol`: hostile counterparts of the federated pair (a refund recipient that re-enters `settle`, an editions contract whose seal runs out of gas, an adapter that never delivers) |
 | [`mocks/libraries/`](mocks/libraries/) | Adversarial call targets (return bombs, gas burners, ERC-1271 wallets) for the bounded-call and signature libraries and their callers |
-| [`mocks/integration/`](mocks/integration/) | A refusing wallet for the integration flows |
-
-Stream has four kinds of stand-in, each for one job: the real contract (`StreamFixture`) for its
-own suites; `StreamMock` for contracts that only read it (the renderer, the artist registry);
-`EditionsStreamMock` for Editions, which needs masters that settle and links that misbehave; and
-`LeanStream`, the start-path model of the auction's gas tests. Anything that crosses modules
-runs on the real stack (`IntegrationBase`).
 
 ## What a file's place decides
 

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
+import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IRenderer } from "src/interfaces/IRenderer.sol";
 import { IWorkDelivery } from "src/interfaces/IWorkDelivery.sol";

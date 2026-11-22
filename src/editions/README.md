@@ -38,6 +38,6 @@ replaceable edition sale contract, the uniform-price edition auction in
   promise.
 - **Logs rebuild the state**: every change emits an event; `ContractURISet` carries the URI
   that ERC-7572's `ContractURIUpdated` does not. The replay test is
-  [`LogReplayEditionsCore.t.sol`](../../test/replay/LogReplayEditionsCore.t.sol).
+  [`LogReplayEditions.t.sol`](../../test/replay/LogReplayEditions.t.sol).
 - **Tests**: `test/core/Editions*.t.sol` (unit, fuzz, hostile modules and minters, invariants),
-  `test/symbolic/EditionsCoreSymbolic.t.sol` (Halmos), `test/replay/LogReplayEditionsCore.t.sol`.
+  `test/symbolic/EditionsCoreSymbolic.t.sol` (Halmos), `test/replay/LogReplayEditions.t.sol`.
