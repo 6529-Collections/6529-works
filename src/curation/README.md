@@ -1,8 +1,10 @@
 # curation
 
 The package registry and the v1 curation verifier: how a network-approved package of works is
-registered, accepted by every party, moved to 6529 Stream by its lead artist and consumed once
-at the auction start, and how 6529 Stream Editions claims a master's content. The rules are in
+registered, accepted by every party, moved to 6529 Stream by its lead artist and admitted once
+at the auction start. The package registry is 6529 Stream's mint policy
+([`IMintPolicy`](../interfaces/core/IMintPolicy.sol), ADR 0010): the sale contract calls it,
+then mints in Stream with the facts it answers; Stream never calls it. The rules are in
 [Curation](../../docs/spec/curation.md) (`CUR-*`); the signer's off-chain obligations are under
 [Trust obligations of the curation signer](../../docs/spec/curation.md#trust-obligations-of-the-curation-signer).
 
@@ -10,7 +12,7 @@ at the auction start, and how 6529 Stream Editions claims a master's content. Th
 
 | File | What it is |
 | --- | --- |
-| `PackageRegistry.sol` | Package roots and their status, party acceptances (and identity creation), move signatures and nonces, consume-once checks for Stream (Stream holds content uniqueness and releases), the verifier swap, the kill of a signer's registered approvals, and the edition-sale approval check ([`IItemApprovals`](../interfaces/IItemApprovals.sol)). Implements [`IPackageRegistry`](../interfaces/IPackageRegistry.sol) and, as 6529 Stream's v1 mint policy, [`IMintPolicy`](../interfaces/IMintPolicy.sol): the Stream item rules, the VRF delivery check and the terms quote run here too. |
+| `PackageRegistry.sol` | Package roots and their status, party acceptances (and identity creation), move signatures and nonces, the verifier swap, the kill of a signer's registered approvals, the edition-sale approval check ([`IItemApprovals`](../interfaces/IItemApprovals.sol)), and, as 6529 Stream's mint policy ([`IMintPolicy`](../interfaces/core/IMintPolicy.sol)), the item rules, the VRF seed, the terms of a new work (`MintFacts`, `MintTerms`) and the content rules after an upheld dispute (`releaseContent`, `releasedTo`, `isBarred`). Implements [`IPackageRegistry`](../interfaces/IPackageRegistry.sol). |
 | `Eip712CurationVerifier.sol` | The v1 [`ICurationVerifier`](../interfaces/ICurationVerifier.sol): an EIP-712 `PackageApproval` by an active `CURATION_SIGNER` over its current signer epoch; the network's one-way `disableSigner` and `enableSigner`. |
 
 Item hashes and leaves come from [`WorksHashing`](../interfaces/types/WorksHashing.sol), type
@@ -25,30 +27,31 @@ strings from [`Typehashes`](../interfaces/types/Typehashes.sol), edition-terms v
 | Anyone, relaying a party's proof (`abi.encodePacked(wallet, signature)`) | `acceptPackage(root, acceptance, proof)`; the first acceptance of an account calls `ArtistRegistry.register` | CUR-7, CUR-19 |
 | A wallet of the artist's account | `revokeMove(artistId, nonce)` | CUR-11 |
 | An edition sale opening (view) | `isApprovedItem(root, itemHash, proof)` | CUR-24 |
-| The bound Stream, inside `mint` | `authorize(context, request)` at the auction start (item rules, the private `_consume`, the quote; AUC-38) | CUR-1, CUR-6, CUR-8 to CUR-10, CUR-12, CUR-14 |
+| An active minter of the bound Stream (the English auction), at the start | `authorize(token, request)`, then `IStream.mint(custody, facts)`; `preview` answers the same unverified | CUR-1, CUR-6, CUR-8 to CUR-10, CUR-12, CUR-14 |
 | The entropy module (views) | `packageOf`, `consumedItemOf` for its request gate | ENT-1 in [Entropy](../../docs/spec/entropy.md#rules-and-invariants) |
-| The network | `revokePackage`, `killSignerApprovals`, `setVerifier`, `disableSigner`, `enableSigner`; the genesis binds `bindStream`, `bindEditions` | CUR-15 to CUR-18, CUR-23; [role matrix](../../docs/audit/roles.md#packageregistry) |
+| The network | `revokePackage`, `killSignerApprovals`, `setVerifier`, `setEntropyModule`, `releaseContent`, `disableSigner`, `enableSigner`; the genesis binds `bindStream` | CUR-15 to CUR-18, CUR-23; [role matrix](../../docs/audit/roles.md#packageregistry) |
 
 The call sequences (approve and register, acceptance, move and start, release)
 are under [Flows](../../docs/spec/curation.md#flows).
 
 ## Developer notes
 
-- **Storage.** The consume writes nothing new for content: Stream holds content uniqueness
-  and releases (AUC-44), and `consumedItemOf`, `releasedTo` and `isReleased` answer from it.
+- **Single use.** An item mints once because Stream keeps one live token per content hash
+  (`tokenOfContent`). When that token was burned (an upheld dispute), the content mints again
+  only after `releaseContent` names the burned token and a beneficiary, only for an item whose
+  lead artist is the beneficiary, and never by the burned item, which the release bars
+  (`isBarred`). A release is used up by the next mint.
 - **Open item values.** `PackageItem.kind`, `seedPolicy` and `Party.role` are `uint8`s, so the
   permanent contracts decode any value; this policy refuses, for a new item, any kind, seed
   policy or party role it does not know (`InvalidItem`, `InvalidSeedPolicy`; CUR-9). A successor
   policy may accept new values.
-- **No edition record.** Editions decides an edition from Stream's permanent record alone
-  (ED-1, ED-3; review A, M-1), so a replacement policy can never strand a settled master's
-  edition; `bindEditions` is kept for the genesis wiring and is informational.
 - **Start-path budget.** `authorize` runs inside every auction start, so it is held to its
   [ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table) row (one new slot,
   a regression ceiling). Its external calls are the lead artist's `activeAuthorityOf` (a move
   signed by the root is verified here; any other wallet of the account goes through
-  `requireSigned`, a non-default path that reads the consolidation source), the economics read
-  and the split factory's `walletFor` (and, for a VRF item, the entropy module's delivery);
+  `requireSigned`, a non-default path that reads the consolidation source), Stream's
+  `isMinter` and `tokenOfContent`, the resolver's `newWorkTerms` (two `walletFor` derivations)
+  and, for a VRF item, the entropy module's delivery and seed;
   consent is read from `acceptedAs`. The kill epoch sits beside `stream`, a word the start
   reads anyway. Adding a call or a write
   here moves every `start` row of the gas report.

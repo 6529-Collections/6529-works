@@ -313,12 +313,11 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
         _checkItem(item);
         uint256 artistId = _artists.artistIdOf(item.parties[0].account);
         if (artistId == 0) revert InvalidLeadArtist();
-        _fill(
-            facts, terms, item, WorksHashing.itemHashCalldata(item), artistId, req.packageRoot
-        );
+        _fill(facts, terms, item, WorksHashing.itemHashCalldata(item), artistId, req.packageRoot);
         terms.creator = _artists.activeAuthorityOf(artistId);
-        if (item.seedPolicy == uint8(SeedPolicy.ARTIST)) facts.seed = item.seed;
-        else if (item.seedPolicy == uint8(SeedPolicy.VRF)) {
+        if (item.seedPolicy == uint8(SeedPolicy.ARTIST)) {
+            facts.seed = item.seed;
+        } else if (item.seedPolicy == uint8(SeedPolicy.VRF)) {
             facts.seed = IEntropyModule(entropyModule).seedOfContent(item.contentHash);
         }
     }
@@ -335,8 +334,8 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
         uint256 beneficiary
     ) external restricted {
         if (
-            token != stream || tokenId == 0
-                || IStream(token).tokenOfContent(contentHash) != tokenId || _isLive(token, tokenId)
+            token != stream || tokenId == 0 || IStream(token).tokenOfContent(contentHash) != tokenId
+                || _isLive(token, tokenId)
         ) revert ContentUsed(contentHash, tokenId);
         if (beneficiary > type(uint160).max || _artists.authorityOf(beneficiary) == address(0)) {
             revert IArtistRegistry.UnknownArtist(beneficiary);
@@ -471,10 +470,9 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
     ///      item only with an entropy module; a license ID that follows the `SpdxId` rule.
     function _checkItem(PackageItem calldata item) private view {
         address currency = item.sale.currency;
-        if (
-            item.sale.saleKind == 0
-                || (currency != CURRENCY_ETH && currency != CURRENCY_DEFAULT)
-        ) revert InvalidItemSale();
+        if (item.sale.saleKind == 0 || (currency != CURRENCY_ETH && currency != CURRENCY_DEFAULT)) {
+            revert InvalidItemSale();
+        }
         if (item.parties.length == 0) revert InvalidLeadArtist();
         uint8 policy = item.seedPolicy;
         if (

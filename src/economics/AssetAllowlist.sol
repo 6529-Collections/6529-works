@@ -39,7 +39,7 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
     mapping(bytes32 product => Currency) private _defaults;
 
     /// @param authority The AccessManager governing this contract.
-    /// @param ethIncrementFloor The ETH increment floor in wei (ADR 0001: 0.001 ETH); ETH is
+    /// @param ethIncrementFloor The ETH increment floor in wei (0.001 ETH at launch); ETH is
     ///        admitted at deployment because 6529 Stream launches with it, at revision 1.
     constructor(address authority, uint256 ethIncrementFloor) AccessManaged(authority) {
         _admit(ETH, ethIncrementFloor);
@@ -90,7 +90,7 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
     {
         AssetConfig storage config = _activeConfig(asset);
         _checkRevision(expectedRevision, config.revision);
-        // A storage bound only (the bid shares the status word), not a price cap (R19).
+        // A storage bound only (the bid shares the status word), not a price cap.
         if (bid > type(uint96).max) revert OpeningBidAboveCeiling(bid, type(uint96).max);
         uint256 previous = config.openingBid;
         // Safe: `bid` is at most `type(uint96).max` (checked above).

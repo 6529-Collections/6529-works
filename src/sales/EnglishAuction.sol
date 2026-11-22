@@ -211,7 +211,8 @@ contract EnglishAuction is
         ) revert InvalidAuctionState(saleId, _state(s));
         if (!IModules(token).isMinter(address(this))) revert TargetNotAllowed(token);
         uint40 end = SafeCast.toUint40(block.timestamp + c.duration);
-        (s.endTime, s.status, s.pauseUsed, s.recipientSet) = (end, AuctionState.ACTIVE, false, false);
+        (s.endTime, s.status, s.pauseUsed, s.recipientSet) =
+        (end, AuctionState.ACTIVE, false, false);
         (s.bid, s.recipient, s.pausedAt, s.outcomeFrom) = (0, address(0), 0, 0);
         emit SaleStarted(
             saleId,
@@ -340,8 +341,8 @@ contract EnglishAuction is
         if (s.token == stream) revert SaleNotRefusable(saleId);
         uint256 allowedAt = uint256(s.endTime) + REFUSAL_DELAY;
         if (block.timestamp < allowedAt) revert RefusalTooEarly(saleId, allowedAt);
-        (bool ok, bytes memory answer) = address(escrow)
-            .call(abi.encodeCall(IRevenueEscrow.depositETH, (address(this))));
+        (bool ok, bytes memory answer) =
+            address(escrow).call(abi.encodeCall(IRevenueEscrow.depositETH, (address(this))));
         bool escrowFree =
             !ok && answer.length == 4 && bytes4(answer) == IRevenueEscrow.ZeroAmount.selector;
         if (!escrowFree || _reentrancyGuardEntered()) revert ReentrancyGuardReentrantCall();
@@ -600,9 +601,9 @@ contract EnglishAuction is
         // The escrow refuses to be paid as a wallet, so a seller that is the escrow (or this
         // contract) could never settle; it is refused while nothing is at stake.
         if (
-            t.saleKind != SaleKind.ENGLISH_AUCTION || t.params.length != 0
-                || t.seller == address(0) || t.seller == address(escrow)
-                || t.seller == address(this) || t.feeShare > DENOMINATOR
+            t.saleKind != SaleKind.ENGLISH_AUCTION || t.params.length != 0 || t.seller == address(0)
+                || t.seller == address(escrow) || t.seller == address(this)
+                || t.feeShare > DENOMINATOR
         ) revert InvalidSaleTerms(token, 0);
         uint256 tokenId = IStream(token).mint(address(this), f);
         if (IERC721(token).ownerOf(tokenId) != address(this)) {
@@ -616,7 +617,7 @@ contract EnglishAuction is
         // Checked above: at most 100,000.
         // forge-lint: disable-next-line(unsafe-typecast)
         (s.seller, s.feeShare, s.endTime, s.status) =
-            (t.seller, uint24(t.feeShare), end, AuctionState.ACTIVE);
+        (t.seller, uint24(t.feeShare), end, AuctionState.ACTIVE);
         emit SaleStarted(
             saleId,
             token,
@@ -814,6 +815,6 @@ contract EnglishAuction is
         ) revert InvalidConfig();
         emit ConfigSet(config(), next);
         (st.duration, st.extensionWindow, st.incrementShare, st.refusalGas) =
-            (next.duration, next.extensionWindow, next.incrementShare, next.refusalGas);
+        (next.duration, next.extensionWindow, next.incrementShare, next.refusalGas);
     }
 }
