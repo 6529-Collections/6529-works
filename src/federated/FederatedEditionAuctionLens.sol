@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { ISplitFactory } from "../economics/interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "../economics/interfaces/ISplitWallet.sol";
 import { Splits } from "../economics/Splits.sol";
-import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
+import { Slots } from "../interfaces/core/CoreTypes.sol";
+import { IEditions } from "../interfaces/core/IEditions.sol";
+import { IFederationGate } from "../interfaces/core/IFederationGate.sol";
+import { IModuleSlots } from "../interfaces/core/IModules.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "../interfaces/IEnglishAuction.sol";
 import { IEnglishAuctionClock } from "../interfaces/IEnglishAuctionClock.sol";
-import { IFederatedEditions } from "../interfaces/IFederatedEditions.sol";
-import { IFederatedToken } from "../interfaces/IFederatedToken.sol";
-import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
 import { IUniformEditionAuctionLens } from "../interfaces/IUniformEditionAuctionLens.sol";
 import {
@@ -17,67 +18,41 @@ import {
 } from "../interfaces/IUniformEditionAuctionStorage.sol";
 import { PRODUCT_FEDERATED, WorkTerms } from "../interfaces/types/EconomicsTypes.sol";
 import { PackageItem } from "../interfaces/types/PackageTypes.sol";
-import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { UniformEditionAuctionLensBase } from "../sales/UniformEditionAuctionLens.sol";
+
+/// @notice The one view of the federation module this lens reads besides `IFederationGate`:
+///         whether a federated contract is listed and served (`IFederationRegistry.isActive`).
+interface IFederationListing {
+    /// @notice Whether `token` is a listed federated contract the federation module serves.
+    /// @param token The federated contract.
+    /// @return True while it is served.
+    function isActive(address token) external view returns (bool);
+}
 
 /// @title FederatedEditionAuctionLens
 /// @notice The lens of {FederatedEditionAuction} (ADR 0008): {UniformEditionAuctionLensBase}'s
 ///         views and checks, plus the federation rules the adapter asks it for: which contracts
 ///         are served, the fee a sale locks, and the 1/1 clock a delisting cancels.
-/// @dev Stateless; reads the calling adapter's storage (slot 12: each sale's edition contract)
-///      and, for the federation registry, the artist registry's current pointer. Every call out
-///      forwards all gas; a high-level call reverts on any failure, and the existence check
-///      uses `BoundedCall`'s forward-all read, so no shortfall is read as an answer. `editions`
-///      and `stream` answer zero (there is no single one).
+/// @dev Stateless; reads the calling adapter's storage (slot 13: each sale's edition contract)
+///      and, for the federation module, the directory's FEDERATION slot, read live. The fee
+///      share a sale locks is the federation module's answer for the token
+///      (`IFederationGate.feeShareOf`), never the token's own; the recipient is the economics
+///      resolver's federated one. Every call out forwards all gas and reverts on any failure.
+///      `editions` and `stream` answer zero (there is no single one).
 contract FederatedEditionAuctionLens is UniformEditionAuctionLensBase {
-    uint256 private constant _SLOT_TOKENS = 12;
-
-    address private immutable _englishAuctionAddress;
-    IArtistRegistry private immutable _artistRegistry;
-    IEconomicsResolver private immutable _economics;
+    uint256 private constant _SLOT_TOKENS = 13;
 
     /// @param englishAuction_ The adapter's English auction.
     /// @param escrow_ The adapter's revenue escrow.
-    /// @param artistRegistry_ The artist registry, whose pointer names the federation registry.
-    /// @param economics_ The economics resolver: the federated network fee recipient.
-    constructor(
-        address englishAuction_,
-        address escrow_,
-        address artistRegistry_,
-        address economics_
-    ) UniformEditionAuctionLensBase(englishAuction_, escrow_) {
-        _englishAuctionAddress = englishAuction_;
-        _artistRegistry = IArtistRegistry(artistRegistry_);
-        _economics = IEconomicsResolver(economics_);
-    }
-
-    /// @notice The fee a sale of `token` locks at open: the federation registry entry's share,
-    ///         and the economics resolver's federated recipient now (settlement reads it again).
-    ///         Reverts with
-    ///         `InvalidSaleTerms` unless the registry serves `token` with an entry whose code hash
-    ///         is the token's, the share is at most 100,000, and a nonzero share has a payable
-    ///         recipient (not zero, not `escrow`).
-    /// @param token The edition contract.
-    /// @param escrow The adapter's revenue escrow.
-    /// @return recipient The network fee recipient.
-    /// @return share The network share, out of 100,000.
-    function feeTerms(address token, address escrow)
-        external
-        view
-        returns (address recipient, uint256 share)
-    {
-        IFederationRegistry registry = IFederationRegistry(federationRegistry());
-        IFederationRegistry.Entry memory e = registry.entry(token);
-        recipient = _economics.networkFeeRecipient(PRODUCT_FEDERATED);
-        share = e.feeShare;
-        if (
-            !registry.isActive(token) || e.codeHash != token.codehash || share > Splits.DENOMINATOR
-                || (share != 0 && (recipient == address(0) || recipient == escrow))
-        ) revert ISaleAdapter.InvalidSaleTerms(token, 0);
-    }
+    /// @param directory_ The directory: its FEDERATION module and its unclaimed period.
+    /// @param economics_ The economics resolver: the federated network fee recipient and the
+    ///        split factory.
+    constructor(address englishAuction_, address escrow_, address directory_, address economics_)
+        UniformEditionAuctionLensBase(englishAuction_, escrow_, directory_, economics_)
+    { }
 
     /// @notice Edition `id`'s 1/1 clock (`IEnglishAuctionClock.auctionClock` of its master's
-    ///         sale), or CANCELLED once the federation registry no longer serves `token`.
+    ///         sale), or CANCELLED once the federation module no longer serves `token`.
     /// @param token The edition contract.
     /// @param id The edition ID (the master's token ID).
     /// @return The 1/1's state.
@@ -89,7 +64,7 @@ contract FederatedEditionAuctionLens is UniformEditionAuctionLensBase {
         returns (IEnglishAuction.AuctionState, uint64, uint64)
     {
         if (!_served(token)) return (IEnglishAuction.AuctionState.CANCELLED, 0, 0);
-        return IEnglishAuctionClock(_englishAuctionAddress)
+        return IEnglishAuctionClock(_englishAuction)
             .auctionClock(uint256(keccak256(abi.encode(_masterFor(token), id))));
     }
 
@@ -104,15 +79,15 @@ contract FederatedEditionAuctionLens is UniformEditionAuctionLensBase {
     }
 
     /// @inheritdoc IUniformEditionAuctionLens
-    /// @dev A contract the federation registry serves (`IFederationRegistry.isActive`).
+    /// @dev A contract the federation module serves (`isActive`).
     function isTarget(address token) external view returns (bool) {
         return _served(token);
     }
 
     /// @inheritdoc IUniformEditionAuctionLens
-    /// @dev The artist registry's current federation registry.
+    /// @dev The directory's FEDERATION module now.
     function federationRegistry() public view returns (address) {
-        return _artistRegistry.federationRegistry();
+        return IModuleSlots(_directory).moduleOf(Slots.FEDERATION);
     }
 
     /// @inheritdoc IUniformEditionAuctionLens
@@ -129,43 +104,49 @@ contract FederatedEditionAuctionLens is UniformEditionAuctionLensBase {
     }
 
     function _masterFor(address token) internal view override returns (address) {
-        return IFederatedEditions(token).stream();
+        return IEditions(token).stream();
     }
 
-    /// @dev C26: the registry lets the calling adapter mint `token` now (`canMint`: the template
-    ///      approved, not suspended, and the pair listed), so a suspended template opens no sale.
+    /// @dev The 1/1 clock, CANCELLED once `token` is no longer served.
+    function _clock(address token, uint256 id)
+        internal
+        view
+        override
+        returns (IEnglishAuction.AuctionState state, uint64 endTime)
+    {
+        if (!_served(token)) return (IEnglishAuction.AuctionState.CANCELLED, 0);
+        return super._clock(token, id);
+    }
+
+    /// @dev The federation module lets the calling adapter mint `token` now
+    ///      (`IFederationGate.canMint`), so a suspended or delisted contract opens no sale.
     function _sells(address token) internal view override returns (bool) {
-        address registry = federationRegistry();
-        return registry != address(0) && IFederationRegistry(registry).canMint(token, msg.sender);
+        address gate = federationRegistry();
+        return gate != address(0) && IFederationGate(gate).canMint(token, msg.sender);
     }
 
+    /// @dev The seller's wallet for `payees`, the federation module's fee share for `token`, the
+    ///      resolver's federated fee recipient, and the royalty receiver they derive (the seller
+    ///      at a zero share). The royalty rate is not used here: the edition takes the master's.
     function _newTerms(address token, ISplitWallet.Payee[] memory payees)
         internal
         view
         override
-        returns (WorkTerms memory)
+        returns (WorkTerms memory w)
     {
-        return IFederatedEditions(token).previewTerms(payees);
-    }
-
-    /// @dev The ledger `token` names, which must be the canonical split ledger (the economics
-    ///      resolver's split factory, which the registry checked at joining); anything else fails
-    ///      closed.
-    function _factory(address token) internal view override returns (address ledger) {
-        (, ledger,,,,) = IFederatedToken(token).federationTerms();
-        if (ledger != _economics.splitFactory()) revert ISaleAdapter.InvalidSaleTerms(token, 0);
-    }
-
-    /// @dev A refusal reads as absent (so an abandonment is never blocked by the token); a
-    ///      shortfall reverts.
-    function _editionExists(address token, uint256 id) internal view override returns (bool) {
-        (bool ok, bytes32 word) =
-            BoundedCall.tryReadWordAll(token, abi.encodeCall(IFederatedEditions.exists, (id)));
-        return ok && word != 0;
+        ISplitFactory factory = ISplitFactory(_economics.splitFactory());
+        w.seller = factory.walletFor(payees, bytes32(0));
+        w.feeRecipient = _economics.networkFeeRecipient(PRODUCT_FEDERATED);
+        w.feeShare = IFederationGate(federationRegistry()).feeShareOf(token);
+        w.royaltyReceiver = w.feeShare == 0
+            ? w.seller
+            : factory.walletFor(
+                Splits.royaltyPayees(w.seller, w.feeRecipient, w.feeShare), bytes32(0)
+            );
     }
 
     /// @dev `data` is `abi.encode(PackageItem)`: a federated item has no package to check (the
-    ///      template's own item revocation plays that part).
+    ///      federation module's own item approval plays that part).
     function _item(address, uint256, bytes32, bytes calldata data)
         internal
         pure
@@ -180,9 +161,9 @@ contract FederatedEditionAuctionLens is UniformEditionAuctionLensBase {
         return (_economics, PRODUCT_FEDERATED);
     }
 
-    /// @dev Whether the current federation registry serves `token`.
+    /// @dev Whether the current federation module serves `token`.
     function _served(address token) private view returns (bool) {
-        address registry = federationRegistry();
-        return registry != address(0) && IFederationRegistry(registry).isActive(token);
+        address gate = federationRegistry();
+        return gate != address(0) && IFederationListing(gate).isActive(token);
     }
 }

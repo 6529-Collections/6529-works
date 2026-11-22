@@ -3,6 +3,8 @@ pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
+import { Directory } from "src/core/Directory.sol";
+import { Editions } from "src/core/Editions.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
@@ -22,19 +24,21 @@ import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { UniformEditionAuction } from "src/sales/UniformEditionAuction.sol";
 import { UniformEditionAuctionLens } from "src/sales/UniformEditionAuctionLens.sol";
-import { MockRevenueEscrow } from "../../mocks/sales/SaleMocks.sol";
 import {
-    MockEditionToken,
+    MockEditionRenderer,
     MockMasterStream,
     MockOneOfOneAuction,
+    MockRevenueEscrow,
     MockWorkTermsResolver
-} from "../../mocks/sales/EditionAuctionMocks.sol";
+} from "./EditionAuctionMocks.sol";
 
-/// @notice The edition auction on mocks of everything it calls: a harness the unit, vector,
-///         hostile and invariant suites share. The 1/1 English auction, 6529 Stream, the
-///         economics resolver and 6529 Stream Editions are mocks whose state the test sets; the
-///         adapter, its lens and the clearing library are the real ones. This contract is the
-///         AccessManager's admin, so it may call every restricted setter at once.
+/// @notice The edition auction on the real 6529 Stream Editions (`src/core/Editions.sol`) and
+///         the real `Directory`, with mocks for the rest: a harness the unit, vector, hostile
+///         and invariant suites share. The 1/1 English auction, the master token (which also
+///         answers the package registry's approval check) and the economics resolver are mocks
+///         whose state the test sets; the adapter, its lens, the clearing library and the
+///         edition contract are the real ones. This contract is the AccessManager's admin, so it
+///         may call every restricted setter at once.
 /// @dev Helpers keep ghost accounting of every wei the auction takes in and pays out, so a suite
 ///      can check conservation at any point: `escrowIn - refundsOut - paidOut ==
 ///      address(auction).balance - credits`.
@@ -49,7 +53,8 @@ abstract contract EditionAuctionBase is Test {
     MockRevenueEscrow internal escrow;
     MockWorkTermsResolver internal economics;
     MockMasterStream internal stream;
-    MockEditionToken internal editions;
+    Editions internal editions;
+    Directory internal directory;
     MockOneOfOneAuction internal english;
     UniformEditionAuction internal auction;
     /// @dev The adapter through its frozen interface (the views reach the lens).
@@ -76,16 +81,21 @@ abstract contract EditionAuctionBase is Test {
         escrow = new MockRevenueEscrow();
         economics = new MockWorkTermsResolver();
         economics.set(seller, networkFee, FEE_SHARE);
-        stream = new MockMasterStream(address(economics));
-        editions = new MockEditionToken(address(stream));
-        editions.setResolver(address(economics));
+        stream = new MockMasterStream();
+        stream.setRenderer(address(new MockEditionRenderer()));
+        editions = new Editions(
+            address(manager), address(stream), makeAddr("marketOwner"), address(0), new address[](0)
+        );
+        directory = new Directory(
+            address(manager), address(0xACC), address(0xFED), address(0x7E), address(0x2EC)
+        );
         english = new MockOneOfOneAuction();
         auction = _deployAuction(defaultConfig());
         ua = IUniformEditionAuction(address(auction));
         lens = IUniformEditionAuctionLens(address(auction));
         lensAddress = auction.lens();
         auction.setTarget(address(editions), true);
-        editions.admit(address(auction), true);
+        _addMinter(address(auction));
         english.set(
             address(stream),
             ID,
@@ -101,12 +111,19 @@ abstract contract EditionAuctionBase is Test {
     {
         address l = address(
             new UniformEditionAuctionLens(
-                address(editions), address(stream), address(english), address(escrow)
+                address(editions),
+                address(stream),
+                address(english),
+                address(escrow),
+                address(directory),
+                address(economics),
+                address(stream)
             )
         );
         return new UniformEditionAuction(
             address(manager),
             address(escrow),
+            address(directory),
             address(editions),
             address(english),
             l,
@@ -114,6 +131,15 @@ abstract contract EditionAuctionBase is Test {
             config,
             defaultLimits()
         );
+    }
+
+    /// @dev Adds `minter` to 6529 Stream Editions, active at once (the network's wait set to
+    ///      zero for the addition, then restored).
+    function _addMinter(address minter) internal {
+        uint48 delay = editions.moduleDelay();
+        editions.setModuleDelay(0);
+        editions.addMinter(minter);
+        editions.setModuleDelay(delay);
     }
 
     // ------------------------------------------------------------------ configuration
@@ -207,11 +233,10 @@ abstract contract EditionAuctionBase is Test {
 
     // ------------------------------------------------------------------ closing
 
-    /// @dev Settles the 1/1 at its current end, warps past the edition close, creates the edition
-    ///      and settles the sale with the lens's full order.
+    /// @dev Settles the 1/1 at its current end, warps past the edition close and settles the
+    ///      sale with the lens's full order.
     function _settle(uint256 saleId) internal {
         _closeOneOfOne(saleId);
-        editions.setExists(ID, true);
         uint256 balance = address(auction).balance;
         // Settlement runs in calls of bounded gas: call until it is done.
         for (
@@ -226,8 +251,8 @@ abstract contract EditionAuctionBase is Test {
 
     /// @dev Marks the 1/1 settled at its end and warps to the edition close.
     function _closeOneOfOne(uint256 saleId) internal {
-        IEnglishAuction.Auction memory o = english.auction(english.saleIdOf(address(stream), ID));
-        english.set(address(stream), ID, IEnglishAuction.AuctionState.SETTLED, o.endTime);
+        (, uint64 oneEnd) = english.clockOf(address(stream), ID);
+        english.set(address(stream), ID, IEnglishAuction.AuctionState.SETTLED, oneEnd);
         IUniformEditionAuction.EndTimes memory e = ua.endTimes(saleId);
         if (block.timestamp < e.endTime) vm.warp(e.endTime);
     }

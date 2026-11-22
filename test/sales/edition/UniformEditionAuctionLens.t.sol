@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IEditions } from "src/interfaces/IEditions.sol";
+import { Edition } from "src/interfaces/core/CoreTypes.sol";
+import { IEditions } from "src/interfaces/core/IEditions.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
@@ -9,6 +10,13 @@ import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctio
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { EditionAuctionBase } from "./EditionAuctionBase.sol";
+
+/// @notice Another sale contract that creates an edition directly.
+contract MockCreator {
+    function create(IEditions editions, uint256 id) external {
+        editions.create(id, 5, address(0), 0);
+    }
+}
 
 /// @notice The lens's views, read both directly and through the adapter's fallback (the same
 ///         answers), across every status: before opening, OPEN, SETTLING, SETTLED and VOID.
@@ -29,27 +37,34 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         assertEq(ua.stepPrice(saleId, 130), lens.stepPrice(saleId, 130));
     }
 
-    /// @dev `open` binds the edition to the adapter through `IEditions.bindMinter`, passing
-    ///      the very item it received (the adapter re-frames `data` without decoding it).
-    function test_Open_BindsTheEditionWithTheItemItReceived() public {
+    /// @dev `open` creates the edition in one call (`IEditions.create`): the creator's cap, the
+    ///      royalty receiver the economics derive, the master's royalty rate; the adapter is its
+    ///      only minter.
+    function test_Open_CreatesTheEdition() public {
         PackageItem memory item = _item(ID, 42);
-        vm.expectEmit(true, true, false, true, address(editions));
-        emit IEditions.EditionMinterBound(ID, address(auction));
+        stream.setRoyaltyRate(ID, 7777);
+        address receiver = makeAddr("royaltyVault");
+        economics.setRoyaltyReceiver(receiver);
+        vm.expectEmit(address(editions));
+        emit IEditions.EditionCreated(ID, address(auction), 42, receiver, 7777);
         auction.open(address(editions), ID, _openData(item));
-        assertEq(editions.minterOf(ID), address(auction));
-        assertEq(editions.boundItemHash(ID), WorksHashing.itemHash(item), "the item, intact");
-        assertEq(editions.binds(), 1);
+        Edition memory e = editions.editionOf(ID);
+        assertEq(e.minter, address(auction));
+        assertEq(e.maxSupply, 42);
+        assertEq(e.royaltyReceiver, receiver);
+        assertEq(e.royaltyRate, 7777);
+        // Both wallets were deployed through the factory before anything is owed to them.
+        assertEq(economics.createWalletCalls(), 2);
     }
 
-    /// @dev An edition bound to another adapter refuses the open, with Editions' error, and
-    ///      the sale is not recorded.
-    function test_Open_RefusedForAnEditionAnotherAdapterSells() public {
-        address other = makeAddr("otherAdapter");
-        editions.admit(other, true);
+    /// @dev An edition that already exists (created by another sale contract) refuses the open,
+    ///      with the edition contract's error, and the sale is not recorded.
+    function test_Open_RefusedForAnEditionThatExists() public {
+        MockCreator other = new MockCreator();
+        _addMinter(address(other));
         PackageItem memory item = _item(ID, 0);
-        vm.prank(other);
-        editions.bindMinter(ID, item);
-        vm.expectRevert(abi.encodeWithSelector(IEditions.MinterMismatch.selector, ID, other));
+        other.create(editions, ID);
+        vm.expectRevert(abi.encodeWithSelector(IEditions.EditionExists.selector, ID));
         auction.open(address(editions), ID, _openData(item));
         uint256 saleId = ua.saleIdOf(address(editions), ID);
         vm.expectRevert(
@@ -58,42 +73,21 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         ua.auction(saleId);
     }
 
-    /// @dev F1: a sale pays exactly the economics 6529 Stream Editions returns from
-    ///      `bindMinter`: for an edition that exists, the ones it recorded, whatever the
-    ///      resolver says now.
-    function test_Open_PaysTheEconomicsEditionsReturns() public {
-        address recordedSeller = makeAddr("recordedSeller");
-        address recordedFee = makeAddr("recordedFee");
-        editions.setExists(ID, true);
-        editions.setLocked(ID, recordedSeller, recordedFee, 10_000);
-        // The ledger confirms the recorded wallet (`createWallet` is idempotent for a wallet it
-        // deployed at the edition's earlier sale; review C, F16: code alone is never enough).
-        economics.setWalletOverride(recordedSeller);
+    /// @dev A sale pays the economics the resolver gave at open: the seller and the share are
+    ///      stored by the adapter; the recipient is the resolver's at settlement, and the one it
+    ///      gave at open when it names none.
+    function test_Open_LocksTheResolversEconomics() public {
+        address openSeller = makeAddr("openSeller");
+        address openFee = makeAddr("openFee");
+        economics.set(openSeller, openFee, 10_000);
         uint256 saleId = _open(0);
-        economics.setWalletOverride(address(0));
+        economics.set(seller, networkFee, FEE_SHARE);
         IUniformEditionAuction.Auction memory a = ua.auction(saleId);
-        assertEq(a.seller, recordedSeller);
-        // R18: the recipient is the resolver's now; the recorded one only when it names none.
-        assertEq(a.feeRecipient, networkFee);
+        assertEq(a.seller, openSeller, "locked at open");
+        assertEq(a.feeShare, 10_000, "locked at open");
+        assertEq(a.feeRecipient, networkFee, "the resolver's now");
         economics.setNetworkFeeRecipient(address(0));
-        assertEq(ua.auction(saleId).feeRecipient, recordedFee);
-        assertEq(a.feeShare, 10_000);
-        // The lens's preview of them refuses unpayable terms (here, no seller).
-        editions.setLocked(ID + 1, address(0), recordedFee, 10_000);
-        editions.setExists(ID + 1, true);
-        english.set(
-            address(stream),
-            ID + 1,
-            IEnglishAuction.AuctionState.ACTIVE,
-            uint64(block.timestamp + 1 days)
-        );
-        PackageItem memory item = _item(ID + 1, 0);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                ISaleAdapter.InvalidSaleTerms.selector, address(editions), ID + 1
-            )
-        );
-        auction.open(address(editions), ID + 1, _openData(item));
+        assertEq(ua.auction(saleId).feeRecipient, openFee, "the one it gave at open");
     }
 
     /// @dev The cut step's departure log sorted in `O(n log n)` (a heapsort of packed keys): 600
@@ -192,7 +186,6 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         assertLt(outcomeGas, 10_000_000);
         // Settled with that order, in bounded calls.
         _closeOneOfOne(saleId);
-        editions.setExists(ID, true);
         uint256 balance = address(auction).balance;
         for (
             uint256 i;
@@ -210,16 +203,22 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         // It deploys wallets, so the adapter calls it directly (the fallback's staticcall cannot).
         vm.prank(address(auction));
         IUniformEditionAuctionLens.MasterTerms memory m = IUniformEditionAuctionLens(lensAddress)
-            .masterTerms(address(editions), ID, _openData(item));
+            .masterTerms(address(editions), ID, _openData(item), false);
         assertEq(m.maxCount, 42);
         assertEq(m.oneOfOneEnd, block.timestamp + 1 days);
         assertEq(uint8(m.oneOfOneState), uint8(IEnglishAuction.AuctionState.ACTIVE));
+        assertEq(m.seller, seller);
+        assertEq(m.feeShare, FEE_SHARE);
+        assertEq(m.feeRecipient, networkFee);
+        assertEq(m.royaltyRate, 6529, "the master's rate");
+        assertFalse(m.runsOnItsOwn);
         // Another token is refused.
         vm.expectRevert(
             abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(stream), ID)
         );
         vm.prank(address(auction));
-        IUniformEditionAuctionLens(lensAddress).masterTerms(address(stream), ID, _openData(item));
+        IUniformEditionAuctionLens(lensAddress)
+            .masterTerms(address(stream), ID, _openData(item), false);
     }
 
     function test_Lens_BeforeOpening() public view {
@@ -390,7 +389,6 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         _raise(saleId, 2, 1);
         assertEq(ua.departures(saleId, 0).length, 1);
         _closeOneOfOne(saleId);
-        editions.setExists(ID, true);
         uint256 balance = address(auction).balance;
         assertTrue(auction.settle(saleId, new uint256[](0)), "settled in one call");
         paidOut += balance - address(auction).balance;
@@ -425,7 +423,6 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         uint256[] memory order = ua.settlementOrder(saleId);
         assertEq(order.length, 2);
         _closeOneOfOne(saleId);
-        editions.setExists(ID, true);
         uint256[] memory first = new uint256[](1);
         first[0] = order[0];
         uint256 balance = address(auction).balance;
