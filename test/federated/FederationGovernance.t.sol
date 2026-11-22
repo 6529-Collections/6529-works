@@ -328,6 +328,22 @@ contract FederationGovernanceTest is FederationBase {
         _join(address(editions), fedArtist);
     }
 
+    /// @dev A 1/1 copy joins only while its editions partner is listed ACTIVE: once the network
+    ///      delists the partner, the 1/1 is refused.
+    function test_Register_AStreamWhoseEditionsPartnerIsDelistedIsRefused() public {
+        FederatedStream stream = _deployStream(fedArtist);
+        FederatedEditions editions = _deployEditions(fedArtist, address(stream));
+        vm.prank(fedArtist);
+        stream.linkEditions(address(editions));
+        _join(address(editions), fedArtist);
+        _setListing(address(editions), IFederationRegistry.Status.DELISTED);
+        _join(
+            address(stream),
+            fedArtist,
+            abi.encodeWithSelector(IFederationRegistry.NotListable.selector, address(stream))
+        );
+    }
+
     /// @dev Makes `token` answer the federation terms of `like`, with `share` and `partner`.
     function _mockTerms(address token, address like, uint32 share, address partner) internal {
         (address ar, address ledger, uint256 id,, address recipient,) =
