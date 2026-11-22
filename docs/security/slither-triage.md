@@ -102,3 +102,5 @@ finding is reported as stale in the job log; remove it.
 | `unused-return` | `src/sales/SaleStarter.sol:SaleStarter.start` | false-positive | Only the terms of the policy's preview are used (the vaults to deploy); the facts come back from the start itself. |
 | `unused-return` | `src/curation/PackageRegistry.sol:PackageRegistry._isLive` | false-positive | `ownerOf` is called in a `try` for whether it answers; the owner is not needed. |
 | `write-after-write` | `src/content/Renderer.sol:Renderer._locator` | false-positive | `ok` and `ret` are reused for three reads in a row; each pair is consumed (`_address`, `_servable`) before the next read overwrites it. |
+| `unused-return` | `src/core/EditionsBase.sol:EditionsBase.create` | false-positive | `ownerOf` is called for its revert when the master token does not exist or is burned; the owner is not needed. `test_Create_*` in `Editions.t.sol` cover it. |
+| `unused-return` | `src/records/WorkRules.sol:WorkRules.renounce` | false-positive | `requireSigned` reverts unless the signature is the artist account's; the wallet it returns is not needed here. |

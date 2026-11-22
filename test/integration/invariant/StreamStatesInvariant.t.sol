@@ -333,8 +333,8 @@ contract StreamStatesInvariantTest is IntegrationBase {
     ///      was an active minter, and no outcome is recorded.
     function _seamAllows(address minter, uint256 id) internal view returns (bool) {
         Minter memory m = stream.minterOf(minter);
-        return _holder(id) == minter && m.activeFrom != 0 && block.timestamp >= m.activeFrom
-            && stream.workOf(id).outcome == Outcome.NONE;
+        bool wasActive = m.removedAt != 0 || (m.activeFrom != 0 && block.timestamp >= m.activeFrom);
+        return _holder(id) == minter && wasActive && stream.workOf(id).outcome == Outcome.NONE;
     }
 
     /// @dev Added and not removed (active, or pending activation).

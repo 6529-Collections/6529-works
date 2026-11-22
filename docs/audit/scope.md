@@ -15,7 +15,7 @@ with `--artifacts out --update` to refresh them. No audit has taken place.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 13,924 non-blank, non-comment lines in 121 files under `src/` (budget: 17,000) |
+| Source lines | 13,896 non-blank, non-comment lines in 121 files under `src/` (budget: 17,000) |
 | Deployed contracts | Every contract `script/DeployCore.sol` deploys: the permanent core, the money contracts, the modules, the governance pair and the two federated deployers (the deploy order is in the [runbook](../../script/README.md#how-a-deployment-is-built)) |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
@@ -45,7 +45,7 @@ Deployed once and never replaced ([ADR 0010](../adr/0010-plain-permanent-core.md
 | `FederatedMembership` (abstract, both templates) | [`src/federated/FederatedMembership.sol`](../../src/federated/FederatedMembership.sol) | 46 |  |  |  |
 | `SplitLedger` (deployed under the name `SplitFactory`) | [`src/economics/SplitLedger.sol`](../../src/economics/SplitLedger.sol) | 362 | 11,299 | 12,304 | 13,277 |
 | `SplitVault` (the 66-byte wallet; raw bytecode constants) | [`src/economics/SplitVault.sol`](../../src/economics/SplitVault.sol) | 8 |  |  |  |
-| `RevenueEscrow` | [`src/economics/RevenueEscrow.sol`](../../src/economics/RevenueEscrow.sol) | 199 | 8,338 | 8,804 | 16,238 |
+| `RevenueEscrow` | [`src/economics/RevenueEscrow.sol`](../../src/economics/RevenueEscrow.sol) | 199 | 7,819 | 8,285 | 16,757 |
 | `ContentStore` | [`src/content/ContentStore.sol`](../../src/content/ContentStore.sol) | 451 | 11,855 | 11,883 | 12,721 |
 
 ### Sale contracts (minters)
@@ -78,7 +78,7 @@ Deployed once and never replaced ([ADR 0010](../adr/0010-plain-permanent-core.md
 | `EconomicsResolver` | [`src/economics/EconomicsResolver.sol`](../../src/economics/EconomicsResolver.sol) | 197 | 8,372 | 11,492 | 16,204 |
 | `AssetAllowlist` | [`src/economics/AssetAllowlist.sol`](../../src/economics/AssetAllowlist.sol) | 70 | 2,493 | 3,049 | 22,083 |
 | `ClaimRouter` | [`src/economics/ClaimRouter.sol`](../../src/economics/ClaimRouter.sol) | 148 | 4,102 | 4,421 | 20,474 |
-| `GovernedVault` (deployed twice: `FeeRecipientVault`, `MuseumVault`) | [`src/economics/GovernedVault.sol`](../../src/economics/GovernedVault.sol) | 114 | 5,437 | 5,985 | 19,139 |
+| `GovernedVault` (deployed twice: `FeeRecipientVault`, `MuseumVault`) | [`src/economics/GovernedVault.sol`](../../src/economics/GovernedVault.sol) | 114 | 5,237 | 5,785 | 19,339 |
 | `DependencyRegistry` | [`src/content/DependencyRegistry.sol`](../../src/content/DependencyRegistry.sol) | 66 | 2,988 | 3,433 | 21,588 |
 
 ### Governance
@@ -102,7 +102,7 @@ Compiled into the contracts that use them; none is deployed or linked.
 | `GovernanceConfig` | [`src/governance/GovernanceConfig.sol`](../../src/governance/GovernanceConfig.sol) | 218 | `GovernanceConfigurator` |
 | `Utf8` | [`src/libraries/Utf8.sol`](../../src/libraries/Utf8.sol) | 152 | `Renderer`, `JsonScan`, `StatementLog` |
 | `UniformClearing` | [`src/sales/UniformClearing.sol`](../../src/sales/UniformClearing.sol) | 149 | The edition auctions and their lenses |
-| `TokenTransfer` | [`src/economics/TokenTransfer.sol`](../../src/economics/TokenTransfer.sol) | 128 | `SplitLedger`, `RevenueEscrow`, the sale contracts |
+| `TokenTransfer` | [`src/economics/TokenTransfer.sol`](../../src/economics/TokenTransfer.sol) | 100 | `SplitLedger`, `RevenueEscrow`, the sale contracts |
 | `JsonEscape` | [`src/libraries/JsonEscape.sol`](../../src/libraries/JsonEscape.sol) | 129 | `Renderer` |
 | `BoundedCall` | [`src/libraries/BoundedCall.sol`](../../src/libraries/BoundedCall.sol) | 202 | Modules that call other contracts |
 | `HtmlScript` | [`src/content/HtmlScript.sol`](../../src/content/HtmlScript.sol) | 84 | `Renderer` |

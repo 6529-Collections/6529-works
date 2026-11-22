@@ -31,19 +31,6 @@
     "type": "error"
   },
   {
-    "id": "0x00609487",
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "gasLimit",
-        "type": "uint256"
-      }
-    ],
-    "name": "TokenInsufficientGas",
-    "signature": "TokenInsufficientGas(uint256)",
-    "type": "error"
-  },
-  {
     "id": "0x1373f626",
     "inputs": [
       {

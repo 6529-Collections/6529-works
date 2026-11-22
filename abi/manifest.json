@@ -203,12 +203,12 @@
     },
     {
       "abi": "GovernedVault.json",
-      "errors": 14,
+      "errors": 13,
       "events": 4,
       "functions": 14,
       "kind": "contract",
       "name": "GovernedVault",
-      "sha256": "ac1659b0689b582737b57e762b54fb4212d21f427b66b1dccf4b58f97c82ce9a",
+      "sha256": "670d1eae3d96a6cb18cc5a75fe30e50dfa9c055748d850aa1462d0c0fd7e5136",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/economics/GovernedVault.sol"
     },
@@ -824,12 +824,12 @@
     },
     {
       "abi": "RevenueEscrow.json",
-      "errors": 19,
+      "errors": 18,
       "events": 7,
       "functions": 18,
       "kind": "contract",
       "name": "RevenueEscrow",
-      "sha256": "a8e1f1ffbe1ce376c3ad6024a83fad967b686cd3c7aa67f998453b09f185d263",
+      "sha256": "8e63dde1028af0db8703cd234ef06afc80183ea564ea2960bc8189aab06d1964",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/economics/RevenueEscrow.sol"
     },

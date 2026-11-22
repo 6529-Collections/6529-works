@@ -358,8 +358,8 @@ contract LogMedusa is MedusaBase {
         mCopies[id][to] += amount;
     }
 
-    /// `seal`: the edition's minter, active or removed, once, between the copies minted and the
-    /// current maximum (ED-25).
+    /// `seal`: the edition's minter, while it is not removed, once, between the copies minted and
+    /// the current maximum (ED-25). A removed minter no longer seals.
     function seal(uint8 saleSel, uint8 idSel, uint8 countSel) public {
         uint256 a = saleSel % ED_SALES;
         uint256 id = 1 + idSel % WORKS;
@@ -373,7 +373,8 @@ contract LogMedusa is MedusaBase {
                 : k == 2 ? minted + (limit - minted) / 2 : k == 3 ? minted + 1 : limit + 1;
         if (k == 3 && minted != 0) count = minted - 1;
         if (count > type(uint40).max) count = type(uint40).max;
-        bool allowed = mMinter[id] == a + 1 && !mSealed[id] && count >= minted && count <= limit;
+        bool allowed = mMinter[id] == a + 1 && mRemovedAt[a] == 0 && !mSealed[id] && count >= minted
+            && count <= limit;
         (bool ok,) = address(edSales[a])
             .call(abi.encodeCall(MockSale.seal, (address(editions), id, uint40(count))));
         _record(ok, allowed, "seal");

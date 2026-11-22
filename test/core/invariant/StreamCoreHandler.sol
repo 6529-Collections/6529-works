@@ -66,9 +66,12 @@ contract StreamCoreHandler is CommonBase, StdCheats, StdUtils {
         return n == 0 ? 0 : bound(seed, 1, n);
     }
 
+    /// @dev Active now, or removed: a removed record always belongs to a minter that was active
+    ///      (a removal before the first activation deletes the record), also when it was added
+    ///      again and removed before that addition took effect.
     function _wasActive(address account) internal view returns (bool) {
         Minter memory m = stream.minterOf(account);
-        return m.activeFrom != 0 && block.timestamp >= m.activeFrom;
+        return m.removedAt != 0 || (m.activeFrom != 0 && block.timestamp >= m.activeFrom);
     }
 
     function _isSale(address account) internal view returns (bool) {
