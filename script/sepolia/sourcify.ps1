@@ -58,7 +58,17 @@ $paths = [ordered]@{
     EnglishAuction            = 'src/sales/EnglishAuction.sol:EnglishAuction'
     UniformEditionAuctionLens = 'src/sales/UniformEditionAuctionLens.sol:UniformEditionAuctionLens'
     UniformEditionAuction     = 'src/sales/UniformEditionAuction.sol:UniformEditionAuction'
+    # r5 on: created inside WorkRecords' constructor, so its creation transaction is WorkRecords'.
+    WorkDelivery              = 'src/stream/WorkDelivery.sol:WorkDelivery'
+    FederationRegistry        = 'src/federated/FederationRegistry.sol:FederationRegistry'
+    FederatedEditionAuctionLens = 'src/federated/FederatedEditionAuctionLens.sol:FederatedEditionAuctionLens'
+    FederatedEditionAuction   = 'src/federated/FederatedEditionAuction.sol:FederatedEditionAuction'
+    FederatedStreamDeployer   = 'src/federated/FederatedDeployer.sol:FederatedDeployer'
+    FederatedEditionsDeployer = 'src/federated/FederatedDeployer.sol:FederatedDeployer'
+    SaleStarter               = 'src/sales/SaleStarter.sol:SaleStarter'
 }
+# Contracts created inside another contract's constructor: verified against that transaction.
+$createdBy = @{ WorksAccessManager = 'GovernanceConfigurator'; WorkDelivery = 'WorkRecords' }
 $names = @($rec.contracts.PSObject.Properties.Name)
 $unmapped = @($names | Where-Object { -not $paths.Contains($_) })
 if ($unmapped.Count) { throw "unmapped contract in the record: $($unmapped -join ', ')" }
@@ -84,7 +94,7 @@ foreach ($name in $paths.Keys) {
     if (-not ($names -contains $name)) { continue }
     if ($Only.Count -and $Only -notcontains $name) { continue }
     $addr = $rec.contracts.$name.address
-    $tx = if ($name -eq 'WorksAccessManager') { $creation[$rec.contracts.GovernanceConfigurator.address.ToLower()] } else { $creation[$addr.ToLower()] }
+    $tx = if ($createdBy.ContainsKey($name)) { $creation[$rec.contracts.($createdBy[$name]).address.ToLower()] } else { $creation[$addr.ToLower()] }
     $text = ''
     if ($StatusOnly) {
         if ($results.Contains($name)) { $text = $results[$name].forge; $tx = $results[$name].creationTx }

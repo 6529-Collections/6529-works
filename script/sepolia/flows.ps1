@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Runs the v1 flows on a Sepolia rehearsal deployment (r4 by default; -Record selects
+    Runs the v1 flows on a Sepolia rehearsal deployment (r5 by default; -Record selects
     another) and records the gas of every transaction (deployments/11155111/flows.md).
 
 .DESCRIPTION
@@ -46,14 +46,14 @@
 param(
     [Parameter(Mandatory)] [string] $SignerModule,
     [Parameter(Mandatory)] [string] $State,
-    [Parameter(Mandatory)] [ValidateSet('content', 'collections', 'package', 'start', 'startWithBid',
+    [Parameter(Mandatory)] [ValidateSet('content', 'collections', 'package', 'start', 'starter', 'startWithBid',
         'bid', 'openRecord', 'sync', 'requestSeed', 'settle', 'createEdition', 'openEdition',
         'editionBid', 'editionRaise', 'editionSettle', 'claimBid', 'claimBidFor',
         'claimCredits', 'editionState', 'englishState', 'pause', 'englishWithdraw', 'outcome',
-        'cancel', 'send', 'record', 'prague', 'report')] [string] $Step,
+        'cancel', 'send', 'safeCall', 'record', 'prague', 'report')] [string] $Step,
     [string] $Rpc = 'https://ethereum-sepolia-rpc.publicnode.com',
-    # The deployment record, relative to the repository root (r4 by default).
-    [string] $Record = 'deployments/11155111/1793536584.json',
+    # The deployment record, relative to the repository root (r5 by default; r4 is 1793536584.json).
+    [string] $Record = 'deployments/11155111/1795338612.json',
     # The keystore that relays permissionless calls (role `any`): the keeper, an EOA with no
     # role. A second relayer lets the content uploads run beside the sale flow, each with its
     # own state file.
@@ -89,8 +89,10 @@ $Repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $Script = 'script/sepolia/Flows.s.sol:Flows'
 $env:FLOWS_RECORD = $Record
 $Contracts = (Get-Content -Raw -Encoding UTF8 (Join-Path $Repo $Record) | ConvertFrom-Json).contracts
-$PriorityFee = '50000000'   # 0.05 gwei
-$MaxFee = '200000000'       # 0.2 gwei: cast's own max fee can fall below the priority fee
+# 0.05 gwei and 0.2 gwei by default (cast's own max fee can fall below the priority fee);
+# FLOWS_PRIORITY_FEE and FLOWS_MAX_FEE (wei) override them when Sepolia's base fee is near zero.
+$PriorityFee = if ($env:FLOWS_PRIORITY_FEE) { $env:FLOWS_PRIORITY_FEE } else { '50000000' }
+$MaxFee = if ($env:FLOWS_MAX_FEE) { $env:FLOWS_MAX_FEE } else { '200000000' }
 # Role -> keystore account name in the operator's signer set.
 $Accounts = @{
     any      = $Relay               # relays permissionless calls; holds no role
@@ -98,6 +100,7 @@ $Accounts = @{
     curator  = 'curator'            # CURATOR
     artist   = 'stream-artist'      # the lead artist of the package
     signer   = 'curation-1'         # CURATION_SIGNER (signs only)
+    pauser   = 'pauser-1'           # PAUSER (r5 on: a key, not a Safe)
     bidder1  = 'flows-bidder-1'
     bidder2  = 'flows-bidder-2'
     wallet2  = 'flows-consolidated'  # the artist's consolidated second wallet (from r1)
@@ -107,12 +110,12 @@ $Accounts = @{
 }
 # Safe -> the owner keystores that sign for it (threshold many), from the genesis holders.
 $SafeSigners = @{
-    '0x5d1103f2fc0ce8d0e81a918a3819182208b6e916' = @('guardian1-1', 'guardian1-2')  # Guardian Safe 1, 2-of-3
-    '0x2588a62384f41bb32412841ab774cd574b427bd5' = @('hot-1', 'hot-2')              # Hot admin Safe, 2-of-3
+    '0x54a769fe591c3f47cf83d30b69e576497ce34454' = @('safe-owner-1', 'safe-owner-2')  # r5 network Safe, 2-of-3
+    '0x5d1103f2fc0ce8d0e81a918a3819182208b6e916' = @('guardian1-1', 'guardian1-2')    # r4 Guardian Safe 1, 2-of-3
+    '0x2588a62384f41bb32412841ab774cd574b427bd5' = @('hot-1', 'hot-2')                # r4 Hot admin Safe, 2-of-3
 }
-# The genesis holders the dispute steps act as.
+# r4's guardian Safe paused 1/1s; from r5 a pauser key does (-Safe overrides).
 $GuardianSafe = '0x5d1103f2FC0ce8D0E81a918A3819182208B6E916'
-$HotAdminSafe = '0x2588A62384F41bB32412841ab774CD574b427bd5'
 $Zero = '0x0000000000000000000000000000000000000000'
 
 # ---------------------------------------------------------------------------- state
@@ -151,11 +154,23 @@ function Get-Address([string]$Role) {
     return $address
 }
 
+# The role whose account is $Address (case-insensitive). Addresses already in the state file are
+# matched first; the others are resolved one by one, and a role whose keystore the operator does
+# not hold (for example `pauser` on an earlier record) is skipped, not fatal.
 function Get-Role([string]$Address) {
-    foreach ($role in $Accounts.Keys) {
-        if ((Get-Address $role) -eq $Address) { return $role }
+    $cached = (Read-State).addresses
+    foreach ($p in $cached.PSObject.Properties) {
+        if ($Accounts.ContainsKey($p.Name) -and $p.Value -eq $Address) { return $p.Name }
     }
-    throw "no account for $Address"
+    $missing = @()
+    foreach ($role in $Accounts.Keys) {
+        if ($cached.PSObject.Properties[$role]) { continue }
+        try { $resolved = Get-Address $role }
+        catch { $missing += $role; continue }
+        if ($resolved -eq $Address) { return $role }
+    }
+    $note = if ($missing.Count) { " (not resolvable here: $($missing -join ', '))" } else { '' }
+    throw "no account for $Address$note"
 }
 
 # ---------------------------------------------------------------------------- forge and cast
@@ -275,7 +290,9 @@ function Send-Planned([string]$Label, [string]$Role, [string]$To, [string]$Value
         catch {
             # Errors a load-balanced RPC returns before anything is broadcast (a lagging
             # backend's nonce, block or fee view). Anything else is not retried.
-            $transient = "$_" -match 'nonce too low|block not found|header not found|max priority fee per gas higher'
+            # "replacement transaction underpriced": a backend that has not yet seen the previous
+            # transaction mined hands out its nonce again (seen on r5).
+            $transient = "$_" -match 'nonce too low|block not found|header not found|max priority fee per gas higher|replacement transaction underpriced'
             if (-not $transient -or $attempt -ge 5) { throw }
             Start-Sleep -Seconds 6
         }
@@ -385,6 +402,9 @@ function Get-MoveSignature([int]$Item) {
 
 # ---------------------------------------------------------------------------- steps
 
+# The curation signer whose approval the package step collects (Flows.s.sol reads FLOWS_SIGNER).
+if ($Step -eq 'package') { $env:FLOWS_SIGNER = Get-Address 'signer' }
+
 switch ($Step) {
     'content' {
         Send-Items (Invoke-Plan 'content()' @())
@@ -413,6 +433,10 @@ switch ($Step) {
     }
     'start' {
         Send-Items (Invoke-Plan 'startTx(uint256,uint256,uint64,bytes)' ((@("$Index") + (Get-MoveSignature $Index))))
+    }
+    'starter' {
+        # SaleStarter.start: auction, seller and royalty vaults and record in one transaction.
+        Send-Items (Invoke-Plan 'starterTx(uint256,uint256,uint64,bytes)' ((@("$Index") + (Get-MoveSignature $Index))))
     }
     'startWithBid' {
         $bidder = Get-Address $Bidder
@@ -473,7 +497,8 @@ switch ($Step) {
         Save-Snapshot (Invoke-Plan 'englishState(uint256)' @("$TokenId")) $Label
     }
     'pause' {
-        $guardian = if ($Safe) { $Safe } else { $GuardianSafe }
+        # The pauser key (r5 on), or -Safe for an instance whose pauser is a Safe (r4: $GuardianSafe).
+        $guardian = if ($Safe) { $Safe } else { Get-Address 'pauser' }
         Send-Items (Invoke-Plan 'pauseTx(uint256,address)' @("$TokenId", $guardian))
     }
     'englishWithdraw' {
@@ -506,6 +531,12 @@ switch ($Step) {
     'send' {
         # A call that needs no encoding help, for example the delegation registrations.
         Send-Planned $Label $From $To $Amount $Data | Out-Null
+    }
+    'safeCall' {
+        # A call the Safe -Safe makes, for example the network's acceptNetwork() on the manager:
+        # its owners in $SafeSigners sign and the `any` account relays execTransaction.
+        if (-not $Safe -or -not $To -or -not $Label) { throw 'safeCall needs -Safe, -To and -Label' }
+        Send-Safe $Label $Safe $To $Amount $(if ($Data) { $Data } else { '0x' }) | Out-Null
     }
     'prague' {
         # The same transaction replayed on its parent block's state with Prague gas costs.
