@@ -157,7 +157,7 @@ contract GenesisPortedTest is GenesisJsonPorted {
         assertGt(checked, 90);
         assertEq(via, 4, "rescue, setRescueDelay, rebind, setRebindDelay on the Directory");
         console2.log("listed functions refusing an outsider at once:", refused);
-        assertEq(refused, checked - via - 2, "all but renounce and addLocator");
+        assertEq(refused, checked - via - 3, "all but renounce, setFileStore and addLocator");
     }
 
     /// @dev Checks function `j` of contract entry `c` deployed at `target_`: its installed role and

@@ -51,6 +51,11 @@ abstract contract CoreIntegrationBase is Test {
     uint256 internal constant START_BUDGET = 370_000;
     /// @dev New storage slots a start may write, with or without a bid (ADR 0010).
     uint256 internal constant START_MAX_SLOTS = 8;
+    /// @dev The ceiling of a start with a bid of a VRF work, which also writes the seed: its
+    ///      own, in Prague gas and new slots (owner ruling, 22 November 2026). Test budgets,
+    ///      like the two above; no contract enforces them.
+    uint256 internal constant VRF_START_BUDGET = 395_000;
+    uint256 internal constant VRF_START_MAX_SLOTS = 9;
     /// @dev EIP-7825: no transaction may carry more than 2^24 gas.
     uint256 internal constant TX_GAS_CAP = 1 << 24;
 

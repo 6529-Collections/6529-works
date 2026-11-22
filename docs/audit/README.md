@@ -33,7 +33,8 @@ break one sentence of the promise in [ADR 0010](../adr/0010-plain-permanent-core
 
 Then the modules against the seam: for each module, the worst it can do to an existing token,
 fact or balance if it is hostile. The busiest module is `EnglishAuction` (start path: at most
-370,000 Prague gas and 8 new storage slots, asserted in the gas report).
+370,000 Prague gas and 8 new storage slots; with a bid on a VRF work, which also writes the
+seed, 395,000 and 9; asserted in the gas report).
 
 ## Existing evidence
 

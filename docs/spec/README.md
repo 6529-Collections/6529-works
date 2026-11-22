@@ -61,7 +61,7 @@ generated [role matrix](../audit/roles.md).
 ## Differences from the ADRs
 
 [ADR 0010](../adr/0010-plain-permanent-core.md) amends ADRs 0001, 0004, 0007, 0008 and 0009:
-what is permanent, the start budget (370,000 Prague gas and 8 new slots), the federated
+what is permanent, the start budget (370,000 Prague gas and 8 new slots; 395,000 and 9 for a start with a bid of a VRF work), the federated
 templates and the waits in permanent contracts, which are now the network's settings. The pages
 follow ADR 0010 and the code. The earlier register of smaller differences is in the history of
 this file.

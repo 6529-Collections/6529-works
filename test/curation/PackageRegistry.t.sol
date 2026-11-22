@@ -201,11 +201,27 @@ contract PackageRegistryTest is CurationBase {
         assertEq(registry.stream(), stream);
         PackageRegistry fresh = _newRegistry();
         address s2 = address(new MockBoundCaller(type(IStream).interfaceId));
-        vm.expectEmit(address(fresh));
-        emit IPackageRegistry.Bound(STREAM_NAME, s2);
+        // A Stream whose facts do not answer is refused, and so is one whose facts name
+        // another CC0 text than the registry was built with.
         vm.prank(admin);
+        vm.expectRevert();
         fresh.bindStream(s2);
-        assertEq(fresh.stream(), s2);
+        uint256 snap = vm.snapshotState();
+        vm.mockCall(
+            IStream(stream).facts(),
+            abi.encodeWithSignature("cc0TextFileId()"),
+            abi.encode(keccak256("another text"))
+        );
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stream));
+        fresh.bindStream(stream);
+        vm.revertToState(snap);
+        vm.expectEmit(address(fresh));
+        emit IPackageRegistry.Bound(STREAM_NAME, stream);
+        vm.prank(admin);
+        fresh.bindStream(stream);
+        assertEq(fresh.stream(), stream);
+        assertEq(fresh.cc0TextFileId(), keccak256("cc0 text file"));
         vm.prank(admin);
         vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.AlreadyBound.selector, STREAM_NAME));
         fresh.bindStream(stream);

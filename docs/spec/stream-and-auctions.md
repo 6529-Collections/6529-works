@@ -165,7 +165,7 @@ the seller when the share is zero.
 | AUC-29 | The auction refuses every safe transfer into it except its own mint. | |
 | AUC-30 | Governed auction parameters stay within bounds and are compare-and-set. | |
 | AUC-31 | No reentrant call reaches a value-moving function. | |
-| AUC-32 | Gas: every start row, with or without a bid, costs at most 370,000 Prague gas and writes at most 8 new slots. | |
+| AUC-32 | Gas: every start row, with or without a bid, costs at most 370,000 Prague gas and writes at most 8 new slots. A start with a bid of a VRF work also writes the seed: at most 395,000 Prague gas and 9 new slots. These are test budgets, asserted in the gas report; no contract enforces them. | |
 | AUC-33 | An unsold 6529 Stream work is never a pending delivery: the auction moves it with a plain transfer, no receiver callback. | |
 | AUC-34 | Retired: the auction's views are its own. | |
 | AUC-35 | The network may `rescue` a token only while a removed minter holds it with no outcome, once `rescueDelay` has passed since the removal; re-adding the minter clears the removal. | `test_Rescue_AfterFourteenDaysOnlyTheNetworkOnlyUnsold`, `testFuzz_Rescue_RefusedBeforeThePeriodInForce` |

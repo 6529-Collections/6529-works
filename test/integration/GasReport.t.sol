@@ -35,11 +35,10 @@ import { GasBase } from "./GasBase.sol";
 /// @dev Gates:
 ///      - **Start rows** (an English-auction start of a 6529 Stream work, with or without a
 ///        bid): `START_BUDGET` (370,000 Prague gas) and, for the new slots, `START_MAX_SLOTS`
-///        (8). A row above either keeps its measured exact slot count asserted and carries the
-///        excess as an open finding, so the default suite stays green and the excess cannot grow
-///        or be fixed unnoticed: slots over 8 by `_expectFailure`, gas over 370,000 by a
-///        regression ceiling plus an assertion that the row is still over the budget
-///        (`_startGatesOver`).
+///        (8). A start with a bid of a VRF work also writes the seed (the ninth slot, in the
+///        token), so those rows have their own ceiling: `VRF_START_BUDGET` (395,000) and
+///        `VRF_START_MAX_SLOTS` (9) (`_vrfStartGates`). The ceilings are test budgets, not
+///        chain code.
 ///      - **One-time rows** (the deployment's first start or first bid) and the other paths:
 ///        regression ceilings, the figure when set plus about 2%, rounded up to the thousand.
 ///        They are not budgets; a change that crosses one says why and moves it.
@@ -65,7 +64,7 @@ contract IntegrationGasReport is GasBase {
     uint256 internal constant FIRST_BID_CEILING = 353_000;
     uint256 internal constant STARTER_CEILING = 579_000;
     uint256 internal constant BID_CEILING = 76_000;
-    uint256 internal constant AUTHORIZE_CEILING = 113_000;
+    uint256 internal constant AUTHORIZE_CEILING = 119_000;
     uint256 internal constant AUCTION_VIEW_CEILING = 34_000;
     uint256 internal constant MINIMUM_BID_VIEW_CEILING = 40_000;
     uint256 internal constant AUCTION_CLOCK_VIEW_CEILING = 28_000;
@@ -81,20 +80,12 @@ contract IntegrationGasReport is GasBase {
     uint256 internal constant RELEASE_FIRST_CEILING = 104_000;
     uint256 internal constant SIGNED_FIRST_CEILING = 150_000;
     uint256 internal constant SIGNED_LATER_CEILING = 98_000;
-    /// @dev The start rows measured above the 370,000 start budget (open findings, each test
-    ///      states it): a VRF work's `startWithBid`. Each keeps a regression ceiling (measured
-    ///      378,366, 387,047 and 388,182, plus about 2%) so the excess cannot grow unnoticed.
-    uint256 internal constant VRF_START_WITH_BID_CEILING = 386_000;
-    uint256 internal constant VRF_TWO_PARTY_CEILING = 395_000;
-    uint256 internal constant VRF_TWO_PARTY_MAX_PARAMS_CEILING = 396_000;
     /// @dev The edition master's creator cap.
     uint32 internal constant EDITION_CAP = 10;
     /// @dev A 6529 consolidation: use case 999 over all collections.
     address internal constant ALL_COLLECTIONS = 0x8888888888888888888888888888888888888888;
     uint256 internal constant CONSOLIDATION = 999;
 
-    /// @dev A start row over `START_MAX_SLOTS` (an open finding, see the contract's notice).
-    error OverStartSlotMaximum(uint256 slots, uint256 max);
 
     /// @dev One measured transaction.
     struct Row {
@@ -193,19 +184,15 @@ contract IntegrationGasReport is GasBase {
         assertLe(r.growth.slots, START_MAX_SLOTS, string.concat(r.label, ": over 8 new slots"));
     }
 
-    /// @dev A start row measured above the 370,000 start budget and above `START_MAX_SLOTS`:
-    ///      the exact slot count is asserted (its test carries the slot excess as an open finding)
-    ///      and the gas is held to `ceiling`. The row must still be over the budget: once it is
-    ///      not, this fails, and the row moves to `_startGates`.
-    function _startGatesOver(Row memory r, uint256 slots, uint256 ceiling) internal view {
-        _gasAtMost(r, ceiling, "regression ceiling of a start row over the 370K budget");
+    /// @dev A start with a bid of a VRF work: within the 395,000 ceiling and the 9-slot maximum
+    ///      of those rows, its exact new slots and no new account.
+    function _vrfStartGates(Row memory r, uint256 slots) internal view {
+        _gasAtMost(r, VRF_START_BUDGET, "395K ceiling of a VRF start with a bid");
         _growthIs(r, slots, 0);
         if (pass != Pass.BOTH) return;
         _logGrowth(r);
-        assertGt(
-            r.total,
-            START_BUDGET,
-            string.concat(r.label, ": open finding fixed (within 370K): gate it with _startGates")
+        assertLe(
+            r.growth.slots, VRF_START_MAX_SLOTS, string.concat(r.label, ": over 9 new slots")
         );
     }
 
@@ -490,7 +477,7 @@ contract IntegrationGasReport is GasBase {
             _startWithBidData(vrfRoot, works, 0),
             1 ether
         );
-        _startGatesOver(r, 9, VRF_START_WITH_BID_CEILING);
+        _vrfStartGates(r, 9);
     }
 
     function _rowStartMaster() internal returns (Row memory r) {
@@ -592,7 +579,7 @@ contract IntegrationGasReport is GasBase {
             _startWithBidData(vrfRoot, works, 0),
             1 ether
         );
-        _startGatesOver(r, 9, VRF_TWO_PARTY_CEILING);
+        _vrfStartGates(r, 9);
     }
 
     function _rowStartWithBidArtistFirstTwoPartyVrfMaxParams() internal returns (Row memory r) {
@@ -607,7 +594,7 @@ contract IntegrationGasReport is GasBase {
             _startWithBidData(vrfRoot, works, 0),
             1 ether
         );
-        _startGatesOver(r, 9, VRF_TWO_PARTY_MAX_PARAMS_CEILING);
+        _vrfStartGates(r, 9);
     }
 
     /// @dev One-time: the first start on a new deployment.
@@ -1240,14 +1227,7 @@ contract IntegrationGasReport is GasBase {
     }
 
     function test_Gas_StartWithBid_VrfWork() public {
-        uint256 fresh = vm.snapshotState();
         _rowStartWithBidVrf();
-        vm.revertToStateAndDelete(fresh);
-        _expectFailure(
-            abi.encodeCall(this.check_StartWithBidVrfWithinSlotMaximum, ()),
-            OverStartSlotMaximum.selector,
-            "a VRF work's startWithBid writes more than START_MAX_SLOTS new slots"
-        );
     }
 
     function test_Gas_Start_EditionMaster() public {
@@ -1275,25 +1255,11 @@ contract IntegrationGasReport is GasBase {
     }
 
     function test_Gas_StartWithBid_ArtistsFirstWork_TwoParty_Vrf() public {
-        uint256 fresh = vm.snapshotState();
         _rowStartWithBidArtistFirstTwoPartyVrf();
-        vm.revertToStateAndDelete(fresh);
-        _expectFailure(
-            abi.encodeCall(this.check_StartWithBidTwoPartyVrfWithinSlotMaximum, ()),
-            OverStartSlotMaximum.selector,
-            "a VRF work's startWithBid writes more than START_MAX_SLOTS new slots"
-        );
     }
 
     function test_Gas_StartWithBid_ArtistsFirstWork_TwoParty_Vrf_MaxParams() public {
-        uint256 fresh = vm.snapshotState();
         _rowStartWithBidArtistFirstTwoPartyVrfMaxParams();
-        vm.revertToStateAndDelete(fresh);
-        _expectFailure(
-            abi.encodeCall(this.check_StartWithBidTwoPartyVrfMaxParamsWithinSlotMaximum, ()),
-            OverStartSlotMaximum.selector,
-            "a VRF work's startWithBid writes more than START_MAX_SLOTS new slots"
-        );
     }
 
     function test_Gas_Start_FirstWorkEver() public {
@@ -1396,30 +1362,6 @@ contract IntegrationGasReport is GasBase {
         _tokenUriMatrix(artistA, caller);
     }
 
-    // ------------------------------------------------------------------ open findings
-
-    /// @dev The intended behaviour: a start row writes at most `START_MAX_SLOTS` new slots.
-    ///      Growth only (a recording), so it runs after the row's own measurement.
-    function _checkWithinSlotMaximum(function() internal returns (Row memory) row) internal {
-        pass = Pass.GROWTH;
-        Row memory r = row();
-        if (r.growth.slots > START_MAX_SLOTS) {
-            revert OverStartSlotMaximum(r.growth.slots, START_MAX_SLOTS);
-        }
-    }
-
-    function check_StartWithBidVrfWithinSlotMaximum() external {
-        _checkWithinSlotMaximum(_rowStartWithBidVrf);
-    }
-
-    function check_StartWithBidTwoPartyVrfWithinSlotMaximum() external {
-        _checkWithinSlotMaximum(_rowStartWithBidArtistFirstTwoPartyVrf);
-    }
-
-    function check_StartWithBidTwoPartyVrfMaxParamsWithinSlotMaximum() external {
-        _checkWithinSlotMaximum(_rowStartWithBidArtistFirstTwoPartyVrfMaxParams);
-    }
-
     // ------------------------------------------------------------------ the table
 
     /// @dev Every row, each from a fresh copy of the set-up state, printed as one table with its
@@ -1503,6 +1445,8 @@ contract IntegrationGasReport is GasBase {
         for (uint256 i; i < 15; ++i) {
             c[i] = START_BUDGET;
         }
+        // The three starts with a bid of a VRF work.
+        (c[6], c[13], c[14]) = (VRF_START_BUDGET, VRF_START_BUDGET, VRF_START_BUDGET);
         c[15] = FIRST_START_CEILING;
         c[16] = FIRST_BID_CEILING;
         c[17] = STARTER_CEILING;

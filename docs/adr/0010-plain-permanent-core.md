@@ -194,3 +194,8 @@ auctions (`AgedCredits`). For the escrow the rule is: money expires only after i
 waited the period; a window's due time can be at most two periods after its first deposit.
 A deposit into an open window, by anyone, can move that window's due time later within that
 bound and never earlier (`RevenueEscrow`, ECO-45; owner ruling of 22 November 2026).
+
+Decision 4 (the 370,000 ceiling and 8 new slots) holds for every start row but one kind. A
+start with a bid of a VRF work also writes the work's seed, a ninth slot, in the token. Those
+rows have their own ceiling: 395,000 Prague gas and 9 new slots. The ceilings are test budgets
+asserted in the gas report, not chain code (owner ruling of 22 November 2026).

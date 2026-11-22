@@ -166,10 +166,12 @@ contract RoleMapCompleteTest is FederatedIntegrationBase {
     /// @dev Mapped functions whose access check zeroed arguments never reach: `addLocator`
     ///      reads the work's media first and asks for the platform's role only when the caller
     ///      is not the artist of an unfinalized work; `renounce` asks for the network's role
-    ///      only when a royalty or license power is newly renounced.
+    ///      only when a royalty or license power is newly renounced; `setFileStore` asks for the
+    ///      storage operator's role only when the caller is not a wallet of the work's artist.
     function _conditional(address target, bytes4 sel) internal view returns (bool) {
         return (target == address(delivery) && sel == WorkDelivery.addLocator.selector)
-            || (target == address(rules) && sel == WorkRules.renounce.selector);
+            || (target == address(rules) && sel == WorkRules.renounce.selector)
+            || (target == address(rules) && sel == WorkRules.setFileStore.selector);
     }
 
     // ------------------------------------------------------------------ probing
