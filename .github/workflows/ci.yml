@@ -260,10 +260,11 @@ jobs:
     runs-on: ubuntu-latest
     # ADR 0001 budget: every CI job finishes in under 15 minutes.
     timeout-minutes: 15
-    # `forge test` in six parallel parts that together run every test exactly once:
+    # `forge test` in seven parallel parts that together run every test exactly once:
     # everything but the invariant tests, the economics invariants (the longest suite, in two
-    # parts by test), the token, vault and signer invariants, the auction invariants, and the
-    # other invariants (the Medusa harnesses' Forge runners among them). Each part builds
+    # parts by test), the token, vault and signer invariants, the auction invariants, the
+    # lifecycle invariants on the whole deployed stack, and the other invariants (the Medusa
+    # harnesses' Forge runners among them). 68 invariant tests on 22 November 2026. Each part builds
     # incrementally from the cached compiler output. Recount when invariant suites are added:
     #   forge test --list --match-test "^invariant" --json
     # and check that each listed test matches exactly one filter below.
@@ -281,8 +282,10 @@ jobs:
             filter: --match-test ^invariant --match-contract ^(StreamCore|FederatedStream|GovernedVault|CurationSigner)Invariant
           - name: auction invariants
             filter: --match-test ^invariant --match-contract ^(Auction|EditionAuction)
+          - name: lifecycle invariants
+            filter: --match-test ^invariant --match-contract ^(StreamLifecycle|StreamStates)Invariant
           - name: other invariants
-            filter: --match-test ^invariant --no-match-contract ^((Economics|StreamCore|FederatedStream|GovernedVault|CurationSigner)Invariant|Auction|EditionAuction)
+            filter: --match-test ^invariant --no-match-contract ^((Economics|StreamCore|FederatedStream|GovernedVault|CurationSigner|StreamLifecycle|StreamStates)Invariant|Auction|EditionAuction)
 
     steps:
       - name: Checkout

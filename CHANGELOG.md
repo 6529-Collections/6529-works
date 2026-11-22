@@ -28,6 +28,22 @@
   regenerated from the build; the audit scope regenerated; the testing guide rewritten; the
   mutation baseline kept as a historical record of the earlier contracts; every broken link
   repaired, and documents cite only tests that exist.
+- Review fixes and system tests on the plain core, integrated. A removed minter no longer seals
+  (an open edition waits for the rebind, `closeEdition` closes one with no sale); a sale contract
+  is admitted for one token form (`setAdapter(adapter, form, admitted)`); `cancelModule`
+  withdraws an announced module; the mint policy reads the accounts module from the Directory at
+  every use, refuses a CC0 item that names another text, and keeps the deployment's CC0 text as
+  a constructor argument checked at `bindStream`.
+- ETH-only leftovers removed: `AssetAllowlist.deprecateAsset`, `setDefaultCurrency`,
+  `statusClock` and the default-currency views, `EconomicsResolver.resolveCurrency` and
+  `RevenuePayment.payERC20`. The allowlist keeps ETH's opening bid and increment floor. The
+  escrow and the split ledger keep their token paths.
+- The renderer shows a collection name of at most 128 bytes; a longer one is not read and the
+  work renders without it, so `tokenURI` stays inside its gas budget whatever a name holds.
+- Gas: every start row stays within 370,000 Prague gas and 8 new slots; a start with a bid of a
+  VRF work, which also writes the seed, has its own ceiling of 395,000 and 9. Both are test
+  budgets.
+- Operators: [Replacing a module](docs/operations/replacing-modules.md), a checklist.
 
 - Escrow credit expiry by windows (ECO-45, R12; `RevenueEscrow`, permanent): a credit opens a
   180-day window or joins the open one, and a window's credits may move to the network 180 days

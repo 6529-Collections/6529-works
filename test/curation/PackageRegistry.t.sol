@@ -206,7 +206,6 @@ contract PackageRegistryTest is CurationBase {
         vm.prank(admin);
         vm.expectRevert();
         fresh.bindStream(s2);
-        uint256 snap = vm.snapshotState();
         vm.mockCall(
             IStream(stream).facts(),
             abi.encodeWithSignature("cc0TextFileId()"),
@@ -215,7 +214,7 @@ contract PackageRegistryTest is CurationBase {
         vm.prank(admin);
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stream));
         fresh.bindStream(stream);
-        vm.revertToState(snap);
+        vm.clearMockedCalls();
         vm.expectEmit(address(fresh));
         emit IPackageRegistry.Bound(STREAM_NAME, stream);
         vm.prank(admin);
