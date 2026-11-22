@@ -56,7 +56,7 @@ pragma solidity ^0.8.24;
 ///      A shortfall reverts instead of being reported as a failed call. Return data is never
 ///      copied unless it fits `maxReturn`.
 ///
-///      Glamsterdam (CALLS-3): {hasSufficientGas} also guards the protocol's fixed-gas CALLs
+///      Glamsterdam (LIM-GAS-2): {hasSufficientGas} also guards the protocol's fixed-gas CALLs
 ///      (payouts, token transfers, deliveries), and there it guarantees regular gas only. Under
 ///      the EIP-8037 draft a transaction whose gas limit exceeds 2^24 carries a state-gas
 ///      reservoir that passes through a fixed-gas call, so the allowance does not cap the state

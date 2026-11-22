@@ -188,7 +188,7 @@ library Core {
     uint256 internal constant DENOMINATOR = 100_000;
 
     /// @notice What a collaborator of a federated work consents to: the item and the royalty
-    ///         rate (ADR 0010, owner decision 10). Passed as `what` to `IAccounts.requireConsent`.
+    ///         rate (ADR 0010). Passed as `what` to `IAccounts.requireConsent`.
     /// @param itemHash The item hash.
     /// @param royaltyRate The royalty rate, out of 100,000.
     /// @return The consent subject.

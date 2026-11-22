@@ -72,6 +72,7 @@ library AgedCredits {
     function expireAged(Credit storage c) internal returns (uint256 amount) {
         amount = c.aged;
         uint104 rest = c.total - c.aged;
-        (c.total, c.aged, c.since) = (rest, rest, rest == 0 ? 0 : SafeCast.toUint48(block.timestamp));
+        (c.total, c.aged, c.since) =
+        (rest, rest, rest == 0 ? 0 : SafeCast.toUint48(block.timestamp));
     }
 }

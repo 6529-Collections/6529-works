@@ -47,7 +47,7 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///      checks), so nobody can push an accrued balance to a lost key before recovery.
 ///      Every external call forwards all available gas and any failure reverts the release, so
 ///      no gas shortfall can produce a partial or success-shaped result.
-///      The network (R11, R12): every release also pays the network fee vault ({network}) its
+///      The network: every release also pays the network fee vault ({network}) its
 ///      share of the same asset when the vault is a payee of the wallet, and a payee's share that
 ///      someone marked and that is still unreleased once the unclaimed period has passed goes to
 ///      the network. The period is the network's setting, read from the resolver
@@ -362,7 +362,7 @@ contract SplitLedger is ISplitLedger, EIP712 {
         );
     }
 
-    /// @dev R11: after a release of payee `paid` of `wallet`, pays the network fee vault, when it
+    /// @dev After a release of payee `paid` of `wallet`, pays the network fee vault, when it
     ///      is a fixed payee of the wallet, everything it is due in the same asset, under the
     ///      wallet's lock that the release holds. The move comes first and the accounting is
     ///      written only once it succeeded; a refusal (the token will not pay the vault) leaves the

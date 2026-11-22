@@ -14,8 +14,8 @@ import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { TokenTransfer } from "./TokenTransfer.sol";
 
 /// @title GovernedVault
-/// @notice The network fee recipient and the 6529 Network Museum as contracts that outlive any key
-///         (study D, finding 6): a fixed payee of every royalty wallet, and the holder of every
+/// @notice The network fee recipient and the 6529 Network Museum as contracts that outlive any key:
+///         a fixed payee of every royalty wallet, and the holder of every
 ///         unbid work, each moving what it holds only to a destination governance sets on the
 ///         slow funds path.
 /// @dev Deliberately small and without upgrade: a bug here would be permanent for every work's fee

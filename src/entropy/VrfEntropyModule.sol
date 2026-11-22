@@ -24,7 +24,7 @@ import { IVRFV2PlusWrapper } from "./IVRFV2PlusWrapper.sol";
 /// @notice The optional VRF module of seeded 1/1s revealed before bidding (ADR 0001 section 9),
 ///         on Chainlink VRF v2.5 with a subscription. One seed per work, keyed by the work's
 ///         content hash, never per copy or per package item.
-/// @dev Flow (review decision D4). The seed is requested BEFORE a token exists: anyone calls
+/// @dev Flow. The seed is requested BEFORE a token exists: anyone calls
 ///      {requestSeed} for a VRF item of an approved package; the coordinator later calls
 ///      {rawFulfillRandomWords}, which stores the seed and emits `SeedDelivered`, with no call into
 ///      the token or the auction. The auction never calls this module: its `start` calls 6529
@@ -584,7 +584,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     }
 
     /// @dev Stamps a new request of an undelivered draw: the request time, the repeat count and
-    ///      the tenure, in one word, before the provider is called. RFX-ENT-2: the count and the
+    ///      the tenure, in one word, before the provider is called. The count and the
     ///      wait belong to the tenure (`epoch`, of the provider the draw uses) of the draw's latest
     ///      request; the first request in a new tenure is not a repeat. While the draw's wait
     ///      runs it returns false when `joined` (the caller only linked) and reverts

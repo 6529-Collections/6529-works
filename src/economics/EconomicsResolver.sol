@@ -31,10 +31,10 @@ import { Splits } from "./Splits.sol";
 /// @dev Changes apply to new works only: a work locks its terms (seller wallet, fee terms,
 ///      royalty receiver and rate) at mint and a sale locks its currency at start. Two
 ///      exceptions: sale adapters pay the network's fee to {networkFeeRecipient} as it reads at
-///      settlement (R18), and 6529 Stream reads the museum
+///      settlement (the fee address current at settlement), and 6529 Stream reads the museum
 ///      (through `IStream.economics()`) when it settles an unbid or frozen-out work and moves
-///      the work there itself (`IMintTarget.settlePrimary`, D140, owner decision 17), and when
-///      governance rescues a stranded work (`IStream.rescueToMuseum`, owner decision 20).
+///      the work there itself (`IMintTarget.settlePrimary`), and when
+///      governance rescues a stranded work (`IStream.rescueToMuseum`).
 ///      Governed through AccessManager with
 ///      `Roles` (src/governance/Roles.sol): {setFeeTerms} and {setMuseum} map to
 ///      `Roles.FUNDS_SETTER` (the network, 3 days); {setRoyaltyRate} and {setDefaultLicense} map
@@ -83,7 +83,7 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
     /// @param allowlist_ The asset allowlist.
     /// @param factory_ The split factory.
     /// @param feeRecipient The network fee recipient for every product at launch.
-    /// @param museum_ The 6529 Network Museum (D140): an existing Safe or EOA.
+    /// @param museum_ The 6529 Network Museum: an existing Safe or EOA.
     /// @param cc0TextFileId_ The content store file ID of the CC0 1.0 legal text.
     constructor(
         address authority,
@@ -273,7 +273,7 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
         if (_refused(e.feeRecipient)) revert InvalidFeeRecipient(e.feeRecipient);
     }
 
-    /// @dev D140: the museum holds every unbid canonical work it receives, so it is never zero
+    /// @dev The museum holds every unbid canonical work it receives, so it is never zero
     ///      and never a contract the fee-recipient rule refuses.
     function _setMuseum(address next) private {
         if (next == address(0) || _refused(next)) revert InvalidMuseum(next);
@@ -282,7 +282,7 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
         (_museum, _museumRevision) = (next, revision);
     }
 
-    /// @dev The fee-recipient rule (CALLS-1): this resolver, its allowlist, the split ledger (also
+    /// @dev The fee-recipient rule: this resolver, its allowlist, the split ledger (also
     ///      the release verifier), and every protocol contract that cannot be paid or hold a work.
     function _refused(address r) private view returns (bool) {
         return r == address(this) || r == address(_allowlist) || r == address(_factory)

@@ -6,7 +6,7 @@ pragma solidity ^0.8.24;
 ///         (ADR 0001 section 5 "Sale extensibility"). A kind is a `bytes32` label so a new
 ///         adapter needs no change to Core or to the package format.
 /// @dev Constants only; nothing here is linked bytecode.
-///      Adding a sale method (ADR 0005, owner decision 14) needs no new token contract: a new
+///      Adding a sale method (ADR 0005) needs no new token contract: a new
 ///      adapter claims a fresh label, `keccak256("<NAME>")`, and reports it from
 ///      `ISaleAdapter.saleKind()`; packages approved afterwards name it in their terms; and
 ///      governance admits the adapter on each token it may mint (`IMintTarget.setAdmittedMinter`,
@@ -83,15 +83,15 @@ struct PrimaryTerms {
 }
 
 /// @notice How a 1/1's primary sale ended, as the adapter that minted it reports it to the token
-///         (`IMintTarget.settlePrimary`, owner decision 17), or as governance ended it
-///         (RESCUED, owner decision 28). NONE is never reported: it is the answer of
+///         (`IMintTarget.settlePrimary`), or as governance ended it
+///         (RESCUED). NONE is never reported: it is the answer of
 ///         `IStream.primarySale` before settlement. RESCUED is never reported by an adapter
 ///         either: only 6529 Stream's `rescueToMuseum` records it.
 /// @dev SOLD: a buyer paid a price. UNBID: the sale ended with no bid. FROZEN_OUT: the sale
 ///      ended unsold because its currency stayed frozen (the English auction's 60-day freeze
 ///      exit) or its token was delisted, any standing bid credited back. RESCUED: governance
 ///      moved the work out of a removed adapter's custody before the adapter settled it
-///      (`IStream.rescueToMuseum`, owner decision 20). 6529 Stream moves an UNBID, FROZEN_OUT or
+///      (`IStream.rescueToMuseum`). 6529 Stream moves an UNBID, FROZEN_OUT or
 ///      RESCUED work to the 6529 Network Museum itself. Appended last, so the earlier values
 ///      keep their encodings.
 enum PrimaryOutcome {
@@ -102,15 +102,15 @@ enum PrimaryOutcome {
     RESCUED
 }
 
-/// @notice What a token answers when a 1/1's primary sale settles (`IMintTarget.settlePrimary`,
-///         owner decision 17): the terms the adapter pays by, and where the work went if the
+/// @notice What a token answers when a 1/1's primary sale settles (`IMintTarget.settlePrimary`):
+///         the terms the adapter pays by, and where the work went if the
 ///         token moved it itself.
 /// @dev Static, so the adapter decodes it cheaply. `seller`, `feeRecipient` and `feeShare` are
 ///      as in `PrimaryTerms`. `holder` is nonzero when the token moved the work out of the
 ///      adapter's custody itself: 6529 Stream's museum, for UNBID and FROZEN_OUT. An adapter
 ///      that is left an unsold work reads its creator from `IMintTarget.primaryTerms`. The
 ///      English auction does not trust `holder`: it reads `ownerOf` after the call, so a token
-///      that reports a holder without moving the work still has it delivered (rc.2 CALLS I-2).
+///      that reports a holder without moving the work still has it delivered.
 struct PrimarySettlement {
     address seller;
     address feeRecipient;

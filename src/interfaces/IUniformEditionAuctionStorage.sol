@@ -49,7 +49,7 @@ interface IUniformEditionAuctionStorage {
     }
 
     /// @notice A sale's payout terms, locked at open (`Space.PAYOUT`). The fee recipient is not
-    ///         locked: settlement pays the one the economics resolver names then (R18), or the
+    ///         locked: settlement pays the one the economics resolver names then, or the
     ///         one it named at open (`Space.FEE_RECIPIENT`) when it names none.
     /// @param seller The artist-portion split wallet.
     /// @param feeShare The network fee share, out of 100,000.

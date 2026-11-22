@@ -5,7 +5,7 @@ import { IUniformEditionAuction } from "../interfaces/IUniformEditionAuction.sol
 import { StepLadder } from "../interfaces/types/StepLadder.sol";
 
 /// @title UniformClearing
-/// @notice The pure core of the 6529 Stream Editions uniform-price auction (D138, ADR 0005): the
+/// @notice The pure core of the 6529 Stream Editions uniform-price auction (ADR 0005): the
 ///         clearing rule on `StepLadder`'s prices, the first-in-first-out split of the cut step
 ///         and the what-if quote behind the views. The auction, its views and the Halmos proofs
 ///         share this one implementation.
@@ -94,7 +94,7 @@ library UniformClearing {
             && StepLadder.isStepsPerDecade(stepsPerDecade);
     }
 
-    /// @notice Clears a book by the D138 rule, in one pass over its words.
+    /// @notice Clears a book by the uniform-price clearing rule, in one pass over its words.
     /// @dev **The rule, per unit.** A bid of `q` units counts as `q` unit bids. `P(k)` is the
     ///      k-th highest unit price and `revenue(k) = k * P(k)` for `1 <= k <= K`, where `K` is
     ///      the number of live units, or the cap when that is lower. `R*` is the highest revenue.

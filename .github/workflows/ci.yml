@@ -67,6 +67,11 @@ jobs:
         # in tools/rules-uncovered.txt, which can only shrink.
         run: python tools/check_rules.py --uncovered
 
+      - name: Comment codes
+        # Comments in src/ cite only spec rule, invariant and limitation IDs, ADRs, EIPs and
+        # repository names, never internal reference codes.
+        run: python tools/check_comment_codes.py src
+
       - name: Sepolia manifest writer unit tests
         # script/sepolia/make_manifest.py builds the manifest's `safes` from the new genesis.
         run: python -m unittest discover -s script/sepolia -p "test_*.py"

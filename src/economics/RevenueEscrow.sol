@@ -25,11 +25,11 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///      split wallet's credit only to a replacement wallet with an identical payee configuration
 ///      (consent is trivially satisfied because the payees and shares are identical; ADR 0003),
 ///      the network's own credits (an account whose `authority()` is this escrow's, such as the
-///      fee and museum vaults) wherever the network names (C19), and any other account's credit
+///      fee and museum vaults) wherever the network names, and any other account's credit
 ///      only to the replacement that account named itself with {consentToRecovery}, each consent
 ///      covering one recovery.
 ///
-///      Expiry (R12, ECO-45). The wait is the unclaimed period, the network's setting
+///      Expiry (ECO-45). The wait is the unclaimed period, the network's setting
 ///      (`IDirectory.unclaimedPeriod`, 180 days at launch), read from the split factory's resolver
 ///      (the `Directory`) whenever the escrow ages a credit: at every deposit, recovery and
 ///      expiry, and in {expirableAt}. If that read fails, the call reverts and the money stays.
@@ -140,7 +140,7 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
                 revert NotEquivalentWallet(wallet, replacement);
             }
         } else if (_isNetworks(wallet)) {
-            // C19: the network moves its own credits without consent.
+            // The network moves its own credits without consent.
             if (replacement == address(0) || replacement == address(this) || replacement == wallet)
             {
                 revert InvalidWallet(replacement);

@@ -7,9 +7,8 @@ pragma solidity ^0.8.24;
 ///         an account has the same rights; none acts while the account is frozen or a network
 ///         replacement is pending.
 /// @dev Today's `src/interfaces/IAccounts.sol` without the two federation views (they move to
-///      `IFederationGate`), plus `payoutAddress`. A freeze also blocks a contest of a
-///      replacement, and the network may place a freeze again after one ends or is lifted
-///      (ADR 0010, owner decision 9).
+///      `IFederationGate`), plus `payoutAddress`. A freeze blocks a contest of a
+///      replacement, and a freeze can be placed again (ADR 0010).
 interface IAccounts {
     /// @notice Whether `wallet` may act for the account now.
     /// @param accountId An artist ID, or an address (as a number) that is or was a root.

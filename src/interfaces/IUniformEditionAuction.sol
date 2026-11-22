@@ -6,18 +6,18 @@ import { ISaleAdapter } from "./ISaleAdapter.sol";
 
 /// @title IUniformEditionAuction
 /// @notice The uniform-price edition auction: how 6529 Stream Editions sells an edition (ADR
-///         0005; 6529chain D138-D141). One auction per edition decides both how many copies
+///         0005). One auction per edition decides both how many copies
 ///         exist and their one price, so the number is never fixed in advance and nothing is
 ///         left unsold. It runs alongside the edition master's 1/1 English auction and closes
-///         exactly 15 minutes after the 1/1 finally closes (a fixed value, R20). Anyone bids a
+///         exactly 15 minutes after the 1/1 finally closes (a fixed value). Anyone bids a
 ///         quantity at a price step; bids are public, fully escrowed in ETH, and can be raised
-///         but never lowered or withdrawn, also while the 1/1 is paused (R21). At the close, revenue(k) is
-///         k times the k-th highest unit bid; the result is the largest k whose revenue is at
-///         least (100% - margin) of the highest, at most the creator's optional cap. Every winner
-///         pays the lowest winning step's price, every other unit is refunded in full, and
-///         exactly k copies are minted, as winners claim. The network fee (25% at launch) is the
-///         share the edition's economics locked at open, rounded up (the seller's part rounds
-///         down), paid to the recipient the economics resolver names at settlement (R18).
+///         but never lowered or withdrawn, also while the 1/1 is paused. At the close,
+///         revenue(k) is k times the k-th highest unit bid; the result is the largest k whose
+///         revenue is at least (100% - margin) of the highest, at most the creator's optional
+///         cap. Every winner pays the lowest winning step's price, every other unit is refunded
+///         in full, and exactly k copies are minted, as winners claim. The network fee (25% at
+///         launch) is the share the edition's economics locked at open, rounded up (the seller's
+///         part rounds down), paid to the recipient the economics resolver names at settlement.
 /// @dev Sales are keyed like the English auction's: `saleId = saleIdOf(token, id)`, the edition
 ///      contract and edition ID (for 6529 Stream Editions, the master's 6529 Stream token ID), so
 ///      one adapter can serve every listed token and federated pairs. The adapter is one minter
@@ -49,7 +49,7 @@ import { ISaleAdapter } from "./ISaleAdapter.sol";
 ///      Ladder. Steps are 0-based indices into `StepLadder`'s prices under the sale's locked
 ///      `AuctionConfig`. A step's live units are the units of the bids sitting on it now.
 ///
-///      Timing (D140, D141). `open` is permissionless from the 1/1 auction's start (the keeper
+///      Timing. `open` is permissionless from the 1/1 auction's start (the keeper
 ///      batches it with the start) until the edition close. The 1/1 is the English auction sale
 ///      `IEnglishAuction.saleIdOf(master, id)`, where `master` is the token's
 ///      `IEditions.stream()`. Bids are accepted while `block.timestamp < endTime`, where
@@ -60,7 +60,7 @@ import { ISaleAdapter } from "./ISaleAdapter.sol";
 ///      min(block.timestamp + softWindow, backstop)` with `backstop = closeAt + maxExtension`,
 ///      a hard close. While the 1/1 is PAUSED for a dispute, bids and raises are accepted
 ///      whatever the time and do not move `softEnd`; a resumed 1/1 runs at least its governed
-///      duration, and the edition close follows it. Bids stay firm during the pause (R21). A
+///      duration, and the edition close follows it. Bids stay firm during the pause. A
 ///      CANCELLED 1/1 (an upheld dispute) voids the sale: nothing is minted or paid, and every
 ///      bid is refunded in full. A bid reads the 1/1 live only within `softWindow` of the close (or
 ///      later), so a bid placed earlier, after the cancel but before the sale is voided, can
@@ -68,14 +68,14 @@ import { ISaleAdapter } from "./ISaleAdapter.sol";
 ///      (read live) is already false. Any `settle` call voids the sale at once. Editions sell
 ///      whether or not the 1/1 drew bids; no edition bids means no copies.
 ///
-///      Clearing (D138). Scanning used steps from the top, step s is a candidate of
+///      Clearing. Scanning used steps from the top, step s is a candidate of
 ///      `k_s = min(D_s, cap)` copies at `price(s)`, `D_s` being the live units at or above s;
 ///      the scan stops once the units strictly above a step reach the cap. `bestRevenue` (R*)
 ///      is the highest candidate revenue; the result is the lowest-priced candidate with
 ///      `revenue * 100,000 >= bestRevenue * (100,000 - marginShare)`. This equals the per-unit
 ///      definition (golden vectors in `test/fixtures/edition-auction/clearing.json`).
 ///
-///      The cut step (owner decision 1). Without a cap no step is split. When a cap binds
+///      The cut step. Without a cap no step is split. When a cap binds
 ///      inside the clearing step, its units fill in arrival order (price-time priority): a bid's
 ///      `position` there is the step's entered units before it, counted in units that only
 ///      increase; a raise rejoins at the back of its new step; a raise out of a step leaves a
@@ -98,7 +98,7 @@ interface IUniformEditionAuction is ISaleAdapter {
         VOID
     }
 
-    /// @notice The governed parameters (D86), locked into each sale when it opens (ADR 0005).
+    /// @notice The governed parameters, locked into each sale when it opens (ADR 0005).
     ///         The close offset is not one of them: every sale closes 15 minutes after its 1/1.
     /// @param basePrice The price of step 0, in wei (0.0001 ETH at launch).
     /// @param stepsPerDecade Steps per tenfold rise: 24, 48, 96 or 192 (48 at launch).
@@ -135,7 +135,7 @@ interface IUniformEditionAuction is ISaleAdapter {
     /// @param terms The parameters locked at open.
     /// @param seller The artist-portion split wallet, locked at open.
     /// @param feeRecipient The network fee recipient settlement would pay now: the economics
-    ///        resolver's, or the one it named at open when it names none (R18).
+    ///        resolver's, or the one it named at open when it names none.
     /// @param feeShare The network share of revenue, out of 100,000, locked at open.
     /// @param openedAt When the sale opened.
     /// @param bidCount Bids placed so far; bid IDs run from 1 to `bidCount`.
@@ -205,7 +205,7 @@ interface IUniformEditionAuction is ISaleAdapter {
     ///        `count` is zero.
     /// @param revenue `count * price`.
     /// @param networkFee `revenue - floor(revenue * (100,000 - feeShare) / 100,000)`: the
-    ///        seller's part rounds down and the network takes the rest (R18).
+    ///        seller's part rounds down and the network takes the rest.
     /// @param bestRevenue R*, the highest candidate revenue.
     /// @param rationed Whether the cap binds inside the clearing step.
     /// @param cutUnits The clearing step's winning units (all of them unless rationed).
@@ -471,7 +471,7 @@ interface IUniformEditionAuction is ISaleAdapter {
     ///        `WorksHashing.itemHash` must equal the item hash 6529 Stream stored for `id`
     ///        (`IStream.itemHashOf`, with `workOf(id).kind` 1), and the package it was approved in, which must still be
     ///        approved and contain the item (`IItemApprovals.isApprovedItem` of the package
-    ///        registry the lens names, C23: a revoked package or a disabled signer opens no sale; a sale
+    ///        registry the lens names: a revoked package or a disabled signer opens no sale; a sale
     ///        already open is untouched). For a federated pair: `abi.encode(PackageItem item)`.
     ///        The edition terms must name `SaleKind.UNIFORM_AUCTION` and `CURRENCY_ETH`, their
     ///        `maxCount` is the cap, and their params are empty. Before locking anything, `open`
@@ -608,7 +608,7 @@ interface IUniformEditionAuction is ISaleAdapter {
     function setLimits(uint256 expected, uint256 next) external;
 
     /// @notice Voids a sale that cannot complete on its own because its 1/1 auction no longer
-    ///         gives an answer settlement can use (R16): it refuses to answer, answers malformed,
+    ///         gives an answer settlement can use: it refuses to answer, answers malformed,
     ///         has no such sale, or reports it cancelled. Permissionless, from 21 days after the
     ///         sale's scheduled close (its 1/1's final end plus the fixed 15 minutes; a
     ///         soft-close extension of the edition sale does not move it), while the sale has

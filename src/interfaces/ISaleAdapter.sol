@@ -77,9 +77,8 @@ interface ISaleAdapter is IERC165 {
     ///         withdrawn bid, or an ETH overpayment; for the auction also the high bid refunded by
     ///         a dispute cancel or by a sale ending unsold (a currency freeze past its 14 days, or
     ///         a delisted federated contract), and an ERC-20 settlement payout that failed in its
-    ///         own frame (MONEY-1), which `IEnglishAuction.claimFor` pays out.
-    /// @param account The account credited: the bidder or buyer, or (MONEY-1) the seller or fee
-    ///        wallet.
+    ///         own frame, which `IEnglishAuction.claimFor` pays out.
+    /// @param account The account credited: the bidder or buyer, or the seller or fee wallet.
     /// @param currency The credit's currency, zero for ETH.
     /// @param saleId The sale the credit comes from.
     /// @param amount The amount credited, in the currency's base units.
@@ -124,8 +123,9 @@ interface ISaleAdapter is IERC165 {
     error SalePaused();
     /// @notice `unpause` was called while the adapter is not paused.
     error NotPaused();
-    /// @notice A credit may be sent to the network's fee recipient only from `expiresAt`, 180
-    ///         days after it went from zero (R12).
+    /// @notice A credit may be sent to the network's fee recipient only from `expiresAt`, once
+    ///         the network's unclaimed period (`IDirectory.unclaimedPeriod`, 180 days at launch)
+    ///         has passed.
     error CreditNotExpired(address account, uint256 expiresAt);
     /// @notice The address cannot receive the token or the credit (for `claim`, zero).
     error InvalidRecipient(address recipient);
@@ -142,8 +142,7 @@ interface ISaleAdapter is IERC165 {
     error InvalidSaleTerms(address token, uint256 id);
 
     /// @notice This adapter's `SaleKind` label: a token mints only for an admitted adapter whose
-    ///         label equals its terms' kind. A new sale method claims a new label (ADR 0005,
-    ///         owner decision 14).
+    ///         label equals its terms' kind. A new sale method claims a new label (ADR 0005).
     /// @return `SaleKind.ENGLISH_AUCTION`, `SaleKind.UNIFORM_AUCTION`, rc.1's
     ///         `SaleKind.FIXED_PRICE` or `SaleKind.DUTCH`, or a later adapter's own label.
     function saleKind() external view returns (bytes32);

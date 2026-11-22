@@ -59,7 +59,7 @@ struct License {
 ///         (ADR 0001 section 5 "Sale extensibility").
 /// @dev `saleKind` is a `SaleKind` label; only an admitted adapter reporting the same kind may
 ///      sell the work (6529 Stream admits the English auction at genesis, and later methods by
-///      governance: ADR 0005, owner decision 15). `currency` is `CURRENCY_ETH` (`address(0)`),
+///      governance: ADR 0005). `currency` is `CURRENCY_ETH` (`address(0)`),
 ///      an allowlisted ERC-20, or `CURRENCY_DEFAULT` for the product's default currency when
 ///      the sale starts. `params` is the encoding the kind defines, checked by its adapter; the
 ///      English auction takes none, so it must be empty.
@@ -74,12 +74,12 @@ struct SaleTerms {
 /// @dev `maxCount` is the creator's optional cap on the count (0 for none), which 6529 Stream
 ///      Editions enforces for every minter: the sale decides how many copies exist, so the terms
 ///      fix no size and no price. `saleKind` is any label a sale adapter claims (`SaleKind`,
-///      `ISaleAdapter.saleKind`, owner decision 14), `SaleKind.UNIFORM_AUCTION` in rc.2.
+///      `ISaleAdapter.saleKind`, ADR 0005),`SaleKind.UNIFORM_AUCTION` in rc.2.
 ///      `currency` and `params` are that kind's, opaque to the token and the package registry,
 ///      which check only a nonzero kind and a bounded `params` length (`EditionRules`); a priced
 ///      method carries its price in `params`, and the adapter validates both when it opens a
 ///      sale. The edition auction takes `CURRENCY_ETH` and empty `params` (its close is a fixed
-///      15 minutes after the 1/1, R20). For an ORIGINAL item
+///      15 minutes after the 1/1). For an ORIGINAL item
 ///      every field is zero or empty.
 struct EditionTerms {
     uint32 maxCount;

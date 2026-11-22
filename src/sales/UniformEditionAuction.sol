@@ -46,7 +46,7 @@ import { UniformClearing } from "./UniformClearing.sol";
 ///      no per-step counter is written. The governed parameters are interned: `setConfig` writes
 ///      one record per change, and a sale stores its record's 24-bit ID. The payout gas shares
 ///      the settings word. Values of this replaceable adapter: every sale closes {CLOSE_OFFSET}
-///      after its 1/1 (R20), may be abandoned {ABANDON_DELAY} after that (R16), and an adopted
+///      after its 1/1, may be abandoned {ABANDON_DELAY} after that, and an adopted
 ///      sale whose master's sale already ended runs {ADOPTED_RUN} before its close is counted.
 ///      Credits follow the rule both auctions share (`AgedCredits`): only money that has itself
 ///      waited the network's unclaimed period (`IDirectory.unclaimedPeriod()`, read when an
@@ -90,9 +90,9 @@ abstract contract UniformEditionAuctionBase is
     AccessManaged,
     ReentrancyGuardTransient
 {
-    /// @notice Every edition sale closes exactly this long after its 1/1's final end (R20).
+    /// @notice Every edition sale closes exactly this long after its 1/1's final end.
     uint256 internal constant CLOSE_OFFSET = 15 minutes;
-    /// @notice How long after its close a sale may be abandoned (R16). Longer than the soft
+    /// @notice How long after its close a sale may be abandoned. Longer than the soft
     ///         close's longest extension (7 days), so no sale taking bids can be abandoned.
     uint256 internal constant ABANDON_DELAY = 21 days;
     /// @notice How long an adopted sale whose master's sale already ended runs before its close
@@ -229,7 +229,7 @@ abstract contract UniformEditionAuctionBase is
     /// @notice Opens the sale of edition `id` on `token` and creates the edition
     ///         (`IUniformEditionAuction.open`).
     /// @dev The lens's `masterTerms` checks the item (and, for 6529 Stream Editions, that its
-    ///      package is still approved, C23), computes the economics and deploys the split
+    ///      package is still approved), computes the economics and deploys the split
     ///      wallets; `IEditions.create` then makes this adapter the edition's only minter, so an
     ///      edition that already exists refuses the open, and only this adapter can ever mint
     ///      the copies this sale clears.
@@ -432,7 +432,7 @@ abstract contract UniformEditionAuctionBase is
             // Cleared already: sweep the clearing step's departures.
             if (_scans[saleId] == 0) return _sweep(saleId, stored, order, _SWEEP_CHUNK);
         }
-        // The sale word and its terms, read once for the whole call (I-1).
+        // The sale word and its terms, read once for the whole call.
         SaleWord memory a = _saleWord(stored);
         IUniformEditionAuction.AuctionConfig memory t = _config(a.termsId);
         if (status == IUniformEditionAuction.AuctionStatus.OPEN && _begin(saleId, stored, a, t)) {
@@ -529,7 +529,7 @@ abstract contract UniformEditionAuctionBase is
     }
 
     /// @notice Voids a sale whose 1/1 auction no longer gives settlement a usable answer
-    ///         (`IUniformEditionAuction.abandon`, R16).
+    ///         (`IUniformEditionAuction.abandon`).
     /// @dev The lens decides (`checkAbandon`, which reverts with `NotAbandonable`): it reads the
     ///      1/1, forwarding all gas and reverting on a shortfall. This adapter then enforces the
     ///      state rule and the time floor itself (`NotAbandonable` before the stored close plus
@@ -652,7 +652,7 @@ abstract contract UniformEditionAuctionBase is
     }
 
     /// @dev For a bid or raise on OPEN sale `a`: requires bidding open (the end not passed, the
-    ///      1/1 not cancelled when read), applies the soft close to `a` (D141) and returns the end
+    ///      1/1 not cancelled when read), applies the soft close to `a` and returns the end
     ///      after it, or {_NO_END} while the 1/1 is paused (which never extends).
     function _extend(
         uint256 saleId,
@@ -796,7 +796,7 @@ abstract contract UniformEditionAuctionBase is
         );
         // forge-lint: disable-end(unsafe-typecast)
         // The count is final here (rationing picks winners, not the count): seal the edition at
-        // it, so no copy past what the winners are owed can ever be minted (ED-12).
+        // it, so no copy past what the winners are owed can ever be minted (ED-25).
         IEditions(editions).seal(p.id, uint40(count));
         price = count == 0 ? 0 : _price(t, step);
         emit IUniformEditionAuction.AuctionCleared(
@@ -882,7 +882,7 @@ abstract contract UniformEditionAuctionBase is
     }
 
     /// @dev Pays `count × price` of sale `saleId`: the network fee to the recipient the lens
-    ///      resolves now (R18: the economics resolver's, else the one it named at open), then
+    ///      resolves now (the economics resolver's, else the one it named at open), then
     ///      the rest to the seller, each escrowed on refusal, and emits `SaleSettled` (the event
     ///      the TDH pipeline weights, P29 section 1.2). The seller's part rounds down and the
     ///      network takes the leftover wei.
@@ -950,7 +950,7 @@ abstract contract UniformEditionAuctionBase is
         if (unitsWon != 0) IEditions(_editionsOf(saleId)).mint(to, id, unitsWon, unitPrice);
     }
 
-    /// @dev One chunk of the D138 clearing of sale `a`'s live book (ADR 0005): a downward pass
+    /// @dev One chunk of the clearing of sale `a`'s live book (ADR 0005): a downward pass
     ///      over at most {_SCAN_WORDS} of its words, resuming from `left` (a scan in progress) or
     ///      from its highest word. It gives exactly `UniformClearing.clear`'s result, which the
     ///      lens runs: the tests replay the golden vectors through both and fuzz one against the
@@ -1020,7 +1020,7 @@ abstract contract UniformEditionAuctionBase is
     ///
     ///      Invariants, each relied on by the arithmetic below (no checked arithmetic in Yul):
     ///      - the loop reads words `scan[6] - 1` down to `scan[7]` (at most {_SCAN_WORDS}) and,
-    ///        within each, lanes 7 down to 0: steps strictly decreasing, as the D138 pass needs;
+    ///        within each, lanes 7 down to 0: steps strictly decreasing, as clearing needs;
     ///      - `demand` is a sum of live units of one sale, below 2^32, so `demand + units` and
     ///        `demand - units` never wrap, and the packed `pick` fields (64 bits each) hold them;
     ///      - `start` (the current decade's first step) stays at most `step`: the inner loop
@@ -1301,8 +1301,8 @@ abstract contract UniformEditionAuctionBase is
         _requireStatus(saleId, a.status, IUniformEditionAuction.AuctionStatus.OPEN);
     }
 
-    /// @dev A sale word read with one SLOAD and decoded, for the settlement path (I-1 of review
-    ///      A: there the compiler's member-by-member copy reads the slot once per field; the
+    /// @dev A sale word read with one SLOAD and decoded, for the settlement path
+    ///      (there the compiler's member-by-member copy reads the slot once per field; the
     ///      bid and claim paths keep the compiler's copy, which is cheaper for them). The packing is `SaleWord`'s, from the
     ///      least significant bit, as `IUniformEditionAuctionStorage.Space` documents and the lens
     ///      decodes.
@@ -1326,7 +1326,7 @@ abstract contract UniformEditionAuctionBase is
         // forge-lint: disable-end(unsafe-typecast)
     }
 
-    /// @dev Terms record `termsId` read with one SLOAD and decoded (I-1), `AuctionConfig`'s
+    /// @dev Terms record `termsId` read with one SLOAD and decoded, `AuctionConfig`'s
     ///      packing from the least significant bit.
     function _config(uint256 termsId)
         private

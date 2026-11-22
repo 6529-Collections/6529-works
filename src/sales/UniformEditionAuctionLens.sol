@@ -211,7 +211,7 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
     }
 
     /// @dev The economics a sale of `token` locks now (`_newTerms`), required payable.
-    ///      CALLS-1: the escrow refuses to be paid as a wallet, so a sale paying it could never
+    ///      The escrow refuses to be paid as a wallet, so a sale paying it could never
     ///      settle; it is refused at open.
     function _terms(address token, uint256 id, ISplitWallet.Payee[] memory payees)
         private
@@ -253,7 +253,7 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
         if (!ok) revert IUniformEditionAuction.NotAbandonable(saleId);
     }
 
-    /// @dev The abandonment rule (R16). A sale whose 1/1 auction answers ACTIVE, PAUSED, ENDED
+    /// @dev The abandonment rule. A sale whose 1/1 auction answers ACTIVE, PAUSED, ENDED
     ///      or SETTLED settles as usual (an ended 1/1 can be settled by anyone), and so does an
     ///      adopted sale that runs on its own. A 1/1 auction that refuses to answer (reverts, or
     ///      answers malformed), or answers NONE or CANCELLED, leaves the sale nothing to settle
@@ -1183,7 +1183,7 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
         returns (PackageItem memory);
 
     /// @dev The economics resolver whose network fee recipient this deployment pays, and the
-    ///      product it asks for (R18).
+    ///      product it asks for.
     function _feeSource() internal view virtual returns (IEconomicsResolver, bytes32);
 }
 
@@ -1227,7 +1227,7 @@ contract UniformEditionAuctionLens is UniformEditionAuctionLensBase {
         return _stream;
     }
 
-    /// @notice The package registry whose approval a master's item must still have (C23).
+    /// @notice The package registry whose approval a master's item must still have.
     /// @return The registry (immutable).
     function packageRegistry() external view returns (address) {
         return _packageRegistry;
@@ -1271,8 +1271,8 @@ contract UniformEditionAuctionLens is UniformEditionAuctionLensBase {
     }
 
     /// @dev `data` is `abi.encode(PackageItem item, bytes32 packageRoot, bytes32[] proof)`; the
-    ///      item must be in a package the package registry still approves (C23,
-    ///      `IItemApprovals.isApprovedItem`: not revoked, its signer not disabled). The call
+    ///      item must be in a package the package registry still approves
+    ///      (`IItemApprovals.isApprovedItem`: not revoked, its signer not disabled). The call
     ///      forwards all gas and reverts on any failure, so a shortfall is never a refusal.
     function _item(address token, uint256 id, bytes32 itemHash, bytes calldata data)
         internal

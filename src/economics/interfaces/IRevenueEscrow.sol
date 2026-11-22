@@ -223,7 +223,7 @@ interface IRevenueEscrow is IERC165 {
     ///         factory, `replacement` must be a distinct wallet of the same factory with an
     ///         identical payee configuration (another salt). For the network's own account (one
     ///         whose `authority()` is this escrow's, such as the fee and museum vaults),
-    ///         `replacement` is any account but zero, the escrow and the account itself (C19). For
+    ///         `replacement` is any account but zero, the escrow and the account itself. For
     ///         any other account, it must be the replacement that account named with
     ///         {consentToRecovery}, and the move consumes that consent.
     /// @dev Governed: `Roles.FUNDS_SETTER` (the network, 3 days). It rescues credits for an

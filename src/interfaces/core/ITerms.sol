@@ -4,10 +4,11 @@ pragma solidity ^0.8.24;
 /// @title ITerms
 /// @notice The TERMS module (replaceable): the royalty policy of existing works. It is the only
 ///         caller of `IStream.setRoyalty`, `IStream.lockRoyaltyRate` and `IEditions.setRoyalty`.
-/// @dev Rules it holds (ADR 0009 R8 to R10 and C7; ADR 0010 decision 1): the royalty rate
-///      changes only through the token's RECORDS module, which checked every party's consent
-///      and the network's approval; the network alone may lower its share of an existing work's
-///      royalties, never raise it; the receiver is always the split vault of (seller, fee
+/// @dev Rules it holds: the royalty rate changes only through the token's RECORDS module, which
+///      checked every party's consent and the network's approval. The network's share of an
+///      existing work's royalties can only be lowered; a rate rises only with the artist's and
+///      the network's agreement; renouncing the royalty power needs the network's approval
+///      (ADR 0010). The receiver is always the split vault of (seller, fee
 ///      recipient) at the share in force, or the seller at a zero share, deployed before it is
 ///      set. A master's edition follows its master.
 interface ITerms {

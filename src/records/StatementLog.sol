@@ -241,7 +241,7 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     {
         entryHash = _latestDispute[subjectKey(token, id)];
         if (entryHash != 0 || token == address(0) || token.code.length == 0) return entryHash;
-        // RFX-REC-2: only a declared Stream's answer can name an item.
+        // Only a declared Stream's answer can name an item.
         if (!BoundedCall.supportsInterface(token, type(IStream).interfaceId)) return 0;
         // `itemHashOf` answers one word; `ERC721NonexistentToken` reverts with 36 bytes.
         (bool ok, bytes memory answer) =

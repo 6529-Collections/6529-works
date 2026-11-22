@@ -38,7 +38,7 @@ import { Splits } from "./Splits.sol";
 ///      involve contract payees or unfamiliar tokens. The minimums are only the floor of each
 ///      item's share.
 ///
-///      Glamsterdam (CALLS-3, per the EIP-8037 draft, not yet reproduced on Sepolia): an item's
+///      Glamsterdam (LIM-GAS-2, per the EIP-8037 draft, not yet reproduced on Sepolia): an item's
 ///      share caps its regular gas only. A release that creates storage or an account draws state
 ///      gas from the transaction's EIP-8037 reservoir, so an item's outcome can depend on the
 ///      batch's gas limit, and the caller pays for the state growth of every item it runs. A failed

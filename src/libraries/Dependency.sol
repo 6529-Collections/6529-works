@@ -6,8 +6,8 @@ import { DelegatedEOA } from "./DelegatedEOA.sol";
 
 /// @title Dependency
 /// @notice The one install check for a contract that another v1 contract calls, binds, lists or
-///         pins (ADR 0003, "Governance"; GV-22), and the use-time check of a pinned code hash
-///         (DEPS-6). Installing requires code that is not an EIP-7702 delegation designator,
+///         pins (ADR 0003, "Governance"; GV-22), and the use-time check of a pinned code hash.
+///         Installing requires code that is not an EIP-7702 delegation designator,
 ///         ERC-165 support for the interface the dependency is installed as (where it implements
 ///         ERC-165), and, where pinned, the reviewed code hash. The function a call site uses
 ///         shows which of these it applies.
@@ -26,7 +26,7 @@ library Dependency {
     /// @param dependency The refused address.
     error InvalidDependency(address dependency);
     /// @notice The code at a pinned `dependency` no longer has the code hash it was installed
-    ///         with: code recreated at the same address is never trusted (DEPS-6).
+    ///         with: code recreated at the same address is never trusted.
     /// @param dependency The pinned address.
     error DependencyCodeChanged(address dependency);
 

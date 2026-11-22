@@ -50,11 +50,11 @@ interface IUniformEditionAuctionLens {
     }
 
     /// @notice How long after its 1/1's final end every edition sale closes: 15 minutes, a fixed
-    ///         value (R20).
+    ///         value.
     /// @return 900.
     function CLOSE_OFFSET() external view returns (uint32);
     /// @notice How long after its scheduled close (its 1/1's final end plus {CLOSE_OFFSET}; a
-    ///         soft-close extension does not move it) a sale may be abandoned (R16): 21 days, a
+    ///         soft-close extension does not move it) a sale may be abandoned: 21 days, a
     ///         fixed value.
     /// @return 1,814,400.
     function ABANDON_DELAY() external view returns (uint32);
@@ -92,7 +92,7 @@ interface IUniformEditionAuctionLens {
     ///         `WorksHashing.itemHash` of the item in `data`. For 6529 Stream Editions, `data`
     ///         must be `abi.encode(PackageItem item, bytes32 packageRoot, bytes32[] proof)`, an
     ///         item the package registry still approves in `packageRoot`
-    ///         (`IItemApprovals.isApprovedItem`, C23); for a federated pair `abi.encode(item)`,
+    ///         (`IItemApprovals.isApprovedItem`); for a federated pair `abi.encode(item)`,
     ///         whose contract the federation module lets this adapter mint (`canMint`). The
     ///         edition terms must name `SaleKind.UNIFORM_AUCTION` and `CURRENCY_ETH`, with empty
     ///         params; the payout terms (6529 Stream Editions: the resolver's
@@ -133,7 +133,7 @@ interface IUniformEditionAuctionLens {
     /// @param saleId The sale ID.
     function checkAbandon(uint256 saleId) external view;
 
-    /// @notice The network fee recipient a payout of the caller pays now (R18): the economics
+    /// @notice The network fee recipient a payout of the caller pays now: the economics
     ///         resolver's for the deployment's product (6529 Stream Editions or Federated), or,
     ///         when it names none or the escrow and `token` is nonzero, the recipient the
     ///         caller's sale of edition `id` of `token` recorded at open (zero when it has none).

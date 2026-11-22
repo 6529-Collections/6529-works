@@ -101,7 +101,7 @@ interface IEconomicsResolver is IERC165 {
     function economics(bytes32 product) external view returns (ProductEconomics memory);
     /// @notice A product's network fee recipient (`economics(product).feeRecipient`). Sale
     ///         adapters read it when a sale settles and pay the network's fee there, so a change
-    ///         reaches running sales too (R18); a sale pays the recipient it recorded when this
+    ///         reaches running sales too; a sale pays the recipient it recorded when this
     ///         answers zero.
     /// @param product The product identifier; reverts with {UnknownProduct} if not configured.
     /// @return The fee recipient; zero only while the fee share is zero, and never the revenue
@@ -126,13 +126,12 @@ interface IEconomicsResolver is IERC165 {
     /// @notice The split factory (immutable).
     /// @return The `ISplitFactory` this resolver predicts wallet addresses with.
     function splitFactory() external view returns (address);
-    /// @notice The 6529 Network Museum (ADR 0005; 6529chain D140): the network-held account
-    ///         that receives a 6529 Stream work whose 1/1 auction drew no bids, or that ended
-    ///         unsold after its currency stayed deprecated past the freeze exit, whatever the sale method
-    ///         (owner decision 22), and a work governance rescues from a removed sale adapter
-    ///         (owner decision 20). 6529 Stream reads it when the sale settles and moves the work
-    ///         itself (owner decision 17); another token's unsold work goes to its artist
-    ///         instead. Set at deployment (revision 1) and never zero.
+    /// @notice The 6529 Network Museum (ADR 0005): the network-held account that receives a
+    ///         6529 Stream work whose 1/1 auction drew no bids, or that ended unsold after its
+    ///         currency stayed deprecated past the freeze exit, whatever the sale method, and a
+    ///         work governance rescues from a removed sale adapter. 6529 Stream reads it when the
+    ///         sale settles and moves the work itself; another token's unsold work goes to its
+    ///         artist instead. Set at deployment (revision 1) and never zero.
     /// @return The museum's address.
     function museum() external view returns (address);
     /// @notice The revision `setMuseum` compares.
