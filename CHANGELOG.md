@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+- Escrow credit expiry by windows (ECO-45, R12; `RevenueEscrow`, permanent): a credit opens a
+  180-day window or joins the open one, and a window's credits may move to the network 180 days
+  after its last credit. Every amount waits at least 180 days from its own arrival and under 360
+  in the worst case; no deposit, by anyone, shortens a wait or moves the due time of an amount
+  already 180 days old (before, a stranger's earlier deposit could make a later payout expire
+  the next day). Four storage words per account and asset: `credits(wallet, asset)` replaces
+  `creditedAt`, `owed` is their sum, `expirableAt(wallet, asset, time)` is new, and `expire` moves
+  only the due part. Log replay, the economics invariants, the Medusa ledger harness, the Halmos
+  escrow proofs and the reference keeper follow the new rule.
+- `RevenueEscrow.locked()` answers whether its reentrancy guard is held; the English auction's
+  `settleOrRefund` reads it instead of a zero deposit's revert reason. `IRevenueEscrow`'s
+  interface ID changes.
+- Content completeness in pieces (WS-55; `ContentStore`, permanent): `attestComplete(fileId,
+  maxChunks)` advances a permissionless per-file prefix of present chunks (`completeThrough`),
+  never past a missing or wrong-length chunk, with `CompletenessProgress` and
+  `CompletenessAttested`; `isComplete` walks only past the prefix, so an attested file is one
+  storage read and a 4,096-chunk file can be checked by `syncOnChain` and
+  `DependencyRegistry.register` once attested. `IContentStore`'s interface ID changes.
+- Documentation: a freeze and a replacement leave no moment to contest, so the right to contest
+  binds only a network that does not freeze, and ID-8 now says a running freeze can be renewed
+  at once (`unfreeze`, then `freeze`); role delays hold until a 7-day remap changes them, unlike
+  waits enforced in a contract's own code; collaborator consent does not cover the royalty rate;
+  `TokenForwarded` needs the token's own transfer to count; a fee-share cut leaves the new
+  royalty vault to deploy; the auctions' older-clock credit expiry is a known gap until their
+  rewrite (LIM-SAL-22).
+
 - Developer path: a [quickstart](docs/quickstart.md) from clone to a local run, with measured
   build and test times; `script/local/walkthrough.sh`, which deploys on anvil with test accounts,
   accepts, verifies and sells one work end to end (store, curate, accept, start with a bid,

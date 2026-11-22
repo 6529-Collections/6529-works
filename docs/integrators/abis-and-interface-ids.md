@@ -171,6 +171,16 @@ The metadata hash covers every source file byte for byte, NatSpec included, so o
 from the deployment's commit matches the deployed bytecode exactly. The deployment records
 hold each contract's code hash, which [`Verify.s.sol`](../../script/Verify.s.sol) compares.
 
+## Changes in the escrow and content fixes
+
+The escrow's expiry windows (ECO-45) and the content store's completeness attestation (WS-55),
+22 November 2026. Sepolia r5 predates them.
+
+| File | Change |
+| --- | --- |
+| [`IRevenueEscrow.sol`](../../src/economics/interfaces/IRevenueEscrow.sol) | `creditedAt` is removed. New `credits(address,address)` (`0x637cd7f0`: the aged, maturing and recent parts with `maturesAt`, `openedAt`, `lastAt`), `expirableAt(address,address,uint256)` (`0x9404ca60`) and `locked()` (`0xcf309012`). `owed` is now the sum of the parts; `expire` moves only the due part, and `Expired.amount` is that part. ID `0x5b80c31e`. |
+| [`IContentStore.sol`](../../src/interfaces/IContentStore.sol) | New `attestComplete(bytes32,uint256)` (`0x13361284`), `completeThrough(bytes32)` (`0x62a61267`) and events `CompletenessProgress`, `CompletenessAttested`; `isComplete` walks only past the attested prefix. ID `0xe5a30736`. |
+
 ## Changes in the second permanence pass
 
 The owner's decisions of 16 November 2026 (ADR 0009) change these surfaces. Sepolia r4 predates them. The sections after this one describe earlier
@@ -391,7 +401,7 @@ selectors.
 | `ICurationSignerVerifier` | [`ICurationVerifier.sol`](../../src/interfaces/ICurationVerifier.sol) | `0x9f12d97a` | `0xb7ab1d96` | Eip712CurationVerifier |
 | `IPackageRegistry` | [`IPackageRegistry.sol`](../../src/interfaces/IPackageRegistry.sol) | `0x7bdc9b1d` | `0xc0f6f835` | PackageRegistry |
 | `IItemApprovals` | [`IItemApprovals.sol`](../../src/interfaces/IItemApprovals.sol) | `0x881b19aa` | none | PackageRegistry (`isApprovedItem`, read by the edition auction's `open`) |
-| `IContentStore` | [`IContentStore.sol`](../../src/interfaces/IContentStore.sol) | `0x943307d5` (`0xca09e241` before `maxParts`) | `0x3f437f81` | None: ContentStore does not implement ERC-165 |
+| `IContentStore` | [`IContentStore.sol`](../../src/interfaces/IContentStore.sol) | `0xe5a30736` (`attestComplete`, `completeThrough`; `0x943307d5` before, `0xca09e241` before `maxParts`) | `0x3f437f81` | None: ContentStore does not implement ERC-165 |
 | `IChunkStore` | [`IChunkStore.sol`](../../src/interfaces/IChunkStore.sol) | `0x81c8e452` (computed) | none | None: the interface a store adapter implements (`chunkData`); ContentStore implements it without ERC-165 |
 | `IDependencyRegistry` | [`IDependencyRegistry.sol`](../../src/interfaces/IDependencyRegistry.sol) | `0xe5338d57` | `0xe5338d57` | None: DependencyRegistry does not implement ERC-165 |
 | `IRenderer` | [`IRenderer.sol`](../../src/interfaces/IRenderer.sol) | `0xa772216d` | `0xa772216d` | Renderer |
@@ -409,7 +419,7 @@ selectors.
 | `IFederatedDeployer` | [`IFederatedDeployer.sol`](../../src/interfaces/IFederatedDeployer.sol) | `0xf53f1196` (computed) | none | None: FederatedDeployer implements no ERC-165 |
 | `IFederatedEditions` | [`IFederatedEditions.sol`](../../src/interfaces/IFederatedEditions.sol) | `0x5c20a834` | none | FederatedEditions |
 | `IClaimRouter` | [`IClaimRouter.sol`](../../src/economics/interfaces/IClaimRouter.sol) | `0x5a97db73` (computed) | not answered on r2 | ClaimRouter |
-| `IRevenueEscrow` | [`IRevenueEscrow.sol`](../../src/economics/interfaces/IRevenueEscrow.sol) | `0xe5fb855e` (computed) | not answered on r2 | RevenueEscrow |
+| `IRevenueEscrow` | [`IRevenueEscrow.sol`](../../src/economics/interfaces/IRevenueEscrow.sol) | `0x5b80c31e` (computed; `credits`, `expirableAt`, `locked`; `0xe5fb855e` before) | not answered on r2 | RevenueEscrow |
 | `IGovernedVault` | [`IGovernedVault.sol`](../../src/economics/interfaces/IGovernedVault.sol) | `0x3e7d8e56` (computed) | none | GovernedVault (`FeeRecipientVault`, `MuseumVault`), which also answers `IERC721Receiver` and `IERC1155Receiver` |
 | `IAssetAllowlist` | [`IAssetAllowlist.sol`](../../src/economics/interfaces/IAssetAllowlist.sol) | `0x1df21794` (computed) | | None: AssetAllowlist does not implement ERC-165 |
 | `ISplitLedger` | [`ISplitLedger.sol`](../../src/economics/interfaces/ISplitLedger.sol) | `0xc6f9f88d` (computed; its own functions only: `releaseWithAuthorization`, `mark`, `forfeit`, `markOf`) | none | None: SplitLedger does not implement ERC-165 |

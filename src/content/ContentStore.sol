@@ -37,6 +37,12 @@ import { Base64Validator } from "./Base64Validator.sol";
 ///      anything, and renderers copy such text verbatim into JSON. {attestBase64} reads the chunks
 ///      once, checks them against the strict alphabet and records the result; renderers embed
 ///      the file only when it is attested.
+///
+///      Completeness attestation: {isComplete} walks the chunks a file has not had attested;
+///      {attestComplete} advances a per-file prefix of present chunks over a caller-chosen count,
+///      so a file too large to walk in one transaction becomes complete in pieces and {isComplete}
+///      is then one storage read. Presence is permanent (chunk code is immutable, a link is only
+///      replaced by the same bytes), so an attested prefix stays true.
 contract ContentStore is IContentStore {
     /// @inheritdoc IContentStore
     uint256 public constant CHUNK_SIZE = SSTORE2.MAX_CHUNK_LENGTH;
@@ -85,6 +91,8 @@ contract ContentStore is IContentStore {
     mapping(bytes32 chunkHash => uint256) private _linked;
     /// @dev The pointers of a linked chunk's parts, in order.
     mapping(bytes32 chunkHash => mapping(uint256 index => address)) private _partAt;
+    /// @inheritdoc IContentStore
+    mapping(bytes32 fileId => uint256) public completeThrough;
 
     /// @inheritdoc IContentStore
     function writeChunk(bytes calldata data) external returns (bytes32 hash, address pointer) {
@@ -181,7 +189,7 @@ contract ContentStore is IContentStore {
     /// @inheritdoc IContentStore
     function isComplete(bytes32 fileId) external view returns (bool) {
         File storage f = _file(fileId);
-        for (uint256 i; i < f.chunkCount; ++i) {
+        for (uint256 i = completeThrough[fileId]; i < f.chunkCount; ++i) {
             if (_parts(f, i) == 0) return false;
         }
         return true;
@@ -287,6 +295,22 @@ contract ContentStore is IContentStore {
     /// @inheritdoc IContentStore
     function isBase64Attested(bytes32 fileId) external view returns (bool) {
         return _attestation[fileId].done;
+    }
+
+    /// @inheritdoc IContentStore
+    function attestComplete(bytes32 fileId, uint256 maxChunks) external returns (bool done) {
+        File storage f = _file(fileId);
+        uint256 count = f.chunkCount;
+        uint256 from = completeThrough[fileId];
+        if (from == count) return true;
+        uint256 stop = count - from > maxChunks ? from + maxChunks : count;
+        for (uint256 i = from; i < stop; ++i) {
+            if (_parts(f, i) == 0) revert ContentChunkMissing(fileId, i, _hashAt(f, i));
+        }
+        completeThrough[fileId] = stop;
+        done = stop == count;
+        if (done) emit CompletenessAttested(fileId);
+        else emit CompletenessProgress(fileId, stop);
     }
 
     /// @inheritdoc IContentStore

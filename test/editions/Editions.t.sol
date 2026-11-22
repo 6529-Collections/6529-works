@@ -61,6 +61,8 @@ import {
 } from "../mocks/editions/EditionsMocks.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
+import { IERC1155Receiver } from "@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol";
+import { RawAnswerReceiver1155 } from "../mocks/editions/EditionsMutationMocks.sol";
 
 /// @dev An ERC-721 by ERC-165 that is not `IStream`.
 contract ERC721OnlyStream {
@@ -1756,5 +1758,72 @@ contract EditionsTest is EditionsBase {
         editions.masterOf(1);
         vm.expectRevert(abi.encodeWithSelector(IEditions.UnknownEdition.selector, 1));
         editions.contentHashOf(1);
+    }
+
+    // --------------------------------------------------------- exact checks (mutation, batch 2)
+
+    /// @dev Removal checks nothing about the adapter: one that no longer answers ERC-165 is
+    ///      still removed.
+    function test_SetAdmittedMinter_RemovalChecksNothing() public {
+        vm.mockCall(
+            address(adapter),
+            abi.encodeWithSelector(IERC165.supportsInterface.selector),
+            abi.encode(false)
+        );
+        vm.prank(governor);
+        editions.setAdmittedMinter(address(adapter), false);
+        assertFalse(editions.isAdmittedMinter(address(adapter)));
+    }
+
+    /// @dev Only a work whose stored kind is EDITION_MASTER takes an edition: the kinds a later
+    ///      policy may define (2 and 3) are refused at binding and at creation.
+    function test_BindMinter_RefusesAWorkOfAKindAboveTheMaster() public {
+        for (uint8 kind = 2; kind <= 3; ++kind) {
+            PackageItem memory item = _item(5);
+            item.kind = kind;
+            uint256 id = _master(item);
+            vm.expectRevert(abi.encodeWithSelector(IEditions.NotEditionMaster.selector, id));
+            adapter.bind(editions, id, item);
+            vm.expectRevert(abi.encodeWithSelector(IEditions.NotEditionMaster.selector, id));
+            editions.createEdition(id, item);
+        }
+    }
+
+    /// @dev The item must hash to the master's own item hash: one hashing above it is refused,
+    ///      like one below.
+    function test_BindMinter_RefusesAnItemHashingAboveTheMasters() public {
+        PackageItem memory item = _item(5);
+        uint256 id = _masterInAuction(item);
+        bytes32 stored = WorksHashing.itemHash(item);
+        PackageItem memory other = item;
+        uint256 nonce;
+        do {
+            other.recordFileId = keccak256(abi.encode("another record", ++nonce));
+        } while (WorksHashing.itemHash(other) <= stored);
+        vm.expectRevert(abi.encodeWithSelector(IEditions.NotEditionMaster.selector, id));
+        adapter.bind(editions, id, other);
+    }
+
+    /// @dev Acceptance is exactly the selector's 32-byte word: the 4-byte selector alone, or the
+    ///      selector's word with a low byte set, is refused.
+    function test_Receiver_AcceptanceIsExactlyTheSelectorWord() public {
+        uint256 id = _create(_item(5));
+        RawAnswerReceiver1155 receiver = new RawAnswerReceiver1155();
+        bytes4 selector = IERC1155Receiver.onERC1155Received.selector;
+        bytes[2] memory refused = [
+            abi.encodePacked(selector), abi.encodePacked(bytes32(selector) | bytes32(uint256(1)))
+        ];
+        for (uint256 i; i < refused.length; ++i) {
+            receiver.setAnswer(refused[i]);
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    IERC1155Errors.ERC1155InvalidReceiver.selector, address(receiver)
+                )
+            );
+            adapter.buy(editions, id, address(receiver), 1);
+        }
+        receiver.setAnswer(abi.encode(selector));
+        adapter.buy(editions, id, address(receiver), 1);
+        assertEq(editions.balanceOf(address(receiver), id), 1);
     }
 }

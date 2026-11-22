@@ -22,6 +22,7 @@ import { IStream } from "src/interfaces/core/IStream.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { ReturnDataMock } from "../mocks/libraries/AdversarialTargets.sol";
 import { EvilResolverMock, ForwardingResolverMock } from "../mocks/records/RecordsResolvers.sol";
+import { RawRevertStreamCore } from "../mocks/records/RecordsMutationMocks.sol";
 
 /// @notice The policy the review asked for: the ARTIST trust boundary and resolver binding, no
 ///         attribution to the AccessManager, reserved kinds, the dispute pointer, the relayed-nonce
@@ -784,6 +785,61 @@ contract StatementLogPolicyTest is StatementLogFixture {
         vm.expectRevert(IStatementLog.InvalidGovernanceManifest.selector);
         vm.prank(governor);
         manager.execute(address(stmtLog), viaGovernance);
+    }
+
+    // --------------------------------------------------------- exact checks (mutation, batch 2)
+
+    /// @dev A contract that answers true to every call declares no ERC-165, so it is no token
+    ///      subject: an outcome about it is recorded unchecked, as about any other contract.
+    function test_DisputeOutcome_ATokenAnsweringTrueToEveryCallIsUnchecked() public {
+        ReturnDataMock token = new ReturnDataMock();
+        token.configure(abi.encode(uint256(1)), false);
+        Statement memory dispute = _statement(address(token), 1);
+        dispute.kind = StatementKinds.DISPUTE_OUTCOME;
+        vm.prank(platform);
+        bytes32 outcome = stmtLog.appendPlatform(dispute);
+        (bytes32 latest,) = stmtLog.disputeOutcomeOf(address(token), 1);
+        assertEq(latest, outcome);
+    }
+
+    /// @dev Only `UnknownWork` with its one word (36 bytes) reads as no work: the selector alone,
+    ///      the selector with two words, and the selectors either side of it in 36 bytes are
+    ///      failed reads (`BoundedCallFailed`).
+    function test_LatestDisputeOutcome_OnlyAnExactUnknownWorkReadsZero() public {
+        RawRevertStreamCore token = new RawRevertStreamCore();
+        bytes4 unknown = IStream.UnknownWork.selector;
+        token.setReason(abi.encodeWithSelector(unknown, uint256(1)));
+        assertEq(stmtLog.latestDisputeOutcome(address(token), 1), bytes32(0));
+        bytes[4] memory failed = [
+            abi.encodePacked(unknown),
+            abi.encodeWithSelector(unknown, uint256(1), uint256(2)),
+            abi.encodeWithSelector(bytes4(uint32(unknown) - 1), uint256(1)),
+            abi.encodeWithSelector(bytes4(uint32(unknown) + 1), uint256(1))
+        ];
+        for (uint256 i; i < failed.length; ++i) {
+            token.setReason(failed[i]);
+            vm.expectRevert(
+                abi.encodeWithSelector(BoundedCall.BoundedCallFailed.selector, address(token))
+            );
+            stmtLog.latestDisputeOutcome(address(token), 1);
+        }
+    }
+
+    /// @dev The governance path takes only the governance kind: a kind that sorts above it is
+    ///      refused like one below.
+    function test_GovernanceManifest_RefusesAKindAboveTheGovernanceKind() public {
+        StatementLog direct =
+            new StatementLog(address(manager), address(resolver), address(resolver).codehash);
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = direct.appendGovernanceManifest.selector;
+        vm.prank(admin);
+        manager.setTargetFunctionRole(address(direct), selectors, CURATOR_ROLE);
+        Statement memory s = _governanceStatement();
+        s.kind = bytes32(type(uint256).max);
+        assertGt(uint256(s.kind), uint256(StatementKinds.GOVERNANCE_MANIFEST));
+        vm.expectRevert(IStatementLog.InvalidGovernanceManifest.selector);
+        vm.prank(curator);
+        direct.appendGovernanceManifest(s);
     }
 }
 

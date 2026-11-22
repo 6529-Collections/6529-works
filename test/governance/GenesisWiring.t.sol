@@ -498,6 +498,22 @@ contract GenesisWiringTest is GovernanceFixture {
         );
     }
 
+    /// @dev A wiring call of exactly four bytes carries its selector and is validated by it: a
+    ///      genesis selector passes, and any other is refused by name.
+    function test_AFourByteWiringCallIsValidatedByItsSelector() public {
+        WiringValidationHarness harness = new WiringValidationHarness();
+        GovernanceConfig.Config memory cfg = _wiredConfig();
+        bytes4 genesis = IStream.bindEditions.selector;
+        harness.validateWiring(cfg, _one(_call(address(wired), abi.encodePacked(genesis))));
+        bytes4 other = IStream.setDefaultRenderer.selector;
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GovernanceConfig.WiringSelectorNotAllowed.selector, address(wired), other
+            )
+        );
+        harness.validateWiring(cfg, _one(_call(address(wired), abi.encodePacked(other))));
+    }
+
     function test_RejectsMoreThanTheWiringBound() public {
         uint256 count = GovernanceConfig.MAX_WIRING_CALLS + 1;
         GovernanceConfig.Call[] memory wiring = new GovernanceConfig.Call[](count);

@@ -277,4 +277,32 @@ contract UniformEditionAuctionAbandonTest is EditionAuctionBase {
         _abandon();
         assertTrue(editions.sealed_(ID));
     }
+
+    /// @dev The copy bound is exact (found by mutation testing): a refusal of exactly 1,024
+    ///      bytes from the edition contract is passed on whole, one of 1,025 bytes is not.
+    function test_Abandon_ARefusalOfExactly1024BytesIsPassedOn() public {
+        _setOneOfOne(IEnglishAuction.AuctionState.SETTLED);
+        stream.setSettled(ID, true);
+        vm.warp(_deadline());
+        bytes memory reason = new bytes(1024);
+        reason[0] = 0x5a;
+        reason[1023] = 0xa5;
+        vm.mockCallRevert(
+            address(editions), abi.encodePacked(IEditions.createEdition.selector), reason
+        );
+        vm.expectRevert(reason);
+        auction.abandon(saleId, master);
+        vm.mockCallRevert(
+            address(editions),
+            abi.encodePacked(IEditions.createEdition.selector),
+            abi.encodePacked(reason, bytes1(0))
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(BoundedCall.BoundedCallFailed.selector, address(editions))
+        );
+        auction.abandon(saleId, master);
+        vm.clearMockedCalls();
+        _abandon();
+        assertTrue(editions.exists(ID));
+    }
 }

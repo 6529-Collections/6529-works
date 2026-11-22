@@ -90,43 +90,114 @@ contract EscrowSymbolicTest is SymHelpers {
         }
     }
 
-    /// @notice ECO-45: a credit can be expired to the network fee vault only 180 days or more
-    ///         after it went from zero, a later credit does not move that clock, the moved
-    ///         amount becomes the vault's credit, and the network's own credit never expires.
-    /// @dev Bounds: any 64-bit credits, any delays below 2**32 seconds, any caller.
-    function check_expiry_waits180Days(
+    /// @notice ECO-45: an expiry moves only money credited 180 days or more before it, always
+    ///         every unit credited 360 days or more before it, keeps the rest, makes the moved
+    ///         amount the vault's credit, and never touches the network's own credit. The
+    ///         credits come from any payer, so this holds whoever deposits.
+    /// @dev Bounds: three 64-bit credits (zero skips one) at nondecreasing times spaced by any
+    ///      delays below 2**32 seconds, then an expiry by any caller after any such delay.
+    function check_expiry_movesOnlyMoney180DaysOld(
         address caller,
         uint64 c1,
         uint64 c2,
-        uint32 addDelay,
-        uint32 expireDelay,
+        uint64 c3,
+        uint32 d2,
+        uint32 d3,
+        uint32 de,
         bool networkCredit
     ) public {
-        vm.assume(c1 != 0 && caller != address(escrow));
+        vm.assume(caller != address(escrow));
         address wallet = networkCredit ? address(feeVault) : W1;
-        uint256 start = block.timestamp;
-        _deposit(wallet, c1);
-        vm.warp(start + addDelay);
-        if (c2 != 0) _deposit(wallet, c2);
-        uint256 credit = escrow.owed(wallet, ETH);
-        uint256 vaultCredit = escrow.owed(address(feeVault), ETH);
-        vm.warp(start + expireDelay);
-
+        (uint256 credit, uint256 old, uint256 veryOld) =
+            _threeCredits(wallet, [uint256(c1), c2, c3], [uint256(d2), d3, de]);
         (bool ok, bytes4 err) =
             _call(caller, address(escrow), abi.encodeCall(escrow.expire, (wallet, ETH)));
         if (networkCredit) {
             assert(!ok && err == IRevenueEscrow.InvalidWallet.selector);
-            return;
-        }
-        assert(ok == (expireDelay >= 180 days));
-        if (!ok) {
-            assert(err == IRevenueEscrow.CreditNotExpired.selector);
+        } else if (!ok) {
+            assert(veryOld == 0);
+            assert(
+                err
+                    == (credit == 0
+                            ? IRevenueEscrow.NothingOwed.selector
+                            : IRevenueEscrow.CreditNotExpired.selector)
+            );
             assert(escrow.owed(wallet, ETH) == credit);
         } else {
-            assert(escrow.owed(wallet, ETH) == 0);
-            assert(escrow.owed(address(feeVault), ETH) == vaultCredit + credit);
-            assert(escrow.totalOwed(ETH) == uint256(c1) + c2);
+            // The vault held no credit before, so its credit is what moved.
+            uint256 moved = escrow.owed(address(feeVault), ETH);
+            assert(moved != 0 && moved <= old && moved >= veryOld);
+            assert(escrow.owed(wallet, ETH) == credit - moved);
+            assert(escrow.totalOwed(ETH) == credit);
         }
+    }
+
+    /// @dev Credits `wallet` with `amounts` at times spaced by the first two `gaps`, then warps
+    ///      by the third; returns the total and the parts credited at least 180 and 360 days
+    ///      before the final time.
+    function _threeCredits(address wallet, uint256[3] memory amounts, uint256[3] memory gaps)
+        internal
+        returns (uint256 credit, uint256 old, uint256 veryOld)
+    {
+        uint256[3] memory times;
+        times[0] = block.timestamp;
+        times[1] = times[0] + gaps[0];
+        times[2] = times[1] + gaps[1];
+        for (uint256 i; i < 3; ++i) {
+            vm.warp(times[i]);
+            _deposit(wallet, amounts[i]);
+            credit += amounts[i];
+        }
+        uint256 te = times[2] + gaps[2];
+        vm.warp(te);
+        (old, veryOld) = _aged(amounts, times, te);
+    }
+
+    /// @dev The credits made at least 180 and at least 360 days before `te`.
+    function _aged(uint256[3] memory amounts, uint256[3] memory times, uint256 te)
+        internal
+        pure
+        returns (uint256 old, uint256 veryOld)
+    {
+        for (uint256 i; i < 3; ++i) {
+            old += _pick(times[i] + 180 days <= te, amounts[i], 0);
+            veryOld += _pick(times[i] + 360 days <= te, amounts[i], 0);
+        }
+    }
+
+    /// @notice ECO-45: a deposit by anyone, made when a first credit is already 180 days old,
+    ///         never lowers what of that credit may expire at any later time, and changes nothing
+    ///         that may expire at the moment it is made. A second credit may be younger (it may
+    ///         share a window with the deposit). Two escrows get the same two credits at the same
+    ///         times; the first also gets the extra deposit. Fails for a rule whose window stays
+    ///         open while credits keep arriving.
+    /// @dev Bounds: two 64-bit credits, a 64-bit extra deposit 180 days to 2**32 seconds after
+    ///      the first credit, the second credit anywhere between them, and any read time up to
+    ///      2**32 seconds after the deposit.
+    function check_deposit_neverPostponesMoney180DaysOld(
+        uint64 c1,
+        uint64 c2,
+        uint64 extra,
+        uint32 gap,
+        uint32 late,
+        uint32 read
+    ) public {
+        vm.assume(extra != 0 && late >= 180 days && gap <= late);
+        RevenueEscrow twin = new RevenueEscrow(address(manager), ledger);
+        uint256 t1 = block.timestamp;
+        _depositBoth(twin, c1);
+        vm.warp(t1 + gap);
+        _depositBoth(twin, c2);
+        uint256 t = t1 + late;
+        vm.warp(t);
+        uint256 atDeposit = twin.expirableAt(W1, ETH, t);
+        vm.deal(PAYER, extra);
+        vm.prank(PAYER);
+        escrow.depositETH{ value: extra }(W1);
+        assert(escrow.expirableAt(W1, ETH, t) == atDeposit);
+        uint256 before = twin.expirableAt(W1, ETH, t + read);
+        uint256 floor = before < c1 ? before : c1;
+        assert(escrow.expirableAt(W1, ETH, t + read) >= floor);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -321,6 +392,15 @@ contract EscrowSymbolicTest is SymHelpers {
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = selector;
         manager.setTargetFunctionRole(target, selectors, FUNDS_ROLE);
+    }
+
+    /// @dev Credits W1 with `amount` wei in the escrow and in `twin`; zero credits nothing.
+    function _depositBoth(RevenueEscrow twin, uint256 amount) internal {
+        if (amount == 0) return;
+        _deposit(W1, amount);
+        vm.deal(PAYER, amount);
+        vm.prank(PAYER);
+        twin.depositETH{ value: amount }(W1);
     }
 
     /// @dev Credits `wallet` with `amount` wei from the payer; a zero amount credits nothing.

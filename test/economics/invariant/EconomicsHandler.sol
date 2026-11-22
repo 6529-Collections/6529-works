@@ -11,6 +11,7 @@ import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol"
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { ISplitLedger } from "src/economics/interfaces/ISplitLedger.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
+import { EscrowLots } from "../EscrowLots.sol";
 import {
     BlocklistToken,
     FeeOnTransferToken,
@@ -126,8 +127,8 @@ contract EconomicsHandler is Test {
         markAt;
     /// @notice What the network vault received other than from wallets (payments, flushes).
     mapping(address asset => uint256) public networkOther;
-    /// @notice The model's escrow clock: when each credit last went from zero to nonzero.
-    mapping(address target => mapping(address asset => uint256)) public ghostCreditedAt;
+    /// @notice The model's escrow credits lot by lot, with their windows (R12, ECO-45).
+    mapping(address target => mapping(address asset => EscrowLots.Book)) internal _books;
 
     uint256 internal constant UNCLAIMED = 180 days;
 
@@ -315,8 +316,7 @@ contract EconomicsHandler is Test {
         assertEq(abi.decode(ret, (bool)), expectEscrow, "payment route");
         if (amount == 0) return;
         if (expectEscrow) {
-            if (ghostOwed[target][asset] == 0) ghostCreditedAt[target][asset] = block.timestamp;
-            ghostOwed[target][asset] += amount;
+            _ghostCredit(target, asset, amount);
             ++outcomes["pay.escrow"];
         } else {
             if (target == network) networkOther[asset] += amount;
@@ -363,8 +363,7 @@ contract EconomicsHandler is Test {
             return;
         }
         assertTrue(ok, "deposit reverted");
-        if (ghostOwed[target][asset] == 0) ghostCreditedAt[target][asset] = block.timestamp;
-        ghostOwed[target][asset] += amount;
+        _ghostCredit(target, asset, amount);
         ++outcomes["deposit.ok"];
     }
 
@@ -396,6 +395,7 @@ contract EconomicsHandler is Test {
         assertTrue(ok, "flush reverted");
         assertEq(abi.decode(ret, (uint256)), owed);
         ghostOwed[target][asset] = 0;
+        EscrowLots.takeAll(_books[target][asset]);
         if (target == network) networkOther[asset] += owed;
         else if (target != address(toggle)) received[target][asset] += owed;
         ++outcomes["flush.ok"];
@@ -455,9 +455,10 @@ contract EconomicsHandler is Test {
             return;
         }
         assertTrue(ok, "recover reverted");
-        if (ghostOwed[to][asset] == 0) ghostCreditedAt[to][asset] = block.timestamp;
-        ghostOwed[to][asset] += ghostOwed[from][asset];
+        uint256 moved = ghostOwed[from][asset];
         ghostOwed[from][asset] = 0;
+        EscrowLots.takeAll(_books[from][asset]);
+        _ghostCredit(to, asset, moved);
         if (from == address(toggle)) {
             toggleConsent = address(0); // single use
             assertEq(escrow.recoveryConsent(from), address(0));
@@ -469,22 +470,24 @@ contract EconomicsHandler is Test {
         ];
     }
 
-    /// @notice Anyone moves a credit nobody claimed for 180 days to the network (R12). Refused
-    ///         for the network's own credit and before the 180 days.
+    /// @notice Anyone moves the part of a credit whose window matured (every unit at least 180
+    ///         days old) to the network (R12); the rest stays. Refused for the network's own
+    ///         credit, with nothing owed, and while no window has matured.
     function expire(uint256 targetSeed, uint256 assetSeed) external {
         address target = _target(targetSeed);
         address asset = assets[assetSeed % 3];
-        uint256 dueAt = ghostCreditedAt[target][asset] + UNCLAIMED;
+        EscrowLots.Book storage book = _books[target][asset];
         uint256 owed = ghostOwed[target][asset];
+        uint256 due = EscrowLots.expirable(book, block.timestamp);
         bytes memory expected;
         if (target == network) {
             expected = abi.encodeWithSelector(IRevenueEscrow.InvalidWallet.selector, target);
-        } else if (block.timestamp < dueAt) {
-            expected = abi.encodeWithSelector(
-                IRevenueEscrow.CreditNotExpired.selector, target, asset, dueAt
-            );
         } else if (owed == 0) {
             expected = abi.encodeWithSelector(IRevenueEscrow.NothingOwed.selector, target, asset);
+        } else if (due == 0) {
+            expected = abi.encodeWithSelector(
+                IRevenueEscrow.CreditNotExpired.selector, target, asset, EscrowLots.nextDue(book)
+            );
         }
         (bool ok, bytes memory ret) =
             address(escrow).call(abi.encodeCall(IRevenueEscrow.expire, (target, asset)));
@@ -495,11 +498,35 @@ contract EconomicsHandler is Test {
             return;
         }
         assertTrue(ok, "expire reverted");
-        assertEq(abi.decode(ret, (uint256)), owed, "expire amount");
-        if (ghostOwed[network][asset] == 0) ghostCreditedAt[network][asset] = block.timestamp;
-        ghostOwed[network][asset] += owed;
-        ghostOwed[target][asset] = 0;
-        ++outcomes["expire.ok"];
+        assertEq(abi.decode(ret, (uint256)), due, "expire amount");
+        assertLe(due, EscrowLots.olderThan(book, block.timestamp, UNCLAIMED), "young money");
+        EscrowLots.expire(book, block.timestamp);
+        ghostOwed[target][asset] = owed - due;
+        _ghostCredit(network, asset, due);
+        ++outcomes[due == owed ? bytes32("expire.ok") : bytes32("expire.partial")];
+    }
+
+    /// @notice The model's expirable amount of `target`'s credit in `asset` at `time`.
+    function modelExpirable(address target, address asset, uint256 time)
+        external
+        view
+        returns (uint256)
+    {
+        return EscrowLots.expirable(_books[target][asset], time);
+    }
+
+    /// @notice The model's credits of `target` in `asset` made at least `age` before `time`.
+    function modelOlder(address target, address asset, uint256 time, uint256 age)
+        external
+        view
+        returns (uint256)
+    {
+        return EscrowLots.olderThan(_books[target][asset], time, age);
+    }
+
+    function _ghostCredit(address target, address asset, uint256 amount) internal {
+        ghostOwed[target][asset] += amount;
+        EscrowLots.credit(_books[target][asset], amount, block.timestamp);
     }
 
     // ------------------------------------------------------------------ unclaimed shares

@@ -27,7 +27,7 @@ schedule (every few minutes); each run picks up where the chain is.
 | `abandon` | `abandonable(saleId)` is true (21 days after the close) | `abandon(saleId, abi.encode(item))` |
 | `finalize` | A `FinalizeNoticeRecorded` notice is 14 days old and the work is not finalized | `WorkRecords.finalize(tokenId, 0)` |
 | `vaults` | A 6529 Stream work's seller vault (payees known from its record) or royalty vault is not deployed | `SplitLedger.createWallet(payees, 0)` |
-| `expire` | A credit on either auction, or in the revenue escrow, is unclaimed 180 days after it went from zero | `expireCredit(account, currency)`, `RevenueEscrow.expire(wallet, asset)` |
+| `expire` | A credit on either auction is unclaimed 180 days after it went from zero; an escrow credit has a part that `RevenueEscrow.expirableAt(wallet, asset, now)` answers as due (a window 180 days past its last credit) | `expireCredit(account, currency)`, `RevenueEscrow.expire(wallet, asset)` |
 | `forfeit` | A split-wallet mark the payee has not released up to is 180 days old | `SplitLedger.forfeit(payees, salt, asset, index)` |
 | `release` (opt-in, `--release`) | A fixed payee of a split wallet has ETH to release | `ClaimRouter.claim(claims, true)` in batches of at most the router's `MAX_CONTINUE_CLAIMS` (8); the network's own index is left out of a batch that releases another payee of the same wallet and asset, because that release already paid the network |
 | `mark` (opt-in, `--mark`) | A payee other than the network has ETH releasable and no pending mark (none, or one it has since released up to) | `SplitLedger.mark(payees, salt, asset, index)`, which starts the payee's 180 days |

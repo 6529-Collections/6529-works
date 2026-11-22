@@ -17,7 +17,7 @@ consume them, and the artist registry resolves artist payouts for them.
 | `SplitVault` (one per payee configuration) | [`src/economics/SplitVault.sol`](../../src/economics/SplitVault.sol) | none (raw bytecode) | A split wallet's code: 66 bytes that accept ETH from anyone and move funds only when the ledger that deployed them says so. No storage, no decision. |
 | `GovernedVault` | [`src/economics/GovernedVault.sol`](../../src/economics/GovernedVault.sol) | [`IGovernedVault`](../../src/economics/interfaces/IGovernedVault.sol) | The network fee recipient and the museum as contracts that outlive any key: receives ETH, ERC-20s, ERC-721s and ERC-1155s and moves them only to a destination the network sets (3 days for the fee vault, 7 days for the museum's, C20). Takes no ledger, so the fee vault is deployed before the ledger that names it. |
 | `AssetAllowlist` (replaceable) | [`src/economics/AssetAllowlist.sol`](../../src/economics/AssetAllowlist.sol) | [`IAssetAllowlist`](../../src/economics/interfaces/IAssetAllowlist.sol) | Governed payment currencies: a status per asset, an increment floor, the English auction's opening bid (in the status word), a default currency per product, and a deprecation clock for sale adapters. No permanent contract references it and no withdrawal reads it: a new allowlist reaches new sales through a new economics resolver and new adapters (ECO-25). |
-| `RevenueEscrow` | [`src/economics/RevenueEscrow.sol`](../../src/economics/RevenueEscrow.sol) | [`IRevenueEscrow`](../../src/economics/interfaces/IRevenueEscrow.sol) | Holds credits for refused payments. Anyone flushes a credit to its wallet; the network moves one only to an identical wallet, its own credits anywhere (C19), anyone else's only to a replacement its holder consented to, and may sweep only what nobody is owed (`sweepExcess`). A credit unclaimed for 180 days moves to the network (`expire`, R12). |
+| `RevenueEscrow` | [`src/economics/RevenueEscrow.sol`](../../src/economics/RevenueEscrow.sol) | [`IRevenueEscrow`](../../src/economics/interfaces/IRevenueEscrow.sol) | Holds credits for refused payments. Anyone flushes a credit to its wallet; the network moves one only to an identical wallet, its own credits anywhere (C19), anyone else's only to a replacement its holder consented to, and may sweep only what nobody is owed (`sweepExcess`). Credits unclaimed for 180 days from their arrival, grouped in windows, move to the network (`expire`, R12). |
 | `EconomicsResolver` | [`src/economics/EconomicsResolver.sol`](../../src/economics/EconomicsResolver.sol) | [`IEconomicsResolver`](../../src/interfaces/IEconomicsResolver.sol) | Governed per-product fee recipient, fee share, royalty rate and default license. Derives the terms a new work locks (`newWorkTerms`) and the currency a new sale locks (`resolveCurrency`). |
 | `ClaimRouter` | [`src/economics/ClaimRouter.sol`](../../src/economics/ClaimRouter.sol) | [`IClaimRouter`](../../src/economics/interfaces/IClaimRouter.sol) | Stateless batch claims across split wallets. Holds no funds. |
 | `RevenuePayment`, `TokenTransfer`, `Splits` | [`RevenuePayment.sol`](../../src/economics/RevenuePayment.sol), [`TokenTransfer.sol`](../../src/economics/TokenTransfer.sol), [`Splits.sol`](../../src/economics/Splits.sol) | none (internal libraries) | How a payer pays a wallet (directly, else through the escrow); strict ERC-20 moves and the shared ETH send; the 100,000 denominator, payee-list validation and the entitlement formula. |
@@ -308,12 +308,21 @@ factory wallet's credit only to an identical factory wallet; the network's own c
 whose `authority()` is the escrow's authority: the fee and museum vaults) to any account but zero,
 the escrow or itself, with no consent (C19); and any other account's credit only to a replacement
 its holder named with `consentToRecovery` (ECO-28; see the
-[recovery flows](#escrow-recovery-for-a-blocked-split-wallet)). Each credit records when it last went from zero to nonzero (`creditedAt`, set by a deposit or
-a recovery into an empty credit); later additions, by anyone, do not move that clock, and once
-the credit is emptied the next one starts a new clock. 180 days later anyone may `expire` it,
-which moves it to the network fee vault (`factory().network()`) as a credit there, for anyone to
-flush (R12, ECO-45). A payout added to a wallet that already holds a credit takes the older
-clock, so it can expire less than 180 days after it arrived.
+[recovery flows](#escrow-recovery-for-a-blocked-split-wallet)). Credits expire by windows
+(R12, ECO-45). A credit (a deposit, or a recovery to the account) to an account and asset with no
+open window opens one; the window takes every credit for the next 180 days and then closes; its
+credits may move once 180 days have passed since its last credit. Anyone may then `expire` them,
+which moves them to the network fee vault (`factory().network()`) as a credit there, for anyone
+to flush; credits not yet due stay. So every amount waits at least 180 days from its own arrival
+and less than 360 days in the worst case (a credit on the day its window opened, then another on
+the window's last day). Whoever deposits, and whenever, no amount can move sooner than 180 days
+after it arrived, and a credit made when an amount is already 180 days old opens a new window
+rather than joining that amount's, so it never moves the time from which that amount may expire.
+A deposit into an open window, all of whose credits are younger than 180 days, can delay them by
+at most the rest of the window. The record per account and asset is four words (`credits`: the
+aged part, the last closed window's part and its due time, and the open window's part with its
+opening and last credit times); `expirableAt(wallet, asset, time)` answers what `expire` would
+move at a time. The network's own credits never expire.
 The escrow has no `receive`; ETH force-sent to it, and tokens sent without a deposit, are owed to
 nobody. `sweepExcess(asset, recipient)` (FUNDS_SETTER, 3 days) sends exactly
 `balance - totalOwed[asset]` to the recipient governance names, and reverts with `NothingToSweep`
@@ -354,7 +363,7 @@ stateDiagram-v2
     Owed --> Owed : further deposits, or a failed flush
     Owed --> Paid : flush (anyone)
     Owed --> Moved : recover (FUNDS_SETTER, 3 days)
-    Owed --> Moved : expire to the network, 180 days after it went from zero (anyone)
+    Owed --> Moved : expire to the network, the windows 180 days past their last credit (anyone)
     Moved --> Paid : flush to the replacement (anyone)
     Paid --> [*]
 ```
@@ -391,7 +400,7 @@ stateDiagram-v2
 | Product: new royalty rate, or default license | PARAMETER_SETTER | 24 hours | `EconomicsResolver.setRoyaltyRate`, `setDefaultLicense` |
 | Credit: created, increased or paid | Anyone (in practice a sale adapter deposits) | None | `RevenueEscrow.depositETH`, `depositERC20`, `flush` |
 | Credit: moved to a replacement | FUNDS_SETTER, with an identical wallet, the network's own account, or the holder's consent | 3 days | `RevenueEscrow.recover` |
-| Credit: moved to the network, unclaimed | Anyone | 180 days after it last went from zero | `RevenueEscrow.expire` |
+| Credit: moved to the network, unclaimed | Anyone | Each window 180 days after its last credit: at least 180 days, under 360, after each amount | `RevenueEscrow.expire` |
 | Escrow excess (owed to nobody) swept | FUNDS_SETTER | 3 days | `RevenueEscrow.sweepExcess` |
 | Governed vault: new destination (the fee recipient's vault) | FUNDS_SETTER | 3 days | `GovernedVault.setDestination` |
 | Governed vault: new destination (the museum's vault, which holds existing works) | SUCCESSOR_SETTER | 7 days | `GovernedVault.setDestination` |
@@ -679,7 +688,7 @@ sequenceDiagram
 | ECO-42 | No compiled gas number in the ledger: a payee, token, resolver or signer costing 1x to 100x its base gives the same release, and one that runs short reverts with `BoundedCallShortfall`, never a refusal. | `SplitLedger._instruct`, `_payout`; `SignatureVerifier` | [`SplitLedgerStress.t.sol`](../../test/economics/SplitLedgerStress.t.sol) `test_GasRule_*`; [`NetworkShare.t.sol`](../../test/economics/NetworkShare.t.sol) `test_GasRule_ThePushToTheNetworkIsNeverSkippedForGas`; [`ClaimRouter.t.sol`](../../test/economics/ClaimRouter.t.sol) `test_ContinueModeAtItsEstimatePaysAnItemAboveItsMinimum` |
 | ECO-43 | Every release (`release`, `releaseTo`, `releaseWithAuthorization`, `forfeit`) of a payee of a wallet that names the network fee vault as a fixed payee also pays the vault its whole due share of the same asset; a token's refusal leaves it due and the release stands, a shortfall or balance mismatch reverts; no other fixed payee is pushed (R11). | `SplitLedger._payNetwork`, `_move` | [`NetworkShare.t.sol`](../../test/economics/NetworkShare.t.sol) `test_ReleaseFromARoyaltyWalletAlsoPaysTheFeeVault`, `testFuzz_EveryReleasePathPaysTheNetwork`, `test_ATokenRefusingTheVaultDoesNotBlockTheRelease`, `test_APushWithABalanceMismatchRevertsTheRelease`; [`EconomicsInvariant.t.sol`](../../test/economics/invariant/EconomicsInvariant.t.sol) (two wallets naming the network); [`EscrowRecovery.t.sol`](../../test/integration/EscrowRecovery.t.sol) `test_BlockedFeeRecipientRedirectsItsRoyaltyShare`; `property_NetworkShareIsPaidOrDue` |
 | ECO-44 | Anyone may mark a payee's releasable share; a running mark cannot be replaced; 180 days after it, anyone may send the network what of the marked level is still unreleased, at most what is releasable now, so money that arrived after the mark is never taken; the forfeit counts as released for the payee (R12). | `SplitLedger.mark`, `forfeit`, `_forfeitable`; `UNCLAIMED_PERIOD` | [`NetworkShare.t.sol`](../../test/economics/NetworkShare.t.sol) `test_AMarkedShareUnclaimedFor180DaysGoesToTheNetwork`, `test_AShareClaimedInTimeIsNotForfeited`, `testFuzz_AMarkNeverTakesLaterMoney`, `test_ARunningMarkCannotBeRestarted`, `test_MarkAndForfeitRefusals`, `test_AForfeitAlsoPaysTheNetworksOwnShare`; [`EconomicsInvariant.t.sol`](../../test/economics/invariant/EconomicsInvariant.t.sol) `invariant_MarksWithinEntitlement`, `invariant_ReleasedWithinEntitlement`; `check_mark_cannotBeReplacedAndForfeitWaits180Days` |
-| ECO-45 | An escrow credit records when it last went from zero; 180 days later anyone may move it to the network fee vault as a credit there; never the network's own credit, never sooner (R12). | `RevenueEscrow.expire`, `_add`; `UNCLAIMED_PERIOD` | [`NetworkShare.t.sol`](../../test/economics/NetworkShare.t.sol) `test_AnEscrowCreditExpiresToTheNetworkAfter180Days`, `test_LaterCreditsDoNotMoveTheClock`, `test_ExpireRefusals`; [`EconomicsInvariant.t.sol`](../../test/economics/invariant/EconomicsInvariant.t.sol) `invariant_EscrowIsSolventAndMatchesTheModel`; `check_expiry_waits180Days` |
+| ECO-45 | Escrow credits expire by windows: a credit to an account and asset with no open window opens one, which takes every credit for 180 days; once 180 days have passed since a window's last credit, anyone may move its credits to the network fee vault as a credit there, and credits not yet due stay. No amount moves sooner than 180 days after it arrived, every amount may move within 360; no deposit, by anyone, moves the time from which an amount already 180 days old may expire; never the network's own credit (R12). | `RevenueEscrow.expire`, `_add`, `_rolled`, `expirableAt`; `UNCLAIMED_PERIOD` | [`NetworkShare.t.sol`](../../test/economics/NetworkShare.t.sol) `test_AnEscrowCreditExpiresToTheNetworkAfter180Days`, `test_LaterCreditsJoinTheOpenWindow`, `test_ExpireRefusals`; [`RevenueEscrowExpiry.t.sol`](../../test/economics/RevenueEscrowExpiry.t.sol) (every path, and `testFuzz_ExpiryGuaranteesUnderAnyInterleaving` against a per-lot model); [`RevenueEscrowCreditClock.t.sol`](../../test/economics/RevenueEscrowCreditClock.t.sol) `test_AStrangersDustDepositDoesNotShortenALaterPayoutsClock`; [`EconomicsInvariant.t.sol`](../../test/economics/invariant/EconomicsInvariant.t.sol) `invariant_EscrowIsSolventAndMatchesTheModel`; `check_expiry_movesOnlyMoney180DaysOld`, `check_deposit_neverPostponesMoney180DaysOld` |
 
 ## Events
 
@@ -723,7 +732,7 @@ Accepted risks are listed once, with their IDs, in
 | An ERC-20's balance in a wallet falls (negative rebase) (LIM-ECO-6) | That asset's releases revert with `ObservedDecreased`; nothing is lost. | Releases resume when receipts reach the recorded mark again; nothing else moves them. |
 | An artist's key is lost or stolen | A thief holding it can pull until the network freezes the account (at once, for 14 days: payouts read zero) or a replacement is staged; nobody can push to it. | The network replaces the account's root, which redirects the payout, accrued balances included ([Identity and recovery](identity-and-recovery.md)). |
 | A payee's key is lost, or a payee never claims | Its share stays in the wallet. | Anyone marks it; 180 days later anyone sends the unclaimed rest to the network (`forfeit`). |
-| A credit in the escrow is never claimed | It stays owed. | 180 days after it last went from zero, anyone moves it to the network (`expire`). |
+| A credit in the escrow is never claimed | It stays owed. | Once its window's last credit is 180 days old, anyone moves it to the network (`expire`). |
 | Funds force-sent or transferred to the escrow without a deposit | Owed to nobody. | `sweepExcess` (FUNDS_SETTER, 3 days) to a recipient governance names. |
 | A continue-mode batch reverts with `ClaimInsufficientGas` | Nothing is paid. | Raise the gas limit; drop an item that keeps failing below the ceiling, or batch it alone. |
 | A product's default currency is deprecated | `defaultCurrency` and `resolveCurrency(CURRENCY_DEFAULT)` revert; default-currency sales cannot start. | Set another active default (FUNDS_SETTER, 3 days), or re-admit the asset. |
@@ -749,7 +758,7 @@ Accepted risks are listed once, with their IDs, in
 | Default currency at genesis | ETH for all three products | [`config/genesis.example.json`](../../config/genesis.example.json) |
 | Re-admission wait | One `Roles.DELAY_3D` (3 days) delay after the deprecation | `Roles.DELAY_3D` (3 days) in `AssetAllowlist.admitAsset` |
 | Opening bid bound | `type(uint96).max` (storage, not a price cap) | `AssetAllowlist.setOpeningBid` |
-| Unclaimed share or credit goes to the network | 180 days after the mark, or after the credit last went from zero (the guarantee) | `SplitLedger.UNCLAIMED_PERIOD`, `RevenueEscrow.UNCLAIMED_PERIOD` |
+| Unclaimed share or credit goes to the network | 180 days after the mark; for an escrow credit, 180 days after its window's last credit, so at least 180 and under 360 days after it arrived (the guarantee) | `SplitLedger.UNCLAIMED_PERIOD`, `RevenueEscrow.UNCLAIMED_PERIOD` |
 | ETH payout gas; reserve on top | 100,000; 40,000 | `EnglishAuction.PAYOUT_GAS`, `UniformEditionAuction.PAYOUT_GAS`; `RevenuePayment.ETH_CALL_RESERVE` |
 | Token gas on the direct ERC-20 route | 300,000 | `RevenuePayment.ERC20_TRANSFER_GAS` |
 | Auction ERC-20 payout frame | 1,000,000 | `EnglishAuction._ERC20_PAYOUT_GAS` (private) |

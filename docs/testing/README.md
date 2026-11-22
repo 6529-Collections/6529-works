@@ -60,7 +60,7 @@ the fork suites ([Safe fork tests](#safe-fork-tests)), coverage and mutation tes
 | Integration | [`test/integration/`](../../test/integration/README.md), and a module's real-stack suites such as `test/sales/auction/Auction*.t.sol` | The real, wired v1 stack, deployed by the deploy library with the committed genesis configuration; only external systems are mocked | `forge test --match-path "test/integration/*"` | PR |
 | Gas and state growth | `test/integration/GasReport.t.sol`, the `*Gas*` and `*GasCap*` tests, [`StateGrowth`](../../test/helpers/StateGrowth.sol) | Prague gas ceilings and the exact new storage slots and accounts of every operation ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md)), and the 16,777,216 transaction cap for worst-case inputs | `forge test --match-test test_Gas_Table -vv` prints the table | PR |
 | Oracles and differential | [`TextOracles`](../../test/helpers/TextOracles.sol), the frozen RC1 code in [`Pr744Utf8`](../../test/helpers/Pr744Utf8.sol) and [`Pr744Escape`](../../test/helpers/Pr744Escape.sol), the vectors in [`test/fixtures/oracles/`](../../test/fixtures/oracles) from [`tools/content/oracles.py`](../../tools/content/oracles.py), the uploader's golden vectors, the edition auction's golden vectors in [`test/fixtures/edition-auction/`](../../test/fixtures/edition-auction) from [`tools/edition_auction_ref.py`](../../tools/edition_auction_ref.py), and [`UniformClearingReference`](../../test/helpers/UniformClearingReference.sol) | Assembly against naive byte loops and against RC1; the JSON scanner against `serde_json` and CPython; the Python uploader against the real `ContentStore`; the edition auction's clearing against the reference model's vectors and a brute-force per-unit clearing | `forge test --match-path "test/content/**"`, and `python -m unittest discover -s tools/content -t . -p "test_*.py"` | PR |
-| Symbolic | [`test/symbolic/`](../../test/symbolic) | 67 Halmos proofs (`check_*`): the pure libraries, and the state rules of the permanent contracts (ledger, escrow, governed vault, statement log, Stream and work records, Editions, the federated template) on the real contracts ([below](#symbolic-proofs-halmos)) | `FOUNDRY_PROFILE=symbolic halmos` | after merge and daily, one job per test contract |
+| Symbolic | [`test/symbolic/`](../../test/symbolic) | 68 Halmos proofs (`check_*`): the pure libraries, and the state rules of the permanent contracts (ledger, escrow, governed vault, statement log, Stream and work records, Editions, the federated template) on the real contracts ([below](#symbolic-proofs-halmos)) | `FOUNDRY_PROFILE=symbolic halmos` | after merge and daily, one job per test contract |
 | Second fuzzer | [`test/medusa/`](../../test/medusa), [`medusa.json`](../../medusa.json) | Three cheatcode-free harnesses, each with its own model of the rules written from the spec, run by Medusa and by a Forge runner ([below](#second-fuzzer-medusa)) | `medusa fuzz --compilation-target test/medusa/LedgerMedusa.sol --target-contracts LedgerMedusa` | Forge runner on PR; Medusa nightly |
 | Fork | [`test/fork/`](../../test/fork/README.md) | The stack against the real delegation contract, Permit2 and the VRF coordinator on local forks of mainnet and Sepolia, and the deploy script simulated on Sepolia; skipped without an RPC URL | `forge test --match-path "test/fork/*"` with `FORK_MAINNET_RPC` and `FORK_SEPOLIA_RPC` set | nightly |
 | Safe | `test/fork/Safe*.t.sol` | The network, an artist wallet, holders, the museum and the fee destination as real Safe v1.4.1 wallets on a mainnet fork ([below](#safe-fork-tests)) | `forge test --match-path "test/fork/Safe*" -vv` with `FORK_MAINNET_RPC` set | nightly |
@@ -102,8 +102,8 @@ section below says which.
 | Nightly (`.github/workflows/nightly.yml`) | every day at 03:30 UTC, and on demand | the invariant suites under the `deep` profile (2,000 runs of depth 256) in five jobs of up to 3 hours (the economics invariants in two, the four new campaigns, the auctions, the others); every fuzz test at 10,000 runs (`deep`); one 30-minute Medusa campaign per harness (45-minute job, the release checked against a pinned SHA-256, the corpus cached); the fork tests in `test/fork` (the Safe suites included) against public mainnet and Sepolia endpoints | locally: deep fuzz 10.5 min on 48 threads (5.9 CPU hours, so roughly 1.5 hours on a 4-core runner); the four new campaigns under `deep` about 68 min; the fork suites 6 s from the RPC cache. The deep fuzz, the new deep partition and the Medusa jobs have not run on a runner | no (scheduled) |
 | Mutation (`.github/workflows/mutation.yml`) | weekly, Sunday 02:00 UTC, and on demand; one small shard when a push to `main` changes the workflow or the tool | every shard of `tools/mutation.py`, eight jobs at a time, each stopped at a 335-minute budget; the merged report in the run summary, with a row for every planned file; fails, naming the shard or contract, when a planned shard left no results or ran out of its budget, a contract has no floor, or a contract's kill rate drops below its floor | several hours | no (scheduled) |
 
-`forge test` runs in six parts whose filters together select every test exactly once (3,259
-tests on 22 November 2026: 3,160, 6, 4, 16, 25 and 48; the 12 examples and the keeper fixture fall
+`forge test` runs in six parts whose filters together select every test exactly once (3,337
+tests on 22 November 2026: 3,238, 6, 4, 16, 25 and 48; the 12 examples and the keeper fixture fall
 in the first), so the parts run on separate runners. Each
 part restores the latest compiler output and compiles only what changed. The 15-minute CI
 budget applies to each job. The fourth part holds the four campaigns of this build, which
@@ -458,6 +458,22 @@ of its survivors was a defect in a contract; three were access checks no test pi
 of its shards ran longer than the weekly job allows (now split in parts): see
 [what it did not reach](mutation-baseline.md#not-reached).
 
+**Third batch (22 November 2026).** The files the second campaign did not reach ran as the tool's
+own shards on two rented 96-core machines: 14 files, 5,917 mutants once `GovernanceConfig`'s
+earlier groups are added, 5,476 killed (92.5%) and 5,553 by the final suite (93.8%). 47 new tests,
+each run against the mutant it kills, pin among others the content store's checks on an added
+source's answer, `StatementLog`'s relay delay, a fee share at and above the denominator, the
+auction's re-entry guard on `expireCredit` and the governance readback. Midway the owner decided
+to restructure `Stream`, `WorkRecords`, `Editions` and the English and edition auctions with their
+lenses; for those seven only rule-level tests were kept (access, who may act, who is paid), their
+other survivors (227) are listed as deferred with a category, and their floors are unchanged.
+`ContentStore`, `StatementLog`, `EditionRules`, `WorksAccessManager`, `Roles`, `GovernanceConfig`
+and `GovernanceConfigurator` were triaged in full and their floors set or raised. No survivor was
+a defect. `UniformEditionAuction` keeps its floor of 91 through two tests that pin current
+internals (`_MAX_REVERT`, the payout-gas limit bounds), to be replaced in the restructure. Tables
+and triage:
+[third batch](mutation-baseline.md#third-batch-22-november-2026).
+
 ## Symbolic proofs (Halmos)
 
 ```bash
@@ -513,7 +529,7 @@ may call, nonces and state, not ECDSA or ERC-1271 themselves.
 | Contract | Proof (`check_*`) | Rules | Bounds |
 | --- | --- | --- | --- |
 | `SplitLedger`, `SplitVault` | `release_neverExceedsEntitlement`, `release_paysOnlyThePayeesOwnAccount`, `artistPayee_onlyTheCurrentPayoutReleases`, `signedRelease_nonceIsSingleUse`, `nonces_inOneWordAreIndependent`, `failedSignedRelease_keepsItsNonce`, `vault_obeysOnlyItsLedger`, `mark_cannotBeReplacedAndForfeitWaits180Days` | ECO-13, INV-ECO-2, ECO-15 to ECO-17, ECO-20 to ECO-22, ECO-39, ECO-44, INV-ECO-14 | ETH only, 64-bit receipts, fixed EOA payees and recipients; one payee across two deposits |
-| `RevenueEscrow`, `GovernedVault` | `flush_paysOnlyTheCreditedWallet`, `expiry_waits180Days`, `sweepExcess_neverTouchesOwed`, `recover_onlyToTheEquivalentWallet`, `everyGovernedWrite_needsItsRole`, `governedVault_paysOnlyItsDestination` | ECO-27, ECO-45, ECO-40, INV-ECO-13, ECO-28, INV-ECO-10, ECO-5, ECO-41 | ETH only, 64-bit credits; any caller and any restricted selector |
+| `RevenueEscrow`, `GovernedVault` | `flush_paysOnlyTheCreditedWallet`, `expiry_movesOnlyMoney180DaysOld`, `deposit_neverPostponesMoney180DaysOld`, `sweepExcess_neverTouchesOwed`, `recover_onlyToTheEquivalentWallet`, `everyGovernedWrite_needsItsRole`, `governedVault_paysOnlyItsDestination` | ECO-27, ECO-45, ECO-40, INV-ECO-13, ECO-28, INV-ECO-10, ECO-5, ECO-41 | ETH only, 64-bit credits; any caller and any restricted selector |
 | `StatementLog` | `append_servesOnlyArtistAndOwner`, `outcomeKinds_onlyFromTheirRole`, `noEntryNamesTheManager`, `relay_deadlineNonceAndSigner`, `head_followsTheFormula` | DSP-3, DSP-4, DSP-5, DSP-9, DSP-1, DSP-10 | a fixed URI (its UTF-8 rule is `TextSymbolicTest`'s); two appends with symbolic fields |
 | `Stream`, `WorkRecords` | `settlePrimary_onlyTheMintingAdapterOnce`, `burn_onlyTheMintingAdapterBeforeSettlement`, `everyRestrictedStreamWrite_needsItsRole`, `renounce_onlyGainsBits`, `renouncedPower_alwaysReverts`, `royaltyRate_atMost100000`, `cc0_isIrrevocable`, `finalizedRecord_refusesSetRecordAndFinalize`, `perTokenCalls_revertUntilOpen` | INV-STR-6, INV-STR-11, INV-STR-7, DSP-20, INV-STR-12, INV-STR-13, WS-37, WS-38, INV-STR-14, WS-12, INV-STR-8, WS-1 | 11 Stream and 6 WorkRecords restricted selectors; license identifiers of 3 bytes, or 3 bytes and "-1.0" |
 | `Editions` | `mint_neverPassesTheCap`, `seal_isOnceAndBoundsMints`, `boundAdapter_neverRebinds` | INV-ED-2, INV-ED-6, ED-25, INV-ED-5 | the master's content hash is keccak (Halmos 0.3.3 fails on the SHA-256 precompile there) |
@@ -692,9 +708,10 @@ survivors, and only a lying mock of a trusted contract the defensive ones.
   the shared edition auction base), GV-18 (every governed setter emits old and new values) and
   GV-20 (dependency checks across setters). The 30
   declaration rules are off-chain conventions ([rule traceability](#rule-traceability)).
-- **Mutation floors.** Every file the weekly run mutates has a floor. Four permanent files
-  (`WorkRecords`, `Editions`, `StatementLog`, `ContentStore`) and nine replaceable ones keep
-  first-campaign floors measured before later rewrites, and `Stream` and `GovernanceConfig`
-  were re-measured only in part ([not reached](mutation-baseline.md#not-reached)). Since 21
+- **Mutation floors.** Every file the weekly run mutates has a floor. `BoundedParameter` and
+  `UniformClearing` keep floors measured before later rewrites. `Stream`, `WorkRecords`,
+  `Editions`, `EnglishAuction`, `UniformEditionAuction` and both lenses were measured by the
+  [third batch](mutation-baseline.md#third-batch-22-november-2026) but keep their earlier floors
+  while they are restructured; 227 of their survivors are deferred untested. Since 21
   November 2026 every src/ file with executable code has its own coverage floor
   ([coverage](#coverage)).

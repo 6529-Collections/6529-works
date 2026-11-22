@@ -12,7 +12,9 @@ pragma solidity ^0.8.24;
 ///      - Operational roles (`PAUSER`, `CURATION_SIGNER`, `STORAGE_OPERATOR`, `MINTER`,
 ///        `KEEPER`, `PLATFORM`, `CURATOR`) are ordinary keys the network grants and revokes at
 ///        once: genesis makes `NETWORK` their admin (no delay). They carry no delay.
-///      Every delay here is a compiled constant, not a setting: the number is the guarantee.
+///      Every delay here is a compiled constant, not a setting. A class's delay holds for a
+///      function until a 7-day remap (ADMIN) moves its selector to another role; waits a
+///      contract enforces in its own code are the ones no remap changes.
 ///      ID 3 is unused (it was a separate unpause role).
 library Roles {
     // ----------------------------------------------------------------------- delays
