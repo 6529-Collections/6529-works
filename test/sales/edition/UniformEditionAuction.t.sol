@@ -19,8 +19,9 @@ import {
     UniformEditionAuctionBase
 } from "src/sales/UniformEditionAuction.sol";
 import { UniformEditionAuctionLens } from "src/sales/UniformEditionAuctionLens.sol";
-import { MockFederationRegistry } from "../../mocks/sales/SaleMocks.sol";
-import { EthRefusingHolder, MockOneOfOneAuction } from "../../mocks/sales/EditionAuctionMocks.sol";
+import { Editions } from "src/core/Editions.sol";
+import { IEditions } from "src/interfaces/core/IEditions.sol";
+import { EthRefusingHolder, MockOneOfOneAuction } from "./EditionAuctionMocks.sol";
 import { EditionAuctionBase } from "./EditionAuctionBase.sol";
 
 /// @notice Unit tests of `UniformEditionAuction` on mocks: every entry point's happy path,
@@ -31,9 +32,9 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
     address internal alice = makeAddr("alice");
     address internal bob = makeAddr("bob");
     address internal carol = makeAddr("carol");
-    /// @dev `IUniformEditionAuction`'s interface ID: the second pass removed `withdrawBid`, gave
-    ///      `abandon` the item and added `expireCredit` (was 0x94ff7508).
-    uint32 internal constant INTERFACE_ID = 0xcced0690;
+    /// @dev `IUniformEditionAuction`'s interface ID: the plain core added `adopt` and took the
+    ///      item from `abandon` (was 0xcced0690).
+    uint32 internal constant INTERFACE_ID = 0xa34e53aa;
 
     // ================================================================== construction
 
@@ -70,7 +71,28 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         IUniformEditionAuction.AuctionConfig memory c
     ) internal returns (UniformEditionAuction) {
         return new UniformEditionAuction(
-            address(manager), escrow_, editions_, english_, lens_, lensHash, c, defaultLimits()
+            address(manager),
+            escrow_,
+            address(directory),
+            editions_,
+            english_,
+            lens_,
+            lensHash,
+            c,
+            defaultLimits()
+        );
+    }
+
+    /// @dev A lens for this fixture's wiring with one address replaced (`which`: 0 escrow, 1
+    ///      English auction, 2 Editions, 3 directory).
+    function _lensWith(uint256 which, address other) internal returns (address) {
+        address[4] memory w =
+            [address(escrow), address(english), address(editions), address(directory)];
+        w[which] = other;
+        return address(
+            new UniformEditionAuctionLens(
+                w[2], address(stream), w[1], w[0], w[3], address(economics), address(stream)
+            )
         );
     }
 
@@ -86,18 +108,32 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
             abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(english))
         );
         _construct(address(escrow), address(english), address(english), l, h, c);
-        // The English auction must answer IEnglishAuction.
-        vm.expectRevert(
-            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(editions))
-        );
+        // An English auction the lens was not deployed for.
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, l));
         _construct(address(escrow), address(editions), address(editions), l, h, c);
-        // The master read from Editions must answer IStream.
-        editions.setStream(address(english));
+        // The directory must answer IDirectory.
         vm.expectRevert(
             abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(english))
         );
-        _construct(address(escrow), address(editions), address(english), l, h, c);
-        editions.setStream(address(stream));
+        new UniformEditionAuction(
+            address(manager),
+            address(escrow),
+            address(english),
+            address(editions),
+            address(english),
+            l,
+            h,
+            c,
+            defaultLimits()
+        );
+        // The master read from Editions must answer IStream.
+        Editions strayEditions = new Editions(
+            address(manager), address(english), address(this), address(0), new address[](0)
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(english))
+        );
+        _construct(address(escrow), address(strayEditions), address(english), l, h, c);
         // An invalid initial configuration.
         c.marginShare = 50_001;
         vm.expectRevert(IUniformEditionAuction.InvalidConfig.selector);
@@ -116,28 +152,15 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         address none = makeAddr("noLens");
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, none));
         _construct(address(escrow), address(editions), address(english), none, none.codehash, c);
-        // Lenses deployed for another escrow, English auction, Editions: not this wiring.
-        address[3] memory others = [
-            address(
-                new UniformEditionAuctionLens(
-                    address(editions), address(stream), address(english), makeAddr("otherEscrow")
-                )
-            ),
-            address(
-                new UniformEditionAuctionLens(
-                    address(editions),
-                    address(stream),
-                    address(new MockOneOfOneAuction()),
-                    address(escrow)
-                )
-            ),
-            address(
-                new UniformEditionAuctionLens(
-                    makeAddr("otherEditions"), address(stream), address(english), address(escrow)
-                )
-            )
+        // Lenses deployed for another escrow, English auction, Editions, directory: not this
+        // wiring.
+        address[4] memory others = [
+            _lensWith(0, makeAddr("otherEscrow")),
+            _lensWith(1, address(new MockOneOfOneAuction())),
+            _lensWith(2, makeAddr("otherEditions")),
+            _lensWith(3, makeAddr("otherDirectory"))
         ];
-        for (uint256 i; i < 3; ++i) {
+        for (uint256 i; i < 4; ++i) {
             vm.expectRevert(
                 abi.encodeWithSelector(Dependency.InvalidDependency.selector, others[i])
             );
@@ -192,6 +215,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         assertEq(
             UniformEditionAuctionBase.abandon.selector, IUniformEditionAuction.abandon.selector
         );
+        assertEq(UniformEditionAuctionBase.adopt.selector, IUniformEditionAuction.adopt.selector);
         assertEq(
             UniformEditionAuctionBase.expireCredit.selector,
             IUniformEditionAuction.expireCredit.selector
@@ -489,11 +513,9 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
     /// @dev The adapter sells only 6529 Stream Editions in v1 and keeps no federation registry:
     ///      the lens answers zero and refuses any installation, from anyone.
     function test_SetFederationRegistry_IsRefused() public {
-        MockFederationRegistry registry = new MockFederationRegistry();
-        vm.expectRevert(
-            abi.encodeWithSelector(ISaleAdapter.TargetNotAllowed.selector, address(registry))
-        );
-        ua.setFederationRegistry(address(0), address(registry));
+        address registry = makeAddr("federationRegistry");
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.TargetNotAllowed.selector, registry));
+        ua.setFederationRegistry(address(0), registry);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.TargetNotAllowed.selector, address(0)));
         ua.setFederationRegistry(address(0), address(0));
@@ -523,6 +545,11 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         );
         vm.prank(opener);
         assertEq(auction.open(address(editions), ID, _openData(item)), saleId);
+        // The edition exists, minted by this adapter alone, with the cap and the master's rate.
+        assertEq(editions.editionOf(ID).minter, address(auction));
+        assertEq(editions.editionOf(ID).maxSupply, 60);
+        assertEq(editions.editionOf(ID).royaltyRate, 6529);
+        assertEq(editions.editionOf(ID).royaltyReceiver, seller);
         IUniformEditionAuction.Auction memory a = ua.auction(saleId);
         assertEq(a.token, address(editions));
         assertEq(a.id, ID);
@@ -1137,14 +1164,6 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         // 151 x 0.01 = 1.51 is below 90% of 51 x 0.0511 = 2.6061: the price holds at 0.0511.
         _bid(saleId, carol, 96, 100); // 0.0100
         _closeOneOfOne(saleId);
-        // Copies sold need the edition.
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IUniformEditionAuction.EditionNotCreated.selector, address(editions), ID
-            )
-        );
-        auction.settle(saleId, new uint256[](0));
-        editions.setExists(ID, true);
         uint256 revenue = 51 * 0.0511 ether;
         uint256 fee = revenue * FEE_SHARE / 100_000;
         // Every write first (the result, then SETTLED), the payout last.
@@ -1185,7 +1204,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         emit IUniformEditionAuction.BidClaimed(saleId, 1, alice, alice, 1, 1 ether - 0.0511 ether);
         uint256 minted = _claimAll(saleId);
         assertEq(minted, 51);
-        assertEq(editions.minted(ID), 51);
+        assertEq(editions.editionOf(ID).minted, 51);
         assertEq(editions.balanceOf(alice, ID), 1);
         assertEq(editions.balanceOf(bob, ID), 50);
         assertEq(editions.balanceOf(carol, ID), 0);
@@ -1306,18 +1325,17 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         );
         uint256 second = _openId(8, 0);
         _bid(second, bob, 100, 1);
-        IEnglishAuction.Auction memory o = english.auction(english.saleIdOf(address(stream), 8));
-        english.set(address(stream), 8, IEnglishAuction.AuctionState.SETTLED, o.endTime);
+        (, uint64 oneEnd) = english.clockOf(address(stream), 8);
+        english.set(address(stream), 8, IEnglishAuction.AuctionState.SETTLED, oneEnd);
         vm.warp(ua.endTimes(second).endTime);
-        editions.setExists(8, true);
         assertTrue(auction.settle(second, new uint256[](0)));
         assertEq(networkFee.balance, _price(second, 100) * FEE_SHARE / 100_000);
     }
 
-    /// @dev R12: a credit is sent to the network's fee recipient 180 days after it was last added
-    ///      to, by anyone, and not a second earlier. Fails without the change: credits never
-    ///      expire.
-    function test_ExpireCredit_After180Days() public {
+    /// @dev A credit's waiting batch is sent to the network's fee recipient once the unclaimed
+    ///      period in force (the directory's setting) has passed since it started waiting, by
+    ///      anyone, and not a second earlier.
+    function test_ExpireCredit_AfterThePeriodInForce() public {
         uint256 saleId = _open(0);
         _bid(saleId, alice, 100, 1);
         _bid(saleId, bob, 0, 1);
@@ -1325,7 +1343,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         auction.claimBidFor(saleId, 2);
         uint256 credit = ua.claimable(bob, CURRENCY_ETH);
         assertGt(credit, 0);
-        uint256 expiresAt = block.timestamp + 180 days;
+        uint256 expiresAt = block.timestamp + directory.unclaimedPeriod();
         assertEq(lens.creditExpiresAt(bob), expiresAt);
         vm.warp(expiresAt - 1);
         vm.expectRevert(
@@ -1343,7 +1361,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         _assertConserved();
     }
 
-    /// @dev R12: while the network recipient is zero, an expired credit is not sent anywhere
+    /// @dev While the network recipient is zero, an expired credit is not sent anywhere
     ///      (`InvalidRecipient(0)`) and stays claimable by its account.
     function test_ExpireCredit_RevertsWhileTheNetworkRecipientIsZero() public {
         uint256 saleId = _open(0);
@@ -1352,33 +1370,112 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         _settle(saleId);
         auction.claimBidFor(saleId, 2);
         uint256 credit = ua.claimable(bob, CURRENCY_ETH);
-        vm.warp(block.timestamp + 180 days);
+        vm.warp(block.timestamp + directory.unclaimedPeriod());
         economics.setNetworkFeeRecipient(address(0));
         vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
         auction.expireCredit(bob, CURRENCY_ETH);
         assertEq(ua.claimable(bob, CURRENCY_ETH), credit, "still the account's");
     }
 
-    /// @dev R12: a later refund credited by anyone (`claimBidFor`) does not move a credit's
-    ///      clock: it expires 180 days after it went from zero. Fails without the change: the
-    ///      second claim postpones the expiry by 10 days.
-    function test_ExpireCredit_ALaterRefundDoesNotMoveTheClock() public {
+    /// @dev A later refund credited by anyone (`claimBidFor`) never joins the batch already
+    ///      waiting, so it does not postpone the batch's clock, and is never taken on it: a
+    ///      stranger's claim on the day before the batch is due cannot put the fresh refund on
+    ///      that clock. Only the batch expires; the rest starts waiting then.
+    function test_ExpireCredit_OnlyMoneyThatHasItselfWaitedExpires() public {
+        uint256 period = directory.unclaimedPeriod();
         uint256 saleId = _open(0);
         _bid(saleId, alice, 100, 1);
         _bid(saleId, bob, 0, 1);
+        _bid(saleId, bob, 1, 1);
+        _settle(saleId);
+        auction.claimBidFor(saleId, 2);
+        uint256 first = _price(saleId, 0);
+        uint256 dueAt = block.timestamp + period;
+        vm.warp(dueAt - 1 days);
+        vm.prank(carol);
+        auction.claimBidFor(saleId, 3);
+        uint256 second = _price(saleId, 1);
+        (uint256 total, uint256 aged, uint256 since) = lens.creditOf(bob);
+        assertEq(total, first + second);
+        assertEq(aged, first, "the fresh refund is not in the waiting batch");
+        assertEq(since + period, dueAt, "the batch's clock did not move");
+        assertEq(lens.creditExpiresAt(bob), dueAt);
+        vm.warp(dueAt);
+        vm.prank(carol);
+        assertEq(auction.expireCredit(bob, CURRENCY_ETH), first, "only the batch that waited");
+        (total, aged, since) = lens.creditOf(bob);
+        assertEq(total, second);
+        assertEq(aged, second);
+        assertEq(since, block.timestamp, "the rest waits from now");
+        vm.expectRevert(
+            abi.encodeWithSelector(ISaleAdapter.CreditNotExpired.selector, bob, dueAt + period)
+        );
+        auction.expireCredit(bob, CURRENCY_ETH);
+        vm.warp(dueAt + period);
+        assertEq(auction.expireCredit(bob, CURRENCY_ETH), second);
+        assertEq(ua.claimable(bob, CURRENCY_ETH), 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(ISaleAdapter.NothingToClaim.selector, bob, CURRENCY_ETH)
+        );
+        auction.expireCredit(bob, CURRENCY_ETH);
+        refundsOut += first + second;
+        _assertConserved();
+    }
+
+    /// @dev The period in force decides, read when the expiry is attempted: refused before it
+    ///      has passed since the batch started waiting, allowed from then on; zero allows it at
+    ///      once; a change applies to a batch already waiting.
+    function testFuzz_ExpireCredit_RefusedBeforeThePeriodInForce(uint48 period, uint256 wait)
+        public
+    {
+        period = uint48(bound(period, 1, 3650 days));
+        wait = bound(wait, 0, uint256(period) - 1);
+        uint256 saleId = _open(0);
+        _bid(saleId, alice, 100, 1);
         _bid(saleId, bob, 0, 1);
         _settle(saleId);
         auction.claimBidFor(saleId, 2);
-        uint256 expiresAt = block.timestamp + 180 days;
-        vm.warp(block.timestamp + 10 days);
+        uint256 start = block.timestamp;
+        // Set after the batch started waiting: it still applies.
+        directory.setUnclaimedPeriod(period);
+        skip(wait);
+        vm.expectRevert(
+            abi.encodeWithSelector(ISaleAdapter.CreditNotExpired.selector, bob, start + period)
+        );
         vm.prank(carol);
+        auction.expireCredit(bob, CURRENCY_ETH);
+        skip(uint256(period) - wait);
+        vm.prank(carol);
+        assertEq(auction.expireCredit(bob, CURRENCY_ETH), _price(saleId, 0));
+    }
+
+    function test_ExpireCredit_ZeroPeriodAllowsItAtOnce() public {
+        uint256 saleId = _open(0);
+        _bid(saleId, alice, 100, 1);
+        _bid(saleId, bob, 0, 1);
+        _settle(saleId);
+        directory.setUnclaimedPeriod(0);
+        auction.claimBidFor(saleId, 2);
+        assertEq(auction.expireCredit(bob, CURRENCY_ETH), _price(saleId, 0));
+    }
+
+    /// @dev The account's own claim takes the whole credit, batch and rest, at any time.
+    function test_Claim_TakesTheWholeCreditBatchAndRest() public {
+        uint256 saleId = _open(0);
+        _bid(saleId, alice, 100, 1);
+        _bid(saleId, bob, 0, 1);
+        _bid(saleId, bob, 1, 1);
+        _settle(saleId);
+        auction.claimBidFor(saleId, 2);
+        skip(30 days);
         auction.claimBidFor(saleId, 3);
-        assertEq(lens.creditExpiresAt(bob), expiresAt, "clock unchanged");
-        vm.warp(expiresAt);
-        uint256 credit = ua.claimable(bob, CURRENCY_ETH);
-        assertGt(credit, 0);
-        assertEq(auction.expireCredit(bob, CURRENCY_ETH), credit);
-        refundsOut += credit;
+        uint256 total = _price(saleId, 0) + _price(saleId, 1);
+        vm.prank(bob);
+        assertEq(auction.claim(CURRENCY_ETH, bob), total);
+        (uint256 left, uint256 aged, uint256 since) = lens.creditOf(bob);
+        assertEq(left + aged + since, 0);
+        // A refund after a claim starts a new batch from its own time.
+        refundsOut += total;
         _assertConserved();
     }
 
@@ -1403,7 +1500,6 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         uint256[] memory order = ua.settlementOrder(saleId);
         assertEq(order.length, 1);
         _closeOneOfOne(saleId);
-        editions.setExists(ID, true);
         // First call: cleared and paid, the sweep not yet run (empty order).
         assertFalse(auction.settle(saleId, new uint256[](0)));
         paidOut += 60 * 0.0511 ether;
@@ -1463,7 +1559,6 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         assertEq(ua.settlementOrder(saleId).length, 0, "step 11 logged no departures");
         // Rationed at a step without departures settles at once, its cutoff the cut units.
         _closeOneOfOne(saleId);
-        editions.setExists(ID, true);
         uint256 balance = address(auction).balance;
         vm.expectEmit(address(auction));
         emit IUniformEditionAuction.AuctionSettled(saleId, 4, 4);
@@ -1492,7 +1587,6 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         assertEq(order[0], 1);
         assertEq(order[1], 0);
         _closeOneOfOne(saleId);
-        editions.setExists(ID, true);
         uint256[] memory wrong = new uint256[](2);
         (wrong[0], wrong[1]) = (0, 1);
         vm.expectRevert(
@@ -1620,16 +1714,17 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         auction.claim(CURRENCY_ETH, bob);
     }
 
-    function test_Claims_RejectAWrongMint() public {
+    /// @dev A claim mints through `IEditions.mint`, logging the clearing price per copy.
+    function test_Claims_MintThroughEditionsWithTheClearingPrice() public {
         uint256 saleId = _open(0);
         _bid(saleId, alice, 100, 2);
         _settle(saleId);
-        editions.setReturnOffset(1);
+        vm.expectEmit(address(editions));
+        emit IEditions.EditionMinted(ID, alice, 2, _price(saleId, 100));
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(editions), ID)
-        );
         auction.claimBid(saleId, 1, alice);
+        assertEq(editions.editionOf(ID).minted, 2);
+        assertEq(editions.editionOf(ID).maxSupply, 2, "sealed at the count");
     }
 
     // ================================================================== storage words
@@ -1674,6 +1769,15 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         auction.claimBidFor(saleId, 1);
         address a = address(auction);
         bytes32 m = keccak256(abi.encode(saleId, uint256(7)));
+        assertEq(
+            lens.storageWord(IUniformEditionAuctionStorage.Space.FEE_RECIPIENT, saleId, 0),
+            uint256(vm.load(a, keccak256(abi.encode(saleId, uint256(12))))),
+            "fee recipient"
+        );
+        assertEq(
+            lens.storageWord(IUniformEditionAuctionStorage.Space.FEE_RECIPIENT, saleId, 0),
+            uint160(networkFee)
+        );
         uint256[11] memory raw = [
             uint256(vm.load(a, bytes32(uint256(1)))),
             uint256(vm.load(a, keccak256(abi.encode(uint256(1), uint256(2))))),

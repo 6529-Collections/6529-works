@@ -60,7 +60,6 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
         _bid(saleId, makeAddr("next"), 290, 1);
         _bid(saleId, makeAddr("low"), 0, 1);
         _closeOneOfOne(saleId);
-        editions.setExists(ID, true);
         uint256 balance = address(auction).balance;
         assertTrue(auction.settle(saleId, new uint256[](0)), "cleared in one call");
         paidOut += balance - address(auction).balance;
@@ -77,7 +76,6 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
         _bid(saleId, makeAddr("low"), 16, 40);
         _bid(saleId, makeAddr("high"), 300, 1);
         _closeOneOfOne(saleId);
-        editions.setExists(ID, true);
         vm.expectEmit(address(auction));
         emit IUniformEditionAuctionStorage.SettlementScanned(saleId, 12);
         assertFalse(auction.settle(saleId, new uint256[](0)));
@@ -96,7 +94,6 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
         IUniformEditionAuction.Clearing memory live = ua.clearing(saleId);
         uint256[] memory order = ua.settlementOrder(saleId);
         _closeOneOfOne(saleId);
-        editions.setExists(ID, true);
         // 38 words from step 300 down to step 0: the first call scans 24 and stops.
         vm.expectEmit(address(auction));
         emit IUniformEditionAuctionStorage.SettlementScanned(saleId, 14);
@@ -146,25 +143,30 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
         _assertConserved();
     }
 
-    /// @dev A missing edition stops the clearing call, not the scan before it: once created,
-    ///      the next call clears.
-    function test_Settlement_WaitsForTheEditionAtTheClearingCall() public {
+    /// @dev The network removed this adapter and, after the rebind wait, moved the unsold
+    ///      edition to another sale contract between two scan calls: the clearing call voids the
+    ///      sale instead of reverting, every bid is refunded in full, nothing is paid, and the
+    ///      edition is left unsealed to its new minter.
+    function test_Settlement_AnEditionReboundMidScanVoidsTheSale() public {
         uint256 saleId = _open(0);
         _bid(saleId, makeAddr("low"), 0, 3);
         _bid(saleId, makeAddr("high"), 300, 1);
         _closeOneOfOne(saleId);
         assertFalse(auction.settle(saleId, new uint256[](0)), "the first chunk");
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IUniformEditionAuction.EditionNotCreated.selector, address(editions), ID
-            )
-        );
-        auction.settle(saleId, new uint256[](0));
-        editions.setExists(ID, true);
-        uint256 balance = address(auction).balance;
+        address next = address(new UniformEditionAuctionSettlementNext());
+        _addMinter(next);
+        editions.removeMinter(address(auction));
+        skip(editions.rebindDelay());
+        editions.rebind(ID, next);
+        vm.expectEmit(address(auction));
+        emit IUniformEditionAuction.AuctionVoided(saleId);
         assertTrue(auction.settle(saleId, new uint256[](0)));
-        paidOut += balance - address(auction).balance;
-        assertEq(_claimAll(saleId), ua.settlement(saleId).count);
+        assertEq(uint8(ua.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.VOID));
+        assertEq(seller.balance + networkFee.balance, 0, "nothing paid");
+        assertEq(_claimAll(saleId), 0);
+        assertEq(address(auction).balance, 0, "every bid refunded");
+        assertFalse(editions.editionOf(ID).supplySealed, "left to the new minter");
+        assertEq(editions.editionOf(ID).minter, next);
         _assertConserved();
     }
 
@@ -188,7 +190,6 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
         assertEq(ua.auction(saleId).liveUnits, total, "every unit a sale can hold");
         IUniformEditionAuction.Clearing memory live = ua.clearing(saleId);
         _closeOneOfOne(saleId);
-        editions.setExists(ID, true);
         // The first call scans 24 words and keeps its state in the scan word: the demand of 192
         // steps, below 2^32.
         assertFalse(auction.settle(saleId, new uint256[](0)));
@@ -256,7 +257,6 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
         uint256 saleId = _open(uint32(bound(maxCount, 0, 300)));
         _randomBook(saleId, seed, bound(bids, 1, 60), steps, spread);
         _closeOneOfOne(saleId);
-        editions.setExists(ID, true);
         IUniformEditionAuction.Clearing memory live = ua.clearing(saleId);
         uint256 count = ua.auction(saleId).bidCount;
         IUniformEditionAuction.BidOutcome[] memory outcomes =
@@ -382,7 +382,6 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
         IUniformEditionAuction.Clearing memory live = ua.clearing(saleId);
         assertEq(live.step, 100);
         _closeOneOfOne(saleId);
-        editions.setExists(ID, true);
         address keeper = makeAddr("keeper");
         uint256 balance = address(auction).balance;
         uint256 calls;
@@ -430,3 +429,6 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
         }
     }
 }
+
+/// @dev A contract to stand as the edition's next minter.
+contract UniformEditionAuctionSettlementNext { }

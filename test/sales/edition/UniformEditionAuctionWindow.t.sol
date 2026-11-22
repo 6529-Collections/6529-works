@@ -17,7 +17,8 @@ contract UniformEditionAuctionWindowTest is EditionAuctionBase {
     address internal bob = makeAddr("bob");
 
     function _oneEnd() internal view returns (uint256) {
-        return english.auction(english.saleIdOf(address(stream), ID)).endTime;
+        (, uint64 end) = english.clockOf(address(stream), ID);
+        return end;
     }
 
     // ------------------------------------------------------------------ the window
@@ -151,7 +152,6 @@ contract UniformEditionAuctionWindowTest is EditionAuctionBase {
         uint256 saleId = _open(0);
         _bid(saleId, alice, 10, 2);
         _closeOneOfOne(saleId);
-        editions.setExists(ID, true);
         vm.expectEmit(address(editions));
         emit IEditions.EditionSupplySealed(ID, 2);
         auction.settle(saleId, new uint256[](0));

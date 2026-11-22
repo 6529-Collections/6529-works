@@ -5,13 +5,15 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 import { ISplitFactory } from "../economics/interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "../economics/interfaces/ISplitWallet.sol";
 import { Splits } from "../economics/Splits.sol";
+import { Edition, Outcome, Work } from "../interfaces/core/CoreTypes.sol";
+import { IDirectory } from "../interfaces/core/IDirectory.sol";
+import { IEditions } from "../interfaces/core/IEditions.sol";
+import { IStream } from "../interfaces/core/IStream.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
-import { IEditions } from "../interfaces/IEditions.sol";
 import { IEnglishAuction } from "../interfaces/IEnglishAuction.sol";
 import { IEnglishAuctionClock } from "../interfaces/IEnglishAuctionClock.sol";
 import { IItemApprovals } from "../interfaces/IItemApprovals.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
-import { IStream } from "../interfaces/IStream.sol";
 import { IUniformEditionAuction } from "../interfaces/IUniformEditionAuction.sol";
 import { IUniformEditionAuctionLens } from "../interfaces/IUniformEditionAuctionLens.sol";
 import {
@@ -33,10 +35,11 @@ import { UniformClearing } from "./UniformClearing.sol";
 ///         consult. See {IUniformEditionAuctionLens}.
 /// @dev Stateless, and bound to no adapter: deployed in its own transaction (so the adapter's
 ///      deployment fits a block), it reads every sale from `msg.sender`, the adapter forwarding
-///      its views through its read-only fallback or calling `masterTerms` from `open`. Called
-///      from anywhere else, it reads the caller's own words, which is harmless. The adapter's
-///      constructor pins its code hash and checks that its immutables (`editions`, `stream`,
-///      `englishAuction`, `escrow`) are the adapter's own. It computes where each word lives
+///      its views through its read-only fallback or calling `masterTerms` from `open` and
+///      `adopt`. Called from anywhere else, it reads the caller's own words, which is harmless.
+///      The adapter's constructor pins its code hash and checks that its immutables
+///      (`englishAuction`, `escrow`, `directory` and, for 6529 Stream Editions, `editions` and
+///      `stream`) are the adapter's own. It computes where each word lives
 ///      from the adapter's storage layout (the `_SLOT_*` constants) and reads it with
 ///      `IStorage.storageAt`, and decodes the word layouts `IStorage.Space` documents; the test
 ///      suite pins every slot and decoder against the adapter's behaviour. A sale's book is
@@ -44,13 +47,20 @@ import { UniformClearing } from "./UniformClearing.sol";
 ///      the close is the settlement's.
 ///
 ///      Gas rule. Every call to another contract forwards all the gas EIP-150 allows; a high-level
-///      call reverts on any failure, and the two reads whose refusal has a meaning (the 1/1's
-///      clock, and 6529 Stream's settlement record in the abandonment check) use
-///      `BoundedCall`'s forward-all reads, which revert with `BoundedCallShortfall` when a
-///      failure left at most 1/8 of the gas: a shortfall is never read as a refusal.
+///      call reverts on any failure, and the one read whose refusal has a meaning (the 1/1's
+///      clock) uses `BoundedCall`'s forward-all read, which reverts with `BoundedCallShortfall`
+///      when a failure left at most 1/8 of the gas: a shortfall is never read as a refusal.
+///
+///      Two reads are permissive by design, and stay so: in `_oneOfOne` (on the path of `open`)
+///      a 1/1 auction that refuses to answer or answers malformed is reported as
+///      `NoOneOfOneAuction`, so the open fails closed; in `_abandon` the same refusal counts as
+///      a finished 1/1, so a sale whose 1/1 auction stopped answering can still be voided and
+///      refunded after its waiting time. Neither reads a gas shortfall as an answer.
 abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
     address internal immutable _englishAuction;
     address private immutable _escrow;
+    address internal immutable _directory;
+    IEconomicsResolver internal immutable _economics;
 
     /// @dev Departure log entries in a step's head word; four in each word after it.
     uint256 private constant _HEAD_ENTRIES = 3;
@@ -67,16 +77,33 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
     uint256 private constant _SLOT_DEPARTURES = 9;
     uint256 private constant _SLOT_CREDITS = 10;
     uint256 private constant _SLOT_SWEEPS = 11;
+    uint256 private constant _SLOT_FEE_RECIPIENTS = 12;
     /// @inheritdoc IUniformEditionAuctionLens
     uint32 public constant CLOSE_OFFSET = 15 minutes;
     /// @inheritdoc IUniformEditionAuctionLens
     uint32 public constant ABANDON_DELAY = 21 days;
+    /// @inheritdoc IUniformEditionAuctionLens
+    uint32 public constant ADOPTED_RUN = 1 days;
 
     /// @param englishAuction_ The adapter's English auction.
     /// @param escrow_ The adapter's revenue escrow.
-    constructor(address englishAuction_, address escrow_) {
+    /// @param directory_ The adapter's directory.
+    /// @param economics_ The economics resolver.
+    constructor(address englishAuction_, address escrow_, address directory_, address economics_) {
         _englishAuction = englishAuction_;
         _escrow = escrow_;
+        _directory = directory_;
+        _economics = IEconomicsResolver(economics_);
+    }
+
+    /// @inheritdoc IUniformEditionAuctionLens
+    function directory() external view returns (address) {
+        return _directory;
+    }
+
+    /// @inheritdoc IUniformEditionAuctionLens
+    function economics() external view returns (address) {
+        return address(_economics);
     }
 
     /// @inheritdoc IUniformEditionAuctionLens
@@ -94,7 +121,7 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
     /// @inheritdoc IUniformEditionAuctionLens
     /// @dev The 32-bit bounds keep the adapter's stored ID and clocks exact: an ID, a 1/1 end or
     ///      a time of 2^32 or more (7 February 2106) is refused, so no stored value wraps.
-    function masterTerms(address token, uint256 id, bytes calldata data)
+    function masterTerms(address token, uint256 id, bytes calldata data, bool adopting)
         external
         returns (MasterTerms memory m)
     {
@@ -102,24 +129,47 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
             revert ISaleAdapter.InvalidSaleTerms(token, id);
         }
         address master = _masterFor(token);
-        (m.oneOfOneEnd, m.oneOfOneState) = _oneOfOne(token, master, id);
-        (bytes32 itemHash,,, uint8 kind,,) = IStream(master).coreOf(id);
-        PackageItem memory item = _item(token, id, itemHash, data);
+        Work memory work = IStream(master).workOf(id);
+        PackageItem memory item = _item(token, id, work.itemHash, data);
         EditionTerms memory e = item.edition;
         if (
-            kind != uint8(ItemKind.EDITION_MASTER) || WorksHashing.itemHash(item) != itemHash
+            work.kind != uint8(ItemKind.EDITION_MASTER) || work.itemHash == 0
+                || WorksHashing.itemHash(item) != work.itemHash
                 || e.saleKind != SaleKind.UNIFORM_AUCTION || e.currency != CURRENCY_ETH
                 || e.params.length != 0
         ) revert ISaleAdapter.InvalidSaleTerms(token, id);
+        if (adopting) {
+            Edition memory ed = IEditions(token).editionOf(id);
+            if (ed.minter != msg.sender || ed.minted != 0 || ed.supplySealed) {
+                revert ISaleAdapter.InvalidSaleTerms(token, id);
+            }
+        }
+        if (adopting && work.outcome != Outcome.NONE) {
+            // The master's sale ended: the adopted sale runs on its own from now.
+            // forge-lint: disable-next-line(block-timestamp)
+            if (block.timestamp + ADOPTED_RUN > type(uint32).max) {
+                revert ISaleAdapter.InvalidSaleTerms(token, id);
+            }
+            // Safe: checked above to fit 32 bits.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            m.oneOfOneEnd = uint64(block.timestamp + ADOPTED_RUN);
+            m.oneOfOneState = IEnglishAuction.AuctionState.SETTLED;
+            m.runsOnItsOwn = true;
+        } else {
+            (m.oneOfOneEnd, m.oneOfOneState) = _oneOfOne(token, master, id);
+        }
         m.maxCount = e.maxCount;
-        WorkTerms memory w = _previewTerms(token, id, item.payees);
+        WorkTerms memory w = _terms(token, id, item.payees);
+        (m.seller, m.feeShare, m.feeRecipient) = (w.seller, w.feeShare, w.feeRecipient);
+        (m.royaltyReceiver, m.royaltyRate) = (w.royaltyReceiver, work.royaltyRate);
         // No payment from this sale may reach an undeployed wallet (rule 4: no fund movement
         // depends on the future price of deploying code): deploy the seller's split wallet now,
-        // before anything is owed to it, and the royalty receiver's, before any copy can trade.
-        // A wallet the ledger already deployed is confirmed, not deployed again.
+        // before anything is owed to it, and, for a new edition, the royalty receiver's, before
+        // any copy can trade. A wallet the ledger already deployed is confirmed, not deployed
+        // again. An adopted edition keeps the royalty receiver it has.
         address factory = _factory(token);
         _deployWallet(factory, item.payees, w.seller, token, id);
-        if (w.royaltyReceiver != w.seller) {
+        if (!adopting && w.royaltyReceiver != w.seller) {
             _deployWallet(
                 factory,
                 Splits.royaltyPayees(w.seller, w.feeRecipient, w.feeShare),
@@ -160,28 +210,15 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
         return (uint64(endTime), IEnglishAuction.AuctionState(state));
     }
 
-    /// @dev A preview of the economics `bindMinter` locks and returns in this same transaction,
-    ///      which the adapter pays (F1: 6529 Stream Editions is their one source): the ones an
-    ///      existing edition recorded, or else the current resolver's (6529 Stream's, read live,
-    ///      as Editions reads it). CALLS-1: the escrow refuses to be paid as a wallet, so a sale
-    ///      paying it could never settle; it is refused at open.
-    function _previewTerms(address token, uint256 id, ISplitWallet.Payee[] memory payees)
+    /// @dev The economics a sale of `token` locks now (`_newTerms`), required payable.
+    ///      CALLS-1: the escrow refuses to be paid as a wallet, so a sale paying it could never
+    ///      settle; it is refused at open.
+    function _terms(address token, uint256 id, ISplitWallet.Payee[] memory payees)
         private
         view
         returns (WorkTerms memory w)
     {
-        if (IEditions(token).exists(id)) {
-            IEditions.Edition memory locked = IEditions(token).edition(id);
-            w = WorkTerms(
-                locked.seller,
-                locked.feeRecipient,
-                locked.feeShare,
-                locked.royaltyReceiver,
-                locked.royaltyRate
-            );
-        } else {
-            w = _newTerms(token, payees);
-        }
+        w = _newTerms(token, payees);
         if (
             w.seller == address(0) || w.seller == _escrow || w.feeShare > Splits.DENOMINATOR
                 || (w.feeShare != 0 && (w.feeRecipient == address(0) || w.feeRecipient == _escrow))
@@ -207,66 +244,53 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
 
     /// @inheritdoc IUniformEditionAuctionLens
     function abandonable(uint256 saleId) external view returns (bool ok, uint256 abandonAt) {
-        (ok, abandonAt,) = _abandon(saleId);
+        (ok, abandonAt) = _abandon(saleId);
     }
 
     /// @inheritdoc IUniformEditionAuctionLens
-    function checkAbandon(uint256 saleId) external view returns (bool createEdition) {
-        bool ok;
-        (ok,, createEdition) = _abandon(saleId);
+    function checkAbandon(uint256 saleId) external view {
+        (bool ok,) = _abandon(saleId);
         if (!ok) revert IUniformEditionAuction.NotAbandonable(saleId);
     }
 
-    /// @dev The abandonment rule (R16). A 1/1 auction that refuses to answer (reverts, or
-    ///      answers malformed) counts as finished: the sale's end is then the one the adapter last
-    ///      read. A shortfall in any read reverts with `BoundedCallShortfall`. A SETTLING sale
-    ///      qualifies only while its scan is in progress (nothing paid): its clearing call can
-    ///      only have failed for want of the edition. `create` is whether the master's sale is
-    ///      settled in its token, so the edition can be created and the sale completed.
-    function _abandon(uint256 saleId)
-        private
-        view
-        returns (bool ok, uint256 abandonAt, bool create)
-    {
+    /// @dev The abandonment rule (R16). A sale whose 1/1 auction answers ACTIVE, PAUSED, ENDED
+    ///      or SETTLED settles as usual (an ended 1/1 can be settled by anyone), and so does an
+    ///      adopted sale that runs on its own. A 1/1 auction that refuses to answer (reverts, or
+    ///      answers malformed), or answers NONE or CANCELLED, leaves the sale nothing to settle
+    ///      against: it qualifies once 21 days have passed since its close, counted from the end
+    ///      the adapter last read when the auction gives none. A shortfall in any read reverts
+    ///      with `BoundedCallShortfall`. A SETTLING sale qualifies only while its scan is in
+    ///      progress (nothing paid).
+    function _abandon(uint256 saleId) private view returns (bool ok, uint256 abandonAt) {
         IStorage.SaleWord memory a = _opened(saleId);
+        IStorage.PayoutWord memory p = _payout(saleId);
         if (
-            a.status != IUniformEditionAuction.AuctionStatus.OPEN
-                && (a.status != IUniformEditionAuction.AuctionStatus.SETTLING
-                    || _word(IStorage.Space.SCAN, saleId, 0) == 0)
-        ) return (false, 0, false);
-        uint256 id = _payout(saleId).id;
+            p.runsOnItsOwn
+                || (a.status != IUniformEditionAuction.AuctionStatus.OPEN
+                    && (a.status != IUniformEditionAuction.AuctionStatus.SETTLING
+                        || _word(IStorage.Space.SCAN, saleId, 0) == 0))
+        ) return (false, 0);
         uint256 oneEnd = a.oneOfOneEnd;
-        address token = _tokenOfSale(saleId);
-        address master = _masterFor(token);
         (bool answered, bytes memory clock) = BoundedCall.tryReadAll(
             _englishAuction,
-            abi.encodeCall(IEnglishAuctionClock.auctionClock, (_saleIdOf(master, id))),
+            abi.encodeCall(
+                IEnglishAuctionClock.auctionClock, (_saleIdOf(_masterOfSale(saleId), p.id))
+            ),
             96
         );
         if (answered && clock.length == 96) {
             (uint256 state, uint256 end,) = abi.decode(clock, (uint256, uint256, uint256));
-            // Not settled yet (anyone may settle an ended 1/1): the sale's end may still move.
             if (
                 state == uint256(IEnglishAuction.AuctionState.ACTIVE)
                     || state == uint256(IEnglishAuction.AuctionState.PAUSED)
                     || state == uint256(IEnglishAuction.AuctionState.ENDED)
-            ) return (false, 0, false);
+                    || state == uint256(IEnglishAuction.AuctionState.SETTLED)
+            ) return (false, 0);
             if (end > oneEnd && end <= type(uint32).max) oneEnd = end;
         }
-        // Settled with its master and the edition created: the sale settles as usual.
-        create = _masterSettled(master, id);
-        if (create && _editionExists(token, id)) return (false, 0, false);
         abandonAt = oneEnd + CLOSE_OFFSET + ABANDON_DELAY;
         // forge-lint: disable-next-line(block-timestamp)
         ok = block.timestamp >= abandonAt;
-    }
-
-    /// @dev Whether 6529 Stream records master `id`'s primary sale as settled; a refusal reads as
-    ///      not settled, a shortfall reverts.
-    function _masterSettled(address master, uint256 id) private view returns (bool) {
-        (bool answered, bytes32 word) =
-            BoundedCall.tryReadWordAll(master, abi.encodeCall(IStream.primarySaleSettled, (id)));
-        return answered && word != 0;
     }
 
     // ------------------------------------------------------------------- the adapter's own
@@ -295,15 +319,27 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
     }
 
     /// @inheritdoc IUniformEditionAuctionLens
-    function claimable(address account, address currency) external view returns (uint256) {
+    function claimable(address account, address currency) external view returns (uint256 total) {
         if (currency != CURRENCY_ETH) return 0;
-        return uint208(storageWord(IStorage.Space.CREDIT, 0, uint160(account)));
+        (total,,) = creditOf(account);
     }
 
     /// @inheritdoc IUniformEditionAuctionLens
     function creditExpiresAt(address account) external view returns (uint256) {
+        (uint256 total,, uint256 since) = creditOf(account);
+        return total == 0 ? 0 : since + IDirectory(_directory).unclaimedPeriod();
+    }
+
+    /// @inheritdoc IUniformEditionAuctionLens
+    function creditOf(address account)
+        public
+        view
+        returns (uint256 total, uint256 aged, uint256 since)
+    {
         uint256 w = storageWord(IStorage.Space.CREDIT, 0, uint160(account));
-        return uint208(w) == 0 ? 0 : (w >> 208) + 180 days;
+        // Safe: the adapter's `Credit` packing, field by field.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        (total, aged, since) = (uint104(w), uint104(w >> 104), uint48(w >> 208));
     }
 
     /// @inheritdoc IUniformEditionAuctionLens
@@ -311,8 +347,9 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
         (IEconomicsResolver resolver, bytes32 product) = _feeSource();
         recipient = resolver.networkFeeRecipient(product);
         if ((recipient == address(0) || recipient == _escrow) && token != address(0)) {
-            recipient =
-                _editionExists(token, id) ? IEditions(token).edition(id).feeRecipient : address(0);
+            recipient = address(
+                uint160(storageWord(IStorage.Space.FEE_RECIPIENT, _saleIdOf(token, id), 0))
+            );
         }
     }
 
@@ -372,17 +409,49 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
         returns (IUniformEditionAuction.EndTimes memory e)
     {
         IStorage.SaleWord memory a = _opened(saleId);
-        IEnglishAuction.Auction memory o = IEnglishAuction(_englishAuction)
-            .auction(_saleIdOf(_masterOfSale(saleId), _payout(saleId).id));
-        _clocks(e, a, _config(a.termsId), o.endTime);
-        e.oneOfOneState = o.state;
+        (IEnglishAuction.AuctionState state, uint64 oneEnd) = _clockOf(saleId);
+        _clocks(e, a, _config(a.termsId), oneEnd);
+        e.oneOfOneState = state;
         // Open while the 1/1 is paused, whatever the time; else until the end, unless cancelled.
         // forge-lint: disable-start(block-timestamp)
         e.biddingOpen = a.status == IUniformEditionAuction.AuctionStatus.OPEN
-            && (o.state == IEnglishAuction.AuctionState.PAUSED
-                || (o.state != IEnglishAuction.AuctionState.CANCELLED
-                    && block.timestamp < e.endTime));
+            && (state == IEnglishAuction.AuctionState.PAUSED
+                || (state != IEnglishAuction.AuctionState.CANCELLED && block.timestamp < e.endTime));
         // forge-lint: disable-end(block-timestamp)
+    }
+
+    /// @dev Sale `saleId`'s 1/1 state and end as its settlement reads them: SETTLED with no end
+    ///      of its own for an adopted sale that runs on its own, else the English auction's
+    ///      `auctionClock` (the deployment's `_clock`).
+    function _clockOf(uint256 saleId) private view returns (IEnglishAuction.AuctionState, uint64) {
+        IStorage.PayoutWord memory p = _payout(saleId);
+        if (p.runsOnItsOwn) return (IEnglishAuction.AuctionState.SETTLED, 0);
+        return _clock(_tokenOfSale(saleId), p.id);
+    }
+
+    /// @dev The 1/1 clock of edition `id` of `token` for the views: the English auction's
+    ///      answer, or NONE with no end when it refuses or answers malformed, so a sale's views
+    ///      keep answering from the adapter's own words when its 1/1 auction stops answering. A
+    ///      shortfall reverts (`BoundedCallShortfall`).
+    function _clock(address token, uint256 id)
+        internal
+        view
+        virtual
+        returns (IEnglishAuction.AuctionState state, uint64 endTime)
+    {
+        (bool answered, bytes memory clock) = BoundedCall.tryReadAll(
+            _englishAuction,
+            abi.encodeCall(IEnglishAuctionClock.auctionClock, (_saleIdOf(_masterFor(token), id))),
+            96
+        );
+        if (!answered || clock.length != 96) return (IEnglishAuction.AuctionState.NONE, 0);
+        (uint256 s, uint256 e,) = abi.decode(clock, (uint256, uint256, uint256));
+        if (s > uint256(IEnglishAuction.AuctionState.CANCELLED) || e > type(uint64).max) {
+            return (IEnglishAuction.AuctionState.NONE, 0);
+        }
+        // Safe: both checked above.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return (IEnglishAuction.AuctionState(s), uint64(e));
     }
 
     /// @dev Fills `e`'s clocks from the 1/1's end now (`oneOfOneEnd`, at least the cached one).
@@ -994,6 +1063,7 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
         p.seller = address(uint160(w));
         p.feeShare = uint32(w >> 160);
         p.id = uint32(w >> 192);
+        p.runsOnItsOwn = uint8(w >> 224) != 0;
     }
 
     function _result(uint256 saleId) private view returns (IStorage.ResultWord memory r) {
@@ -1058,6 +1128,8 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
             (base, k) = (_SLOT_TERMS, key);
         } else if (space == IStorage.Space.CREDIT) {
             (base, k) = (_SLOT_CREDITS, key);
+        } else if (space == IStorage.Space.FEE_RECIPIENT) {
+            base = _SLOT_FEE_RECIPIENTS;
         } else {
             nested = true;
             if (space == IStorage.Space.BID) base = _SLOT_BIDS;
@@ -1089,18 +1161,18 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
     /// @dev Whether `masterTerms` may open a sale of `token`.
     function _sells(address token) internal view virtual returns (bool);
 
-    /// @dev The terms a new edition of `payees` on `token` would lock now.
+    /// @dev The terms a sale of an edition of `payees` on `token` locks now: the seller's
+    ///      wallet, the network fee recipient and share, and the royalty receiver they derive.
     function _newTerms(address token, ISplitWallet.Payee[] memory payees)
         internal
         view
         virtual
         returns (WorkTerms memory);
 
-    /// @dev The split factory that deploys `token`'s wallets.
-    function _factory(address token) internal view virtual returns (address);
-
-    /// @dev Whether `token`'s edition `id` exists, for the abandonment check.
-    function _editionExists(address token, uint256 id) internal view virtual returns (bool);
+    /// @dev The split factory that deploys the wallets: the economics resolver's.
+    function _factory(address) internal view returns (address) {
+        return _economics.splitFactory();
+    }
 
     /// @dev The master's item from `open`'s `data`, checked as the deployment requires;
     ///      `itemHash` is the hash the master stored for edition `id`.
@@ -1117,20 +1189,32 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
 
 /// @title UniformEditionAuctionLens
 /// @notice The lens of {UniformEditionAuction}, 6529 Stream Editions' deployment: its one edition
-///         contract and 6529 Stream, the economics 6529 Stream's resolver gives new editions.
+///         contract and 6529 Stream, the economics the resolver gives new editions, and the
+///         package registry that must still approve a master's item.
 contract UniformEditionAuctionLens is UniformEditionAuctionLensBase {
     address private immutable _editions;
     address private immutable _stream;
+    address private immutable _packageRegistry;
 
     /// @param editions_ The adapter's 6529 Stream Editions.
     /// @param stream_ Its 6529 Stream.
     /// @param englishAuction_ The adapter's English auction.
     /// @param escrow_ The adapter's revenue escrow.
-    constructor(address editions_, address stream_, address englishAuction_, address escrow_)
-        UniformEditionAuctionLensBase(englishAuction_, escrow_)
-    {
+    /// @param directory_ The adapter's directory.
+    /// @param economics_ The economics resolver.
+    /// @param packageRegistry_ The package registry (`IItemApprovals`).
+    constructor(
+        address editions_,
+        address stream_,
+        address englishAuction_,
+        address escrow_,
+        address directory_,
+        address economics_,
+        address packageRegistry_
+    ) UniformEditionAuctionLensBase(englishAuction_, escrow_, directory_, economics_) {
         _editions = editions_;
         _stream = stream_;
+        _packageRegistry = packageRegistry_;
     }
 
     /// @inheritdoc IUniformEditionAuctionLens
@@ -1141,6 +1225,12 @@ contract UniformEditionAuctionLens is UniformEditionAuctionLensBase {
     /// @inheritdoc IUniformEditionAuctionLens
     function stream() external view returns (address) {
         return _stream;
+    }
+
+    /// @notice The package registry whose approval a master's item must still have (C23).
+    /// @return The registry (immutable).
+    function packageRegistry() external view returns (address) {
+        return _packageRegistry;
     }
 
     /// @inheritdoc IUniformEditionAuctionLens
@@ -1170,28 +1260,18 @@ contract UniformEditionAuctionLens is UniformEditionAuctionLensBase {
         return token == _editions;
     }
 
+    /// @dev The resolver's `newWorkTerms(PRODUCT_EDITIONS, payees)`.
     function _newTerms(address, ISplitWallet.Payee[] memory payees)
         internal
         view
         override
         returns (WorkTerms memory)
     {
-        return IEconomicsResolver(IStream(_stream).economics())
-            .newWorkTerms(PRODUCT_EDITIONS, payees);
-    }
-
-    /// @dev The resolver's factory is 6529 Stream's own: Stream refuses a replacement resolver
-    ///      that names another.
-    function _factory(address) internal view override returns (address) {
-        return IEconomicsResolver(IStream(_stream).economics()).splitFactory();
-    }
-
-    function _editionExists(address token, uint256 id) internal view override returns (bool) {
-        return IEditions(token).exists(id);
+        return _economics.newWorkTerms(PRODUCT_EDITIONS, payees);
     }
 
     /// @dev `data` is `abi.encode(PackageItem item, bytes32 packageRoot, bytes32[] proof)`; the
-    ///      item must be in a package 6529 Stream's package registry still approves (C23,
+    ///      item must be in a package the package registry still approves (C23,
     ///      `IItemApprovals.isApprovedItem`: not revoked, its signer not disabled). The call
     ///      forwards all gas and reverts on any failure, so a shortfall is never a refusal.
     function _item(address token, uint256 id, bytes32 itemHash, bytes calldata data)
@@ -1203,14 +1283,13 @@ contract UniformEditionAuctionLens is UniformEditionAuctionLensBase {
         bytes32 root;
         bytes32[] memory proof;
         (item, root, proof) = abi.decode(data, (PackageItem, bytes32, bytes32[]));
-        if (!IItemApprovals(IStream(_stream).packageRegistry())
-                .isApprovedItem(root, itemHash, proof)) {
+        if (!IItemApprovals(_packageRegistry).isApprovedItem(root, itemHash, proof)) {
             revert ISaleAdapter.InvalidSaleTerms(token, id);
         }
     }
 
-    /// @dev 6529 Stream's resolver, read now, and the Editions product.
+    /// @dev The resolver, read now, and the Editions product.
     function _feeSource() internal view override returns (IEconomicsResolver, bytes32) {
-        return (IEconomicsResolver(IStream(_stream).economics()), PRODUCT_EDITIONS);
+        return (_economics, PRODUCT_EDITIONS);
     }
 }

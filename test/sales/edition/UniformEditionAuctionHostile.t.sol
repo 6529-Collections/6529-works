@@ -121,7 +121,6 @@ contract UniformEditionAuctionHostileTest is EditionAuctionBase {
         uint256 saleId = _open(0);
         _bid(saleId, alice, 100, 1);
         _closeOneOfOne(saleId);
-        editions.setExists(ID, true);
         uint256 gasBefore = gasleft();
         auction.settle(saleId, new uint256[](0));
         uint256 used = gasBefore - gasleft();
@@ -134,7 +133,6 @@ contract UniformEditionAuctionHostileTest is EditionAuctionBase {
         uint256 saleId = _open(0);
         _bid(saleId, alice, 100, 1);
         _closeOneOfOne(saleId);
-        editions.setExists(ID, true);
         // A settler that cannot forward the payout allowance cannot force the escrow route.
         (bool ok,) = address(auction).call{ gas: 120_000 }(
             abi.encodeCall(IUniformEditionAuction.settle, (saleId, new uint256[](0)))
@@ -170,7 +168,6 @@ contract UniformEditionAuctionHostileTest is EditionAuctionBase {
             seller_.setTarget(ua, saleId, winner);
             fee_.setTarget(ua, saleId, winner);
             _closeOneOfOne(saleId);
-            editions.setExists(ID, true);
             uint256 balance = address(auction).balance;
             bool done = auction.settle(saleId, lens.settlementOrderFor(saleId, address(this)));
             paidOut += balance - address(auction).balance;

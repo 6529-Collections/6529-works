@@ -49,14 +49,18 @@ interface IUniformEditionAuctionStorage {
     }
 
     /// @notice A sale's payout terms, locked at open (`Space.PAYOUT`). The fee recipient is not
-    ///         locked: settlement pays the one the economics resolver names then (R18).
+    ///         locked: settlement pays the one the economics resolver names then (R18), or the
+    ///         one it named at open (`Space.FEE_RECIPIENT`) when it names none.
     /// @param seller The artist-portion split wallet.
     /// @param feeShare The network fee share, out of 100,000.
     /// @param id The edition ID.
+    /// @param runsOnItsOwn True for an adopted sale whose master's sale already had an outcome:
+    ///        it never reads the 1/1, which counts as settled.
     struct PayoutWord {
         address seller;
         uint32 feeShare;
         uint32 id;
+        bool runsOnItsOwn;
     }
 
     /// @notice A sale's result, written at settlement (`Space.RESULT`). Each settler's sweep
@@ -115,10 +119,11 @@ interface IUniformEditionAuctionStorage {
     ///      ID (`IUniformEditionAuction.AuctionConfig`).
     ///      SWEEP: `key` a settler's address; its own departure sweep in progress, `swept |
     ///      nextPosition << 32 | cutoff << 64`, zero when it has none (never swept, or
-    ///      finished). CREDIT: `key` an account; its claimable ETH (bits 0-207) and when it went
-    ///      from zero (208-255). SETTINGS: `saleId` and `key` ignored; `termsId` (the
+    ///      finished). CREDIT: `key` an account; its credit total (bits 0-103), the batch waiting
+    ///      (104-207) and when that batch started waiting (208-255). SETTINGS: `saleId` and `key` ignored; `termsId` (the
     ///      current configuration's ID, bits 0-23), `termsCount` (24-47), `pausedAt` (48-87,
-    ///      zero while not paused), `listed` (88-95), then `payoutGas` (96-127).
+    ///      zero while not paused), `listed` (88-95), then `payoutGas` (96-127). FEE_RECIPIENT:
+    ///      `key` ignored; the network fee recipient the sale named at open (an address).
     enum Space {
         SALE,
         PAYOUT,
@@ -130,7 +135,8 @@ interface IUniformEditionAuctionStorage {
         SCAN,
         SWEEP,
         CREDIT,
-        SETTINGS
+        SETTINGS,
+        FEE_RECIPIENT
     }
 
     /// @notice A settle call scanned part of a sale's book and stopped at its gas bound; the
@@ -140,8 +146,8 @@ interface IUniformEditionAuctionStorage {
     event SettlementScanned(uint256 indexed saleId, uint256 wordsLeft);
 
     /// @notice The read-only lens this adapter pinned in its constructor: deployed beforehand in
-    ///         its own transaction, with the code hash and the wiring (Editions, Stream, English
-    ///         auction, escrow) the constructor checked. It computes every view of
+    ///         its own transaction, with the code hash and the wiring (English auction, escrow,
+    ///         directory and, for 6529 Stream Editions, Editions) the constructor checked. It computes every view of
     ///         `IUniformEditionAuction` from its caller's words, which the adapter forwards to
     ///         it, and the master check `open` consults.
     /// @return The lens's address (immutable).

@@ -16,12 +16,28 @@ import { IStream } from "../interfaces/core/IStream.sol";
 /// @notice The plain permanent ERC-1155 of editions (ADR 0010): who owns each copy, and each
 ///         edition's supply. Shared by 6529 Stream Editions (`Editions`) and each federated
 ///         artist's editions (`FederatedEditions`), which differ only in the hooks at the end.
-/// @dev lane 2 completes this (tests, NatSpec, review). The hooks' signatures are frozen: lane
-///      5 builds `FederatedEditions` on them and must not edit this file.
-///      Guarantees: an edition is created once, for a live master; only its own minter mints
-///      it; copies minted never pass the maximum; the seal happens once; a sealed maximum never
-///      grows; burned copies still count. Transfers are OpenZeppelin's, untouched.
+/// @dev What this contract guarantees, whatever its modules and minters do:
+///      - an edition is created once, by an active minter, for a master that exists and is not
+///        burned, and that minter becomes its only minter;
+///      - only the edition's own minter mints it, and copies minted never pass the maximum;
+///      - the supply is sealed once, between the copies minted and the maximum, and a sealed
+///        maximum never grows; burned copies still count toward it;
+///      - a removed minter can still seal its editions and then mint up to the seal, so the
+///        winners of its sales are never stranded; it mints nothing it has not sealed;
+///      - the minter of an edition changes only by `rebind`: the network moves an edition with no
+///        copies and no seal to another active minter, once `rebindDelay` (the network's setting,
+///        read when the rebind is attempted) has passed since its minter's removal;
+///      - transfers, approvals and balances are OpenZeppelin's, untouched: no module or minter
+///        can move or burn a copy, and no call leaves this contract during a transfer except
+///        the standard ERC-1155 acceptance check of the receiver;
+///      - `royaltyInfo` reads this contract's storage only.
+///      Every state change emits an event from which the state can be rebuilt.
 abstract contract EditionsBase is ERC1155, IEditions {
+    /// @notice The contract-level metadata URI was set (ERC-7572's `ContractURIUpdated` carries
+    ///         no value, so this event carries it for indexers that rebuild state from logs).
+    /// @param uri The URI now.
+    event ContractURISet(string uri);
+
     /// @inheritdoc IEditions
     uint48 public rebindDelay = 14 days;
 
@@ -42,6 +58,8 @@ abstract contract EditionsBase is ERC1155, IEditions {
     }
 
     /// @inheritdoc IEditions
+    /// @dev A cap of zero stores the largest maximum (`type(uint40).max`): no cap until the
+    ///      seal. The royalty receiver may be any address; the rate is at most 100,000.
     function create(
         uint256 editionId,
         uint40 maxSupply,
@@ -63,6 +81,9 @@ abstract contract EditionsBase is ERC1155, IEditions {
     }
 
     /// @inheritdoc IEditions
+    /// @dev The supply is written and logged before the ERC-1155 acceptance check, so a
+    ///      receiver that re-enters sees the new count; a receiver that refuses fails only its
+    ///      own mint.
     function mint(address to, uint256 editionId, uint256 amount, uint256 unitPrice) external {
         Edition storage e = _editions[editionId];
         if (e.minter != msg.sender || !(e.supplySealed || _isMinter(msg.sender))) {
@@ -91,6 +112,9 @@ abstract contract EditionsBase is ERC1155, IEditions {
     }
 
     /// @inheritdoc IEditions
+    /// @dev The wait in force when the rebind is attempted decides, counted from the removal.
+    ///      A minter added again after its removal is no longer removed, so its editions cannot
+    ///      be rebound.
     function rebind(uint256 editionId, address minter) external {
         _checkNetwork();
         Edition storage e = _editions[editionId];
@@ -119,7 +143,7 @@ abstract contract EditionsBase is ERC1155, IEditions {
     /// @inheritdoc IEditions
     function setRoyalty(uint256 editionId, address receiver, uint24 rate) external {
         if (msg.sender != _moduleOf(Slots.TERMS) || msg.sender == address(0)) {
-            revert InvalidRoyalty();
+            revert IModuleSlots.NotModule(Slots.TERMS, msg.sender);
         }
         Edition storage e = _editions[editionId];
         if (e.minter == address(0)) revert UnknownEdition(editionId);
@@ -150,6 +174,7 @@ abstract contract EditionsBase is ERC1155, IEditions {
     function setContractURI(string calldata uri_) external {
         _checkAdmin();
         contractURI = uri_;
+        emit ContractURISet(uri_);
         emit ContractURIUpdated();
     }
 
@@ -159,7 +184,9 @@ abstract contract EditionsBase is ERC1155, IEditions {
     }
 
     /// @inheritdoc IERC2981
-    /// @dev This contract's storage only: no module is asked.
+    /// @dev This contract's storage only: no module is asked. Exact for any price: the product
+    ///      is taken in full precision before the division. An edition that does not exist
+    ///      answers zero and the zero address.
     function royaltyInfo(uint256 tokenId, uint256 salePrice)
         external
         view
@@ -170,6 +197,8 @@ abstract contract EditionsBase is ERC1155, IEditions {
     }
 
     /// @notice The edition's metadata, drawn by its master's renderer (`IStream.rendererOf`).
+    /// @dev Reverts if the edition does not exist, or if the master's renderer is missing or
+    ///      fails; it never falls back to another renderer.
     /// @param editionId An existing edition.
     /// @return The metadata URI.
     function uri(uint256 editionId) public view override returns (string memory) {

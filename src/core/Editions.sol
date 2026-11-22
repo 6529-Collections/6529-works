@@ -10,7 +10,11 @@ import { Modules } from "./Modules.sol";
 /// @title Editions
 /// @notice 6529 Stream Editions: the one shared ERC-1155 of editions (ADR 0010). `EditionsBase`
 ///         with its own minter list and TERMS slot (`Modules`); the admin is the network.
-/// @dev lane 2 completes this.
+/// @dev Its minters are the edition sale contracts the network adds, each active after the
+///      network's waiting period (`moduleDelay`) and removed at once; its one module slot is
+///      TERMS (royalties). The network, through the AccessManager, is the admin (`setOwner`,
+///      `setContractURI`, the module and minter functions) and alone may `rebind` and
+///      `setRebindDelay`.
 contract Editions is EditionsBase, Modules {
     /// @notice The ERC-1155 collection name.
     string public constant name = "6529 Stream Editions";
@@ -21,7 +25,9 @@ contract Editions is EditionsBase, Modules {
     /// @param stream_ 6529 Stream.
     /// @param owner_ The first marketplace owner.
     /// @param terms_ The genesis TERMS module.
-    /// @param minters_ The genesis minters (edition sale contracts), active at once.
+    /// @param minters_ The genesis minters (edition sale contracts), active at once: genesis
+    ///        minters are deployed at predicted addresses, so they are named here rather than
+    ///        added later with the wait.
     constructor(
         address authority_,
         address stream_,
