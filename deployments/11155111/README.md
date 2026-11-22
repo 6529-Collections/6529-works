@@ -51,7 +51,7 @@ every other parameter is the mainnet default, and the genesis file is the commit
 **VRF subscription.**
 - Subscription ID: `89333215533523544286942655033330382207138972885355549119019072655576170365979`, a new dedicated subscription on the VRF v2.5 coordinator `0x9DdfaCa8…8B1B`.
 - Owner: the operator (the deployer EOA).
-- Funding: 0.02 Sepolia ETH, native payment.
+- Funding: 0.02 Sepolia ETH at creation, topped up with 0.3 ETH ([`0xddbc5dd2…`](https://sepolia.etherscan.io/tx/0xddbc5dd24cad0e3ccd4fc59a6ba807017a17bcc156349cf6d7a016850c657a49)), native payment. The first request stayed pending on 0.02 ETH and was fulfilled two blocks after the top-up.
 - Consumers: r5's entropy module only, added before the broadcast to its predicted address.
 - Why a new one: the operator's older subscription (from the September prototype) has two old
   consumers and a pending request, so the coordinator refuses to remove them
@@ -66,6 +66,49 @@ revert, and forge stopped. Transactions 20 to 32 were sent with forge's exact ca
 broadcast cache, through Tenderly's public gateway, in order and from the same deployer, with gas
 limits of 8 times forge's Prague simulation. The deployment record was written by `Deploy.s.sol`
 from the simulation, and every address it lists has the expected code (Sourcify matches each).
+
+**Why 725M gas, and what mainnet needs today** (from the receipts, each deploy transaction
+replayed with `cast run --quick --evm-version prague`, and each chain's `eth_config` and
+headers, read on 22 November 2026):
+- Sepolia runs the fork activated at 1791294816 (6 October 2026): its headers carry a block
+  access list hash and a slot number (Glamsterdam), its block gas limit is about 200M, and it
+  reprices state creation. The same 33 transactions replay at 106,273,873 gas under Prague
+  rules, against 724,791,013 on Sepolia (6.82x).
+- Almost all of the difference is code deposit. For every plain contract creation the extra
+  gas is 1,337 to 1,486 per deployed runtime byte (about 1,540 a byte instead of Prague's
+  200). WorkRecords' transaction deploys WorkRecords (22,934 bytes) and WorkDelivery (9,283):
+  50,759,039 gas on Sepolia, 7,229,901 under Prague, so about 43.5M of it is the repriced
+  deposit of 32,217 bytes. The configurator's creation also deploys the manager (12,506 bytes).
+  A receipt reports one `gasUsed`, so the exact split between regular and state-creation gas
+  cannot be read from it.
+- Regular gas and the 16,777,216 cap: no transaction's whole Prague cost exceeds 7,229,901
+  (WorkRecords), and the Prague cost includes the old state charges, so each transaction's
+  regular gas is below that, if Glamsterdam's non-state costs are Prague's (not verified here).
+  Sepolia accepted gas limits up to 61M (transactions 20 to 32), so its cap is not on the
+  transaction's gas limit; every transaction succeeded.
+- Mainnet today (read-only, 22 November 2026): its block gas limit is 60,000,000 and its
+  headers have no block access list, so Glamsterdam is not active; its current fork entry dates
+  from 1767747671 (7 January 2026), a Fusaka blob-parameter fork. By Fusaka's specification
+  (not measured here: `eth_call` does not apply the cap), EIP-7825 caps a transaction's gas
+  limit at 16,777,216, and storage and code deposit cost what they cost under Prague. The deployment then needs about
+  106.3M gas over 33 transactions (anvil measured 104M with the delegation mock); the largest,
+  WorkRecords, about 7.23M (9.4M with forge's 1.3 margin), fits both the per-transaction cap
+  and a block. The largest runtime (Renderer, 24,064 bytes) is under EIP-170's 24,576 and the
+  largest initcode (about 36.3 KB) under EIP-3860's 49,152. If mainnet adopts Sepolia's state
+  pricing, WorkRecords' 50.8M would exceed nothing per transaction but would take most of a
+  60M block; those parameters are not known yet.
+
+**Dated follow-ups.**
+- **27 November 2026, 09:21:24 UTC:** the full `Verify.s.sol` can run (5-day `minSetback` from
+  the `configure` block). Use an RPC that serves the deploy blocks' logs.
+- **23 November 2026, 11:09:36 UTC:** the network Safe's scheduled `Stream.lowerFeeShare(1,
+  20000)` (PARAMETER_SETTER, 24 hours; operation `0x9d7a91a1…87e2`) can execute, through the
+  manager's `execute` from the Safe, until 14 days after that. Verify fails while it is pending
+  unless `ALLOW_PENDING_OPERATIONS=1`, so execute it before the 27 November Verify.
+- **6 December 2026, 11:06:24 UTC:** the finalize notice on token 3 becomes due; any account
+  can then call `WorkRecords.finalize(3, 0)` (the keeper's `finalize` step).
+- **21 May 2027, 12:11:24 UTC:** the mark on the artist's seller-wallet share (180 days) allows
+  `SplitLedger.forfeit` if the artist has not released up to its target by then.
 
 ### Contracts (r5)
 

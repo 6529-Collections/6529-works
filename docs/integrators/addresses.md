@@ -31,7 +31,9 @@ Every address comes from the record
 ([ADR 0008](../adr/0008-federation.md)), the single network address and `SaleStarter`, so its
 ABIs and roles are the ones the other pages describe. Every contract is verified on Sourcify with
 an exact match (links in the
-[Sepolia README](../../deployments/11155111/README.md#contracts-r5)). The flows run on it are in
+[Sepolia README](../../deployments/11155111/README.md#contracts-r5)). Seven works ran through it:
+sales, edition sales with a cut step, a dispute, a VRF work, a `SaleStarter` start, a start signed by a
+consolidated wallet, payouts, a freeze and an artist's finalize; every transaction is in
 [flows.md](../../deployments/11155111/flows.md#r5-the-current-main-22-november-2026).
 
 **r5 is a rehearsal with throwaway keys.** Its live Verify needs the 5-day setback and can run

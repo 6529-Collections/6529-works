@@ -398,9 +398,11 @@ On Sepolia, set the module up as on mainnet; do not use `NO_VRF`.
 1. In the Chainlink VRF app on Sepolia, create a **dedicated** subscription. Fund it with LINK,
    or with Sepolia ETH if `VRF_NATIVE_PAYMENT=1`. No app is needed: the coordinator's
    `createSubscription()` and `fundSubscriptionWithNative(subId)` can be called directly (r5).
-   Fund it for the gas lane's maximum price, not today's: r1 and r2 (0.25 and 0.2 ETH) were
-   fulfilled within five blocks, while r5's request on 0.02 ETH stayed pending (Sepolia's lane
-   above is the 750 gwei one). A shared subscription does not work for Verify, which requires
+   Fund it for the gas lane's maximum price, not today's: r5's request stayed pending for
+   about 80 minutes on 0.02 ETH and was fulfilled two blocks after the balance reached 0.32 ETH
+   (r1 and r2, on 0.25 and 0.2 ETH, within five blocks). Sepolia's lane above is the 750 gwei
+   one; at that price a 200,000-gas callback with the coordinator's 24% native premium costs
+   about 0.2 ETH. A shared subscription does not work for Verify, which requires
    the module to be the only consumer, and the coordinator refuses to remove a consumer while
    any request on the subscription is pending (`PendingRequestExists`).
 2. Set the variables:

@@ -79,7 +79,8 @@ testnet rehearsal whose live Verify passed on 6 November 2026, at block 12,076,6
 new throwaway keys and a 2-of-3 network Safe
 ([record](../deployments/11155111/README.md#sepolia-r5-22-november-2026-current),
 [flows](../deployments/11155111/flows.md#r5-the-current-main-22-november-2026)). Its live
-Verify can run from 27 November 2026, and its VRF request waits on the subscription's funding.
+Verify can run from 27 November 2026; its flows, the VRF work and the reference keeper included,
+ran on 22 November.
 
 **What rc.2 is.** The tag on `main` whose contracts, deploy and verify scripts, genesis policy and
 `foundry.toml` are those of `1e7022b`, the code deployed as Sepolia rehearsal r4. To rc.1 it adds
