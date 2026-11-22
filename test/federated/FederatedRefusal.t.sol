@@ -9,6 +9,8 @@ import { IFederatedStream } from "src/interfaces/IFederatedStream.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { PrimaryOutcome, PrimarySettlement } from "src/interfaces/types/SaleTypes.sol";
+import { Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
+import { RefusingWallet } from "../mocks/integration/IntegrationMocks.sol";
 import { FederationBase } from "./FederationBase.sol";
 
 /// @notice A template copy that refuses to settle on demand: the same code plus a switch, so a
@@ -143,6 +145,39 @@ contract FederatedRefusalTest is FederationBase {
         _settleAtEnd(saleId);
         vm.expectRevert(abi.encodeWithSelector(IFederatedStream.WorkNotRestartable.selector, 1));
         fed.reclaim(tokenId);
+    }
+
+    /// @dev A sold token whose winner could not take it waits in the auction for a claim: it is
+    ///      not the template's to reclaim, and the template refuses it as a delivery target.
+    function test_Reclaim_ASoldTokenAwaitingDeliveryIsNotTheTemplates() public {
+        _joinedFed();
+        (uint256 saleId, uint256 tokenId) = _startFed(_fedWork(fedArtist));
+        RefusingWallet winner = new RefusingWallet();
+        vm.deal(address(winner), 1 ether);
+        winner.exec(
+            address(auction),
+            1 ether,
+            abi.encodeCall(
+                auction.bid,
+                (
+                    saleId,
+                    address(0),
+                    Payment(PaymentMethod.DIRECT, address(winner), 1 ether, 0, 0, "")
+                )
+            )
+        );
+        _settleAtEnd(saleId);
+        assertEq(fed.ownerOf(tokenId), address(auction), "awaiting delivery");
+        vm.expectRevert(abi.encodeWithSelector(IFederatedStream.WorkNotRestartable.selector, 1));
+        fed.reclaim(tokenId);
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC721Errors.ERC721InvalidReceiver.selector, address(fed))
+        );
+        winner.exec(
+            address(auction), 0, abi.encodeCall(auction.claimDelivery, (saleId, address(fed)))
+        );
+        (PrimaryOutcome outcome,,) = fed.primarySale(tokenId);
+        assertEq(uint8(outcome), uint8(PrimaryOutcome.SOLD));
     }
 
     /// @dev A token that was never minted has nothing to reclaim.
