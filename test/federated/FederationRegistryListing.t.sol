@@ -396,7 +396,7 @@ contract FederationRegistryListingTest is FederationFixture {
         assertTrue(next.canMint(address(fStream), address(fedSale)));
         assertTrue(next.canMint(address(fEditions), address(fedSale)));
         assertTrue(next.isActive(address(fStream)));
-        assertTrue(next.wasMinter(address(fedSale)));
+        assertTrue(next.saleContractOf(address(fedSale)).addedAt != 0);
         assertTrue(next.isAccountDelisted(otherId));
         assertEq(next.feeShareOf(address(fStream)), SHARE);
         assertTrue(fStream.isMinter(address(fedSale)), "tokens ask the new module");
@@ -418,7 +418,7 @@ contract FederationRegistryListingTest is FederationFixture {
         assertFalse(next.isAccountDelisted(otherId));
         assertTrue(registry.isAccountDelisted(otherId));
 
-        next.setAdapter(address(fedSale), false);
+        next.setAdapter(address(fedSale), IFederationRegistry.Form.ERC721, false);
         assertFalse(next.canMint(address(fStream), address(fedSale)));
         assertTrue(registry.canMint(address(fStream), address(fedSale)));
         assertFalse(fStream.isMinter(address(fedSale)), "the token follows the directory");

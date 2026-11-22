@@ -75,7 +75,7 @@ contract FederatedHostileTest is FederatedTokenFixture {
         super.setUp();
         sold = _fsell(1, collector); // SOLD, a collector holds it
         held = _fmint(2); // in the sale's custody, no outcome
-        direct = sale.mintTo(address(fs), stranger, _facts(3)); // no outcome, a collector holds it
+        direct = sale.mintTo(address(fs), stranger, _ffacts(3)); // no outcome, a collector holds it
         soldFacts = keccak256(abi.encode(fs.workOf(sold)));
         hostileGate = new HostileGate();
         hostile = new HostileModule();
@@ -111,7 +111,7 @@ contract FederatedHostileTest is FederatedTokenFixture {
     function test_LyingGate_MintsJunkButReachesNoHeldToken() public {
         _install(Slots.FEDERATION, address(hostileGate));
         assertTrue(fs.isMinter(address(hostile)));
-        MintFacts memory f = _facts(9);
+        MintFacts memory f = _ffacts(9);
         (bool minted,) =
             hostile.exec(address(fs), abi.encodeCall(IStream.mint, (address(hostile), f)));
         assertTrue(minted, "junk is minted: the gate decides who mints");
@@ -144,7 +144,7 @@ contract FederatedHostileTest is FederatedTokenFixture {
         _install(Slots.FEDERATION, address(hostileGate));
         hostileGate.setMode(HostileGate.Mode.BURN_GAS);
         (bool ok,) = address(sale).call{ gas: 2_000_000 }(
-            abi.encodeCall(MockSale.mint, (address(fs), _facts(4)))
+            abi.encodeCall(MockSale.mint, (address(fs), _ffacts(4)))
         );
         assertFalse(ok, "a gas shortfall never reads as an answer");
         assertEq(fs.totalMinted(), 3);

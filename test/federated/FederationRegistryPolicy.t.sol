@@ -84,7 +84,7 @@ contract FederationRegistryPolicyTest is FederationFixture {
             abi.encodeWithSelector(IMintPolicy.NotSaleContract.selector, address(fStream), stranger)
         );
         registry.authorize(address(fStream), _request(item, media, new bytes[](0)));
-        registry.setAdapter(address(fedSale), false);
+        registry.setAdapter(address(fedSale), IFederationRegistry.Form.ERC721, false);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IMintPolicy.NotSaleContract.selector, address(fStream), address(fedSale)

@@ -13,12 +13,13 @@ import {
 import { IAssetAllowlist } from "../economics/interfaces/IAssetAllowlist.sol";
 import { IRevenueEscrow } from "../economics/interfaces/IRevenueEscrow.sol";
 import { RevenuePayment } from "../economics/RevenuePayment.sol";
-import { MintFacts, MintTerms, Slots } from "../interfaces/core/CoreTypes.sol";
+import { MintFacts, MintTerms, Outcome, Slots } from "../interfaces/core/CoreTypes.sol";
 import { IDirectory } from "../interfaces/core/IDirectory.sol";
+import { IFederationGate } from "../interfaces/core/IFederationGate.sol";
 import { IMintPolicy } from "../interfaces/core/IMintPolicy.sol";
-import { IModules } from "../interfaces/core/IModules.sol";
 import { IStream } from "../interfaces/core/IStream.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
+import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { IEnglishAuction } from "../interfaces/IEnglishAuction.sol";
 import { IEnglishAuctionClock } from "../interfaces/IEnglishAuctionClock.sol";
 import { IEnglishAuctionRefusal } from "../interfaces/IEnglishAuctionRefusal.sol";
@@ -51,6 +52,16 @@ import { Dependency } from "../libraries/Dependency.sol";
 ///      ETH balance. The contract's balance always equals the standing bids of sales that are
 ///      not settled or cancelled plus every account's credit: a bid adds both, an outbid moves a
 ///      bid to a credit, a settlement pays a bid out, a claim or expiry pays a credit out.
+///
+///      Federated works and replacement. Whether a federated sale goes on is whether the
+///      federation module still serves its token (`IFederationRegistry.isActive`: listed, not
+///      delisted, its version not revoked), never whether this auction may still mint new works.
+///      A federated token lets the account that minted a work record that work's sale for good
+///      (`IFederatedStream.hasMinted`), so an auction the network removed or replaced stays the
+///      venue of the works it minted: its running sales finish, and its unsold works can be
+///      offered again here (`restart`) for as long as the token is served. The network's other
+///      path is `IStream.rescue`, once the token's `rescueDelay` has passed since the removal:
+///      it ends the work's primary sale as RESCUED and moves the work where the network says.
 contract EnglishAuction is
     IEnglishAuction,
     IEnglishAuctionClock,
@@ -200,12 +211,20 @@ contract EnglishAuction is
         if (
             s.status != AuctionState.SETTLED || token == stream || s.deliveryPending
                 || IERC721(token).ownerOf(s.tokenId) != address(this)
+                || IStream(token).workOf(s.tokenId).outcome != Outcome.NONE
         ) revert InvalidAuctionState(saleId, _state(s));
-        if (!IModules(token).isMinter(address(this))) revert TargetNotAllowed(token);
+        if (!_served(token)) revert TargetNotAllowed(token);
+        // The network's share only goes down: a restart takes the share in force now.
+        uint256 share = IFederationGate(policyOf(token)).feeShareOf(token);
+        if (share > DENOMINATOR) revert InvalidSaleTerms(token, s.tokenId);
         uint40 end = SafeCast.toUint40(block.timestamp + c.duration);
+        // Checked above: at most 100,000.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        s.feeShare = uint24(share);
         (s.endTime, s.status, s.pauseUsed, s.recipientSet) =
         (end, AuctionState.ACTIVE, false, false);
-        (s.bid, s.recipient, s.pausedAt, s.outcomeFrom) = (0, address(0), 0, 0);
+        (s.bidder, s.bid) = (address(0), 0);
+        (s.recipient, s.pausedAt, s.outcomeFrom) = (address(0), 0, 0);
         emit SaleStarted(
             saleId,
             token,
@@ -240,8 +259,10 @@ contract EnglishAuction is
 
     /// @inheritdoc IEnglishAuction
     /// @dev In order: a work no longer in custody (only the network's `IStream.rescue` can move
-    ///      it) closes with refunds; a federated work whose token no longer lets this auction
-    ///      mint (delisted) has its standing bid credited back and ends unsold; with no bid, a
+    ///      it) closes with refunds; a federated work whose token the federation module no
+    ///      longer serves (delisted, or its version revoked) has its standing bid credited back
+    ///      and ends unsold, while a removed auction or a suspended version settles as usual;
+    ///      with no bid, a
     ///      6529 Stream work is recorded UNSOLD and sent to the museum, a federated work stays in
     ///      custody for `restart`; with a bid, the outcome is recorded SOLD, the seller and the
     ///      network are paid and the work is delivered (or left pending).
@@ -255,7 +276,7 @@ contract EnglishAuction is
             return;
         }
         bool federated = token != stream;
-        if (federated && !IModules(token).isMinter(address(this))) _refundHighBid(saleId, s);
+        if (federated && !_served(token)) _refundHighBid(saleId, s);
         if (s.bidder == address(0)) {
             address holder = address(this);
             if (!federated) {
@@ -616,10 +637,8 @@ contract EnglishAuction is
     /// @dev Records a bid of `msg.value` by the caller for `recipient` (the caller when zero).
     function _bid(uint256 saleId, address recipient) private {
         Sale storage s = _require(saleId, AuctionState.ACTIVE);
-        // A federated token that no longer lets this auction mint (delisted) takes no bids.
-        if (s.token != stream && !IModules(s.token).isMinter(address(this))) {
-            revert TargetNotAllowed(s.token);
-        }
+        // A federated token the federation module no longer serves (delisted) takes no bids.
+        if (s.token != stream && !_served(s.token)) revert TargetNotAllowed(s.token);
         if (recipient == address(0)) recipient = msg.sender;
         if (recipient == address(this)) revert InvalidRecipient(recipient);
         uint256 required = _minimumBid(s);
@@ -763,6 +782,13 @@ contract EnglishAuction is
         Settings storage st = _settings;
         uint256 reopening = Math.max(st.duration, st.extensionWindow);
         return pausedAt + length + Math.max(s.endTime - pausedAt, reopening);
+    }
+
+    /// @dev Whether the federation module the directory names now still serves the federated
+    ///      `token` (`IFederationRegistry.isActive`); false while the FEDERATION slot is empty.
+    function _served(address token) private view returns (bool) {
+        address gate = directory.moduleOf(Slots.FEDERATION);
+        return gate != address(0) && IFederationRegistry(gate).isActive(token);
     }
 
     /// @dev The token's recipient: the stored one, or the bidder.

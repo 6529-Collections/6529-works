@@ -11,17 +11,13 @@ pragma solidity ^0.8.24;
 ///      once. The network's waiting period applies to installing a federation module in the directory.
 interface IFederationGate {
     /// @notice Whether `minter` may mint for `token` now: the token is listed and not delisted
-    ///         and `minter` is one of the network's federated sale contracts.
+    ///         and `minter` is one of the network's federated sale contracts for tokens of its
+    ///         form. Who may record a sale is the token's own answer (the account that minted
+    ///         the work), not the module's.
     /// @param token The federated token contract.
     /// @param minter The sale contract.
     /// @return True if it may mint.
     function canMint(address token, address minter) external view returns (bool);
-
-    /// @notice Whether `minter` is or ever was a federated sale contract (a removed one still
-    ///         records the sales it started).
-    /// @param minter The sale contract.
-    /// @return True if it is or was.
-    function wasMinter(address minter) external view returns (bool);
 
     /// @notice When the network removed `minter` from the federated sale contracts; zero if it
     ///         is not removed.

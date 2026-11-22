@@ -97,15 +97,31 @@ contract MockFederationPolicy is MockMintPolicy, IFederationGate {
     mapping(address => mapping(address => bool)) public canMint;
     mapping(address => bool) public wasMinter;
     mapping(address => uint256) public minterRemovedAt;
-    mapping(address => uint32) public feeShareOf;
+    /// @dev Whether the token is served (`IFederationRegistry.isActive`), which the English
+    ///      auction asks to decide whether a federated sale goes on.
+    mapping(address => bool) public isActive;
 
     constructor(address seller, address feeRecipient, uint32 feeShare)
         MockMintPolicy(seller, feeRecipient, feeShare)
     { }
 
+    /// @dev Admitting a sale contract for a token also serves the token; refusing it models a
+    ///      delisting (the token is no longer served).
     function setMinter(address token, address minter, bool ok) external {
         canMint[token][minter] = ok;
+        isActive[token] = ok;
         if (ok) wasMinter[minter] = true;
+    }
+
+    /// @dev Stops `minter` minting for `token` while the token stays served (a removed sale
+    ///      contract or a suspended version).
+    function stopMinting(address token, address minter) external {
+        canMint[token][minter] = false;
+    }
+
+    /// @dev The share the policy's terms answer.
+    function feeShareOf(address) external view returns (uint32) {
+        return _terms.feeShare;
     }
 
     /// @dev Makes the gate deny that `minter` ever was one (a token then refuses its records).
@@ -145,7 +161,7 @@ contract MockFederatedToken is StreamBase {
     }
 
     function _wasMinter(address account) internal view override returns (bool) {
-        return _gate().wasMinter(account);
+        return MockFederationPolicy(address(_gate())).wasMinter(account);
     }
 
     function _minterRemovedAt(address account) internal view override returns (uint256) {

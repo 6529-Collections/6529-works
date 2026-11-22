@@ -158,7 +158,7 @@ abstract contract FederationFixture is CoreFixture {
         fedSale = new FedSale();
         registry.approveTemplate(address(streamDeployer), 1, IFederationRegistry.Form.ERC721);
         registry.approveTemplate(address(editionsDeployer), 1, IFederationRegistry.Form.ERC1155);
-        registry.setAdapter(address(fedSale), true);
+        registry.setAdapter(address(fedSale), IFederationRegistry.Form.ERC721, true);
 
         _consolidate(artist, wallet);
         licenseText = _file("license text of the work", "text/plain");

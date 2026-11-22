@@ -149,7 +149,7 @@ contract FederatedFlowTest is FederationFixture {
 
     function test_Flow_ARemovedSaleContractFinishesAndIsRescuedAfterTheDelay() public {
         uint256 id = _fedMint(7);
-        registry.setAdapter(address(fedSale), false);
+        registry.setAdapter(address(fedSale), IFederationRegistry.Form.ERC721, false);
         assertFalse(fStream.isMinter(address(fedSale)));
         vm.warp(block.timestamp + fStream.rescueDelay());
         fStream.rescue(id, collector);

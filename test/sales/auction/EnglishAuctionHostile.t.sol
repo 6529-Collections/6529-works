@@ -96,6 +96,7 @@ contract EnglishAuctionHostileTest is AuctionFixture {
     function test_HostileToken_ARepeatedIdCannotOverwriteASale() public {
         HostileToken t = new HostileToken();
         t.setMode(HostileToken.Mode.REPEAT, address(auction), "");
+        federation.setMinter(address(t), address(auction), true); // the module serves it
         uint256 saleId = auction.start(address(t), abi.encode(1));
         vm.prank(alice);
         auction.bid{ value: 1 ether }(saleId, address(0));

@@ -115,12 +115,13 @@ contract FederationRegistryIndexer is ReplayIndexer {
             _listings[token].feeShare = share;
         } else if (sig == IFederationRegistry.SaleContractSet.selector) {
             address minter = _addr(log.topics[1]);
-            (uint48 addedAt, uint48 removedAt) = abi.decode(log.data, (uint48, uint48));
+            (IFederationRegistry.Form form, uint48 addedAt, uint48 removedAt) =
+                abi.decode(log.data, (IFederationRegistry.Form, uint48, uint48));
             if (!_minterSeen[minter]) {
                 _minterSeen[minter] = true;
                 _minters.push(minter);
             }
-            _sale[minter] = IFederationRegistry.SaleContract(addedAt, removedAt);
+            _sale[minter] = IFederationRegistry.SaleContract(addedAt, removedAt, form);
         } else if (sig == IFederationRegistry.ItemApproval.selector) {
             address token = _addr(log.topics[1]);
             bytes32 itemHash = log.topics[2];
@@ -175,7 +176,7 @@ contract FederationRegistryIndexer is ReplayIndexer {
         IFederationRegistry.SaleContract memory s = _sale[minter];
         if (s.addedAt == 0 || s.removedAt != 0) return false;
         IFederationRegistry.Listing memory l = _listings[token];
-        if (!_mintable(l)) return false;
+        if (l.form != s.form || !_mintable(l)) return false;
         return l.form != IFederationRegistry.Form.ERC1155 || _mintable(_listings[l.partner]);
     }
 
@@ -200,7 +201,6 @@ contract FederationRegistryIndexer is ReplayIndexer {
         for (uint256 i; i < _minters.length; ++i) {
             address m = _minters[i];
             assertEq(abi.encode(r.saleContractOf(m)), abi.encode(_sale[m]), "sale contract");
-            assertEq(r.wasMinter(m), _sale[m].addedAt != 0, "wasMinter");
             assertEq(r.minterRemovedAt(m), _sale[m].removedAt, "removedAt");
         }
         for (uint256 i; i < _itemKeys.length; ++i) {

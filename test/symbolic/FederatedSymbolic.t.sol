@@ -271,7 +271,7 @@ contract FederatedSymbolicTest is Test {
             IFederationRegistry.Template(
                 1, IFederationRegistry.Form.ERC721, IFederationRegistry.TemplateStatus.APPROVED
             ),
-            IFederationRegistry.SaleContract(1, 0),
+            IFederationRegistry.SaleContract(1, 0, IFederationRegistry.Form.ERC721),
             false
         );
         vm.prank(NETWORK);
@@ -282,16 +282,18 @@ contract FederatedSymbolicTest is Test {
         assert(now_ <= first);
     }
 
-    /// @notice `canMint` is false unless the sale contract is added and not removed, the listing
-    ///         is ACTIVE, its account is not delisted and its template version is APPROVED.
+    /// @notice `canMint` is false unless the sale contract is added and not removed for the
+    ///         listing's form, the listing is ACTIVE, its account is not delisted and its
+    ///         template version is APPROVED.
     function check_canMint_onlyAnActiveListingAndAnAddedSaleContract(
         uint48 addedAt,
         uint48 removedAt,
         uint8 status,
         uint8 templateStatus,
-        bool delisted
+        bool delisted,
+        uint8 form
     ) public {
-        vm.assume(status < 3 && templateStatus < 4);
+        vm.assume(status < 3 && templateStatus < 4 && form < 3);
         previous.set(
             IFederationRegistry.Listing(
                 1,
@@ -306,11 +308,12 @@ contract FederatedSymbolicTest is Test {
                 IFederationRegistry.Form.ERC721,
                 IFederationRegistry.TemplateStatus(templateStatus)
             ),
-            IFederationRegistry.SaleContract(addedAt, removedAt),
+            IFederationRegistry.SaleContract(addedAt, removedAt, IFederationRegistry.Form(form)),
             delisted
         );
         bool can = registry.canMint(TOKEN, address(minter));
         bool expected = addedAt != 0 && removedAt == 0
+            && form == uint8(IFederationRegistry.Form.ERC721)
             && status == uint8(IFederationRegistry.Status.ACTIVE) && !delisted
             && templateStatus == uint8(IFederationRegistry.TemplateStatus.APPROVED);
         assert(can == expected);
@@ -353,10 +356,11 @@ contract FederatedSymbolicTest is Test {
         uint48 removedAt,
         uint8 status,
         uint8 templateStatus,
-        bool delisted
+        bool delisted,
+        uint8 form
     ) public {
         check_canMint_onlyAnActiveListingAndAnAddedSaleContract(
-            addedAt, removedAt, status % 3, templateStatus % 4, delisted
+            addedAt, removedAt, status % 3, templateStatus % 4, delisted, form % 3
         );
     }
 }

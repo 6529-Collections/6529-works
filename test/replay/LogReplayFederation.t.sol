@@ -51,7 +51,7 @@ contract LogReplayFederationTest is FederationFixture {
 
         // Governance of the module.
         FedSale second = new FedSale();
-        registry.setAdapter(address(second), true);
+        registry.setAdapter(address(second), IFederationRegistry.Form.ERC721, true);
         registry.setEntropyModule(address(0xE7));
         address[] memory tokens = new address[](1);
         tokens[0] = address(fEditions);
@@ -63,7 +63,7 @@ contract LogReplayFederationTest is FederationFixture {
         registry.resumeTemplate(address(editionsDeployer));
         registry.setStatus(tokens, IFederationRegistry.Status.ACTIVE, "relisted");
         registry.setAccountDelisted(uint160(0xBAD), false, "relisted");
-        registry.setAdapter(address(second), false);
+        registry.setAdapter(address(second), IFederationRegistry.Form.ERC721, false);
         _matches();
 
         // Items, mints and sales.
@@ -109,7 +109,7 @@ contract LogReplayFederationTest is FederationFixture {
 
         // A removed sale contract's unsold token is rescued after the delay.
         uint256 stuck = _fedMint(4);
-        registry.setAdapter(address(fedSale), false);
+        registry.setAdapter(address(fedSale), IFederationRegistry.Form.ERC721, false);
         vm.warp(block.timestamp + 3 days);
         fStream.rescue(stuck, collector);
         _matches();

@@ -128,9 +128,12 @@ interface IFederationRegistry is IERC165 {
     /// @notice A federated sale contract's standing.
     /// @param addedAt When the network added it; zero if never.
     /// @param removedAt When the network removed it; zero while it is not removed.
+    /// @param form The one form of token it mints for: ERC721 (1/1 works) or ERC1155
+    ///        (editions).
     struct SaleContract {
         uint48 addedAt;
         uint48 removedAt;
+        Form form;
     }
 
     /// @notice A burned work's content released by the network.
@@ -187,9 +190,10 @@ interface IFederationRegistry is IERC165 {
     event FeeShareLowered(address indexed token, uint32 previous, uint32 share);
     /// @notice A federated sale contract was added or removed.
     /// @param minter The sale contract.
+    /// @param form The form of token it mints for.
     /// @param addedAt When it was added.
     /// @param removedAt When it was removed, zero while it is not.
-    event SaleContractSet(address indexed minter, uint48 addedAt, uint48 removedAt);
+    event SaleContractSet(address indexed minter, Form form, uint48 addedAt, uint48 removedAt);
     /// @notice The artist approved an item for one mint, or withdrew it.
     /// @param token The federated contract.
     /// @param itemHash The item hash.
@@ -241,6 +245,8 @@ interface IFederationRegistry is IERC165 {
     error ItemNotApproved(address token, bytes32 itemHash);
     /// @notice The royalty rate is over 100,000.
     error InvalidRoyaltyRate(uint256 rate);
+    /// @notice The artist's account may not act now: it is frozen, or a replacement is pending.
+    error AccountCannotAct(uint256 artistId);
     /// @notice The mint request breaks a rule: currency, media, kind, seed policy, license,
     ///         parties, payees, or an edition master without listed editions.
     error InvalidMintRequest();

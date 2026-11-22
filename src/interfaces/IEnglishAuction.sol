@@ -26,6 +26,10 @@ import { IEconomicsResolver } from "./IEconomicsResolver.sol";
 ///      recorded UNSOLD and sent to the 6529 Network Museum (`IEconomicsResolver.museum()`, read
 ///      then). An unsold federated work stays in this auction's custody with no outcome, and
 ///      anyone may offer it again here (`restart`); its artist cannot take it out without a sale.
+///      A federated sale is closed with refunds only when its token is no longer served by the
+///      federation module (delisted, or its version revoked); removing this auction as a sale
+///      contract or suspending a version lets running sales finish and unsold works be offered
+///      again here, since the token lets the account that minted a work record its sale for good.
 ///      A work the network rescued (`IStream.rescue`, outcome RESCUED) closes its sale with the
 ///      standing bid credited back.
 ///
@@ -272,9 +276,11 @@ interface IEnglishAuction {
         payable
         returns (uint256 saleId);
 
-    /// @notice Offers an unsold federated work in this auction's custody again, with the terms
-    ///         its first start locked. Permissionless, while starts are not paused and the
-    ///         token still lets this auction mint.
+    /// @notice Offers an unsold federated work in this auction's custody again, with the seller
+    ///         its first start locked and the network's share in force now for the token
+    ///         (`IFederationGate.feeShareOf`). Permissionless, while starts are not paused and the
+    ///         federation module still serves the token, whether or not this auction may still
+    ///         mint new works.
     /// @param saleId A settled sale of a federated work still in custody with no outcome.
     function restart(uint256 saleId) external;
 

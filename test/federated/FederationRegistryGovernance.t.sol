@@ -152,7 +152,7 @@ contract FederationRegistryGovernanceTest is FederationFixture {
         vm.expectRevert(_unauthorized(stranger));
         registry.reinstateTemplate(address(streamDeployer));
         vm.expectRevert(_unauthorized(stranger));
-        registry.setAdapter(address(fedSale), false);
+        registry.setAdapter(address(fedSale), IFederationRegistry.Form.ERC721, false);
         vm.expectRevert(_unauthorized(stranger));
         registry.setStatus(_tokens(address(fStream)), IFederationRegistry.Status.DELISTED, 0);
         vm.expectRevert(_unauthorized(stranger));
@@ -170,25 +170,29 @@ contract FederationRegistryGovernanceTest is FederationFixture {
 
     function test_SetAdapter_AddRemoveReAdd() public {
         FedSale s = new FedSale();
-        assertFalse(registry.wasMinter(address(s)));
+        assertFalse(registry.saleContractOf(address(s)).addedAt != 0);
         vm.warp(1_800_000_100);
         vm.expectEmit(address(registry));
-        emit IFederationRegistry.SaleContractSet(address(s), 1_800_000_100, 0);
-        registry.setAdapter(address(s), true);
-        assertTrue(registry.wasMinter(address(s)));
+        emit IFederationRegistry.SaleContractSet(
+            address(s), IFederationRegistry.Form.ERC721, 1_800_000_100, 0
+        );
+        registry.setAdapter(address(s), IFederationRegistry.Form.ERC721, true);
+        assertTrue(registry.saleContractOf(address(s)).addedAt != 0);
         assertEq(registry.minterRemovedAt(address(s)), 0);
         assertTrue(registry.canMint(address(fStream), address(s)));
 
         vm.warp(1_800_000_200);
         vm.expectEmit(address(registry));
-        emit IFederationRegistry.SaleContractSet(address(s), 1_800_000_100, 1_800_000_200);
-        registry.setAdapter(address(s), false);
-        assertTrue(registry.wasMinter(address(s)), "a removed one still was one");
+        emit IFederationRegistry.SaleContractSet(
+            address(s), IFederationRegistry.Form.ERC721, 1_800_000_100, 1_800_000_200
+        );
+        registry.setAdapter(address(s), IFederationRegistry.Form.ERC721, false);
+        assertTrue(registry.saleContractOf(address(s)).addedAt != 0, "a removed one still was one");
         assertEq(registry.minterRemovedAt(address(s)), 1_800_000_200);
         assertFalse(registry.canMint(address(fStream), address(s)));
 
         vm.warp(1_800_000_300);
-        registry.setAdapter(address(s), true);
+        registry.setAdapter(address(s), IFederationRegistry.Form.ERC721, true);
         assertEq(registry.minterRemovedAt(address(s)), 0, "re-adding clears the removal");
         assertEq(registry.saleContractOf(address(s)).addedAt, 1_800_000_300);
         assertTrue(registry.canMint(address(fStream), address(s)));
@@ -200,22 +204,22 @@ contract FederationRegistryGovernanceTest is FederationFixture {
                 IFederationRegistry.SaleContractInvalid.selector, address(fedSale)
             )
         );
-        registry.setAdapter(address(fedSale), true);
+        registry.setAdapter(address(fedSale), IFederationRegistry.Form.ERC721, true);
         vm.expectRevert(
             abi.encodeWithSelector(IFederationRegistry.SaleContractInvalid.selector, stranger)
         );
-        registry.setAdapter(stranger, true);
+        registry.setAdapter(stranger, IFederationRegistry.Form.ERC721, true);
         vm.expectRevert(
             abi.encodeWithSelector(IFederationRegistry.SaleContractInvalid.selector, stranger)
         );
-        registry.setAdapter(stranger, false);
-        registry.setAdapter(address(fedSale), false);
+        registry.setAdapter(stranger, IFederationRegistry.Form.ERC721, false);
+        registry.setAdapter(address(fedSale), IFederationRegistry.Form.ERC721, false);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IFederationRegistry.SaleContractInvalid.selector, address(fedSale)
             )
         );
-        registry.setAdapter(address(fedSale), false);
+        registry.setAdapter(address(fedSale), IFederationRegistry.Form.ERC721, false);
     }
 
     // ------------------------------------------------------------------ status
@@ -378,7 +382,9 @@ contract FederationRegistryGovernanceTest is FederationFixture {
             registry.setStatus(_tokens(address(fStream)), IFederationRegistry.Status.DELISTED, 0);
         }
         if (accountDelisted) registry.setAccountDelisted(fArtistId, true, 0);
-        if (!adapterOn) registry.setAdapter(address(fedSale), false);
+        if (!adapterOn) {
+            registry.setAdapter(address(fedSale), IFederationRegistry.Form.ERC721, false);
+        }
 
         bool listedActive = !delisted && !accountDelisted;
         assertEq(registry.isActive(address(fStream)), listedActive && tpl != 2, "isActive");
@@ -414,7 +420,7 @@ contract FederationRegistryGovernanceTest is FederationFixture {
     function test_Gate_TokensAskTheRegistry() public {
         assertTrue(fStream.isMinter(address(fedSale)));
         assertTrue(fEditions.isMinter(address(fedSale)));
-        registry.setAdapter(address(fedSale), false);
+        registry.setAdapter(address(fedSale), IFederationRegistry.Form.ERC721, false);
         assertFalse(fStream.isMinter(address(fedSale)));
         assertFalse(fEditions.isMinter(address(fedSale)));
     }
@@ -422,7 +428,7 @@ contract FederationRegistryGovernanceTest is FederationFixture {
     function test_FeeShareOf_UnlistedIsZero() public view {
         assertEq(registry.feeShareOf(stranger), 0);
         assertEq(registry.minterRemovedAt(stranger), 0);
-        assertFalse(registry.wasMinter(stranger));
+        assertFalse(registry.saleContractOf(stranger).addedAt != 0);
     }
 
     function test_Constructor_ReadsSplitFactoryAndPrevious() public {

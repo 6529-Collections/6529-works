@@ -42,8 +42,13 @@ import { SpdxId } from "../stream/SpdxId.sol";
 ///      are listed, which sale contracts may mint new works and open new sales, and what a new
 ///      work is minted with. A replacement is deployed naming this one as `previous` and reads
 ///      through it for listings, account delistings, template versions and sale contracts it has
-///      not recorded itself, so it inherits them without any artist signature. Every governed
-///      function is the network's, at the role delays of the genesis role map.
+///      not recorded itself, so it inherits them without any artist signature. It does not
+///      inherit item approvals (they die with this module), releases or barred items: content
+///      uniqueness still holds through each token's `tokenOfContent`, so a burned work's content
+///      stays unmintable under the replacement until the network releases it there again
+///      (`releaseContent`), which bars the burned item there too; a release made here and not
+///      yet used must be made again. Every governed function is the network's, at the role
+///      delays of the genesis role map.
 contract FederationRegistry is IFederationRegistry, IFederationGate, IMintPolicy, AccessManaged {
     /// @notice Whether an account is delisted, as recorded here.
     /// @param recorded Whether this module recorded the account (else the predecessor answers).
@@ -165,24 +170,28 @@ contract FederationRegistry is IFederationRegistry, IFederationGate, IMintPolicy
     }
 
     /// @notice Adds (`admitted`) or removes a federated sale contract, at once. The network. A
-    ///         removed one may be added again. Removal stops new works only: the sale contract
+    ///         sale contract mints for one form of token only: the English auction for ERC721
+    ///         (1/1) contracts, the edition auction for ERC1155 contracts. A removed one may be
+    ///         added again, with a form again. Removal stops new works only: the sale contract
     ///         still finishes the sales it started, and from then the rescue and rebind waits of
     ///         the federated tokens count from the removal. The network's waiting period applies
     ///         to installing this module in the directory, not to each sale contract.
     /// @param adapter The sale contract (code, to add).
+    /// @param form ERC721 or ERC1155, to add (PAIR matches no token, so it mints nothing);
+    ///        ignored on a removal.
     /// @param admitted True to add, false to remove.
-    function setAdapter(address adapter, bool admitted) external restricted {
+    function setAdapter(address adapter, Form form, bool admitted) external restricted {
         SaleContract memory s = saleContractOf(adapter);
         bool active = s.addedAt != 0 && s.removedAt == 0;
         if (admitted) {
             if (adapter.code.length == 0 || active) revert SaleContractInvalid(adapter);
-            s = SaleContract(_now(), 0);
+            s = SaleContract(_now(), 0, form);
         } else {
             if (!active) revert SaleContractInvalid(adapter);
             s.removedAt = _now();
         }
         _saleContracts[adapter] = s;
-        emit SaleContractSet(adapter, s.addedAt, s.removedAt);
+        emit SaleContractSet(adapter, s.form, s.addedAt, s.removedAt);
     }
 
     /// @notice Sets listed contracts ACTIVE or DELISTED, in batches of the caller's size. The
@@ -349,7 +358,8 @@ contract FederationRegistry is IFederationRegistry, IFederationGate, IMintPolicy
     /// @dev `request` is `abi.encode(IFederatedStream.FederatedMint)`. The caller must be a sale
     ///      contract that may mint into `token` now (`canMint`), and this module must be the one
     ///      the directory names now: a replaced module authorizes nothing, so its item approvals
-    ///      die with it. The item must be approved for
+    ///      die with it. The artist's account must be able to act now (not frozen, no
+    ///      replacement pending: `IArtistRegistry.activeAuthorityOf`). The item must be approved for
     ///      `token`, not minted and not barred; it is consumed. Checks: ETH only; one to
     ///      `Limits.MAX_MEDIA_FILES` media files, each registered in the content store with the
     ///      stated SHA-256, the primary first and committed by the item; kind original or edition
@@ -453,13 +463,8 @@ contract FederationRegistry is IFederationRegistry, IFederationGate, IMintPolicy
         SaleContract memory s = saleContractOf(minter);
         if (s.addedAt == 0 || s.removedAt != 0) return false;
         Listing memory l = listingOf(token);
-        if (!_mintable(l)) return false;
+        if (l.form != s.form || !_mintable(l)) return false;
         return l.form != Form.ERC1155 || _mintable(listingOf(l.partner));
-    }
-
-    /// @inheritdoc IFederationGate
-    function wasMinter(address minter) external view returns (bool) {
-        return saleContractOf(minter).addedAt != 0;
     }
 
     /// @inheritdoc IFederationGate
@@ -592,7 +597,8 @@ contract FederationRegistry is IFederationRegistry, IFederationGate, IMintPolicy
 
     /// @dev Reverts (`InvalidMintRequest`) unless the first party is the contract's artist (its
     ///      ID as an address), there are at most `Limits.MAX_PARTIES` parties and one consent per
-    ///      later party, and at most `Splits.MAX_PAYEES` payees. Each later party's consent to
+    ///      later party, and at most `Splits.MAX_PAYEES` payees; with `AccountCannotAct` while the
+    ///      artist's account is frozen or a replacement is pending. Each later party's consent to
     ///      `Core.federatedConsent(itemHash, rate)` for `token` must be good
     ///      (`IAccounts.requireSigned` over `consentDigest(token, ...)` reverts otherwise):
     ///      signed by a wallet of that party's account, so consent is unanimous and counted by
@@ -612,6 +618,11 @@ contract FederationRegistry is IFederationRegistry, IFederationGate, IMintPolicy
                 || consents.length != n - 1 || item.payees.length > Splits.MAX_PAYEES
         ) revert InvalidMintRequest();
         IAccounts accounts = _accounts();
+        // An approval is the artist's act: none is used while the account may not act (frozen,
+        // or a replacement pending), the same rule that stops the artist revoking it.
+        if (IArtistRegistry(address(accounts)).activeAuthorityOf(artistId) == address(0)) {
+            revert AccountCannotAct(artistId);
+        }
         bytes32 digest = accounts.consentDigest(token, Core.federatedConsent(itemHash, rate));
         for (uint256 i = 1; i < n; ++i) {
             accounts.requireSigned(uint160(parties[i].account), digest, consents[i - 1]);
