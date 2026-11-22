@@ -374,20 +374,8 @@ contract SplitLedger is ISplitLedger, EIP712 {
     {
         address net = network;
         uint256 count = payees.length;
-        // Binary search for `(0, net)`: a release only gets here for a deployed wallet, whose
-        // list is canonical, strictly ascending by `(artistId, account)`. Each payee is three
-        // calldata words: artist ID, account, share.
-        uint256 i;
-        uint256 hi = count;
-        assembly ("memory-safe") {
-            for { } lt(i, hi) { } {
-                let mid := shr(1, add(i, hi))
-                let at := add(payees.offset, mul(mid, 0x60))
-                switch and(iszero(calldataload(at)), lt(calldataload(add(at, 0x20)), net))
-                case 1 { i := add(mid, 1) }
-                default { hi := mid }
-            }
-        }
+        // A release only gets here for a deployed wallet, whose list is canonical.
+        uint256 i = Splits.lowerBound(payees, net);
         if (i == count || i == paid || payees[i].artistId != 0 || payees[i].account != net) {
             return;
         }
